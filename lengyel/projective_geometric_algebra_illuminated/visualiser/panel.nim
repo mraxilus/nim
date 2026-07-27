@@ -55,6 +55,8 @@ type
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
+    microseconds_tessellate*: float ## Cost of rebuilding vertex storage, last frame.
+    count_vertices*: int ## Vertices assembled, last frame.
     path_export*: array[PATH_MAX, char] ## Where exported frame is written.
     message*: array[MESSAGE_MAX, char] ## Outcome of last action taken.
 
@@ -228,8 +230,15 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   discard gui.inputText("path", toCstring(workbench.path_export), cint(PATH_MAX))
   gui.widthPop()
   if gui.button("save PNG"): workbench.is_export_requested = true
-  gui.sameLine()
-  gui.text(cstring(&"{int(gui.framerate())} fps"))
+
+  # Report what the frame cost here rather than in a benchmark, since the answer is the
+  #   reader's own machine, and tessellation is the only part this code controls.
+  gui.separatorText("cost")
+  gui.text(cstring(&"{int(gui.framerate())} fps, {1000.0/max(gui.framerate(), 1.0):.2f} ms/frame"))
+  gui.text(cstring(
+    &"tessellate {workbench.microseconds_tessellate:.1f} us into " &
+    &"{workbench.count_vertices} vertices"
+  ))
 
 
 

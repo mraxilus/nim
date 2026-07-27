@@ -384,6 +384,19 @@ suite "Scene":
       check POINTS[j] ∧ line =~ 0
 
 
+  test "orthogonal projection lands on the object projected onto":
+    for i in 0 ..< SAMPLES:
+      # Point must not be one of the three that built the plane, or it lies on it already.
+      let
+        plane = PLANES[i]
+        point = POINTS[(i + 9) mod SAMPLES]
+        projected = applyOperation(Operation.ProjectOrthogonal, point, plane)
+      check shape(projected) == some(Shape.Point)
+      let place = position(projected)
+      check place.isSome
+      check toMultivector(place.get) ∧ plane =~ 0
+
+
   test "labels truncate and stay terminated":
     var storage: Label
     toChars("short", storage)

@@ -14,15 +14,16 @@
 ##   | g ∨ h             | meet     | Line where two planes cross.                   |
 ##   | L ∨ g             | meet     | Point where line pierces plane.                |
 ##   | ∩m                | sup(m)   | Point of object nearest origin.                |
-##   | ⊖m                | att(m)   | Direction of object, standing at horizon.       |
+##   | ⊖m                | att(m)   | Direction of object, standing at horizon.      |
 ##   | e ∧ t             | join     | Camera's own sight axis, and frame from it.    |
 ##   |-------------------|----------|------------------------------------------------|
 ##
 ## Bootstrap order, left to right:
 ##
-##   pga -> objects -> mesh -> scene -> panel -> visualiser
-##   sdl3 -> gui --------------^ ^-------^
-##   opengl -> renderer -----------------^
+##   pga -> objects -> mesh -> scene -> panel ------> visualiser
+##   sdl3 -> gui --------------^ ^--------^           ^
+##   opengl -> renderer ------------------^           |
+##   scene -> storyboard -----------------------------|
 ##   camera and image stand beside renderer, depending only on objects.
 ##
 ##   objects reads drawable quantities out of multivectors.
@@ -31,6 +32,7 @@
 ##   renderer owns OpenGL names and draws the meshes.
 ##   scene holds objects and catalogue of operations that derive new ones.
 ##   panel lays out the widgets user edits scene through.
+##   storyboard scripts a construction, one operation per exported frame.
 ##   image encodes a frame readback as PNG.
 ##
 ## Controls:
@@ -39,17 +41,18 @@
 ##
 ## Command line, for validating a build without sitting in front of it:
 ##   `--screenshot:PATH` writes one PNG, `--frames:N` exits after N frames,
-##   `--hidden` never maps the window. Together they render a scene and quit.
+##   `--hidden` never maps the window, and `--storyboard:DIR` writes one frame per
+##   scripted construction step and quits.
 
 {.experimental: "strictFuncs".}
 
 when compileOption("profiler"):
   import std/nimprof
 
-import std/[math, parseopt, strformat, strutils]
+import std/[math, monotimes, os, parseopt, strformat, strutils]
 
 import ./pga
-import ./visualiser/[camera, gui, image, mesh, objects, panel, renderer, scene]
+import ./visualiser/[camera, gui, image, mesh, objects, panel, renderer, scene, storyboard]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
 
@@ -73,6 +76,8 @@ const
     ## Set how far a dragged pixel slides the target, as fraction of orbit distance.
   FACTOR_DOLLY = 1.12
     ## Set how much one wheel notch scales orbit distance.
+  FRAMES_SETTLE = 2
+    ## Draw this many frames before capturing, so widget layout has settled.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
@@ -87,6 +92,7 @@ var MESHES: MeshSet
 
 type Options = object ## Hold what command line asked of this run.
   path_screenshot: string ## Where one-shot export is written; empty for none.
+  path_storyboard: string ## Directory scripted construction is written to; empty for none.
   count_frames: int ## Frames to draw before quitting; 0 to run until closed.
   is_hidden: bool ## Whether window is left unmapped.
 
@@ -98,46 +104,23 @@ proc parseOptions(): Options =
     of cmdLongOption, cmdShortOption:
       case key
       of "screenshot": result.path_screenshot = value
+      of "storyboard": result.path_storyboard = value
       of "frames": result.count_frames = parseInt(value)
       of "hidden": result.is_hidden = true
-      else: doAssert false, &"Unknown option `--{key}`; expected screenshot, frames, hidden."
+      else:
+        doAssert false,
+          &"Unknown option `--{key}`; expected screenshot, storyboard, frames or hidden."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
 
 
 
-#[ Demonstration Scene ]#
-
-proc constructScene(): Scene =
-  ## Construct opening scene: three seed points, and everything else derived from them.
-  let
-    point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 0.5))
-    point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 3.5))
-    point_c = toMultivector(Position(x: 1.0, y: 4.0, z: 1.0))
-    ground = (
-      toMultivector(Position(x: 0, y: 0, z: 0)) ∧
-      toMultivector(Position(x: 1, y: 0, z: 0)) ∧
-      toMultivector(Position(x: 0, y: 1, z: 0))
-    )
-    line_ab = point_a ∧ point_b
-    plane_abc = point_a ∧ point_b ∧ point_c
-
-  result.addItem(point_a, "a", Ink.Amber)
-  result.addItem(point_b, "b", Ink.Amber)
-  result.addItem(point_c, "c", Ink.Amber)
-  result.addItem(ground, "ground", Ink.Lime)
-  result.addItem(line_ab, "L = a ^ b", Ink.Cyan)
-  result.addItem(plane_abc, "G = a ^ b ^ c", Ink.Teal)
-  result.addItem(ground ∨ plane_abc, "ground v G", Ink.Violet)
-  result.addItem(line_ab ∨ ground, "L v ground", Ink.Coral)
-
-
-
 #[ Frame Assembly ]#
 
-proc assembleMeshes(workbench: Workbench; scene: Scene) =
-  ## Refill vertex storage from scene as it stands this frame.
+proc assembleMeshes(workbench: var Workbench; scene: Scene) =
+  ## Refill vertex storage from scene as it stands this frame, recording what it cost.
+  let ticks_start = getMonoTime().ticks
   MESHES.clearMeshes
   if workbench.is_grid_shown: MESHES.addGrid
   if workbench.is_axes_shown: MESHES.addAxes
@@ -145,9 +128,34 @@ proc assembleMeshes(workbench: Workbench; scene: Scene) =
     if not item.is_visible: continue
     discard MESHES.addObject(item.geometry, item.ink.colour)
 
+  workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
+  workbench.count_vertices = 0
+  for primitive in Primitive:
+    workbench.count_vertices += MESHES[primitive].count_vertices
+
+
+proc renderFrame(
+  window: Window; renderer: Renderer;
+  workbench: var Workbench; scene: var Scene; camera: var Camera;
+): (int, int) =
+  ## Lay panels out, draw scene beneath them, and report framebuffer's size in pixels.
+  ##   Panels run first, so an edit made this frame reaches meshes assembled below it.
+  var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
+  sdl3.getWindowSizeInPixels(window, addr width, addr height)
+
+  gui.frameBegin()
+  layoutWorkbench(workbench, scene, camera)
+
+  assembleMeshes(workbench, scene)
+  clearFrame(int(width), int(height))
+  renderer.drawMeshes(MESHES, camera.initMatrixViewProjection(width / height))
+  gui.frameEnd()
+  (int(width), int(height))
+
 
 proc exportFrame(path: string; width, height: int; pixels: var seq[uint8]): string =
   ## Read framebuffer back and write it out as PNG, reporting what happened.
+  ##   Must run before buffers are swapped, as back buffer is what was just drawn into.
   if len(path) == 0: return "Export path is empty; nothing written."
   capturePixels(width, height, pixels)
   writePng(path, width, height, pixels)
@@ -184,17 +192,96 @@ proc handleEvent(
     camera.dolly(pow(FACTOR_DOLLY, -float(event.wheel.y)))
   of uint32(EventKind.MouseMotion):
     if is_dragging_orbit:
-      camera.orbit(-SPEED_ORBIT*float(event.motion.xrel), SPEED_ORBIT*float(event.motion.yrel))
+      camera.orbit(
+        -SPEED_ORBIT*float(event.motion.xrel), SPEED_ORBIT*float(event.motion.yrel)
+      )
     if is_dragging_pan:
       camera.pan(-SPEED_PAN*float(event.motion.xrel), SPEED_PAN*float(event.motion.yrel))
   else: discard
 
 
 
+#[ Run Modes ]#
+
+proc runInteractive(
+  window: Window; renderer: Renderer; options: Options;
+  workbench: var Workbench; scene: var Scene; camera: var Camera;
+) =
+  ## Draw frames, folding input in, until user or command line asks to stop.
+  var
+    pixels = newSeq[uint8](0)
+    is_running = true
+    is_dragging_orbit = false
+    is_dragging_pan = false
+    count_drawn = 0
+
+  while is_running:
+    var event: Event
+    while sdl3.pollEvent(addr event):
+      gui.processEvent(addr event)
+      handleEvent(event, camera, workbench, is_dragging_orbit, is_dragging_pan, is_running)
+
+    let (width, height) = renderFrame(window, renderer, workbench, scene, camera)
+
+    # Export on final frame of a bounded run, so a build can be checked without a screen.
+    inc count_drawn
+    let is_final = options.count_frames > 0 and count_drawn >= options.count_frames
+    if is_final and len(options.path_screenshot) > 0: workbench.is_export_requested = true
+
+    if workbench.is_export_requested:
+      workbench.is_export_requested = false
+      let report = exportFrame($toCstring(workbench.path_export), width, height, pixels)
+      toChars(report, workbench.message)
+      echo report
+
+    sdl3.glSwapWindow(window)
+    if is_final: is_running = false
+
+  echo &"Drew {count_drawn} frames."
+
+
+proc runStoryboard(
+  window: Window; renderer: Renderer; directory: string;
+  workbench: var Workbench; scene: var Scene; camera: var Camera;
+) =
+  ## Apply each scripted step in turn, writing one frame after each.
+  ##   Every step runs through the same catalogue the GUI's apply button does, so frames
+  ##   show what clicking would have produced.
+  createDir(directory)
+  var pixels = newSeq[uint8](0)
+
+  template capture(stem: string) =
+    ## Settle widget layout, then write one numbered frame.
+    ##   Template rather than nested procedure, as scene and workbench arrive by `var`
+    ##   and a closure may not capture those.
+    block:
+      var (width, height) = (0, 0)
+      for _ in 1 .. FRAMES_SETTLE:
+        (width, height) = renderFrame(window, renderer, workbench, scene, camera)
+      echo exportFrame(directory / (stem & ".png"), width, height, pixels)
+      sdl3.glSwapWindow(window)
+
+  scene = Scene()
+  constructSeeds(scene)
+  toChars("Seeds placed.", workbench.message)
+  capture("00_seeds")
+
+  for step in STEPS:
+    applyStep(scene, step)
+    toChars(
+      &"{step.label} gave {describeShape(scene[scene.len - 1].geometry)}.",
+      workbench.message,
+    )
+    capture(step.stem)
+
+  echo &"Wrote {len(STEPS) + 1} frames to `{directory}`."
+
+
+
 #[ Entry Point ]#
 
 proc main() =
-  ## Open window, run frames until asked to stop, then tear everything down in order.
+  ## Open window, run the mode command line asked for, then tear down in order.
   let options = parseOptions()
   doAssert sdl3.init(INIT_VIDEO), &"SDL3 failed to start: {sdl3.getError()}"
   defer: sdl3.quit()
@@ -225,7 +312,7 @@ proc main() =
 
   let renderer = initRenderer()
   var
-    scene = constructScene()
+    scene = Scene()
     camera = initCamera(
       target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
     )
@@ -233,47 +320,15 @@ proc main() =
       if len(options.path_screenshot) > 0: options.path_screenshot
       else: PATH_EXPORT_DEFAULT
     )
-    pixels = newSeq[uint8](0)
-    is_running = true
-    is_dragging_orbit = false
-    is_dragging_pan = false
-    count_drawn = 0
 
-  while is_running:
-    var event: Event
-    while sdl3.pollEvent(addr event):
-      gui.processEvent(addr event)
-      handleEvent(event, camera, workbench, is_dragging_orbit, is_dragging_pan, is_running)
+  # Open on storyboard's own seeds and first steps, so window and script agree on scene.
+  constructSeeds(scene)
+  for step in STEPS[0 .. 3]:
+    applyStep(scene, step)
 
-    var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
-    sdl3.getWindowSizeInPixels(window, addr width, addr height)
-
-    # Lay panels out first, so this frame's edits reach meshes assembled below.
-    gui.frameBegin()
-    layoutWorkbench(workbench, scene, camera)
-
-    assembleMeshes(workbench, scene)
-    clearFrame(int(width), int(height))
-    renderer.drawMeshes(MESHES, camera.initMatrixViewProjection(width / height))
-    gui.frameEnd()
-
-    # Export on final frame of a headless run, so a build can be checked without a screen.
-    inc count_drawn
-    let is_final = options.count_frames > 0 and count_drawn >= options.count_frames
-    if is_final and len(options.path_screenshot) > 0: workbench.is_export_requested = true
-
-    # Read back before swapping, as back buffer is what was just drawn into.
-    if workbench.is_export_requested:
-      workbench.is_export_requested = false
-      let report = exportFrame(
-        $toCstring(workbench.path_export), int(width), int(height), pixels
-      )
-      toChars(report, workbench.message)
-      echo report
-
-    sdl3.glSwapWindow(window)
-    if is_final: is_running = false
-
-  echo &"Drew {count_drawn} frames."
+  if len(options.path_storyboard) > 0:
+    runStoryboard(window, renderer, options.path_storyboard, workbench, scene, camera)
+  else:
+    runInteractive(window, renderer, options, workbench, scene, camera)
 
 main()
