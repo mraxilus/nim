@@ -1,0 +1,206 @@
+## Hit-test scene items against the cursor, so a mouse action knows which object it touched.
+##
+## Point and line are tested in screen space, by pixel distance: that answers where a pixel
+## is, a rasterisation question, not an algebraic one, exactly as the camera's own clip
+## volume is written out directly rather than derived. Their endpoints are support ± extent
+## along direction, matching `mesh.addLine` exactly, so a hit always agrees with what is drawn.
+##
+## Plane is tested differently, through the algebra rather than around it: cursor's own
+## sight ray is built as an RGA line (eye ∧ heading) and met with the plane directly,
+## `ray ∨ plane`, giving the exact point struck. Screen-space quad-projection was tried first
+## and discarded — a corner near the eye sends its projected position to infinity, and the
+## point-in-polygon test on that blown-up quad can then accept a cursor nowhere near the
+## plane at all. Meeting in 3D has no such singularity nearby: it fails cleanly (ray parallel
+## to plane, or the hit behind the eye) instead of failing wrongly.
+##
+##   |------------|-------------------------------------------------------------------|
+##   | Shape      | Tested against                                                    |
+##   |------------|-------------------------------------------------------------------|
+##   | Point      | Projected marker, by pixel distance.                              |
+##   | Line       | Projected drawn segment, by distance to its nearest point.        |
+##   | Plane      | Sight ray met with the plane, by whether that point falls inside  |
+##   |            |   the drawn quad, and by distance from eye if it does.            |
+##   |------------|-------------------------------------------------------------------|
+##
+## A point wins a tie over a line, and a line over a plane: the smaller target should not
+## be swallowed by a larger one drawn behind or through it.
+
+{.experimental: "strictFuncs".}
+
+import std/[math, options]
+
+import ../pga
+import ./[camera, mesh, objects, scene]
+
+
+
+#[ Picking Configuration ]#
+
+const
+  RADIUS_PICK_POINT* = 14.0
+    ## Bound how far, in pixels, cursor may sit from a point's marker and still hit it.
+  RADIUS_PICK_LINE* = 9.0
+    ## Bound how far, in pixels, cursor may sit from a line's drawn segment and still hit it.
+
+
+
+#[ Type Definitions ]#
+
+type ScreenPosition* = object ## Hold projected position, in window pixels, y downward.
+  x*, y*: float
+  depth*: float ## View-space depth; positive and smaller is nearer the eye.
+
+
+
+#[ Screen Projection ]#
+
+func projectToScreen*(
+  view_projection: Matrix4; width, height: int; position: Position
+): ScreenPosition =
+  ## Project world position through clip space onto window pixels.
+  var clip: array[4, float]
+  let coordinates = [position.x, position.y, position.z, 1.0]
+  for row in 0 .. 3:
+    for column in 0 .. 3:
+      clip[row] += float(view_projection.at(row, column)) * coordinates[column]
+
+  let (ndc_x, ndc_y) = (clip[0]/clip[3], clip[1]/clip[3])
+  ScreenPosition(
+    x: (ndc_x*0.5 + 0.5) * float(width),
+    y: (1.0 - (ndc_y*0.5 + 0.5)) * float(height),
+    depth: clip[3],
+  )
+
+
+func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
+  ## Report whether projected position stands in front of eye, where perspective divide
+  ## and every pixel distance measured from it are meaningful.
+
+
+
+#[ Representative Point ]#
+
+func anchorFor*(m: Multivector): Option[Position] =
+  ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
+  ##   Point uses its own place, or its horizon arrow's tip where it has none.
+  ##   Line and plane use their support point, matching what mesh actually anchors on.
+  ##   None where `m` carries no drawable geometry at all.
+  let shape = shape(m)
+  if shape.isNone: return
+  case shape.get
+  of Shape.Point:
+    let place = position(m)
+    if place.isSome: return place
+    let heading = directionHorizon(m)
+    if heading.isNone: return
+    some(ORIGIN_WORLD + (0.5*float(EXTENT_WORLD))*heading.get)
+  of Shape.Line, Shape.Plane:
+    positionAnchor(m)
+
+
+
+#[ Segment Test ]#
+
+func distanceToSegment(p, a, b: ScreenPosition): float =
+  ## Measure pixel distance from `p` to nearest point of segment `a`-`b`.
+  let
+    (dx, dy) = (b.x - a.x, b.y - a.y)
+    length_squared = dx*dx + dy*dy
+  if length_squared <= 1.0e-9: return hypot(p.x - a.x, p.y - a.y)
+  let t = clamp(((p.x - a.x)*dx + (p.y - a.y)*dy) / length_squared, 0.0, 1.0)
+  hypot(p.x - (a.x + t*dx), p.y - (a.y + t*dy))
+
+
+
+#[ Sight Ray ]#
+
+func castRay(camera: Camera; width, height: int; cursor: ScreenPosition): Multivector =
+  ## Build RGA line running from eye through cursor's own pixel, into the scene.
+  ##   Undoes `initMatrixProjection`'s own construction: cursor becomes NDC again, scaled
+  ##   by the same field-of-view tangent, and composed from camera's own right/up/forward.
+  let
+    axes = camera.frame
+    half_height = tan(0.5 * degToRad(camera.degrees_field_of_view))
+    half_width = half_height * (float(width) / float(height))
+    ndc_x = (cursor.x / float(width))*2.0 - 1.0
+    ndc_y = 1.0 - (cursor.y / float(height))*2.0
+    heading = (ndc_x*half_width)*axes.axis_right + (ndc_y*half_height)*axes.axis_up + axes.forward
+  toMultivector(camera.eye) ∧ toMultivector(heading)
+
+
+func rayPlaneHit(
+  camera: Camera; width, height: int; cursor: ScreenPosition;
+  plane: Multivector; anchor: Position; axes: FramePlane
+): Option[float] =
+  ## Meet cursor's sight ray with `plane`; report distance from eye where it lands inside
+  ## the drawn quad, so a nearer plane can be preferred over a farther one behind it.
+  ##   None where the ray misses the plane, the hit falls behind the eye, or it lands
+  ##   outside the drawn quad.
+  let hit = position(castRay(camera, width, height, cursor) ∨ plane)
+  if hit.isNone: return
+
+  let distance = dot(hit.get - camera.eye, camera.frame.forward)
+  if distance <= 1.0e-6: return
+
+  let local = hit.get - anchor
+  const EXTENT = float(EXTENT_WORLD)
+  if abs(dot(local, axes.axis_first)) > EXTENT or abs(dot(local, axes.axis_second)) > EXTENT:
+    return
+  some(distance)
+
+
+
+#[ Item Hit Testing ]#
+
+func pickNearest*(
+  scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int;
+  cursor: ScreenPosition;
+): Option[int] =
+  ## Find visible item nearest cursor, preferring points over lines over planes.
+  ##   None where nothing visible falls within its shape's pick radius.
+  const EXTENT = float(EXTENT_WORLD)
+  var
+    index_best = none(int)
+    priority_best = high(int)
+    distance_best = Inf
+
+  template consider(priority: int; distance: float) =
+    if priority < priority_best or (priority == priority_best and distance < distance_best):
+      priority_best = priority
+      distance_best = distance
+      index_best = some(index)
+
+  for index in 0 ..< scene.len:
+    let item = scene[index]
+    if not item.is_visible: continue
+    let shape = shape(item.geometry)
+    if shape.isNone: continue
+
+    case shape.get
+    of Shape.Point:
+      let anchor = anchorFor(item.geometry)
+      if anchor.isNone: continue
+      let screen = projectToScreen(view_projection, width, height, anchor.get)
+      if not screen.isInFront: continue
+      let distance = hypot(cursor.x - screen.x, cursor.y - screen.y)
+      if distance <= RADIUS_PICK_POINT: consider(0, distance)
+
+    of Shape.Line:
+      let (anchor, axis) = (positionAnchor(item.geometry), direction(item.geometry))
+      if anchor.isNone or axis.isNone: continue
+      let
+        tail = projectToScreen(view_projection, width, height, anchor.get - EXTENT*axis.get)
+        head = projectToScreen(view_projection, width, height, anchor.get + EXTENT*axis.get)
+      if not (tail.isInFront and head.isInFront): continue
+      let distance = distanceToSegment(cursor, tail, head)
+      if distance <= RADIUS_PICK_LINE: consider(1, distance)
+
+    of Shape.Plane:
+      let
+        anchor = positionAnchor(item.geometry)
+        axes = frame(item.geometry)
+      if anchor.isNone or axes.isNone: continue
+      let hit = rayPlaneHit(camera, width, height, cursor, item.geometry, anchor.get, axes.get)
+      if hit.isSome: consider(2, hit.get)
+
+  index_best

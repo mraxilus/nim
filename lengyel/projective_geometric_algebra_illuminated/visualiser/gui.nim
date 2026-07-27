@@ -98,3 +98,7 @@ proc widthPush*(width: cfloat) {.importc: "guiWidthPush".}
 proc widthPop*() {.importc: "guiWidthPop".}
 proc disabledPush*(is_disabled: bool) {.importc: "guiDisabledPush".}
 proc disabledPop*() {.importc: "guiDisabledPop".}
+proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
+  {.importc: "guiOverlayLine".}
+proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)
+  {.importc: "guiOverlayCircle".}

@@ -20,23 +20,28 @@
 ##
 ## Bootstrap order, left to right:
 ##
-##   pga -> objects -> mesh -> scene -> panel ------> visualiser
-##   sdl3 -> gui --------------^ ^--------^           ^
-##   opengl -> renderer ------------------^           |
-##   scene -> storyboard -----------------------------|
-##   camera and image stand beside renderer, depending only on objects.
+##   pga -> objects -> mesh -> scene -> panel ------------> visualiser
+##                       |       ^--------^                  ^
+##   camera -> picking --+-> interaction ---------------------
+##   sdl3 -> gui ----------------------------------------------
+##   opengl -> renderer -----------------------------------------
+##   scene -> storyboard -------------------------------------------
 ##
 ##   objects reads drawable quantities out of multivectors.
 ##   mesh tessellates those quantities into vertices, into fixed storage.
 ##   camera orbits, and assembles transforms from its own RGA-derived frame.
+##   picking hit-tests scene items in screen space, against those same transforms.
 ##   renderer owns OpenGL names and draws the meshes.
 ##   scene holds objects and catalogue of operations that derive new ones.
+##   interaction tracks a mouse drag from one item to another, and applies what it names.
 ##   panel lays out the widgets user edits scene through.
 ##   storyboard scripts a construction, one operation per exported frame.
 ##   image encodes a frame readback as PNG.
 ##
 ## Controls:
-##   Left drag orbits, right drag pans, wheel dollies.
+##   Drag from one object to another to derive a third: left joins, right meets, middle
+##   projects the object dragged from onto the object dragged to.
+##   Drag from empty space instead to move the camera: left orbits, right pans, wheel dollies.
 ##   `S` writes current frame to the export path; `Escape` quits.
 ##
 ## Command line, for validating a build without sitting in front of it:
@@ -49,10 +54,12 @@
 when compileOption("profiler"):
   import std/nimprof
 
-import std/[math, monotimes, os, parseopt, strformat, strutils]
+import std/[math, monotimes, options, os, parseopt, strformat, strutils]
 
 import ./pga
-import ./visualiser/[camera, gui, image, mesh, objects, panel, renderer, scene, storyboard]
+import ./visualiser/[
+  camera, gui, image, interaction, mesh, objects, panel, picking, renderer, scene, storyboard
+]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
 
@@ -78,6 +85,10 @@ const
     ## Set how much one wheel notch scales orbit distance.
   FRAMES_SETTLE = 2
     ## Draw this many frames before capturing, so widget layout has settled.
+  RADIUS_OVERLAY_HOVER = 16.0'f32
+    ## Set radius of ring drawn around whatever the cursor is over.
+  WIDTH_OVERLAY_LINE = 2.0'f32
+    ## Set thickness of drag rubber-band and hover ring.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
@@ -134,12 +145,43 @@ proc assembleMeshes(workbench: var Workbench; scene: Scene) =
     workbench.count_vertices += MESHES[primitive].count_vertices
 
 
+proc drawInteractionOverlay(
+  interaction: Interaction; scene: Scene; view_projection: Matrix4; width, height: int
+) =
+  ## Draw drag's rubber-band and hover's ring directly onto the foreground layer.
+  ##   Off entirely during storyboard capture, where interaction is never enabled.
+  if not interaction.is_enabled: return
+
+  if interaction.index_hover.isSome:
+    let anchor = anchorFor(scene[interaction.index_hover.get].geometry)
+    if anchor.isSome:
+      let screen = projectToScreen(view_projection, width, height, anchor.get)
+      if screen.isInFront:
+        gui.overlayCircle(
+          cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
+          1.0, 1.0, 1.0, 0.8, WIDTH_OVERLAY_LINE,
+        )
+
+  if interaction.operation.isSome:
+    let anchor = anchorFor(scene[interaction.index_source].geometry)
+    if anchor.isSome:
+      let screen = projectToScreen(view_projection, width, height, anchor.get)
+      if screen.isInFront:
+        gui.overlayLine(
+          cfloat(screen.x), cfloat(screen.y),
+          cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
+          1.0, 1.0, 1.0, 0.65, WIDTH_OVERLAY_LINE,
+        )
+
+
 proc renderFrame(
   window: Window; renderer: Renderer;
-  workbench: var Workbench; scene: var Scene; camera: var Camera;
+  workbench: var Workbench; scene: var Scene; camera: var Camera; interaction: var Interaction;
 ): (int, int) =
-  ## Lay panels out, draw scene beneath them, and report framebuffer's size in pixels.
+  ## Lay panels out, draw scene and interaction overlay, and report framebuffer size.
   ##   Panels run first, so an edit made this frame reaches meshes assembled below it.
+  ##   Hover is recomputed here too, from this same frame's transform, so a drag started
+  ##   next frame reads a pick that matches what was just drawn.
   var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
   sdl3.getWindowSizeInPixels(window, addr width, addr height)
 
@@ -148,7 +190,12 @@ proc renderFrame(
 
   assembleMeshes(workbench, scene)
   clearFrame(int(width), int(height))
-  renderer.drawMeshes(MESHES, camera.initMatrixViewProjection(width / height))
+  let view_projection = camera.initMatrixViewProjection(width / height)
+  renderer.drawMeshes(MESHES, view_projection)
+
+  interaction.updateHover(scene, camera, view_projection, int(width), int(height))
+  drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height))
+
   gui.frameEnd()
   (int(width), int(height))
 
@@ -165,12 +212,22 @@ proc exportFrame(path: string; width, height: int; pixels: var seq[uint8]): stri
 
 #[ Input Handling ]#
 
+func dragOperationFor(button: uint8): Option[DragOperation] =
+  ## Name operation a mouse button performs while dragging, if any.
+  if button == uint8(MouseButton.Left): some(DragOperation.Join)
+  elif button == uint8(MouseButton.Right): some(DragOperation.Meet)
+  elif button == uint8(MouseButton.Middle): some(DragOperation.Project)
+  else: none(DragOperation)
+
+
 proc handleEvent(
-  event: Event; camera: var Camera; workbench: var Workbench;
-  is_dragging_orbit, is_dragging_pan, is_running: var bool;
+  event: Event;
+  camera: var Camera; workbench: var Workbench; scene: var Scene; interaction: var Interaction;
+  is_dragging_orbit, is_dragging_pan, is_running: var bool; button_dragging: var Option[uint8];
 ) =
-  ## Fold one SDL3 event into camera placement, workbench state or run state.
-  ##   Mouse is ignored while GUI wants it, so dragging a widget never turns the view.
+  ## Fold one SDL3 event into camera placement, drag state, workbench state or run state.
+  ##   Mouse is ignored while GUI wants it, so dragging a widget never turns the view or
+  ##   starts an operation drag.
   ##   Case runs on raw kind rather than on `EventKind`, since SDL3 sends kinds this
   ##   binding never mirrored and converting those to a sparse enum is undefined.
   case event.kind
@@ -182,15 +239,27 @@ proc handleEvent(
     if event.key.scancode == uint32(Scancode.S): workbench.is_export_requested = true
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
-    if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = true
-    if event.button.button == uint8(MouseButton.Right): is_dragging_pan = true
+    # Press on a pickable item starts an operation drag; press on empty space falls back
+    #   to camera control, exactly as before this feature existed.
+    let drag = dragOperationFor(event.button.button)
+    if drag.isSome and interaction.beginDrag(drag.get):
+      button_dragging = some(event.button.button)
+    elif event.button.button == uint8(MouseButton.Left):
+      is_dragging_orbit = true
+    elif event.button.button == uint8(MouseButton.Right):
+      is_dragging_pan = true
   of uint32(EventKind.MouseButtonUp):
+    if button_dragging == some(event.button.button):
+      let message = interaction.endDrag(scene)
+      if len(message) > 0: toChars(message, workbench.message)
+      button_dragging = none(uint8)
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
   of uint32(EventKind.MouseWheel):
     if gui.wantsMouse(): return
     camera.dolly(pow(FACTOR_DOLLY, -float(event.wheel.y)))
   of uint32(EventKind.MouseMotion):
+    interaction.updateCursor(float(event.motion.x), float(event.motion.y))
     if is_dragging_orbit:
       camera.orbit(
         -SPEED_ORBIT*float(event.motion.xrel), SPEED_ORBIT*float(event.motion.yrel)
@@ -209,19 +278,30 @@ proc runInteractive(
 ) =
   ## Draw frames, folding input in, until user or command line asks to stop.
   var
+    interaction = Interaction(is_enabled: true)
+    button_dragging = none(uint8)
     pixels = newSeq[uint8](0)
     is_running = true
     is_dragging_orbit = false
     is_dragging_pan = false
+    is_vsync_active = true # Matches `sdl3.glSetSwapInterval(1)` already set before this loop.
     count_drawn = 0
 
   while is_running:
     var event: Event
     while sdl3.pollEvent(addr event):
       gui.processEvent(addr event)
-      handleEvent(event, camera, workbench, is_dragging_orbit, is_dragging_pan, is_running)
+      handleEvent(
+        event, camera, workbench, scene, interaction,
+        is_dragging_orbit, is_dragging_pan, is_running, button_dragging,
+      )
 
-    let (width, height) = renderFrame(window, renderer, workbench, scene, camera)
+    let (width, height) = renderFrame(window, renderer, workbench, scene, camera, interaction)
+
+    # Change the swap interval only when the checkbox actually flips, not every frame.
+    if workbench.is_vsync_enabled != is_vsync_active:
+      is_vsync_active = workbench.is_vsync_enabled
+      sdl3.glSetSwapInterval(if is_vsync_active: 1 else: 0)
 
     # Export on final frame of a bounded run, so a build can be checked without a screen.
     inc count_drawn
@@ -248,7 +328,9 @@ proc runStoryboard(
   ##   Every step runs through the same catalogue the GUI's apply button does, so frames
   ##   show what clicking would have produced.
   createDir(directory)
-  var pixels = newSeq[uint8](0)
+  var
+    interaction_disabled = Interaction() # is_enabled defaults false; no picking, no overlay.
+    pixels = newSeq[uint8](0)
 
   template capture(stem: string) =
     ## Settle widget layout, then write one numbered frame.
@@ -257,7 +339,8 @@ proc runStoryboard(
     block:
       var (width, height) = (0, 0)
       for _ in 1 .. FRAMES_SETTLE:
-        (width, height) = renderFrame(window, renderer, workbench, scene, camera)
+        (width, height) =
+          renderFrame(window, renderer, workbench, scene, camera, interaction_disabled)
       echo exportFrame(directory / (stem & ".png"), width, height, pixels)
       sdl3.glSwapWindow(window)
 

@@ -95,6 +95,11 @@ func `-`*(d: Direction): Direction =
   Direction(x: -d.x, y: -d.y, z: -d.z)
 
 
+func `+`*(d, e: Direction): Direction =
+  ## Add directions, e.g. to compose a ray from steps along independent axes.
+  Direction(x: d.x + e.x, y: d.y + e.y, z: d.z + e.z)
+
+
 func `*`*(scale: float, d: Direction): Direction =
   ## Scale direction.
   Direction(x: scale * d.x, y: scale * d.y, z: scale * d.z)

@@ -148,4 +148,21 @@ void guiDisabledPush(bool is_disabled) { ImGui::BeginDisabled(is_disabled); }
 
 void guiDisabledPop() { ImGui::EndDisabled(); }
 
+// Draw directly onto the foreground layer, above every window, for cursor feedback that
+// belongs to the 3D view rather than to any panel: a rubber-band line while dragging, a
+// ring around whatever the cursor is over. Screen space only; caller does the projection.
+void guiOverlayLine(float x1, float y1, float x2, float y2, float red, float green,
+                     float blue, float alpha, float thickness) {
+  ImGui::GetForegroundDrawList()->AddLine(
+      ImVec2(x1, y1), ImVec2(x2, y2),
+      ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), thickness);
+}
+
+void guiOverlayCircle(float cx, float cy, float radius, float red, float green, float blue,
+                       float alpha, float thickness) {
+  ImGui::GetForegroundDrawList()->AddCircle(
+      ImVec2(cx, cy), radius,
+      ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), 0, thickness);
+}
+
 } // extern "C"

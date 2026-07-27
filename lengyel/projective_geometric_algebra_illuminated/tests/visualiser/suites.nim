@@ -18,7 +18,7 @@ when compileOption("profiler"):
 import std/[math, options, os, random, strutils, unittest]
 
 import ../../pga
-import ../../visualiser/[camera, image, mesh, objects, scene]
+import ../../visualiser/[camera, image, interaction, mesh, objects, picking, scene]
 
 randomize(0)
 
@@ -460,3 +460,203 @@ suite "Image":
       offset += 12 + length
     check offset == len(document)
     check names == @["IHDR", "IDAT", "IEND"]
+
+
+
+suite "Picking":
+  const (WIDTH_PICK, HEIGHT_PICK) = (800, 600)
+  let CENTRE = ScreenPosition(x: float(WIDTH_PICK)/2.0, y: float(HEIGHT_PICK)/2.0, depth: 0.0)
+
+  proc cameraFacingOrigin(distance = 10.0): Camera =
+    ## Build camera looking at world origin, so target is known to project to screen centre.
+    initCamera(
+      target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = 0.0, elevation = 0.0
+    )
+
+  test "point at target is picked at screen centre":
+    var scene = Scene()
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+
+
+  test "cursor far from every item picks nothing":
+    var scene = Scene()
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let corner = ScreenPosition(x: 5.0, y: 5.0, depth: 0.0)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, corner).isNone
+
+
+  test "hidden item is never picked":
+    var scene = Scene()
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    scene[0].is_visible = false
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE).isNone
+
+
+  test "line through target is picked at screen centre":
+    var scene = Scene()
+    let axis_z =
+      toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
+    scene.addItem(axis_z, "axis_z", Ink.Cyan)
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+
+
+  test "point wins a tie over a plane behind it":
+    var scene = Scene()
+    let facing = (
+      toMultivector(Position(x: 0, y: -3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 0, z: 3))
+    )
+    scene.addItem(facing, "facing", Ink.Lime) # Index 0: plane, spans the view straight on.
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber) # Index 1: point.
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+
+
+  test "plane misses where its sight ray lands outside the drawn quad":
+    # Camera stands far enough back that the visible frustum, at the plane's own depth,
+    #   spans wider than the fixed EXTENT_WORLD quad mesh actually draws -- so the window's
+    #   own corners correspond to rays that land genuinely outside that quad, while the
+    #   centre ray still lands on the support point well within it.
+    var scene = Scene()
+    let facing = (
+      toMultivector(Position(x: 0, y: -3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 0, z: 3))
+    )
+    scene.addItem(facing, "facing", Ink.Lime)
+    let camera = cameraFacingOrigin(distance = 30.0)
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+    for (label, cx, cy) in [
+      ("top-left corner", 0.0, 0.0),
+      ("bottom-right corner", float(WIDTH_PICK), float(HEIGHT_PICK)),
+    ]:
+      let cursor = ScreenPosition(x: cx, y: cy, depth: 0.0)
+      check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, cursor).isNone
+
+
+  test "nearer plane wins over a farther one behind it":
+    # Eye sits at (10, 0, 0) looking toward the origin along -x, so a plane at x=6 stands
+    #   nearer the eye (distance 4) than one at x=3 (distance 7).
+    var scene = Scene()
+    let far_plane = (
+      toMultivector(Position(x: 3, y: -3, z: -3)) ∧
+      toMultivector(Position(x: 3, y: 3, z: -3)) ∧
+      toMultivector(Position(x: 3, y: 0, z: 3))
+    )
+    let near_plane = (
+      toMultivector(Position(x: 6, y: -3, z: -3)) ∧
+      toMultivector(Position(x: 6, y: 3, z: -3)) ∧
+      toMultivector(Position(x: 6, y: 0, z: 3))
+    )
+    scene.addItem(far_plane, "far", Ink.Lime) # Index 0.
+    scene.addItem(near_plane, "near", Ink.Teal) # Index 1.
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+
+
+
+suite "Interaction":
+  test "drag operation maps to the catalogue entry it names":
+    check DragOperation.Join.toOperation == Operation.Wedge
+    check DragOperation.Meet.toOperation == Operation.WedgeAnti
+    check DragOperation.Project.toOperation == Operation.ProjectOrthogonal
+
+
+  test "drag applies its operation and appends the result":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[1], "b", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(DragOperation.Join)
+    interaction.index_hover = some(1)
+    let message = interaction.endDrag(scene)
+    check scene.len == 3
+    check scene[2].geometry =~ (POINTS[0] ∧ POINTS[1])
+    check interaction.operation.isNone
+    check "gave" in message
+
+
+  test "drag cannot start without a hovered item":
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = none(int)
+    check not interaction.beginDrag(DragOperation.Meet)
+    check interaction.operation.isNone
+
+
+  test "releasing over empty space adds nothing":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(DragOperation.Join)
+    interaction.index_hover = none(int)
+    let message = interaction.endDrag(scene)
+    check scene.len == 1
+    check interaction.operation.isNone
+    check "empty space" in message
+
+
+  test "releasing on its own source adds nothing":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(DragOperation.Meet)
+    let message = interaction.endDrag(scene)
+    check scene.len == 1
+    check "own source" in message
+
+
+  test "cancelDrag clears state without applying anything":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[1], "b", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(DragOperation.Project)
+    interaction.cancelDrag()
+    check interaction.operation.isNone
+    check scene.len == 2
+
+
+  test "endDrag with nothing dragging is a harmless no-op":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    check interaction.endDrag(scene) == ""
+    check scene.len == 1
+
+
+  test "disabled interaction never hovers":
+    var scene = Scene()
+    scene.addItem(POINTS[0], "a", Ink.Amber)
+    var interaction = Interaction(is_enabled: false)
+    let camera = initCamera(target = PLACES[0], distance = 10.0, azimuth = 0.0, elevation = 0.0)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    check interaction.index_hover.isNone
+
+
+  test "enabled interaction hovers the item under the cursor":
+    var scene = Scene()
+    let target = Position(x: 0, y: 0, z: 0)
+    scene.addItem(toMultivector(target), "p", Ink.Amber)
+    var interaction = Interaction(is_enabled: true)
+    let camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    check interaction.index_hover == some(0)

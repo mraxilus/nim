@@ -46,6 +46,7 @@ type
 
   MouseButton* {.pure.} = enum ## Name mouse buttons visualiser reacts to.
     Left = 1,
+    Middle = 2,
     Right = 3,
 
   KeyboardEvent* {.importc: "SDL_KeyboardEvent", header: HEADER, bycopy.} = object
@@ -53,6 +54,8 @@ type
     down* {.importc.}: bool ## Whether key is pressed rather than released.
 
   MouseMotionEvent* {.importc: "SDL_MouseMotionEvent", header: HEADER, bycopy.} = object
+    x* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.
+    y* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.
     xrel* {.importc.}: cfloat ## Motion since previous event, in pixels.
     yrel* {.importc.}: cfloat ## Motion since previous event, in pixels.
 
@@ -128,6 +131,7 @@ const lut_mirror_to_symbol = [
   (int(Scancode.Escape), "SDL_SCANCODE_ESCAPE"),
   (int(Scancode.S), "SDL_SCANCODE_S"),
   (int(MouseButton.Left), "SDL_BUTTON_LEFT"),
+  (int(MouseButton.Middle), "SDL_BUTTON_MIDDLE"),
   (int(MouseButton.Right), "SDL_BUTTON_RIGHT"),
   (int(INIT_VIDEO), "SDL_INIT_VIDEO"),
   (int(WINDOW_OPENGL), "SDL_WINDOW_OPENGL"),

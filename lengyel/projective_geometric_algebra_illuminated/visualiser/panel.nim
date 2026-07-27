@@ -10,7 +10,7 @@
 ##   |------------|-------------------------------------------------------------------|
 ##   | Objects    | Show, hide, rename, recolour, remove; edit any coefficient.        |
 ##   | Construct  | Add point at a position; apply any library operation to operands.  |
-##   | View       | Orbit, target, lens, world furniture, PNG export, framerate.       |
+##   | View       | Orbit, target, lens, world furniture, PNG export, vsync, framerate. |
 ##   |------------|-------------------------------------------------------------------|
 ##
 ## Coefficients are staged through 32-bit floats because that is what the widget writes,
@@ -55,6 +55,7 @@ type
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
+    is_vsync_enabled*: bool ## Whether swap waits for display refresh before returning.
     microseconds_tessellate*: float ## Cost of rebuilding vertex storage, last frame.
     count_vertices*: int ## Vertices assembled, last frame.
     path_export*: array[PATH_MAX, char] ## Where exported frame is written.
@@ -65,6 +66,7 @@ func initWorkbench*(path_export: string): Workbench =
   ## Construct workbench with world furniture shown and export aimed at `path_export`.
   result.is_grid_shown = true
   result.is_axes_shown = true
+  result.is_vsync_enabled = true
   toChars(path_export, result.path_export)
   toChars("Ready.", result.message)
 
@@ -234,6 +236,9 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   # Report what the frame cost here rather than in a benchmark, since the answer is the
   #   reader's own machine, and tessellation is the only part this code controls.
   gui.separatorText("cost")
+  discard gui.checkbox("vsync", addr workbench.is_vsync_enabled)
+  gui.sameLine()
+  gui.text("uncheck to see uncapped cost; uneven fps below settles over ~1s after any change")
   gui.text(cstring(&"{int(gui.framerate())} fps, {1000.0/max(gui.framerate(), 1.0):.2f} ms/frame"))
   gui.text(cstring(
     &"tessellate {workbench.microseconds_tessellate:.1f} us into " &
@@ -248,6 +253,9 @@ proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Ca
   ## Lay out every panel inside one window.
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA workbench"):
+    gui.text("Drag object to object: left joins, right meets, middle projects.")
+    gui.text("Drag empty space: left orbits, right pans, wheel dollies.")
+    gui.separator()
     layoutView(workbench, camera)
     layoutConstruct(workbench, scene)
     layoutObjects(scene)
