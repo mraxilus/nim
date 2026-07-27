@@ -75,13 +75,12 @@ proc constructSeeds*(scene: var Scene) =
   scene.addItem(ground, "ground", Ink.Lime)
 
 
-proc applyStep*(scene: var Scene; step: Step) =
+proc applyStep*(scene: var Scene; step: Step): Multivector {.discardable.} =
   ## Apply one step, appending its result exactly as the GUI's apply button would.
-  doAssert step.index_first < scene.len and step.index_second < scene.len,
+  ##   Reports the derived geometry directly, since a caller wanting to name what this
+  ##   step produced can no longer assume it landed in the last slot of a dense array.
+  doAssert scene.isAlive(step.index_first) and scene.isAlive(step.index_second),
     "Storyboard step names an operand the scene has not built yet."
-  scene.addItem(
-    applyOperation(step.operation, scene[step.index_first].geometry,
-      scene[step.index_second].geometry),
-    step.label,
-    step.ink,
-  )
+  result = applyOperation(step.operation, scene[step.index_first].geometry,
+    scene[step.index_second].geometry)
+  scene.addItem(result, step.label, step.ink)

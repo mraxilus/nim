@@ -157,7 +157,7 @@ proc dolly*(camera: var Camera; factor: float) =
 
 proc pan*(camera: var Camera; across, up: float) =
   ## Slide target within plane facing eye, so whole view shifts with it.
-  let axes = camera.frame
+  let axes = camera.frame(camera.eye)
   camera.target = camera.target +
     (across * camera.distance)*axes.axis_right +
     (up * camera.distance)*axes.axis_up
@@ -166,12 +166,14 @@ proc pan*(camera: var Camera; across, up: float) =
 
 #[ Camera Frame ]#
 
-func frame*(camera: Camera): FrameCamera =
+func frame*(camera: Camera; eye: Position): FrameCamera =
   ## Derive camera's orthonormal axes from its placement, through joins and antiduals.
   ##   Elevation clamp keeps sight axis off world up, so every join below stays defined.
+  ##   Takes eye explicitly rather than reading `camera.eye` itself, so a caller that
+  ##   already holds it, or that calls this once per frame across many items, need not
+  ##   pay for the same handful of trig calls again on every one of those calls.
   let
-    point_eye = toMultivector(camera.eye)
-    axis_sight = point_eye ∧ toMultivector(camera.target)
+    axis_sight = toMultivector(eye) ∧ toMultivector(camera.target)
     forward = direction(axis_sight)
   doAssert forward.isSome,
     "Camera eye and target must differ; orbit distance is bounded away from zero."
@@ -195,6 +197,7 @@ func frame*(camera: Camera): FrameCamera =
 
 func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
   ## Compose whole transform from world space to clip space.
+  let eye = camera.eye
   initMatrixProjection(
     camera.degrees_field_of_view, aspect, camera.distance_near, camera.distance_far
-  ) * initMatrixView(camera.eye, camera.frame)
+  ) * initMatrixView(eye, camera.frame(eye))

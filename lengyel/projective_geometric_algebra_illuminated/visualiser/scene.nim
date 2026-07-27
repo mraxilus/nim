@@ -1,8 +1,21 @@
 ## Hold objects visualiser draws, and catalogue of operations that derive new ones.
 ##
 ## Scene is fixed-capacity and owned by caller, so nothing is allocated after setup.
-##   Item carries multivector, label, palette slot and visibility; nothing is cached.
+##   Storage is structure-of-arrays, one array per field, addressed by slot rather than
+##   by dense position: a slot is assigned once, on `addItem`, and never moves again.
 ##   Label is fixed char storage rather than string, so GUI can edit it in place.
+##
+## Free slots thread onto an intrusive singly-linked list, `next_free`, so `addItem` and
+## `removeItem` both run in constant time regardless of how many items scene holds.
+##   "Intrusive" means the link lives inside the slot array itself rather than in some
+##   separate bookkeeping structure: a dead slot's `next_free` entry costs nothing beyond
+##   what that slot already carries while alive.
+##   Removal used to shift every later item down, to keep indices dense; that cost a copy
+##   per following item, worth nothing at these counts on its own, except that every
+##   cross-frame index the GUI holds (operands picked, item hovered, item mid-drag) then
+##   went stale too, since a shift renumbers items it never touched. A stable slot narrows
+##   that: only the removed item's own references go stale, not every later item's, still
+##   without a generation counter.
 ##
 ## Operation catalogue is what makes scene live rather than scripted:
 ## every entry is one of library's own named aliases, applied to items user picks.
@@ -13,10 +26,6 @@
 ##   | One     | ⊖ ∩ ∪ \ / ★ ☆ ~ ~∘ - ^ ∙ ∘     | Attitude, support, duals, norms.     |
 ##   | Two     | + - ∧ ∨ ⟑ ⟇ ∙ ∘ ∧★ ∧☆ ∨★ ∨☆    | Join, meet, geometric products.      |
 ##   |---------|--------------------------------|--------------------------------------|
-##
-## Removing an item shifts later items down, so indices stay dense.
-##   Costs a copy per following item, which is nothing at these counts, and keeps every
-##   index the GUI holds meaningful without a generation counter.
 
 {.experimental: "strictFuncs".}
 
@@ -53,9 +62,15 @@ type
     ink*: Ink ## Palette slot object is drawn with.
     is_visible*: bool ## Whether object is tessellated this frame.
 
-  Scene* = object ## Hold fixed-capacity list of items, kept dense.
-    entries: array[ITEMS_MAX, Item]
-    count_entries: int
+  Scene* = object ## Hold fixed-capacity arena of items, addressed by stable slot.
+    geometries: array[ITEMS_MAX, Multivector]
+    labels: array[ITEMS_MAX, Label]
+    inks: array[ITEMS_MAX, Ink]
+    are_visible: array[ITEMS_MAX, bool]
+    are_alive: array[ITEMS_MAX, bool]
+    next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
+    slot_free_first: Option[int] ## Head of free list; none where scene is full.
+    count_live: int
 
   Arity* {.pure.} = enum ## Count operands operation consumes.
     One, Two
@@ -231,52 +246,99 @@ template toCstring*(storage: untyped): cstring = cast[cstring](unsafeAddr storag
 
 #[ Scene Editing ]#
 
-func len*(scene: Scene): int = scene.count_entries
-  ## Count items held by scene.
+proc initScene*(): Scene =
+  ## Construct empty scene, threading every slot onto the free list ahead of first use.
+  for slot in 0 ..< ITEMS_MAX - 1:
+    result.next_free[slot] = some(slot + 1)
+  result.slot_free_first = some(0)
 
 
-func isFull*(scene: Scene): bool = scene.count_entries >= ITEMS_MAX
+func len*(scene: Scene): int = scene.count_live
+  ## Count live items held by scene.
+
+
+func isFull*(scene: Scene): bool = scene.count_live >= ITEMS_MAX
   ## Report whether scene has no room for another item.
 
 
-proc `[]`*(scene: var Scene; index: int): var Item =
-  ## Reach item for editing, by dense index.
-  doAssert index in 0 ..< scene.count_entries,
-    &"Item index must be below {scene.count_entries}; got `{index}`."
-  scene.entries[index]
+func isAlive*(scene: Scene; slot: int): bool =
+  ## Report whether slot currently holds a live item.
+  ##   Meant for checking a slot read back from across a frame boundary, e.g. an
+  ##   operand picked earlier, before trusting it still names something.
+  slot in 0 ..< ITEMS_MAX and scene.are_alive[slot]
 
 
-func `[]`*(scene: Scene; index: int): Item =
-  ## Read item by dense index.
-  doAssert index in 0 ..< scene.count_entries,
-    &"Item index must be below {scene.count_entries}; got `{index}`."
-  scene.entries[index]
+func `[]`*(scene: Scene; slot: int): Item =
+  ## Read item by slot, assembled from parallel storage.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  Item(
+    geometry: scene.geometries[slot],
+    label: scene.labels[slot],
+    ink: scene.inks[slot],
+    is_visible: scene.are_visible[slot],
+  )
 
 
-iterator items*(scene: Scene): lent Item =
-  ## Yield each item in order it was added.
-  for i in 0 ..< scene.count_entries:
-    yield scene.entries[i]
+proc geometryAt*(scene: var Scene; slot: int): var Multivector =
+  ## Reach item's geometry for editing, by slot.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.geometries[slot]
 
 
-proc addItem*(scene: var Scene; geometry: Multivector; label: string; ink: Ink) =
-  ## Append object to scene, visible, together with its presentation.
+proc labelAt*(scene: var Scene; slot: int): var Label =
+  ## Reach item's label for editing, by slot.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.labels[slot]
+
+
+proc isVisibleAt*(scene: var Scene; slot: int): var bool =
+  ## Reach item's visibility for editing, by slot.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_visible[slot]
+
+
+proc setInk*(scene: var Scene; slot: int; ink: Ink) =
+  ## Rewrite item's palette slot, by slot.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.inks[slot] = ink
+
+
+iterator items*(scene: Scene): Item =
+  ## Yield each live item, in slot order.
+  for slot in 0 ..< ITEMS_MAX:
+    if scene.are_alive[slot]: yield scene[slot]
+
+
+iterator pairs*(scene: Scene): (int, Item) =
+  ## Yield each live item together with the slot it stands at, in slot order.
+  for slot in 0 ..< ITEMS_MAX:
+    if scene.are_alive[slot]: yield (slot, scene[slot])
+
+
+proc addItem*(
+  scene: var Scene; geometry: Multivector; label: string; ink: Ink
+): int {.discardable.} =
+  ## Insert object into scene at its first free slot, visible; report slot used.
   ##   Silently refuses nothing: caller must check `isFull` first, as scene cannot grow.
   doAssert not scene.isFull,
     &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
-  scene.entries[scene.count_entries] = Item(geometry: geometry, ink: ink, is_visible: true)
-  toChars(label, scene.entries[scene.count_entries].label)
-  inc scene.count_entries
+  result = scene.slot_free_first.get
+  scene.slot_free_first = scene.next_free[result]
+  scene.geometries[result] = geometry
+  toChars(label, scene.labels[result])
+  scene.inks[result] = ink
+  scene.are_visible[result] = true
+  scene.are_alive[result] = true
+  inc scene.count_live
 
 
-proc removeItem*(scene: var Scene; index: int) =
-  ## Drop item, shifting later items down so indices stay dense.
-  doAssert index in 0 ..< scene.count_entries,
-    &"Item index must be below {scene.count_entries}; got `{index}`."
-  for i in index ..< scene.count_entries - 1:
-    scene.entries[i] = scene.entries[i + 1]
-  dec scene.count_entries
-  scene.entries[scene.count_entries] = Item()
+proc removeItem*(scene: var Scene; slot: int) =
+  ## Drop item at slot, in constant time: slot returns to the free list, nothing moves.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_alive[slot] = false
+  scene.next_free[slot] = scene.slot_free_first
+  scene.slot_free_first = some(slot)
+  dec scene.count_live
 
 
 func inkCycled*(index: int): Ink =

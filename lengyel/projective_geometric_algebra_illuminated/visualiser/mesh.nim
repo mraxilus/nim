@@ -231,8 +231,7 @@ proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement
   let
     anchor = positionAnchor(geometry)
     axes = frame(geometry)
-    normal = directionNormal(geometry)
-  if anchor.isNone or axes.isNone or normal.isNone: return Placement.Horizon
+  if anchor.isNone or axes.isNone: return Placement.Horizon
   const EXTENT = float(EXTENT_WORLD)
   let (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
 
@@ -259,7 +258,7 @@ proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement
     )
 
   # Show normal, as it is what tells plane apart from its own reflection.
-  meshes.addArrow(anchor.get, normal.get, 0.25*EXTENT, Ink.Guide.colour)
+  meshes.addArrow(anchor.get, axes.get.normal, 0.25*EXTENT, Ink.Guide.colour)
   meshes.addMarker(anchor.get, tint)
   Placement.Finite
 

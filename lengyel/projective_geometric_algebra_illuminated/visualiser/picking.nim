@@ -114,32 +114,37 @@ func distanceToSegment(p, a, b: ScreenPosition): float =
 
 #[ Sight Ray ]#
 
-func castRay(camera: Camera; width, height: int; cursor: ScreenPosition): Multivector =
+func castRay(
+  camera: Camera; eye: Position; frame: FrameCamera; width, height: int; cursor: ScreenPosition
+): Multivector =
   ## Build RGA line running from eye through cursor's own pixel, into the scene.
   ##   Undoes `initMatrixProjection`'s own construction: cursor becomes NDC again, scaled
   ##   by the same field-of-view tangent, and composed from camera's own right/up/forward.
+  ##   Takes eye and frame precomputed, since a cursor position tests against every item
+  ##   in the scene with the very same ray; recomputing it per item would repeat the same
+  ##   two RGA joins and antiduals up to `ITEMS_MAX` times for one cursor position.
   let
-    axes = camera.frame
     half_height = tan(0.5 * degToRad(camera.degrees_field_of_view))
     half_width = half_height * (float(width) / float(height))
     ndc_x = (cursor.x / float(width))*2.0 - 1.0
     ndc_y = 1.0 - (cursor.y / float(height))*2.0
-    heading = (ndc_x*half_width)*axes.axis_right + (ndc_y*half_height)*axes.axis_up + axes.forward
-  toMultivector(camera.eye) ∧ toMultivector(heading)
+    heading = (ndc_x*half_width)*frame.axis_right + (ndc_y*half_height)*frame.axis_up +
+      frame.forward
+  toMultivector(eye) ∧ toMultivector(heading)
 
 
 func rayPlaneHit(
-  camera: Camera; width, height: int; cursor: ScreenPosition;
+  ray: Multivector; eye: Position; forward: Direction;
   plane: Multivector; anchor: Position; axes: FramePlane
 ): Option[float] =
   ## Meet cursor's sight ray with `plane`; report distance from eye where it lands inside
   ## the drawn quad, so a nearer plane can be preferred over a farther one behind it.
   ##   None where the ray misses the plane, the hit falls behind the eye, or it lands
   ##   outside the drawn quad.
-  let hit = position(castRay(camera, width, height, cursor) ∨ plane)
+  let hit = position(ray ∨ plane)
   if hit.isNone: return
 
-  let distance = dot(hit.get - camera.eye, camera.frame.forward)
+  let distance = dot(hit.get - eye, forward)
   if distance <= 1.0e-6: return
 
   let local = hit.get - anchor
@@ -159,8 +164,16 @@ func pickNearest*(
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   None where nothing visible falls within its shape's pick radius.
   const EXTENT = float(EXTENT_WORLD)
+
+  # Eye, camera frame and sight ray depend only on camera and cursor, not on which item is
+  #   being tested, so each is built once here rather than once per plane candidate below.
+  let
+    eye = camera.eye
+    frame_camera = camera.frame(eye)
+    ray = castRay(camera, eye, frame_camera, width, height, cursor)
+
   var
-    index_best = none(int)
+    slot_best = none(int)
     priority_best = high(int)
     distance_best = Inf
 
@@ -168,10 +181,9 @@ func pickNearest*(
     if priority < priority_best or (priority == priority_best and distance < distance_best):
       priority_best = priority
       distance_best = distance
-      index_best = some(index)
+      slot_best = some(slot)
 
-  for index in 0 ..< scene.len:
-    let item = scene[index]
+  for slot, item in scene.pairs:
     if not item.is_visible: continue
     let shape = shape(item.geometry)
     if shape.isNone: continue
@@ -200,7 +212,7 @@ func pickNearest*(
         anchor = positionAnchor(item.geometry)
         axes = frame(item.geometry)
       if anchor.isNone or axes.isNone: continue
-      let hit = rayPlaneHit(camera, width, height, cursor, item.geometry, anchor.get, axes.get)
+      let hit = rayPlaneHit(ray, eye, frame_camera.forward, item.geometry, anchor.get, axes.get)
       if hit.isSome: consider(2, hit.get)
 
-  index_best
+  slot_best

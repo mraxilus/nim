@@ -344,17 +344,14 @@ proc runStoryboard(
       echo exportFrame(directory / (stem & ".png"), width, height, pixels)
       sdl3.glSwapWindow(window)
 
-  scene = Scene()
+  scene = initScene()
   constructSeeds(scene)
   toChars("Seeds placed.", workbench.message)
   capture("00_seeds")
 
   for step in STEPS:
-    applyStep(scene, step)
-    toChars(
-      &"{step.label} gave {describeShape(scene[scene.len - 1].geometry)}.",
-      workbench.message,
-    )
+    let derived = applyStep(scene, step)
+    toChars(&"{step.label} gave {describeShape(derived)}.", workbench.message)
     capture(step.stem)
 
   echo &"Wrote {len(STEPS) + 1} frames to `{directory}`."
@@ -395,7 +392,7 @@ proc main() =
 
   let renderer = initRenderer()
   var
-    scene = Scene()
+    scene = initScene()
     camera = initCamera(
       target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
     )

@@ -102,8 +102,8 @@ proc endDrag*(interaction: var Interaction; scene: var Scene): string =
     return "Drag released on its own source; nothing done."
 
   let
-    label_source = $toCstring(scene[interaction.index_source].label)
-    label_destination = $toCstring(scene[index_destination].label)
+    label_source = $toCstring(scene.labelAt(interaction.index_source))
+    label_destination = $toCstring(scene.labelAt(index_destination))
     derived = applyOperation(
       drag.toOperation, scene[interaction.index_source].geometry,
       scene[index_destination].geometry,

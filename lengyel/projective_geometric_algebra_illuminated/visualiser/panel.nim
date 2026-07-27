@@ -23,7 +23,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/strformat
+import std/[options, strformat]
 
 import ../pga
 import ./[camera, gui, mesh, objects, scene]
@@ -74,51 +74,51 @@ func initWorkbench*(path_export: string): Workbench =
 
 #[ Objects Panel ]#
 
-proc layoutCoefficients(item: var Item) =
+proc layoutCoefficients(geometry: var Multivector) =
   ## Lay out one drag widget per basis coefficient, writing back only what changed.
   var staged: array[Basis, cfloat]
-  for b in Basis: staged[b] = cfloat(item.geometry[b])
+  for b in Basis: staged[b] = cfloat(geometry[b])
   gui.widthPush(140.0)
   for b in Basis:
     if gui.dragFloat(cstring(lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0):
-      item.geometry[b] = float(staged[b])
+      geometry[b] = float(staged[b])
     if int(b) mod 4 != 3: gui.sameLine()
   gui.widthPop()
 
 
-proc layoutItem(scene: var Scene; index: int): bool =
-  ## Lay out one item's controls; report whether user asked for it to be removed.
-  gui.idPush(cint(index))
+proc layoutItem(scene: var Scene; slot: int): bool =
+  ## Lay out one item's controls, by slot; report whether user asked for it to be removed.
+  gui.idPush(cint(slot))
   defer: gui.idPop()
 
-  discard gui.checkbox("", addr scene[index].is_visible)
+  discard gui.checkbox("", addr scene.isVisibleAt(slot))
   gui.sameLine()
-  let tint = scene[index].ink.colour
-  gui.textTinted(toCstring(scene[index].label), tint.red, tint.green, tint.blue)
+  let tint = scene[slot].ink.colour
+  gui.textTinted(toCstring(scene.labelAt(slot)), tint.red, tint.green, tint.blue)
   gui.sameLine()
   result = gui.buttonSmall("remove")
-  gui.text(cstring(&"  {formatMultivector(scene[index].geometry)}"))
-  gui.text(cstring(&"  {describeShape(scene[index].geometry)}"))
+  gui.text(cstring(&"  {formatMultivector(scene[slot].geometry)}"))
+  gui.text(cstring(&"  {describeShape(scene[slot].geometry)}"))
 
   if gui.header("edit", is_open_first = false):
     gui.widthPush(220.0)
-    discard gui.inputText("label", toCstring(scene[index].label), cint(LABEL_MAX))
-    var index_ink = cint(scene[index].ink)
+    discard gui.inputText("label", toCstring(scene.labelAt(slot)), cint(LABEL_MAX))
+    var index_ink = cint(scene[slot].ink)
     if gui.combo("colour", addr index_ink, addr lut_ink_to_name[Ink.low], cint(COUNT_INK)):
-      scene[index].ink = Ink(index_ink)
+      scene.setInk(slot, Ink(index_ink))
     gui.widthPop()
-    layoutCoefficients(scene[index])
+    layoutCoefficients(scene.geometryAt(slot))
   gui.separator()
 
 
 proc layoutObjects*(scene: var Scene) =
-  ## Lay out every item in scene, applying at most one removal per frame.
+  ## Lay out every live item's controls, applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
   gui.separatorText(cstring(&"objects ({scene.len} of {ITEMS_MAX})"))
-  var index_removed = -1
-  for index in 0 ..< scene.len:
-    if layoutItem(scene, index): index_removed = index
-  if index_removed >= 0: scene.removeItem(index_removed)
+  var slot_removed = none(int)
+  for slot, _ in scene.pairs:
+    if layoutItem(scene, slot): slot_removed = some(slot)
+  if slot_removed.isSome: scene.removeItem(slot_removed.get)
 
 
 
@@ -150,10 +150,16 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene) =
     gui.text("Scene is empty; add a point first.")
     return
 
-  # Offer every item by label, so operands are picked by name rather than by index.
-  var names: array[ITEMS_MAX, cstring]
-  for index in 0 ..< scene.len:
-    names[index] = toCstring(scene[index].label)
+  # Offer every live item by label, so operands are picked by name rather than by slot;
+  #   `slots` translates the combo's dense position back to the slot it names.
+  var
+    names: array[ITEMS_MAX, cstring]
+    slots: array[ITEMS_MAX, int]
+    count = 0
+  for slot, _ in scene.pairs:
+    names[count] = toCstring(scene.labelAt(slot))
+    slots[count] = slot
+    inc count
 
   let operation = Operation(workbench.index_operation)
   let is_binary = lut_operation_to_arity[operation] == Arity.Two
@@ -163,21 +169,21 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene) =
     addr lut_operation_to_notation[Operation.low], cint(COUNT_OPERATION),
   )
   discard gui.combo("operand m", addr workbench.index_operand_first,
-    addr names[0], cint(scene.len))
+    addr names[0], cint(count))
   gui.disabledPush(not is_binary)
   discard gui.combo("operand n", addr workbench.index_operand_second,
-    addr names[0], cint(scene.len))
+    addr names[0], cint(count))
   gui.disabledPop()
   gui.widthPop()
 
   gui.disabledPush(scene.isFull)
   if gui.button("apply"):
     let
-      first = clamp(int(workbench.index_operand_first), 0, scene.len - 1)
-      second = clamp(int(workbench.index_operand_second), 0, scene.len - 1)
+      first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
+      second = slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
       derived = applyOperation(operation, scene[first].geometry, scene[second].geometry)
-      name_first = $toCstring(scene[first].label)
-      name_second = $toCstring(scene[second].label)
+      name_first = $toCstring(scene.labelAt(first))
+      name_second = $toCstring(scene.labelAt(second))
       label =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"

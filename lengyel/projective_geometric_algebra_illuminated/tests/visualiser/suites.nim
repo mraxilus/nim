@@ -71,6 +71,11 @@ func `=~`(p, q: Position): bool =
   p.x =~ q.x and p.y =~ q.y and p.z =~ q.z
 
 
+func `=~`(d, e: Direction): bool =
+  ## Compare approximate equality between directions.
+  d.x =~ e.x and d.y =~ e.y and d.z =~ e.z
+
+
 func isNear(a, b: float): bool =
   ## Compare scalars that passed through 32-bit storage.
   abs(a - b) <= TOLERANCE_SINGLE * max(1.0, max(abs(a), abs(b)))
@@ -144,17 +149,20 @@ suite "Objects":
 
   test "frame of plane is orthonormal, inside plane, and normal to its normal":
     for plane in PLANES:
-      let (axes, normal) = (frame(plane), directionNormal(plane))
-      check axes.isSome and normal.isSome
-      let (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
+      let axes = frame(plane)
+      check axes.isSome
+      let (axis_first, axis_second, normal) =
+        (axes.get.axis_first, axes.get.axis_second, axes.get.normal)
       check norm(axis_first) =~ 1.0
       check norm(axis_second) =~ 1.0
-      check norm(normal.get) =~ 1.0
+      check norm(normal) =~ 1.0
       check dot(axis_first, axis_second) =~ 0
-      check dot(axis_first, normal.get) =~ 0
-      check dot(axis_second, normal.get) =~ 0
+      check dot(axis_first, normal) =~ 0
+      check dot(axis_second, normal) =~ 0
       check toMultivector(axis_first) ∧ plane =~ 0
       check toMultivector(axis_second) ∧ plane =~ 0
+      # Frame's own normal is the same one `directionNormal` derives independently.
+      check normal =~ directionNormal(plane).get
 
 
   test "object at horizon yields no anchor":
@@ -175,7 +183,7 @@ suite "Camera":
         azimuth = rand(2.0*PI),
         elevation = rand(-1.4 .. 1.4),
       )
-      let axes = camera.frame
+      let axes = camera.frame(camera.eye)
       check norm(axes.axis_right) =~ 1.0
       check norm(axes.axis_up) =~ 1.0
       check norm(axes.forward) =~ 1.0
@@ -193,14 +201,14 @@ suite "Camera":
       check norm(camera.eye - camera.target) =~ camera.distance
       let heading = normalize(camera.target - camera.eye)
       check heading.isSome
-      check dot(heading.get, camera.frame.forward) =~ 1.0
+      check dot(heading.get, camera.frame(camera.eye).forward) =~ 1.0
 
 
   test "view transform carries eye to origin and target down its own negative z":
     let camera = initCamera(
       target = Position(x: 1, y: -2, z: 0.5), distance = 9.0, azimuth = 0.7, elevation = 0.3
     )
-    let view = initMatrixView(camera.eye, camera.frame)
+    let view = initMatrixView(camera.eye, camera.frame(camera.eye))
     let (at_eye, at_target) = (
       transform(view, camera.eye, 1.0), transform(view, camera.target, 1.0)
     )
@@ -316,7 +324,7 @@ suite "Mesh":
 
 suite "Scene":
   test "items are held in order added":
-    var scene = Scene()
+    var scene = initScene()
     for i in 0 ..< 5:
       scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
     check scene.len == 5
@@ -328,22 +336,50 @@ suite "Scene":
     check count_seen == 5
 
 
-  test "removal keeps remaining items dense and in order":
-    var scene = Scene()
+  test "removeItem drops one slot without moving any other item":
+    var scene = initScene()
     for i in 0 ..< 5:
       scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
     scene.removeItem(2)
     check scene.len == 4
-    for index, expected in [0, 1, 3, 4]:
-      check scene[index].geometry =~ POINTS[expected]
+    check not scene.isAlive(2)
+    for slot in [0, 1, 3, 4]:
+      check scene.isAlive(slot)
+      check scene[slot].geometry =~ POINTS[slot]
 
-    while scene.len > 0: scene.removeItem(0)
+
+  test "freed slot is reused by the next addItem, most recently freed first":
+    var scene = initScene()
+    for i in 0 ..< 5:
+      scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    scene.removeItem(2)
+    scene.removeItem(0)
+    check scene.addItem(POINTS[5 mod SAMPLES], "p5", Ink.Amber) == 0
+    check scene.addItem(POINTS[6 mod SAMPLES], "p6", Ink.Amber) == 2
+
+
+  test "scene drains to empty regardless of removal order":
+    var scene = initScene()
+    for i in 0 ..< 5:
+      scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    for slot in [2, 0, 4, 1, 3]:
+      scene.removeItem(slot)
     check scene.len == 0
     check not scene.isFull
 
 
+  test "isAlive rejects a removed slot and any slot out of range":
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "a", Ink.Amber)
+    check scene.isAlive(0)
+    scene.removeItem(0)
+    check not scene.isAlive(0)
+    check not scene.isAlive(-1)
+    check not scene.isAlive(ITEMS_MAX)
+
+
   test "scene fills to capacity and reports it":
-    var scene = Scene()
+    var scene = initScene()
     for i in 0 ..< ITEMS_MAX:
       check not scene.isFull
       scene.addItem(POINTS[i mod SAMPLES], "p", Ink.Amber)
@@ -474,7 +510,7 @@ suite "Picking":
     )
 
   test "point at target is picked at screen centre":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
@@ -482,7 +518,7 @@ suite "Picking":
 
 
   test "cursor far from every item picks nothing":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
@@ -491,16 +527,16 @@ suite "Picking":
 
 
   test "hidden item is never picked":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
-    scene[0].is_visible = false
+    scene.isVisibleAt(0) = false
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE).isNone
 
 
   test "line through target is picked at screen centre":
-    var scene = Scene()
+    var scene = initScene()
     let axis_z =
       toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
     scene.addItem(axis_z, "axis_z", Ink.Cyan)
@@ -510,7 +546,7 @@ suite "Picking":
 
 
   test "point wins a tie over a plane behind it":
-    var scene = Scene()
+    var scene = initScene()
     let facing = (
       toMultivector(Position(x: 0, y: -3, z: -3)) ∧
       toMultivector(Position(x: 0, y: 3, z: -3)) ∧
@@ -528,7 +564,7 @@ suite "Picking":
     #   spans wider than the fixed EXTENT_WORLD quad mesh actually draws -- so the window's
     #   own corners correspond to rays that land genuinely outside that quad, while the
     #   centre ray still lands on the support point well within it.
-    var scene = Scene()
+    var scene = initScene()
     let facing = (
       toMultivector(Position(x: 0, y: -3, z: -3)) ∧
       toMultivector(Position(x: 0, y: 3, z: -3)) ∧
@@ -549,7 +585,7 @@ suite "Picking":
   test "nearer plane wins over a farther one behind it":
     # Eye sits at (10, 0, 0) looking toward the origin along -x, so a plane at x=6 stands
     #   nearer the eye (distance 4) than one at x=3 (distance 7).
-    var scene = Scene()
+    var scene = initScene()
     let far_plane = (
       toMultivector(Position(x: 3, y: -3, z: -3)) ∧
       toMultivector(Position(x: 3, y: 3, z: -3)) ∧
@@ -576,7 +612,7 @@ suite "Interaction":
 
 
   test "drag applies its operation and appends the result":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     scene.addItem(POINTS[1], "b", Ink.Amber)
     var interaction = Interaction(is_enabled: true)
@@ -598,7 +634,7 @@ suite "Interaction":
 
 
   test "releasing over empty space adds nothing":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
@@ -611,7 +647,7 @@ suite "Interaction":
 
 
   test "releasing on its own source adds nothing":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
@@ -622,7 +658,7 @@ suite "Interaction":
 
 
   test "cancelDrag clears state without applying anything":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     scene.addItem(POINTS[1], "b", Ink.Amber)
     var interaction = Interaction(is_enabled: true)
@@ -634,7 +670,7 @@ suite "Interaction":
 
 
   test "endDrag with nothing dragging is a harmless no-op":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     var interaction = Interaction(is_enabled: true)
     check interaction.endDrag(scene) == ""
@@ -642,7 +678,7 @@ suite "Interaction":
 
 
   test "disabled interaction never hovers":
-    var scene = Scene()
+    var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Amber)
     var interaction = Interaction(is_enabled: false)
     let camera = initCamera(target = PLACES[0], distance = 10.0, azimuth = 0.0, elevation = 0.0)
@@ -652,7 +688,7 @@ suite "Interaction":
 
 
   test "enabled interaction hovers the item under the cursor":
-    var scene = Scene()
+    var scene = initScene()
     let target = Position(x: 0, y: 0, z: 0)
     scene.addItem(toMultivector(target), "p", Ink.Amber)
     var interaction = Interaction(is_enabled: true)

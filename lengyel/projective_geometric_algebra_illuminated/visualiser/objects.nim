@@ -54,6 +54,7 @@ type
 
   FramePlane* = object ## Hold orthonormal pair of directions spanning plane.
     axis_first*, axis_second*: Direction
+    normal*: Direction ## Unit direction perpendicular to plane; same as `directionNormal(m)`.
 
   Placement* {.pure.} = enum ## Report what became of object once drawn.
     Finite, ## Object had finite extent and was drawn where it stands.
@@ -242,4 +243,4 @@ func frame*(m: Multivector): Option[FramePlane] =
     axis_second = directionNormal(plane_second)
   if axis_second.isNone: return
 
-  some(FramePlane(axis_first: axis_first.get, axis_second: axis_second.get))
+  some(FramePlane(axis_first: axis_first.get, axis_second: axis_second.get, normal: normal.get))
