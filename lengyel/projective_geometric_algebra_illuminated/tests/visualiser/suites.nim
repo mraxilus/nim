@@ -4,8 +4,13 @@
 ## since visualiser is tool built on library rather than replication of published equations.
 ##
 ## Pool is drawn once from seeded generator, so failure reproduces from test name alone.
-##   Points are sampled inside box well inside camera's view, so visibility is not incidental.
-##   Lines and planes are joined from those points, so degenerate cases stay improbable.
+##   Points are sampled inside box the drawn extent covers, so nothing is degenerate.
+##   Lines and planes are joined from those points, so collinear cases stay improbable.
+##
+## `renderer`, `gui` and `panel` are absent, and deliberately so: every one of them needs
+## a live OpenGL context, which a test runner has no business opening.
+##   What they would test is pushed below them instead — `mesh` holds the tessellation,
+##   `scene` holds the operations and formatting, `camera` holds the transforms.
 
 when compileOption("profiler"):
   import std/nimprof
@@ -13,7 +18,7 @@ when compileOption("profiler"):
 import std/[math, options, os, random, strutils, unittest]
 
 import ../../pga
-import ../../visualiser/[camera, canvas, objects, scene]
+import ../../visualiser/[camera, image, mesh, objects, scene]
 
 randomize(0)
 
@@ -23,14 +28,13 @@ const
   EXTENT_SAMPLE = 5.0
   TOLERANCE_PLACES_TEST {.define: "visualiser.tolerance_places".} = 9
   TOLERANCE_TEST = 10.0.pow(-float(TOLERANCE_PLACES_TEST))
+  TOLERANCE_SINGLE = 1.0e-5
+    ## Loosen tolerance for values that passed through 32-bit storage.
+    ##   Matrices and vertices are single precision, as that is what a GPU consumes,
+    ##   so comparing them against double-precision geometry at full tolerance is wrong.
 
-let
-  ORIGIN = Position(x: 0, y: 0, z: 0)
-  CAMERA = initCamera(
-    eye = Position(x: 15.0, y: 12.0, z: 9.0),
-    target = Position(x: 0.0, y: 0.0, z: 1.0),
-    up = Direction(x: 0.0, y: 0.0, z: 1.0),
-  )
+
+let ORIGIN = Position(x: 0, y: 0, z: 0)
 
 
 proc randPosition(): Position =
@@ -53,6 +57,9 @@ for i in 0 ..< SAMPLES:
   LINES[i] = POINTS[i] ∧ POINTS[j]
   PLANES[i] = POINTS[i] ∧ POINTS[j] ∧ POINTS[k]
 
+# Mesh storage is far too large for a stack frame, exactly as it is in the application.
+var MESHES: MeshSet
+
 
 func `=~`(a, b: float): bool =
   ## Compare approximate equality between scalars.
@@ -64,14 +71,27 @@ func `=~`(p, q: Position): bool =
   p.x =~ q.x and p.y =~ q.y and p.z =~ q.z
 
 
-func `=~`(d, e: Direction): bool =
-  ## Compare approximate equality between directions.
-  d.x =~ e.x and d.y =~ e.y and d.z =~ e.z
+func isNear(a, b: float): bool =
+  ## Compare scalars that passed through 32-bit storage.
+  abs(a - b) <= TOLERANCE_SINGLE * max(1.0, max(abs(a), abs(b)))
 
 
-func `=~`(p, q: PointImage): bool =
-  ## Compare approximate equality between image points.
-  p.x =~ q.x and p.y =~ q.y
+func isNear(p, q: Position): bool =
+  ## Compare positions that passed through 32-bit storage.
+  isNear(p.x, q.x) and isNear(p.y, q.y) and isNear(p.z, q.z)
+
+
+func toPosition(vertex: Vertex): Position =
+  ## Read vertex back as position, for checking where tessellation put it.
+  Position(x: float(vertex.x), y: float(vertex.y), z: float(vertex.z))
+
+
+func transform(matrix: Matrix4; p: Position; weight: float): array[4, float] =
+  ## Apply transform to homogeneous point, so matrices can be checked by what they do.
+  let coordinates = [p.x, p.y, p.z, weight]
+  for row in 0 .. 3:
+    for column in 0 .. 3:
+      result[row] += float(matrix.at(row, column)) * coordinates[column]
 
 
 
@@ -89,13 +109,6 @@ suite "Objects":
         let (plain, scaled) = (position(point), position(scale * point))
         check plain.isSome and scaled.isSome
         check plain.get =~ scaled.get
-
-
-  test "point at horizon has no position":
-    for place in PLACES:
-      let heading = Direction(x: place.x, y: place.y, z: place.z)
-      check position(toMultivector(heading)).isNone
-      check directionHorizon(toMultivector(heading)).isSome
 
 
   test "shape follows grade":
@@ -129,23 +142,17 @@ suite "Objects":
       check toMultivector(axis.get) ∧ line =~ 0
 
 
-  test "normal of plane is unit and perpendicular to plane":
+  test "frame of plane is orthonormal, inside plane, and normal to its normal":
     for plane in PLANES:
-      let (normal, axes) = (directionNormal(plane), frame(plane))
-      check normal.isSome and axes.isSome
-      check norm(normal.get) =~ 1.0
-      check dot(normal.get, axes.get.axis_first) =~ 0
-      check dot(normal.get, axes.get.axis_second) =~ 0
-
-
-  test "frame of plane is orthonormal and lies inside plane":
-    for plane in PLANES:
-      let axes = frame(plane)
-      check axes.isSome
+      let (axes, normal) = (frame(plane), directionNormal(plane))
+      check axes.isSome and normal.isSome
       let (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
       check norm(axis_first) =~ 1.0
       check norm(axis_second) =~ 1.0
+      check norm(normal.get) =~ 1.0
       check dot(axis_first, axis_second) =~ 0
+      check dot(axis_first, normal.get) =~ 0
+      check dot(axis_second, normal.get) =~ 0
       check toMultivector(axis_first) ∧ plane =~ 0
       check toMultivector(axis_second) ∧ plane =~ 0
 
@@ -155,149 +162,288 @@ suite "Objects":
       let attitude = ⊖ line
       check attitude.isHorizon
       check positionAnchor(attitude).isNone
+      check directionHorizon(attitude).isSome
 
 
 
 suite "Camera":
   test "frame is orthonormal and perpendicular to sight axis":
-    let forward = direction(CAMERA.axis_sight)
-    check forward.isSome
-    check norm(CAMERA.axis_right) =~ 1.0
-    check norm(CAMERA.axis_up) =~ 1.0
-    check dot(CAMERA.axis_right, CAMERA.axis_up) =~ 0
-    check dot(CAMERA.axis_right, forward.get) =~ 0
-    check dot(CAMERA.axis_up, forward.get) =~ 0
-
-
-  test "image plane stands one focal distance ahead of eye":
-    check dot(CAMERA.origin_image - CAMERA.eye, direction(CAMERA.axis_sight).get) =~
-      DISTANCE_IMAGE
-    check depth(CAMERA, toMultivector(CAMERA.eye)).get =~ -DISTANCE_IMAGE
-
-
-  test "image plane holds every point it pierces":
-    for point in POINTS:
-      let projection = CAMERA.project(point)
-      check projection.isSome
-      let pierce = (toMultivector(CAMERA.eye) ∧ toMultivector(position(point).get)) ∨
-        CAMERA.plane_image
-      check toMultivector(position(pierce).get) ∨ CAMERA.plane_image =~ 0
-
-
-  test "depth measures separation from image plane":
-    let forward = direction(CAMERA.axis_sight).get
-    for i, point in POINTS:
-      let separation = dot(PLACES[i] - CAMERA.origin_image, forward)
-      check depth(CAMERA, point).get =~ separation
-      check CAMERA.project(point).get.depth =~ separation
-
-
-  test "projection ignores scale of homogeneous point":
-    for point in POINTS:
-      for scale in [0.25, 3.0, 11.0]:
-        let (plain, scaled) = (CAMERA.project(point), CAMERA.project(scale * point))
-        check plain.isSome and scaled.isSome
-        check plain.get.position =~ scaled.get.position
-
-
-  test "target projects to image origin":
-    let camera = initCamera(
-      eye = Position(x: 4.0, y: -3.0, z: 6.0),
-      target = Position(x: -1.0, y: 2.0, z: 0.5),
-      up = Direction(x: 0.0, y: 0.0, z: 1.0),
-    )
-    let projection = camera.project(toMultivector(Position(x: -1.0, y: 2.0, z: 0.5)))
-    check projection.isSome
-    check projection.get.position =~ PointImage(x: 0.0, y: 0.0)
-
-
-  test "collinear points stay collinear once projected":
     for i in 0 ..< SAMPLES:
-      let
-        j = (i + 1) mod SAMPLES
-        midpoint = PLACES[i] + 0.5*(PLACES[j] - PLACES[i])
-        first = CAMERA.project(POINTS[i]).get.position
-        second = CAMERA.project(POINTS[j]).get.position
-        middle = CAMERA.project(toMultivector(midpoint)).get.position
-        area = (second.x - first.x)*(middle.y - first.y) -
-          (second.y - first.y)*(middle.x - first.x)
-      check area =~ 0
+      let camera = initCamera(
+        target = PLACES[i],
+        distance = 2.0 + rand(20.0),
+        azimuth = rand(2.0*PI),
+        elevation = rand(-1.4 .. 1.4),
+      )
+      let axes = camera.frame
+      check norm(axes.axis_right) =~ 1.0
+      check norm(axes.axis_up) =~ 1.0
+      check norm(axes.forward) =~ 1.0
+      check dot(axes.axis_right, axes.axis_up) =~ 0
+      check dot(axes.axis_right, axes.forward) =~ 0
+      check dot(axes.axis_up, axes.forward) =~ 0
+      check dot(axes.axis_up, UP_WORLD) > 0
 
 
-  test "point at or behind image plane is culled":
-    let forward = direction(CAMERA.axis_sight).get
-    for offset in [0.0, 0.5, 4.0]:
-      let behind = CAMERA.origin_image - offset*forward
-      check CAMERA.project(toMultivector(behind)).isNone
-    check CAMERA.project(toMultivector(CAMERA.eye)).isNone
+  test "eye stands at orbit distance from target, and looks back at it":
+    for i in 0 ..< SAMPLES:
+      let camera = initCamera(
+        target = PLACES[i], distance = 7.0, azimuth = rand(2.0*PI), elevation = rand(-1.4 .. 1.4)
+      )
+      check norm(camera.eye - camera.target) =~ camera.distance
+      let heading = normalize(camera.target - camera.eye)
+      check heading.isSome
+      check dot(heading.get, camera.frame.forward) =~ 1.0
 
 
-  test "point at horizon is culled":
-    for place in PLACES:
-      let heading = Direction(x: place.x, y: place.y, z: place.z)
-      check CAMERA.project(toMultivector(heading)).isNone
-      check depth(CAMERA, toMultivector(heading)).isNone
-
-
-
-suite "Canvas":
-  test "image origin maps to canvas centre":
-    let centre = toCanvas(PointImage(x: 0.0, y: 0.0))
-    check centre.x =~ 0.5*float(PIXELS_WIDTH)
-    check centre.y =~ 0.5*float(PIXELS_HEIGHT)
-
-
-  test "vertical axis flips between image and canvas":
-    let (above, below) = (
-      toCanvas(PointImage(x: 0.0, y: 0.5)), toCanvas(PointImage(x: 0.0, y: -0.5))
+  test "view transform carries eye to origin and target down its own negative z":
+    let camera = initCamera(
+      target = Position(x: 1, y: -2, z: 0.5), distance = 9.0, azimuth = 0.7, elevation = 0.3
     )
-    check above.y < below.y
-    check above.y + below.y =~ float(PIXELS_HEIGHT)
+    let view = initMatrixView(camera.eye, camera.frame)
+    let (at_eye, at_target) = (
+      transform(view, camera.eye, 1.0), transform(view, camera.target, 1.0)
+    )
+    check isNear(at_eye[0], 0) and isNear(at_eye[1], 0) and isNear(at_eye[2], 0)
+    check isNear(at_target[0], 0) and isNear(at_target[1], 0)
+    check isNear(at_target[2], -camera.distance)
 
 
-  test "aspect ratio is preserved":
-    let
-      centre = toCanvas(PointImage(x: 0.0, y: 0.0))
-      along_x = toCanvas(PointImage(x: 1.0, y: 0.0))
-      along_y = toCanvas(PointImage(x: 0.0, y: 1.0))
-    check along_x.x - centre.x =~ centre.y - along_y.y
+  test "projection carries clip planes to depth bounds":
+    const (NEAR, FAR) = (0.25, 60.0)
+    let projection = initMatrixProjection(45.0, 1.6, NEAR, FAR)
+    for (depth, expected) in [(NEAR, -1.0), (FAR, 1.0)]:
+      let clipped = transform(projection, Position(x: 0, y: 0, z: -depth), 1.0)
+      check isNear(clipped[3], depth)
+      check isNear(clipped[2]/clipped[3], expected)
+
+
+  test "whole transform carries target to centre of view":
+    for i in 0 ..< SAMPLES:
+      let camera = initCamera(
+        target = PLACES[i], distance = 11.0, azimuth = rand(2.0*PI), elevation = rand(-1.2 .. 1.2)
+      )
+      let clipped = transform(camera.initMatrixViewProjection(1.6), camera.target, 1.0)
+      check clipped[3] > 0
+      check isNear(clipped[0]/clipped[3], 0)
+      check isNear(clipped[1]/clipped[3], 0)
+
+
+
+suite "Mesh":
+  setup:
+    MESHES.clearMeshes
+
+  test "clearing drops every vertex":
+    MESHES.addMarker(ORIGIN, Ink.Amber.colour)
+    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Cyan.colour)
+    MESHES.clearMeshes
+    for primitive in Primitive:
+      check MESHES[primitive].count_vertices == 0
+
+
+  test "point becomes one marker where it stands":
+    for i in 0 ..< SAMPLES:
+      MESHES.clearMeshes
+      check MESHES.addObject(POINTS[i], Ink.Amber.colour) == Placement.Finite
+      check MESHES[Primitive.Point].count_vertices == 1
+      check MESHES[Primitive.Line].count_vertices == 0
+      check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
+
+
+  test "line becomes segment whose every vertex lies on it":
+    for line in LINES:
+      MESHES.clearMeshes
+      check MESHES.addObject(line, Ink.Cyan.colour) == Placement.Finite
+      check MESHES[Primitive.Line].count_vertices == 2
+      check MESHES[Primitive.Point].count_vertices == 1
+      # Vertex lies on line exactly when its offset from support runs along the direction,
+      #   which holds when that offset's whole magnitude is accounted for along the axis.
+      let (anchor, axis) = (positionAnchor(line), direction(line))
+      check anchor.isSome and axis.isSome
+      for i in 0 ..< MESHES[Primitive.Line].count_vertices:
+        let offset = MESHES[Primitive.Line].vertices[i].toPosition - anchor.get
+        check isNear(abs(dot(offset, axis.get)), norm(offset))
+
+
+  test "plane becomes quad and grid whose every vertex lies on it":
+    for plane in PLANES:
+      MESHES.clearMeshes
+      check MESHES.addObject(plane, Ink.Lime.colour) == Placement.Finite
+      # Grid rules both ways across every cell boundary, then normal's arrow follows it.
+      const
+        VERTICES_GRID = 4*(2*CELLS_PLANE + 1)
+        VERTICES_NORMAL = 2
+      check MESHES[Primitive.Triangle].count_vertices == 6
+      check MESHES[Primitive.Line].count_vertices == VERTICES_GRID + VERTICES_NORMAL
+      # Vertex lies on plane exactly when its offset from support is normal to the normal.
+      let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
+      check anchor.isSome and normal.isSome
+      for primitive in [Primitive.Triangle, Primitive.Line]:
+        for i in 0 ..< MESHES[primitive].count_vertices:
+          let at = MESHES[primitive].vertices[i].toPosition
+          # Normal's own arrow leaves the plane, so it alone is expected to miss.
+          if primitive == Primitive.Line and i >= VERTICES_GRID: continue
+          check isNear(dot(at - anchor.get, normal.get), 0)
+
+
+  test "object at horizon becomes arrow from origin":
+    for line in LINES:
+      MESHES.clearMeshes
+      let attitude = ⊖ line
+      check MESHES.addObject(attitude, Ink.Rose.colour) == Placement.Horizon
+      check MESHES[Primitive.Line].count_vertices == 2
+      check isNear(MESHES[Primitive.Line].vertices[0].toPosition, ORIGIN)
+
+
+  test "multivector of no geometry becomes nothing at all":
+    for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
+      MESHES.clearMeshes
+      check MESHES.addObject(empty, Ink.Amber.colour) == Placement.Empty
+      for primitive in Primitive:
+        check MESHES[primitive].count_vertices == 0
+
+
+  test "world furniture stays within drawn extent":
+    MESHES.addAxes
+    MESHES.addGrid
+    check MESHES[Primitive.Line].count_vertices > 0
+    for i in 0 ..< MESHES[Primitive.Line].count_vertices:
+      let at = MESHES[Primitive.Line].vertices[i].toPosition
+      check max(abs(at.x), max(abs(at.y), abs(at.z))) <= float(EXTENT_WORLD) + TOLERANCE_TEST
 
 
 
 suite "Scene":
-  test "scene counts items in order added":
+  test "items are held in order added":
     var scene = Scene()
-    for i in 0 ..< 3:
-      scene.addItem(POINTS[i], "point " & $i, Ink.Amber)
-    check scene.len == 3
+    for i in 0 ..< 5:
+      scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    check scene.len == 5
     var count_seen = 0
     for item in scene:
       check item.geometry =~ POINTS[count_seen]
+      check item.is_visible
       inc count_seen
-    check count_seen == 3
+    check count_seen == 5
 
 
-  test "drawn document is well formed and accounts for every item":
+  test "removal keeps remaining items dense and in order":
     var scene = Scene()
-    scene.addItem(POINTS[0], "𝐚", Ink.Amber)
-    scene.addItem(LINES[0], "𝐋", Ink.Cyan)
-    scene.addItem(PLANES[0], "𝐆", Ink.Lime)
-    scene.addItem(⊖ LINES[0], "att(𝐋)", Ink.Rose)
+    for i in 0 ..< 5:
+      scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    scene.removeItem(2)
+    check scene.len == 4
+    for index, expected in [0, 1, 3, 4]:
+      check scene[index].geometry =~ POINTS[expected]
 
-    let path = getTempDir() / "visualiser_suite.svg"
-    var canvas = openCanvas(path)
-    let tally = drawScene(canvas, CAMERA, scene)
-    canvas.closeCanvas
+    while scene.len > 0: scene.removeItem(0)
+    check scene.len == 0
+    check not scene.isFull
 
-    var count_tallied = 0
-    for placement in Placement:
-      count_tallied += tally[placement]
-    check count_tallied == scene.len
-    check tally[Placement.Horizon] == 1
 
+  test "scene fills to capacity and reports it":
+    var scene = Scene()
+    for i in 0 ..< ITEMS_MAX:
+      check not scene.isFull
+      scene.addItem(POINTS[i mod SAMPLES], "p", Ink.Amber)
+    check scene.isFull
+    check scene.len == ITEMS_MAX
+
+
+  test "unary operations ignore their second operand":
+    for operation in Operation:
+      if lut_operation_to_arity[operation] != Arity.One: continue
+      for i in 0 ..< SAMPLES:
+        let (m, n, o) = (POINTS[i], LINES[i], PLANES[i])
+        check applyOperation(operation, m, n) =~ applyOperation(operation, m, o)
+
+
+  test "every operation names itself and is offered once":
+    var seen: array[Operation, int]
+    for operation in Operation:
+      check len($lut_operation_to_notation[operation]) > 0
+      inc seen[operation]
+    for operation in Operation:
+      check seen[operation] == 1
+    check COUNT_OPERATION == ord(Operation.high) + 1
+
+
+  test "join and meet recover the geometry they are named for":
+    for i in 0 ..< SAMPLES:
+      let
+        j = (i + 1) mod SAMPLES
+        line = applyOperation(Operation.Wedge, POINTS[i], POINTS[j])
+        plane = applyOperation(Operation.Wedge, line, POINTS[(i + 2) mod SAMPLES])
+        crossed = applyOperation(Operation.WedgeAnti, plane, PLANES[(i + 7) mod SAMPLES])
+      check shape(line) == some(Shape.Line)
+      check shape(plane) == some(Shape.Plane)
+      check shape(crossed) == some(Shape.Line)
+      # Both seed points must lie on the line joining them.
+      check POINTS[i] ∧ line =~ 0
+      check POINTS[j] ∧ line =~ 0
+
+
+  test "labels truncate and stay terminated":
+    var storage: Label
+    toChars("short", storage)
+    check $toCstring(storage) == "short"
+    toChars('x'.repeat(LABEL_MAX*2), storage)
+    check len($toCstring(storage)) == LABEL_MAX - 1
+
+
+  test "multivectors print every term they carry, and nothing else":
+    check formatMultivector(initElement(Basis.scalar, 0.0)) == "0 S"
+    check formatMultivector(toMultivector(Position(x: 2, y: 0, z: -3))) ==
+      "2.000 E1 - 3.000 E3 + 1.000 E4"
+    for i in 0 ..< SAMPLES:
+      check describeShape(POINTS[i]) == "point"
+      check describeShape(LINES[i]) == "line"
+      check describeShape(PLANES[i]) == "plane"
+      # Attitude of a line is its direction, which is a point standing at the horizon.
+      check describeShape(⊖ LINES[i]) == "point at horizon"
+    check describeShape(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
+
+
+
+suite "Image":
+  test "written file is a PNG carrying the size it was given":
+    const (WIDTH, HEIGHT) = (37, 21)
+    var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
+    for i in 0 ..< len(pixels): pixels[i] = uint8((i*7) mod 256)
+
+    let path = getTempDir() / "visualiser_suite.png"
+    writePng(path, WIDTH, HEIGHT, pixels)
+    defer: removeFile(path)
     let document = readFile(path)
-    check document.startsWith("<svg ")
-    check document.strip.endsWith("</svg>")
-    check document.count("<polyline") > 0
-    check document.count("<circle") > 0
-    removeFile(path)
+
+    check len(document) > 8
+    check document[0 .. 7] == "\x89PNG\r\n\x1A\n"
+    check document[12 .. 15] == "IHDR"
+    check document[16 .. 19] == "\0\0\0" & char(WIDTH)
+    check document[20 .. 23] == "\0\0\0" & char(HEIGHT)
+    check document[24] == char(8) # Bit depth.
+    check document[25] == char(2) # Colour type: truecolour.
+    check document.find("IDAT") > 0
+    check document[^8 .. ^5] == "IEND"
+
+
+  test "chunk lengths and checksums agree end to end":
+    const (WIDTH, HEIGHT) = (16, 9)
+    var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
+    let path = getTempDir() / "visualiser_suite_chunks.png"
+    writePng(path, WIDTH, HEIGHT, pixels)
+    defer: removeFile(path)
+    let document = readFile(path)
+
+    # Walk chunks by their own lengths; landing exactly on the end proves each is sound.
+    var
+      offset = 8
+      names: seq[string]
+    while offset < len(document):
+      var length = 0
+      for i in 0 .. 3: length = length*256 + int(uint8(document[offset + i]))
+      names.add(document[offset + 4 .. offset + 7])
+      offset += 12 + length
+    check offset == len(document)
+    check names == @["IHDR", "IDAT", "IEND"]

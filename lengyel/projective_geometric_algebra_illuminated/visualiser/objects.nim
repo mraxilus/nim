@@ -52,8 +52,13 @@ type
   Direction* = object ## Hold Euclidean direction, in world units.
     x*, y*, z*: float
 
-  Frame* = object ## Hold orthonormal pair of directions spanning plane.
+  FramePlane* = object ## Hold orthonormal pair of directions spanning plane.
     axis_first*, axis_second*: Direction
+
+  Placement* {.pure.} = enum ## Report what became of object once drawn.
+    Finite, ## Object had finite extent and was drawn where it stands.
+    Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
+    Empty, ## Multivector carried no drawable geometry at all.
 
 
 # Forbid exact comparison, as every coordinate below is an accumulated float.
@@ -196,7 +201,7 @@ func directionNormal*(m: Multivector): Option[Direction] =
 
 #[ Plane Frame ]#
 
-func frame*(m: Multivector): Option[Frame] =
+func frame*(m: Multivector): Option[FramePlane] =
   ## Derive orthonormal pair of directions lying inside plane.
   ##   Pair is arbitrary up to rotation about normal; only plane it spans is meaningful.
   ##   None where plane lies at horizon, as it then spans no Euclidean directions.
@@ -232,4 +237,4 @@ func frame*(m: Multivector): Option[Frame] =
     axis_second = directionNormal(plane_second)
   if axis_second.isNone: return
 
-  some(Frame(axis_first: axis_first.get, axis_second: axis_second.get))
+  some(FramePlane(axis_first: axis_first.get, axis_second: axis_second.get))

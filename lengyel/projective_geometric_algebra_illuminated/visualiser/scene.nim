@@ -1,84 +1,256 @@
-## Draw RGA objects of scene through camera onto canvas.
+## Hold objects visualiser draws, and catalogue of operations that derive new ones.
 ##
-## Scene owns fixed-capacity list of items, so no allocation happens after setup.
-##   Item pairs multivector with presentation; nothing else is stored about it.
-##   Everything drawn is recomputed from multivector at draw time, never cached.
+## Scene is fixed-capacity and owned by caller, so nothing is allocated after setup.
+##   Item carries multivector, label, palette slot and visibility; nothing is cached.
+##   Label is fixed char storage rather than string, so GUI can edit it in place.
 ##
-## Unbounded objects are drawn about their support point, i.e. their point nearest origin:
-##   Line becomes span of `EXTENT_WORLD` either side of support, along its attitude.
-##   Plane becomes grid patch of same extent, spanned by orthonormal frame inside it.
-##   Support point is what algebra actually computed, so it is marked in both cases.
+## Operation catalogue is what makes scene live rather than scripted:
+## every entry is one of library's own named aliases, applied to items user picks.
 ##
-## Painting proceeds by descending grade, i.e. planes, then lines, then points.
-##   Approximates depth sorting well enough for prototype, since planes are washes.
-##   Cost is that near plane never occludes far line; nothing is sorted by depth.
+##   |---------|--------------------------------|--------------------------------------|
+##   | Arity   | Operations                     | Meaning                              |
+##   |---------|--------------------------------|--------------------------------------|
+##   | One     | ⊖ ∩ ∪ \ / ★ ☆ ~ ~∘ - ^ ∙ ∘     | Attitude, support, duals, norms.     |
+##   | Two     | + - ∧ ∨ ⟑ ⟇ ∙ ∘ ∧★ ∧☆ ∨★ ∨☆    | Join, meet, geometric products.      |
+##   |---------|--------------------------------|--------------------------------------|
+##
+## Removing an item shifts later items down, so indices stay dense.
+##   Costs a copy per following item, which is nothing at these counts, and keeps every
+##   index the GUI holds meaningful without a generation counter.
 
 {.experimental: "strictFuncs".}
 
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, canvas, objects]
+import ./[mesh, objects]
 
 
 
 #[ Scene Configuration ]#
 
-# Allow caller to resize drawn extent and scene capacity without editing source.
-#   E.g. `--define:visualiser.extent_world=20 --define:visualiser.items_max=64`.
+# Allow caller to resize scene without editing source.
+#   E.g. `--define:visualiser.items_max=128 --define:visualiser.label_max=48`.
 const
-  EXTENT_WORLD* {.define: "visualiser.extent_world".} = 8
-  ITEMS_MAX* {.define: "visualiser.items_max".} = 32
+  ITEMS_MAX* {.define: "visualiser.items_max".} = 64
+  LABEL_MAX* {.define: "visualiser.label_max".} = 40
 
 static:
-  doAssert EXTENT_WORLD > 0, &"Drawn extent must be positive; got `{EXTENT_WORLD}`."
   doAssert ITEMS_MAX > 0, &"Scene capacity must be positive; got `{ITEMS_MAX}`."
-
-const
-  SAMPLES_AXIS* = 33
-    ## Set vertex count of drawn span of unbounded object.
-    ##   Straight span needs only two vertices, but sampling places break near image plane
-    ##   close to where clipping would put it, without computing intersection.
-  CELLS_PLANE* = 8
-    ## Set grid line count either side of support point, when drawing plane.
-  ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
-    ## Set world origin, which unbounded objects through it are drawn about.
+  doAssert LABEL_MAX >= 8, &"Label must hold 8 characters; got `{LABEL_MAX}`."
 
 
 
 #[ Type Definitions ]#
 
 type
-  Placement* {.pure.} = enum ## Report what became of item once drawn.
-    Finite, ## Object had finite extent and was drawn.
-    Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
-    Hidden, ## Object lay outside what camera can see.
+  Label* = array[LABEL_MAX, char]
+    ## Hold item's display text, terminated by 0, so GUI may edit it without allocating.
 
   Item* = object ## Hold one RGA object together with its presentation.
     geometry*: Multivector ## Object being visualised.
-    label*: string ## Display text; drawn verbatim, never inspected.
+    label*: Label ## Display text; drawn verbatim, never inspected.
     ink*: Ink ## Palette slot object is drawn with.
+    is_visible*: bool ## Whether object is tessellated this frame.
 
-  Scene* = object ## Hold fixed-capacity list of items to draw.
+  Scene* = object ## Hold fixed-capacity list of items, kept dense.
     entries: array[ITEMS_MAX, Item]
     count_entries: int
 
+  Arity* {.pure.} = enum ## Count operands operation consumes.
+    One, Two
+
+  Operation* {.pure.} = enum ## Name every operation GUI may apply to scene's items.
+    ## Unary operations, in order library's own documentation lists them.
+    Attitude, Support, SupportAnti, Bulk, Weight, Unitize,
+    ComplementLeft, ComplementRight, DualBulk, DualWeight,
+    Reverse, ReverseAnti, Negate,
+    ## Binary operations, likewise.
+    Add, Subtract, Wedge, WedgeAnti, WedgeDot, WedgeDotAnti, Dot, DotAnti,
+    ExpandBulk, ExpandWeight, ContractBulk, ContractWeight,
+    ProjectCentral, ProjectOrthogonal,
 
 
-#[ Scene Construction ]#
 
-proc addItem*(scene: var Scene; geometry: Multivector; label: string; ink: Ink) =
-  ## Append object to scene together with its presentation.
-  doAssert scene.count_entries < ITEMS_MAX,
-    &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
-  doAssert shape(geometry).isSome,
-    &"Item `{label}` must be point, line or plane; got mixed or trivial grade `{geometry}`."
-  scene.entries[scene.count_entries] = Item(geometry: geometry, label: label, ink: ink)
-  inc scene.count_entries
+#[ Operation Catalogue ]#
 
+const lut_operation_to_arity*: array[Operation, Arity] = [
+  Operation.Attitude: Arity.One,
+  Operation.Support: Arity.One,
+  Operation.SupportAnti: Arity.One,
+  Operation.Bulk: Arity.One,
+  Operation.Weight: Arity.One,
+  Operation.Unitize: Arity.One,
+  Operation.ComplementLeft: Arity.One,
+  Operation.ComplementRight: Arity.One,
+  Operation.DualBulk: Arity.One,
+  Operation.DualWeight: Arity.One,
+  Operation.Reverse: Arity.One,
+  Operation.ReverseAnti: Arity.One,
+  Operation.Negate: Arity.One,
+  Operation.Add: Arity.Two,
+  Operation.Subtract: Arity.Two,
+  Operation.Wedge: Arity.Two,
+  Operation.WedgeAnti: Arity.Two,
+  Operation.WedgeDot: Arity.Two,
+  Operation.WedgeDotAnti: Arity.Two,
+  Operation.Dot: Arity.Two,
+  Operation.DotAnti: Arity.Two,
+  Operation.ExpandBulk: Arity.Two,
+  Operation.ExpandWeight: Arity.Two,
+  Operation.ContractBulk: Arity.Two,
+  Operation.ContractWeight: Arity.Two,
+  Operation.ProjectCentral: Arity.Two,
+  Operation.ProjectOrthogonal: Arity.Two,
+] ## Map operation to number of operands it consumes.
+
+
+let lut_operation_to_notation*: array[Operation, cstring] = [
+  Operation.Attitude: cstring"⊖m  attitude",
+  Operation.Support: cstring"∩m  support",
+  Operation.SupportAnti: cstring"∪m  antisupport",
+  Operation.Bulk: cstring"∙m  bulk",
+  Operation.Weight: cstring"∘m  weight",
+  Operation.Unitize: cstring"^m  unitize",
+  Operation.ComplementLeft: cstring"\\m  left complement",
+  Operation.ComplementRight: cstring"/m  right complement",
+  Operation.DualBulk: cstring"★m  bulk dual",
+  Operation.DualWeight: cstring"☆m  weight dual",
+  Operation.Reverse: cstring"~m  reverse",
+  Operation.ReverseAnti: cstring"~∘m  antireverse",
+  Operation.Negate: cstring"-m  negate",
+  Operation.Add: cstring"m + n  add",
+  Operation.Subtract: cstring"m - n  subtract",
+  Operation.Wedge: cstring"m ∧ n  wedge (join)",
+  Operation.WedgeAnti: cstring"m ∨ n  antiwedge (meet)",
+  Operation.WedgeDot: cstring"m ⟑ n  geometric product",
+  Operation.WedgeDotAnti: cstring"m ⟇ n  geometric antiproduct",
+  Operation.Dot: cstring"m ∙ n  inner product",
+  Operation.DotAnti: cstring"m ∘ n  inner antiproduct",
+  Operation.ExpandBulk: cstring"m ∧ n★  bulk expansion",
+  Operation.ExpandWeight: cstring"m ∧ n☆  weight expansion",
+  Operation.ContractBulk: cstring"m ∨ n★  bulk contraction",
+  Operation.ContractWeight: cstring"m ∨ n☆  weight contraction",
+  Operation.ProjectCentral: cstring"n ∨ (m ∧ n★)  central projection",
+  Operation.ProjectOrthogonal: cstring"n ∨ (m ∧ n☆)  orthogonal projection",
+] ## Map operation to notation and name GUI offers it under.
+  ##   Operands are written `m` and `n` rather than in Lengyel's bold, since bold letters
+  ##   live outside the Basic Multilingual Plane and no GUI font here carries them.
+  ##   Bound as `let` rather than `const`, since picker needs address of first entry.
+
+
+const COUNT_OPERATION* = ord(Operation.high) + 1
+  ## Count operations, for handing whole catalogue to a picker.
+
+
+func applyOperation*(operation: Operation; m, n: Multivector): Multivector =
+  ## Apply operation to operands, ignoring `n` where operation is unary.
+  case operation
+  of Operation.Attitude: attitude(m)
+  of Operation.Support: support(m)
+  of Operation.SupportAnti: supportAnti(m)
+  of Operation.Bulk: bulk(m)
+  of Operation.Weight: weight(m)
+  of Operation.Unitize: unitize(m)
+  of Operation.ComplementLeft: complementLeft(m)
+  of Operation.ComplementRight: complementRight(m)
+  of Operation.DualBulk: dualBulk(m)
+  of Operation.DualWeight: dualWeight(m)
+  of Operation.Reverse: reverse(m)
+  of Operation.ReverseAnti: reverseAnti(m)
+  of Operation.Negate: negate(m)
+  of Operation.Add: add(m, n)
+  of Operation.Subtract: subtract(m, n)
+  of Operation.Wedge: wedge(m, n)
+  of Operation.WedgeAnti: wedgeAnti(m, n)
+  of Operation.WedgeDot: wedgeDot(m, n)
+  of Operation.WedgeDotAnti: wedgeDotAnti(m, n)
+  of Operation.Dot: dot(m, n)
+  of Operation.DotAnti: dotAnti(m, n)
+  of Operation.ExpandBulk: expandBulk(m, n)
+  of Operation.ExpandWeight: expandWeight(m, n)
+  of Operation.ContractBulk: contractBulk(m, n)
+  of Operation.ContractWeight: contractWeight(m, n)
+  of Operation.ProjectCentral: projectCentral(m, n)
+  of Operation.ProjectOrthogonal: projectOrthogonal(m, n)
+
+
+
+#[ Multivector Formatting ]#
+
+const lut_basis_to_name* = block:
+  ## Name each basis element in ASCII, since fonts carry no mathematical bold.
+  ##   Exported so the GUI can label a coefficient with the basis element it belongs to.
+  var lut: array[Basis, string]
+  for b in Basis: lut[b] = $b
+  lut
+
+
+func formatMultivector*(m: Multivector): string =
+  ## Print multivector in ASCII, in same shape library's own `$` uses.
+  ##   Library writes basis elements in mathematical bold, which lives outside the Basic
+  ##   Multilingual Plane; no font a GUI can load here carries those codepoints.
+  for b in Basis:
+    if abs(m[b]) <= TOLERANCE_ABS: continue
+    let
+      sign = if m[b] < 0: " - " else: (if len(result) == 0: "" else: " + ")
+      magnitude = abs(m[b])
+    result &= &"{sign}{magnitude:.4g} {lut_basis_to_name[b]}"
+  if len(result) == 0: result = "0 S"
+
+
+func describeShape*(m: Multivector): string =
+  ## Name geometry multivector stands for, for reporting back to user.
+  let shape = shape(m)
+  if shape.isNone: return "mixed grade, nothing to draw"
+  case shape.get
+  of Shape.Point: (if m.isHorizon: "point at horizon" else: "point")
+  of Shape.Line: (if m.isHorizon: "line at horizon" else: "line")
+  of Shape.Plane: (if m.isHorizon: "plane at horizon" else: "plane")
+
+
+
+#[ Label Storage ]#
+
+proc toChars*(text: string; storage: var openArray[char]) =
+  ## Copy text into fixed char storage, truncating where it will not fit.
+  ##   Truncation is deliberate: storage is display only, and GUI must never overrun it.
+  let count = min(len(text), len(storage) - 1)
+  for i in 0 ..< count:
+    storage[i] = text[i]
+  for i in count ..< len(storage):
+    storage[i] = '\0'
+
+
+template toCstring*(storage: untyped): cstring = cast[cstring](unsafeAddr storage[0])
+  ## Point at fixed char storage, for handing to GUI or to formatter.
+  ##   Template rather than function, so address is taken of caller's own storage
+  ##   rather than of a copy made for a parameter.
+
+
+
+#[ Scene Editing ]#
 
 func len*(scene: Scene): int = scene.count_entries
   ## Count items held by scene.
+
+
+func isFull*(scene: Scene): bool = scene.count_entries >= ITEMS_MAX
+  ## Report whether scene has no room for another item.
+
+
+proc `[]`*(scene: var Scene; index: int): var Item =
+  ## Reach item for editing, by dense index.
+  doAssert index in 0 ..< scene.count_entries,
+    &"Item index must be below {scene.count_entries}; got `{index}`."
+  scene.entries[index]
+
+
+func `[]`*(scene: Scene; index: int): Item =
+  ## Read item by dense index.
+  doAssert index in 0 ..< scene.count_entries,
+    &"Item index must be below {scene.count_entries}; got `{index}`."
+  scene.entries[index]
 
 
 iterator items*(scene: Scene): lent Item =
@@ -87,243 +259,29 @@ iterator items*(scene: Scene): lent Item =
     yield scene.entries[i]
 
 
-
-#[ World Space Drawing ]#
-
-func sampleAxis(anchor: Position, axis: Direction): array[SAMPLES_AXIS, Position] =
-  ## Sample straight span of world centred on anchor, running along axis.
-  const EXTENT = float(EXTENT_WORLD)
-  for i in 0 ..< SAMPLES_AXIS:
-    let offset = -EXTENT + 2.0*EXTENT*float(i)/float(SAMPLES_AXIS - 1)
-    result[i] = anchor + offset*axis
-
-
-proc drawPolylineWorld(
-  canvas: var Canvas;
-  camera: Camera;
-  places: openArray[Position];
-  ink: Ink;
-  width = 1.6;
-  opacity = 1.0;
-) =
-  ## Draw polyline through world positions, breaking run wherever camera cannot see one.
-  ##   Segment straddling image plane is dropped rather than clipped against it,
-  ##   so span ends short of frame edge where it passes behind camera.
-  doAssert len(places) <= SAMPLES_AXIS,
-    &"Polyline holds at most {SAMPLES_AXIS} vertices; got `{len(places)}`."
-  var
-    vertices: array[SAMPLES_AXIS, PointCanvas]
-    count_vertices = 0
-  for place in places:
-    let projection = camera.project(toMultivector(place))
-    if projection.isNone:
-      if count_vertices >= 2:
-        canvas.drawPolyline(vertices.toOpenArray(0, count_vertices - 1), ink, width, opacity)
-      count_vertices = 0
-      continue
-    vertices[count_vertices] = toCanvas(projection.get.position)
-    inc count_vertices
-  if count_vertices >= 2:
-    canvas.drawPolyline(vertices.toOpenArray(0, count_vertices - 1), ink, width, opacity)
+proc addItem*(scene: var Scene; geometry: Multivector; label: string; ink: Ink) =
+  ## Append object to scene, visible, together with its presentation.
+  ##   Silently refuses nothing: caller must check `isFull` first, as scene cannot grow.
+  doAssert not scene.isFull,
+    &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
+  scene.entries[scene.count_entries] = Item(geometry: geometry, ink: ink, is_visible: true)
+  toChars(label, scene.entries[scene.count_entries].label)
+  inc scene.count_entries
 
 
-proc drawPatchWorld(
-  canvas: var Canvas; camera: Camera; corners: array[4, Position]; ink: Ink
-) =
-  ## Draw filled quadrilateral through world corners.
-  ##   Whole patch is dropped where any corner is unseen, as partial fill would mislead.
-  var vertices: array[4, PointCanvas]
-  for i, corner in corners:
-    let projection = camera.project(toMultivector(corner))
-    if projection.isNone: return
-    vertices[i] = toCanvas(projection.get.position)
-  canvas.drawPolygon(vertices, ink)
+proc removeItem*(scene: var Scene; index: int) =
+  ## Drop item, shifting later items down so indices stay dense.
+  doAssert index in 0 ..< scene.count_entries,
+    &"Item index must be below {scene.count_entries}; got `{index}`."
+  for i in index ..< scene.count_entries - 1:
+    scene.entries[i] = scene.entries[i + 1]
+  dec scene.count_entries
+  scene.entries[scene.count_entries] = Item()
 
 
-proc drawArrowWorld(
-  canvas: var Canvas;
-  camera: Camera;
-  tail: Position;
-  axis: Direction;
-  length: float;
-  ink: Ink;
-) =
-  ## Draw shaft from tail along axis, marking its head with disc.
-  let head = tail + length*axis
-  canvas.drawPolylineWorld(camera, [tail, head], ink, width = 1.2)
-  let projection = camera.project(toMultivector(head))
-  if projection.isNone: return
-  canvas.drawMarker(toCanvas(projection.get.position), ink, radius = 2.5)
-
-
-proc drawLabelWorld(
-  canvas: var Canvas; camera: Camera; at: Position; text: string; ink: Ink
-) =
-  ## Draw text beside projection of world position.
-  const OFFSET_LABEL = 9.0
-  let projection = camera.project(toMultivector(at))
-  if projection.isNone: return
-  var place = toCanvas(projection.get.position)
-  place.x += OFFSET_LABEL
-  place.y -= OFFSET_LABEL
-  canvas.drawText(place, text, ink)
-
-
-
-#[ Object Drawing ]#
-
-proc drawPoint(
-  canvas: var Canvas; camera: Camera; geometry: Multivector; label: string; ink: Ink
-): Placement =
-  ## Draw grade-1 object as disc, or as arrow from origin where it lies at horizon.
-  ##   Point at horizon has no place to mark, so its direction is drawn from origin.
-  let place = position(geometry)
-  if place.isNone:
-    let heading = directionHorizon(geometry)
-    if heading.isNone: return Placement.Hidden
-    const LENGTH_HEADING = 0.5 * float(EXTENT_WORLD)
-    canvas.drawArrowWorld(camera, ORIGIN_WORLD, heading.get, LENGTH_HEADING, ink)
-    canvas.drawLabelWorld(camera, ORIGIN_WORLD + LENGTH_HEADING*heading.get, label, ink)
-    return Placement.Horizon
-
-  let projection = camera.project(toMultivector(place.get))
-  if projection.isNone: return Placement.Hidden
-  canvas.drawMarker(toCanvas(projection.get.position), ink)
-  canvas.drawLabelWorld(camera, place.get, label, ink)
-  Placement.Finite
-
-
-proc drawLine(
-  canvas: var Canvas; camera: Camera; geometry: Multivector; label: string; ink: Ink
-): Placement =
-  ## Draw grade-2 object as span about its support point, along its attitude.
-  let
-    anchor = positionAnchor(geometry)
-    axis = direction(geometry)
-  if anchor.isNone or axis.isNone: return Placement.Horizon
-
-  canvas.drawPolylineWorld(camera, sampleAxis(anchor.get, axis.get), ink, width = 2.2)
-
-  # Mark support point, as it is quantity algebra computed rather than one chosen to draw.
-  #   Span stays drawn where support itself falls outside view, so placement is still finite.
-  let projection = camera.project(toMultivector(anchor.get))
-  if projection.isSome:
-    canvas.drawMarker(toCanvas(projection.get.position), ink, radius = 3.0)
-
-  # Label along span rather than at support, so support's own label stays readable.
-  const OFFSET_LABEL = 0.35 * float(EXTENT_WORLD)
-  canvas.drawLabelWorld(camera, anchor.get + OFFSET_LABEL*axis.get, label, ink)
-  Placement.Finite
-
-
-proc drawPlane(
-  canvas: var Canvas; camera: Camera; geometry: Multivector; label: string; ink: Ink
-): Placement =
-  ## Draw grade-3 object as ruled grid patch about its support point.
-  let
-    anchor = positionAnchor(geometry)
-    axes = frame(geometry)
-    normal = directionNormal(geometry)
-  if anchor.isNone or axes.isNone or normal.isNone: return Placement.Horizon
-  const EXTENT = float(EXTENT_WORLD)
-  let (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
-
-  # Wash patch first, so plane reads as surface rather than as loose bundle of lines.
-  canvas.drawPatchWorld(camera, [
-    anchor.get + EXTENT*axis_first + EXTENT*axis_second,
-    anchor.get - EXTENT*axis_first + EXTENT*axis_second,
-    anchor.get - EXTENT*axis_first - EXTENT*axis_second,
-    anchor.get + EXTENT*axis_first - EXTENT*axis_second,
-  ], ink)
-
-  # Rule grid both ways, so plane's orientation and extent stay legible under perspective.
-  for i in -CELLS_PLANE .. CELLS_PLANE:
-    let offset = EXTENT*float(i)/float(CELLS_PLANE)
-    let (start_first, start_second) = (
-      anchor.get + offset*axis_second, anchor.get + offset*axis_first
-    )
-    canvas.drawPolylineWorld(
-      camera, sampleAxis(start_first, axis_first), ink, width = 1.0, opacity = 0.55
-    )
-    canvas.drawPolylineWorld(
-      camera, sampleAxis(start_second, axis_second), ink, width = 1.0, opacity = 0.55
-    )
-
-  # Show normal, as it is what tells plane apart from its own reflection.
-  canvas.drawArrowWorld(camera, anchor.get, normal.get, 0.25*EXTENT, Ink.Guide)
-
-  # Label at patch's edge rather than at support, so overlapping planes stay legible.
-  canvas.drawLabelWorld(camera, anchor.get + (0.8*EXTENT)*axis_first, label, ink)
-  Placement.Finite
-
-
-proc drawItem*(canvas: var Canvas; camera: Camera; item: Item): Placement =
-  ## Draw one item, dispatching on geometry its grade stands for.
-  let shape = shape(item.geometry)
-  doAssert shape.isSome, &"Item `{item.label}` lost its shape; got `{item.geometry}`."
-  case shape.get
-  of Shape.Point: canvas.drawPoint(camera, item.geometry, item.label, item.ink)
-  of Shape.Line: canvas.drawLine(camera, item.geometry, item.label, item.ink)
-  of Shape.Plane: canvas.drawPlane(camera, item.geometry, item.label, item.ink)
-
-
-
-#[ Scene Drawing ]#
-
-proc drawAxes*(canvas: var Canvas, camera: Camera) =
-  ## Draw world axes through origin, so scene has frame to be read against.
-  const AXES_WORLD = [
-    (Direction(x: 1, y: 0, z: 0), "x"),
-    (Direction(x: 0, y: 1, z: 0), "y"),
-    (Direction(x: 0, y: 0, z: 1), "z"),
-  ]
-  for (axis, name) in AXES_WORLD:
-    canvas.drawPolylineWorld(
-      camera, sampleAxis(ORIGIN_WORLD, axis), Ink.Axis, width = 1.2, opacity = 0.8
-    )
-    canvas.drawLabelWorld(camera, ORIGIN_WORLD + float(EXTENT_WORLD)*axis, name, Ink.Axis)
-
-
-proc drawLegend*(canvas: var Canvas, scene: Scene) =
-  ## List label, shape and coefficients of each item, so picture and algebra sit together.
+func inkCycled*(index: int): Ink =
+  ## Choose palette slot for item at given position, cycling through categorical slots.
   const
-    MARGIN_LEGEND = 22.0
-    LEADING_LEGEND = 16.0
-  var baseline = MARGIN_LEGEND + LEADING_LEGEND
-  canvas.drawText(
-    PointCanvas(x: MARGIN_LEGEND, y: baseline),
-    "4D RGA · 3D Euclidean space",
-    Ink.Label,
-    size = 15.0,
-  )
-  baseline += 2.0*LEADING_LEGEND
-
-  for item in scene:
-    let shape = shape(item.geometry)
-    doAssert shape.isSome, &"Item `{item.label}` lost its shape; got `{item.geometry}`."
-    canvas.drawText(
-      PointCanvas(x: MARGIN_LEGEND, y: baseline),
-      &"{item.label}  ({shape.get})",
-      item.ink,
-      size = 13.0,
-      as_monospace = true,
-    )
-    baseline += LEADING_LEGEND
-    canvas.drawText(
-      PointCanvas(x: MARGIN_LEGEND + LEADING_LEGEND, y: baseline),
-      $item.geometry,
-      Ink.Label,
-      size = 12.0,
-      as_monospace = true,
-    )
-    baseline += 1.6*LEADING_LEGEND
-
-
-proc drawScene*(canvas: var Canvas; camera: Camera; scene: Scene): array[Placement, int] =
-  ## Draw world axes, then every item, then legend; tally where items ended up.
-  canvas.drawAxes(camera)
-  for shape_pass in [Shape.Plane, Shape.Line, Shape.Point]:
-    for item in scene:
-      if shape(item.geometry) != some(shape_pass): continue
-      inc result[canvas.drawItem(camera, item)]
-  canvas.drawLegend(scene)
+    INK_FIRST = int(Ink.Amber)
+    COUNT_CATEGORICAL = int(Ink.high) - INK_FIRST + 1
+  Ink(INK_FIRST + (index mod COUNT_CATEGORICAL))

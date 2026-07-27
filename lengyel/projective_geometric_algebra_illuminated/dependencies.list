@@ -1,0 +1,8 @@
+libsdl3-dev  # Provide windowing, input and OpenGL context creation.
+libgl-dev  # Provide OpenGL headers and loader.
+zlib1g-dev  # Provide deflate and CRC used by the PNG export.
+fonts-dejavu-core  # Provide a font carrying the operator glyphs the GUI writes.
+
+# Dear ImGui is compiled from source rather than linked, so clone it beside the visualiser:
+#   git clone --branch docking https://github.com/ocornut/imgui.git deps/imgui
+# Point elsewhere with `--define:visualiser.path_imgui=/some/where/imgui`.

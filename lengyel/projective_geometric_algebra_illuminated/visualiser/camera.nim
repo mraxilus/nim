@@ -1,151 +1,200 @@
-## Project world-space points through pinhole camera onto image plane.
+## Orbit camera about target, and assemble transforms OpenGL draws through.
 ##
-## Projection of point 𝐩 is (𝐞 ∧ 𝐩) ∨ 𝐠̂, read as: join eye 𝐞 to 𝐩 to obtain sight ray,
-## then meet that ray with image plane 𝐠̂.
-##   Chosen over view matrix and perspective divide, so prototype shows library doing work
-##   graphics pipeline normally hides. Cost is roughly ten times arithmetic per point.
-##   Perspective divide is not written anywhere; it falls out of unitizing pierced point.
+## Camera's own frame is still derived through RGA, exactly as objects it looks at are:
 ##
-## Whole camera frame is derived from eye, target and up through RGA alone:
+##   |-------------|---------------|-------------------------------------------------|
+##   | Identifier  | Construction  | Meaning                                         |
+##   |-------------|---------------|-------------------------------------------------|
+##   | axis_sight  | 𝐞 ∧ 𝐭         | Line joining eye to target.                     |
+##   | forward     | att(𝐋)        | Unit direction eye looks along.                 |
+##   | axis_right  | -(𝐋 ∧ 𝐮)☆     | Unit direction of view's +x.                    |
+##   | axis_up     | -(𝐋 ∧ 𝐫)☆     | Unit direction of view's +y.                    |
+##   |-------------|---------------|-------------------------------------------------|
 ##
-##   |-------------|------------------|--------------------------------------------------|
-##   | Identifier  | Construction     | Meaning                                          |
-##   |-------------|------------------|--------------------------------------------------|
-##   | axis_sight  | 𝐞 ∧ 𝐭            | Line joining eye to target.                      |
-##   | origin_image| 𝐞 + f·att(𝐋)     | Point where sight axis pierces image plane.      |
-##   | plane_image | -(𝐨 ∧ 𝐋☆)        | Plane through 𝐨 perpendicular to sight axis.     |
-##   | axis_right  | -(𝐋 ∧ 𝐮)☆        | Direction of image's +x, perpendicular to 𝐋, 𝐮.  |
-##   | axis_up     | -(𝐋 ∧ 𝐫)☆        | Direction of image's +y, perpendicular to 𝐋, 𝐫.  |
-##   |-------------|------------------|--------------------------------------------------|
+## Only projection is left to convention: perspective divide, depth range and clip volume
+## belong to graphics pipeline rather than to geometry, so they are written out directly.
 ##
-## Sign of `plane_image` is flipped so its normal runs along sight direction.
-##   Signed distance 𝐩 ∨ 𝐠̂ is then positive exactly for points in front of camera,
-##   which is same quantity used to reject points at or behind pinhole.
+## Placement is spherical about target, since that is what mouse drag turns.
+##   Elevation is clamped short of poles, where up direction would run along sight axis
+##   and the joins above would collapse.
 
+# Reorder so placement reads before frame derived from it, though `pan` calls `frame`.
+#   Constants below stay in dependency order regardless, as reordering does not cover them.
+{.experimental: "codeReordering".}
 {.experimental: "strictFuncs".}
 
-import std/[math, options, strformat]
+import std/[math, options]
 
 import ../pga
-import ./[canvas, objects]
+import ./objects
 
 
 
 #[ Camera Configuration ]#
 
-# Allow caller to widen or narrow view without editing source.
-#   E.g. `--define:visualiser.degrees_field_of_view=60`.
-const DEGREES_FIELD_OF_VIEW* {.define: "visualiser.degrees_field_of_view".} = 45
-
-static:
-  doAssert DEGREES_FIELD_OF_VIEW in 1 .. 179,
-    &"Vertical field of view must be in range 1..179 degrees; got `{DEGREES_FIELD_OF_VIEW}`."
-
 const
-  DISTANCE_IMAGE* = 1.0
-    ## Set distance from pinhole to image plane, in world units.
-    ##   Value is arbitrary, as field of view rescales image plane to match.
-  DISTANCE_NEAR* = 1.0e-6
-    ## Set smallest depth a point may have and still be projected.
-    ##   Below it, sight ray runs nearly parallel to image plane and pierce point diverges.
-  EXTENT_IMAGE* = DISTANCE_IMAGE * tan(degToRad(0.5 * float(DEGREES_FIELD_OF_VIEW)))
-    ## Set half-height of image plane, in world units, spanned by vertical field of view.
+  UP_WORLD* = Direction(x: 0.0, y: 0.0, z: 1.0)
+    ## Fix world's up direction, which azimuth turns about and elevation rises from.
+  ELEVATION_LIMIT* = 0.5*PI - 0.02
+    ## Bound elevation short of pole, where sight axis would run along `UP_WORLD`.
+  DISTANCE_LIMIT_NEAR* = 0.05
+    ## Bound how close eye may orbit to target.
+  DISTANCE_LIMIT_FAR* = 500.0
+    ## Bound how far eye may orbit from target.
 
 
 
 #[ Type Definitions ]#
 
 type
-  Camera* = object ## Hold pinhole camera and frame derived from its placement.
-    eye*: Position ## Position of pinhole.
-    origin_image*: Position ## Position where sight axis pierces image plane.
-    axis_sight*: Multivector ## Grade-2 line joining eye to target.
-    plane_image*: Multivector ## Unitized grade-3 plane points are projected onto.
-    axis_right*: Direction ## Unit direction of image's +x.
-    axis_up*: Direction ## Unit direction of image's +y.
+  Matrix4* = object ## Hold 4x4 transform in column-major order, as OpenGL expects.
+    elements: array[16, float32]
 
-  Projection* = object ## Hold image-space result of projecting one world point.
-    position*: PointImage ## Normalised device coordinates of pierced point.
-    depth*: float ## Signed distance in front of image plane, in world units.
+  Camera* = object ## Hold placement of eye about target, and lens it looks through.
+    target*: Position ## Point orbit turns about.
+    distance*: float ## Separation of eye from target.
+    azimuth*: float ## Angle about world up, in radians.
+    elevation*: float ## Angle above horizon, in radians.
+    degrees_field_of_view*: float ## Vertical field of view, in degrees.
+    distance_near*: float ## Nearest depth kept by clip volume.
+    distance_far*: float ## Farthest depth kept by clip volume.
+
+  FrameCamera* = object ## Hold orthonormal directions of camera's own axes.
+    axis_right*: Direction ## Unit direction of view's +x.
+    axis_up*: Direction ## Unit direction of view's +y.
+    forward*: Direction ## Unit direction eye looks along.
 
 
 
-#[ Camera Construction ]#
+#[ Matrix Arithmetic ]#
 
-func initCamera*(eye, target: Position; up: Direction): Camera =
-  ## Construct camera looking from `eye` towards `target`, with image's +y following `up`.
+func at*(matrix: Matrix4; row, column: int): float32 = matrix.elements[4*column + row]
+  ## Read element of matrix, addressed as reader writes it rather than as GPU stores it.
+
+
+func elementsAddress*(matrix: Matrix4): ptr float32 =
+  ## Point at first element, for handing whole matrix to OpenGL.
+  unsafeAddr matrix.elements[0]
+
+
+func `*`*(a, b: Matrix4): Matrix4 =
+  ## Compose transforms, applying `b` before `a`.
+  for row in 0 .. 3:
+    for column in 0 .. 3:
+      var sum = 0.0'f32
+      for i in 0 .. 3:
+        sum += a.at(row, i) * b.at(i, column)
+      result.elements[4*column + row] = sum
+
+
+func initMatrixProjection*(
+  degrees_field_of_view, aspect, distance_near, distance_far: float
+): Matrix4 =
+  ## Construct perspective projection onto OpenGL's clip volume.
+  ##   Depth maps to -1 .. 1, and camera looks along its own -z, as pipeline expects.
   let
-    point_eye = toMultivector(eye)
-    axis_sight = point_eye ∧ toMultivector(target)
-    forward = direction(axis_sight)
-  doAssert forward.isSome,
-    "Camera eye and target must differ, as sight axis is line joining them."
+    focal = 1.0 / tan(0.5 * degToRad(degrees_field_of_view))
+    span = distance_near - distance_far
+  result.elements[0] = float32(focal / aspect)
+  result.elements[5] = float32(focal)
+  result.elements[10] = float32((distance_far + distance_near) / span)
+  result.elements[11] = -1.0
+  result.elements[14] = float32(2.0 * distance_far * distance_near / span)
 
-  # Place image plane in front of pinhole, perpendicular to sight axis.
-  let
-    origin_image = eye + DISTANCE_IMAGE * forward.get
-    plane_image = ^(-expandWeight(toMultivector(origin_image), axis_sight))
 
-  # Span image plane by directions perpendicular to sight axis and to each other.
-  let
-    plane_vertical = axis_sight ∧ toMultivector(up)
-    axis_right = directionNormal(plane_vertical)
-  doAssert axis_right.isSome,
-    "Camera up direction must not run along sight axis, as plane through both collapses."
-  let
-    plane_horizontal = axis_sight ∧ toMultivector(axis_right.get)
-    axis_up = directionNormal(plane_horizontal)
-  doAssert axis_up.isSome,
-    "Camera sight axis and right direction must span plane; they are perpendicular."
+func initMatrixView*(eye: Position; frame: FrameCamera): Matrix4 =
+  ## Construct transform carrying world into camera's own frame.
+  ##   Rows hold camera axes, so transform is inverse of camera's placement.
+  let (right, up, forward) = (frame.axis_right, frame.axis_up, frame.forward)
+  let offset = eye - Position(x: 0, y: 0, z: 0)
+  result.elements = [
+    float32(right.x), float32(up.x), float32(-forward.x), 0.0,
+    float32(right.y), float32(up.y), float32(-forward.y), 0.0,
+    float32(right.z), float32(up.z), float32(-forward.z), 0.0,
+    float32(-dot(right, offset)), float32(-dot(up, offset)), float32(dot(forward, offset)),
+    1.0,
+  ]
 
-  # Pin image's +y to caller's up, as antidual fixes axis only up to sign.
-  let orientation = if dot(axis_up.get, up) < 0: -1.0 else: 1.0
 
+
+#[ Camera Placement ]#
+
+func initCamera*(target: Position; distance, azimuth, elevation: float): Camera =
+  ## Construct camera orbiting `target` at given separation and angles.
   Camera(
-    eye: eye,
-    origin_image: origin_image,
-    axis_sight: axis_sight,
-    plane_image: plane_image,
-    axis_right: axis_right.get,
-    axis_up: orientation * axis_up.get,
+    target: target,
+    distance: clamp(distance, DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR),
+    azimuth: azimuth,
+    elevation: clamp(elevation, -ELEVATION_LIMIT, ELEVATION_LIMIT),
+    degrees_field_of_view: 45.0,
+    distance_near: 0.05,
+    distance_far: 400.0,
   )
 
 
-
-#[ Projection ]#
-
-func depth*(camera: Camera, point: Multivector): Option[float] =
-  ## Measure signed distance of point in front of image plane.
-  ##   Antiwedge of unitized point with unitized plane is their separation, i.e. 𝐩̂ ∨ 𝐠̂.
-  ##   None where point lies at horizon, as direction stands at no distance.
-  let place = position(point)
-  if place.isNone: return
-  some((toMultivector(place.get) ∨ camera.plane_image)[Basis.scalar])
+func eye*(camera: Camera): Position =
+  ## Place eye on sphere about target, from azimuth and elevation.
+  let radius = camera.distance * cos(camera.elevation)
+  camera.target + Direction(
+    x: radius * cos(camera.azimuth),
+    y: radius * sin(camera.azimuth),
+    z: camera.distance * sin(camera.elevation),
+  )
 
 
-func project*(camera: Camera, point: Multivector): Option[Projection] =
-  ## Project point through pinhole onto image plane.
-  ##   None where point cannot appear in image, for any of three reasons:
-  ##     Point lies at horizon, so it names direction rather than place.
-  ##     Point lies at or behind image plane, so pinhole does not see it.
-  ##     Sight ray misses image plane, which unitizing pierced point detects.
-  let place = position(point)
-  if place.isNone: return
+proc orbit*(camera: var Camera; turn, rise: float) =
+  ## Turn eye about target by given angles, keeping elevation short of poles.
+  camera.azimuth += turn
+  camera.elevation = clamp(camera.elevation + rise, -ELEVATION_LIMIT, ELEVATION_LIMIT)
+
+
+proc dolly*(camera: var Camera; factor: float) =
+  ## Scale separation of eye from target, keeping it within orbit's bounds.
+  camera.distance = clamp(
+    camera.distance * factor, DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR
+  )
+
+
+proc pan*(camera: var Camera; across, up: float) =
+  ## Slide target within plane facing eye, so whole view shifts with it.
+  let axes = camera.frame
+  camera.target = camera.target +
+    (across * camera.distance)*axes.axis_right +
+    (up * camera.distance)*axes.axis_up
+
+
+
+#[ Camera Frame ]#
+
+func frame*(camera: Camera): FrameCamera =
+  ## Derive camera's orthonormal axes from its placement, through joins and antiduals.
+  ##   Elevation clamp keeps sight axis off world up, so every join below stays defined.
   let
-    point_unit = toMultivector(place.get)
-    depth = (point_unit ∨ camera.plane_image)[Basis.scalar]
-  if depth <= DISTANCE_NEAR: return
+    point_eye = toMultivector(camera.eye)
+    axis_sight = point_eye ∧ toMultivector(camera.target)
+    forward = direction(axis_sight)
+  doAssert forward.isSome,
+    "Camera eye and target must differ; orbit distance is bounded away from zero."
 
-  # Meet sight ray with image plane, then unitize to perform perspective divide.
-  let pierce = position((toMultivector(camera.eye) ∧ point_unit) ∨ camera.plane_image)
-  if pierce.isNone: return
+  let axis_right = directionNormal(axis_sight ∧ toMultivector(UP_WORLD))
+  doAssert axis_right.isSome,
+    "Camera sight axis must not run along world up; elevation is clamped short of poles."
 
-  # Resolve pierced point against image axes, scaled so field of view spans -1 .. 1.
-  let offset = pierce.get - camera.origin_image
-  some(Projection(
-    position: PointImage(
-      x: dot(offset, camera.axis_right) / EXTENT_IMAGE,
-      y: dot(offset, camera.axis_up) / EXTENT_IMAGE,
-    ),
-    depth: depth,
-  ))
+  let axis_up = directionNormal(axis_sight ∧ toMultivector(axis_right.get))
+  doAssert axis_up.isSome,
+    "Camera sight axis and right direction must span plane; they are perpendicular."
+
+  # Pin view's +y to world up, as antidual fixes axis only up to sign.
+  let orientation = if dot(axis_up.get, UP_WORLD) < 0: -1.0 else: 1.0
+  FrameCamera(
+    axis_right: axis_right.get,
+    axis_up: orientation * axis_up.get,
+    forward: forward.get,
+  )
+
+
+func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
+  ## Compose whole transform from world space to clip space.
+  initMatrixProjection(
+    camera.degrees_field_of_view, aspect, camera.distance_near, camera.distance_far
+  ) * initMatrixView(camera.eye, camera.frame)
