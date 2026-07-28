@@ -122,6 +122,14 @@ const
     ## Bound how many per-frame timings `--timings` can record; independent of either
     ## arena above, since a benchmarking run is not itself the interactive draw loop
     ## either arena was carved to serve.
+  BYTES_MEMORY_TOTAL* =
+    CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME +
+    sizeof(MeshSet) + sizeof(Scene) + sizeof(Workbench) + FRAMES_TIMING_MAX*sizeof(float32)
+    ## Sum of every fixed-size reservation this binary makes for itself: both arenas at
+    ## their full capacity, committed in the data segment regardless of use; tessellation
+    ## storage; the object pool; the panel's own state, frame-time ring buffer included;
+    ## and the `--timings` benchmark buffer. Excludes anything Dear ImGui, SDL, or the
+    ## graphics driver allocate on their own account, which this process cannot see.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
@@ -279,6 +287,7 @@ proc renderFrame(
   workbench.bytes_arena_permanent_capacity = ARENA_PERMANENT.capacity
   workbench.bytes_arena_frame_peak = ARENA_FRAME.peakUsed
   workbench.bytes_arena_frame_capacity = ARENA_FRAME.capacity
+  workbench.bytes_memory_total = BYTES_MEMORY_TOTAL
 
   gui.frameBegin()
   layoutWorkbench(workbench, scene, camera, now)

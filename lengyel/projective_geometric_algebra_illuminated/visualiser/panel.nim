@@ -11,7 +11,8 @@
 ##   | View        | Orbit, target, lens, world furniture, PNG export.                   |
 ##   | Construct   | Add point at a position; apply any library operation to operands.   |
 ##   | Objects     | Show, hide, rename, recolour, remove; edit any coefficient.         |
-##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool.     |
+##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,     |
+##   |             | and everything else this binary reserves for itself, added up.     |
 ##   |-------------|--------------------------------------------------------------------|
 ##
 ## Every panel above is a collapsing header, so a first-time reader can open one at a
@@ -84,6 +85,9 @@ type
     bytes_arena_permanent_capacity*: int ## Snapshot of the permanent arena's `capacity`.
     bytes_arena_frame_peak*: int ## Snapshot of the frame arena's own `peakUsed`.
     bytes_arena_frame_capacity*: int ## Snapshot of the frame arena's `capacity`.
+    bytes_memory_total*: int ## Sum of every fixed reservation this binary makes for
+      ## itself; computed once where every piece is visible, since `panel` alone cannot
+      ## see the arenas' own backing storage or the mesh and timing buffers beside them.
 
 
 func initWorkbench*(path_export: string): Workbench =
@@ -442,6 +446,38 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
   appendChars(summary, cursor, " free")
   finishChars(summary, cursor)
   gui.text(toCstring(summary))
+
+  const
+    BYTES_SCENE = sizeof(Scene)
+    BYTES_PER_SLOT = BYTES_SCENE div ITEMS_MAX
+  var pool_memory: array[WIDTH_ITEM_LINE, char]
+  cursor = 0
+  appendFixed(pool_memory, cursor, float(BYTES_SCENE) / 1024.0, 1)
+  appendChars(pool_memory, cursor, " KB total, ")
+  appendFixed(pool_memory, cursor, float(scene.len * BYTES_PER_SLOT) / 1024.0, 1)
+  appendChars(pool_memory, cursor, " KB active")
+  finishChars(pool_memory, cursor)
+  gui.text(toCstring(pool_memory))
+  gui.tooltip(
+    "Scene is one fixed block sized for all 64 slots up front, not allocated one " &
+    "object at a time; this splits that block evenly to show roughly what a slot " &
+    "costs, not a measurement of any single object."
+  )
+
+  gui.separatorText("total")
+  var total: array[WIDTH_OVERLAY_TEXT, char]
+  cursor = 0
+  appendFixed(total, cursor, float(workbench.bytes_memory_total) / (1024.0*1024.0), 1)
+  appendChars(total, cursor, " MB")
+  finishChars(total, cursor)
+  gui.text(toCstring(total))
+  gui.tooltip(
+    "Every fixed reservation this binary makes for itself, added up: both arenas at " &
+    "their full capacity (committed whether or not they're ever filled), the object " &
+    "pool above, tessellation storage, and the panel's own state. Excludes whatever " &
+    "Dear ImGui, SDL, or the graphics driver allocate on their own account, which " &
+    "this process cannot see or account for."
+  )
 
 
 
