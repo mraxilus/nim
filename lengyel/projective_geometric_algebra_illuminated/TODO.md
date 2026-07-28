@@ -22,11 +22,16 @@ want the full history from earlier rounds (arenas, GC removal, GIF/PNG, storyboa
 - [x] #34 Disambiguate the object-pool memory line's wording (you caught this one: the
       first phrasing, "X KB total, Y KB active", read like Y was a single object's own
       cost rather than every live object added together)
+- [x] #35 Reorder that same line to "X allocated, Y used, Z per slot"
+- [x] #36 Raise the storyboard GIF's resolution — it had never actually been raised in
+      an earlier turn despite being asked about; `STRIDE_GIF` 4 -> 2 (360x225 -> 720x450),
+      permanent arena 48 -> 128 MB to fit the larger accumulated frame buffer
 
 Commits on `claude/rga-visualization-prototype-kbq9kw`: `3a58ddd` (diagnostics panel +
 usability pass), `06674a4` (this file, first commit), `65225a3` (object-pool memory +
-total memory line), `030e7f3` (disambiguate the wording). Delegations repo: `fe82294`,
-`68adfe8`, `b42032a`.
+total memory line), `030e7f3` (disambiguate the wording), `8b1c1fd` (this file), `6fe5707`
+(reorder pool line + raise GIF resolution). Delegations repo: `fe82294`, `68adfe8`,
+`b42032a`, `2c027c6`.
 
 ## What shipped, cumulative
 
