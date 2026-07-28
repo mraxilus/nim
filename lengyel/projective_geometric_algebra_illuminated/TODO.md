@@ -1,84 +1,75 @@
-# Working notes: live diagnostics + usability pass — done
+# Working notes: refactor / colour / visual-noise pass — done
 
 This file mirrors the task tracker I use internally (visible to me as a todo list, not
 otherwise visible to you), plus anything else worth knowing about how each round went.
-Tracked in git going forward (per your stop-hook check), so it stays part of the
-branch's own history rather than living only in this session.
+Tracked in git (per your stop-hook check), so it stays part of the branch's own history.
 
-All tasks through this round are done and pushed. Kept below for the record; ask if you
-want the full history from earlier rounds (arenas, GC removal, GIF/PNG, storyboard...).
+Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, live diagnostics panel, object
+pool + total memory readouts) are all done and summarized in prior commits on this
+branch — ask if you want that history restated here.
 
-## Task list (final state, this round)
+## This round: task list (final state)
 
-- [x] #26 Add arena peak/usage accessors
-- [x] #27 Add ImGui shim widgets for stats viz (progressBar, plotLines, tooltip,
-      helpMarker, poolBar)
-- [x] #28 Wire live frame-time ring buffer
-- [x] #29 Build Diagnostics panel section
-- [x] #30 Usability pass over workbench window
-- [x] #31 Rebuild, test, smoke-test GUI changes
-- [x] #32 Commit, push, refresh delegations tarball
-- [x] #33 Add object-pool + total memory usage to diagnostics
-- [x] #34 Disambiguate the object-pool memory line's wording (you caught this one: the
-      first phrasing, "X KB total, Y KB active", read like Y was a single object's own
-      cost rather than every live object added together)
-- [x] #35 Reorder that same line to "X allocated, Y used, Z per slot"
-- [x] #36 Raise the storyboard GIF's resolution — it had never actually been raised in
-      an earlier turn despite being asked about; `STRIDE_GIF` 4 -> 2 (360x225 -> 720x450),
-      permanent arena 48 -> 128 MB to fit the larger accumulated frame buffer
+You asked for an unhurried, open-ended pass: identify refactor/simplification
+opportunities, non-RGA-native math, and remaining heap allocation; separately, make the
+categorical colours more pleasant and cut down the visual noise a few overlapping
+planes produce.
 
-Commits on `claude/rga-visualization-prototype-kbq9kw`: `3a58ddd` (diagnostics panel +
-usability pass), `06674a4` (this file, first commit), `65225a3` (object-pool memory +
-total memory line), `030e7f3` (disambiguate the wording), `8b1c1fd` (this file), `6fe5707`
-(reorder pool line + raise GIF resolution). Delegations repo: `fe82294`, `68adfe8`,
-`b42032a`, `2c027c6`.
+- [x] #37 Audit heap allocations — grepped and read every `visualiser/*.nim` hit.
+      **Found nothing to fix.** Every `strformat`/heap-string use left is either a
+      `doAssert` message (cost paid only if the assertion fails) or one-shot
+      button-click UI code, never the interactive draw loop itself.
+- [x] #38 Audit non-RGA-native math — **found nothing to fix.** `objects.nim`'s
+      Position/Direction arithmetic and `picking.nim`'s screen-space projection are
+      non-algebraic by necessity (rendering-pipeline concerns) and already documented
+      as deliberate in their own doc comments; `camera.eye`'s spherical placement is
+      an orbit-camera convenience, independent of the RGA frame derived from it.
+- [x] #39 Audit refactor/simplification opportunities — **found and fixed one real
+      win**: `panel.nim`'s diagnostics section repeated the same five-line
+      "cursor/append/finishChars/cast" pattern at nine text readouts. Added
+      `format.buildChars`, a template collapsing each site to just the calls that
+      vary. Verified byte-for-byte identical rendered text before/after.
+- [x] #40 Redesign colour palette — the old 7-hue categorical palette was picked by
+      eye and never checked; run through the dataviz skill's own
+      `validate_palette.js` against this app's actual backdrop, it failed badly (two
+      hues only 1.9 CVD ΔE apart — nearly indistinguishable to a colourblind reader).
+      Rebuilt at matched lightness/saturation, iterated against the validator until
+      the adjacent-pair gates all passed (CVD ΔE 12.1, normal-vision ΔE 25.4 worst
+      case), and reordered the enum so consecutive slots (the pair objects are most
+      likely to be compared, since they're handed out in that cycle order) sit far
+      apart on the wheel.
+- [x] #41 Reduce visual noise from planes — a plane's own ruled grid was the fastest
+      way overlapping planes turned into clutter (34 lines/plane at flat 0.55 alpha).
+      `CELLS_PLANE` 8→4 (18 lines), grid alpha split into a crisp boundary (0.65) and
+      a much fainter interior (0.22), wash 0.13→0.10, normal-arrow guide toned down
+      to 0.75. Checked by regenerating the storyboard and looking at the step where a
+      derived plane crosses the seed ground plane.
+- [x] #42 Implement fixes from audits — folded into #39/#40/#41 above.
+- [x] #43 Rebuild, test, visually verify, commit/push/deliver — full suite green,
+      both smoke tests (screenshot + storyboard) clean at production settings.
 
-## What shipped, cumulative
-
-- **Diagnostics panel** (collapsible, closed by default): live raw per-frame-time graph,
-  vsync + fps/tessellate readout, a fill bar for the permanent arena, a peak-usage bar
-  for the frame arena (`arena.nim` tracks a `peak_used` high-water mark since it reads
-  empty between exports), a coloured per-slot object-pool bar (green = active, dark =
-  free) with an "N active, M free" count, the pool's own fixed memory split into
-  total/active KB, and a closing **total** line summing every fixed reservation the
-  binary makes for itself (both arenas at full capacity, tessellation storage, the
-  object pool, the panel's own state) — computed once as a `const` in `visualiser.nim`
-  and handed to the panel through `Workbench`, since `panel.nim` alone can't see the
-  arenas' backing arrays or the mesh/timings buffers beside them.
-- **Usability pass**: every top-level panel is a collapsing header; tooltips on every
-  non-obvious control; the drag rubber-band is colour-coded by operation (join=cyan,
-  meet=coral, project=lime) matching a legend at the top of the panel.
-
-## Issues found and fixed during QA (both caught by actually rendering the panel
-headless and looking at it or catching a crash, not by inspection)
-
-1. **Crash**: `gui.plotLines("", ...)` — an empty ImGui label collides with the ID Dear
-   ImGui assigns the window itself. Fixed with `"##frame_time"`.
-2. **Wrong data**: the arena-stats snapshot was only wired into `runInteractive`'s loop,
-   so `runStoryboard` (shares the render/panel code, not that loop) showed "0.0 / 0 MB"
-   for both arenas in every exported PNG. Fixed by moving the snapshot into
-   `renderFrame` itself, the code path both modes share; reverified with a fresh
-   storyboard capture showing correct non-zero figures.
-3. **Ambiguous wording** (you caught this one, not me): the object-pool memory line
-   read "X KB total, Y KB active", which reads like Y is one object's own cost. It's
-   actually every currently-live object added together (`count × bytes/slot`), and the
-   real per-object cost (~195 B) is well under 1 KB either way. Reworded to lead with
-   the explicit per-slot figure so the aggregate can't be misread as a single object's.
-
-All three written up in the delegations copy's `PROVENANCE.md`, including what's still
-*not* verified (no human has hovered a tooltip or clicked a header — headless rendering
-can't simulate that; the frame-time graph reads flat in storyboard mode since nothing
-feeds it there).
+Commits: `f5f6772` on `claude/rga-visualization-prototype-kbq9kw` (source). Delegations
+repo: `bb4284b` (synced copy + PROVENANCE.md + regenerated storyboard assets).
 
 ## Process notes
 
-- QA method each round: temporarily patch `panel.nim` locally (force the diagnostics
-  header open, enlarge the panel/window/arena-capacity defines) to get one screenshot
-  showing the whole panel under Xvfb, then revert every throwaway change before the
-  real build — confirmed clean each time by diffing against a saved backup.
-- Test suite (`nim c ... -r tests/visualiser/test_4d.nim`) doesn't reach panel/gui/
-  renderer at all (need a live GL context by the project's own design), so the only
-  real verification for GUI work is building the actual binary and rendering headless
-  under Xvfb — which is what caught both issues above.
-- `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked; they
-  get copied in locally to build and stripped back out before each commit.
+- Palette candidates were iterated with a throwaway Python script (`colorsys.hls_to_rgb`
+  for evenly-spaced hues at matched S/L) and checked with the dataviz skill's
+  `scripts/validate_palette.js` — never eyeballed. The skill's own reference palette
+  documents that 7-8 categorical hues cannot all clear its stricter *all-pairs* gate;
+  this set targets the *adjacent* gate instead, since `inkCycled` only guarantees
+  adjacency in cycle order, and that's the pairing this app actually produces most.
+- QA method unchanged from earlier rounds: temporarily patch `panel.nim` locally
+  (force the diagnostics header open, enlarge the window/arena-capacity defines) to
+  get one screenshot showing everything under Xvfb, revert before the real build,
+  confirm the revert is clean by diffing against a saved backup.
+- The delegations repo's own `.gitignore` has a `!*/storyboard/*.png` exception that
+  doesn't actually match the deep path this project's storyboard PNGs live at (only
+  one directory level before `storyboard/` is unignored, not several) — so those
+  PNGs have never actually been git-tracked there, only `storyboard.gif` is. Not
+  something this round changed or was asked to fix; noting it since it explains why
+  `git status` never flags them even after a real regeneration — `tar` bundles them
+  into the delivered tarball regardless of git's tracking state, so delivery is
+  unaffected.
+- `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked;
+  copied in locally to build, stripped back out before each commit.
