@@ -114,8 +114,8 @@ proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0):
     label_source = $toCstring(scene.labelAt(interaction.index_source))
     label_destination = $toCstring(scene.labelAt(index_destination))
     derived = applyOperation(
-      drag.toOperation, scene[interaction.index_source].geometry,
-      scene[index_destination].geometry,
+      drag.toOperation, scene.geometry(interaction.index_source),
+      scene.geometry(index_destination),
     )
   scene.addItem(
     derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now

@@ -183,14 +183,18 @@ func pickNearest*(
       distance_best = distance
       slot_best = some(slot)
 
-  for slot, item in scene.pairs:
-    if not item.is_visible: continue
-    let shape = shape(item.geometry)
+  # Reads geometry once per live item, whether or not it's visible, and only what's
+  #   needed after that -- not the whole `Item` (label and born included) `scene.pairs`
+  #   would otherwise copy for every candidate, on every cursor test, every frame.
+  for slot in scene.liveSlots:
+    if not scene.isVisible(slot): continue
+    let geometry = scene.geometry(slot)
+    let shape = shape(geometry)
     if shape.isNone: continue
 
     case shape.get
     of Shape.Point:
-      let anchor = anchorFor(item.geometry)
+      let anchor = anchorFor(geometry)
       if anchor.isNone: continue
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if not screen.isInFront: continue
@@ -198,7 +202,7 @@ func pickNearest*(
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
     of Shape.Line:
-      let (anchor, axis) = (positionAnchor(item.geometry), direction(item.geometry))
+      let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
       if anchor.isNone or axis.isNone: continue
       let
         tail = projectToScreen(view_projection, width, height, anchor.get - EXTENT*axis.get)
@@ -209,10 +213,10 @@ func pickNearest*(
 
     of Shape.Plane:
       let
-        anchor = positionAnchor(item.geometry)
-        axes = frame(item.geometry)
+        anchor = positionAnchor(geometry)
+        axes = frame(geometry)
       if anchor.isNone or axes.isNone: continue
-      let hit = rayPlaneHit(ray, eye, frame_camera.forward, item.geometry, anchor.get, axes.get)
+      let hit = rayPlaneHit(ray, eye, frame_camera.forward, geometry, anchor.get, axes.get)
       if hit.isSome: consider(2, hit.get)
 
   slot_best

@@ -219,10 +219,10 @@ proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float) =
   MESHES.clearMeshes
   if workbench.is_grid_shown: MESHES.addGrid
   if workbench.is_axes_shown: MESHES.addAxes
-  for item in scene:
-    if not item.is_visible: continue
-    let progress = animationProgress(now, item.born)
-    discard MESHES.addObject(item.geometry, item.ink.colour, progress)
+  for slot in scene.liveSlots:
+    if not scene.isVisible(slot): continue
+    let progress = animationProgress(now, scene.born(slot))
+    discard MESHES.addObject(scene.geometry(slot), scene.ink(slot).colour, progress)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -245,7 +245,7 @@ proc drawInteractionOverlay(
   if not interaction.is_enabled: return
 
   if interaction.index_hover.isSome:
-    let anchor = anchorFor(scene[interaction.index_hover.get].geometry)
+    let anchor = anchorFor(scene.geometry(interaction.index_hover.get))
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
@@ -255,7 +255,7 @@ proc drawInteractionOverlay(
         )
 
   if interaction.operation.isSome:
-    let anchor = anchorFor(scene[interaction.index_source].geometry)
+    let anchor = anchorFor(scene.geometry(interaction.index_source))
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:

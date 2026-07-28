@@ -281,6 +281,11 @@ func isAlive*(scene: Scene; slot: int): bool =
 
 func `[]`*(scene: Scene; slot: int): Item =
   ## Read item by slot, assembled from parallel storage.
+  ##   Costs a copy of every field, `geometry` included, whether or not caller wants
+  ##   all of them: fine for a one-shot read or a test, wasteful for a hot path that
+  ##   walks every item every frame wanting only one or two fields. `geometry`,
+  ##   `label`, `ink`, `isVisible` and `born` below read a single field with no such
+  ##   waste, and `liveSlots` walks slots with no `Item` built at all.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   Item(
     geometry: scene.geometries[slot],
@@ -289,6 +294,46 @@ func `[]`*(scene: Scene; slot: int): Item =
     is_visible: scene.are_visible[slot],
     born: scene.borns[slot],
   )
+
+
+func geometry*(scene: Scene; slot: int): lent Multivector =
+  ## Read item's geometry by slot, without assembling a whole `Item` around it.
+  ##   `lent` borrows straight out of `scene`'s own storage, so this costs no more
+  ##   than reading the array element directly would.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.geometries[slot]
+
+
+func label*(scene: Scene; slot: int): lent Label =
+  ## Read item's label by slot, without assembling a whole `Item` around it.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.labels[slot]
+
+
+func ink*(scene: Scene; slot: int): Ink =
+  ## Read item's palette slot by slot, without assembling a whole `Item` around it.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.inks[slot]
+
+
+func isVisible*(scene: Scene; slot: int): bool =
+  ## Read item's visibility by slot, without assembling a whole `Item` around it.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_visible[slot]
+
+
+func born*(scene: Scene; slot: int): float =
+  ## Read item's `born` reading by slot, without assembling a whole `Item` around it.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.borns[slot]
+
+
+iterator liveSlots*(scene: Scene): int =
+  ## Yield each live slot, in slot order, with no `Item` built at all -- for a caller
+  ## that only wants the slot, or that reads one or two fields itself through the
+  ## accessors above rather than through every field at once.
+  for slot in 0 ..< ITEMS_MAX:
+    if scene.are_alive[slot]: yield slot
 
 
 proc geometryAt*(scene: var Scene; slot: int): var Multivector =
