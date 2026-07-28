@@ -102,7 +102,7 @@ const
     ## Set how many repeated frames hold on a step's settled result, so playback reads.
   CENTISECONDS_GIF_DELAY = 8
     ## Set hold time per GIF frame, in hundredths of a second.
-  STRIDE_GIF = 4
+  STRIDE_GIF = 2
     ## Keep every this-many-th pixel in both directions, so the storyboard's GIF stays
     ## a short preview rather than a full-resolution capture nobody asked for.
   WIDTH_SHAPE_WORD = 32
@@ -110,10 +110,11 @@ const
   WIDTH_EXPORT_MAX* {.define: "visualiser.width_export_max".} = 3840
     ## Bound the largest window a pixel readback or PNG export is ever asked to cover.
   HEIGHT_EXPORT_MAX* {.define: "visualiser.height_export_max".} = 2160
-  CAPACITY_ARENA_PERMANENT* {.define: "visualiser.capacity_arena_permanent".} = 48*1024*1024
+  CAPACITY_ARENA_PERMANENT* {.define: "visualiser.capacity_arena_permanent".} = 128*1024*1024
     ## Set the permanent arena's own size: the pixel readback buffer, and every
     ## storyboard GIF frame collected before the final GIF is written, live here for
-    ## as long as the process runs.
+    ## as long as the process runs. Sized for `STRIDE_GIF`'s own downsample plus
+    ## `WIDTH_EXPORT_MAX`x`HEIGHT_EXPORT_MAX`'s own readback, with headroom to spare.
   CAPACITY_ARENA_FRAME* {.define: "visualiser.capacity_arena_frame".} = 64*1024*1024
     ## Set the frame arena's own size: whichever of PNG's filtered/compressed scanlines
     ## or one GIF frame's quantized indices and LZW output is using it, reclaimed the
