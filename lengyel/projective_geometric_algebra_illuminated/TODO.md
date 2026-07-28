@@ -19,10 +19,14 @@ want the full history from earlier rounds (arenas, GC removal, GIF/PNG, storyboa
 - [x] #31 Rebuild, test, smoke-test GUI changes
 - [x] #32 Commit, push, refresh delegations tarball
 - [x] #33 Add object-pool + total memory usage to diagnostics
+- [x] #34 Disambiguate the object-pool memory line's wording (you caught this one: the
+      first phrasing, "X KB total, Y KB active", read like Y was a single object's own
+      cost rather than every live object added together)
 
 Commits on `claude/rga-visualization-prototype-kbq9kw`: `3a58ddd` (diagnostics panel +
 usability pass), `06674a4` (this file, first commit), `65225a3` (object-pool memory +
-total memory line). Delegations repo: `fe82294`, `68adfe8`.
+total memory line), `030e7f3` (disambiguate the wording). Delegations repo: `fe82294`,
+`68adfe8`, `b42032a`.
 
 ## What shipped, cumulative
 
@@ -50,11 +54,16 @@ headless and looking at it or catching a crash, not by inspection)
    for both arenas in every exported PNG. Fixed by moving the snapshot into
    `renderFrame` itself, the code path both modes share; reverified with a fresh
    storyboard capture showing correct non-zero figures.
+3. **Ambiguous wording** (you caught this one, not me): the object-pool memory line
+   read "X KB total, Y KB active", which reads like Y is one object's own cost. It's
+   actually every currently-live object added together (`count × bytes/slot`), and the
+   real per-object cost (~195 B) is well under 1 KB either way. Reworded to lead with
+   the explicit per-slot figure so the aggregate can't be misread as a single object's.
 
-Both written up in the delegations copy's `PROVENANCE.md`, including what's still *not*
-verified (no human has hovered a tooltip or clicked a header — headless rendering can't
-simulate that; the frame-time graph reads flat in storyboard mode since nothing feeds it
-there).
+All three written up in the delegations copy's `PROVENANCE.md`, including what's still
+*not* verified (no human has hovered a tooltip or clicked a header — headless rendering
+can't simulate that; the frame-time graph reads flat in storyboard mode since nothing
+feeds it there).
 
 ## Process notes
 
