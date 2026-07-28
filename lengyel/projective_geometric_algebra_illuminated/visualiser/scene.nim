@@ -29,7 +29,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strformat]
+import std/[options, os, strformat, syncio]
 
 import ../pga
 import ./[format, mesh, objects]
@@ -371,6 +371,135 @@ proc removeItem*(scene: var Scene; slot: int) =
   scene.next_free[slot] = scene.slot_free_first
   scene.slot_free_first = some(slot)
   dec scene.count_live
+
+
+
+#[ Scene Persistence ]#
+
+## Binary format this project invents for itself -- no external spec to match, so no
+## reason to follow PNG/GIF's own big/little-endian conventions either; every
+## multi-byte field below is written in the host's own native layout, straight through
+## `writeBuffer`/`readBuffer`. A file saved on a big-endian machine will not load
+## correctly on a little-endian one; this tool runs on one desktop at a time, so that
+## trade favours simplicity over a portability nothing here needs yet.
+##
+##   |----------|--------------------------------------------------------------|
+##   | Bytes    | Field                                                        |
+##   |----------|--------------------------------------------------------------|
+##   | 4        | Magic `RGAS`, to catch a wrong file at a glance.              |
+##   | 1        | Format version.                                              |
+##   | 1        | Basis count (terms per multivector); must match this build's |
+##   |          |   own count, or the file was saved under a different PGA     |
+##   |          |   dimension or metric and cannot be read here.               |
+##   | 4        | Item count, native `uint32`.                                 |
+##   | per item | Ink (1), visibility (1), label length (1) then that many     |
+##   |          |   bytes, then one `float` per basis term, native layout.     |
+##   |----------|--------------------------------------------------------------|
+##
+## Only live items are written, in slot order, never a dead or free slot; slot numbers
+## themselves are not preserved, since they mean nothing once reloaded into a scene
+## that assigns its own free-list order. `born` is not written either: it is a clock
+## reading meaningless across runs (see `Item.born`'s own doc comment), so a freshly
+## loaded item is born at the dawn of time like any other freshly constructed one,
+## never partway through an appear-in animation that never happened this run. A label
+## is written as exactly as many bytes as it holds rather than padded to `LABEL_MAX`,
+## so the format costs nothing for the padding no reader ever wants back and does not
+## depend on the `LABEL_MAX` the writing build happened to use.
+
+const
+  MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
+  VERSION_SCENE = 1'u8
+
+
+proc saveScene*(scene: Scene; path: string): string =
+  ## Write every live item to `path`, in the format documented above; report outcome.
+  if len(path) == 0: return "Save path is empty; nothing written."
+  let file = open(path, fmWrite)
+  defer: file.close
+
+  discard file.writeChars(MAGIC_SCENE, 0, 4)
+  file.write(char(VERSION_SCENE))
+  file.write(char(ord(Basis.high) + 1))
+  let count = uint32(scene.len)
+  discard file.writeBuffer(unsafeAddr count, 4)
+
+  for item in scene:
+    file.write(char(ord(item.ink)))
+    file.write(char(ord(item.is_visible)))
+    let
+      text = $toCstring(item.label)
+      geometry = item.geometry
+    file.write(char(len(text)))
+    discard file.writeChars(text, 0, len(text))
+    for b in Basis:
+      let coefficient = geometry[b]
+      discard file.writeBuffer(unsafeAddr coefficient, 8)
+
+  &"Saved {scene.len} object(s) to `{path}`."
+
+
+proc loadScene*(scene: var Scene; path: string): string =
+  ## Replace scene's contents with what `path` holds; report outcome for display.
+  ##   Parses into a scene of its own and only replaces the caller's on complete
+  ##   success, so a bad path or a corrupt or foreign file leaves whatever scene
+  ##   already held untouched rather than half-overwritten by however far parsing
+  ##   got before failing.
+  if len(path) == 0: return "Load path is empty; nothing read."
+  if not fileExists(path): return &"No such file `{path}`."
+
+  let file = open(path, fmRead)
+  defer: file.close
+
+  var magic: array[4, char]
+  if file.readChars(magic) != 4 or magic != MAGIC_SCENE:
+    return &"`{path}` is not a scene file."
+
+  var version: array[1, char]
+  if file.readChars(version) != 1 or uint8(version[0]) != VERSION_SCENE:
+    return &"`{path}` is a scene file of a version this build cannot read."
+
+  let basis_count_here = ord(Basis.high) + 1
+  var basis_count: array[1, char]
+  if file.readChars(basis_count) != 1 or int(uint8(basis_count[0])) != basis_count_here:
+    return &"`{path}` was saved under a different PGA dimension or metric; " &
+      &"this build reads {basis_count_here}-term multivectors."
+
+  var count: uint32
+  if file.readBuffer(addr count, 4) != 4:
+    return &"`{path}` is truncated; no item count."
+  if int(count) > ITEMS_MAX:
+    return &"`{path}` holds {count} objects, more than this build's {ITEMS_MAX}-item " &
+      "capacity; raise `--define:visualiser.items_max`."
+
+  var staging = initScene()
+  for index in 0 ..< int(count):
+    var ink_byte, visible_byte, length_byte: array[1, char]
+    if file.readChars(ink_byte) != 1 or file.readChars(visible_byte) != 1 or
+        file.readChars(length_byte) != 1:
+      return &"`{path}` is truncated partway through object {index}."
+    if int(uint8(ink_byte[0])) notin ord(Ink.low) .. ord(Ink.high):
+      return &"`{path}` names an unknown palette slot for object {index}."
+
+    let
+      ink = Ink(uint8(ink_byte[0]))
+      is_visible = uint8(visible_byte[0]) != 0
+      length = int(uint8(length_byte[0]))
+    var label = newString(length)
+    if length > 0 and file.readChars(label) != length:
+      return &"`{path}` is truncated partway through object {index}'s label."
+
+    var geometry: Multivector
+    for b in Basis:
+      var coefficient: float
+      if file.readBuffer(addr coefficient, 8) != 8:
+        return &"`{path}` is truncated partway through object {index}'s geometry."
+      geometry[b] = coefficient
+
+    let slot = staging.addItem(geometry, label, ink)
+    staging.isVisibleAt(slot) = is_visible
+
+  scene = staging
+  &"Loaded {count} object(s) from `{path}`."
 
 
 func inkCycled*(index: int): Ink =

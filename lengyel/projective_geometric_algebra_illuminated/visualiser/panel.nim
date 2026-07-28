@@ -5,15 +5,15 @@
 ##   Everything else is read straight off scene and camera, so there is one source of truth
 ##   and no synchronisation step.
 ##
-##   |-------------|--------------------------------------------------------------------|
-##   | Panel       | Offers                                                             |
-##   |-------------|--------------------------------------------------------------------|
-##   | View        | Orbit, target, lens, world furniture, PNG export.                   |
-##   | Construct   | Add point at a position; apply any library operation to operands.   |
-##   | Objects     | Show, hide, rename, recolour, remove; edit any coefficient.         |
-##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,     |
-##   |             | and everything else this binary reserves for itself, added up.     |
-##   |-------------|--------------------------------------------------------------------|
+##   |-------------|-------------------------------------------------------------------------|
+##   | Panel       | Offers                                                                  |
+##   |-------------|-------------------------------------------------------------------------|
+##   | View        | Orbit, target, lens, world furniture, PNG export.                       |
+##   | Construct   | Add point at a position; apply any library operation to operands.       |
+##   | Objects     | Save, load, show, hide, rename, recolour, remove; edit any coefficient. |
+##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,         |
+##   |             | and everything else this binary reserves for itself, added up.          |
+##   |-------------|-------------------------------------------------------------------------|
 ##
 ## Every panel above is a collapsing header, so a first-time reader can open one at a
 ## time rather than face all four at once; View, Construct and Objects open by default
@@ -76,6 +76,7 @@ type
     microseconds_tessellate*: float ## Cost of rebuilding vertex storage, last frame.
     count_vertices*: int ## Vertices assembled, last frame.
     path_export*: array[PATH_MAX, char] ## Where exported frame is written.
+    path_scene*: array[PATH_MAX, char] ## Where scene is saved to and loaded from.
     message*: array[MESSAGE_MAX, char] ## Outcome of last action taken.
     milliseconds_history*: array[FRAMES_HISTORY, cfloat] ## Ring buffer of recent frame
       ## times, oldest to newest by `index_history`; owned here rather than in a module
@@ -96,6 +97,7 @@ func initWorkbench*(path_export: string): Workbench =
   result.is_axes_shown = true
   result.is_vsync_enabled = true
   toChars(path_export, result.path_export)
+  toChars("scene.rgascene", result.path_scene)
   toChars("Ready.", result.message)
 
 
@@ -159,7 +161,7 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   gui.separator()
 
 
-proc layoutObjects*(scene: var Scene) =
+proc layoutObjects*(workbench: var Workbench; scene: var Scene) =
   ## Lay out every live item's controls, applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
   var header: array[32, char]
@@ -170,6 +172,17 @@ proc layoutObjects*(scene: var Scene) =
     appendInt(header, cursor, ITEMS_MAX)
     appendChars(header, cursor, ")")
   if not gui.header(label, is_open_first = true): return
+
+  gui.widthPush(300.0)
+  discard gui.inputText("path", toCstring(workbench.path_scene), cint(PATH_MAX))
+  gui.tooltip("File `save scene` writes to and `load scene` reads from.")
+  gui.widthPop()
+  if gui.button("save scene"):
+    toChars(saveScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+  gui.sameLine()
+  if gui.button("load scene"):
+    toChars(loadScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+  gui.separator()
 
   if scene.len == 0:
     gui.text("Nothing here yet -- add a point below, or drag between two once you have a few.")
@@ -499,6 +512,6 @@ proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Ca
     gui.separator()
     layoutView(workbench, camera)
     layoutConstruct(workbench, scene, now)
-    layoutObjects(scene)
+    layoutObjects(workbench, scene)
     layoutDiagnostics(workbench, scene)
   gui.windowEnd()

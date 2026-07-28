@@ -173,6 +173,7 @@ var TIMINGS_FRAME_MILLISECONDS: array[FRAMES_TIMING_MAX, float32]
 type Options = object ## Hold what command line asked of this run.
   path_screenshot: string ## Where one-shot export is written; empty for none.
   path_storyboard: string ## Directory scripted construction is written to; empty for none.
+  path_load_scene: string ## Scene file to open instead of the built-in demo; empty for none.
   count_frames: int ## Frames to draw before quitting; 0 to run until closed.
   is_hidden: bool ## Whether window is left unmapped.
   is_timed: bool ## Whether to record and report per-frame timing statistics.
@@ -189,6 +190,7 @@ proc parseOptions(): Options =
       case key
       of "screenshot": result.path_screenshot = value
       of "storyboard": result.path_storyboard = value
+      of "load-scene": result.path_load_scene = value
       of "frames": result.count_frames = parseInt(value)
       of "hidden": result.is_hidden = true
       of "timings": result.is_timed = true
@@ -196,8 +198,8 @@ proc parseOptions(): Options =
       of "fill": result.is_filled = true
       else:
         doAssert false,
-          &"Unknown option `--{key}`; expected screenshot, storyboard, frames, hidden, " &
-          "timings, novsync or fill."
+          &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
+          "frames, hidden, timings, novsync or fill."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -670,11 +672,15 @@ proc main() =
     )
   workbench.is_vsync_enabled = not options.is_novsync
 
-  # Open on storyboard's own seeds and first steps, so window and script agree on scene.
+  # Open on storyboard's own seeds and first steps, so window and script agree on scene,
+  #   unless a saved scene was asked for instead, which replaces the demo entirely.
   let now_startup = secondsNow()
-  constructSeeds(scene, now_startup)
-  for step in STEPS[0 .. 3]:
-    applyStep(scene, step, now_startup)
+  if len(options.path_load_scene) > 0:
+    echo loadScene(scene, options.path_load_scene)
+  else:
+    constructSeeds(scene, now_startup)
+    for step in STEPS[0 .. 3]:
+      applyStep(scene, step, now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
 
   if len(options.path_storyboard) > 0:

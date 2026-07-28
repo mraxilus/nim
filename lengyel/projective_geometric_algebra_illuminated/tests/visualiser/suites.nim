@@ -477,6 +477,102 @@ suite "Scene":
     check describeShapeString(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
 
 
+  test "save then load reproduces every live item, compacting freed slots":
+    var original = initScene()
+    discard original.addItem(POINTS[0], "a", Ink.Amber)
+    discard original.addItem(POINTS[1], "bb", Ink.Cyan)
+    let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Lime)
+    original.removeItem(slot_doomed) # leaves a hole a fresh load must not reproduce
+    let slot_last = original.addItem(POINTS[3], "d", Ink.Violet)
+    original.isVisibleAt(slot_last) = false
+
+    let path = getTempDir() / "visualiser_suite_scene.rgascene"
+    check saveScene(original, path).contains("Saved 3")
+    defer: removeFile(path)
+
+    var loaded = initScene()
+    discard loaded.addItem(POINTS[9], "stale", Ink.Teal) # load must replace, not merge
+    check loadScene(loaded, path).contains("Loaded 3")
+    check loaded.len == 3
+
+    # Freed slot 2 is compacted away: loaded items land at slots 0, 1, 2 in save order.
+    check loaded[0].geometry =~ POINTS[0]
+    check $toCstring(loaded[0].label) == "a"
+    check loaded[0].ink == Ink.Amber
+    check loaded[0].is_visible
+    check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
+
+    check loaded[1].geometry =~ POINTS[1]
+    check $toCstring(loaded[1].label) == "bb"
+    check loaded[1].ink == Ink.Cyan
+    check loaded[1].is_visible
+
+    check loaded[2].geometry =~ POINTS[3]
+    check $toCstring(loaded[2].label) == "d"
+    check loaded[2].ink == Ink.Violet
+    check not loaded[2].is_visible
+
+
+  test "empty scene round-trips":
+    let original = initScene()
+    let path = getTempDir() / "visualiser_suite_scene_empty.rgascene"
+    check saveScene(original, path).contains("Saved 0")
+    defer: removeFile(path)
+
+    var loaded = initScene()
+    discard loaded.addItem(POINTS[0], "will be cleared", Ink.Amber)
+    check loadScene(loaded, path).contains("Loaded 0")
+    check loaded.len == 0
+
+
+  test "loading a foreign file leaves scene untouched and reports why":
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    let path = getTempDir() / "visualiser_suite_scene_bogus.rgascene"
+    writeFile(path, "not a scene file at all")
+    defer: removeFile(path)
+
+    check loadScene(scene, path).contains("not a scene file")
+    check scene.len == 1
+    check $toCstring(scene[0].label) == "keep"
+
+
+  test "loading a file saved under a different PGA dimension is rejected":
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    let path = getTempDir() / "visualiser_suite_scene_wrongbasis.rgascene"
+    writeFile(path, "RGAS" & char(1) & char(99)) # no build here carries 99 basis terms
+    defer: removeFile(path)
+
+    check loadScene(scene, path).contains("different PGA dimension")
+    check scene.len == 1
+
+
+  test "loading a missing path reports cleanly and leaves scene untouched":
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    let path = getTempDir() / "visualiser_suite_scene_does_not_exist.rgascene"
+
+    check loadScene(scene, path).contains("No such file")
+    check scene.len == 1
+
+
+  test "loading a file naming more items than this build's capacity is rejected":
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+
+    var
+      count = uint32(ITEMS_MAX + 1)
+      count_bytes = newString(4)
+    copyMem(addr count_bytes[0], addr count, 4)
+    let path = getTempDir() / "visualiser_suite_scene_toobig.rgascene"
+    writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1) & count_bytes)
+    defer: removeFile(path)
+
+    check loadScene(scene, path).contains("more than")
+    check scene.len == 1
+
+
 
 suite "Image":
   var buffer_arena: array[1024*1024, byte]
