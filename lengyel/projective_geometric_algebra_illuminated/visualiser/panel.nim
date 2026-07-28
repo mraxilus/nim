@@ -124,7 +124,7 @@ proc layoutObjects*(scene: var Scene) =
 
 #[ Construct Panel ]#
 
-proc layoutPointNew(workbench: var Workbench; scene: var Scene) =
+proc layoutPointNew(workbench: var Workbench; scene: var Scene; now: float) =
   ## Lay out controls that add fresh point at a position.
   gui.separatorText("add point")
   gui.widthPush(260.0)
@@ -137,13 +137,13 @@ proc layoutPointNew(workbench: var Workbench; scene: var Scene) =
       y: float(workbench.place_new[1]),
       z: float(workbench.place_new[2]),
     )
-    scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len))
+    scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len), now)
     toChars(&"Added point at ({place.x:.2f}, {place.y:.2f}, {place.z:.2f}).",
       workbench.message)
   gui.disabledPop()
 
 
-proc layoutOperation(workbench: var Workbench; scene: var Scene) =
+proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
   gui.separatorText("apply operation")
   if scene.len == 0:
@@ -187,15 +187,17 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene) =
       label =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"
-    scene.addItem(derived, label, inkCycled(scene.len))
+    scene.addItem(derived, label, inkCycled(scene.len), now)
     toChars(&"{$operation} gave {describeShape(derived)}.", workbench.message)
   gui.disabledPop()
 
 
-proc layoutConstruct*(workbench: var Workbench; scene: var Scene) =
+proc layoutConstruct*(workbench: var Workbench; scene: var Scene; now: float) =
   ## Lay out both ways of growing scene, then report outcome of last action.
-  layoutPointNew(workbench, scene)
-  layoutOperation(workbench, scene)
+  ##   `now` is only ever forwarded to a freshly added item's `born` reading; nothing
+  ##   here reads a clock itself.
+  layoutPointNew(workbench, scene, now)
+  layoutOperation(workbench, scene, now)
   gui.separator()
   gui.text(toCstring(workbench.message))
 
@@ -255,14 +257,16 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
 
 #[ Whole Workbench ]#
 
-proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Camera) =
+proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Camera; now: float) =
   ## Lay out every panel inside one window.
+  ##   `now` is this frame's own clock reading, passed through to whichever construct
+  ##   control adds an item this frame, so it animates in from the moment it appears.
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA workbench"):
     gui.text("Drag object to object: left joins, right meets, middle projects.")
     gui.text("Drag empty space: left orbits, right pans, wheel dollies.")
     gui.separator()
     layoutView(workbench, camera)
-    layoutConstruct(workbench, scene)
+    layoutConstruct(workbench, scene, now)
     layoutObjects(scene)
   gui.windowEnd()

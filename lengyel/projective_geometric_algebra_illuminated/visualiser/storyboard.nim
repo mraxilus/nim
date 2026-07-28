@@ -58,8 +58,10 @@ const STEPS*: array[8, Step] = [
 ] ## Build a line from two points, a plane from that line, then meet, measure and project.
 
 
-proc constructSeeds*(scene: var Scene) =
+proc constructSeeds*(scene: var Scene; now: float = 0.0) =
   ## Place the three points and the ground plane every later step is derived from.
+  ##   `now` is forwarded to `addItem` untouched, so seeds animate in exactly as any
+  ##   other item does where a caller passes a real clock reading.
   let
     point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 0.5))
     point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 3.5))
@@ -69,13 +71,13 @@ proc constructSeeds*(scene: var Scene) =
       toMultivector(Position(x: 1, y: 0, z: 0)) ∧
       toMultivector(Position(x: 0, y: 1, z: 0))
     )
-  scene.addItem(point_a, "a", Ink.Amber)
-  scene.addItem(point_b, "b", Ink.Amber)
-  scene.addItem(point_c, "c", Ink.Amber)
-  scene.addItem(ground, "ground", Ink.Lime)
+  scene.addItem(point_a, "a", Ink.Amber, now)
+  scene.addItem(point_b, "b", Ink.Amber, now)
+  scene.addItem(point_c, "c", Ink.Amber, now)
+  scene.addItem(ground, "ground", Ink.Lime, now)
 
 
-proc applyStep*(scene: var Scene; step: Step): Multivector {.discardable.} =
+proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =
   ## Apply one step, appending its result exactly as the GUI's apply button would.
   ##   Reports the derived geometry directly, since a caller wanting to name what this
   ##   step produced can no longer assume it landed in the last slot of a dense array.
@@ -83,4 +85,4 @@ proc applyStep*(scene: var Scene; step: Step): Multivector {.discardable.} =
     "Storyboard step names an operand the scene has not built yet."
   result = applyOperation(step.operation, scene[step.index_first].geometry,
     scene[step.index_second].geometry)
-  scene.addItem(result, step.label, step.ink)
+  scene.addItem(result, step.label, step.ink, now)

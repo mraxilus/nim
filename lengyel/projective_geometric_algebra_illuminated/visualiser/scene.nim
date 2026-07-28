@@ -61,6 +61,9 @@ type
     label*: Label ## Display text; drawn verbatim, never inspected.
     ink*: Ink ## Palette slot object is drawn with.
     is_visible*: bool ## Whether object is tessellated this frame.
+    born*: float ## Clock reading `addItem` was given when this item appeared.
+      ##   Meaningless in isolation; a caller animating appearance reads only its own
+      ##   `now - born`, so scene never needs to know what clock or its units are.
 
   Scene* = object ## Hold fixed-capacity arena of items, addressed by stable slot.
     geometries: array[ITEMS_MAX, Multivector]
@@ -68,6 +71,7 @@ type
     inks: array[ITEMS_MAX, Ink]
     are_visible: array[ITEMS_MAX, bool]
     are_alive: array[ITEMS_MAX, bool]
+    borns: array[ITEMS_MAX, float]
     next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
     slot_free_first: Option[int] ## Head of free list; none where scene is full.
     count_live: int
@@ -276,6 +280,7 @@ func `[]`*(scene: Scene; slot: int): Item =
     label: scene.labels[slot],
     ink: scene.inks[slot],
     is_visible: scene.are_visible[slot],
+    born: scene.borns[slot],
   )
 
 
@@ -316,10 +321,13 @@ iterator pairs*(scene: Scene): (int, Item) =
 
 
 proc addItem*(
-  scene: var Scene; geometry: Multivector; label: string; ink: Ink
+  scene: var Scene; geometry: Multivector; label: string; ink: Ink; now: float = 0.0
 ): int {.discardable.} =
   ## Insert object into scene at its first free slot, visible; report slot used.
   ##   Silently refuses nothing: caller must check `isFull` first, as scene cannot grow.
+  ##   `now` is stamped as the item's `born` reading and otherwise never inspected here;
+  ##   a caller indifferent to appear-in animation may leave it at its default, which
+  ##   reads as "born at the dawn of time" and so never animates.
   doAssert not scene.isFull,
     &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
   result = scene.slot_free_first.get
@@ -329,6 +337,7 @@ proc addItem*(
   scene.inks[result] = ink
   scene.are_visible[result] = true
   scene.are_alive[result] = true
+  scene.borns[result] = now
   inc scene.count_live
 
 

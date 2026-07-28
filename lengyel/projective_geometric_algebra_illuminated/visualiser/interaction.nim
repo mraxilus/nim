@@ -88,9 +88,11 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.operation = none(DragOperation)
 
 
-proc endDrag*(interaction: var Interaction; scene: var Scene): string =
+proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0): string =
   ## Apply drag's operation between source and hovered item, if both still make sense.
   ##   Always clears drag state; message names outcome, even where nothing was done.
+  ##   `now` is forwarded to the derived item's `addItem` untouched, so it animates in
+  ##   exactly as one added through the panel does.
   defer: interaction.operation = none(DragOperation)
   if interaction.operation.isNone: return ""
   let drag = interaction.operation.get
@@ -109,6 +111,6 @@ proc endDrag*(interaction: var Interaction; scene: var Scene): string =
       scene[index_destination].geometry,
     )
   scene.addItem(
-    derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len)
+    derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now
   )
   &"{label_source} {drag.notation} {label_destination} gave {describeShape(derived)}."

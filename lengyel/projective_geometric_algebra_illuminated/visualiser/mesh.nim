@@ -34,10 +34,18 @@ import ./objects
 const
   EXTENT_WORLD* {.define: "visualiser.extent_world".} = 8
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 16384
+  ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
+    ## Set how long a freshly added object takes to grow and fade fully into view.
+    ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
 
 static:
   doAssert EXTENT_WORLD > 0, &"Drawn extent must be positive; got `{EXTENT_WORLD}`."
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
+  doAssert ANIMATION_MILLISECONDS > 0,
+    &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
+
+const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
+  ## Convert configured duration to the seconds `animationProgress` works in.
 
 const
   CELLS_PLANE* = 8
@@ -57,7 +65,9 @@ type
   Ink* {.pure.} = enum ## Name palette slot, so every colour in output lives in one table.
     ## Structural slots, spent on furniture of drawing itself.
     Backdrop, ## Colour framebuffer is cleared to.
-    Axis, ## World axes through origin.
+    AxisX, ## World x axis through origin; standard convention is red.
+    AxisY, ## World y axis through origin; standard convention is green.
+    AxisZ, ## World z axis through origin; standard convention is blue.
     Grid, ## World reference grid on ground.
     Guide, ## Construction helper, e.g. plane normal.
     ## Categorical slots, spent by caller on telling one object from another.
@@ -87,7 +97,9 @@ type
 
 const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Backdrop: Rgba(red: 0.063, green: 0.075, blue: 0.102, alpha: 1.0),
-  Ink.Axis: Rgba(red: 0.404, green: 0.443, blue: 0.514, alpha: 1.0),
+  Ink.AxisX: Rgba(red: 0.851, green: 0.239, blue: 0.239, alpha: 1.0),
+  Ink.AxisY: Rgba(red: 0.298, green: 0.780, blue: 0.298, alpha: 1.0),
+  Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Amber: Rgba(red: 1.000, green: 0.706, blue: 0.329, alpha: 1.0),
@@ -119,6 +131,22 @@ func colour*(ink: Ink): Rgba = lut_ink_to_rgba[ink]
 func fade*(base: Rgba; alpha: float32): Rgba =
   ## Rewrite colour's opacity, leaving its hue alone.
   Rgba(red: base.red, green: base.green, blue: base.blue, alpha: alpha)
+
+
+
+#[ Appear Animation ]#
+
+func easeOutCubic(t: float): float =
+  ## Ease progress toward 1, quickly at first then settling, for a materialising feel.
+  let u = 1.0 - clamp(t, 0.0, 1.0)
+  1.0 - u*u*u
+
+
+func animationProgress*(now, born: float): float =
+  ## Report how much of its appear animation an item born at `born` has completed by `now`.
+  ##   Clamped and eased, so a caller may pass any `now - born` -- however large, negative,
+  ##   or mid-flight -- and always get a value straight back to scale or fade geometry by.
+  easeOutCubic((now - born) / ANIMATION_SECONDS)
 
 
 
@@ -172,23 +200,28 @@ proc addArrow*(
 #[ World Furniture ]#
 
 proc addAxes*(meshes: var MeshSet) =
-  ## Append world axes through origin, so scene has frame to be read against.
+  ## Append world axes through origin, each in the standard convention: x red, y green,
+  ## z blue, so orientation reads at a glance regardless of where the camera stands.
   const AXES_WORLD = [
-    Direction(x: 1, y: 0, z: 0),
-    Direction(x: 0, y: 1, z: 0),
-    Direction(x: 0, y: 0, z: 1),
+    (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
+    (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
+    (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
   const EXTENT = float(EXTENT_WORLD)
-  for axis in AXES_WORLD:
-    meshes.addSegment(ORIGIN_WORLD - EXTENT*axis, ORIGIN_WORLD + EXTENT*axis, Ink.Axis.colour)
+  for (axis, ink) in AXES_WORLD:
+    meshes.addSegment(ORIGIN_WORLD - EXTENT*axis, ORIGIN_WORLD + EXTENT*axis, ink.colour)
 
 
 proc addGrid*(meshes: var MeshSet) =
   ## Append reference grid on ground, so distance and direction stay judgeable.
+  ##   Skips the two lines through the origin itself: those coincide exactly with the
+  ##   x and y world axes, and would either fight them for the same depth or hide their
+  ##   colour under plain grid grey, depending on which happened to draw last.
   const
     EXTENT = float(EXTENT_WORLD)
     TINT = Ink.Grid.colour
   for i in -CELLS_PLANE .. CELLS_PLANE:
+    if i == 0: continue
     let offset = EXTENT*float(i)/float(CELLS_PLANE)
     meshes.addSegment(
       Position(x: offset, y: -EXTENT, z: 0), Position(x: offset, y: EXTENT, z: 0), TINT
@@ -201,74 +234,93 @@ proc addGrid*(meshes: var MeshSet) =
 
 #[ Object Tessellation ]#
 
-proc addPoint(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement =
+proc addPoint(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
   ## Append grade-1 object as marker, or as arrow from origin where it lies at horizon.
+  ##   `progress` fades a marker in and, for the arrow, also grows its length -- a point
+  ##   sprite has no length of its own to grow, so its own appearance is fade alone.
   let place = position(geometry)
   if place.isSome:
-    meshes.addMarker(place.get, tint)
+    meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
     return Placement.Finite
 
   let heading = directionHorizon(geometry)
   if heading.isNone: return Placement.Empty
-  meshes.addArrow(ORIGIN_WORLD, heading.get, 0.5*float(EXTENT_WORLD), tint)
+  meshes.addArrow(
+    ORIGIN_WORLD, heading.get, progress*0.5*float(EXTENT_WORLD), tint.fade(tint.alpha*progress)
+  )
   Placement.Horizon
 
 
-proc addLine(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement =
+proc addLine(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
   ## Append grade-2 object as segment about its support point, along its attitude.
+  ##   `progress` grows the segment symmetrically out from its support point, and fades
+  ##   it in alongside, so a freshly derived line visibly extends rather than popping in.
   let
     anchor = positionAnchor(geometry)
     axis = direction(geometry)
   if anchor.isNone or axis.isNone: return Placement.Horizon
-  const EXTENT = float(EXTENT_WORLD)
-  meshes.addSegment(anchor.get - EXTENT*axis.get, anchor.get + EXTENT*axis.get, tint)
-  meshes.addMarker(anchor.get, tint)
+  let
+    extent = progress*float(EXTENT_WORLD)
+    tint_progress = tint.fade(tint.alpha*progress)
+  meshes.addSegment(anchor.get - extent*axis.get, anchor.get + extent*axis.get, tint_progress)
+  meshes.addMarker(anchor.get, tint_progress)
   Placement.Finite
 
 
-proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement =
+proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
   ## Append grade-3 object as translucent quad ruled by grid, about its support point.
+  ##   `progress` grows the quad, grid and normal arrow out from the support point exactly
+  ##   as `addLine` grows a segment, and fades every part of it in alongside.
   let
     anchor = positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isNone or axes.isNone: return Placement.Horizon
-  const EXTENT = float(EXTENT_WORLD)
-  let (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
+  let
+    extent = progress*float(EXTENT_WORLD)
+    (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
+    tint_progress = tint.fade(tint.alpha*progress)
 
   # Wash quad first, so plane reads as surface rather than as loose bundle of lines.
   meshes.addQuad([
-    anchor.get + EXTENT*axis_first + EXTENT*axis_second,
-    anchor.get - EXTENT*axis_first + EXTENT*axis_second,
-    anchor.get - EXTENT*axis_first - EXTENT*axis_second,
-    anchor.get + EXTENT*axis_first - EXTENT*axis_second,
-  ], tint.fade(ALPHA_WASH))
+    anchor.get + extent*axis_first + extent*axis_second,
+    anchor.get - extent*axis_first + extent*axis_second,
+    anchor.get - extent*axis_first - extent*axis_second,
+    anchor.get + extent*axis_first - extent*axis_second,
+  ], tint.fade(ALPHA_WASH*progress))
 
   # Rule grid both ways, so plane's orientation stays legible under perspective.
-  let tint_grid = tint.fade(ALPHA_GRID)
+  let tint_grid = tint.fade(ALPHA_GRID*progress)
   for i in -CELLS_PLANE .. CELLS_PLANE:
     let
-      offset = EXTENT*float(i)/float(CELLS_PLANE)
+      offset = extent*float(i)/float(CELLS_PLANE)
       start_first = anchor.get + offset*axis_second
       start_second = anchor.get + offset*axis_first
     meshes.addSegment(
-      start_first - EXTENT*axis_first, start_first + EXTENT*axis_first, tint_grid
+      start_first - extent*axis_first, start_first + extent*axis_first, tint_grid
     )
     meshes.addSegment(
-      start_second - EXTENT*axis_second, start_second + EXTENT*axis_second, tint_grid
+      start_second - extent*axis_second, start_second + extent*axis_second, tint_grid
     )
 
   # Show normal, as it is what tells plane apart from its own reflection.
-  meshes.addArrow(anchor.get, axes.get.normal, 0.25*EXTENT, Ink.Guide.colour)
-  meshes.addMarker(anchor.get, tint)
+  meshes.addArrow(
+    anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(progress)
+  )
+  meshes.addMarker(anchor.get, tint_progress)
   Placement.Finite
 
 
-proc addObject*(meshes: var MeshSet; geometry: Multivector; tint: Rgba): Placement =
+proc addObject*(
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float = 1.0
+): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
+  ##   `progress` is how much of its appear animation the object has completed, from
+  ##   `mesh.animationProgress`; defaults to fully appeared, for a caller with nothing
+  ##   to animate against.
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
-  of Shape.Point: meshes.addPoint(geometry, tint)
-  of Shape.Line: meshes.addLine(geometry, tint)
-  of Shape.Plane: meshes.addPlane(geometry, tint)
+  of Shape.Point: meshes.addPoint(geometry, tint, progress)
+  of Shape.Line: meshes.addLine(geometry, tint, progress)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress)
