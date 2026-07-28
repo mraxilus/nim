@@ -48,14 +48,27 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to the seconds `animationProgress` works in.
 
 const
-  CELLS_PLANE* = 8
+  CELLS_PLANE* = 4
     ## Set grid line count either side of support point, when tessellating plane.
+    ##   Halved from an earlier 8: a plane's own ruled grid is what a second or third
+    ##   overlapping plane turns into visual noise fastest, since every one of them
+    ##   draws its own full set of lines across the same shared space. Four still reads
+    ##   as a grid and still conveys tilt under perspective; eight, doubled or tripled
+    ##   by nearby planes, reads as a thicket.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
-  ALPHA_WASH* = 0.13'f32
+  ALPHA_WASH* = 0.10'f32
     ## Set opacity of plane's translucent quad.
-  ALPHA_GRID* = 0.55'f32
-    ## Set opacity of plane's ruled grid.
+  ALPHA_GRID_BOUNDARY* = 0.65'f32
+    ## Set opacity of the grid lines running along a plane's own outer edge, crisp
+    ## enough that its extent reads at a glance regardless of how faint the rest is.
+  ALPHA_GRID_INTERIOR* = 0.22'f32
+    ## Set opacity of every grid line strictly inside a plane's own boundary: present
+    ## enough to still read as a ruled surface and carry perspective tilt, faint enough
+    ## that two or three overlapping planes don't drown each other in crossing lines.
+  ALPHA_GUIDE* = 0.75'f32
+    ## Set opacity of a plane's own normal arrow, shown a touch less boldly than its
+    ## boundary so it reads as a construction aid, not as another competing line.
 
 
 
@@ -73,7 +86,11 @@ type
     ## Categorical slots, spent by caller on telling one object from another.
     ##   Named by hue rather than by role, as caller alone knows what objects mean.
     ##   Grade is already legible from shape drawn, so colour is free to carry identity.
-    Amber, Coral, Cyan, Violet, Lime, Teal, Rose,
+    ##   Declared in this exact order, not just for cycling: consecutive names sit far
+    ##   apart on the colour wheel, so two objects added one after another -- the most
+    ##   likely pair to end up compared or drawn near each other -- read as different
+    ##   colours even under colour-vision deficiency, not just to typical vision.
+    Amber, Cyan, Rose, Lime, Violet, Coral, Teal,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
     Triangle, Line, Point
@@ -102,14 +119,18 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
-  Ink.Amber: Rgba(red: 1.000, green: 0.706, blue: 0.329, alpha: 1.0),
-  Ink.Coral: Rgba(red: 1.000, green: 0.435, blue: 0.380, alpha: 1.0),
-  Ink.Cyan: Rgba(red: 0.435, green: 0.765, blue: 0.875, alpha: 1.0),
-  Ink.Violet: Rgba(red: 0.780, green: 0.573, blue: 0.918, alpha: 1.0),
-  Ink.Lime: Rgba(red: 0.561, green: 0.737, blue: 0.353, alpha: 1.0),
-  Ink.Teal: Rgba(red: 0.247, green: 0.722, blue: 0.627, alpha: 1.0),
-  Ink.Rose: Rgba(red: 0.878, green: 0.424, blue: 0.624, alpha: 1.0),
-] ## Map palette slot to colour, chosen for contrast against backdrop and each other.
+  Ink.Amber: Rgba(red: 0.690, green: 0.510, blue: 0.145, alpha: 1.0),
+  Ink.Cyan: Rgba(red: 0.231, green: 0.518, blue: 0.808, alpha: 1.0),
+  Ink.Rose: Rgba(red: 0.824, green: 0.251, blue: 0.557, alpha: 1.0),
+  Ink.Lime: Rgba(red: 0.255, green: 0.639, blue: 0.157, alpha: 1.0),
+  Ink.Violet: Rgba(red: 0.510, green: 0.271, blue: 0.827, alpha: 1.0),
+  Ink.Coral: Rgba(red: 0.824, green: 0.329, blue: 0.251, alpha: 1.0),
+  Ink.Teal: Rgba(red: 0.129, green: 0.624, blue: 0.608, alpha: 1.0),
+] ## Map palette slot to colour: each hue picked at matched lightness and moderate,
+  ## consistent saturation (rather than the mix of near-neon and washed-out shades a
+  ## quick, unchecked choice tends to produce), and the whole set run through the
+  ## dataviz skill's own palette validator (adjacent CVD ΔE and normal-vision ΔE both
+  ## clear their floors against this backdrop) rather than picked by eye.
 
 
 const COUNT_INK* = ord(Ink.high) + 1
@@ -289,9 +310,15 @@ proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: 
   ], tint.fade(ALPHA_WASH*progress))
 
   # Rule grid both ways, so plane's orientation stays legible under perspective.
-  let tint_grid = tint.fade(ALPHA_GRID*progress)
+  #   Boundary drawn crisp so extent reads at a glance; interior left faint, so a
+  #   second or third overlapping plane adds a wash and an edge, not another thicket
+  #   of full-strength lines fighting the first plane's own for attention.
+  let
+    tint_boundary = tint.fade(ALPHA_GRID_BOUNDARY*progress)
+    tint_interior = tint.fade(ALPHA_GRID_INTERIOR*progress)
   for i in -CELLS_PLANE .. CELLS_PLANE:
     let
+      tint_grid = if abs(i) == CELLS_PLANE: tint_boundary else: tint_interior
       offset = extent*float(i)/float(CELLS_PLANE)
       start_first = anchor.get + offset*axis_second
       start_second = anchor.get + offset*axis_first
@@ -304,7 +331,7 @@ proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: 
 
   # Show normal, as it is what tells plane apart from its own reflection.
   meshes.addArrow(
-    anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(progress)
+    anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(ALPHA_GUIDE*progress)
   )
   meshes.addMarker(anchor.get, tint_progress)
   Placement.Finite

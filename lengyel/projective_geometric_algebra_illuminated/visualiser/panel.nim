@@ -132,17 +132,14 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   #   both lines every frame; a fresh heap string per item per frame is exactly the kind
   #   of allocator churn an arena-backed scene should not turn around and reintroduce.
   var line: array[WIDTH_ITEM_LINE, char]
-  var cursor = 0
-  appendChars(line, cursor, "  ")
-  formatMultivector(scene[slot].geometry, line, cursor)
-  finishChars(line, cursor)
-  gui.text(toCstring(line))
-
-  cursor = 0
-  appendChars(line, cursor, "  ")
-  describeShape(scene[slot].geometry, line, cursor)
-  finishChars(line, cursor)
-  gui.text(toCstring(line))
+  let coefficients = buildChars(line):
+    appendChars(line, cursor, "  ")
+    formatMultivector(scene[slot].geometry, line, cursor)
+  gui.text(coefficients)
+  let shape_word = buildChars(line):
+    appendChars(line, cursor, "  ")
+    describeShape(scene[slot].geometry, line, cursor)
+  gui.text(shape_word)
 
   if gui.header("edit", is_open_first = false):
     gui.widthPush(220.0)
@@ -165,14 +162,13 @@ proc layoutObjects*(scene: var Scene) =
   ## Lay out every live item's controls, applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
   var header: array[32, char]
-  var cursor_header = 0
-  appendChars(header, cursor_header, "objects (")
-  appendInt(header, cursor_header, scene.len)
-  appendChars(header, cursor_header, " of ")
-  appendInt(header, cursor_header, ITEMS_MAX)
-  appendChars(header, cursor_header, ")")
-  finishChars(header, cursor_header)
-  if not gui.header(toCstring(header), is_open_first = true): return
+  let label = buildChars(header):
+    appendChars(header, cursor, "objects (")
+    appendInt(header, cursor, scene.len)
+    appendChars(header, cursor, " of ")
+    appendInt(header, cursor, ITEMS_MAX)
+    appendChars(header, cursor, ")")
+  if not gui.header(label, is_open_first = true): return
 
   if scene.len == 0:
     gui.text("Nothing here yet -- add a point below, or drag between two once you have a few.")
@@ -346,13 +342,12 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
   for value in workbench.milliseconds_history:
     if value > highest: highest = value
   var overlay: array[WIDTH_OVERLAY_TEXT, char]
-  var cursor = 0
-  appendFixed(overlay, cursor, 1000.0/max(float(gui.framerate()), 1.0), 2)
-  appendChars(overlay, cursor, " ms now")
-  finishChars(overlay, cursor)
+  let text_now = buildChars(overlay):
+    appendFixed(overlay, cursor, 1000.0/max(float(gui.framerate()), 1.0), 2)
+    appendChars(overlay, cursor, " ms now")
   gui.plotLines(
     "##frame_time", addr workbench.milliseconds_history[0], cint(FRAMES_HISTORY),
-    cint(workbench.index_history), toCstring(overlay), 0.0, highest, 0.0, 60.0,
+    cint(workbench.index_history), text_now, 0.0, highest, 0.0, 60.0,
   )
   gui.tooltip(
     "Milliseconds per drawn frame, oldest at the left and most recent at the right. " &
@@ -365,22 +360,19 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     "refresh rate; the reading below settles over about a second after any change."
   )
   var line: array[WIDTH_ITEM_LINE, char]
-  cursor = 0
-  appendInt(line, cursor, int(gui.framerate()))
-  appendChars(line, cursor, " fps, ")
-  appendFixed(line, cursor, 1000.0/max(gui.framerate(), 1.0), 2)
-  appendChars(line, cursor, " ms/frame")
-  finishChars(line, cursor)
-  gui.text(toCstring(line))
-
-  cursor = 0
-  appendChars(line, cursor, "tessellate ")
-  appendFixed(line, cursor, workbench.microseconds_tessellate, 1)
-  appendChars(line, cursor, " us into ")
-  appendInt(line, cursor, workbench.count_vertices)
-  appendChars(line, cursor, " vertices")
-  finishChars(line, cursor)
-  gui.text(toCstring(line))
+  let text_rate = buildChars(line):
+    appendInt(line, cursor, int(gui.framerate()))
+    appendChars(line, cursor, " fps, ")
+    appendFixed(line, cursor, 1000.0/max(gui.framerate(), 1.0), 2)
+    appendChars(line, cursor, " ms/frame")
+  gui.text(text_rate)
+  let text_tessellate = buildChars(line):
+    appendChars(line, cursor, "tessellate ")
+    appendFixed(line, cursor, workbench.microseconds_tessellate, 1)
+    appendChars(line, cursor, " us into ")
+    appendInt(line, cursor, workbench.count_vertices)
+    appendChars(line, cursor, " vertices")
+  gui.text(text_tessellate)
 
   gui.separatorText("memory")
   block:
@@ -388,15 +380,14 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
       mb_used = float(workbench.bytes_arena_permanent_used) / (1024.0*1024.0)
       mb_capacity = float(workbench.bytes_arena_permanent_capacity) / (1024.0*1024.0)
     var text: array[WIDTH_OVERLAY_TEXT, char]
-    var c = 0
-    appendFixed(text, c, mb_used, 1)
-    appendChars(text, c, " / ")
-    appendFixed(text, c, mb_capacity, 0)
-    appendChars(text, c, " MB")
-    finishChars(text, c)
+    let overlay_text = buildChars(text):
+      appendFixed(text, cursor, mb_used, 1)
+      appendChars(text, cursor, " / ")
+      appendFixed(text, cursor, mb_capacity, 0)
+      appendChars(text, cursor, " MB")
     gui.text("permanent arena")
     gui.progressBar(
-      cfloat(mb_used / max(mb_capacity, 1.0)), toCstring(text), 380.0, 0.0,
+      cfloat(mb_used / max(mb_capacity, 1.0)), overlay_text, 380.0, 0.0,
       0.298, 0.482, 0.929, 0.15, 0.15, 0.18,
     )
     gui.tooltip(
@@ -410,19 +401,18 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
       kb_peak = float(workbench.bytes_arena_frame_peak) / 1024.0
       mb_capacity = float(workbench.bytes_arena_frame_capacity) / (1024.0*1024.0)
     var text: array[WIDTH_OVERLAY_TEXT, char]
-    var c = 0
-    appendChars(text, c, "peak ")
-    appendFixed(text, c, kb_peak, 0)
-    appendChars(text, c, " KB / ")
-    appendFixed(text, c, mb_capacity, 0)
-    appendChars(text, c, " MB")
-    finishChars(text, c)
+    let overlay_text = buildChars(text):
+      appendChars(text, cursor, "peak ")
+      appendFixed(text, cursor, kb_peak, 0)
+      appendChars(text, cursor, " KB / ")
+      appendFixed(text, cursor, mb_capacity, 0)
+      appendChars(text, cursor, " MB")
     gui.text("frame arena")
     let fraction =
       float(workbench.bytes_arena_frame_peak) /
       max(float(workbench.bytes_arena_frame_capacity), 1.0)
     gui.progressBar(
-      cfloat(fraction), toCstring(text), 380.0, 0.0, 0.561, 0.737, 0.353, 0.15, 0.15, 0.18,
+      cfloat(fraction), overlay_text, 380.0, 0.0, 0.561, 0.737, 0.353, 0.15, 0.15, 0.18,
     )
     gui.tooltip(
       "Reset after every PNG or GIF frame it backs, so it reads empty almost any time " &
@@ -439,27 +429,25 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     "it's free and will be handed to the next one you add, most recently freed first."
   )
   var summary: array[WIDTH_ITEM_LINE, char]
-  cursor = 0
-  appendInt(summary, cursor, scene.len)
-  appendChars(summary, cursor, " active, ")
-  appendInt(summary, cursor, ITEMS_MAX - scene.len)
-  appendChars(summary, cursor, " free")
-  finishChars(summary, cursor)
-  gui.text(toCstring(summary))
+  let text_summary = buildChars(summary):
+    appendInt(summary, cursor, scene.len)
+    appendChars(summary, cursor, " active, ")
+    appendInt(summary, cursor, ITEMS_MAX - scene.len)
+    appendChars(summary, cursor, " free")
+  gui.text(text_summary)
 
   const
     BYTES_SCENE = sizeof(Scene)
     BYTES_PER_SLOT = BYTES_SCENE div ITEMS_MAX
   var pool_memory: array[WIDTH_ITEM_LINE, char]
-  cursor = 0
-  appendFixed(pool_memory, cursor, float(BYTES_SCENE) / 1024.0, 1)
-  appendChars(pool_memory, cursor, " KB allocated, ")
-  appendFixed(pool_memory, cursor, float(scene.len * BYTES_PER_SLOT) / 1024.0, 1)
-  appendChars(pool_memory, cursor, " KB used, ")
-  appendInt(pool_memory, cursor, BYTES_PER_SLOT)
-  appendChars(pool_memory, cursor, " B/slot")
-  finishChars(pool_memory, cursor)
-  gui.text(toCstring(pool_memory))
+  let text_pool = buildChars(pool_memory):
+    appendFixed(pool_memory, cursor, float(BYTES_SCENE) / 1024.0, 1)
+    appendChars(pool_memory, cursor, " KB allocated, ")
+    appendFixed(pool_memory, cursor, float(scene.len * BYTES_PER_SLOT) / 1024.0, 1)
+    appendChars(pool_memory, cursor, " KB used, ")
+    appendInt(pool_memory, cursor, BYTES_PER_SLOT)
+    appendChars(pool_memory, cursor, " B/slot")
+  gui.text(text_pool)
   gui.tooltip(
     "Scene is one fixed block sized for all 64 slots up front, not allocated one " &
     "object at a time: `allocated` is that whole block, `used` is however many slots " &
@@ -469,11 +457,10 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
 
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
-  cursor = 0
-  appendFixed(total, cursor, float(workbench.bytes_memory_total) / (1024.0*1024.0), 1)
-  appendChars(total, cursor, " MB")
-  finishChars(total, cursor)
-  gui.text(toCstring(total))
+  let text_total = buildChars(total):
+    appendFixed(total, cursor, float(workbench.bytes_memory_total) / (1024.0*1024.0), 1)
+    appendChars(total, cursor, " MB")
+  gui.text(text_total)
   gui.tooltip(
     "Every fixed reservation this binary makes for itself, added up: both arenas at " &
     "their full capacity (committed whether or not they're ever filled), the object " &

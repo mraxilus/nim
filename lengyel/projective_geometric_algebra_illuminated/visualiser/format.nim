@@ -68,3 +68,18 @@ proc finishChars*(storage: var openArray[char]; cursor: int) =
   ## Zero every byte from `cursor` onward, so text a longer previous write left behind
   ## can never trail past whatever was written this time.
   for i in cursor ..< len(storage): storage[i] = '\0'
+
+
+
+#[ One-Line Assembly ]#
+
+template buildChars*(storage: var openArray[char]; body: untyped): cstring =
+  ## Zero a fresh `cursor`, run `body` -- a sequence of `append*` calls against
+  ## `storage` and that injected `cursor` -- then terminate and return a pointer
+  ## into `storage`, so building one line of text costs only the calls that vary
+  ## between call sites, not the `cursor`/`finishChars`/cast boilerplate around them.
+  block:
+    var cursor {.inject.} = 0
+    body
+    finishChars(storage, cursor)
+    cast[cstring](unsafeAddr storage[0])
