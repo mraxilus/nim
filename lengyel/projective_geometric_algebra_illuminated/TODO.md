@@ -12,52 +12,68 @@ summarized in prior commits on this branch — ask if you want that history rest
 
 You asked why `Scene`'s structure-of-arrays slots get copied into full `Item` objects
 on the stack whenever read, and to minimise data copying that has no good reason
-behind it.
+behind it. First pass shipped, then you rejected its design (see below) and asked for
+something cleaner; second pass is what's actually in the tree now.
 
 - [x] Diagnose why: `scene[slot]`, `items`, and `pairs` all assemble a full `Item` —
       copying every field, `geometry` (128-byte `Multivector`, 4D rigid PGA) and
       `label` (40-byte array) included — whether or not the caller wanted them.
-- [x] Grep and read every production call site (`scene\[`, `scene.pairs`,
-      `scene.items`, `for item in scene`) to separate real one-shot reads from
-      wasteful ones. Found four **hot** sites (once per live item, every frame) and
-      three **cold** ones (once per click) that discarded fields going along for the
-      ride — no good reason behind any of the copies, just different costs.
-- [x] Add lightweight accessors to `scene.nim`: `geometry`/`label` return `lent`
-      (borrowed straight out of the array, no copy at all); `ink`/`isVisible`/`born`
-      return their small scalars by value. Added `liveSlots`, an iterator yielding
-      just the slot for a caller that reads specific fields itself.
-- [x] Migrate every identified call site: `visualiser.nim`'s `assembleMeshes` (main
-      render loop) and `drawInteractionOverlay`; `picking.nim`'s `pickNearest`;
-      `panel.nim`'s `layoutItem` (caching one `geometry` read used twice instead of
-      re-fetching), `layoutObjects`, and `layoutOperation` (its `pairs` loop and its
-      apply-button handler); `storyboard.nim`'s `applyStep`; `interaction.nim`'s
-      `endDrag`. Left `Item`, `` `[]` ``, `items`, `pairs` untouched — still correct,
-      still used by tests, still the right tool for a genuine one-shot full read.
+- [x] **First pass (commit `12b50b2`), rejected:** added five standalone field
+      accessors (`geometry`/`label`/`ink`/`isVisible`/`born`) plus a `liveSlots`
+      iterator to `scene.nim`, and migrated all seven identified call sites across six
+      files to use them. Worked, tests passed — but left two ways to read the same
+      slot (an `Item` copy and the new accessors) side by side, for a problem that
+      didn't need a second API. You called this out directly and asked for a cleaner
+      design.
+- [x] **Second pass (commit `dce1dc7`), shipped:** redefined `Item` itself as a
+      16-byte handle (a `ptr Scene` plus the slot number) instead of an assembled
+      value. `.geometry`/`.label` resolve via `lent`; `.ink`/`.is_visible`/`.born` are
+      trivial pointer-relative reads. Because `` `[]` ``, `items`, and `pairs` already
+      construct an `Item` internally, every existing call site — `scene[slot].geometry`,
+      `for item in scene`, `for slot, item in scene.pairs` — became zero-copy
+      automatically, with no call site needing to change at all. Reverted all six
+      files from the first pass back to their original form (`picking.nim` and
+      `panel.nim` keep one small "cache the repeated read into a local" tweak,
+      unrelated to the copying fix); deleted the five standalone accessors and
+      `liveSlots` as redundant now that the thing they routed around no longer copies.
+- [x] Checked, before converting `Item` to a view: no test anywhere holds an `Item`
+      across a scene mutation (`removeItem` then a slot's reuse via `addItem`) — so
+      nothing relied on `Item`'s old copy semantics, and the conversion is safe.
+- [x] Considered Nim's second index operator, `` `{}` `` (`a{i}` → `` `{}`(a, i) ``,
+      distinct from `` `[]` ``), as a way to offer a real owned-copy variant alongside
+      a zero-copy `[]`. Nothing in this codebase currently needs a frozen copy of an
+      item across a mutation, so didn't add it — that would have been exactly the kind
+      of speculative surface the rejection above was about. Worth revisiting only if a
+      genuine future need (undo/redo, before/after comparison) shows up.
 - [x] Rebuild, re-run the full test suite, re-run both smoke tests (screenshot +
       storyboard) under Xvfb and confirm every frame renders identically to before —
-      a pure internal storage-access change, so no visible difference is expected or
-      found.
-- [x] Commit/push source; sync + rebuild/test standalone in the delegations copy;
-      update its `PROVENANCE.md`; regenerate its storyboard assets; retar; deliver.
+      a pure internal representation change, so no visible difference is expected or
+      found. `sizeof(Item)`: 178 bytes (assembled struct) → 16 bytes (pointer + int).
+- [x] Commit/push source (both passes); sync + rebuild/test standalone in the
+      delegations copy; update its `PROVENANCE.md` to narrate the rejected first pass
+      honestly, not just the final design; regenerate its storyboard assets; retar;
+      deliver.
 
-Commits: `12b50b2` on `claude/rga-visualization-prototype-kbq9kw` (source).
-Delegations repo: `a65faed` (synced copy + `PROVENANCE.md` + regenerated storyboard
-assets).
+Commits: `12b50b2` (first pass, superseded), `dce1dc7` (shipped) on
+`claude/rga-visualization-prototype-kbq9kw` (source). Delegations repo: `a65faed`
+(first pass sync), `1ccbdfa` (shipped design sync + corrected `PROVENANCE.md` +
+regenerated storyboard assets).
 
 ## Process notes
 
-- Naming: the pre-existing *mutable* accessors are suffixed `At` (`geometryAt`,
-  `labelAt`, `isVisibleAt`, taking `scene: var Scene`); the new *read-only* ones take
-  `scene: Scene` (non-var) and carry no suffix (`geometry`, `label`, `ink`,
-  `isVisible`, `born`) — no overload collision between the two.
-- `lent` used only where it earns its keep (the two large fields); the three small
-  scalar fields are returned by plain value, since `lent`'s indirection isn't worth it
-  for 1-8 bytes.
-- This was additive, not a replacement: `Item`/`` `[]` ``/`items`/`pairs` still exist
-  and are still exactly right for `tests/visualiser/suites.nim`, which was
-  deliberately left unchanged.
-- QA method unchanged from earlier rounds: full test suite plus a headless
-  screenshot and storyboard regeneration under Xvfb, this time compared visually
-  against the pre-change renders (expecting, and finding, no difference at all).
+- The correction that mattered this round: "additive, don't touch existing call
+  sites" is not automatically the right instinct. Here the *representation* of `Item`
+  was the actual bug; fixing that representation once made every existing call site
+  correct for free, which is strictly better than adding a parallel API and migrating
+  callers to it. Generalizes past this project: before reaching for "add a new
+  accessor/path and route hot callers to it," check whether the type at the root can
+  just stop lying about its own cost instead.
+- `lent` used only where it earns its keep (the two large fields, now living on
+  `Item`'s own accessor procs rather than on `Scene`); small scalar fields return by
+  plain value.
+- QA method unchanged from earlier rounds: full test suite plus a headless screenshot
+  and storyboard regeneration under Xvfb, compared visually against the pre-change
+  renders (expecting, and finding, no difference at all) — done for both passes, not
+  just the final one.
 - `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked;
   copied in locally to build, stripped back out before each commit.
