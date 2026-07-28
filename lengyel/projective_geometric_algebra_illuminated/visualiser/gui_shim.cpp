@@ -148,6 +148,74 @@ void guiDisabledPush(bool is_disabled) { ImGui::BeginDisabled(is_disabled); }
 
 void guiDisabledPop() { ImGui::EndDisabled(); }
 
+// Attach to whatever widget was laid out immediately before this call, so a control
+// gains an on-hover explanation without a separate marker glyph competing for space.
+void guiTooltip(const char* text) {
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("%s", text);
+}
+
+// Draw a standalone "(?)" for a concept with no single widget to hang an explanation
+// off, wrapped to a readable width rather than one unbroken line.
+void guiHelpMarker(const char* text) {
+  ImGui::TextDisabled("(?)");
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 25.0f);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+  }
+}
+
+// Fraction filled in one colour, remainder in another, so caller can mean "active" and
+// "free" rather than accept the theme's own default progress-bar colours.
+void guiProgressBar(float fraction, const char* overlay, float width, float height,
+                     float r_fill, float g_fill, float b_fill,
+                     float r_track, float g_track, float b_track) {
+  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(r_fill, g_fill, b_fill, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(r_track, g_track, b_track, 1.0f));
+  ImGui::ProgressBar(fraction, ImVec2(width, height), overlay);
+  ImGui::PopStyleColor(2);
+}
+
+// Live line graph over `count` samples, read starting `offset` frames back so caller's
+// own ring buffer needs no shifting to stay in chronological order on screen.
+void guiPlotLines(const char* label, const float* values, int count, int offset,
+                   const char* overlay, float scale_min, float scale_max,
+                   float width, float height) {
+  ImGui::PlotLines(label, values, count, offset, overlay, scale_min, scale_max,
+                    ImVec2(width, height));
+}
+
+// One small filled cell per pool slot, coloured by whether it currently holds an object,
+// wrapped to the panel's own width rather than assuming any fixed row length.
+void guiPoolBar(const bool* are_alive, int count, float cell_size,
+                 float r_alive, float g_alive, float b_alive,
+                 float r_free, float g_free, float b_free) {
+  const float spacing = 2.0f;
+  const float avail = ImGui::GetContentRegionAvail().x;
+  const int fitted = (int)((avail + spacing) / (cell_size + spacing));
+  const int per_row = avail > cell_size ? (fitted < 1 ? 1 : fitted) : count;
+  const int rows = (count + per_row - 1) / per_row;
+  const ImU32 colour_alive =
+      ImGui::ColorConvertFloat4ToU32(ImVec4(r_alive, g_alive, b_alive, 1.0f));
+  const ImU32 colour_free =
+      ImGui::ColorConvertFloat4ToU32(ImVec4(r_free, g_free, b_free, 1.0f));
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  for (int i = 0; i < count; ++i) {
+    const int row = i / per_row;
+    const int column = i % per_row;
+    const ImVec2 top_left(origin.x + column * (cell_size + spacing),
+                           origin.y + row * (cell_size + spacing));
+    const ImVec2 bottom_right(top_left.x + cell_size, top_left.y + cell_size);
+    draw_list->AddRectFilled(top_left, bottom_right,
+                              are_alive[i] ? colour_alive : colour_free, 2.0f);
+  }
+  ImGui::Dummy(ImVec2(avail, rows * (cell_size + spacing)));
+}
+
 // Draw directly onto the foreground layer, above every window, for cursor feedback that
 // belongs to the 3D view rather than to any panel: a rubber-band line while dragging, a
 // ring around whatever the cursor is over. Screen space only; caller does the projection.

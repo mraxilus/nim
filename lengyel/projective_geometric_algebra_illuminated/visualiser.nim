@@ -40,9 +40,12 @@
 ##
 ## Controls:
 ##   Drag from one object to another to derive a third: left joins, right meets, middle
-##   projects the object dragged from onto the object dragged to.
+##   projects the object dragged from onto the object dragged to. The rubber-band drawn
+##   while dragging is tinted to match, and the panel's own top line names the same colours.
 ##   Drag from empty space instead to move the camera: left orbits, right pans, wheel dollies.
 ##   `S` writes current frame to the export path; `Escape` quits.
+##   Every panel is a collapsing header; `diagnostics` starts closed and holds live frame
+##   time, memory use of both arenas, and the object pool -- nothing needed day to day.
 ##
 ## Command line, for validating a build without sitting in front of it:
 ##   `--screenshot:PATH` writes one PNG, `--frames:N` exits after N frames,
@@ -218,6 +221,13 @@ proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float) =
     workbench.count_vertices += MESHES[primitive].count_vertices
 
 
+const lut_drag_to_ink: array[DragOperation, Ink] = [
+  DragOperation.Join: Ink.Cyan,
+  DragOperation.Meet: Ink.Coral,
+  DragOperation.Project: Ink.Lime,
+] ## Match the panel's own drag legend, so the rubber-band names its outcome as it's drawn.
+
+
 proc drawInteractionOverlay(
   interaction: Interaction; scene: Scene; view_projection: Matrix4; width, height: int
 ) =
@@ -240,10 +250,11 @@ proc drawInteractionOverlay(
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
+        let tint = lut_drag_to_ink[interaction.operation.get].colour
         gui.overlayLine(
           cfloat(screen.x), cfloat(screen.y),
           cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
-          1.0, 1.0, 1.0, 0.65, WIDTH_OVERLAY_LINE,
+          tint.red, tint.green, tint.blue, 0.85, WIDTH_OVERLAY_LINE,
         )
 
 
@@ -260,6 +271,14 @@ proc renderFrame(
   ##   real one drives interactive animation and a scripted one drives storyboard capture.
   var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
   sdl3.getWindowSizeInPixels(window, addr width, addr height)
+
+  # Snapshot both arenas before the panel that reads them draws, so what it shows this
+  #   frame is this frame's own state; shared by both run modes, so a storyboard capture
+  #   reports real figures too rather than whatever `Workbench` happened to start zeroed at.
+  workbench.bytes_arena_permanent_used = ARENA_PERMANENT.used
+  workbench.bytes_arena_permanent_capacity = ARENA_PERMANENT.capacity
+  workbench.bytes_arena_frame_peak = ARENA_FRAME.peakUsed
+  workbench.bytes_arena_frame_capacity = ARENA_FRAME.capacity
 
   gui.frameBegin()
   layoutWorkbench(workbench, scene, camera, now)
@@ -427,18 +446,21 @@ proc runInteractive(
     #   frame's own render, so a completed drag and what gets drawn agree on "now".
     let now = secondsNow()
 
-    if options.is_timed:
-      # Measured against the previous iteration's own start, so this covers everything
-      #   a real frame pays for: events, tessellation, render, and the swap that just
-      #   blocked on vsync (or didn't) at the tail of that previous iteration.
-      let ticks_frame_start = getMonoTime().ticks
-      if count_drawn > 0:
+    # Measured against the previous iteration's own start, so this covers everything a
+    #   real frame pays for: events, tessellation, render, and the swap that just blocked
+    #   on vsync (or didn't) at the tail of that previous iteration. Always taken, not
+    #   just under `--timings`, since the panel's own live graph needs it every frame too.
+    let ticks_frame_start = getMonoTime().ticks
+    if count_drawn > 0:
+      let delta_milliseconds = float32(ticks_frame_start - ticks_previous_frame) / 1_000_000.0
+      workbench.milliseconds_history[workbench.index_history] = cfloat(delta_milliseconds)
+      workbench.index_history = (workbench.index_history + 1) mod FRAMES_HISTORY
+      if options.is_timed:
         doAssert count_drawn - 1 < FRAMES_TIMING_MAX,
           &"Timing run passed its own {FRAMES_TIMING_MAX}-frame bound; raise " &
           "`--define:visualiser.frames_timing_max` or shorten `--frames`."
-        TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] =
-          float32(ticks_frame_start - ticks_previous_frame) / 1_000_000.0
-      ticks_previous_frame = ticks_frame_start
+        TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] = delta_milliseconds
+    ticks_previous_frame = ticks_frame_start
 
     var event: Event
     while sdl3.pollEvent(addr event):

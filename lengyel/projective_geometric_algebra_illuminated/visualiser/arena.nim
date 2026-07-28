@@ -39,6 +39,11 @@ type Arena* = object ## Hold a fixed block of bytes and how much of it is in use
   buffer: ptr UncheckedArray[byte]
   capacity: int
   used: int
+  peak_used: int ## Highest `used` has ever reached; never falls back on `reset`.
+    ## Exists so a live display can show what an arena's activity actually looks like:
+    ## `used` alone reads near zero almost anywhere it would be sampled, since carving
+    ## and reset both happen well within one frame, before anything outside this module
+    ## gets a chance to look.
 
 
 
@@ -51,12 +56,15 @@ proc initArena*(backing: var openArray[byte]): Arena =
     buffer: cast[ptr UncheckedArray[byte]](addr backing[0]),
     capacity: len(backing),
     used: 0,
+    peak_used: 0,
   )
 
 
 proc reset*(arena: var Arena) =
   ## Reclaim everything carved from `arena` so far, in one step; nothing is freed
   ## individually, since nothing carved from an arena is ever freed individually.
+  ##   `peak_used` is deliberately untouched: it tracks the arena's own high-water mark
+  ##   across its whole lifetime, not since the last reset.
   arena.used = 0
 
 
@@ -72,3 +80,17 @@ proc push*[T](arena: var Arena; count: int): ptr UncheckedArray[T] =
     "Raise whichever `--define:visualiser.capacity_arena_*` backs this arena."
   result = cast[ptr UncheckedArray[T]](addr arena.buffer[arena.used])
   arena.used += bytes_needed
+  if arena.used > arena.peak_used: arena.peak_used = arena.used
+
+
+
+#[ Arena Introspection ]#
+
+func used*(arena: Arena): int = arena.used
+  ## Report bytes carved from `arena` and not yet reclaimed by a `reset`.
+
+func capacity*(arena: Arena): int = arena.capacity
+  ## Report the fixed size `arena` was constructed with.
+
+func peakUsed*(arena: Arena): int = arena.peak_used
+  ## Report the most `arena` has ever held at once, across every `reset` so far.

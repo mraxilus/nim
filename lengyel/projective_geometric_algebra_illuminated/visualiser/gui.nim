@@ -98,6 +98,20 @@ proc widthPush*(width: cfloat) {.importc: "guiWidthPush".}
 proc widthPop*() {.importc: "guiWidthPop".}
 proc disabledPush*(is_disabled: bool) {.importc: "guiDisabledPush".}
 proc disabledPop*() {.importc: "guiDisabledPop".}
+proc tooltip*(text: cstring) {.importc: "guiTooltip".}
+proc helpMarker*(text: cstring) {.importc: "guiHelpMarker".}
+proc progressBar*(
+  fraction: cfloat; overlay: cstring; width, height: cfloat;
+  red_fill, green_fill, blue_fill, red_track, green_track, blue_track: cfloat;
+) {.importc: "guiProgressBar".}
+proc plotLines*(
+  label: cstring; values: ptr cfloat; count, offset: cint; overlay: cstring;
+  scale_min, scale_max, width, height: cfloat;
+) {.importc: "guiPlotLines".}
+proc poolBar*(
+  are_alive: ptr bool; count: cint; cell_size: cfloat;
+  red_alive, green_alive, blue_alive, red_free, green_free, blue_free: cfloat;
+) {.importc: "guiPoolBar".}
 proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayLine".}
 proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)
