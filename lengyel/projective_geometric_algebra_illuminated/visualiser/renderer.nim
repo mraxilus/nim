@@ -215,11 +215,14 @@ proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) 
 
 #[ Frame Capture ]#
 
-proc capturePixels*(width, height: int; pixels: var seq[uint8]) =
+proc capturePixels*(width, height: int; pixels: var openArray[uint8]) =
   ## Read framebuffer back as tightly packed RGB triples, first row nearest bottom.
-  ##   Caller owns buffer; it is grown here only when window has outgrown it.
+  ##   Caller owns fixed storage, sized to the largest export this build allows; nothing
+  ##   is grown here, so a window resized past that bound fails loudly rather than
+  ##   silently reallocating in what is meant to be a fixed-memory path.
   let count = width*height*3
-  if len(pixels) < count: pixels.setLen(count)
+  doAssert len(pixels) >= count,
+    &"Readback buffer holds {len(pixels)} bytes, short of {count}."
   gl.pixelStorei(gl.PACK_ALIGNMENT, 1)
   gl.readPixels(
     0, 0, gl.Sizei(width), gl.Sizei(height), gl.RGB, gl.UNSIGNED_BYTE, addr pixels[0]

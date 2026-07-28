@@ -18,7 +18,9 @@ when compileOption("profiler"):
 import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
-import ../../visualiser/[camera, format, gif, image, interaction, mesh, objects, picking, scene]
+import ../../visualiser/[
+  arena, camera, format, gif, image, interaction, mesh, objects, picking, scene,
+]
 
 randomize(0)
 
@@ -477,13 +479,16 @@ suite "Scene":
 
 
 suite "Image":
+  var buffer_arena: array[1024*1024, byte]
+
   test "written file is a PNG carrying the size it was given":
     const (WIDTH, HEIGHT) = (37, 21)
     var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
     for i in 0 ..< len(pixels): pixels[i] = uint8((i*7) mod 256)
 
+    var test_arena = initArena(buffer_arena)
     let path = getTempDir() / "visualiser_suite.png"
-    writePng(path, WIDTH, HEIGHT, pixels)
+    writePng(test_arena, path, WIDTH, HEIGHT, pixels)
     defer: removeFile(path)
     let document = readFile(path)
 
@@ -501,8 +506,9 @@ suite "Image":
   test "chunk lengths and checksums agree end to end":
     const (WIDTH, HEIGHT) = (16, 9)
     var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
+    var test_arena = initArena(buffer_arena)
     let path = getTempDir() / "visualiser_suite_chunks.png"
-    writePng(path, WIDTH, HEIGHT, pixels)
+    writePng(test_arena, path, WIDTH, HEIGHT, pixels)
     defer: removeFile(path)
     let document = readFile(path)
 
@@ -521,15 +527,14 @@ suite "Image":
 
 
 suite "Gif":
+  var buffer_arena: array[1024*1024, byte]
+
   test "written file carries the size and frame count it was given":
     const (WIDTH, HEIGHT) = (12, 8)
-    let frames = @[
-      newSeq[uint8](WIDTH*HEIGHT*3),
-      newSeq[uint8](WIDTH*HEIGHT*3),
-      newSeq[uint8](WIDTH*HEIGHT*3),
-    ]
+    var frames = newSeq[uint8](3*WIDTH*HEIGHT*3)
+    var test_arena = initArena(buffer_arena)
     let path = getTempDir() / "visualiser_suite.gif"
-    writeGif(path, WIDTH, HEIGHT, frames, 8)
+    writeGif(test_arena, path, WIDTH, HEIGHT, frames, 3, 8)
     defer: removeFile(path)
     let document = readFile(path)
 
@@ -554,7 +559,7 @@ suite "Gif":
         if length == 0: break
         offset += length
       inc count_frames
-    check count_frames == len(frames)
+    check count_frames == 3
     check offset == len(document) - 1
     check document[offset] == char(0x3B)
 
@@ -632,8 +637,9 @@ suite "Gif":
         let at = (row_source*WIDTH + column)*3
         expected.add(paletteIndex(frame[at], frame[at + 1], frame[at + 2]))
 
+    var test_arena = initArena(buffer_arena)
     let path = getTempDir() / "visualiser_suite_growth.gif"
-    writeGif(path, WIDTH, HEIGHT, @[frame], 8)
+    writeGif(test_arena, path, WIDTH, HEIGHT, frame, 1, 8)
     defer: removeFile(path)
     let document = readFile(path)
 

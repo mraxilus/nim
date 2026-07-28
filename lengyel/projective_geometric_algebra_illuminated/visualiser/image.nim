@@ -16,13 +16,19 @@
 ## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being filtered,
 ## so no separate copy of image exists.
 ##
-## Two buffers proportional to image are allocated per call.
-##   Deliberate exception to fixed storage elsewhere: export happens on keypress, never
-##   in draw loop, and sizing buffers at compile time would fix maximum window size.
+## Two buffers proportional to image are carved from caller's frame arena per call,
+## reclaimed the moment it is next reset.
+##   Used to be two fresh `seq` allocations instead, on the reasoning that export happens
+##   on keypress, never in the draw loop, so sizing buffers at compile time would only fix
+##   a maximum window size for no real benefit. Arena carving costs the same fixed bound
+##   -- `writePng` now asserts instead of growing past it -- but pays it in one place
+##   the caller already owns, rather than in a second, independent allocator call.
 
 {.experimental: "strictFuncs".}
 
 import std/[strformat, syncio]
+
+import ./arena
 
 
 
@@ -94,9 +100,12 @@ proc writeChunk(file: File; name: string; payload: openArray[uint8]) =
 
 #[ Image Encoding ]#
 
-proc writePng*(path: string; width, height: int; rows_bottom_up: openArray[uint8]) =
+proc writePng*(
+  arena: var Arena; path: string; width, height: int; rows_bottom_up: openArray[uint8]
+) =
   ## Write pixels as PNG file, flipping rows so image reads top-down.
   ##   `rows_bottom_up` holds tightly packed RGB triples, first row nearest bottom of image.
+  ##   Both scratch buffers come from `arena`; caller resets it once this returns.
   doAssert width > 0 and height > 0,
     &"Image must have positive extent; got `{width}x{height}`."
   doAssert len(rows_bottom_up) >= width*height*CHANNELS,
@@ -104,8 +113,10 @@ proc writePng*(path: string; width, height: int; rows_bottom_up: openArray[uint8
 
   # Filter every scanline with filter 0, which stores bytes as they stand.
   #   Cheapest filter, and deflate still finds most of redundancy in flat-shaded frame.
-  let stride = width*CHANNELS
-  var filtered = newSeq[uint8]((stride + 1)*height)
+  let
+    stride = width*CHANNELS
+    count_filtered = (stride + 1)*height
+    filtered = push[uint8](arena, count_filtered)
   for row in 0 ..< height:
     let
       source = (height - 1 - row)*stride
@@ -114,14 +125,15 @@ proc writePng*(path: string; width, height: int; rows_bottom_up: openArray[uint8
       filtered[destination + i] = rows_bottom_up[source + i]
 
   # Deflate whole filtered image in one call, since it is already wholly in memory.
-  var
-    compressed = newSeq[uint8](int(compressBound(Ulong(len(filtered)))))
-    count_compressed = Ulong(len(compressed))
+  let
+    count_compressed_max = int(compressBound(Ulong(count_filtered)))
+    compressed = push[uint8](arena, count_compressed_max)
+  var count_compressed = Ulong(count_compressed_max)
   let status = compress2(
     addr compressed[0], addr count_compressed,
-    addr filtered[0], Ulong(len(filtered)), cint(LEVEL_COMPRESSION),
+    addr filtered[0], Ulong(count_filtered), cint(LEVEL_COMPRESSION),
   )
-  doAssert status == 0, &"Deflate of {len(filtered)} bytes failed with zlib status {status}."
+  doAssert status == 0, &"Deflate of {count_filtered} bytes failed with zlib status {status}."
 
   var header: array[13, uint8]
   header[0 .. 3] = toBigEndian(uint32(width))

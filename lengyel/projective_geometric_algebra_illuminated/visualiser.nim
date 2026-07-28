@@ -48,18 +48,21 @@
 ##   `--screenshot:PATH` writes one PNG, `--frames:N` exits after N frames,
 ##   `--hidden` never maps the window, and `--storyboard:DIR` writes one frame per
 ##   scripted construction step and quits.
+##   `--timings` reports frame-time statistics (mean, percentiles, tessellation cost)
+##   over a `--frames:N` run; `--novsync` disables vsync from startup for an uncapped
+##   reading, and `--fill` tops the scene up to capacity first, for the heaviest case.
 
 {.experimental: "strictFuncs".}
 
 when compileOption("profiler"):
   import std/nimprof
 
-import std/[math, monotimes, options, os, parseopt, strformat, strutils]
+import std/[algorithm, math, monotimes, options, os, parseopt, strformat, strutils]
 
 import ./pga
 import ./visualiser/[
-  camera, format, gif, gui, image, interaction, mesh, objects, panel, picking, renderer, scene,
-  storyboard,
+  arena, camera, format, gif, gui, image, interaction, mesh, objects, panel, picking, renderer,
+  scene, storyboard,
 ]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
@@ -101,13 +104,55 @@ const
     ## a short preview rather than a full-resolution capture nobody asked for.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
+  WIDTH_EXPORT_MAX* {.define: "visualiser.width_export_max".} = 3840
+    ## Bound the largest window a pixel readback or PNG export is ever asked to cover.
+  HEIGHT_EXPORT_MAX* {.define: "visualiser.height_export_max".} = 2160
+  CAPACITY_ARENA_PERMANENT* {.define: "visualiser.capacity_arena_permanent".} = 48*1024*1024
+    ## Set the permanent arena's own size: the pixel readback buffer, and every
+    ## storyboard GIF frame collected before the final GIF is written, live here for
+    ## as long as the process runs.
+  CAPACITY_ARENA_FRAME* {.define: "visualiser.capacity_arena_frame".} = 64*1024*1024
+    ## Set the frame arena's own size: whichever of PNG's filtered/compressed scanlines
+    ## or one GIF frame's quantized indices and LZW output is using it, reclaimed the
+    ## moment that single unit of work is written out.
+  FRAMES_TIMING_MAX* {.define: "visualiser.frames_timing_max".} = 20_000
+    ## Bound how many per-frame timings `--timings` can record; independent of either
+    ## arena above, since a benchmarking run is not itself the interactive draw loop
+    ## either arena was carved to serve.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
     &"Window must be at least 640x480; got `{PIXELS_WIDTH}x{PIXELS_HEIGHT}`."
+  doAssert PIXELS_WIDTH <= WIDTH_EXPORT_MAX and PIXELS_HEIGHT <= HEIGHT_EXPORT_MAX,
+    &"Window must fit within the {WIDTH_EXPORT_MAX}x{HEIGHT_EXPORT_MAX} export bound; " &
+    &"raise `--define:visualiser.width_export_max` or `...height_export_max`."
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet
+
+# Two arenas, one permanent and one reset after each throwaway unit of work; see
+#   `arena.nim` for why the interactive draw loop needs neither, and what does.
+var
+  BUFFER_ARENA_PERMANENT: array[CAPACITY_ARENA_PERMANENT, byte]
+  ARENA_PERMANENT = initArena(BUFFER_ARENA_PERMANENT)
+  BUFFER_ARENA_FRAME: array[CAPACITY_ARENA_FRAME, byte]
+  ARENA_FRAME = initArena(BUFFER_ARENA_FRAME)
+
+# Carved once from the permanent arena: the pixel readback every export reuses.
+var PIXELS_READBACK = push[uint8](ARENA_PERMANENT, WIDTH_EXPORT_MAX*HEIGHT_EXPORT_MAX*3)
+
+# Carved once from the permanent arena: every GIF frame a storyboard run collects,
+#   back to back, before `writeGif` reads them all at once at the very end.
+const
+  WIDTH_GIF_MAX = PIXELS_WIDTH div STRIDE_GIF
+  HEIGHT_GIF_MAX = PIXELS_HEIGHT div STRIDE_GIF
+  COUNT_GIF_FRAMES_MAX = (len(STEPS) + 1) * (FRAMES_GIF_GROW + FRAMES_GIF_HOLD)
+var GIF_FRAMES =
+  push[uint8](ARENA_PERMANENT, COUNT_GIF_FRAMES_MAX*WIDTH_GIF_MAX*HEIGHT_GIF_MAX*3)
+
+# Hold at module scope for the same reason `MESHES` does: too large for a stack frame,
+#   and only ever touched by a `--timings` run, never by the interactive loop otherwise.
+var TIMINGS_FRAME_MILLISECONDS: array[FRAMES_TIMING_MAX, float32]
 
 
 
@@ -118,6 +163,10 @@ type Options = object ## Hold what command line asked of this run.
   path_storyboard: string ## Directory scripted construction is written to; empty for none.
   count_frames: int ## Frames to draw before quitting; 0 to run until closed.
   is_hidden: bool ## Whether window is left unmapped.
+  is_timed: bool ## Whether to record and report per-frame timing statistics.
+  is_novsync: bool ## Whether to disable vsync from startup, for uncapped timing runs.
+  is_filled: bool ## Whether to top scene up to capacity with synthetic items, for
+    ## timing the heaviest tessellation and draw load rather than the demo's own light one.
 
 
 proc parseOptions(): Options =
@@ -130,9 +179,13 @@ proc parseOptions(): Options =
       of "storyboard": result.path_storyboard = value
       of "frames": result.count_frames = parseInt(value)
       of "hidden": result.is_hidden = true
+      of "timings": result.is_timed = true
+      of "novsync": result.is_novsync = true
+      of "fill": result.is_filled = true
       else:
         doAssert false,
-          &"Unknown option `--{key}`; expected screenshot, storyboard, frames or hidden."
+          &"Unknown option `--{key}`; expected screenshot, storyboard, frames, hidden, " &
+          "timings, novsync or fill."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -223,30 +276,36 @@ proc renderFrame(
   (int(width), int(height))
 
 
-proc exportFrame(path: string; width, height: int; pixels: var seq[uint8]): string =
+proc exportFrame(path: string; width, height: int): string =
   ## Read framebuffer back and write it out as PNG, reporting what happened.
   ##   Must run before buffers are swapped, as back buffer is what was just drawn into.
+  ##   Reads into the permanent arena's own pixel buffer, and writes through the frame
+  ##   arena, reset the moment the file is closed.
   if len(path) == 0: return "Export path is empty; nothing written."
-  capturePixels(width, height, pixels)
-  writePng(path, width, height, pixels)
+  doAssert width <= WIDTH_EXPORT_MAX and height <= HEIGHT_EXPORT_MAX,
+    &"Window grew past the {WIDTH_EXPORT_MAX}x{HEIGHT_EXPORT_MAX} export bound; " &
+    &"raise `--define:visualiser.width_export_max` or `...height_export_max`."
+  let count = width*height*3
+  capturePixels(width, height, PIXELS_READBACK.toOpenArray(0, count - 1))
+  writePng(ARENA_FRAME, path, width, height, PIXELS_READBACK.toOpenArray(0, count - 1))
+  ARENA_FRAME.reset()
   &"Wrote {width}x{height} frame to `{path}`."
 
 
-proc downsample(pixels: openArray[uint8]; width, height, stride: int): seq[uint8] =
+proc downsampleInto(
+  destination: var openArray[uint8]; pixels: openArray[uint8]; width, height, stride: int
+) =
   ## Keep every `stride`-th pixel in both directions, so a GIF frame stays small without
   ## a box filter costing time nobody asked to spend on a diagnostic capture.
-  let
-    width_small = width div stride
-    height_small = height div stride
-  result = newSeq[uint8](width_small*height_small*3)
-  for row in 0 ..< height_small:
+  let width_small = width div stride
+  for row in 0 ..< height div stride:
     for column in 0 ..< width_small:
       let
         source = (row*stride*width + column*stride)*3
-        destination = (row*width_small + column)*3
-      result[destination] = pixels[source]
-      result[destination + 1] = pixels[source + 1]
-      result[destination + 2] = pixels[source + 2]
+        destination_at = (row*width_small + column)*3
+      destination[destination_at] = pixels[source]
+      destination[destination_at + 1] = pixels[source + 1]
+      destination[destination_at + 2] = pixels[source + 2]
 
 
 
@@ -314,6 +373,34 @@ proc handleEvent(
 
 #[ Run Modes ]#
 
+proc reportTimings(milliseconds: var openArray[float32]) =
+  ## Print frame-time statistics over a completed `--timings` run.
+  ##   Mean and standard deviation alone hide a stutter a percentile catches: a run that
+  ##   spends 99% of frames at 2ms and 1% at 40ms reports a fine mean, so the tail past
+  ##   p95 is what actually answers "does this stutter."
+  let count = len(milliseconds)
+  var total = 0.0
+  for value in milliseconds: total += float(value)
+  let mean = total / float(count)
+
+  var variance = 0.0
+  for value in milliseconds: variance += (float(value) - mean)*(float(value) - mean)
+  let deviation = sqrt(variance / float(count))
+
+  sort(milliseconds)
+  template atPercentile(fraction: float): float32 =
+    milliseconds[min(count - 1, int(fraction * float(count)))]
+  let (p50, p90, p95, p99) =
+    (atPercentile(0.50), atPercentile(0.90), atPercentile(0.95), atPercentile(0.99))
+
+  echo &"Frame time over {count} frames, milliseconds (fps in parentheses):"
+  echo &"  mean {mean:.3f} ({1000.0/mean:.1f})  stddev {deviation:.3f}"
+  echo &"  min {milliseconds[0]:.3f}  p50 {p50:.3f} ({1000.0/float(p50):.1f})  " &
+    &"p90 {p90:.3f} ({1000.0/float(p90):.1f})"
+  echo &"  p95 {p95:.3f} ({1000.0/float(p95):.1f})  p99 {p99:.3f} ({1000.0/float(p99):.1f})  " &
+    &"max {milliseconds[^1]:.3f} ({1000.0/float(milliseconds[^1]):.1f})"
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -322,17 +409,36 @@ proc runInteractive(
   var
     interaction = Interaction(is_enabled: true)
     button_dragging = none(uint8)
-    pixels = newSeq[uint8](0)
     is_running = true
     is_dragging_orbit = false
     is_dragging_pan = false
-    is_vsync_active = true # Matches `sdl3.glSetSwapInterval(1)` already set before this loop.
+    is_vsync_active = workbench.is_vsync_enabled # Matches the swap interval already set.
     count_drawn = 0
+    ticks_previous_frame = getMonoTime().ticks
+    total_tessellate_microseconds = 0.0
+    total_vertices = 0
 
   while is_running:
+    # Frame arena starts every frame empty; nothing in the draw loop itself asks it for
+    #   anything today, but `exportFrame` below may, and always leaves it reset behind it.
+    ARENA_FRAME.reset()
+
     # One reading per frame, shared by every drag that completes this frame and by the
     #   frame's own render, so a completed drag and what gets drawn agree on "now".
     let now = secondsNow()
+
+    if options.is_timed:
+      # Measured against the previous iteration's own start, so this covers everything
+      #   a real frame pays for: events, tessellation, render, and the swap that just
+      #   blocked on vsync (or didn't) at the tail of that previous iteration.
+      let ticks_frame_start = getMonoTime().ticks
+      if count_drawn > 0:
+        doAssert count_drawn - 1 < FRAMES_TIMING_MAX,
+          &"Timing run passed its own {FRAMES_TIMING_MAX}-frame bound; raise " &
+          "`--define:visualiser.frames_timing_max` or shorten `--frames`."
+        TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] =
+          float32(ticks_frame_start - ticks_previous_frame) / 1_000_000.0
+      ticks_previous_frame = ticks_frame_start
 
     var event: Event
     while sdl3.pollEvent(addr event):
@@ -344,6 +450,9 @@ proc runInteractive(
 
     let (width, height) =
       renderFrame(window, renderer, workbench, scene, camera, interaction, now)
+    if options.is_timed:
+      total_tessellate_microseconds += workbench.microseconds_tessellate
+      total_vertices += workbench.count_vertices
 
     # Change the swap interval only when the checkbox actually flips, not every frame.
     if workbench.is_vsync_enabled != is_vsync_active:
@@ -357,7 +466,7 @@ proc runInteractive(
 
     if workbench.is_export_requested:
       workbench.is_export_requested = false
-      let report = exportFrame($toCstring(workbench.path_export), width, height, pixels)
+      let report = exportFrame($toCstring(workbench.path_export), width, height)
       toChars(report, workbench.message)
       echo report
 
@@ -365,6 +474,11 @@ proc runInteractive(
     if is_final: is_running = false
 
   echo &"Drew {count_drawn} frames."
+  if options.is_timed and count_drawn > 1:
+    reportTimings(TIMINGS_FRAME_MILLISECONDS.toOpenArray(0, count_drawn - 2))
+    echo &"  tessellate mean {total_tessellate_microseconds/float(count_drawn):.1f}us, " &
+      &"{total_vertices div count_drawn} vertices/frame " &
+      &"(both this run's own CPU-side cost, not the rasterizer's)."
 
 
 proc runStoryboard(
@@ -380,9 +494,8 @@ proc runStoryboard(
   createDir(directory)
   var
     interaction_disabled = Interaction() # is_enabled defaults false; no picking, no overlay.
-    pixels = newSeq[uint8](0)
-    frames_gif: seq[seq[uint8]]
     dims_gif = (0, 0)
+    count_frames_gif = 0
     clock = 0.0
 
   template renderAt(now: float): (int, int) =
@@ -390,11 +503,23 @@ proc runStoryboard(
 
   template captureGif(now: float) =
     ## Render one frame at `now`, downsample it, and append it to the GIF's own frames.
+    ##   Frames are collected in the permanent arena's own storage, since they must all
+    ##   survive to the single `writeGif` call at the very end; only the throwaway pixel
+    ##   readback in between comes from the frame arena, reset right after.
     block:
       let (width, height) = renderAt(now)
+      doAssert width == PIXELS_WIDTH and height == PIXELS_HEIGHT,
+        "Storyboard capture assumes a fixed window size; the actual framebuffer differs."
       dims_gif = (width div STRIDE_GIF, height div STRIDE_GIF)
-      capturePixels(width, height, pixels)
-      frames_gif.add(downsample(pixels, width, height, STRIDE_GIF))
+      doAssert count_frames_gif < COUNT_GIF_FRAMES_MAX,
+        &"Storyboard asked for more than the {COUNT_GIF_FRAMES_MAX} GIF frames reserved."
+      capturePixels(width, height, PIXELS_READBACK.toOpenArray(0, width*height*3 - 1))
+      let frame_size = dims_gif[0]*dims_gif[1]*3
+      downsampleInto(
+        GIF_FRAMES.toOpenArray(count_frames_gif*frame_size, (count_frames_gif + 1)*frame_size - 1),
+        PIXELS_READBACK.toOpenArray(0, width*height*3 - 1), width, height, STRIDE_GIF,
+      )
+      inc count_frames_gif
 
   template captureStep(stem: string) =
     ## Sweep this step's own items from freshly born to settled into the GIF, hold on
@@ -411,7 +536,7 @@ proc runStoryboard(
 
       var (width, height) = (0, 0)
       for _ in 1 .. FRAMES_SETTLE: (width, height) = renderAt(now_settled)
-      echo exportFrame(directory / (stem & ".png"), width, height, pixels)
+      echo exportFrame(directory / (stem & ".png"), width, height)
       sdl3.glSwapWindow(window)
 
   scene = initScene()
@@ -430,10 +555,42 @@ proc runStoryboard(
     toChars(&"{step.label} gave {$toCstring(shape_word)}.", workbench.message)
     captureStep(step.stem)
 
-  let path_gif = directory / "storyboard.gif"
-  writeGif(path_gif, dims_gif[0], dims_gif[1], frames_gif, CENTISECONDS_GIF_DELAY)
-  echo &"Wrote {len(frames_gif)} frames to `{path_gif}`."
+  let
+    path_gif = directory / "storyboard.gif"
+    frame_size_gif = dims_gif[0]*dims_gif[1]*3
+  writeGif(
+    ARENA_FRAME, path_gif, dims_gif[0], dims_gif[1],
+    GIF_FRAMES.toOpenArray(0, count_frames_gif*frame_size_gif - 1),
+    count_frames_gif, CENTISECONDS_GIF_DELAY,
+  )
+  ARENA_FRAME.reset()
+  echo &"Wrote {count_frames_gif} frames to `{path_gif}`."
   echo &"Wrote {len(STEPS) + 1} frames to `{directory}`."
+
+
+proc fillSceneForBenchmark(scene: var Scene; now: float) =
+  ## Top scene up to capacity with synthetic points, lines and planes, so `--timings`
+  ## can measure the heaviest tessellation and draw load this scene ever reaches rather
+  ## than the handful of items the demo opens on.
+  ##   Positions walk a helix, so no two are ever collinear and every join is well formed.
+  ##   Own point buffer, not the scene, backs each join: earlier slots may already hold
+  ##   the demo's own seeds, which this helix has nothing to do with.
+  var points: array[ITEMS_MAX, Multivector]
+  var index = 0
+  while not scene.isFull:
+    let angle = float(index) * 0.7
+    points[index] = toMultivector(
+      Position(x: 6.0*cos(angle), y: 6.0*sin(angle), z: -3.0 + 0.15*float(index))
+    )
+    let ink = inkCycled(index)
+    case index mod 3
+    of 0: scene.addItem(points[index], &"fill{index}", ink, now)
+    of 1: scene.addItem(points[index] ∧ points[index - 1], &"fill{index}", ink, now)
+    else:
+      scene.addItem(
+        points[index] ∧ points[index - 1] ∧ points[index - 2], &"fill{index}", ink, now
+      )
+    inc index
 
 
 
@@ -461,7 +618,7 @@ proc main() =
   let context = sdl3.glCreateContext(window)
   doAssert context != nil, &"SDL3 failed to make OpenGL context: {sdl3.getError()}"
   defer: sdl3.glDestroyContext(context)
-  sdl3.glSetSwapInterval(1)
+  sdl3.glSetSwapInterval(if options.is_novsync: 0 else: 1)
   echo &"OpenGL: {gl.getString(gl.VERSION)}"
 
   doAssert gui.init(window, context, PATH_FONT, SIZE_FONT), "Dear ImGui failed to start."
@@ -479,12 +636,14 @@ proc main() =
       if len(options.path_screenshot) > 0: options.path_screenshot
       else: PATH_EXPORT_DEFAULT
     )
+  workbench.is_vsync_enabled = not options.is_novsync
 
   # Open on storyboard's own seeds and first steps, so window and script agree on scene.
   let now_startup = secondsNow()
   constructSeeds(scene, now_startup)
   for step in STEPS[0 .. 3]:
     applyStep(scene, step, now_startup)
+  if options.is_filled: fillSceneForBenchmark(scene, now_startup)
 
   if len(options.path_storyboard) > 0:
     runStoryboard(window, renderer, options.path_storyboard, workbench, scene, camera)

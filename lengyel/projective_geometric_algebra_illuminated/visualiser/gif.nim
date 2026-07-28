@@ -24,10 +24,16 @@
 ## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being quantized,
 ## exactly as `image.nim` flips them while filtering, so no separate copy of a frame
 ## exists solely to turn it right side up.
+##
+## Every scratch buffer -- quantized indices, the LZW dictionary, and its packed
+## output -- comes from a caller-owned frame arena, or is a fixed-capacity table
+## reset per call; nothing here calls the allocator.
 
 {.experimental: "strictFuncs".}
 
-import std/[strformat, syncio, tables]
+import std/[strformat, syncio]
+
+import ./arena
 
 
 
@@ -43,6 +49,13 @@ const
     ## legal size, 256, regardless of how few of those entries the colour cube fills.
   COUNT_TABLE = 1 shl BITS_CODE
   COUNT_PALETTE = LEVELS_PER_CHANNEL*LEVELS_PER_CHANNEL*LEVELS_PER_CHANNEL
+  CODE_CLEAR = COUNT_TABLE
+  CODE_END = CODE_CLEAR + 1
+  CODE_MAX = 4096
+    ## Bound LZW dictionary size to what a 12-bit code can name, as GIF's own spec fixes.
+  CAPACITY_DICT = 8192
+    ## Set the fixed hash table's own slot count: a power of two, comfortably above
+    ## `CODE_MAX`, so linear probing stays cheap at the load factor that ever occurs.
 
 static:
   doAssert LEVELS_PER_CHANNEL in 2 .. 6,
@@ -50,6 +63,10 @@ static:
     &"`{LEVELS_PER_CHANNEL}`."
   doAssert COUNT_PALETTE <= COUNT_TABLE,
     &"Colour cube must fit the global colour table; {COUNT_PALETTE} used of {COUNT_TABLE}."
+  doAssert (CAPACITY_DICT and (CAPACITY_DICT - 1)) == 0,
+    &"Dictionary capacity must be a power of two; got `{CAPACITY_DICT}`."
+  doAssert CAPACITY_DICT > CODE_MAX,
+    &"Dictionary capacity must exceed {CODE_MAX} live entries; got `{CAPACITY_DICT}`."
 
 
 
@@ -90,10 +107,57 @@ func globalColorTable(): array[COUNT_TABLE*3, uint8] =
 
 
 
+#[ LZW Dictionary ]#
+
+type LzwDict = object ## Hold (prefix code, next byte) to code, as a fixed open-addressed
+  ## table rather than a heap-backed `Table`: capacity is `CODE_MAX` at the format's own
+  ## limit, known at compile time, so nothing here ever grows.
+  keys_prefix: array[CAPACITY_DICT, int]
+  keys_byte: array[CAPACITY_DICT, uint8]
+  values: array[CAPACITY_DICT, int]
+  are_used: array[CAPACITY_DICT, bool]
+
+
+func hashKey(prefix: int; value: uint8): int =
+  ## Spread (prefix, value) pairs over the table; multiplier is Knuth's own constant
+  ## for multiplicative hashing, folded through `uint64` so it can never overflow.
+  let combined = uint64(prefix)*2654435761'u64 xor uint64(value)
+  int(combined and uint64(CAPACITY_DICT - 1))
+
+
+proc clear(dict: var LzwDict) =
+  ## Empty every slot, in place; the table itself is never reallocated.
+  for i in 0 ..< CAPACITY_DICT: dict.are_used[i] = false
+
+
+proc find(dict: LzwDict; prefix: int; value: uint8): int =
+  ## Look up the code (prefix, value) was assigned; -1 where it has none yet.
+  var index = hashKey(prefix, value)
+  while dict.are_used[index]:
+    if dict.keys_prefix[index] == prefix and dict.keys_byte[index] == value:
+      return dict.values[index]
+    index = (index + 1) and (CAPACITY_DICT - 1)
+  -1
+
+
+proc insert(dict: var LzwDict; prefix: int; value: uint8; code: int) =
+  ## Assign (prefix, value) a fresh code; caller has already confirmed it has none.
+  var index = hashKey(prefix, value)
+  while dict.are_used[index]: index = (index + 1) and (CAPACITY_DICT - 1)
+  dict.are_used[index] = true
+  dict.keys_prefix[index] = prefix
+  dict.keys_byte[index] = value
+  dict.values[index] = code
+
+
+
 #[ LZW Compression ]#
 
-type BitWriter = object ## Pack variable-width codes into bytes, least significant bit first.
-  buffer: seq[uint8]
+type BitWriter = object ## Pack variable-width codes into caller-owned storage, least
+  ## significant bit first, tracking only how much of it is in use.
+  buffer: ptr UncheckedArray[uint8]
+  capacity: int
+  count: int
   pending: uint32
   count_pending: int
 
@@ -103,7 +167,10 @@ proc packCode(writer: var BitWriter; code, width: int) =
   writer.pending = writer.pending or (uint32(code) shl writer.count_pending)
   writer.count_pending += width
   while writer.count_pending >= 8:
-    writer.buffer.add(uint8(writer.pending and 0xFF))
+    doAssert writer.count < writer.capacity,
+      &"LZW output exceeded its own reservation of {writer.capacity} bytes."
+    writer.buffer[writer.count] = uint8(writer.pending and 0xFF)
+    inc writer.count
     writer.pending = writer.pending shr 8
     writer.count_pending -= 8
 
@@ -111,22 +178,27 @@ proc packCode(writer: var BitWriter; code, width: int) =
 proc flushBits(writer: var BitWriter) =
   ## Emit whatever partial byte remains, padded with zero bits above it.
   if writer.count_pending > 0:
-    writer.buffer.add(uint8(writer.pending and 0xFF))
+    doAssert writer.count < writer.capacity,
+      &"LZW output exceeded its own reservation of {writer.capacity} bytes."
+    writer.buffer[writer.count] = uint8(writer.pending and 0xFF)
+    inc writer.count
     writer.pending = 0
     writer.count_pending = 0
 
 
-proc lzwEncode(indices: openArray[uint8]): seq[uint8] =
+proc lzwEncode(
+  arena: var Arena; dict: var LzwDict; indices: openArray[uint8]
+): BitWriter =
   ## Compress quantized pixel indices with GIF's own variable-width LZW.
   ##   Root codes 0 ..< `COUNT_TABLE` are the palette indices themselves; clear and end
   ##   codes follow immediately after, and every code the dictionary invents follows those.
-  const
-    CODE_CLEAR = COUNT_TABLE
-    CODE_END = CODE_CLEAR + 1
-    CODE_MAX = 4096
+  ##   Output is reserved at up to double the input, plus slack: LZW never expands data
+  ##   this repetitive by more than the occasional wider code, and this is generous
+  ##   enough to never come close in practice.
+  dict.clear()
+  let capacity_output = 2*len(indices) + 256
   var
-    writer: BitWriter
-    dict = initTable[(int, uint8), int]()
+    writer = BitWriter(buffer: push[uint8](arena, capacity_output), capacity: capacity_output)
     next_code = CODE_END + 1
     width_code = BITS_CODE + 1
     code_current = -1
@@ -136,14 +208,14 @@ proc lzwEncode(indices: openArray[uint8]): seq[uint8] =
     if code_current < 0:
       code_current = int(value)
       continue
-    let key = (code_current, value)
-    if dict.hasKey(key):
-      code_current = dict[key]
+    let existing = dict.find(code_current, value)
+    if existing >= 0:
+      code_current = existing
       continue
 
     writer.packCode(code_current, width_code)
     if next_code < CODE_MAX:
-      dict[key] = next_code
+      dict.insert(code_current, value, next_code)
       inc next_code
       # GIF's own LZW widens a step later than the naive "table is now full" reading
       # would suggest: code 2^width_code still fits the current width, so only the
@@ -159,7 +231,7 @@ proc lzwEncode(indices: openArray[uint8]): seq[uint8] =
   if code_current >= 0: writer.packCode(code_current, width_code)
   writer.packCode(CODE_END, width_code)
   writer.flushBits()
-  writer.buffer
+  writer
 
 
 
@@ -183,9 +255,12 @@ proc writeSubBlocks(file: File; data: openArray[uint8]) =
 
 
 proc writeFrame(
-  file: File; width, height: int; row_bottom_up: openArray[uint8]; centiseconds_delay: int
+  file: File; arena: var Arena; dict: var LzwDict;
+  width, height: int; row_bottom_up: openArray[uint8]; centiseconds_delay: int
 ) =
   ## Write one frame's Graphic Control Extension and Image Descriptor.
+  ##   Every scratch buffer this needs comes from `arena`; caller resets it once this
+  ##   returns, since nothing carved from it survives past one frame.
   let delay = toLittleEndian16(uint16(centiseconds_delay))
   discard file.writeBytes([0x21'u8, 0xF9, 0x04, 0x00, delay[0], delay[1], 0x00, 0x00], 0, 8)
 
@@ -193,7 +268,7 @@ proc writeFrame(
   discard file.writeBytes([0x2C'u8, 0, 0, 0, 0, w[0], w[1], h[0], h[1], 0x00], 0, 10)
 
   # Quantize while flipping, so no separate right-side-up copy of the frame exists.
-  var indices = newSeq[uint8](width*height)
+  let indices = push[uint8](arena, width*height)
   for row in 0 ..< height:
     let
       source = (height - 1 - row)*width*CHANNELS
@@ -203,28 +278,31 @@ proc writeFrame(
       indices[destination + column] =
         paletteIndex(row_bottom_up[at], row_bottom_up[at + 1], row_bottom_up[at + 2])
 
+  let compressed = lzwEncode(arena, dict, indices.toOpenArray(0, width*height - 1))
   file.write(char(BITS_CODE))
-  file.writeSubBlocks(lzwEncode(indices))
+  file.writeSubBlocks(compressed.buffer.toOpenArray(0, compressed.count - 1))
 
 
 
 #[ Animation Encoding ]#
 
 proc writeGif*(
-  path: string; width, height: int;
-  frames_bottom_up: openArray[seq[uint8]]; centiseconds_delay: int
+  arena: var Arena; path: string; width, height: int;
+  frames_bottom_up: openArray[uint8]; count_frames: int; centiseconds_delay: int
 ) =
-  ## Write frames as one looping animated GIF, flipping rows so each reads top-down.
-  ##   Every frame holds tightly packed RGB triples, first row nearest bottom, exactly
-  ##   as `capturePixels` reads them and `writePng` takes them.
+  ## Write `count_frames` frames as one looping animated GIF, flipping rows so each
+  ## reads top-down. `frames_bottom_up` holds every frame back to back, each the same
+  ## tightly packed RGB triples `capturePixels` reads and `writePng` takes.
+  ##   Every scratch buffer this or a frame needs comes from `arena`; caller resets it
+  ##   once this returns.
   doAssert width > 0 and height > 0,
     &"Image must have positive extent; got `{width}x{height}`."
-  doAssert len(frames_bottom_up) > 0, "Animated GIF needs at least one frame."
+  doAssert count_frames > 0, "Animated GIF needs at least one frame."
   doAssert centiseconds_delay > 0,
     &"Hold time must be positive; got `{centiseconds_delay}` centiseconds."
-  for frame in frames_bottom_up:
-    doAssert len(frame) >= width*height*CHANNELS,
-      &"Frame holds {len(frame)} bytes, short of {width*height*CHANNELS}."
+  let frame_size = width*height*CHANNELS
+  doAssert len(frames_bottom_up) >= count_frames*frame_size,
+    &"Frames hold {len(frames_bottom_up)} bytes, short of {count_frames*frame_size}."
 
   let file = open(path, fmWrite)
   defer: file.close
@@ -238,7 +316,13 @@ proc writeGif*(
   # Application Extension: loop forever, as a still storyboard is a poor animated one.
   discard file.writeChars("!\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00", 0, 19)
 
-  for frame in frames_bottom_up:
-    file.writeFrame(width, height, frame, centiseconds_delay)
+  var dict: LzwDict
+  for index in 0 ..< count_frames:
+    file.writeFrame(
+      arena, dict, width, height,
+      frames_bottom_up.toOpenArray(index*frame_size, (index + 1)*frame_size - 1),
+      centiseconds_delay,
+    )
+    arena.reset()
 
   file.write(char(0x3B)) # Trailer.
