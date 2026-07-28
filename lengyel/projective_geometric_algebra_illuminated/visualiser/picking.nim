@@ -183,12 +183,9 @@ func pickNearest*(
       distance_best = distance
       slot_best = some(slot)
 
-  # Reads geometry once per live item, whether or not it's visible, and only what's
-  #   needed after that -- not the whole `Item` (label and born included) `scene.pairs`
-  #   would otherwise copy for every candidate, on every cursor test, every frame.
-  for slot in scene.liveSlots:
-    if not scene.isVisible(slot): continue
-    let geometry = scene.geometry(slot)
+  for slot, item in scene.pairs:
+    if not item.is_visible: continue
+    let geometry = item.geometry
     let shape = shape(geometry)
     if shape.isNone: continue
 

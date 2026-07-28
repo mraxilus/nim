@@ -122,16 +122,12 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   discard gui.checkbox("", addr scene.isVisibleAt(slot))
   gui.tooltip("Show or hide this object without removing it.")
   gui.sameLine()
-  let tint = scene.ink(slot).colour
+  let item = scene[slot]
+  let tint = item.ink.colour
   gui.textTinted(toCstring(scene.labelAt(slot)), tint.red, tint.green, tint.blue)
   gui.sameLine()
   result = gui.buttonSmall("remove")
   gui.tooltip("Delete this object; its slot is reused by the next one you add.")
-
-  # Read once, not once per line below -- `geometry` borrows straight out of scene's own
-  #   storage, so this costs nothing beyond the two `formatMultivector`/`describeShape`
-  #   reads actually need.
-  let geometry = scene.geometry(slot)
 
   # Built into a stack buffer rather than a `string`, since every visible item redraws
   #   both lines every frame; a fresh heap string per item per frame is exactly the kind
@@ -139,17 +135,17 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   var line: array[WIDTH_ITEM_LINE, char]
   let coefficients = buildChars(line):
     appendChars(line, cursor, "  ")
-    formatMultivector(geometry, line, cursor)
+    formatMultivector(item.geometry, line, cursor)
   gui.text(coefficients)
   let shape_word = buildChars(line):
     appendChars(line, cursor, "  ")
-    describeShape(geometry, line, cursor)
+    describeShape(item.geometry, line, cursor)
   gui.text(shape_word)
 
   if gui.header("edit", is_open_first = false):
     gui.widthPush(220.0)
     discard gui.inputText("label", toCstring(scene.labelAt(slot)), cint(LABEL_MAX))
-    var index_ink = cint(scene.ink(slot))
+    var index_ink = cint(item.ink)
     if gui.combo("colour", addr index_ink, addr lut_ink_to_name[Ink.low], cint(COUNT_INK)):
       scene.setInk(slot, Ink(index_ink))
     gui.widthPop()
@@ -180,7 +176,7 @@ proc layoutObjects*(scene: var Scene) =
     return
 
   var slot_removed = none(int)
-  for slot in scene.liveSlots:
+  for slot, _ in scene.pairs:
     if layoutItem(scene, slot): slot_removed = some(slot)
   if slot_removed.isSome: scene.removeItem(slot_removed.get)
 
@@ -221,7 +217,7 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
     names: array[ITEMS_MAX, cstring]
     slots: array[ITEMS_MAX, int]
     count = 0
-  for slot in scene.liveSlots:
+  for slot, _ in scene.pairs:
     names[count] = toCstring(scene.labelAt(slot))
     slots[count] = slot
     inc count
@@ -253,7 +249,7 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
     let
       first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
       second = slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
-      derived = applyOperation(operation, scene.geometry(first), scene.geometry(second))
+      derived = applyOperation(operation, scene[first].geometry, scene[second].geometry)
       name_first = $toCstring(scene.labelAt(first))
       name_second = $toCstring(scene.labelAt(second))
       label =

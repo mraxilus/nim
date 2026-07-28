@@ -56,14 +56,16 @@ type
   Label* = array[LABEL_MAX, char]
     ## Hold item's display text, terminated by 0, so GUI may edit it without allocating.
 
-  Item* = object ## Hold one RGA object together with its presentation.
-    geometry*: Multivector ## Object being visualised.
-    label*: Label ## Display text; drawn verbatim, never inspected.
-    ink*: Ink ## Palette slot object is drawn with.
-    is_visible*: bool ## Whether object is tessellated this frame.
-    born*: float ## Clock reading `addItem` was given when this item appeared.
-      ##   Meaningless in isolation; a caller animating appearance reads only its own
-      ##   `now - born`, so scene never needs to know what clock or its units are.
+  Item* = object ## Handle onto one live slot's data; a view, not a copy.
+    ##   Holds a pointer back into `scene`'s own storage plus the slot number -- reading
+    ##   `.geometry`, `.label`, `.ink`, `.is_visible` or `.born` off it resolves straight
+    ##   into that storage each time, so holding or passing an `Item` around costs no
+    ##   more than a pointer and an int, whether or not the caller ends up reading every
+    ##   field or just one. Do not hold one across a mutation of its own slot (`removeItem`
+    ##   followed by reuse via `addItem`): same discipline as any other live reference
+    ##   into a container you do not own.
+    scene: ptr Scene
+    slot: int
 
   Scene* = object ## Hold fixed-capacity arena of items, addressed by stable slot.
     geometries: array[ITEMS_MAX, Multivector]
@@ -280,60 +282,29 @@ func isAlive*(scene: Scene; slot: int): bool =
 
 
 func `[]`*(scene: Scene; slot: int): Item =
-  ## Read item by slot, assembled from parallel storage.
-  ##   Costs a copy of every field, `geometry` included, whether or not caller wants
-  ##   all of them: fine for a one-shot read or a test, wasteful for a hot path that
-  ##   walks every item every frame wanting only one or two fields. `geometry`,
-  ##   `label`, `ink`, `isVisible` and `born` below read a single field with no such
-  ##   waste, and `liveSlots` walks slots with no `Item` built at all.
+  ## Read item by slot: a handle onto `scene`'s own storage, not a copy of it.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  Item(
-    geometry: scene.geometries[slot],
-    label: scene.labels[slot],
-    ink: scene.inks[slot],
-    is_visible: scene.are_visible[slot],
-    born: scene.borns[slot],
-  )
+  Item(scene: unsafeAddr scene, slot: slot)
 
 
-func geometry*(scene: Scene; slot: int): lent Multivector =
-  ## Read item's geometry by slot, without assembling a whole `Item` around it.
-  ##   `lent` borrows straight out of `scene`'s own storage, so this costs no more
-  ##   than reading the array element directly would.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.geometries[slot]
+func geometry*(item: Item): lent Multivector = item.scene.geometries[item.slot]
+  ## Read item's geometry, straight out of the scene the handle points at.
 
 
-func label*(scene: Scene; slot: int): lent Label =
-  ## Read item's label by slot, without assembling a whole `Item` around it.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.labels[slot]
+func label*(item: Item): lent Label = item.scene.labels[item.slot]
+  ## Read item's label, straight out of the scene the handle points at.
 
 
-func ink*(scene: Scene; slot: int): Ink =
-  ## Read item's palette slot by slot, without assembling a whole `Item` around it.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.inks[slot]
+func ink*(item: Item): Ink = item.scene.inks[item.slot]
+  ## Read item's palette slot, straight out of the scene the handle points at.
 
 
-func isVisible*(scene: Scene; slot: int): bool =
-  ## Read item's visibility by slot, without assembling a whole `Item` around it.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.are_visible[slot]
+func is_visible*(item: Item): bool = item.scene.are_visible[item.slot]
+  ## Read item's visibility, straight out of the scene the handle points at.
 
 
-func born*(scene: Scene; slot: int): float =
-  ## Read item's `born` reading by slot, without assembling a whole `Item` around it.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.borns[slot]
-
-
-iterator liveSlots*(scene: Scene): int =
-  ## Yield each live slot, in slot order, with no `Item` built at all -- for a caller
-  ## that only wants the slot, or that reads one or two fields itself through the
-  ## accessors above rather than through every field at once.
-  for slot in 0 ..< ITEMS_MAX:
-    if scene.are_alive[slot]: yield slot
+func born*(item: Item): float = item.scene.borns[item.slot]
+  ## Read item's `born` reading, straight out of the scene the handle points at.
 
 
 proc geometryAt*(scene: var Scene; slot: int): var Multivector =

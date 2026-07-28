@@ -83,6 +83,6 @@ proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.d
   ##   step produced can no longer assume it landed in the last slot of a dense array.
   doAssert scene.isAlive(step.index_first) and scene.isAlive(step.index_second),
     "Storyboard step names an operand the scene has not built yet."
-  result = applyOperation(step.operation, scene.geometry(step.index_first),
-    scene.geometry(step.index_second))
+  result = applyOperation(step.operation, scene[step.index_first].geometry,
+    scene[step.index_second].geometry)
   scene.addItem(result, step.label, step.ink, now)
