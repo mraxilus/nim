@@ -26,7 +26,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, gui, mesh, objects, scene]
+import ./[camera, format, gui, mesh, objects, scene]
 
 
 
@@ -41,6 +41,10 @@ const
     ## Set width panels open at, in pixels.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
+  WIDTH_ITEM_LINE = 128
+    ## Bound length of one item's coefficient or shape line, redrawn every frame.
+  WIDTH_SHAPE_WORD = 32
+    ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
 
 
 
@@ -97,8 +101,22 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   gui.textTinted(toCstring(scene.labelAt(slot)), tint.red, tint.green, tint.blue)
   gui.sameLine()
   result = gui.buttonSmall("remove")
-  gui.text(cstring(&"  {formatMultivector(scene[slot].geometry)}"))
-  gui.text(cstring(&"  {describeShape(scene[slot].geometry)}"))
+
+  # Built into a stack buffer rather than a `string`, since every visible item redraws
+  #   both lines every frame; a fresh heap string per item per frame is exactly the kind
+  #   of allocator churn an arena-backed scene should not turn around and reintroduce.
+  var line: array[WIDTH_ITEM_LINE, char]
+  var cursor = 0
+  appendChars(line, cursor, "  ")
+  formatMultivector(scene[slot].geometry, line, cursor)
+  finishChars(line, cursor)
+  gui.text(toCstring(line))
+
+  cursor = 0
+  appendChars(line, cursor, "  ")
+  describeShape(scene[slot].geometry, line, cursor)
+  finishChars(line, cursor)
+  gui.text(toCstring(line))
 
   if gui.header("edit", is_open_first = false):
     gui.widthPush(220.0)
@@ -114,7 +132,16 @@ proc layoutItem(scene: var Scene; slot: int): bool =
 proc layoutObjects*(scene: var Scene) =
   ## Lay out every live item's controls, applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
-  gui.separatorText(cstring(&"objects ({scene.len} of {ITEMS_MAX})"))
+  var header: array[32, char]
+  var cursor_header = 0
+  appendChars(header, cursor_header, "objects (")
+  appendInt(header, cursor_header, scene.len)
+  appendChars(header, cursor_header, " of ")
+  appendInt(header, cursor_header, ITEMS_MAX)
+  appendChars(header, cursor_header, ")")
+  finishChars(header, cursor_header)
+  gui.separatorText(toCstring(header))
+
   var slot_removed = none(int)
   for slot, _ in scene.pairs:
     if layoutItem(scene, slot): slot_removed = some(slot)
@@ -188,7 +215,12 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"
     scene.addItem(derived, label, inkCycled(scene.len), now)
-    toChars(&"{$operation} gave {describeShape(derived)}.", workbench.message)
+
+    var shape_word: array[WIDTH_SHAPE_WORD, char]
+    var cursor_shape = 0
+    describeShape(derived, shape_word, cursor_shape)
+    finishChars(shape_word, cursor_shape)
+    toChars(&"{$operation} gave {$toCstring(shape_word)}.", workbench.message)
   gui.disabledPop()
 
 
@@ -247,11 +279,23 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   discard gui.checkbox("vsync", addr workbench.is_vsync_enabled)
   gui.sameLine()
   gui.text("uncheck to see uncapped cost; uneven fps below settles over ~1s after any change")
-  gui.text(cstring(&"{int(gui.framerate())} fps, {1000.0/max(gui.framerate(), 1.0):.2f} ms/frame"))
-  gui.text(cstring(
-    &"tessellate {workbench.microseconds_tessellate:.1f} us into " &
-    &"{workbench.count_vertices} vertices"
-  ))
+  var line: array[WIDTH_ITEM_LINE, char]
+  var cursor = 0
+  appendInt(line, cursor, int(gui.framerate()))
+  appendChars(line, cursor, " fps, ")
+  appendFixed(line, cursor, 1000.0/max(gui.framerate(), 1.0), 2)
+  appendChars(line, cursor, " ms/frame")
+  finishChars(line, cursor)
+  gui.text(toCstring(line))
+
+  cursor = 0
+  appendChars(line, cursor, "tessellate ")
+  appendFixed(line, cursor, workbench.microseconds_tessellate, 1)
+  appendChars(line, cursor, " us into ")
+  appendInt(line, cursor, workbench.count_vertices)
+  appendChars(line, cursor, " vertices")
+  finishChars(line, cursor)
+  gui.text(toCstring(line))
 
 
 

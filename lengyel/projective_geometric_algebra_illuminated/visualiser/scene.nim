@@ -32,7 +32,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[mesh, objects]
+import ./[format, mesh, objects]
 
 
 
@@ -205,27 +205,36 @@ const lut_basis_to_name* = block:
   lut
 
 
-func formatMultivector*(m: Multivector): string =
-  ## Print multivector in ASCII, in same shape library's own `$` uses.
+proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: var int) =
+  ## Print multivector in ASCII into fixed storage, in same shape library's own `$` uses.
   ##   Library writes basis elements in mathematical bold, which lives outside the Basic
   ##   Multilingual Plane; no font a GUI can load here carries those codepoints.
+  ##   Appends from `cursor` onward rather than returning a `string`, so redrawing every
+  ##   visible item's coefficients, every one, every frame, never touches the heap.
+  var wrote_any = false
   for b in Basis:
     if abs(m[b]) <= TOLERANCE_ABS: continue
-    let
-      sign = if m[b] < 0: " - " else: (if len(result) == 0: "" else: " + ")
-      magnitude = abs(m[b])
-    result &= &"{sign}{magnitude:.4g} {lut_basis_to_name[b]}"
-  if len(result) == 0: result = "0 S"
+    if m[b] < 0: appendChars(storage, cursor, " - ")
+    elif wrote_any: appendChars(storage, cursor, " + ")
+    appendMagnitude(storage, cursor, abs(m[b]))
+    appendChars(storage, cursor, " ")
+    appendChars(storage, cursor, lut_basis_to_name[b])
+    wrote_any = true
+  if not wrote_any: appendChars(storage, cursor, "0 S")
 
 
-func describeShape*(m: Multivector): string =
-  ## Name geometry multivector stands for, for reporting back to user.
+proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =
+  ## Name geometry multivector stands for into fixed storage, for reporting to user.
+  ##   Appends from `cursor` onward; see `formatMultivector` for why.
   let shape = shape(m)
-  if shape.isNone: return "mixed grade, nothing to draw"
-  case shape.get
-  of Shape.Point: (if m.isHorizon: "point at horizon" else: "point")
-  of Shape.Line: (if m.isHorizon: "line at horizon" else: "line")
-  of Shape.Plane: (if m.isHorizon: "plane at horizon" else: "plane")
+  appendChars(storage, cursor,
+    if shape.isNone: "mixed grade, nothing to draw"
+    else:
+      case shape.get
+      of Shape.Point: (if m.isHorizon: "point at horizon" else: "point")
+      of Shape.Line: (if m.isHorizon: "line at horizon" else: "line")
+      of Shape.Plane: (if m.isHorizon: "plane at horizon" else: "plane")
+  )
 
 
 
@@ -234,11 +243,9 @@ func describeShape*(m: Multivector): string =
 proc toChars*(text: string; storage: var openArray[char]) =
   ## Copy text into fixed char storage, truncating where it will not fit.
   ##   Truncation is deliberate: storage is display only, and GUI must never overrun it.
-  let count = min(len(text), len(storage) - 1)
-  for i in 0 ..< count:
-    storage[i] = text[i]
-  for i in count ..< len(storage):
-    storage[i] = '\0'
+  var cursor = 0
+  appendChars(storage, cursor, text)
+  finishChars(storage, cursor)
 
 
 template toCstring*(storage: untyped): cstring = cast[cstring](unsafeAddr storage[0])

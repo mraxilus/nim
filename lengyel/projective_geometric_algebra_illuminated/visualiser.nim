@@ -58,7 +58,8 @@ import std/[math, monotimes, options, os, parseopt, strformat, strutils]
 
 import ./pga
 import ./visualiser/[
-  camera, gif, gui, image, interaction, mesh, objects, panel, picking, renderer, scene, storyboard
+  camera, format, gif, gui, image, interaction, mesh, objects, panel, picking, renderer, scene,
+  storyboard,
 ]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
@@ -98,6 +99,8 @@ const
   STRIDE_GIF = 4
     ## Keep every this-many-th pixel in both directions, so the storyboard's GIF stays
     ## a short preview rather than a full-resolution capture nobody asked for.
+  WIDTH_SHAPE_WORD = 32
+    ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
@@ -419,7 +422,12 @@ proc runStoryboard(
   for step in STEPS:
     clock += 1.0
     let derived = applyStep(scene, step, clock)
-    toChars(&"{step.label} gave {describeShape(derived)}.", workbench.message)
+
+    var shape_word: array[WIDTH_SHAPE_WORD, char]
+    var cursor_shape = 0
+    describeShape(derived, shape_word, cursor_shape)
+    finishChars(shape_word, cursor_shape)
+    toChars(&"{step.label} gave {$toCstring(shape_word)}.", workbench.message)
     captureStep(step.stem)
 
   let path_gif = directory / "storyboard.gif"

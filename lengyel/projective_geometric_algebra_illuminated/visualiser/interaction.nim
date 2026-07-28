@@ -11,7 +11,14 @@
 
 import std/[options, strformat]
 
-import ./[camera, picking, scene]
+import ./[camera, format, picking, scene]
+
+
+
+#[ Drag Configuration ]#
+
+const WIDTH_SHAPE_WORD = 32
+  ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
 
 
 
@@ -113,4 +120,9 @@ proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0):
   scene.addItem(
     derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now
   )
-  &"{label_source} {drag.notation} {label_destination} gave {describeShape(derived)}."
+
+  var shape_word: array[WIDTH_SHAPE_WORD, char]
+  var cursor_shape = 0
+  describeShape(derived, shape_word, cursor_shape)
+  finishChars(shape_word, cursor_shape)
+  &"{label_source} {drag.notation} {label_destination} gave {$toCstring(shape_word)}."

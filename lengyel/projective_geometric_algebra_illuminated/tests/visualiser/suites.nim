@@ -18,7 +18,7 @@ when compileOption("profiler"):
 import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
-import ../../visualiser/[camera, gif, image, interaction, mesh, objects, picking, scene]
+import ../../visualiser/[camera, format, gif, image, interaction, mesh, objects, picking, scene]
 
 randomize(0)
 
@@ -97,6 +97,27 @@ func transform(matrix: Matrix4; p: Position; weight: float): array[4, float] =
   for row in 0 .. 3:
     for column in 0 .. 3:
       result[row] += float(matrix.at(row, column)) * coordinates[column]
+
+
+proc formatMultivectorString(m: Multivector): string =
+  ## Format into a stack buffer exactly as the panel does, then read it back as a
+  ## `string` a test can compare against; production code never takes this last step.
+  var
+    buffer: array[128, char]
+    cursor = 0
+  formatMultivector(m, buffer, cursor)
+  finishChars(buffer, cursor)
+  $toCstring(buffer)
+
+
+proc describeShapeString(m: Multivector): string =
+  ## Format into a stack buffer exactly as the panel does; see `formatMultivectorString`.
+  var
+    buffer: array[32, char]
+    cursor = 0
+  describeShape(m, buffer, cursor)
+  finishChars(buffer, cursor)
+  $toCstring(buffer)
 
 
 
@@ -442,16 +463,16 @@ suite "Scene":
 
 
   test "multivectors print every term they carry, and nothing else":
-    check formatMultivector(initElement(Basis.scalar, 0.0)) == "0 S"
-    check formatMultivector(toMultivector(Position(x: 2, y: 0, z: -3))) ==
+    check formatMultivectorString(initElement(Basis.scalar, 0.0)) == "0 S"
+    check formatMultivectorString(toMultivector(Position(x: 2, y: 0, z: -3))) ==
       "2.000 E1 - 3.000 E3 + 1.000 E4"
     for i in 0 ..< SAMPLES:
-      check describeShape(POINTS[i]) == "point"
-      check describeShape(LINES[i]) == "line"
-      check describeShape(PLANES[i]) == "plane"
+      check describeShapeString(POINTS[i]) == "point"
+      check describeShapeString(LINES[i]) == "line"
+      check describeShapeString(PLANES[i]) == "plane"
       # Attitude of a line is its direction, which is a point standing at the horizon.
-      check describeShape(⊖ LINES[i]) == "point at horizon"
-    check describeShape(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
+      check describeShapeString(⊖ LINES[i]) == "point at horizon"
+    check describeShapeString(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
 
 
 
