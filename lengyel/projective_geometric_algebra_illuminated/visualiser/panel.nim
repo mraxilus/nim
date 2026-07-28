@@ -452,16 +452,21 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     BYTES_PER_SLOT = BYTES_SCENE div ITEMS_MAX
   var pool_memory: array[WIDTH_ITEM_LINE, char]
   cursor = 0
+  appendInt(pool_memory, cursor, BYTES_PER_SLOT)
+  appendChars(pool_memory, cursor, " B/slot, ")
   appendFixed(pool_memory, cursor, float(BYTES_SCENE) / 1024.0, 1)
-  appendChars(pool_memory, cursor, " KB total, ")
+  appendChars(pool_memory, cursor, " KB total (")
+  appendInt(pool_memory, cursor, scene.len)
+  appendChars(pool_memory, cursor, " active = ")
   appendFixed(pool_memory, cursor, float(scene.len * BYTES_PER_SLOT) / 1024.0, 1)
-  appendChars(pool_memory, cursor, " KB active")
+  appendChars(pool_memory, cursor, " KB)")
   finishChars(pool_memory, cursor)
   gui.text(toCstring(pool_memory))
   gui.tooltip(
     "Scene is one fixed block sized for all 64 slots up front, not allocated one " &
-    "object at a time; this splits that block evenly to show roughly what a slot " &
-    "costs, not a measurement of any single object."
+    "object at a time; this splits that block evenly, so `B/slot` is roughly what one " &
+    "object's own slot costs, and the parenthesised figure is that times how many are " &
+    "actually alive right now -- not a measurement of any single object on its own."
   )
 
   gui.separatorText("total")
