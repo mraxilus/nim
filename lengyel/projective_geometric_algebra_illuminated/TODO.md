@@ -1,75 +1,63 @@
-# Working notes: refactor / colour / visual-noise pass — done
+# Working notes: SoA-to-Item copy minimization pass — done
 
 This file mirrors the task tracker I use internally (visible to me as a todo list, not
 otherwise visible to you), plus anything else worth knowing about how each round went.
 Tracked in git (per your stop-hook check), so it stays part of the branch's own history.
 
 Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, live diagnostics panel, object
-pool + total memory readouts) are all done and summarized in prior commits on this
-branch — ask if you want that history restated here.
+pool + total memory readouts, refactor/colour/visual-noise audits) are all done and
+summarized in prior commits on this branch — ask if you want that history restated here.
 
 ## This round: task list (final state)
 
-You asked for an unhurried, open-ended pass: identify refactor/simplification
-opportunities, non-RGA-native math, and remaining heap allocation; separately, make the
-categorical colours more pleasant and cut down the visual noise a few overlapping
-planes produce.
+You asked why `Scene`'s structure-of-arrays slots get copied into full `Item` objects
+on the stack whenever read, and to minimise data copying that has no good reason
+behind it.
 
-- [x] #37 Audit heap allocations — grepped and read every `visualiser/*.nim` hit.
-      **Found nothing to fix.** Every `strformat`/heap-string use left is either a
-      `doAssert` message (cost paid only if the assertion fails) or one-shot
-      button-click UI code, never the interactive draw loop itself.
-- [x] #38 Audit non-RGA-native math — **found nothing to fix.** `objects.nim`'s
-      Position/Direction arithmetic and `picking.nim`'s screen-space projection are
-      non-algebraic by necessity (rendering-pipeline concerns) and already documented
-      as deliberate in their own doc comments; `camera.eye`'s spherical placement is
-      an orbit-camera convenience, independent of the RGA frame derived from it.
-- [x] #39 Audit refactor/simplification opportunities — **found and fixed one real
-      win**: `panel.nim`'s diagnostics section repeated the same five-line
-      "cursor/append/finishChars/cast" pattern at nine text readouts. Added
-      `format.buildChars`, a template collapsing each site to just the calls that
-      vary. Verified byte-for-byte identical rendered text before/after.
-- [x] #40 Redesign colour palette — the old 7-hue categorical palette was picked by
-      eye and never checked; run through the dataviz skill's own
-      `validate_palette.js` against this app's actual backdrop, it failed badly (two
-      hues only 1.9 CVD ΔE apart — nearly indistinguishable to a colourblind reader).
-      Rebuilt at matched lightness/saturation, iterated against the validator until
-      the adjacent-pair gates all passed (CVD ΔE 12.1, normal-vision ΔE 25.4 worst
-      case), and reordered the enum so consecutive slots (the pair objects are most
-      likely to be compared, since they're handed out in that cycle order) sit far
-      apart on the wheel.
-- [x] #41 Reduce visual noise from planes — a plane's own ruled grid was the fastest
-      way overlapping planes turned into clutter (34 lines/plane at flat 0.55 alpha).
-      `CELLS_PLANE` 8→4 (18 lines), grid alpha split into a crisp boundary (0.65) and
-      a much fainter interior (0.22), wash 0.13→0.10, normal-arrow guide toned down
-      to 0.75. Checked by regenerating the storyboard and looking at the step where a
-      derived plane crosses the seed ground plane.
-- [x] #42 Implement fixes from audits — folded into #39/#40/#41 above.
-- [x] #43 Rebuild, test, visually verify, commit/push/deliver — full suite green,
-      both smoke tests (screenshot + storyboard) clean at production settings.
+- [x] Diagnose why: `scene[slot]`, `items`, and `pairs` all assemble a full `Item` —
+      copying every field, `geometry` (128-byte `Multivector`, 4D rigid PGA) and
+      `label` (40-byte array) included — whether or not the caller wanted them.
+- [x] Grep and read every production call site (`scene\[`, `scene.pairs`,
+      `scene.items`, `for item in scene`) to separate real one-shot reads from
+      wasteful ones. Found four **hot** sites (once per live item, every frame) and
+      three **cold** ones (once per click) that discarded fields going along for the
+      ride — no good reason behind any of the copies, just different costs.
+- [x] Add lightweight accessors to `scene.nim`: `geometry`/`label` return `lent`
+      (borrowed straight out of the array, no copy at all); `ink`/`isVisible`/`born`
+      return their small scalars by value. Added `liveSlots`, an iterator yielding
+      just the slot for a caller that reads specific fields itself.
+- [x] Migrate every identified call site: `visualiser.nim`'s `assembleMeshes` (main
+      render loop) and `drawInteractionOverlay`; `picking.nim`'s `pickNearest`;
+      `panel.nim`'s `layoutItem` (caching one `geometry` read used twice instead of
+      re-fetching), `layoutObjects`, and `layoutOperation` (its `pairs` loop and its
+      apply-button handler); `storyboard.nim`'s `applyStep`; `interaction.nim`'s
+      `endDrag`. Left `Item`, `` `[]` ``, `items`, `pairs` untouched — still correct,
+      still used by tests, still the right tool for a genuine one-shot full read.
+- [x] Rebuild, re-run the full test suite, re-run both smoke tests (screenshot +
+      storyboard) under Xvfb and confirm every frame renders identically to before —
+      a pure internal storage-access change, so no visible difference is expected or
+      found.
+- [x] Commit/push source; sync + rebuild/test standalone in the delegations copy;
+      update its `PROVENANCE.md`; regenerate its storyboard assets; retar; deliver.
 
-Commits: `f5f6772` on `claude/rga-visualization-prototype-kbq9kw` (source). Delegations
-repo: `bb4284b` (synced copy + PROVENANCE.md + regenerated storyboard assets).
+Commits: `12b50b2` on `claude/rga-visualization-prototype-kbq9kw` (source).
+Delegations repo: `a65faed` (synced copy + `PROVENANCE.md` + regenerated storyboard
+assets).
 
 ## Process notes
 
-- Palette candidates were iterated with a throwaway Python script (`colorsys.hls_to_rgb`
-  for evenly-spaced hues at matched S/L) and checked with the dataviz skill's
-  `scripts/validate_palette.js` — never eyeballed. The skill's own reference palette
-  documents that 7-8 categorical hues cannot all clear its stricter *all-pairs* gate;
-  this set targets the *adjacent* gate instead, since `inkCycled` only guarantees
-  adjacency in cycle order, and that's the pairing this app actually produces most.
-- QA method unchanged from earlier rounds: temporarily patch `panel.nim` locally
-  (force the diagnostics header open, enlarge the window/arena-capacity defines) to
-  get one screenshot showing everything under Xvfb, revert before the real build,
-  confirm the revert is clean by diffing against a saved backup.
-- The delegations repo's own `.gitignore` has a `!*/storyboard/*.png` exception that
-  doesn't actually match the deep path this project's storyboard PNGs live at (only
-  one directory level before `storyboard/` is unignored, not several) — so those
-  PNGs have never actually been git-tracked there, only `storyboard.gif` is. Not
-  something this round changed or was asked to fix; noting it since it explains why
-  `git status` never flags them even after a real regeneration — `tar` bundles them
-  into the delivered tarball regardless of git's tracking state, so delivery is
-  unaffected.
+- Naming: the pre-existing *mutable* accessors are suffixed `At` (`geometryAt`,
+  `labelAt`, `isVisibleAt`, taking `scene: var Scene`); the new *read-only* ones take
+  `scene: Scene` (non-var) and carry no suffix (`geometry`, `label`, `ink`,
+  `isVisible`, `born`) — no overload collision between the two.
+- `lent` used only where it earns its keep (the two large fields); the three small
+  scalar fields are returned by plain value, since `lent`'s indirection isn't worth it
+  for 1-8 bytes.
+- This was additive, not a replacement: `Item`/`` `[]` ``/`items`/`pairs` still exist
+  and are still exactly right for `tests/visualiser/suites.nim`, which was
+  deliberately left unchanged.
+- QA method unchanged from earlier rounds: full test suite plus a headless
+  screenshot and storyboard regeneration under Xvfb, this time compared visually
+  against the pre-change renders (expecting, and finding, no difference at all).
 - `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked;
   copied in locally to build, stripped back out before each commit.
