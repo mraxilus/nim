@@ -46,7 +46,7 @@ const STEPS*: array[11, Step] = [
   Step(stem: "03_meet_line", label: "ground v G",
     operation: Operation.WedgeAnti, index_first: 3, index_second: 5, ink: Ink.Violet),
   Step(stem: "04_meet_point", label: "L v ground",
-    operation: Operation.WedgeAnti, index_first: 4, index_second: 3, ink: Ink.Coral),
+    operation: Operation.WedgeAnti, index_first: 4, index_second: 3, ink: Ink.Orchid),
   Step(stem: "05_support", label: "sup(L)",
     operation: Operation.Support, index_first: 4, index_second: 0, ink: Ink.Amber),
   Step(stem: "06_attitude", label: "att(L)",
@@ -54,7 +54,7 @@ const STEPS*: array[11, Step] = [
   Step(stem: "07_expand_weight", label: "a ^ L*  perp plane",
     operation: Operation.ExpandWeight, index_first: 0, index_second: 4, ink: Ink.Lime),
   Step(stem: "08_project", label: "a onto G",
-    operation: Operation.ProjectOrthogonal, index_first: 0, index_second: 5, ink: Ink.Coral),
+    operation: Operation.ProjectOrthogonal, index_first: 0, index_second: 5, ink: Ink.Orchid),
   # Attitude always drops one grade and always lands at horizon (see
   #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
   #   point at horizon above (06); applied to a plane it gives a line at horizon; applied

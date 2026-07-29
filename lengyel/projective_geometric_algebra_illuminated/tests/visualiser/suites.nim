@@ -323,8 +323,14 @@ suite "Mesh":
           ## within each segment's own 9 vertices -- see `addDisc`'s own quad winding.
         VERTICES_DISC = VERTICES_PER_SEGMENT*SEGMENTS_DISC
         VERTICES_NORMAL = 2
+      let radius_plateau = FRACTION_DISC_PLATEAU*SCALE_TEST.extent
+      var count_grid_lines = 0
+      for i in -int(radius_plateau / SIZE_CELL_GRID) .. int(radius_plateau / SIZE_CELL_GRID):
+        let offset = float(i)*SIZE_CELL_GRID
+        if radius_plateau*radius_plateau - offset*offset > 0.0: count_grid_lines += 2
+      let vertices_grid = count_grid_lines*2
       check MESHES[Primitive.Triangle].count_vertices == VERTICES_DISC
-      check MESHES[Primitive.Line].count_vertices == VERTICES_NORMAL
+      check MESHES[Primitive.Line].count_vertices == vertices_grid + VERTICES_NORMAL
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
@@ -340,8 +346,15 @@ suite "Mesh":
         #   fan actually draws.
         let radius_vertex = norm(vertex.toPosition - anchor.get)
         check isNear(radius_vertex, 0) or
-          isNear(radius_vertex, FRACTION_DISC_PLATEAU*SCALE_TEST.extent) or
+          isNear(radius_vertex, radius_plateau) or
           isNear(radius_vertex, SCALE_TEST.extent)
+      # Every grid line is a chord of the plateau circle, so both its own endpoints --
+      #   every vertex the grid itself contributes -- land exactly on that circle.
+      for i in 0 ..< vertices_grid:
+        let vertex = MESHES[Primitive.Line].vertices[i]
+        check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
+        check isNear(norm(vertex.toPosition - anchor.get), radius_plateau)
+        check isNear(float(vertex.alpha), ALPHA_GRID_PLANE)
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":

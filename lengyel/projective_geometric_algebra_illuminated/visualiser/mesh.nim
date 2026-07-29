@@ -126,6 +126,10 @@ const
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal arrow, shown a touch less boldly than its
     ## own disc's centre so it reads as a construction aid, not as another competing mark.
+  ALPHA_GRID_PLANE* = 0.55'f32
+    ## Set opacity of the ruled grid drawn over a finite plane's own flat plateau --
+    ## bolder than the disc's own wash so the lines read clearly against it, giving
+    ## the disc scale and orientation instead of reading as an amorphous soft-edged wash.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -150,7 +154,11 @@ type
     ##   apart on the colour wheel, so two objects added one after another -- the most
     ##   likely pair to end up compared or drawn near each other -- read as different
     ##   colours even under colour-vision deficiency, not just to typical vision.
-    Amber, Cyan, Rose, Lime, Violet, Coral, Teal,
+    ##   Every hue here also clears the dataviz skill's own validator against the three
+    ##   axis colours above, not just against each other (see `lut_ink_to_rgba`'s own
+    ##   comment) -- a categorical object is never the same hue family as a structural
+    ##   axis line, so neither is ever mistaken for the other.
+    Amber, Teal, Rose, Lime, Orchid, Cyan, Violet,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
     Triangle, Line, Point
@@ -221,18 +229,24 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
-  Ink.Amber: Rgba(red: 0.690, green: 0.510, blue: 0.145, alpha: 1.0),
-  Ink.Cyan: Rgba(red: 0.231, green: 0.518, blue: 0.808, alpha: 1.0),
-  Ink.Rose: Rgba(red: 0.824, green: 0.251, blue: 0.557, alpha: 1.0),
-  Ink.Lime: Rgba(red: 0.255, green: 0.639, blue: 0.157, alpha: 1.0),
-  Ink.Violet: Rgba(red: 0.510, green: 0.271, blue: 0.827, alpha: 1.0),
-  Ink.Coral: Rgba(red: 0.824, green: 0.329, blue: 0.251, alpha: 1.0),
-  Ink.Teal: Rgba(red: 0.129, green: 0.624, blue: 0.608, alpha: 1.0),
+  Ink.Amber: Rgba(red: 0.788, green: 0.506, blue: 0.000, alpha: 1.0),
+  Ink.Teal: Rgba(red: 0.000, green: 0.408, blue: 0.588, alpha: 1.0),
+  Ink.Rose: Rgba(red: 0.549, green: 0.267, blue: 0.420, alpha: 1.0),
+  Ink.Lime: Rgba(red: 0.431, green: 0.439, blue: 0.000, alpha: 1.0),
+  Ink.Orchid: Rgba(red: 0.745, green: 0.373, blue: 0.945, alpha: 1.0),
+  Ink.Cyan: Rgba(red: 0.000, green: 0.655, blue: 0.647, alpha: 1.0),
+  Ink.Violet: Rgba(red: 0.455, green: 0.110, blue: 0.851, alpha: 1.0),
 ] ## Map palette slot to colour: each hue picked at matched lightness and moderate,
   ## consistent saturation (rather than the mix of near-neon and washed-out shades a
   ## quick, unchecked choice tends to produce), and the whole set run through the
-  ## dataviz skill's own palette validator (adjacent CVD ΔE and normal-vision ΔE both
-  ## clear their floors against this backdrop) rather than picked by eye.
+  ## dataviz skill's own palette validator against the three axis colours above as
+  ## well as against each other -- CVD ΔE, normal-vision ΔE and lightness/chroma bounds
+  ## all clear their floors against both, catching a first version of this palette
+  ## (`Coral`, `Cyan` and `Lime` all sat close enough to `AxisX`/`AxisZ`/`AxisY` that a
+  ## reader could mistake a categorical object for a world axis) that eyeballing alone
+  ## had missed. `Coral` is retired as `Orchid` here: the hue "coral" names is claimed
+  ## by `AxisX` itself, too close to separate from it at any lightness or chroma this
+  ## validator accepts, so no hue there could keep both its old name and a safe margin.
 
 
 const COUNT_INK* = ord(Ink.high) + 1
@@ -357,6 +371,33 @@ proc addDisc(
         [inner_a, outer_a, outer_b, inner_b][index],
         [tint, tint_edge, tint_edge, tint][index],
       )
+
+
+proc addPlaneGrid(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius_plateau: float; tint: Rgba; cell_size: float = SIZE_CELL_GRID
+) =
+  ## Append ruled grid lines across the disc's own flat plateau, each clipped to a
+  ## chord of that plateau's circle rather than drawn full length and cut off --
+  ## the wash alone reads as soft-edged and directionless, a cloud rather than a
+  ## surface; scale and orientation only read once something rules across it.
+  ##   Confined to the plateau, not the disc's full radius: the outer band beyond it
+  ##   is already fading to nothing, and a grid line ending abruptly inside that fade
+  ##   would look like a defect rather than like the same soft edge the wash itself has.
+  let count = int(radius_plateau / cell_size)
+  for i in -count .. count:
+    let offset = float(i) * cell_size
+    let reach_squared = radius_plateau*radius_plateau - offset*offset
+    if reach_squared <= 0.0: continue
+    let reach = sqrt(reach_squared)
+    meshes.addSegment(
+      center + offset*axis_first - reach*axis_second,
+      center + offset*axis_first + reach*axis_second, tint,
+    )
+    meshes.addSegment(
+      center - reach*axis_first + offset*axis_second,
+      center + reach*axis_first + offset*axis_second, tint,
+    )
 
 
 proc addGreatCircle(
@@ -517,6 +558,13 @@ proc addPlane(
     #   toward its own rim rather than stopping at a hard edge that would give away this
     #   render's own finite reach for what is, in the algebra, an unbounded plane.
     meshes.addDisc(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
+
+    # Ruled grid over the disc's own flat plateau, so it reads as a surface with scale
+    #   and orientation rather than an amorphous soft-edged wash.
+    meshes.addPlaneGrid(
+      anchor.get, axis_first, axis_second, FRACTION_DISC_PLATEAU*extent,
+      tint.fade(ALPHA_GRID_PLANE*progress),
+    )
 
     # Show normal, as it is what tells plane apart from its own reflection.
     meshes.addArrow(
