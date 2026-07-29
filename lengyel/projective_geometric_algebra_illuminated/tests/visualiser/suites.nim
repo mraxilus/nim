@@ -311,25 +311,32 @@ suite "Mesh":
         check isNear(abs(dot(offset, axis.get)), norm(offset))
 
 
-  test "plane becomes a rim and crosshair, no fill, every vertex on it":
+  test "plane becomes a flat filled disc and a rim, every vertex on it":
     for plane in PLANES:
       MESHES.clearMeshes
       check MESHES.addObject(plane, Ink.Lime.colour, SCALE_TEST) == Placement.Finite
       const
+        VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
         VERTICES_RING = 2*SEGMENTS_CIRCLE_HORIZON
-        VERTICES_CROSSHAIR = 4 ## Two diameters, two vertices each.
         VERTICES_NORMAL = 2
-      check MESHES[Primitive.Triangle].count_vertices == 0
-      check MESHES[Primitive.Line].count_vertices == VERTICES_RING + VERTICES_CROSSHAIR + VERTICES_NORMAL
+      check MESHES[Primitive.Triangle].count_vertices == VERTICES_FILL
+      check MESHES[Primitive.Line].count_vertices == VERTICES_RING + VERTICES_NORMAL
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
-      for i in 0 ..< VERTICES_RING + VERTICES_CROSSHAIR:
+      for i in 0 ..< VERTICES_FILL:
+        let vertex = MESHES[Primitive.Triangle].vertices[i]
+        check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
+        check isNear(float(vertex.alpha), ALPHA_WASH)
+        # Every fill vertex is either the fan's own centre or out at the drawn extent
+        #   -- flat alpha throughout, so unlike the old fading disc there is no band
+        #   strictly between the two to rule out.
+        let radius_vertex = norm(vertex.toPosition - anchor.get)
+        check isNear(radius_vertex, 0) or isNear(radius_vertex, SCALE_TEST.extent)
+      for i in 0 ..< VERTICES_RING:
         let vertex = MESHES[Primitive.Line].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
         check isNear(float(vertex.alpha), Ink.Lime.colour.alpha)
-        # Ring vertices sit exactly at the drawn extent; crosshair endpoints do too,
-        #   since both diameters run tip to tip across the full extent.
         check isNear(norm(vertex.toPosition - anchor.get), SCALE_TEST.extent)
 
 

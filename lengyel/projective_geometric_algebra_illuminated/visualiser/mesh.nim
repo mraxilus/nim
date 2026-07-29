@@ -5,8 +5,8 @@
 ## line or plane always reads as extending well past the visible view, however far the
 ## camera currently orbits:
 ##   Line becomes segment of that extent either side of support, along its attitude.
-##   Plane becomes a rim at that same extent plus a crosshair through its own centre,
-##   spanned by its own frame -- no filled wash, so it never reads as a soft-edged cloud.
+##   Plane becomes a flat, translucent disc at that same extent plus a rim marking its
+##   edge crisply, spanned by its own frame.
 ##   Support point is what algebra computed, so it is marked in both cases.
 ##
 ## Object at horizon -- infinitely far away, no support point to anchor on -- is drawn
@@ -31,7 +31,7 @@
 ##   |-----------|--------------|-------------------------------------|
 ##   | Primitive | OpenGL       | Carries                             |
 ##   |-----------|--------------|-------------------------------------|
-##   | Triangle  | GL_TRIANGLES | Whole-sky domes.                    |
+##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.       |
 ##   | Line      | GL_LINES     | Lines, plane rims, horizon circles, |
 ##   |           |              | axes, ground grid.                  |
 ##   | Point     | GL_POINTS    | Points, support markers, stars.     |
@@ -73,11 +73,15 @@ const
     ## (unlike `EXTENT_FACTOR` above), so both read as extending indefinitely into the
     ## distance regardless of how far the camera has dollied in or out to inspect
     ## finite content.
-  FRACTION_GRID_FADE_START* = 0.2
+  FRACTION_GRID_FADE_START* = 0.03
     ## Hold ground grid lines at full alpha out to this fraction of their own reach,
-    ## fading the remainder out toward the horizon -- past this point, cells crowd
-    ## into fewer and fewer screen pixels under perspective, reading as aliasing
-    ## noise rather than as a reference.
+    ## fading the remainder out toward `FRACTION_GRID_FADE_END` -- past that point,
+    ## cells crowd into fewer and fewer screen pixels under perspective, reading as
+    ## aliasing noise rather than as a reference.
+  FRACTION_GRID_FADE_END* = 0.12
+    ## Cut ground grid lines off entirely at this fraction of their own reach, well
+    ## short of it -- a faint line still aliases under perspective, so the fix is to
+    ## stop drawing it there, not just to dim it further.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 16384
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
@@ -93,6 +97,9 @@ static:
   doAssert FRACTION_GRID_FADE_START > 0 and FRACTION_GRID_FADE_START < 1.0,
     &"Grid fade start fraction must fall strictly between 0 and 1; got " &
     &"`{FRACTION_GRID_FADE_START}`."
+  doAssert FRACTION_GRID_FADE_END > FRACTION_GRID_FADE_START and FRACTION_GRID_FADE_END <= 1.0,
+    &"Grid fade end fraction must exceed the start fraction and fall within 0 and 1; " &
+    &"got `{FRACTION_GRID_FADE_END}`."
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
   doAssert ANIMATION_MILLISECONDS > 0,
     &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
@@ -116,14 +123,17 @@ const
     ## Set band counts in a horizon plane's own whole-sky dome.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
+  ALPHA_WASH* = 0.16'f32
+    ## Set opacity of a finite plane's own fill -- flat across the whole disc, since
+    ## the rim already marks its edge crisply; low enough that whatever sits behind a
+    ## plane, including another plane crossing it, stays legible through it.
   ALPHA_WASH_SKY* = 0.05'f32
     ## Set opacity of a horizon plane's own whole-sky dome -- this one has no edge to
     ## fade toward and would otherwise read as a dominant tint over the entire view
     ## rather than a background hint.
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal arrow, shown a touch less boldly than the
-    ## plane's own rim and crosshair so it reads as a construction aid, not as another
-    ## competing mark.
+    ## plane's own rim so it reads as a construction aid, not as another competing mark.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -334,7 +344,7 @@ proc addPlaneRing(
 ) =
   ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
   ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is
-  ## drawn without a filled wash that would otherwise read as a soft-edged cloud.
+  ## drawn.
   for i in 0 ..< segments:
     let
       angle_a = (2.0*PI * float(i)) / float(segments)
@@ -342,6 +352,26 @@ proc addPlaneRing(
       point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
       point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
     meshes.addSegment(point_a, point_b, tint)
+
+
+proc addPlaneFill(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+) =
+  ## Append a flat, uniformly translucent fan filling the same circle `addPlaneRing`
+  ## outlines -- flat rather than faded toward the rim, since the rim itself already
+  ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
+  ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
+  ## legible through every one of its triangles alike.
+  for i in 0 ..< segments:
+    let
+      angle_a = (2.0*PI * float(i)) / float(segments)
+      angle_b = (2.0*PI * float(i + 1)) / float(segments)
+      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
+      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+    meshes.addVertex(Primitive.Triangle, center, tint)
+    meshes.addVertex(Primitive.Triangle, point_a, tint)
+    meshes.addVertex(Primitive.Triangle, point_b, tint)
 
 
 proc addGreatCircle(
@@ -413,31 +443,36 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
 
 
 proc addGrid*(meshes: var MeshSet; extent: float) =
-  ## Append reference grid on ground, so distance and direction stay judgeable, out to
-  ## `extent` -- fixed cell size (`SIZE_CELL_GRID`) regardless of how far that reaches,
-  ## so filling further out toward the far clip plane adds more cells rather than
-  ## stretching the existing ones until they read as empty ground near the camera. Each
-  ## line is cut into `SEGMENTS_GRID_FADE` pieces -- independent of cell size, so this
-  ## stays cheap even as `extent` grows -- with each piece's own two endpoints faded by
-  ## their own distance from the origin, per `alphaGridFade`: GL interpolates between
-  ## them same as any other vertex colour, so the fade reads smoothly across every
-  ## piece rather than in visible bands, and reaches exactly zero at `extent` itself.
+  ## Append reference grid on ground, so distance and direction stay judgeable, held
+  ## at fixed cell size (`SIZE_CELL_GRID`) regardless of how far it reaches. Rather
+  ## than drawing all the way out to `extent` at ever-fainter alpha, every line is cut
+  ## off entirely at `radius_fade_end` -- well short of `extent` -- since past that
+  ## point cells crowd into so few screen pixels under perspective that even a faint
+  ## line still aliases; cutting the geometry off there removes the aliasing outright
+  ## rather than just dimming it. Within `radius_fade_end`, each line is cut into
+  ## `SEGMENTS_GRID_FADE` pieces, faded by each endpoint's own distance from the
+  ## origin (`alphaGridFade`) from `radius_fade_start` so the cutoff itself is never
+  ## visible as a hard edge.
   ##   Skips the two lines through the origin itself: those coincide exactly with the
   ##   x and y world axes, and would either fight them for the same depth or hide their
   ##   colour under plain grid grey, depending on which happened to draw last.
   let
     tint = Ink.Grid.colour
-    count = int(ceil(extent / SIZE_CELL_GRID))
+    radius_fade_end = FRACTION_GRID_FADE_END * extent
     radius_fade_start = FRACTION_GRID_FADE_START * extent
+    count = int(ceil(radius_fade_end / SIZE_CELL_GRID))
   func tintAt(u, offset: float): Rgba =
-    tint.fade(tint.alpha * alphaGridFade(norm(Direction(x: u, y: offset, z: 0)), radius_fade_start, extent))
+    tint.fade(
+      tint.alpha * alphaGridFade(norm(Direction(x: u, y: offset, z: 0)), radius_fade_start, radius_fade_end)
+    )
   for i in -count .. count:
     if i == 0: continue
     let offset = float(i) * SIZE_CELL_GRID
+    let reach = sqrt(max(0.0, radius_fade_end*radius_fade_end - offset*offset))
     for j in 0 ..< SEGMENTS_GRID_FADE:
       let
-        a = extent * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
-        b = extent * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
+        a = reach * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
+        b = reach * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
       meshes.addVertex(Primitive.Line, Position(x: offset, y: a, z: 0), tintAt(a, offset))
       meshes.addVertex(Primitive.Line, Position(x: offset, y: b, z: 0), tintAt(b, offset))
       meshes.addVertex(Primitive.Line, Position(x: a, y: offset, z: 0), tintAt(a, offset))
@@ -503,12 +538,12 @@ proc addLine(
 proc addPlane(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
 ): Placement =
-  ## Append grade-3 object as a rim and crosshair about its support point, or, at
+  ## Append grade-3 object as a filled disc and rim about its support point, or, at
   ## horizon, as a dome filling the whole sky around `scale.eye` -- the unique
   ## universal object every plane at horizon stands for, regardless of which points
   ## produced it.
-  ##   `progress` grows the rim, its crosshair, and the normal arrow out from nothing,
-  ##   and fades every part of it in alongside.
+  ##   `progress` grows the disc, its rim, and the normal arrow out from nothing, and
+  ##   fades every part of it in alongside.
   let
     anchor = positionAnchor(geometry)
     axes = frame(geometry)
@@ -518,12 +553,10 @@ proc addPlane(
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
       tint_progress = tint.fade(tint.alpha*progress)
 
-    # Rim marks exactly how far this plane is drawn, same reach a line's own segment
-    #   gets; crosshair through the centre, along the plane's own two axes, gives it
-    #   an orientation without a filled wash that would read as a soft-edged cloud.
+    # Fill first, so plane reads as a surface rather than a bare outline; flat, since
+    #   the rim drawn over it already marks the edge crisply on its own.
+    meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
     meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress)
-    meshes.addSegment(anchor.get - extent*axis_first, anchor.get + extent*axis_first, tint_progress)
-    meshes.addSegment(anchor.get - extent*axis_second, anchor.get + extent*axis_second, tint_progress)
 
     # Show normal, as it is what tells plane apart from its own reflection.
     meshes.addArrow(
