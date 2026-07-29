@@ -1,4 +1,4 @@
-# Working notes: plain rim + crosshair planes, fading grid — done
+# Working notes: flat plane fill back, wider grid cutoff — done
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
@@ -6,33 +6,37 @@ each round. Tracked in git (per your stop-hook check).
 Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, diagnostics panel, object
 pool readouts, refactor/colour/visual-noise audits, scene save/load, unbounded
 camera-relative drawing, fading-disc planes made visible, ground grid/axes made
-indefinite, categorical palette checked against the axis colours) are summarized in
-prior commits on this branch — ask if you want that history restated.
+indefinite, categorical palette checked against the axis colours, then rim+crosshair
+planes with a distance-cutoff grid) are summarized in prior commits on this branch —
+ask if you want that history restated.
 
 ## This round
 
-Feedback: the ruled-disc plane still didn't work. Prototyped five alternatives in
-isolation (single-plane scene, env-var-switched variants on one build) and presented
-three side by side for a pick: polar grid, rim + crosshair, checkerboard.
+Feedback on rim+crosshair: drop the crosshair, bring back a semi-transparent fill
+under the rim, push the grid's cutoff further out. Plus a question about whether
+plane rims were genuinely centred on their own support point (they were — verified,
+not a bug) and what a few extra scattered points were (seed points that geometrically
+lie on the built objects, plus each object's own support marker and, for planes, the
+normal arrow's tip — all expected).
 
-Chosen: rim + crosshair, fill dropped entirely.
-
-- [x] `addPlane` now draws a circular rim at the plane's own drawn extent plus a
-      crosshair through its centre — same reach a line's segment gets, no fill.
-      Removed `addDisc`/`addPlaneGrid` and their now-unused constants
-      (`FRACTION_DISC_PLATEAU`, `ALPHA_WASH`, `ALPHA_GRID_PLANE`, `SEGMENTS_DISC`).
-- [x] `addGrid` fades each vertex by its own distance from the origin
-      (`alphaGridFade`) — full alpha through the camera's usual range, exactly zero
-      at the grid's own outer edge — fixing the aliasing noise the converging lines
-      caused near the horizon. Per-vertex, not per-piece, so the fade is smooth and
-      the true tip of every line reaches zero exactly.
-- [x] Updated tests (64 total): rim/crosshair shape, and grid-fade near/far alpha.
-- [x] Rebuilt, ran the full suite, regenerated the storyboard, verified visually.
+- [x] `addPlaneFill`: flat, uniformly translucent fan (`ALPHA_WASH` 0.16) bounded by
+      the same circle the rim outlines — flat rather than fading, since the rim
+      already marks the edge crisply.
+- [x] Checked directly against the stated requirements before calling it done: two
+      overlapping planes at different tilts read as distinguishable ellipses; ground
+      grid/axes/other objects stay visible behind both.
+- [x] Grid fade-end radius tuned through three rounds of visual comparison (checked
+      in after each): landed on `radius_fade_start` = 0.03, `radius_fade_end` = 0.12
+      of the grid's own reach.
+- [x] Updated tests (64 total): rewrote the plane test for the flat fill.
+- [x] Rebuilt, ran the full suite, regenerated storyboard, checked screenshots
+      against the user's stated requirements before committing (per their own
+      "check back in with me" instruction — held off committing until confirmed).
 - [x] Commit/push source; sync + rebuild/test delegations copy; update its
       `PROVENANCE.md`; regenerate its storyboard; retar; deliver.
 
-Commits: `5962247` on `claude/rga-visualization-prototype-kbq9kw` (source).
-Delegations repo: `28226db` (synced copy + `PROVENANCE.md` + regenerated storyboard).
+Commits: `cb59d6f` on `claude/rga-visualization-prototype-kbq9kw` (source).
+Delegations repo: `4ee198b` (synced copy + `PROVENANCE.md` + regenerated storyboard).
 
 ## Process notes
 
