@@ -311,50 +311,26 @@ suite "Mesh":
         check isNear(abs(dot(offset, axis.get)), norm(offset))
 
 
-  test "plane becomes a disc holding visible alpha until near its own rim":
+  test "plane becomes a rim and crosshair, no fill, every vertex on it":
     for plane in PLANES:
       MESHES.clearMeshes
       check MESHES.addObject(plane, Ink.Lime.colour, SCALE_TEST) == Placement.Finite
       const
-        VERTICES_PER_SEGMENT = 9 ## Inner fan (centre, two plateau rim points) plus outer
-          ## annulus (that same plateau edge joined to the disc's own true rim), per
-          ## `addDisc`'s own layout: 3 + 6.
-        INDICES_FADED = [4, 5, 7] ## Where the annulus quad's own outer-rim corners fall,
-          ## within each segment's own 9 vertices -- see `addDisc`'s own quad winding.
-        VERTICES_DISC = VERTICES_PER_SEGMENT*SEGMENTS_DISC
+        VERTICES_RING = 2*SEGMENTS_CIRCLE_HORIZON
+        VERTICES_CROSSHAIR = 4 ## Two diameters, two vertices each.
         VERTICES_NORMAL = 2
-      let radius_plateau = FRACTION_DISC_PLATEAU*SCALE_TEST.extent
-      var count_grid_lines = 0
-      for i in -int(radius_plateau / SIZE_CELL_GRID) .. int(radius_plateau / SIZE_CELL_GRID):
-        let offset = float(i)*SIZE_CELL_GRID
-        if radius_plateau*radius_plateau - offset*offset > 0.0: count_grid_lines += 2
-      let vertices_grid = count_grid_lines*2
-      check MESHES[Primitive.Triangle].count_vertices == VERTICES_DISC
-      check MESHES[Primitive.Line].count_vertices == vertices_grid + VERTICES_NORMAL
+      check MESHES[Primitive.Triangle].count_vertices == 0
+      check MESHES[Primitive.Line].count_vertices == VERTICES_RING + VERTICES_CROSSHAIR + VERTICES_NORMAL
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
-      for i in 0 ..< VERTICES_DISC:
-        let vertex = MESHES[Primitive.Triangle].vertices[i]
-        check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
-        if (i mod VERTICES_PER_SEGMENT) in INDICES_FADED:
-          check vertex.alpha == 0.0'f32
-        else:
-          check isNear(float(vertex.alpha), ALPHA_WASH)
-        # Every vertex sits at the centre, on the flat plateau's own edge, or out at the
-        #   disc's full radius -- nowhere strictly between the plateau and the fade this
-        #   fan actually draws.
-        let radius_vertex = norm(vertex.toPosition - anchor.get)
-        check isNear(radius_vertex, 0) or
-          isNear(radius_vertex, radius_plateau) or
-          isNear(radius_vertex, SCALE_TEST.extent)
-      # Every grid line is a chord of the plateau circle, so both its own endpoints --
-      #   every vertex the grid itself contributes -- land exactly on that circle.
-      for i in 0 ..< vertices_grid:
+      for i in 0 ..< VERTICES_RING + VERTICES_CROSSHAIR:
         let vertex = MESHES[Primitive.Line].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
-        check isNear(norm(vertex.toPosition - anchor.get), radius_plateau)
-        check isNear(float(vertex.alpha), ALPHA_GRID_PLANE)
+        check isNear(float(vertex.alpha), Ink.Lime.colour.alpha)
+        # Ring vertices sit exactly at the drawn extent; crosshair endpoints do too,
+        #   since both diameters run tip to tip across the full extent.
+        check isNear(norm(vertex.toPosition - anchor.get), SCALE_TEST.extent)
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":
@@ -440,6 +416,25 @@ suite "Mesh":
       let at = MESHES[Primitive.Line].vertices[i].toPosition
       check max(abs(at.x), max(abs(at.y), abs(at.z))) <=
         SCALE_TEST.extent_furniture + TOLERANCE_TEST
+
+
+  test "ground grid holds full alpha near the origin and fades toward its own reach":
+    MESHES.clearMeshes
+    MESHES.addGrid(SCALE_TEST.extent_furniture)
+    let radius_fade_start = FRACTION_GRID_FADE_START*SCALE_TEST.extent_furniture
+    var
+      alpha_near_min = 1.0
+      alpha_far_max = 0.0
+    for i in 0 ..< MESHES[Primitive.Line].count_vertices:
+      let
+        vertex = MESHES[Primitive.Line].vertices[i]
+        radius = norm(vertex.toPosition - ORIGIN)
+      if radius <= radius_fade_start:
+        alpha_near_min = min(alpha_near_min, float(vertex.alpha))
+      if radius >= SCALE_TEST.extent_furniture - TOLERANCE_TEST:
+        alpha_far_max = max(alpha_far_max, float(vertex.alpha))
+    check isNear(alpha_near_min, Ink.Grid.colour.alpha)
+    check alpha_far_max <= TOLERANCE_SINGLE
 
 
   test "extentFor floors near the camera and scales with distance past it":
@@ -932,11 +927,11 @@ suite "Picking":
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
 
 
-  test "plane misses where its sight ray lands outside the drawn disc":
+  test "plane misses where its sight ray lands outside the drawn rim":
     # A window corner is the widest angle any ray reaches, off the sight axis -- wider
     #   than `EXTENT_FACTOR` itself allows for, at any distance, since that factor is
     #   tuned against the vertical field of view alone, not a corner's own diagonal
-    #   reach. So a corner ray lands outside the drawn disc's own radius regardless of
+    #   reach. So a corner ray lands outside the drawn rim's own radius regardless of
     #   how far back the camera stands, while the centre ray still lands on the
     #   support point well within it.
     var scene = initScene()

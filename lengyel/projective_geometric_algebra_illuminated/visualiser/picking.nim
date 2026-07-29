@@ -150,7 +150,7 @@ func rayPlaneHit(
   let distance = dot(hit.get - eye, forward)
   if distance <= 1.0e-6: return
 
-  # Disc bound is circular, matching `mesh.addDisc` exactly: a plane's own hit test
+  # Bound is circular, matching `mesh.addPlaneRing` exactly: a plane's own hit test
   #   should agree with what is drawn, not with a square the render no longer produces.
   let local = hit.get - anchor
   if dot(local, local) > extent*extent: return
