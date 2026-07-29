@@ -171,7 +171,6 @@ proc nimBuildFrame(
 
   let eye = g_camera.eye
   let scale = DrawExtent(
-    extent: extentFor(g_camera.distance),
     extent_furniture: extentFurnitureFor(g_camera.distance_far),
     eye: eye,
     radius_horizon: radiusHorizonFor(g_camera.distance_far),

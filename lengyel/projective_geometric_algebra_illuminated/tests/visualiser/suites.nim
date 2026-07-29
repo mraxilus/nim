@@ -263,13 +263,13 @@ suite "Camera":
 
 suite "Mesh":
   let SCALE_TEST = DrawExtent(
-    extent: float(EXTENT_MIN), extent_furniture: 30.0,
+    extent_furniture: 30.0,
     eye: Position(x: 5, y: -3, z: 7), radius_horizon: 50.0
   ) ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
     ## mistake, instead of to `eye`, would fail every horizon check below.
-    ##   `extent_furniture` held distinct from `extent`, so a call site that read the
-    ##   wrong one of the two would fail the furniture check below rather than pass by
-    ##   coincidence.
+    ##   `extent_furniture` held distinct from `EXTENT_PLANE_F` (a plane's own fixed
+    ##   radius, no longer part of `DrawExtent` at all), so a line test checking against
+    ##   the wrong one of the two would fail rather than pass by coincidence.
     ##   Radius held modest rather than close to a real far clip distance (hundreds of
     ##   units): vertices round-trip through `Vertex`'s own `float32` storage, and
     ##   `isNear`'s tolerance is calibrated for coordinates near the same scale every
@@ -321,6 +321,10 @@ suite "Mesh":
         VERTICES_NORMAL = 2
       check MESHES[Primitive.Triangle].count_vertices == VERTICES_FILL
       check MESHES[Primitive.Line].count_vertices == VERTICES_RING + VERTICES_NORMAL
+      # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
+      #   plane never adds a scattered dot beyond what the fill, rim and shaft already
+      #   draw.
+      check MESHES[Primitive.Point].count_vertices == 0
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
@@ -328,16 +332,16 @@ suite "Mesh":
         let vertex = MESHES[Primitive.Triangle].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
         check isNear(float(vertex.alpha), ALPHA_WASH)
-        # Every fill vertex is either the fan's own centre or out at the drawn extent
-        #   -- flat alpha throughout, so unlike the old fading disc there is no band
-        #   strictly between the two to rule out.
+        # Every fill vertex is either the fan's own centre or out at the plane's own
+        #   fixed radius -- flat alpha throughout, so unlike the old fading disc there
+        #   is no band strictly between the two to rule out.
         let radius_vertex = norm(vertex.toPosition - anchor.get)
-        check isNear(radius_vertex, 0) or isNear(radius_vertex, SCALE_TEST.extent)
+        check isNear(radius_vertex, 0) or isNear(radius_vertex, EXTENT_PLANE_F)
       for i in 0 ..< VERTICES_RING:
         let vertex = MESHES[Primitive.Line].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
         check isNear(float(vertex.alpha), Ink.Lime.colour.alpha)
-        check isNear(norm(vertex.toPosition - anchor.get), SCALE_TEST.extent)
+        check isNear(norm(vertex.toPosition - anchor.get), EXTENT_PLANE_F)
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":
@@ -442,13 +446,6 @@ suite "Mesh":
         alpha_far_max = max(alpha_far_max, float(vertex.alpha))
     check isNear(alpha_near_min, Ink.Grid.colour.alpha)
     check alpha_far_max <= TOLERANCE_SINGLE
-
-
-  test "extentFor floors near the camera and scales with distance past it":
-    check extentFor(0.0) == float(EXTENT_MIN)
-    check extentFor(1.0) == float(EXTENT_MIN)
-    let distance = float(EXTENT_MIN) / EXTENT_FACTOR + 100.0
-    check extentFor(distance) =~ distance*EXTENT_FACTOR
 
 
   test "radiusHorizonFor scales with the camera's own far clip distance":
@@ -935,12 +932,11 @@ suite "Picking":
 
 
   test "plane misses where its sight ray lands outside the drawn rim":
-    # A window corner is the widest angle any ray reaches, off the sight axis -- wider
-    #   than `EXTENT_FACTOR` itself allows for, at any distance, since that factor is
-    #   tuned against the vertical field of view alone, not a corner's own diagonal
-    #   reach. So a corner ray lands outside the drawn rim's own radius regardless of
-    #   how far back the camera stands, while the centre ray still lands on the
-    #   support point well within it.
+    # A window corner is the widest angle any ray reaches, off the sight axis, and the
+    #   camera stands far enough back (30 units, against an `EXTENT_PLANE_F` of 8) that
+    #   a corner ray's own diagonal reach lands well outside the drawn rim's fixed
+    #   radius regardless of how far back the camera stands, while the centre ray still
+    #   lands on the support point well within it.
     var scene = initScene()
     let facing = (
       toMultivector(Position(x: 0, y: -3, z: -3)) ∧

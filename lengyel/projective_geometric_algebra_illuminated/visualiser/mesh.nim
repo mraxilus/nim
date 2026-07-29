@@ -1,27 +1,33 @@
 ## Turn RGA objects into vertices OpenGL can draw.
 ##
-## Finite objects are tessellated about their support point, i.e. point nearest origin,
-## out to `DrawExtent.extent` -- camera-relative (`extentFor`), not a fixed size, so a
-## line or plane always reads as extending well past the visible view, however far the
-## camera currently orbits:
-##   Line becomes segment of that extent either side of support, along its attitude.
-##   Plane becomes a flat, translucent disc at that same extent plus a rim marking its
-##   edge crisply, spanned by its own frame.
-##   Support point is what algebra computed, so it is marked in both cases.
+## Finite objects are tessellated about their support point, i.e. point nearest origin:
+##   Line becomes segment reaching `DrawExtent.extent_furniture` either side of support,
+##   along its attitude -- the same reach world furniture below gets, so a line always
+##   reads as running out toward the horizon rather than stopping at some arbitrary
+##   camera-relative length, and a plane crossing it never reads as swallowing it, since
+##   a line's own reach dwarfs any plane's.
+##   Plane becomes a flat, translucent disc at a fixed radius (`EXTENT_PLANE`) plus a
+##   rim marking its edge crisply, spanned by its own frame -- fixed rather than
+##   camera-relative, so a plane holds one size in world units and does not appear to
+##   grow or shrink as the camera dollies or orbits, exactly as a real fixed-size object
+##   would.
+##   Support point is what algebra computed; only a plane's own normal is additionally
+##   marked, as a bare shaft with no point at its tip, so orientation reads without
+##   adding another marker to the scene.
 ##
 ## Object at horizon -- infinitely far away, no support point to anchor on -- is drawn
 ## fixed to `DrawExtent.eye` instead, at `DrawExtent.radius_horizon` (near the camera's
-## own far clip plane, independent of `extent`): a point becomes a marker standing in a
-## fixed direction, a line becomes the great circle of directions its own pencil spans,
-## and a plane -- the unique universal "whole sky" object every plane at horizon is,
-## regardless of which points produced it -- becomes a dome over the entire sky. Fixed
-## to the eye rather than the origin, so orbiting or dollying the camera leaves each in
-## the same apparent direction, exactly as real stars at effectively infinite distance
-## would; only turning the camera to look toward or away from one moves it on screen.
+## own far clip plane): a point becomes a marker standing in a fixed direction, a line
+## becomes the great circle of directions its own pencil spans, and a plane -- the
+## unique universal "whole sky" object every plane at horizon is, regardless of which
+## points produced it -- becomes a dome over the entire sky. Fixed to the eye rather
+## than the origin, so orbiting or dollying the camera leaves each in the same apparent
+## direction, exactly as real stars at effectively infinite distance would; only
+## turning the camera to look toward or away from one moves it on screen.
 ##
 ## World furniture -- ground grid, world axes -- reaches `DrawExtent.extent_furniture`
-## instead, tied to the camera's own far clip distance rather than to orbit distance
-## (`extentFurnitureFor`), so both read as extending indefinitely into the distance
+## too, tied to the camera's own far clip distance rather than to orbit distance
+## (`extentFurnitureFor`), so it reads as extending indefinitely into the distance
 ## regardless of how far the camera has dollied in or out to inspect finite content.
 ##
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
@@ -48,31 +54,25 @@ import ./objects
 
 #[ Mesh Configuration ]#
 
-# Allow caller to resize drawn extent floor and vertex storage without editing source.
-#   E.g. `--define:visualiser.extent_min=20 --define:visualiser.vertices_max=32768`.
-#   Nim's `.define` pragma takes only integers, bools or strings, so `EXTENT_FACTOR` and
-#   `FRACTION_HORIZON` below -- both plain ratios, never needing a caller's own extreme
-#   value the way a capacity like `EXTENT_MIN` or `VERTICES_MAX` might -- stay ordinary
-#   constants instead.
+# Allow caller to resize a plane's own drawn radius and vertex storage without editing
+#   source. E.g. `--define:visualiser.extent_plane=20 --define:visualiser.vertices_max=32768`.
+#   Nim's `.define` pragma takes only integers, bools or strings, so `FRACTION_HORIZON`
+#   below -- a plain ratio, never needing a caller's own extreme value the way a
+#   capacity like `EXTENT_PLANE` or `VERTICES_MAX` might -- stays an ordinary constant.
 const
-  EXTENT_MIN* {.define: "visualiser.extent_min".} = 8
-    ## Floor under the camera-relative draw extent below, so a line, plane or the
-    ## ground grid never shrinks to nothing even when the camera dollies in close.
-  EXTENT_FACTOR* = 0.5
-    ## Scale camera's own orbit distance by this to reach the draw extent below -- a
-    ## touch above the default 45-degree field of view's own half-width tangent
-    ## (0.414), so drawn geometry comfortably exceeds the visible view rather than
-    ## just reaching its edge, at whatever distance the camera currently orbits.
+  EXTENT_PLANE* {.define: "visualiser.extent_plane".} = 8
+    ## Fix how far a plane's own disc and rim reach from its support point, in world
+    ## units -- deliberately independent of the camera, so a plane holds one size
+    ## rather than growing or shrinking as the camera dollies or orbits around it.
   FRACTION_HORIZON* = 0.9
     ## Place horizon geometry -- a star, a great circle, the whole sky -- this fraction
     ## of the way to camera's own far clip plane, so it reads as the farthest thing
     ## standing in this scene without ever being clipped away by standing past it.
   FRACTION_FURNITURE* = 0.95
-    ## Reach world axes and the ground grid this fraction of the way to camera's own
-    ## far clip plane -- tied to that fixed depth rather than to orbit distance
-    ## (unlike `EXTENT_FACTOR` above), so both read as extending indefinitely into the
-    ## distance regardless of how far the camera has dollied in or out to inspect
-    ## finite content.
+    ## Reach world axes, the ground grid, and every finite line this fraction of the
+    ## way to camera's own far clip plane -- tied to that fixed depth rather than to
+    ## orbit distance, so all three read as extending indefinitely into the distance
+    ## regardless of how far the camera has dollied in or out to inspect finite content.
   FRACTION_GRID_FADE_START* = 0.03
     ## Hold ground grid lines at full alpha out to this fraction of their own reach,
     ## fading the remainder out toward `FRACTION_GRID_FADE_END` -- past that point,
@@ -88,8 +88,7 @@ const
     ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
 
 static:
-  doAssert EXTENT_MIN > 0, &"Drawn extent floor must be positive; got `{EXTENT_MIN}`."
-  doAssert EXTENT_FACTOR > 0, &"Extent factor must be positive; got `{EXTENT_FACTOR}`."
+  doAssert EXTENT_PLANE > 0, &"Plane radius must be positive; got `{EXTENT_PLANE}`."
   doAssert FRACTION_HORIZON > 0 and FRACTION_HORIZON < 1.0,
     &"Horizon fraction must fall strictly between 0 and 1; got `{FRACTION_HORIZON}`."
   doAssert FRACTION_FURNITURE > 0 and FRACTION_FURNITURE < 1.0,
@@ -103,6 +102,11 @@ static:
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
   doAssert ANIMATION_MILLISECONDS > 0,
     &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
+
+const EXTENT_PLANE_F* = float(EXTENT_PLANE)
+  ## `EXTENT_PLANE` itself stays an integer default, since Nim's `.define` pragma
+  ## cannot take a float literal; every use site, in this module and beyond, wants a
+  ## float.
 
 const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to the seconds `animationProgress` works in.
@@ -182,12 +186,11 @@ type
   MeshSet* = array[Primitive, Mesh] ## Hold one mesh per primitive kind.
 
   DrawExtent* = object ## Hold how far this frame's geometry reaches, and from where.
-    extent*: float ## How far a finite line's segment or plane's disc extends from its
-      ## own anchor -- camera-relative, via `extentFor`.
-    extent_furniture*: float ## How far the ground grid and world axes extend from the
-      ## origin -- tied to the camera's own far clip distance, via `extentFurnitureFor`,
-      ## rather than to orbit distance, so both read as reaching indefinitely into the
-      ## distance regardless of how far the camera has dollied in or out.
+    extent_furniture*: float ## How far the ground grid, world axes, and every finite
+      ## line extend from the origin or their own support -- tied to the camera's own
+      ## far clip distance, via `extentFurnitureFor`, rather than to orbit distance, so
+      ## all three read as reaching indefinitely into the distance regardless of how
+      ## far the camera has dollied in or out.
     eye*: Position ## Camera's own eye position, horizon geometry is anchored to, so it
       ## stays in a fixed apparent direction as the camera pans or dollies, exactly as
       ## a real star at effectively infinite distance would.
@@ -198,29 +201,21 @@ type
 
 #[ Camera-Relative Scale ]#
 
-func extentFor*(distance: float): float =
-  ## Compute how far a line, plane or the ground grid should reach this frame, given
-  ## how far the camera currently orbits from its target -- so drawn geometry always
-  ## looks like it extends past the visible view, whether the camera sits close or
-  ## dollies far out, without coupling this module to `Camera` itself: caller reads
-  ## `camera.distance` and hands over a plain number.
-  max(float(EXTENT_MIN), distance * EXTENT_FACTOR)
-
-
 func radiusHorizonFor*(distance_far: float): float =
   ## Compute how far from the eye horizon geometry sits this frame, given the camera's
-  ## own far clip distance -- decoupled from `extentFor` above deliberately: an object
-  ## standing for "infinitely far away" should sit near the renderer's own outer depth
-  ## limit regardless of how far the camera has dollied in or out to view finite content.
+  ## own far clip distance: an object standing for "infinitely far away" should sit
+  ## near the renderer's own outer depth limit regardless of how far the camera has
+  ## dollied in or out to view finite content.
   distance_far * FRACTION_HORIZON
 
 
 func extentFurnitureFor*(distance_far: float): float =
-  ## Compute how far the ground grid and world axes should reach this frame, given the
-  ## camera's own far clip distance -- independent of orbit distance, unlike `extentFor`,
-  ## so both keep reaching almost all the way to the renderer's own outer depth limit
-  ## regardless of how far the camera has dollied in or out to inspect finite content,
-  ## reading as extending indefinitely rather than shrinking back when the camera does.
+  ## Compute how far the ground grid, world axes, and every finite line should reach
+  ## this frame, given the camera's own far clip distance -- independent of orbit
+  ## distance, so all three keep reaching almost all the way to the renderer's own
+  ## outer depth limit regardless of how far the camera has dollied in or out to
+  ## inspect finite content, reading as extending indefinitely rather than shrinking
+  ## back when the camera does.
   distance_far * FRACTION_FURNITURE
 
 
@@ -327,15 +322,6 @@ proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
   ## Append filled quadrilateral, wound as two triangles.
   for index in [0, 1, 2, 0, 2, 3]:
     meshes.addVertex(Primitive.Triangle, corners[index], tint)
-
-
-proc addArrow*(
-  meshes: var MeshSet; tail: Position; axis: Direction; length: float; tint: Rgba
-) =
-  ## Append shaft from tail along axis, marking its head.
-  let head = tail + length*axis
-  meshes.addSegment(tail, head, tint)
-  meshes.addMarker(head, tint)
 
 
 proc addPlaneRing(
@@ -506,9 +492,12 @@ proc addPoint(
 proc addLine(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
 ): Placement =
-  ## Append grade-2 object as segment about its support point, along its attitude, or,
-  ## at horizon, as a great circle around `scale.eye` -- the pencil of directions the
-  ## line stands for, traced across the sky at `scale.radius_horizon`.
+  ## Append grade-2 object as segment about its support point, along its attitude,
+  ## reaching `scale.extent_furniture` either side of it -- the same reach world
+  ## furniture gets, so a line always reads as running out toward the horizon rather
+  ## than stopping short, and a plane crossing it never looks like it swallows the
+  ## rest of it -- or, at horizon, as a great circle around `scale.eye` -- the pencil
+  ## of directions the line stands for, traced across the sky at `scale.radius_horizon`.
   ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
   ##   fades it in alongside, so a freshly derived line visibly extends rather than
   ##   popping in.
@@ -517,7 +506,7 @@ proc addLine(
     axis = direction(geometry)
   if anchor.isSome and axis.isSome:
     let
-      extent = progress*scale.extent
+      extent = progress*scale.extent_furniture
       tint_progress = tint.fade(tint.alpha*progress)
     meshes.addSegment(anchor.get - extent*axis.get, anchor.get + extent*axis.get, tint_progress)
     meshes.addMarker(anchor.get, tint_progress)
@@ -538,18 +527,18 @@ proc addLine(
 proc addPlane(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
 ): Placement =
-  ## Append grade-3 object as a filled disc and rim about its support point, or, at
-  ## horizon, as a dome filling the whole sky around `scale.eye` -- the unique
-  ## universal object every plane at horizon stands for, regardless of which points
-  ## produced it.
-  ##   `progress` grows the disc, its rim, and the normal arrow out from nothing, and
+  ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
+  ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
+  ## filling the whole sky around `scale.eye` -- the unique universal object every
+  ## plane at horizon stands for, regardless of which points produced it.
+  ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
   let
     anchor = positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isSome and axes.isSome:
     let
-      extent = progress*scale.extent
+      extent = progress*EXTENT_PLANE_F
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
       tint_progress = tint.fade(tint.alpha*progress)
 
@@ -558,11 +547,12 @@ proc addPlane(
     meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
     meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress)
 
-    # Show normal, as it is what tells plane apart from its own reflection.
-    meshes.addArrow(
-      anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(ALPHA_GUIDE*progress)
+    # Show normal as a bare shaft, no marker at its tip: tells plane apart from its own
+    #   reflection without adding another point to the scene.
+    meshes.addSegment(
+      anchor.get, anchor.get + (0.25*extent)*axes.get.normal,
+      Ink.Guide.colour.fade(ALPHA_GUIDE*progress),
     )
-    meshes.addMarker(anchor.get, tint_progress)
     return Placement.Finite
 
   meshes.addDome(scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress))

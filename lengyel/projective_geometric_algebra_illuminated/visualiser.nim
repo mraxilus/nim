@@ -300,7 +300,6 @@ proc renderFrame(
 
   let eye = camera.eye
   let scale = DrawExtent(
-    extent: extentFor(camera.distance),
     extent_furniture: extentFurnitureFor(camera.distance_far),
     eye: eye,
     radius_horizon: radiusHorizonFor(camera.distance_far),

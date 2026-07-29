@@ -178,7 +178,7 @@ func pickNearest*(
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
     scale = DrawExtent(
-      extent: extentFor(camera.distance), eye: eye,
+      extent_furniture: extentFurnitureFor(camera.distance_far), eye: eye,
       radius_horizon: radiusHorizonFor(camera.distance_far),
     )
 
@@ -213,10 +213,10 @@ func pickNearest*(
       if anchor.isNone or axis.isNone: continue
       let
         tail = projectToScreen(
-          view_projection, width, height, anchor.get - scale.extent*axis.get
+          view_projection, width, height, anchor.get - scale.extent_furniture*axis.get
         )
         head = projectToScreen(
-          view_projection, width, height, anchor.get + scale.extent*axis.get
+          view_projection, width, height, anchor.get + scale.extent_furniture*axis.get
         )
       if not (tail.isInFront and head.isInFront): continue
       let distance = distanceToSegment(cursor, tail, head)
@@ -228,7 +228,7 @@ func pickNearest*(
         axes = frame(geometry)
       if anchor.isNone or axes.isNone: continue
       let hit = rayPlaneHit(
-        ray, eye, frame_camera.forward, geometry, anchor.get, axes.get, scale.extent
+        ray, eye, frame_camera.forward, geometry, anchor.get, axes.get, EXTENT_PLANE_F
       )
       if hit.isSome: consider(2, hit.get)
 
