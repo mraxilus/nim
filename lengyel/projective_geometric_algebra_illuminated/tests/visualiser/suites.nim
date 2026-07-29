@@ -476,6 +476,17 @@ suite "Mesh":
     check extentFurnitureFor(400.0) =~ 400.0*FRACTION_FURNITURE
 
 
+  test "muted colour grays to the grid's own hue and cuts opacity by its fixed fraction":
+    for ink in Ink:
+      let
+        base = ink.colour
+        dimmed = muted(base)
+      check isNear(dimmed.red, Ink.Grid.colour.red)
+      check isNear(dimmed.green, Ink.Grid.colour.green)
+      check isNear(dimmed.blue, Ink.Grid.colour.blue)
+      check isNear(dimmed.alpha, base.alpha*FRACTION_DIMMED_ALPHA)
+
+
 
 suite "Scene":
   test "items are held in order added":
@@ -586,6 +597,45 @@ suite "Scene":
       let place = position(projected)
       check place.isSome
       check toMultivector(place.get) ∧ plane =~ 0
+
+
+  test "creation anchor for a plane wedged from a line and a point sits at their midpoint":
+    for i in 0 ..< SAMPLES:
+      let
+        line = LINES[i]
+        point = POINTS[(i + 5) mod SAMPLES]
+        plane = applyOperation(Operation.Wedge, line, point)
+        anchor = creationAnchor(Operation.Wedge, line, point, plane)
+        anchor_swapped = creationAnchor(Operation.Wedge, point, line, plane)
+        expected = position(add(unitize(point), unitize(projectOrthogonal(point, line))))
+      check anchor.isSome
+      check anchor_swapped.isSome
+      check expected.isSome
+      check anchor.get =~ expected.get
+      check anchor_swapped.get =~ expected.get
+
+
+  test "creation anchor for a perpendicular plane sits where its line pierces it":
+    for i in 0 ..< SAMPLES:
+      let
+        point = POINTS[i]
+        line = LINES[(i + 11) mod SAMPLES]
+        plane = applyOperation(Operation.ExpandWeight, point, line)
+        anchor = creationAnchor(Operation.ExpandWeight, point, line, plane)
+        anchor_swapped = creationAnchor(Operation.ExpandWeight, line, point, plane)
+        expected = position(wedgeAnti(line, plane))
+      check anchor.isSome
+      check anchor_swapped.isSome
+      check expected.isSome
+      check anchor.get =~ expected.get
+      check anchor_swapped.get =~ expected.get
+
+
+  test "creation anchor is none for operations or shapes it does not special-case":
+    check creationAnchor(Operation.WedgeAnti, PLANES[0], PLANES[1], LINES[0]).isNone
+    check creationAnchor(Operation.Wedge, POINTS[0], POINTS[1], LINES[0]).isNone
+    check creationAnchor(Operation.Wedge, PLANES[0], POINTS[0], PLANES[0]).isNone
+    check creationAnchor(Operation.ProjectOrthogonal, POINTS[0], PLANES[0], POINTS[0]).isNone
 
 
   test "labels truncate and stay terminated":

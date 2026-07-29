@@ -217,16 +217,23 @@ proc secondsNow(): float =
   float(getMonoTime().ticks) / 1_000_000_000.0
 
 
-proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float; scale: DrawExtent) =
+proc assembleMeshes(
+  workbench: var Workbench; scene: Scene; now: float; scale: DrawExtent;
+  are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
+) =
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
+  ##   `are_dimmed` grays an item out rather than skipping it -- empty (nothing dimmed)
+  ##   for ordinary interactive rendering; the storyboard's own rolling emphasis is the
+  ##   only caller that fills it in.
   let ticks_start = getMonoTime().ticks
   MESHES.clearMeshes
   if workbench.is_grid_shown: MESHES.addGrid(scale.extent_furniture)
   if workbench.is_axes_shown: MESHES.addAxes(scale.extent_furniture)
-  for item in scene:
+  for slot, item in scene.pairs:
     if not item.is_visible: continue
     let progress = animationProgress(now, item.born)
-    discard MESHES.addObject(item.geometry, item.ink.colour, scale, progress)
+    let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
+    discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -275,7 +282,7 @@ proc drawInteractionOverlay(
 proc renderFrame(
   window: Window; renderer: Renderer;
   workbench: var Workbench; scene: var Scene; camera: var Camera; interaction: var Interaction;
-  now: float;
+  now: float; are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
 ): (int, int) =
   ## Lay panels out, draw scene and interaction overlay, and report framebuffer size.
   ##   Panels run first, so an edit made this frame reaches meshes assembled below it.
@@ -283,6 +290,7 @@ proc renderFrame(
   ##   next frame reads a pick that matches what was just drawn.
   ##   `now` is this frame's own clock reading; caller decides what clock that is, so a
   ##   real one drives interactive animation and a scripted one drives storyboard capture.
+  ##   `are_dimmed` is forwarded to `assembleMeshes` untouched; see its own doc comment.
   var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
   sdl3.getWindowSizeInPixels(window, addr width, addr height)
 
@@ -304,7 +312,7 @@ proc renderFrame(
     eye: eye,
     radius_horizon: radiusHorizonFor(camera.distance_far),
   )
-  assembleMeshes(workbench, scene, now, scale)
+  assembleMeshes(workbench, scene, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
   renderer.drawMeshes(MESHES, view_projection)
@@ -540,9 +548,11 @@ proc runStoryboard(
     dims_gif = (0, 0)
     count_frames_gif = 0
     clock = 0.0
+    are_dimmed: array[ITEMS_MAX, bool] ## Every slot starts un-dimmed, right for the
+      ## seeds-only frame captured below before any step has a rolling window to dim.
 
   template renderAt(now: float): (int, int) =
-    renderFrame(window, renderer, workbench, scene, camera, interaction_disabled, now)
+    renderFrame(window, renderer, workbench, scene, camera, interaction_disabled, now, are_dimmed)
 
   template captureGif(now: float) =
     ## Render one frame at `now`, downsample it, and append it to the GIF's own frames.
@@ -588,11 +598,12 @@ proc runStoryboard(
   toChars("Seeds placed.", workbench.message)
   captureStep("00_seeds")
 
-  # Every step after this one otherwise stays visible forever once added, burying later
-  #   frames under everything every earlier step ever built. Seeds are pinned throughout,
-  #   as the stable reference the rest is read against; each derived object is shown only
-  #   for the step that creates it and the one right after -- long enough that a step
-  #   using yesterday's result still shows it, gone once two steps have passed it by.
+  # Every object stays visible once added: a construction's own history should stay
+  #   legible, not disappear as later steps pass it by. Seeds are pinned at full colour
+  #   throughout, as the stable reference the rest is read against; a derived object
+  #   reads at full colour only for the step that creates it and the one right after --
+  #   long enough that a step using yesterday's result still shows it clearly -- and
+  #   grays out, rather than vanishing, once two steps have passed it by.
   #   Only a step's real operands count as "involved": a unary operation's own second
   #   index is a required-but-ignored placeholder (see `Step.index_second`'s own doc
   #   comment), not something this step actually reads, so it plays no part here either.
@@ -608,8 +619,8 @@ proc runStoryboard(
     if lut_operation_to_arity[step.operation] == Arity.Two:
       operative_current.add(step.index_second)
     for slot, _ in scene.pairs:
-      scene.isVisibleAt(slot) =
-        slot < count_seeds or slot in operative_current or slot in operative_previous
+      are_dimmed[slot] =
+        not (slot < count_seeds or slot in operative_current or slot in operative_previous)
     operative_previous = operative_current
 
     # A finite object is anchored somewhere the fixed demo angle already frames; a

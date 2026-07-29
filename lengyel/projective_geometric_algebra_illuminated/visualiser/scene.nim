@@ -79,6 +79,12 @@ type
     are_visible: array[ITEMS_MAX, bool]
     are_alive: array[ITEMS_MAX, bool]
     borns: array[ITEMS_MAX, float]
+    anchor_overrides: array[ITEMS_MAX, Option[Position]] ## Where a plane's own circle
+      ## should centre, for an item whose construction fixes that more specifically than
+      ## its own closest-to-origin support does; see `creationAnchor`. None for anything
+      ## else, which draws centred on its own support as always. Not saved or loaded:
+      ## it is a rendering hint recomputed from how an item was built, not data an item
+      ## itself carries.
     next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
     slot_free_first: Option[int] ## Head of free list; none where scene is full.
     count_live: int
@@ -201,6 +207,40 @@ func applyOperation*(operation: Operation; m, n: Multivector): Multivector =
   of Operation.ProjectOrthogonal: projectOrthogonal(m, n)
 
 
+func creationAnchor*(operation: Operation; m, n, derived: Multivector): Option[Position] =
+  ## Resolve the point a freshly derived plane's own circle should centre on, from how
+  ## it was built, rather than always from its own closest-to-origin support -- so it
+  ## reads as centred where its construction actually happened. Computed through the
+  ## same operators the construction itself used, not around them.
+  ##   None for any operation or operand shape not recognised here, so caller falls back
+  ##   to the plane's own support (`objects.positionAnchor`) as it always did.
+  case operation
+  of Operation.Wedge:
+    # A line wedged with a point gives a plane the line lies entirely within -- the two
+    #   never meet at one point, so there is none to centre on the way ExpandWeight's
+    #   own case below can. Centre between the point and the line's own closest
+    #   approach to it instead: both unitized first, so their sum's own weight is
+    #   exactly two and reading its position back out (which divides by weight) gives
+    #   the plain midpoint, not one skewed by whatever weight `projectOrthogonal`
+    #   itself happened to leave its own result at.
+    let (line, point) =
+      if shape(m) == some(Shape.Line) and shape(n) == some(Shape.Point): (m, n)
+      elif shape(n) == some(Shape.Line) and shape(m) == some(Shape.Point): (n, m)
+      else: return none(Position)
+    position(add(unitize(point), unitize(projectOrthogonal(point, line))))
+
+  of Operation.ExpandWeight:
+    # A plane built perpendicular to a line meets it at exactly one point; meeting them
+    #   directly finds it.
+    let line =
+      if shape(m) == some(Shape.Line): m
+      elif shape(n) == some(Shape.Line): n
+      else: return none(Position)
+    position(wedgeAnti(line, derived))
+
+  else: none(Position)
+
+
 
 #[ Multivector Formatting ]#
 
@@ -315,6 +355,11 @@ func born*(item: Item): float = item.scene.borns[item.slot]
   ## Read item's `born` reading, straight out of the scene the handle points at.
 
 
+func anchorOverride*(item: Item): Option[Position] = item.scene.anchor_overrides[item.slot]
+  ## Read where item's own circle should centre, if its construction fixed that more
+  ## specifically than its own support does; see `creationAnchor`.
+
+
 proc geometryAt*(scene: var Scene; slot: int): var Multivector =
   ## Reach item's geometry for editing, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
@@ -352,13 +397,17 @@ iterator pairs*(scene: Scene): (int, Item) =
 
 
 proc addItem*(
-  scene: var Scene; geometry: Multivector; label: string; ink: Ink; now: float = 0.0
+  scene: var Scene; geometry: Multivector; label: string; ink: Ink; now: float = 0.0;
+  anchor_override: Option[Position] = none(Position)
 ): int {.discardable.} =
   ## Insert object into scene at its first free slot, visible; report slot used.
   ##   Silently refuses nothing: caller must check `isFull` first, as scene cannot grow.
   ##   `now` is stamped as the item's `born` reading and otherwise never inspected here;
   ##   a caller indifferent to appear-in animation may leave it at its default, which
   ##   reads as "born at the dawn of time" and so never animates.
+  ##   `anchor_override` is where a plane's own circle should centre instead of its own
+  ##   support, where the caller's own construction fixes that more specifically; see
+  ##   `creationAnchor`. Left `none` by a caller with no such point to offer.
   doAssert not scene.isFull,
     &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
   result = scene.slot_free_first.get
@@ -369,6 +418,7 @@ proc addItem*(
   scene.are_visible[result] = true
   scene.are_alive[result] = true
   scene.borns[result] = now
+  scene.anchor_overrides[result] = anchor_override
   inc scene.count_live
 
 

@@ -146,12 +146,18 @@ const
     ## Scale a plane's own radius by this to reach the length its normal shaft is drawn
     ## at -- long enough to read as an arrow rather than a stub, short enough not to
     ## compete with the disc's own rim for attention.
+  FRACTION_DIMMED_ALPHA* = 0.3'f32
+    ## Scale an already-constructed but non-focal object's own alpha by this, so it
+    ## stays legible as background context -- shown rather than hidden outright -- while
+    ## still clearly receding behind whatever the current step is showcasing.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
   doAssert SEGMENTS_GRID_FADE >= 2, &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
   doAssert FRACTION_NORMAL_SHAFT > 0,
     &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
+  doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
+    &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
 
 
 
@@ -278,6 +284,15 @@ func colour*(ink: Ink): Rgba = lut_ink_to_rgba[ink]
 func fade*(base: Rgba; alpha: float32): Rgba =
   ## Rewrite colour's opacity, leaving its hue alone.
   Rgba(red: base.red, green: base.green, blue: base.blue, alpha: alpha)
+
+
+func muted*(base: Rgba): Rgba =
+  ## Gray colour out and cut its opacity to `FRACTION_DIMMED_ALPHA`, for an object that
+  ## has already been constructed but is not part of the step currently in focus --
+  ## shown as background context, rather than hidden outright, so a construction's own
+  ## history stays visible without competing with what is being showcased right now.
+  let gray = Ink.Grid.colour
+  Rgba(red: gray.red, green: gray.green, blue: gray.blue, alpha: base.alpha*FRACTION_DIMMED_ALPHA)
 
 
 
@@ -541,16 +556,22 @@ proc addLine(
 
 
 proc addPlane(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
+  anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
   ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
   ## filling the whole sky around `scale.eye` -- the unique universal object every
   ## plane at horizon stands for, regardless of which points produced it.
+  ##   `anchor_override`, if given, centres the disc there instead -- some point the
+  ##   plane's own construction fixed more specifically than its closest-to-origin
+  ##   support does; see `scene.creationAnchor`. `frame`'s own axes do not depend on
+  ##   which point anchors the plane (see `spanPerpendicular`'s own doc comment), so
+  ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
   let
-    anchor = positionAnchor(geometry)
+    anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isSome and axes.isSome:
     let
@@ -576,16 +597,19 @@ proc addPlane(
 
 
 proc addObject*(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
+  anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
   ##   `progress` is how much of its appear animation the object has completed, from
   ##   `mesh.animationProgress`; defaults to fully appeared, for a caller with nothing
   ##   to animate against.
+  ##   `anchor_override` centres a plane's own disc there instead of its own support;
+  ##   ignored for a point or line, neither of which is drawn centred on anything else.
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
   of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)

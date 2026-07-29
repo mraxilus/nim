@@ -12,6 +12,9 @@
 
 {.experimental: "strictFuncs".}
 
+import std/options
+
+import ../pga
 import ./[objects, mesh, camera, scene, storyboard]
 
 
@@ -22,7 +25,11 @@ var
   g_scene: Scene
   g_camera: Camera
   g_count_seeds: int
-  g_are_visible: array[ITEMS_MAX, bool]
+  g_are_visible: array[ITEMS_MAX, bool] ## Whether a slot's own step has been reached
+    ## yet at all -- false for one not built up to by the current step, drawn not at
+    ## all; true for every seed and every step at or before the current one.
+  g_are_dimmed: array[ITEMS_MAX, bool] ## Whether a visible slot is shown muted, as
+    ## background context, rather than at full colour; see `mesh.muted`.
   g_borns: array[ITEMS_MAX, float]
   g_step: int = -1 ## -1 names "seeds only", i.e. before the first step applies.
 
@@ -79,6 +86,7 @@ proc nimInit(now: cfloat) {.exportc.} =
 
   for slot in 0 ..< ITEMS_MAX:
     g_are_visible[slot] = slot < g_count_seeds
+    g_are_dimmed[slot] = false
     g_borns[slot] = float(now)
   g_step = -1
 
@@ -105,21 +113,49 @@ proc nimStepColor(step: cint): seq[float32] {.exportc.} =
   toRgbSeq(ink.colour)
 
 
+proc shapeDescription(m: Multivector): string =
+  ## Name what shape `m` stands for, or that it stands for none at all. Built by hand
+  ## rather than through `scene.describeShape`: that proc's fixed-buffer, `unsafeAddr`-
+  ## based design does not carry over correctly to the JS backend (the same kind of gap
+  ## `scene.Item`'s own doc comment already flags for a value parameter's address), and
+  ## a plain string costs nothing extra here, called only when the step transport's own
+  ## text changes, not once a frame.
+  let s = shape(m)
+  if s.isNone: return "mixed grade, nothing to draw"
+  case s.get
+  of Shape.Point: (if isHorizon(m): "point at horizon" else: "point")
+  of Shape.Line: (if isHorizon(m): "line at horizon" else: "line")
+  of Shape.Plane: (if isHorizon(m): "plane at horizon" else: "plane")
+
+
+proc nimStepShape(step: cint): cstring {.exportc.} =
+  ## Name what step `step`'s own result actually is -- most useful for a step that
+  ## draws nothing at all (wedging a point with a plane gives a grade-4 volume, with no
+  ## shape to draw), so that reads as "nothing to draw" rather than as a bug.
+  if step < 0: return cstring""
+  cstring(shapeDescription(g_scene[g_count_seeds + int(step)].geometry))
+
+
 proc nimGotoStep(step: cint, now: cfloat) {.exportc.} =
-  ## Move to `step`, updating which slots are visible under the same "pin seeds, roll
-  ## the rest" rule `runStoryboard` applies: seeds stay visible throughout; a derived
-  ## object is visible only for the step that creates it and the one right after.
-  ##   Stamps `born` only for a slot that just became visible, so an object already on
-  ##   screen does not restart its appear animation when nothing about its own
-  ##   visibility changed.
+  ## Move to `step`. Every slot already reached (a seed, or a step at or before this
+  ## one) stays visible from here on -- a construction's own history should stay
+  ## legible, not disappear as later steps pass it by -- but only the slots the same
+  ## "pin seeds, roll the rest" rule `runStoryboard` uses (seeds, this step's own
+  ## operands and result, and the step right before) draw at full colour; everything
+  ## else visible draws muted (`mesh.muted`), as background context.
+  ##   Stamps `born` only for a slot newly reached, so an object already on screen does
+  ##   not restart its appear animation as focus moves on.
   let
     stepI = int(step)
     current = operativeSlots(stepI)
     previous = operativeSlots(stepI - 1)
   for slot in 0 ..< ITEMS_MAX:
-    let visible = slot < g_count_seeds or slot in current or slot in previous
-    if visible and not g_are_visible[slot]: g_borns[slot] = float(now)
-    g_are_visible[slot] = visible
+    let
+      reached = slot < g_count_seeds or slot < g_count_seeds + stepI + 1
+      focal = slot < g_count_seeds or slot in current or slot in previous
+    if reached and not g_are_visible[slot]: g_borns[slot] = float(now)
+    g_are_visible[slot] = reached
+    g_are_dimmed[slot] = reached and not focal
   g_step = stepI
 
 
@@ -173,7 +209,8 @@ proc nimBuildFrame(
   for slot, item in g_scene.pairs:
     if slot < ITEMS_MAX and g_are_visible[slot]:
       let progress = animationProgress(float(now), g_borns[slot])
-      discard meshes.addObject(item.geometry, item.ink.colour, scale, progress)
+      let tint = if g_are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
+      discard meshes.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)

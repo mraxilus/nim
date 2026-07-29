@@ -113,12 +113,13 @@ proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0):
   let
     label_source = $toCstring(scene.labelAt(interaction.index_source))
     label_destination = $toCstring(scene.labelAt(index_destination))
-    derived = applyOperation(
-      drag.toOperation, scene[interaction.index_source].geometry,
-      scene[index_destination].geometry,
-    )
+    operand_source = scene[interaction.index_source].geometry
+    operand_destination = scene[index_destination].geometry
+    derived = applyOperation(drag.toOperation, operand_source, operand_destination)
+    anchor = creationAnchor(drag.toOperation, operand_source, operand_destination, derived)
   scene.addItem(
-    derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now
+    derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now,
+    anchor,
   )
 
   var shape_word: array[WIDTH_SHAPE_WORD, char]

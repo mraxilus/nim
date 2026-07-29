@@ -262,13 +262,16 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
     let
       first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
       second = slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
-      derived = applyOperation(operation, scene[first].geometry, scene[second].geometry)
+      operand_first = scene[first].geometry
+      operand_second = scene[second].geometry
+      derived = applyOperation(operation, operand_first, operand_second)
+      anchor = creationAnchor(operation, operand_first, operand_second, derived)
       name_first = $toCstring(scene.labelAt(first))
       name_second = $toCstring(scene.labelAt(second))
       label =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"
-    scene.addItem(derived, label, inkCycled(scene.len), now)
+    scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0

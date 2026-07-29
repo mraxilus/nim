@@ -79,15 +79,23 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
     point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 0.5))
     point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 3.5))
     point_c = toMultivector(Position(x: 1.0, y: 4.0, z: 1.0))
-    ground = (
-      toMultivector(Position(x: 0, y: 0, z: 0)) ∧
-      toMultivector(Position(x: 1, y: 0, z: 0)) ∧
-      toMultivector(Position(x: 0, y: 1, z: 0))
+    point_origin = toMultivector(Position(x: 0, y: 0, z: 0))
+    point_x = toMultivector(Position(x: 1, y: 0, z: 0))
+    point_y = toMultivector(Position(x: 0, y: 1, z: 0))
+    ground = point_origin ∧ point_x ∧ point_y
+    # Centre ground's own circle on the three points that built it, not on its own
+    #   closest-to-origin support -- the same reasoning `creationAnchor` gives every
+    #   later plane, applied here by hand since a plane built from three points at once
+    #   goes through no single `Operation` a generic dispatch could recognise. Each
+    #   point unitized first, so the sum's own weight is exactly three and reading its
+    #   position back out (which divides by weight) gives the plain centroid.
+    anchor_ground = position(
+      add(add(unitize(point_origin), unitize(point_x)), unitize(point_y))
     )
   scene.addItem(point_a, "a", Ink.Amber, now)
   scene.addItem(point_b, "b", Ink.Amber, now)
   scene.addItem(point_c, "c", Ink.Amber, now)
-  scene.addItem(ground, "ground", Ink.Lime, now)
+  scene.addItem(ground, "ground", Ink.Lime, now, anchor_ground)
 
 
 proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =
@@ -96,6 +104,9 @@ proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.d
   ##   step produced can no longer assume it landed in the last slot of a dense array.
   doAssert scene.isAlive(step.index_first) and scene.isAlive(step.index_second),
     "Storyboard step names an operand the scene has not built yet."
-  result = applyOperation(step.operation, scene[step.index_first].geometry,
-    scene[step.index_second].geometry)
-  scene.addItem(result, step.label, step.ink, now)
+  let
+    operand_first = scene[step.index_first].geometry
+    operand_second = scene[step.index_second].geometry
+  result = applyOperation(step.operation, operand_first, operand_second)
+  let anchor = creationAnchor(step.operation, operand_first, operand_second, result)
+  scene.addItem(result, step.label, step.ink, now, anchor)

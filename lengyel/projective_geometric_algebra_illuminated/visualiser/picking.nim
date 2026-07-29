@@ -243,7 +243,8 @@ func pickNearest*(
 
     of Shape.Plane:
       let
-        anchor = positionAnchor(geometry)
+        anchor =
+          if item.anchorOverride.isSome: item.anchorOverride else: positionAnchor(geometry)
         axes = frame(geometry)
       if anchor.isNone or axes.isNone: continue
       let hit = rayPlaneHit(
