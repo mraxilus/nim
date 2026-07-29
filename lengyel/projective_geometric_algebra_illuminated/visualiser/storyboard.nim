@@ -7,14 +7,17 @@
 ##
 ## Steps name their operands by index into the scene, which is dense and grows by one per
 ## step, so an index is stable once written.
-##   Seeds occupy indices 0 to 3; every later index is the step that produced it.
+##   Seeds occupy indices 0 to 4; every later index is the step that produced it.
 ##
 ##   |-------|-------------------|--------------------------------------------------|
 ##   | Index | Object            | Origin                                           |
 ##   |-------|-------------------|--------------------------------------------------|
 ##   | 0,1,2 | a, b, c           | Seed points, placed by hand.                     |
-##   | 3     | ground            | Seed plane, joined from three points at z = 0.    |
-##   | 4+    | one per step      | Result of the step's own operation.               |
+##   | 3     | o                 | The world origin, placed by hand -- kept off `G` |
+##   |       |                   |   (see step 08's own comment) purely so it has    |
+##   |       |                   |   something non-trivial to project onto it.       |
+##   | 4     | ground            | Seed plane, joined from three points at z = 0.    |
+##   | 5+    | one per step      | Result of the step's own operation.               |
 ##   |-------|-------------------|--------------------------------------------------|
 
 {.experimental: "strictFuncs".}
@@ -42,19 +45,24 @@ const STEPS*: array[11, Step] = [
   Step(stem: "01_join_line", label: "L = a ^ b",
     operation: Operation.Wedge, index_first: 0, index_second: 1, ink: Ink.Cyan),
   Step(stem: "02_join_plane", label: "G = L ^ c",
-    operation: Operation.Wedge, index_first: 4, index_second: 2, ink: Ink.Teal),
+    operation: Operation.Wedge, index_first: 5, index_second: 2, ink: Ink.Teal),
   Step(stem: "03_meet_line", label: "ground v G",
-    operation: Operation.WedgeAnti, index_first: 3, index_second: 5, ink: Ink.Violet),
+    operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Violet),
   Step(stem: "04_meet_point", label: "L v ground",
-    operation: Operation.WedgeAnti, index_first: 4, index_second: 3, ink: Ink.Orchid),
+    operation: Operation.WedgeAnti, index_first: 5, index_second: 4, ink: Ink.Orchid),
   Step(stem: "05_support", label: "sup(L)",
-    operation: Operation.Support, index_first: 4, index_second: 0, ink: Ink.Amber),
+    operation: Operation.Support, index_first: 5, index_second: 0, ink: Ink.Amber),
   Step(stem: "06_attitude", label: "att(L)",
-    operation: Operation.Attitude, index_first: 4, index_second: 0, ink: Ink.Rose),
+    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Rose),
   Step(stem: "07_expand_weight", label: "a ^ L*  perp plane",
-    operation: Operation.ExpandWeight, index_first: 0, index_second: 4, ink: Ink.Lime),
-  Step(stem: "08_project", label: "a onto G",
-    operation: Operation.ProjectOrthogonal, index_first: 0, index_second: 5, ink: Ink.Orchid),
+    operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Lime),
+  # `a` (and `b`, and `c`) already lie on `G` by construction -- `G` is joined from a
+  #   line through `a` and `b`, plus `c` -- so projecting any of them onto `G` is a
+  #   no-op with nothing new to show. `o`, the world origin, is the one seed placed
+  #   specifically to sit off `G` (see the module doc comment's own table), so its
+  #   projection actually lands somewhere else, visibly.
+  Step(stem: "08_project", label: "o onto G",
+    operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Orchid),
   # Attitude always drops one grade and always lands at horizon (see
   #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
   #   point at horizon above (06); applied to a plane it gives a line at horizon; applied
@@ -62,11 +70,11 @@ const STEPS*: array[11, Step] = [
   #   on) it gives a plane at horizon -- the unique universal object every plane at
   #   horizon is, regardless of which points produced it.
   Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
-    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cyan),
+    operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Cyan),
   Step(stem: "10_wedge_volume", label: "a ^ ground",
-    operation: Operation.Wedge, index_first: 0, index_second: 3, ink: Ink.Violet),
+    operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Violet),
   Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ^ ground)",
-    operation: Operation.Attitude, index_first: 13, index_second: 0, ink: Ink.Teal),
+    operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Teal),
 ] ## Build a line from two points, a plane from that line, then meet, measure and
   ## project; close with attitude taken down to a line, then a plane, at horizon.
 
@@ -95,6 +103,7 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
   scene.addItem(point_a, "a", Ink.Amber, now)
   scene.addItem(point_b, "b", Ink.Amber, now)
   scene.addItem(point_c, "c", Ink.Amber, now)
+  scene.addItem(point_origin, "o", Ink.Amber, now)
   scene.addItem(ground, "ground", Ink.Lime, now, anchor_ground)
 
 

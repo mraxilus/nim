@@ -1,4 +1,4 @@
-# Working notes: creation-anchored plane circles, dimmed (not hidden) history — done
+# Working notes: infinite-plane meet double-checked, a non-degenerate projection step — done
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
@@ -9,11 +9,65 @@ camera-relative drawing, fading-disc planes made visible, ground grid/axes made
 indefinite, categorical palette checked against the axis colours, rim+crosshair planes
 with a distance-cutoff grid, flat fill back under the rim with a wider grid cutoff, a
 browser rendering pipeline through the real library, a fixed plane radius and a longer
-line reach, then closing the last visible gap between a line and its own attitude and a
-style/hacks audit) are summarized in prior commits on this branch — ask if you want that
-history restated.
+line reach, closing the last visible gap between a line and its own attitude and a
+style/hacks audit, then creation-anchored plane circles and dimmed-rather-than-hidden
+storyboard history) are summarized in prior commits on this branch — ask if you want
+that history restated.
 
 ## This round
+
+Two asks, both follow-ups on the previous round's own explanations: double-check that a
+plane's drawn disc is only a rendering choice, not a bound the actual (infinite) plane
+geometry is subject to, specifically that a line crossing well outside the disc still
+meets it correctly; and fix `a onto G`, which the previous round explained but did not
+actually fix -- `a` already lies on `G` by construction (`G` is joined from a line
+through `a`, plus a third point), so projecting `a` onto `G` is a no-op with nothing new
+to see, and needs a point genuinely off `G` instead.
+
+- [x] Confirmed by reading, not just by argument: `EXTENT_PLANE`/`EXTENT_PLANE_F` (the
+      disc's own drawn radius) is referenced in exactly two places, `mesh.nim` (drawing
+      the disc) and `picking.nim` (bounding a mouse click to what is actually visible to
+      click on) -- grepped the whole `visualiser/` tree to be sure. Every construction
+      path (`storyboard.applyStep`, `interaction.endDrag`, `panel`'s apply button) reads
+      an item's `geometry` (the full, un-truncated `Multivector`) and calls
+      `applyOperation` directly, never consulting either constant -- so a meet was
+      already correct regardless of disc size before this round touched anything; this
+      was verification, not a fix.
+- [x] Added a regression test making that concrete rather than leaving it as an
+      unexercised property: build a plane, take a point on it three disc-radii out from
+      its own drawn centre (well outside `mesh.addPlane`'s own circle), cross it with a
+      line built specifically to meet the plane there, and confirm `WedgeAnti` recovers
+      that exact point. Passes, as expected -- this documents and locks in the
+      already-correct behaviour, not a bug being fixed.
+- [x] Fixed the actually-degenerate step: added a fifth seed, `o` (the world origin),
+      confirmed off `G` by direct computation before writing any code (`o`'s incidence
+      with `G` is nonzero, at roughly 1.8 world units away -- comparable to the scale
+      `a`, `b`, `c` themselves sit at, so the projected point lands somewhere legible
+      rather than off in the distance). Step 08 now reads `o onto G` and projects `o`
+      instead of `a`, landing at a point visibly distinct from `o` itself. Every scene
+      index from that point on shifts by one to make room (seeds now occupy 0 to 4, not
+      0 to 3) -- `storyboard.nim`'s own module doc comment and every `Step`'s
+      `index_first`/`index_second` updated by hand, and re-verified end to end by
+      rebuilding rather than by re-deriving the arithmetic a second time: a bad index
+      would have tripped `applyStep`'s own `doAssert isAlive` at runtime, and the
+      storyboard capture ran clean through all twelve frames. `visualiser.nim`'s
+      `runStoryboard` and `browser_bridge.nim` both compute their own seed count from
+      `scene.len` after construction rather than a hardcoded constant, so neither needed
+      a matching edit.
+- [x] Rebuilt and reran the full native suite (69 tests, one new) and the desktop
+      binary, regenerated the storyboard under `xvfb-run` and confirmed visually: `o`
+      appears as a fifth amber seed point at the world origin, and the step-08 frame
+      shows a new point clearly offset from it rather than the previous frame's
+      exact-overlap no-op. Rebuilt the browser bridge, reassembled the artifact, and
+      smoke-tested headlessly (Playwright, SwiftShader): all eleven steps still report
+      through cleanly, `o onto G` reports "point" same as any other, zero console or
+      page errors, and a screenshot at that step shows the same visibly distinct pair of
+      points as the desktop capture.
+
+Artifact: `https://claude.ai/code/artifact/a523f27b-d74e-4987-9b6e-7b1680e469a6`
+(same URL, republished).
+
+## Previous round
 
 Three asks: explain what the `a onto G` (`ProjectOrthogonal`) and `a ^ ground` (a
 grade-4 pseudoscalar, drawing nothing) steps actually are; replace "hide" for a

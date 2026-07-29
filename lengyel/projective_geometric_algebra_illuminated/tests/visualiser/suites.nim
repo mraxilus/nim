@@ -586,6 +586,30 @@ suite "Scene":
       check POINTS[j] ∧ line =~ 0
 
 
+  test "meet finds where a line crosses a plane even far outside its own drawn disc":
+    # `mesh.addPlane`'s disc is only a rendering choice -- the plane it represents is
+    #   the same infinite object algebraically either way, and `WedgeAnti` (meet) reads
+    #   straight off that Multivector, never consulting `EXTENT_PLANE_F` or anything
+    #   drawn. Crossing a plane three disc-radii out from its own drawn centre, well
+    #   outside the circle `mesh.addPlane` actually fills, exercises that directly.
+    for i in 0 ..< SAMPLES:
+      let
+        plane = PLANES[i]
+        anchor = positionAnchor(plane)
+        axes = frame(plane)
+      check anchor.isSome
+      check axes.isSome
+      let
+        far_on_plane = anchor.get + (3.0*EXTENT_PLANE_F)*axes.get.axis_first
+        off_plane = toMultivector(far_on_plane + axes.get.normal)
+        line = toMultivector(far_on_plane) ∧ off_plane
+        crossing = applyOperation(Operation.WedgeAnti, line, plane)
+      check shape(crossing) == some(Shape.Point)
+      let place = position(crossing)
+      check place.isSome
+      check place.get =~ far_on_plane
+
+
   test "orthogonal projection lands on the object projected onto":
     for i in 0 ..< SAMPLES:
       # Point must not be one of the three that built the plane, or it lies on it already.
