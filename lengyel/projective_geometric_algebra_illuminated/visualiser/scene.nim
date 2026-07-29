@@ -56,7 +56,9 @@ type
   Label* = array[LABEL_MAX, char]
     ## Hold item's display text, terminated by 0, so GUI may edit it without allocating.
 
-  Item* = object ## Handle onto one live slot's data; a view, not a copy.
+  Item* = object ## Handle onto one live slot's data; a view on native builds, a copy
+    ## under the JS backend, where a value parameter's own address does not carry
+    ## across calls the way it does under the C++ backend.
     ##   Holds a pointer back into `scene`'s own storage plus the slot number -- reading
     ##   `.geometry`, `.label`, `.ink`, `.is_visible` or `.born` off it resolves straight
     ##   into that storage each time, so holding or passing an `Item` around costs no
@@ -64,7 +66,10 @@ type
     ##   field or just one. Do not hold one across a mutation of its own slot (`removeItem`
     ##   followed by reuse via `addItem`): same discipline as any other live reference
     ##   into a container you do not own.
-    scene: ptr Scene
+    when defined(js):
+      scene: Scene
+    else:
+      scene: ptr Scene
     slot: int
 
   Scene* = object ## Hold fixed-capacity arena of items, addressed by stable slot.
@@ -284,7 +289,10 @@ func isAlive*(scene: Scene; slot: int): bool =
 func `[]`*(scene: Scene; slot: int): Item =
   ## Read item by slot: a handle onto `scene`'s own storage, not a copy of it.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  Item(scene: unsafeAddr scene, slot: slot)
+  when defined(js):
+    Item(scene: scene, slot: slot)
+  else:
+    Item(scene: unsafeAddr scene, slot: slot)
 
 
 func geometry*(item: Item): lent Multivector = item.scene.geometries[item.slot]
@@ -406,100 +414,101 @@ proc removeItem*(scene: var Scene; slot: int) =
 ## so the format costs nothing for the padding no reader ever wants back and does not
 ## depend on the `LABEL_MAX` the writing build happened to use.
 
-const
-  MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
-  VERSION_SCENE = 1'u8
+when not defined(js):
+  const
+    MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
+    VERSION_SCENE = 1'u8
 
 
-proc saveScene*(scene: Scene; path: string): string =
-  ## Write every live item to `path`, in the format documented above; report outcome.
-  if len(path) == 0: return "Save path is empty; nothing written."
-  let file = open(path, fmWrite)
-  defer: file.close
+  proc saveScene*(scene: Scene; path: string): string =
+    ## Write every live item to `path`, in the format documented above; report outcome.
+    if len(path) == 0: return "Save path is empty; nothing written."
+    let file = open(path, fmWrite)
+    defer: file.close
 
-  discard file.writeChars(MAGIC_SCENE, 0, 4)
-  file.write(char(VERSION_SCENE))
-  file.write(char(ord(Basis.high) + 1))
-  let count = uint32(scene.len)
-  discard file.writeBuffer(unsafeAddr count, 4)
+    discard file.writeChars(MAGIC_SCENE, 0, 4)
+    file.write(char(VERSION_SCENE))
+    file.write(char(ord(Basis.high) + 1))
+    let count = uint32(scene.len)
+    discard file.writeBuffer(unsafeAddr count, 4)
 
-  for item in scene:
-    file.write(char(ord(item.ink)))
-    file.write(char(ord(item.is_visible)))
-    let
-      text = $toCstring(item.label)
-      geometry = item.geometry
-    file.write(char(len(text)))
-    discard file.writeChars(text, 0, len(text))
-    for b in Basis:
-      let coefficient = geometry[b]
-      discard file.writeBuffer(unsafeAddr coefficient, 8)
+    for item in scene:
+      file.write(char(ord(item.ink)))
+      file.write(char(ord(item.is_visible)))
+      let
+        text = $toCstring(item.label)
+        geometry = item.geometry
+      file.write(char(len(text)))
+      discard file.writeChars(text, 0, len(text))
+      for b in Basis:
+        let coefficient = geometry[b]
+        discard file.writeBuffer(unsafeAddr coefficient, 8)
 
-  &"Saved {scene.len} object(s) to `{path}`."
+    &"Saved {scene.len} object(s) to `{path}`."
 
 
-proc loadScene*(scene: var Scene; path: string): string =
-  ## Replace scene's contents with what `path` holds; report outcome for display.
-  ##   Parses into a scene of its own and only replaces the caller's on complete
-  ##   success, so a bad path or a corrupt or foreign file leaves whatever scene
-  ##   already held untouched rather than half-overwritten by however far parsing
-  ##   got before failing.
-  if len(path) == 0: return "Load path is empty; nothing read."
-  if not fileExists(path): return &"No such file `{path}`."
+  proc loadScene*(scene: var Scene; path: string): string =
+    ## Replace scene's contents with what `path` holds; report outcome for display.
+    ##   Parses into a scene of its own and only replaces the caller's on complete
+    ##   success, so a bad path or a corrupt or foreign file leaves whatever scene
+    ##   already held untouched rather than half-overwritten by however far parsing
+    ##   got before failing.
+    if len(path) == 0: return "Load path is empty; nothing read."
+    if not fileExists(path): return &"No such file `{path}`."
 
-  let file = open(path, fmRead)
-  defer: file.close
+    let file = open(path, fmRead)
+    defer: file.close
 
-  var magic: array[4, char]
-  if file.readChars(magic) != 4 or magic != MAGIC_SCENE:
-    return &"`{path}` is not a scene file."
+    var magic: array[4, char]
+    if file.readChars(magic) != 4 or magic != MAGIC_SCENE:
+      return &"`{path}` is not a scene file."
 
-  var version: array[1, char]
-  if file.readChars(version) != 1 or uint8(version[0]) != VERSION_SCENE:
-    return &"`{path}` is a scene file of a version this build cannot read."
+    var version: array[1, char]
+    if file.readChars(version) != 1 or uint8(version[0]) != VERSION_SCENE:
+      return &"`{path}` is a scene file of a version this build cannot read."
 
-  let basis_count_here = ord(Basis.high) + 1
-  var basis_count: array[1, char]
-  if file.readChars(basis_count) != 1 or int(uint8(basis_count[0])) != basis_count_here:
-    return &"`{path}` was saved under a different PGA dimension or metric; " &
-      &"this build reads {basis_count_here}-term multivectors."
+    let basis_count_here = ord(Basis.high) + 1
+    var basis_count: array[1, char]
+    if file.readChars(basis_count) != 1 or int(uint8(basis_count[0])) != basis_count_here:
+      return &"`{path}` was saved under a different PGA dimension or metric; " &
+        &"this build reads {basis_count_here}-term multivectors."
 
-  var count: uint32
-  if file.readBuffer(addr count, 4) != 4:
-    return &"`{path}` is truncated; no item count."
-  if int(count) > ITEMS_MAX:
-    return &"`{path}` holds {count} objects, more than this build's {ITEMS_MAX}-item " &
-      "capacity; raise `--define:visualiser.items_max`."
+    var count: uint32
+    if file.readBuffer(addr count, 4) != 4:
+      return &"`{path}` is truncated; no item count."
+    if int(count) > ITEMS_MAX:
+      return &"`{path}` holds {count} objects, more than this build's {ITEMS_MAX}-item " &
+        "capacity; raise `--define:visualiser.items_max`."
 
-  var staging = initScene()
-  for index in 0 ..< int(count):
-    var ink_byte, visible_byte, length_byte: array[1, char]
-    if file.readChars(ink_byte) != 1 or file.readChars(visible_byte) != 1 or
-        file.readChars(length_byte) != 1:
-      return &"`{path}` is truncated partway through object {index}."
-    if int(uint8(ink_byte[0])) notin ord(Ink.low) .. ord(Ink.high):
-      return &"`{path}` names an unknown palette slot for object {index}."
+    var staging = initScene()
+    for index in 0 ..< int(count):
+      var ink_byte, visible_byte, length_byte: array[1, char]
+      if file.readChars(ink_byte) != 1 or file.readChars(visible_byte) != 1 or
+          file.readChars(length_byte) != 1:
+        return &"`{path}` is truncated partway through object {index}."
+      if int(uint8(ink_byte[0])) notin ord(Ink.low) .. ord(Ink.high):
+        return &"`{path}` names an unknown palette slot for object {index}."
 
-    let
-      ink = Ink(uint8(ink_byte[0]))
-      is_visible = uint8(visible_byte[0]) != 0
-      length = int(uint8(length_byte[0]))
-    var label = newString(length)
-    if length > 0 and file.readChars(label) != length:
-      return &"`{path}` is truncated partway through object {index}'s label."
+      let
+        ink = Ink(uint8(ink_byte[0]))
+        is_visible = uint8(visible_byte[0]) != 0
+        length = int(uint8(length_byte[0]))
+      var label = newString(length)
+      if length > 0 and file.readChars(label) != length:
+        return &"`{path}` is truncated partway through object {index}'s label."
 
-    var geometry: Multivector
-    for b in Basis:
-      var coefficient: float
-      if file.readBuffer(addr coefficient, 8) != 8:
-        return &"`{path}` is truncated partway through object {index}'s geometry."
-      geometry[b] = coefficient
+      var geometry: Multivector
+      for b in Basis:
+        var coefficient: float
+        if file.readBuffer(addr coefficient, 8) != 8:
+          return &"`{path}` is truncated partway through object {index}'s geometry."
+        geometry[b] = coefficient
 
-    let slot = staging.addItem(geometry, label, ink)
-    staging.isVisibleAt(slot) = is_visible
+      let slot = staging.addItem(geometry, label, ink)
+      staging.isVisibleAt(slot) = is_visible
 
-  scene = staging
-  &"Loaded {count} object(s) from `{path}`."
+    scene = staging
+    &"Loaded {count} object(s) from `{path}`."
 
 
 func inkCycled*(index: int): Ink =

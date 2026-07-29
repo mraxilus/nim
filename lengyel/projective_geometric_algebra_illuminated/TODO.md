@@ -1,4 +1,4 @@
-# Working notes: flat plane fill back, wider grid cutoff — done
+# Working notes: browser rendering pipeline through the real library — done
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
@@ -6,39 +6,51 @@ each round. Tracked in git (per your stop-hook check).
 Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, diagnostics panel, object
 pool readouts, refactor/colour/visual-noise audits, scene save/load, unbounded
 camera-relative drawing, fading-disc planes made visible, ground grid/axes made
-indefinite, categorical palette checked against the axis colours, then rim+crosshair
-planes with a distance-cutoff grid) are summarized in prior commits on this branch —
-ask if you want that history restated.
+indefinite, categorical palette checked against the axis colours, rim+crosshair planes
+with a distance-cutoff grid, then flat fill back under the rim with a wider grid
+cutoff) are summarized in prior commits on this branch — ask if you want that history
+restated.
 
 ## This round
 
-Feedback on rim+crosshair: drop the crosshair, bring back a semi-transparent fill
-under the rim, push the grid's cutoff further out. Plus a question about whether
-plane rims were genuinely centred on their own support point (they were — verified,
-not a bug) and what a few extra scattered points were (seed points that geometrically
-lie on the built objects, plus each object's own support marker and, for planes, the
-normal arrow's tip — all expected).
+Asked for a second, browser-based rendering pipeline so the workbench is reachable from
+a phone. First pass wrongly hand-rolled the demo's vector algebra directly in JS; told
+to use the actual `pga` library instead, compiled through Nim's own JS backend, since
+being a testbed for that library is the whole point.
 
-- [x] `addPlaneFill`: flat, uniformly translucent fan (`ALPHA_WASH` 0.16) bounded by
-      the same circle the rim outlines — flat rather than fading, since the rim
-      already marks the edge crisply.
-- [x] Checked directly against the stated requirements before calling it done: two
-      overlapping planes at different tilts read as distinguishable ellipses; ground
-      grid/axes/other objects stay visible behind both.
-- [x] Grid fade-end radius tuned through three rounds of visual comparison (checked
-      in after each): landed on `radius_fade_start` = 0.03, `radius_fade_end` = 0.12
-      of the grid's own reach.
-- [x] Updated tests (64 total): rewrote the plane test for the flat fill.
-- [x] Rebuilt, ran the full suite, regenerated storyboard, checked screenshots
-      against the user's stated requirements before committing (per their own
-      "check back in with me" instruction — held off committing until confirmed).
-- [x] Commit/push source; sync + rebuild/test delegations copy; update its
-      `PROVENANCE.md`; regenerate its storyboard; retar; deliver.
+- [x] `visualiser/browser_bridge.nim`: new module, compiled with `nim js`, that builds
+      the fixed fifteen-object demo through the real `pga`/`objects`/`mesh`/`camera`/
+      `scene`/`storyboard` modules — same joins, meets, attitudes, supports, expansions
+      and orthogonal projections the desktop app runs, same camera orbit math, same
+      tessellation. Exports plain functions a browser calls directly: step transport,
+      camera orbit/dolly/pan, and one frame's vertex buffers plus view-projection matrix
+      as flat arrays ready for `gl.bufferData`/`gl.uniformMatrix4fv`.
+- [x] `scene.nim`: two JS-backend compatibility fixes, both gated behind
+      `when defined(js)` and inert on the native build (full suite still passes) —
+      `Item` holds its `Scene` by value instead of by `ptr` (a value parameter's own
+      address does not survive a call the same way under the JS backend as under C++),
+      and `saveScene`/`loadScene` (file I/O has nothing to target in a browser) are
+      gated to native builds only.
+- [x] Rewrote the artifact's own script as two layers: the compiled bridge inlined
+      verbatim, then a thin hand-written layer that is WebGL calls, DOM wiring and
+      pointer input only — no geometry or camera math of its own, mirroring how
+      OpenGL/SDL/Dear ImGui sit over the same CPU-side geometry on the desktop app.
+- [x] Verified headlessly (Playwright + swiftshader): no console/page errors across
+      storyboard playback, drag-orbit, pinch/wheel-zoom; screenshots match the prior
+      (pre-fix) renders pixel-for-pixel in composition, confirming the swap in engines
+      changed nothing about what's drawn.
+- [x] Rebuilt and reran the native suite (64 tests) and the desktop binary itself after
+      the `scene.nim` patch, to confirm zero regression on the C++ backend.
+- [x] Republished the same artifact URL with the corrected pipeline.
 
-Commits: `cb59d6f` on `claude/rga-visualization-prototype-kbq9kw` (source).
-Delegations repo: `4ee198b` (synced copy + `PROVENANCE.md` + regenerated storyboard).
+Artifact: `https://claude.ai/code/artifact/a523f27b-d74e-4987-9b6e-7b1680e469a6`.
 
 ## Process notes
 
 - `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked;
-  copied in locally to build, stripped back out before each commit.
+  copied in locally to build (native or `nim js`), stripped back out before each commit.
+- Browser build flags: `nim js -d:release --define:pga.dimensions=4
+  --define:pga.is_conformal=false --define:visualiser.items_max=16
+  -o:browser_bridge.js visualiser/browser_bridge.nim` — `items_max` trimmed from the
+  desktop default of 64 since the fixed demo only ever holds fifteen objects, and
+  `Item`'s JS-backend value-copy makes `Scene`'s own size worth keeping small.
