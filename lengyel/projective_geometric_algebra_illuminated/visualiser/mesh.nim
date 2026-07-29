@@ -1,19 +1,21 @@
 ## Turn RGA objects into vertices OpenGL can draw.
 ##
 ## Finite objects are tessellated about their support point, i.e. point nearest origin:
-##   Line becomes segment reaching `DrawExtent.extent_furniture` either side of support,
-##   along its attitude -- the same reach world furniture below gets, so a line always
-##   reads as running out toward the horizon rather than stopping at some arbitrary
-##   camera-relative length, and a plane crossing it never reads as swallowing it, since
-##   a line's own reach dwarfs any plane's.
+##   Line becomes segment along its attitude: `DrawExtent.radius_horizon` backward from
+##   support, the same radius forward from the eye instead, so the forward end lands
+##   exactly on `eye + radius_horizon*axis` -- precisely where a horizon marker for this
+##   line's own attitude would be drawn, with no gap between the two -- and dwarfs any
+##   plane crossing it, since a plane holds a fixed, far smaller radius regardless of
+##   camera distance.
 ##   Plane becomes a flat, translucent disc at a fixed radius (`EXTENT_PLANE`) plus a
 ##   rim marking its edge crisply, spanned by its own frame -- fixed rather than
 ##   camera-relative, so a plane holds one size in world units and does not appear to
 ##   grow or shrink as the camera dollies or orbits, exactly as a real fixed-size object
 ##   would.
-##   Support point is what algebra computed; only a plane's own normal is additionally
-##   marked, as a bare shaft with no point at its tip, so orientation reads without
-##   adding another marker to the scene.
+##   Support point is what algebra computed, but no object marks it beyond its own
+##   drawn shape (a point marker is that shape; a line's segment or a plane's disc
+##   already passes through it): a plane's own normal is marked too, as a bare shaft
+##   with no point at its tip, so orientation reads without adding another marker.
 ##
 ## Object at horizon -- infinitely far away, no support point to anchor on -- is drawn
 ## fixed to `DrawExtent.eye` instead, at `DrawExtent.radius_horizon` (near the camera's
@@ -26,22 +28,24 @@
 ## turning the camera to look toward or away from one moves it on screen.
 ##
 ## World furniture -- ground grid, world axes -- reaches `DrawExtent.extent_furniture`
-## too, tied to the camera's own far clip distance rather than to orbit distance
+## instead, tied to the camera's own far clip distance rather than to orbit distance
 ## (`extentFurnitureFor`), so it reads as extending indefinitely into the distance
 ## regardless of how far the camera has dollied in or out to inspect finite content.
+## Held distinct from `radius_horizon` deliberately: furniture has no attitude of its
+## own to meet, so nothing ties its reach to the eye the way a line's does.
 ##
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
 ##   Rebuilding beats tracking which object changed, while scene holds only tens of objects.
 ##   Cost is a few thousand vertices uploaded per frame, which is far below any budget.
 ##
-##   |-----------|--------------|-------------------------------------|
-##   | Primitive | OpenGL       | Carries                             |
-##   |-----------|--------------|-------------------------------------|
-##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.       |
-##   | Line      | GL_LINES     | Lines, plane rims, horizon circles, |
-##   |           |              | axes, ground grid.                  |
-##   | Point     | GL_POINTS    | Points, support markers, stars.     |
-##   |-----------|--------------|-------------------------------------|
+##   |-----------|--------------|--------------------------------------|
+##   | Primitive | OpenGL       | Carries                              |
+##   |-----------|--------------|--------------------------------------|
+##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.        |
+##   | Line      | GL_LINES     | Lines, plane rims and normal shafts,  |
+##   |           |              | horizon circles, axes, ground grid.  |
+##   | Point     | GL_POINTS    | Points, stars.                       |
+##   |-----------|--------------|--------------------------------------|
 
 {.experimental: "strictFuncs".}
 
@@ -136,12 +140,18 @@ const
     ## fade toward and would otherwise read as a dominant tint over the entire view
     ## rather than a background hint.
   ALPHA_GUIDE* = 0.75'f32
-    ## Set opacity of a plane's own normal arrow, shown a touch less boldly than the
+    ## Set opacity of a plane's own normal shaft, shown a touch less boldly than the
     ## plane's own rim so it reads as a construction aid, not as another competing mark.
+  FRACTION_NORMAL_SHAFT* = 0.25
+    ## Scale a plane's own radius by this to reach the length its normal shaft is drawn
+    ## at -- long enough to read as an arrow rather than a stub, short enough not to
+    ## compete with the disc's own rim for attention.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
   doAssert SEGMENTS_GRID_FADE >= 2, &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
+  doAssert FRACTION_NORMAL_SHAFT > 0,
+    &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
 
 
 
@@ -492,12 +502,19 @@ proc addPoint(
 proc addLine(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
 ): Placement =
-  ## Append grade-2 object as segment about its support point, along its attitude,
-  ## reaching `scale.extent_furniture` either side of it -- the same reach world
-  ## furniture gets, so a line always reads as running out toward the horizon rather
-  ## than stopping short, and a plane crossing it never looks like it swallows the
-  ## rest of it -- or, at horizon, as a great circle around `scale.eye` -- the pencil
-  ## of directions the line stands for, traced across the sky at `scale.radius_horizon`.
+  ## Append grade-2 object as segment along its attitude: backward `scale.radius_horizon`
+  ## from support, forward the same radius from the eye instead, so the forward end
+  ## lands exactly on `scale.eye + scale.radius_horizon*axis` -- precisely where
+  ## `addPoint` draws this same line's own attitude as a horizon marker, closing what
+  ## would otherwise be a gap between a finite reach measured from support and an
+  ## infinite one measured from the eye. The one straight segment between two ends each
+  ## anchored a touch differently bends by an angle no wider than the support-to-eye
+  ## separation over `scale.radius_horizon` itself -- imperceptible at the scale a
+  ## radius reaching toward the camera's own far clip plane is drawn at, and the price
+  ## of a line that visibly continues to exactly where its own attitude stands, rather
+  ## than short of it.
+  ##   Or, at horizon, as a great circle around `scale.eye` -- the pencil of directions
+  ##   the line stands for, traced across the sky at `scale.radius_horizon`.
   ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
   ##   fades it in alongside, so a freshly derived line visibly extends rather than
   ##   popping in.
@@ -506,10 +523,9 @@ proc addLine(
     axis = direction(geometry)
   if anchor.isSome and axis.isSome:
     let
-      extent = progress*scale.extent_furniture
+      reach = progress*scale.radius_horizon
       tint_progress = tint.fade(tint.alpha*progress)
-    meshes.addSegment(anchor.get - extent*axis.get, anchor.get + extent*axis.get, tint_progress)
-    meshes.addMarker(anchor.get, tint_progress)
+    meshes.addSegment(anchor.get - reach*axis.get, scale.eye + reach*axis.get, tint_progress)
     return Placement.Finite
 
   let normal = directionNormalHorizon(geometry)
@@ -550,7 +566,7 @@ proc addPlane(
     # Show normal as a bare shaft, no marker at its tip: tells plane apart from its own
     #   reflection without adding another point to the scene.
     meshes.addSegment(
-      anchor.get, anchor.get + (0.25*extent)*axes.get.normal,
+      anchor.get, anchor.get + (FRACTION_NORMAL_SHAFT*extent)*axes.get.normal,
       Ink.Guide.colour.fade(ALPHA_GUIDE*progress),
     )
     return Placement.Finite

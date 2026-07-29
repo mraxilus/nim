@@ -12,8 +12,6 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, strformat]
-
 import ./[objects, mesh, camera, scene, storyboard]
 
 
@@ -24,8 +22,8 @@ var
   g_scene: Scene
   g_camera: Camera
   g_count_seeds: int
-  g_visible: array[ITEMS_MAX, bool]
-  g_born: array[ITEMS_MAX, float]
+  g_are_visible: array[ITEMS_MAX, bool]
+  g_borns: array[ITEMS_MAX, float]
   g_step: int = -1 ## -1 names "seeds only", i.e. before the first step applies.
 
 
@@ -42,10 +40,9 @@ proc operativeSlots(step: int): seq[int] =
     result.add(this_step.index_second)
 
 
-proc hexOf(colour: Rgba): cstring =
-  ## Format colour as a `#rrggbb` string, for a caller styling DOM chrome to match.
-  func toByte(channel: float32): int = clamp(int(round(channel * 255.0)), 0, 255)
-  cstring(&"#{toByte(colour.red):02x}{toByte(colour.green):02x}{toByte(colour.blue):02x}")
+proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
+  ## Format colour as an `[r, g, b]` triple, for a caller that wants a CSS colour string
+  ## to format one for itself -- DOM styling is not this module's own job.
 
 
 proc flatten(mesh: Mesh): seq[float32] =
@@ -81,8 +78,8 @@ proc nimInit(now: cfloat) {.exportc.} =
   )
 
   for slot in 0 ..< ITEMS_MAX:
-    g_visible[slot] = slot < g_count_seeds
-    g_born[slot] = float(now)
+    g_are_visible[slot] = slot < g_count_seeds
+    g_borns[slot] = float(now)
   g_step = -1
 
 
@@ -102,10 +99,10 @@ proc nimStepLabel(step: cint): cstring {.exportc.} =
   else: cstring(STEPS[int(step)].label)
 
 
-proc nimStepInk(step: cint): cstring {.exportc.} =
-  ## Report the hex colour step `step`'s own derived object is drawn with.
+proc nimStepColor(step: cint): seq[float32] {.exportc.} =
+  ## Report the colour step `step`'s own derived object is drawn with.
   let ink = if step < 0: Ink.Amber else: STEPS[int(step)].ink
-  hexOf(ink.colour)
+  toRgbSeq(ink.colour)
 
 
 proc nimGotoStep(step: cint, now: cfloat) {.exportc.} =
@@ -121,8 +118,8 @@ proc nimGotoStep(step: cint, now: cfloat) {.exportc.} =
     previous = operativeSlots(stepI - 1)
   for slot in 0 ..< ITEMS_MAX:
     let visible = slot < g_count_seeds or slot in current or slot in previous
-    if visible and not g_visible[slot]: g_born[slot] = float(now)
-    g_visible[slot] = visible
+    if visible and not g_are_visible[slot]: g_borns[slot] = float(now)
+    g_are_visible[slot] = visible
   g_step = stepI
 
 
@@ -141,13 +138,7 @@ proc nimCameraPan(across, up: cfloat) {.exportc.} =
   camera.pan(g_camera, float(across), float(up))
 
 
-proc nimBackdropHex(): cstring {.exportc.} =
-  hexOf(Ink.Backdrop.colour)
-
-
-proc nimBackdropRgb(): seq[float32] {.exportc.} =
-  let c = Ink.Backdrop.colour
-  @[c.red, c.green, c.blue]
+proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour)
 
 
 
@@ -156,12 +147,12 @@ proc nimBackdropRgb(): seq[float32] {.exportc.} =
 type FrameData = object
   ## Hold one frame's worth of vertex data plus the transform it is drawn through --
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
-  triVerts, lineVerts, pointVerts: seq[float32]
-  viewProjection: seq[float32]
+  tri_verts, line_verts, point_verts: seq[float32]
+  view_projection: seq[float32]
 
 
 proc nimBuildFrame(
-  aspect, now: cfloat; showAxes, showGrid: bool
+  aspect, now: cfloat; show_axes, show_grid: bool
 ): FrameData {.exportc.} =
   ## Tessellate every visible object at the current step, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
@@ -176,12 +167,12 @@ proc nimBuildFrame(
     radius_horizon: radiusHorizonFor(g_camera.distance_far),
   )
 
-  if showGrid: addGrid(meshes, scale.extent_furniture)
-  if showAxes: addAxes(meshes, scale.extent_furniture)
+  if show_grid: addGrid(meshes, scale.extent_furniture)
+  if show_axes: addAxes(meshes, scale.extent_furniture)
 
   for slot, item in g_scene.pairs:
-    if slot < ITEMS_MAX and g_visible[slot]:
-      let progress = animationProgress(float(now), g_born[slot])
+    if slot < ITEMS_MAX and g_are_visible[slot]:
+      let progress = animationProgress(float(now), g_borns[slot])
       discard meshes.addObject(item.geometry, item.ink.colour, scale, progress)
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
@@ -191,8 +182,8 @@ proc nimBuildFrame(
       view_projection[4*column + row] = vp.at(row, column)
 
   FrameData(
-    triVerts: flatten(meshes[Primitive.Triangle]),
-    lineVerts: flatten(meshes[Primitive.Line]),
-    pointVerts: flatten(meshes[Primitive.Point]),
-    viewProjection: view_projection,
+    tri_verts: flatten(meshes[Primitive.Triangle]),
+    line_verts: flatten(meshes[Primitive.Line]),
+    point_verts: flatten(meshes[Primitive.Point]),
+    view_projection: view_projection,
   )

@@ -2,8 +2,9 @@
 ##
 ## Point and line are tested in screen space, by pixel distance: that answers where a pixel
 ## is, a rasterisation question, not an algebraic one, exactly as the camera's own clip
-## volume is written out directly rather than derived. Their endpoints are support ± extent
-## along direction, matching `mesh.addLine` exactly, so a hit always agrees with what is drawn.
+## volume is written out directly rather than derived. A line's own endpoints are computed
+## the same way `mesh.addLine` draws them -- `radius_horizon` backward from support, the
+## same radius forward from the eye instead -- so a hit always agrees with what is drawn.
 ##
 ## Plane is tested differently, through the algebra rather than around it: cursor's own
 ## sight ray is built as an RGA line (eye ∧ heading) and met with the plane directly,
@@ -104,6 +105,25 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
 
 #[ Segment Test ]#
 
+func clipToEyeSide(
+  a, b: Position; eye: Position; forward: Direction; distance_near: float
+): Option[(Position, Position)] =
+  ## Clip segment `a`-`b` to the half-space at least `distance_near` in front of `eye`
+  ## -- the same near-side clip the GPU already performs when actually drawing the
+  ## segment, done by hand here since a screen-space hit test needs to divide by each
+  ## endpoint's own depth, which the far reach `mesh.addLine` now gives a line can put
+  ## at or behind the eye from some camera angles even though the near half of the very
+  ## same segment stays plainly on screen.
+  ##   None where the whole segment lies behind `eye`.
+  let
+    depth_a = dot(a - eye, forward)
+    depth_b = dot(b - eye, forward)
+  if depth_a <= distance_near and depth_b <= distance_near: return
+  if depth_a > distance_near and depth_b > distance_near: return some((a, b))
+  let crossing = a + ((distance_near - depth_a) / (depth_b - depth_a))*(b - a)
+  if depth_a > distance_near: some((a, crossing)) else: some((crossing, b))
+
+
 func distanceToSegment(p, a, b: ScreenPosition): float =
   ## Measure pixel distance from `p` to nearest point of segment `a`-`b`.
   let
@@ -177,10 +197,7 @@ func pickNearest*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    scale = DrawExtent(
-      extent_furniture: extentFurnitureFor(camera.distance_far), eye: eye,
-      radius_horizon: radiusHorizonFor(camera.distance_far),
-    )
+    scale = DrawExtent(eye: eye, radius_horizon: radiusHorizonFor(camera.distance_far))
 
   var
     slot_best = none(int)
@@ -211,13 +228,15 @@ func pickNearest*(
     of Shape.Line:
       let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
       if anchor.isNone or axis.isNone: continue
+      let clipped = clipToEyeSide(
+        anchor.get - scale.radius_horizon*axis.get, eye + scale.radius_horizon*axis.get,
+        eye, frame_camera.forward, camera.distance_near,
+      )
+      if clipped.isNone: continue
+      let (a, b) = clipped.get
       let
-        tail = projectToScreen(
-          view_projection, width, height, anchor.get - scale.extent_furniture*axis.get
-        )
-        head = projectToScreen(
-          view_projection, width, height, anchor.get + scale.extent_furniture*axis.get
-        )
+        tail = projectToScreen(view_projection, width, height, a)
+        head = projectToScreen(view_projection, width, height, b)
       if not (tail.isInFront and head.isInFront): continue
       let distance = distanceToSegment(cursor, tail, head)
       if distance <= RADIUS_PICK_LINE: consider(1, distance)

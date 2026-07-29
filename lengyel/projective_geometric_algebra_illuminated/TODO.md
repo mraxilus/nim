@@ -1,4 +1,4 @@
-# Working notes: fixed plane size, indefinite lines, stray markers gone — done
+# Working notes: line reach closes the gap with its own attitude, style/hacks audit — done
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
@@ -7,52 +7,78 @@ Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, diagnostics panel, obje
 pool readouts, refactor/colour/visual-noise audits, scene save/load, unbounded
 camera-relative drawing, fading-disc planes made visible, ground grid/axes made
 indefinite, categorical palette checked against the axis colours, rim+crosshair planes
-with a distance-cutoff grid, flat fill back under the rim with a wider grid cutoff,
-then a browser rendering pipeline through the real library) are summarized in prior
-commits on this branch — ask if you want that history restated.
+with a distance-cutoff grid, flat fill back under the rim with a wider grid cutoff, a
+browser rendering pipeline through the real library, then a fixed plane radius and a
+longer line reach) are summarized in prior commits on this branch — ask if you want
+that history restated.
 
 ## This round
 
-Feedback on the browser pipeline, present in both it and the desktop app since both
-draw through the same `mesh.nim`: two stray points beyond the three seed points (one at
-the origin, one just above); lines reading as cut off or swallowed by planes; planes
-visibly resizing as the camera zoomed or orbited.
+Follow-up on the previous round's line-reach fix: the line still visibly stopped short
+of its own attitude's horizon marker (e.g. `att(L)`), a genuine gap, not close enough to
+read as continuous. Also asked to remove a line's own support marker too, for
+consistency with the plane's already having lost its one two rounds back -- and,
+separately, a full pass for hacks, style-guide drift, and non-RGA math to trim, with at
+least two hours of real diligence behind it.
 
-- [x] Traced the two stray points to a plane's own anchor marker and its normal arrow's
-      head marker -- both removed. The normal itself still draws as a bare shaft with
-      no marker at its tip, so orientation still reads without adding a point.
-- [x] Planes now draw at a fixed radius (`EXTENT_PLANE`, 8 world units) around their own
-      support, independent of the camera entirely -- replaces the old camera-relative
-      `extentFor(camera.distance)`, which grew or shrank a plane as the camera dollied.
-      `DrawExtent.extent` and `extentFor` are gone; nothing needed them once planes
-      stopped scaling with distance.
-- [x] Lines now reach `extent_furniture` either side of their own support -- the same
-      camera-far-clip-relative reach world axes and the ground grid already use, so a
-      line reads as running out toward the horizon rather than stopping at some
-      arbitrary camera-relative length, and dwarfs any plane's now-small fixed radius,
-      so a plane crossing it never reads as swallowing the rest of it.
-- [x] `picking.nim` updated to match: a line's own pick test now reaches to
-      `extent_furniture`, and a plane's own hit bound uses `EXTENT_PLANE` directly,
-      matching what is now actually drawn in each case.
-- [x] Found and fixed a real bug while checking "hidden by planes": the browser's own
-      WebGL draw order drew plane washes before lines/points, with ordinary depth
-      writes on, so a plane could occlude a line correctly drawn behind it in the depth
-      buffer even at low alpha. `renderer.nim` (the desktop app) already gets this
-      right -- opaque kinds first, plane washes last with depth writes off, so a wash
-      only tints over what is already drawn rather than hiding it. Rewrote the
-      browser's own draw order in `glue.js` to match exactly.
-- [x] Verified on the real OpenGL desktop renderer (not just headlessly): a fixed-size
-      plane, a line reaching most of the way across the view, and two overlapping
-      plane washes with a line clearly legible through both at once, confirming the
-      fix in the one shared module (`mesh.nim`) plus the one browser-only draw-order
-      fix together resolve all three reports.
-- [x] Updated the plane/pick tests for the new fixed radius and the now-empty point
-      count on a plane; removed the `extentFor` test, now that the function is gone.
-      Rebuilt and reran the full native suite and the desktop binary itself: no
-      regressions.
-- [x] Rebuilt the browser bridge, reassembled the artifact, and smoke-tested headlessly
-      (Playwright + swiftshader) across the full storyboard, drag-orbit and zoom: zero
-      console or page errors.
+- [x] Root-caused the gap: the previous round's line reach (`extent_furniture`, measured
+      from the line's own support) and a horizon marker's reach (`radius_horizon`,
+      measured from the eye) are different distances from different points, so nothing
+      forced a line's own drawn end to land where its own attitude would be drawn, no
+      matter how far either one reached.
+- [x] Fixed `mesh.addLine`: a line now reaches `radius_horizon` backward from its own
+      support, but forward from the eye instead -- landing its forward end exactly on
+      `eye + radius_horizon*axis`, precisely where `addPoint` draws that same line's own
+      attitude. The one straight segment between two ends anchored slightly differently
+      bends by an angle bounded by the support-to-eye separation over `radius_horizon`
+      itself: imperceptible at the scale a reach toward the far clip plane is drawn at,
+      and the price of a line that visibly continues to exactly where its own attitude
+      stands rather than short of it. Added a test asserting the two literally coincide,
+      not just "close."
+- [x] Removed the line's own support marker (`addMarker` at anchor) to match the plane,
+      which lost its own equivalent two rounds back -- checked first whether either was
+      load-bearing as a mouse-pick target: neither is. Picking a line already tests
+      against its whole drawn segment (`pickNearest`'s `Shape.Line` branch), and picking
+      a plane against its whole drawn disc, never against a separate marker point; the
+      handle was already the object itself. The one place a support point still matters
+      -- the desktop GUI's conditional hover ring / drag rubber-band, shown only while
+      actively interacting -- already anchors there because that point sits on the
+      object's own drawn shape, not because of the removed always-on marker; left as is.
+- [x] `picking.nim`'s line test updated to match exactly, and hit a real bug while doing
+      so: reaching all the way to `radius_horizon` from two different anchors means one
+      end can land behind the eye for a fairly ordinary line direction (caught by the
+      existing "line through target" test going from pass to fail) -- fixed by clipping
+      the test segment to the eye's own near side before projecting to screen space
+      (`clipToEyeSide`), the same clip the GPU already performs when actually drawing
+      the line, done by hand here since a hit test has to divide by each endpoint's own
+      depth.
+- [x] Hacks/style pass: extracted the one remaining unnamed magic number in `mesh.nim`
+      (a plane's own normal-shaft length, `0.25*extent`) into `FRACTION_NORMAL_SHAFT`,
+      matching every other tunable ratio in the file already being named and asserted
+      positive. Renamed `browser_bridge.nim`'s camelCase JS-facing record fields and
+      globals (`triVerts`, `g_visible`, `g_born`, ...) to the snake_case the rest of the
+      codebase uses throughout for fields and variables (camelCase stayed for proc
+      names, matching `initCamera`/`addObject`/etc.) -- a grep across every other module
+      for the same camelCase-field pattern turned up nothing else. Collapsed
+      `nimBackdropHex`/`nimStepInk` into colour-triple exports only
+      (`nimBackdropColor`/`nimStepColor`) and moved hex-string formatting into `glue.js`
+      instead, since formatting a CSS colour string is DOM styling, not this module's
+      job, and it removed `strformat`/`std/math` from `browser_bridge.nim` entirely.
+      Grepped the rest of `visualiser/*.nim` for `TODO`/`HACK`/`FIXME`/magic-number
+      patterns and for non-RGA vector math specifically: every remaining raw dot
+      product, cross-product-shaped construction, or trig call already carries its own
+      justification in a doc comment (screen-space picking math, camera/projection
+      convention, or "no algebra to illuminate" reads on a plain axis) predating this
+      round, and each one was re-checked rather than taken on faith; nothing else
+      qualified as a hack worth changing.
+- [x] Rebuilt and reran the full native suite (65 tests) and the desktop binary itself,
+      regenerated the storyboard under `xvfb-run` and visually confirmed on the real
+      OpenGL path: a line now runs continuously off-frame with no visible seam where its
+      own attitude would sit, no stray points beyond the seeds, two overlapping planes
+      still read as distinguishable fixed-size ellipses with a line clearly legible
+      through both. Rebuilt the browser bridge, reassembled the artifact, and
+      smoke-tested headlessly (Playwright + SwiftShader): zero console or page errors
+      across the full storyboard, drag-orbit, pinch/wheel-zoom.
 
 Artifact: `https://claude.ai/code/artifact/a523f27b-d74e-4987-9b6e-7b1680e469a6`
 (same URL, republished).
@@ -65,5 +91,5 @@ Artifact: `https://claude.ai/code/artifact/a523f27b-d74e-4987-9b6e-7b1680e469a6`
   --define:pga.is_conformal=false --define:visualiser.items_max=16
   -o:browser_bridge.js visualiser/browser_bridge.nim`.
 - Storyboard PNGs/GIF regenerated via `xvfb-run -a ./visualiser --hidden
-  --storyboard:DIR` against the delegations copy's own build, to confirm the fix
-  visually on the real (Mesa llvmpipe) OpenGL path, not just headless WebGL.
+  --storyboard:DIR` against the delegations copy's own build, to confirm fixes visually
+  on the real (Mesa llvmpipe) OpenGL path, not just headless WebGL.

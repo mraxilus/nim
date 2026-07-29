@@ -296,19 +296,39 @@ suite "Mesh":
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
 
 
-  test "line becomes segment whose every vertex lies on it":
+  test "line becomes segment reaching radius_horizon backward from support, forward from eye":
     for line in LINES:
       MESHES.clearMeshes
       check MESHES.addObject(line, Ink.Cyan.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Line].count_vertices == 2
-      check MESHES[Primitive.Point].count_vertices == 1
-      # Vertex lies on line exactly when its offset from support runs along the direction,
-      #   which holds when that offset's whole magnitude is accounted for along the axis.
+      # No point marker: a line's own segment already passes through its support, so
+      #   marking that point again would only add a stray dot the segment does not need.
+      check MESHES[Primitive.Point].count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
       check anchor.isSome and axis.isSome
-      for i in 0 ..< MESHES[Primitive.Line].count_vertices:
-        let offset = MESHES[Primitive.Line].vertices[i].toPosition - anchor.get
-        check isNear(abs(dot(offset, axis.get)), norm(offset))
+      let
+        tail = MESHES[Primitive.Line].vertices[0].toPosition
+        head = MESHES[Primitive.Line].vertices[1].toPosition
+      check isNear(tail, anchor.get - SCALE_TEST.radius_horizon*axis.get)
+      check isNear(head, SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get)
+
+
+  test "line's own far end coincides exactly with where its attitude is drawn":
+    # The property the "lines look cut off" feedback chased: a line and its own
+    #   attitude are two different objects (a finite segment and a horizon point)
+    #   drawn through two different branches of `mesh`, so nothing forces them to
+    #   agree geometrically unless the segment's own far end is deliberately built to
+    #   land on the same point the horizon marker would.
+    for line in LINES:
+      let attitude = ⊖ line
+      MESHES.clearMeshes
+      discard MESHES.addObject(attitude, Ink.Rose.colour, SCALE_TEST)
+      let star = MESHES[Primitive.Point].vertices[0].toPosition
+
+      MESHES.clearMeshes
+      discard MESHES.addObject(line, Ink.Cyan.colour, SCALE_TEST)
+      let far_end = MESHES[Primitive.Line].vertices[1].toPosition
+      check isNear(far_end, star)
 
 
   test "plane becomes a flat filled disc and a rim, every vertex on it":
