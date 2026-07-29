@@ -32,6 +32,8 @@ var
     ## background context, rather than at full colour; see `mesh.muted`.
   g_borns: array[ITEMS_MAX, float]
   g_step: int = -1 ## -1 names "seeds only", i.e. before the first step applies.
+  g_index_highlighted: int = -1 ## Slot the current step just built, ringed as if
+    ## freshly selected; -1 before the first step applies, matching `g_step`.
 
 
 proc operativeSlots(step: int): seq[int] =
@@ -157,6 +159,7 @@ proc nimGotoStep(step: cint, now: cfloat) {.exportc.} =
     g_are_visible[slot] = reached
     g_are_dimmed[slot] = reached and not focal
   g_step = stepI
+  g_index_highlighted = if stepI < 0: -1 else: g_count_seeds + stepI
 
 
 
@@ -211,6 +214,16 @@ proc nimBuildFrame(
       let progress = animationProgress(float(now), g_borns[slot])
       let tint = if g_are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
       discard meshes.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+
+  # Ring the current step's own result, as if it were freshly selected -- same as the
+  #   desktop storyboard capture; drawn once more, independent of the loop above.
+  if g_index_highlighted >= 0 and g_index_highlighted < ITEMS_MAX and
+     g_are_visible[g_index_highlighted]:
+    let item = g_scene[g_index_highlighted]
+    discard meshes.addHighlight(
+      item.geometry, scale, animationProgress(float(now), g_borns[g_index_highlighted]),
+      item.anchorOverride,
+    )
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)

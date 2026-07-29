@@ -66,6 +66,9 @@ const
 type
   Workbench* = object ## Hold GUI's own state between frames.
     place_new*: array[3, cfloat] ## Position next added point stands at.
+    index_highlighted*: Option[int] ## Slot most recently constructed, drawn ringed as
+      ## if freshly selected -- by a storyboard step, or by this session's own last
+      ## drag-release or apply-operation click. None where nothing has been built yet.
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
     index_operation*: cint ## Operation picked from catalogue.
@@ -211,7 +214,8 @@ proc layoutPointNew(workbench: var Workbench; scene: var Scene; now: float) =
       y: float(workbench.place_new[1]),
       z: float(workbench.place_new[2]),
     )
-    scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len), now)
+    workbench.index_highlighted =
+      some(scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len), now))
     toChars(&"Added point at ({place.x:.2f}, {place.y:.2f}, {place.z:.2f}).",
       workbench.message)
   gui.disabledPop()
@@ -271,7 +275,7 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
       label =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"
-    scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
+    workbench.index_highlighted = some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0

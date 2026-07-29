@@ -95,20 +95,24 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.operation = none(DragOperation)
 
 
-proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0): string =
+proc endDrag*(
+  interaction: var Interaction; scene: var Scene; now: float = 0.0
+): tuple[message: string, index_created: Option[int]] =
   ## Apply drag's operation between source and hovered item, if both still make sense.
   ##   Always clears drag state; message names outcome, even where nothing was done.
+  ##   `index_created` names the slot just built, for caller to draw ringed as if freshly
+  ##   selected; `none` wherever nothing was actually added.
   ##   `now` is forwarded to the derived item's `addItem` untouched, so it animates in
   ##   exactly as one added through the panel does.
   defer: interaction.operation = none(DragOperation)
-  if interaction.operation.isNone: return ""
+  if interaction.operation.isNone: return ("", none(int))
   let drag = interaction.operation.get
 
   if interaction.index_hover.isNone:
-    return "Drag released over empty space; nothing done."
+    return ("Drag released over empty space; nothing done.", none(int))
   let index_destination = interaction.index_hover.get
   if index_destination == interaction.index_source:
-    return "Drag released on its own source; nothing done."
+    return ("Drag released on its own source; nothing done.", none(int))
 
   let
     label_source = $toCstring(scene.labelAt(interaction.index_source))
@@ -117,13 +121,16 @@ proc endDrag*(interaction: var Interaction; scene: var Scene; now: float = 0.0):
     operand_destination = scene[index_destination].geometry
     derived = applyOperation(drag.toOperation, operand_source, operand_destination)
     anchor = creationAnchor(drag.toOperation, operand_source, operand_destination, derived)
-  scene.addItem(
-    derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now,
-    anchor,
-  )
+    index_created = scene.addItem(
+      derived, &"{label_source} {drag.notation} {label_destination}", inkCycled(scene.len), now,
+      anchor,
+    )
 
   var shape_word: array[WIDTH_SHAPE_WORD, char]
   var cursor_shape = 0
   describeShape(derived, shape_word, cursor_shape)
   finishChars(shape_word, cursor_shape)
-  &"{label_source} {drag.notation} {label_destination} gave {$toCstring(shape_word)}."
+  (
+    &"{label_source} {drag.notation} {label_destination} gave {$toCstring(shape_word)}.",
+    some(index_created),
+  )

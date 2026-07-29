@@ -1,4 +1,4 @@
-# Working notes: infinite-plane meet double-checked, a non-degenerate projection step — done
+# Working notes: infinite-plane meet double-checked, a highlight ring on new objects — done
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
@@ -16,13 +16,15 @@ that history restated.
 
 ## This round
 
-Two asks, both follow-ups on the previous round's own explanations: double-check that a
-plane's drawn disc is only a rendering choice, not a bound the actual (infinite) plane
-geometry is subject to, specifically that a line crossing well outside the disc still
-meets it correctly; and fix `a onto G`, which the previous round explained but did not
-actually fix -- `a` already lies on `G` by construction (`G` is joined from a line
-through `a`, plus a third point), so projecting `a` onto `G` is a no-op with nothing new
-to see, and needs a point genuinely off `G` instead.
+Three asks, the first two follow-ups on the previous round's own explanations: double-
+check that a plane's drawn disc is only a rendering choice, not a bound the actual
+(infinite) plane geometry is subject to, specifically that a line crossing well outside
+the disc still meets it correctly; fix `a onto G`, which the previous round explained
+but did not actually fix -- `a` already lies on `G` by construction (`G` is joined from a
+line through `a`, plus a third point), so projecting `a` onto `G` is a no-op with nothing
+new to see, and needs a point genuinely off `G` instead; and, raised mid-round, ring
+whichever object was just constructed in a pleasing, appropriate colour, as if it were
+freshly selected by the user.
 
 - [x] Confirmed by reading, not just by argument: `EXTENT_PLANE`/`EXTENT_PLANE_F` (the
       disc's own drawn radius) is referenced in exactly two places, `mesh.nim` (drawing
@@ -63,6 +65,38 @@ to see, and needs a point genuinely off `G` instead.
       through cleanly, `o onto G` reports "point" same as any other, zero console or
       page errors, and a screenshot at that step shows the same visibly distinct pair of
       points as the desktop capture.
+- [x] Added a highlight ring for whichever object was just built. Reused the desktop
+      editor's own existing precedent rather than inventing a new visual language: the
+      hover ring it already draws (a white circle over whatever the cursor rests on) is
+      the established "this one is currently of interest" affordance, so the new ring
+      matches its colour exactly. Implemented once, in `mesh.addHighlight`, shared by
+      both native and browser: a ring spans `spanPerpendicular` around the direction
+      from the object's own anchor toward the eye, so it always faces the camera
+      (billboarded) without needing a full camera frame passed in, just the eye position
+      `DrawExtent` already carries; sized as a fraction of distance from the eye rather
+      than a fixed world size, so it holds a constant, comfortable screen size regardless
+      of how close or far the camera stands. Empty for a horizon line or plane, which
+      has no fixed anchor to ring, matching `picking.anchorFor`'s own established rule
+      that neither is pickable either.
+- [x] Wired the highlight through every path that constructs something: `runStoryboard`
+      and `browser_bridge.nimGotoStep` set it to each step's own result; the desktop
+      editor's "add point" and "apply operation" panel buttons and its drag-release
+      (`interaction.endDrag`, whose return type changed from a bare message string to a
+      `(message, index_created)` pair so the caller can learn which slot to highlight)
+      all set it too, so a freshly built object reads as just-selected everywhere it's
+      built, not only in the scripted demo.
+- [x] Added tests for `mesh.addHighlight`: rings a point, line or plane's own anchor
+      exactly, face-on to the eye, at the right radius; honours `anchor_override`; empty
+      for a horizon line or plane. Updated the `Interaction` suite's existing `endDrag`
+      tests for its new return shape. Rebuilt and reran the full suite (72 tests, three
+      new) and the desktop binary, regenerated the storyboard and confirmed visually: a
+      clean white ring appears around the point, line, or plane each step just built,
+      sized consistently across near and far objects alike, and is properly absent from
+      the seeds-only frame before any step has run. Rebuilt the browser bridge,
+      reassembled the artifact, and smoke-tested headlessly (Playwright, SwiftShader):
+      zero console or page errors across all eleven steps, and a screenshot at the
+      perpendicular-plane step shows the same ring, in the same place, as the desktop
+      capture.
 
 Artifact: `https://claude.ai/code/artifact/a523f27b-d74e-4987-9b6e-7b1680e469a6`
 (same URL, republished).

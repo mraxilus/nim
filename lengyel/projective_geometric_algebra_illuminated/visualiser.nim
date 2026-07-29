@@ -235,6 +235,17 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
+  # Ring the most recently constructed object, as if it were freshly selected -- drawn
+  #   last and independent of the loop above, since it decorates whichever item is
+  #   highlighted regardless of where that slot happens to fall.
+  if workbench.index_highlighted.isSome:
+    let slot = workbench.index_highlighted.get
+    if scene.isAlive(slot) and scene[slot].is_visible:
+      let item = scene[slot]
+      discard MESHES.addHighlight(
+        item.geometry, scale, animationProgress(now, item.born), item.anchorOverride
+      )
+
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
   for primitive in Primitive:
@@ -399,8 +410,9 @@ proc handleEvent(
       is_dragging_pan = true
   of uint32(EventKind.MouseButtonUp):
     if button_dragging == some(event.button.button):
-      let message = interaction.endDrag(scene, now)
-      if len(message) > 0: toChars(message, workbench.message)
+      let outcome = interaction.endDrag(scene, now)
+      if len(outcome.message) > 0: toChars(outcome.message, workbench.message)
+      if outcome.index_created.isSome: workbench.index_highlighted = outcome.index_created
       button_dragging = none(uint8)
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
@@ -653,6 +665,7 @@ proc runStoryboard(
     describeShape(derived, shape_word, cursor_shape)
     finishChars(shape_word, cursor_shape)
     toChars(&"{step.label} gave {$toCstring(shape_word)}.", workbench.message)
+    workbench.index_highlighted = some(count_seeds + index)
     captureStep(step.stem)
 
   let

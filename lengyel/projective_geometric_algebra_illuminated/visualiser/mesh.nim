@@ -150,6 +150,19 @@ const
     ## Scale an already-constructed but non-focal object's own alpha by this, so it
     ## stays legible as background context -- shown rather than hidden outright -- while
     ## still clearly receding behind whatever the current step is showcasing.
+  FRACTION_HIGHLIGHT_RADIUS* = 0.05
+    ## Scale the highlight ring's own radius by this fraction of its distance from the
+    ## eye, rather than by a fixed world size -- so the ring reads as a constant,
+    ## comfortable size on screen regardless of how close or far the camera stands, the
+    ## same way a UI affordance would, rather than shrinking to nothing at range or
+    ## swallowing the object at close approach.
+  ALPHA_HIGHLIGHT* = 0.8'f32
+    ## Set opacity of the highlight ring -- matching the desktop editor's own existing
+    ## hover ring exactly, so this reads as the same "currently of interest" affordance
+    ## rather than a new visual vocabulary alongside it.
+  SEGMENTS_HIGHLIGHT* = 48
+    ## Set segment count in the highlight ring, dense enough to read as circular at the
+    ## modest size it is actually drawn at.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -158,6 +171,10 @@ static:
     &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
+  doAssert FRACTION_HIGHLIGHT_RADIUS > 0,
+    &"Highlight radius fraction must be positive; got `{FRACTION_HIGHLIGHT_RADIUS}`."
+  doAssert SEGMENTS_HIGHLIGHT >= 3,
+    &"Highlight ring needs at least 3 segments; got `{SEGMENTS_HIGHLIGHT}`."
 
 
 
@@ -172,6 +189,10 @@ type
     AxisZ, ## World z axis through origin; standard convention is blue.
     Grid, ## World reference grid on ground.
     Guide, ## Construction helper, e.g. plane normal.
+    Highlight, ## Ring marking the one object currently of interest -- freshly
+      ## constructed, as if just selected -- matching the desktop editor's own
+      ## existing hover ring; never cycled to automatically, only drawn where a
+      ## caller names a specific slot as highlighted.
     ## Categorical slots, spent by caller on telling one object from another.
     ##   Named by hue rather than by role, as caller alone knows what objects mean.
     ##   Grade is already legible from shape drawn, so colour is free to carry identity.
@@ -245,6 +266,7 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
+  Ink.Highlight: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
   Ink.Amber: Rgba(red: 0.788, green: 0.506, blue: 0.000, alpha: 1.0),
   Ink.Teal: Rgba(red: 0.000, green: 0.408, blue: 0.588, alpha: 1.0),
   Ink.Rose: Rgba(red: 0.549, green: 0.267, blue: 0.420, alpha: 1.0),
@@ -613,3 +635,57 @@ proc addObject*(
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
   of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
   of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)
+
+
+proc addHighlight*(
+  meshes: var MeshSet; geometry: Multivector; scale: DrawExtent; progress: float;
+  anchor_override: Option[Position] = none(Position)
+): Placement =
+  ## Ring drawn face-on to the camera around whichever point already stands for
+  ## `geometry` -- its own place, or a line/plane's support, or `anchor_override` where
+  ## a plane's own construction fixed a different point (see `addPlane`'s own doc
+  ## comment) -- marking the object as the one currently of interest, in the same white
+  ## the desktop editor's own hover ring already uses, so a freshly built object reads
+  ## as if just selected without teaching a reader a second visual vocabulary.
+  ##   Faces the camera by spanning the ring perpendicular to the direction from the
+  ##   anchor toward `scale.eye` -- exactly `spanPerpendicular`'s own contract, just
+  ##   given that direction as its normal instead of a plane's own -- and sizes it as a
+  ##   fraction of distance from the eye, so it holds a constant, comfortable screen
+  ##   size regardless of how close or far the camera stands, unlike a plane's own
+  ##   fixed-world-size disc.
+  ##   Empty wherever `geometry` carries no anchor to ring at all: a horizon line or
+  ##   plane has none, matching `picking.anchorFor`'s own doc comment on the same gap,
+  ##   since neither is anchored anywhere fixed for a ring to face either.
+  ##   `progress` grows and fades the ring in alongside the object's own appear animation.
+  let anchor = block:
+    if anchor_override.isSome:
+      anchor_override
+    else:
+      let own_shape = shape(geometry)
+      if own_shape.isNone:
+        none(Position)
+      elif own_shape.get == Shape.Point:
+        let place = position(geometry)
+        if place.isSome:
+          place
+        else:
+          let heading = directionHorizon(geometry)
+          if heading.isSome: some(scale.eye + scale.radius_horizon*heading.get)
+          else: none(Position)
+      else:
+        positionAnchor(geometry)
+  if anchor.isNone: return Placement.Empty
+
+  let toward_eye = scale.eye - anchor.get
+  let distance = norm(toward_eye)
+  if distance <= 1.0e-6: return Placement.Empty
+  let direction = normalize(toward_eye)
+  if direction.isNone: return Placement.Empty
+  let axes = spanPerpendicular(anchor.get, direction.get)
+  if axes.isNone: return Placement.Empty
+  let (axis_first, axis_second) = axes.get
+  meshes.addGreatCircle(
+    anchor.get, axis_first, axis_second, progress*FRACTION_HIGHLIGHT_RADIUS*distance,
+    Ink.Highlight.colour.fade(ALPHA_HIGHLIGHT*progress), SEGMENTS_HIGHLIGHT,
+  )
+  Placement.Finite
