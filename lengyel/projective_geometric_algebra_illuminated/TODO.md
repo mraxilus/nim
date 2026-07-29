@@ -1,4 +1,4 @@
-# Working notes: visible planes, indefinite furniture, reorient not zoom — done
+# Working notes: ruled discs, palette checked against the axes — done
 
 This file mirrors the task tracker I use internally (visible to me as a todo list, not
 otherwise visible to you), plus anything else worth knowing about how each round went.
@@ -7,63 +7,67 @@ Tracked in git (per your stop-hook check), so it stays part of the branch's own 
 Earlier rounds (arenas, GC removal, GIF/PNG, storyboard, live diagnostics panel, object
 pool + total memory readouts, refactor/colour/visual-noise audits, the Item-copying
 correction, scene save/load, unbounded camera-relative drawing with fading-disc planes
-and skybox horizons) are all done and summarized in prior commits on this branch — ask
-if you want that history restated here.
+and skybox horizons, then a follow-up making those discs actually visible and the
+ground grid/axes genuinely indefinite) are all done and summarized in prior commits on
+this branch — ask if you want that history restated here.
 
 ## This round: task list (final state)
 
-Feedback on the previous round's own storyboard frames: the finite plane's disc read
-as invisible rather than merely translucent (fading from a peak alpha too faint to see
-anywhere on it); the ground grid and world axes, despite being camera-relative, still
-fell short of reading as indefinite in practice (both still shrank back whenever the
-camera dollied in); and the horizon camera-aiming fix should reorient the camera
-instead of widening its lens.
+Feedback on the previous round's own storyboard frames: a finite plane's disc, even
+holding flat alpha across most of its own radius, still just looked like a cloud —
+nothing about it read as a surface with any scale or orientation. Separately: object
+colours needed to be visibly different from the axis colours, to avoid confusing the
+two.
 
-- [x] Fixed `addDisc` (`mesh.nim`) to hold a flat, clearly visible alpha (`ALPHA_WASH`
-      raised from 0.10 to 0.35) out to `FRACTION_DISC_PLATEAU` (0.7) of its own radius,
-      fading to transparent only across the remaining outer band — an inner fan plus
-      an outer annulus of quads, rather than one fan faded corner to corner.
-- [x] Split world furniture off its own extent: a new `DrawExtent.extent_furniture`,
-      computed by `extentFurnitureFor(distance_far)`, tied to the camera's fixed far
-      clip distance rather than orbit distance, so the ground grid and world axes keep
-      reaching outward regardless of zoom. Gave the grid a fixed cell size
-      (`SIZE_CELL_GRID`) while doing so, rather than stretching its existing four cells
-      each way over the much larger span — otherwise the grid would have gone coarse
-      enough to read as empty ground right around the camera, exactly the reference
-      grid's own reason to exist.
-- [x] Removed the storyboard's per-step field-of-view widening for horizon-producing
-      steps, relying on the existing camera reorientation (`azimuthElevationFor`)
-      alone.
-- [x] Updated tests for the new disc shape and the split furniture extent (still 62
-      tests; existing ones rewritten rather than added to), plus one test-only fix: a
-      fixed absolute tolerance rejected a disc centre vertex that had round-tripped
-      through `Vertex`'s own `float32` storage and come back `1.25e-8` off zero rather
-      than exactly zero — swapped for `isNear`, already calibrated for values that
-      passed through that same 32-bit storage.
+- [x] Added `addPlaneGrid` (`mesh.nim`): rules a square grid across the disc's own
+      flat plateau (`FRACTION_DISC_PLATEAU` of its radius), each line clipped to a
+      chord of that plateau's own circle rather than drawn full length and cut off —
+      a line never appears to end abruptly inside the fade band beyond it. Fixed cell
+      size, matching the ground reference grid's own (`SIZE_CELL_GRID`); tinted the
+      plane's own hue at a bolder alpha (`ALPHA_GRID_PLANE`, 0.55) than the wash
+      beneath it.
+- [x] Checked the categorical palette against the three axis colours directly, not
+      just against itself — something no earlier round had done, since axis colours
+      are structural furniture rather than data and had never been part of the
+      dataviz skill's own validator run. Built the axis hues as OKLCH fixtures and ran
+      them through that validator alongside the seven categorical ones (`--pairs
+      all`): found `Coral` only 3.8 ΔE from `AxisX`'s red (i.e. indistinguishable),
+      `Cyan` 5.8 from `AxisZ`'s blue, `Lime` 10.3 from `AxisY`'s green, and (previously
+      unnoticed) `Rose` and `Violet` both under the 15 floor too.
+- [x] Re-derived the categorical set: generated OKLCH candidates across the hue
+      circle, screened for normal-vision ΔE ≥ 15 against all three axes first, then
+      searched that screened pool for seven that also clear the skill's own mutual
+      thresholds (CVD ΔE ≥ 8, normal-vision ΔE ≥ 15) against each other, checking
+      lightness-band and chroma-floor survive sRGB gamut clipping rather than trusting
+      the input target. True "coral" turned out to live in the same neighbourhood
+      `AxisX` itself claims, with no lightness or chroma the validator accepts opening
+      enough distance from it — retired that slot as `Orchid`, at a hue the search
+      could actually clear; the other six keep their old names over new, validated
+      hues. Re-picked declaration order for spacing once the hues themselves changed.
+- [x] Updated tests: `plane becomes a disc...` extended to check the grid's own
+      vertex count, plateau-circle placement and alpha (still 62 tests).
 - [x] Rebuilt, ran the full test suite, and regenerated the storyboard under Xvfb:
-      confirmed the ground seed plane's disc is now a clearly visible wash from the
-      first frame, the ground grid keeps its original near-camera spacing while
-      reaching visibly further out alongside the axes, and the horizon steps (star,
-      great circle) still land centred in frame from reorienting alone.
+      confirmed the ground seed's disc now shows a clear ruled grid from the first
+      frame, and every categorical object reads as visibly its own colour next to the
+      axis lines rather than blending into one.
 - [x] Commit/push source; sync + rebuild/test standalone in the delegations copy;
       update its `PROVENANCE.md`; regenerate its storyboard assets; retar; deliver.
 
-Commits: `c5db947` on `claude/rga-visualization-prototype-kbq9kw` (source).
-Delegations repo: `17afc0f` (synced copy + `PROVENANCE.md` + regenerated storyboard
+Commits: `c9bfc74` on `claude/rga-visualization-prototype-kbq9kw` (source).
+Delegations repo: `715b046` (synced copy + `PROVENANCE.md` + regenerated storyboard
 assets).
 
 ## Process notes
 
-- All three fixes were feedback on the previous round's own output, not new requests
-  in the abstract — driving each one back to a specific storyboard frame (the invisible
-  disc, the grid that hadn't actually grown, the widened lens) before deciding what to
-  change kept the fix targeted rather than a broader redesign.
-- One test-only false lead: a fixed absolute tolerance rejected a disc centre vertex
-  that had round-tripped through `Vertex`'s own `float32` storage and come back
-  `1.25e-8` off zero rather than exactly zero. Traced with a throwaway script printing
-  every disc vertex's own radius and alpha before touching the test itself, confirming
-  the production code was correct and the check was miscalibrated; swapped for
-  `isNear`, this suite's own tolerance already built for values that passed through
-  that same 32-bit storage.
+- The palette fix used the dataviz skill's own computed validator throughout rather
+  than eyeballing hues — the same discipline that skill itself insists on. The axis
+  colours were treated as a third set of fixed points the categorical palette had to
+  clear, alongside the two checks (mutual CVD/normal separation, lightness/chroma
+  bounds) the palette was already validated against.
+- Finding seven categorical hues that simultaneously clear separation from three
+  saturated primary axis colours *and* from each other is a real, non-trivial
+  constraint — several naive hand-picked candidates failed the mutual or axis checks
+  before a systematic OKLCH-space search (screen for axis separation, then search the
+  screened pool for a mutually-compatible seven) found a working set.
 - `pga.nim`/`pga/` and `deps/imgui` are vendored/external, deliberately untracked;
   copied in locally to build, stripped back out before each commit.
