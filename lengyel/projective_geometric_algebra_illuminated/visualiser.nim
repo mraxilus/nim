@@ -110,11 +110,13 @@ const
   WIDTH_EXPORT_MAX* {.define: "visualiser.width_export_max".} = 3840
     ## Bound the largest window a pixel readback or PNG export is ever asked to cover.
   HEIGHT_EXPORT_MAX* {.define: "visualiser.height_export_max".} = 2160
-  CAPACITY_ARENA_PERMANENT* {.define: "visualiser.capacity_arena_permanent".} = 128*1024*1024
+  CAPACITY_ARENA_PERMANENT* {.define: "visualiser.capacity_arena_permanent".} = 160*1024*1024
     ## Set the permanent arena's own size: the pixel readback buffer, and every
     ## storyboard GIF frame collected before the final GIF is written, live here for
     ## as long as the process runs. Sized for `STRIDE_GIF`'s own downsample plus
-    ## `WIDTH_EXPORT_MAX`x`HEIGHT_EXPORT_MAX`'s own readback, with headroom to spare.
+    ## `WIDTH_EXPORT_MAX`x`HEIGHT_EXPORT_MAX`'s own readback, with headroom to spare --
+    ## raised from an earlier 128 MiB alongside `STEPS`, since GIF frame storage scales
+    ## with how many steps the storyboard now has.
   CAPACITY_ARENA_FRAME* {.define: "visualiser.capacity_arena_frame".} = 64*1024*1024
     ## Set the frame arena's own size: whichever of PNG's filtered/compressed scanlines
     ## or one GIF frame's quantized indices and LZW output is using it, reclaimed the
@@ -215,16 +217,16 @@ proc secondsNow(): float =
   float(getMonoTime().ticks) / 1_000_000_000.0
 
 
-proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float) =
+proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float; scale: DrawExtent) =
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
   let ticks_start = getMonoTime().ticks
   MESHES.clearMeshes
-  if workbench.is_grid_shown: MESHES.addGrid
-  if workbench.is_axes_shown: MESHES.addAxes
+  if workbench.is_grid_shown: MESHES.addGrid(scale.extent)
+  if workbench.is_axes_shown: MESHES.addAxes(scale.extent)
   for item in scene:
     if not item.is_visible: continue
     let progress = animationProgress(now, item.born)
-    discard MESHES.addObject(item.geometry, item.ink.colour, progress)
+    discard MESHES.addObject(item.geometry, item.ink.colour, scale, progress)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -240,14 +242,15 @@ const lut_drag_to_ink: array[DragOperation, Ink] = [
 
 
 proc drawInteractionOverlay(
-  interaction: Interaction; scene: Scene; view_projection: Matrix4; width, height: int
+  interaction: Interaction; scene: Scene; view_projection: Matrix4; width, height: int;
+  scale: DrawExtent
 ) =
   ## Draw drag's rubber-band and hover's ring directly onto the foreground layer.
   ##   Off entirely during storyboard capture, where interaction is never enabled.
   if not interaction.is_enabled: return
 
   if interaction.index_hover.isSome:
-    let anchor = anchorFor(scene[interaction.index_hover.get].geometry)
+    let anchor = anchorFor(scene[interaction.index_hover.get].geometry, scale)
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
@@ -257,7 +260,7 @@ proc drawInteractionOverlay(
         )
 
   if interaction.operation.isSome:
-    let anchor = anchorFor(scene[interaction.index_source].geometry)
+    let anchor = anchorFor(scene[interaction.index_source].geometry, scale)
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
@@ -295,13 +298,18 @@ proc renderFrame(
   gui.frameBegin()
   layoutWorkbench(workbench, scene, camera, now)
 
-  assembleMeshes(workbench, scene, now)
+  let eye = camera.eye
+  let scale = DrawExtent(
+    extent: extentFor(camera.distance), eye: eye,
+    radius_horizon: radiusHorizonFor(camera.distance_far),
+  )
+  assembleMeshes(workbench, scene, now, scale)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
   renderer.drawMeshes(MESHES, view_projection)
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
-  drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height))
+  drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)
 
   gui.frameEnd()
   (int(width), int(height))
@@ -575,12 +583,60 @@ proc runStoryboard(
 
   scene = initScene()
   constructSeeds(scene, clock)
+  let count_seeds = scene.len
   toChars("Seeds placed.", workbench.message)
   captureStep("00_seeds")
 
-  for step in STEPS:
+  # Every step after this one otherwise stays visible forever once added, burying later
+  #   frames under everything every earlier step ever built. Seeds are pinned throughout,
+  #   as the stable reference the rest is read against; each derived object is shown only
+  #   for the step that creates it and the one right after -- long enough that a step
+  #   using yesterday's result still shows it, gone once two steps have passed it by.
+  #   Only a step's real operands count as "involved": a unary operation's own second
+  #   index is a required-but-ignored placeholder (see `Step.index_second`'s own doc
+  #   comment), not something this step actually reads, so it plays no part here either.
+  let
+    fov_default = camera.degrees_field_of_view
+    azimuth_default = camera.azimuth
+    elevation_default = camera.elevation
+  var operative_previous: seq[int] = @[]
+  for index, step in STEPS:
     clock += 1.0
     let derived = applyStep(scene, step, clock)
+
+    var operative_current = @[step.index_first, count_seeds + index]
+    if lut_operation_to_arity[step.operation] == Arity.Two:
+      operative_current.add(step.index_second)
+    for slot, _ in scene.pairs:
+      scene.isVisibleAt(slot) =
+        slot < count_seeds or slot in operative_current or slot in operative_previous
+    operative_previous = operative_current
+
+    # A finite object is anchored somewhere the fixed demo angle already frames; a
+    #   horizon object is not -- it stands wherever its own construction happened to
+    #   land it, which that fixed angle may or may not be looking toward. Aim this one
+    #   capture at it directly (a representative point for a line's own great circle,
+    #   since aiming along its normal would place the whole ring at the frame's own
+    #   edge, exactly 90 degrees off in every direction), widen the lens a little to
+    #   catch more of what surrounds that point, then restore both after -- a plane at
+    #   horizon needs neither, since the whole sky around the eye is visible regardless
+    #   of which way the camera looks.
+    camera.degrees_field_of_view = fov_default
+    camera.azimuth = azimuth_default
+    camera.elevation = elevation_default
+    if isHorizon(derived):
+      let shape_derived = shape(derived)
+      var heading = none(Direction)
+      if shape_derived == some(Shape.Point):
+        heading = directionHorizon(derived)
+      elif shape_derived == some(Shape.Line):
+        let normal = directionNormalHorizon(derived)
+        if normal.isSome:
+          let axes = spanPerpendicular(Position(x: 0, y: 0, z: 0), normal.get)
+          if axes.isSome: heading = some(axes.get[0])
+      if heading.isSome:
+        (camera.azimuth, camera.elevation) = azimuthElevationFor(heading.get)
+        camera.degrees_field_of_view = 90.0
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0

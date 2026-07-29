@@ -1,10 +1,23 @@
 ## Turn RGA objects into vertices OpenGL can draw.
 ##
-## Unbounded objects are tessellated about their support point, i.e. point nearest origin:
-##   Line becomes segment of `EXTENT_WORLD` either side of support, along its attitude.
-##   Plane becomes translucent quad of same extent, ruled by grid, spanned by its frame.
+## Finite objects are tessellated about their support point, i.e. point nearest origin,
+## out to `DrawExtent.extent` -- camera-relative (`extentFor`), not a fixed size, so a
+## line or plane always reads as extending well past the visible view, however far the
+## camera currently orbits:
+##   Line becomes segment of that extent either side of support, along its attitude.
+##   Plane becomes translucent disc of the same extent, fading toward its own rim rather
+##   than stopping at a hard edge, spanned by its own frame.
 ##   Support point is what algebra computed, so it is marked in both cases.
-##   Object at horizon has no support, so its direction is drawn as arrow from origin.
+##
+## Object at horizon -- infinitely far away, no support point to anchor on -- is drawn
+## fixed to `DrawExtent.eye` instead, at `DrawExtent.radius_horizon` (near the camera's
+## own far clip plane, independent of `extent`): a point becomes a marker standing in a
+## fixed direction, a line becomes the great circle of directions its own pencil spans,
+## and a plane -- the unique universal "whole sky" object every plane at horizon is,
+## regardless of which points produced it -- becomes a dome over the entire sky. Fixed
+## to the eye rather than the origin, so orbiting or dollying the camera leaves each in
+## the same apparent direction, exactly as real stars at effectively infinite distance
+## would; only turning the camera to look toward or away from one moves it on screen.
 ##
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
 ##   Rebuilding beats tracking which object changed, while scene holds only tens of objects.
@@ -13,14 +26,14 @@
 ##   |-----------|--------------|-------------------------------------|
 ##   | Primitive | OpenGL       | Carries                             |
 ##   |-----------|--------------|-------------------------------------|
-##   | Triangle  | GL_TRIANGLES | Translucent plane washes.           |
-##   | Line      | GL_LINES     | Lines, plane grids, axes, arrows.   |
-##   | Point     | GL_POINTS    | Points and support markers.         |
+##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.       |
+##   | Line      | GL_LINES     | Lines, horizon circles, axes.       |
+##   | Point     | GL_POINTS    | Points, support markers, stars.     |
 ##   |-----------|--------------|-------------------------------------|
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strformat]
+import std/[math, options, strformat]
 
 import ../pga
 import ./objects
@@ -29,17 +42,35 @@ import ./objects
 
 #[ Mesh Configuration ]#
 
-# Allow caller to resize drawn extent and vertex storage without editing source.
-#   E.g. `--define:visualiser.extent_world=20 --define:visualiser.vertices_max=32768`.
+# Allow caller to resize drawn extent floor and vertex storage without editing source.
+#   E.g. `--define:visualiser.extent_min=20 --define:visualiser.vertices_max=32768`.
+#   Nim's `.define` pragma takes only integers, bools or strings, so `EXTENT_FACTOR` and
+#   `FRACTION_HORIZON` below -- both plain ratios, never needing a caller's own extreme
+#   value the way a capacity like `EXTENT_MIN` or `VERTICES_MAX` might -- stay ordinary
+#   constants instead.
 const
-  EXTENT_WORLD* {.define: "visualiser.extent_world".} = 8
+  EXTENT_MIN* {.define: "visualiser.extent_min".} = 8
+    ## Floor under the camera-relative draw extent below, so a line, plane or the
+    ## ground grid never shrinks to nothing even when the camera dollies in close.
+  EXTENT_FACTOR* = 0.5
+    ## Scale camera's own orbit distance by this to reach the draw extent below -- a
+    ## touch above the default 45-degree field of view's own half-width tangent
+    ## (0.414), so drawn geometry comfortably exceeds the visible view rather than
+    ## just reaching its edge, at whatever distance the camera currently orbits.
+  FRACTION_HORIZON* = 0.9
+    ## Place horizon geometry -- a star, a great circle, the whole sky -- this fraction
+    ## of the way to camera's own far clip plane, so it reads as the farthest thing
+    ## standing in this scene without ever being clipped away by standing past it.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 16384
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
     ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
 
 static:
-  doAssert EXTENT_WORLD > 0, &"Drawn extent must be positive; got `{EXTENT_WORLD}`."
+  doAssert EXTENT_MIN > 0, &"Drawn extent floor must be positive; got `{EXTENT_MIN}`."
+  doAssert EXTENT_FACTOR > 0, &"Extent factor must be positive; got `{EXTENT_FACTOR}`."
+  doAssert FRACTION_HORIZON > 0 and FRACTION_HORIZON < 1.0,
+    &"Horizon fraction must fall strictly between 0 and 1; got `{FRACTION_HORIZON}`."
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
   doAssert ANIMATION_MILLISECONDS > 0,
     &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
@@ -49,26 +80,27 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
 
 const
   CELLS_PLANE* = 4
-    ## Set grid line count either side of support point, when tessellating plane.
-    ##   Halved from an earlier 8: a plane's own ruled grid is what a second or third
-    ##   overlapping plane turns into visual noise fastest, since every one of them
-    ##   draws its own full set of lines across the same shared space. Four still reads
-    ##   as a grid and still conveys tilt under perspective; eight, doubled or tripled
-    ##   by nearby planes, reads as a thicket.
+    ## Set grid line count either side of origin, when tessellating ground furniture.
+  SEGMENTS_DISC* = 48
+    ## Set triangle count in a finite plane's own fan, dense enough to read as circular.
+  SEGMENTS_CIRCLE_HORIZON* = 96
+    ## Set segment count in a horizon line's own great circle -- denser than a finite
+    ## plane's disc, since the ring alone is all a horizon line ever draws, with no
+    ## filled wash of its own to soften a coarser ring's facets.
+  LATITUDES_HORIZON* = 12
+  LONGITUDES_HORIZON* = 24
+    ## Set band counts in a horizon plane's own whole-sky dome.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
   ALPHA_WASH* = 0.10'f32
-    ## Set opacity of plane's translucent quad.
-  ALPHA_GRID_BOUNDARY* = 0.65'f32
-    ## Set opacity of the grid lines running along a plane's own outer edge, crisp
-    ## enough that its extent reads at a glance regardless of how faint the rest is.
-  ALPHA_GRID_INTERIOR* = 0.22'f32
-    ## Set opacity of every grid line strictly inside a plane's own boundary: present
-    ## enough to still read as a ruled surface and carry perspective tilt, faint enough
-    ## that two or three overlapping planes don't drown each other in crossing lines.
+    ## Set opacity of a finite plane's own disc, at its own centre.
+  ALPHA_WASH_SKY* = 0.05'f32
+    ## Set opacity of a horizon plane's own whole-sky dome -- fainter than a finite
+    ## plane's own wash, since this one has no edge to fade toward and would otherwise
+    ## read as a dominant tint over the entire view rather than a background hint.
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal arrow, shown a touch less boldly than its
-    ## boundary so it reads as a construction aid, not as another competing line.
+    ## own disc's centre so it reads as a construction aid, not as another competing mark.
 
 
 
@@ -107,6 +139,35 @@ type
     count_vertices*: int
 
   MeshSet* = array[Primitive, Mesh] ## Hold one mesh per primitive kind.
+
+  DrawExtent* = object ## Hold how far this frame's geometry reaches, and from where.
+    extent*: float ## How far a finite line's segment or plane's disc extends from its
+      ## own anchor; how far the ground grid and world axes extend from the origin.
+    eye*: Position ## Camera's own eye position, horizon geometry is anchored to, so it
+      ## stays in a fixed apparent direction as the camera pans or dollies, exactly as
+      ## a real star at effectively infinite distance would.
+    radius_horizon*: float ## How far from `eye` horizon geometry -- a star, a great
+      ## circle, a whole-sky dome -- is drawn.
+
+
+
+#[ Camera-Relative Scale ]#
+
+func extentFor*(distance: float): float =
+  ## Compute how far a line, plane or the ground grid should reach this frame, given
+  ## how far the camera currently orbits from its target -- so drawn geometry always
+  ## looks like it extends past the visible view, whether the camera sits close or
+  ## dollies far out, without coupling this module to `Camera` itself: caller reads
+  ## `camera.distance` and hands over a plain number.
+  max(float(EXTENT_MIN), distance * EXTENT_FACTOR)
+
+
+func radiusHorizonFor*(distance_far: float): float =
+  ## Compute how far from the eye horizon geometry sits this frame, given the camera's
+  ## own far clip distance -- decoupled from `extentFor` above deliberately: an object
+  ## standing for "infinitely far away" should sit near the renderer's own outer depth
+  ## limit regardless of how far the camera has dollied in or out to view finite content.
+  distance_far * FRACTION_HORIZON
 
 
 
@@ -217,10 +278,77 @@ proc addArrow*(
   meshes.addMarker(head, tint)
 
 
+proc addDisc(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; segments: int = SEGMENTS_DISC
+) =
+  ## Append a filled circle as a fan of triangles from `center`, faded from `tint`'s own
+  ## alpha at the centre to fully transparent at `radius` -- GL interpolates each
+  ## vertex's own colour linearly across every triangle (confirmed against `renderer.nim`'s
+  ## own shader: the vertex-to-fragment colour is a plain varying, not `flat`), so the
+  ## fade is smooth with no extra shader work, standing in for a plane's own unbounded
+  ## extent without a hard edge that would give away the render's own finite reach.
+  let tint_edge = tint.fade(0.0)
+  for i in 0 ..< segments:
+    let
+      angle_a = (2.0*PI * float(i)) / float(segments)
+      angle_b = (2.0*PI * float(i + 1)) / float(segments)
+      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
+      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+    meshes.addVertex(Primitive.Triangle, center, tint)
+    meshes.addVertex(Primitive.Triangle, point_a, tint_edge)
+    meshes.addVertex(Primitive.Triangle, point_b, tint_edge)
+
+
+proc addGreatCircle(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+) =
+  ## Append a closed ring of segments around `center`, in the plane `axis_first` and
+  ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
+  ## the sky, seen from any point, standing for the pencil of directions it names.
+  for i in 0 ..< segments:
+    let
+      angle_a = (2.0*PI * float(i)) / float(segments)
+      angle_b = (2.0*PI * float(i + 1)) / float(segments)
+      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
+      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+    meshes.addSegment(point_a, point_b, tint)
+
+
+func spherePoint(center: Position; radius: float; theta, phi: float): Position =
+  ## Place point on sphere around `center`, at colatitude `theta` and longitude `phi`.
+  center + radius*Direction(x: sin(theta)*cos(phi), y: sin(theta)*sin(phi), z: cos(theta))
+
+
+proc addDome(
+  meshes: var MeshSet; center: Position; radius: float; tint: Rgba;
+  latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
+) =
+  ## Append a full sphere around `center` -- a plane at horizon is the unique universal
+  ## "whole sky" object, the same regardless of which points produced it (see
+  ## `directionNormalHorizon`'s own doc comment for why), so nothing about its own
+  ## coefficients decides its shape here; only `radius` and `tint` do.
+  for lat in 0 ..< latitudes:
+    let
+      theta_a = PI * float(lat) / float(latitudes)
+      theta_b = PI * float(lat + 1) / float(latitudes)
+    for lon in 0 ..< longitudes:
+      let
+        phi_a = 2.0*PI * float(lon) / float(longitudes)
+        phi_b = 2.0*PI * float(lon + 1) / float(longitudes)
+      meshes.addQuad([
+        spherePoint(center, radius, theta_a, phi_a),
+        spherePoint(center, radius, theta_a, phi_b),
+        spherePoint(center, radius, theta_b, phi_b),
+        spherePoint(center, radius, theta_b, phi_a),
+      ], tint)
+
+
 
 #[ World Furniture ]#
 
-proc addAxes*(meshes: var MeshSet) =
+proc addAxes*(meshes: var MeshSet; extent: float) =
   ## Append world axes through origin, each in the standard convention: x red, y green,
   ## z blue, so orientation reads at a glance regardless of where the camera stands.
   const AXES_WORLD = [
@@ -228,37 +356,38 @@ proc addAxes*(meshes: var MeshSet) =
     (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
     (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
-  const EXTENT = float(EXTENT_WORLD)
   for (axis, ink) in AXES_WORLD:
-    meshes.addSegment(ORIGIN_WORLD - EXTENT*axis, ORIGIN_WORLD + EXTENT*axis, ink.colour)
+    meshes.addSegment(ORIGIN_WORLD - extent*axis, ORIGIN_WORLD + extent*axis, ink.colour)
 
 
-proc addGrid*(meshes: var MeshSet) =
+proc addGrid*(meshes: var MeshSet; extent: float) =
   ## Append reference grid on ground, so distance and direction stay judgeable.
   ##   Skips the two lines through the origin itself: those coincide exactly with the
   ##   x and y world axes, and would either fight them for the same depth or hide their
   ##   colour under plain grid grey, depending on which happened to draw last.
-  const
-    EXTENT = float(EXTENT_WORLD)
-    TINT = Ink.Grid.colour
+  const TINT = Ink.Grid.colour
   for i in -CELLS_PLANE .. CELLS_PLANE:
     if i == 0: continue
-    let offset = EXTENT*float(i)/float(CELLS_PLANE)
+    let offset = extent*float(i)/float(CELLS_PLANE)
     meshes.addSegment(
-      Position(x: offset, y: -EXTENT, z: 0), Position(x: offset, y: EXTENT, z: 0), TINT
+      Position(x: offset, y: -extent, z: 0), Position(x: offset, y: extent, z: 0), TINT
     )
     meshes.addSegment(
-      Position(x: -EXTENT, y: offset, z: 0), Position(x: EXTENT, y: offset, z: 0), TINT
+      Position(x: -extent, y: offset, z: 0), Position(x: extent, y: offset, z: 0), TINT
     )
 
 
 
 #[ Object Tessellation ]#
 
-proc addPoint(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
-  ## Append grade-1 object as marker, or as arrow from origin where it lies at horizon.
-  ##   `progress` fades a marker in and, for the arrow, also grows its length -- a point
-  ##   sprite has no length of its own to grow, so its own appearance is fade alone.
+proc addPoint(
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
+): Placement =
+  ## Append grade-1 object as marker, or, at horizon, as a marker fixed at `scale.eye`
+  ## plus its own direction scaled out to `scale.radius_horizon` -- a star effectively
+  ## infinitely far away, staying in the same apparent direction as the camera pans or
+  ## dollies, moving only as the eye itself does.
+  ##   `progress` fades a marker in and, at horizon, also grows how far out it stands.
   let place = position(geometry)
   if place.isSome:
     meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
@@ -266,79 +395,79 @@ proc addPoint(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: 
 
   let heading = directionHorizon(geometry)
   if heading.isNone: return Placement.Empty
-  meshes.addArrow(
-    ORIGIN_WORLD, heading.get, progress*0.5*float(EXTENT_WORLD), tint.fade(tint.alpha*progress)
+  meshes.addMarker(
+    scale.eye + (progress*scale.radius_horizon)*heading.get, tint.fade(tint.alpha*progress)
   )
   Placement.Horizon
 
 
-proc addLine(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
-  ## Append grade-2 object as segment about its support point, along its attitude.
-  ##   `progress` grows the segment symmetrically out from its support point, and fades
-  ##   it in alongside, so a freshly derived line visibly extends rather than popping in.
+proc addLine(
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
+): Placement =
+  ## Append grade-2 object as segment about its support point, along its attitude, or,
+  ## at horizon, as a great circle around `scale.eye` -- the pencil of directions the
+  ## line stands for, traced across the sky at `scale.radius_horizon`.
+  ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
+  ##   fades it in alongside, so a freshly derived line visibly extends rather than
+  ##   popping in.
   let
     anchor = positionAnchor(geometry)
     axis = direction(geometry)
-  if anchor.isNone or axis.isNone: return Placement.Horizon
-  let
-    extent = progress*float(EXTENT_WORLD)
-    tint_progress = tint.fade(tint.alpha*progress)
-  meshes.addSegment(anchor.get - extent*axis.get, anchor.get + extent*axis.get, tint_progress)
-  meshes.addMarker(anchor.get, tint_progress)
-  Placement.Finite
+  if anchor.isSome and axis.isSome:
+    let
+      extent = progress*scale.extent
+      tint_progress = tint.fade(tint.alpha*progress)
+    meshes.addSegment(anchor.get - extent*axis.get, anchor.get + extent*axis.get, tint_progress)
+    meshes.addMarker(anchor.get, tint_progress)
+    return Placement.Finite
+
+  let normal = directionNormalHorizon(geometry)
+  if normal.isNone: return Placement.Empty
+  let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
+  if axes.isNone: return Placement.Empty
+  let (axis_first, axis_second) = axes.get
+  meshes.addGreatCircle(
+    scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
+    tint.fade(tint.alpha*progress),
+  )
+  Placement.Horizon
 
 
-proc addPlane(meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float): Placement =
-  ## Append grade-3 object as translucent quad ruled by grid, about its support point.
-  ##   `progress` grows the quad, grid and normal arrow out from the support point exactly
-  ##   as `addLine` grows a segment, and fades every part of it in alongside.
+proc addPlane(
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
+): Placement =
+  ## Append grade-3 object as translucent disc about its support point, or, at horizon,
+  ## as a dome filling the whole sky around `scale.eye` -- the unique universal object
+  ## every plane at horizon stands for, regardless of which points produced it.
+  ##   `progress` grows the disc, its normal arrow, or the dome's own radius out from
+  ##   nothing, and fades every part of it in alongside.
   let
     anchor = positionAnchor(geometry)
     axes = frame(geometry)
-  if anchor.isNone or axes.isNone: return Placement.Horizon
-  let
-    extent = progress*float(EXTENT_WORLD)
-    (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
-    tint_progress = tint.fade(tint.alpha*progress)
-
-  # Wash quad first, so plane reads as surface rather than as loose bundle of lines.
-  meshes.addQuad([
-    anchor.get + extent*axis_first + extent*axis_second,
-    anchor.get - extent*axis_first + extent*axis_second,
-    anchor.get - extent*axis_first - extent*axis_second,
-    anchor.get + extent*axis_first - extent*axis_second,
-  ], tint.fade(ALPHA_WASH*progress))
-
-  # Rule grid both ways, so plane's orientation stays legible under perspective.
-  #   Boundary drawn crisp so extent reads at a glance; interior left faint, so a
-  #   second or third overlapping plane adds a wash and an edge, not another thicket
-  #   of full-strength lines fighting the first plane's own for attention.
-  let
-    tint_boundary = tint.fade(ALPHA_GRID_BOUNDARY*progress)
-    tint_interior = tint.fade(ALPHA_GRID_INTERIOR*progress)
-  for i in -CELLS_PLANE .. CELLS_PLANE:
+  if anchor.isSome and axes.isSome:
     let
-      tint_grid = if abs(i) == CELLS_PLANE: tint_boundary else: tint_interior
-      offset = extent*float(i)/float(CELLS_PLANE)
-      start_first = anchor.get + offset*axis_second
-      start_second = anchor.get + offset*axis_first
-    meshes.addSegment(
-      start_first - extent*axis_first, start_first + extent*axis_first, tint_grid
-    )
-    meshes.addSegment(
-      start_second - extent*axis_second, start_second + extent*axis_second, tint_grid
-    )
+      extent = progress*scale.extent
+      (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
+      tint_progress = tint.fade(tint.alpha*progress)
 
-  # Show normal, as it is what tells plane apart from its own reflection.
-  meshes.addArrow(
-    anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(ALPHA_GUIDE*progress)
-  )
-  meshes.addMarker(anchor.get, tint_progress)
-  Placement.Finite
+    # Disc first, so plane reads as surface rather than as loose bundle of lines; fades
+    #   toward its own rim rather than stopping at a hard edge that would give away this
+    #   render's own finite reach for what is, in the algebra, an unbounded plane.
+    meshes.addDisc(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
+
+    # Show normal, as it is what tells plane apart from its own reflection.
+    meshes.addArrow(
+      anchor.get, axes.get.normal, 0.25*extent, Ink.Guide.colour.fade(ALPHA_GUIDE*progress)
+    )
+    meshes.addMarker(anchor.get, tint_progress)
+    return Placement.Finite
+
+  meshes.addDome(scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress))
+  Placement.Horizon
 
 
 proc addObject*(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float = 1.0
+  meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
@@ -348,6 +477,6 @@ proc addObject*(
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
-  of Shape.Point: meshes.addPoint(geometry, tint, progress)
-  of Shape.Line: meshes.addLine(geometry, tint, progress)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress)
+  of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
+  of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale)

@@ -142,6 +142,21 @@ func eye*(camera: Camera): Position =
   )
 
 
+func azimuthElevationFor*(heading: Direction): (float, float) =
+  ## Solve orbit angles an orbit camera would need to look along `heading`, regardless
+  ## of target or distance -- `eye`'s own formula cancels target out of `forward`
+  ## entirely (`forward = normalize(target - eye) = normalize(target - target - D) =
+  ## -normalize(D)`, where `D` depends only on azimuth, elevation and distance), so
+  ## this is the plain spherical-coordinates inverse of that same `D`, independent of
+  ## wherever the camera actually orbits.
+  ##   Meant for aiming a capture at a horizon object's own direction: unlike a finite
+  ##   one, it is not anchored anywhere a fixed demo angle already frames, so whether
+  ##   it falls inside view depends entirely on which way the camera happens to look.
+  let elevation = arcsin(clamp(-heading.z, -1.0, 1.0))
+  let azimuth = arctan2(-heading.y, -heading.x)
+  (azimuth, elevation)
+
+
 proc orbit*(camera: var Camera; turn, rise: float) =
   ## Turn eye about target by given angles, keeping elevation short of poles.
   camera.azimuth += turn

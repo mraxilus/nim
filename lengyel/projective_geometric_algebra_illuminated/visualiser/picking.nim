@@ -80,10 +80,13 @@ func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
 
 #[ Representative Point ]#
 
-func anchorFor*(m: Multivector): Option[Position] =
+func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
   ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
-  ##   Point uses its own place, or its horizon arrow's tip where it has none.
-  ##   Line and plane use their support point, matching what mesh actually anchors on.
+  ##   Point uses its own place, or its own star position at horizon where it has none,
+  ##   matching exactly where `mesh.addPoint` draws it.
+  ##   Line and plane use their support point, matching what mesh actually anchors on;
+  ##   neither is pickable at horizon (see `pickNearest`'s own doc comment), so no
+  ##   equivalent horizon anchor is needed for them here.
   ##   None where `m` carries no drawable geometry at all.
   let shape = shape(m)
   if shape.isNone: return
@@ -93,7 +96,7 @@ func anchorFor*(m: Multivector): Option[Position] =
     if place.isSome: return place
     let heading = directionHorizon(m)
     if heading.isNone: return
-    some(ORIGIN_WORLD + (0.5*float(EXTENT_WORLD))*heading.get)
+    some(scale.eye + scale.radius_horizon*heading.get)
   of Shape.Line, Shape.Plane:
     positionAnchor(m)
 
@@ -135,22 +138,22 @@ func castRay(
 
 func rayPlaneHit(
   ray: Multivector; eye: Position; forward: Direction;
-  plane: Multivector; anchor: Position; axes: FramePlane
+  plane: Multivector; anchor: Position; axes: FramePlane; extent: float
 ): Option[float] =
   ## Meet cursor's sight ray with `plane`; report distance from eye where it lands inside
-  ## the drawn quad, so a nearer plane can be preferred over a farther one behind it.
+  ## the drawn disc, so a nearer plane can be preferred over a farther one behind it.
   ##   None where the ray misses the plane, the hit falls behind the eye, or it lands
-  ##   outside the drawn quad.
+  ##   outside the drawn disc.
   let hit = position(ray ∨ plane)
   if hit.isNone: return
 
   let distance = dot(hit.get - eye, forward)
   if distance <= 1.0e-6: return
 
+  # Disc bound is circular, matching `mesh.addDisc` exactly: a plane's own hit test
+  #   should agree with what is drawn, not with a square the render no longer produces.
   let local = hit.get - anchor
-  const EXTENT = float(EXTENT_WORLD)
-  if abs(dot(local, axes.axis_first)) > EXTENT or abs(dot(local, axes.axis_second)) > EXTENT:
-    return
+  if dot(local, local) > extent*extent: return
   some(distance)
 
 
@@ -163,7 +166,10 @@ func pickNearest*(
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   None where nothing visible falls within its shape's pick radius.
-  const EXTENT = float(EXTENT_WORLD)
+  ##   A line or plane at horizon is never pickable: neither is anchored anywhere a
+  ##   screen-space or ray test could land on, since both are drawn fixed to the eye
+  ##   rather than to a point in the scene (see `mesh.addLine`/`addPlane`'s own horizon
+  ##   branches). Only a point at horizon -- a fixed star -- keeps a pickable anchor.
 
   # Eye, camera frame and sight ray depend only on camera and cursor, not on which item is
   #   being tested, so each is built once here rather than once per plane candidate below.
@@ -171,6 +177,10 @@ func pickNearest*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
+    scale = DrawExtent(
+      extent: extentFor(camera.distance), eye: eye,
+      radius_horizon: radiusHorizonFor(camera.distance_far),
+    )
 
   var
     slot_best = none(int)
@@ -191,7 +201,7 @@ func pickNearest*(
 
     case shape.get
     of Shape.Point:
-      let anchor = anchorFor(geometry)
+      let anchor = anchorFor(geometry, scale)
       if anchor.isNone: continue
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if not screen.isInFront: continue
@@ -202,8 +212,12 @@ func pickNearest*(
       let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
       if anchor.isNone or axis.isNone: continue
       let
-        tail = projectToScreen(view_projection, width, height, anchor.get - EXTENT*axis.get)
-        head = projectToScreen(view_projection, width, height, anchor.get + EXTENT*axis.get)
+        tail = projectToScreen(
+          view_projection, width, height, anchor.get - scale.extent*axis.get
+        )
+        head = projectToScreen(
+          view_projection, width, height, anchor.get + scale.extent*axis.get
+        )
       if not (tail.isInFront and head.isInFront): continue
       let distance = distanceToSegment(cursor, tail, head)
       if distance <= RADIUS_PICK_LINE: consider(1, distance)
@@ -213,7 +227,9 @@ func pickNearest*(
         anchor = positionAnchor(geometry)
         axes = frame(geometry)
       if anchor.isNone or axes.isNone: continue
-      let hit = rayPlaneHit(ray, eye, frame_camera.forward, geometry, anchor.get, axes.get)
+      let hit = rayPlaneHit(
+        ray, eye, frame_camera.forward, geometry, anchor.get, axes.get, scale.extent
+      )
       if hit.isSome: consider(2, hit.get)
 
   slot_best

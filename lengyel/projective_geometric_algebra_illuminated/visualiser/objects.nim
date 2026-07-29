@@ -196,6 +196,18 @@ func directionHorizon*(m: Multivector): Option[Direction] =
   normalize(Direction(x: m[Basis.E1], y: m[Basis.E2], z: m[Basis.E3]))
 
 
+func directionNormalHorizon*(m: Multivector): Option[Direction] =
+  ## Read unit direction normal to the pencil of directions a horizon line stands for.
+  ##   A line's own weight lives in its `E41`/`E42`/`E43` terms; `E23`/`E31`/`E12` survive
+  ##   at horizon and carry the very same normal a finite plane's own attitude would leave
+  ##   there, unnormalized -- confirmed directly by comparing a plane's `directionNormal`
+  ##   against `(⊖ that plane)[E23], [E31], [E12]`, which agree component for component.
+  ##   None where line has weight, as it then runs along a direction, not perpendicular
+  ##   to a pencil of them.
+  if not m.isHorizon: return
+  normalize(Direction(x: m[Basis.E23], y: m[Basis.E31], z: m[Basis.E12]))
+
+
 func directionNormal*(m: Multivector): Option[Direction] =
   ## Read unit direction perpendicular to plane.
   ##   Antidual is negated so normal runs along plane's own weight gˣ, gʸ, gᶻ.
@@ -207,6 +219,48 @@ func directionNormal*(m: Multivector): Option[Direction] =
 
 #[ Plane Frame ]#
 
+func spanPerpendicular*(anchor: Position; normal: Direction): Option[(Direction, Direction)] =
+  ## Derive orthonormal pair of directions perpendicular to `normal`, through `anchor`.
+  ##   Built the same way `frame` spans a plane's own two axes, so a caller holding a
+  ##   normal read some other way -- not necessarily `directionNormal` of a multivector
+  ##   `frame` could take directly -- still spans it algebraically, through joins and
+  ##   antiduals, rather than by a raw cross product outside the library's own operators.
+  ##   Pair is arbitrary up to rotation about `normal`; only the plane it spans is
+  ##   meaningful. `anchor` only fixes where the spanning joins are built through --
+  ##   the two directions found do not depend on which point is chosen.
+  ##   None only where library's own antiduals fail to resolve, which does not happen
+  ##   for any unit `normal`.
+
+  # Pick world axis least aligned with normal, so joins below stay well conditioned.
+  const AXES_WORLD = [
+    Direction(x: 1, y: 0, z: 0),
+    Direction(x: 0, y: 1, z: 0),
+    Direction(x: 0, y: 0, z: 1),
+  ]
+  let alignments = [abs(normal.x), abs(normal.y), abs(normal.z)]
+  var index_least = 0
+  for i in 1 .. 2:
+    if alignments[i] < alignments[index_least]: index_least = i
+  let axis_world = AXES_WORLD[index_least]
+
+  # Span plane through anchor holding both helper axis and normal.
+  #   Its own normal is perpendicular to both, so it lies inside the plane `normal` spans.
+  let
+    point_anchor = toMultivector(anchor)
+    point_normal = toMultivector(normal)
+    plane_first = point_anchor ∧ toMultivector(axis_world) ∧ point_normal
+    axis_first = directionNormal(plane_first)
+  if axis_first.isNone: return
+
+  # Repeat against first axis, to obtain second axis perpendicular to it inside the plane.
+  let
+    plane_second = point_anchor ∧ toMultivector(axis_first.get) ∧ point_normal
+    axis_second = directionNormal(plane_second)
+  if axis_second.isNone: return
+
+  some((axis_first.get, axis_second.get))
+
+
 func frame*(m: Multivector): Option[FramePlane] =
   ## Derive orthonormal pair of directions lying inside plane.
   ##   Pair is arbitrary up to rotation about normal; only plane it spans is meaningful.
@@ -215,32 +269,7 @@ func frame*(m: Multivector): Option[FramePlane] =
     normal = directionNormal(m)
     anchor = positionAnchor(m)
   if normal.isNone or anchor.isNone: return
-
-  # Pick world axis least aligned with normal, so joins below stay well conditioned.
-  const AXES_WORLD = [
-    Direction(x: 1, y: 0, z: 0),
-    Direction(x: 0, y: 1, z: 0),
-    Direction(x: 0, y: 0, z: 1),
-  ]
-  let alignments = [abs(normal.get.x), abs(normal.get.y), abs(normal.get.z)]
-  var index_least = 0
-  for i in 1 .. 2:
-    if alignments[i] < alignments[index_least]: index_least = i
-  let axis_world = AXES_WORLD[index_least]
-
-  # Span plane through anchor holding both helper axis and normal.
-  #   Its own normal is perpendicular to both, so it lies inside `m`.
-  let
-    point_anchor = toMultivector(anchor.get)
-    point_normal = toMultivector(normal.get)
-    plane_first = point_anchor ∧ toMultivector(axis_world) ∧ point_normal
-    axis_first = directionNormal(plane_first)
-  if axis_first.isNone: return
-
-  # Repeat against first axis, to obtain second axis perpendicular to it inside `m`.
-  let
-    plane_second = point_anchor ∧ toMultivector(axis_first.get) ∧ point_normal
-    axis_second = directionNormal(plane_second)
-  if axis_second.isNone: return
-
-  some(FramePlane(axis_first: axis_first.get, axis_second: axis_second.get, normal: normal.get))
+  let axes = spanPerpendicular(anchor.get, normal.get)
+  if axes.isNone: return
+  let (axis_first, axis_second) = axes.get
+  some(FramePlane(axis_first: axis_first, axis_second: axis_second, normal: normal.get))

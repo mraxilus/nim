@@ -262,6 +262,16 @@ suite "Camera":
 
 
 suite "Mesh":
+  let SCALE_TEST = DrawExtent(
+    extent: float(EXTENT_MIN), eye: Position(x: 5, y: -3, z: 7), radius_horizon: 50.0
+  ) ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
+    ## mistake, instead of to `eye`, would fail every horizon check below.
+    ##   Radius held modest rather than close to a real far clip distance (hundreds of
+    ##   units): vertices round-trip through `Vertex`'s own `float32` storage, and
+    ##   `isNear`'s tolerance is calibrated for coordinates near the same scale every
+    ##   other geometry test in this suite uses, not for the additional rounding a much
+    ##   larger radius would carry through unrelated to anything this suite tests here.
+
   setup:
     MESHES.clearMeshes
 
@@ -276,7 +286,7 @@ suite "Mesh":
   test "point becomes one marker where it stands":
     for i in 0 ..< SAMPLES:
       MESHES.clearMeshes
-      check MESHES.addObject(POINTS[i], Ink.Amber.colour) == Placement.Finite
+      check MESHES.addObject(POINTS[i], Ink.Amber.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Point].count_vertices == 1
       check MESHES[Primitive.Line].count_vertices == 0
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
@@ -285,7 +295,7 @@ suite "Mesh":
   test "line becomes segment whose every vertex lies on it":
     for line in LINES:
       MESHES.clearMeshes
-      check MESHES.addObject(line, Ink.Cyan.colour) == Placement.Finite
+      check MESHES.addObject(line, Ink.Cyan.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Line].count_vertices == 2
       check MESHES[Primitive.Point].count_vertices == 1
       # Vertex lies on line exactly when its offset from support runs along the direction,
@@ -297,51 +307,120 @@ suite "Mesh":
         check isNear(abs(dot(offset, axis.get)), norm(offset))
 
 
-  test "plane becomes quad and grid whose every vertex lies on it":
+  test "plane becomes a disc fading to transparent at its rim, every vertex on it":
     for plane in PLANES:
       MESHES.clearMeshes
-      check MESHES.addObject(plane, Ink.Lime.colour) == Placement.Finite
-      # Grid rules both ways across every cell boundary, then normal's arrow follows it.
+      check MESHES.addObject(plane, Ink.Lime.colour, SCALE_TEST) == Placement.Finite
       const
-        VERTICES_GRID = 4*(2*CELLS_PLANE + 1)
+        VERTICES_DISC = 3*SEGMENTS_DISC
         VERTICES_NORMAL = 2
-      check MESHES[Primitive.Triangle].count_vertices == 6
-      check MESHES[Primitive.Line].count_vertices == VERTICES_GRID + VERTICES_NORMAL
+      check MESHES[Primitive.Triangle].count_vertices == VERTICES_DISC
+      check MESHES[Primitive.Line].count_vertices == VERTICES_NORMAL
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
-      for primitive in [Primitive.Triangle, Primitive.Line]:
-        for i in 0 ..< MESHES[primitive].count_vertices:
-          let at = MESHES[primitive].vertices[i].toPosition
-          # Normal's own arrow leaves the plane, so it alone is expected to miss.
-          if primitive == Primitive.Line and i >= VERTICES_GRID: continue
-          check isNear(dot(at - anchor.get, normal.get), 0)
+      for i in 0 ..< VERTICES_DISC:
+        let vertex = MESHES[Primitive.Triangle].vertices[i]
+        check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
+        # Every third vertex, starting at 0, is the fan's own centre; the two either
+        #   side of it are its rim, faded fully transparent.
+        if i mod 3 == 0: check isNear(float(vertex.alpha), ALPHA_WASH)
+        else: check vertex.alpha == 0.0'f32
 
 
-  test "object at horizon becomes arrow from origin":
+  test "point at horizon becomes a star fixed at eye plus its own direction":
     for line in LINES:
       MESHES.clearMeshes
       let attitude = ⊖ line
-      check MESHES.addObject(attitude, Ink.Rose.colour) == Placement.Horizon
-      check MESHES[Primitive.Line].count_vertices == 2
-      check isNear(MESHES[Primitive.Line].vertices[0].toPosition, ORIGIN)
+      check MESHES.addObject(attitude, Ink.Rose.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES[Primitive.Point].count_vertices == 1
+      let
+        heading = directionHorizon(attitude)
+        star = MESHES[Primitive.Point].vertices[0].toPosition
+      check heading.isSome
+      check isNear(star, SCALE_TEST.eye + SCALE_TEST.radius_horizon*heading.get)
+
+
+  test "line at horizon becomes a great circle around eye, perpendicular to its normal":
+    for plane in PLANES:
+      MESHES.clearMeshes
+      let attitude = ⊖ plane
+      check MESHES.addObject(attitude, Ink.Cyan.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES[Primitive.Line].count_vertices == 2*SEGMENTS_CIRCLE_HORIZON
+      # `directionNormalHorizon` reads straight off the horizon line's own raw
+      #   coefficients; confirm it agrees with the finite plane's own normal, read
+      #   through a wholly different pair of library operators, before trusting either
+      #   to check where the circle itself landed.
+      let
+        normal_from_plane = directionNormal(plane)
+        normal_from_horizon = directionNormalHorizon(attitude)
+      check normal_from_plane.isSome and normal_from_horizon.isSome
+      check normal_from_plane.get =~ normal_from_horizon.get
+      for i in 0 ..< MESHES[Primitive.Line].count_vertices:
+        let
+          vertex = MESHES[Primitive.Line].vertices[i].toPosition
+          offset = vertex - SCALE_TEST.eye
+        check isNear(norm(offset), SCALE_TEST.radius_horizon)
+        check isNear(dot(offset, normal_from_plane.get), 0)
+
+
+  test "plane at horizon becomes a dome over the whole sky around eye":
+    # Every plane at horizon is the same universal object regardless of source (see
+    #   `objects.directionNormalHorizon`'s own doc comment), so two unrelated planes'
+    #   own attitudes should both land the dome at exactly the same distance from eye,
+    #   with nothing about either plane's own coefficients read to decide it.
+    #   Attitude of a plane (grade 3) gives a line at horizon, not a plane: reaching a
+    #   plane at horizon needs a grade-4 volume first, built here from a point wedged
+    #   with an unrelated plane it does not lie on.
+    let
+      volume_first = POINTS[10] ∧ PLANES[0]
+      volume_second = POINTS[20] ∧ PLANES[7]
+      attitude_first = ⊖ volume_first
+      attitude_second = ⊖ volume_second
+    check shape(attitude_first) == some(Shape.Plane) and isHorizon(attitude_first)
+    check shape(attitude_second) == some(Shape.Plane) and isHorizon(attitude_second)
+
+    check MESHES.addObject(attitude_first, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
+    let vertices_first = MESHES[Primitive.Triangle].vertices
+    for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
+      let offset = vertices_first[i].toPosition - SCALE_TEST.eye
+      check isNear(norm(offset), SCALE_TEST.radius_horizon)
+
+    MESHES.clearMeshes
+    check MESHES.addObject(attitude_second, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
+    # Same dome, vertex for vertex, regardless of which unrelated volume produced it.
+    for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
+      check isNear(MESHES[Primitive.Triangle].vertices[i].toPosition, vertices_first[i].toPosition)
 
 
   test "multivector of no geometry becomes nothing at all":
     for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
       MESHES.clearMeshes
-      check MESHES.addObject(empty, Ink.Amber.colour) == Placement.Empty
+      check MESHES.addObject(empty, Ink.Amber.colour, SCALE_TEST) == Placement.Empty
       for primitive in Primitive:
         check MESHES[primitive].count_vertices == 0
 
 
   test "world furniture stays within drawn extent":
-    MESHES.addAxes
-    MESHES.addGrid
+    MESHES.addAxes(SCALE_TEST.extent)
+    MESHES.addGrid(SCALE_TEST.extent)
     check MESHES[Primitive.Line].count_vertices > 0
     for i in 0 ..< MESHES[Primitive.Line].count_vertices:
       let at = MESHES[Primitive.Line].vertices[i].toPosition
-      check max(abs(at.x), max(abs(at.y), abs(at.z))) <= float(EXTENT_WORLD) + TOLERANCE_TEST
+      check max(abs(at.x), max(abs(at.y), abs(at.z))) <= SCALE_TEST.extent + TOLERANCE_TEST
+
+
+  test "extentFor floors near the camera and scales with distance past it":
+    check extentFor(0.0) == float(EXTENT_MIN)
+    check extentFor(1.0) == float(EXTENT_MIN)
+    let distance = float(EXTENT_MIN) / EXTENT_FACTOR + 100.0
+    check extentFor(distance) =~ distance*EXTENT_FACTOR
+
+
+  test "radiusHorizonFor scales with the camera's own far clip distance":
+    check radiusHorizonFor(400.0) =~ 400.0*FRACTION_HORIZON
 
 
 
@@ -819,11 +898,13 @@ suite "Picking":
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
 
 
-  test "plane misses where its sight ray lands outside the drawn quad":
-    # Camera stands far enough back that the visible frustum, at the plane's own depth,
-    #   spans wider than the fixed EXTENT_WORLD quad mesh actually draws -- so the window's
-    #   own corners correspond to rays that land genuinely outside that quad, while the
-    #   centre ray still lands on the support point well within it.
+  test "plane misses where its sight ray lands outside the drawn disc":
+    # A window corner is the widest angle any ray reaches, off the sight axis -- wider
+    #   than `EXTENT_FACTOR` itself allows for, at any distance, since that factor is
+    #   tuned against the vertical field of view alone, not a corner's own diagonal
+    #   reach. So a corner ray lands outside the drawn disc's own radius regardless of
+    #   how far back the camera stands, while the centre ray still lands on the
+    #   support point well within it.
     var scene = initScene()
     let facing = (
       toMultivector(Position(x: 0, y: -3, z: -3)) ∧

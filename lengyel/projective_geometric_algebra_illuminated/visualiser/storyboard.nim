@@ -38,7 +38,7 @@ type Step* = object ## Hold one scripted construction step.
 
 #[ Scripted Construction ]#
 
-const STEPS*: array[8, Step] = [
+const STEPS*: array[11, Step] = [
   Step(stem: "01_join_line", label: "L = a ^ b",
     operation: Operation.Wedge, index_first: 0, index_second: 1, ink: Ink.Cyan),
   Step(stem: "02_join_plane", label: "G = L ^ c",
@@ -55,7 +55,20 @@ const STEPS*: array[8, Step] = [
     operation: Operation.ExpandWeight, index_first: 0, index_second: 4, ink: Ink.Lime),
   Step(stem: "08_project", label: "a onto G",
     operation: Operation.ProjectOrthogonal, index_first: 0, index_second: 5, ink: Ink.Coral),
-] ## Build a line from two points, a plane from that line, then meet, measure and project.
+  # Attitude always drops one grade and always lands at horizon (see
+  #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
+  #   point at horizon above (06); applied to a plane it gives a line at horizon; applied
+  #   to a grade-4 volume (built here from a point wedged with a plane it does not lie
+  #   on) it gives a plane at horizon -- the unique universal object every plane at
+  #   horizon is, regardless of which points produced it.
+  Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
+    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cyan),
+  Step(stem: "10_wedge_volume", label: "a ^ ground",
+    operation: Operation.Wedge, index_first: 0, index_second: 3, ink: Ink.Violet),
+  Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ^ ground)",
+    operation: Operation.Attitude, index_first: 13, index_second: 0, ink: Ink.Teal),
+] ## Build a line from two points, a plane from that line, then meet, measure and
+  ## project; close with attitude taken down to a line, then a plane, at horizon.
 
 
 proc constructSeeds*(scene: var Scene; now: float = 0.0) =
