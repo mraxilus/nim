@@ -143,6 +143,12 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet
+var MESHES_HIGHLIGHT: MeshSet ## Holds only the highlighted item's own geometry, re-
+  ## tessellated a second time so the renderer's own highlight pass has something to
+  ## draw the Fresnel rim shader over, separate from the main frame's own buffers.
+var HIGHLIGHT_NORMAL: Option[Direction] ## Highlighted item's own normal, for a plane;
+  ## `none` for a point or line, which have no surface of their own to be grazing or
+  ## face-on to -- the highlight shader falls back to a fixed rim for those instead.
 
 # Two arenas, one permanent and one reset after each throwaway unit of work; see
 #   `arena.nim` for why the interactive draw loop needs neither, and what does.
@@ -235,16 +241,22 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
-  # Ring the most recently constructed object, as if it were freshly selected -- drawn
-  #   last and independent of the loop above, since it decorates whichever item is
-  #   highlighted regardless of where that slot happens to fall.
+  # Re-tessellate the most recently constructed object's own real geometry a second
+  #   time, into a separate buffer the renderer's own highlight pass draws over the
+  #   frame with a Fresnel rim shader, so it reads as freshly selected -- not a
+  #   different shape stood in for it, the same disc, segment or marker the main pass
+  #   just drew.
+  MESHES_HIGHLIGHT.clearMeshes
+  HIGHLIGHT_NORMAL = none(Direction)
   if workbench.index_highlighted.isSome:
     let slot = workbench.index_highlighted.get
     if scene.isAlive(slot) and scene[slot].is_visible:
       let item = scene[slot]
-      discard MESHES.addHighlight(
-        item.geometry, scale, animationProgress(now, item.born), item.anchorOverride
+      discard MESHES_HIGHLIGHT.addObject(
+        item.geometry, item.ink.colour, scale, animationProgress(now, item.born),
+        item.anchorOverride,
       )
+      HIGHLIGHT_NORMAL = directionNormal(item.geometry)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -327,6 +339,7 @@ proc renderFrame(
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
   renderer.drawMeshes(MESHES, view_projection)
+  renderer.drawHighlight(MESHES_HIGHLIGHT, eye, HIGHLIGHT_NORMAL)
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)

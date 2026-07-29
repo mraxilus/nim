@@ -188,6 +188,13 @@ type FrameData = object
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
   tri_verts, line_verts, point_verts: seq[float32]
   view_projection: seq[float32]
+  hl_tri_verts, hl_line_verts, hl_point_verts: seq[float32] ## Current step's own
+    ## result, re-tessellated a second time for the highlight (Fresnel rim) pass --
+    ## same geometry `nimBuildFrame`'s own loop above already drew, not a different
+    ## shape stood in for it; empty wherever nothing is currently highlighted.
+  eye: seq[float32] ## Camera eye, for the highlight pass's own view-direction term.
+  highlight_normal: seq[float32] ## Highlighted plane's own normal; zero vector for a
+    ## point or line, which have none of their own to be grazing or face-on to.
 
 
 proc nimBuildFrame(
@@ -215,15 +222,21 @@ proc nimBuildFrame(
       let tint = if g_are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
       discard meshes.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
-  # Ring the current step's own result, as if it were freshly selected -- same as the
-  #   desktop storyboard capture; drawn once more, independent of the loop above.
+  # Re-tessellate the current step's own result a second time, into its own buffer the
+  #   highlight pass draws with a Fresnel rim shader -- the same geometry the loop
+  #   above already drew, so it reads as that object glowing, not a different shape.
+  var meshes_highlight: MeshSet
+  clearMeshes(meshes_highlight)
+  var normal = Direction(x: 0, y: 0, z: 0)
   if g_index_highlighted >= 0 and g_index_highlighted < ITEMS_MAX and
      g_are_visible[g_index_highlighted]:
     let item = g_scene[g_index_highlighted]
-    discard meshes.addHighlight(
-      item.geometry, scale, animationProgress(float(now), g_borns[g_index_highlighted]),
-      item.anchorOverride,
+    discard meshes_highlight.addObject(
+      item.geometry, item.ink.colour, scale,
+      animationProgress(float(now), g_borns[g_index_highlighted]), item.anchorOverride,
     )
+    let own_normal = directionNormal(item.geometry)
+    if own_normal.isSome: normal = own_normal.get
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
@@ -236,4 +249,9 @@ proc nimBuildFrame(
     line_verts: flatten(meshes[Primitive.Line]),
     point_verts: flatten(meshes[Primitive.Point]),
     view_projection: view_projection,
+    hl_tri_verts: flatten(meshes_highlight[Primitive.Triangle]),
+    hl_line_verts: flatten(meshes_highlight[Primitive.Line]),
+    hl_point_verts: flatten(meshes_highlight[Primitive.Point]),
+    eye: @[float32(eye.x), float32(eye.y), float32(eye.z)],
+    highlight_normal: @[float32(normal.x), float32(normal.y), float32(normal.z)],
   )

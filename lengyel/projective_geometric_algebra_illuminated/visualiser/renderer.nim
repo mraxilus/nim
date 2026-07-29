@@ -15,9 +15,9 @@
 
 {.experimental: "strictFuncs".}
 
-import std/strformat
+import std/[options, strformat]
 
-import ./[camera, mesh]
+import ./[camera, mesh, objects]
 import ./opengl as gl
 
 
@@ -40,28 +40,53 @@ layout (location = 1) in vec4 in_colour;
 uniform mat4 view_projection;
 uniform float size_point;
 out vec4 vertex_colour;
+out vec3 world_pos;
 void main() {
   gl_Position = view_projection * vec4(in_position, 1.0);
   gl_PointSize = size_point;
   vertex_colour = in_colour;
+  world_pos = in_position;
 }
-""" ## Transform world position to clip space, carrying vertex colour through.
+""" ## Transform world position to clip space, carrying vertex colour through, plus the
+  ## untransformed world position itself for the highlight pass's own Fresnel term.
 
 
 const SOURCE_FRAGMENT = """
 #version 330 core
 in vec4 vertex_colour;
+in vec3 world_pos;
 uniform float as_point;
+uniform bool is_highlight;
+uniform vec3 eye;
+uniform vec3 highlight_normal;
 out vec4 out_colour;
 void main() {
+  vec4 colour = vertex_colour;
   if (as_point > 0.5) {
     vec2 offset = gl_PointCoord - vec2(0.5);
-    if (dot(offset, offset) > 0.25) discard;
+    float r2 = dot(offset, offset);
+    if (r2 > 0.25) discard;
+    // Sphere-impostor rim: a point sprite's own gl_PointCoord already gives a free
+    //   radial coordinate, so a genuine per-fragment Fresnel term falls out of it with
+    //   no extra geometry -- brightest at the sprite's own silhouette edge, none at
+    //   its centre, exactly the "highlighted item" glow games render this way for.
+    if (is_highlight) colour = mix(colour, vec4(1.0), pow(clamp(sqrt(r2)*2.0, 0.0, 1.0), 2.0));
+  } else if (is_highlight) {
+    // A line carries no surface normal to be grazing or face-on to, so `highlight_normal`
+    //   is left the zero vector for one and this falls back to a fixed, modest rim
+    //   instead of a real Fresnel term; a plane's own real, constant normal gives a
+    //   genuine one -- brighter near its own silhouette, where the sight line to a
+    //   given point on it runs closest to grazing.
+    float facing = dot(highlight_normal, highlight_normal) > 0.5
+      ? abs(dot(normalize(eye - world_pos), highlight_normal)) : 0.6;
+    colour = mix(colour, vec4(1.0), pow(1.0 - facing, 2.0));
   }
-  out_colour = vertex_colour;
+  out_colour = colour;
 }
-""" ## Write interpolated vertex colour, rounding off point sprites into discs.
-  ##   Nothing here is lit or textured, so colour passes straight through otherwise.
+""" ## Write interpolated vertex colour, rounding off point sprites into discs, and
+  ## brightening the current highlight pass's own fragments toward white at grazing
+  ## angles -- a Fresnel rim, the same family of effect a game uses to mark a
+  ## teammate, enemy or item, rather than a flat outline independent of view angle.
 
 
 
@@ -77,6 +102,9 @@ type
     location_view_projection: gl.Int
     location_size_point: gl.Int
     location_as_point: gl.Int
+    location_is_highlight: gl.Int
+    location_eye: gl.Int
+    location_highlight_normal: gl.Int
     buffers: array[Primitive, Buffers]
 
 
@@ -138,6 +166,9 @@ proc initRenderer*(): Renderer =
     gl.getUniformLocation(result.program, "view_projection")
   result.location_size_point = gl.getUniformLocation(result.program, "size_point")
   result.location_as_point = gl.getUniformLocation(result.program, "as_point")
+  result.location_is_highlight = gl.getUniformLocation(result.program, "is_highlight")
+  result.location_eye = gl.getUniformLocation(result.program, "eye")
+  result.location_highlight_normal = gl.getUniformLocation(result.program, "highlight_normal")
 
   const
     STRIDE = gl.Sizei(sizeof(Vertex))
@@ -209,6 +240,38 @@ proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) 
   gl.depthMask(gl.FALSE)
   renderer.drawPrimitive(meshes, Primitive.Triangle)
   gl.depthMask(1)
+  gl.uniform1i(renderer.location_is_highlight, 0)
+  gl.bindVertexArray(0)
+
+
+proc drawHighlight*(
+  renderer: Renderer; meshes: MeshSet; eye: Position; normal: Option[Direction]
+) =
+  ## Draw the one object currently highlighted a second time, over the frame `drawMeshes`
+  ## already assembled -- `meshes` here holds only that object's own real geometry (see
+  ## `mesh.addObject`'s own caller in `visualiser.nim`/`browser_bridge.nim`), tessellated
+  ## exactly as it already was for the main pass, not a separate ring or outline shape.
+  ##   `is_highlight` switches the fragment shader to brighten toward white at grazing
+  ##   angles instead of passing colour through untouched -- a real Fresnel rim for a
+  ##   point (`gl_PointCoord` already gives a free sphere-impostor radial coordinate) or
+  ##   a plane (its own constant `normal`), and a fixed, modest rim for a line, which has
+  ##   no surface normal of its own to be grazing or face-on to.
+  # Depth test off for this whole pass: it re-draws the same triangles and lines the
+  #   main pass already drew, at literally the same depth, so testing against that
+  #   pass's own depth buffer would only invite z-fighting -- flickering per-pixel
+  #   pass/fail noise from floating-point rounding on numbers that should tie exactly.
+  #   Drawing on top regardless also reads as a deliberate "this one is highlighted"
+  #   emphasis, the same way a game's own selection glow usually ignores depth too.
+  gl.disable(gl.DEPTH_TEST)
+  gl.uniform1i(renderer.location_is_highlight, 1)
+  gl.uniform3f(renderer.location_eye, gl.Float(eye.x), gl.Float(eye.y), gl.Float(eye.z))
+  let n = if normal.isSome: normal.get else: Direction(x: 0, y: 0, z: 0)
+  gl.uniform3f(renderer.location_highlight_normal, gl.Float(n.x), gl.Float(n.y), gl.Float(n.z))
+  renderer.drawPrimitive(meshes, Primitive.Line)
+  renderer.drawPrimitive(meshes, Primitive.Point)
+  renderer.drawPrimitive(meshes, Primitive.Triangle)
+  gl.uniform1i(renderer.location_is_highlight, 0)
+  gl.enable(gl.DEPTH_TEST)
   gl.bindVertexArray(0)
 
 

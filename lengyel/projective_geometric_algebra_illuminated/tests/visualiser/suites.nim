@@ -431,55 +431,6 @@ suite "Mesh":
       check isNear(MESHES[Primitive.Triangle].vertices[i].toPosition, vertices_first[i].toPosition)
 
 
-  test "highlight rings a point, line or plane's own anchor, facing the eye":
-    for (geometry, anchor) in [
-      (POINTS[0], position(POINTS[0]).get),
-      (LINES[0], positionAnchor(LINES[0]).get),
-      (PLANES[0], positionAnchor(PLANES[0]).get),
-    ]:
-      MESHES.clearMeshes
-      check MESHES.addHighlight(geometry, SCALE_TEST, 1.0) == Placement.Finite
-      check MESHES[Primitive.Line].count_vertices == 2*SEGMENTS_HIGHLIGHT
-      let
-        distance = norm(SCALE_TEST.eye - anchor)
-        radius = FRACTION_HIGHLIGHT_RADIUS*distance
-      for i in 0 ..< MESHES[Primitive.Line].count_vertices:
-        let
-          vertex = MESHES[Primitive.Line].vertices[i]
-          offset = vertex.toPosition - anchor
-        # Ring lies in the plane facing the eye: every vertex normal to eye direction.
-        check isNear(dot(offset, SCALE_TEST.eye - anchor), 0)
-        check isNear(norm(offset), radius)
-        check isNear(float(vertex.alpha), ALPHA_HIGHLIGHT)
-
-
-  test "highlight honours anchor_override, matching a plane's own creation anchor":
-    let
-      plane = PLANES[3]
-      override = positionAnchor(plane).get + Direction(x: 1, y: 0, z: 0)
-    check MESHES.addHighlight(plane, SCALE_TEST, 1.0, some(override)) == Placement.Finite
-    for i in 0 ..< MESHES[Primitive.Line].count_vertices:
-      let offset = MESHES[Primitive.Line].vertices[i].toPosition - override
-      check isNear(norm(offset), FRACTION_HIGHLIGHT_RADIUS*norm(SCALE_TEST.eye - override))
-
-
-  test "highlight is empty for a horizon line or plane, which has no anchor to ring":
-    # Attitude of a plane gives a line at horizon; attitude of a grade-4 volume (a
-    #   point wedged with an unrelated plane it does not lie on) gives a plane at
-    #   horizon -- neither is anchored anywhere fixed, matching `picking.anchorFor`'s
-    #   own established rule that neither is pickable either.
-    MESHES.clearMeshes
-    check MESHES.addHighlight(⊖ PLANES[0], SCALE_TEST, 1.0) == Placement.Empty
-    for primitive in Primitive:
-      check MESHES[primitive].count_vertices == 0
-
-    let volume = POINTS[10] ∧ PLANES[0]
-    MESHES.clearMeshes
-    check MESHES.addHighlight(⊖ volume, SCALE_TEST, 1.0) == Placement.Empty
-    for primitive in Primitive:
-      check MESHES[primitive].count_vertices == 0
-
-
   test "multivector of no geometry becomes nothing at all":
     for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
       MESHES.clearMeshes

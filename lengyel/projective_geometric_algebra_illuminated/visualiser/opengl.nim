@@ -128,3 +128,5 @@ proc getUniformLocation*(program: Uint; name: cstring): Int
 proc uniformMatrix4fv*(location: Int; count: Sizei; transpose: Boolean; value: ptr Float)
   {.importc: "glUniformMatrix4fv", header: HEADER.}
 proc uniform1f*(location: Int; value: Float) {.importc: "glUniform1f", header: HEADER.}
+proc uniform1i*(location: Int; value: Int) {.importc: "glUniform1i", header: HEADER.}
+proc uniform3f*(location: Int; x, y, z: Float) {.importc: "glUniform3f", header: HEADER.}

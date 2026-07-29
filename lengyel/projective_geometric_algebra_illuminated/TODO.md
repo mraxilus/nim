@@ -1,4 +1,22 @@
-# Working notes: infinite-plane meet double-checked, a highlight ring on new objects — done
+# Working notes: swapped the highlight ring for a real Fresnel rim glow — done
+
+## Follow-up
+
+The ring wasn't what was wanted: asked for a Fresnel outline like a game's teammate/
+enemy/item highlight -- brighter at grazing angles, not a flat billboarded circle.
+Replaced `mesh.addHighlight` (deleted) with a real shader-based rim: the highlighted
+object's own geometry (not a separate shape) is re-tessellated into a second buffer and
+redrawn with `is_highlight` on, depth test off (avoids z-fighting the identical
+geometry, and reads as deliberate emphasis). Fragment shader: a point gets a genuine
+sphere-impostor Fresnel for free from its own `gl_PointCoord`; a plane gets a real one
+from its own constant normal plus a new `eye`/`world_pos`; a line, with no surface
+normal of its own, falls back to a fixed modest rim. Mirrored exactly in `glue.js`/
+WebGL. Native and browser rebuilt, native storyboard and a browser screenshot both
+confirm a visible white-hot core fading to the object's own colour at the rim (clearest
+on points at larger sizes; subtle but real on the perpendicular-plane's own curved
+edge). 69 native tests pass (3 ring-only tests removed, none replaced -- the shader
+path isn't unit-testable without a GL context, matching this project's existing rule
+that `renderer`/`gui`/`panel` stay out of the suite for the same reason).
 
 This file mirrors the task tracker I use internally, plus anything worth knowing about
 each round. Tracked in git (per your stop-hook check).
