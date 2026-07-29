@@ -263,9 +263,13 @@ suite "Camera":
 
 suite "Mesh":
   let SCALE_TEST = DrawExtent(
-    extent: float(EXTENT_MIN), eye: Position(x: 5, y: -3, z: 7), radius_horizon: 50.0
+    extent: float(EXTENT_MIN), extent_furniture: 30.0,
+    eye: Position(x: 5, y: -3, z: 7), radius_horizon: 50.0
   ) ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
     ## mistake, instead of to `eye`, would fail every horizon check below.
+    ##   `extent_furniture` held distinct from `extent`, so a call site that read the
+    ##   wrong one of the two would fail the furniture check below rather than pass by
+    ##   coincidence.
     ##   Radius held modest rather than close to a real far clip distance (hundreds of
     ##   units): vertices round-trip through `Vertex`'s own `float32` storage, and
     ##   `isNear`'s tolerance is calibrated for coordinates near the same scale every
@@ -307,12 +311,17 @@ suite "Mesh":
         check isNear(abs(dot(offset, axis.get)), norm(offset))
 
 
-  test "plane becomes a disc fading to transparent at its rim, every vertex on it":
+  test "plane becomes a disc holding visible alpha until near its own rim":
     for plane in PLANES:
       MESHES.clearMeshes
       check MESHES.addObject(plane, Ink.Lime.colour, SCALE_TEST) == Placement.Finite
       const
-        VERTICES_DISC = 3*SEGMENTS_DISC
+        VERTICES_PER_SEGMENT = 9 ## Inner fan (centre, two plateau rim points) plus outer
+          ## annulus (that same plateau edge joined to the disc's own true rim), per
+          ## `addDisc`'s own layout: 3 + 6.
+        INDICES_FADED = [4, 5, 7] ## Where the annulus quad's own outer-rim corners fall,
+          ## within each segment's own 9 vertices -- see `addDisc`'s own quad winding.
+        VERTICES_DISC = VERTICES_PER_SEGMENT*SEGMENTS_DISC
         VERTICES_NORMAL = 2
       check MESHES[Primitive.Triangle].count_vertices == VERTICES_DISC
       check MESHES[Primitive.Line].count_vertices == VERTICES_NORMAL
@@ -322,10 +331,17 @@ suite "Mesh":
       for i in 0 ..< VERTICES_DISC:
         let vertex = MESHES[Primitive.Triangle].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
-        # Every third vertex, starting at 0, is the fan's own centre; the two either
-        #   side of it are its rim, faded fully transparent.
-        if i mod 3 == 0: check isNear(float(vertex.alpha), ALPHA_WASH)
-        else: check vertex.alpha == 0.0'f32
+        if (i mod VERTICES_PER_SEGMENT) in INDICES_FADED:
+          check vertex.alpha == 0.0'f32
+        else:
+          check isNear(float(vertex.alpha), ALPHA_WASH)
+        # Every vertex sits at the centre, on the flat plateau's own edge, or out at the
+        #   disc's full radius -- nowhere strictly between the plateau and the fade this
+        #   fan actually draws.
+        let radius_vertex = norm(vertex.toPosition - anchor.get)
+        check isNear(radius_vertex, 0) or
+          isNear(radius_vertex, FRACTION_DISC_PLATEAU*SCALE_TEST.extent) or
+          isNear(radius_vertex, SCALE_TEST.extent)
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":
@@ -403,13 +419,14 @@ suite "Mesh":
         check MESHES[primitive].count_vertices == 0
 
 
-  test "world furniture stays within drawn extent":
-    MESHES.addAxes(SCALE_TEST.extent)
-    MESHES.addGrid(SCALE_TEST.extent)
+  test "world furniture stays within its own, separately tracked extent":
+    MESHES.addAxes(SCALE_TEST.extent_furniture)
+    MESHES.addGrid(SCALE_TEST.extent_furniture)
     check MESHES[Primitive.Line].count_vertices > 0
     for i in 0 ..< MESHES[Primitive.Line].count_vertices:
       let at = MESHES[Primitive.Line].vertices[i].toPosition
-      check max(abs(at.x), max(abs(at.y), abs(at.z))) <= SCALE_TEST.extent + TOLERANCE_TEST
+      check max(abs(at.x), max(abs(at.y), abs(at.z))) <=
+        SCALE_TEST.extent_furniture + TOLERANCE_TEST
 
 
   test "extentFor floors near the camera and scales with distance past it":
@@ -421,6 +438,10 @@ suite "Mesh":
 
   test "radiusHorizonFor scales with the camera's own far clip distance":
     check radiusHorizonFor(400.0) =~ 400.0*FRACTION_HORIZON
+
+
+  test "extentFurnitureFor scales with the camera's own far clip distance":
+    check extentFurnitureFor(400.0) =~ 400.0*FRACTION_FURNITURE
 
 
 

@@ -221,8 +221,8 @@ proc assembleMeshes(workbench: var Workbench; scene: Scene; now: float; scale: D
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
   let ticks_start = getMonoTime().ticks
   MESHES.clearMeshes
-  if workbench.is_grid_shown: MESHES.addGrid(scale.extent)
-  if workbench.is_axes_shown: MESHES.addAxes(scale.extent)
+  if workbench.is_grid_shown: MESHES.addGrid(scale.extent_furniture)
+  if workbench.is_axes_shown: MESHES.addAxes(scale.extent_furniture)
   for item in scene:
     if not item.is_visible: continue
     let progress = animationProgress(now, item.born)
@@ -300,7 +300,9 @@ proc renderFrame(
 
   let eye = camera.eye
   let scale = DrawExtent(
-    extent: extentFor(camera.distance), eye: eye,
+    extent: extentFor(camera.distance),
+    extent_furniture: extentFurnitureFor(camera.distance_far),
+    eye: eye,
     radius_horizon: radiusHorizonFor(camera.distance_far),
   )
   assembleMeshes(workbench, scene, now, scale)
@@ -596,7 +598,6 @@ proc runStoryboard(
   #   index is a required-but-ignored placeholder (see `Step.index_second`'s own doc
   #   comment), not something this step actually reads, so it plays no part here either.
   let
-    fov_default = camera.degrees_field_of_view
     azimuth_default = camera.azimuth
     elevation_default = camera.elevation
   var operative_previous: seq[int] = @[]
@@ -615,13 +616,13 @@ proc runStoryboard(
     # A finite object is anchored somewhere the fixed demo angle already frames; a
     #   horizon object is not -- it stands wherever its own construction happened to
     #   land it, which that fixed angle may or may not be looking toward. Aim this one
-    #   capture at it directly (a representative point for a line's own great circle,
-    #   since aiming along its normal would place the whole ring at the frame's own
-    #   edge, exactly 90 degrees off in every direction), widen the lens a little to
-    #   catch more of what surrounds that point, then restore both after -- a plane at
-    #   horizon needs neither, since the whole sky around the eye is visible regardless
-    #   of which way the camera looks.
-    camera.degrees_field_of_view = fov_default
+    #   capture at it directly instead (a representative point for a line's own great
+    #   circle, since aiming along its normal would place the whole ring at the frame's
+    #   own edge, exactly 90 degrees off in every direction), then restore the default
+    #   orientation after -- a plane at horizon needs no aiming at all, since the whole
+    #   sky around the eye is visible regardless of which way the camera looks. Lens
+    #   stays at its own default throughout: reorienting is enough on its own, and
+    #   widening it besides would shrink everything else this same capture also shows.
     camera.azimuth = azimuth_default
     camera.elevation = elevation_default
     if isHorizon(derived):
@@ -636,7 +637,6 @@ proc runStoryboard(
           if axes.isSome: heading = some(axes.get[0])
       if heading.isSome:
         (camera.azimuth, camera.elevation) = azimuthElevationFor(heading.get)
-        camera.degrees_field_of_view = 90.0
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0

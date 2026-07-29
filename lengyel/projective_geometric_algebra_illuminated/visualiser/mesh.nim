@@ -19,6 +19,11 @@
 ## the same apparent direction, exactly as real stars at effectively infinite distance
 ## would; only turning the camera to look toward or away from one moves it on screen.
 ##
+## World furniture -- ground grid, world axes -- reaches `DrawExtent.extent_furniture`
+## instead, tied to the camera's own far clip distance rather than to orbit distance
+## (`extentFurnitureFor`), so both read as extending indefinitely into the distance
+## regardless of how far the camera has dollied in or out to inspect finite content.
+##
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
 ##   Rebuilding beats tracking which object changed, while scene holds only tens of objects.
 ##   Cost is a few thousand vertices uploaded per frame, which is far below any budget.
@@ -61,6 +66,17 @@ const
     ## Place horizon geometry -- a star, a great circle, the whole sky -- this fraction
     ## of the way to camera's own far clip plane, so it reads as the farthest thing
     ## standing in this scene without ever being clipped away by standing past it.
+  FRACTION_FURNITURE* = 0.95
+    ## Reach world axes and the ground grid this fraction of the way to camera's own
+    ## far clip plane -- tied to that fixed depth rather than to orbit distance
+    ## (unlike `EXTENT_FACTOR` above), so both read as extending indefinitely into the
+    ## distance regardless of how far the camera has dollied in or out to inspect
+    ## finite content.
+  FRACTION_DISC_PLATEAU* = 0.7
+    ## Hold a finite plane's own disc at its full, clearly visible alpha out to this
+    ## fraction of its radius; only the remaining outer band fades to transparent.
+    ## Fading across the whole radius, from centre, read as barely-there everywhere
+    ## rather than as a genuinely visible surface with a soft edge.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 16384
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
@@ -71,6 +87,11 @@ static:
   doAssert EXTENT_FACTOR > 0, &"Extent factor must be positive; got `{EXTENT_FACTOR}`."
   doAssert FRACTION_HORIZON > 0 and FRACTION_HORIZON < 1.0,
     &"Horizon fraction must fall strictly between 0 and 1; got `{FRACTION_HORIZON}`."
+  doAssert FRACTION_FURNITURE > 0 and FRACTION_FURNITURE < 1.0,
+    &"Furniture fraction must fall strictly between 0 and 1; got `{FRACTION_FURNITURE}`."
+  doAssert FRACTION_DISC_PLATEAU > 0 and FRACTION_DISC_PLATEAU < 1.0,
+    &"Disc plateau fraction must fall strictly between 0 and 1; got " &
+    &"`{FRACTION_DISC_PLATEAU}`."
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
   doAssert ANIMATION_MILLISECONDS > 0,
     &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
@@ -79,8 +100,10 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to the seconds `animationProgress` works in.
 
 const
-  CELLS_PLANE* = 4
-    ## Set grid line count either side of origin, when tessellating ground furniture.
+  SIZE_CELL_GRID* = 2.0
+    ## Fix ground grid's own cell size, regardless of how far it reaches -- so filling
+    ## further out toward the far clip plane adds more cells rather than stretching the
+    ## existing ones until they lose all use as a local reference near the camera.
   SEGMENTS_DISC* = 48
     ## Set triangle count in a finite plane's own fan, dense enough to read as circular.
   SEGMENTS_CIRCLE_HORIZON* = 96
@@ -92,8 +115,10 @@ const
     ## Set band counts in a horizon plane's own whole-sky dome.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
-  ALPHA_WASH* = 0.10'f32
-    ## Set opacity of a finite plane's own disc, at its own centre.
+  ALPHA_WASH* = 0.35'f32
+    ## Set opacity of a finite plane's own disc, held flat out to `FRACTION_DISC_PLATEAU`
+    ## of its radius -- high enough to read as a genuinely present, semi-transparent
+    ## surface at a glance, not so high it hides what lies behind it.
   ALPHA_WASH_SKY* = 0.05'f32
     ## Set opacity of a horizon plane's own whole-sky dome -- fainter than a finite
     ## plane's own wash, since this one has no edge to fade toward and would otherwise
@@ -101,6 +126,9 @@ const
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal arrow, shown a touch less boldly than its
     ## own disc's centre so it reads as a construction aid, not as another competing mark.
+
+static:
+  doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
 
 
 
@@ -142,7 +170,11 @@ type
 
   DrawExtent* = object ## Hold how far this frame's geometry reaches, and from where.
     extent*: float ## How far a finite line's segment or plane's disc extends from its
-      ## own anchor; how far the ground grid and world axes extend from the origin.
+      ## own anchor -- camera-relative, via `extentFor`.
+    extent_furniture*: float ## How far the ground grid and world axes extend from the
+      ## origin -- tied to the camera's own far clip distance, via `extentFurnitureFor`,
+      ## rather than to orbit distance, so both read as reaching indefinitely into the
+      ## distance regardless of how far the camera has dollied in or out.
     eye*: Position ## Camera's own eye position, horizon geometry is anchored to, so it
       ## stays in a fixed apparent direction as the camera pans or dollies, exactly as
       ## a real star at effectively infinite distance would.
@@ -168,6 +200,15 @@ func radiusHorizonFor*(distance_far: float): float =
   ## standing for "infinitely far away" should sit near the renderer's own outer depth
   ## limit regardless of how far the camera has dollied in or out to view finite content.
   distance_far * FRACTION_HORIZON
+
+
+func extentFurnitureFor*(distance_far: float): float =
+  ## Compute how far the ground grid and world axes should reach this frame, given the
+  ## camera's own far clip distance -- independent of orbit distance, unlike `extentFor`,
+  ## so both keep reaching almost all the way to the renderer's own outer depth limit
+  ## regardless of how far the camera has dollied in or out to inspect finite content,
+  ## reading as extending indefinitely rather than shrinking back when the camera does.
+  distance_far * FRACTION_FURNITURE
 
 
 
@@ -282,22 +323,40 @@ proc addDisc(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba; segments: int = SEGMENTS_DISC
 ) =
-  ## Append a filled circle as a fan of triangles from `center`, faded from `tint`'s own
-  ## alpha at the centre to fully transparent at `radius` -- GL interpolates each
-  ## vertex's own colour linearly across every triangle (confirmed against `renderer.nim`'s
-  ## own shader: the vertex-to-fragment colour is a plain varying, not `flat`), so the
-  ## fade is smooth with no extra shader work, standing in for a plane's own unbounded
-  ## extent without a hard edge that would give away the render's own finite reach.
-  let tint_edge = tint.fade(0.0)
+  ## Append a filled circle from `center`, held at `tint`'s own alpha flat out to
+  ## `FRACTION_DISC_PLATEAU` of `radius` -- an inner fan of triangles, all at that one
+  ## alpha -- then faded to fully transparent only across the remaining outer band -- an
+  ## annulus of quads, each spanning inner alpha to zero. Fading over the whole radius
+  ## from the centre read as barely-there everywhere rather than as a genuinely visible,
+  ## semi-transparent surface; holding it flat until close to the rim reads as one.
+  ##   GL interpolates each vertex's own colour linearly across every triangle (confirmed
+  ##   against `renderer.nim`'s own shader: the vertex-to-fragment colour is a plain
+  ##   varying, not `flat`), so both the flat plateau and the rim's own fade come free of
+  ##   any extra shader work.
+  let
+    tint_edge = tint.fade(0.0)
+    radius_plateau = FRACTION_DISC_PLATEAU * radius
   for i in 0 ..< segments:
     let
       angle_a = (2.0*PI * float(i)) / float(segments)
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
-      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+      direction_a = cos(angle_a)*axis_first + sin(angle_a)*axis_second
+      direction_b = cos(angle_b)*axis_first + sin(angle_b)*axis_second
+      inner_a = center + radius_plateau*direction_a
+      inner_b = center + radius_plateau*direction_b
+      outer_a = center + radius*direction_a
+      outer_b = center + radius*direction_b
+
     meshes.addVertex(Primitive.Triangle, center, tint)
-    meshes.addVertex(Primitive.Triangle, point_a, tint_edge)
-    meshes.addVertex(Primitive.Triangle, point_b, tint_edge)
+    meshes.addVertex(Primitive.Triangle, inner_a, tint)
+    meshes.addVertex(Primitive.Triangle, inner_b, tint)
+
+    for index in [0, 1, 2, 0, 2, 3]:
+      meshes.addVertex(
+        Primitive.Triangle,
+        [inner_a, outer_a, outer_b, inner_b][index],
+        [tint, tint_edge, tint_edge, tint][index],
+      )
 
 
 proc addGreatCircle(
@@ -361,14 +420,18 @@ proc addAxes*(meshes: var MeshSet; extent: float) =
 
 
 proc addGrid*(meshes: var MeshSet; extent: float) =
-  ## Append reference grid on ground, so distance and direction stay judgeable.
+  ## Append reference grid on ground, so distance and direction stay judgeable, out to
+  ## `extent` -- fixed cell size (`SIZE_CELL_GRID`) regardless of how far that reaches,
+  ## so filling further out toward the far clip plane adds more cells rather than
+  ## stretching the existing ones until they read as empty ground near the camera.
   ##   Skips the two lines through the origin itself: those coincide exactly with the
   ##   x and y world axes, and would either fight them for the same depth or hide their
   ##   colour under plain grid grey, depending on which happened to draw last.
   const TINT = Ink.Grid.colour
-  for i in -CELLS_PLANE .. CELLS_PLANE:
+  let count = int(ceil(extent / SIZE_CELL_GRID))
+  for i in -count .. count:
     if i == 0: continue
-    let offset = extent*float(i)/float(CELLS_PLANE)
+    let offset = float(i) * SIZE_CELL_GRID
     meshes.addSegment(
       Position(x: offset, y: -extent, z: 0), Position(x: offset, y: extent, z: 0), TINT
     )
