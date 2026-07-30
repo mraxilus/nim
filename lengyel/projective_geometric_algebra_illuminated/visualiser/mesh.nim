@@ -146,14 +146,20 @@ const
     ## Scale a plane's own radius by this to reach the length its normal shaft is drawn
     ## at -- long enough to read as an arrow rather than a stub, short enough not to
     ## compete with the disc's own rim for attention.
-  FRACTION_DIMMED_ALPHA* = 0.3'f32
+  FRACTION_DIMMED_ALPHA* = 0.55'f32
     ## Scale an already-constructed but non-focal object's own alpha by this, so it
     ## stays legible as background context -- shown rather than hidden outright -- while
     ## still clearly receding behind whatever the current step is showcasing.
-  FRACTION_OUTLINE_PLANE* = 1.12
-    ## Scale a highlighted plane's own outline rim to this fraction of its ordinary
-    ## radius -- wide enough that the sliver peeking out past the object's own
-    ## true-size redraw over it reads clearly as a border, not lost to anti-aliasing.
+  MUTE_DESATURATION* = 0.6'f32
+    ## Blend a muted object's own colour this far toward its own grayscale equivalent,
+    ## short of replacing it outright -- keeps a dulled hint of its own hue rather than
+    ## converging every muted object to one indistinguishable grey.
+  EXTENT_OUTLINE_BORDER* = 0.4
+    ## Widen a highlighted plane's own outline rim by this many world units beyond its
+    ## ordinary radius -- an addition, not a multiple, matching the fixed-pixel border
+    ## a point or line's own outline widens by (see `renderer.SIZE_POINT_OUTLINE`/
+    ## `WIDTH_LINE_OUTLINE`), so all three read as roughly the same border thickness at
+    ## the camera distance this workbench's own storyboard is captured from.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -162,8 +168,10 @@ static:
     &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
-  doAssert FRACTION_OUTLINE_PLANE > 1.0,
-    &"Outline plane fraction must exceed 1; got `{FRACTION_OUTLINE_PLANE}`."
+  doAssert MUTE_DESATURATION > 0 and MUTE_DESATURATION <= 1.0,
+    &"Mute desaturation must fall between 0 and 1; got `{MUTE_DESATURATION}`."
+  doAssert EXTENT_OUTLINE_BORDER > 0,
+    &"Outline border extent must be positive; got `{EXTENT_OUTLINE_BORDER}`."
 
 
 
@@ -297,12 +305,22 @@ func fade*(base: Rgba; alpha: float32): Rgba =
 
 
 func muted*(base: Rgba): Rgba =
-  ## Gray colour out and cut its opacity to `FRACTION_DIMMED_ALPHA`, for an object that
-  ## has already been constructed but is not part of the step currently in focus --
-  ## shown as background context, rather than hidden outright, so a construction's own
-  ## history stays visible without competing with what is being showcased right now.
-  let gray = Ink.Grid.colour
-  Rgba(red: gray.red, green: gray.green, blue: gray.blue, alpha: base.alpha*FRACTION_DIMMED_ALPHA)
+  ## Dull colour partway toward its own grayscale equivalent, and cut its opacity to
+  ## `FRACTION_DIMMED_ALPHA`, for an object that has already been constructed but is
+  ## not part of the step currently in focus -- shown as background context, rather
+  ## than hidden outright, so a construction's own history stays visible without
+  ## competing with what is being showcased right now.
+  ##   Blended toward its own luminance, not replaced by `Ink.Grid.colour` as an
+  ##   earlier version did: fading every hue to one shared grey made a muted line
+  ##   object indistinguishable from the ground grid itself, and lost the object's own
+  ##   identity entirely rather than just dimming it.
+  let luminance = 0.299'f32*base.red + 0.587'f32*base.green + 0.114'f32*base.blue
+  Rgba(
+    red: base.red + (luminance - base.red)*MUTE_DESATURATION,
+    green: base.green + (luminance - base.green)*MUTE_DESATURATION,
+    blue: base.blue + (luminance - base.blue)*MUTE_DESATURATION,
+    alpha: base.alpha*FRACTION_DIMMED_ALPHA,
+  )
 
 
 
@@ -580,10 +598,11 @@ proc addPlane(
   ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
-  ##   `outline` draws only a solid rim, `FRACTION_OUTLINE_PLANE` wider than usual and at
-  ##   full opacity, skipping the fill and normal shaft -- for the "selection outline"
-  ##   pass, whose whole point is to peek out past the object's own true-size redraw
-  ##   over it, not to add a second fill or shaft the ordinary pass already drew.
+  ##   `outline` draws only a solid rim, `EXTENT_OUTLINE_BORDER` world units wider than
+  ##   usual and at full opacity, skipping the fill and normal shaft -- for the
+  ##   "selection outline" pass, whose whole point is to peek out past the object's own
+  ##   true-size redraw over it, not to add a second fill or shaft the ordinary pass
+  ##   already drew.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
@@ -592,7 +611,7 @@ proc addPlane(
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
 
     if outline:
-      let extent = progress*EXTENT_PLANE_F*FRACTION_OUTLINE_PLANE
+      let extent = progress*(EXTENT_PLANE_F + EXTENT_OUTLINE_BORDER)
       meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint)
       return Placement.Finite
 

@@ -476,14 +476,15 @@ suite "Mesh":
     check extentFurnitureFor(400.0) =~ 400.0*FRACTION_FURNITURE
 
 
-  test "muted colour grays to the grid's own hue and cuts opacity by its fixed fraction":
+  test "muted colour blends toward its own luminance and cuts opacity by its fixed fraction":
     for ink in Ink:
       let
         base = ink.colour
+        luminance = 0.299'f32*base.red + 0.587'f32*base.green + 0.114'f32*base.blue
         dimmed = muted(base)
-      check isNear(dimmed.red, Ink.Grid.colour.red)
-      check isNear(dimmed.green, Ink.Grid.colour.green)
-      check isNear(dimmed.blue, Ink.Grid.colour.blue)
+      check isNear(dimmed.red, base.red + (luminance - base.red)*MUTE_DESATURATION)
+      check isNear(dimmed.green, base.green + (luminance - base.green)*MUTE_DESATURATION)
+      check isNear(dimmed.blue, base.blue + (luminance - base.blue)*MUTE_DESATURATION)
       check isNear(dimmed.alpha, base.alpha*FRACTION_DIMMED_ALPHA)
 
 

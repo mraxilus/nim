@@ -188,11 +188,14 @@ type FrameData = object
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
   tri_verts, line_verts, point_verts: seq[float32]
   view_projection: seq[float32]
+  furn_line_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, at
+    ## their own thinner line width (see `renderer.WIDTH_LINE_FURNITURE`), and before
+    ## the outline pass below so neither ever paints back over a selection border.
   ol_tri_verts, ol_line_verts, ol_point_verts: seq[float32] ## Current step's own
     ## result, built oversized and in a flat outline colour, for the outline pass --
-    ## drawn before the main frame above, so only what peeks out past that object's
-    ## own true-size redraw over it shows, reading as a selection border; empty
-    ## wherever nothing is currently highlighted.
+    ## drawn between furniture and the main frame above, so only what peeks out past
+    ## that object's own true-size redraw over it shows, reading as a selection
+    ## border; empty wherever nothing is currently highlighted.
 
 
 proc nimBuildFrame(
@@ -201,8 +204,8 @@ proc nimBuildFrame(
   ## Tessellate every visible object at the current step, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
   ## desktop app draws through.
-  var meshes: MeshSet
-  clearMeshes(meshes)
+  var meshes_furniture: MeshSet
+  clearMeshes(meshes_furniture)
 
   let eye = g_camera.eye
   let scale = DrawExtent(
@@ -211,9 +214,11 @@ proc nimBuildFrame(
     radius_horizon: radiusHorizonFor(g_camera.distance_far),
   )
 
-  if show_grid: addGrid(meshes, scale.extent_furniture)
-  if show_axes: addAxes(meshes, scale.extent_furniture)
+  if show_grid: addGrid(meshes_furniture, scale.extent_furniture)
+  if show_axes: addAxes(meshes_furniture, scale.extent_furniture)
 
+  var meshes: MeshSet
+  clearMeshes(meshes)
   for slot, item in g_scene.pairs:
     if slot < ITEMS_MAX and g_are_visible[slot]:
       let progress = animationProgress(float(now), g_borns[slot])
@@ -245,6 +250,7 @@ proc nimBuildFrame(
     line_verts: flatten(meshes[Primitive.Line]),
     point_verts: flatten(meshes[Primitive.Point]),
     view_projection: view_projection,
+    furn_line_verts: flatten(meshes_furniture[Primitive.Line]),
     ol_tri_verts: flatten(meshes_outline[Primitive.Triangle]),
     ol_line_verts: flatten(meshes_outline[Primitive.Line]),
     ol_point_verts: flatten(meshes_outline[Primitive.Point]),

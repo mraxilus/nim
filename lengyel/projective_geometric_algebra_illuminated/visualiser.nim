@@ -142,11 +142,16 @@ static:
     &"raise `--define:visualiser.width_export_max` or `...height_export_max`."
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
-var MESHES: MeshSet
+var MESHES: MeshSet ## Every scene object, excluding world furniture below.
+var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn separately (and
+  ## first) so the outline pass below can draw over them without a grid line or axis
+  ## ever painting back over a selection border afterward (see `renderer.drawOutline`'s
+  ## own doc comment on draw order) -- and so they can hold their own, thinner line
+  ## width distinct from a scene object's own (`renderer.WIDTH_LINE_FURNITURE`).
 var MESHES_OUTLINE: MeshSet ## Holds only the highlighted item's own geometry, built
   ## oversized and in a flat outline colour, for the renderer's own outline pass --
-  ## separate from the main frame's own buffers since it is drawn before them, at a
-  ## different point size and line width (see `renderer.drawOutline`'s own doc comment).
+  ## drawn between the two buffers above, at a different point size and line width
+  ## (see `renderer.drawOutline`'s own doc comment).
 
 # Two arenas, one permanent and one reset after each throwaway unit of work; see
 #   `arena.nim` for why the interactive draw loop needs neither, and what does.
@@ -230,9 +235,11 @@ proc assembleMeshes(
   ##   for ordinary interactive rendering; the storyboard's own rolling emphasis is the
   ##   only caller that fills it in.
   let ticks_start = getMonoTime().ticks
+  MESHES_FURNITURE.clearMeshes
+  if workbench.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture)
+  if workbench.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture)
+
   MESHES.clearMeshes
-  if workbench.is_grid_shown: MESHES.addGrid(scale.extent_furniture)
-  if workbench.is_axes_shown: MESHES.addAxes(scale.extent_furniture)
   for slot, item in scene.pairs:
     if not item.is_visible: continue
     let progress = animationProgress(now, item.born)
@@ -241,9 +248,10 @@ proc assembleMeshes(
 
   # Build the most recently constructed object's own outline -- oversized, flat
   #   `Ink.Outline` -- into a separate buffer the renderer's own outline pass draws
-  #   before the frame above, so only the sliver peeking out past that object's own
-  #   true-size redraw over it stays visible, reading as a selection border the way
-  #   3D modelling software draws one, rather than a second copy of the object itself.
+  #   between furniture and the frame above, so only the sliver peeking out past that
+  #   object's own true-size redraw over it stays visible, reading as a selection
+  #   border the way 3D modelling software draws one, rather than a second copy of the
+  #   object itself, and never painted over by a grid line or axis crossing it.
   MESHES_OUTLINE.clearMeshes
   if workbench.index_highlighted.isSome:
     let slot = workbench.index_highlighted.get
@@ -257,7 +265,9 @@ proc assembleMeshes(
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
   for primitive in Primitive:
-    workbench.count_vertices += MESHES[primitive].count_vertices
+    workbench.count_vertices +=
+      MESHES[primitive].count_vertices + MESHES_FURNITURE[primitive].count_vertices +
+      MESHES_OUTLINE[primitive].count_vertices
 
 
 const lut_drag_to_ink: array[DragOperation, Ink] = [
@@ -334,6 +344,7 @@ proc renderFrame(
   assembleMeshes(workbench, scene, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
+  renderer.drawMeshes(MESHES_FURNITURE, view_projection, WIDTH_LINE_FURNITURE)
   renderer.drawOutline(MESHES_OUTLINE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
 

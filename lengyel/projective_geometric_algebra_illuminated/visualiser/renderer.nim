@@ -27,24 +27,37 @@ import ./opengl as gl
 const
   SIZE_POINT* = 9.0'f32
     ## Set diameter of drawn points, in pixels.
-  WIDTH_LINE* = 1.5'f32
-    ## Set width of drawn lines, in pixels.
-  SIZE_POINT_OUTLINE* = 17.0'f32
-    ## Set diameter the highlighted object's own point draws at, in its outline pass --
-    ## wider than `SIZE_POINT` by more than the normal pass's own point will cover, so
-    ## the difference shows as a ring around it, not swallowed underneath.
-  WIDTH_LINE_OUTLINE* = 5.5'f32
-    ## Set width the highlighted object's own line draws at, in its outline pass --
-    ## wider than `WIDTH_LINE`, so a border shows either side of the normal line drawn
-    ## over it after.
+  WIDTH_LINE_FURNITURE* = 1.5'f32
+    ## Set width of the ground grid and world axes, in pixels -- kept thinner than a
+    ## scene line object's own width (`WIDTH_LINE_OBJECT`), so reference furniture
+    ## recedes behind whatever the workbench is actually showing.
+  WIDTH_LINE_OBJECT* = 2.5'f32
+    ## Set width of a scene line object, in pixels -- wider than furniture, so its own
+    ## highlighted outline can widen by the same border thickness a point's own outline
+    ## does (`BORDER_OUTLINE`), rather than needing a disproportionately wide outline
+    ## relative to a thin line to show a comparable border.
+  BORDER_OUTLINE* = 2.5'f32
+    ## Set the highlight outline's own border thickness, in pixels, shared by a point
+    ## and a line alike -- subtle enough to read as a border, not overwhelm the object
+    ## itself. A plane's own border is a world-space addition instead
+    ## (`mesh.EXTENT_OUTLINE_BORDER`), tuned to roughly match this at the camera
+    ## distance the workbench's own storyboard is captured from.
+  SIZE_POINT_OUTLINE* = SIZE_POINT + 2.0'f32*BORDER_OUTLINE
+    ## Diameter the highlighted object's own point draws at, in its outline pass --
+    ## `BORDER_OUTLINE` wider on every side than `SIZE_POINT`, so the difference shows
+    ## as a border of that thickness once the normal-size point redraws over it.
+  WIDTH_LINE_OUTLINE* = WIDTH_LINE_OBJECT + 2.0'f32*BORDER_OUTLINE
+    ## Width the highlighted object's own line draws at, in its outline pass --
+    ## `BORDER_OUTLINE` wider on each side than `WIDTH_LINE_OBJECT`, matching the
+    ## point's own border thickness exactly.
   LOG_MAX = 1024
     ## Bound how much of driver's compile log is reported.
 
 static:
-  doAssert SIZE_POINT_OUTLINE > SIZE_POINT,
-    &"Outline point size must exceed the normal one; got `{SIZE_POINT_OUTLINE}` <= `{SIZE_POINT}`."
-  doAssert WIDTH_LINE_OUTLINE > WIDTH_LINE,
-    &"Outline line width must exceed the normal one; got `{WIDTH_LINE_OUTLINE}` <= `{WIDTH_LINE}`."
+  doAssert WIDTH_LINE_OBJECT > WIDTH_LINE_FURNITURE,
+    &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
+    &"`{WIDTH_LINE_FURNITURE}`."
+  doAssert BORDER_OUTLINE > 0, &"Outline border must be positive; got `{BORDER_OUTLINE}`."
 
 
 const SOURCE_VERTEX = """
@@ -208,19 +221,24 @@ proc drawPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
 
 proc drawOutline*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
   ## Draw the currently highlighted object's own geometry oversized and in a flat
-  ## outline colour (already baked into `meshes`' own vertex colours by the caller),
-  ## before the ordinary frame -- the same "selection outline" technique 3D modelling
-  ## software uses: an enlarged silhouette drawn behind, so only the sliver of it
-  ## sticking out past the object's own true-size edge stays visible once the ordinary
-  ## pass draws that object, and everything else, back over it.
+  ## outline colour (already baked into `meshes`' own vertex colours by the caller) --
+  ## the same "selection outline" technique 3D modelling software uses: an enlarged
+  ## silhouette, so only the sliver of it sticking out past the object's own true-size
+  ## edge stays visible once the object itself draws back over it.
+  ##   Caller must draw this between world furniture (`drawMeshes` on the ground grid
+  ##   and world axes alone) and the scene's own objects (`drawMeshes` again, on
+  ##   everything else): drawn any earlier, furniture painted afterward would cover the
+  ##   border wherever a grid line or axis happens to cross it: furniture has no
+  ##   business occluding a selection outline. Drawn any later, it would instead cover
+  ##   the object's own true-size redraw, hiding the object rather than framing it.
   ##   A point's and a line's own geometry is unchanged from the ordinary pass; drawing
   ##   them here at a wider point size / line width is what pushes their own silhouette
   ##   out past their normal-sized redraw. A plane's own geometry is genuinely built
-  ##   larger by the caller (`mesh.addObject`'s `extent_scale`), since its size is not
+  ##   larger by the caller (`mesh.addObject`'s `outline` flag), since its size is not
   ##   a draw-time uniform the way a point or line's is.
-  ##   Depth test and write both off: nothing else has drawn yet this frame, so there is
-  ##   nothing yet to test against, and leaving depth on would block the ordinary pass
-  ##   from redrawing over this same position right after, at some fractionally
+  ##   Depth test and write both off: this draws between two ordinary passes that both
+  ##   depth-test normally, and leaving depth on here would let this pass block the
+  ##   second of them from redrawing over this same position, at some fractionally
   ##   different depth an equality-based test cannot be trusted to resolve consistently.
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
@@ -236,14 +254,21 @@ proc drawOutline*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4)
   gl.bindVertexArray(0)
 
 
-proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
+proc drawMeshes*(
+  renderer: Renderer; meshes: MeshSet; view_projection: Matrix4;
+  width_line: float32 = WIDTH_LINE_OBJECT
+) =
   ## Draw every mesh, opaque kinds before translucent ones.
+  ##   `width_line` defaults to a scene object's own width; caller passes
+  ##   `WIDTH_LINE_FURNITURE` instead when drawing the ground grid and world axes alone,
+  ##   so furniture reads thinner than whatever object the workbench is actually
+  ##   showing (see `WIDTH_LINE_FURNITURE`'s own doc comment).
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
   gl.uniform1f(renderer.location_size_point, SIZE_POINT)
-  gl.lineWidth(WIDTH_LINE)
+  gl.lineWidth(width_line)
 
   # Draw opaque kinds first, so they own depth buffer.
   renderer.drawPrimitive(meshes, Primitive.Line)

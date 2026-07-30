@@ -1,5 +1,24 @@
 # Working notes: swapped Fresnel for a 3D-modelling-style selection outline — done
 
+## Follow-up 3
+
+Polish pass on the selection outline and muting from follow-up 2: the point's own
+border read as too thick relative to a line's, the ground grid painted back over a
+selection border wherever it crossed one, and muted objects lost their own hue
+entirely (converging to the grid's own grey) at too heavy an opacity cut. Fixed by:
+giving the ground grid/world axes their own thinner line width
+(`renderer.WIDTH_LINE_FURNITURE`) distinct from a scene line object's own
+(`WIDTH_LINE_OBJECT`, now wider than before), deriving both the point's and the
+line's outline sizes from one shared `BORDER_OUTLINE` pixel thickness so the two
+read as the same border, splitting the draw into three ordered passes (furniture,
+then the outline, then scene objects) so furniture can never paint over a border
+drawn after it, and rewriting `mesh.muted()` to blend toward the object's own
+luminance (`MUTE_DESATURATION`) rather than replacing its colour outright, at a
+higher `FRACTION_DIMMED_ALPHA`. Mirrored the same three-pass split and constants
+into `browser_bridge.nim`/`glue.js`. 69 native tests pass (one, on `muted()`'s exact
+output, rewritten for the new blend formula); storyboard regenerated and visually
+confirmed; browser smoke-tested headless with no console errors.
+
 ## Follow-up 2
 
 Fresnel still wasn't it: wanted an outline just outside the object's own edge, like
