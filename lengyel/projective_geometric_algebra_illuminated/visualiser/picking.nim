@@ -41,10 +41,17 @@ import ./[camera, mesh, objects, scene]
 #[ Picking Configuration ]#
 
 const
-  RADIUS_PICK_POINT* = 14.0
+  RADIUS_PICK_POINT* = 20.0
     ## Bound how far, in pixels, cursor may sit from a point's marker and still hit it.
-  RADIUS_PICK_LINE* = 9.0
-    ## Bound how far, in pixels, cursor may sit from a line's drawn segment and still hit it.
+    ##   Raised from an original 14 on reported difficulty selecting points and lines --
+    ##   both drawn thin (a marker a few pixels across, a one-pixel-wide segment), so a
+    ##   pick radius close to the mark itself left little room for cursor imprecision or
+    ##   a fingertip's own contact area on touch. The shape priority below (point beats
+    ##   line beats plane) is what keeps a more generous radius from misfiring where
+    ##   targets overlap on screen, rather than a tight radius doing that job instead.
+  RADIUS_PICK_LINE* = 14.0
+    ## Bound how far, in pixels, cursor may sit from a line's drawn segment and still hit
+    ## it; see `RADIUS_PICK_POINT`'s own doc comment for why both were widened together.
 
 
 

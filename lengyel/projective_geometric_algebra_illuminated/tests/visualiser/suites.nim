@@ -1107,6 +1107,59 @@ suite "Picking":
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
 
 
+  test "point pick radius tolerates cursor imprecision, not unlimited slack":
+    var scene = initScene()
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    # Point itself projects exactly to CENTRE; offsetting the cursor instead of the
+    #   point is what actually exercises the radius bound.
+    let near = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT - 1.0, y: CENTRE.y, depth: 0.0)
+    let far = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT + 1.0, y: CENTRE.y, depth: 0.0)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, near) == some(0)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, far).isNone
+
+
+  test "line pick radius tolerates cursor imprecision, not unlimited slack":
+    var scene = initScene()
+    let axis_z =
+      toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
+    scene.addItem(axis_z, "axis_z", Ink.Jade)
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let near = ScreenPosition(x: CENTRE.x + RADIUS_PICK_LINE - 1.0, y: CENTRE.y, depth: 0.0)
+    let far = ScreenPosition(x: CENTRE.x + RADIUS_PICK_LINE + 1.0, y: CENTRE.y, depth: 0.0)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, near) == some(0)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, far).isNone
+
+
+  test "point wins a tie over a line through it":
+    var scene = initScene()
+    let axis_z =
+      toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
+    scene.addItem(axis_z, "axis_z", Ink.Jade) # Index 0: line, passes straight through origin.
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose) # Index 1: point.
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+
+
+  test "line wins a tie over a plane behind it":
+    var scene = initScene()
+    let facing = (
+      toMultivector(Position(x: 0, y: -3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 3, z: -3)) ∧
+      toMultivector(Position(x: 0, y: 0, z: 3))
+    )
+    let axis_z =
+      toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
+    scene.addItem(facing, "facing", Ink.Olive) # Index 0: plane, spans the view straight on.
+    scene.addItem(axis_z, "axis_z", Ink.Jade) # Index 1: line, passes straight through origin.
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+
+
   test "point wins a tie over a plane behind it":
     var scene = initScene()
     let facing = (
