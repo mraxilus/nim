@@ -159,7 +159,8 @@ const
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
-  doAssert SEGMENTS_GRID_FADE >= 2, &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
+  doAssert SEGMENTS_GRID_FADE >= 2,
+    &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
   doAssert FRACTION_NORMAL_SHAFT > 0,
     &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
@@ -526,7 +527,9 @@ proc addGrid*(meshes: var MeshSet; extent: float) =
     count = int(ceil(radius_fade_end / SIZE_CELL_GRID))
   func tintAt(u, offset: float): Rgba =
     tint.fade(
-      tint.alpha * alphaGridFade(norm(Direction(x: u, y: offset, z: 0)), radius_fade_start, radius_fade_end)
+      tint.alpha * alphaGridFade(
+        norm(Direction(x: u, y: offset, z: 0)), radius_fade_start, radius_fade_end,
+      )
     )
   for i in -count .. count:
     if i == 0: continue

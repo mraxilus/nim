@@ -39,7 +39,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[objects, mesh, camera, scene, picking, interaction, storyboard]
+import ./[camera, interaction, mesh, objects, picking, scene, storyboard]
 
 
 
@@ -436,7 +436,8 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   let
     label_source = labelString(g_scene.labelAt(g_interaction.index_source))
     label_destination =
-      if g_interaction.index_hover.isSome: labelString(g_scene.labelAt(g_interaction.index_hover.get))
+      if g_interaction.index_hover.isSome:
+        labelString(g_scene.labelAt(g_interaction.index_hover.get))
       else: ""
     notation_text = if drag.isSome: interaction.notation(drag.get) else: "?"
     outcome = interaction.endDrag(g_interaction, g_scene, float(now))
@@ -452,7 +453,10 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
       created_slot: cint(slot),
       message: cstring(&"{label_fixed} gave {shape_word}."),
     )
-  DragResult(created_slot: cint(-1), message: cstring("Drag released on empty space or its own source; nothing done."))
+  DragResult(
+    created_slot: cint(-1),
+    message: cstring("Drag released on empty space or its own source; nothing done."),
+  )
 
 
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =

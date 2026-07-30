@@ -275,7 +275,8 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
       label =
         if is_binary: &"{name_first} {$operation} {name_second}"
         else: &"{$operation} {name_first}"
-    workbench.index_highlighted = some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
+    workbench.index_highlighted =
+      some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0
