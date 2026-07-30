@@ -503,7 +503,7 @@ proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Ca
     # Coloured words match the rubber-band drawn while dragging, so the line on screen
     #   names its own outcome before the button is even released.
     gui.text("Drag one object onto another to derive a new one:")
-    let (join, meet, project) = (Ink.Jade.colour, Ink.Plum.colour, Ink.Moss.colour)
+    let (join, meet, project) = (Ink.Jade.colour, Ink.Magenta.colour, Ink.Olive.colour)
     gui.textTinted("  join", join.red, join.green, join.blue)
     gui.sameLine()
     gui.text("left click,")

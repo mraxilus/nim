@@ -111,7 +111,7 @@ proc nimStepLabel(step: cint): cstring {.exportc.} =
 
 proc nimStepColor(step: cint): seq[float32] {.exportc.} =
   ## Report the colour step `step`'s own derived object is drawn with.
-  let ink = if step < 0: Ink.Pine else: STEPS[int(step)].ink
+  let ink = if step < 0: Ink.Rose else: STEPS[int(step)].ink
   toRgbSeq(ink.colour)
 
 

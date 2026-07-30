@@ -564,6 +564,6 @@ when not defined(js):
 func inkCycled*(index: int): Ink =
   ## Choose palette slot for item at given position, cycling through categorical slots.
   const
-    INK_FIRST = int(Ink.Pine)
+    INK_FIRST = int(Ink.Rose)
     COUNT_CATEGORICAL = int(Ink.high) - INK_FIRST + 1
   Ink(INK_FIRST + (index mod COUNT_CATEGORICAL))

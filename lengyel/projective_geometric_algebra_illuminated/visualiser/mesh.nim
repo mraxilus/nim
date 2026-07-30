@@ -190,12 +190,16 @@ type
     ##   apart on the colour wheel, so two objects added one after another -- the most
     ##   likely pair to end up compared or drawn near each other -- read as different
     ##   colours even under colour-vision deficiency, not just to typical vision.
-    ##   Sixteen slots, not seven: with `inkCycled` wrapping back to the first slot
-    ##   only after all sixteen are spent, a run of objects stays visibly distinct for
-    ##   much longer than the previous seven-hue set allowed -- see `lut_ink_to_rgba`'s
-    ##   own comment for how the sixteen were chosen and checked.
-    Pine, Fuchsia, Slate, Indigo, Jade, Plum, Emerald, Cobalt, Garnet, Iris, Moss,
-    Magenta, Cerise, Mulberry, Blossom, Berry,
+    ##   Eight slots, not sixteen: a prior round widened this set to sixteen so a
+    ##   longer run of objects would stay individually distinct before `inkCycled`
+    ##   wraps, but packing that many hues into the narrow band that stays clear of
+    ##   all three axis colours left every slot reading as a shade of teal, blue,
+    ##   violet or magenta -- more colours, but not more *distinguishable* ones.
+    ##   Cut back to eight so every one of the 28 possible pairings, not just the
+    ##   ones `inkCycled` places back to back, clears a real separation floor -- see
+    ##   `lut_ink_to_rgba`'s own comment for the exact floors and the trade this
+    ##   made to hit them.
+    Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
     Triangle, Line, Point
@@ -258,43 +262,41 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
-  Ink.Pine: Rgba(red: 0.106, green: 0.498, blue: 0.071, alpha: 1.0),
-  Ink.Fuchsia: Rgba(red: 0.863, green: 0.098, blue: 0.839, alpha: 1.0),
-  Ink.Slate: Rgba(red: 0.090, green: 0.400, blue: 0.592, alpha: 1.0),
-  Ink.Indigo: Rgba(red: 0.427, green: 0.082, blue: 0.976, alpha: 1.0),
-  Ink.Jade: Rgba(red: 0.165, green: 0.655, blue: 0.612, alpha: 1.0),
-  Ink.Plum: Rgba(red: 0.525, green: 0.071, blue: 0.773, alpha: 1.0),
-  Ink.Emerald: Rgba(red: 0.141, green: 0.612, blue: 0.475, alpha: 1.0),
-  Ink.Cobalt: Rgba(red: 0.106, green: 0.224, blue: 0.980, alpha: 1.0),
-  Ink.Garnet: Rgba(red: 0.663, green: 0.071, blue: 0.424, alpha: 1.0),
-  Ink.Iris: Rgba(red: 0.310, green: 0.118, blue: 0.980, alpha: 1.0),
-  Ink.Moss: Rgba(red: 0.110, green: 0.525, blue: 0.322, alpha: 1.0),
-  Ink.Magenta: Rgba(red: 0.647, green: 0.078, blue: 0.753, alpha: 1.0),
-  Ink.Cerise: Rgba(red: 0.988, green: 0.157, blue: 0.616, alpha: 1.0),
-  Ink.Mulberry: Rgba(red: 0.600, green: 0.071, blue: 0.627, alpha: 1.0),
-  Ink.Blossom: Rgba(red: 0.965, green: 0.106, blue: 0.753, alpha: 1.0),
-  Ink.Berry: Rgba(red: 0.690, green: 0.075, blue: 0.576, alpha: 1.0),
-] ## Map palette slot to colour: sixteen hues (up from an earlier seven, so a longer
-  ## run of objects keeps reading as individually distinct before `inkCycled` wraps
-  ## back to the first), each individually checked against the three axis colours
-  ## above through the dataviz skill's own palette validator (OKLCH lightness/chroma
-  ## bounds, CVD ΔE, normal-vision ΔE), and every *consecutive* pair in this exact
-  ## declaration order -- the pair `inkCycled` actually hands to two objects added
-  ## back to back, the ones likeliest to end up compared -- clearing the same
-  ## validator's adjacent-pair floors in turn.
-  ##   Sixteen hues chosen this way skew heavily toward teal/green and blue/violet/
-  ## magenta: avoiding confusion with the three axis colours (red/green/blue) rules
-  ## out almost the entire orange-yellow-green third of the wheel outright -- under
-  ## colour-vision-deficiency simulation specifically, that whole region reads as
-  ## close to `AxisX`'s own red even at hues that look nothing like red to normal
-  ## vision -- leaving teal/green and blue/violet/magenta as the two hue families with
-  ## enough room to fit sixteen individually-safe, mutually-legible slots. Checked
-  ## for genuine variety by additionally requiring every *pair*, not just adjacent
-  ## ones, to clear a lower distinctness floor (normal-vision ΔE >= 5), so the sixteen
-  ## read as sixteen different colours at a glance, not a cluster of near-duplicates
-  ## repeated under a stricter, adjacent-only check -- full sixteen-way mutual
-  ## separation at the same floor adjacent pairs clear is not achievable in this
-  ## space (a documented limit past seven or eight categorical hues already).
+  Ink.Rose: Rgba(red: 0.690, green: 0.090, blue: 0.373, alpha: 1.0),
+  Ink.Copper: Rgba(red: 0.812, green: 0.451, blue: 0.275, alpha: 1.0),
+  Ink.Olive: Rgba(red: 0.341, green: 0.431, blue: 0.000, alpha: 1.0),
+  Ink.Jade: Rgba(red: 0.133, green: 0.655, blue: 0.478, alpha: 1.0),
+  Ink.Cobalt: Rgba(red: 0.027, green: 0.424, blue: 0.573, alpha: 1.0),
+  Ink.Violet: Rgba(red: 0.396, green: 0.082, blue: 0.965, alpha: 1.0),
+  Ink.Magenta: Rgba(red: 0.612, green: 0.000, blue: 0.722, alpha: 1.0),
+  Ink.Cerise: Rgba(red: 0.949, green: 0.031, blue: 0.765, alpha: 1.0),
+] ## Map palette slot to colour: eight hues, cut back down from sixteen (see the
+  ## enum's own comment for why more slots made the palette read as less distinct,
+  ## not more). Re-derived from scratch, not just trimmed to eight of the sixteen --
+  ## the sixteen were only ever separated pairwise *adjacent* in declaration order,
+  ## so keeping any eight of them would carry the same "only next-door pairs are
+  ## checked" weakness this round set out to fix.
+  ##   Screened through the dataviz skill's own validator (OKLCH lightness/chroma
+  ## bounds, CVD ΔE, normal-vision ΔE, `--pairs all`) with axis-safety loosened from
+  ## the sixteen-hue round's full separation floor to a smaller hue-distance-plus-ΔE
+  ## gate (>= 20 degrees of hue and a lower ΔE floor from each of `AxisX`/`AxisY`/
+  ## `AxisZ`): thin axis lines and filled categorical objects were never going to be
+  ## mistaken for each other at the sixteen-hue round's own strictness, and holding
+  ## that floor is what had squeezed every categorical hue into one narrow arc of the
+  ## wheel in the first place. Freed from that, all 28 possible pairings among the
+  ## eight -- not just the ones `inkCycled` places back to back -- clear the
+  ## adjacent-pair-grade floor (CVD ΔE >= 8, normal-vision ΔE >= 15) except one, at
+  ## CVD ΔE 6.6 (`Cobalt`/`Magenta`), inside the validator's own 6-8 legal-with-
+  ## secondary-encoding band -- and every categorical object here already carries
+  ## secondary encoding through its own shape and position, same as the panel's own
+  ## legend. Worst normal-vision pair is 15.6, just clear of the 15.0 hard floor.
+  ##   Also required >= 20 degrees of hue from every other slot, not just enough ΔE:
+  ## two hues barely 2-9 degrees apart can still clear a ΔE floor on lightness or
+  ## chroma alone while still reading, at a glance, as "two shades of the same
+  ## colour" -- exactly the complaint that sent this palette back to eight in the
+  ## first place. The eight that resulted spend one hue each on rose, copper, olive,
+  ## jade, blue, violet, magenta and pink, spread across most of the wheel apart from
+  ## the three axis-adjacent arcs.
 
 
 const COUNT_INK* = ord(Ink.high) + 1
