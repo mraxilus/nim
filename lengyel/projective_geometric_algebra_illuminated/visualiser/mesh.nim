@@ -154,12 +154,6 @@ const
     ## Blend a muted object's own colour this far toward its own grayscale equivalent,
     ## short of replacing it outright -- keeps a dulled hint of its own hue rather than
     ## converging every muted object to one indistinguishable grey.
-  EXTENT_OUTLINE_BORDER* = 0.4
-    ## Widen a highlighted plane's own outline rim by this many world units beyond its
-    ## ordinary radius -- an addition, not a multiple, matching the fixed-pixel border
-    ## a point or line's own outline widens by (see `renderer.SIZE_POINT_OUTLINE`/
-    ## `WIDTH_LINE_OUTLINE`), so all three read as roughly the same border thickness at
-    ## the camera distance this workbench's own storyboard is captured from.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -170,8 +164,6 @@ static:
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
   doAssert MUTE_DESATURATION > 0 and MUTE_DESATURATION <= 1.0,
     &"Mute desaturation must fall between 0 and 1; got `{MUTE_DESATURATION}`."
-  doAssert EXTENT_OUTLINE_BORDER > 0,
-    &"Outline border extent must be positive; got `{EXTENT_OUTLINE_BORDER}`."
 
 
 
@@ -598,11 +590,16 @@ proc addPlane(
   ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
-  ##   `outline` draws only a solid rim, `EXTENT_OUTLINE_BORDER` world units wider than
-  ##   usual and at full opacity, skipping the fill and normal shaft -- for the
-  ##   "selection outline" pass, whose whole point is to peek out past the object's own
-  ##   true-size redraw over it, not to add a second fill or shaft the ordinary pass
-  ##   already drew.
+  ##   `outline` draws only a solid rim, at the object's own ordinary radius, skipping
+  ##   the fill and normal shaft -- for the "selection outline" pass, whose whole point
+  ##   is to peek out past the object's own true-size redraw over it. Drawn at exactly
+  ##   the same radius the ordinary rim below is (not a separately-tuned wider one): the
+  ##   border comes entirely from `renderer.drawOutline`'s own wider line width for this
+  ##   pass, the same mechanism a line object's outline uses, so the two rings stay
+  ##   concentric by construction rather than by matching two independent constants
+  ##   (an earlier version widened the radius itself here, which needed a world-space
+  ##   offset tuned to roughly match the renderer's pixel-space one at some assumed
+  ##   camera distance -- correct only there, visibly off-centre everywhere else).
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
@@ -611,8 +608,7 @@ proc addPlane(
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
 
     if outline:
-      let extent = progress*(EXTENT_PLANE_F + EXTENT_OUTLINE_BORDER)
-      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint)
+      meshes.addPlaneRing(anchor.get, axis_first, axis_second, progress*EXTENT_PLANE_F, tint)
       return Placement.Finite
 
     let
@@ -647,11 +643,11 @@ proc addObject*(
   ##   to animate against.
   ##   `anchor_override` centres a plane's own disc there instead of its own support;
   ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  ##   `outline` builds a plane's own oversized solid rim instead of its ordinary fill
-  ##   plus rim plus normal shaft (see `addPlane`'s own doc comment); ignored for a
-  ##   point or line, whose own outline pass instead widens a draw-time uniform
-  ##   (`renderer.SIZE_POINT_OUTLINE`/`WIDTH_LINE_OUTLINE`) the geometry itself does not
-  ##   need to change for.
+  ##   `outline` builds a plane's own solid rim alone, at its ordinary radius, instead
+  ##   of its ordinary fill plus rim plus normal shaft (see `addPlane`'s own doc
+  ##   comment); ignored for a point or line, whose own outline pass instead widens a
+  ##   draw-time uniform (`renderer.SIZE_POINT_OUTLINE`/`WIDTH_LINE_OUTLINE`) the
+  ##   geometry itself does not need to change for.
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
