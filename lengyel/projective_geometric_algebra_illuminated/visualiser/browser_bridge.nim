@@ -48,6 +48,18 @@ import ./[objects, mesh, camera, scene, picking, interaction, storyboard]
 var
   g_scene: Scene
   g_camera: Camera
+  g_meshes_furniture, g_meshes, g_meshes_outline: MeshSet ## Held at module scope and
+    ## reused every frame via `clearMeshes` (which only resets each mesh's own
+    ## `count_vertices`, not its backing storage) -- mirrors `visualiser.nim`'s own
+    ## module-level `MESHES`/`MESHES_FURNITURE`/`MESHES_OUTLINE`. Declaring these as
+    ## `nimBuildFrame`'s own locals instead, freshly on every call, was measured costing
+    ## ~90ms/frame *regardless of how many objects the scene actually held* -- a `MeshSet`
+    ## reserves `VERTICES_MAX` (16384) vertices per primitive up front, and the JS
+    ## backend has no true stack allocation the way re-declaring a fixed-size array
+    ## inside a proc gets on the C backend: each call was reallocating and zero-filling
+    ## three ~1.3MB `MeshSet`s from scratch, whether the scene held nine objects or
+    ## sixty-four. Fixed the same way the desktop build already avoids this: allocate
+    ## once, clear (not reallocate) every frame.
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
@@ -151,31 +163,36 @@ proc nimSceneCapacity(): cint {.exportc.} = cint(ITEMS_MAX)
 proc nimSceneSlots(): seq[cint] {.exportc.} =
   ## Report every live slot, in slot order -- the same dense-position-to-slot mapping
   ## `panel.layoutOperation`'s own combo boxes rely on.
-  for slot, _ in g_scene.pairs: result.add(cint(slot))
+  ##   Walks slots directly rather than through the `pairs` iterator: that iterator
+  ##   yields an `Item` per live slot purely to hand back the slot number here, and
+  ##   under the JS backend constructing an `Item` copies the whole `Scene` by value
+  ##   (see `Item`'s own doc comment) -- wasted for a caller that only wants the number.
+  for slot in 0 ..< ITEMS_MAX:
+    if g_scene.isAlive(slot): result.add(cint(slot))
 
 
 proc nimIsAlive(slot: cint): bool {.exportc.} = g_scene.isAlive(int(slot))
 
 
 proc nimItemLabel(slot: cint): cstring {.exportc.} =
-  cstring(labelString(g_scene[int(slot)].label))
+  cstring(labelString(g_scene.labelAt(int(slot))))
 
 
-proc nimItemInk(slot: cint): cint {.exportc.} = cint(g_scene[int(slot)].ink)
+proc nimItemInk(slot: cint): cint {.exportc.} = cint(g_scene.inkAt(int(slot)))
 
 
-proc nimItemVisible(slot: cint): bool {.exportc.} = g_scene[int(slot)].is_visible
+proc nimItemVisible(slot: cint): bool {.exportc.} = g_scene.isVisible(int(slot))
 
 
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
-  cstring(shapeDescription(g_scene[int(slot)].geometry))
+  cstring(shapeDescription(g_scene.geometryAt(int(slot))))
 
 
 proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
   ## Report all sixteen basis coefficients of an item's own multivector, in the library's
   ## own `Basis` order -- the same order `scene.saveScene`/`loadScene` read and write, and
   ## the same order `panel.layoutCoefficients` lays its sixteen drag widgets out in.
-  let geometry = g_scene[int(slot)].geometry
+  let geometry = g_scene.geometryAt(int(slot))
   result = newSeq[float](ord(Basis.high) + 1)
   for b in Basis: result[ord(b)] = geometry[b]
 
@@ -206,12 +223,12 @@ proc nimApplyOperation(
   let
     operation = Operation(operation_ordinal)
     is_binary = lut_operation_to_arity[operation] == Arity.Two
-    operand_first = g_scene[int(slot_first)].geometry
-    operand_second = g_scene[int(slot_second)].geometry
+    operand_first = g_scene.geometryAt(int(slot_first))
+    operand_second = g_scene.geometryAt(int(slot_second))
     derived = applyOperation(operation, operand_first, operand_second)
     anchor = creationAnchor(operation, operand_first, operand_second, derived)
-    name_first = labelString(g_scene[int(slot_first)].label)
-    name_second = labelString(g_scene[int(slot_second)].label)
+    name_first = labelString(g_scene.labelAt(int(slot_first)))
+    name_second = labelString(g_scene.labelAt(int(slot_second)))
     label =
       if is_binary: &"{name_first} {$operation} {name_second}"
       else: &"{$operation} {name_first}"
@@ -228,7 +245,7 @@ proc nimApplyOperation(
 
 
 proc nimSetVisible(slot: cint; visible: bool) {.exportc.} =
-  g_scene.isVisibleAt(int(slot)) = visible
+  g_scene.setVisible(int(slot), visible)
 
 
 proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
@@ -417,9 +434,9 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   #   longer hold what a caller expects once the new item lands in one of them (a freed
   #   slot is reused by the very next `addItem`, which this call itself may be).
   let
-    label_source = labelString(g_scene[g_interaction.index_source].label)
+    label_source = labelString(g_scene.labelAt(g_interaction.index_source))
     label_destination =
-      if g_interaction.index_hover.isSome: labelString(g_scene[g_interaction.index_hover.get].label)
+      if g_interaction.index_hover.isSome: labelString(g_scene.labelAt(g_interaction.index_hover.get))
       else: ""
     notation_text = if drag.isSome: interaction.notation(drag.get) else: "?"
     outcome = interaction.endDrag(g_interaction, g_scene, float(now))
@@ -429,7 +446,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     g_index_highlighted = slot
     let
       label_fixed = &"{label_source} {notation_text} {label_destination}"
-      shape_word = shapeDescription(g_scene[slot].geometry)
+      shape_word = shapeDescription(g_scene.geometryAt(slot))
     toChars(label_fixed, g_scene.labelAt(slot))
     return DragResult(
       created_slot: cint(slot),
@@ -447,7 +464,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ##   it is 0, matching `picking.isInFront`'s own gate.
   let
     scale = drawExtentFor(g_camera)
-    anchor = anchorFor(g_scene[int(slot)].geometry, scale)
+    anchor = anchorFor(g_scene.geometryAt(int(slot)), scale)
   if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   let screen = projectToScreen(vp, int(width), int(height), anchor.get)
@@ -472,7 +489,7 @@ proc nimSceneAddRaw(
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   let slot = g_scene.addItem(geometry, $label, Ink(ink_ordinal))
-  g_scene.isVisibleAt(slot) = visible
+  g_scene.setVisible(slot, visible)
   cint(slot)
 
 
@@ -502,44 +519,60 @@ proc nimBuildFrame(
   ## desktop app draws through -- every item always at full colour, exactly as the
   ## desktop build's own interactive `assembleMeshes` call (`are_dimmed` all false)
   ## draws outside of a storyboard capture.
-  var meshes_furniture: MeshSet
-  clearMeshes(meshes_furniture)
+  clearMeshes(g_meshes_furniture)
 
   let scale = drawExtentFor(g_camera)
 
-  if show_grid: addGrid(meshes_furniture, scale.extent_furniture)
-  if show_axes: addAxes(meshes_furniture, scale.extent_furniture)
+  if show_grid: addGrid(g_meshes_furniture, scale.extent_furniture)
+  if show_axes: addAxes(g_meshes_furniture, scale.extent_furniture)
 
-  var meshes: MeshSet
-  clearMeshes(meshes)
+  clearMeshes(g_meshes)
   # A horizon plane's own dome first, before anything else that might share its own
   #   translucent `Primitive.Triangle` bucket -- see `visualiser.assembleMeshes`'s own
   #   doc comment (mirrored here) for why draw order matters: that bucket draws in
   #   whatever order its vertices were appended, unsorted by depth, so inserting the
   #   dome first guarantees every ordinary plane's own fill blends over it rather than
   #   the reverse, regardless of which scene slot either happens to occupy.
-  for slot, item in g_scene.pairs:
-    if item.is_visible and isHorizonPlane(item.geometry):
-      let progress = animationProgress(float(now), g_borns[slot])
-      discard meshes.addObject(item.geometry, item.ink.colour, scale, progress, item.anchorOverride)
+  # Walks slots directly with the by-slot "At" accessors rather than through the `pairs`
+  #   iterator: under the JS backend, `Item` holds `Scene` by value rather than by
+  #   pointer (see `Item`'s own doc comment), so constructing one -- as `pairs` does,
+  #   once per live slot, twice over below -- copies the *entire* scene just to read a
+  #   handful of that one slot's own fields. Measured directly: at a full 64-item scene
+  #   this cost alone was ~150ms/frame, worse than useless for a 60fps draw loop: fixed
+  #   by adding `inkAt`/`anchorOverrideAt` beside the geometry/label/visibility "At"
+  #   readers `scene.nim` already had (purely additive there, native-inert, mirroring
+  #   the existing `geometryAt`/`isVisibleAt` pattern) and reading every field here by
+  #   slot instead.
+  for slot in 0 ..< ITEMS_MAX:
+    if not g_scene.isAlive(slot): continue
+    if g_scene.isVisible(slot):
+      let geometry = g_scene.geometryAt(slot)
+      if isHorizonPlane(geometry):
+        let progress = animationProgress(float(now), g_borns[slot])
+        discard g_meshes.addObject(
+          geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
+        )
 
-  for slot, item in g_scene.pairs:
-    if item.is_visible and not isHorizonPlane(item.geometry):
-      let progress = animationProgress(float(now), g_borns[slot])
-      discard meshes.addObject(item.geometry, item.ink.colour, scale, progress, item.anchorOverride)
+  for slot in 0 ..< ITEMS_MAX:
+    if not g_scene.isAlive(slot): continue
+    if g_scene.isVisible(slot):
+      let geometry = g_scene.geometryAt(slot)
+      if not isHorizonPlane(geometry):
+        let progress = animationProgress(float(now), g_borns[slot])
+        discard g_meshes.addObject(
+          geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
+        )
 
   # Build the highlighted item's own result a second time, oversized and in a flat
   #   outline colour, into its own buffer the outline pass draws before the frame above --
   #   see `renderer.drawOutline`'s own doc comment for why this reads as a selection border.
-  var meshes_outline: MeshSet
-  clearMeshes(meshes_outline)
+  clearMeshes(g_meshes_outline)
   if g_index_highlighted >= 0 and g_scene.isAlive(g_index_highlighted) and
-     g_scene[g_index_highlighted].is_visible:
-    let item = g_scene[g_index_highlighted]
-    discard meshes_outline.addObject(
-      item.geometry, Ink.Outline.colour, scale,
-      animationProgress(float(now), g_borns[g_index_highlighted]), item.anchorOverride,
-      outline = true,
+     g_scene.isVisible(g_index_highlighted):
+    discard g_meshes_outline.addObject(
+      g_scene.geometryAt(g_index_highlighted), Ink.Outline.colour, scale,
+      animationProgress(float(now), g_borns[g_index_highlighted]),
+      g_scene.anchorOverrideAt(g_index_highlighted), outline = true,
     )
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
@@ -549,12 +582,12 @@ proc nimBuildFrame(
       view_projection[4*column + row] = vp.at(row, column)
 
   FrameData(
-    tri_verts: flatten(meshes[Primitive.Triangle]),
-    line_verts: flatten(meshes[Primitive.Line]),
-    point_verts: flatten(meshes[Primitive.Point]),
+    tri_verts: flatten(g_meshes[Primitive.Triangle]),
+    line_verts: flatten(g_meshes[Primitive.Line]),
+    point_verts: flatten(g_meshes[Primitive.Point]),
     view_projection: view_projection,
-    furn_line_verts: flatten(meshes_furniture[Primitive.Line]),
-    ol_tri_verts: flatten(meshes_outline[Primitive.Triangle]),
-    ol_line_verts: flatten(meshes_outline[Primitive.Line]),
-    ol_point_verts: flatten(meshes_outline[Primitive.Point]),
+    furn_line_verts: flatten(g_meshes_furniture[Primitive.Line]),
+    ol_tri_verts: flatten(g_meshes_outline[Primitive.Triangle]),
+    ol_line_verts: flatten(g_meshes_outline[Primitive.Line]),
+    ol_point_verts: flatten(g_meshes_outline[Primitive.Point]),
   )

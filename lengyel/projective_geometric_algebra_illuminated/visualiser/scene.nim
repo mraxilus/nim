@@ -378,10 +378,59 @@ proc isVisibleAt*(scene: var Scene; slot: int): var bool =
   scene.are_visible[slot]
 
 
+func isVisible*(scene: Scene; slot: int): bool =
+  ## Read item's visibility by value, by slot rather than through an `Item` handle --
+  ## see `inkAt`'s own doc comment for why a by-slot reader beside the `Item`-based one
+  ## earns its keep, and keep this one separate from `isVisibleAt` rather than reusing
+  ## it for reads too: confirmed empirically that a `var bool`-returning proc reading
+  ## an `array[N, bool]` field miscompiles under the JS backend specifically when its
+  ## result is used as a value (an exported proc's own return, or a plain `if`
+  ## condition) rather than as an lvalue to assign through -- it reads back `undefined`
+  ## there, silently false in every boolean context, which made every object invisible
+  ## the moment a caller tried to *read* through `isVisibleAt` instead of write through
+  ## it. `isVisibleAt` itself is unaffected for its own real job (`isVisibleAt(...) =
+  ## newValue`, an assignment target, not a read) and stays as the setter path;
+  ## this is the reader.
+  scene.are_visible[slot]
+
+
+func inkAt*(scene: Scene; slot: int): Ink =
+  ## Read item's palette slot, by slot rather than through an `Item` handle.
+  ##   Exists beside `Item.ink` for a caller that reads many items a frame and cannot
+  ##   afford `Item`'s own per-read cost on every backend: under the JS backend, where
+  ##   `Item` holds `Scene` by value rather than by pointer (see `Item`'s own doc
+  ##   comment), constructing one to read a single field copies the whole scene, which
+  ##   a hot per-frame loop over many items should not pay for just to read one `Ink`.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.inks[slot]
+
+
+func anchorOverrideAt*(scene: Scene; slot: int): Option[Position] =
+  ## Read where item's own circle should centre, by slot rather than through an `Item`
+  ## handle -- see `inkAt`'s own doc comment for why a by-slot reader beside the
+  ## `Item`-based one earns its keep.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.anchor_overrides[slot]
+
+
 proc setInk*(scene: var Scene; slot: int; ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.inks[slot] = ink
+
+
+proc setVisible*(scene: var Scene; slot: int; visible: bool) =
+  ## Rewrite item's visibility, by slot -- a plain setter beside `isVisibleAt`'s own
+  ## `addr scene.isVisibleAt(slot)` idiom (which `panel.nim`'s checkbox widget still
+  ## uses, and which works fine there), for a caller that cannot use that idiom: under
+  ## the JS backend, writing through `isVisibleAt(...) = visible` compiles to the same
+  ## miscompiled `var bool`-over-`array[N, bool]` pattern `isVisible`'s own doc comment
+  ## already documents breaking reads -- confirmed separately that the write silently
+  ## does nothing there either (the assignment lands on a copied primitive, not the
+  ## backing array), so a direct, ordinary assignment through a plain setter is the
+  ## only path this backend can rely on for both directions, mirroring `setInk` exactly.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_visible[slot] = visible
 
 
 iterator items*(scene: Scene): Item =
