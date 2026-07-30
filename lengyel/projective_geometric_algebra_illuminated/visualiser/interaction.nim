@@ -117,6 +117,13 @@ proc endDrag*(
   if index_destination == interaction.index_source:
     return ("Drag released on its own source; nothing done.", none(int))
 
+  # Source or destination may have been removed (or replaced by undo/redo) since the
+  #   drag began -- both are slots carried across frames, not re-picked at release
+  #   time, so either can go stale without a mouse ever moving. Bail out the same way
+  #   as any other drag that resolves to nothing, rather than reading a freed slot.
+  if not (scene.isAlive(interaction.index_source) and scene.isAlive(index_destination)):
+    return ("Drag's source or destination no longer exists; nothing done.", none(int))
+
   let
     label_source = $toCstring(scene.labelAt(interaction.index_source))
     label_destination = $toCstring(scene.labelAt(index_destination))

@@ -543,10 +543,18 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   #   not `index_hover`) once done, and the source/destination slots themselves may no
   #   longer hold what a caller expects once the new item lands in one of them (a freed
   #   slot is reused by the very next `addItem`, which this call itself may be).
+  #   Guarded by `isAlive` first: either slot may have been removed (or replaced by
+  #   undo/redo) since the drag began, since both are carried across frames rather than
+  #   re-picked at release time -- reading a freed slot's label here would otherwise
+  #   crash before `endDrag` below ever gets a chance to reject the stale drag itself.
+  let is_source_alive = g_scene.isAlive(g_interaction.index_source)
+  let is_destination_alive =
+    g_interaction.index_hover.isNone or g_scene.isAlive(g_interaction.index_hover.get)
   let
-    label_source = labelString(g_scene.labelAt(g_interaction.index_source))
+    label_source =
+      if is_source_alive: labelString(g_scene.labelAt(g_interaction.index_source)) else: ""
     label_destination =
-      if g_interaction.index_hover.isSome:
+      if is_destination_alive and g_interaction.index_hover.isSome:
         labelString(g_scene.labelAt(g_interaction.index_hover.get))
       else: ""
     notation_text = if drag.isSome: interaction.notation(drag.get) else: "?"

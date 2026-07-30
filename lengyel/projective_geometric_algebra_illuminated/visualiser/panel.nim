@@ -204,6 +204,7 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var His
     if layoutItem(scene, history, slot): slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
+    if workbench.index_highlighted == slot_removed: workbench.index_highlighted = none(int)
     history.record(scene)
 
 

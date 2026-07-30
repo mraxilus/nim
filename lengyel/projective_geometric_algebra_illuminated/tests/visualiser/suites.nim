@@ -1223,6 +1223,37 @@ suite "Interaction":
     check outcome.index_created.isNone
 
 
+  test "endDrag ignores a drag whose source was removed since it began":
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(DragOperation.Join) # index_source = 0.
+    scene.removeItem(0) # Source vanishes mid-drag -- e.g. removed by another input path.
+    interaction.index_hover = some(1)
+    let outcome = interaction.endDrag(scene)
+    check "no longer exists" in outcome.message
+    check outcome.index_created.isNone
+    check interaction.operation.isNone
+    check scene.len == 1
+
+
+  test "endDrag ignores a drag whose destination was removed since it began":
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(DragOperation.Join) # index_source = 0.
+    scene.removeItem(1)
+    interaction.index_hover = some(1) # Still reports the now-dead slot as hovered.
+    let outcome = interaction.endDrag(scene)
+    check "no longer exists" in outcome.message
+    check outcome.index_created.isNone
+    check scene.len == 1
+
+
   test "cancelDrag clears state without applying anything":
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
