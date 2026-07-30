@@ -584,7 +584,13 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ## browser's own hover ring and drag rubber-band can be drawn as plain 2D overlay,
   ## exactly matching where the desktop build draws them.
   ##   Reports `[x, y, is_in_front]`, the last 0 or 1: caller should draw nothing where
-  ##   it is 0, matching `picking.isInFront`'s own gate.
+  ##   it is 0, matching `picking.isInFront`'s own gate -- also 0 where slot no longer
+  ##   holds a live item, the same "nothing to draw" response a caller already handles,
+  ##   since every caller here (`refreshOverlay`'s hover ring, selection ring and drag
+  ##   line) reads a slot carried across frames -- `nimHoverSlot`/`nimDragSourceSlot`
+  ##   are not re-picked at draw time -- so any of them can go stale the moment the
+  ##   item they name is removed, with no frame boundary forcing a re-check first.
+  if not g_scene.isAlive(int(slot)): return @[0.0'f32, 0.0'f32, 0.0'f32]
   let
     scale = drawExtentFor(g_camera)
     anchor = anchorFor(g_scene.geometryAt(int(slot)), scale)
