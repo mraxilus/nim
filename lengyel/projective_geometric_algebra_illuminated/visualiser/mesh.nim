@@ -150,6 +150,10 @@ const
     ## Scale an already-constructed but non-focal object's own alpha by this, so it
     ## stays legible as background context -- shown rather than hidden outright -- while
     ## still clearly receding behind whatever the current step is showcasing.
+  FRACTION_OUTLINE_PLANE* = 1.12
+    ## Scale a highlighted plane's own outline rim to this fraction of its ordinary
+    ## radius -- wide enough that the sliver peeking out past the object's own
+    ## true-size redraw over it reads clearly as a border, not lost to anti-aliasing.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -158,6 +162,8 @@ static:
     &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
+  doAssert FRACTION_OUTLINE_PLANE > 1.0,
+    &"Outline plane fraction must exceed 1; got `{FRACTION_OUTLINE_PLANE}`."
 
 
 
@@ -172,6 +178,9 @@ type
     AxisZ, ## World z axis through origin; standard convention is blue.
     Grid, ## World reference grid on ground.
     Guide, ## Construction helper, e.g. plane normal.
+    Outline, ## Selection outline drawn around the one object currently highlighted --
+      ## never cycled to automatically, only drawn where a caller names a specific
+      ## slot as highlighted (see `renderer.drawOutline`).
     ## Categorical slots, spent by caller on telling one object from another.
     ##   Named by hue rather than by role, as caller alone knows what objects mean.
     ##   Grade is already legible from shape drawn, so colour is free to carry identity.
@@ -245,6 +254,7 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
+  Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
   Ink.Amber: Rgba(red: 0.788, green: 0.506, blue: 0.000, alpha: 1.0),
   Ink.Teal: Rgba(red: 0.000, green: 0.408, blue: 0.588, alpha: 1.0),
   Ink.Rose: Rgba(red: 0.549, green: 0.267, blue: 0.420, alpha: 1.0),
@@ -557,7 +567,7 @@ proc addLine(
 
 proc addPlane(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
-  anchor_override: Option[Position] = none(Position)
+  anchor_override: Option[Position] = none(Position); outline: bool = false
 ): Placement =
   ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
   ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
@@ -570,13 +580,24 @@ proc addPlane(
   ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
+  ##   `outline` draws only a solid rim, `FRACTION_OUTLINE_PLANE` wider than usual and at
+  ##   full opacity, skipping the fill and normal shaft -- for the "selection outline"
+  ##   pass, whose whole point is to peek out past the object's own true-size redraw
+  ##   over it, not to add a second fill or shaft the ordinary pass already drew.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isSome and axes.isSome:
     let
-      extent = progress*EXTENT_PLANE_F
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
+
+    if outline:
+      let extent = progress*EXTENT_PLANE_F*FRACTION_OUTLINE_PLANE
+      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint)
+      return Placement.Finite
+
+    let
+      extent = progress*EXTENT_PLANE_F
       tint_progress = tint.fade(tint.alpha*progress)
 
     # Fill first, so plane reads as a surface rather than a bare outline; flat, since
@@ -598,7 +619,7 @@ proc addPlane(
 
 proc addObject*(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
-  anchor_override: Option[Position] = none(Position)
+  anchor_override: Option[Position] = none(Position); outline: bool = false
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
@@ -607,9 +628,14 @@ proc addObject*(
   ##   to animate against.
   ##   `anchor_override` centres a plane's own disc there instead of its own support;
   ##   ignored for a point or line, neither of which is drawn centred on anything else.
+  ##   `outline` builds a plane's own oversized solid rim instead of its ordinary fill
+  ##   plus rim plus normal shaft (see `addPlane`'s own doc comment); ignored for a
+  ##   point or line, whose own outline pass instead widens a draw-time uniform
+  ##   (`renderer.SIZE_POINT_OUTLINE`/`WIDTH_LINE_OUTLINE`) the geometry itself does not
+  ##   need to change for.
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
   of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override, outline)

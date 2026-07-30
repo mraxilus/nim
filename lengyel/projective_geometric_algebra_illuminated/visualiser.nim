@@ -143,12 +143,10 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet
-var MESHES_HIGHLIGHT: MeshSet ## Holds only the highlighted item's own geometry, re-
-  ## tessellated a second time so the renderer's own highlight pass has something to
-  ## draw the Fresnel rim shader over, separate from the main frame's own buffers.
-var HIGHLIGHT_NORMAL: Option[Direction] ## Highlighted item's own normal, for a plane;
-  ## `none` for a point or line, which have no surface of their own to be grazing or
-  ## face-on to -- the highlight shader falls back to a fixed rim for those instead.
+var MESHES_OUTLINE: MeshSet ## Holds only the highlighted item's own geometry, built
+  ## oversized and in a flat outline colour, for the renderer's own outline pass --
+  ## separate from the main frame's own buffers since it is drawn before them, at a
+  ## different point size and line width (see `renderer.drawOutline`'s own doc comment).
 
 # Two arenas, one permanent and one reset after each throwaway unit of work; see
 #   `arena.nim` for why the interactive draw loop needs neither, and what does.
@@ -241,22 +239,20 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
-  # Re-tessellate the most recently constructed object's own real geometry a second
-  #   time, into a separate buffer the renderer's own highlight pass draws over the
-  #   frame with a Fresnel rim shader, so it reads as freshly selected -- not a
-  #   different shape stood in for it, the same disc, segment or marker the main pass
-  #   just drew.
-  MESHES_HIGHLIGHT.clearMeshes
-  HIGHLIGHT_NORMAL = none(Direction)
+  # Build the most recently constructed object's own outline -- oversized, flat
+  #   `Ink.Outline` -- into a separate buffer the renderer's own outline pass draws
+  #   before the frame above, so only the sliver peeking out past that object's own
+  #   true-size redraw over it stays visible, reading as a selection border the way
+  #   3D modelling software draws one, rather than a second copy of the object itself.
+  MESHES_OUTLINE.clearMeshes
   if workbench.index_highlighted.isSome:
     let slot = workbench.index_highlighted.get
     if scene.isAlive(slot) and scene[slot].is_visible:
       let item = scene[slot]
-      discard MESHES_HIGHLIGHT.addObject(
-        item.geometry, item.ink.colour, scale, animationProgress(now, item.born),
-        item.anchorOverride,
+      discard MESHES_OUTLINE.addObject(
+        item.geometry, Ink.Outline.colour, scale, animationProgress(now, item.born),
+        item.anchorOverride, outline = true,
       )
-      HIGHLIGHT_NORMAL = directionNormal(item.geometry)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -338,8 +334,8 @@ proc renderFrame(
   assembleMeshes(workbench, scene, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
+  renderer.drawOutline(MESHES_OUTLINE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
-  renderer.drawHighlight(MESHES_HIGHLIGHT, eye, HIGHLIGHT_NORMAL)
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)

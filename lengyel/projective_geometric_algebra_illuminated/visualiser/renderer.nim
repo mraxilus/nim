@@ -15,9 +15,9 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strformat]
+import std/strformat
 
-import ./[camera, mesh, objects]
+import ./[camera, mesh]
 import ./opengl as gl
 
 
@@ -29,8 +29,22 @@ const
     ## Set diameter of drawn points, in pixels.
   WIDTH_LINE* = 1.5'f32
     ## Set width of drawn lines, in pixels.
+  SIZE_POINT_OUTLINE* = 17.0'f32
+    ## Set diameter the highlighted object's own point draws at, in its outline pass --
+    ## wider than `SIZE_POINT` by more than the normal pass's own point will cover, so
+    ## the difference shows as a ring around it, not swallowed underneath.
+  WIDTH_LINE_OUTLINE* = 5.5'f32
+    ## Set width the highlighted object's own line draws at, in its outline pass --
+    ## wider than `WIDTH_LINE`, so a border shows either side of the normal line drawn
+    ## over it after.
   LOG_MAX = 1024
     ## Bound how much of driver's compile log is reported.
+
+static:
+  doAssert SIZE_POINT_OUTLINE > SIZE_POINT,
+    &"Outline point size must exceed the normal one; got `{SIZE_POINT_OUTLINE}` <= `{SIZE_POINT}`."
+  doAssert WIDTH_LINE_OUTLINE > WIDTH_LINE,
+    &"Outline line width must exceed the normal one; got `{WIDTH_LINE_OUTLINE}` <= `{WIDTH_LINE}`."
 
 
 const SOURCE_VERTEX = """
@@ -40,53 +54,28 @@ layout (location = 1) in vec4 in_colour;
 uniform mat4 view_projection;
 uniform float size_point;
 out vec4 vertex_colour;
-out vec3 world_pos;
 void main() {
   gl_Position = view_projection * vec4(in_position, 1.0);
   gl_PointSize = size_point;
   vertex_colour = in_colour;
-  world_pos = in_position;
 }
-""" ## Transform world position to clip space, carrying vertex colour through, plus the
-  ## untransformed world position itself for the highlight pass's own Fresnel term.
+""" ## Transform world position to clip space, carrying vertex colour through.
 
 
 const SOURCE_FRAGMENT = """
 #version 330 core
 in vec4 vertex_colour;
-in vec3 world_pos;
 uniform float as_point;
-uniform bool is_highlight;
-uniform vec3 eye;
-uniform vec3 highlight_normal;
 out vec4 out_colour;
 void main() {
-  vec4 colour = vertex_colour;
   if (as_point > 0.5) {
     vec2 offset = gl_PointCoord - vec2(0.5);
-    float r2 = dot(offset, offset);
-    if (r2 > 0.25) discard;
-    // Sphere-impostor rim: a point sprite's own gl_PointCoord already gives a free
-    //   radial coordinate, so a genuine per-fragment Fresnel term falls out of it with
-    //   no extra geometry -- brightest at the sprite's own silhouette edge, none at
-    //   its centre, exactly the "highlighted item" glow games render this way for.
-    if (is_highlight) colour = mix(colour, vec4(1.0), pow(clamp(sqrt(r2)*2.0, 0.0, 1.0), 2.0));
-  } else if (is_highlight) {
-    // A line carries no surface normal to be grazing or face-on to, so `highlight_normal`
-    //   is left the zero vector for one and this falls back to a fixed, modest rim
-    //   instead of a real Fresnel term; a plane's own real, constant normal gives a
-    //   genuine one -- brighter near its own silhouette, where the sight line to a
-    //   given point on it runs closest to grazing.
-    float facing = dot(highlight_normal, highlight_normal) > 0.5
-      ? abs(dot(normalize(eye - world_pos), highlight_normal)) : 0.6;
-    colour = mix(colour, vec4(1.0), pow(1.0 - facing, 2.0));
+    if (dot(offset, offset) > 0.25) discard;
   }
-  out_colour = colour;
+  out_colour = vertex_colour;
 }
-""" ## Write interpolated vertex colour, rounding off point sprites into discs, and
-  ## brightening the current highlight pass's own fragments toward white at grazing
-  ## angles -- a Fresnel rim, the same family of effect a game uses to mark a
-  ## teammate, enemy or item, rather than a flat outline independent of view angle.
+""" ## Write interpolated vertex colour, rounding off point sprites into discs.
+  ##   Nothing here is lit or textured, so colour passes straight through otherwise.
 
 
 
@@ -102,9 +91,6 @@ type
     location_view_projection: gl.Int
     location_size_point: gl.Int
     location_as_point: gl.Int
-    location_is_highlight: gl.Int
-    location_eye: gl.Int
-    location_highlight_normal: gl.Int
     buffers: array[Primitive, Buffers]
 
 
@@ -166,9 +152,6 @@ proc initRenderer*(): Renderer =
     gl.getUniformLocation(result.program, "view_projection")
   result.location_size_point = gl.getUniformLocation(result.program, "size_point")
   result.location_as_point = gl.getUniformLocation(result.program, "as_point")
-  result.location_is_highlight = gl.getUniformLocation(result.program, "is_highlight")
-  result.location_eye = gl.getUniformLocation(result.program, "eye")
-  result.location_highlight_normal = gl.getUniformLocation(result.program, "highlight_normal")
 
   const
     STRIDE = gl.Sizei(sizeof(Vertex))
@@ -223,6 +206,36 @@ proc drawPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
   gl.drawArrays(lut_primitive_to_mode[primitive], 0, gl.Sizei(count))
 
 
+proc drawOutline*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
+  ## Draw the currently highlighted object's own geometry oversized and in a flat
+  ## outline colour (already baked into `meshes`' own vertex colours by the caller),
+  ## before the ordinary frame -- the same "selection outline" technique 3D modelling
+  ## software uses: an enlarged silhouette drawn behind, so only the sliver of it
+  ## sticking out past the object's own true-size edge stays visible once the ordinary
+  ## pass draws that object, and everything else, back over it.
+  ##   A point's and a line's own geometry is unchanged from the ordinary pass; drawing
+  ##   them here at a wider point size / line width is what pushes their own silhouette
+  ##   out past their normal-sized redraw. A plane's own geometry is genuinely built
+  ##   larger by the caller (`mesh.addObject`'s `extent_scale`), since its size is not
+  ##   a draw-time uniform the way a point or line's is.
+  ##   Depth test and write both off: nothing else has drawn yet this frame, so there is
+  ##   nothing yet to test against, and leaving depth on would block the ordinary pass
+  ##   from redrawing over this same position right after, at some fractionally
+  ##   different depth an equality-based test cannot be trusted to resolve consistently.
+  gl.useProgram(renderer.program)
+  gl.uniformMatrix4fv(
+    renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
+  )
+  gl.disable(gl.DEPTH_TEST)
+  gl.uniform1f(renderer.location_size_point, SIZE_POINT_OUTLINE)
+  gl.lineWidth(WIDTH_LINE_OUTLINE)
+  renderer.drawPrimitive(meshes, Primitive.Line)
+  renderer.drawPrimitive(meshes, Primitive.Point)
+  renderer.drawPrimitive(meshes, Primitive.Triangle)
+  gl.enable(gl.DEPTH_TEST)
+  gl.bindVertexArray(0)
+
+
 proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
   ## Draw every mesh, opaque kinds before translucent ones.
   gl.useProgram(renderer.program)
@@ -240,38 +253,6 @@ proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) 
   gl.depthMask(gl.FALSE)
   renderer.drawPrimitive(meshes, Primitive.Triangle)
   gl.depthMask(1)
-  gl.uniform1i(renderer.location_is_highlight, 0)
-  gl.bindVertexArray(0)
-
-
-proc drawHighlight*(
-  renderer: Renderer; meshes: MeshSet; eye: Position; normal: Option[Direction]
-) =
-  ## Draw the one object currently highlighted a second time, over the frame `drawMeshes`
-  ## already assembled -- `meshes` here holds only that object's own real geometry (see
-  ## `mesh.addObject`'s own caller in `visualiser.nim`/`browser_bridge.nim`), tessellated
-  ## exactly as it already was for the main pass, not a separate ring or outline shape.
-  ##   `is_highlight` switches the fragment shader to brighten toward white at grazing
-  ##   angles instead of passing colour through untouched -- a real Fresnel rim for a
-  ##   point (`gl_PointCoord` already gives a free sphere-impostor radial coordinate) or
-  ##   a plane (its own constant `normal`), and a fixed, modest rim for a line, which has
-  ##   no surface normal of its own to be grazing or face-on to.
-  # Depth test off for this whole pass: it re-draws the same triangles and lines the
-  #   main pass already drew, at literally the same depth, so testing against that
-  #   pass's own depth buffer would only invite z-fighting -- flickering per-pixel
-  #   pass/fail noise from floating-point rounding on numbers that should tie exactly.
-  #   Drawing on top regardless also reads as a deliberate "this one is highlighted"
-  #   emphasis, the same way a game's own selection glow usually ignores depth too.
-  gl.disable(gl.DEPTH_TEST)
-  gl.uniform1i(renderer.location_is_highlight, 1)
-  gl.uniform3f(renderer.location_eye, gl.Float(eye.x), gl.Float(eye.y), gl.Float(eye.z))
-  let n = if normal.isSome: normal.get else: Direction(x: 0, y: 0, z: 0)
-  gl.uniform3f(renderer.location_highlight_normal, gl.Float(n.x), gl.Float(n.y), gl.Float(n.z))
-  renderer.drawPrimitive(meshes, Primitive.Line)
-  renderer.drawPrimitive(meshes, Primitive.Point)
-  renderer.drawPrimitive(meshes, Primitive.Triangle)
-  gl.uniform1i(renderer.location_is_highlight, 0)
-  gl.enable(gl.DEPTH_TEST)
   gl.bindVertexArray(0)
 
 

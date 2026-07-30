@@ -1,4 +1,24 @@
-# Working notes: swapped the highlight ring for a real Fresnel rim glow — done
+# Working notes: swapped Fresnel for a 3D-modelling-style selection outline — done
+
+## Follow-up 2
+
+Fresnel still wasn't it: wanted an outline just outside the object's own edge, like
+Blender/3D-modelling-software selection, not a grazing-angle glow -- and lines looked
+unchanged. Replaced the Fresnel shader pass (reverted `renderer.nim`'s shader to plain
+original) with the classic "oversized silhouette drawn first" technique: the
+highlighted object's own geometry, built oversized and in a flat `Ink.Outline` white,
+draws *before* the ordinary frame, depth test/write off; the ordinary frame then
+redraws everything (including that object at true size) over it, leaving only the
+sliver that peeks out past the true-size edge visible as a border. A point gets a
+wider `gl_PointSize` for its one draw call; a plane gets a genuinely larger disc rim
+(`mesh.addPlane`'s new `outline`/`FRACTION_OUTLINE_PLANE` param, fill and normal shaft
+skipped); a line gets a wider `gl.lineWidth`. Native (Mesa) renders all three
+correctly, confirmed against the regenerated storyboard. The browser (WebGL/ANGLE)
+renders the point and plane outlines correctly too, but most browsers clamp
+`gl.lineWidth` to 1px regardless of what's requested -- a WebGL platform limit, not a
+bug here -- so a highlighted *line* shows no visible outline there specifically; fixing
+that would need a geometry-based thick line (a screen-space quad per segment), not
+attempted this round. 69 native tests pass unchanged.
 
 ## Follow-up
 
