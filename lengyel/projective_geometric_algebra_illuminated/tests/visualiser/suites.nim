@@ -400,7 +400,7 @@ suite "Mesh":
         check isNear(dot(offset, normal_from_plane.get), 0)
 
 
-  test "plane at horizon becomes a dome over the sky's own upper half around eye":
+  test "plane at horizon becomes a dome over the whole sky around eye":
     # Every plane at horizon is the same universal object regardless of source (see
     #   `objects.directionNormalHorizon`'s own doc comment), so two unrelated planes'
     #   own attitudes should both land the dome at exactly the same distance from eye,
@@ -417,18 +417,15 @@ suite "Mesh":
     check shape(attitude_second) == some(Shape.Plane) and isHorizon(attitude_second)
 
     check MESHES.addObject(attitude_first, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
-    check MESHES[Primitive.Triangle].count_vertices == 6*(LATITUDES_HORIZON div 2)*LONGITUDES_HORIZON
+    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     let vertices_first = MESHES[Primitive.Triangle].vertices
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
       let offset = vertices_first[i].toPosition - SCALE_TEST.eye
       check isNear(norm(offset), SCALE_TEST.radius_horizon)
-      # Never below eye level: the dome stops at the horizontal through the eye rather
-      #   than continuing into a full sphere (`mesh.addDome`'s own doc comment).
-      check offset.z >= -TOLERANCE_TEST
 
     MESHES.clearMeshes
     check MESHES.addObject(attitude_second, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
-    check MESHES[Primitive.Triangle].count_vertices == 6*(LATITUDES_HORIZON div 2)*LONGITUDES_HORIZON
+    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     # Same dome, vertex for vertex, regardless of which unrelated volume produced it.
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
       check isNear(MESHES[Primitive.Triangle].vertices[i].toPosition, vertices_first[i].toPosition)

@@ -128,9 +128,7 @@ const
     ## rim, dense enough to read as circular.
   LATITUDES_HORIZON* = 12
   LONGITUDES_HORIZON* = 24
-    ## Set band counts across a horizon plane's own dome -- `LATITUDES_HORIZON` spans
-    ## only its upper half (see `addDome`'s own doc comment on why), so this many bands
-    ## actually reach from the eye's own horizontal plane up to directly overhead.
+    ## Set band counts in a horizon plane's own whole-sky dome.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
   ALPHA_WASH* = 0.16'f32
@@ -139,10 +137,10 @@ const
     ## plane, including another plane crossing it, stays legible through it.
   ALPHA_WASH_SKY* = 0.22'f32
     ## Set opacity of a horizon plane's own sky dome -- this one has no edge to fade
-    ## toward, but unlike an early, near-invisible value, still needs to read as a
-    ## genuinely coloured sky rather than a barely-there hint once it is confined to
-    ## the dome's own upper half (`addDome`'s own doc comment) and so no longer bleeds
-    ## into the furniture/objects below the eye's own horizontal plane.
+    ## toward and covers the whole sphere around the eye, so needs to read as a
+    ## genuinely coloured sky rather than a barely-there hint at a glance, without
+    ## overwhelming whatever furniture or objects the ordinary depth test still lets
+    ## show through in front of it.
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal shaft, shown a touch less boldly than the
     ## plane's own rim so it reads as a construction aid, not as another competing mark.
@@ -434,22 +432,22 @@ proc addDome(
   meshes: var MeshSet; center: Position; radius: float; tint: Rgba;
   latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
 ) =
-  ## Append a dome over `center`'s own upper half only -- from directly overhead
-  ## (`theta` 0) down to level with `center` itself (`theta` `PI/2`), never below it --
-  ## a plane at horizon is the unique universal "whole sky" object, the same
-  ## regardless of which points produced it (see `directionNormalHorizon`'s own doc
-  ## comment for why), so nothing about its own coefficients decides its shape here;
-  ## only `radius` and `tint` do.
-  ##   Stops at the horizontal through `center` rather than continuing into a full
-  ##   sphere: a full sphere reads as a uniform haze in every direction alike, including
-  ##   straight down through the ground grid and whatever furniture or objects sit near
-  ##   it, rather than as a sky specifically -- restricting to the upper half keeps the
-  ##   tint where "sky" actually reads as sky, and lets it draw at a boldness
-  ##   (`ALPHA_WASH_SKY`) that would otherwise look like fog laid over the whole scene.
-  for lat in 0 ..< latitudes div 2:
+  ## Append a full sphere around `center` -- a plane at horizon is the unique universal
+  ## "whole sky" object, the same regardless of which points produced it (see
+  ## `directionNormalHorizon`'s own doc comment for why), so nothing about its own
+  ## coefficients decides its shape here; only `radius` and `tint` do. Every direction
+  ## the camera can actually see sky in should show it, including looking down across
+  ## the ground grid toward the horizon, not only straight overhead -- an earlier
+  ## version stopped this dome at the eye's own horizontal, reasoning a full sphere
+  ## would bleed through the sparse ground grid's own gaps; reverted on explicit
+  ## feedback that halving it cut off sky the camera genuinely can see. Occlusion
+  ## against anything nearer is the ordinary depth test's job (still on for this
+  ## translucent pass, only its write is off), same as any other drawn geometry --
+  ## not something this proc's own shape needs to work around.
+  for lat in 0 ..< latitudes:
     let
-      theta_a = (PI/2.0) * float(lat) / float(latitudes div 2)
-      theta_b = (PI/2.0) * float(lat + 1) / float(latitudes div 2)
+      theta_a = PI * float(lat) / float(latitudes)
+      theta_b = PI * float(lat + 1) / float(latitudes)
     for lon in 0 ..< longitudes:
       let
         phi_a = 2.0*PI * float(lon) / float(longitudes)

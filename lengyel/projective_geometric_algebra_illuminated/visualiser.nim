@@ -107,13 +107,6 @@ const
     ## a short preview rather than a full-resolution capture nobody asked for.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
-  ELEVATION_SKY_CAPTURE = -0.15
-    ## Tilt the camera to this elevation for a plane-at-horizon step's own capture --
-    ## negative, i.e. looking up rather than down. Its dome (`mesh.addDome`) only
-    ## covers the sky's own upper half now, not a full sphere in every direction
-    ## (see that proc's own doc comment for why), so unlike a horizon point or line,
-    ## it does need *some* aim to actually appear in a capture at all: the fixed demo
-    ## angle's own default elevation looks down at the ground, not up at the sky.
   WIDTH_EXPORT_MAX* {.define: "visualiser.width_export_max".} = 3840
     ## Bound the largest window a pixel readback or PNG export is ever asked to cover.
   HEIGHT_EXPORT_MAX* {.define: "visualiser.height_export_max".} = 2160
@@ -681,12 +674,11 @@ proc runStoryboard(
     #   land it, which that fixed angle may or may not be looking toward. Aim this one
     #   capture at it directly instead (a representative point for a line's own great
     #   circle, since aiming along its normal would place the whole ring at the frame's
-    #   own edge, exactly 90 degrees off in every direction). A plane at horizon has no
-    #   one heading to aim at -- every direction above the horizontal shows the same
-    #   dome -- so tilt up to `ELEVATION_SKY_CAPTURE` instead of reorienting to a
-    #   heading. Default orientation is restored after either way. Lens stays at its
-    #   own default throughout: reorienting/tilting is enough on its own, and widening
-    #   it besides would shrink everything else this same capture also shows.
+    #   own edge, exactly 90 degrees off in every direction), then restore the default
+    #   orientation after -- a plane at horizon needs no aiming at all, since the whole
+    #   sky around the eye is visible regardless of which way the camera looks. Lens
+    #   stays at its own default throughout: reorienting is enough on its own, and
+    #   widening it besides would shrink everything else this same capture also shows.
     camera.azimuth = azimuth_default
     camera.elevation = elevation_default
     if isHorizon(derived):
@@ -699,8 +691,6 @@ proc runStoryboard(
         if normal.isSome:
           let axes = spanPerpendicular(Position(x: 0, y: 0, z: 0), normal.get)
           if axes.isSome: heading = some(axes.get[0])
-      elif shape_derived == some(Shape.Plane):
-        camera.elevation = ELEVATION_SKY_CAPTURE
       if heading.isSome:
         (camera.azimuth, camera.elevation) = azimuthElevationFor(heading.get)
 
