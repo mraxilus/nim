@@ -31,7 +31,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[strformat, syncio]
+import std/[options, strformat, syncio]
 
 import ./arena
 
@@ -130,14 +130,14 @@ proc clear(dict: var LzwDict) =
   for i in 0 ..< CAPACITY_DICT: dict.are_used[i] = false
 
 
-proc find(dict: LzwDict; prefix: int; value: uint8): int =
-  ## Look up the code (prefix, value) was assigned; -1 where it has none yet.
+proc find(dict: LzwDict; prefix: int; value: uint8): Option[int] =
+  ## Look up the code (prefix, value) was assigned; none where it has none yet.
   var index = hashKey(prefix, value)
   while dict.are_used[index]:
     if dict.keys_prefix[index] == prefix and dict.keys_byte[index] == value:
-      return dict.values[index]
+      return some(dict.values[index])
     index = (index + 1) and (CAPACITY_DICT - 1)
-  -1
+  none(int)
 
 
 proc insert(dict: var LzwDict; prefix: int; value: uint8; code: int) =
@@ -201,21 +201,21 @@ proc lzwEncode(
     writer = BitWriter(buffer: push[uint8](arena, capacity_output), capacity: capacity_output)
     next_code = CODE_END + 1
     width_code = BITS_CODE + 1
-    code_current = -1
+    code_current = none(int)
 
   writer.packCode(CODE_CLEAR, width_code)
   for value in indices:
-    if code_current < 0:
-      code_current = int(value)
+    if code_current.isNone:
+      code_current = some(int(value))
       continue
-    let existing = dict.find(code_current, value)
-    if existing >= 0:
+    let existing = dict.find(code_current.get, value)
+    if existing.isSome:
       code_current = existing
       continue
 
-    writer.packCode(code_current, width_code)
+    writer.packCode(code_current.get, width_code)
     if next_code < CODE_MAX:
-      dict.insert(code_current, value, next_code)
+      dict.insert(code_current.get, value, next_code)
       inc next_code
       # GIF's own LZW widens a step later than the naive "table is now full" reading
       # would suggest: code 2^width_code still fits the current width, so only the
@@ -226,9 +226,9 @@ proc lzwEncode(
       dict.clear()
       next_code = CODE_END + 1
       width_code = BITS_CODE + 1
-    code_current = int(value)
+    code_current = some(int(value))
 
-  if code_current >= 0: writer.packCode(code_current, width_code)
+  if code_current.isSome: writer.packCode(code_current.get, width_code)
   writer.packCode(CODE_END, width_code)
   writer.flushBits()
   writer
