@@ -154,6 +154,14 @@ func isHorizon*(m: Multivector): bool = abs(( |∘ m)[Basis.scalarAnti]) <= TOLE
   ## Report whether object lies wholly at horizon, i.e. whether its weight vanishes.
 
 
+func isHorizonPlane*(m: Multivector): bool = shape(m) == some(Shape.Plane) and isHorizon(m)
+  ## Report whether object is specifically a plane at horizon -- the one shape that
+  ## draws as a sky dome (`mesh.addDome`) rather than ordinary finite geometry, so a
+  ## caller assembling a frame's own meshes can single it out and insert its dome
+  ## before anything else shares its own translucent (`Primitive.Triangle`) bucket --
+  ## see `visualiser.assembleMeshes`'s own doc comment for why draw order matters here.
+
+
 
 #[ Object Interrogation ]#
 

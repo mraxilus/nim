@@ -36,7 +36,7 @@ const
     ## highlighted outline can widen by the same border thickness a point's own outline
     ## does (`BORDER_OUTLINE`), rather than needing a disproportionately wide outline
     ## relative to a thin line to show a comparable border.
-  BORDER_OUTLINE* = 1.0'f32
+  BORDER_OUTLINE* = 1.2'f32
     ## Set the highlight outline's own border thickness, in pixels each side, shared by
     ## a point and a line alike (and, in world units, a plane's own ring -- see
     ## `mesh.addPlane`'s outline branch, which now reuses the object's own true radius
@@ -49,13 +49,17 @@ const
     ## geometry spans -- under a fifth of the total: a border thin enough to vanish
     ## outright below this size (an earlier value, tried and rejected, rendered not one
     ## visibly different pixel from the object alone), so thickness and opacity both do
-    ## some of the work of staying subtle, rather than thickness alone.
-  ALPHA_PEAK_OUTLINE* = 0.6'f32
+    ## some of the work of staying subtle, rather than thickness alone. Raised a touch
+    ## from that first fix (1.0px) alongside `ALPHA_PEAK_OUTLINE` below, once that fix's
+    ## own border read as a little too faint to notice at a glance.
+  ALPHA_PEAK_OUTLINE* = 0.8'f32
     ## Cap a highlight outline's own opacity at its single most opaque point (a point's
-    ## own centre, or a line/plane ring's innermost band) -- well under the object's own
-    ## full opacity, so even where the border's own fade is strongest it still reads as
+    ## own centre, or a line/plane ring's innermost band) -- under the object's own full
+    ## opacity, so even where the border's own fade is strongest it still reads as
     ## visibly subordinate to the object it frames, rather than a second, equally solid
-    ## shape sitting next to it.
+    ## shape sitting next to it. Raised from an initial 0.6, which -- combined with
+    ## `BORDER_OUTLINE`'s own first value -- read as too subtle to register as a border
+    ## at a glance, rather than merely thin.
   SIZE_POINT_OUTLINE* = SIZE_POINT + 2.0'f32*BORDER_OUTLINE
     ## Diameter the highlighted object's own point draws at, in its outline pass --
     ## `BORDER_OUTLINE` wider on every side than `SIZE_POINT`, so the difference shows

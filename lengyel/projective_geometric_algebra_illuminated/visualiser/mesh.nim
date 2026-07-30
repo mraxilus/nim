@@ -128,17 +128,21 @@ const
     ## rim, dense enough to read as circular.
   LATITUDES_HORIZON* = 12
   LONGITUDES_HORIZON* = 24
-    ## Set band counts in a horizon plane's own whole-sky dome.
+    ## Set band counts across a horizon plane's own dome -- `LATITUDES_HORIZON` spans
+    ## only its upper half (see `addDome`'s own doc comment on why), so this many bands
+    ## actually reach from the eye's own horizontal plane up to directly overhead.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
   ALPHA_WASH* = 0.16'f32
     ## Set opacity of a finite plane's own fill -- flat across the whole disc, since
     ## the rim already marks its edge crisply; low enough that whatever sits behind a
     ## plane, including another plane crossing it, stays legible through it.
-  ALPHA_WASH_SKY* = 0.05'f32
-    ## Set opacity of a horizon plane's own whole-sky dome -- this one has no edge to
-    ## fade toward and would otherwise read as a dominant tint over the entire view
-    ## rather than a background hint.
+  ALPHA_WASH_SKY* = 0.22'f32
+    ## Set opacity of a horizon plane's own sky dome -- this one has no edge to fade
+    ## toward, but unlike an early, near-invisible value, still needs to read as a
+    ## genuinely coloured sky rather than a barely-there hint once it is confined to
+    ## the dome's own upper half (`addDome`'s own doc comment) and so no longer bleeds
+    ## into the furniture/objects below the eye's own horizontal plane.
   ALPHA_GUIDE* = 0.75'f32
     ## Set opacity of a plane's own normal shaft, shown a touch less boldly than the
     ## plane's own rim so it reads as a construction aid, not as another competing mark.
@@ -430,14 +434,22 @@ proc addDome(
   meshes: var MeshSet; center: Position; radius: float; tint: Rgba;
   latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
 ) =
-  ## Append a full sphere around `center` -- a plane at horizon is the unique universal
-  ## "whole sky" object, the same regardless of which points produced it (see
-  ## `directionNormalHorizon`'s own doc comment for why), so nothing about its own
-  ## coefficients decides its shape here; only `radius` and `tint` do.
-  for lat in 0 ..< latitudes:
+  ## Append a dome over `center`'s own upper half only -- from directly overhead
+  ## (`theta` 0) down to level with `center` itself (`theta` `PI/2`), never below it --
+  ## a plane at horizon is the unique universal "whole sky" object, the same
+  ## regardless of which points produced it (see `directionNormalHorizon`'s own doc
+  ## comment for why), so nothing about its own coefficients decides its shape here;
+  ## only `radius` and `tint` do.
+  ##   Stops at the horizontal through `center` rather than continuing into a full
+  ##   sphere: a full sphere reads as a uniform haze in every direction alike, including
+  ##   straight down through the ground grid and whatever furniture or objects sit near
+  ##   it, rather than as a sky specifically -- restricting to the upper half keeps the
+  ##   tint where "sky" actually reads as sky, and lets it draw at a boldness
+  ##   (`ALPHA_WASH_SKY`) that would otherwise look like fog laid over the whole scene.
+  for lat in 0 ..< latitudes div 2:
     let
-      theta_a = PI * float(lat) / float(latitudes)
-      theta_b = PI * float(lat + 1) / float(latitudes)
+      theta_a = (PI/2.0) * float(lat) / float(latitudes div 2)
+      theta_b = (PI/2.0) * float(lat + 1) / float(latitudes div 2)
     for lon in 0 ..< longitudes:
       let
         phi_a = 2.0*PI * float(lon) / float(longitudes)

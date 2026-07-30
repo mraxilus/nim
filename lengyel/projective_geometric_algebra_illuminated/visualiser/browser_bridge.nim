@@ -219,8 +219,20 @@ proc nimBuildFrame(
 
   var meshes: MeshSet
   clearMeshes(meshes)
+  # A horizon plane's own dome first, before anything else that might share its own
+  #   translucent `Primitive.Triangle` bucket -- see `visualiser.assembleMeshes`'s own
+  #   doc comment (mirrored here) for why draw order matters: that bucket draws in
+  #   whatever order its vertices were appended, unsorted by depth, so inserting the
+  #   dome first guarantees every ordinary plane's own fill blends over it rather than
+  #   the reverse, regardless of which scene slot either happens to occupy.
   for slot, item in g_scene.pairs:
-    if slot < ITEMS_MAX and g_are_visible[slot]:
+    if slot < ITEMS_MAX and g_are_visible[slot] and isHorizonPlane(item.geometry):
+      let progress = animationProgress(float(now), g_borns[slot])
+      let tint = if g_are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
+      discard meshes.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+
+  for slot, item in g_scene.pairs:
+    if slot < ITEMS_MAX and g_are_visible[slot] and not isHorizonPlane(item.geometry):
       let progress = animationProgress(float(now), g_borns[slot])
       let tint = if g_are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
       discard meshes.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
