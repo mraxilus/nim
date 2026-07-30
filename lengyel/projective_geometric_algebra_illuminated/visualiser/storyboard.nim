@@ -43,26 +43,26 @@ type Step* = object ## Hold one scripted construction step.
 
 const STEPS*: array[11, Step] = [
   Step(stem: "01_join_line", label: "L = a ^ b",
-    operation: Operation.Wedge, index_first: 0, index_second: 1, ink: Ink.Cyan),
+    operation: Operation.Wedge, index_first: 0, index_second: 1, ink: Ink.Jade),
   Step(stem: "02_join_plane", label: "G = L ^ c",
-    operation: Operation.Wedge, index_first: 5, index_second: 2, ink: Ink.Teal),
+    operation: Operation.Wedge, index_first: 5, index_second: 2, ink: Ink.Slate),
   Step(stem: "03_meet_line", label: "ground v G",
-    operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Violet),
+    operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Indigo),
   Step(stem: "04_meet_point", label: "L v ground",
-    operation: Operation.WedgeAnti, index_first: 5, index_second: 4, ink: Ink.Orchid),
+    operation: Operation.WedgeAnti, index_first: 5, index_second: 4, ink: Ink.Plum),
   Step(stem: "05_support", label: "sup(L)",
-    operation: Operation.Support, index_first: 5, index_second: 0, ink: Ink.Amber),
+    operation: Operation.Support, index_first: 5, index_second: 0, ink: Ink.Pine),
   Step(stem: "06_attitude", label: "att(L)",
-    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Rose),
+    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Garnet),
   Step(stem: "07_expand_weight", label: "a ^ L*  perp plane",
-    operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Lime),
+    operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Moss),
   # `a` (and `b`, and `c`) already lie on `G` by construction -- `G` is joined from a
   #   line through `a` and `b`, plus `c` -- so projecting any of them onto `G` is a
   #   no-op with nothing new to show. `o`, the world origin, is the one seed placed
   #   specifically to sit off `G` (see the module doc comment's own table), so its
   #   projection actually lands somewhere else, visibly.
   Step(stem: "08_project", label: "o onto G",
-    operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Orchid),
+    operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Plum),
   # Attitude always drops one grade and always lands at horizon (see
   #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
   #   point at horizon above (06); applied to a plane it gives a line at horizon; applied
@@ -70,11 +70,11 @@ const STEPS*: array[11, Step] = [
   #   on) it gives a plane at horizon -- the unique universal object every plane at
   #   horizon is, regardless of which points produced it.
   Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
-    operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Cyan),
+    operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Jade),
   Step(stem: "10_wedge_volume", label: "a ^ ground",
-    operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Violet),
+    operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Indigo),
   Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ^ ground)",
-    operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Teal),
+    operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Slate),
 ] ## Build a line from two points, a plane from that line, then meet, measure and
   ## project; close with attitude taken down to a line, then a plane, at horizon.
 
@@ -100,11 +100,11 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
     anchor_ground = position(
       add(add(unitize(point_origin), unitize(point_x)), unitize(point_y))
     )
-  scene.addItem(point_a, "a", Ink.Amber, now)
-  scene.addItem(point_b, "b", Ink.Amber, now)
-  scene.addItem(point_c, "c", Ink.Amber, now)
-  scene.addItem(point_origin, "o", Ink.Amber, now)
-  scene.addItem(ground, "ground", Ink.Lime, now, anchor_ground)
+  scene.addItem(point_a, "a", Ink.Pine, now)
+  scene.addItem(point_b, "b", Ink.Pine, now)
+  scene.addItem(point_c, "c", Ink.Pine, now)
+  scene.addItem(point_origin, "o", Ink.Pine, now)
+  scene.addItem(ground, "ground", Ink.Moss, now, anchor_ground)
 
 
 proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =

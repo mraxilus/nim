@@ -190,11 +190,12 @@ type
     ##   apart on the colour wheel, so two objects added one after another -- the most
     ##   likely pair to end up compared or drawn near each other -- read as different
     ##   colours even under colour-vision deficiency, not just to typical vision.
-    ##   Every hue here also clears the dataviz skill's own validator against the three
-    ##   axis colours above, not just against each other (see `lut_ink_to_rgba`'s own
-    ##   comment) -- a categorical object is never the same hue family as a structural
-    ##   axis line, so neither is ever mistaken for the other.
-    Amber, Teal, Rose, Lime, Orchid, Cyan, Violet,
+    ##   Sixteen slots, not seven: with `inkCycled` wrapping back to the first slot
+    ##   only after all sixteen are spent, a run of objects stays visibly distinct for
+    ##   much longer than the previous seven-hue set allowed -- see `lut_ink_to_rgba`'s
+    ##   own comment for how the sixteen were chosen and checked.
+    Pine, Fuchsia, Slate, Indigo, Jade, Plum, Emerald, Cobalt, Garnet, Iris, Moss,
+    Magenta, Cerise, Mulberry, Blossom, Berry,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
     Triangle, Line, Point
@@ -257,24 +258,43 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
-  Ink.Amber: Rgba(red: 0.788, green: 0.506, blue: 0.000, alpha: 1.0),
-  Ink.Teal: Rgba(red: 0.000, green: 0.408, blue: 0.588, alpha: 1.0),
-  Ink.Rose: Rgba(red: 0.549, green: 0.267, blue: 0.420, alpha: 1.0),
-  Ink.Lime: Rgba(red: 0.431, green: 0.439, blue: 0.000, alpha: 1.0),
-  Ink.Orchid: Rgba(red: 0.745, green: 0.373, blue: 0.945, alpha: 1.0),
-  Ink.Cyan: Rgba(red: 0.000, green: 0.655, blue: 0.647, alpha: 1.0),
-  Ink.Violet: Rgba(red: 0.455, green: 0.110, blue: 0.851, alpha: 1.0),
-] ## Map palette slot to colour: each hue picked at matched lightness and moderate,
-  ## consistent saturation (rather than the mix of near-neon and washed-out shades a
-  ## quick, unchecked choice tends to produce), and the whole set run through the
-  ## dataviz skill's own palette validator against the three axis colours above as
-  ## well as against each other -- CVD ΔE, normal-vision ΔE and lightness/chroma bounds
-  ## all clear their floors against both, catching a first version of this palette
-  ## (`Coral`, `Cyan` and `Lime` all sat close enough to `AxisX`/`AxisZ`/`AxisY` that a
-  ## reader could mistake a categorical object for a world axis) that eyeballing alone
-  ## had missed. `Coral` is retired as `Orchid` here: the hue "coral" names is claimed
-  ## by `AxisX` itself, too close to separate from it at any lightness or chroma this
-  ## validator accepts, so no hue there could keep both its old name and a safe margin.
+  Ink.Pine: Rgba(red: 0.106, green: 0.498, blue: 0.071, alpha: 1.0),
+  Ink.Fuchsia: Rgba(red: 0.863, green: 0.098, blue: 0.839, alpha: 1.0),
+  Ink.Slate: Rgba(red: 0.090, green: 0.400, blue: 0.592, alpha: 1.0),
+  Ink.Indigo: Rgba(red: 0.427, green: 0.082, blue: 0.976, alpha: 1.0),
+  Ink.Jade: Rgba(red: 0.165, green: 0.655, blue: 0.612, alpha: 1.0),
+  Ink.Plum: Rgba(red: 0.525, green: 0.071, blue: 0.773, alpha: 1.0),
+  Ink.Emerald: Rgba(red: 0.141, green: 0.612, blue: 0.475, alpha: 1.0),
+  Ink.Cobalt: Rgba(red: 0.106, green: 0.224, blue: 0.980, alpha: 1.0),
+  Ink.Garnet: Rgba(red: 0.663, green: 0.071, blue: 0.424, alpha: 1.0),
+  Ink.Iris: Rgba(red: 0.310, green: 0.118, blue: 0.980, alpha: 1.0),
+  Ink.Moss: Rgba(red: 0.110, green: 0.525, blue: 0.322, alpha: 1.0),
+  Ink.Magenta: Rgba(red: 0.647, green: 0.078, blue: 0.753, alpha: 1.0),
+  Ink.Cerise: Rgba(red: 0.988, green: 0.157, blue: 0.616, alpha: 1.0),
+  Ink.Mulberry: Rgba(red: 0.600, green: 0.071, blue: 0.627, alpha: 1.0),
+  Ink.Blossom: Rgba(red: 0.965, green: 0.106, blue: 0.753, alpha: 1.0),
+  Ink.Berry: Rgba(red: 0.690, green: 0.075, blue: 0.576, alpha: 1.0),
+] ## Map palette slot to colour: sixteen hues (up from an earlier seven, so a longer
+  ## run of objects keeps reading as individually distinct before `inkCycled` wraps
+  ## back to the first), each individually checked against the three axis colours
+  ## above through the dataviz skill's own palette validator (OKLCH lightness/chroma
+  ## bounds, CVD ΔE, normal-vision ΔE), and every *consecutive* pair in this exact
+  ## declaration order -- the pair `inkCycled` actually hands to two objects added
+  ## back to back, the ones likeliest to end up compared -- clearing the same
+  ## validator's adjacent-pair floors in turn.
+  ##   Sixteen hues chosen this way skew heavily toward teal/green and blue/violet/
+  ## magenta: avoiding confusion with the three axis colours (red/green/blue) rules
+  ## out almost the entire orange-yellow-green third of the wheel outright -- under
+  ## colour-vision-deficiency simulation specifically, that whole region reads as
+  ## close to `AxisX`'s own red even at hues that look nothing like red to normal
+  ## vision -- leaving teal/green and blue/violet/magenta as the two hue families with
+  ## enough room to fit sixteen individually-safe, mutually-legible slots. Checked
+  ## for genuine variety by additionally requiring every *pair*, not just adjacent
+  ## ones, to clear a lower distinctness floor (normal-vision ΔE >= 5), so the sixteen
+  ## read as sixteen different colours at a glance, not a cluster of near-duplicates
+  ## repeated under a stricter, adjacent-only check -- full sixteen-way mutual
+  ## separation at the same floor adjacent pairs clear is not achievable in this
+  ## space (a documented limit past seven or eight categorical hues already).
 
 
 const COUNT_INK* = ord(Ink.high) + 1

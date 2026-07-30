@@ -280,8 +280,8 @@ suite "Mesh":
     MESHES.clearMeshes
 
   test "clearing drops every vertex":
-    MESHES.addMarker(ORIGIN, Ink.Amber.colour)
-    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Cyan.colour)
+    MESHES.addMarker(ORIGIN, Ink.Pine.colour)
+    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour)
     MESHES.clearMeshes
     for primitive in Primitive:
       check MESHES[primitive].count_vertices == 0
@@ -290,7 +290,7 @@ suite "Mesh":
   test "point becomes one marker where it stands":
     for i in 0 ..< SAMPLES:
       MESHES.clearMeshes
-      check MESHES.addObject(POINTS[i], Ink.Amber.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(POINTS[i], Ink.Pine.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Point].count_vertices == 1
       check MESHES[Primitive.Line].count_vertices == 0
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
@@ -299,7 +299,7 @@ suite "Mesh":
   test "line becomes segment reaching radius_horizon backward from support, forward from eye":
     for line in LINES:
       MESHES.clearMeshes
-      check MESHES.addObject(line, Ink.Cyan.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Line].count_vertices == 2
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
@@ -322,11 +322,11 @@ suite "Mesh":
     for line in LINES:
       let attitude = ⊖ line
       MESHES.clearMeshes
-      discard MESHES.addObject(attitude, Ink.Rose.colour, SCALE_TEST)
+      discard MESHES.addObject(attitude, Ink.Garnet.colour, SCALE_TEST)
       let star = MESHES[Primitive.Point].vertices[0].toPosition
 
       MESHES.clearMeshes
-      discard MESHES.addObject(line, Ink.Cyan.colour, SCALE_TEST)
+      discard MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST)
       let far_end = MESHES[Primitive.Line].vertices[1].toPosition
       check isNear(far_end, star)
 
@@ -334,7 +334,7 @@ suite "Mesh":
   test "plane becomes a flat filled disc and a rim, every vertex on it":
     for plane in PLANES:
       MESHES.clearMeshes
-      check MESHES.addObject(plane, Ink.Lime.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(plane, Ink.Moss.colour, SCALE_TEST) == Placement.Finite
       const
         VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
         VERTICES_RING = 2*SEGMENTS_CIRCLE_HORIZON
@@ -360,7 +360,7 @@ suite "Mesh":
       for i in 0 ..< VERTICES_RING:
         let vertex = MESHES[Primitive.Line].vertices[i]
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
-        check isNear(float(vertex.alpha), Ink.Lime.colour.alpha)
+        check isNear(float(vertex.alpha), Ink.Moss.colour.alpha)
         check isNear(norm(vertex.toPosition - anchor.get), EXTENT_PLANE_F)
 
 
@@ -368,7 +368,7 @@ suite "Mesh":
     for line in LINES:
       MESHES.clearMeshes
       let attitude = ⊖ line
-      check MESHES.addObject(attitude, Ink.Rose.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES.addObject(attitude, Ink.Garnet.colour, SCALE_TEST) == Placement.Horizon
       check MESHES[Primitive.Point].count_vertices == 1
       let
         heading = directionHorizon(attitude)
@@ -381,7 +381,7 @@ suite "Mesh":
     for plane in PLANES:
       MESHES.clearMeshes
       let attitude = ⊖ plane
-      check MESHES.addObject(attitude, Ink.Cyan.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES.addObject(attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
       check MESHES[Primitive.Line].count_vertices == 2*SEGMENTS_CIRCLE_HORIZON
       # `directionNormalHorizon` reads straight off the horizon line's own raw
       #   coefficients; confirm it agrees with the finite plane's own normal, read
@@ -416,7 +416,7 @@ suite "Mesh":
     check shape(attitude_first) == some(Shape.Plane) and isHorizon(attitude_first)
     check shape(attitude_second) == some(Shape.Plane) and isHorizon(attitude_second)
 
-    check MESHES.addObject(attitude_first, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES.addObject(attitude_first, Ink.Slate.colour, SCALE_TEST) == Placement.Horizon
     check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     let vertices_first = MESHES[Primitive.Triangle].vertices
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
@@ -424,7 +424,7 @@ suite "Mesh":
       check isNear(norm(offset), SCALE_TEST.radius_horizon)
 
     MESHES.clearMeshes
-    check MESHES.addObject(attitude_second, Ink.Teal.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES.addObject(attitude_second, Ink.Slate.colour, SCALE_TEST) == Placement.Horizon
     check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     # Same dome, vertex for vertex, regardless of which unrelated volume produced it.
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
@@ -434,7 +434,7 @@ suite "Mesh":
   test "multivector of no geometry becomes nothing at all":
     for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
       MESHES.clearMeshes
-      check MESHES.addObject(empty, Ink.Amber.colour, SCALE_TEST) == Placement.Empty
+      check MESHES.addObject(empty, Ink.Pine.colour, SCALE_TEST) == Placement.Empty
       for primitive in Primitive:
         check MESHES[primitive].count_vertices == 0
 
@@ -521,8 +521,8 @@ suite "Scene":
       scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
     scene.removeItem(2)
     scene.removeItem(0)
-    check scene.addItem(POINTS[5 mod SAMPLES], "p5", Ink.Amber) == 0
-    check scene.addItem(POINTS[6 mod SAMPLES], "p6", Ink.Amber) == 2
+    check scene.addItem(POINTS[5 mod SAMPLES], "p5", Ink.Pine) == 0
+    check scene.addItem(POINTS[6 mod SAMPLES], "p6", Ink.Pine) == 2
 
 
   test "scene drains to empty regardless of removal order":
@@ -537,7 +537,7 @@ suite "Scene":
 
   test "isAlive rejects a removed slot and any slot out of range":
     var scene = initScene()
-    discard scene.addItem(POINTS[0], "a", Ink.Amber)
+    discard scene.addItem(POINTS[0], "a", Ink.Pine)
     check scene.isAlive(0)
     scene.removeItem(0)
     check not scene.isAlive(0)
@@ -549,7 +549,7 @@ suite "Scene":
     var scene = initScene()
     for i in 0 ..< ITEMS_MAX:
       check not scene.isFull
-      scene.addItem(POINTS[i mod SAMPLES], "p", Ink.Amber)
+      scene.addItem(POINTS[i mod SAMPLES], "p", Ink.Pine)
     check scene.isFull
     check scene.len == ITEMS_MAX
 
@@ -686,11 +686,11 @@ suite "Scene":
 
   test "save then load reproduces every live item, compacting freed slots":
     var original = initScene()
-    discard original.addItem(POINTS[0], "a", Ink.Amber)
-    discard original.addItem(POINTS[1], "bb", Ink.Cyan)
-    let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Lime)
+    discard original.addItem(POINTS[0], "a", Ink.Pine)
+    discard original.addItem(POINTS[1], "bb", Ink.Jade)
+    let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Moss)
     original.removeItem(slot_doomed) # leaves a hole a fresh load must not reproduce
-    let slot_last = original.addItem(POINTS[3], "d", Ink.Violet)
+    let slot_last = original.addItem(POINTS[3], "d", Ink.Indigo)
     original.isVisibleAt(slot_last) = false
 
     let path = getTempDir() / "visualiser_suite_scene.rgascene"
@@ -698,25 +698,25 @@ suite "Scene":
     defer: removeFile(path)
 
     var loaded = initScene()
-    discard loaded.addItem(POINTS[9], "stale", Ink.Teal) # load must replace, not merge
+    discard loaded.addItem(POINTS[9], "stale", Ink.Slate) # load must replace, not merge
     check loadScene(loaded, path).contains("Loaded 3")
     check loaded.len == 3
 
     # Freed slot 2 is compacted away: loaded items land at slots 0, 1, 2 in save order.
     check loaded[0].geometry =~ POINTS[0]
     check $toCstring(loaded[0].label) == "a"
-    check loaded[0].ink == Ink.Amber
+    check loaded[0].ink == Ink.Pine
     check loaded[0].is_visible
     check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
 
     check loaded[1].geometry =~ POINTS[1]
     check $toCstring(loaded[1].label) == "bb"
-    check loaded[1].ink == Ink.Cyan
+    check loaded[1].ink == Ink.Jade
     check loaded[1].is_visible
 
     check loaded[2].geometry =~ POINTS[3]
     check $toCstring(loaded[2].label) == "d"
-    check loaded[2].ink == Ink.Violet
+    check loaded[2].ink == Ink.Indigo
     check not loaded[2].is_visible
 
 
@@ -727,14 +727,14 @@ suite "Scene":
     defer: removeFile(path)
 
     var loaded = initScene()
-    discard loaded.addItem(POINTS[0], "will be cleared", Ink.Amber)
+    discard loaded.addItem(POINTS[0], "will be cleared", Ink.Pine)
     check loadScene(loaded, path).contains("Loaded 0")
     check loaded.len == 0
 
 
   test "loading a foreign file leaves scene untouched and reports why":
     var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    discard scene.addItem(POINTS[0], "keep", Ink.Pine)
     let path = getTempDir() / "visualiser_suite_scene_bogus.rgascene"
     writeFile(path, "not a scene file at all")
     defer: removeFile(path)
@@ -746,7 +746,7 @@ suite "Scene":
 
   test "loading a file saved under a different PGA dimension is rejected":
     var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    discard scene.addItem(POINTS[0], "keep", Ink.Pine)
     let path = getTempDir() / "visualiser_suite_scene_wrongbasis.rgascene"
     writeFile(path, "RGAS" & char(1) & char(99)) # no build here carries 99 basis terms
     defer: removeFile(path)
@@ -757,7 +757,7 @@ suite "Scene":
 
   test "loading a missing path reports cleanly and leaves scene untouched":
     var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    discard scene.addItem(POINTS[0], "keep", Ink.Pine)
     let path = getTempDir() / "visualiser_suite_scene_does_not_exist.rgascene"
 
     check loadScene(scene, path).contains("No such file")
@@ -766,7 +766,7 @@ suite "Scene":
 
   test "loading a file naming more items than this build's capacity is rejected":
     var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Amber)
+    discard scene.addItem(POINTS[0], "keep", Ink.Pine)
 
     var
       count = uint32(ITEMS_MAX + 1)
@@ -978,7 +978,7 @@ suite "Picking":
 
   test "point at target is picked at screen centre":
     var scene = initScene()
-    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Pine)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
@@ -986,7 +986,7 @@ suite "Picking":
 
   test "cursor far from every item picks nothing":
     var scene = initScene()
-    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Pine)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     let corner = ScreenPosition(x: 5.0, y: 5.0, depth: 0.0)
@@ -995,7 +995,7 @@ suite "Picking":
 
   test "hidden item is never picked":
     var scene = initScene()
-    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber)
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Pine)
     scene.isVisibleAt(0) = false
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
@@ -1006,7 +1006,7 @@ suite "Picking":
     var scene = initScene()
     let axis_z =
       toMultivector(Position(x: 0, y: 0, z: -1)) ∧ toMultivector(Position(x: 0, y: 0, z: 1))
-    scene.addItem(axis_z, "axis_z", Ink.Cyan)
+    scene.addItem(axis_z, "axis_z", Ink.Jade)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
@@ -1019,8 +1019,8 @@ suite "Picking":
       toMultivector(Position(x: 0, y: 3, z: -3)) ∧
       toMultivector(Position(x: 0, y: 0, z: 3))
     )
-    scene.addItem(facing, "facing", Ink.Lime) # Index 0: plane, spans the view straight on.
-    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Amber) # Index 1: point.
+    scene.addItem(facing, "facing", Ink.Moss) # Index 0: plane, spans the view straight on.
+    scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Pine) # Index 1: point.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
@@ -1038,7 +1038,7 @@ suite "Picking":
       toMultivector(Position(x: 0, y: 3, z: -3)) ∧
       toMultivector(Position(x: 0, y: 0, z: 3))
     )
-    scene.addItem(facing, "facing", Ink.Lime)
+    scene.addItem(facing, "facing", Ink.Moss)
     let camera = cameraFacingOrigin(distance = 30.0)
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
@@ -1064,8 +1064,8 @@ suite "Picking":
       toMultivector(Position(x: 6, y: 3, z: -3)) ∧
       toMultivector(Position(x: 6, y: 0, z: 3))
     )
-    scene.addItem(far_plane, "far", Ink.Lime) # Index 0.
-    scene.addItem(near_plane, "near", Ink.Teal) # Index 1.
+    scene.addItem(far_plane, "far", Ink.Moss) # Index 0.
+    scene.addItem(near_plane, "near", Ink.Slate) # Index 1.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
@@ -1081,8 +1081,8 @@ suite "Interaction":
 
   test "drag applies its operation and appends the result":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
-    scene.addItem(POINTS[1], "b", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
+    scene.addItem(POINTS[1], "b", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
     check interaction.beginDrag(DragOperation.Join)
@@ -1104,7 +1104,7 @@ suite "Interaction":
 
   test "releasing over empty space adds nothing":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
     discard interaction.beginDrag(DragOperation.Join)
@@ -1118,7 +1118,7 @@ suite "Interaction":
 
   test "releasing on its own source adds nothing":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
     discard interaction.beginDrag(DragOperation.Meet)
@@ -1130,8 +1130,8 @@ suite "Interaction":
 
   test "cancelDrag clears state without applying anything":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
-    scene.addItem(POINTS[1], "b", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
+    scene.addItem(POINTS[1], "b", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
     discard interaction.beginDrag(DragOperation.Project)
@@ -1142,7 +1142,7 @@ suite "Interaction":
 
   test "endDrag with nothing dragging is a harmless no-op":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     let outcome = interaction.endDrag(scene)
     check outcome.message == ""
@@ -1152,7 +1152,7 @@ suite "Interaction":
 
   test "disabled interaction never hovers":
     var scene = initScene()
-    scene.addItem(POINTS[0], "a", Ink.Amber)
+    scene.addItem(POINTS[0], "a", Ink.Pine)
     var interaction = Interaction(is_enabled: false)
     let camera = initCamera(target = PLACES[0], distance = 10.0, azimuth = 0.0, elevation = 0.0)
     interaction.updateCursor(400.0, 300.0)
@@ -1163,7 +1163,7 @@ suite "Interaction":
   test "enabled interaction hovers the item under the cursor":
     var scene = initScene()
     let target = Position(x: 0, y: 0, z: 0)
-    scene.addItem(toMultivector(target), "p", Ink.Amber)
+    scene.addItem(toMultivector(target), "p", Ink.Pine)
     var interaction = Interaction(is_enabled: true)
     let camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
     interaction.updateCursor(400.0, 300.0)
