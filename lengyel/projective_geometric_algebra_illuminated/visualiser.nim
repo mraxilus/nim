@@ -94,8 +94,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/[
-  arena, camera, format, gif, gui, image, interaction, mesh, objects, panel, picking, renderer,
-  scene, storyboard,
+  arena, camera, format, gif, gui, history, image, interaction, mesh, objects, panel, picking,
+  renderer, scene, storyboard,
 ]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
@@ -173,15 +173,13 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet ## Every scene object, excluding world furniture below.
-var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn separately (and
-  ## first) so the outline pass below can draw over them without a grid line or axis
-  ## ever painting back over a selection border afterward (see `renderer.drawOutline`'s
-  ## own doc comment on draw order) -- and so they can hold their own, thinner line
-  ## width distinct from a scene object's own (`renderer.WIDTH_LINE_FURNITURE`).
-var MESHES_OUTLINE: MeshSet ## Holds only the highlighted item's own geometry, built
-  ## oversized and in a flat outline colour, for the renderer's own outline pass --
-  ## drawn between the two buffers above, at a different point size and line width
-  ## (see `renderer.drawOutline`'s own doc comment).
+var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn separately, so
+  ## they can hold their own, thinner line width distinct from a scene object's own
+  ## (`renderer.WIDTH_LINE_FURNITURE`).
+var HISTORY: History ## Undo/redo timeline of scene-content edits; too large for a stack
+  ## frame for the same reason `MESHES` is (`history.CAPACITY_HISTORY * sizeof(Scene)`).
+  ## Holds a zeroed placeholder nothing reads until `main` seeds it via `initHistory`
+  ## once the startup scene (demo or loaded) is built.
 
 # Two arenas, one permanent and one reset after each throwaway unit of work; see
 #   `arena.nim` for why the interactive draw loop needs neither, and what does.
@@ -290,28 +288,11 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
-  # Build the most recently constructed object's own outline -- oversized, flat
-  #   `Ink.Outline` -- into a separate buffer the renderer's own outline pass draws
-  #   between furniture and the frame above, so only the sliver peeking out past that
-  #   object's own true-size redraw over it stays visible, reading as a selection
-  #   border the way 3D modelling software draws one, rather than a second copy of the
-  #   object itself, and never painted over by a grid line or axis crossing it.
-  MESHES_OUTLINE.clearMeshes
-  if workbench.index_highlighted.isSome:
-    let slot = workbench.index_highlighted.get
-    if scene.isAlive(slot) and scene[slot].isVisible:
-      let item = scene[slot]
-      discard MESHES_OUTLINE.addObject(
-        item.geometry, Ink.Outline.colour, scale, animationProgress(now, item.born),
-        item.anchorOverride, is_outline = true,
-      )
-
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
   for primitive in Primitive:
-    workbench.count_vertices +=
-      MESHES[primitive].count_vertices + MESHES_FURNITURE[primitive].count_vertices +
-      MESHES_OUTLINE[primitive].count_vertices
+    workbench.count_vertices += MESHES[primitive].count_vertices +
+      MESHES_FURNITURE[primitive].count_vertices
 
 
 const lut_drag_to_ink: array[DragOperation, Ink] = [
@@ -319,6 +300,30 @@ const lut_drag_to_ink: array[DragOperation, Ink] = [
   DragOperation.Meet: Ink.Magenta,
   DragOperation.Project: Ink.Olive,
 ] ## Match the panel's own drag legend, so the rubber-band names its outcome as it's drawn.
+
+
+proc drawSelectionRing(
+  scene: Scene; index_highlighted: Option[int]; view_projection: Matrix4;
+  width, height: int; scale: DrawExtent
+) =
+  ## Draw currently selected item's own ring, directly onto the foreground layer, with
+  ## the exact same `gui.overlayCircle` call the hover ring below uses -- tinted with
+  ## `Ink.Outline` instead of hover's own inline white, so both read as one family of
+  ## plain circle markers rather than two different mechanisms.
+  ##   Unconditional, unlike hover/drag below: a storyboard step uses this same ring to
+  ##   show which object it just built, so it must still draw with interaction disabled.
+  if index_highlighted.isNone: return
+  let slot = index_highlighted.get
+  if not (scene.isAlive(slot) and scene[slot].isVisible): return
+  let anchor = anchorFor(scene[slot].geometry, scale)
+  if anchor.isNone: return
+  let screen = projectToScreen(view_projection, width, height, anchor.get)
+  if not screen.isInFront: return
+  let tint = Ink.Outline.colour
+  gui.overlayCircle(
+    cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
+    tint.red, tint.green, tint.blue, tint.alpha, WIDTH_OVERLAY_LINE,
+  )
 
 
 proc drawInteractionOverlay(
@@ -377,7 +382,7 @@ proc renderFrame(
   workbench.bytes_memory_total = BYTES_MEMORY_TOTAL
 
   gui.frameBegin()
-  layoutWorkbench(workbench, scene, camera, now)
+  layoutWorkbench(workbench, scene, camera, HISTORY, now)
 
   let eye = camera.eye
   let scale = DrawExtent(
@@ -389,10 +394,12 @@ proc renderFrame(
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
   renderer.drawMeshes(MESHES_FURNITURE, view_projection, WIDTH_LINE_FURNITURE)
-  renderer.drawOutline(MESHES_OUTLINE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
+  drawSelectionRing(
+    scene, workbench.index_highlighted, view_projection, int(width), int(height), scale
+  )
   drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)
 
   gui.frameEnd()
@@ -476,7 +483,9 @@ proc handleEvent(
     if button_dragging == some(event.button.button):
       let outcome = interaction.endDrag(scene, now)
       if len(outcome.message) > 0: toChars(outcome.message, workbench.message)
-      if outcome.index_created.isSome: workbench.index_highlighted = outcome.index_created
+      if outcome.index_created.isSome:
+        workbench.index_highlighted = outcome.index_created
+        HISTORY.record(scene)
       button_dragging = none(uint8)
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
@@ -834,6 +843,7 @@ proc main() =
     for step in STEPS[0 .. 3]:
       applyStep(scene, step, now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
+  HISTORY = initHistory(scene)
 
   if len(options.path_storyboard) > 0:
     runStoryboard(window, renderer, options.path_storyboard, workbench, scene, camera)

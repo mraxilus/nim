@@ -36,7 +36,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, format, gui, mesh, objects, scene]
+import ./[camera, format, gui, history, mesh, objects, scene]
 
 
 
@@ -69,9 +69,13 @@ const
 type
   Workbench* = object ## Hold GUI's own state between frames.
     place_new*: array[3, cfloat] ## Position next added point stands at.
-    index_highlighted*: Option[int] ## Slot most recently constructed, drawn ringed as
-      ## if freshly selected -- by a storyboard step, or by this session's own last
-      ## drag-release or apply-operation click. None where nothing has been built yet.
+    index_highlighted*: Option[int] ## Currently selected item's own slot, drawn ringed
+      ## by `visualiser.drawSelectionRing` -- auto-selected by every construction path (a
+      ## storyboard step, or this session's own last drag-release or apply-operation
+      ## click); no explicit "select by clicking" gesture exists on the desktop build
+      ## otherwise. Cleared by a successful undo or redo too, since a restored
+      ## snapshot's slot numbers may not match whatever was highlighted before. None
+      ## where nothing is selected.
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
     index_operation*: cint ## Operation picked from catalogue.
@@ -122,12 +126,12 @@ proc layoutCoefficients(geometry: var Multivector) =
   gui.widthPop()
 
 
-proc layoutItem(scene: var Scene; slot: int): bool =
+proc layoutItem(scene: var Scene; history: var History; slot: int): bool =
   ## Lay out one item's controls, by slot; report whether user asked for it to be removed.
   gui.idPush(cint(slot))
   defer: gui.idPop()
 
-  discard gui.checkbox("", addr scene.isVisibleAt(slot))
+  if gui.checkbox("", addr scene.isVisibleAt(slot)): history.record(scene)
   gui.tooltip("Show or hide this object without removing it.")
   gui.sameLine()
   let item = scene[slot]
@@ -156,6 +160,7 @@ proc layoutItem(scene: var Scene; slot: int): bool =
     var index_ink = cint(item.ink)
     if gui.combo("colour", addr index_ink, addr lut_ink_to_name[Ink.low], cint(COUNT_INK)):
       scene.setInk(slot, Ink(index_ink))
+      history.record(scene)
     gui.widthPop()
     gui.text("Coefficients:")
     gui.sameLine()
@@ -167,7 +172,7 @@ proc layoutItem(scene: var Scene; slot: int): bool =
   gui.separator()
 
 
-proc layoutObjects*(workbench: var Workbench; scene: var Scene) =
+proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var History) =
   ## Lay out every live item's controls, applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
   var header: array[32, char]
@@ -196,14 +201,18 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene) =
 
   var slot_removed = none(int)
   for slot, _ in scene.pairs:
-    if layoutItem(scene, slot): slot_removed = some(slot)
-  if slot_removed.isSome: scene.removeItem(slot_removed.get)
+    if layoutItem(scene, history, slot): slot_removed = some(slot)
+  if slot_removed.isSome:
+    scene.removeItem(slot_removed.get)
+    history.record(scene)
 
 
 
 #[ Construct Panel ]#
 
-proc layoutPointNew(workbench: var Workbench; scene: var Scene; now: float) =
+proc layoutPointNew(
+  workbench: var Workbench; scene: var Scene; history: var History; now: float
+) =
   ## Lay out controls that add fresh point at a position.
   gui.separatorText("add point")
   gui.widthPush(260.0)
@@ -219,12 +228,15 @@ proc layoutPointNew(workbench: var Workbench; scene: var Scene; now: float) =
     )
     workbench.index_highlighted =
       some(scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len), now))
+    history.record(scene)
     toChars(&"Added point at ({place.x:.2f}, {place.y:.2f}, {place.z:.2f}).",
       workbench.message)
   gui.disabledPop()
 
 
-proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
+proc layoutOperation(
+  workbench: var Workbench; scene: var Scene; history: var History; now: float
+) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
   gui.separatorText("apply operation")
   if scene.len == 0:
@@ -280,6 +292,7 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
         else: &"{$operation} {name_first}"
     workbench.index_highlighted =
       some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
+    history.record(scene)
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0
@@ -289,13 +302,15 @@ proc layoutOperation(workbench: var Workbench; scene: var Scene; now: float) =
   gui.disabledPop()
 
 
-proc layoutConstruct*(workbench: var Workbench; scene: var Scene; now: float) =
+proc layoutConstruct*(
+  workbench: var Workbench; scene: var Scene; history: var History; now: float
+) =
   ## Lay out both ways of growing scene, then report outcome of last action.
   ##   `now` is only ever forwarded to a freshly added item's `born` reading; nothing
   ##   here reads a clock itself.
   if not gui.header("construct", is_open_first = true): return
-  layoutPointNew(workbench, scene, now)
-  layoutOperation(workbench, scene, now)
+  layoutPointNew(workbench, scene, history, now)
+  layoutOperation(workbench, scene, history, now)
   gui.separator()
   gui.text(toCstring(workbench.message))
 
@@ -516,7 +531,9 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
 
 #[ Whole Workbench ]#
 
-proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Camera; now: float) =
+proc layoutWorkbench*(
+  workbench: var Workbench; scene: var Scene; camera: var Camera; history: var History; now: float
+) =
   ## Lay out every panel inside one window.
   ##   `now` is this frame's own clock reading, passed through to whichever construct
   ##   control adds an item this frame, so it animates in from the moment it appears.
@@ -538,9 +555,20 @@ proc layoutWorkbench*(workbench: var Workbench; scene: var Scene; camera: var Ca
     gui.sameLine()
     gui.text("middle click.")
     gui.text("Drag empty space instead to move the camera: left orbits, right pans, wheel dollies.")
+
+    # Scene-content edits only (add, apply, remove, visibility, recolour) -- label text
+    #   and coefficient drags are continuous, multi-frame inputs with no clean "edit
+    #   committed" boundary, so neither is on this timeline; see `history.nim`.
+    if gui.button("undo"):
+      if history.undo(scene): workbench.index_highlighted = none(int)
+      else: toChars("Nothing to undo.", workbench.message)
+    gui.sameLine()
+    if gui.button("redo"):
+      if history.redo(scene): workbench.index_highlighted = none(int)
+      else: toChars("Nothing to redo.", workbench.message)
     gui.separator()
     layoutView(workbench, camera)
-    layoutConstruct(workbench, scene, now)
-    layoutObjects(workbench, scene)
+    layoutConstruct(workbench, scene, history, now)
+    layoutObjects(workbench, scene, history)
     layoutDiagnostics(workbench, scene)
   gui.windowEnd()

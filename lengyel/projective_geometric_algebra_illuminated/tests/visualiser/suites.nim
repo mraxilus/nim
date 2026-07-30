@@ -19,7 +19,7 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
 import ../../visualiser/[
-  arena, camera, format, gif, image, interaction, mesh, objects, picking, scene,
+  arena, camera, format, gif, history, image, interaction, mesh, objects, picking, scene,
 ]
 
 randomize(0)
@@ -778,6 +778,101 @@ suite "Scene":
 
     check loadScene(scene, path).contains("more than")
     check scene.len == 1
+
+
+
+suite "History":
+  proc scenesEqual(a, b: Scene): bool =
+    ## Compare two scenes item by item, rather than through a plain `==`: `Scene`
+    ## embeds `Multivector`, whose own `==` is an intentional compile error (see
+    ## `pga/multivectors.nim`) steering every other caller toward `=~`'s tolerance --
+    ## this is that same comparison, just folded field by field over a whole scene
+    ## rather than one multivector at a time.
+    if a.len != b.len: return false
+    for slot in 0 ..< ITEMS_MAX:
+      if a.isAlive(slot) != b.isAlive(slot): return false
+      if not a.isAlive(slot): continue
+      let (item_a, item_b) = (a[slot], b[slot])
+      if not (item_a.geometry =~ item_b.geometry): return false
+      if item_a.label != item_b.label: return false
+      if item_a.ink != item_b.ink: return false
+      if item_a.isVisible != item_b.isVisible: return false
+    true
+
+
+  test "undo and redo retrace every recorded state exactly, and canUndo/canRedo agree":
+    var scene = initScene()
+    var history = initHistory(scene)
+    var snapshots = @[scene] # Index 0 is the seeded initial state.
+    for i in 0 ..< CAPACITY_HISTORY - 1:
+      scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
+      history.record(scene)
+      snapshots.add(scene)
+
+    # Cursor sits at the last recorded state: nothing to redo yet, everything to undo.
+    check not history.canRedo
+    check history.canUndo
+
+    # Walk all the way back, checking scene equality against what was actually recorded
+    #   at each step, and that canUndo agrees with undo's own success, right up to the
+    #   seeded state undo can never reach past.
+    for i in countdown(len(snapshots) - 1, 1):
+      check history.canUndo
+      check history.undo(scene)
+      check scenesEqual(scene, snapshots[i - 1])
+    check not history.canUndo
+    check not history.undo(scene)
+    check scenesEqual(scene, snapshots[0])
+
+    # Walk all the way forward again, the same way.
+    for i in 1 ..< len(snapshots):
+      check history.canRedo
+      check history.redo(scene)
+      check scenesEqual(scene, snapshots[i])
+    check not history.canRedo
+    check not history.redo(scene)
+
+
+  test "recording past capacity drops the oldest entry instead of growing":
+    var scene = initScene()
+    var history = initHistory(scene)
+    var snapshots = @[scene]
+    for i in 0 ..< CAPACITY_HISTORY + 4: # Four states past what the timeline retains.
+      scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
+      history.record(scene)
+      snapshots.add(scene)
+
+    # Only the most recent CAPACITY_HISTORY states are still reachable: undoing all the
+    #   way back lands on the oldest still-retained one, CAPACITY_HISTORY - 1 steps back
+    #   from the latest, not on the very first state ever recorded.
+    var count_undone = 0
+    while history.undo(scene): inc count_undone
+    check count_undone == CAPACITY_HISTORY - 1
+    check scenesEqual(scene, snapshots[^CAPACITY_HISTORY])
+
+
+  test "a fresh record after undo truncates the redo-able future":
+    var scene = initScene()
+    var history = initHistory(scene)
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    history.record(scene)
+    let state_a = scene
+
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    history.record(scene) # A state undo will later discard, never redone.
+
+    discard history.undo(scene)
+    check scenesEqual(scene, state_a)
+    check history.canRedo
+
+    scene.addItem(POINTS[2], "c", Ink.Rose) # Diverges from the discarded state above.
+    history.record(scene)
+    check not history.canRedo
+    check not history.redo(scene)
+
+    check history.canUndo
+    discard history.undo(scene)
+    check scenesEqual(scene, state_a)
 
 
 

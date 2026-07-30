@@ -616,7 +616,7 @@ proc addLine(
 
 proc addPlane(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
-  anchor_override: Option[Position] = none(Position); is_outline: bool = false
+  anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
   ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
@@ -629,28 +629,12 @@ proc addPlane(
   ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
-  ##   `is_outline` draws only a solid rim, at the object's own ordinary radius, skipping
-  ##   the fill and normal shaft -- for the "selection outline" pass, whose whole point
-  ##   is to peek out past the object's own true-size redraw over it. Drawn at exactly
-  ##   the same radius the ordinary rim below is (not a separately-tuned wider one): the
-  ##   border comes entirely from `renderer.drawOutline`'s own wider line width for this
-  ##   pass, the same mechanism a line object's outline uses, so the two rings stay
-  ##   concentric by construction rather than by matching two independent constants
-  ##   (an earlier version widened the radius itself here, which needed a world-space
-  ##   offset tuned to roughly match the renderer's pixel-space one at some assumed
-  ##   camera distance -- correct only there, visibly off-centre everywhere else).
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isSome and axes.isSome:
     let
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
-
-    if is_outline:
-      meshes.addPlaneRing(anchor.get, axis_first, axis_second, progress*EXTENT_PLANE_F, tint)
-      return Placement.Finite
-
-    let
       extent = progress*EXTENT_PLANE_F
       tint_progress = tint.fade(tint.alpha*progress)
 
@@ -673,7 +657,7 @@ proc addPlane(
 
 proc addObject*(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
-  anchor_override: Option[Position] = none(Position); is_outline: bool = false
+  anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
@@ -682,14 +666,9 @@ proc addObject*(
   ##   to animate against.
   ##   `anchor_override` centres a plane's own disc there instead of its own support;
   ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  ##   `is_outline` builds a plane's own solid rim alone, at its ordinary radius, instead
-  ##   of its ordinary fill plus rim plus normal shaft (see `addPlane`'s own doc
-  ##   comment); ignored for a point or line, whose own outline pass instead widens a
-  ##   draw-time uniform (`renderer.SIZE_POINT_OUTLINE`/`WIDTH_LINE_OUTLINE`) the
-  ##   geometry itself does not need to change for.
   let shape = shape(geometry)
   if shape.isNone: return Placement.Empty
   case shape.get
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
   of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override, is_outline)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)

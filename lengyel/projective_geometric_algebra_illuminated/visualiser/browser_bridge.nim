@@ -42,7 +42,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, interaction, mesh, objects, picking, scene, storyboard]
+import ./[camera, history, interaction, mesh, objects, picking, scene, storyboard]
 
 
 
@@ -51,26 +51,33 @@ import ./[camera, interaction, mesh, objects, picking, scene, storyboard]
 var
   g_scene: Scene
   g_camera: Camera
-  g_meshes_furniture, g_meshes, g_meshes_outline: MeshSet ## Held at module scope and
-    ## reused every frame via `clearMeshes` (which only resets each mesh's own
-    ## `count_vertices`, not its backing storage) -- mirrors `visualiser.nim`'s own
-    ## module-level `MESHES`/`MESHES_FURNITURE`/`MESHES_OUTLINE`. Declaring these as
-    ## `nimBuildFrame`'s own locals instead, freshly on every call, was measured costing
-    ## ~90ms/frame *regardless of how many objects the scene actually held* -- a `MeshSet`
-    ## reserves `VERTICES_MAX` (16384) vertices per primitive up front, and the JS
-    ## backend has no true stack allocation the way re-declaring a fixed-size array
-    ## inside a proc gets on the C backend: each call was reallocating and zero-filling
-    ## three ~1.3MB `MeshSet`s from scratch, whether the scene held nine objects or
-    ## sixty-four. Fixed the same way the desktop build already avoids this: allocate
-    ## once, clear (not reallocate) every frame.
+  g_meshes_furniture, g_meshes: MeshSet ## Held at module scope and reused every frame
+    ## via `clearMeshes` (which only resets each mesh's own `count_vertices`, not its
+    ## backing storage) -- mirrors `visualiser.nim`'s own module-level
+    ## `MESHES`/`MESHES_FURNITURE`. Declaring these as `nimBuildFrame`'s own locals
+    ## instead, freshly on every call, was measured costing ~90ms/frame *regardless of
+    ## how many objects the scene actually held* -- a `MeshSet` reserves `VERTICES_MAX`
+    ## (16384) vertices per primitive up front, and the JS backend has no true stack
+    ## allocation the way re-declaring a fixed-size array inside a proc gets on the C
+    ## backend: each call was reallocating and zero-filling ~1.3MB `MeshSet`s from
+    ## scratch, whether the scene held nine objects or sixty-four. Fixed the same way
+    ## the desktop build already avoids this: allocate once, clear (not reallocate)
+    ## every frame.
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
   g_borns: array[ITEMS_MAX, float] ## Stamped once per slot, the moment an item is added
     ## (by point, by operation, or by drag) -- read back by `nimBuildFrame` so it animates
     ## in exactly as the desktop build's own newly-added item does.
-  g_index_highlighted = none(int) ## Slot most recently constructed, ringed as if freshly
-    ## selected; none where nothing has been built yet this session.
+  g_index_highlighted = none(int) ## Currently selected item's own slot, ringed by the
+    ## presentation layer's own `refreshOverlay` -- auto-selected by every construction
+    ## path, and (unlike the desktop build) also settable directly by `nimSelectItem`,
+    ## for the touch tap-to-select flow. None where nothing is selected.
+  g_history: History ## Undo/redo timeline of scene-content edits; scoped exactly as
+    ## `visualiser.HISTORY` is -- see `history.nim`'s own doc comment for what is and is
+    ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
+    ## is (re)initialized (`nimInit`, `nimLoadDemo`, `nimSceneClear`), so undo never
+    ## reaches earlier than the moment tracking began for whatever scene is live now.
 
 
 proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
@@ -140,6 +147,7 @@ proc nimInit(now: cfloat) {.exportc.} =
     target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
   g_index_highlighted = none(int)
+  g_history = initHistory(g_scene)
 
 
 proc nimLoadDemo(now: cfloat) {.exportc.} =
@@ -152,6 +160,7 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
   for step in STEPS: applyStep(g_scene, step, float(now))
   for slot in 0 ..< ITEMS_MAX: g_borns[slot] = float(now)
   g_index_highlighted = none(int)
+  g_history = initHistory(g_scene)
 
 
 
@@ -217,6 +226,7 @@ proc nimAddPoint(x, y, z, now: cfloat): cint {.exportc.} =
     g_scene.addItem(toMultivector(place), &"p{g_scene.len}", inkCycled(g_scene.len), float(now))
   )
   g_index_highlighted = some(int(result))
+  g_history.record(g_scene)
 
 
 type OperationResult = object ## Report what applying a catalogue operation produced.
@@ -246,6 +256,7 @@ proc nimApplyOperation(
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
   g_index_highlighted = some(slot_created)
+  g_history.record(g_scene)
   let shape_word = shapeDescription(derived)
   OperationResult(
     created_slot: cint(slot_created),
@@ -257,6 +268,7 @@ proc nimApplyOperation(
 proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
   ## Rewrite item's visibility, by slot.
   g_scene.setVisible(int(slot), is_visible)
+  g_history.record(g_scene)
 
 
 proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
@@ -267,6 +279,7 @@ proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
 proc nimSetInk(slot: cint; ink_ordinal: cint) {.exportc.} =
   ## Rewrite item's palette slot, by slot.
   g_scene.setInk(int(slot), Ink(ink_ordinal))
+  g_history.record(g_scene)
 
 
 proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
@@ -279,6 +292,7 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
   ##   Clears the highlighted-slot marker too, where it names the slot just removed.
   g_scene.removeItem(int(slot))
   if g_index_highlighted == some(int(slot)): g_index_highlighted = none(int)
+  g_history.record(g_scene)
 
 
 
@@ -424,6 +438,38 @@ proc nimHoverSlot(): cint {.exportc.} =
   if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: SLOT_NONE
 
 
+proc nimHighlightedSlot(): cint {.exportc.} =
+  ## Report currently selected item's own slot, or `SLOT_NONE` where nothing is
+  ## selected -- the presentation layer's own `refreshOverlay` reads this to draw the
+  ## selected-item ring, the same way it already reads `nimHoverSlot` for the hover ring.
+  if g_index_highlighted.isSome: cint(g_index_highlighted.get) else: SLOT_NONE
+
+
+proc nimSelectItem(slot: cint) {.exportc.} =
+  ## Select item, by slot, or clear the selection where slot is `SLOT_NONE` -- the only
+  ## way anything outside construction changes the selection; used by the touch
+  ## tap-to-select flow, since the desktop build has no analogous explicit "select by
+  ## clicking" gesture to mirror here.
+  g_index_highlighted = if slot == SLOT_NONE: none(int) else: some(int(slot))
+
+
+proc nimUndo(): bool {.exportc.} =
+  ## Move scene back one step on its own edit timeline; report whether there was an
+  ## earlier step to move to. Clears the current selection unconditionally on success,
+  ## since a restored snapshot's slot numbers may not match whatever was highlighted
+  ## before.
+  result = g_history.undo(g_scene)
+  if result: g_index_highlighted = none(int)
+
+
+proc nimRedo(): bool {.exportc.} =
+  ## Move scene forward one step on its own edit timeline; report whether there was a
+  ## later step to move to. Clears the current selection unconditionally on success,
+  ## for the same reason `nimUndo` does.
+  result = g_history.redo(g_scene)
+  if result: g_index_highlighted = none(int)
+
+
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
   interaction.beginDrag(g_interaction, DragOperation(drag_ordinal))
@@ -513,6 +559,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
       label_fixed = &"{label_source} {notation_text} {label_destination}"
       shape_word = shapeDescription(g_scene.geometryAt(slot))
     toChars(label_fixed, g_scene.labelAt(slot))
+    g_history.record(g_scene)
     return DragResult(
       created_slot: cint(slot),
       message: cstring(&"{label_fixed} gave {shape_word}."),
@@ -546,6 +593,7 @@ proc nimSceneClear() {.exportc.} =
   ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()
   g_index_highlighted = none(int)
+  g_history = initHistory(g_scene)
 
 
 proc nimSceneAddRaw(
@@ -571,13 +619,7 @@ type FrameData = object
   tri_verts, line_verts, point_verts: seq[float32]
   view_projection: seq[float32]
   furn_line_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, at
-    ## their own thinner line width (see `renderer.WIDTH_LINE_FURNITURE`), and before
-    ## the outline pass below so neither ever paints back over a selection border.
-  ol_tri_verts, ol_line_verts, ol_point_verts: seq[float32] ## Highlighted item's own
-    ## result, built oversized and in a flat outline colour, for the outline pass --
-    ## drawn between furniture and the main frame above, so only what peeks out past
-    ## that object's own true-size redraw over it shows, reading as a selection
-    ## border; empty wherever nothing is currently highlighted.
+    ## their own thinner line width (see `renderer.WIDTH_LINE_FURNITURE`).
 
 
 proc nimBuildFrame(
@@ -592,10 +634,10 @@ proc nimBuildFrame(
   ##   two-pass draw-order invariant (horizon plane first, so its translucent dome never
   ##   occludes an ordinary plane's own fill drawn after it) and additionally packs the
   ##   view-projection matrix plus the whole `FrameData` return struct -- packaging the
-  ##   desktop side never needs, since it reads `MESHES`/`MESHES_FURNITURE`/
-  ##   `MESHES_OUTLINE` straight through `renderer.nim` instead of handing them back
-  ##   across an FFI boundary. Splitting the packaging out would return partial results
-  ##   across an extra proc boundary for no reader benefit.
+  ##   desktop side never needs, since it reads `MESHES`/`MESHES_FURNITURE` straight
+  ##   through `renderer.nim` instead of handing them back across an FFI boundary.
+  ##   Splitting the packaging out would return partial results across an extra proc
+  ##   boundary for no reader benefit.
   clearMeshes(g_meshes_furniture)
 
   let scale = drawExtentFor(g_camera)
@@ -640,19 +682,6 @@ proc nimBuildFrame(
           geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
         )
 
-  # Build the highlighted item's own result a second time, oversized and in a flat
-  #   outline colour, into its own buffer the outline pass draws before the frame above --
-  #   see `renderer.drawOutline`'s own doc comment for why this reads as a selection border.
-  clearMeshes(g_meshes_outline)
-  if g_index_highlighted.isSome:
-    let highlighted = g_index_highlighted.get
-    if g_scene.isAlive(highlighted) and g_scene.isVisible(highlighted):
-      discard g_meshes_outline.addObject(
-        g_scene.geometryAt(highlighted), Ink.Outline.colour, scale,
-        animationProgress(float(now), g_borns[highlighted]),
-        g_scene.anchorOverrideAt(highlighted), is_outline = true,
-      )
-
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
   for row in 0 .. 3:
@@ -665,7 +694,4 @@ proc nimBuildFrame(
     point_verts: flatten(g_meshes[Primitive.Point]),
     view_projection: view_projection,
     furn_line_verts: flatten(g_meshes_furniture[Primitive.Line]),
-    ol_tri_verts: flatten(g_meshes_outline[Primitive.Triangle]),
-    ol_line_verts: flatten(g_meshes_outline[Primitive.Line]),
-    ol_point_verts: flatten(g_meshes_outline[Primitive.Point]),
   )
