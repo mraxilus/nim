@@ -13,6 +13,9 @@
 ##
 ## Enumerants are written as literals rather than imported, since their values are fixed
 ## by OpenGL specification and never renumbered.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

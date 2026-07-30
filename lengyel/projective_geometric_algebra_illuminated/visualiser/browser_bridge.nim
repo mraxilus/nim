@@ -33,6 +33,9 @@
 ## coefficients) rather than bytes directly, since packing IEEE-754 doubles by hand in
 ## Nim/JS would only reinvent what a browser's own `DataView` already does natively; the
 ## hand-written presentation layer packs and unpacks the exact documented byte layout.
+##
+## This is the browser entry point; see `visualiser.nim`'s own "Render Paths" table for
+## the full shared/desktop-only/browser-only module split.
 
 {.experimental: "strictFuncs".}
 

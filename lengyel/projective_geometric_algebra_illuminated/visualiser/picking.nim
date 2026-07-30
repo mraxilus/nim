@@ -25,6 +25,9 @@
 ##
 ## A point wins a tie over a line, and a line over a plane: the smaller target should not
 ## be swallowed by a larger one drawn behind or through it.
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 

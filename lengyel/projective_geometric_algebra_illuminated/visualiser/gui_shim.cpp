@@ -6,6 +6,9 @@
 // once rather than repeated at each call site.
 //
 // Backends are Dear ImGui's own for SDL3 and OpenGL 3, used unmodified.
+//
+// Desktop-only; unreachable from the browser build. See visualiser.nim's own "Render
+// Paths" table.
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"

@@ -28,6 +28,9 @@
 ## Every scratch buffer -- quantized indices, the LZW dictionary, and its packed
 ## output -- comes from a caller-owned frame arena, or is a fixed-capacity table
 ## reset per call; nothing here calls the allocator.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

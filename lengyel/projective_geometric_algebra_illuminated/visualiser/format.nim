@@ -9,6 +9,10 @@
 ## Sits beside `sdl3`, `opengl` and `image` as a binding over something external -- here
 ## the C runtime's own formatter -- rather than beside `scene` or `mesh`, which hold
 ## this project's own logic.
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths, transitively through `interaction`; see `visualiser.nim`'s own
+## "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 

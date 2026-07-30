@@ -18,6 +18,9 @@
 ##   Elevation is clamped short of poles, where up direction would run along sight axis
 ##   and the joins above would collapse.
 
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
+
 # Reorder so placement reads before frame derived from it, though `pan` calls `frame`.
 #   Constants below stay in dependency order regardless, as reordering does not cover them.
 {.experimental: "codeReordering".}

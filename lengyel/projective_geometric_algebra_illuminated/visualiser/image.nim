@@ -23,6 +23,9 @@
 ##   a maximum window size for no real benefit. Arena carving costs the same fixed bound
 ##   -- `writePng` now asserts instead of growing past it -- but pays it in one place
 ##   the caller already owns, rather than in a second, independent allocator call.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

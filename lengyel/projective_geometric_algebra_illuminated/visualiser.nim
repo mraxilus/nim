@@ -38,6 +38,36 @@
 ##   storyboard scripts a construction, one operation per exported frame.
 ##   image encodes a frame readback as PNG.
 ##
+## Render paths: this file is the native desktop entry point (SDL3/OpenGL/Dear ImGui,
+## compiled `--backend:cpp` per `visualiser.nim.cfg`); `visualiser/browser_bridge.nim`
+## is the browser entry point (compiled through `nim js` per its own sibling
+## `browser_bridge.nim.cfg`, presentation done by hand-written JS living outside this
+## repo). Neither imports the other, and nothing shared imports either render target's
+## own presentation layer -- verified by import graph, not just by convention:
+##
+##   |-------------------|---------|-----------------------------------------------|
+##   | Module            | Path    | Reachable from                                |
+##   |-------------------|---------|-----------------------------------------------|
+##   | pga               | Shared  | Both (external, vendored at build time only). |
+##   | objects           | Shared  | Both.                                         |
+##   | mesh              | Shared  | Both.                                         |
+##   | camera            | Shared  | Both.                                         |
+##   | scene             | Shared  | Both.                                         |
+##   | picking           | Shared  | Both.                                         |
+##   | interaction       | Shared  | Both.                                         |
+##   | storyboard        | Shared  | Both.                                         |
+##   | format            | Shared  | Both (transitively, through interaction).     |
+##   | browser_bridge    | Browser | Browser entry point.                          |
+##   | arena             | Desktop | Desktop only.                                 |
+##   | gif               | Desktop | Desktop only.                                 |
+##   | image             | Desktop | Desktop only.                                 |
+##   | gui, gui_shim.cpp | Desktop | Desktop only.                                 |
+##   | opengl            | Desktop | Desktop only.                                 |
+##   | sdl3              | Desktop | Desktop only.                                 |
+##   | renderer          | Desktop | Desktop only.                                 |
+##   | panel             | Desktop | Desktop only.                                 |
+##   |-------------------|---------|-----------------------------------------------|
+##
 ## Controls:
 ##   Drag from one object to another to derive a third: left joins, right meets, middle
 ##   projects the object dragged from onto the object dragged to. The rubber-band drawn

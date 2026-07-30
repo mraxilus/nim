@@ -27,6 +27,9 @@
 ## Multivectors are printed by `scene.formatMultivector` rather than by the library's own
 ## `$`, which writes basis elements in mathematical bold outside the Basic Multilingual
 ## Plane. No font available to the GUI carries those, so they would draw as empty boxes.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

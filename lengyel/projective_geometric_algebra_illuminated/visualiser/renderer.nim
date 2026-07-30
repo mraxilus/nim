@@ -12,6 +12,9 @@
 ##   Lines and points therefore occlude correctly against each other.
 ##   Plane washes never occlude anything, so objects stay visible through them, which is
 ##   what a geometry viewer wants. Cost is that two washes crossing look order-dependent.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

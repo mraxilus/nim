@@ -1,4 +1,5 @@
-## Turn RGA objects into vertices OpenGL can draw.
+## Turn RGA objects into vertices a renderer can draw -- natively through OpenGL,
+## in-browser through WebGL.
 ##
 ## Finite objects are tessellated about their support point, i.e. point nearest origin:
 ##   Line becomes segment along its attitude: `DrawExtent.radius_horizon` backward from
@@ -46,6 +47,9 @@
 ##   |           |              | horizon circles, axes, ground grid.  |
 ##   | Point     | GL_POINTS    | Points, stars.                       |
 ##   |-----------|--------------|--------------------------------------|
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 

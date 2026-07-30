@@ -26,6 +26,11 @@
 ##   | One     | ⊖ ∩ ∪ \ / ★ ☆ ~ ~∘ - ^ ∙ ∘     | Attitude, support, duals, norms.     |
 ##   | Two     | + - ∧ ∨ ⟑ ⟇ ∙ ∘ ∧★ ∧☆ ∨★ ∨☆    | Join, meet, geometric products.      |
 ##   |---------|--------------------------------|--------------------------------------|
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table. `saveScene`/
+## `loadScene` are native-only (`when not defined(js)`), since a browser has no
+## filesystem to target -- the browser side saves/loads via download/upload instead.
 
 {.experimental: "strictFuncs".}
 

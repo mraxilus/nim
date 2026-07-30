@@ -26,6 +26,9 @@
 ## Backing storage is a plain global array, not a runtime allocation: reserving the block
 ## costs one line in the binary's own data segment, never a call to the allocator, and
 ## every arena described above is exhausted by that same `doAssert` rather than by growing.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

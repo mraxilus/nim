@@ -13,6 +13,9 @@
 ## Built-in font carries no mathematical operators, so a TrueType face is loaded over it.
 ##   Where the file is absent the built-in font stands, and notation degrades to boxes;
 ##   `isFontLoaded` reports which happened, rather than leaving the caller to guess.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

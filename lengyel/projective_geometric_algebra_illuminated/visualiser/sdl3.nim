@@ -9,6 +9,9 @@
 ## Event kinds and flags are mirrored as Nim constants so `case` can bind them.
 ##   Mirroring risks silent drift, so every value is checked against the header's own by a
 ##   generated static assertion, and a stale binding fails to compile rather than to work.
+##
+## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
+## Paths" table.
 
 {.experimental: "strictFuncs".}
 

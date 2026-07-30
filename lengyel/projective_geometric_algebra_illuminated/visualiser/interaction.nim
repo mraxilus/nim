@@ -6,6 +6,9 @@
 ##
 ## Hover is tracked independently of dragging, every frame, purely so the item a drag would
 ## start from can be shown before any button is pressed.
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 

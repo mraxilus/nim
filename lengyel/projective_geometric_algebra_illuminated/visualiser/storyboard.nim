@@ -19,6 +19,9 @@
 ##   | 4     | ground            | Seed plane, joined from three points at z = 0.    |
 ##   | 5+    | one per step      | Result of the step's own operation.               |
 ##   |-------|-------------------|--------------------------------------------------|
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 

@@ -23,6 +23,9 @@
 ##   Difference of two positions is direction; position offset by direction is position.
 ##   Weight coefficient pʷ decides which of two a grade-1 multivector holds.
 ##   Confusing them silently drops perspective divide, so type makes that uncompilable.
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
+## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 
