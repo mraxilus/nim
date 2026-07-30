@@ -202,6 +202,11 @@ proc nimItemVisible(slot: cint): bool {.exportc.} = g_scene.isVisible(int(slot))
   ## Report item's visibility, by slot.
 
 
+proc nimItemBorn(slot: cint): cfloat {.exportc.} = cfloat(g_borns[int(slot)])
+  ## Report the moment (same clock as every other `now` parameter here) item was added,
+  ## by slot -- lets the browser's own Objects panel sort by recency.
+
+
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
   ## Report item's shape, by slot, in the same words `shapeDescription` names it.
   cstring(shapeDescription(g_scene.geometryAt(int(slot))))
@@ -225,6 +230,7 @@ proc nimAddPoint(x, y, z, now: cfloat): cint {.exportc.} =
   result = cint(
     g_scene.addItem(toMultivector(place), &"p{g_scene.len}", inkCycled(g_scene.len), float(now))
   )
+  g_borns[int(result)] = float(now)
   g_index_highlighted = some(int(result))
   g_history.record(g_scene)
 
@@ -621,6 +627,11 @@ proc nimSceneAddRaw(
   for b in Basis: geometry[b] = coefficients[ord(b)]
   let slot = g_scene.addItem(geometry, $label, Ink(ink_ordinal))
   g_scene.setVisible(slot, is_visible)
+  # Matches Item.born's own "dawn of time" default for a loaded item (never partway
+  #   through an appear-in animation that never happened this run): without this, the
+  #   slot could otherwise still hold a stale g_borns reading from whatever occupied it
+  #   earlier this session, misranking a just-loaded item as more recent than it is.
+  g_borns[slot] = 0.0
   cint(slot)
 
 
