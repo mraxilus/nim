@@ -66,8 +66,8 @@ var
   g_borns: array[ITEMS_MAX, float] ## Stamped once per slot, the moment an item is added
     ## (by point, by operation, or by drag) -- read back by `nimBuildFrame` so it animates
     ## in exactly as the desktop build's own newly-added item does.
-  g_index_highlighted = -1 ## Slot most recently constructed, ringed as if freshly
-    ## selected; -1 where nothing has been built yet this session.
+  g_index_highlighted = none(int) ## Slot most recently constructed, ringed as if freshly
+    ## selected; none where nothing has been built yet this session.
 
 
 proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
@@ -136,7 +136,7 @@ proc nimInit(now: cfloat) {.exportc.} =
   g_camera = initCamera(
     target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
-  g_index_highlighted = -1
+  g_index_highlighted = none(int)
 
 
 proc nimLoadDemo(now: cfloat) {.exportc.} =
@@ -148,7 +148,7 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
   constructSeeds(g_scene, float(now))
   for step in STEPS: applyStep(g_scene, step, float(now))
   for slot in 0 ..< ITEMS_MAX: g_borns[slot] = float(now)
-  g_index_highlighted = -1
+  g_index_highlighted = none(int)
 
 
 
@@ -206,7 +206,7 @@ proc nimAddPoint(x, y, z, now: cfloat): cint {.exportc.} =
   result = cint(
     g_scene.addItem(toMultivector(place), &"p{g_scene.len}", inkCycled(g_scene.len), float(now))
   )
-  g_index_highlighted = int(result)
+  g_index_highlighted = some(int(result))
 
 
 type OperationResult = object ## Report what applying a catalogue operation produced.
@@ -235,7 +235,7 @@ proc nimApplyOperation(
     slot_created =
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
-  g_index_highlighted = slot_created
+  g_index_highlighted = some(slot_created)
   let shape_word = shapeDescription(derived)
   OperationResult(
     created_slot: cint(slot_created),
@@ -262,7 +262,7 @@ proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
 
 proc nimRemoveItem(slot: cint) {.exportc.} =
   g_scene.removeItem(int(slot))
-  if g_index_highlighted == int(slot): g_index_highlighted = -1
+  if g_index_highlighted == some(int(slot)): g_index_highlighted = none(int)
 
 
 
@@ -349,6 +349,15 @@ proc nimCameraLimits(): seq[float32] {.exportc.} =
 
 #[ Picking And Drag ]#
 
+const SLOT_NONE = -1'i32
+  ## Cross the `{.exportc.}` boundary as "no slot" -- `cint` cannot carry `Option[int]`
+  ## into JS, so every exported proc reporting an optional slot translates through this
+  ## one constant at its own return, rather than inventing its own inline `-1`. See
+  ## `shapeDescription`'s own doc comment for the precedent: the boundary is where a
+  ## JS-incompatible representation gets translated, not a reason to use it upstream --
+  ## everything on this side of that translation stays `Option[int]`.
+
+
 func drawExtentFor(cam: Camera): DrawExtent =
   DrawExtent(
     extent_furniture: extentFurnitureFor(cam.distance_far),
@@ -367,7 +376,7 @@ proc nimUpdateHover(width, height: cint) {.exportc.} =
 
 
 proc nimHoverSlot(): cint {.exportc.} =
-  if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: cint(-1)
+  if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: SLOT_NONE
 
 
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
@@ -382,10 +391,14 @@ proc nimDragActive(): bool {.exportc.} = g_interaction.operation.isSome
 
 
 proc nimDragOperation(): cint {.exportc.} =
-  if g_interaction.operation.isSome: cint(g_interaction.operation.get) else: cint(-1)
+  if g_interaction.operation.isSome: cint(g_interaction.operation.get) else: SLOT_NONE
 
 
 proc nimDragSourceSlot(): cint {.exportc.} = cint(g_interaction.index_source)
+  ## Report item drag started from -- meaningful only while `nimDragActive()` is true,
+  ## exactly mirroring `interaction.index_source`'s own doc comment; not a `SLOT_NONE`
+  ## case of its own, since it is a plain forward of a field already paired with that
+  ## guard rather than an independently optional value.
 
 
 proc nimDragOperationToOperation(drag_ordinal: cint): cint {.exportc.} =
@@ -412,8 +425,8 @@ proc nimDragTint(drag_ordinal: cint): seq[float32] {.exportc.} =
 
 
 type DragResult = object ## Report what ending a drag produced.
-  created_slot: cint ## -1 where nothing was added (released over empty space, or on the
-    ## drag's own source).
+  created_slot: cint ## `SLOT_NONE` where nothing was added (released over empty space,
+    ## or on the drag's own source).
   message: cstring ## Outcome, for display exactly as the desktop panel's own status line.
 
 
@@ -444,7 +457,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
     g_borns[slot] = float(now)
-    g_index_highlighted = slot
+    g_index_highlighted = some(slot)
     let
       label_fixed = &"{label_source} {notation_text} {label_destination}"
       shape_word = shapeDescription(g_scene.geometryAt(slot))
@@ -454,7 +467,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
       message: cstring(&"{label_fixed} gave {shape_word}."),
     )
   DragResult(
-    created_slot: cint(-1),
+    created_slot: SLOT_NONE,
     message: cstring("Drag released on empty space or its own source; nothing done."),
   )
 
@@ -480,7 +493,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
 
 proc nimSceneClear() {.exportc.} =
   g_scene = initScene()
-  g_index_highlighted = -1
+  g_index_highlighted = none(int)
 
 
 proc nimSceneAddRaw(
@@ -571,13 +584,14 @@ proc nimBuildFrame(
   #   outline colour, into its own buffer the outline pass draws before the frame above --
   #   see `renderer.drawOutline`'s own doc comment for why this reads as a selection border.
   clearMeshes(g_meshes_outline)
-  if g_index_highlighted >= 0 and g_scene.isAlive(g_index_highlighted) and
-     g_scene.isVisible(g_index_highlighted):
-    discard g_meshes_outline.addObject(
-      g_scene.geometryAt(g_index_highlighted), Ink.Outline.colour, scale,
-      animationProgress(float(now), g_borns[g_index_highlighted]),
-      g_scene.anchorOverrideAt(g_index_highlighted), is_outline = true,
-    )
+  if g_index_highlighted.isSome:
+    let highlighted = g_index_highlighted.get
+    if g_scene.isAlive(highlighted) and g_scene.isVisible(highlighted):
+      discard g_meshes_outline.addObject(
+        g_scene.geometryAt(highlighted), Ink.Outline.colour, scale,
+        animationProgress(float(now), g_borns[highlighted]),
+        g_scene.anchorOverrideAt(highlighted), is_outline = true,
+      )
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
