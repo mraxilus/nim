@@ -69,6 +69,7 @@ const
   LINK_STATUS* = 0x8B82'u32
   VERSION* = 0x1F02'u32
   FALSE* = 0'u8
+  TRUE* = 1'u8
 
 
 

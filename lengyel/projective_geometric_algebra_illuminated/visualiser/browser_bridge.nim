@@ -244,8 +244,8 @@ proc nimApplyOperation(
   )
 
 
-proc nimSetVisible(slot: cint; visible: bool) {.exportc.} =
-  g_scene.setVisible(int(slot), visible)
+proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
+  g_scene.setVisible(int(slot), is_visible)
 
 
 proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
@@ -480,7 +480,7 @@ proc nimSceneClear() {.exportc.} =
 
 
 proc nimSceneAddRaw(
-  ink_ordinal: cint; visible: bool; label: cstring; coefficients: seq[float]
+  ink_ordinal: cint; is_visible: bool; label: cstring; coefficients: seq[float]
 ): cint {.exportc.} =
   ## Add one item straight from parsed `.rgascene` fields, for the load path: the hand-
   ## written presentation layer parses the uploaded file's bytes into exactly these
@@ -489,7 +489,7 @@ proc nimSceneAddRaw(
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   let slot = g_scene.addItem(geometry, $label, Ink(ink_ordinal))
-  g_scene.setVisible(slot, visible)
+  g_scene.setVisible(slot, is_visible)
   cint(slot)
 
 
@@ -512,7 +512,7 @@ type FrameData = object
 
 
 proc nimBuildFrame(
-  aspect, now: cfloat; show_axes, show_grid: bool
+  aspect, now: cfloat; is_axes_shown, is_grid_shown: bool
 ): FrameData {.exportc.} =
   ## Tessellate every visible object in the live scene, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
@@ -523,8 +523,8 @@ proc nimBuildFrame(
 
   let scale = drawExtentFor(g_camera)
 
-  if show_grid: addGrid(g_meshes_furniture, scale.extent_furniture)
-  if show_axes: addAxes(g_meshes_furniture, scale.extent_furniture)
+  if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture)
+  if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture)
 
   clearMeshes(g_meshes)
   # A horizon plane's own dome first, before anything else that might share its own
@@ -572,7 +572,7 @@ proc nimBuildFrame(
     discard g_meshes_outline.addObject(
       g_scene.geometryAt(g_index_highlighted), Ink.Outline.colour, scale,
       animationProgress(float(now), g_borns[g_index_highlighted]),
-      g_scene.anchorOverrideAt(g_index_highlighted), outline = true,
+      g_scene.anchorOverrideAt(g_index_highlighted), is_outline = true,
     )
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))

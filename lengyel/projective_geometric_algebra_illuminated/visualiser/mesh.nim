@@ -609,7 +609,7 @@ proc addLine(
 
 proc addPlane(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
-  anchor_override: Option[Position] = none(Position); outline: bool = false
+  anchor_override: Option[Position] = none(Position); is_outline: bool = false
 ): Placement =
   ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
   ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
@@ -622,7 +622,7 @@ proc addPlane(
   ##   only where the disc is drawn changes, never how it is oriented.
   ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
   ##   fades every part of it in alongside.
-  ##   `outline` draws only a solid rim, at the object's own ordinary radius, skipping
+  ##   `is_outline` draws only a solid rim, at the object's own ordinary radius, skipping
   ##   the fill and normal shaft -- for the "selection outline" pass, whose whole point
   ##   is to peek out past the object's own true-size redraw over it. Drawn at exactly
   ##   the same radius the ordinary rim below is (not a separately-tuned wider one): the
@@ -639,7 +639,7 @@ proc addPlane(
     let
       (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
 
-    if outline:
+    if is_outline:
       meshes.addPlaneRing(anchor.get, axis_first, axis_second, progress*EXTENT_PLANE_F, tint)
       return Placement.Finite
 
@@ -666,7 +666,7 @@ proc addPlane(
 
 proc addObject*(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
-  anchor_override: Option[Position] = none(Position); outline: bool = false
+  anchor_override: Option[Position] = none(Position); is_outline: bool = false
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Empty where multivector carries no drawable geometry at all.
@@ -675,7 +675,7 @@ proc addObject*(
   ##   to animate against.
   ##   `anchor_override` centres a plane's own disc there instead of its own support;
   ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  ##   `outline` builds a plane's own solid rim alone, at its ordinary radius, instead
+  ##   `is_outline` builds a plane's own solid rim alone, at its ordinary radius, instead
   ##   of its ordinary fill plus rim plus normal shaft (see `addPlane`'s own doc
   ##   comment); ignored for a point or line, whose own outline pass instead widens a
   ##   draw-time uniform (`renderer.SIZE_POINT_OUTLINE`/`WIDTH_LINE_OUTLINE`) the
@@ -685,4 +685,4 @@ proc addObject*(
   case shape.get
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
   of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override, outline)
+  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override, is_outline)

@@ -249,13 +249,13 @@ proc assembleMeshes(
   #   end up looking hazed by the sky behind it purely from slot ordering, not from
   #   anything about actual position.
   for slot, item in scene.pairs:
-    if not item.is_visible or not isHorizonPlane(item.geometry): continue
+    if not item.isVisible or not isHorizonPlane(item.geometry): continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
   for slot, item in scene.pairs:
-    if not item.is_visible or isHorizonPlane(item.geometry): continue
+    if not item.isVisible or isHorizonPlane(item.geometry): continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
@@ -269,11 +269,11 @@ proc assembleMeshes(
   MESHES_OUTLINE.clearMeshes
   if workbench.index_highlighted.isSome:
     let slot = workbench.index_highlighted.get
-    if scene.isAlive(slot) and scene[slot].is_visible:
+    if scene.isAlive(slot) and scene[slot].isVisible:
       let item = scene[slot]
       discard MESHES_OUTLINE.addObject(
         item.geometry, Ink.Outline.colour, scale, animationProgress(now, item.born),
-        item.anchorOverride, outline = true,
+        item.anchorOverride, is_outline = true,
       )
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0

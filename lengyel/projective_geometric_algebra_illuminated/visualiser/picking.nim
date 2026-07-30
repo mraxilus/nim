@@ -211,7 +211,7 @@ func pickNearest*(
       slot_best = some(slot)
 
   for slot, item in scene.pairs:
-    if not item.is_visible: continue
+    if not item.isVisible: continue
     let geometry = item.geometry
     let shape = shape(geometry)
     if shape.isNone: continue

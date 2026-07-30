@@ -378,7 +378,7 @@ proc drawMeshes*(
   # Draw washes without writing depth, so objects stay visible through them.
   gl.depthMask(gl.FALSE)
   renderer.drawPrimitive(meshes, Primitive.Triangle)
-  gl.depthMask(1)
+  gl.depthMask(gl.TRUE)
   gl.bindVertexArray(0)
 
 

@@ -51,7 +51,7 @@ type
 
   KeyboardEvent* {.importc: "SDL_KeyboardEvent", header: HEADER, bycopy.} = object
     scancode* {.importc.}: uint32 ## Physical key, independent of layout.
-    down* {.importc.}: bool ## Whether key is pressed rather than released.
+    is_down* {.importc: "down".}: bool ## Whether key is pressed rather than released.
 
   MouseMotionEvent* {.importc: "SDL_MouseMotionEvent", header: HEADER, bycopy.} = object
     x* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.

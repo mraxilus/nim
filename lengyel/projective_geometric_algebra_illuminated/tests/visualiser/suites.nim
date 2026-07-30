@@ -498,7 +498,7 @@ suite "Scene":
     var count_seen = 0
     for item in scene:
       check item.geometry =~ POINTS[count_seen]
-      check item.is_visible
+      check item.isVisible
       inc count_seen
     check count_seen == 5
 
@@ -706,18 +706,18 @@ suite "Scene":
     check loaded[0].geometry =~ POINTS[0]
     check $toCstring(loaded[0].label) == "a"
     check loaded[0].ink == Ink.Rose
-    check loaded[0].is_visible
+    check loaded[0].isVisible
     check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
 
     check loaded[1].geometry =~ POINTS[1]
     check $toCstring(loaded[1].label) == "bb"
     check loaded[1].ink == Ink.Jade
-    check loaded[1].is_visible
+    check loaded[1].isVisible
 
     check loaded[2].geometry =~ POINTS[3]
     check $toCstring(loaded[2].label) == "d"
     check loaded[2].ink == Ink.Violet
-    check not loaded[2].is_visible
+    check not loaded[2].isVisible
 
 
   test "empty scene round-trips":

@@ -60,7 +60,7 @@ type
     ## under the JS backend, where a value parameter's own address does not carry
     ## across calls the way it does under the C++ backend.
     ##   Holds a pointer back into `scene`'s own storage plus the slot number -- reading
-    ##   `.geometry`, `.label`, `.ink`, `.is_visible` or `.born` off it resolves straight
+    ##   `.geometry`, `.label`, `.ink`, `.isVisible` or `.born` off it resolves straight
     ##   into that storage each time, so holding or passing an `Item` around costs no
     ##   more than a pointer and an int, whether or not the caller ends up reading every
     ##   field or just one. Do not hold one across a mutation of its own slot (`removeItem`
@@ -347,7 +347,7 @@ func ink*(item: Item): Ink = item.scene.inks[item.slot]
   ## Read item's palette slot, straight out of the scene the handle points at.
 
 
-func is_visible*(item: Item): bool = item.scene.are_visible[item.slot]
+func isVisible*(item: Item): bool = item.scene.are_visible[item.slot]
   ## Read item's visibility, straight out of the scene the handle points at.
 
 
@@ -419,7 +419,7 @@ proc setInk*(scene: var Scene; slot: int; ink: Ink) =
   scene.inks[slot] = ink
 
 
-proc setVisible*(scene: var Scene; slot: int; visible: bool) =
+proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
   ## Rewrite item's visibility, by slot -- a plain setter beside `isVisibleAt`'s own
   ## `addr scene.isVisibleAt(slot)` idiom (which `panel.nim`'s checkbox widget still
   ## uses, and which works fine there), for a caller that cannot use that idiom: under
@@ -430,7 +430,7 @@ proc setVisible*(scene: var Scene; slot: int; visible: bool) =
   ## backing array), so a direct, ordinary assignment through a plain setter is the
   ## only path this backend can rely on for both directions, mirroring `setInk` exactly.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.are_visible[slot] = visible
+  scene.are_visible[slot] = is_visible
 
 
 iterator items*(scene: Scene): Item =
@@ -533,7 +533,7 @@ when not defined(js):
 
     for item in scene:
       file.write(char(ord(item.ink)))
-      file.write(char(ord(item.is_visible)))
+      file.write(char(ord(item.isVisible)))
       let
         text = $toCstring(item.label)
         geometry = item.geometry
