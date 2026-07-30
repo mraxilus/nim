@@ -500,6 +500,11 @@ proc runInteractive(
   workbench: var Workbench; scene: var Scene; camera: var Camera;
 ) =
   ## Draw frames, folding input in, until user or command line asks to stop.
+  ##   Exceeds the working 60-line default: a sequential per-frame state machine
+  ##   threading a dozen mutable locals (drag state, vsync tracking, running totals)
+  ##   through one loop body. Splitting the loop into helper procs would mean passing
+  ##   most of those locals by `var` reference across a new proc boundary, trading a
+  ##   readable top-to-bottom frame loop for indirection with no cost reduction.
   var
     interaction = Interaction(is_enabled: true)
     button_dragging = none(uint8)
@@ -588,6 +593,10 @@ proc runStoryboard(
   ##   show what clicking would have produced.
   ##   `clock` is a synthetic reading rather than a real one, so the animation sweeps at
   ##   an exact, reproducible pace regardless of how fast this machine draws a frame.
+  ##   Exceeds the working 60-line default: a sequential per-step state machine
+  ##   threading dimming state, GIF frame accounting, and the synthetic clock through
+  ##   one loop body -- the same shape, and the same reason to leave it as one proc,
+  ##   as `runInteractive` above.
   createDir(directory)
   var
     interaction_disabled = Interaction() # is_enabled defaults false; no picking, no overlay.

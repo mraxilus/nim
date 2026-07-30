@@ -348,17 +348,9 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
 
 #[ Diagnostics Panel ]#
 
-proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
-  ## Lay out live performance and memory readouts: closed by default, since nothing here
-  ## is needed to use the workbench, only to understand what using it costs.
-  if not gui.header("diagnostics", is_open_first = false): return
-  gui.text("Live cost of this build, updated every frame.")
-  gui.sameLine()
-  gui.helpMarker(
-    "Nothing on this panel changes what you can do here; it exists so a slow frame or " &
-    "a full object pool shows itself directly instead of just feeling wrong."
-  )
-
+proc layoutDiagnosticsFrameTime(workbench: var Workbench) =
+  ## Lay out the "frame time" section: rolling frame-time plot, vsync toggle, current
+  ## rate, tessellation cost.
   gui.separatorText("frame time")
   var highest = 16.6'f32 # Floor the range at 60fps, so a smooth run doesn't zoom in on noise.
   for value in workbench.milliseconds_history:
@@ -396,6 +388,9 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     appendChars(line, cursor, " vertices")
   gui.text(text_tessellate)
 
+
+proc layoutDiagnosticsMemory(workbench: Workbench) =
+  ## Lay out the "memory" section: permanent and per-frame arena usage bars.
   gui.separatorText("memory")
   block:
     let
@@ -442,6 +437,9 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
       "has needed so far, out of its own fixed reservation."
     )
 
+
+proc layoutDiagnosticsObjectPool(scene: Scene) =
+  ## Lay out the "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
   var are_alive: array[ITEMS_MAX, bool]
   for slot in 0 ..< ITEMS_MAX: are_alive[slot] = scene.isAlive(slot)
@@ -477,6 +475,9 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     "what one object's own slot costs -- not a measurement of any single object."
   )
 
+
+proc layoutDiagnosticsTotal(workbench: Workbench) =
+  ## Lay out the "total" section: every fixed reservation this binary makes, added up.
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
   let text_total = buildChars(total):
@@ -490,6 +491,23 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     "Dear ImGui, SDL, or the graphics driver allocate on their own account, which " &
     "this process cannot see or account for."
   )
+
+
+proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
+  ## Lay out live performance and memory readouts: closed by default, since nothing here
+  ## is needed to use the workbench, only to understand what using it costs.
+  if not gui.header("diagnostics", is_open_first = false): return
+  gui.text("Live cost of this build, updated every frame.")
+  gui.sameLine()
+  gui.helpMarker(
+    "Nothing on this panel changes what you can do here; it exists so a slow frame or " &
+    "a full object pool shows itself directly instead of just feeling wrong."
+  )
+
+  layoutDiagnosticsFrameTime(workbench)
+  layoutDiagnosticsMemory(workbench)
+  layoutDiagnosticsObjectPool(scene)
+  layoutDiagnosticsTotal(workbench)
 
 
 

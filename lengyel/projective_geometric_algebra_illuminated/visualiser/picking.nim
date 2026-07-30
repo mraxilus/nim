@@ -190,6 +190,11 @@ func pickNearest*(
   ##   screen-space or ray test could land on, since both are drawn fixed to the eye
   ##   rather than to a point in the scene (see `mesh.addLine`/`addPlane`'s own horizon
   ##   branches). Only a point at horizon -- a fixed star -- keeps a pickable anchor.
+  ##   Exceeds the working 60-line default: the three shape branches below are
+  ##   irreducibly different geometry (point/line/plane hit-testing), each already
+  ##   minimal, and all three share the `eye`/`frame_camera`/`ray`/`scale` setup computed
+  ##   once above rather than per-candidate -- extracting a branch into its own proc
+  ##   would mean threading all four back in as parameters for no simplification.
 
   # Eye, camera frame and sight ray depend only on camera and cursor, not on which item is
   #   being tested, so each is built once here rather than once per plane candidate below.

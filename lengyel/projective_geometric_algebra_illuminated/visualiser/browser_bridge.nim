@@ -155,9 +155,11 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
 #[ Scene Inspection ]#
 
 proc nimSceneCount(): cint {.exportc.} = cint(g_scene.len)
+  ## Report how many items are currently alive in the scene.
 
 
 proc nimSceneCapacity(): cint {.exportc.} = cint(ITEMS_MAX)
+  ## Report the fixed number of item slots this build reserves.
 
 
 proc nimSceneSlots(): seq[cint] {.exportc.} =
@@ -172,19 +174,24 @@ proc nimSceneSlots(): seq[cint] {.exportc.} =
 
 
 proc nimIsAlive(slot: cint): bool {.exportc.} = g_scene.isAlive(int(slot))
+  ## Report whether slot currently holds a live item.
 
 
 proc nimItemLabel(slot: cint): cstring {.exportc.} =
+  ## Report item's display label, by slot.
   cstring(labelString(g_scene.labelAt(int(slot))))
 
 
 proc nimItemInk(slot: cint): cint {.exportc.} = cint(g_scene.inkAt(int(slot)))
+  ## Report item's palette slot, by slot.
 
 
 proc nimItemVisible(slot: cint): bool {.exportc.} = g_scene.isVisible(int(slot))
+  ## Report item's visibility, by slot.
 
 
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
+  ## Report item's shape, by slot, in the same words `shapeDescription` names it.
   cstring(shapeDescription(g_scene.geometryAt(int(slot))))
 
 
@@ -245,22 +252,28 @@ proc nimApplyOperation(
 
 
 proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
+  ## Rewrite item's visibility, by slot.
   g_scene.setVisible(int(slot), is_visible)
 
 
 proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
+  ## Rewrite item's display label, by slot.
   toChars($text, g_scene.labelAt(int(slot)))
 
 
 proc nimSetInk(slot: cint; ink_ordinal: cint) {.exportc.} =
+  ## Rewrite item's palette slot, by slot.
   g_scene.setInk(int(slot), Ink(ink_ordinal))
 
 
 proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
+  ## Rewrite one basis coefficient of item's own multivector, by slot.
   g_scene.geometryAt(int(slot))[Basis(basis_index)] = float(value)
 
 
 proc nimRemoveItem(slot: cint) {.exportc.} =
+  ## Drop item from the scene, freeing its slot for reuse.
+  ##   Clears the highlighted-slot marker too, where it names the slot just removed.
   g_scene.removeItem(int(slot))
   if g_index_highlighted == some(int(slot)): g_index_highlighted = none(int)
 
@@ -269,9 +282,11 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
 #[ Catalogue Metadata ]#
 
 proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
+  ## Report how many catalogue operations exist.
 
 
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
+  ## Report the Nth catalogue operation's own notation symbol.
   lut_operation_to_notation[Operation(index)]
 
 
@@ -282,61 +297,82 @@ proc nimOperationArity(index: cint): cint {.exportc.} =
 
 
 proc nimBasisCount(): cint {.exportc.} = cint(ord(Basis.high) + 1)
+  ## Report how many basis coefficients a multivector carries in this build's dimension.
 
 
 proc nimBasisName(index: cint): cstring {.exportc.} = cstring(lut_basis_to_name[Basis(index)])
+  ## Report the Nth basis element's own name.
 
 
 proc nimInkCount(): cint {.exportc.} = cint(COUNT_INK)
+  ## Report how many named palette entries exist.
 
 
 proc nimInkName(index: cint): cstring {.exportc.} = lut_ink_to_name[Ink(index)]
+  ## Report the Nth palette entry's own name.
 
 
 proc nimInkColor(index: cint): seq[float32] {.exportc.} = toRgbSeq(Ink(index).colour)
+  ## Report the Nth palette entry's own colour, as an `[r, g, b]` triple.
 
 
 proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour)
+  ## Report the canvas backdrop's own colour, as an `[r, g, b]` triple.
 
 
 
 #[ Camera ]#
 
 proc nimCameraOrbit(turn, rise: cfloat) {.exportc.} =
+  ## Rotate camera about its own target by turn (azimuth) and rise (elevation), radians.
   camera.orbit(g_camera, float(turn), float(rise))
 
 
 proc nimCameraDolly(factor: cfloat) {.exportc.} =
+  ## Scale camera's own distance from target by factor.
   camera.dolly(g_camera, float(factor))
 
 
 proc nimCameraPan(across, up: cfloat) {.exportc.} =
+  ## Slide camera's own target sideways and vertically in its own view plane.
   camera.pan(g_camera, float(across), float(up))
 
 
 proc nimCameraAzimuth(): cfloat {.exportc.} = cfloat(g_camera.azimuth)
+  ## Report angle about world up, in radians.
 proc nimCameraElevation(): cfloat {.exportc.} = cfloat(g_camera.elevation)
+  ## Report angle above the horizontal plane, in radians.
 proc nimCameraDistance(): cfloat {.exportc.} = cfloat(g_camera.distance)
+  ## Report distance from target, in world units.
 proc nimCameraFov(): cfloat {.exportc.} = cfloat(g_camera.degrees_field_of_view)
+  ## Report vertical field of view, in degrees.
 proc nimCameraTarget(): seq[float32] {.exportc.} =
+  ## Report point camera orbits around, as an `[x, y, z]` triple.
   @[cfloat(g_camera.target.x), cfloat(g_camera.target.y), cfloat(g_camera.target.z)]
 
 
 proc nimSetCameraAzimuth(v: cfloat) {.exportc.} = g_camera.azimuth = float(v)
+  ## Rewrite angle about world up, in radians.
 
 
 proc nimSetCameraElevation(v: cfloat) {.exportc.} =
+  ## Rewrite angle above the horizontal plane, in radians, clamped to the same bound
+  ## `panel.layoutView`'s own drag widget uses.
   g_camera.elevation = clamp(float(v), -ELEVATION_LIMIT, ELEVATION_LIMIT)
 
 
 proc nimSetCameraDistance(v: cfloat) {.exportc.} =
+  ## Rewrite distance from target, in world units, clamped to the same bound
+  ## `panel.layoutView`'s own drag widget uses.
   g_camera.distance = clamp(float(v), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
 
 
 proc nimSetCameraFov(v: cfloat) {.exportc.} = g_camera.degrees_field_of_view = float(v)
+  ## Rewrite vertical field of view, in degrees.
 
 
 proc nimSetCameraTarget(x, y, z: cfloat) {.exportc.} =
+  ## Rewrite point camera orbits around.
   g_camera.target = Position(x: float(x), y: float(y), z: float(z))
 
 
@@ -359,6 +395,9 @@ const SLOT_NONE = -1'i32
 
 
 func drawExtentFor(cam: Camera): DrawExtent =
+  ## Derive camera-relative draw scale, exactly as `visualiser.drawExtentFor` does for
+  ## the desktop build (duplicated rather than imported, since that proc lives in
+  ## `visualiser.nim` itself, which does not compile under `nim js`).
   DrawExtent(
     extent_furniture: extentFurnitureFor(cam.distance_far),
     eye: cam.eye,
@@ -367,30 +406,37 @@ func drawExtentFor(cam: Camera): DrawExtent =
 
 
 proc nimUpdateCursor(x, y: cfloat) {.exportc.} =
+  ## Forward to `interaction.updateCursor`; see its own doc comment.
   interaction.updateCursor(g_interaction, float(x), float(y))
 
 
 proc nimUpdateHover(width, height: cint) {.exportc.} =
+  ## Forward to `interaction.updateHover`; see its own doc comment.
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   interaction.updateHover(g_interaction, g_scene, g_camera, vp, int(width), int(height))
 
 
 proc nimHoverSlot(): cint {.exportc.} =
+  ## Report slot currently hovered, or `SLOT_NONE` where nothing is.
   if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: SLOT_NONE
 
 
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
+  ## Forward to `interaction.beginDrag`; see its own doc comment.
   interaction.beginDrag(g_interaction, DragOperation(drag_ordinal))
 
 
 proc nimCancelDrag() {.exportc.} =
+  ## Forward to `interaction.cancelDrag`; see its own doc comment.
   interaction.cancelDrag(g_interaction)
 
 
 proc nimDragActive(): bool {.exportc.} = g_interaction.operation.isSome
+  ## Report whether a drag is currently in progress.
 
 
 proc nimDragOperation(): cint {.exportc.} =
+  ## Report drag's own operation ordinal, or `SLOT_NONE` where no drag is active.
   if g_interaction.operation.isSome: cint(g_interaction.operation.get) else: SLOT_NONE
 
 
@@ -421,6 +467,8 @@ const lut_drag_to_ink = [
 
 
 proc nimDragTint(drag_ordinal: cint): seq[float32] {.exportc.} =
+  ## Report the colour a drag's own operation tints its rubber-band, as an `[r, g, b]`
+  ## triple.
   toRgbSeq(lut_drag_to_ink[DragOperation(drag_ordinal)].colour)
 
 
@@ -492,6 +540,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
 #[ Scene Save/Load Primitives ]#
 
 proc nimSceneClear() {.exportc.} =
+  ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()
   g_index_highlighted = none(int)
 
@@ -536,6 +585,14 @@ proc nimBuildFrame(
   ## desktop app draws through -- every item always at full colour, exactly as the
   ## desktop build's own interactive `assembleMeshes` call (`are_dimmed` all false)
   ## draws outside of a storyboard capture.
+  ##   Exceeds the working 60-line default: mirrors `visualiser.assembleMeshes`'s own
+  ##   two-pass draw-order invariant (horizon plane first, so its translucent dome never
+  ##   occludes an ordinary plane's own fill drawn after it) and additionally packs the
+  ##   view-projection matrix plus the whole `FrameData` return struct -- packaging the
+  ##   desktop side never needs, since it reads `MESHES`/`MESHES_FURNITURE`/
+  ##   `MESHES_OUTLINE` straight through `renderer.nim` instead of handing them back
+  ##   across an FFI boundary. Splitting the packaging out would return partial results
+  ##   across an extra proc boundary for no reader benefit.
   clearMeshes(g_meshes_furniture)
 
   let scale = drawExtentFor(g_camera)
