@@ -360,7 +360,7 @@ proc nimClearGhost() {.exportc.} =
 #[ Catalogue Metadata ]#
 
 let lut_operation_to_notation_bold: array[Operation, cstring] = [
-  Operation.Attitude: cstring"⊖𝐦",
+  Operation.Attitude: cstring"𝐦⊖",
   Operation.Support: cstring"𝐦∩",
   Operation.SupportAnti: cstring"𝐦∪",
   Operation.Bulk: cstring"𝐦∙",
@@ -402,6 +402,9 @@ let lut_operation_to_notation_bold: array[Operation, cstring] = [
   ##   "Lengyel" column uses a functional shorthand (e.g. `att(𝐦)`, `sup(𝐦)`) for a few of
   ##   these that the actual per-proc doc comments don't: `` `∩`*(m) `` itself reads
   ##   "i.e. 𝐦∩ = ...", postfix, not the summary table's prefix-functional form.
+  ##   One deliberate exception: `Attitude`'s own doc comment reads prefix (`⊖𝐦`), but is
+  ##   placed postfix here (`𝐦⊖`) on explicit request, for visual consistency with every
+  ##   other unary entry above reading operator-after-operand.
 
 
 proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)

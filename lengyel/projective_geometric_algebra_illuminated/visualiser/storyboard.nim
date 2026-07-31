@@ -87,9 +87,9 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
   ##   `now` is forwarded to `addItem` untouched, so seeds animate in exactly as any
   ##   other item does where a caller passes a real clock reading.
   let
-    point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 0.5))
-    point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 3.5))
-    point_c = toMultivector(Position(x: 1.0, y: 4.0, z: 1.0))
+    point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 2.5))
+    point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 5.5))
+    point_c = toMultivector(Position(x: 1.0, y: 4.0, z: 3.0))
     point_origin = toMultivector(Position(x: 0, y: 0, z: 0))
     point_x = toMultivector(Position(x: 1, y: 0, z: 0))
     point_y = toMultivector(Position(x: 0, y: 1, z: 0))
