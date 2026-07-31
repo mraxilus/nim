@@ -569,6 +569,17 @@ proc nimRedo(): bool {.exportc.} =
   if result: g_index_highlighted = none(int)
 
 
+proc nimCanUndo(): bool {.exportc.} =
+  ## Report whether `nimUndo` would move anywhere, so the UI can dim/disable its own
+  ## undo button rather than let a user press it only to read "Nothing to undo."
+  g_history.canUndo
+
+
+proc nimCanRedo(): bool {.exportc.} =
+  ## Report whether `nimRedo` would move anywhere, mirroring `nimCanUndo`.
+  g_history.canRedo
+
+
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
   interaction.beginDrag(g_interaction, DragOperation(drag_ordinal))
