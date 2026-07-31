@@ -537,6 +537,16 @@ proc nimHoverSlot(): cint {.exportc.} =
   if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: SLOT_NONE
 
 
+proc nimClearHover() {.exportc.} =
+  ## Discard whatever is currently hovered. Touch has no continuous pointer position the
+  ## way a mouse does -- `nimUpdateHover` only ever runs at a specific touch-down point
+  ## (long-press timer, tap detection), so once that finger lifts with nothing further
+  ## touching the canvas, the last hover reading would otherwise sit stale forever and
+  ## `refreshOverlay`'s own hover ring (only 20% dimmer than the selection ring) would
+  ## keep drawing at that object indefinitely, reading as a second selected object.
+  g_interaction.index_hover = none(int)
+
+
 proc nimHighlightedSlot(): cint {.exportc.} =
   ## Report currently selected item's own slot, or `SLOT_NONE` where nothing is
   ## selected -- the presentation layer's own `refreshOverlay` reads this to draw the
