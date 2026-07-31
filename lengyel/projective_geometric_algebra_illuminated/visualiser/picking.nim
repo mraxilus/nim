@@ -41,17 +41,22 @@ import ./[camera, mesh, objects, scene]
 #[ Picking Configuration ]#
 
 const
-  RADIUS_PICK_POINT* = 20.0
+  RADIUS_PICK_POINT* = 34.0
     ## Bound how far, in pixels, cursor may sit from a point's marker and still hit it.
-    ##   Raised from an original 14 on reported difficulty selecting points and lines --
-    ##   both drawn thin (a marker a few pixels across, a one-pixel-wide segment), so a
-    ##   pick radius close to the mark itself left little room for cursor imprecision or
-    ##   a fingertip's own contact area on touch. The shape priority below (point beats
+    ##   Raised 14 -> 20 -> 34 across two rounds on reported difficulty selecting points
+    ##   and lines -- both drawn thin (a marker a few pixels across, a one-pixel-wide
+    ##   segment), so a pick radius close to the mark itself left little room for cursor
+    ##   imprecision or a fingertip's own contact area on touch (a real fingertip's
+    ##   contact patch is roughly this wide at typical phone screen density, well past
+    ##   what the first widening left room for). The shape priority below (point beats
     ##   line beats plane) is what keeps a more generous radius from misfiring where
-    ##   targets overlap on screen, rather than a tight radius doing that job instead.
-  RADIUS_PICK_LINE* = 14.0
+    ##   targets overlap on screen, rather than a tight radius doing that job instead --
+    ##   confirmed still exactly in effect (`consider`'s own priority-then-distance
+    ##   ordering, untouched) before widening further a second time.
+  RADIUS_PICK_LINE* = 24.0
     ## Bound how far, in pixels, cursor may sit from a line's drawn segment and still hit
-    ## it; see `RADIUS_PICK_POINT`'s own doc comment for why both were widened together.
+    ## it; see `RADIUS_PICK_POINT`'s own doc comment for why both were widened together,
+    ## twice now (9 -> 14 -> 24).
 
 
 
