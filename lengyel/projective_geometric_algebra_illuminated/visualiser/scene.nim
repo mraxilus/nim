@@ -296,42 +296,6 @@ proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: va
   if not wrote_any: appendChars(storage, cursor, "0 S")
 
 
-when defined(js):
-  proc toPrecisionJs(value: cfloat, digits: cint): cstring
-    {.importjs: "(#).toPrecision(#)".}
-    ## Mechanical one-to-one binding to JS's own `Number.prototype.toPrecision` -- the
-    ## `nim js` backend's own `strformat` does not implement `g`-style significant-digit
-    ## formatting (confirmed empirically: `&"{value:#.4g}"` silently ignores both the
-    ## precision and the trailing-zero flag under this backend, though the identical
-    ## call is correct under the native `nim c` backend), so `formatMultivectorHeap`
-    ## reaches for the browser's own built-in formatter directly instead.
-
-  func formatSignificant(value: float): string = $toPrecisionJs(cfloat(value), 4)
-else:
-  func formatSignificant(value: float): string = &"{value:#.4g}"
-    ## Matches `format.nim`'s own `appendMagnitude` (`"%#.4g"` through C's `snprintf`)
-    ## exactly -- verified by comparing this proc's own output against
-    ## `formatMultivector`'s, same multivector, byte for byte.
-
-
-proc formatMultivectorHeap*(m: Multivector): string =
-  ## Print multivector's own coefficients into a fresh heap string, in the same shape
-  ## `formatMultivector` writes into fixed storage for the desktop build -- for a caller
-  ## (the browser build) that cannot use `format.nim`'s own `snprintf` binding and for
-  ## whom a heap allocation on a discrete user action, not once a frame, costs nothing
-  ## worth avoiding.
-  var wrote_any = false
-  for b in Basis:
-    if abs(m[b]) <= TOLERANCE_ABS: continue
-    if m[b] < 0: result.add(" - ")
-    elif wrote_any: result.add(" + ")
-    result.add(formatSignificant(abs(m[b])))
-    result.add(" ")
-    result.add(lut_basis_to_name[b])
-    wrote_any = true
-  if not wrote_any: result = "0 S"
-
-
 proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =
   ## Name geometry multivector stands for into fixed storage, for reporting to user.
   ##   Appends from `cursor` onward; see `formatMultivector` for why.

@@ -78,6 +78,16 @@ var
     ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
     ## is (re)initialized (`nimInit`, `nimLoadDemo`, `nimSceneClear`), so undo never
     ## reaches earlier than the moment tracking began for whatever scene is live now.
+  g_ghost = none(Multivector) ## Not-yet-committed multivector the Add panel's own
+    ## 16-input grid is composing, rendered every frame by `nimBuildFrame` exactly like
+    ## a live scene object -- but never added to `g_scene` itself: `nimSceneSlots`/
+    ## `nimSceneCount` (and so undo/redo, save, picking) never see it. None where the Add
+    ## panel has never been touched this round, or its last edit just committed
+    ## (`nimAddMultivector`) or cleared (`nimClearGhost`).
+
+const INK_GHOST = Ink.Guide
+  ## Palette slot the ghost draws in, muted -- reuses Ink.Guide's own existing
+  ## "construction helper" semantics rather than adding a palette entry just for this.
 
 
 proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
@@ -230,19 +240,32 @@ proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
 
 
 proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
-  ## Format item's own multivector for display, by slot, through the library's own
-  ## heap-allocating formatter.
-  cstring(formatMultivectorHeap(g_scene.geometryAt(int(slot))))
+  ## Format item's own multivector for display, by slot, through the library's own `$`
+  ## operator directly -- confirmed (both `nim c` and `nim js`, byte-identical output)
+  ## to compile and run cleanly under this backend with no C/snprintf dependency, unlike
+  ## `scene.formatMultivector`'s own fixed-buffer, `format.nim`-backed path the desktop
+  ## build still needs. The browser has no font-atlas limitation the desktop's ImGui
+  ## build has, so nothing here needs to avoid the library's own bold Unicode.
+  cstring($g_scene.geometryAt(int(slot)))
 
 
 
 #[ Scene Mutation ]#
 
-proc nimAddPoint(x, y, z, now: cfloat): cint {.exportc.} =
-  ## Add a fresh point at a position, exactly as `panel.layoutPointNew`'s own button does.
-  let place = Position(x: float(x), y: float(y), z: float(z))
+proc nimAddMultivector(coefficients: seq[float]; now: cfloat): cint {.exportc.} =
+  ## Commit the Add panel's own 16-input grid as a fresh scene object, full bookkeeping
+  ## (auto-label, cycled ink, `g_borns` stamp, highlight, history record) -- built from
+  ## all sixteen basis coefficients directly, since "add" composes any multivector, not
+  ## only a point.
+  ##   Builds `geometry` coefficient-by-coefficient the same way `nimSceneAddRaw` does
+  ##   for a loaded item, rather than reusing that proc outright: `nimSceneAddRaw`
+  ##   deliberately skips `g_history.record`, stamps `g_borns` to 0.0 (load semantics),
+  ##   and never touches `g_index_highlighted` -- all three of which a user-drawn add
+  ##   must do.
+  var geometry: Multivector
+  for b in Basis: geometry[b] = coefficients[ord(b)]
   result = cint(
-    g_scene.addItem(toMultivector(place), &"p{g_scene.len}", inkCycled(g_scene.len), float(now))
+    g_scene.addItem(geometry, &"m{g_scene.len}", inkCycled(g_scene.len), float(now))
   )
   g_borns[int(result)] = float(now)
   g_index_highlighted = some(int(result))
@@ -310,6 +333,27 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
   g_scene.removeItem(int(slot))
   if g_index_highlighted == some(int(slot)): g_index_highlighted = none(int)
   g_history.record(g_scene)
+
+
+
+#[ Ghost Preview ]#
+
+proc nimSetGhost(coefficients: seq[float]) {.exportc.} =
+  ## Rewrite the not-yet-committed ghost multivector wholesale, from the Add panel's own
+  ## local JS-side 16-element state array -- called on every `input` event on any one of
+  ## its sixteen fields. Builds `geometry` coefficient-by-coefficient the same way
+  ## `nimSceneAddRaw` does for a loaded item, but writes into `g_ghost` instead of a
+  ## scene slot; `nimBuildFrame` reads it back next frame and draws it like any other
+  ## object, tinted `INK_GHOST`, muted.
+  var geometry: Multivector
+  for b in Basis: geometry[b] = coefficients[ord(b)]
+  g_ghost = some(geometry)
+
+
+proc nimClearGhost() {.exportc.} =
+  ## Discard the ghost, so `nimBuildFrame` stops drawing it -- called once a ghost
+  ## commits (`nimAddMultivector`) or the Add section collapses mid-edit.
+  g_ghost = none(Multivector)
 
 
 
@@ -674,6 +718,9 @@ proc nimBuildFrame(
   ##   through `renderer.nim` instead of handing them back across an FFI boundary.
   ##   Splitting the packaging out would return partial results across an extra proc
   ##   boundary for no reader benefit.
+  ##   Also draws `g_ghost`, if any, through the same `addObject` dispatch, tinted
+  ##   `INK_GHOST` and muted -- see that var's own doc comment for why it never touches
+  ##   `g_scene` and so is invisible to `nimSceneSlots`/undo/redo/save/picking.
   clearMeshes(g_meshes_furniture)
 
   let scale = drawExtentFor(g_camera)
@@ -717,6 +764,9 @@ proc nimBuildFrame(
         discard g_meshes.addObject(
           geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
         )
+
+  if g_ghost.isSome:
+    discard g_meshes.addObject(g_ghost.get, INK_GHOST.colour.muted(), scale)
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
