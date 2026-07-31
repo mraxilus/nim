@@ -360,33 +360,33 @@ proc nimClearGhost() {.exportc.} =
 #[ Catalogue Metadata ]#
 
 let lut_operation_to_notation_bold: array[Operation, cstring] = [
-  Operation.Attitude: cstring"⊖𝐦 (attitude)",
-  Operation.Support: cstring"∩𝐦 (support)",
-  Operation.SupportAnti: cstring"∪𝐦 (antisupport)",
-  Operation.Bulk: cstring"∙𝐦 (bulk)",
-  Operation.Weight: cstring"∘𝐦 (weight)",
-  Operation.Unitize: cstring"^𝐦 (unitize)",
-  Operation.ComplementLeft: cstring"\\𝐦 (complementleft)",
-  Operation.ComplementRight: cstring"/𝐦 (complementright)",
-  Operation.DualBulk: cstring"★𝐦 (dualbulk)",
-  Operation.DualWeight: cstring"☆𝐦 (dualweight)",
-  Operation.Reverse: cstring"~𝐦 (reverse)",
-  Operation.ReverseAnti: cstring"~∘𝐦 (antireverse)",
-  Operation.Negate: cstring"-𝐦 (negate)",
-  Operation.Add: cstring"𝐦 + 𝐧 (add)",
-  Operation.Subtract: cstring"𝐦 - 𝐧 (subtract)",
-  Operation.Wedge: cstring"𝐦 ∧ 𝐧 (wedge)",
-  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧 (antiwedge)",
-  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧 (wedgedot)",
-  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧 (antiwedgedot)",
-  Operation.Dot: cstring"𝐦 ∙ 𝐧 (dot)",
-  Operation.DotAnti: cstring"𝐦 ∘ 𝐧 (antidot)",
-  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★ (expandbulk)",
-  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆ (expandweight)",
-  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★ (contractbulk)",
-  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆ (contractweight)",
-  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★) (projectcentral)",
-  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆) (projectorthogonal)",
+  Operation.Attitude: cstring"⊖𝐦",
+  Operation.Support: cstring"𝐦∩",
+  Operation.SupportAnti: cstring"𝐦∪",
+  Operation.Bulk: cstring"𝐦∙",
+  Operation.Weight: cstring"𝐦∘",
+  Operation.Unitize: cstring"𝐦̂",
+  Operation.ComplementLeft: cstring"𝐦̲",
+  Operation.ComplementRight: cstring"𝐦̅",
+  Operation.DualBulk: cstring"𝐦★",
+  Operation.DualWeight: cstring"𝐦☆",
+  Operation.Reverse: cstring"𝐦̃",
+  Operation.ReverseAnti: cstring"𝐦̰",
+  Operation.Negate: cstring"−𝐦",
+  Operation.Add: cstring"𝐦 + 𝐧",
+  Operation.Subtract: cstring"𝐦 - 𝐧",
+  Operation.Wedge: cstring"𝐦 ∧ 𝐧",
+  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧",
+  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧",
+  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧",
+  Operation.Dot: cstring"𝐦 ∙ 𝐧",
+  Operation.DotAnti: cstring"𝐦 ∘ 𝐧",
+  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★",
+  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆",
+  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★",
+  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆",
+  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★)",
+  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆)",
 ] ## Browser-only bold-Unicode counterpart to `scene.lut_operation_to_notation` -- that
   ## table's own plain `m`/`n` exists only because `panel.nim` hands its raw array
   ## address straight to Dear ImGui's `combo` widget (desktop font atlas has no astral-
@@ -395,6 +395,13 @@ let lut_operation_to_notation_bold: array[Operation, cstring] = [
   ## `notationSubstituted` (scene.nim) is untouched and keeps reading the plain table --
   ## it pattern-matches literal ASCII "m"/"n" to substitute real operand names, which
   ## this table's bold glyphs are not.
+  ##   Pure math notation, no parenthesized English name -- every symbol placement
+  ##   (prefix/postfix) and glyph (including combining diacritics: `𝐦̂`/`𝐦̲`/`𝐦̅`/`𝐦̃`/`𝐦̰`)
+  ##   copied verbatim from each operator's own doc comment in `pga/operators.nim`/
+  ##   `pga/multivectors.nim` -- not from `pga.nim`'s own top-of-file summary table, whose
+  ##   "Lengyel" column uses a functional shorthand (e.g. `att(𝐦)`, `sup(𝐦)`) for a few of
+  ##   these that the actual per-proc doc comments don't: `` `∩`*(m) `` itself reads
+  ##   "i.e. 𝐦∩ = ...", postfix, not the summary table's prefix-functional form.
 
 
 proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
