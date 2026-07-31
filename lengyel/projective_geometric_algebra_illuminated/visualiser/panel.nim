@@ -306,9 +306,7 @@ proc layoutOperation(
       anchor = creationAnchor(operation, operand_first, operand_second, derived)
       name_first = $toCstring(scene.labelAt(first))
       name_second = $toCstring(scene.labelAt(second))
-      label =
-        if is_binary: &"{name_first} {$operation} {name_second}"
-        else: &"{$operation} {name_first}"
+      label = notationSubstituted(operation, name_first, name_second)
     workbench.index_highlighted =
       some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
     history.record(scene)
@@ -317,7 +315,7 @@ proc layoutOperation(
     var cursor_shape = 0
     describeShape(derived, shape_word, cursor_shape)
     finishChars(shape_word, cursor_shape)
-    toChars(&"{$operation} gave {$toCstring(shape_word)}.", workbench.message)
+    toChars(&"{label} gave {$toCstring(shape_word)}.", workbench.message)
   gui.disabledPop()
 
 

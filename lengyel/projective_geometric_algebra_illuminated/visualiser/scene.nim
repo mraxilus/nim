@@ -34,7 +34,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, os, strformat, syncio]
+import std/[options, os, strformat, strutils, syncio]
 
 import ../pga
 import ./[format, mesh, objects]
@@ -180,6 +180,27 @@ const COUNT_OPERATION* = ord(Operation.high) + 1
   ## Count operations, for handing whole catalogue to a picker.
 
 
+proc notationSubstituted*(operation: Operation; name_first, name_second: string): string =
+  ## Build the label/message text an applied operation reads as, substituting the
+  ## notation template's own literal "m"/"n" placeholders with the real operand names
+  ## just combined -- e.g. `Operation.Wedge` with names "a"/"b" gives "a ∧ b", not the
+  ## raw enum identifier "Wedge".
+  ##   Isolates the symbolic portion of the notation entry first -- the English
+  ##   description after it (e.g. "wedge (join)", "central projection") incidentally
+  ##   contains the letters "m"/"n" too and must never be touched. Swaps placeholders
+  ##   through two passes via sentinel bytes no label would contain, so an operand name
+  ##   that itself contains "m" or "n" is never re-touched by the second pass, and a
+  ##   template where "n" appears twice (ProjectCentral/ProjectOrthogonal) substitutes
+  ##   both occurrences.
+  const SENTINEL_M = "\x01"
+  const SENTINEL_N = "\x02"
+  let full = $lut_operation_to_notation[operation]
+  let cutoff = full.find("  ")
+  let symbolic = if cutoff >= 0: full[0 ..< cutoff] else: full
+  let staged = symbolic.replace("m", SENTINEL_M).replace("n", SENTINEL_N)
+  result = staged.replace(SENTINEL_M, name_first).replace(SENTINEL_N, name_second)
+
+
 func applyOperation*(operation: Operation; m, n: Multivector): Multivector =
   ## Apply operation to operands, ignoring `n` where operation is unary.
   case operation
@@ -273,6 +294,42 @@ proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: va
     appendChars(storage, cursor, lut_basis_to_name[b])
     wrote_any = true
   if not wrote_any: appendChars(storage, cursor, "0 S")
+
+
+when defined(js):
+  proc toPrecisionJs(value: cfloat, digits: cint): cstring
+    {.importjs: "(#).toPrecision(#)".}
+    ## Mechanical one-to-one binding to JS's own `Number.prototype.toPrecision` -- the
+    ## `nim js` backend's own `strformat` does not implement `g`-style significant-digit
+    ## formatting (confirmed empirically: `&"{value:#.4g}"` silently ignores both the
+    ## precision and the trailing-zero flag under this backend, though the identical
+    ## call is correct under the native `nim c` backend), so `formatMultivectorHeap`
+    ## reaches for the browser's own built-in formatter directly instead.
+
+  func formatSignificant(value: float): string = $toPrecisionJs(cfloat(value), 4)
+else:
+  func formatSignificant(value: float): string = &"{value:#.4g}"
+    ## Matches `format.nim`'s own `appendMagnitude` (`"%#.4g"` through C's `snprintf`)
+    ## exactly -- verified by comparing this proc's own output against
+    ## `formatMultivector`'s, same multivector, byte for byte.
+
+
+proc formatMultivectorHeap*(m: Multivector): string =
+  ## Print multivector's own coefficients into a fresh heap string, in the same shape
+  ## `formatMultivector` writes into fixed storage for the desktop build -- for a caller
+  ## (the browser build) that cannot use `format.nim`'s own `snprintf` binding and for
+  ## whom a heap allocation on a discrete user action, not once a frame, costs nothing
+  ## worth avoiding.
+  var wrote_any = false
+  for b in Basis:
+    if abs(m[b]) <= TOLERANCE_ABS: continue
+    if m[b] < 0: result.add(" - ")
+    elif wrote_any: result.add(" + ")
+    result.add(formatSignificant(abs(m[b])))
+    result.add(" ")
+    result.add(lut_basis_to_name[b])
+    wrote_any = true
+  if not wrote_any: result = "0 S"
 
 
 proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =

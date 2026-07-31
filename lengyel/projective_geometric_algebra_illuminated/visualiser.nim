@@ -833,15 +833,14 @@ proc main() =
     )
   workbench.is_vsync_enabled = not options.is_novsync
 
-  # Open on storyboard's own seeds and first steps, so window and script agree on scene,
-  #   unless a saved scene was asked for instead, which replaces the demo entirely.
+  # Open on storyboard's own seeds alone, so window and script agree on where a
+  #   construction starts, unless a saved scene was asked for instead, which replaces
+  #   the demo entirely.
   let now_startup = secondsNow()
   if len(options.path_load_scene) > 0:
     echo loadScene(scene, options.path_load_scene)
   else:
     constructSeeds(scene, now_startup)
-    for step in STEPS[0 .. 3]:
-      applyStep(scene, step, now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
   HISTORY = initHistory(scene)
 

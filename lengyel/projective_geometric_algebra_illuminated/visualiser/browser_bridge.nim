@@ -127,32 +127,19 @@ proc labelString(label: Label): string =
 
 #[ Setup ]#
 
-proc placeSeedsAndFirstSteps(now: float) =
+proc placeSeeds(now: float) =
   ## Build the same default scene the desktop app itself opens on when no saved scene is
-  ## given: four seeds, then the storyboard's own first four steps applied through the
-  ## real `applyOperation` catalogue -- see `visualiser.main`'s own startup, which this
-  ## mirrors exactly rather than approximates.
-  ##   Stamps each item's own `g_borns` one second apart, mirroring
-  ##   `visualiser.runStoryboard`'s own synthetic clock (`clock = 0.0` for every seed,
-  ##   then `clock += 1.0` before each subsequent step), anchored at this call's own real
-  ##   `now` rather than literal zero -- a single unchanging `now` stamped onto every slot
-  ##   alike, as before, left every seed and every derived object equally "recent,"
-  ##   defeating the Objects panel's own sort-by-recency (`nimItemBorn`).
+  ## given: just the five seeds, nothing derived -- see `visualiser.main`'s own startup,
+  ## which this mirrors exactly rather than approximates.
   g_scene = initScene()
-  var clock = now
-  constructSeeds(g_scene, clock)
-  let count_seeds = g_scene.len
-  for slot in 0 ..< count_seeds: g_borns[slot] = clock
-  for index, step in STEPS[0 .. 3]:
-    clock += 1.0
-    applyStep(g_scene, step, clock)
-    g_borns[count_seeds + index] = clock
+  constructSeeds(g_scene, now)
+  for slot in 0 ..< g_scene.len: g_borns[slot] = now
 
 
 proc nimInit(now: cfloat) {.exportc.} =
   ## Build the default interactive scene and place the camera at the same default orbit
   ## the desktop app itself opens on.
-  placeSeedsAndFirstSteps(float(now))
+  placeSeeds(float(now))
   g_camera = initCamera(
     target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
@@ -165,8 +152,12 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
   ## ordinary live items -- a one-click preset rather than a scripted playback mode: once
   ## loaded, every one of its objects is exactly as editable, removable and pickable as
   ## anything built by hand.
-  ##   Stamps `g_borns` with the same one-second-per-step synthetic clock
-  ##   `placeSeedsAndFirstSteps` uses; see its own doc comment for why.
+  ##   Stamps `g_borns` one second apart per step (five seeds at `now`, then each of the
+  ##   eleven steps one second later than the last), mirroring
+  ##   `visualiser.runStoryboard`'s own synthetic clock -- unlike `placeSeeds`'s own
+  ##   plain startup scene, this one has derived steps to rank by recency, so the
+  ##   staggering still earns its keep here even where the startup scene no longer needs
+  ##   it.
   g_scene = initScene()
   var clock = float(now)
   constructSeeds(g_scene, clock)
@@ -238,6 +229,12 @@ proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
   for b in Basis: result[ord(b)] = geometry[b]
 
 
+proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
+  ## Format item's own multivector for display, by slot, through the library's own
+  ## heap-allocating formatter.
+  cstring(formatMultivectorHeap(g_scene.geometryAt(int(slot))))
+
+
 
 #[ Scene Mutation ]#
 
@@ -265,16 +262,13 @@ proc nimApplyOperation(
   ## exactly as `panel.layoutOperation`'s own apply button does.
   let
     operation = Operation(operation_ordinal)
-    is_binary = lut_operation_to_arity[operation] == Arity.Two
     operand_first = g_scene.geometryAt(int(slot_first))
     operand_second = g_scene.geometryAt(int(slot_second))
     derived = applyOperation(operation, operand_first, operand_second)
     anchor = creationAnchor(operation, operand_first, operand_second, derived)
     name_first = labelString(g_scene.labelAt(int(slot_first)))
     name_second = labelString(g_scene.labelAt(int(slot_second)))
-    label =
-      if is_binary: &"{name_first} {$operation} {name_second}"
-      else: &"{$operation} {name_first}"
+    label = notationSubstituted(operation, name_first, name_second)
     slot_created =
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
@@ -283,7 +277,7 @@ proc nimApplyOperation(
   let shape_word = shapeDescription(derived)
   OperationResult(
     created_slot: cint(slot_created),
-    message: cstring(&"{$operation} gave {shape_word}."),
+    message: cstring(&"{label} gave {shape_word}."),
     shape_word: cstring(shape_word),
   )
 
