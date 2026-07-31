@@ -132,11 +132,21 @@ proc placeSeedsAndFirstSteps(now: float) =
   ## given: four seeds, then the storyboard's own first four steps applied through the
   ## real `applyOperation` catalogue -- see `visualiser.main`'s own startup, which this
   ## mirrors exactly rather than approximates.
+  ##   Stamps each item's own `g_borns` one second apart, mirroring
+  ##   `visualiser.runStoryboard`'s own synthetic clock (`clock = 0.0` for every seed,
+  ##   then `clock += 1.0` before each subsequent step), anchored at this call's own real
+  ##   `now` rather than literal zero -- a single unchanging `now` stamped onto every slot
+  ##   alike, as before, left every seed and every derived object equally "recent,"
+  ##   defeating the Objects panel's own sort-by-recency (`nimItemBorn`).
   g_scene = initScene()
-  constructSeeds(g_scene, now)
-  for step in STEPS[0 .. 3]:
-    applyStep(g_scene, step, now)
-  for slot in 0 ..< ITEMS_MAX: g_borns[slot] = now
+  var clock = now
+  constructSeeds(g_scene, clock)
+  let count_seeds = g_scene.len
+  for slot in 0 ..< count_seeds: g_borns[slot] = clock
+  for index, step in STEPS[0 .. 3]:
+    clock += 1.0
+    applyStep(g_scene, step, clock)
+    g_borns[count_seeds + index] = clock
 
 
 proc nimInit(now: cfloat) {.exportc.} =
@@ -155,10 +165,17 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
   ## ordinary live items -- a one-click preset rather than a scripted playback mode: once
   ## loaded, every one of its objects is exactly as editable, removable and pickable as
   ## anything built by hand.
+  ##   Stamps `g_borns` with the same one-second-per-step synthetic clock
+  ##   `placeSeedsAndFirstSteps` uses; see its own doc comment for why.
   g_scene = initScene()
-  constructSeeds(g_scene, float(now))
-  for step in STEPS: applyStep(g_scene, step, float(now))
-  for slot in 0 ..< ITEMS_MAX: g_borns[slot] = float(now)
+  var clock = float(now)
+  constructSeeds(g_scene, clock)
+  let count_seeds = g_scene.len
+  for slot in 0 ..< count_seeds: g_borns[slot] = clock
+  for index, step in STEPS:
+    clock += 1.0
+    applyStep(g_scene, step, clock)
+    g_borns[count_seeds + index] = clock
   g_index_highlighted = none(int)
   g_history = initHistory(g_scene)
 

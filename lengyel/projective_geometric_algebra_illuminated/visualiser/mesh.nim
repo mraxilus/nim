@@ -160,6 +160,12 @@ const
     ## Blend a muted object's own colour this far toward its own grayscale equivalent,
     ## short of replacing it outright -- keeps a dulled hint of its own hue rather than
     ## converging every muted object to one indistinguishable grey.
+  MUTE_AXIS_TOWARD_GREY* = 0.22'f32
+    ## Blend a world axis's own colour this far toward its own grayscale equivalent --
+    ## much less than `MUTE_DESATURATION`'s 0.6, and with no alpha change (unlike
+    ## `muted()`, a permanent palette entry, not a per-frame "not in focus" dim): enough
+    ## to soften the axes so a bright red/green/blue trio doesn't compete with
+    ## categorical object colours, not so much they stop reading as axes at a glance.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -171,6 +177,8 @@ static:
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
   doAssert MUTE_DESATURATION > 0 and MUTE_DESATURATION <= 1.0,
     &"Mute desaturation must fall between 0 and 1; got `{MUTE_DESATURATION}`."
+  doAssert MUTE_AXIS_TOWARD_GREY > 0 and MUTE_AXIS_TOWARD_GREY <= 1.0,
+    &"Axis mute fraction must fall between 0 and 1; got `{MUTE_AXIS_TOWARD_GREY}`."
 
 
 
@@ -261,9 +269,13 @@ func extentFurnitureFor*(distance_far: float): float =
 
 const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Backdrop: Rgba(red: 0.063, green: 0.075, blue: 0.102, alpha: 1.0),
-  Ink.AxisX: Rgba(red: 0.851, green: 0.239, blue: 0.239, alpha: 1.0),
-  Ink.AxisY: Rgba(red: 0.298, green: 0.780, blue: 0.298, alpha: 1.0),
-  Ink.AxisZ: Rgba(red: 0.298, green: 0.482, blue: 0.929, alpha: 1.0),
+  # Each blended toward its own luminance-grey by `MUTE_AXIS_TOWARD_GREY`, using the
+  #   same 0.299/0.587/0.114 luminance weights `muted()` uses below -- this table is a
+  #   plain compile-time literal, not a runtime call, so the blend is baked in rather
+  #   than computed through `muted()` itself (whose alpha cut this must not inherit).
+  Ink.AxisX: Rgba(red: 0.757, green: 0.279, blue: 0.279, alpha: 1.0),
+  Ink.AxisY: Rgba(red: 0.360, green: 0.736, blue: 0.360, alpha: 1.0),
+  Ink.AxisZ: Rgba(red: 0.338, green: 0.481, blue: 0.830, alpha: 1.0),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),

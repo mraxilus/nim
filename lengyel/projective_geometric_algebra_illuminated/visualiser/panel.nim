@@ -78,6 +78,13 @@ type
       ## where nothing is selected.
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
+    index_operand_synced_highlight*: Option[int] ## Last `index_highlighted` reading
+      ## operand m's own default was synced against -- lets `layoutOperation` re-default
+      ## `index_operand_first` to the selected item only the moment selection actually
+      ## changes, not every frame: this panel redraws every frame regardless of whether
+      ## anything changed, and an unconditional resync would fight a user's own later
+      ## manual pick of a different operand right back to whatever is selected. None
+      ## until the first sync runs.
     index_operation*: cint ## Operation picked from catalogue.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
@@ -254,6 +261,17 @@ proc layoutOperation(
     names[count] = toCstring(scene.labelAt(slot))
     slots[count] = slot
     inc count
+
+  # Operand m defaults to whatever is currently selected, but only right when
+  #   selection itself changes -- see `index_operand_synced_highlight`'s own doc.
+  if workbench.index_highlighted != workbench.index_operand_synced_highlight:
+    workbench.index_operand_synced_highlight = workbench.index_highlighted
+    if workbench.index_highlighted.isSome:
+      let slot_selected = workbench.index_highlighted.get
+      for pos in 0 ..< count:
+        if slots[pos] == slot_selected:
+          workbench.index_operand_first = cint(pos)
+          break
 
   let operation = Operation(workbench.index_operation)
   let is_binary = lut_operation_to_arity[operation] == Arity.Two
