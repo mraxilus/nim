@@ -359,13 +359,51 @@ proc nimClearGhost() {.exportc.} =
 
 #[ Catalogue Metadata ]#
 
+let lut_operation_to_notation_bold: array[Operation, cstring] = [
+  Operation.Attitude: cstring"⊖𝐦 (attitude)",
+  Operation.Support: cstring"∩𝐦 (support)",
+  Operation.SupportAnti: cstring"∪𝐦 (antisupport)",
+  Operation.Bulk: cstring"∙𝐦 (bulk)",
+  Operation.Weight: cstring"∘𝐦 (weight)",
+  Operation.Unitize: cstring"^𝐦 (unitize)",
+  Operation.ComplementLeft: cstring"\\𝐦 (complementleft)",
+  Operation.ComplementRight: cstring"/𝐦 (complementright)",
+  Operation.DualBulk: cstring"★𝐦 (dualbulk)",
+  Operation.DualWeight: cstring"☆𝐦 (dualweight)",
+  Operation.Reverse: cstring"~𝐦 (reverse)",
+  Operation.ReverseAnti: cstring"~∘𝐦 (antireverse)",
+  Operation.Negate: cstring"-𝐦 (negate)",
+  Operation.Add: cstring"𝐦 + 𝐧 (add)",
+  Operation.Subtract: cstring"𝐦 - 𝐧 (subtract)",
+  Operation.Wedge: cstring"𝐦 ∧ 𝐧 (wedge)",
+  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧 (antiwedge)",
+  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧 (wedgedot)",
+  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧 (antiwedgedot)",
+  Operation.Dot: cstring"𝐦 ∙ 𝐧 (dot)",
+  Operation.DotAnti: cstring"𝐦 ∘ 𝐧 (antidot)",
+  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★ (expandbulk)",
+  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆ (expandweight)",
+  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★ (contractbulk)",
+  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆ (contractweight)",
+  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★) (projectcentral)",
+  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆) (projectorthogonal)",
+] ## Browser-only bold-Unicode counterpart to `scene.lut_operation_to_notation` -- that
+  ## table's own plain `m`/`n` exists only because `panel.nim` hands its raw array
+  ## address straight to Dear ImGui's `combo` widget (desktop font atlas has no astral-
+  ## plane bold glyphs); the browser has no such limitation (confirmed via the library's
+  ## own `$` operator rendering cleanly here) and gets this parallel table instead.
+  ## `notationSubstituted` (scene.nim) is untouched and keeps reading the plain table --
+  ## it pattern-matches literal ASCII "m"/"n" to substitute real operand names, which
+  ## this table's bold glyphs are not.
+
+
 proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
   ## Report how many catalogue operations exist.
 
 
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
-  ## Report the Nth catalogue operation's own notation symbol.
-  lut_operation_to_notation[Operation(index)]
+  ## Report the Nth catalogue operation's own notation symbol, browser-bold variant.
+  lut_operation_to_notation_bold[Operation(index)]
 
 
 proc nimOperationArity(index: cint): cint {.exportc.} =
