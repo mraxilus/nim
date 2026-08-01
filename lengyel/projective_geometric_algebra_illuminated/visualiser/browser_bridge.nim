@@ -42,7 +42,9 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, history, interaction, mesh, objects, picking, scene, storyboard]
+import ./[
+  camera, history, interaction, mesh, objects, picking, scene, selection, storyboard,
+]
 
 
 
@@ -69,10 +71,12 @@ var
   g_borns: array[ITEMS_MAX, float] ## Stamped once per slot, the moment an item is added
     ## (by point, by operation, or by drag) -- read back by `nimBuildFrame` so it animates
     ## in exactly as the desktop build's own newly-added item does.
-  g_index_highlighted = none(int) ## Currently selected item's own slot, ringed by the
-    ## presentation layer's own `refreshOverlay` -- auto-selected by every construction
-    ## path, and (unlike the desktop build) also settable directly by `nimSelectItem`,
-    ## for the touch tap-to-select flow. None where nothing is selected.
+  g_selection: Selection ## Items picked right now, in pick order, each ringed by the
+    ## presentation layer's own `refreshOverlay`. Replaced outright by every construction
+    ## path, and driven directly by the touch/click select gestures through
+    ## `nimSelectOnly`/`nimSelectToggle`/`nimSelectClear`. The presentation layer keeps no
+    ## list of its own: pick order is what names an operation's operands, so it lives in
+    ## `selection.nim` beside every other rule about it, not in hand-written JavaScript.
   g_history: History ## Undo/redo timeline of scene-content edits; scoped exactly as
     ## `visualiser.HISTORY` is -- see `history.nim`'s own doc comment for what is and is
     ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
@@ -155,7 +159,7 @@ proc nimInit(now: cfloat) {.exportc.} =
   g_camera = initCamera(
     target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
-  g_index_highlighted = none(int)
+  g_selection.clear()
   g_history = initHistory(g_scene)
 
 
@@ -179,7 +183,7 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
     clock += 1.0
     applyStep(g_scene, step, clock)
     g_borns[count_seeds + index] = clock
-  g_index_highlighted = none(int)
+  g_selection.clear()
   g_history = initHistory(g_scene)
 
 
@@ -274,12 +278,12 @@ proc nimAddItem(
   ##   Builds `geometry` coefficient-by-coefficient the same way `nimSceneAddRaw` does for
   ##   a loaded item, rather than reusing that proc outright: `nimSceneAddRaw` deliberately
   ##   skips `g_history.record`, stamps `g_borns` to 0.0 (load semantics), and never
-  ##   touches `g_index_highlighted` -- all three of which a user-driven add must do.
+  ##   touches `g_selection` -- all three of which a user-driven add must do.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   result = cint(g_scene.addItem(geometry, $label, Ink(ink_ordinal), float(now)))
   g_borns[int(result)] = float(now)
-  g_index_highlighted = some(int(result))
+  g_selection.selectOnly(int(result))
   g_history.record(g_scene)
 
 
@@ -322,7 +326,7 @@ proc nimApplyOperation(
     slot_created =
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
-  g_index_highlighted = some(slot_created)
+  g_selection.selectOnly(slot_created)
   g_history.record(g_scene)
   let shape_word = shapeDescription(derived)
   OperationResult(
@@ -356,9 +360,10 @@ proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
 
 proc nimRemoveItem(slot: cint) {.exportc.} =
   ## Drop item from the scene, freeing its slot for reuse.
-  ##   Clears the highlighted-slot marker too, where it names the slot just removed.
+  ##   Drops the slot from the selection too: a freed slot goes straight back to the next
+  ##   add, so a pick left behind would silently reattach to an unrelated new object.
   g_scene.removeItem(int(slot))
-  if g_index_highlighted == some(int(slot)): g_index_highlighted = none(int)
+  g_selection.pruneDead(g_scene)
   g_history.record(g_scene)
 
 
@@ -663,19 +668,34 @@ proc nimClearHover() {.exportc.} =
   g_interaction.index_hover = none(int)
 
 
-proc nimHighlightedSlot(): cint {.exportc.} =
-  ## Report currently selected item's own slot, or `SLOT_NONE` where nothing is
-  ## selected -- the presentation layer's own `refreshOverlay` reads this to draw the
-  ## selected-item ring, the same way it already reads `nimHoverSlot` for the hover ring.
-  if g_index_highlighted.isSome: cint(g_index_highlighted.get) else: SLOT_NONE
+proc nimSelectionSlots(): seq[int] {.exportc.} =
+  ## List the picked slots in pick order -- the presentation layer's own `refreshOverlay`
+  ##   reads this to ring each one, the same way it already reads `nimHoverSlot` for the
+  ##   hover ring, and the object rows read it to tick their own checkboxes.
+  for position in 0 ..< g_selection.len: result.add(g_selection.at(position))
 
 
-proc nimSelectItem(slot: cint) {.exportc.} =
-  ## Select item, by slot, or clear the selection where slot is `SLOT_NONE` -- the only
-  ## way anything outside construction changes the selection; used by the touch
-  ## tap-to-select flow, since the desktop build has no analogous explicit "select by
-  ## clicking" gesture to mirror here.
-  g_index_highlighted = if slot == SLOT_NONE: none(int) else: some(int(slot))
+proc nimSelectionCount(): cint {.exportc.} = cint(g_selection.len)
+  ## Count picked items, for a caller that only needs to know how many.
+
+
+proc nimSelectionArity(): cint {.exportc.} = cint(ord(g_selection.impliedArity))
+  ## Report the arity the current selection implies -- see `selection.impliedArity`, which
+  ##   is where that rule lives for both builds. Matches `nimOperationArity`'s own
+  ##   convention: 0 unary, 1 binary.
+
+
+proc nimSelectOnly(slot: cint) {.exportc.} = g_selection.selectOnly(int(slot))
+  ## Replace the whole selection with one slot.
+
+
+proc nimSelectToggle(slot: cint) {.exportc.} = g_selection.toggle(int(slot))
+  ## Add a slot to the end of the selection, or drop it where it is already picked; pick
+  ##   order is what names operands m and n.
+
+
+proc nimSelectClear() {.exportc.} = g_selection.clear()
+  ## Drop every pick.
 
 
 proc nimUndo(): bool {.exportc.} =
@@ -684,7 +704,7 @@ proc nimUndo(): bool {.exportc.} =
   ## since a restored snapshot's slot numbers may not match whatever was highlighted
   ## before.
   result = g_history.undo(g_scene)
-  if result: g_index_highlighted = none(int)
+  if result: g_selection.clear()
 
 
 proc nimRedo(): bool {.exportc.} =
@@ -692,7 +712,7 @@ proc nimRedo(): bool {.exportc.} =
   ## later step to move to. Clears the current selection unconditionally on success,
   ## for the same reason `nimUndo` does.
   result = g_history.redo(g_scene)
-  if result: g_index_highlighted = none(int)
+  if result: g_selection.clear()
 
 
 proc nimCanUndo(): bool {.exportc.} =
@@ -812,7 +832,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
     g_borns[slot] = float(now)
-    g_index_highlighted = some(slot)
+    g_selection.selectOnly(slot)
     let
       label_fixed = &"{label_source} {notation_text} {label_destination}"
       shape_word = shapeDescription(g_scene.geometryAt(slot))
@@ -856,7 +876,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
 proc nimSceneClear() {.exportc.} =
   ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()
-  g_index_highlighted = none(int)
+  g_selection.clear()
   g_history = initHistory(g_scene)
 
 
