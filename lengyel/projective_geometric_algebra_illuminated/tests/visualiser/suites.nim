@@ -921,6 +921,102 @@ suite "History":
 
 
 
+suite "Camera Aim":
+  let SCALE_AIM = DrawExtent(
+    extent_furniture: 100.0, eye: ORIGIN, radius_horizon: 90.0,
+  )
+
+  test "a finite object is aimed at by target, a horizon one by orbit angle":
+    let aim_point = aimFor(POINTS[0], SCALE_AIM)
+    check aim_point.isSome
+    check not aim_point.get.is_horizon
+    check aim_point.get.target =~ anchorFor(POINTS[0], SCALE_AIM).get
+
+    let horizon = attitude(LINES[0]) # A line's attitude is a point at the horizon.
+    check isHorizon(horizon)
+    let aim_horizon = aimFor(horizon, SCALE_AIM)
+    check aim_horizon.isSome
+    check aim_horizon.get.is_horizon
+
+
+  test "an object that draws nothing aims at nothing":
+    var empty: Multivector
+    check aimFor(empty, SCALE_AIM).isNone
+
+
+  test "a tween eases toward its goal and lands on it exactly at the duration":
+    const DURATION = 0.35
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0.0, z: 0.0))
+    tween.aimAt(camera, goal, 0.0, DURATION)
+
+    # Partway: strictly between start and goal, and monotonic toward it.
+    var previous = 0.0
+    for step in 1 .. 4:
+      let now = DURATION*float(step)/5.0
+      tween.advance(camera, now, easeOutCubic)
+      check camera.target.x > previous
+      check camera.target.x < goal.target.x
+      previous = camera.target.x
+
+    tween.advance(camera, DURATION, easeOutCubic)
+    check camera.target.x =~ goal.target.x
+    check tween.goal.isNone # Arrived, so nothing left to carry.
+
+
+  test "retargeting mid-flight continues from where the camera reached":
+    const DURATION = 0.35
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    tween.aimAt(camera, CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0, z: 0)),
+                0.0, DURATION)
+    tween.advance(camera, DURATION*0.5, easeOutCubic)
+    let reached = camera.target.x
+    check reached > 0.0 and reached < 10.0
+
+    # A goal that moves must not snap the camera back to where the last ease began.
+    tween.aimAt(camera, CameraAim(is_horizon: false, target: Position(x: 20.0, y: 0, z: 0)),
+                DURATION*0.5, DURATION)
+    check tween.target_from.x =~ reached
+    tween.advance(camera, DURATION*0.5 + 0.001, easeOutCubic)
+    check camera.target.x >= reached # Continues forward, never jumps backward.
+
+
+  test "offering the goal it already holds does not restart the ease":
+    const DURATION = 0.35
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0, z: 0))
+    tween.aimAt(camera, goal, 0.0, DURATION)
+    tween.advance(camera, DURATION*0.5, easeOutCubic)
+    tween.aimAt(camera, goal, DURATION*0.5, DURATION) # Same goal, offered again.
+    check tween.started == 0.0 # Clock untouched, so the ease still ends on time.
+
+
+  test "a horizon tween turns the short way round the azimuth circle":
+    # An angle just past -pi is next door to one just short of +pi, not most of a turn.
+    const DURATION = 0.35
+    var camera = initCamera(ORIGIN, 12.0, 3.0, 0.0)
+    var tween: CameraTween
+    tween.aimAt(camera, CameraAim(is_horizon: true, azimuth: -3.0, elevation: 0.0),
+                0.0, DURATION)
+    tween.advance(camera, DURATION*0.5, easeOutCubic)
+    check camera.azimuth > 3.0 # Onward past +pi, not back down through zero.
+
+
+  test "settle puts the camera on its goal at once":
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: true, azimuth: 1.0, elevation: 0.5)
+    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.settle(camera)
+    check camera.azimuth =~ 1.0
+    check camera.elevation =~ 0.5
+    check tween.goal.isNone
+
+
+
 suite "Selection":
   proc ordered(selection: Selection): seq[int] =
     ## Read the whole selection out in pick order, so a test can state the order it

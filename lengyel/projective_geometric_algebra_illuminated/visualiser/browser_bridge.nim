@@ -77,6 +77,10 @@ var
     ## `nimSelectOnly`/`nimSelectToggle`/`nimSelectClear`. The presentation layer keeps no
     ## list of its own: pick order is what names an operation's operands, so it lives in
     ## `selection.nim` beside every other rule about it, not in hand-written JavaScript.
+  g_tween_camera: CameraTween ## Carries the camera toward whatever is being built or
+    ## edited -- see `camera.CameraTween`. Aimed and advanced inside `nimBuildFrame`, from
+    ## the same one rule the desktop build uses, so neither UI decides for itself when the
+    ## camera should move.
   g_history: History ## Undo/redo timeline of scene-content edits; scoped exactly as
     ## `visualiser.HISTORY` is -- see `history.nim`'s own doc comment for what is and is
     ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
@@ -401,6 +405,10 @@ proc nimClearGhost() {.exportc.} =
 
 #[ Catalogue Metadata ]#
 
+proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
+  ## Report how many catalogue operations exist.
+
+
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
   ## Report the Nth catalogue operation's own notation and name, from the one table both
   ##   render paths read. A parallel browser-only table existed while the desktop font
@@ -648,6 +656,24 @@ proc nimSelectClear() {.exportc.} = g_selection.clear()
   ## Drop every pick.
 
 
+proc nimSelectionAllHidden(): bool {.exportc.} =
+  ## Report whether every picked object is hidden, so a control acting on the whole
+  ##   selection can name what it would do -- `show` where they are all hidden, `hide`
+  ##   otherwise. Answered here rather than by the caller folding `nimItemVisible` over
+  ##   the list, since what "the selection is hidden" means is a rule about a selection.
+  ##   An empty selection is not hidden; there is nothing to show.
+  if g_selection.len == 0: return false
+  for position in 0 ..< g_selection.len:
+    if g_scene.isVisible(g_selection.at(position)): return false
+  true
+
+
+proc nimAnimationMilliseconds(): cint {.exportc.} = cint(ANIMATION_MILLISECONDS)
+  ## Report how long this build eases an animation for -- the same `mesh` constant a
+  ##   freshly added object grows in over, handed out so the presentation layer's own
+  ##   transitions run to it rather than to a second number written down separately.
+
+
 proc nimUndo(): bool {.exportc.} =
   ## Move scene back one step on its own edit timeline; report whether there was an
   ## earlier step to move to. Clears the current selection unconditionally on success,
@@ -882,7 +908,21 @@ proc nimBuildFrame(
   ##   `g_scene` and so is invisible to `nimSceneSlots`/undo/redo/save/picking.
   clearMeshes(g_meshes_furniture)
 
+  # Carry the camera one frame further toward whatever is being worked on, then aim it
+  #   again from what this frame holds -- the same one rule `visualiser.assembleMeshes`
+  #   applies, so neither UI decides for itself when the camera should move. Advancing
+  #   before `scale` is read keeps this frame's furniture extent and horizon radius
+  #   consistent with where the camera actually is.
+  g_tween_camera.advance(g_camera, float(now), easeOutCubic)
   let scale = drawExtentFor(g_camera)
+  block:
+    var geometry = none(Multivector)
+    if g_ghost.isSome: geometry = g_ghost
+    elif g_selection.len == 1 and g_scene.isAlive(g_selection.at(0)):
+      geometry = some(g_scene.geometryAt(g_selection.at(0)))
+    if geometry.isSome:
+      let aim = aimFor(geometry.get, scale)
+      if aim.isSome: g_tween_camera.aimAt(g_camera, aim.get, float(now), ANIMATION_SECONDS)
 
   if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture)
   if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture)

@@ -386,9 +386,32 @@ func muted*(base: Rgba): Rgba =
 
 
 
+#[ Representative Point ]#
+
+func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
+  ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
+  ##   Point uses its own place, or its own star position at horizon where it has none,
+  ##   matching exactly where `mesh.addPoint` draws it.
+  ##   Line and plane use their support point, matching what mesh actually anchors on;
+  ##   neither is pickable at horizon (see `pickNearest`'s own doc comment), so no
+  ##   equivalent horizon anchor is needed for them here.
+  ##   None where `m` carries no drawable geometry at all.
+  let shape = shape(m)
+  if shape.isNone: return
+  case shape.get
+  of Shape.Point:
+    let place = position(m)
+    if place.isSome: return place
+    let heading = directionHorizon(m)
+    if heading.isNone: return
+    some(scale.eye + scale.radius_horizon*heading.get)
+  of Shape.Line, Shape.Plane:
+    positionAnchor(m)
+
+
 #[ Appear Animation ]#
 
-func easeOutCubic(t: float): float =
+func easeOutCubic*(t: float): float =
   ## Ease progress toward 1, quickly at first then settling, for a materialising feel.
   let u = 1.0 - clamp(t, 0.0, 1.0)
   1.0 - u*u*u

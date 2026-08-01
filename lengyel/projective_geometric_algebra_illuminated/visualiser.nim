@@ -271,7 +271,7 @@ proc secondsNow(): float =
 
 
 proc assembleMeshes(
-  workbench: var Workbench; scene: Scene; now: float; scale: DrawExtent;
+  workbench: var Workbench; scene: Scene; camera: Camera; now: float; scale: DrawExtent;
   are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
 ) =
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
@@ -314,6 +314,28 @@ proc assembleMeshes(
     var ghost: Multivector
     for b in Basis: ghost[b] = float(workbench.session.get.coefficients[b])
     discard MESHES.addObject(ghost, muted(INK_GHOST.colour), scale)
+
+
+  # Aim the camera at whatever is being worked on, from one rule rather than from each
+  #   path that could change it: an open session's own staged multivector, or else the
+  #   object solely selected -- which is exactly what every construction path leaves
+  #   behind (`selectOnly`), so applying an operation, releasing a drag and stepping the
+  #   storyboard all aim without knowing anything about the camera. Offered every frame
+  #   rather than at each event: `aimAt` ignores a goal it already holds, so an unchanged
+  #   scene costs nothing while a moving one -- a coefficient being dragged -- reads as one
+  #   continuous chase. Anything that draws nothing (a still-empty composing session)
+  #   aims at nothing and leaves the camera alone.
+  block:
+    var geometry = none(Multivector)
+    if workbench.session.isSome:
+      var ghost: Multivector
+      for b in Basis: ghost[b] = float(workbench.session.get.coefficients[b])
+      geometry = some(ghost)
+    elif workbench.selection.len == 1 and scene.isAlive(workbench.selection.at(0)):
+      geometry = some(scene[workbench.selection.at(0)].geometry)
+    if geometry.isSome:
+      let aim = aimFor(geometry.get, scale)
+      if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -417,13 +439,19 @@ proc renderFrame(
   gui.frameBegin()
   layoutWorkbench(workbench, scene, camera, HISTORY, now)
 
+  # Advance before this frame's transforms are built, so the frame draws where the camera
+  #   has reached rather than a frame behind. Aiming happens inside `assembleMeshes`
+  #   below, which is one frame later by design -- there is nothing to advance toward
+  #   until something has been aimed at.
+  workbench.tween_camera.advance(camera, now, easeOutCubic)
+
   let eye = camera.eye
   let scale = DrawExtent(
     extent_furniture: extentFurnitureFor(camera.distance_far),
     eye: eye,
     radius_horizon: radiusHorizonFor(camera.distance_far),
   )
-  assembleMeshes(workbench, scene, now, scale, are_dimmed)
+  assembleMeshes(workbench, scene, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
   renderer.drawMeshes(MESHES_FURNITURE, view_projection, WIDTH_LINE_FURNITURE)
@@ -762,18 +790,20 @@ proc runStoryboard(
     #   widening it besides would shrink everything else this same capture also shows.
     camera.azimuth = azimuth_default
     camera.elevation = elevation_default
+    # Turn to face a result standing at the horizon, which is nowhere the demo's own
+    #   fixed angle already frames. Instant, not eased: a captured frame must never show
+    #   a half-finished pan. Same `aimFor` the interactive path uses, so both agree on
+    #   where an object is worth looking from.
     if isHorizon(derived):
-      let shape_derived = shape(derived)
-      var heading = none(Direction)
-      if shape_derived == some(Shape.Point):
-        heading = directionHorizon(derived)
-      elif shape_derived == some(Shape.Line):
-        let normal = directionNormalHorizon(derived)
-        if normal.isSome:
-          let axes = spanPerpendicular(Position(x: 0, y: 0, z: 0), normal.get)
-          if axes.isSome: heading = some(axes.get[0])
-      if heading.isSome:
-        (camera.azimuth, camera.elevation) = azimuthElevationFor(heading.get)
+      let scale_aim = DrawExtent(
+        extent_furniture: extentFurnitureFor(camera.distance_far),
+        eye: camera.eye,
+        radius_horizon: radiusHorizonFor(camera.distance_far),
+      )
+      let aim = aimFor(derived, scale_aim)
+      if aim.isSome:
+        workbench.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
+        workbench.tween_camera.settle(camera)
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
     var cursor_shape = 0

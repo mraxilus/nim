@@ -126,6 +126,10 @@ type
       ## construction path (a storyboard step, or this session's own last drag-release or
       ## apply-operation click). Cleared by a successful undo or redo, since a restored
       ## snapshot's slot numbers may not match whatever was picked before.
+    tween_camera*: CameraTween ## Carries the camera toward whatever is being built or
+      ## edited -- see `camera.CameraTween`. Retargeted wherever an object is created or
+      ## an edit session stages a change, and advanced once per frame by the caller that
+      ## owns the clock (`visualiser.renderFrame`).
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
     selection_synced*: Selection ## Last `selection` reading the apply controls were
@@ -204,6 +208,8 @@ proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int])
   ## Open an edit session against `slot`, or a composing one where slot is none.
   ##   A composing session starts on the same auto-label and cycled ink every other
   ##   construction path assigns, leaving both editable before the object exists.
+  ##   Does not aim the camera itself: the session's own staged geometry is offered to the
+  ##   tween every frame by `layoutObjects` below, which covers the moment it opens too.
   var session = EditSession(slot: slot)
   if slot.isSome:
     for b in Basis: session.coefficients[b] = cfloat(scene.geometryAt(slot.get)[b])

@@ -29,7 +29,7 @@
 import std/[math, options]
 
 import ../pga
-import ./objects
+import ./[mesh, objects]
 
 
 
@@ -219,3 +219,126 @@ func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
   initMatrixProjection(
     camera.degrees_field_of_view, aspect, camera.distance_near, camera.distance_far
   ) * initMatrixView(eye, camera.frame(eye))
+
+
+
+#[ Aiming And Easing ]#
+
+type
+  CameraAim* = object ## Name where a camera should look to bring one object into view.
+    ## Two cases, because a finite object and a horizon one are reached differently: a
+    ## finite object is somewhere, so the camera moves its target onto it; a horizon
+    ## object is only a direction, drawn fixed to the eye at any distance, so the camera
+    ## instead turns to face along it and its target is left alone.
+    case is_horizon*: bool
+    of true:
+      azimuth*, elevation*: float ## Orbit angles that look along the object's direction.
+    of false:
+      target*: Position ## Point the orbit should turn about.
+
+  CameraTween* = object ## Carry a camera from where it was toward where it should look.
+    ## Eased over `duration`, so a camera that jumps to a freshly built object is followed
+    ## rather than teleported after. Empty until something aims it.
+    ##   Retargeting captures wherever the tween had reached as its new start (see
+    ##   `aimAt`), which is what lets a goal that moves every frame -- the staged geometry
+    ##   of an open edit session, say -- read as one smooth chase instead of restarting.
+    goal*: Option[CameraAim] ## Where the camera is heading. None while nothing is aimed.
+    started*: float ## Clock reading `goal` was last set or retargeted at.
+    duration*: float ## Seconds the ease takes, end to end.
+    azimuth_from*, elevation_from*: float ## Orbit angles the current ease began at.
+    target_from*: Position ## Target point the current ease began at.
+
+
+func `==`*(a, b: CameraAim): bool =
+  ## Compare two aims. Written out rather than left to Nim, whose generated `==` walks a
+  ## case object's fields in parallel and refuses to compile for one.
+  ##   Exact comparison, not approximate: this answers "is this the same aim I was already
+  ##   given", so a caller offering the same goal every frame does not restart its ease.
+  ##   An aim that genuinely moved by a hair should restart it.
+  if a.is_horizon != b.is_horizon: return false
+  if a.is_horizon:
+    a.azimuth == b.azimuth and a.elevation == b.elevation
+  else:
+    a.target.x == b.target.x and a.target.y == b.target.y and a.target.z == b.target.z
+
+
+func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
+  ## Resolve where a camera should look to see `m`, or none where `m` draws nothing.
+  ##   A point at horizon is a fixed star: the camera turns along its own direction.
+  ##   A line at horizon is a whole great circle, so no single direction faces it; the
+  ##   first axis spanning perpendicular to its normal is picked, which puts some of that
+  ##   circle in view. A plane at horizon fills the sky and needs no aiming at all.
+  ##   Everything finite is reached through `anchorFor`'s own representative point, so the
+  ##   camera targets exactly what the overlay already rings.
+  let shape_m = shape(m)
+  if shape_m.isNone: return
+  if isHorizon(m):
+    var heading = none(Direction)
+    case shape_m.get
+    of Shape.Point: heading = directionHorizon(m)
+    of Shape.Line:
+      let normal = directionNormalHorizon(m)
+      if normal.isSome:
+        let axes = spanPerpendicular(Position(x: 0, y: 0, z: 0), normal.get)
+        if axes.isSome: heading = some(axes.get[0])
+    of Shape.Plane: discard
+    if heading.isNone: return
+    let (azimuth, elevation) = azimuthElevationFor(heading.get)
+    return some(CameraAim(is_horizon: true, azimuth: azimuth, elevation: elevation))
+  let anchor = anchorFor(m, scale)
+  if anchor.isNone: return
+  some(CameraAim(is_horizon: false, target: anchor.get))
+
+
+proc aimAt*(tween: var CameraTween; camera: Camera; goal: CameraAim; now, duration: float) =
+  ## Send the camera toward `goal`, easing from wherever it stands right now.
+  ##   Reading the start off the live camera rather than off the previous goal is what
+  ##   makes a moving goal smooth: the camera has already been eased partway there by
+  ##   `advance` below, so starting the next ease from that reading continues the motion
+  ##   instead of snapping back.
+  ##   Re-aiming at a goal already set is ignored, so a caller may offer the same goal
+  ##   every frame -- as one watching an unchanged edit session does -- without the ease
+  ##   restarting forever and never arriving.
+  if tween.goal.isSome and tween.goal.get == goal: return
+  tween.goal = some(goal)
+  tween.started = now
+  tween.duration = duration
+  tween.azimuth_from = camera.azimuth
+  tween.elevation_from = camera.elevation
+  tween.target_from = camera.target
+
+
+proc advance*(tween: var CameraTween; camera: var Camera; now: float; ease: proc(t: float): float {.noSideEffect.}) =
+  ## Carry the camera one frame further toward its goal, and drop the goal on arrival.
+  ##   `ease` is passed in rather than imported so this module stays independent of where
+  ##   the project keeps its easing curve; callers hand it `mesh.easeOutCubic`, which is
+  ##   the same curve and duration a freshly added object grows in with.
+  if tween.goal.isNone: return
+  let progress = ease((now - tween.started) / max(tween.duration, 1.0e-6))
+  let goal = tween.goal.get
+  if goal.is_horizon:
+    # Turn the short way round: azimuth is an angle, so a goal just past -pi is next door
+    #   to a camera just short of +pi, not most of a turn away.
+    var delta = goal.azimuth - tween.azimuth_from
+    while delta > PI: delta -= 2.0*PI
+    while delta < -PI: delta += 2.0*PI
+    camera.azimuth = tween.azimuth_from + progress*delta
+    camera.elevation = tween.elevation_from +
+      progress*(goal.elevation - tween.elevation_from)
+  else:
+    camera.target = tween.target_from + progress*(goal.target - tween.target_from)
+  if now - tween.started >= tween.duration:
+    tween.goal = none(CameraAim)
+
+
+proc settle*(tween: var CameraTween; camera: var Camera) =
+  ## Put the camera on its goal at once and drop it -- for a caller that must not show a
+  ## half-finished pan, such as a storyboard frame about to be captured.
+  if tween.goal.isNone: return
+  let goal = tween.goal.get
+  if goal.is_horizon:
+    camera.azimuth = goal.azimuth
+    camera.elevation = goal.elevation
+  else:
+    camera.target = goal.target
+  tween.goal = none(CameraAim)
