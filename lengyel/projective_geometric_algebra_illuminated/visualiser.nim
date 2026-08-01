@@ -292,14 +292,15 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
-  # The add panel's own not-yet-committed multivector, drawn through the same dispatch a
-  #   real object uses so composing one shows exactly what adding it would give. Never
-  #   enters `scene`, so picking, undo/redo and save stay unaware of it; an all-zero
-  #   staging degrades to "nothing to draw" through `addObject`'s own empty-shape branch,
-  #   and `is_ghost_shown` is false then anyway.
-  if workbench.is_ghost_shown:
+  # The open edit session's own staged multivector, drawn through the same dispatch a
+  #   real object uses so composing or reshaping one shows exactly what saving it would
+  #   give. Never enters `scene`, so picking, undo/redo and save stay unaware of it; an
+  #   all-zero staging degrades to "nothing to draw" through `addObject`'s own
+  #   empty-shape branch. While editing an existing object, this draws beside it: the
+  #   object holds its committed position and the ghost shows where it would land.
+  if workbench.session.isSome:
     var ghost: Multivector
-    for b in Basis: ghost[b] = float(workbench.coefficients_new[b])
+    for b in Basis: ghost[b] = float(workbench.session.get.coefficients[b])
     discard MESHES.addObject(ghost, muted(INK_GHOST.colour), scale)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0

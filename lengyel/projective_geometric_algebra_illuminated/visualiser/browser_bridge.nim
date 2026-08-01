@@ -78,12 +78,14 @@ var
     ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
     ## is (re)initialized (`nimInit`, `nimLoadDemo`, `nimSceneClear`), so undo never
     ## reaches earlier than the moment tracking began for whatever scene is live now.
-  g_ghost = none(Multivector) ## Not-yet-committed multivector the Add panel's own
-    ## 16-input grid is composing, rendered every frame by `nimBuildFrame` exactly like
-    ## a live scene object -- but never added to `g_scene` itself: `nimSceneSlots`/
-    ## `nimSceneCount` (and so undo/redo, save, picking) never see it. None where the Add
-    ## panel has never been touched this round, or its last edit just committed
-    ## (`nimAddMultivector`) or cleared (`nimClearGhost`).
+  g_ghost = none(Multivector) ## Multivector the open edit session is staging, rendered
+    ## every frame by `nimBuildFrame` exactly like a live scene object -- but never added
+    ## to `g_scene` itself: `nimSceneSlots`/`nimSceneCount` (and so undo/redo, save,
+    ## picking) never see it. Serves both session modes, since only one is ever open:
+    ## composing a new object, where nothing backs it in the scene yet, and editing an
+    ## existing one, where the ghost shows where it would land while the object itself
+    ## stays put. None where no session is open, or the last one committed
+    ## (`nimAddItem`/`nimCommitItem`) or was abandoned (`nimClearGhost`).
 
 const INK_GHOST = Ink.Guide
   ## Palette slot the ghost draws in, muted -- reuses Ink.Guide's own existing
@@ -252,23 +254,48 @@ proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
 
 #[ Scene Mutation ]#
 
-proc nimAddMultivector(coefficients: seq[float]; now: cfloat): cint {.exportc.} =
-  ## Commit the Add panel's own 16-input grid as a fresh scene object, full bookkeeping
-  ## (auto-label, cycled ink, `g_borns` stamp, highlight, history record) -- built from
-  ## all sixteen basis coefficients directly, since "add" composes any multivector, not
-  ## only a point.
-  ##   Builds `geometry` coefficient-by-coefficient the same way `nimSceneAddRaw` does
-  ##   for a loaded item, rather than reusing that proc outright: `nimSceneAddRaw`
-  ##   deliberately skips `g_history.record`, stamps `g_borns` to 0.0 (load semantics),
-  ##   and never touches `g_index_highlighted` -- all three of which a user-drawn add
-  ##   must do.
+proc nimDefaultLabel(): cstring {.exportc.} = cstring(&"m{g_scene.len}")
+  ## Report the label a freshly composed object starts out carrying, for a caller to
+  ## pre-fill an edit session with and let the user change before committing.
+
+
+proc nimDefaultInk(): cint {.exportc.} = cint(inkCycled(g_scene.len))
+  ## Report the palette slot a freshly composed object starts out carrying, cycled the
+  ## same way every construction path already cycles it.
+
+
+proc nimAddItem(
+  coefficients: seq[float]; label: cstring; ink_ordinal: cint; now: cfloat
+): cint {.exportc.} =
+  ## Commit a composing edit session as a fresh scene object, taking the label and palette
+  ## slot the session staged rather than assigning them here -- both are editable before
+  ## the commit, unlike every other construction path, which has no user-facing moment
+  ## between deciding to build something and it existing.
+  ##   Builds `geometry` coefficient-by-coefficient the same way `nimSceneAddRaw` does for
+  ##   a loaded item, rather than reusing that proc outright: `nimSceneAddRaw` deliberately
+  ##   skips `g_history.record`, stamps `g_borns` to 0.0 (load semantics), and never
+  ##   touches `g_index_highlighted` -- all three of which a user-driven add must do.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
-  result = cint(
-    g_scene.addItem(geometry, &"m{g_scene.len}", inkCycled(g_scene.len), float(now))
-  )
+  result = cint(g_scene.addItem(geometry, $label, Ink(ink_ordinal), float(now)))
   g_borns[int(result)] = float(now)
   g_index_highlighted = some(int(result))
+  g_history.record(g_scene)
+
+
+proc nimCommitItem(
+  slot: cint; coefficients: seq[float]; label: cstring; ink_ordinal: cint
+) {.exportc.} =
+  ## Commit an editing session onto the item it was opened against, writing every staged
+  ## field at once and recording history exactly once.
+  ##   This is the "edit committed" boundary `history.nim`'s own doc comment says the
+  ##   continuous widgets lacked: a coefficient drag or a keystroke no longer reaches the
+  ##   scene at all, so the timeline gains one entry per save rather than one per frame of
+  ##   input, and coefficient/label/colour edits are undoable for the first time.
+  let index = int(slot)
+  for b in Basis: g_scene.geometryAt(index)[b] = coefficients[ord(b)]
+  toChars($label, g_scene.labelAt(index))
+  g_scene.setInk(index, Ink(ink_ordinal))
   g_history.record(g_scene)
 
 
@@ -339,20 +366,30 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
 #[ Ghost Preview ]#
 
 proc nimSetGhost(coefficients: seq[float]) {.exportc.} =
-  ## Rewrite the not-yet-committed ghost multivector wholesale, from the Add panel's own
-  ## local JS-side 16-element state array -- called on every `input` event on any one of
-  ## its sixteen fields. Builds `geometry` coefficient-by-coefficient the same way
-  ## `nimSceneAddRaw` does for a loaded item, but writes into `g_ghost` instead of a
-  ## scene slot; `nimBuildFrame` reads it back next frame and draws it like any other
-  ## object, tinted `INK_GHOST`, muted.
+  ## Rewrite the staged ghost multivector wholesale, from the open session's own JS-side
+  ## 16-element state array -- called on every `input` event on any one of its sixteen
+  ## fields, so the preview tracks a keystroke rather than waiting for the field to blur.
+  ## Builds `geometry` coefficient-by-coefficient the same way `nimSceneAddRaw` does for a
+  ## loaded item, but writes into `g_ghost` instead of a scene slot; `nimBuildFrame` reads
+  ## it back next frame and draws it like any other object, tinted `INK_GHOST`, muted.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   g_ghost = some(geometry)
 
 
+proc nimDescribeCoefficients(coefficients: seq[float]): cstring {.exportc.} =
+  ## Report the same `shape: equation` line an item row shows, for a staged multivector
+  ## that has no slot yet -- so a row being composed or edited previews exactly what it
+  ## would read as once committed, rather than the presentation layer assembling that
+  ## sentence for itself out of two separate exports.
+  var geometry: Multivector
+  for b in Basis: geometry[b] = coefficients[ord(b)]
+  cstring(shapeDescription(geometry) & ": " & $geometry)
+
+
 proc nimClearGhost() {.exportc.} =
-  ## Discard the ghost, so `nimBuildFrame` stops drawing it -- called once a ghost
-  ## commits (`nimAddMultivector`) or the Add section collapses mid-edit.
+  ## Discard the ghost, so `nimBuildFrame` stops drawing it -- called once a session
+  ## commits (`nimAddItem`/`nimCommitItem`) or is abandoned.
   g_ghost = none(Multivector)
 
 

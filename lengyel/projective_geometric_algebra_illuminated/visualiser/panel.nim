@@ -71,6 +71,15 @@ const
   ALPHA_ITEM_HIDDEN = 0.45'f32
     ## Dim a hidden item's own row to this fraction, matching the browser's own
     ## `.item-row.hidden-item` rule -- present but plainly not drawn right now.
+  HELP_COEFFICIENTS_PENDING: cstring =
+    "The 16 numbers of the new multivector, in the library's basis order, stacked one " &
+    "row per grade. A live preview draws as soon as any goes non-zero; nothing joins " &
+    "the scene until you save."
+    ## Explain the coefficient grid while composing a new object.
+  HELP_COEFFICIENTS_EDITING: cstring =
+    "The 16 numbers of this object's own multivector, in the library's basis order, " &
+    "stacked one row per grade. The object itself only moves when you save."
+    ## Explain the coefficient grid while editing an object that already exists.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
   FRAMES_HISTORY* {.define: "visualiser.frames_history".} = 240
@@ -83,20 +92,22 @@ const
 #[ Type Definitions ]#
 
 type
+  EditSession* = object ## Hold what an open edit is staging, before any of it reaches
+    ## the scene. One session exists at a time, in one of two modes -- see `slot`.
+    slot*: Option[int] ## Item being edited. None while composing a brand-new object,
+      ## which has nothing backing it in the scene until its own save commits it.
+    coefficients*: array[Basis, cfloat] ## Staged multivector, one coefficient per basis
+      ## element, drawn every frame as a muted ghost. Held as `cfloat` because that is
+      ## what the drag widget writes.
+    label*: array[LABEL_MAX, char] ## Staged label. Staged rather than edited in place
+      ## because `gui.inputText` writes straight through the pointer it is handed, and
+      ## the scene's own buffer must not change before save.
+    index_ink*: cint ## Staged palette slot.
+
   Workbench* = object ## Hold GUI's own state between frames.
-    coefficients_new*: array[Basis, cfloat] ## Multivector the add panel is composing, one
-      ## coefficient per basis element -- committed by its own add button, and drawn every
-      ## frame until then as a muted ghost (see `is_ghost_shown`). Staged as `cfloat`
-      ## because that is what the drag widget writes.
-    are_edit_open*: array[ITEMS_MAX, bool] ## Whether each slot's own coefficient editor is
-      ## expanded. Held here rather than as a collapsing header's own internal state so the
-      ## toggle can be an inline small button beside hide/remove: Dear ImGui's
-      ## `CollapsingHeader` spans the full remaining width, which would push those buttons
-      ## onto their own line and read as a section rather than a row control.
-    is_ghost_shown*: bool ## Whether the add panel's own staged multivector should draw as
-      ## a ghost this frame. Set by `layoutMultivectorNew` while its section is open and
-      ## some coefficient is non-zero, cleared otherwise; read by
-      ## `visualiser.assembleMeshes` later the same frame, so there is no lag.
+    session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
+      ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
+      ## later in the same frame this panel writes it, so there is no lag.
     index_highlighted*: Option[int] ## Currently selected item's own slot, drawn ringed
       ## by `visualiser.drawSelectionRing` -- auto-selected by every construction path (a
       ## storyboard step, or this session's own last drag-release or apply-operation
@@ -179,44 +190,123 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
         result = some(b)
 
 
+proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int]) =
+  ## Open an edit session against `slot`, or a composing one where slot is none.
+  ##   A composing session starts on the same auto-label and cycled ink every other
+  ##   construction path assigns, leaving both editable before the object exists.
+  var session = EditSession(slot: slot)
+  if slot.isSome:
+    for b in Basis: session.coefficients[b] = cfloat(scene.geometryAt(slot.get)[b])
+    session.label = scene.labelAt(slot.get)
+    session.index_ink = cint(scene.inkAt(slot.get))
+  else:
+    toChars(&"m{scene.len}", session.label)
+    session.index_ink = cint(inkCycled(scene.len))
+  workbench.session = some(session)
+
+
+proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
+  ## Lay out the label, colour and coefficient controls an open session stages.
+  ##   Everything here writes into the session, never the scene: the row above previews
+  ##   the change and the ghost previews the geometry, but nothing lands until save.
+  gui.widthPush(220.0)
+  discard gui.inputText("label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
+  discard gui.combo(
+    "colour", addr workbench.session.get.index_ink,
+    addr lut_ink_to_name[Ink.low], cint(COUNT_INK),
+  )
+  gui.widthPop()
+  gui.text("Coefficients:")
+  gui.sameLine()
+  gui.helpMarker(
+    if is_pending: HELP_COEFFICIENTS_PENDING else: HELP_COEFFICIENTS_EDITING
+  )
+  discard layoutCoefficientGrid(workbench.session.get.coefficients)
+
+
 proc layoutItem(
-  workbench: var Workbench; scene: var Scene; history: var History; slot: int
+  workbench: var Workbench; scene: var Scene; history: var History; slot: Option[int];
+  now: float
 ): bool =
-  ## Lay out one item's controls, by slot; report whether user asked for it to be removed.
+  ## Lay out one item's controls; report whether user asked for it to be removed.
+  ##   A none `slot` lays out the composing row instead: same shape, but nothing backs it
+  ##   in the scene, so it takes its values from the session and leaves out the buttons
+  ##   that act on an object that exists (hide, remove).
   ##   A hidden item's whole row dims rather than disappearing, so it stays readable and
   ##   its own show button stays clickable -- `alphaPush`, not `disabledPush`.
-  gui.idPush(cint(slot))
+  let is_pending = slot.isNone
+  gui.idPush(if is_pending: cint(ITEMS_MAX) else: cint(slot.get))
   defer: gui.idPop()
 
   let
-    item = scene[slot]
-    tint = item.ink.colour
-    is_visible = scene.isVisible(slot)
+    is_open = is_pending or
+      (workbench.session.isSome and workbench.session.get.slot == slot)
+    is_visible = is_pending or scene.isVisible(slot.get)
+    tint =
+      if is_open: Ink(workbench.session.get.index_ink).colour
+      else: scene.inkAt(slot.get).colour
   if not is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
   defer:
     if not is_visible: gui.alphaPop()
 
-  # Row selects on click, the way the browser's own row does, and shows which item the
-  #   ring in the 3D view is currently drawn around.
-  gui.textColorPush(tint.red, tint.green, tint.blue)
-  let is_selected = workbench.index_highlighted == some(slot)
-  if gui.selectable(toCstring(scene.labelAt(slot)), is_selected, WIDTH_ITEM_LABEL):
-    workbench.index_highlighted = if is_selected: none(int) else: some(slot)
-  gui.textColorPop()
+  # Checkbox mirrors the selection ring, the way the browser's own row does; the name
+  #   beside it selects on click too, so either target works.
+  var is_selected = (not is_pending) and workbench.index_highlighted == slot
+  gui.disabledPush(is_pending) # Nothing to select until it exists.
+  if gui.checkbox("", addr is_selected):
+    workbench.index_highlighted = if is_selected: slot else: none(int)
+  gui.disabledPop()
   gui.tooltip("Select this object; the 3D view rings whatever is selected.")
+  gui.sameLine()
+
+  let label_shown =
+    if is_open: toCstring(workbench.session.get.label) else: toCstring(scene.labelAt(slot.get))
+  gui.textColorPush(tint.red, tint.green, tint.blue)
+  if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not is_pending:
+    workbench.index_highlighted = if is_selected: none(int) else: slot
+  gui.textColorPop()
 
   gui.sameLine()
-  if gui.buttonSmall(if is_visible: cstring"hide" else: cstring"show"):
-    scene.setVisible(slot, not is_visible)
-    history.record(scene)
-  gui.tooltip("Show or hide this object without removing it.")
-  gui.sameLine()
-  if gui.buttonSmall(if workbench.are_edit_open[slot]: cstring"close" else: cstring"edit"):
-    workbench.are_edit_open[slot] = not workbench.are_edit_open[slot]
-  gui.tooltip("Rename, recolour, or reshape this object coefficient by coefficient.")
-  gui.sameLine()
-  result = gui.buttonSmall("remove")
-  gui.tooltip("Delete this object; its slot is reused by the next one you add.")
+  if gui.buttonSmall(if is_open: cstring"save" else: cstring"edit"):
+    if not is_open:
+      beginSession(workbench, scene, slot)
+    else:
+      let session = workbench.session.get
+      var geometry: Multivector
+      for b in Basis: geometry[b] = float(session.coefficients[b])
+      if is_pending:
+        let slot_added =
+          scene.addItem(geometry, $toCstring(session.label), Ink(session.index_ink), now)
+        workbench.index_highlighted = some(slot_added)
+      else:
+        scene.geometryAt(slot.get) = geometry
+        scene.labelAt(slot.get) = session.label
+        scene.setInk(slot.get, Ink(session.index_ink))
+      history.record(scene)
+      workbench.session = none(EditSession)
+  gui.tooltip(
+    if is_open: cstring"Commit these values to the scene."
+    else: cstring"Rename, recolour or reshape this object; nothing changes until you save."
+  )
+
+  if is_open:
+    # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
+    #   scene was never touched either way, so this only has to drop the session.
+    gui.sameLine()
+    if gui.buttonSmall("x"): workbench.session = none(EditSession)
+    gui.tooltip(
+      if is_pending: cstring"Discard this new object." else: cstring"Discard these changes."
+    )
+
+  if not is_pending:
+    gui.sameLine()
+    if gui.buttonSmall(if is_visible: cstring"hide" else: cstring"show"):
+      scene.setVisible(slot.get, not is_visible)
+      history.record(scene)
+    gui.tooltip("Show or hide this object without removing it.")
+    gui.sameLine()
+    result = gui.buttonSmall("remove")
+    gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
   # Built into a stack buffer rather than a `string`, since every visible item redraws
   #   this line every frame; a fresh heap string per item per frame is exactly the kind
@@ -224,39 +314,31 @@ proc layoutItem(
   #   Shape word first on the same line as the coefficients, matching the browser's own
   #   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
   #   that reads as a prefix to the equation anyway.
+  var geometry_shown: Multivector
+  if is_open:
+    for b in Basis: geometry_shown[b] = float(workbench.session.get.coefficients[b])
+  else:
+    geometry_shown = scene.geometryAt(slot.get)
   var line: array[WIDTH_ITEM_LINE, char]
   let description = buildChars(line):
     appendChars(line, cursor, "  ")
-    describeShape(item.geometry, line, cursor)
+    describeShape(geometry_shown, line, cursor)
     appendChars(line, cursor, ": ")
-    formatMultivector(item.geometry, line, cursor)
+    formatMultivector(geometry_shown, line, cursor)
   gui.textWrapped(description)
 
-  if workbench.are_edit_open[slot]:
-    gui.widthPush(220.0)
-    discard gui.inputText("label", toCstring(scene.labelAt(slot)), cint(LABEL_MAX))
-    var index_ink = cint(item.ink)
-    if gui.combo("colour", addr index_ink, addr lut_ink_to_name[Ink.low], cint(COUNT_INK)):
-      scene.setInk(slot, Ink(index_ink))
-      history.record(scene)
-    gui.widthPop()
-    gui.text("Coefficients:")
-    gui.sameLine()
-    gui.helpMarker(
-      "The 16 numbers of this RGA object's own multivector, in the library's basis " &
-      "order, stacked one row per grade; drag any one to reshape the object directly."
-    )
-    var staged: array[Basis, cfloat]
-    for b in Basis: staged[b] = cfloat(scene.geometryAt(slot)[b])
-    let changed = layoutCoefficientGrid(staged)
-    if changed.isSome:
-      scene.geometryAt(slot)[changed.get] = float(staged[changed.get])
+  if is_open: layoutSessionFields(workbench, is_pending)
   gui.separator()
 
 
-proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var History) =
-  ## Lay out every live item's controls, applying at most one removal per frame.
+proc layoutObjects*(
+  workbench: var Workbench; scene: var Scene; history: var History; now: float
+) =
+  ## Lay out every live item's controls, plus the row being composed if there is one,
+  ## applying at most one removal per frame.
   ##   One per frame is enough, since a click can only land on one button.
+  ##   `now` is forwarded to whichever row commits a fresh object this frame, so it
+  ##   animates in from the moment it appears.
   var header: array[32, char]
   let label = buildChars(header):
     appendChars(header, cursor, "objects (")
@@ -266,20 +348,15 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var His
     appendChars(header, cursor, ")")
   if not gui.header(label, is_open_first = true): return
 
-  gui.widthPush(300.0)
-  discard gui.inputText("path", toCstring(workbench.path_scene), cint(PATH_MAX))
-  gui.tooltip("File `save scene` writes to and `load scene` reads from.")
-  gui.widthPop()
-  if gui.button("save scene"):
-    toChars(saveScene(scene, $toCstring(workbench.path_scene)), workbench.message)
-  gui.sameLine()
-  if gui.button("load scene"):
-    toChars(loadScene(scene, $toCstring(workbench.path_scene)), workbench.message)
-  gui.separator()
-
-  if scene.len == 0:
-    gui.text("Nothing here yet -- add a multivector above, or drag between two objects.")
+  let is_composing =
+    workbench.session.isSome and workbench.session.get.slot.isNone
+  if scene.len == 0 and not is_composing:
+    gui.text("Nothing here yet -- press `add` above, or drag between two objects.")
     return
+
+  # A composing row heads the list: it is the newest thing here, and it has no `born`
+  #   reading to sort by since nothing backs it in the scene yet.
+  if is_composing: discard layoutItem(workbench, scene, history, none(int), now)
 
   # Most recently added first, matching the browser's own list order: the object just
   #   built is the one a user is looking for, and it would otherwise sit at whatever
@@ -298,65 +375,53 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var His
   var slot_removed = none(int)
   for position in 0 ..< count:
     let slot = slots_ordered[position]
-    if layoutItem(workbench, scene, history, slot): slot_removed = some(slot)
+    if layoutItem(workbench, scene, history, some(slot), now): slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
     if workbench.index_highlighted == slot_removed: workbench.index_highlighted = none(int)
+    # Its session has nothing left to commit against.
+    if workbench.session.isSome and workbench.session.get.slot == slot_removed:
+      workbench.session = none(EditSession)
     history.record(scene)
 
 
 
 #[ Construct Panel ]#
 
-proc layoutMultivectorNew*(
-  workbench: var Workbench; scene: var Scene; history: var History; now: float
-) =
-  ## Lay out controls that compose and add a fresh multivector, one coefficient per basis
-  ## element.
-  ##   Adds any multivector rather than only a point, matching what the operation
-  ##   catalogue below can already derive: a point was never a special case the scene
-  ##   itself recognised, only what the old three-field position widget could express.
-  ##   Sets `is_ghost_shown` while composing, so the not-yet-committed object draws muted
-  ##   in the 3D view the moment any coefficient goes non-zero, and stops the moment this
-  ##   section closes or the object commits.
-  workbench.is_ghost_shown = false
-  if not gui.header("add", is_open_first = false): return
-
-  gui.text("The 16 numbers of a fresh multivector, in the library's basis order.")
-  gui.sameLine()
-  gui.helpMarker(
-    "Stacked one row per grade: a scalar, then this build's four grade-1 elements, and " &
-    "so on. A live preview draws in the view as soon as any field goes non-zero; " &
-    "nothing joins the scene until you add it below."
-  )
-  discard layoutCoefficientGrid(workbench.coefficients_new)
-
-  for b in Basis:
-    if workbench.coefficients_new[b] != 0.0:
-      workbench.is_ghost_shown = true
-      break
-
-  gui.disabledPush(scene.isFull)
-  if gui.button("add multivector"):
-    var geometry: Multivector
-    for b in Basis: geometry[b] = float(workbench.coefficients_new[b])
-    let slot = scene.addItem(geometry, &"m{scene.len}", inkCycled(scene.len), now)
-    workbench.index_highlighted = some(slot)
-    history.record(scene)
-
-    var shape_word: array[WIDTH_SHAPE_WORD, char]
-    var cursor_shape = 0
-    describeShape(geometry, shape_word, cursor_shape)
-    finishChars(shape_word, cursor_shape)
-    toChars(&"Added {$toCstring(shape_word)}.", workbench.message)
-
-    # Committing clears the composer, the same way the browser's own add section resets
-    #   its sixteen fields -- and with them the ghost, now that a real object stands in
-    #   its place.
-    for b in Basis: workbench.coefficients_new[b] = 0.0
-    workbench.is_ghost_shown = false
+proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
+  ## Lay out the controls reached for constantly, above every collapsing section: start a
+  ## new object, toggle world furniture, and save or load the scene.
+  ##   These sit outside the sections for the same reason the browser's own chip row and
+  ##   menu hold them -- each is either flipped repeatedly while working or applies to the
+  ##   whole scene, so neither should cost opening a section first. `add` in particular
+  ##   has to live outside `objects`, since pressing it opens that section.
+  gui.disabledPush(workbench.session.isSome or scene.isFull)
+  if gui.button("add"):
+    beginSession(workbench, scene, none(int))
   gui.disabledPop()
-  gui.tooltip("Commit the multivector above as a new object in the scene.")
+  gui.tooltip(
+    "Compose a new object in the Objects list below; nothing joins the scene until you " &
+    "save it. Greyed out while another edit is open, so starting this cannot discard it."
+  )
+
+  gui.sameLine()
+  discard gui.checkbox("axes", addr workbench.is_axes_shown)
+  gui.tooltip("Toggle the red/green/blue x/y/z axis lines through the origin.")
+  gui.sameLine()
+  discard gui.checkbox("grid", addr workbench.is_grid_shown)
+  gui.tooltip("Toggle the reference grid at z = 0.")
+
+  gui.widthPush(220.0)
+  discard gui.inputText("scene file", toCstring(workbench.path_scene), cint(PATH_MAX))
+  gui.tooltip("File `save scene` writes to and `load scene` reads from.")
+  gui.widthPop()
+  if gui.button("save scene"):
+    toChars(saveScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+  gui.sameLine()
+  if gui.button("load scene"):
+    toChars(loadScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+    # A loaded scene's slots are not the ones any open session was opened against.
+    workbench.session = none(EditSession)
 
 
 proc layoutOperation*(
@@ -465,7 +530,9 @@ proc layoutOperation*(
 #[ View Panel ]#
 
 proc layoutView*(workbench: var Workbench; camera: var Camera) =
-  ## Lay out camera placement, world furniture and frame export.
+  ## Lay out camera placement and frame export.
+  ##   World furniture toggles moved to `layoutTopBar` -- they are flipped constantly
+  ##   while orbiting, so they should not cost opening a section first.
   if not gui.header("view", is_open_first = false): return
   gui.widthPush(260.0)
 
@@ -494,12 +561,6 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
     camera.degrees_field_of_view = float(field_of_view)
   gui.tooltip("Lens angle; smaller looks through a telephoto, larger through a wide angle.")
   gui.widthPop()
-
-  discard gui.checkbox("world axes", addr workbench.is_axes_shown)
-  gui.tooltip("Toggle the red/green/blue x/y/z axis lines through the origin.")
-  gui.sameLine()
-  discard gui.checkbox("ground grid", addr workbench.is_grid_shown)
-  gui.tooltip("Toggle the reference grid at z = 0.")
 
   gui.separatorText("export")
   gui.widthPush(300.0)
@@ -702,30 +763,35 @@ proc layoutWorkbench*(
     gui.text("middle click.")
     gui.text("Drag empty space instead to move the camera: left orbits, right pans, wheel dollies.")
 
-    # Scene-content edits only (add, apply, remove, visibility, recolour) -- label text
-    #   and coefficient drags are continuous, multi-frame inputs with no clean "edit
-    #   committed" boundary, so neither is on this timeline; see `history.nim`.
-    #   Each button greys out where its own side of the timeline is empty, rather than
-    #   staying live and reporting "nothing to undo" only once pressed.
+    # Scene-content edits only -- camera moves are not on this timeline; see
+    #   `history.nim`. Each button greys out where its own side of the timeline is empty,
+    #   rather than staying live and reporting "nothing to undo" only once pressed.
+    #   A successful step drops any open session too: a restored snapshot's slot numbers
+    #   need not match the one it was opened against.
     gui.disabledPush(not history.canUndo)
     if gui.button("undo"):
-      if history.undo(scene): workbench.index_highlighted = none(int)
+      if history.undo(scene):
+        workbench.index_highlighted = none(int)
+        workbench.session = none(EditSession)
     gui.disabledPop()
     gui.tooltip("Step back through scene-content edits; camera moves are not on this timeline.")
     gui.sameLine()
     gui.disabledPush(not history.canRedo)
     if gui.button("redo"):
-      if history.redo(scene): workbench.index_highlighted = none(int)
+      if history.redo(scene):
+        workbench.index_highlighted = none(int)
+        workbench.session = none(EditSession)
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
+    gui.separator()
+    layoutTopBar(workbench, scene)
     gui.separator()
 
     # Sections in alphabetical order, matching the browser's own drawer, with `objects`
     #   the one open by default: it is what a returning session looks at first, and the
     #   rest are reached for deliberately.
-    layoutMultivectorNew(workbench, scene, history, now)
     layoutDiagnostics(workbench, scene)
-    layoutObjects(workbench, scene, history)
+    layoutObjects(workbench, scene, history, now)
     layoutOperation(workbench, scene, history, now)
     layoutView(workbench, camera)
     gui.separator()
