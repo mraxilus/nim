@@ -23,7 +23,7 @@ static const ImWchar RANGES_GLYPH[] = {
   0x2010, 0x22FF, // Punctuation, subscripts, arrows, mathematical operators.
   0x2300, 0x23FF, // Miscellaneous technical.
   0x25A0, 0x26FF, // Geometric shapes and miscellaneous symbols.
-  0x27C0, 0x27FF, // Supplemental mathematical operators.
+  0x2700, 0x27FF, // Dingbats and supplemental mathematical operators.
   0,
 };
 

@@ -293,7 +293,7 @@ proc layoutItem(
     # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
     #   scene was never touched either way, so this only has to drop the session.
     gui.sameLine()
-    if gui.buttonSmall("x"): workbench.session = none(EditSession)
+    if gui.buttonSmall("✕"): workbench.session = none(EditSession)
     gui.tooltip(
       if is_pending: cstring"Discard this new object." else: cstring"Discard these changes."
     )
