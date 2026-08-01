@@ -89,6 +89,12 @@ proc textTinted*(text: cstring; red, green, blue: cfloat) {.importc: "guiTextTin
 proc header*(label: cstring; is_open_first: bool): bool {.importc: "guiHeader".}
 proc button*(label: cstring): bool {.importc: "guiButton".}
 proc buttonSmall*(label: cstring): bool {.importc: "guiButtonSmall".}
+proc buttonToggle*(label: cstring; is_on: bool; width: cfloat): bool
+  {.importc: "guiButtonToggle".}
+  ## Draw one segment of a segmented control, tinted where it is the option in force and
+  ## recessive where it is not.
+proc buttonWide*(label: cstring; width: cfloat): bool {.importc: "guiButtonWide".}
+  ## Draw a button filling the given width, for one that leads its own section.
 proc checkbox*(label: cstring; value: ptr bool): bool {.importc: "guiCheckbox".}
 proc dragFloat*(
   label: cstring; value: ptr cfloat; speed, lowest, highest: cfloat

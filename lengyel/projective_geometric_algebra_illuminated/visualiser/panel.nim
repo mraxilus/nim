@@ -83,6 +83,11 @@ const
     "The 16 numbers of this object's own multivector, in the library's basis order, " &
     "stacked one row per grade. The object itself only moves when you save."
     ## Explain the coefficient grid while editing an object that already exists.
+  WIDTH_LABEL_FIELD = 96.0'f32
+    ## Reserve room to the right of a field for its own label, which Dear ImGui draws
+    ## there rather than above -- so a control sized to fill the line leaves it space.
+  SPACING_SEGMENT = 8.0'f32
+    ## Separate the segments of a segmented control, matching the gap `sameLine` leaves.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
   SIZE_POOL_CELL = 14.0'f32
@@ -513,11 +518,25 @@ proc layoutApply*(
     operations[count_offered] = operation
     inc count_offered
 
-  gui.widthPush(300.0)
+  # Arity is a segmented control rather than a dropdown: there are exactly two choices,
+  #   both worth seeing at once, and switching should cost one click. Matches the
+  #   browser's own `.toggles` pill.
   const lut_arity_to_name = [Arity.One: cstring"unary", Arity.Two: cstring"binary"]
-  if gui.combo("arity", addr workbench.index_arity, addr lut_arity_to_name[Arity.low], 2):
-    workbench.index_operation = 0
+  let width_segment = (gui.contentWidth() - WIDTH_LABEL_FIELD - SPACING_SEGMENT)/2.0'f32
+  for arity in Arity:
+    if arity != Arity.low: gui.sameLine()
+    if gui.buttonToggle(
+      lut_arity_to_name[arity], workbench.index_arity == cint(ord(arity)), width_segment
+    ):
+      workbench.index_arity = cint(ord(arity))
+      # A filtered operation list is indexed per arity, so a position carried across from
+      #   the other list names an unrelated operation.
+      workbench.index_operation = 0
+  gui.sameLine()
+  gui.text("arity")
   gui.tooltip("Whether to list operations reading one operand or two.")
+
+  gui.widthPush(300.0)
 
   let index_offered = clamp(int(workbench.index_operation), 0, count_offered - 1)
   workbench.index_operation = cint(index_offered)
@@ -540,7 +559,7 @@ proc layoutApply*(
   gui.widthPop()
 
   gui.disabledPush(scene.isFull)
-  if gui.button("apply"):
+  if gui.buttonWide("apply", gui.contentWidth()):
     let
       first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
       second =

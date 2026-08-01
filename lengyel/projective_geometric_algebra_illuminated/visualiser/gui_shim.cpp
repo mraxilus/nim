@@ -150,6 +150,39 @@ bool guiButton(const char* label) { return ImGui::Button(label); }
 
 bool guiButtonSmall(const char* label) { return ImGui::SmallButton(label); }
 
+// One segment of a segmented control: a button that shows whether it is the option in
+// force, so both choices stay visible and switching costs one click rather than opening a
+// list. Both states are styled explicitly, from the browser's own `.toggles button` rules
+// -- the segment not in force must be *recessive*, and Dear ImGui's default button is a
+// prominent blue that would otherwise make it read as the selected one.
+bool guiButtonToggle(const char* label, bool is_on, float width) {
+  if (is_on) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.655f, 0.647f, 0.22f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.655f, 0.647f, 0.34f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.655f, 0.647f, 0.48f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.741f, 0.953f, 0.941f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.655f, 0.647f, 1.0f));
+  } else {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.12f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.545f, 0.588f, 0.639f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+  }
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+  const bool pressed = ImGui::Button(label, ImVec2(width, 0.0f));
+  ImGui::PopStyleVar();
+  ImGui::PopStyleColor(5);
+  return pressed;
+}
+
+// A button that fills a width the caller names, for one that leads its own section the way
+// the browser's `.btn.primary` does -- Dear ImGui's plain button is only as wide as its
+// own label.
+bool guiButtonWide(const char* label, float width) {
+  return ImGui::Button(label, ImVec2(width, 0.0f));
+}
+
 bool guiCheckbox(const char* label, bool* value) { return ImGui::Checkbox(label, value); }
 
 bool guiDragFloat(const char* label, float* value, float speed, float lowest,
