@@ -34,7 +34,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, os, strformat, strutils, syncio]
+import std/[options, os, strformat, strutils, syncio, unicode]
 
 import ../pga
 import ./[format, mesh, objects]
@@ -181,10 +181,9 @@ let lut_operation_to_notation*: array[Operation, cstring] = [
   ##   has none: rendered, they landed to the right of the operand instead of over it, and
   ##   antireverse's tilde-below came out indistinguishable from left complement's low
   ##   line. A spacing modifier carries its own advance, so both renderers place it the
-  ##   same way and the five stay distinguishable. A previous round kept a second, plain-ASCII table because the
-  ##   desktop font atlas carried no astral-plane glyphs; that was a property of the font
-  ##   chosen, not of the GUI, and the atlas now merges faces that do carry them (see
-  ##   `visualiser.PATH_FONT_MATH`). One table means the two builds cannot drift.
+  ##   same way and the five stay distinguishable. Not a second, plain-ASCII table beside
+  ##   this one: the atlas merges faces carrying the astral-plane glyphs (see
+  ##   `visualiser.PATH_FONT_MATH`), and one table is what stops the two builds drifting.
   ##   Bound as `let` rather than `const`, since picker needs address of first entry.
 
 
@@ -288,17 +287,39 @@ func creationAnchor*(operation: Operation; m, n, derived: Multivector): Option[P
 #[ Multivector Formatting ]#
 
 const lut_basis_to_name* = block:
-  ## Name each basis element in ASCII, since fonts carry no mathematical bold.
-  ##   Exported so the GUI can label a coefficient with the basis element it belongs to.
+  ## Name each basis element the way the library's own `$` names it: `𝟏` for the scalar,
+  ## `𝟙` for the antiscalar, and a bold `𝐞` carrying subscript digits for the rest.
+  ##   Exported so both GUIs label a coefficient with the basis element it belongs to,
+  ##   and read the same as the multivector text printed beside them.
+  ##   Derived rather than transcribed, so a build of another dimension names its own
+  ##   elements without this table being rewritten. The rule is a second copy of the one
+  ##   inside `pga/multivectors.nim`'s `$`, which does not expose it separately; check
+  ##   that one whenever this is touched.
+  const
+    NAME_SCALAR = "\u{1D7CF}" # Mathematical bold digit one.
+    NAME_SCALAR_ANTI = "\u{1D7D9}" # Mathematical double-struck digit one.
+    NAME_VECTOR = "\u{1D41E}" # Mathematical bold small e.
+    CODEPOINT_SUBSCRIPT_ZERO = 0x2080
   var lut: array[Basis, string]
-  for b in Basis: lut[b] = $b
+  for b in Basis:
+    lut[b] =
+      case b
+      of Basis.scalar: NAME_SCALAR
+      of Basis.scalarAnti: NAME_SCALAR_ANTI
+      else:
+        # Enum's own name is the index list behind an `E`, one digit per factor.
+        var name = NAME_VECTOR
+        for digit in ($b)[1 .. ^1]:
+          name &= $Rune(CODEPOINT_SUBSCRIPT_ZERO + ord(digit) - ord('0'))
+        name
   lut
 
 
 proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: var int) =
-  ## Print multivector in ASCII into fixed storage, in same shape library's own `$` uses.
-  ##   Library writes basis elements in mathematical bold, which lives outside the Basic
-  ##   Multilingual Plane; no font a GUI can load here carries those codepoints.
+  ## Print multivector into fixed storage, in same shape library's own `$` uses.
+  ##   Basis elements are named exactly as the library names them, mathematical bold and
+  ##   all; both GUIs carry faces covering those codepoints. Magnitudes stay this
+  ##   project's own four significant digits rather than the library's `%G`.
   ##   Appends from `cursor` onward rather than returning a `string`, so redrawing every
   ##   visible item's coefficients, every one, every frame, never touches the heap.
   var wrote_any = false
@@ -310,7 +331,9 @@ proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: va
     appendChars(storage, cursor, " ")
     appendChars(storage, cursor, lut_basis_to_name[b])
     wrote_any = true
-  if not wrote_any: appendChars(storage, cursor, "0 S")
+  if not wrote_any:
+    appendChars(storage, cursor, "0 ")
+    appendChars(storage, cursor, lut_basis_to_name[Basis.scalar])
 
 
 proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =
