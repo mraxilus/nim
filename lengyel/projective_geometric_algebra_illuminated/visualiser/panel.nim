@@ -52,8 +52,9 @@ const
     ## Bound length of outcome reported after an action.
   PATH_MAX* = 256
     ## Bound length of export path user may type.
-  WIDTH_PANEL* = 430.0'f32
-    ## Set width panels open at, in pixels.
+  WIDTH_PANEL* = 540.0'f32
+    ## Set width panels open at, in pixels -- wide enough that four coefficient cells and
+    ## their basis names share one line, which is what sets the floor here.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
   WIDTH_ITEM_LINE = 320
@@ -62,12 +63,12 @@ const
     ## basis terms written out, which a mixed-grade object genuinely does print.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
-  WIDTH_COEFFICIENT = 84.0'f32
-    ## Set width of one coefficient drag widget -- wide enough to read a four-decimal
-    ## reading, narrow enough that three cells and their labels share one panel line.
-  WIDTH_COEFFICIENT_CELL = WIDTH_COEFFICIENT + 52.0'f32
-    ## Set total width one coefficient occupies: its own widget, its label to the right,
-    ## and the spacing before the next. Used to decide where a grade's own row wraps.
+  COEFFICIENTS_PER_ROW = 4
+    ## Lay a grade's own elements out four to a line, matching the browser's own grade row
+    ## -- which puts all four of grade 1 on one line, and wraps grade 2's six onto two.
+  WIDTH_LABEL_COEFFICIENT = 48.0'f32
+    ## Reserve this much of a coefficient cell for its basis name, sized for the longest
+    ## one this build writes (`E1234`); the widget takes whatever the cell has left.
   WIDTH_ITEM_LABEL = 150.0'f32
     ## Set width an item row's own selectable label spans, leaving its three buttons room
     ## to share the same line.
@@ -197,32 +198,34 @@ proc fieldLabel(name: cstring) =
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
-  ## Lay out one drag widget per basis coefficient, stacked one row per grade, 0 to n;
-  ## report which coefficient the user changed, if any.
-  ##   Grouping by grade rather than wrapping at a fixed column count keeps a grade's own
-  ##   members together: in this build's 4D metric the grades hold 1, 4, 6, 4 and 1
-  ##   elements, so any fixed column count cuts across a boundary somewhere. Grade comes
-  ##   from the library's own `grade`, so nothing here hardcodes a dimension.
+  ## Lay out one drag widget per basis coefficient, four to a line, each grade starting a
+  ## fresh line; report which coefficient the user changed, if any.
+  ##   Grade comes from the library's own `grade`, so nothing here hardcodes a dimension,
+  ##   and a grade never shares a line with its neighbour. In this build's 4D metric the
+  ##   grades hold 1, 4, 6, 4 and 1 elements, so grade 2 alone takes two lines.
+  ##   Cell width is divided out of the panel rather than fixed, so four fit whatever
+  ##   width the panel is dragged to -- `sameLine` places widgets unconditionally, so the
+  ##   caller has to decide where a line ends either way.
+  ##   Every cell is placed at its column's own offset rather than after whatever precedes
+  ##   it, so a one-character name (`S`) and a four-character one (`E423`) still leave the
+  ##   drag widgets in a straight column.
   ##   Only one change is reported per frame, which is all a pointer can make.
-  gui.widthPush(WIDTH_COEFFICIENT)
+  let width_cell =
+    (gui.contentWidth() - float32(COEFFICIENTS_PER_ROW - 1)*SPACING_SEGMENT) /
+    float32(COEFFICIENTS_PER_ROW)
+  gui.widthPush(width_cell - WIDTH_LABEL_COEFFICIENT)
   defer: gui.widthPop()
-  let width_line = gui.contentWidth()
   for g in Grade.low .. Grade.high:
-    # Wrap within a grade rather than running off the panel: `sameLine` places widgets
-    #   unconditionally, so the caller has to decide where a line ends. This build's
-    #   grade 2 holds six elements, more than any readable coefficient width fits across
-    #   one 430px panel. Matches the browser's own wrapping grade row.
-    var width_used = 0.0'f32
+    var count_placed = 0
     for b in Basis:
       if b.grade != g: continue
-      if width_used > 0.0:
-        if width_used + WIDTH_COEFFICIENT_CELL > width_line: width_used = 0.0
-        else: gui.sameLine()
-      width_used += WIDTH_COEFFICIENT_CELL
-      # Basis name first, then its own widget -- a cell reads "what" before "how much",
-      #   the way the browser's `<label>` sits above its input.
+      let column = count_placed mod COEFFICIENTS_PER_ROW
+      count_placed.inc
+      let offset_cell = float32(column)*(width_cell + SPACING_SEGMENT)
+      # Basis name first, then its own widget -- a cell reads "what" before "how much".
+      if column != 0: gui.sameLineAt(offset_cell)
       gui.text(cstring(lut_basis_to_name[b]))
-      gui.sameLine()
+      gui.sameLineAt(offset_cell + WIDTH_LABEL_COEFFICIENT)
       if gui.dragFloat(
         cstring("##" & lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0
       ):
