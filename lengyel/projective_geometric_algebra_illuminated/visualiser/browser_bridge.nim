@@ -430,6 +430,10 @@ proc nimBasisName(index: cint): cstring {.exportc.} = cstring(lut_basis_to_name[
   ## Report the Nth basis element's own name.
 
 
+proc nimBasisGrade(index: cint): cint {.exportc.} = cint(ord(Basis(index).grade))
+  ## Report the Nth basis element's own grade, for grouping the coefficient grid.
+
+
 proc nimInkCount(): cint {.exportc.} = cint(COUNT_INK)
   ## Report how many named palette entries exist.
 
@@ -598,6 +602,20 @@ proc nimCanUndo(): bool {.exportc.} =
 proc nimCanRedo(): bool {.exportc.} =
   ## Report whether `nimRedo` would move anywhere, mirroring `nimCanUndo`.
   g_history.canRedo
+
+
+proc nimDragOperationForButton(dom_button: cint): cint {.exportc.} =
+  ## Name the drag operation a pointer button starts, as a `DragOperation` ordinal, or
+  ## `SLOT_NONE` for a button that starts none -- the browser's own counterpart to
+  ## `visualiser.dragOperationFor`, duplicated rather than imported since that proc is
+  ## tied to SDL's own button numbering (`visualiser.nim` does not compile under
+  ## `nim js`) while this one is tied to `PointerEvent.button`'s (0 left, 1 middle, 2
+  ## right -- a different numbering for the same three physical buttons).
+  case dom_button
+  of 0: cint(DragOperation.Join)
+  of 2: cint(DragOperation.Meet)
+  of 1: cint(DragOperation.Project)
+  else: SLOT_NONE
 
 
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
