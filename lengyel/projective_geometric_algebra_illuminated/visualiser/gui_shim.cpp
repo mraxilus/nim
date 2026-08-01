@@ -212,6 +212,11 @@ void guiSeparatorText(const char* label) { ImGui::SeparatorText(label); }
 
 void guiSameLine() { ImGui::SameLine(); }
 
+// Continue the current line at a fixed distance from its start, so a column of controls
+// lines up under one another regardless of how long each one's own name is. Dear ImGui
+// draws a widget's label to its right; this is what lets a caller put it on the left.
+void guiSameLineAt(float offset) { ImGui::SameLine(offset); }
+
 void guiIdPush(int id) { ImGui::PushID(id); }
 
 void guiIdPop() { ImGui::PopID(); }

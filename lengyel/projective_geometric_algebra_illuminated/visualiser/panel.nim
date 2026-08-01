@@ -180,6 +180,20 @@ func initWorkbench*(path_export: string): Workbench =
 
 
 
+#[ Field Layout ]#
+
+proc fieldLabel(name: cstring) =
+  ## Name a control, to its left, and leave the line open for the control itself.
+  ##   Dear ImGui draws a widget's own label to its *right*, which reads backwards: you
+  ##   meet the control before being told what it sets. Every control below is therefore
+  ##   given a hidden ImGui label (`##name`, which still identifies it) and its name is
+  ##   written here first. `sameLineAt` puts every control in one column, so a short name
+  ##   and a long one do not stagger their controls.
+  gui.text(name)
+  gui.sameLineAt(WIDTH_LABEL_FIELD)
+
+
+
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
@@ -205,7 +219,13 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
         if width_used + WIDTH_COEFFICIENT_CELL > width_line: width_used = 0.0
         else: gui.sameLine()
       width_used += WIDTH_COEFFICIENT_CELL
-      if gui.dragFloat(cstring(lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0):
+      # Basis name first, then its own widget -- a cell reads "what" before "how much",
+      #   the way the browser's `<label>` sits above its input.
+      gui.text(cstring(lut_basis_to_name[b]))
+      gui.sameLine()
+      if gui.dragFloat(
+        cstring("##" & lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0
+      ):
         result = some(b)
 
 
@@ -231,14 +251,16 @@ proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
   ##   Everything here writes into the session, never the scene: the row above previews
   ##   the change and the ghost previews the geometry, but nothing lands until save.
   gui.widthPush(220.0)
-  discard gui.inputText("label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
+  fieldLabel("label")
+  discard gui.inputText("##label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
   # Offer the categorical run alone: the structural slots before it belong to the drawing's
   #   own furniture, and the combo therefore counts positions within that run rather than
   #   whole-palette ordinals. Names come from the shared table at its own offset, since the
   #   run is contiguous -- see `mesh.COUNT_INK_CATEGORICAL` for what holds that true.
   var index_categorical = cint(categoricalIndex(Ink(workbench.session.get.index_ink)))
+  fieldLabel("colour")
   if gui.combo(
-    "colour", addr index_categorical,
+    "##colour", addr index_categorical,
     addr lut_ink_to_name[INK_CATEGORICAL_FIRST], cint(COUNT_INK_CATEGORICAL),
   ):
     workbench.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
@@ -446,7 +468,8 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
   gui.tooltip("Toggle the reference grid at z = 0.")
 
   gui.widthPush(220.0)
-  discard gui.inputText("scene file", toCstring(workbench.path_scene), cint(PATH_MAX))
+  fieldLabel("scene file")
+  discard gui.inputText("##scene_file", toCstring(workbench.path_scene), cint(PATH_MAX))
   gui.tooltip("File `save scene` writes to and `load scene` reads from.")
   gui.widthPop()
   if gui.button("save scene"):
@@ -522,7 +545,8 @@ proc layoutApply*(
   #   both worth seeing at once, and switching should cost one click. Matches the
   #   browser's own `.toggles` pill.
   const lut_arity_to_name = [Arity.One: cstring"unary", Arity.Two: cstring"binary"]
-  let width_segment = (gui.contentWidth() - WIDTH_LABEL_FIELD - SPACING_SEGMENT)/2.0'f32
+  fieldLabel("arity")
+  let width_segment = (gui.contentWidth() - SPACING_SEGMENT)/2.0'f32
   for arity in Arity:
     if arity != Arity.low: gui.sameLine()
     if gui.buttonToggle(
@@ -532,16 +556,15 @@ proc layoutApply*(
       # A filtered operation list is indexed per arity, so a position carried across from
       #   the other list names an unrelated operation.
       workbench.index_operation = 0
-  gui.sameLine()
-  gui.text("arity")
   gui.tooltip("Whether to list operations reading one operand or two.")
 
   gui.widthPush(300.0)
 
   let index_offered = clamp(int(workbench.index_operation), 0, count_offered - 1)
   workbench.index_operation = cint(index_offered)
+  fieldLabel("operation")
   discard gui.combo(
-    "operation", addr workbench.index_operation, addr notations[0], cint(count_offered),
+    "##operation", addr workbench.index_operation, addr notations[0], cint(count_offered),
   )
   gui.tooltip("Library operation to apply below; its own notation names m and n, " &
     "the operands picked next.")
@@ -549,11 +572,13 @@ proc layoutApply*(
     operation = operations[clamp(int(workbench.index_operation), 0, count_offered - 1)]
     is_binary = arity_wanted == Arity.Two
 
-  discard gui.combo("operand m", addr workbench.index_operand_first,
+  fieldLabel("operand m")
+  discard gui.combo("##operand_m", addr workbench.index_operand_first,
     addr names[0], cint(count))
   gui.tooltip("First operand -- `m` in the notation above -- every operation reads.")
   if is_binary:
-    discard gui.combo("operand n", addr workbench.index_operand_second,
+    fieldLabel("operand n")
+    discard gui.combo("##operand_n", addr workbench.index_operand_second,
       addr names[0], cint(count))
     gui.tooltip("Second operand -- `n` above -- this operation combines with `m`.")
   gui.widthPop()
@@ -601,32 +626,38 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   var placement = [
     cfloat(camera.azimuth), cfloat(camera.elevation), cfloat(camera.distance)
   ]
-  if gui.dragFloat("azimuth", addr placement[0], 0.01, 0.0, 0.0):
+  fieldLabel("azimuth")
+  if gui.dragFloat("##azimuth", addr placement[0], 0.01, 0.0, 0.0):
     camera.azimuth = float(placement[0])
   gui.tooltip("Spin the camera around its target.")
-  if gui.dragFloat("elevation", addr placement[1], 0.01,
+  fieldLabel("elevation")
+  if gui.dragFloat("##elevation", addr placement[1], 0.01,
       cfloat(-ELEVATION_LIMIT), cfloat(ELEVATION_LIMIT)):
     camera.elevation = float(placement[1])
   gui.tooltip("Tilt the camera up or down; clamped short of looking straight up or down.")
-  if gui.dragFloat("distance", addr placement[2], 0.05,
+  fieldLabel("distance")
+  if gui.dragFloat("##distance", addr placement[2], 0.05,
       cfloat(DISTANCE_LIMIT_NEAR), cfloat(DISTANCE_LIMIT_FAR)):
     camera.distance = float(placement[2])
   gui.tooltip("Move the camera toward or away from its target.")
 
   var target = [cfloat(camera.target.x), cfloat(camera.target.y), cfloat(camera.target.z)]
-  if gui.dragFloat3("target", addr target[0], SPEED_DRAG*10.0):
+  fieldLabel("target")
+  if gui.dragFloat3("##target", addr target[0], SPEED_DRAG*10.0):
     camera.target = Position(x: float(target[0]), y: float(target[1]), z: float(target[2]))
   gui.tooltip("World point the camera looks at and orbits around.")
 
   var field_of_view = cfloat(camera.degrees_field_of_view)
-  if gui.dragFloat("field of view", addr field_of_view, 0.2, 10.0, 120.0):
+  fieldLabel("field of view")
+  if gui.dragFloat("##field_of_view", addr field_of_view, 0.2, 10.0, 120.0):
     camera.degrees_field_of_view = float(field_of_view)
   gui.tooltip("Lens angle; smaller looks through a telephoto, larger through a wide angle.")
   gui.widthPop()
 
   gui.separatorText("export")
   gui.widthPush(300.0)
-  discard gui.inputText("path", toCstring(workbench.path_export), cint(PATH_MAX))
+  fieldLabel("path")
+  discard gui.inputText("##path_export", toCstring(workbench.path_export), cint(PATH_MAX))
   gui.tooltip("File `save PNG` and the `S` key both write the current frame to.")
   gui.widthPop()
   if gui.button("save PNG"): workbench.is_export_requested = true

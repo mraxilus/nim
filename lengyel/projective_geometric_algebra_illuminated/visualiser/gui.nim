@@ -111,6 +111,9 @@ proc colorEdit3*(label: cstring; values: ptr cfloat): bool {.importc: "guiColorE
 proc separator*() {.importc: "guiSeparator".}
 proc separatorText*(label: cstring) {.importc: "guiSeparatorText".}
 proc sameLine*() {.importc: "guiSameLine".}
+proc sameLineAt*(offset: cfloat) {.importc: "guiSameLineAt".}
+  ## Continue the current line at a fixed distance from its start, so a column of controls
+  ## lines up whatever the length of each one's own name.
 proc idPush*(id: cint) {.importc: "guiIdPush".}
 proc idPop*() {.importc: "guiIdPop".}
 proc contentWidth*(): cfloat {.importc: "guiContentWidth".}
