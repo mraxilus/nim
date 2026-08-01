@@ -30,8 +30,9 @@
 ## on coefficients the user never touched.
 ##
 ## Multivectors are printed by `scene.formatMultivector` rather than by the library's own
-## `$`, which writes basis elements in mathematical bold outside the Basic Multilingual
-## Plane. No font available to the GUI carries those, so they would draw as empty boxes.
+## `$`, which returns a fresh heap `string` -- once per visible item, per frame. Basis
+## elements are named identically either way; the atlas carries the mathematical bold and
+## subscript blocks the library writes them in.
 ##
 ## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
 ## Paths" table.
@@ -52,23 +53,28 @@ const
     ## Bound length of outcome reported after an action.
   PATH_MAX* = 256
     ## Bound length of export path user may type.
-  WIDTH_PANEL* = 540.0'f32
-    ## Set width panels open at, in pixels -- wide enough that four coefficient cells and
+  WIDTH_PANEL* = 680.0'f32
+    ## Set width panels open at, in pixels -- wide enough that six coefficient cells and
     ## their basis names share one line, which is what sets the floor here.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
-  WIDTH_ITEM_LINE = 320
-    ## Bound length of one item's shape-and-coefficient line, redrawn every frame. Sized
+  WIDTH_ITEM_LINE = 640
+    ## Bound one item's shape-and-coefficient line in *bytes*, redrawn every frame. Sized
     ## for the worst case that line can reach: the longest shape word plus all sixteen
-    ## basis terms written out, which a mixed-grade object genuinely does print.
+    ## basis terms written out, which a mixed-grade object genuinely does print. A basis
+    ## name costs up to 13 bytes rather than 5, since the library names elements in
+    ## mathematical bold with subscript digits; the buffer counts bytes, and truncating a
+    ## line mid-name would leave a half-written codepoint for the GUI to draw.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
-  COEFFICIENTS_PER_ROW = 4
-    ## Lay a grade's own elements out four to a line, matching the browser's own grade row
-    ## -- which puts all four of grade 1 on one line, and wraps grade 2's six onto two.
-  WIDTH_LABEL_COEFFICIENT = 48.0'f32
-    ## Reserve this much of a coefficient cell for its basis name, sized for the longest
-    ## one this build writes (`E1234`); the widget takes whatever the cell has left.
+  COEFFICIENTS_PER_ROW = 6
+    ## Lay a grade's own elements out six to a line. In this build's 4D metric the largest
+    ## grade holds exactly six, so every grade fits one line and the desktop grid matches
+    ## the browser's own grade row one for one. A build of higher dimension wraps instead
+    ## of overflowing the panel.
+  WIDTH_LABEL_COEFFICIENT = 40.0'f32
+    ## Reserve this much of a coefficient cell for its basis name, sized by rendering the
+    ## longest one this build writes (`𝐞₄₂₃`); the widget takes whatever the cell has left.
   WIDTH_ITEM_LABEL = 150.0'f32
     ## Set width an item row's own selectable label spans, leaving its three buttons room
     ## to share the same line.
@@ -198,17 +204,17 @@ proc fieldLabel(name: cstring) =
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
-  ## Lay out one drag widget per basis coefficient, four to a line, each grade starting a
+  ## Lay out one drag widget per basis coefficient, six to a line, each grade starting a
   ## fresh line; report which coefficient the user changed, if any.
   ##   Grade comes from the library's own `grade`, so nothing here hardcodes a dimension,
   ##   and a grade never shares a line with its neighbour. In this build's 4D metric the
-  ##   grades hold 1, 4, 6, 4 and 1 elements, so grade 2 alone takes two lines.
-  ##   Cell width is divided out of the panel rather than fixed, so four fit whatever
+  ##   grades hold 1, 4, 6, 4 and 1 elements, so every one of them fits a single line.
+  ##   Cell width is divided out of the panel rather than fixed, so six fit whatever
   ##   width the panel is dragged to -- `sameLine` places widgets unconditionally, so the
   ##   caller has to decide where a line ends either way.
   ##   Every cell is placed at its column's own offset rather than after whatever precedes
-  ##   it, so a one-character name (`S`) and a four-character one (`E423`) still leave the
-  ##   drag widgets in a straight column.
+  ##   it, so a one-glyph name (`𝟏`) and a four-glyph one (`𝐞₄₂₃`) still leave the drag
+  ##   widgets in a straight column.
   ##   Only one change is reported per frame, which is all a pointer can make.
   let width_cell =
     (gui.contentWidth() - float32(COEFFICIENTS_PER_ROW - 1)*SPACING_SEGMENT) /
