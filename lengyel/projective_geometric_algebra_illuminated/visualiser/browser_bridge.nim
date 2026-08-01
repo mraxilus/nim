@@ -487,6 +487,26 @@ proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour
   ## Report the canvas backdrop's own colour, as an `[r, g, b]` triple.
 
 
+const INK_POOL_FREE = Ink.Grid
+  ## Mirror `panel.INK_POOL_FREE` exactly (duplicated rather than imported, since
+  ##   `panel` is a desktop-only module this build cannot compile): the palette's own
+  ##   recessive furniture colour, which is what a free object-pool slot is.
+
+
+proc nimPoolCellColors(): seq[float32] {.exportc.} =
+  ## Report the object-pool strip's own colours, one `[r, g, b]` triple per slot in slot
+  ##   order, so a cell wears the ink of whatever object holds it and a free one stays
+  ##   recessive. Mirrors `panel.layoutDiagnosticsObjectPool`'s own cell loop; the caller
+  ##   walks the result in threes and needs to know no palette rule of its own.
+  result = newSeqOfCap[float32](ITEMS_MAX * 3)
+  for slot in 0 ..< ITEMS_MAX:
+    let colour =
+      if g_scene.isAlive(slot): g_scene.inkAt(slot).colour else: INK_POOL_FREE.colour
+    result.add(colour.red)
+    result.add(colour.green)
+    result.add(colour.blue)
+
+
 
 #[ Render Metrics ]#
 

@@ -120,10 +120,11 @@ proc plotLines*(
   label: cstring; values: ptr cfloat; count, offset: cint; overlay: cstring;
   scale_min, scale_max, width, height: cfloat;
 ) {.importc: "guiPlotLines".}
-proc poolBar*(
-  are_alive: ptr bool; count: cint; cell_size: cfloat;
-  red_alive, green_alive, blue_alive, red_free, green_free, blue_free: cfloat;
-) {.importc: "guiPoolBar".}
+proc poolBar*(colours: ptr cfloat; count: cint; cell_size: cfloat)
+  {.importc: "guiPoolBar".}
+  ## Draw one square cell per pool slot, wrapped to the panel's width. `colours` addresses
+  ## `count` * 3 floats, red then green then blue per cell, so the caller alone decides
+  ## what any slot's colour means.
 proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayLine".}
 proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)

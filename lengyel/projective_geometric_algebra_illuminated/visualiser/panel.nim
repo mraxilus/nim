@@ -1,26 +1,28 @@
 ## Lay out panels user edits scene and camera through.
 ##
 ## Workbench holds what the GUI needs between frames and the scene does not own:
-## which operands are picked, what point is about to be added, where to export.
+## which operands are picked, what an open edit is staging, where to export.
 ##   Everything else is read straight off scene and camera, so there is one source of truth
 ##   and no synchronisation step.
 ##
 ##   |-------------|-------------------------------------------------------------------------|
 ##   | Panel       | Offers                                                                  |
 ##   |-------------|-------------------------------------------------------------------------|
-##   | Add         | Compose a multivector coefficient by coefficient, previewed as a ghost. |
+##   | Top bar     | Start a new object, toggle world furniture, save or load the scene.     |
 ##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,         |
 ##   |             | and everything else this binary reserves for itself, added up.          |
-##   | Objects     | Save, load, select, show, hide, rename, recolour, remove; edit any      |
-##   |             | coefficient.                                                            |
+##   | Objects     | Select, show, hide, remove; edit any object's label, colour and         |
+##   |             | coefficients through one staged session, shared with composing a new    |
+##   |             | one.                                                                    |
 ##   | Operate     | Apply any library operation of a chosen arity to picked operands.       |
-##   | View        | Orbit, target, lens, world furniture, PNG export.                       |
+##   | View        | Orbit, target, lens, PNG export.                                        |
 ##   |-------------|-------------------------------------------------------------------------|
 ##
-## Every panel above is a collapsing header, ordered alphabetically and matching the
-## browser build's own drawer section for section. Only Objects opens by default: it is
-## what a returning session looks at first, and opening all five at once buries the 3D
-## view the workbench exists to show.
+## Every panel above except the top bar is a collapsing header, ordered alphabetically and
+## matching the browser build's own drawer section for section. The top bar sits outside
+## them all, because its `add` button has to be able to open Objects. Only Objects opens by
+## default: it is what a returning session looks at first, and opening all four at once
+## buries the 3D view the workbench exists to show.
 ##
 ## Coefficients are staged through 32-bit floats because that is what the widget writes,
 ## and written back only where widget reports a change, so editing costs no precision
@@ -82,6 +84,15 @@ const
     ## Explain the coefficient grid while editing an object that already exists.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
+  SIZE_POOL_CELL = 14.0'f32
+    ## Set the side of one object-pool cell, in pixels -- large enough that a categorical
+    ## ink is recognisable in it, small enough that all 64 slots fit a few panel rows.
+  CHANNELS_POOL_CELL = 3
+    ## Count the floats one pool cell contributes to `gui.poolBar`'s own buffer: red,
+    ## green and blue, with no alpha, since every cell is drawn opaque.
+  INK_POOL_FREE = Ink.Grid
+    ## Draw a free object-pool slot in the palette's own recessive furniture colour,
+    ## which is what an empty slot is: present, but carrying nothing to look at.
   FRAMES_HISTORY* {.define: "visualiser.frames_history".} = 240
     ## Bound how many recent per-frame timings the live diagnostics graph keeps; at a
     ## typical frame rate this covers a few seconds, long enough to see a stutter land
@@ -666,11 +677,18 @@ proc layoutDiagnosticsMemory(workbench: Workbench) =
 proc layoutDiagnosticsObjectPool(scene: Scene) =
   ## Lay out the "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
-  var are_alive: array[ITEMS_MAX, bool]
-  for slot in 0 ..< ITEMS_MAX: are_alive[slot] = scene.isAlive(slot)
-  gui.poolBar(addr are_alive[0], cint(ITEMS_MAX), 14.0, 0.298, 0.780, 0.298, 0.15, 0.15, 0.18)
+  # An occupied cell wears its own object's ink, so the strip reads as the scene rather
+  #   than as an anonymous occupancy count: which slot a given object sits in, and how
+  #   `inkCycled` has spread the palette so far, are both legible at a glance.
+  var cells: array[ITEMS_MAX * CHANNELS_POOL_CELL, cfloat]
+  for slot in 0 ..< ITEMS_MAX:
+    let colour = if scene.isAlive(slot): scene.inkAt(slot).colour else: INK_POOL_FREE.colour
+    cells[slot*CHANNELS_POOL_CELL + 0] = cfloat(colour.red)
+    cells[slot*CHANNELS_POOL_CELL + 1] = cfloat(colour.green)
+    cells[slot*CHANNELS_POOL_CELL + 2] = cfloat(colour.blue)
+  gui.poolBar(addr cells[0], cint(ITEMS_MAX), SIZE_POOL_CELL)
   gui.tooltip(
-    "One cell per object slot: lit means it currently holds an object, dark means " &
+    "One cell per object slot, in the colour of whatever object holds it; dark means " &
     "it's free and will be handed to the next one you add, most recently freed first."
   )
   var summary: array[WIDTH_ITEM_LINE, char]

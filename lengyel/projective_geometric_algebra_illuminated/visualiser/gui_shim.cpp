@@ -227,20 +227,16 @@ void guiPlotLines(const char* label, const float* values, int count, int offset,
                     ImVec2(width, height));
 }
 
-// One small filled cell per pool slot, coloured by whether it currently holds an object,
-// wrapped to the panel's own width rather than assuming any fixed row length.
-void guiPoolBar(const bool* are_alive, int count, float cell_size,
-                 float r_alive, float g_alive, float b_alive,
-                 float r_free, float g_free, float b_free) {
+// One small filled cell per pool slot, wrapped to the panel's own width rather than
+// assuming any fixed row length. `colours` holds three floats per cell, red then green
+// then blue: the caller alone decides what a slot's colour means, so nothing here has to
+// know which slots are occupied or which palette a live one is drawn in.
+void guiPoolBar(const float* colours, int count, float cell_size) {
   const float spacing = 2.0f;
   const float avail = ImGui::GetContentRegionAvail().x;
   const int fitted = (int)((avail + spacing) / (cell_size + spacing));
   const int per_row = avail > cell_size ? (fitted < 1 ? 1 : fitted) : count;
   const int rows = (count + per_row - 1) / per_row;
-  const ImU32 colour_alive =
-      ImGui::ColorConvertFloat4ToU32(ImVec4(r_alive, g_alive, b_alive, 1.0f));
-  const ImU32 colour_free =
-      ImGui::ColorConvertFloat4ToU32(ImVec4(r_free, g_free, b_free, 1.0f));
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -250,8 +246,9 @@ void guiPoolBar(const bool* are_alive, int count, float cell_size,
     const ImVec2 top_left(origin.x + column * (cell_size + spacing),
                            origin.y + row * (cell_size + spacing));
     const ImVec2 bottom_right(top_left.x + cell_size, top_left.y + cell_size);
-    draw_list->AddRectFilled(top_left, bottom_right,
-                              are_alive[i] ? colour_alive : colour_free, 2.0f);
+    const ImU32 colour = ImGui::ColorConvertFloat4ToU32(
+        ImVec4(colours[i * 3], colours[i * 3 + 1], colours[i * 3 + 2], 1.0f));
+    draw_list->AddRectFilled(top_left, bottom_right, colour, 2.0f);
   }
   ImGui::Dummy(ImVec2(avail, rows * (cell_size + spacing)));
 }
