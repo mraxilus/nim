@@ -317,7 +317,36 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
 
 
 const COUNT_INK* = ord(Ink.high) + 1
-  ## Count palette slots, for handing whole palette to a picker.
+  ## Count palette slots, structural and categorical alike.
+
+
+const INK_CATEGORICAL_FIRST* = Ink.Rose
+  ## Name where the categorical run begins. Everything declared before it is structural,
+  ## spent on the drawing's own furniture, and offering any of those as an object's colour
+  ## would let an object wear the backdrop, a world axis, or the selection outline -- three
+  ## ways to make it invisible or to make it read as something it is not.
+
+
+const COUNT_INK_CATEGORICAL* = ord(Ink.high) - ord(INK_CATEGORICAL_FIRST) + 1
+  ## Count the slots a colour picker may offer.
+  ##   Callers walk the run as one contiguous block, so `Ink`'s own declaration order is
+  ##   load-bearing here, not just cosmetic: every categorical slot must follow every
+  ##   structural one. The `static` assertion below is what enforces it -- a structural
+  ##   slot appended after `Cerise` changes this count and fails the build.
+
+static:
+  doAssert COUNT_INK_CATEGORICAL == 8,
+    "Ink's categorical slots must stay one contiguous run ending at Ink.high; a slot " &
+    "added or removed after Ink.Rose changes what a colour picker offers."
+
+
+func inkCategorical*(index: int): Ink = Ink(ord(INK_CATEGORICAL_FIRST) + index)
+  ## Read the palette slot at a position within the categorical run.
+
+
+func categoricalIndex*(ink: Ink): int = ord(ink) - ord(INK_CATEGORICAL_FIRST)
+  ## Read a palette slot's own position within the categorical run. Negative for a
+  ## structural slot, which has no position there.
 
 
 let lut_ink_to_name* = block:

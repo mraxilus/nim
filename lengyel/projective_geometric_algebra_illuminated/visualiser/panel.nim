@@ -222,10 +222,16 @@ proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
   ##   the change and the ghost previews the geometry, but nothing lands until save.
   gui.widthPush(220.0)
   discard gui.inputText("label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
-  discard gui.combo(
-    "colour", addr workbench.session.get.index_ink,
-    addr lut_ink_to_name[Ink.low], cint(COUNT_INK),
-  )
+  # Offer the categorical run alone: the structural slots before it belong to the drawing's
+  #   own furniture, and the combo therefore counts positions within that run rather than
+  #   whole-palette ordinals. Names come from the shared table at its own offset, since the
+  #   run is contiguous -- see `mesh.COUNT_INK_CATEGORICAL` for what holds that true.
+  var index_categorical = cint(categoricalIndex(Ink(workbench.session.get.index_ink)))
+  if gui.combo(
+    "colour", addr index_categorical,
+    addr lut_ink_to_name[INK_CATEGORICAL_FIRST], cint(COUNT_INK_CATEGORICAL),
+  ):
+    workbench.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
   gui.widthPop()
   gui.text("Coefficients:")
   gui.sameLine()

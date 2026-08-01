@@ -471,8 +471,12 @@ proc nimBasisGrade(index: cint): cint {.exportc.} = cint(ord(Basis(index).grade)
   ## Report the Nth basis element's own grade, for grouping the coefficient grid.
 
 
-proc nimInkCount(): cint {.exportc.} = cint(COUNT_INK)
-  ## Report how many named palette entries exist.
+proc nimInkChoosableSlots(): seq[int] {.exportc.} =
+  ## List the palette slots a colour picker may offer, as whole-palette ordinals ready to
+  ##   hand back to `nimInkName` and `nimInkColor`. Structural slots are left out: an
+  ##   object wearing the backdrop, a world axis or the selection outline is either
+  ##   invisible or reads as something it is not.
+  for index in 0 ..< COUNT_INK_CATEGORICAL: result.add(ord(inkCategorical(index)))
 
 
 proc nimInkName(index: cint): cstring {.exportc.} = lut_ink_to_name[Ink(index)]

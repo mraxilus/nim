@@ -488,6 +488,35 @@ suite "Mesh":
       check isNear(dimmed.alpha, base.alpha*FRACTION_DIMMED_ALPHA)
 
 
+  test "the categorical run is contiguous, so a picker can walk it as one block":
+    # A colour picker offers `COUNT_INK_CATEGORICAL` entries starting at
+    #   `lut_ink_to_name[INK_CATEGORICAL_FIRST]`, which is only correct while every
+    #   categorical slot follows every structural one, with no gaps.
+    check COUNT_INK_CATEGORICAL == 8
+    check inkCategorical(0) == INK_CATEGORICAL_FIRST
+    check inkCategorical(COUNT_INK_CATEGORICAL - 1) == Ink.high
+    for index in 0 ..< COUNT_INK_CATEGORICAL:
+      check categoricalIndex(inkCategorical(index)) == index
+
+
+  test "a colour picker offers every categorical slot and no structural one":
+    var offered: seq[string]
+    for index in 0 ..< COUNT_INK_CATEGORICAL: offered.add($inkCategorical(index))
+    check offered == @["Rose", "Copper", "Olive", "Jade", "Cobalt", "Violet",
+                       "Magenta", "Cerise"]
+    for structural in [Ink.Backdrop, Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid,
+                       Ink.Guide, Ink.Outline]:
+      check categoricalIndex(structural) < 0
+
+
+  test "inkCycled stays inside the run a picker offers, and wraps within it":
+    # Nothing may cycle to a colour the user could not have chosen themselves.
+    for index in 0 ..< 3*COUNT_INK_CATEGORICAL:
+      check categoricalIndex(inkCycled(index)) >= 0
+      check categoricalIndex(inkCycled(index)) < COUNT_INK_CATEGORICAL
+    check inkCycled(0) == INK_CATEGORICAL_FIRST
+    check inkCycled(COUNT_INK_CATEGORICAL) == inkCycled(0)
+
 
 suite "Scene":
   test "items are held in order added":

@@ -646,9 +646,7 @@ when not defined(js):
     &"Loaded {count} object(s) from `{path}`."
 
 
-func inkCycled*(index: int): Ink =
-  ## Choose palette slot for item at given position, cycling through categorical slots.
-  const
-    INK_FIRST = int(Ink.Rose)
-    COUNT_CATEGORICAL = int(Ink.high) - INK_FIRST + 1
-  Ink(INK_FIRST + (index mod COUNT_CATEGORICAL))
+func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICAL)
+  ## Choose palette slot for item at given position, cycling through categorical slots --
+  ## the same run a colour picker offers, so nothing cycles to a colour the user could
+  ## not have chosen.
