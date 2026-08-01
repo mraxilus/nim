@@ -451,6 +451,47 @@ proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour
 
 
 
+#[ Render Metrics ]#
+
+const
+  SIZE_POINT = 9.0'f32
+    ## Mirror `renderer.SIZE_POINT` exactly (duplicated rather than imported, since
+    ## `renderer.nim` binds straight to OpenGL and does not compile under `nim js`).
+  WIDTH_LINE_FURNITURE = 1.5'f32
+    ## Mirror `renderer.WIDTH_LINE_FURNITURE` exactly; see that constant's own doc
+    ## comment for why furniture draws thinner than a scene line object.
+  WIDTH_LINE_OBJECT = 2.5'f32
+    ## Mirror `renderer.WIDTH_LINE_OBJECT` exactly; see that constant's own doc comment.
+  RADIUS_OVERLAY_HOVER = 16.0'f32
+    ## Mirror `visualiser.RADIUS_OVERLAY_HOVER` exactly (duplicated rather than
+    ## imported, since `visualiser.nim` binds straight to SDL/Dear ImGui and does not
+    ## compile under `nim js`).
+  WIDTH_OVERLAY_LINE = 2.0'f32
+    ## Mirror `visualiser.WIDTH_OVERLAY_LINE` exactly; see that constant's own doc
+    ## comment.
+
+static:
+  doAssert WIDTH_LINE_OBJECT > WIDTH_LINE_FURNITURE,
+    &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
+    &"`{WIDTH_LINE_FURNITURE}`."
+
+
+proc nimRenderLineWidths(): seq[float32] {.exportc.} =
+  ## Report `[point_size, furniture_line_width, object_line_width]`, so the browser's
+  ## own `gl.uniform1f`/`gl.lineWidth` calls draw at the same sizes the desktop build's
+  ## `renderer.nim` does, without a hand-copied literal to drift out of sync with it.
+  @[SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT]
+
+
+proc nimOverlayMetrics(): seq[float32] {.exportc.} =
+  ## Report `[hover_ring_radius, overlay_line_width]`, so the browser's own SVG
+  ## overlay (hover/selection rings, drag rubber-band) matches the desktop build's
+  ## `visualiser.drawInteractionOverlay` exactly, without a hand-copied literal to
+  ## drift out of sync with it.
+  @[RADIUS_OVERLAY_HOVER, WIDTH_OVERLAY_LINE]
+
+
+
 #[ Camera ]#
 
 proc nimCameraOrbit(turn, rise: cfloat) {.exportc.} =
