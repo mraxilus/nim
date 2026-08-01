@@ -94,6 +94,9 @@ language community differs — a mixed scheme destroys the signal.
   the run; test fixtures and helpers; a declaration whose sole purpose is to fail at compile
   time, whose error message is its documentation. Never leave the slot empty — write
   `## TODO: Document.` where you cannot write it yet.
+- A GENERATOR DOCUMENTS WHAT IT EMITS. Every declaration a generator produces carries a doc
+  comment like any other; make the doc text a required parameter of the emitting helper, so an
+  undocumented emission cannot compile. Generation is not a fourth exception.
 - Doc comments are telegraphic: omit articles, end every line with a period. MOOD FOLLOWS LINE
   ROLE — first line imperative, opening with a verb, stating what the callable does
   (`## Decode UTF-8 sequence from buffer at offset.`); elaboration declarative, stating a fact
@@ -115,6 +118,10 @@ language community differs — a mixed scheme destroys the signal.
 - A SUMMARY INDEX IS A DERIVED VIEW, NOT A SOURCE OF TRUTH. A table, cross-reference or
   top-of-file listing restating facts individual declarations own can drift out of sync with
   them. Where the two could disagree the declaration wins — verify the index against it.
+- A DOC COMMENT ASSERTING A GLOBAL PROPERTY — no allocation, no exceptions, thread safety, a
+  complexity bound — NAMES WHAT ENFORCES IT: a test, a pragma, a compile-time check. Where
+  nothing does, mark it unverified. A guarantee stated as fact that nothing checks is a claim
+  the reader cannot act on.
 - TODOs are a design journal: multi-line, indented, exploratory, honest about uncertainty
   including doubt about your own claims. Keep substantial commented-out work in place.
 
