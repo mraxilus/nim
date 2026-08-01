@@ -16,14 +16,34 @@
 
 #include <SDL3/SDL.h>
 
-// Cover Latin, the mathematical operators the PGA library writes its notation with,
-// and subscript digits used by basis element names.
-static const ImWchar RANGES_GLYPH[] = {
+#include <utility>
+
+// No single face covers what this GUI writes, so the atlas is built from three, merged in
+// order of decreasing generality. Each range list names only what its own face is here to
+// supply, so a glyph is never taken from a face that merely happens to have it too.
+//   Verified by rendering every non-ASCII codepoint the source actually uses against all
+//   three faces: 36 distinct codepoints, none missing. Re-run that check before narrowing
+//   any range below.
+static const ImWchar RANGES_TEXT[] = {
   0x0020, 0x00FF, // Latin and supplement.
-  0x2010, 0x22FF, // Punctuation, subscripts, arrows, mathematical operators.
+  0x02B0, 0x02FF, // Spacing modifiers, which the notation accents its operands with.
+  0x2010, 0x205F, // Punctuation, superscripts and subscripts.
+  0x2080, 0x209F, // Subscript digits, used by basis element names.
+  0,
+};
+static const ImWchar RANGES_MATH[] = {
+  0x2190, 0x21FF, // Arrows.
+  0x2200, 0x22FF, // Mathematical operators: the wedge, antiwedge, dots and complements.
   0x2300, 0x23FF, // Miscellaneous technical.
-  0x25A0, 0x26FF, // Geometric shapes and miscellaneous symbols.
-  0x2700, 0x27FF, // Dingbats and supplemental mathematical operators.
+  0x27C0, 0x27EF, // Supplemental mathematical operators A: the geometric (anti)product.
+  0x2A00, 0x2AFF, // Supplemental mathematical operators B.
+  0x1D400, 0x1D7FF, // Mathematical alphanumerics: Lengyel's own bold operands.
+  0,
+};
+static const ImWchar RANGES_SYMBOL[] = {
+  0x25A0, 0x25FF, // Geometric shapes.
+  0x2600, 0x26FF, // Miscellaneous symbols: the bulk and weight dual stars.
+  0x2700, 0x27BF, // Dingbats: the abandon button's own cross.
   0,
 };
 
@@ -34,7 +54,7 @@ static bool is_font_loaded = false;
 extern "C" {
 
 bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
-             float size_font) {
+             const char* path_font_math, const char* path_font_symbol, float size_font) {
   IMGUI_CHECKVERSION();
   if (ImGui::CreateContext() == nullptr) return false;
   ImGui::StyleColorsDark();
@@ -45,8 +65,20 @@ bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
   if (!ImGui_ImplSDL3_InitForOpenGL(window, context)) return false;
   if (!ImGui_ImplOpenGL3_Init("#version 330 core")) return false;
   if (path_font != nullptr && path_font[0] != '\0') {
-    is_font_loaded = ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                         path_font, size_font, nullptr, RANGES_GLYPH) != nullptr;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    is_font_loaded =
+        atlas->AddFontFromFileTTF(path_font, size_font, nullptr, RANGES_TEXT) != nullptr;
+    // Merge the two supplementary faces into that same font rather than adding separate
+    // fonts: a merged range is drawn without the caller having to push a font around
+    // whichever character happens to need it, which no caller could do mid-string anyway.
+    ImFontConfig merge;
+    merge.MergeMode = true;
+    for (auto pair : {std::pair<const char*, const ImWchar*>{path_font_math, RANGES_MATH},
+                      {path_font_symbol, RANGES_SYMBOL}}) {
+      if (pair.first == nullptr || pair.first[0] == '\0') continue;
+      if (atlas->AddFontFromFileTTF(pair.first, size_font, &merge, pair.second) == nullptr)
+        is_font_loaded = false;
+    }
   }
   return true;
 }

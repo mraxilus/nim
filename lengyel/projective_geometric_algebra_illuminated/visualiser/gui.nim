@@ -38,6 +38,14 @@ const PATH_IMGUI_ROOTED =
 
 {.passC: "-I" & PATH_IMGUI_ROOTED.}
 
+# Widen `ImWchar` to 32 bits, which Dear ImGui offers for exactly this and defaults off.
+#   The notation this GUI writes uses Lengyel's own bold operands (`𝐦`, U+1D426), and a
+#   16-bit `ImWchar` cannot even express a codepoint past U+FFFF -- neither to name it in a
+#   glyph range nor to look it up while drawing. Set here as a compiler flag rather than by
+#   uncommenting it in the checkout's own `imconfig.h`: that checkout is a build-time
+#   dependency this repository never commits, so an edit to it would not survive a reclone.
+{.passC: "-DIMGUI_USE_WCHAR32".}
+
 # Compile Dear ImGui and its two backends into binary, alongside facade over them.
 {.compile: PATH_IMGUI_ROOTED / "imgui.cpp".}
 {.compile: PATH_IMGUI_ROOTED / "imgui_draw.cpp".}
@@ -53,7 +61,8 @@ const PATH_IMGUI_ROOTED =
 
 # Mechanical one-to-one imports of `gui_shim.cpp`; see that file for what each wraps.
 proc init*(
-  window: Window; context: GlContext; path_font: cstring; size_font: cfloat
+  window: Window; context: GlContext;
+  path_font, path_font_math, path_font_symbol: cstring; size_font: cfloat
 ): bool {.importc: "guiInit".}
 proc shutdown*() {.importc: "guiShutdown".}
 proc isFontLoaded*(): bool {.importc: "guiFontLoaded".}

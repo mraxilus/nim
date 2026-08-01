@@ -146,36 +146,45 @@ const lut_operation_to_arity*: array[Operation, Arity] = [
 
 
 let lut_operation_to_notation*: array[Operation, cstring] = [
-  Operation.Attitude: cstring"⊖m  attitude",
-  Operation.Support: cstring"m∩  support",
-  Operation.SupportAnti: cstring"m∪  antisupport",
-  Operation.Bulk: cstring"m∙  bulk",
-  Operation.Weight: cstring"m∘  weight",
-  Operation.Unitize: cstring"^m  unitize",
-  Operation.ComplementLeft: cstring"\\m  left complement",
-  Operation.ComplementRight: cstring"/m  right complement",
-  Operation.DualBulk: cstring"m★  bulk dual",
-  Operation.DualWeight: cstring"m☆  weight dual",
-  Operation.Reverse: cstring"~m  reverse",
-  Operation.ReverseAnti: cstring"~∘m  antireverse",
-  Operation.Negate: cstring"-m  negate",
-  Operation.Add: cstring"m + n  add",
-  Operation.Subtract: cstring"m - n  subtract",
-  Operation.Wedge: cstring"m ∧ n  wedge (join)",
-  Operation.WedgeAnti: cstring"m ∨ n  antiwedge (meet)",
-  Operation.WedgeDot: cstring"m ⟑ n  geometric product",
-  Operation.WedgeDotAnti: cstring"m ⟇ n  geometric antiproduct",
-  Operation.Dot: cstring"m ∙ n  inner product",
-  Operation.DotAnti: cstring"m ∘ n  inner antiproduct",
-  Operation.ExpandBulk: cstring"m ∧ n★  bulk expansion",
-  Operation.ExpandWeight: cstring"m ∧ n☆  weight expansion",
-  Operation.ContractBulk: cstring"m ∨ n★  bulk contraction",
-  Operation.ContractWeight: cstring"m ∨ n☆  weight contraction",
-  Operation.ProjectCentral: cstring"n ∨ (m ∧ n★)  central projection",
-  Operation.ProjectOrthogonal: cstring"n ∨ (m ∧ n☆)  orthogonal projection",
-] ## Map operation to notation and name GUI offers it under.
-  ##   Operands are written `m` and `n` rather than in Lengyel's bold, since bold letters
-  ##   live outside the Basic Multilingual Plane and no GUI font here carries them.
+  Operation.Attitude: cstring"𝐦⊖  attitude",
+  Operation.Support: cstring"𝐦∩  support",
+  Operation.SupportAnti: cstring"𝐦∪  antisupport",
+  Operation.Bulk: cstring"𝐦∙  bulk",
+  Operation.Weight: cstring"𝐦∘  weight",
+  Operation.Unitize: cstring"𝐦ˆ  unitize",
+  Operation.ComplementLeft: cstring"𝐦ˍ  left complement",
+  Operation.ComplementRight: cstring"𝐦¯  right complement",
+  Operation.DualBulk: cstring"𝐦★  bulk dual",
+  Operation.DualWeight: cstring"𝐦☆  weight dual",
+  Operation.Reverse: cstring"𝐦˜  reverse",
+  Operation.ReverseAnti: cstring"𝐦˷  antireverse",
+  Operation.Negate: cstring"−𝐦  negate",
+  Operation.Add: cstring"𝐦 + 𝐧  add",
+  Operation.Subtract: cstring"𝐦 - 𝐧  subtract",
+  Operation.Wedge: cstring"𝐦 ∧ 𝐧  wedge (join)",
+  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧  antiwedge (meet)",
+  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧  geometric product",
+  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧  geometric antiproduct",
+  Operation.Dot: cstring"𝐦 ∙ 𝐧  inner product",
+  Operation.DotAnti: cstring"𝐦 ∘ 𝐧  inner antiproduct",
+  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★  bulk expansion",
+  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆  weight expansion",
+  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★  bulk contraction",
+  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆  weight contraction",
+  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★)  central projection",
+  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆)  orthogonal projection",
+] ## Map operation to notation and name GUI offers it under, for both render paths.
+  ##   Operands are written in Lengyel's own mathematical bold, and every symbol's
+  ##   placement is his, written with spacing modifier letters (`ˆ` U+02C6, `ˍ` U+02CD,
+  ##   `¯` U+00AF, `˜` U+02DC, `˷` U+02F7) rather than the combining marks the same five
+  ##   accents also exist as. Combining marks need a shaper to position, and Dear ImGui
+  ##   has none: rendered, they landed to the right of the operand instead of over it, and
+  ##   antireverse's tilde-below came out indistinguishable from left complement's low
+  ##   line. A spacing modifier carries its own advance, so both renderers place it the
+  ##   same way and the five stay distinguishable. A previous round kept a second, plain-ASCII table because the
+  ##   desktop font atlas carried no astral-plane glyphs; that was a property of the font
+  ##   chosen, not of the GUI, and the atlas now merges faces that do carry them (see
+  ##   `visualiser.PATH_FONT_MATH`). One table means the two builds cannot drift.
   ##   Bound as `let` rather than `const`, since picker needs address of first entry.
 
 
@@ -185,22 +194,27 @@ const COUNT_OPERATION* = ord(Operation.high) + 1
 
 proc notationSubstituted*(operation: Operation; name_first, name_second: string): string =
   ## Build the label/message text an applied operation reads as, substituting the
-  ## notation template's own literal "m"/"n" placeholders with the real operand names
-  ## just combined -- e.g. `Operation.Wedge` with names "a"/"b" gives "a ∧ b", not the
-  ## raw enum identifier "Wedge".
-  ##   Isolates the symbolic portion of the notation entry first -- the English
-  ##   description after it (e.g. "wedge (join)", "central projection") incidentally
-  ##   contains the letters "m"/"n" too and must never be touched. Swaps placeholders
-  ##   through two passes via sentinel bytes no label would contain, so an operand name
-  ##   that itself contains "m" or "n" is never re-touched by the second pass, and a
-  ##   template where "n" appears twice (ProjectCentral/ProjectOrthogonal) substitutes
-  ##   both occurrences.
-  const SENTINEL_M = "\x01"
-  const SENTINEL_N = "\x02"
+  ## notation template's own `𝐦`/`𝐧` placeholders with the real operand names just
+  ## combined -- e.g. `Operation.Wedge` with names "a"/"b" gives "a ∧ b", not the raw
+  ## enum identifier "Wedge".
+  ##   Matches the bold operands rather than plain ASCII `m`/`n`, which is what the
+  ##   shared table now writes. That also removes a hazard the plain form carried: the
+  ##   English description after the symbols contains ordinary `m` and `n` constantly,
+  ##   and only the isolation step below kept them safe. The isolation stays anyway,
+  ##   since the description must not reach a label either way.
+  ##   Swaps placeholders through two passes via sentinel bytes no label would contain,
+  ##   so an operand name that itself contains the placeholder is never re-touched by the
+  ##   second pass, and a template where `𝐧` appears twice (ProjectCentral/
+  ##   ProjectOrthogonal) substitutes both occurrences.
+  const
+    OPERAND_FIRST = "𝐦"
+    OPERAND_SECOND = "𝐧"
+    SENTINEL_M = "\x01"
+    SENTINEL_N = "\x02"
   let full = $lut_operation_to_notation[operation]
   let cutoff = full.find("  ")
   let symbolic = if cutoff >= 0: full[0 ..< cutoff] else: full
-  let staged = symbolic.replace("m", SENTINEL_M).replace("n", SENTINEL_N)
+  let staged = symbolic.replace(OPERAND_FIRST, SENTINEL_M).replace(OPERAND_SECOND, SENTINEL_N)
   result = staged.replace(SENTINEL_M, name_first).replace(SENTINEL_N, name_second)
 
 

@@ -1,7 +1,15 @@
 libsdl3-dev  # Provide windowing, input and OpenGL context creation.
 libgl-dev  # Provide OpenGL headers and loader.
 zlib1g-dev  # Provide deflate and CRC used by the PNG export.
-fonts-dejavu-core  # Provide a font carrying the operator glyphs the GUI writes.
+fonts-noto-core  # Provide the UI text face (Noto Sans), the operator and bold-operand face
+  # (Noto Sans Math) and the star and cross face (Noto Sans Symbols 2). No one face carries
+  # all three; `gui_shim.cpp` merges them into one atlas.
+
+# Commit Mono is the browser build's monospace face and is not packaged; fetch it beside
+# the visualiser and never commit it (SIL Open Font License 1.1, notice kept with the copy):
+#   curl -sSLO https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2
+# The browser build embeds it, and the three Noto faces above, as base64 `@font-face` data:
+# an artifact page cannot reach an external font host.
 
 # Dear ImGui is compiled from source rather than linked, so clone it beside the visualiser:
 #   git clone --branch docking https://github.com/ocornut/imgui.git deps/imgui

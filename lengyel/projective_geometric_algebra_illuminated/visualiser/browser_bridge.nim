@@ -401,61 +401,11 @@ proc nimClearGhost() {.exportc.} =
 
 #[ Catalogue Metadata ]#
 
-let lut_operation_to_notation_bold: array[Operation, cstring] = [
-  Operation.Attitude: cstring"𝐦⊖",
-  Operation.Support: cstring"𝐦∩",
-  Operation.SupportAnti: cstring"𝐦∪",
-  Operation.Bulk: cstring"𝐦∙",
-  Operation.Weight: cstring"𝐦∘",
-  Operation.Unitize: cstring"𝐦̂",
-  Operation.ComplementLeft: cstring"𝐦̲",
-  Operation.ComplementRight: cstring"𝐦̅",
-  Operation.DualBulk: cstring"𝐦★",
-  Operation.DualWeight: cstring"𝐦☆",
-  Operation.Reverse: cstring"𝐦̃",
-  Operation.ReverseAnti: cstring"𝐦̰",
-  Operation.Negate: cstring"−𝐦",
-  Operation.Add: cstring"𝐦 + 𝐧",
-  Operation.Subtract: cstring"𝐦 - 𝐧",
-  Operation.Wedge: cstring"𝐦 ∧ 𝐧",
-  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧",
-  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧",
-  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧",
-  Operation.Dot: cstring"𝐦 ∙ 𝐧",
-  Operation.DotAnti: cstring"𝐦 ∘ 𝐧",
-  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★",
-  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆",
-  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★",
-  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆",
-  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★)",
-  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆)",
-] ## Browser-only bold-Unicode counterpart to `scene.lut_operation_to_notation` -- that
-  ## table's own plain `m`/`n` exists only because `panel.nim` hands its raw array
-  ## address straight to Dear ImGui's `combo` widget (desktop font atlas has no astral-
-  ## plane bold glyphs); the browser has no such limitation (confirmed via the library's
-  ## own `$` operator rendering cleanly here) and gets this parallel table instead.
-  ## `notationSubstituted` (scene.nim) is untouched and keeps reading the plain table --
-  ## it pattern-matches literal ASCII "m"/"n" to substitute real operand names, which
-  ## this table's bold glyphs are not.
-  ##   Pure math notation, no parenthesized English name -- every symbol placement
-  ##   (prefix/postfix) and glyph (including combining diacritics: `𝐦̂`/`𝐦̲`/`𝐦̅`/`𝐦̃`/`𝐦̰`)
-  ##   copied verbatim from each operator's own doc comment in `pga/operators.nim`/
-  ##   `pga/multivectors.nim` -- not from `pga.nim`'s own top-of-file summary table, whose
-  ##   "Lengyel" column uses a functional shorthand (e.g. `att(𝐦)`, `sup(𝐦)`) for a few of
-  ##   these that the actual per-proc doc comments don't: `` `∩`*(m) `` itself reads
-  ##   "i.e. 𝐦∩ = ...", postfix, not the summary table's prefix-functional form.
-  ##   One deliberate exception: `Attitude`'s own doc comment reads prefix (`⊖𝐦`), but is
-  ##   placed postfix here (`𝐦⊖`) on explicit request, for visual consistency with every
-  ##   other unary entry above reading operator-after-operand.
-
-
-proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
-  ## Report how many catalogue operations exist.
-
-
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
-  ## Report the Nth catalogue operation's own notation symbol, browser-bold variant.
-  lut_operation_to_notation_bold[Operation(index)]
+  ## Report the Nth catalogue operation's own notation and name, from the one table both
+  ##   render paths read. A parallel browser-only table existed while the desktop font
+  ##   atlas carried no astral-plane glyphs; it does now, so the two cannot drift apart.
+  lut_operation_to_notation[Operation(index)]
 
 
 proc nimOperationArity(index: cint): cint {.exportc.} =

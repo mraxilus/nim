@@ -111,7 +111,17 @@ const
   PIXELS_WIDTH* {.define: "visualiser.pixels_width".} = 1440
   PIXELS_HEIGHT* {.define: "visualiser.pixels_height".} = 900
   PATH_FONT* {.define: "visualiser.path_font".} =
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+    ## Carry the UI's own text: Latin, punctuation, subscripts and combining marks.
+  PATH_FONT_MATH* {.define: "visualiser.path_font_math".} =
+    "/usr/share/fonts/truetype/noto/NotoSansMath-Regular.ttf"
+    ## Carry the operators the notation is written with, and Lengyel's bold operands --
+    ## neither of which Noto Sans itself has. Merged into the same atlas font; see
+    ## `gui_shim.cpp`.
+  PATH_FONT_SYMBOL* {.define: "visualiser.path_font_symbol".} =
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"
+    ## Carry the bulk and weight dual stars and the abandon button's cross, which neither
+    ## face above has. Merged the same way.
   SIZE_FONT* = 16.0'f32
   PATH_EXPORT_DEFAULT* = "rga_workbench.png"
 
@@ -839,7 +849,9 @@ proc main() =
   sdl3.glSetSwapInterval(if options.is_novsync: 0 else: 1)
   echo &"OpenGL: {gl.getString(gl.VERSION)}"
 
-  doAssert gui.init(window, context, PATH_FONT, SIZE_FONT), "Dear ImGui failed to start."
+  doAssert gui.init(
+    window, context, PATH_FONT, PATH_FONT_MATH, PATH_FONT_SYMBOL, SIZE_FONT
+  ), "Dear ImGui failed to start."
   defer: gui.shutdown()
   if not gui.isFontLoaded():
     echo &"Font `{PATH_FONT}` was not loaded; operator notation will draw as boxes."

@@ -693,6 +693,21 @@ suite "Scene":
     check creationAnchor(Operation.ProjectOrthogonal, POINTS[0], PLANES[0], POINTS[0]).isNone
 
 
+  test "notation substitutes real operand names for the table's own bold placeholders":
+    # One table serves both render paths, so this is also what the browser's own
+    #   `nimOperationNotation` hands out -- there is no second table to keep in step.
+    check notationSubstituted(Operation.Wedge, "a", "b") == "a ∧ b"
+    check notationSubstituted(Operation.Attitude, "L", "unused") == "L⊖"
+    # The English name after the symbols is full of ordinary m's and n's and must never
+    #   reach a label; only the symbolic prefix is substituted.
+    check notationSubstituted(Operation.DualWeight, "g", "unused") == "g☆"
+    check "weight dual" notin notationSubstituted(Operation.DualWeight, "g", "unused")
+    # `𝐧` appears twice in the projections, and both occurrences take the operand name.
+    check notationSubstituted(Operation.ProjectCentral, "a", "G") == "G ∨ (a ∧ G★)"
+    # An operand whose own name contains the placeholder letters survives untouched.
+    check notationSubstituted(Operation.Wedge, "mn", "nm") == "mn ∧ nm"
+
+
   test "labels truncate and stay terminated":
     var storage: Label
     toChars("short", storage)
