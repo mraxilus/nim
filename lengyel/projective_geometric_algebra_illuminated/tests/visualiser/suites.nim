@@ -20,6 +20,7 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 import ../../pga
 import ../../visualiser/[
   arena, camera, format, gif, history, image, interaction, mesh, objects, picking, scene,
+  selection,
 ]
 
 randomize(0)
@@ -902,6 +903,75 @@ suite "History":
     check history.canUndo
     discard history.undo(scene)
     check scenesEqual(scene, state_a)
+
+
+
+suite "Selection":
+  proc ordered(selection: Selection): seq[int] =
+    ## Read the whole selection out in pick order, so a test can state the order it
+    ## expects in one line rather than indexing position by position.
+    for position in 0 ..< selection.len: result.add(selection.at(position))
+
+
+  test "toggle appends in pick order, so the first two picks name m and n":
+    var selection: Selection
+    selection.toggle(4)
+    selection.toggle(1)
+    selection.toggle(7)
+    check ordered(selection) == @[4, 1, 7]
+    check selection.at(0) == 4 # Operand m.
+    check selection.at(1) == 1 # Operand n.
+
+
+  test "toggling a picked slot drops it and closes the gap, leaving order intact":
+    var selection: Selection
+    for slot in [4, 1, 7]: selection.toggle(slot)
+    selection.toggle(1)
+    check ordered(selection) == @[4, 7]
+    check not selection.contains(1)
+    selection.toggle(1) # Re-picking appends at the end, not back at its old position.
+    check ordered(selection) == @[4, 7, 1]
+
+
+  test "selectOnly replaces the whole selection, and clear empties it":
+    var selection: Selection
+    for slot in [4, 1, 7]: selection.toggle(slot)
+    selection.selectOnly(2)
+    check ordered(selection) == @[2]
+    selection.clear()
+    check selection.len == 0
+    check not selection.contains(2)
+
+
+  test "every slot can be picked at once, and picking past that adds nothing":
+    var selection: Selection
+    for slot in 0 ..< ITEMS_MAX: selection.toggle(slot)
+    check selection.len == ITEMS_MAX
+    selection.toggle(ITEMS_MAX) # Out of range; capacity is already spent.
+    check selection.len == ITEMS_MAX
+
+
+  test "pruneDead drops removed slots and keeps the rest in pick order":
+    # A removed slot goes straight back to the free list, so a stale pick left behind
+    #   would silently reattach itself to whatever object is added next.
+    var scene = initScene()
+    for i in 0 ..< 3: discard scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    var selection: Selection
+    for slot in [2, 0, 1]: selection.toggle(slot)
+    scene.removeItem(0)
+    selection.pruneDead(scene)
+    check ordered(selection) == @[2, 1]
+    check not selection.contains(0)
+
+
+  test "implied arity is unary at one pick and binary at two or more":
+    var selection: Selection
+    selection.toggle(3)
+    check selection.impliedArity == Arity.One
+    selection.toggle(5)
+    check selection.impliedArity == Arity.Two
+    selection.toggle(6) # Three picked still names a binary operation, on the first two.
+    check selection.impliedArity == Arity.Two
 
 
 

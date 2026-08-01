@@ -33,6 +33,7 @@
 ##   picking hit-tests scene items in screen space, against those same transforms.
 ##   renderer owns OpenGL names and draws the meshes.
 ##   scene holds objects and catalogue of operations that derive new ones.
+##   selection holds which objects are picked, in the order that names an operation's operands.
 ##   interaction tracks a mouse drag from one item to another, and applies what it names.
 ##   panel lays out the widgets user edits scene through.
 ##   storyboard scripts a construction, one operation per exported frame.
@@ -53,6 +54,7 @@
 ##   | mesh              | Shared  | Both.                                         |
 ##   | camera            | Shared  | Both.                                         |
 ##   | scene             | Shared  | Both.                                         |
+##   | selection         | Shared  | Both.                                         |
 ##   | picking           | Shared  | Both.                                         |
 ##   | interaction       | Shared  | Both.                                         |
 ##   | storyboard        | Shared  | Both.                                         |
@@ -95,7 +97,7 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 import ./pga
 import ./visualiser/[
   arena, camera, format, gif, gui, history, image, interaction, mesh, objects, panel, picking,
-  renderer, scene, storyboard,
+  renderer, scene, selection, storyboard,
 ]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
@@ -318,27 +320,33 @@ const lut_drag_to_ink: array[DragOperation, Ink] = [
 
 
 proc drawSelectionRing(
-  scene: Scene; index_highlighted: Option[int]; view_projection: Matrix4;
+  scene: Scene; selection: Selection; view_projection: Matrix4;
   width, height: int; scale: DrawExtent
-) =
-  ## Draw currently selected item's own ring, directly onto the foreground layer, with
-  ## the exact same `gui.overlayCircle` call the hover ring below uses -- tinted with
-  ## `Ink.Outline` instead of hover's own inline white, so both read as one family of
-  ## plain circle markers rather than two different mechanisms.
+): int {.discardable.} =
+  ## Draw one ring per selected item, directly onto the foreground layer, with the exact
+  ## same `gui.overlayCircle` call the hover ring below uses -- tinted with `Ink.Outline`
+  ## instead of hover's own inline white, so both read as one family of plain circle
+  ## markers rather than two different mechanisms. Report how many rings were drawn.
+  ##   One per selected slot rather than one overall: an operation reads two operands, and
+  ##   a selection that cannot be seen in the view it acts on is not worth much. Matches
+  ##   the browser overlay's own per-slot loop.
+  ##   The count exists so a test can assert what was drawn without reading pixels; a
+  ##   caller uninterested in it may discard it.
   ##   Unconditional, unlike hover/drag below: a storyboard step uses this same ring to
   ##   show which object it just built, so it must still draw with interaction disabled.
-  if index_highlighted.isNone: return
-  let slot = index_highlighted.get
-  if not (scene.isAlive(slot) and scene[slot].isVisible): return
-  let anchor = anchorFor(scene[slot].geometry, scale)
-  if anchor.isNone: return
-  let screen = projectToScreen(view_projection, width, height, anchor.get)
-  if not screen.isInFront: return
   let tint = Ink.Outline.colour
-  gui.overlayCircle(
-    cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
-    tint.red, tint.green, tint.blue, tint.alpha, WIDTH_OVERLAY_LINE,
-  )
+  for position in 0 ..< selection.len:
+    let slot = selection.at(position)
+    if not (scene.isAlive(slot) and scene[slot].isVisible): continue
+    let anchor = anchorFor(scene[slot].geometry, scale)
+    if anchor.isNone: continue
+    let screen = projectToScreen(view_projection, width, height, anchor.get)
+    if not screen.isInFront: continue
+    gui.overlayCircle(
+      cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
+      tint.red, tint.green, tint.blue, tint.alpha, WIDTH_OVERLAY_LINE,
+    )
+    result.inc
 
 
 proc drawInteractionOverlay(
@@ -413,7 +421,7 @@ proc renderFrame(
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   drawSelectionRing(
-    scene, workbench.index_highlighted, view_projection, int(width), int(height), scale
+    scene, workbench.selection, view_projection, int(width), int(height), scale
   )
   drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)
 
@@ -499,7 +507,7 @@ proc handleEvent(
       let outcome = interaction.endDrag(scene, now)
       if len(outcome.message) > 0: toChars(outcome.message, workbench.message)
       if outcome.index_created.isSome:
-        workbench.index_highlighted = outcome.index_created
+        workbench.selection.selectOnly(outcome.index_created.get)
         HISTORY.record(scene)
       button_dragging = none(uint8)
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
@@ -762,7 +770,7 @@ proc runStoryboard(
     describeShape(derived, shape_word, cursor_shape)
     finishChars(shape_word, cursor_shape)
     toChars(&"{step.label} gave {$toCstring(shape_word)}.", workbench.message)
-    workbench.index_highlighted = some(count_seeds + index)
+    workbench.selection.selectOnly(count_seeds + index)
     captureStep(step.stem)
 
   let

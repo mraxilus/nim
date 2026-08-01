@@ -9,12 +9,13 @@
 ##   | Panel       | Offers                                                                  |
 ##   |-------------|-------------------------------------------------------------------------|
 ##   | Top bar     | Start a new object, toggle world furniture, save or load the scene.     |
+##   | Apply       | Apply any library operation of a chosen arity to picked operands, both  |
+##   |             | of which the current selection fills in.                                |
 ##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,         |
 ##   |             | and everything else this binary reserves for itself, added up.          |
 ##   | Objects     | Select, show, hide, remove; edit any object's label, colour and         |
 ##   |             | coefficients through one staged session, shared with composing a new    |
 ##   |             | one.                                                                    |
-##   | Operate     | Apply any library operation of a chosen arity to picked operands.       |
 ##   | View        | Orbit, target, lens, PNG export.                                        |
 ##   |-------------|-------------------------------------------------------------------------|
 ##
@@ -40,7 +41,7 @@
 import std/[options, strformat]
 
 import ../pga
-import ./[camera, format, gui, history, mesh, objects, scene]
+import ./[camera, format, gui, history, mesh, objects, scene, selection]
 
 
 
@@ -119,22 +120,20 @@ type
     session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
       ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
       ## later in the same frame this panel writes it, so there is no lag.
-    index_highlighted*: Option[int] ## Currently selected item's own slot, drawn ringed
-      ## by `visualiser.drawSelectionRing` -- auto-selected by every construction path (a
-      ## storyboard step, or this session's own last drag-release or apply-operation
-      ## click); no explicit "select by clicking" gesture exists on the desktop build
-      ## otherwise. Cleared by a successful undo or redo too, since a restored
-      ## snapshot's slot numbers may not match whatever was highlighted before. None
-      ## where nothing is selected.
+    selection*: Selection ## Items picked right now, in pick order, each drawn ringed by
+      ## `visualiser.drawSelectionRing`. Picked through an item row's own checkbox (which
+      ## toggles) or its name (which picks that one alone), and replaced outright by every
+      ## construction path (a storyboard step, or this session's own last drag-release or
+      ## apply-operation click). Cleared by a successful undo or redo, since a restored
+      ## snapshot's slot numbers may not match whatever was picked before.
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
-    index_operand_synced_highlight*: Option[int] ## Last `index_highlighted` reading
-      ## operand m's own default was synced against -- lets `layoutOperation` re-default
-      ## `index_operand_first` to the selected item only the moment selection actually
-      ## changes, not every frame: this panel redraws every frame regardless of whether
-      ## anything changed, and an unconditional resync would fight a user's own later
-      ## manual pick of a different operand right back to whatever is selected. None
-      ## until the first sync runs.
+    selection_synced*: Selection ## Last `selection` reading the apply controls were
+      ## defaulted against -- lets `layoutApply` re-derive arity and operands from the
+      ## selection only the moment the selection actually changes, not every frame: this
+      ## panel redraws every frame regardless of whether anything changed, and an
+      ## unconditional resync would fight a user's own later manual pick right back to
+      ## whatever is selected. Empty until the first sync runs.
     index_operation*: cint ## Operation picked from catalogue.
     index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
       ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
@@ -266,21 +265,24 @@ proc layoutItem(
   defer:
     if not is_visible: gui.alphaPop()
 
-  # Checkbox mirrors the selection ring, the way the browser's own row does; the name
-  #   beside it selects on click too, so either target works.
-  var is_selected = (not is_pending) and workbench.index_highlighted == slot
+  # Checkbox toggles membership, the way the browser's own row checkbox does, so a second
+  #   and third object join the selection in the order they were picked -- that order is
+  #   what names operands m and n over in `layoutApply`. The name beside it picks that one
+  #   object alone: the browser gets single-select from a plain canvas click, which this
+  #   build has no equivalent of, so the row carries both gestures instead.
+  var is_selected = (not is_pending) and slot.get in workbench.selection
   gui.disabledPush(is_pending) # Nothing to select until it exists.
-  if gui.checkbox("", addr is_selected):
-    workbench.index_highlighted = if is_selected: slot else: none(int)
+  if gui.checkbox("", addr is_selected): workbench.selection.toggle(slot.get)
   gui.disabledPop()
-  gui.tooltip("Select this object; the 3D view rings whatever is selected.")
+  gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
   gui.sameLine()
 
   let label_shown =
     if is_open: toCstring(workbench.session.get.label) else: toCstring(scene.labelAt(slot.get))
   gui.textColorPush(tint.red, tint.green, tint.blue)
   if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not is_pending:
-    workbench.index_highlighted = if is_selected: none(int) else: slot
+    if is_selected and workbench.selection.len == 1: workbench.selection.clear()
+    else: workbench.selection.selectOnly(slot.get)
   gui.textColorPop()
 
   gui.sameLine()
@@ -294,7 +296,7 @@ proc layoutItem(
       if is_pending:
         let slot_added =
           scene.addItem(geometry, $toCstring(session.label), Ink(session.index_ink), now)
-        workbench.index_highlighted = some(slot_added)
+        workbench.selection.selectOnly(slot_added)
       else:
         scene.geometryAt(slot.get) = geometry
         scene.labelAt(slot.get) = session.label
@@ -315,7 +317,11 @@ proc layoutItem(
       if is_pending: cstring"Discard this new object." else: cstring"Discard these changes."
     )
 
-  if not is_pending:
+  # Hide and remove act on the object as the scene holds it, which is exactly what an open
+  #   session is staging a replacement for -- offering them mid-edit invites acting on one
+  #   version while looking at another. Absent for a composing row for the same reason its
+  #   own object does not exist yet.
+  if not (is_pending or is_open):
     gui.sameLine()
     if gui.buttonSmall(if is_visible: cstring"hide" else: cstring"show"):
       scene.setVisible(slot.get, not is_visible)
@@ -395,7 +401,7 @@ proc layoutObjects*(
     if layoutItem(workbench, scene, history, some(slot), now): slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
-    if workbench.index_highlighted == slot_removed: workbench.index_highlighted = none(int)
+    workbench.selection.pruneDead(scene)
     # Its session has nothing left to commit against.
     if workbench.session.isSome and workbench.session.get.slot == slot_removed:
       workbench.session = none(EditSession)
@@ -441,11 +447,11 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
     workbench.session = none(EditSession)
 
 
-proc layoutOperation*(
+proc layoutApply*(
   workbench: var Workbench; scene: var Scene; history: var History; now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
-  if not gui.header("operate", is_open_first = false): return
+  if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
     gui.text("Scene is empty; add a multivector first.")
     return
@@ -461,16 +467,29 @@ proc layoutOperation*(
     slots[count] = slot
     inc count
 
-  # Operand m defaults to whatever is currently selected, but only right when
-  #   selection itself changes -- see `index_operand_synced_highlight`'s own doc.
-  if workbench.index_highlighted != workbench.index_operand_synced_highlight:
-    workbench.index_operand_synced_highlight = workbench.index_highlighted
-    if workbench.index_highlighted.isSome:
-      let slot_selected = workbench.index_highlighted.get
-      for pos in 0 ..< count:
-        if slots[pos] == slot_selected:
-          workbench.index_operand_first = cint(pos)
-          break
+  # Everything the selection already says is filled in here rather than asked for a second
+  #   time: how many objects are picked names the arity, and the order they were picked
+  #   names m and n. Only right when the selection itself changes -- see
+  #   `selection_synced`'s own doc -- so a later manual pick of either still sticks.
+  if workbench.selection != workbench.selection_synced:
+    workbench.selection_synced = workbench.selection
+    proc positionOf(slots: openArray[int]; count, slot: int): Option[cint] =
+      ## Translate a slot back to the operand combo's own dense position.
+      for position in 0 ..< count:
+        if slots[position] == slot: return some(cint(position))
+    if workbench.selection.len > 0:
+      let arity_implied = cint(ord(workbench.selection.impliedArity))
+      if workbench.index_arity != arity_implied:
+        # A filtered operation list is indexed per arity, so a position carried across
+        #   from the other list names an unrelated operation -- the arity combo below
+        #   resets the same way for the same reason.
+        workbench.index_arity = arity_implied
+        workbench.index_operation = 0
+      let position_first = positionOf(slots, count, workbench.selection.at(0))
+      if position_first.isSome: workbench.index_operand_first = position_first.get
+      if workbench.selection.len >= 2:
+        let position_second = positionOf(slots, count, workbench.selection.at(1))
+        if position_second.isSome: workbench.index_operand_second = position_second.get
 
   # Offer only the operations of the chosen arity, rather than all of them with the
   #   second operand greyed out for the unary ones: the catalogue is long enough that
@@ -529,8 +548,9 @@ proc layoutOperation*(
       name_first = $toCstring(scene.labelAt(first))
       name_second = $toCstring(scene.labelAt(second))
       label = notationSubstituted(operation, name_first, name_second)
-    workbench.index_highlighted =
-      some(scene.addItem(derived, label, inkCycled(scene.len), now, anchor))
+    workbench.selection.selectOnly(
+      scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
+    )
     history.record(scene)
 
     var shape_word: array[WIDTH_SHAPE_WORD, char]
@@ -795,7 +815,7 @@ proc layoutWorkbench*(
     gui.disabledPush(not history.canUndo)
     if gui.button("undo"):
       if history.undo(scene):
-        workbench.index_highlighted = none(int)
+        workbench.selection.clear()
         workbench.session = none(EditSession)
     gui.disabledPop()
     gui.tooltip("Step back through scene-content edits; camera moves are not on this timeline.")
@@ -803,7 +823,7 @@ proc layoutWorkbench*(
     gui.disabledPush(not history.canRedo)
     if gui.button("redo"):
       if history.redo(scene):
-        workbench.index_highlighted = none(int)
+        workbench.selection.clear()
         workbench.session = none(EditSession)
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
@@ -814,9 +834,9 @@ proc layoutWorkbench*(
     # Sections in alphabetical order, matching the browser's own drawer, with `objects`
     #   the one open by default: it is what a returning session looks at first, and the
     #   rest are reached for deliberately.
+    layoutApply(workbench, scene, history, now)
     layoutDiagnostics(workbench, scene)
     layoutObjects(workbench, scene, history, now)
-    layoutOperation(workbench, scene, history, now)
     layoutView(workbench, camera)
     gui.separator()
     gui.text(toCstring(workbench.message))
