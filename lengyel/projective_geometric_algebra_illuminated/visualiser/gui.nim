@@ -98,6 +98,7 @@ proc separatorText*(label: cstring) {.importc: "guiSeparatorText".}
 proc sameLine*() {.importc: "guiSameLine".}
 proc idPush*(id: cint) {.importc: "guiIdPush".}
 proc idPop*() {.importc: "guiIdPop".}
+proc contentWidth*(): cfloat {.importc: "guiContentWidth".}
 proc widthPush*(width: cfloat) {.importc: "guiWidthPush".}
 proc widthPop*() {.importc: "guiWidthPop".}
 proc disabledPush*(is_disabled: bool) {.importc: "guiDisabledPush".}

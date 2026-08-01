@@ -151,6 +151,10 @@ void guiIdPush(int id) { ImGui::PushID(id); }
 
 void guiIdPop() { ImGui::PopID(); }
 
+// Width still free on the current line, so a caller laying widgets out with `sameLine`
+// can decide for itself where to wrap -- Dear ImGui runs them off the edge otherwise.
+float guiContentWidth() { return ImGui::GetContentRegionAvail().x; }
+
 void guiWidthPush(float width) { ImGui::PushItemWidth(width); }
 
 void guiWidthPop() { ImGui::PopItemWidth(); }

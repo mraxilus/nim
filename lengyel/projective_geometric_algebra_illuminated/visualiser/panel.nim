@@ -59,9 +59,12 @@ const
     ## basis terms written out, which a mixed-grade object genuinely does print.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
-  WIDTH_COEFFICIENT = 116.0'f32
-    ## Set width of one coefficient drag widget, sized so this build's widest grade row
-    ## (six grade-2 elements) fits the panel without wrapping mid-grade.
+  WIDTH_COEFFICIENT = 84.0'f32
+    ## Set width of one coefficient drag widget -- wide enough to read a four-decimal
+    ## reading, narrow enough that three cells and their labels share one panel line.
+  WIDTH_COEFFICIENT_CELL = WIDTH_COEFFICIENT + 52.0'f32
+    ## Set total width one coefficient occupies: its own widget, its label to the right,
+    ## and the spacing before the next. Used to decide where a grade's own row wraps.
   WIDTH_ITEM_LABEL = 150.0'f32
     ## Set width an item row's own selectable label spans, leaving its three buttons room
     ## to share the same line.
@@ -159,12 +162,19 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
   ##   Only one change is reported per frame, which is all a pointer can make.
   gui.widthPush(WIDTH_COEFFICIENT)
   defer: gui.widthPop()
+  let width_line = gui.contentWidth()
   for g in Grade.low .. Grade.high:
-    var is_first_in_row = true
+    # Wrap within a grade rather than running off the panel: `sameLine` places widgets
+    #   unconditionally, so the caller has to decide where a line ends. This build's
+    #   grade 2 holds six elements, more than any readable coefficient width fits across
+    #   one 430px panel. Matches the browser's own wrapping grade row.
+    var width_used = 0.0'f32
     for b in Basis:
       if b.grade != g: continue
-      if not is_first_in_row: gui.sameLine()
-      is_first_in_row = false
+      if width_used > 0.0:
+        if width_used + WIDTH_COEFFICIENT_CELL > width_line: width_used = 0.0
+        else: gui.sameLine()
+      width_used += WIDTH_COEFFICIENT_CELL
       if gui.dragFloat(cstring(lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0):
         result = some(b)
 
