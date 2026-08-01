@@ -14,10 +14,10 @@
 ##   |-------|-------------------|--------------------------------------------------|
 ##   | 0,1,2 | a, b, c           | Seed points, placed by hand.                     |
 ##   | 3     | o                 | The world origin, placed by hand -- kept off `G` |
-##   |       |                   |   (see step 08's own comment) purely so it has    |
-##   |       |                   |   something non-trivial to project onto it.       |
-##   | 4     | ground            | Seed plane, joined from three points at z = 0.    |
-##   | 5+    | one per step      | Result of the step's own operation.               |
+##   |       |                   |   (see step 08's own comment) purely so it has   |
+##   |       |                   |   something non-trivial to project onto it.      |
+##   | 4     | ground            | Seed plane, joined from three points at z = 0.   |
+##   | 5+    | one per step      | Result of the step's own operation.              |
 ##   |-------|-------------------|--------------------------------------------------|
 ##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)

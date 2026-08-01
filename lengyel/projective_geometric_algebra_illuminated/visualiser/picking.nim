@@ -63,7 +63,7 @@ const
 #[ Type Definitions ]#
 
 type ScreenPosition* = object ## Hold projected position, in window pixels, y downward.
-  x*, y*: float
+  x*, y*: float ## Pixel coordinates.
   depth*: float ## View-space depth; positive and smaller is nearer the eye.
 
 
@@ -121,32 +121,34 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
 #[ Segment Test ]#
 
 func clipToEyeSide(
-  a, b: Position; eye: Position; forward: Direction; distance_near: float
+  tail, head: Position; eye: Position; forward: Direction; distance_near: float
 ): Option[(Position, Position)] =
-  ## Clip segment `a`-`b` to the half-space at least `distance_near` in front of `eye`
-  ## -- the same near-side clip the GPU already performs when actually drawing the
-  ## segment, done by hand here since a screen-space hit test needs to divide by each
-  ## endpoint's own depth, which the far reach `mesh.addLine` now gives a line can put
-  ## at or behind the eye from some camera angles even though the near half of the very
-  ## same segment stays plainly on screen.
+  ## Clip segment `tail`-`head` to the half-space at least `distance_near` in front of
+  ## `eye` -- the same near-side clip the GPU already performs when actually drawing
+  ## the segment, done by hand here since a screen-space hit test needs to divide by
+  ## each endpoint's own depth, which the far reach `mesh.addLine` now gives a line can
+  ## put at or behind the eye from some camera angles even though the near half of the
+  ## very same segment stays plainly on screen.
   ##   None where the whole segment lies behind `eye`.
   let
-    depth_a = dot(a - eye, forward)
-    depth_b = dot(b - eye, forward)
-  if depth_a <= distance_near and depth_b <= distance_near: return
-  if depth_a > distance_near and depth_b > distance_near: return some((a, b))
-  let crossing = a + ((distance_near - depth_a) / (depth_b - depth_a))*(b - a)
-  if depth_a > distance_near: some((a, crossing)) else: some((crossing, b))
+    depth_tail = dot(tail - eye, forward)
+    depth_head = dot(head - eye, forward)
+  if depth_tail <= distance_near and depth_head <= distance_near: return
+  if depth_tail > distance_near and depth_head > distance_near: return some((tail, head))
+  let crossing =
+    tail + ((distance_near - depth_tail) / (depth_head - depth_tail))*(head - tail)
+  if depth_tail > distance_near: some((tail, crossing)) else: some((crossing, head))
 
 
-func distanceToSegment(p, a, b: ScreenPosition): float =
-  ## Measure pixel distance from `p` to nearest point of segment `a`-`b`.
+func distanceToSegment(point, tail, head: ScreenPosition): float =
+  ## Measure pixel distance from `point` to nearest point of segment `tail`-`head`.
   let
-    (dx, dy) = (b.x - a.x, b.y - a.y)
+    (dx, dy) = (head.x - tail.x, head.y - tail.y)
     length_squared = dx*dx + dy*dy
-  if length_squared <= 1.0e-9: return hypot(p.x - a.x, p.y - a.y)
-  let t = clamp(((p.x - a.x)*dx + (p.y - a.y)*dy) / length_squared, 0.0, 1.0)
-  hypot(p.x - (a.x + t*dx), p.y - (a.y + t*dy))
+  if length_squared <= 1.0e-9: return hypot(point.x - tail.x, point.y - tail.y)
+  let t =
+    clamp(((point.x - tail.x)*dx + (point.y - tail.y)*dy) / length_squared, 0.0, 1.0)
+  hypot(point.x - (tail.x + t*dx), point.y - (tail.y + t*dy))
 
 
 
@@ -197,7 +199,7 @@ func rayPlaneHit(
 
 func pickNearest*(
   scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int;
-  cursor: ScreenPosition;
+  cursor: ScreenPosition
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   None where nothing visible falls within its shape's pick radius.
@@ -253,10 +255,10 @@ func pickNearest*(
         eye, frame_camera.forward, camera.distance_near,
       )
       if clipped.isNone: continue
-      let (a, b) = clipped.get
+      let (position_tail, position_head) = clipped.get
       let
-        tail = projectToScreen(view_projection, width, height, a)
-        head = projectToScreen(view_projection, width, height, b)
+        tail = projectToScreen(view_projection, width, height, position_tail)
+        head = projectToScreen(view_projection, width, height, position_head)
       if not (tail.isInFront and head.isInFront): continue
       let distance = distanceToSegment(cursor, tail, head)
       if distance <= RADIUS_PICK_LINE: consider(1, distance)

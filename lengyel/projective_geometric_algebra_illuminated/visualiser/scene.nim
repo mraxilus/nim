@@ -47,7 +47,9 @@ import ./[format, mesh, objects]
 #   E.g. `--define:visualiser.items_max=128 --define:visualiser.label_max=48`.
 const
   ITEMS_MAX* {.define: "visualiser.items_max".} = 64
+    ## Max items scene may hold at once.
   LABEL_MAX* {.define: "visualiser.label_max".} = 40
+    ## Max characters a label may hold.
 
 static:
   doAssert ITEMS_MAX > 0, &"Scene capacity must be positive; got `{ITEMS_MAX}`."
@@ -78,12 +80,13 @@ type
     slot: int
 
   Scene* = object ## Hold fixed-capacity arena of items, addressed by stable slot.
-    geometries: array[ITEMS_MAX, Multivector]
-    labels: array[ITEMS_MAX, Label]
-    inks: array[ITEMS_MAX, Ink]
-    are_visible: array[ITEMS_MAX, bool]
-    are_alive: array[ITEMS_MAX, bool]
-    borns: array[ITEMS_MAX, float]
+    geometries: array[ITEMS_MAX, Multivector] ## Per-slot geometry.
+    labels: array[ITEMS_MAX, Label] ## Per-slot display label.
+    inks: array[ITEMS_MAX, Ink] ## Per-slot palette entry.
+    are_visible: array[ITEMS_MAX, bool] ## Per-slot visibility.
+    are_alive: array[ITEMS_MAX, bool] ## Per-slot occupancy; false where slot is free.
+    borns: array[ITEMS_MAX, float] ## Per-slot moment item was added, for its appear
+      ## animation; not saved or loaded, same as `anchor_overrides` below.
     anchor_overrides: array[ITEMS_MAX, Option[Position]] ## Where a plane's own circle
       ## should centre, for an item whose construction fixes that more specifically than
       ## its own closest-to-origin support does; see `creationAnchor`. None for anything
@@ -92,7 +95,7 @@ type
       ## itself carries.
     next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
     slot_free_first: Option[int] ## Head of free list; none where scene is full.
-    count_live: int
+    count_live: int ## Number of occupied slots, so `len` need not rescan `are_alive`.
 
   Arity* {.pure.} = enum ## Count operands operation consumes.
     One, Two
@@ -519,7 +522,7 @@ proc removeItem*(scene: var Scene; slot: int) =
 ##   |----------|--------------------------------------------------------------|
 ##   | Bytes    | Field                                                        |
 ##   |----------|--------------------------------------------------------------|
-##   | 4        | Magic `RGAS`, to catch a wrong file at a glance.              |
+##   | 4        | Magic `RGAS`, to catch a wrong file at a glance.             |
 ##   | 1        | Format version.                                              |
 ##   | 1        | Basis count (terms per multivector); must match this build's |
 ##   |          |   own count, or the file was saved under a different PGA     |
@@ -542,7 +545,9 @@ proc removeItem*(scene: var Scene; slot: int) =
 when not defined(js):
   const
     MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
+      ## First four bytes of a `.rgascene` file, the format table above documents.
     VERSION_SCENE = 1'u8
+      ## Format version this build writes and the only one it reads back.
 
 
   proc saveScene*(scene: Scene; path: string): string =
@@ -578,6 +583,11 @@ when not defined(js):
     ##   success, so a bad path or a corrupt or foreign file leaves whatever scene
     ##   already held untouched rather than half-overwritten by however far parsing
     ##   got before failing.
+    ##   Exceeds the working 60-line default: the format is a strict sequence of
+    ##   fixed-size fields, each needing its own guard clause against a truncated or
+    ##   foreign file before the next field can be trusted -- splitting the guards
+    ##   into a helper would only return partial results across an extra proc
+    ##   boundary for no reader benefit.
     if len(path) == 0: return "Load path is empty; nothing read."
     if not fileExists(path): return &"No such file `{path}`."
 

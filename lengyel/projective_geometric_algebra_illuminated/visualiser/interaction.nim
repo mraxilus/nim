@@ -70,7 +70,7 @@ proc updateCursor*(interaction: var Interaction; x, y: float) =
 
 proc updateHover*(
   interaction: var Interaction; scene: Scene;
-  camera: Camera; view_projection: Matrix4; width, height: int;
+  camera: Camera; view_projection: Matrix4; width, height: int
 ) =
   ## Recompute item nearest cursor, so overlay and drag-start agree on what stands under it.
   interaction.index_hover =

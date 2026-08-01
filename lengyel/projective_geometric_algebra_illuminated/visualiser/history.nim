@@ -39,7 +39,7 @@ const CAPACITY_HISTORY* = 32
 
 type History* = object ## Fixed-capacity timeline of scene snapshots, plus a cursor
   ## onto the entry equal to the live scene right now.
-  entries: array[CAPACITY_HISTORY, Scene]
+  entries: array[CAPACITY_HISTORY, Scene] ## Snapshot recorded at each committed edit.
   count: int    ## Valid timeline entries so far, <= CAPACITY_HISTORY.
   cursor: int   ## Index of the entry equal to the live scene right now.
 
@@ -62,8 +62,8 @@ proc record*(history: var History; scene: Scene) =
   ## an edit settles, never before it.
   history.cursor.inc
   if history.cursor >= CAPACITY_HISTORY:
-    # Oldest entry drops off the front rather than the array growing: shift everything
-    # down one and keep the cursor pinned at the last slot.
+    # Oldest entry drops off the front rather than the array growing, to keep history
+    # within its fixed capacity.
     for index in 0 ..< CAPACITY_HISTORY - 1:
       history.entries[index] = history.entries[index + 1]
     history.cursor = CAPACITY_HISTORY - 1
