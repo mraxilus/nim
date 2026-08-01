@@ -8,17 +8,19 @@
 ##   |-------------|-------------------------------------------------------------------------|
 ##   | Panel       | Offers                                                                  |
 ##   |-------------|-------------------------------------------------------------------------|
-##   | View        | Orbit, target, lens, world furniture, PNG export.                       |
-##   | Construct   | Add point at a position; apply any library operation to operands.       |
-##   | Objects     | Save, load, show, hide, rename, recolour, remove; edit any coefficient. |
+##   | Add         | Compose a multivector coefficient by coefficient, previewed as a ghost. |
 ##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,         |
 ##   |             | and everything else this binary reserves for itself, added up.          |
+##   | Objects     | Save, load, select, show, hide, rename, recolour, remove; edit any      |
+##   |             | coefficient.                                                            |
+##   | Operate     | Apply any library operation of a chosen arity to picked operands.       |
+##   | View        | Orbit, target, lens, world furniture, PNG export.                       |
 ##   |-------------|-------------------------------------------------------------------------|
 ##
-## Every panel above is a collapsing header, so a first-time reader can open one at a
-## time rather than face all four at once; View, Construct and Objects open by default
-## since a new session needs them immediately, Diagnostics starts closed since nothing
-## in it is needed to use the workbench, only to understand what using it costs.
+## Every panel above is a collapsing header, ordered alphabetically and matching the
+## browser build's own drawer section for section. Only Objects opens by default: it is
+## what a returning session looks at first, and opening all five at once buries the 3D
+## view the workbench exists to show.
 ##
 ## Coefficients are staged through 32-bit floats because that is what the widget writes,
 ## and written back only where widget reports a change, so editing costs no precision
@@ -51,10 +53,21 @@ const
     ## Set width panels open at, in pixels.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
-  WIDTH_ITEM_LINE = 128
-    ## Bound length of one item's coefficient or shape line, redrawn every frame.
+  WIDTH_ITEM_LINE = 320
+    ## Bound length of one item's shape-and-coefficient line, redrawn every frame. Sized
+    ## for the worst case that line can reach: the longest shape word plus all sixteen
+    ## basis terms written out, which a mixed-grade object genuinely does print.
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
+  WIDTH_COEFFICIENT = 116.0'f32
+    ## Set width of one coefficient drag widget, sized so this build's widest grade row
+    ## (six grade-2 elements) fits the panel without wrapping mid-grade.
+  WIDTH_ITEM_LABEL = 150.0'f32
+    ## Set width an item row's own selectable label spans, leaving its three buttons room
+    ## to share the same line.
+  ALPHA_ITEM_HIDDEN = 0.45'f32
+    ## Dim a hidden item's own row to this fraction, matching the browser's own
+    ## `.item-row.hidden-item` rule -- present but plainly not drawn right now.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
   FRAMES_HISTORY* {.define: "visualiser.frames_history".} = 240
@@ -68,7 +81,19 @@ const
 
 type
   Workbench* = object ## Hold GUI's own state between frames.
-    place_new*: array[3, cfloat] ## Position next added point stands at.
+    coefficients_new*: array[Basis, cfloat] ## Multivector the add panel is composing, one
+      ## coefficient per basis element -- committed by its own add button, and drawn every
+      ## frame until then as a muted ghost (see `is_ghost_shown`). Staged as `cfloat`
+      ## because that is what the drag widget writes.
+    are_edit_open*: array[ITEMS_MAX, bool] ## Whether each slot's own coefficient editor is
+      ## expanded. Held here rather than as a collapsing header's own internal state so the
+      ## toggle can be an inline small button beside hide/remove: Dear ImGui's
+      ## `CollapsingHeader` spans the full remaining width, which would push those buttons
+      ## onto their own line and read as a section rather than a row control.
+    is_ghost_shown*: bool ## Whether the add panel's own staged multivector should draw as
+      ## a ghost this frame. Set by `layoutMultivectorNew` while its section is open and
+      ## some coefficient is non-zero, cleared otherwise; read by
+      ## `visualiser.assembleMeshes` later the same frame, so there is no lag.
     index_highlighted*: Option[int] ## Currently selected item's own slot, drawn ringed
       ## by `visualiser.drawSelectionRing` -- auto-selected by every construction path (a
       ## storyboard step, or this session's own last drag-release or apply-operation
@@ -86,6 +111,9 @@ type
       ## manual pick of a different operand right back to whatever is selected. None
       ## until the first sync runs.
     index_operation*: cint ## Operation picked from catalogue.
+    index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
+      ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
+      ## rather than offering all 27 and greying the second operand for the unary ones.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
@@ -121,47 +149,80 @@ func initWorkbench*(path_export: string): Workbench =
 
 #[ Objects Panel ]#
 
-proc layoutCoefficients(geometry: var Multivector) =
-  ## Lay out one drag widget per basis coefficient, writing back only what changed.
-  var staged: array[Basis, cfloat]
-  for b in Basis: staged[b] = cfloat(geometry[b])
-  gui.widthPush(140.0)
-  for b in Basis:
-    if gui.dragFloat(cstring(lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0):
-      geometry[b] = float(staged[b])
-    if int(b) mod 4 != 3: gui.sameLine()
-  gui.widthPop()
+proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
+  ## Lay out one drag widget per basis coefficient, stacked one row per grade, 0 to n;
+  ## report which coefficient the user changed, if any.
+  ##   Grouping by grade rather than wrapping at a fixed column count keeps a grade's own
+  ##   members together: in this build's 4D metric the grades hold 1, 4, 6, 4 and 1
+  ##   elements, so any fixed column count cuts across a boundary somewhere. Grade comes
+  ##   from the library's own `grade`, so nothing here hardcodes a dimension.
+  ##   Only one change is reported per frame, which is all a pointer can make.
+  gui.widthPush(WIDTH_COEFFICIENT)
+  defer: gui.widthPop()
+  for g in Grade.low .. Grade.high:
+    var is_first_in_row = true
+    for b in Basis:
+      if b.grade != g: continue
+      if not is_first_in_row: gui.sameLine()
+      is_first_in_row = false
+      if gui.dragFloat(cstring(lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0):
+        result = some(b)
 
 
-proc layoutItem(scene: var Scene; history: var History; slot: int): bool =
+proc layoutItem(
+  workbench: var Workbench; scene: var Scene; history: var History; slot: int
+): bool =
   ## Lay out one item's controls, by slot; report whether user asked for it to be removed.
+  ##   A hidden item's whole row dims rather than disappearing, so it stays readable and
+  ##   its own show button stays clickable -- `alphaPush`, not `disabledPush`.
   gui.idPush(cint(slot))
   defer: gui.idPop()
 
-  if gui.checkbox("", addr scene.isVisibleAt(slot)): history.record(scene)
+  let
+    item = scene[slot]
+    tint = item.ink.colour
+    is_visible = scene.isVisible(slot)
+  if not is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
+  defer:
+    if not is_visible: gui.alphaPop()
+
+  # Row selects on click, the way the browser's own row does, and shows which item the
+  #   ring in the 3D view is currently drawn around.
+  gui.textColorPush(tint.red, tint.green, tint.blue)
+  let is_selected = workbench.index_highlighted == some(slot)
+  if gui.selectable(toCstring(scene.labelAt(slot)), is_selected, WIDTH_ITEM_LABEL):
+    workbench.index_highlighted = if is_selected: none(int) else: some(slot)
+  gui.textColorPop()
+  gui.tooltip("Select this object; the 3D view rings whatever is selected.")
+
+  gui.sameLine()
+  if gui.buttonSmall(if is_visible: cstring"hide" else: cstring"show"):
+    scene.setVisible(slot, not is_visible)
+    history.record(scene)
   gui.tooltip("Show or hide this object without removing it.")
   gui.sameLine()
-  let item = scene[slot]
-  let tint = item.ink.colour
-  gui.textTinted(toCstring(scene.labelAt(slot)), tint.red, tint.green, tint.blue)
+  if gui.buttonSmall(if workbench.are_edit_open[slot]: cstring"close" else: cstring"edit"):
+    workbench.are_edit_open[slot] = not workbench.are_edit_open[slot]
+  gui.tooltip("Rename, recolour, or reshape this object coefficient by coefficient.")
   gui.sameLine()
   result = gui.buttonSmall("remove")
   gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
   # Built into a stack buffer rather than a `string`, since every visible item redraws
-  #   both lines every frame; a fresh heap string per item per frame is exactly the kind
+  #   this line every frame; a fresh heap string per item per frame is exactly the kind
   #   of allocator churn an arena-backed scene should not turn around and reintroduce.
+  #   Shape word first on the same line as the coefficients, matching the browser's own
+  #   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
+  #   that reads as a prefix to the equation anyway.
   var line: array[WIDTH_ITEM_LINE, char]
-  let coefficients = buildChars(line):
-    appendChars(line, cursor, "  ")
-    formatMultivector(item.geometry, line, cursor)
-  gui.text(coefficients)
-  let shape_word = buildChars(line):
+  let description = buildChars(line):
     appendChars(line, cursor, "  ")
     describeShape(item.geometry, line, cursor)
-  gui.text(shape_word)
+    appendChars(line, cursor, ": ")
+    formatMultivector(item.geometry, line, cursor)
+  gui.textWrapped(description)
 
-  if gui.header("edit", is_open_first = false):
+  if workbench.are_edit_open[slot]:
     gui.widthPush(220.0)
     discard gui.inputText("label", toCstring(scene.labelAt(slot)), cint(LABEL_MAX))
     var index_ink = cint(item.ink)
@@ -173,9 +234,13 @@ proc layoutItem(scene: var Scene; history: var History; slot: int): bool =
     gui.sameLine()
     gui.helpMarker(
       "The 16 numbers of this RGA object's own multivector, in the library's basis " &
-      "order; drag any one to reshape the object directly."
+      "order, stacked one row per grade; drag any one to reshape the object directly."
     )
-    layoutCoefficients(scene.geometryAt(slot))
+    var staged: array[Basis, cfloat]
+    for b in Basis: staged[b] = cfloat(scene.geometryAt(slot)[b])
+    let changed = layoutCoefficientGrid(staged)
+    if changed.isSome:
+      scene.geometryAt(slot)[changed.get] = float(staged[changed.get])
   gui.separator()
 
 
@@ -203,12 +268,27 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var His
   gui.separator()
 
   if scene.len == 0:
-    gui.text("Nothing here yet -- add a point below, or drag between two once you have a few.")
+    gui.text("Nothing here yet -- add a multivector above, or drag between two objects.")
     return
 
-  var slot_removed = none(int)
+  # Most recently added first, matching the browser's own list order: the object just
+  #   built is the one a user is looking for, and it would otherwise sit at whatever
+  #   position the free list happened to hand out.
+  var
+    slots_ordered: array[ITEMS_MAX, int]
+    count = 0
   for slot, _ in scene.pairs:
-    if layoutItem(scene, history, slot): slot_removed = some(slot)
+    var position = count
+    while position > 0 and scene[slots_ordered[position - 1]].born < scene[slot].born:
+      slots_ordered[position] = slots_ordered[position - 1]
+      dec position
+    slots_ordered[position] = slot
+    inc count
+
+  var slot_removed = none(int)
+  for position in 0 ..< count:
+    let slot = slots_ordered[position]
+    if layoutItem(workbench, scene, history, slot): slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
     if workbench.index_highlighted == slot_removed: workbench.index_highlighted = none(int)
@@ -218,37 +298,64 @@ proc layoutObjects*(workbench: var Workbench; scene: var Scene; history: var His
 
 #[ Construct Panel ]#
 
-proc layoutPointNew(
+proc layoutMultivectorNew*(
   workbench: var Workbench; scene: var Scene; history: var History; now: float
 ) =
-  ## Lay out controls that add fresh point at a position.
-  gui.separatorText("add point")
-  gui.widthPush(260.0)
-  discard gui.dragFloat3("position", addr workbench.place_new[0], SPEED_DRAG*10.0)
-  gui.tooltip("World x, y, z the new point stands at; click and drag a number to change it.")
-  gui.widthPop()
+  ## Lay out controls that compose and add a fresh multivector, one coefficient per basis
+  ## element.
+  ##   Adds any multivector rather than only a point, matching what the operation
+  ##   catalogue below can already derive: a point was never a special case the scene
+  ##   itself recognised, only what the old three-field position widget could express.
+  ##   Sets `is_ghost_shown` while composing, so the not-yet-committed object draws muted
+  ##   in the 3D view the moment any coefficient goes non-zero, and stops the moment this
+  ##   section closes or the object commits.
+  workbench.is_ghost_shown = false
+  if not gui.header("add", is_open_first = false): return
+
+  gui.text("The 16 numbers of a fresh multivector, in the library's basis order.")
+  gui.sameLine()
+  gui.helpMarker(
+    "Stacked one row per grade: a scalar, then this build's four grade-1 elements, and " &
+    "so on. A live preview draws in the view as soon as any field goes non-zero; " &
+    "nothing joins the scene until you add it below."
+  )
+  discard layoutCoefficientGrid(workbench.coefficients_new)
+
+  for b in Basis:
+    if workbench.coefficients_new[b] != 0.0:
+      workbench.is_ghost_shown = true
+      break
+
   gui.disabledPush(scene.isFull)
-  if gui.button("add point"):
-    let place = Position(
-      x: float(workbench.place_new[0]),
-      y: float(workbench.place_new[1]),
-      z: float(workbench.place_new[2]),
-    )
-    workbench.index_highlighted =
-      some(scene.addItem(toMultivector(place), &"p{scene.len}", inkCycled(scene.len), now))
+  if gui.button("add multivector"):
+    var geometry: Multivector
+    for b in Basis: geometry[b] = float(workbench.coefficients_new[b])
+    let slot = scene.addItem(geometry, &"m{scene.len}", inkCycled(scene.len), now)
+    workbench.index_highlighted = some(slot)
     history.record(scene)
-    toChars(&"Added point at ({place.x:.2f}, {place.y:.2f}, {place.z:.2f}).",
-      workbench.message)
+
+    var shape_word: array[WIDTH_SHAPE_WORD, char]
+    var cursor_shape = 0
+    describeShape(geometry, shape_word, cursor_shape)
+    finishChars(shape_word, cursor_shape)
+    toChars(&"Added {$toCstring(shape_word)}.", workbench.message)
+
+    # Committing clears the composer, the same way the browser's own add section resets
+    #   its sixteen fields -- and with them the ghost, now that a real object stands in
+    #   its place.
+    for b in Basis: workbench.coefficients_new[b] = 0.0
+    workbench.is_ghost_shown = false
   gui.disabledPop()
+  gui.tooltip("Commit the multivector above as a new object in the scene.")
 
 
-proc layoutOperation(
+proc layoutOperation*(
   workbench: var Workbench; scene: var Scene; history: var History; now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
-  gui.separatorText("apply operation")
+  if not gui.header("operate", is_open_first = false): return
   if scene.len == 0:
-    gui.text("Scene is empty; add a point first.")
+    gui.text("Scene is empty; add a multivector first.")
     return
 
   # Offer every live item by label, so operands are picked by name rather than by slot;
@@ -273,33 +380,56 @@ proc layoutOperation(
           workbench.index_operand_first = cint(pos)
           break
 
-  let operation = Operation(workbench.index_operation)
-  let is_binary = lut_operation_to_arity[operation] == Arity.Two
+  # Offer only the operations of the chosen arity, rather than all of them with the
+  #   second operand greyed out for the unary ones: the catalogue is long enough that
+  #   halving it is the difference between scanning and hunting. `operations` translates
+  #   the filtered combo's dense position back to the operation it names, the same shape
+  #   `slots` uses for operands above.
+  var
+    notations: array[COUNT_OPERATION, cstring]
+    operations: array[COUNT_OPERATION, Operation]
+    count_offered = 0
+  let arity_wanted = Arity(workbench.index_arity)
+  for operation in Operation:
+    if lut_operation_to_arity[operation] != arity_wanted: continue
+    notations[count_offered] = lut_operation_to_notation[operation]
+    operations[count_offered] = operation
+    inc count_offered
+
   gui.widthPush(300.0)
+  const lut_arity_to_name = [Arity.One: cstring"unary", Arity.Two: cstring"binary"]
+  if gui.combo("arity", addr workbench.index_arity, addr lut_arity_to_name[Arity.low], 2):
+    workbench.index_operation = 0
+  gui.tooltip("Whether to list operations reading one operand or two.")
+
+  let index_offered = clamp(int(workbench.index_operation), 0, count_offered - 1)
+  workbench.index_operation = cint(index_offered)
   discard gui.combo(
-    "operation", addr workbench.index_operation,
-    addr lut_operation_to_notation[Operation.low], cint(COUNT_OPERATION),
+    "operation", addr workbench.index_operation, addr notations[0], cint(count_offered),
   )
   gui.tooltip("Library operation to apply below; its own notation names m and n, " &
     "the operands picked next.")
+  let
+    operation = operations[clamp(int(workbench.index_operation), 0, count_offered - 1)]
+    is_binary = arity_wanted == Arity.Two
+
   discard gui.combo("operand m", addr workbench.index_operand_first,
     addr names[0], cint(count))
   gui.tooltip("First operand -- `m` in the notation above -- every operation reads.")
-  gui.disabledPush(not is_binary)
-  discard gui.combo("operand n", addr workbench.index_operand_second,
-    addr names[0], cint(count))
   if is_binary:
+    discard gui.combo("operand n", addr workbench.index_operand_second,
+      addr names[0], cint(count))
     gui.tooltip("Second operand -- `n` above -- this operation combines with `m`.")
-  else:
-    gui.tooltip("Greyed out because the operation picked above takes one operand, not two.")
-  gui.disabledPop()
   gui.widthPop()
 
   gui.disabledPush(scene.isFull)
   if gui.button("apply"):
     let
       first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
-      second = slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
+      second =
+        if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
+        else: first # A unary operation ignores its second operand; naming the first
+          # keeps a stale picker reading from ever reaching `applyOperation`.
       operand_first = scene[first].geometry
       operand_second = scene[second].geometry
       derived = applyOperation(operation, operand_first, operand_second)
@@ -319,17 +449,6 @@ proc layoutOperation(
   gui.disabledPop()
 
 
-proc layoutConstruct*(
-  workbench: var Workbench; scene: var Scene; history: var History; now: float
-) =
-  ## Lay out both ways of growing scene, then report outcome of last action.
-  ##   `now` is only ever forwarded to a freshly added item's `born` reading; nothing
-  ##   here reads a clock itself.
-  if not gui.header("construct", is_open_first = true): return
-  layoutPointNew(workbench, scene, history, now)
-  layoutOperation(workbench, scene, history, now)
-  gui.separator()
-  gui.text(toCstring(workbench.message))
 
 
 
@@ -337,7 +456,7 @@ proc layoutConstruct*(
 
 proc layoutView*(workbench: var Workbench; camera: var Camera) =
   ## Lay out camera placement, world furniture and frame export.
-  if not gui.header("view", is_open_first = true): return
+  if not gui.header("view", is_open_first = false): return
   gui.widthPush(260.0)
 
   var placement = [
@@ -576,16 +695,29 @@ proc layoutWorkbench*(
     # Scene-content edits only (add, apply, remove, visibility, recolour) -- label text
     #   and coefficient drags are continuous, multi-frame inputs with no clean "edit
     #   committed" boundary, so neither is on this timeline; see `history.nim`.
+    #   Each button greys out where its own side of the timeline is empty, rather than
+    #   staying live and reporting "nothing to undo" only once pressed.
+    gui.disabledPush(not history.canUndo)
     if gui.button("undo"):
       if history.undo(scene): workbench.index_highlighted = none(int)
-      else: toChars("Nothing to undo.", workbench.message)
+    gui.disabledPop()
+    gui.tooltip("Step back through scene-content edits; camera moves are not on this timeline.")
     gui.sameLine()
+    gui.disabledPush(not history.canRedo)
     if gui.button("redo"):
       if history.redo(scene): workbench.index_highlighted = none(int)
-      else: toChars("Nothing to redo.", workbench.message)
+    gui.disabledPop()
+    gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
     gui.separator()
-    layoutView(workbench, camera)
-    layoutConstruct(workbench, scene, history, now)
-    layoutObjects(workbench, scene, history)
+
+    # Sections in alphabetical order, matching the browser's own drawer, with `objects`
+    #   the one open by default: it is what a returning session looks at first, and the
+    #   rest are reached for deliberately.
+    layoutMultivectorNew(workbench, scene, history, now)
     layoutDiagnostics(workbench, scene)
+    layoutObjects(workbench, scene, history)
+    layoutOperation(workbench, scene, history, now)
+    layoutView(workbench, camera)
+    gui.separator()
+    gui.text(toCstring(workbench.message))
   gui.windowEnd()

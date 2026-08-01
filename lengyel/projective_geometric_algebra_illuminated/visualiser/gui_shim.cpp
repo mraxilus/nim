@@ -95,6 +95,14 @@ void guiChildEnd() { ImGui::EndChild(); }
 
 void guiText(const char* text) { ImGui::TextUnformatted(text); }
 
+// Wrap at the panel's own right edge instead of clipping, for a line whose length is the
+// data's to decide -- a full multivector runs past any width worth reserving for it.
+void guiTextWrapped(const char* text) {
+  ImGui::PushTextWrapPos(0.0f);
+  ImGui::TextUnformatted(text);
+  ImGui::PopTextWrapPos();
+}
+
 void guiTextTinted(const char* text, float red, float green, float blue) {
   ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(red, green, blue, 1.0f));
   ImGui::TextUnformatted(text);
@@ -150,6 +158,31 @@ void guiWidthPop() { ImGui::PopItemWidth(); }
 void guiDisabledPush(bool is_disabled) { ImGui::BeginDisabled(is_disabled); }
 
 void guiDisabledPop() { ImGui::EndDisabled(); }
+
+// Row that draws its own selected-state highlight, for a list where one entry is current.
+// Sized explicitly so following widgets share the line rather than being pushed below by
+// a selectable's own default full-remaining-width.
+bool guiSelectable(const char* label, bool is_selected, float width) {
+  return ImGui::Selectable(label, is_selected, 0, ImVec2(width, 0.0f));
+}
+
+// Scale everything drawn until the matching pop, for content that should read as present
+// but out of focus. Multiplies rather than replaces, so nesting inside a disabled block
+// keeps that block's own dimming too. Unlike `guiDisabledPush` this leaves widgets live:
+// a hidden object's own row must stay clickable in order to unhide it.
+void guiAlphaPush(float alpha) {
+  ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * alpha);
+}
+
+void guiAlphaPop() { ImGui::PopStyleVar(); }
+
+// Tint every widget's text until the matching pop, for a run of widgets that share one
+// item's colour. `guiTextTinted` covers the single-label case; this covers a whole row.
+void guiTextColorPush(float red, float green, float blue) {
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(red, green, blue, 1.0f));
+}
+
+void guiTextColorPop() { ImGui::PopStyleColor(); }
 
 // Attach to whatever widget was laid out immediately before this call, so a control
 // gains an on-hover explanation without a separate marker glyph competing for space.

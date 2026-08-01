@@ -122,6 +122,10 @@ const
     ## Set how much one wheel notch scales orbit distance.
   FRAMES_SETTLE = 2
     ## Draw this many frames before capturing, so widget layout has settled.
+  INK_GHOST = Ink.Guide
+    ## Palette slot the add panel's own uncommitted multivector draws in, muted -- reuses
+    ## `Ink.Guide`'s existing "construction helper" meaning rather than adding a palette
+    ## entry for this alone. Mirrors `browser_bridge.INK_GHOST`.
   RADIUS_OVERLAY_HOVER = 16.0'f32
     ## Set radius of ring drawn around whatever the cursor is over.
   WIDTH_OVERLAY_LINE = 2.0'f32
@@ -287,6 +291,16 @@ proc assembleMeshes(
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+
+  # The add panel's own not-yet-committed multivector, drawn through the same dispatch a
+  #   real object uses so composing one shows exactly what adding it would give. Never
+  #   enters `scene`, so picking, undo/redo and save stay unaware of it; an all-zero
+  #   staging degrades to "nothing to draw" through `addObject`'s own empty-shape branch,
+  #   and `is_ghost_shown` is false then anyway.
+  if workbench.is_ghost_shown:
+    var ghost: Multivector
+    for b in Basis: ghost[b] = float(workbench.coefficients_new[b])
+    discard MESHES.addObject(ghost, muted(INK_GHOST.colour), scale)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0

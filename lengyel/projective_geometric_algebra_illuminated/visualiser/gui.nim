@@ -75,6 +75,7 @@ proc windowEnd*() {.importc: "guiWindowEnd".}
 proc childBegin*(name: cstring; width, height: cfloat): bool {.importc: "guiChildBegin".}
 proc childEnd*() {.importc: "guiChildEnd".}
 proc text*(text: cstring) {.importc: "guiText".}
+proc textWrapped*(text: cstring) {.importc: "guiTextWrapped".}
 proc textTinted*(text: cstring; red, green, blue: cfloat) {.importc: "guiTextTinted".}
 proc header*(label: cstring; is_open_first: bool): bool {.importc: "guiHeader".}
 proc button*(label: cstring): bool {.importc: "guiButton".}
@@ -101,6 +102,13 @@ proc widthPush*(width: cfloat) {.importc: "guiWidthPush".}
 proc widthPop*() {.importc: "guiWidthPop".}
 proc disabledPush*(is_disabled: bool) {.importc: "guiDisabledPush".}
 proc disabledPop*() {.importc: "guiDisabledPop".}
+proc selectable*(
+  label: cstring; is_selected: bool; width: cfloat
+): bool {.importc: "guiSelectable".}
+proc alphaPush*(alpha: cfloat) {.importc: "guiAlphaPush".}
+proc alphaPop*() {.importc: "guiAlphaPop".}
+proc textColorPush*(red, green, blue: cfloat) {.importc: "guiTextColorPush".}
+proc textColorPop*() {.importc: "guiTextColorPop".}
 proc tooltip*(text: cstring) {.importc: "guiTooltip".}
 proc helpMarker*(text: cstring) {.importc: "guiHelpMarker".}
 proc progressBar*(
