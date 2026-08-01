@@ -163,11 +163,15 @@ bool guiButtonToggle(const char* label, bool is_on, float width) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.741f, 0.953f, 0.941f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.655f, 0.647f, 1.0f));
   } else {
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    // Filled and bordered rather than transparent, unlike the browser's own segment: there
+    // the pill's track is what makes an unselected segment visible, and a panel drawn
+    // straight onto the scene has no track to sit on. Tones are the browser's `--surface`
+    // and `--border` so the two controls still read as the same thing.
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.086f, 0.106f, 0.133f, 0.82f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.12f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.545f, 0.588f, 0.639f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.165f, 0.196f, 0.239f, 1.0f));
   }
   ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
   const bool pressed = ImGui::Button(label, ImVec2(width, 0.0f));
