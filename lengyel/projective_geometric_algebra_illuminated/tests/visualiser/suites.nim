@@ -716,15 +716,36 @@ suite "Scene":
     check len($toCstring(storage)) == LABEL_MAX - 1
 
 
+  test "magnitudesAgree: the browser's own formatter answers what C's does":
+    # One rule, two mechanisms: the desktop reaches C's `%.4g` through `snprintf`, which
+    #   the browser build has no runtime for, so `formatMagnitude` states the same rule in
+    #   plain Nim. Only this test holds the two together -- run it before changing either.
+    for value in [
+      0.0, 1.0, -1.0, 3.5, -2.0, 0.25, 1664.0, 1234567.0, 0.00012345, 1e-7, 1e7,
+      99999.0, 0.099999, 123.456, -0.0001, 1e-5, 9.9999e-5, 1000.0, 999.95, 6.02e23,
+    ]:
+      var
+        storage: array[64, char]
+        cursor = 0
+      appendMagnitude(storage, cursor, value)
+      check formatMagnitude(value) == $toCstring(storage)
+
+
   test "multivectors print every term they carry, and nothing else":
     # Significant digits, not fixed decimal places: a whole number reads as one, and a
-    #   coefficient keeps only the digits it actually carries.
-    check formatMultivectorString(initElement(Basis.scalar, 0.0)) == "0 S"
+    #   coefficient keeps only the digits it actually carries. Basis elements are named
+    #   as the library's own `$` names them, which is what keeps the two GUIs 1-1.
+    check formatMultivectorString(initElement(Basis.scalar, 0.0)) == "0 𝟏"
     check formatMultivectorString(toMultivector(Position(x: 2, y: 0, z: -3))) ==
-      "2 E1 - 3 E3 + 1 E4"
+      "2 𝐞₁ - 3 𝐞₃ + 1 𝐞₄"
     check formatMultivectorString(toMultivector(Position(x: 3.5, y: 0, z: 0))) ==
-      "3.5 E1 + 1 E4"
-    check formatMultivectorString(initElement(Basis.scalar, 0.00012345)) == "0.0001234 S"
+      "3.5 𝐞₁ + 1 𝐞₄"
+    check formatMultivectorString(initElement(Basis.scalar, 0.00012345)) == "0.0001234 𝟏"
+    # Every basis name matches what the library writes for that element on its own,
+    #   rather than being trusted to a table transcribed by hand.
+    for b in Basis:
+      let named = ($initElement(b, 1.0)).strip()
+      check lut_basis_to_name[b] == named
     for i in 0 ..< SAMPLES:
       check describeShapeString(POINTS[i]) == "point"
       check describeShapeString(LINES[i]) == "line"

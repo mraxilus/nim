@@ -10,11 +10,18 @@
 ## the C runtime's own formatter -- rather than beside `scene` or `mesh`, which hold
 ## this project's own logic.
 ##
+## `snprintf` is a C entry point, so the browser build cannot reach it. What a magnitude
+## should *read* as is this project's own rule rather than C's, so `formatMagnitude`
+## states it in plain Nim for that build to use, and `magnitudesAgree` in the test suite
+## holds the two to the same answer.
+##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths, transitively through `interaction`; see `visualiser.nim`'s own
 ## "Render Paths" table.
 
 {.experimental: "strictFuncs".}
+
+import std/[strutils]
 
 
 
@@ -26,6 +33,46 @@ const HEADER = "<stdio.h>"
 # Mechanical one-to-one import of the C runtime's own formatter; see its manual page.
 proc snprintf(buffer: cstring; size: csize_t; format: cstring): cint
   {.importc: "snprintf", header: HEADER, varargs, discardable, noSideEffect.}
+
+
+
+#[ Significant Digits Without C ]#
+
+const DIGITS_SIGNIFICANT* = 4
+  ## Show a magnitude to this many significant digits, wherever one is shown: enough to
+  ## tell coefficients apart, few enough that sixteen of them fit a panel.
+
+func formatMagnitude*(value: float): string =
+  ## Format `value` to `DIGITS_SIGNIFICANT` significant digits, as `appendMagnitude`'s own
+  ## `%.4g` does, without needing a C runtime to do it.
+  ##   For the browser build, which has no `snprintf` to call. Nim's own `g` is no help
+  ##   here: under the JS backend it ignores the precision asked for and returns the
+  ##   shortest round-tripping form instead, so 1234567 stays 1234567 where C writes
+  ##   `1.235e+06`. Its `ffScientific` and `ffDecimal` do honour precision on both
+  ##   backends, so the rule is stated over those two.
+  ##   Allocates, unlike everything else here: a browser rebuilds its number fields when
+  ##   the grid changes rather than once per item per frame, so there is no per-frame
+  ##   allocation to avoid. Do not call it from the desktop's draw loop.
+  ##   `%g`'s own rule, from the C standard: take the exponent the value rounds to at this
+  ##   precision, write it scientifically where that exponent falls outside
+  ##   [-4, DIGITS_SIGNIFICANT), and fixed otherwise; either way trailing zeros go.
+  func trimmed(text: string): string =
+    ## Drop trailing zeros, and a point left bare by dropping them.
+    if '.' notin text: return text
+    result = text.strip(leading = false, trailing = true, chars = {'0'})
+    result = result.strip(leading = false, trailing = true, chars = {'.'})
+
+  let scientific = formatBiggestFloat(value, ffScientific, DIGITS_SIGNIFICANT - 1)
+  let split = scientific.rfind('e')
+  let exponent = parseInt(scientific[split + 1 .. ^1])
+  if exponent < -4 or exponent >= DIGITS_SIGNIFICANT:
+    # C writes at least two exponent digits; Nim writes as few as one.
+    let magnitude = abs(exponent)
+    let sign = if exponent < 0: "-" else: "+"
+    let padding = if magnitude < 10: "0" else: ""
+    trimmed(scientific[0 ..< split]) & "e" & sign & padding & $magnitude
+  else:
+    trimmed(formatBiggestFloat(value, ffDecimal, DIGITS_SIGNIFICANT - 1 - exponent))
 
 
 
@@ -42,11 +89,18 @@ proc appendChars*(storage: var openArray[char]; cursor: var int; text: openArray
 
 
 proc appendMagnitude*(storage: var openArray[char]; cursor: var int; value: float) =
-  ## Format `value` as 4 significant digits straight into `storage`, through C's own
-  ## formatter, so printing a coefficient never allocates a Nim string just to hold it.
-  ##   The `#` flag keeps trailing zeros, matching what `strformat`'s own `:.4g` writes.
+  ## Format `value` to `DIGITS_SIGNIFICANT` significant digits straight into `storage`,
+  ## through C's own formatter, so printing a coefficient never allocates a Nim string
+  ## just to hold it.
+  ##   Significant digits, not decimal places, and no `#` flag: a coefficient of 3.5 reads
+  ##   `3.5` rather than `3.5000`, and one of 1664 keeps its integer part.
+  ##   `formatMagnitude` above states the same rule for the browser build; a change to
+  ##   either is not finished until the suite's `magnitudesAgree` still passes.
   var buffer: array[32, char]
-  let count = snprintf(cast[cstring](addr buffer[0]), csize_t(len(buffer)), "%.4g", value)
+  let count = snprintf(
+    cast[cstring](addr buffer[0]), csize_t(len(buffer)),
+    cstring("%." & $DIGITS_SIGNIFICANT & "g"), value
+  )
   appendChars(storage, cursor, buffer.toOpenArray(0, int(count) - 1))
 
 

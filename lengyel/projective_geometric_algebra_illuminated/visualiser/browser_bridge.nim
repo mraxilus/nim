@@ -20,9 +20,10 @@
 ##   frame loop's own timing) either depend on a C FFI (`format.nim`'s `snprintf` binding)
 ##   that does not exist in a browser, or describe implementation details specific to the
 ##   native build's own allocator and draw loop with no browser/JS-GC equivalent worth
-##   fabricating. Numeric formatting for anything shown here happens in hand-written JS
-##   instead (which has better native tools for it than reimplementing C's `%#.4g` would
-##   give); a browser-appropriate diagnostics substitute (frame time via
+##   fabricating. What a *coefficient* should read as is this project's own rule rather
+##   than C's, so `nimFormatCoefficient` below answers it from `format.formatMagnitude`
+##   instead of leaving it to a `toFixed` on the JS side; a browser-appropriate
+##   diagnostics substitute (frame time via
 ##   `requestAnimationFrame` deltas, JS heap size where available) stands in for the
 ##   desktop's own arena/frame-time panel, covering the same *purpose* -- surfacing what
 ##   using this build costs -- without pretending to the same numbers.
@@ -43,7 +44,8 @@ import std/[options, strformat]
 
 import ../pga
 import ./[
-  camera, history, interaction, mesh, objects, picking, scene, selection, storyboard,
+  camera, format, history, interaction, mesh, objects, picking, scene, selection,
+  storyboard,
 ]
 
 
@@ -247,6 +249,17 @@ proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
   let geometry = g_scene.geometryAt(int(slot))
   result = newSeq[float](ord(Basis.high) + 1)
   for b in Basis: result[ord(b)] = geometry[b]
+
+
+proc nimFormatCoefficient(value: float): cstring {.exportc.} =
+  ## Format one coefficient for a number field, to the same four significant digits the
+  ## desktop's own drag widget shows: 3.5 reads `3.5`, not `3.5000`.
+  ##   Exported rather than left to a `toFixed` on the JS side, because how many digits a
+  ##   coefficient is worth is a decision about this project's numbers, not about the DOM.
+  ##   `format.formatMagnitude` rather than `format.appendMagnitude`, whose `snprintf`
+  ##   needs a C runtime this backend does not have; the suite holds the two to the same
+  ##   answer, so a browser cell and a desktop one read a coefficient identically.
+  cstring(formatMagnitude(value))
 
 
 proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
