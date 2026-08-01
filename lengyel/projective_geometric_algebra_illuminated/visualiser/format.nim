@@ -46,7 +46,7 @@ proc appendMagnitude*(storage: var openArray[char]; cursor: var int; value: floa
   ## formatter, so printing a coefficient never allocates a Nim string just to hold it.
   ##   The `#` flag keeps trailing zeros, matching what `strformat`'s own `:.4g` writes.
   var buffer: array[32, char]
-  let count = snprintf(cast[cstring](addr buffer[0]), csize_t(len(buffer)), "%#.4g", value)
+  let count = snprintf(cast[cstring](addr buffer[0]), csize_t(len(buffer)), "%.4g", value)
   appendChars(storage, cursor, buffer.toOpenArray(0, int(count) - 1))
 
 

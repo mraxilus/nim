@@ -717,9 +717,14 @@ suite "Scene":
 
 
   test "multivectors print every term they carry, and nothing else":
+    # Significant digits, not fixed decimal places: a whole number reads as one, and a
+    #   coefficient keeps only the digits it actually carries.
     check formatMultivectorString(initElement(Basis.scalar, 0.0)) == "0 S"
     check formatMultivectorString(toMultivector(Position(x: 2, y: 0, z: -3))) ==
-      "2.000 E1 - 3.000 E3 + 1.000 E4"
+      "2 E1 - 3 E3 + 1 E4"
+    check formatMultivectorString(toMultivector(Position(x: 3.5, y: 0, z: 0))) ==
+      "3.5 E1 + 1 E4"
+    check formatMultivectorString(initElement(Basis.scalar, 0.00012345)) == "0.0001234 S"
     for i in 0 ..< SAMPLES:
       check describeShapeString(POINTS[i]) == "point"
       check describeShapeString(LINES[i]) == "line"

@@ -187,11 +187,13 @@ bool guiCheckbox(const char* label, bool* value) { return ImGui::Checkbox(label,
 
 bool guiDragFloat(const char* label, float* value, float speed, float lowest,
                   float highest) {
-  return ImGui::DragFloat(label, value, speed, lowest, highest, "%.4f");
+  // Four significant digits, not four decimal places: a coefficient of 3.5 should read
+  // "3.5", not "3.5000", and one of 1664 should not lose its integer part to padding.
+  return ImGui::DragFloat(label, value, speed, lowest, highest, "%.4g");
 }
 
 bool guiDragFloat3(const char* label, float* values, float speed) {
-  return ImGui::DragFloat3(label, values, speed, 0.0f, 0.0f, "%.3f");
+  return ImGui::DragFloat3(label, values, speed, 0.0f, 0.0f, "%.4g");
 }
 
 bool guiInputText(const char* label, char* buffer, int capacity) {
