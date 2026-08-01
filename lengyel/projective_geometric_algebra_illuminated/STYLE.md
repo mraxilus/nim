@@ -148,6 +148,18 @@ language community differs — a mixed scheme destroys the signal.
 - MAKE MISUSE UNCOMPILABLE, AND SAY WHAT TO DO INSTEAD: define the tempting-but-wrong operation
   solely to fail at compile time with a message naming the correct call. Stub unimplemented API
   the same way, with the intended expression in the message.
+- TYPEFACES ARE **NOTO SANS** FOR UI TEXT, **NOTO SERIF** FOR PROSE, **COMMIT MONO** FOR CODE,
+  DATA AND FIGURES. Every render target ships the faces it draws with rather than naming ones a
+  viewer may not have: an embedded or bundled face renders the same everywhere, a named one
+  silently falls back and the targets stop matching. Where no one face covers what is written,
+  merge faces by codepoint range rather than settling for a face that renders some of it —
+  and verify coverage by rendering each codepoint and comparing against `.notdef`, since a
+  missing glyph is a box, not an error. Adapt only if the domain genuinely demands it, and say
+  so in `PROVENANCE.md`.
+- ONE ANIMATION DURATION AND ONE EASING CURVE, NAMED ONCE AND DERIVED EVERYWHERE. A second
+  presentation layer reads them across its own boundary rather than writing its own numbers
+  down; a transition with a hand-picked duration is a claim that this one motion is special,
+  and it needs a comment saying why.
 
 ## TESTING
 
