@@ -53,9 +53,11 @@ const
     ## Bound length of outcome reported after an action.
   PATH_MAX* = 256
     ## Bound length of export path user may type.
-  WIDTH_PANEL* = 680.0'f32
-    ## Set width panels open at, in pixels -- wide enough that six coefficient cells and
-    ## their basis names share one line, which is what sets the floor here.
+  WIDTH_PANEL* = 440.0'f32
+    ## Set width panels open at, in pixels -- wide enough that six coefficient cells share
+    ## one line, which is what sets the floor here, and close to the browser drawer's own
+    ## 400. Opening an editor must not resize the window, so this holds whether or not one
+    ## is open, and the grid divides itself out of whatever it is given.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
   WIDTH_ITEM_LINE = 640
@@ -72,9 +74,9 @@ const
     ## grade holds exactly six, so every grade fits one line and the desktop grid matches
     ## the browser's own grade row one for one. A build of higher dimension wraps instead
     ## of overflowing the panel.
-  WIDTH_LABEL_COEFFICIENT = 40.0'f32
-    ## Reserve this much of a coefficient cell for its basis name, sized by rendering the
-    ## longest one this build writes (`𝐞₄₂₃`); the widget takes whatever the cell has left.
+  INK_LABEL = Rgba(red: 0.357, green: 0.400, blue: 0.451, alpha: 1.0)
+    ## Draw a control's own name in this, the browser's `--ink-faint`: a name is read once
+    ## and then stops mattering, while the value beside it is what keeps changing.
   WIDTH_ITEM_LABEL = 150.0'f32
     ## Set width an item row's own selectable label spans, leaving its three buttons room
     ## to share the same line.
@@ -189,6 +191,15 @@ func initWorkbench*(path_export: string): Workbench =
 
 #[ Field Layout ]#
 
+proc widthPushField() =
+  ## Size the controls that follow to whatever the line has left once their own names have
+  ## taken their column, so a field ends flush with the panel's right edge at any width.
+  ##   Fixed widths were tuned against a panel that has since changed width twice, and each
+  ##   time left some field stopping short of the edge; there is nothing here a caller
+  ##   should have to pick per field.
+  gui.widthPush(gui.contentWidth() - WIDTH_LABEL_FIELD)
+
+
 proc fieldLabel(name: cstring) =
   ## Name a control, to its left, and leave the line open for the control itself.
   ##   Dear ImGui draws a widget's own label to its *right*, which reads backwards: you
@@ -196,7 +207,7 @@ proc fieldLabel(name: cstring) =
   ##   given a hidden ImGui label (`##name`, which still identifies it) and its name is
   ##   written here first. `sameLineAt` puts every control in one column, so a short name
   ##   and a long one do not stagger their controls.
-  gui.text(name)
+  gui.textTinted(name, INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLineAt(WIDTH_LABEL_FIELD)
 
 
@@ -204,38 +215,41 @@ proc fieldLabel(name: cstring) =
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
-  ## Lay out one drag widget per basis coefficient, six to a line, each grade starting a
-  ## fresh line; report which coefficient the user changed, if any.
+  ## Lay out one drag widget per basis coefficient, each under its own basis name, six to a
+  ## line, each grade starting a fresh line; report which coefficient the user changed.
   ##   Grade comes from the library's own `grade`, so nothing here hardcodes a dimension,
   ##   and a grade never shares a line with its neighbour. In this build's 4D metric the
   ##   grades hold 1, 4, 6, 4 and 1 elements, so every one of them fits a single line.
-  ##   Cell width is divided out of the panel rather than fixed, so six fit whatever
-  ##   width the panel is dragged to -- `sameLine` places widgets unconditionally, so the
-  ##   caller has to decide where a line ends either way.
-  ##   Every cell is placed at its column's own offset rather than after whatever precedes
-  ##   it, so a one-glyph name (`𝟏`) and a four-glyph one (`𝐞₄₂₃`) still leave the drag
-  ##   widgets in a straight column.
+  ##   Name above its cell rather than beside it, matching the browser's own `.coeff-grid`.
+  ##   Beside costs every cell the width of the longest name whether or not it needs it,
+  ##   which is what forced the panel out to 680 px; above costs one line of text per grade
+  ##   and lets the panel sit at a width the rest of the UI actually wants.
+  ##   Cell width is divided out of the panel rather than fixed, so six fit whatever width
+  ##   the panel is dragged to. `groupBegin`/`groupEnd` is what makes a name and its widget
+  ##   advance `sameLine` as one item; Dear ImGui has no notion of a labelled cell.
   ##   Only one change is reported per frame, which is all a pointer can make.
   let width_cell =
     (gui.contentWidth() - float32(COEFFICIENTS_PER_ROW - 1)*SPACING_SEGMENT) /
     float32(COEFFICIENTS_PER_ROW)
-  gui.widthPush(width_cell - WIDTH_LABEL_COEFFICIENT)
+  gui.widthPush(width_cell)
   defer: gui.widthPop()
   for g in Grade.low .. Grade.high:
-    var count_placed = 0
+    var column = 0
     for b in Basis:
       if b.grade != g: continue
-      let column = count_placed mod COEFFICIENTS_PER_ROW
-      count_placed.inc
-      let offset_cell = float32(column)*(width_cell + SPACING_SEGMENT)
-      # Basis name first, then its own widget -- a cell reads "what" before "how much".
-      if column != 0: gui.sameLineAt(offset_cell)
-      gui.text(cstring(lut_basis_to_name[b]))
-      gui.sameLineAt(offset_cell + WIDTH_LABEL_COEFFICIENT)
+      if column > 0: gui.sameLine()
+      gui.groupBegin()
+      # Name recedes and the number reads: both are on screen at once, and only one of
+      #   them changes. Matches the browser, where a field's own label is `--ink-faint`.
+      gui.textTinted(
+        cstring(lut_basis_to_name[b]), INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue
+      )
       if gui.dragFloat(
         cstring("##" & lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0
       ):
         result = some(b)
+      gui.groupEnd()
+      column = (column + 1) mod COEFFICIENTS_PER_ROW
 
 
 proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int]) =
@@ -259,7 +273,7 @@ proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
   ## Lay out the label, colour and coefficient controls an open session stages.
   ##   Everything here writes into the session, never the scene: the row above previews
   ##   the change and the ghost previews the geometry, but nothing lands until save.
-  gui.widthPush(220.0)
+  widthPushField()
   fieldLabel("label")
   discard gui.inputText("##label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
   # Offer the categorical run alone: the structural slots before it belong to the drawing's
@@ -274,7 +288,7 @@ proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
   ):
     workbench.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
   gui.widthPop()
-  gui.text("Coefficients:")
+  gui.textTinted("coefficients", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLine()
   gui.helpMarker(
     if is_pending: HELP_COEFFICIENTS_PENDING else: HELP_COEFFICIENTS_EDITING
@@ -327,8 +341,23 @@ proc layoutItem(
     else: workbench.selection.selectOnly(slot.get)
   gui.textColorPop()
 
-  gui.sameLine()
-  if gui.buttonSmall(if is_open: cstring"save" else: cstring"edit"):
+  # Buttons end flush against the panel's own right edge, as the browser's row does, so
+  #   they form one column down the list instead of starting wherever each name happens to
+  #   end. Their run has to be measured before any of it is placed, which is what
+  #   `buttonSmallWidth` is for.
+  let
+    label_commit = if is_open: cstring"save" else: cstring"edit"
+    width_buttons =
+      gui.buttonSmallWidth(label_commit) +
+      (if is_open: gui.buttonSmallWidth("✕") + SPACING_SEGMENT else: 0.0'f32) +
+      (
+        if is_pending or is_open: 0.0'f32
+        else:
+          gui.buttonSmallWidth(if is_visible: cstring"hide" else: cstring"show") +
+          gui.buttonSmallWidth("remove") + 2.0'f32*SPACING_SEGMENT
+      )
+  gui.alignRight(width_buttons)
+  if gui.buttonSmall(label_commit):
     if not is_open:
       beginSession(workbench, scene, slot)
     else:
@@ -476,7 +505,7 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
   discard gui.checkbox("grid", addr workbench.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
 
-  gui.widthPush(220.0)
+  widthPushField()
   fieldLabel("scene file")
   discard gui.inputText("##scene_file", toCstring(workbench.path_scene), cint(PATH_MAX))
   gui.tooltip("File `save scene` writes to and `load scene` reads from.")
@@ -567,7 +596,7 @@ proc layoutApply*(
       workbench.index_operation = 0
   gui.tooltip("Whether to list operations reading one operand or two.")
 
-  gui.widthPush(300.0)
+  widthPushField()
 
   let index_offered = clamp(int(workbench.index_operation), 0, count_offered - 1)
   workbench.index_operation = cint(index_offered)
@@ -630,7 +659,7 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   ##   World furniture toggles moved to `layoutTopBar` -- they are flipped constantly
   ##   while orbiting, so they should not cost opening a section first.
   if not gui.header("view", is_open_first = false): return
-  gui.widthPush(260.0)
+  widthPushField()
 
   var placement = [
     cfloat(camera.azimuth), cfloat(camera.elevation), cfloat(camera.distance)
@@ -664,7 +693,7 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   gui.widthPop()
 
   gui.separatorText("export")
-  gui.widthPush(300.0)
+  widthPushField()
   fieldLabel("path")
   discard gui.inputText("##path_export", toCstring(workbench.path_export), cint(PATH_MAX))
   gui.tooltip("File `save PNG` and the `S` key both write the current frame to.")
@@ -686,9 +715,12 @@ proc layoutDiagnosticsFrameTime(workbench: var Workbench) =
   let text_now = buildChars(overlay):
     appendFixed(overlay, cursor, 1000.0/max(float(gui.framerate()), 1.0), 2)
     appendChars(overlay, cursor, " ms now")
+  # Full panel width, passed rather than left at 0: Dear ImGui reads a zero width as its
+  #   own default *item* width, which is two thirds of the window, and a graph beside two
+  #   thirds of a bar reads as one of them being broken.
   gui.plotLines(
     "##frame_time", addr workbench.milliseconds_history[0], cint(FRAMES_HISTORY),
-    cint(workbench.index_history), text_now, 0.0, highest, 0.0, 60.0,
+    cint(workbench.index_history), text_now, 0.0, highest, gui.contentWidth(), 60.0,
   )
   gui.tooltip(
     "Milliseconds per drawn frame, oldest at the left and most recent at the right. " &
@@ -729,9 +761,9 @@ proc layoutDiagnosticsMemory(workbench: Workbench) =
       appendChars(text, cursor, " / ")
       appendFixed(text, cursor, mb_capacity, 0)
       appendChars(text, cursor, " MB")
-    gui.text("permanent arena")
+    gui.textTinted("permanent arena", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
     gui.progressBar(
-      cfloat(mb_used / max(mb_capacity, 1.0)), overlay_text, 380.0, 0.0,
+      cfloat(mb_used / max(mb_capacity, 1.0)), overlay_text, gui.contentWidth(), 0.0,
       0.298, 0.482, 0.929, 0.15, 0.15, 0.18,
     )
     gui.tooltip(
@@ -751,12 +783,13 @@ proc layoutDiagnosticsMemory(workbench: Workbench) =
       appendChars(text, cursor, " KB / ")
       appendFixed(text, cursor, mb_capacity, 0)
       appendChars(text, cursor, " MB")
-    gui.text("frame arena")
+    gui.textTinted("frame arena", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
     let fraction =
       float(workbench.bytes_arena_frame_peak) /
       max(float(workbench.bytes_arena_frame_capacity), 1.0)
     gui.progressBar(
-      cfloat(fraction), overlay_text, 380.0, 0.0, 0.561, 0.737, 0.353, 0.15, 0.15, 0.18,
+      cfloat(fraction), overlay_text, gui.contentWidth(), 0.0,
+      0.561, 0.737, 0.353, 0.15, 0.15, 0.18,
     )
     gui.tooltip(
       "Reset after every PNG or GIF frame it backs, so it reads empty almost any time " &
@@ -857,7 +890,7 @@ proc layoutWorkbench*(
   if gui.windowBegin("RGA workbench"):
     # Coloured words match the rubber-band drawn while dragging, so the line on screen
     #   names its own outcome before the button is even released.
-    gui.text("Drag one object onto another to derive a new one:")
+    gui.textWrapped("Drag one object onto another to derive a new one:")
     let (join, meet, project) = (Ink.Jade.colour, Ink.Magenta.colour, Ink.Olive.colour)
     gui.textTinted("  join", join.red, join.green, join.blue)
     gui.sameLine()
@@ -870,7 +903,9 @@ proc layoutWorkbench*(
     gui.textTinted("project", project.red, project.green, project.blue)
     gui.sameLine()
     gui.text("middle click.")
-    gui.text("Drag empty space instead to move the camera: left orbits, right pans, wheel dollies.")
+    gui.textWrapped(
+      "Drag empty space instead to move the camera: left orbits, right pans, wheel dollies."
+    )
 
     # Scene-content edits only -- camera moves are not on this timeline; see
     #   `history.nim`. Each button greys out where its own side of the timeline is empty,
