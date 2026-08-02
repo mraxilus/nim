@@ -21,7 +21,7 @@
 ##   that does not exist in a browser, or describe implementation details specific to the
 ##   native build's own allocator and draw loop with no browser/JS-GC equivalent worth
 ##   fabricating. What a *coefficient* should read as is this project's own rule rather
-##   than C's, so `nimFormatCoefficient` below answers it from `format.formatMagnitude`
+##   than C's, so `nimFormatNumber` below answers it from `format.formatMagnitude`
 ##   instead of leaving it to a `toFixed` on the JS side; a browser-appropriate
 ##   diagnostics substitute (frame time via
 ##   `requestAnimationFrame` deltas, JS heap size where available) stands in for the
@@ -251,14 +251,17 @@ proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
   for b in Basis: result[ord(b)] = geometry[b]
 
 
-proc nimFormatCoefficient(value: float): cstring {.exportc.} =
-  ## Format one coefficient for a number field, to the same four significant digits the
-  ## desktop's own drag widget shows: 3.5 reads `3.5`, not `3.5000`.
+proc nimFormatNumber(value: float): cstring {.exportc.} =
+  ## Format one number for a field, to the same four significant digits the desktop's own
+  ## drag widget shows: 3.5 reads `3.5`, not `3.5000`.
+  ##   Every editable number goes through here -- coefficients, and the camera's own angles,
+  ##   distance and target -- because they are all read and typed the same way, and the
+  ##   desktop draws every one of them with the same `%.4g` widget.
   ##   Exported rather than left to a `toFixed` on the JS side, because how many digits a
-  ##   coefficient is worth is a decision about this project's numbers, not about the DOM.
+  ##   number is worth is a decision about this project's numbers, not about the DOM.
   ##   `format.formatMagnitude` rather than `format.appendMagnitude`, whose `snprintf`
   ##   needs a C runtime this backend does not have; the suite holds the two to the same
-  ##   answer, so a browser cell and a desktop one read a coefficient identically.
+  ##   answer, so a browser field and a desktop one read a number identically.
   cstring(formatMagnitude(value))
 
 
