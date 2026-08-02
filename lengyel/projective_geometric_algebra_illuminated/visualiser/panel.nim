@@ -70,10 +70,11 @@ const
   WIDTH_SHAPE_WORD = 32
     ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
   COEFFICIENTS_PER_ROW = 6
-    ## Lay a grade's own elements out six to a line. In this build's 4D metric the largest
+    ## Wrap a grade's own elements after this many. In this build's 4D metric the largest
     ## grade holds exactly six, so every grade fits one line and the desktop grid matches
     ## the browser's own grade row one for one. A build of higher dimension wraps instead
-    ## of overflowing the panel.
+    ## of overflowing the panel. A wrap point, not a divisor: a line's cells share that
+    ## line between however many of them are on it.
   INK_LABEL = Rgba(red: 0.357, green: 0.400, blue: 0.451, alpha: 1.0)
     ## Draw a control's own name in this, the browser's `--ink-faint`: a name is read once
     ## and then stops mattering, while the value beside it is what keeps changing.
@@ -215,8 +216,8 @@ proc fieldLabel(name: cstring) =
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
-  ## Lay out one drag widget per basis coefficient, each under its own basis name, six to a
-  ## line, each grade starting a fresh line; report which coefficient the user changed.
+  ## Lay out one drag widget per basis coefficient, each under its own basis name, at most
+  ## six to a line, each grade starting a fresh line; report which coefficient changed.
   ##   Grade comes from the library's own `grade`, so nothing here hardcodes a dimension,
   ##   and a grade never shares a line with its neighbour. In this build's 4D metric the
   ##   grades hold 1, 4, 6, 4 and 1 elements, so every one of them fits a single line.
@@ -224,21 +225,31 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
   ##   Beside costs every cell the width of the longest name whether or not it needs it,
   ##   which is what forced the panel out to 680 px; above costs one line of text per grade
   ##   and lets the panel sit at a width the rest of the UI actually wants.
-  ##   Cell width is divided out of the panel rather than fixed, so six fit whatever width
-  ##   the panel is dragged to. `groupBegin`/`groupEnd` is what makes a name and its widget
-  ##   advance `sameLine` as one item; Dear ImGui has no notion of a labelled cell.
+  ##   Cells divide the line they are on rather than a fixed sixth of it, so a grade fills
+  ##   its own row -- the scalar's lone cell spans the panel, grade 1's four take a quarter
+  ##   each. This is the browser's `flex: 1 1 56px` written out: six per line is the wrap
+  ##   point, not the divisor.
+  ##   `groupBegin`/`groupEnd` is what makes a name and its widget advance `sameLine` as one
+  ##   item; Dear ImGui has no notion of a labelled cell.
   ##   Only one change is reported per frame, which is all a pointer can make.
-  let width_cell =
-    (gui.contentWidth() - float32(COEFFICIENTS_PER_ROW - 1)*SPACING_SEGMENT) /
-    float32(COEFFICIENTS_PER_ROW)
-  gui.widthPush(width_cell)
-  defer: gui.widthPop()
+  # Read once, before anything is placed: `contentWidth` reports what is left on the
+  #   current line, which is no longer the whole line once a cell sits on it.
+  let width_content = gui.contentWidth()
   for g in Grade.low .. Grade.high:
-    var column = 0
+    var count_grade = 0
+    for b in Basis:
+      if b.grade == g: inc count_grade
+    var placed = 0
     for b in Basis:
       if b.grade != g: continue
+      let
+        column = placed mod COEFFICIENTS_PER_ROW
+        count_line = min(COEFFICIENTS_PER_ROW, count_grade - (placed - column))
+        width_cell =
+          (width_content - float32(count_line - 1)*SPACING_SEGMENT)/float32(count_line)
       if column > 0: gui.sameLine()
       gui.groupBegin()
+      gui.widthPush(width_cell)
       # Name recedes and the number reads: both are on screen at once, and only one of
       #   them changes. Matches the browser, where a field's own label is `--ink-faint`.
       gui.textTinted(
@@ -248,8 +259,9 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
         cstring("##" & lut_basis_to_name[b]), addr staged[b], SPEED_DRAG, 0.0, 0.0
       ):
         result = some(b)
+      gui.widthPop()
       gui.groupEnd()
-      column = (column + 1) mod COEFFICIENTS_PER_ROW
+      inc placed
 
 
 proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int]) =
