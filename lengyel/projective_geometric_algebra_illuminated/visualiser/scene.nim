@@ -583,8 +583,12 @@ when not defined(js):
   const
     MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
       ## First four bytes of a `.rgascene` file, the format table above documents.
-    VERSION_SCENE = 1'u8
+    VERSION_SCENE = 2'u8
       ## Format version this build writes and the only one it reads back.
+      ##   Bumped from 1 when `Ink` gained a reserved `Invalid` slot and lost three
+      ##   categorical ones: an item's ink is stored as that enum's own ordinal, so a
+      ##   version 1 file's bytes name different colours here. Refusing it outright is
+      ##   the honest outcome -- silently reading `Cerise` as `Rose` would be worse.
 
 
   proc saveScene*(scene: Scene; path: string): string =

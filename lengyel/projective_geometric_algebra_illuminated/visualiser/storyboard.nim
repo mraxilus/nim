@@ -50,13 +50,13 @@ const STEPS*: array[11, Step] = [
   Step(stem: "02_join_plane", label: "G = L ^ c",
     operation: Operation.Wedge, index_first: 5, index_second: 2, ink: Ink.Cobalt),
   Step(stem: "03_meet_line", label: "ground v G",
-    operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Violet),
+    operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Copper),
   Step(stem: "04_meet_point", label: "L v ground",
-    operation: Operation.WedgeAnti, index_first: 5, index_second: 4, ink: Ink.Magenta),
+    operation: Operation.WedgeAnti, index_first: 5, index_second: 4, ink: Ink.Rose),
   Step(stem: "05_support", label: "sup(L)",
     operation: Operation.Support, index_first: 5, index_second: 0, ink: Ink.Rose),
   Step(stem: "06_attitude", label: "att(L)",
-    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cerise),
+    operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cobalt),
   Step(stem: "07_expand_weight", label: "a ^ L*  perp plane",
     operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Olive),
   # `a` (and `b`, and `c`) already lie on `G` by construction -- `G` is joined from a
@@ -65,7 +65,7 @@ const STEPS*: array[11, Step] = [
   #   specifically to sit off `G` (see the module doc comment's own table), so its
   #   projection actually lands somewhere else, visibly.
   Step(stem: "08_project", label: "o onto G",
-    operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Magenta),
+    operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Rose),
   # Attitude always drops one grade and always lands at horizon (see
   #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
   #   point at horizon above (06); applied to a plane it gives a line at horizon; applied
@@ -75,7 +75,7 @@ const STEPS*: array[11, Step] = [
   Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
     operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Jade),
   Step(stem: "10_wedge_volume", label: "a ^ ground",
-    operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Violet),
+    operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Copper),
   Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ^ ground)",
     operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Cobalt),
 ] ## Build a line from two points, a plane from that line, then meet, measure and

@@ -346,7 +346,7 @@ proc assembleMeshes(
 
 const lut_drag_to_ink: array[DragOperation, Ink] = [
   DragOperation.Join: Ink.Jade,
-  DragOperation.Meet: Ink.Magenta,
+  DragOperation.Meet: Ink.Rose,
   DragOperation.Project: Ink.Olive,
 ] ## Match the panel's own drag legend, so the rubber-band names its outcome as it's drawn.
 

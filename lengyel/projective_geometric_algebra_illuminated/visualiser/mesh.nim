@@ -196,6 +196,14 @@ type
     Outline, ## Selection outline drawn around the one object currently highlighted --
       ## never cycled to automatically, only drawn where a caller names a specific
       ## slot as highlighted (see `renderer.drawOutline`).
+    Invalid, ## Reserved for an object that is wrong rather than merely coloured -- a
+      ## magenta no object may be assigned, so seeing it always means something is
+      ## invalid. Structural for exactly that reason: a status colour a caller could
+      ## also pick for an ordinary object would say nothing.
+      ##   Nothing draws in it yet; it is reserved here so the palette below can be
+      ## held clear of it. Whatever comes to use it must not lean on the colour alone:
+      ## magenta reads as blue under deuteranopia, which is where every assignable hue
+      ## is furthest from it, so an invalid object needs a word or a marker too.
     ## Categorical slots, spent by caller on telling one object from another.
     ##   Named by hue rather than by role, as caller alone knows what objects mean.
     ##   Grade is already legible from shape drawn, so colour is free to carry identity.
@@ -203,16 +211,17 @@ type
     ##   apart on the colour wheel, so two objects added one after another -- the most
     ##   likely pair to end up compared or drawn near each other -- read as different
     ##   colours even under colour-vision deficiency, not just to typical vision.
-    ##   Eight slots, not sixteen: a prior round widened this set to sixteen so a
-    ##   longer run of objects would stay individually distinct before `inkCycled`
-    ##   wraps, but packing that many hues into the narrow band that stays clear of
-    ##   all three axis colours left every slot reading as a shade of teal, blue,
-    ##   violet or magenta -- more colours, but not more *distinguishable* ones.
-    ##   Cut back to eight so every one of the 28 possible pairings, not just the
-    ##   ones `inkCycled` places back to back, clears a real separation floor -- see
-    ##   `lut_ink_to_rgba`'s own comment for the exact floors and the trade this
-    ##   made to hit them.
-    Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise,
+    ##   Five slots, not sixteen and no longer eight: a prior round widened this set
+    ##   to sixteen so a longer run of objects would stay individually distinct before
+    ##   `inkCycled` wraps, but packing that many hues into the narrow band that stays
+    ##   clear of all three axis colours left every slot reading as a shade of teal,
+    ##   blue, violet or magenta -- more colours, but not more *distinguishable* ones.
+    ##   Reserving magenta for `Invalid` then cost three more: the whole pink-purple
+    ##   arc has to stay clear of a status colour, and the axis hues already flank it
+    ##   on both sides, so what is left is one arc of warm hues and one of cool. Adding
+    ##   hues back inside that remainder was measured, not guessed, and reproduced the
+    ##   sixteen-slot failure exactly -- see `lut_ink_to_rgba`'s own comment.
+    Rose, Copper, Olive, Jade, Cobalt,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
     Triangle, Line, Point
@@ -279,41 +288,40 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+  Ink.Invalid: Rgba(red: 0.612, green: 0.000, blue: 0.722, alpha: 1.0),
   Ink.Rose: Rgba(red: 0.690, green: 0.090, blue: 0.373, alpha: 1.0),
   Ink.Copper: Rgba(red: 0.812, green: 0.451, blue: 0.275, alpha: 1.0),
   Ink.Olive: Rgba(red: 0.341, green: 0.431, blue: 0.000, alpha: 1.0),
   Ink.Jade: Rgba(red: 0.133, green: 0.655, blue: 0.478, alpha: 1.0),
-  Ink.Cobalt: Rgba(red: 0.027, green: 0.424, blue: 0.573, alpha: 1.0),
-  Ink.Violet: Rgba(red: 0.396, green: 0.082, blue: 0.965, alpha: 1.0),
-  Ink.Magenta: Rgba(red: 0.612, green: 0.000, blue: 0.722, alpha: 1.0),
-  Ink.Cerise: Rgba(red: 0.949, green: 0.031, blue: 0.765, alpha: 1.0),
-] ## Map palette slot to colour: eight hues, cut back down from sixteen (see the
-  ## enum's own comment for why more slots made the palette read as less distinct,
-  ## not more). Re-derived from scratch, not just trimmed to eight of the sixteen --
-  ## the sixteen were only ever separated pairwise *adjacent* in declaration order,
-  ## so keeping any eight of them would carry the same "only next-door pairs are
-  ## checked" weakness this round set out to fix.
+  Ink.Cobalt: Rgba(red: 0.357, green: 0.565, blue: 0.780, alpha: 1.0),
+] ## Map palette slot to colour: five assignable hues, plus the magenta `Invalid` is
+  ## held out of that run entirely (see the enum's own comment for why the run shrank).
   ##   Screened through the dataviz skill's own validator (OKLCH lightness/chroma
-  ## bounds, CVD ΔE, normal-vision ΔE, `--pairs all`) with axis-safety loosened from
-  ## the sixteen-hue round's full separation floor to a smaller hue-distance-plus-ΔE
-  ## gate (>= 20 degrees of hue and a lower ΔE floor from each of `AxisX`/`AxisY`/
-  ## `AxisZ`): thin axis lines and filled categorical objects were never going to be
-  ## mistaken for each other at the sixteen-hue round's own strictness, and holding
-  ## that floor is what had squeezed every categorical hue into one narrow arc of the
-  ## wheel in the first place. Freed from that, all 28 possible pairings among the
-  ## eight -- not just the ones `inkCycled` places back to back -- clear the
-  ## adjacent-pair-grade floor (CVD ΔE >= 8, normal-vision ΔE >= 15) except one, at
-  ## CVD ΔE 6.6 (`Cobalt`/`Magenta`), inside the validator's own 6-8 legal-with-
-  ## secondary-encoding band -- and every categorical object here already carries
-  ## secondary encoding through its own shape and position, same as the panel's own
-  ## legend. Worst normal-vision pair is 15.6, just clear of the 15.0 hard floor.
-  ##   Also required >= 20 degrees of hue from every other slot, not just enough ΔE:
-  ## two hues barely 2-9 degrees apart can still clear a ΔE floor on lightness or
-  ## chroma alone while still reading, at a glance, as "two shades of the same
-  ## colour" -- exactly the complaint that sent this palette back to eight in the
-  ## first place. The eight that resulted spend one hue each on rose, copper, olive,
-  ## jade, blue, violet, magenta and pink, spread across most of the wheel apart from
-  ## the three axis-adjacent arcs.
+  ## bounds, CVD deltaE, normal-vision deltaE, `--pairs all`) rather than by eye, with
+  ## axis-safety as a hue-distance-plus-deltaE gate (>= 20 degrees of hue and a lower
+  ## deltaE floor from each of `AxisX`/`AxisY`/`AxisZ`) rather than the full categorical
+  ## floor: thin axis lines and filled objects were never going to be mistaken for each
+  ## other, and holding that floor is what had squeezed every hue into one narrow arc.
+  ##   All ten pairings among the five clear the adjacent-pair floor (normal-vision
+  ## deltaE >= 15) except `Jade`/`Copper` at CVD deltaE 7.6, inside the validator's own
+  ## 6-8 legal-with-secondary-encoding band -- every object here already carries its own
+  ## shape and position as secondary encoding. `Rose` sits at contrast 2.78 against the
+  ## backdrop, under the 3:1 the validator wants, which its own always-present row label
+  ## in both panels is the required relief for.
+  ##
+  ## **Every assignable hue is also held clear of `Invalid`**, which is the point of the
+  ## run being this short. Worst separation from it is `Rose` at CVD deltaE 15.2, then
+  ## `Cobalt` at 14.4; the rest are 23 or better.
+  ##   `Cobalt` is re-derived rather than kept: at its old value it sat at CVD deltaE 6.6
+  ## from magenta -- fine when magenta was just another categorical peer, and the reason
+  ## the pair was documented as this palette's one exception, but not fine once magenta
+  ## means "this object is wrong". Blue and magenta converge under deuteranopia even
+  ## though 88 degrees of hue separate them, so hue distance alone would have missed it;
+  ## lightening `Cobalt` and pushing it bluer is what opens the pair back up.
+  ##   Do not fill the remaining arc back up to eight. That was tried and measured: a
+  ## seven-hue set spread across what is left put `Olive` and a new yellow-green at CVD
+  ## deltaE 0.4, and two blues at normal-vision deltaE 5.6. There is only so much wheel
+  ## outside the axis arcs and the reserved one, and five is what fits it honestly.
 
 
 const COUNT_INK* = ord(Ink.high) + 1
@@ -332,10 +340,10 @@ const COUNT_INK_CATEGORICAL* = ord(Ink.high) - ord(INK_CATEGORICAL_FIRST) + 1
   ##   Callers walk the run as one contiguous block, so `Ink`'s own declaration order is
   ##   load-bearing here, not just cosmetic: every categorical slot must follow every
   ##   structural one. The `static` assertion below is what enforces it -- a structural
-  ##   slot appended after `Cerise` changes this count and fails the build.
+  ##   slot appended after `Cobalt` changes this count and fails the build.
 
 static:
-  doAssert COUNT_INK_CATEGORICAL == 8,
+  doAssert COUNT_INK_CATEGORICAL == 5,
     "Ink's categorical slots must stay one contiguous run ending at Ink.high; a slot " &
     "added or removed after Ink.Rose changes what a colour picker offers."
 

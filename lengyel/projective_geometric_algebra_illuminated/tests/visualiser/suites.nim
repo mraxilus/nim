@@ -323,7 +323,7 @@ suite "Mesh":
     for line in LINES:
       let attitude = ⊖ line
       MESHES.clearMeshes
-      discard MESHES.addObject(attitude, Ink.Cerise.colour, SCALE_TEST)
+      discard MESHES.addObject(attitude, Ink.Cobalt.colour, SCALE_TEST)
       let star = MESHES[Primitive.Point].vertices[0].toPosition
 
       MESHES.clearMeshes
@@ -369,7 +369,7 @@ suite "Mesh":
     for line in LINES:
       MESHES.clearMeshes
       let attitude = ⊖ line
-      check MESHES.addObject(attitude, Ink.Cerise.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES.addObject(attitude, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
       check MESHES[Primitive.Point].count_vertices == 1
       let
         heading = directionHorizon(attitude)
@@ -493,7 +493,7 @@ suite "Mesh":
     # A colour picker offers `COUNT_INK_CATEGORICAL` entries starting at
     #   `lut_ink_to_name[INK_CATEGORICAL_FIRST]`, which is only correct while every
     #   categorical slot follows every structural one, with no gaps.
-    check COUNT_INK_CATEGORICAL == 8
+    check COUNT_INK_CATEGORICAL == 5
     check inkCategorical(0) == INK_CATEGORICAL_FIRST
     check inkCategorical(COUNT_INK_CATEGORICAL - 1) == Ink.high
     for index in 0 ..< COUNT_INK_CATEGORICAL:
@@ -503,11 +503,13 @@ suite "Mesh":
   test "a colour picker offers every categorical slot and no structural one":
     var offered: seq[string]
     for index in 0 ..< COUNT_INK_CATEGORICAL: offered.add($inkCategorical(index))
-    check offered == @["Rose", "Copper", "Olive", "Jade", "Cobalt", "Violet",
-                       "Magenta", "Cerise"]
+    check offered == @["Rose", "Copper", "Olive", "Jade", "Cobalt"]
+    # `Invalid` is structural precisely so it can never be offered: a status colour a
+    #   caller could also pick for an ordinary object would say nothing.
     for structural in [Ink.Backdrop, Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid,
-                       Ink.Guide, Ink.Outline]:
+                       Ink.Guide, Ink.Outline, Ink.Invalid]:
       check categoricalIndex(structural) < 0
+    check $Ink.Invalid notin offered
 
 
   test "inkCycled stays inside the run a picker offers, and wraps within it":
@@ -761,7 +763,7 @@ suite "Scene":
     discard original.addItem(POINTS[1], "bb", Ink.Jade)
     let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Olive)
     original.removeItem(slot_doomed) # leaves a hole a fresh load must not reproduce
-    let slot_last = original.addItem(POINTS[3], "d", Ink.Violet)
+    let slot_last = original.addItem(POINTS[3], "d", Ink.Cobalt)
     original.isVisibleAt(slot_last) = false
 
     let path = getTempDir() / "visualiser_suite_scene.rgascene"
@@ -787,7 +789,7 @@ suite "Scene":
 
     check loaded[2].geometry =~ POINTS[3]
     check $toCstring(loaded[2].label) == "d"
-    check loaded[2].ink == Ink.Violet
+    check loaded[2].ink == Ink.Cobalt
     check not loaded[2].isVisible
 
 
@@ -819,10 +821,24 @@ suite "Scene":
     var scene = initScene()
     discard scene.addItem(POINTS[0], "keep", Ink.Rose)
     let path = getTempDir() / "visualiser_suite_scene_wrongbasis.rgascene"
-    writeFile(path, "RGAS" & char(1) & char(99)) # no build here carries 99 basis terms
+    writeFile(path, "RGAS" & char(2) & char(99)) # no build here carries 99 basis terms
     defer: removeFile(path)
 
     check loadScene(scene, path).contains("different PGA dimension")
+    check scene.len == 1
+
+
+  test "a scene file from before the palette changed is refused, not misread":
+    # An item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered
+    #   that enum -- a version 1 file's bytes name different colours now. Refusing it is
+    #   the honest outcome; reading it back in the wrong colours silently is not.
+    var scene = initScene()
+    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+    let path = getTempDir() / "visualiser_suite_scene_v1.rgascene"
+    writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1))
+    defer: removeFile(path)
+
+    check loadScene(scene, path).contains("version this build cannot read")
     check scene.len == 1
 
 
@@ -844,7 +860,7 @@ suite "Scene":
       count_bytes = newString(4)
     copyMem(addr count_bytes[0], addr count, 4)
     let path = getTempDir() / "visualiser_suite_scene_toobig.rgascene"
-    writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1) & count_bytes)
+    writeFile(path, "RGAS" & char(2) & char(ord(Basis.high) + 1) & count_bytes)
     defer: removeFile(path)
 
     check loadScene(scene, path).contains("more than")

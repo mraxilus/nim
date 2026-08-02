@@ -769,7 +769,7 @@ proc nimDragOperationToOperation(drag_ordinal: cint): cint {.exportc.} =
 
 const lut_drag_to_ink = [
   DragOperation.Join: Ink.Jade,
-  DragOperation.Meet: Ink.Magenta,
+  DragOperation.Meet: Ink.Rose,
   DragOperation.Project: Ink.Olive,
 ] ## Mirror `visualiser.lut_drag_to_ink` exactly, so the browser's own rubber-band and
   ## tap-then-pick menu tint each operation the same colour the desktop build's own
