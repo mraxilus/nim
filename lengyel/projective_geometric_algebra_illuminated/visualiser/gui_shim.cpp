@@ -141,9 +141,18 @@ void guiTextTinted(const char* text, float red, float green, float blue) {
   ImGui::PopStyleColor();
 }
 
+// Section headers carry the browser's own weight rather than Dear ImGui's default, which
+// is a saturated blue bar per section -- five of them stacked read as the loudest thing in
+// a panel whose job is to sit over a 3D scene. Tones are the browser's `--surface-raised`
+// and `--border`, so a header is legible as a header and no louder than that.
 bool guiHeader(const char* label, bool is_open_first) {
-  return ImGui::CollapsingHeader(
+  ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.106f, 0.129f, 0.169f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.165f, 0.196f, 0.239f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.204f, 0.243f, 0.298f, 1.0f));
+  const bool is_open = ImGui::CollapsingHeader(
       label, is_open_first ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+  ImGui::PopStyleColor(3);
+  return is_open;
 }
 
 bool guiButton(const char* label) { return ImGui::Button(label); }
@@ -222,6 +231,26 @@ void guiSameLine() { ImGui::SameLine(); }
 // lines up under one another regardless of how long each one's own name is. Dear ImGui
 // draws a widget's label to its right; this is what lets a caller put it on the left.
 void guiSameLineAt(float offset) { ImGui::SameLine(offset); }
+
+// Treat everything between the two as one item, so a name stacked over its own control
+// still advances `guiSameLine` by the width of the pair. Dear ImGui lays widgets out one
+// per line unless told otherwise, and has no notion of a labelled cell.
+void guiGroupBegin() { ImGui::BeginGroup(); }
+
+void guiGroupEnd() { ImGui::EndGroup(); }
+
+// Width `guiButtonSmall` would draw this label at, for a caller lining a run of them up
+// against the right edge rather than letting whatever precedes them decide where they sit.
+float guiButtonSmallWidth(const char* label) {
+  return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+}
+
+// Continue the current line with `width` of it reserved against the right edge, so a run
+// of controls ends flush there whatever sits to its left.
+void guiAlignRight(float width) {
+  ImGui::SameLine(0.0f, 0.0f);
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - width);
+}
 
 void guiIdPush(int id) { ImGui::PushID(id); }
 

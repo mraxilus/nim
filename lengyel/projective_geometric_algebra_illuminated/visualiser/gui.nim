@@ -114,6 +114,16 @@ proc sameLine*() {.importc: "guiSameLine".}
 proc sameLineAt*(offset: cfloat) {.importc: "guiSameLineAt".}
   ## Continue the current line at a fixed distance from its start, so a column of controls
   ## lines up whatever the length of each one's own name.
+proc groupBegin*() {.importc: "guiGroupBegin".}
+  ## Start treating what follows as one item, so a name stacked over its own control still
+  ## advances `sameLine` by the width of the pair.
+proc groupEnd*() {.importc: "guiGroupEnd".}
+proc buttonSmallWidth*(label: cstring): cfloat {.importc: "guiButtonSmallWidth".}
+  ## Report the width `buttonSmall` would draw this label at, for a caller that has to know
+  ## before it places anything.
+proc alignRight*(width: cfloat) {.importc: "guiAlignRight".}
+  ## Continue the current line with `width` reserved against the right edge, so a run of
+  ## controls ends flush there whatever sits to its left.
 proc idPush*(id: cint) {.importc: "guiIdPush".}
 proc idPop*() {.importc: "guiIdPop".}
 proc contentWidth*(): cfloat {.importc: "guiContentWidth".}
