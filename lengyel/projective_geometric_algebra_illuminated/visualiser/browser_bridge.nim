@@ -536,16 +536,19 @@ proc nimOverlayMetrics(): seq[float32] {.exportc.} =
 
 proc nimCameraOrbit(turn, rise: cfloat) {.exportc.} =
   ## Rotate camera about its own target by turn (azimuth) and rise (elevation), radians.
+  g_tween_camera.abandon()
   camera.orbit(g_camera, float(turn), float(rise))
 
 
 proc nimCameraDolly(factor: cfloat) {.exportc.} =
   ## Scale camera's own distance from target by factor.
+  g_tween_camera.abandon()
   camera.dolly(g_camera, float(factor))
 
 
 proc nimCameraPan(across, up: cfloat) {.exportc.} =
   ## Slide camera's own target sideways and vertically in its own view plane.
+  g_tween_camera.abandon()
   camera.pan(g_camera, float(across), float(up))
 
 
@@ -562,19 +565,23 @@ proc nimCameraTarget(): seq[float32] {.exportc.} =
   @[cfloat(g_camera.target.x), cfloat(g_camera.target.y), cfloat(g_camera.target.z)]
 
 
-proc nimSetCameraAzimuth(v: cfloat) {.exportc.} = g_camera.azimuth = float(v)
+proc nimSetCameraAzimuth(v: cfloat) {.exportc.} =
   ## Rewrite angle about world up, in radians.
+  g_tween_camera.abandon()
+  g_camera.azimuth = float(v)
 
 
 proc nimSetCameraElevation(v: cfloat) {.exportc.} =
   ## Rewrite angle above the horizontal plane, in radians, clamped to the same bound
   ## `panel.layoutView`'s own drag widget uses.
+  g_tween_camera.abandon()
   g_camera.elevation = clamp(float(v), -ELEVATION_LIMIT, ELEVATION_LIMIT)
 
 
 proc nimSetCameraDistance(v: cfloat) {.exportc.} =
   ## Rewrite distance from target, in world units, clamped to the same bound
   ## `panel.layoutView`'s own drag widget uses.
+  g_tween_camera.abandon()
   g_camera.distance = clamp(float(v), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
 
 
@@ -584,6 +591,7 @@ proc nimSetCameraFov(v: cfloat) {.exportc.} = g_camera.degrees_field_of_view = f
 
 proc nimSetCameraTarget(x, y, z: cfloat) {.exportc.} =
   ## Rewrite point camera orbits around.
+  g_tween_camera.abandon()
   g_camera.target = Position(x: float(x), y: float(y), z: float(z))
 
 
@@ -936,9 +944,9 @@ proc nimBuildFrame(
     if g_ghost.isSome: geometry = g_ghost
     elif g_selection.len == 1 and g_scene.isAlive(g_selection.at(0)):
       geometry = some(g_scene.geometryAt(g_selection.at(0)))
-    if geometry.isSome:
-      let aim = aimFor(geometry.get, scale)
-      if aim.isSome: g_tween_camera.aimAt(g_camera, aim.get, float(now), ANIMATION_SECONDS)
+    let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
+    if aim.isSome: g_tween_camera.aimAt(g_camera, aim.get, float(now), ANIMATION_SECONDS)
+    else: g_tween_camera.release()
 
   if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture)
   if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture)

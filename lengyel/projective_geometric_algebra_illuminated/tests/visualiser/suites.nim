@@ -1037,7 +1037,10 @@ suite "Camera Aim":
 
     tween.advance(camera, DURATION, easeOutCubic)
     check camera.target.x =~ goal.target.x
-    check tween.goal.isNone # Arrived, so nothing left to carry.
+    # Arrived, so nothing left to carry -- but the goal is kept, not dropped, so a
+    #   caller still offering it every frame is recognised rather than re-armed.
+    check tween.is_arrived
+    check tween.goal.isSome
 
 
   test "retargeting mid-flight continues from where the camera reached":
@@ -1088,7 +1091,72 @@ suite "Camera Aim":
     tween.settle(camera)
     check camera.azimuth =~ 1.0
     check camera.elevation =~ 0.5
+    check tween.is_arrived
+
+
+  test "an arrived tween stops writing, so the user's own camera move survives":
+    # The bug this pins: the aim rule offers the selected object's goal every frame.
+    #   While the tween cleared its goal on arrival, that standing offer re-armed the
+    #   ease each frame from wherever the user had just panned to, and dragged the camera
+    #   straight back -- panning was dead for as long as anything stayed selected.
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
+    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.advance(camera, 0.35, easeOutCubic)
+    check tween.is_arrived
+    check camera.target =~ goal.target
+
+    # The user pans, and the same goal keeps being offered every frame after.
+    camera.pan(3.0, 2.0)
+    let target_panned = camera.target
+    for frame in 1 .. 10:
+      tween.aimAt(camera, goal, 0.35 + 0.016*float(frame), 0.35)
+      tween.advance(camera, 0.35 + 0.016*float(frame), easeOutCubic)
+    check camera.target =~ target_panned
+
+
+  test "abandon hands the camera to the user without re-arming the standing offer":
+    # `release` here would be actively wrong, and was: it clears the goal, so the aim
+    #   rule's own standing offer is seen as new on the very next frame and takes the
+    #   camera straight back. Keeping the goal and marking it done is what makes that
+    #   offer read as already answered.
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
+    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.advance(camera, 0.10, easeOutCubic) # Mid-flight, nowhere near arrival.
+    check not tween.is_arrived
+
+    camera.pan(3.0, 2.0)
+    tween.abandon()
+    let target_panned = camera.target
+    for frame in 1 .. 40:
+      let now = 0.10 + 0.016*float(frame)
+      tween.aimAt(camera, goal, now, 0.35)
+      tween.advance(camera, now, easeOutCubic)
+    check camera.target =~ target_panned
+
+
+  test "release lets the same goal aim the camera again":
+    # Withdrawing the offer is what makes picking the same object twice work: the second
+    #   pick must aim afresh, not be recognised as one already delivered.
+    var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
+    var tween: CameraTween
+    let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
+    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.advance(camera, 0.35, easeOutCubic)
+    camera.pan(3.0, 2.0)
+    let target_panned = camera.target
+
+    tween.release()
     check tween.goal.isNone
+    tween.aimAt(camera, goal, 1.0, 0.35)
+    check tween.goal.isSome
+    check not tween.is_arrived
+    tween.advance(camera, 1.0 + 0.35, easeOutCubic)
+    check camera.target =~ goal.target
+    check not (camera.target =~ target_panned)
 
 
 

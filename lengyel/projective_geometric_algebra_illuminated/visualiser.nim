@@ -333,9 +333,9 @@ proc assembleMeshes(
       geometry = some(ghost)
     elif workbench.selection.len == 1 and scene.isAlive(workbench.selection.at(0)):
       geometry = some(scene[workbench.selection.at(0)].geometry)
-    if geometry.isSome:
-      let aim = aimFor(geometry.get, scale)
-      if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
+    let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
+    if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
+    else: workbench.tween_camera.release()
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -552,14 +552,17 @@ proc handleEvent(
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
   of uint32(EventKind.MouseWheel):
     if gui.wantsMouse(): return
+    workbench.tween_camera.abandon()
     camera.dolly(pow(FACTOR_DOLLY, -float(event.wheel.y)))
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))
     if is_dragging_orbit:
+      workbench.tween_camera.abandon()
       camera.orbit(
         -SPEED_ORBIT*float(event.motion.xrel), SPEED_ORBIT*float(event.motion.yrel)
       )
     if is_dragging_pan:
+      workbench.tween_camera.abandon()
       camera.pan(-SPEED_PAN*float(event.motion.xrel), SPEED_PAN*float(event.motion.yrel))
   else: discard
 

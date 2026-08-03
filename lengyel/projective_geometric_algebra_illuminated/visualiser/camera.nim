@@ -263,7 +263,14 @@ type
     ##   Retargeting captures wherever the tween had reached as its new start (see
     ##   `aimAt`), which is what lets a goal that moves every frame -- the staged geometry
     ##   of an open edit session, say -- read as one smooth chase instead of restarting.
-    goal*: Option[CameraAim] ## Where the camera is heading. None while nothing is aimed.
+    goal*: Option[CameraAim] ## Where the camera is heading, or has already arrived at.
+      ## None only while nothing is aimed at all.
+    is_arrived*: bool ## Whether `goal` has been reached. Set once the ease runs out, and
+      ## what stops `advance` writing to the camera from then on: a caller offering the
+      ## same goal every frame -- as one watching a selected object does -- must not go on
+      ## holding the camera there, or the user's own orbit, pan and dolly are overridden
+      ## the moment they let go. `goal` is deliberately kept rather than cleared, so that
+      ## same offer is recognised as one already delivered instead of re-arming the ease.
     started*: float ## Clock reading `goal` was last set or retargeted at.
     duration*: float ## Seconds the ease takes, end to end.
     azimuth_from*, elevation_from*: float ## Orbit angles the current ease began at.
@@ -319,9 +326,13 @@ proc aimAt*(tween: var CameraTween; camera: Camera; goal: CameraAim; now, durati
   ##   instead of snapping back.
   ##   Re-aiming at a goal already set is ignored, so a caller may offer the same goal
   ##   every frame -- as one watching an unchanged edit session does -- without the ease
-  ##   restarting forever and never arriving.
+  ##   restarting forever and never arriving. That holds after arrival too, which is what
+  ##   keeps a standing offer from re-aiming the camera at something it already reached
+  ##   and taking it back off the user each frame. `release` is how a caller says the
+  ##   offer is withdrawn, and only then does the same goal aim the camera again.
   if tween.goal.isSome and tween.goal.get == goal: return
   tween.goal = some(goal)
+  tween.is_arrived = false
   tween.started = now
   tween.duration = duration
   tween.azimuth_from = camera.azimuth
@@ -337,8 +348,8 @@ proc advance*(
   ##   `ease` is passed in rather than imported so this module stays independent of where
   ##   the project keeps its easing curve; callers hand it `mesh.easeOutCubic`, which is
   ##   the same curve and duration a freshly added object grows in with.
-  if tween.goal.isNone: return
-  let progress = ease((now - tween.started) / max(tween.duration, 1.0e-6))
+  if tween.goal.isNone or tween.is_arrived: return
+  let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))
   let goal = tween.goal.get
   if goal.is_horizon:
     # Turn the short way round: azimuth is an angle, so a goal just past -pi is next door
@@ -351,18 +362,41 @@ proc advance*(
       progress*(goal.elevation - tween.elevation_from)
   else:
     camera.target = tween.target_from + progress*(goal.target - tween.target_from)
-  if now - tween.started >= tween.duration:
-    tween.goal = none(CameraAim)
+  if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
 proc settle*(tween: var CameraTween; camera: var Camera) =
-  ## Put the camera on its goal at once and drop it -- for a caller that must not show a
-  ## half-finished pan, such as a storyboard frame about to be captured.
-  if tween.goal.isNone: return
+  ## Put the camera on its goal at once -- for a caller that must not show a half-finished
+  ## pan, such as a storyboard frame about to be captured.
+  if tween.goal.isNone or tween.is_arrived: return
   let goal = tween.goal.get
   if goal.is_horizon:
     camera.azimuth = goal.azimuth
     camera.elevation = goal.elevation
   else:
     camera.target = goal.target
+  tween.is_arrived = true
+
+
+proc release*(tween: var CameraTween) =
+  ## Withdraw whatever the camera was aimed at, leaving it wherever it stands.
+  ##   For whoever offers the aim, once it has nothing to offer -- the selection cleared,
+  ## the edit session closed. Clearing the goal outright is what lets picking the same
+  ## object again aim at it afresh, rather than having it recognised as one already
+  ## delivered and ignored forever.
+  ##   Not for a camera the *user* just moved: see `abandon`.
   tween.goal = none(CameraAim)
+  tween.is_arrived = false
+
+
+proc abandon*(tween: var CameraTween) =
+  ## Stop carrying the camera, but remember what it was carrying it toward.
+  ##   For every path that moves the camera on the user's own instruction: an orbit, pan
+  ## or dolly half a second into an ease should win outright rather than fight the
+  ## remainder of it.
+  ##   Deliberately not `release`. The aim is a standing offer, re-made every frame for
+  ## as long as an object stays selected, so a goal cleared here is simply offered again
+  ## on the very next frame and the camera is taken straight back off the user -- which
+  ## is the whole bug. Keeping the goal and marking it done is what makes that standing
+  ## offer read as one already answered.
+  if tween.goal.isSome: tween.is_arrived = true
