@@ -5,11 +5,19 @@ fonts-noto-core  # Provide the UI text face (Noto Sans), the operator and bold-o
   # (Noto Sans Math) and the star and cross face (Noto Sans Symbols 2). No one face carries
   # all three; `gui_shim.cpp` merges them into one atlas.
 
-# Commit Mono is the browser build's monospace face and is not packaged; fetch it beside
-# the visualiser and never commit it (SIL Open Font License 1.1, notice kept with the copy):
-#   curl -sSLO https://cdn.jsdelivr.net/npm/@fontsource/commit-mono/files/commit-mono-latin-400-normal.woff2
-# The browser build embeds it, and the three Noto faces above, as base64 `@font-face` data:
-# an artifact page cannot reach an external font host.
+# The browser build embeds its faces as base64 `@font-face` data, since a page served from
+# a file or an artifact host cannot reach an external font host. `build_browser.sh` reads
+# them from `fonts/`, which is vendored -- kept locally, never committed -- so fetch these
+# six WOFF2 into it before assembling the page. All are SIL Open Font License 1.1; keep the
+# licence notice beside the copies. Commit Mono is additionally not packaged for the desktop.
+#   base=https://cdn.jsdelivr.net/npm/@fontsource
+#   mkdir -p fonts && cd fonts
+#   curl -sSLO $base/noto-sans/files/noto-sans-latin-400-normal.woff2
+#   curl -sSLO $base/noto-sans/files/noto-sans-latin-600-normal.woff2
+#   curl -sSLO $base/noto-sans-math/files/noto-sans-math-math-400-normal.woff2
+#   curl -sSLO $base/noto-sans-symbols-2/files/noto-sans-symbols-2-symbols-400-normal.woff2
+#   curl -sSLO $base/noto-serif/files/noto-serif-latin-400-normal.woff2
+#   curl -sSLO $base/commit-mono/files/commit-mono-latin-400-normal.woff2
 
 # Dear ImGui is compiled from source rather than linked, so clone it beside the visualiser:
 #   git clone --branch docking https://github.com/ocornut/imgui.git deps/imgui
