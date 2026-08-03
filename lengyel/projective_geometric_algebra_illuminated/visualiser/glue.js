@@ -967,7 +967,8 @@ function refreshDiagnostics() {
 const overlaySvg = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics, rather than a hand-copied
 // literal that could drift out of sync with them.
-const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_HOVER] = nimOverlayMetrics();
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
+  nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2;
 
@@ -981,6 +982,8 @@ function svgEl(tag, attrs) {
 // how far off the object it sits, where its points land on screen -- was made by
 // marker.nim; this only turns the flat array it reports into SVG elements, and scales
 // from framebuffer pixels to CSS pixels the way every other overlay here does.
+// Rails arrive as consecutive pairs, one per drawn piece, so the pairwise loop below
+// covers a line clipped into any number of them without knowing how many to expect.
 function appendMarker(slot, alpha, w, h) {
   const marker = nimSelectionMarker(slot, canvas.width, canvas.height);
   if (marker.length === 0) return;
@@ -1019,7 +1022,7 @@ function refreshOverlay(cursor) {
   // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
   // marker at lower opacity, so both read as one family and hovering a line previews
   // exactly what selecting it will draw.
-  for (const slot of selectionSlots) appendMarker(slot, 1.0, w, h);
+  for (const slot of selectionSlots) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h);
 
   const hoverSlot = nimHoverSlot();
   if (hoverSlot >= 0 && !selectionSlots.includes(hoverSlot)) {

@@ -19,9 +19,13 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
 import ../../visualiser/[
-  arena, camera, format, gif, history, image, interaction, marker, mesh, objects, picking,
-  scene, selection,
+  arena, camera, format, gif, history, image, interaction, mesh, objects, picking, scene,
+  selection,
 ]
+# `{.all.}` so the suite can check `marker`'s own private helpers directly rather than
+#   only through the markers they end up shaping -- `directionAcross` is the whole of why
+#   a line's rails converge, and is worth asserting on its own terms.
+import ../../visualiser/marker {.all.}
 
 randomize(0)
 
@@ -1743,41 +1747,78 @@ suite "Marker":
     check marker.radius =~ 0.5*float(SIZE_POINT) + GAP_MARKER
 
 
-  test "a line's rails run parallel to its projection, one to each side":
-    let (_, view_projection, _) = setUp()
-    let marker = markerOf(LINE).get
+  test "a line's rails stand off it perpendicular to the line and to the sight ray":
+    let (placement, _, scale) = setUp()
     let
-      first = marker.rail_first
-      second = marker.rail_second
-      along_first = (first[1].x - first[0].x, first[1].y - first[0].y)
-      along_second = (second[1].x - second[0].x, second[1].y - second[0].y)
+      across = directionAcross(LINE, scale.eye).get
+      support = positionAnchor(LINE).get
+    # Perpendicular to the line, so the rails stay parallel to it and share its
+    #   vanishing points; perpendicular to the sight ray, so they show as sideways
+    #   rather than as one in front of the other.
+    check dot(across, direction(LINE).get) =~ 0.0
+    check dot(across, support - scale.eye) =~ 0.0
+    check norm(across) =~ 1.0
 
-    # Parallel: the cross product of the two unit directions vanishes. Taken on unit
-    #   directions rather than raw ones, whose own lengths run to thousands of pixels and
-    #   would swamp any fixed tolerance with their product.
-    let
-      length_first = hypot(along_first[0], along_first[1])
-      length_second = hypot(along_second[0], along_second[1])
-    check along_first[0]/length_first*(along_second[1]/length_second) -
-      along_first[1]/length_first*(along_second[0]/length_second) =~ 0.0
 
-    # Each rail sits its own offset from the line, and on opposite sides -- measured
-    #   against the line's own support, which lies on the line by definition.
+  test "a line's rails close on it with distance, as its own perspective does":
+    let (placement, view_projection, scale) = setUp()
     let
-      support = projectToScreen(
-        view_projection, WIDTH_MARK, HEIGHT_MARK, positionAnchor(LINE).get
+      support = positionAnchor(LINE).get
+      axis = direction(LINE).get
+      across = directionAcross(LINE, scale.eye).get
+      offset = offsetMarkerRail(support, scale, placement, HEIGHT_MARK)
+    proc gapAt(along: float): float =
+      ## Measure the pixel gap between line and rail at a point `along` the line.
+      let place = support + along*axis
+      let (on_line, beside) = (
+        projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, place),
+        projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, place + offset*across),
       )
-      normal = (-along_first[1]/length_first, along_first[0]/length_first)
-    proc sideOf(point: ScreenPosition): float =
-      normal[0]*(point.x - support.x) + normal[1]*(point.y - support.y)
-    # A rail's own ends run out to the line's vanishing points, hundreds of thousands of
-    #   pixels off screen, so measuring a 12.75 px offset from a support on screen cancels
-    #   two large numbers and keeps about seven digits. A ten-thousandth of a pixel is far
-    #   below anything a reader could see, and far above what that cancellation costs.
-    const TOLERANCE_PIXEL = 1.0e-4
-    check abs(abs(sideOf(first[0])) - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
-    check abs(abs(sideOf(second[0])) - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
-    check sideOf(first[0])*sideOf(second[0]) < 0.0
+      hypot(beside.x - on_line.x, beside.y - on_line.y)
+    # Strictly shrinking with distance is exactly what convergence means, and is the
+    #   whole difference from a constant screen offset, which holds the pair open even
+    #   where the line has narrowed to nothing.
+    var gap_previous = gapAt(0.0)
+    for along in [50.0, 200.0, 1000.0, 5000.0]:
+      let gap = gapAt(along)
+      check gap < gap_previous
+      gap_previous = gap
+    check gapAt(5000.0) < 0.1*gapAt(0.0)
+
+
+  test "a line's rails are drawn in the halves the line itself is drawn in":
+    let marker = markerOf(LINE).get
+    check marker.count_segment == SEGMENTS_MARKER_RAILS
+
+
+  test "a line's rails clear it by the shared gap where its support stands":
+    let (placement, view_projection, scale) = setUp()
+    let
+      support = positionAnchor(LINE).get
+      across = directionAcross(LINE, scale.eye).get
+      offset = offsetMarkerRail(support, scale, placement, HEIGHT_MARK)
+      on_screen = projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, support)
+    # Measured at the support, where the offset is stated; the same world offset reads
+    #   as fewer pixels further off, which is the convergence the rails exist to show.
+    #   Held to a quarter pixel rather than exactly: stepping perpendicular to the sight
+    #   ray, which is what puts the rails either side on screen, tilts a hair out of the
+    #   plane perspective divides by, so the gap lands a fraction under a percent wide.
+    #   Sub-pixel, against a geometry worth keeping -- see `directionAcross`.
+    const TOLERANCE_PIXEL = 0.25
+    for side in [offset, -offset]:
+      let beside = projectToScreen(
+        view_projection, WIDTH_MARK, HEIGHT_MARK, support + side*across
+      )
+      let gap = hypot(beside.x - on_screen.x, beside.y - on_screen.y)
+      check abs(gap - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
+
+
+  test "an eye standing on the line has no side to flank it from":
+    let scale = setUp()[2]
+    let through_eye = toMultivector(scale.eye) ∧
+      toMultivector(scale.eye + Direction(x: 1.0, y: 0.0, z: 0.0))
+    check directionAcross(through_eye, scale.eye).isNone
+    check markerOf(through_eye).isNone
 
 
   test "a plane's marker circle lies on that plane, at every one of its points":
@@ -1797,8 +1838,7 @@ suite "Marker":
     let
       centre = positionAnchor(PLANE).get
       radius = radiusMarkerLoop(centre, scale, placement, HEIGHT_MARK)
-      per_pixel = 2.0*norm(centre - scale.eye)*
-        tan(0.5*degToRad(placement.degrees_field_of_view))/float(HEIGHT_MARK)
+      per_pixel = worldPerPixel(centre, scale, placement, HEIGHT_MARK)
     check (radius - EXTENT_PLANE_F)/per_pixel =~ GAP_MARKER
 
 

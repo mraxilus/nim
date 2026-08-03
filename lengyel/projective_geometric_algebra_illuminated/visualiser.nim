@@ -362,20 +362,21 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
       tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
     )
   of MarkerKind.Rails:
-    for rail in [marker.rail_first, marker.rail_second]:
+    for i in 0 ..< marker.count_segment:
+      let piece = marker.segments[i]
       gui.overlayLine(
-        cfloat(rail[0].x), cfloat(rail[0].y), cfloat(rail[1].x), cfloat(rail[1].y),
+        cfloat(piece[0].x), cfloat(piece[0].y), cfloat(piece[1].x), cfloat(piece[1].y),
         tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
       )
   of MarkerKind.Loop:
     # Flatten to the x/y pairs the shim's own path call takes; stack storage, since this
     #   runs once per marked item per frame and the bound is a compile-time constant.
     var points: array[2*SEGMENTS_MARKER_LOOP, cfloat]
-    for i in 0 ..< marker.count:
+    for i in 0 ..< marker.count_point:
       points[2*i] = cfloat(marker.points[i].x)
       points[2*i + 1] = cfloat(marker.points[i].y)
     gui.overlayPolyline(
-      addr points[0], cint(marker.count), tint.red, tint.green, tint.blue, alpha,
+      addr points[0], cint(marker.count_point), tint.red, tint.green, tint.blue, alpha,
       WIDTH_MARKER, cint(ord(marker.is_closed)),
     )
 
@@ -403,7 +404,7 @@ proc drawSelectionMarker(
       item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
     )
     if marker.isNone: continue
-    drawMarker(marker.get, tint, tint.alpha)
+    drawMarker(marker.get, tint, ALPHA_MARKER_SELECTED)
     result.inc
 
 

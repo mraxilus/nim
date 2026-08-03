@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 110 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 114 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -237,8 +237,9 @@ Doubling rather than dividing the reach evenly, so a coarser grid's lines fall e
 subset of the finer one's and the change reads as alternate lines dropping out rather than
 the grid sliding to new positions. A cell size fixed against a reach that now follows the
 camera would multiply without limit — it overran the 16384-vertex budget outright at a
-400-unit orbit, long after cells had crowded below one screen pixel. `addGrid` cuts each line into `SEGMENTS_GRID_FADE` pieces fading per-vertex
-(not per-piece, so GL interpolation stays smooth) from full alpha at
+400-unit orbit, long after cells had crowded below one screen pixel. `addGrid` cuts each
+line into `SEGMENTS_GRID_FADE` pieces fading per-vertex (not per-piece, so GL
+interpolation stays smooth) from full alpha at
 `FRACTION_GRID_FADE_START` × extent to zero at `FRACTION_GRID_FADE_END` × extent — 0.03 /
 0.12, tuned by direct visual comparison. The ground plane skips the two lines that would
 coincide with the X/Y axes, avoiding depth-fighting. Axes use standard convention (x red,
@@ -289,31 +290,52 @@ when its own outline echoes the thing it surrounds:
 | Plane | A circle lying *on the plane*, outside its own rim. |
 | Anything at horizon | None — all three draw fixed to the eye, with nothing to surround. |
 
-All three keep the same clearance, `GAP_MARKER` = 11.5 px, between the object's own drawn
+All three keep the same clearance, `GAP_MARKER` = 6.0 px, between the object's own drawn
 edge and the marker, measured out from the size that object is actually drawn at. That is
-where the point's ring radius of 16 px now comes from (`SIZE_POINT`/2 + gap) rather than
-being written down; a line's rails sit at 12.75 px (`WIDTH_LINE_OBJECT`/2 + gap). Changing
+where the point's ring radius of 10.5 px comes from (`SIZE_POINT`/2 + gap) rather than
+being written down; a line's rails sit at 7.25 px (`WIDTH_LINE_OBJECT`/2 + gap). Changing
 a draw size moves its marker with it.
 
-**A line's rails are offset in screen space, not in world space.** A world offset
-foreshortens, so the two rails converge on the line's own vanishing point and meet it,
-reading as an arrowhead rather than a highlight. They span exactly what `mesh.addLine`
-draws — both halves, support out to each vanishing point — found by projecting each half's
-clipped ends and keeping the furthest-apart pair, which works because those ends are
-collinear on screen to floating-point precision (see Geometry And Drawing). This is why
-`picking.clipToEyeSide` is exported: a marker drawn past the eye plane wraps to the
-opposite side of the screen.
+The clearance is deliberately tight, and the outline deliberately light: `WIDTH_MARKER`
+1.5 px (asserted thinner than the line it marks) at `ALPHA_MARKER_SELECTED` 0.9, hover at
+0.6. An earlier round drew 2 px of pure white at a 11.5 px gap and it read as a second
+object rather than as an annotation of the first — white at full strength is the brightest
+thing this palette can produce, brighter than anything it surrounds, which inverts the
+emphasis it exists to give.
+
+**A line's rails are offset in world space, so they converge exactly as the line does.**
+Two lines parallel to it, one each side, drawn the same way `mesh.addLine` draws the line
+itself — own anchor out to each of the two vanishing points, which parallel lines share —
+so the three meet at the same two points on screen rather than merely running near one
+another. A constant screen offset instead holds the pair open all the way to the horizon,
+where the line has long since narrowed to nothing; that was the first attempt and it was
+wrong on the geometry. This is why `picking.clipToEyeSide` is exported: a marker drawn past
+the eye plane wraps to the opposite side of the screen.
+
+Which way is "sideways" is `marker.directionAcross`, and it stays RGA-native: joining the
+line with the eye gives the one plane containing both, and that plane's own normal is
+perpendicular to the line and to every sight ray reaching it. The rails then straddle the
+very plane the line's screen projection *is*, so the pair reads symmetric about it from any
+angle. It reports none where the eye lies on the line — no plane, and no side to flank
+from. The cost is that stepping perpendicular to the ray tilts a hair out of the plane
+perspective divides by, leaving the stated gap under a percent wide: 7.29 px against a
+nominal 7.25, pinned in the suite to a quarter pixel.
+
+`marker.worldPerPixel` turns a clearance stated in pixels into the world offset a
+world-anchored marker needs. It measures **depth along the sight axis, not distance from
+the eye** — perspective divides by the former, and the two differ by over a percent even
+near the middle of the frame, which is a visible fraction of a gap this tight.
 
 **A plane's marker circle genuinely lies on the plane**, traced from the plane's own
 spanning frame about the same anchor `mesh.addPlane` centres its disc on — the stored
 creation anchor where there is one, so the marker is concentric with the drawn disc rather
 than with a support the disc is not even drawn around. Its clearance therefore has to be a
-world distance, and `radiusMarkerLoop` sizes it so the gap reads as `GAP_MARKER` pixels *at
-the disc's own depth*, which is the depth a reader judges it at. Everywhere else around the
-ellipse the gap foreshortens exactly as the disc does — that is the point; a constant-pixel
-ring would sit off the plane and read as floating above it. Asserted in the suite point by
-point: a unitized ring point wedged with the unitized plane leaves 1.1e-15 on the
-antiscalar, against 1.0 for a control point one unit off.
+world distance, and `radiusMarkerLoop` sizes it through `worldPerPixel` so the gap reads
+as `GAP_MARKER` pixels *at the disc's own depth*, the depth a reader judges it at.
+Everywhere else around the ellipse the gap foreshortens exactly as the disc does — that
+is the point; a constant-pixel ring would sit off the plane and read as floating above
+it. Asserted in the suite point by point: a unitized ring point wedged with the unitized
+plane leaves 1.1e-15 on the antiscalar, against 1.0 for a control point one unit off.
 
 Markers are described in `marker.nim` and stroked by each render path's own **foreground**
 layer — `gui.overlayPolyline` on the desktop (one joined path, so corners do not nick), an

@@ -501,13 +501,13 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[overlay_line_width, hover_alpha]`, so the browser's own SVG overlay
+  ## Report `[overlay_line_width, selected_alpha, hover_alpha]`, so the browser's SVG overlay
   ## strokes markers and the drag rubber-band at the same weight the desktop build's
   ## `visualiser.drawMarker` does, without a hand-copied literal to drift out of sync
   ## with it.
   ##   A marker's own size is not here: it depends on the shape being marked, and comes
   ##   back from `nimSelectionMarker` with the marker itself.
-  @[WIDTH_MARKER, ALPHA_MARKER_HOVER]
+  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER]
 
 
 
@@ -879,11 +879,12 @@ proc nimSelectionMarker(slot, width, height: cint): seq[float32] {.exportc.} =
     result[2] = cfloat(marker.radius)
     result.add([cfloat(marker.centre.x), cfloat(marker.centre.y)])
   of MarkerKind.Rails:
-    for rail in [marker.rail_first, marker.rail_second]:
-      for point in rail: result.add([cfloat(point.x), cfloat(point.y)])
+    for i in 0 ..< marker.count_segment:
+      for point in marker.segments[i]:
+        result.add([cfloat(point.x), cfloat(point.y)])
   of MarkerKind.Loop:
     result[1] = (if marker.is_closed: 1.0'f32 else: 0.0'f32)
-    for i in 0 ..< marker.count:
+    for i in 0 ..< marker.count_point:
       result.add([cfloat(marker.points[i].x), cfloat(marker.points[i].y)])
 
 
