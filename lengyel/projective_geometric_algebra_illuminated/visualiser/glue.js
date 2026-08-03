@@ -18,7 +18,7 @@ const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl', { antialias: true, alpha: false })
   || canvas.getContext('experimental-webgl', { antialias: true, alpha: false });
 
-const VERT_SRC = `
+const SOURCE_VERTEX = `
   attribute vec3 aPosition;
   attribute vec4 aColor;
   uniform mat4 uMVP;
@@ -30,7 +30,7 @@ const VERT_SRC = `
     vColor = aColor;
   }
 `;
-const FRAG_SRC = `
+const SOURCE_FRAGMENT = `
   precision mediump float;
   varying vec4 vColor;
   uniform bool uRound;
@@ -51,17 +51,19 @@ function compileShader(type, src) {
   return s;
 }
 const program = gl.createProgram();
-gl.attachShader(program, compileShader(gl.VERTEX_SHADER, VERT_SRC));
-gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, FRAG_SRC));
+gl.attachShader(program, compileShader(gl.VERTEX_SHADER, SOURCE_VERTEX));
+gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT));
 gl.linkProgram(program);
-if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+  throw new Error(gl.getProgramInfoLog(program));
+}
 gl.useProgram(program);
 
-const aPosition = gl.getAttribLocation(program, 'aPosition');
-const aColor = gl.getAttribLocation(program, 'aColor');
-const uMVP = gl.getUniformLocation(program, 'uMVP');
-const uPointSize = gl.getUniformLocation(program, 'uPointSize');
-const uRound = gl.getUniformLocation(program, 'uRound');
+const attribute_position = gl.getAttribLocation(program, 'aPosition');
+const attribute_colour = gl.getAttribLocation(program, 'aColor');
+const uniform_view_projection = gl.getUniformLocation(program, 'uMVP');
+const uniform_size_point = gl.getUniformLocation(program, 'uPointSize');
+const uniform_is_round = gl.getUniformLocation(program, 'uRound');
 
 // Read from renderer.nim's own constants via nimRenderLineWidths, rather than a hand-
 // copied literal that could drift out of sync with them.
@@ -69,21 +71,21 @@ const [SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT] = nimRenderLineWidth
 
 const vbo = {
   tri: gl.createBuffer(), line: gl.createBuffer(), point: gl.createBuffer(),
-  furnLine: gl.createBuffer(),
+  line_furniture: gl.createBuffer(),
 };
 const STRIDE = 7 * 4;
 
-function drawBuffer(data, mode, roundPoints, vboHandle) {
+function drawBuffer(data, mode, are_points_round, handle_buffer) {
   if (data.length === 0) return;
-  const arr = data instanceof Float32Array ? data : new Float32Array(data);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboHandle);
-  gl.bufferData(gl.ARRAY_BUFFER, arr, gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(aPosition);
-  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, STRIDE, 0);
-  gl.enableVertexAttribArray(aColor);
-  gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, STRIDE, 12);
-  gl.uniform1i(uRound, roundPoints ? 1 : 0);
-  gl.drawArrays(mode, 0, arr.length / 7);
+  const entries = data instanceof Float32Array ? data : new Float32Array(data);
+  gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, entries, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(attribute_position);
+  gl.vertexAttribPointer(attribute_position, 3, gl.FLOAT, false, STRIDE, 0);
+  gl.enableVertexAttribArray(attribute_colour);
+  gl.vertexAttribPointer(attribute_colour, 4, gl.FLOAT, false, STRIDE, 12);
+  gl.uniform1i(uniform_is_round, are_points_round ? 1 : 0);
+  gl.drawArrays(mode, 0, entries.length / 7);
 }
 
 function rgbToCss(rgb) {
@@ -105,7 +107,7 @@ document.documentElement.style.setProperty('--bg', rgbToCss(backdrop));
 /* ---------------------------------------------------------------------- */
 
 nimInit(performance.now() / 1000);
-let showAxes = true, showGrid = true;
+let is_axes_shown = true, is_grid_shown = true;
 
 function now() { return performance.now() / 1000; }
 
@@ -124,26 +126,26 @@ function now() { return performance.now() / 1000; }
 /* times a second and must not cross the JS/Nim boundary to do it.          */
 /* ---------------------------------------------------------------------- */
 
-let selectionSlots = []; // Ordered: first-picked first (-> operand m), second (-> n).
+let slots_selection = []; // Ordered: first-picked first (-> operand m), second (-> n).
 
 function refreshSelectionSnapshot() {
-  selectionSlots = nimSelectionSlots();
+  slots_selection = nimSelectionSlots();
 }
 
-function onSelectionChanged(localPos) {
+function onSelectionChanged(position_local) {
   refreshSelectionSnapshot();
-  refreshSelectionMenu(localPos);
+  refreshSelectionMenu(position_local);
   refreshObjectsUI(); // Also re-syncs the apply controls and the row checkboxes.
 }
 
-function selectOnly(slot, localPos) {
+function selectOnly(slot, position_local) {
   nimSelectOnly(slot);
-  onSelectionChanged(localPos);
+  onSelectionChanged(position_local);
 }
 
-function toggleSelection(slot, localPos) {
+function toggleSelection(slot, position_local) {
   nimSelectToggle(slot);
-  onSelectionChanged(localPos);
+  onSelectionChanged(position_local);
 }
 
 function clearSelection() {
@@ -166,13 +168,13 @@ function adoptConstructionSelection() {
 /* one-line status message, shown transiently rather than pinned.         */
 /* ---------------------------------------------------------------------- */
 
-const toastEl = document.getElementById('toast');
-let toastTimer = null;
+const element_toast = document.getElementById('toast');
+let timer_toast = null;
 function toast(message) {
-  toastEl.textContent = message;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3200);
+  element_toast.textContent = message;
+  element_toast.classList.add('show');
+  clearTimeout(timer_toast);
+  timer_toast = setTimeout(() => element_toast.classList.remove('show'), 3200);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -186,32 +188,32 @@ document.documentElement.style.setProperty('--anim', nimAnimationMilliseconds() 
 document.documentElement.style.setProperty('--ease', 'cubic-bezier(0.215, 0.61, 0.355, 1)');
 
 const drawer = document.getElementById('drawer');
-const chipRow = document.querySelector('.chip-row');
-const drawerBtn = document.getElementById('btn-drawer');
-drawerBtn.addEventListener('click', () => {
+const row_chip = document.querySelector('.chip-row');
+const button_drawer = document.getElementById('btn-drawer');
+button_drawer.addEventListener('click', () => {
   const open = drawer.classList.toggle('open');
-  drawerBtn.classList.toggle('on', open);
+  button_drawer.classList.toggle('on', open);
 });
 
 // Top menu: one popover holding every top-bar action (undo/redo, axes/grid, save/load
 //   scene, save PNG/load demo) that used to be spread across four separate chip-row
 //   pill-groups -- each button inside keeps its own pre-existing #id-based wiring
 //   unchanged below; this only owns the popover's own open/close.
-const topMenu = document.getElementById('top-menu');
-const menuBtn = document.getElementById('btn-menu');
-menuBtn.addEventListener('click', () => {
-  const open = topMenu.classList.toggle('show');
-  menuBtn.classList.toggle('on', open);
+const menu_top = document.getElementById('top-menu');
+const button_menu = document.getElementById('btn-menu');
+button_menu.addEventListener('click', () => {
+  const open = menu_top.classList.toggle('show');
+  button_menu.classList.toggle('on', open);
 });
 
 document.querySelectorAll('.section-header').forEach((header) => {
   header.addEventListener('click', () => header.parentElement.classList.toggle('open'));
 });
 document.getElementById('toggle-axes').addEventListener('click', (e) => {
-  showAxes = !showAxes; e.target.classList.toggle('on', showAxes);
+  is_axes_shown = !is_axes_shown; e.target.classList.toggle('on', is_axes_shown);
 });
 document.getElementById('toggle-grid').addEventListener('click', (e) => {
-  showGrid = !showGrid; e.target.classList.toggle('on', showGrid);
+  is_grid_shown = !is_grid_shown; e.target.classList.toggle('on', is_grid_shown);
 });
 // Four seconds to read it, then a 0.6s fade. One clock: the stylesheet used to carry a
 //   transition-delay too, which ran from the moment this class was added rather than from
@@ -224,9 +226,9 @@ setTimeout(() => document.getElementById('hint').classList.add('hidden'), 4000);
 /* not on this timeline.                                                   */
 /* ---------------------------------------------------------------------- */
 
-const btnAdd = document.getElementById('btn-add');
-const btnUndo = document.getElementById('btn-undo');
-const btnRedo = document.getElementById('btn-redo');
+const button_add = document.getElementById('btn-add');
+const button_undo = document.getElementById('btn-undo');
+const button_redo = document.getElementById('btn-redo');
 
 function openWorkbenchTo(slot) {
   // Open an edit session on `slot` (or a composing one where null) and bring the drawer
@@ -235,28 +237,28 @@ function openWorkbenchTo(slot) {
   beginEditSession(slot);
   document.querySelector('.section[data-section="objects"]').classList.add('open');
   drawer.classList.add('open');
-  drawerBtn.classList.add('on');
+  button_drawer.classList.add('on');
   refreshObjectsUI();
-  const row = objectsList.querySelector(
+  const row = list_objects.querySelector(
     slot === null ? '.item-row.pending-item' : '.item-row[data-slot="' + slot + '"]');
   if (row) row.scrollIntoView({ block: 'nearest' }); // A long list can open past it.
 }
 
-btnAdd.addEventListener('click', () => {
+button_add.addEventListener('click', () => {
   // Compose a new object as a row in the Objects list rather than in a section of its
   //   own: adding and editing stage the same four things through the same interface, so
   //   there is one grid and one ghost instead of two of each.
   openWorkbenchTo(null);
 });
 
-btnUndo.addEventListener('click', () => {
+button_undo.addEventListener('click', () => {
   // A restored snapshot's slot numbers need not match, so an open session has nothing
   //   trustworthy left to commit against.
   if (nimUndo()) { endEditSession(); adoptConstructionSelection(); refreshObjectsUI(); }
   else toast('Nothing to undo.');
   refreshUndoRedoButtons();
 });
-btnRedo.addEventListener('click', () => {
+button_redo.addEventListener('click', () => {
   if (nimRedo()) { endEditSession(); adoptConstructionSelection(); refreshObjectsUI(); }
   else toast('Nothing to redo.');
   refreshUndoRedoButtons();
@@ -267,15 +269,15 @@ function refreshUndoRedoButtons() {
   //   that side of the timeline to move to -- checked after every history-touching
   //   action below, plus once per low-cadence UI tick to catch every other path
   //   (add, apply, remove, load demo, scene load/clear) without hooking each one.
-  btnUndo.disabled = !nimCanUndo();
-  btnRedo.disabled = !nimCanRedo();
+  button_undo.disabled = !nimCanUndo();
+  button_redo.disabled = !nimCanRedo();
 }
 
 /* ---------------------------------------------------------------------- */
 /* View panel: camera numeric fields, mirroring panel.layoutView exactly. */
 /* ---------------------------------------------------------------------- */
 
-const camFields = {
+const fields_camera = {
   azimuth: document.getElementById('cam-azimuth'),
   elevation: document.getElementById('cam-elevation'),
   distance: document.getElementById('cam-distance'),
@@ -284,36 +286,44 @@ const camFields = {
   ty: document.getElementById('cam-target-y'),
   tz: document.getElementById('cam-target-z'),
 };
-let camFieldsFocused = false;
-Object.values(camFields).forEach((el) => {
-  el.addEventListener('focus', () => { camFieldsFocused = true; });
-  el.addEventListener('blur', () => { camFieldsFocused = false; });
+let are_fields_camera_focused = false;
+Object.values(fields_camera).forEach((element) => {
+  element.addEventListener('focus', () => { are_fields_camera_focused = true; });
+  element.addEventListener('blur', () => { are_fields_camera_focused = false; });
 });
-camFields.azimuth.addEventListener('change', () => nimSetCameraAzimuth(parseFloat(camFields.azimuth.value) || 0));
-camFields.elevation.addEventListener('change', () => nimSetCameraElevation(parseFloat(camFields.elevation.value) || 0));
-camFields.distance.addEventListener('change', () => nimSetCameraDistance(parseFloat(camFields.distance.value) || 0.1));
-camFields.fov.addEventListener('change', () => nimSetCameraFov(parseFloat(camFields.fov.value) || 45));
+// Each field commits on change, falling back to the value the camera treats as its own
+// floor for that quantity where the box is left empty or unparseable.
+function commitCameraField(field, apply, fallback) {
+  field.addEventListener('change', () => apply(parseFloat(field.value) || fallback));
+}
+commitCameraField(fields_camera.azimuth, nimSetCameraAzimuth, 0);
+commitCameraField(fields_camera.elevation, nimSetCameraElevation, 0);
+commitCameraField(fields_camera.distance, nimSetCameraDistance, 0.1);
+commitCameraField(fields_camera.fov, nimSetCameraFov, 45);
+
 function commitTarget() {
   nimSetCameraTarget(
-    parseFloat(camFields.tx.value) || 0, parseFloat(camFields.ty.value) || 0, parseFloat(camFields.tz.value) || 0,
+    parseFloat(fields_camera.tx.value) || 0,
+    parseFloat(fields_camera.ty.value) || 0,
+    parseFloat(fields_camera.tz.value) || 0,
   );
 }
-camFields.tx.addEventListener('change', commitTarget);
-camFields.ty.addEventListener('change', commitTarget);
-camFields.tz.addEventListener('change', commitTarget);
+fields_camera.tx.addEventListener('change', commitTarget);
+fields_camera.ty.addEventListener('change', commitTarget);
+fields_camera.tz.addEventListener('change', commitTarget);
 
 function refreshCameraFields() {
-  if (camFieldsFocused) return; // Don't fight a value the user is mid-typing.
+  if (are_fields_camera_focused) return; // Don't fight a value the user is mid-typing.
   // `nimFormatNumber`, not a `toFixed` here: an angle of 1.05 should read `1.05` rather
   //   than `1.050`, and the desktop draws every one of these with the same widget.
-  camFields.azimuth.value = nimFormatNumber(nimCameraAzimuth());
-  camFields.elevation.value = nimFormatNumber(nimCameraElevation());
-  camFields.distance.value = nimFormatNumber(nimCameraDistance());
-  camFields.fov.value = nimFormatNumber(nimCameraFov());
+  fields_camera.azimuth.value = nimFormatNumber(nimCameraAzimuth());
+  fields_camera.elevation.value = nimFormatNumber(nimCameraElevation());
+  fields_camera.distance.value = nimFormatNumber(nimCameraDistance());
+  fields_camera.fov.value = nimFormatNumber(nimCameraFov());
   const t = nimCameraTarget();
-  camFields.tx.value = nimFormatNumber(t[0]);
-  camFields.ty.value = nimFormatNumber(t[1]);
-  camFields.tz.value = nimFormatNumber(t[2]);
+  fields_camera.tx.value = nimFormatNumber(t[0]);
+  fields_camera.ty.value = nimFormatNumber(t[1]);
+  fields_camera.tz.value = nimFormatNumber(t[2]);
 }
 
 document.getElementById('btn-export-png').addEventListener('click', () => {
@@ -339,44 +349,48 @@ document.getElementById('btn-load-demo').addEventListener('click', () => {
 /* panel.layoutPointNew / panel.layoutOperation exactly.                  */
 /* ---------------------------------------------------------------------- */
 
-const opArity = document.getElementById('op-arity');
-const opSelect = document.getElementById('op-select');
-const opFirst = document.getElementById('op-first');
-const opSecond = document.getElementById('op-second');
-const opSecondField = document.getElementById('op-second-field');
+const picker_arity = document.getElementById('op-arity');
+const picker_operation = document.getElementById('op-select');
+const picker_operand_first = document.getElementById('op-first');
+const picker_operand_second = document.getElementById('op-second');
+const field_operand_second = document.getElementById('op-second-field');
 
-let currentArity = 0; // 0 = unary, 1 = binary -- matches nimOperationArity's own convention.
+let arity_current = 0; // 0 = unary, 1 = binary -- matches nimOperationArity's own convention.
 
 function populateOperations() {
-  const prevValue = opSelect.value;
-  opSelect.innerHTML = '';
+  const value_previous = picker_operation.value;
+  picker_operation.innerHTML = '';
   const count = nimOperationCount();
   for (let i = 0; i < count; i++) {
-    if (nimOperationArity(i) !== currentArity) continue;
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = nimOperationNotation(i);
-    opSelect.appendChild(opt);
+    if (nimOperationArity(i) !== arity_current) continue;
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = nimOperationNotation(i);
+    picker_operation.appendChild(option);
   }
   // Switching arity can leave the previous selection's own index absent from the new,
   //   filtered option list -- fall back to the new list's first option rather than
   //   leaving opSelect.value pointing at a now-nonexistent <option>.
-  if (opSelect.querySelector('option[value="' + prevValue + '"]')) opSelect.value = prevValue;
+  if (picker_operation.querySelector('option[value="' + value_previous + '"]')) {
+    picker_operation.value = value_previous;
+  }
   updateOperandEnablement();
 }
 
-opArity.querySelectorAll('button[data-arity]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    currentArity = parseInt(btn.dataset.arity, 10);
-    opArity.querySelectorAll('button[data-arity]').forEach((b) => b.classList.toggle('on', b === btn));
+picker_arity.querySelectorAll('button[data-arity]').forEach((button) => {
+  button.addEventListener('click', () => {
+    arity_current = parseInt(button.dataset.arity, 10);
+    picker_arity.querySelectorAll('button[data-arity]').forEach(
+      (each) => each.classList.toggle('on', each === button),
+    );
     populateOperations();
   });
 });
 
-opSelect.addEventListener('change', updateOperandEnablement);
+picker_operation.addEventListener('change', updateOperandEnablement);
 function updateOperandEnablement() {
-  const arity = nimOperationArity(parseInt(opSelect.value, 10) || 0);
-  opSecondField.style.display = arity === 0 ? 'none' : '';
+  const arity = nimOperationArity(parseInt(picker_operation.value, 10) || 0);
+  field_operand_second.style.display = arity === 0 ? 'none' : '';
 }
 
 populateOperations();
@@ -387,28 +401,28 @@ populateOperations();
 //   (backed by `pga/algebra.grade`, the library's own basis-to-grade lookup), needing
 //   no hardcoded basis list or JS-side reimplementation to stay correct if this build's
 //   own dimension ever changes.
-function buildGradedCoeffGrid(container, valueAt) {
-  const basisCount = nimBasisCount();
-  const inputs = new Array(basisCount);
-  const byGrade = [];
-  for (let b = 0; b < basisCount; b++) {
+function buildGradedCoefficientGrid(container, valueAt) {
+  const count_basis = nimBasisCount();
+  const inputs = new Array(count_basis);
+  const by_grade = [];
+  for (let b = 0; b < count_basis; b++) {
     const grade = nimBasisGrade(b);
-    (byGrade[grade] || (byGrade[grade] = [])).push(b);
+    (by_grade[grade] || (by_grade[grade] = [])).push(b);
   }
-  for (const group of byGrade) {
+  for (const group of by_grade) {
     if (!group) continue;
     const row = document.createElement('div');
     row.className = 'coeff-grade-row';
     for (const b of group) {
       const f = document.createElement('div');
       f.className = 'field';
-      const lbl = document.createElement('label');
-      lbl.textContent = nimBasisName(b);
+      const label_text = document.createElement('label');
+      label_text.textContent = nimBasisName(b);
       const input = document.createElement('input');
       input.type = 'number';
       input.step = '0.1';
       input.value = valueAt(b);
-      f.appendChild(lbl);
+      f.appendChild(label_text);
       f.appendChild(input);
       row.appendChild(f);
       inputs[b] = input;
@@ -421,20 +435,20 @@ function buildGradedCoeffGrid(container, valueAt) {
 document.getElementById('btn-apply').addEventListener('click', () => {
   if (nimSceneCount() === 0) { toast('Scene is empty; add a point first.'); return; }
   const slots = nimSceneSlots();
-  const first = slots[Math.min(parseInt(opFirst.value, 10) || 0, slots.length - 1)];
-  const second = slots[Math.min(parseInt(opSecond.value, 10) || 0, slots.length - 1)];
+  const first = slots[Math.min(parseInt(picker_operand_first.value, 10) || 0, slots.length - 1)];
+  const second = slots[Math.min(parseInt(picker_operand_second.value, 10) || 0, slots.length - 1)];
   if (nimSceneCount() >= nimSceneCapacity()) { toast('Scene is full.'); return; }
-  const result = nimApplyOperation(parseInt(opSelect.value, 10), first, second, now());
+  const result = nimApplyOperation(parseInt(picker_operation.value, 10), first, second, now());
   toast(result.message);
   adoptConstructionSelection();
 });
 
-let lastSyncedSelectionKey = ''; // Mirrors panel.nim's index_operand_synced_highlight,
+let key_selection_synced_last = ''; // Mirrors panel.nim's index_operand_synced_highlight,
   // generalized to a pair: re-defaults operand m/n to the current selection only the
   // moment the selection itself changes (not on every refreshOperandOptions call, which
   // happens far more often than selection changes), so a manual pick of a different
   // operand sticks until selection moves again.
-let lastOperandOptionsKey = ''; // Slot list + labels last used to rebuild operand m/n's
+let key_operand_options_last = ''; // Slot list + labels last used to rebuild operand m/n's
   // own <option> elements -- rebuilding a <select>'s options while its native picker
   // is open (mobile especially) makes the browser re-show/reset that picker, so the
   // full rebuild below only actually runs when scene composition or a label changed,
@@ -443,18 +457,18 @@ let lastOperandOptionsKey = ''; // Slot list + labels last used to rebuild opera
 function refreshOperandOptions() {
   const slots = nimSceneSlots();
   const key = slots.map((slot) => slot + ':' + nimItemLabel(slot)).join(',');
-  if (key !== lastOperandOptionsKey) {
-    lastOperandOptionsKey = key;
-    for (const sel of [opFirst, opSecond]) {
-      const prev = sel.value;
-      sel.innerHTML = '';
+  if (key !== key_operand_options_last) {
+    key_operand_options_last = key;
+    for (const selection_target of [picker_operand_first, picker_operand_second]) {
+      const prev = selection_target.value;
+      selection_target.innerHTML = '';
       slots.forEach((slot, i) => {
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = nimItemLabel(slot);
-        sel.appendChild(opt);
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = nimItemLabel(slot);
+        selection_target.appendChild(option);
       });
-      if (prev !== '' && parseInt(prev, 10) < slots.length) sel.value = prev;
+      if (prev !== '' && parseInt(prev, 10) < slots.length) selection_target.value = prev;
     }
   }
   syncOperandsToSelection(slots);
@@ -468,31 +482,31 @@ function syncOperandsToSelection(slots) {
   // call on every frame-loop tick, unlike the option-list rebuild above, and leaving a
   // later manual pick of either alone until the selection next moves. Mirrors
   // panel.layoutApply exactly.
-  const key = selectionSlots.join(',');
-  if (key === lastSyncedSelectionKey) return;
-  lastSyncedSelectionKey = key;
-  if (selectionSlots.length === 0) return; // Nothing picked names nothing; leave it be.
-  const sceneSlots = slots || nimSceneSlots();
+  const key = slots_selection.join(',');
+  if (key === key_selection_synced_last) return;
+  key_selection_synced_last = key;
+  if (slots_selection.length === 0) return; // Nothing picked names nothing; leave it be.
+  const slots_scene = slots || nimSceneSlots();
 
   const arity = nimSelectionArity();
-  if (arity !== currentArity) {
+  if (arity !== arity_current) {
     // A filtered operation list is indexed per arity, so an option carried across from
     // the other list names an unrelated operation -- populateOperations rebuilds it and
     // falls back to the new list's first entry, exactly as the arity buttons do.
-    currentArity = arity;
-    opArity.querySelectorAll('button[data-arity]').forEach((b) => {
-      b.classList.toggle('on', parseInt(b.dataset.arity, 10) === arity);
+    arity_current = arity;
+    picker_arity.querySelectorAll('button[data-arity]').forEach((each) => {
+      each.classList.toggle('on', parseInt(each.dataset.arity, 10) === arity);
     });
     populateOperations();
   }
 
-  const posFirst = sceneSlots.indexOf(selectionSlots[0]);
-  if (posFirst >= 0) opFirst.value = posFirst;
-  if (selectionSlots.length >= 2) {
+  const position_first = slots_scene.indexOf(slots_selection[0]);
+  if (position_first >= 0) picker_operand_first.value = position_first;
+  if (slots_selection.length >= 2) {
     // Three or more picked still names a binary operation, on the first two: this picker
     // can say which two, unlike the floating menu, which hides `apply` rather than guess.
-    const posSecond = sceneSlots.indexOf(selectionSlots[1]);
-    if (posSecond >= 0) opSecond.value = posSecond;
+    const position_second = slots_scene.indexOf(slots_selection[1]);
+    if (position_second >= 0) picker_operand_second.value = position_second;
   }
 }
 
@@ -501,8 +515,8 @@ function syncOperandsToSelection(slots) {
 /* coefficients -- mirrors panel.layoutObjects / layoutItem exactly.      */
 /* ---------------------------------------------------------------------- */
 
-const objectsList = document.getElementById('objects-list');
-const objectsCount = document.getElementById('objects-count');
+const list_objects = document.getElementById('objects-list');
+const count_objects = document.getElementById('objects-count');
 /* ---------------------------------------------------------------------- */
 /* Edit session: one at a time, in one of two modes -- composing a brand-  */
 /* new object (`slot` null, nothing backing it in the scene yet) or        */
@@ -512,13 +526,13 @@ const objectsCount = document.getElementById('objects-count');
 /* rebuilds every row from scratch, which would otherwise discard it.      */
 /* ---------------------------------------------------------------------- */
 
-let editSession = null; // { slot: number|null, coefficients: number[], label, ink }
+let session_edit = null; // { slot: number|null, coefficients: number[], label, ink }
 
 function beginEditSession(slot) {
   // A null slot composes; a real slot edits that item. Seeding a composing session from
   //   Nim's own defaults keeps the auto-label and cycled ink every other construction
   //   path assigns, while leaving both editable before the object exists.
-  editSession = slot === null
+  session_edit = slot === null
     ? {
         slot: null,
         coefficients: new Array(nimBasisCount()).fill(0),
@@ -531,11 +545,11 @@ function beginEditSession(slot) {
         label: nimItemLabel(slot),
         ink: nimItemInk(slot),
       };
-  nimSetGhost(editSession.coefficients);
+  nimSetGhost(session_edit.coefficients);
 }
 
 function endEditSession() {
-  editSession = null;
+  session_edit = null;
   nimClearGhost();
 }
 
@@ -543,64 +557,64 @@ function refreshObjectsUI() {
   const slots = nimSceneSlots()
     .slice()
     .sort((a, b) => nimItemBorn(b) - nimItemBorn(a)); // Most recently added first.
-  objectsCount.textContent = '(' + slots.length + ' of ' + nimSceneCapacity() + ')';
-  objectsList.innerHTML = '';
+  count_objects.textContent = '(' + slots.length + ' of ' + nimSceneCapacity() + ')';
+  list_objects.innerHTML = '';
   if (slots.length === 0 && !isComposing()) {
     const p = document.createElement('div');
     p.className = 'help-text';
     p.style.margin = '8px 0 0';
     p.textContent = 'Nothing here yet -- press `add` above, or drag between two objects.';
-    objectsList.appendChild(p);
+    list_objects.appendChild(p);
   }
   // A composing session heads the list: it is the newest thing here, and it has no
   //   `born` reading to sort by since nothing backs it in the scene yet.
-  if (isComposing()) objectsList.appendChild(buildItemRow(null));
-  for (const slot of slots) objectsList.appendChild(buildItemRow(slot));
+  if (isComposing()) list_objects.appendChild(buildItemRow(null));
+  for (const slot of slots) list_objects.appendChild(buildItemRow(slot));
   refreshOperandOptions();
   refreshAddButton();
 }
 
-function isComposing() { return editSession !== null && editSession.slot === null; }
+function isComposing() { return session_edit !== null && session_edit.slot === null; }
 
-function isEditing(slot) { return editSession !== null && editSession.slot === slot; }
+function isEditing(slot) { return session_edit !== null && session_edit.slot === slot; }
 
 function refreshAddButton() {
   // Disabled while any session is open, so starting a second one cannot silently
   //   discard the first -- the same treatment undo/redo get when their side is empty.
-  btnAdd.disabled = editSession !== null || nimSceneCount() >= nimSceneCapacity();
+  button_add.disabled = session_edit !== null || nimSceneCount() >= nimSceneCapacity();
 }
 
 function buildItemRow(slot) {
   // `slot === null` builds the composing row: same layout, but nothing backs it in the
   //   scene, so everything it displays comes from `editSession` and the buttons that act
   //   on a real object (hide, remove) are left out entirely.
-  const isPending = slot === null;
-  const isOpen = isPending || isEditing(slot);
+  const is_pending = slot === null;
+  const is_open = is_pending || isEditing(slot);
 
   const row = document.createElement('div');
-  if (!isPending) row.dataset.slot = slot; // Lets a caller find one row again by slot.
+  if (!is_pending) row.dataset.slot = slot; // Lets a caller find one row again by slot.
   row.className = 'item-row'
-    + (isPending ? ' pending-item' : '')
-    + (!isPending && selectionSlots.includes(slot) ? ' selected' : '')
-    + (!isPending && !nimItemVisible(slot) ? ' hidden-item' : '');
+    + (is_pending ? ' pending-item' : '')
+    + (!is_pending && slots_selection.includes(slot) ? ' selected' : '')
+    + (!is_pending && !nimItemVisible(slot) ? ' hidden-item' : '');
 
   const top = document.createElement('div');
   top.className = 'item-top';
 
   // While a session is open its staged values drive the row, so the swatch, label and
   //   coefficient line preview the edit without the scene having changed.
-  const inkOf = () => (isOpen ? editSession.ink : nimItemInk(slot));
-  const labelOf = () => (isOpen ? editSession.label : nimItemLabel(slot));
+  const inkOf = () => (is_open ? session_edit.ink : nimItemInk(slot));
+  const labelOf = () => (is_open ? session_edit.label : nimItemLabel(slot));
 
   // Selection checkbox: mirrors/toggles membership in `selectionSlots`, exactly the
   // same helper long-press/click-to-select already drives -- not visibility any more.
-  const selectCheck = document.createElement('input');
-  selectCheck.type = 'checkbox';
-  selectCheck.checked = !isPending && selectionSlots.includes(slot);
-  selectCheck.disabled = isPending; // Nothing to select until it exists.
-  selectCheck.title = 'Select or deselect this object.';
-  if (!isPending) selectCheck.addEventListener('change', () => toggleSelection(slot, null));
-  top.appendChild(selectCheck);
+  const check_select = document.createElement('input');
+  check_select.type = 'checkbox';
+  check_select.checked = !is_pending && slots_selection.includes(slot);
+  check_select.disabled = is_pending; // Nothing to select until it exists.
+  check_select.title = 'Select or deselect this object.';
+  if (!is_pending) check_select.addEventListener('change', () => toggleSelection(slot, null));
+  top.appendChild(check_select);
 
   const swatch = document.createElement('span');
   swatch.className = 'swatch';
@@ -613,39 +627,39 @@ function buildItemRow(slot) {
   label.style.color = rgbToCss(nimInkColor(inkOf()));
   top.appendChild(label);
 
-  const editToggle = document.createElement('button');
-  editToggle.className = 'btn item-edit-toggle';
-  editToggle.type = 'button';
-  editToggle.textContent = isOpen ? 'save' : 'edit';
-  editToggle.title = isOpen
+  const toggle_edit = document.createElement('button');
+  toggle_edit.className = 'btn item-edit-toggle';
+  toggle_edit.type = 'button';
+  toggle_edit.textContent = is_open ? 'save' : 'edit';
+  toggle_edit.title = is_open
     ? 'Commit these values to the scene.'
     : 'Rename, recolour or reshape this object; nothing changes until you save.';
-  editToggle.addEventListener('click', () => {
-    if (!isOpen) { beginEditSession(slot); refreshObjectsUI(); return; }
-    if (isPending && nimSceneCount() >= nimSceneCapacity()) { toast('Scene is full.'); return; }
-    if (isPending) {
-      nimAddItem(editSession.coefficients, editSession.label, editSession.ink, now());
+  toggle_edit.addEventListener('click', () => {
+    if (!is_open) { beginEditSession(slot); refreshObjectsUI(); return; }
+    if (is_pending && nimSceneCount() >= nimSceneCapacity()) { toast('Scene is full.'); return; }
+    if (is_pending) {
+      nimAddItem(session_edit.coefficients, session_edit.label, session_edit.ink, now());
       endEditSession();
       adoptConstructionSelection();
       toast('Added `' + label.textContent + '`.');
     } else {
-      nimCommitItem(slot, editSession.coefficients, editSession.label, editSession.ink);
+      nimCommitItem(slot, session_edit.coefficients, session_edit.label, session_edit.ink);
       endEditSession();
       toast('Saved `' + label.textContent + '`.');
     }
     refreshObjectsUI();
     refreshUndoRedoButtons();
   });
-  top.appendChild(editToggle);
+  top.appendChild(toggle_edit);
 
-  if (isOpen) {
+  if (is_open) {
     // Abandon: a composing row vanishes with nothing added, an editing row reverts. In
     //   both cases the scene was never touched, so this only has to drop the session.
     const cancel = document.createElement('button');
     cancel.className = 'btn item-edit-cancel';
     cancel.type = 'button';
     cancel.textContent = '✕';
-    cancel.title = isPending ? 'Discard this new object.' : 'Discard these changes.';
+    cancel.title = is_pending ? 'Discard this new object.' : 'Discard these changes.';
     cancel.addEventListener('click', () => {
       endEditSession();
       refreshObjectsUI();
@@ -653,7 +667,7 @@ function buildItemRow(slot) {
     top.appendChild(cancel);
   }
 
-  if (!isOpen) {
+  if (!is_open) {
     // Hide/show and remove act on the object as the scene holds it, which is exactly what
     //   an open session is staging a replacement for -- offering them mid-edit invites
     //   acting on one version while looking at another. A composing row has no object at
@@ -664,10 +678,10 @@ function buildItemRow(slot) {
     visibility.textContent = nimItemVisible(slot) ? 'hide' : 'show';
     visibility.title = 'Show or hide this object without removing it.';
     visibility.addEventListener('click', () => {
-      const wasVisible = nimItemVisible(slot);
-      nimSetVisible(slot, !wasVisible);
-      visibility.textContent = wasVisible ? 'show' : 'hide'; // Local flip, no full rebuild.
-      row.classList.toggle('hidden-item', wasVisible);
+      const was_visible = nimItemVisible(slot);
+      nimSetVisible(slot, !was_visible);
+      visibility.textContent = was_visible ? 'show' : 'hide'; // Local flip, no full rebuild.
+      row.classList.toggle('hidden-item', was_visible);
     });
     top.appendChild(visibility);
 
@@ -688,87 +702,89 @@ function buildItemRow(slot) {
 
   row.appendChild(top);
 
-  const coeffLine = document.createElement('div');
-  coeffLine.className = 'item-coeff';
+  const line_coefficient = document.createElement('div');
+  line_coefficient.className = 'item-coeff';
   const describeStaged = () =>
-    isOpen ? nimDescribeCoefficients(editSession.coefficients)
+    is_open ? nimDescribeCoefficients(session_edit.coefficients)
            : nimItemShapeWord(slot) + ': ' + nimFormatMultivector(slot);
-  coeffLine.textContent = describeStaged();
-  row.appendChild(coeffLine);
+  line_coefficient.textContent = describeStaged();
+  row.appendChild(line_coefficient);
 
-  const editBox = document.createElement('div');
-  editBox.className = 'item-edit' + (isOpen ? ' open' : '');
+  const box_edit = document.createElement('div');
+  box_edit.className = 'item-edit' + (is_open ? ' open' : '');
 
-  const labelField = document.createElement('div');
-  labelField.className = 'field';
-  labelField.innerHTML = '<label>label</label>';
+  const field_label = document.createElement('div');
+  field_label.className = 'field';
+  field_label.innerHTML = '<label>label</label>';
   // Every field below writes into the session, never the scene: the row's own swatch,
   //   label and coefficient line preview the change, the ghost previews the geometry,
   //   and only `save` above reaches `g_scene`.
-  const labelInput = document.createElement('input');
-  labelInput.type = 'text';
-  labelInput.value = labelOf();
-  labelInput.maxLength = 39;
-  labelInput.addEventListener('input', () => {
-    editSession.label = labelInput.value;
-    label.textContent = labelInput.value;
+  const input_label = document.createElement('input');
+  input_label.type = 'text';
+  input_label.value = labelOf();
+  input_label.maxLength = 39;
+  input_label.addEventListener('input', () => {
+    session_edit.label = input_label.value;
+    label.textContent = input_label.value;
   });
-  labelField.appendChild(labelInput);
-  editBox.appendChild(labelField);
+  field_label.appendChild(input_label);
+  box_edit.appendChild(field_label);
 
-  const inkField = document.createElement('div');
-  inkField.className = 'field';
-  inkField.innerHTML = '<label>colour</label>';
-  const inkSelect = document.createElement('select');
+  const field_ink = document.createElement('div');
+  field_ink.className = 'field';
+  field_ink.innerHTML = '<label>colour</label>';
+  const picker_ink = document.createElement('select');
   // Only the categorical slots are offerable; `nimInkChoosableSlots` decides which those
   //   are, so no palette rule lives out here. Its entries stay whole-palette ordinals,
   //   the same ones `nimItemInk` reports and `nimInkName`/`nimInkColor` accept.
   for (const ink of nimInkChoosableSlots()) {
-    const opt = document.createElement('option');
-    opt.value = ink;
-    opt.textContent = nimInkName(ink);
-    inkSelect.appendChild(opt);
+    const option = document.createElement('option');
+    option.value = ink;
+    option.textContent = nimInkName(ink);
+    picker_ink.appendChild(option);
   }
-  inkSelect.value = inkOf();
-  inkSelect.addEventListener('change', () => {
-    editSession.ink = parseInt(inkSelect.value, 10);
-    const rgb = nimInkColor(editSession.ink);
+  picker_ink.value = inkOf();
+  picker_ink.addEventListener('change', () => {
+    session_edit.ink = parseInt(picker_ink.value, 10);
+    const rgb = nimInkColor(session_edit.ink);
     swatch.style.background = rgbToCss(rgb);
     label.style.color = rgbToCss(rgb);
   });
-  inkField.appendChild(inkSelect);
-  editBox.appendChild(inkField);
+  field_ink.appendChild(picker_ink);
+  box_edit.appendChild(field_ink);
 
-  const coeffNote = document.createElement('div');
-  coeffNote.className = 'help-text';
-  coeffNote.style.margin = '6px 0';
-  coeffNote.textContent = isPending
-    ? 'The 16 numbers of the new multivector, in the library’s basis order. A live preview draws as soon as any goes non-zero.'
-    : 'The 16 numbers of this object’s own multivector, in the library’s basis order. The object itself only moves when you save.';
-  editBox.appendChild(coeffNote);
+  const note_coefficient = document.createElement('div');
+  note_coefficient.className = 'help-text';
+  note_coefficient.style.margin = '6px 0';
+  note_coefficient.textContent = is_pending
+    ? 'The 16 numbers of the new multivector, in the library’s basis order. ' +
+      'A live preview draws as soon as any goes non-zero.'
+    : 'The 16 numbers of this object’s own multivector, in the library’s basis ' +
+      'order. The object itself only moves when you save.';
+  box_edit.appendChild(note_coefficient);
 
   const grid = document.createElement('div');
   grid.className = 'coeff-grid';
   // `nimFormatNumber`, not a `toFixed` here: how many digits a coefficient is worth
   //   is a decision about this project's numbers, and the desktop's own cells make it the
   //   same way.
-  const coeffInputs = buildGradedCoeffGrid(
+  const inputs_coefficient = buildGradedCoefficientGrid(
     grid,
     (b) =>
-      nimFormatNumber(isOpen ? editSession.coefficients[b] : nimItemCoefficients(slot)[b]),
+      nimFormatNumber(is_open ? session_edit.coefficients[b] : nimItemCoefficients(slot)[b]),
   );
-  coeffInputs.forEach((input, b) => {
+  inputs_coefficient.forEach((input, b) => {
     // `input`, not `change`: the ghost tracks a keystroke rather than waiting for the
     //   field to blur, which is what makes the preview feel live.
     input.addEventListener('input', () => {
-      editSession.coefficients[b] = parseFloat(input.value) || 0;
-      nimSetGhost(editSession.coefficients);
-      coeffLine.textContent = describeStaged();
+      session_edit.coefficients[b] = parseFloat(input.value) || 0;
+      nimSetGhost(session_edit.coefficients);
+      line_coefficient.textContent = describeStaged();
     });
   });
-  editBox.appendChild(grid);
+  box_edit.appendChild(grid);
 
-  row.appendChild(editBox);
+  row.appendChild(box_edit);
   return row;
 }
 
@@ -793,7 +809,7 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 
 function saveScene() {
   const slots = nimSceneSlots();
-  const basisCount = nimBasisCount();
+  const count_basis = nimBasisCount();
   const items = slots.map((slot) => ({
     ink: nimItemInk(slot),
     visible: nimItemVisible(slot),
@@ -802,7 +818,7 @@ function saveScene() {
   }));
 
   let size = 4 + 1 + 1 + 4;
-  for (const item of items) size += 1 + 1 + 1 + item.label.length + basisCount * 8;
+  for (const item of items) size += 1 + 1 + 1 + item.label.length + count_basis * 8;
 
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
@@ -810,15 +826,21 @@ function saveScene() {
   const magic = 'RGAS';
   for (let i = 0; i < 4; i++) { view.setUint8(offset, magic.charCodeAt(i)); offset += 1; }
   view.setUint8(offset, 1); offset += 1; // version
-  view.setUint8(offset, basisCount); offset += 1;
+  view.setUint8(offset, count_basis); offset += 1;
   view.setUint32(offset, items.length, true); offset += 4;
 
   for (const item of items) {
     view.setUint8(offset, item.ink); offset += 1;
     view.setUint8(offset, item.visible ? 1 : 0); offset += 1;
     view.setUint8(offset, item.label.length); offset += 1;
-    for (let i = 0; i < item.label.length; i++) { view.setUint8(offset, item.label.charCodeAt(i)); offset += 1; }
-    for (let i = 0; i < basisCount; i++) { view.setFloat64(offset, item.coefficients[i], true); offset += 8; }
+    for (let i = 0; i < item.label.length; i++) {
+      view.setUint8(offset, item.label.charCodeAt(i));
+      offset += 1;
+    }
+    for (let i = 0; i < count_basis; i++) {
+      view.setFloat64(offset, item.coefficients[i], true);
+      offset += 8;
+    }
   }
 
   const blob = new Blob([buffer], { type: 'application/octet-stream' });
@@ -857,39 +879,54 @@ function parseAndLoadScene(buffer) {
   if (magic !== 'RGAS') throw new Error('File is not a scene file.');
   const version = view.getUint8(offset); offset += 1;
   if (version !== 1) throw new Error('File is a scene file of a version this build cannot read.');
-  const basisCountFile = view.getUint8(offset); offset += 1;
-  const basisCountHere = nimBasisCount();
-  if (basisCountFile !== basisCountHere) {
+  const count_basis_file = view.getUint8(offset); offset += 1;
+  const count_basis_here = nimBasisCount();
+  if (count_basis_file !== count_basis_here) {
     throw new Error(
       'File was saved under a different PGA dimension or metric; this build reads ' +
-      basisCountHere + '-term multivectors.',
+      count_basis_here + '-term multivectors.',
     );
   }
-  const itemCount = view.getUint32(offset, true); offset += 4;
-  if (itemCount > nimSceneCapacity()) {
-    throw new Error('File holds ' + itemCount + ' objects, more than this build’s ' + nimSceneCapacity() + '-item capacity.');
+  const count_item = view.getUint32(offset, true); offset += 4;
+  if (count_item > nimSceneCapacity()) {
+    throw new Error(
+      'File holds ' + count_item + ' objects, more than this build’s ' +
+      nimSceneCapacity() + '-item capacity.',
+    );
   }
 
   const parsed = [];
-  for (let i = 0; i < itemCount; i++) {
-    if (offset + 3 > buffer.byteLength) throw new Error('File is truncated partway through object ' + i + '.');
+  for (let i = 0; i < count_item; i++) {
+    if (offset + 3 > buffer.byteLength) {
+      throw new Error('File is truncated partway through object ' + i + '.');
+    }
     const ink = view.getUint8(offset); offset += 1;
     const visible = view.getUint8(offset) !== 0; offset += 1;
-    const labelLen = view.getUint8(offset); offset += 1;
-    if (offset + labelLen > buffer.byteLength) throw new Error('File is truncated partway through object ' + i + '’s label.');
+    const length_label = view.getUint8(offset); offset += 1;
+    if (offset + length_label > buffer.byteLength) {
+      throw new Error(
+        'File is truncated partway through object ' + i + '’s label.',
+      );
+    }
     let label = '';
-    for (let j = 0; j < labelLen; j++) { label += String.fromCharCode(view.getUint8(offset)); offset += 1; }
-    if (offset + basisCountHere * 8 > buffer.byteLength) {
+    for (let j = 0; j < length_label; j++) {
+      label += String.fromCharCode(view.getUint8(offset));
+      offset += 1;
+    }
+    if (offset + count_basis_here * 8 > buffer.byteLength) {
       throw new Error('File is truncated partway through object ' + i + '’s geometry.');
     }
-    const coefficients = new Array(basisCountHere);
-    for (let b = 0; b < basisCountHere; b++) { coefficients[b] = view.getFloat64(offset, true); offset += 8; }
+    const coefficients = new Array(count_basis_here);
+    for (let b = 0; b < count_basis_here; b++) {
+      coefficients[b] = view.getFloat64(offset, true);
+      offset += 8;
+    }
     parsed.push({ ink, visible, label, coefficients });
   }
 
   nimSceneClear();
   for (const item of parsed) nimSceneAddRaw(item.ink, item.visible, item.label, item.coefficients);
-  return 'Loaded ' + itemCount + ' object(s) from scene file.';
+  return 'Loaded ' + count_item + ' object(s) from scene file.';
 }
 
 /* ---------------------------------------------------------------------- */
@@ -899,20 +936,20 @@ function parseAndLoadScene(buffer) {
 /* ---------------------------------------------------------------------- */
 
 const FRAMES_HISTORY = 240;
-const frameHistory = new Array(FRAMES_HISTORY).fill(16.6);
-let frameHistoryIndex = 0;
-let lastFrameTime = performance.now();
+const history_frame = new Array(FRAMES_HISTORY).fill(16.6);
+let index_history_frame = 0;
+let time_frame_last = performance.now();
 const sparkline = document.getElementById('sparkline');
-const sparklineCtx = sparkline.getContext('2d');
-const diagFrametime = document.getElementById('diag-frametime');
-const diagHeap = document.getElementById('diag-heap');
-const diagPool = document.getElementById('diag-pool');
-const poolStrip = document.getElementById('pool-strip');
-let poolStripBuilt = false;
+const context_sparkline = sparkline.getContext('2d');
+const diagnostic_frame_time = document.getElementById('diag-frametime');
+const diagnostic_heap = document.getElementById('diag-heap');
+const diagnostic_pool = document.getElementById('diag-pool');
+const strip_pool = document.getElementById('pool-strip');
+let is_strip_pool_built = false;
 
-function recordFrameTime(deltaMs) {
-  frameHistory[frameHistoryIndex] = deltaMs;
-  frameHistoryIndex = (frameHistoryIndex + 1) % FRAMES_HISTORY;
+function recordFrameTime(delta_milliseconds) {
+  history_frame[index_history_frame] = delta_milliseconds;
+  index_history_frame = (index_history_frame + 1) % FRAMES_HISTORY;
 }
 
 function refreshDiagnostics() {
@@ -920,40 +957,42 @@ function refreshDiagnostics() {
   if (sparkline.width !== w) sparkline.width = w;
   if (sparkline.height !== h) sparkline.height = h;
   let highest = 16.6;
-  for (const v of frameHistory) if (v > highest) highest = v;
-  sparklineCtx.clearRect(0, 0, w, h);
-  sparklineCtx.strokeStyle = '#00a7a5';
-  sparklineCtx.lineWidth = 1.5;
-  sparklineCtx.beginPath();
+  for (const v of history_frame) if (v > highest) highest = v;
+  context_sparkline.clearRect(0, 0, w, h);
+  context_sparkline.strokeStyle = '#00a7a5';
+  context_sparkline.lineWidth = 1.5;
+  context_sparkline.beginPath();
   for (let i = 0; i < FRAMES_HISTORY; i++) {
-    const v = frameHistory[(frameHistoryIndex + i) % FRAMES_HISTORY];
+    const v = history_frame[(index_history_frame + i) % FRAMES_HISTORY];
     const x = (i / (FRAMES_HISTORY - 1)) * w;
     const y = h - (Math.min(v, highest) / highest) * h;
-    if (i === 0) sparklineCtx.moveTo(x, y); else sparklineCtx.lineTo(x, y);
+    if (i === 0) context_sparkline.moveTo(x, y); else context_sparkline.lineTo(x, y);
   }
-  sparklineCtx.stroke();
+  context_sparkline.stroke();
 
-  const latest = frameHistory[(frameHistoryIndex + FRAMES_HISTORY - 1) % FRAMES_HISTORY];
-  diagFrametime.textContent = latest.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(latest, 1)) + ' fps)';
+  const latest = history_frame[(index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY];
+  diagnostic_frame_time.textContent =
+    latest.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(latest, 1)) + ' fps)';
 
   if (performance.memory) {
-    diagHeap.textContent = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + ' / ' +
+    diagnostic_heap.textContent =
+      (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + ' / ' +
       (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB';
   }
 
   const count = nimSceneCount(), capacity = nimSceneCapacity();
-  diagPool.textContent = count + ' / ' + capacity;
-  if (!poolStripBuilt) {
-    for (let i = 0; i < capacity; i++) poolStrip.appendChild(document.createElement('span'));
-    poolStripBuilt = true;
+  diagnostic_pool.textContent = count + ' / ' + capacity;
+  if (!is_strip_pool_built) {
+    for (let i = 0; i < capacity; i++) strip_pool.appendChild(document.createElement('span'));
+    is_strip_pool_built = true;
   }
   // An occupied cell wears its own object's ink, so the strip reads as the scene rather
   //   than as an anonymous occupancy count. `nimPoolCellColors` decides every cell's
   //   colour, free ones included, so no palette rule lives out here -- it returns one
   //   [r, g, b] triple per slot, in slot order.
   const cells = nimPoolCellColors();
-  Array.from(poolStrip.children).forEach((el, i) => {
-    el.style.background = rgbToCss(cells.slice(i * 3, i * 3 + 3));
+  Array.from(strip_pool.children).forEach((element, i) => {
+    element.style.background = rgbToCss(cells.slice(i * 3, i * 3 + 3));
   });
 }
 
@@ -964,7 +1003,7 @@ function refreshDiagnostics() {
 /* than through Dear ImGui's own immediate-mode draw list.                */
 /* ---------------------------------------------------------------------- */
 
-const overlaySvg = document.getElementById('overlay');
+const svg_overlay = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics, rather than a hand-copied
 // literal that could drift out of sync with them.
 const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
@@ -973,9 +1012,9 @@ const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2;
 
 function svgEl(tag, attrs) {
-  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  for (const k in attrs) el.setAttribute(k, attrs[k]);
-  return el;
+  const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) element.setAttribute(k, attrs[k]);
+  return element;
 }
 
 // Stroke one object's marker into the overlay. Every geometric decision -- which outline,
@@ -987,7 +1026,7 @@ function svgEl(tag, attrs) {
 function appendMarker(slot, alpha, w, h) {
   const marker = nimSelectionMarker(slot, canvas.width, canvas.height);
   if (marker.length === 0) return;
-  const kind = marker[0], isClosed = marker[1] > 0.5, radius = marker[2];
+  const kind = marker[0], is_closed = marker[1] > 0.5, radius = marker[2];
   const stroke = 'rgba(255,255,255,' + alpha + ')';
   const points = [];
   for (let i = 3; i + 1 < marker.length; i += 2) {
@@ -995,19 +1034,19 @@ function appendMarker(slot, alpha, w, h) {
   }
 
   if (kind === MARKER_RING) {
-    overlaySvg.appendChild(svgEl('circle', {
+    svg_overlay.appendChild(svgEl('circle', {
       cx: points[0][0], cy: points[0][1], r: radius,
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
     }));
   } else if (kind === MARKER_RAILS) {
     for (let i = 0; i < points.length; i += 2) {
-      overlaySvg.appendChild(svgEl('line', {
+      svg_overlay.appendChild(svgEl('line', {
         x1: points[i][0], y1: points[i][1], x2: points[i + 1][0], y2: points[i + 1][1],
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       }));
     }
   } else if (kind === MARKER_LOOP) {
-    overlaySvg.appendChild(svgEl(isClosed ? 'polygon' : 'polyline', {
+    svg_overlay.appendChild(svgEl(is_closed ? 'polygon' : 'polyline', {
       points: points.map((p) => p[0] + ',' + p[1]).join(' '),
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
     }));
@@ -1015,18 +1054,18 @@ function appendMarker(slot, alpha, w, h) {
 }
 
 function refreshOverlay(cursor) {
-  overlaySvg.innerHTML = '';
+  svg_overlay.innerHTML = '';
   const w = canvas.clientWidth, h = canvas.clientHeight;
 
   // One marker per selected object, shaped to that object by marker.nim -- a ring about
   // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
   // marker at lower opacity, so both read as one family and hovering a line previews
   // exactly what selecting it will draw.
-  for (const slot of selectionSlots) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h);
+  for (const slot of slots_selection) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h);
 
-  const hoverSlot = nimHoverSlot();
-  if (hoverSlot >= 0 && !selectionSlots.includes(hoverSlot)) {
-    appendMarker(hoverSlot, ALPHA_MARKER_HOVER, w, h);
+  const slot_hover = nimHoverSlot();
+  if (slot_hover >= 0 && !slots_selection.includes(slot_hover)) {
+    appendMarker(slot_hover, ALPHA_MARKER_HOVER, w, h);
   }
 
   if (nimDragActive()) {
@@ -1034,9 +1073,10 @@ function refreshOverlay(cursor) {
     if (src[2] > 0.5 && cursor) {
       const sx = src[0] * (w / canvas.width), sy = src[1] * (h / canvas.height);
       const tint = nimDragTint(nimDragOperation());
-      overlaySvg.appendChild(svgEl('line', {
+      svg_overlay.appendChild(svgEl('line', {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
-        stroke: 'rgba(' + Math.round(tint[0] * 255) + ',' + Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)',
+        stroke: 'rgba(' + Math.round(tint[0] * 255) + ',' +
+          Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)',
         'stroke-width': WIDTH_OVERLAY_LINE,
       }));
     }
@@ -1058,27 +1098,29 @@ function refreshOverlay(cursor) {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const pointers = new Map();
-let pinchStartDist = null;
-let panLast = null;
-let mouseDragButton = null; // Button held for camera orbit/pan fallback, while no operation drag is active.
-let lastCursor = null;
+let separation_pinch_start = null;
+let pan_last = null;
+// Button held for camera orbit/pan fallback, while no operation drag is active.
+let button_mouse_drag = null;
+let cursor_last = null;
 
 // Touch long-press-to-select / tap-to-toggle state.
-let touchDownAt = null, touchDownPos = null, touchMoved = false;
-let touchLongPressTimer = null, touchLongPressFired = false;
+let touch_down_at = null, position_touch_down = null, has_touch_moved = false;
+let timer_touch_long_press = null, has_long_press_fired = false;
 const TAP_MAX_MS = 350, TAP_MAX_MOVE = 12, LONG_PRESS_MS = 500;
 
 // Mouse click-vs-drag disambiguation state -- a plain click (no movement) selects/
 //   shift-selects; an actual drag still applies join/meet/project exactly as before.
-let mouseDownAt = null, mouseDownPos = null, mouseDownButton = null, mouseMoved = false;
+let mouse_down_at = null, position_mouse_down = null;
+let button_mouse_down = null, has_mouse_moved = false;
 const MOUSE_CLICK_MAX_MS = 350, MOUSE_CLICK_MAX_MOVE = 6;
 
-function pointerDist(pts) {
-  const [a, b] = pts;
+function pointerDist(points_flat) {
+  const [a, b] = points_flat;
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
-function pointerMid(pts) {
-  const [a, b] = pts;
+function pointerMid(points_flat) {
+  const [a, b] = points_flat;
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
@@ -1089,20 +1131,20 @@ canvas.addEventListener('pointerdown', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   if (e.pointerType === 'mouse') {
-    const dpr = canvas.width / rect.width;
-    nimUpdateCursor(local.x * dpr, local.y * dpr);
+    const ratio_pixel = canvas.width / rect.width;
+    nimUpdateCursor(local.x * ratio_pixel, local.y * ratio_pixel);
     nimUpdateHover(canvas.width, canvas.height);
-    mouseDownAt = performance.now();
-    mouseDownPos = { x: e.clientX, y: e.clientY };
-    mouseDownButton = e.button;
-    mouseMoved = false;
+    mouse_down_at = performance.now();
+    position_mouse_down = { x: e.clientX, y: e.clientY };
+    button_mouse_down = e.button;
+    has_mouse_moved = false;
     const drag = nimDragOperationForButton(e.button);
     if (drag >= 0 && nimBeginDrag(drag)) {
-      mouseDragButton = e.button;
+      button_mouse_drag = e.button;
     } else if (e.button === 0) {
-      mouseDragButton = 'orbit';
+      button_mouse_drag = 'orbit';
     } else if (e.button === 2) {
-      mouseDragButton = 'pan';
+      button_mouse_drag = 'pan';
     }
     return;
   }
@@ -1111,56 +1153,63 @@ canvas.addEventListener('pointerdown', (e) => {
   // single-finger tap that toggles selection membership once a selection exists, and
   // for a long-press that starts one.
   if (pointers.size === 1) {
-    touchDownAt = performance.now();
-    touchDownPos = local;
-    touchMoved = false;
-    touchLongPressFired = false;
-    clearTimeout(touchLongPressTimer);
-    touchLongPressTimer = setTimeout(() => {
-      if (touchMoved) return; // Moved into an orbit gesture before the hold matured.
+    touch_down_at = performance.now();
+    position_touch_down = local;
+    has_touch_moved = false;
+    has_long_press_fired = false;
+    clearTimeout(timer_touch_long_press);
+    timer_touch_long_press = setTimeout(() => {
+      if (has_touch_moved) return; // Moved into an orbit gesture before the hold matured.
       const rect2 = canvas.getBoundingClientRect();
-      const dpr2 = canvas.width / rect2.width;
-      nimUpdateCursor(touchDownPos.x * dpr2, touchDownPos.y * dpr2);
+      const ratio_pixel_now = canvas.width / rect2.width;
+      nimUpdateCursor(
+        position_touch_down.x * ratio_pixel_now, position_touch_down.y * ratio_pixel_now,
+      );
       nimUpdateHover(canvas.width, canvas.height);
       const hovered = nimHoverSlot();
       if (hovered >= 0) {
-        touchLongPressFired = true;
-        toggleSelection(hovered, touchDownPos);
+        has_long_press_fired = true;
+        toggleSelection(hovered, position_touch_down);
       }
     }, LONG_PRESS_MS);
   } else {
-    touchDownAt = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
-    clearTimeout(touchLongPressTimer);
+    touch_down_at = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
+    clearTimeout(timer_touch_long_press);
   }
   if (pointers.size === 2) {
-    const pts = [...pointers.values()];
-    pinchStartDist = pointerDist(pts);
-    panLast = pointerMid(pts);
+    const points_flat = [...pointers.values()];
+    separation_pinch_start = pointerDist(points_flat);
+    pan_last = pointerMid(points_flat);
   }
 });
 
 canvas.addEventListener('pointermove', (e) => {
   const rect = canvas.getBoundingClientRect();
-  lastCursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  cursor_last = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
   if (e.pointerType === 'mouse') {
-    const dpr = canvas.width / rect.width;
-    nimUpdateCursor(lastCursor.x * dpr, lastCursor.y * dpr);
-    if (mouseDownPos && Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y) > MOUSE_CLICK_MAX_MOVE) {
-      mouseMoved = true;
+    const ratio_pixel = canvas.width / rect.width;
+    nimUpdateCursor(cursor_last.x * ratio_pixel, cursor_last.y * ratio_pixel);
+    const reach_mouse = position_mouse_down &&
+      Math.hypot(e.clientX - position_mouse_down.x, e.clientY - position_mouse_down.y);
+    if (reach_mouse > MOUSE_CLICK_MAX_MOVE) {
+      has_mouse_moved = true;
     }
-    if (mouseDragButton !== null && typeof mouseDragButton === 'number') {
-      nimUpdateHover(canvas.width, canvas.height); // Re-check hover for the drag's own destination preview.
+    if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
+      // Re-check hover for the drag's own destination preview.
+      nimUpdateHover(canvas.width, canvas.height);
       return;
     }
     if (!pointers.has(e.pointerId)) return;
     const prev = pointers.get(e.pointerId);
-    const cur = { x: e.clientX, y: e.clientY };
-    pointers.set(e.pointerId, cur);
-    const dx = cur.x - prev.x, dy = cur.y - prev.y;
-    if (mouseDragButton === 'orbit') {
-      nimCameraOrbit(-dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4);
-    } else if (mouseDragButton === 'pan') {
+    const current = { x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, current);
+    const dx = current.x - prev.x, dy = current.y - prev.y;
+    if (button_mouse_drag === 'orbit') {
+      nimCameraOrbit(
+        -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
+      );
+    } else if (button_mouse_drag === 'pan') {
       nimCameraPan(-dx / canvas.clientWidth * 1.4, dy / canvas.clientHeight * 1.4);
     }
     nimUpdateHover(canvas.width, canvas.height);
@@ -1169,38 +1218,42 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (!pointers.has(e.pointerId)) return;
   const prev = pointers.get(e.pointerId);
-  const cur = { x: e.clientX, y: e.clientY };
-  pointers.set(e.pointerId, cur);
-  if (touchDownPos && Math.hypot(lastCursor.x - touchDownPos.x, lastCursor.y - touchDownPos.y) > TAP_MAX_MOVE) {
-    touchMoved = true;
-    clearTimeout(touchLongPressTimer);
+  const current = { x: e.clientX, y: e.clientY };
+  pointers.set(e.pointerId, current);
+  const reach_touch = position_touch_down &&
+    Math.hypot(cursor_last.x - position_touch_down.x, cursor_last.y - position_touch_down.y);
+  if (reach_touch > TAP_MAX_MOVE) {
+    has_touch_moved = true;
+    clearTimeout(timer_touch_long_press);
   }
 
   if (pointers.size === 1) {
-    const dx = cur.x - prev.x, dy = cur.y - prev.y;
-    nimCameraOrbit(-dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4);
+    const dx = current.x - prev.x, dy = current.y - prev.y;
+    nimCameraOrbit(
+      -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
+    );
   } else if (pointers.size === 2) {
-    const pts = [...pointers.values()];
-    const dist = pointerDist(pts);
-    if (pinchStartDist) nimCameraDolly(pinchStartDist / Math.max(1, dist));
-    pinchStartDist = dist;
+    const points_flat = [...pointers.values()];
+    const separation = pointerDist(points_flat);
+    if (separation_pinch_start) nimCameraDolly(separation_pinch_start / Math.max(1, separation));
+    separation_pinch_start = separation;
 
-    const mid = pointerMid(pts);
-    if (panLast) {
-      const dx = (mid.x - panLast.x) / canvas.clientWidth;
-      const dy = (mid.y - panLast.y) / canvas.clientHeight;
+    const mid = pointerMid(points_flat);
+    if (pan_last) {
+      const dx = (mid.x - pan_last.x) / canvas.clientWidth;
+      const dy = (mid.y - pan_last.y) / canvas.clientHeight;
       nimCameraPan(-dx * 1.4, dy * 1.4);
     }
-    panLast = mid;
+    pan_last = mid;
   }
 });
 
 function endMouseDrag(e) {
-  const isClick = !mouseMoved && mouseDownAt !== null &&
-    performance.now() - mouseDownAt < MOUSE_CLICK_MAX_MS;
+  const is_click = !has_mouse_moved && mouse_down_at !== null &&
+    performance.now() - mouse_down_at < MOUSE_CLICK_MAX_MS;
 
-  if (typeof mouseDragButton === 'number') {
-    if (isClick && mouseDownButton === 0) {
+  if (typeof button_mouse_drag === 'number') {
+    if (is_click && button_mouse_down === 0) {
       // A plain left click over a hovered object: today this eagerly-begun Join drag
       //   would complete as a harmless "released on its own source" no-op and toast
       //   that; a plain click now means select/shift-select instead, so abandon the
@@ -1208,8 +1261,8 @@ function endMouseDrag(e) {
       nimCancelDrag();
       const hovered = nimHoverSlot();
       if (hovered >= 0) {
-        if (e.shiftKey) toggleSelection(hovered, lastCursor);
-        else selectOnly(hovered, lastCursor);
+        if (e.shiftKey) toggleSelection(hovered, cursor_last);
+        else selectOnly(hovered, cursor_last);
       }
     } else {
       // A genuine drag (moved, or held past the click window), or a non-left-button
@@ -1218,15 +1271,16 @@ function endMouseDrag(e) {
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
     }
-  } else if (isClick && mouseDownButton === 0 && !e.shiftKey) {
+  } else if (is_click && button_mouse_down === 0 && !e.shiftKey) {
     // Plain left click over empty space -- mirrors touch's own "tapping empty space
     //   always cancels" rule. A shift+click over empty space is left a no-op, not a
     //   clear -- shift signals "preserve what I already have".
     clearSelection();
   }
 
-  mouseDragButton = null;
-  mouseDownAt = null; mouseDownPos = null; mouseDownButton = null; mouseMoved = false;
+  button_mouse_drag = null;
+  mouse_down_at = null; position_mouse_down = null;
+  button_mouse_down = null; has_mouse_moved = false;
 }
 
 function releasePointer(e) {
@@ -1239,15 +1293,15 @@ function releasePointer(e) {
   // Touch: a tap is a same-finger down+up within time/distance bounds, with no second
   // finger ever joining and no long-press already having fired -- resolves into a
   // selection toggle (see `handleTap`).
-  clearTimeout(touchLongPressTimer);
-  if (!touchLongPressFired && touchDownAt !== null && !touchMoved && pointers.size === 1 &&
-      performance.now() - touchDownAt < TAP_MAX_MS) {
-    handleTap(touchDownPos);
+  clearTimeout(timer_touch_long_press);
+  if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved && pointers.size === 1 &&
+      performance.now() - touch_down_at < TAP_MAX_MS) {
+    handleTap(position_touch_down);
   }
-  touchDownAt = null;
-  touchLongPressFired = false;
+  touch_down_at = null;
+  has_long_press_fired = false;
   pointers.delete(e.pointerId);
-  if (pointers.size < 2) { pinchStartDist = null; panLast = null; }
+  if (pointers.size < 2) { separation_pinch_start = null; pan_last = null; }
   if (pointers.size === 0) nimClearHover(); // No finger left touching the canvas -- there's
     // no cursor position left to be "hovering" anything, so don't let the last touch-down's
     // own hover reading linger and draw its ring forever.
@@ -1270,10 +1324,10 @@ canvas.addEventListener('wheel', (e) => {
 /*   selected slot at once. Tapping/clicking empty space, or the menu's own close        */
 /*   button, always clears the whole selection.                                          */
 
-function handleTap(localPos) {
+function handleTap(position_local) {
   const rect = canvas.getBoundingClientRect();
-  const dpr = canvas.width / rect.width;
-  nimUpdateCursor(localPos.x * dpr, localPos.y * dpr);
+  const ratio_pixel = canvas.width / rect.width;
+  nimUpdateCursor(position_local.x * ratio_pixel, position_local.y * ratio_pixel);
   nimUpdateHover(canvas.width, canvas.height);
   const hovered = nimHoverSlot();
 
@@ -1281,35 +1335,35 @@ function handleTap(localPos) {
     clearSelection(); // Tapping empty space always cancels.
     return;
   }
-  if (selectionSlots.length === 0) return; // Not in select mode yet -- only a long-press
+  if (slots_selection.length === 0) return; // Not in select mode yet -- only a long-press
     // starts one; a plain tap before that is a no-op, same as before this feature.
-  toggleSelection(hovered, localPos);
+  toggleSelection(hovered, position_local);
 }
 
-const selectionMenu = document.getElementById('selection-menu');
-const selectionMenuApply = document.getElementById('selection-menu-apply');
-const selectionMenuEdit = document.getElementById('selection-menu-edit');
-const selectionMenuHide = document.getElementById('selection-menu-hide');
-const selectionMenuDelete = document.getElementById('selection-menu-delete');
-const selectionMenuReveal = document.getElementById('selection-menu-reveal');
-const selectionMenuSelect = document.getElementById('selection-menu-select');
-const selectionMenuBack = document.getElementById('selection-menu-back');
-const selectionMenuClose = document.getElementById('selection-menu-close');
-let lastMenuOpArity = -1; // Arity last used to rebuild selection-menu-select's own
+const menu_selection = document.getElementById('selection-menu');
+const menu_selection_apply = document.getElementById('selection-menu-apply');
+const menu_selection_edit = document.getElementById('selection-menu-edit');
+const menu_selection_hide = document.getElementById('selection-menu-hide');
+const menu_selection_delete = document.getElementById('selection-menu-delete');
+const menu_selection_reveal = document.getElementById('selection-menu-reveal');
+const menu_selection_select = document.getElementById('selection-menu-select');
+const menu_selection_back = document.getElementById('selection-menu-back');
+const menu_selection_close = document.getElementById('selection-menu-close');
+let arity_menu_last = -1; // Arity last used to rebuild selection-menu-select's own
   // <option> list -- like the drawer's own populateOperations, only rebuilds when it
   // actually changes, not on every reveal.
 
 function populateSelectionMenuOptions(arity) {
-  if (arity === lastMenuOpArity) return;
-  lastMenuOpArity = arity;
-  selectionMenuSelect.innerHTML = '';
+  if (arity === arity_menu_last) return;
+  arity_menu_last = arity;
+  menu_selection_select.innerHTML = '';
   const count = nimOperationCount();
   for (let i = 0; i < count; i++) {
     if (nimOperationArity(i) !== arity) continue;
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = nimOperationNotation(i);
-    selectionMenuSelect.appendChild(opt);
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = nimOperationNotation(i);
+    menu_selection_select.appendChild(option);
   }
 }
 
@@ -1320,53 +1374,54 @@ function openSelectionMenuOp() {
   //   aside while picking an operation, matching the old two-row design's own behaviour
   //   (its second row never carried them either) -- ✕ stays, as it always did.
   populateSelectionMenuOptions(nimSelectionArity());
-  selectionMenuReveal.classList.add('open');
-  selectionMenuEdit.style.display = 'none';
-  selectionMenuHide.style.display = 'none';
-  selectionMenuDelete.style.display = 'none';
+  menu_selection_reveal.classList.add('open');
+  menu_selection_edit.style.display = 'none';
+  menu_selection_hide.style.display = 'none';
+  menu_selection_delete.style.display = 'none';
 }
 
 function closeSelectionMenuOp() {
-  selectionMenuReveal.classList.remove('open');
-  selectionMenuEdit.style.display = selectionSlots.length === 1 ? '' : 'none';
-  selectionMenuHide.style.display = '';
-  selectionMenuDelete.style.display = '';
+  menu_selection_reveal.classList.remove('open');
+  menu_selection_edit.style.display = slots_selection.length === 1 ? '' : 'none';
+  menu_selection_hide.style.display = '';
+  menu_selection_delete.style.display = '';
 }
 
-function refreshSelectionMenu(localPos) {
-  const n = selectionSlots.length;
+function refreshSelectionMenu(position_local) {
+  const n = slots_selection.length;
   if (n === 0) { hideSelectionMenu(); return; }
-  selectionMenuApply.style.display = (n === 1 || n === 2) ? '' : 'none'; // 3+: no apply --
+  menu_selection_apply.style.display = (n === 1 || n === 2) ? '' : 'none'; // 3+: no apply --
     // this menu has no operand pickers, so it cannot say which two of three it would use.
-  selectionMenuEdit.style.display = n === 1 ? '' : 'none'; // One object has one editor.
-  selectionMenuHide.textContent = nimSelectionAllHidden() ? 'show' : 'hide';
+  menu_selection_edit.style.display = n === 1 ? '' : 'none'; // One object has one editor.
+  menu_selection_hide.textContent = nimSelectionAllHidden() ? 'show' : 'hide';
   closeSelectionMenuOp(); // Any fresh selection change resets the picker closed.
-  if (localPos) positionSelectionMenuAt(localPos); else updateSelectionMenuPosition();
-  selectionMenu.classList.add('show');
+  if (position_local) positionSelectionMenuAt(position_local); else updateSelectionMenuPosition();
+  menu_selection.classList.add('show');
 }
 
 function hideSelectionMenu() {
-  selectionMenu.classList.remove('show');
+  menu_selection.classList.remove('show');
   closeSelectionMenuOp();
-  lastMenuOpArity = -1;
+  arity_menu_last = -1;
 }
 
-function positionSelectionMenuAt(localPos) {
+function positionSelectionMenuAt(position_local) {
   const rect = canvas.getBoundingClientRect();
   // Reserved right margin covers the widest state this popover reaches: the op-picker
   //   row (select sized to its own longest notation, e.g. "𝐧 ∨ (𝐦 ∧ 𝐧☆)", plus "apply"/
   //   "back") now that the select's own width is content-sized rather than truncated.
-  selectionMenu.style.left = Math.min(rect.left + localPos.x, window.innerWidth - 300) + 'px';
-  selectionMenu.style.top = Math.max(rect.top + localPos.y - 60, 8) + 'px';
+  menu_selection.style.left =
+    Math.min(rect.left + position_local.x, window.innerWidth - 300) + 'px';
+  menu_selection.style.top = Math.max(rect.top + position_local.y - 60, 8) + 'px';
 }
 
 function updateSelectionMenuPosition() {
   // Keep the menu glued to the most-recently-selected slot's own screen position every
   //   frame it's open, generalizing the old tap-menu's single-slot follow -- an average
   //   across all selected would jump around as membership changes for no real benefit.
-  if (!selectionMenu.classList.contains('show') || selectionSlots.length === 0) return;
-  const anchorSlot = selectionSlots[selectionSlots.length - 1];
-  const anchor = nimAnchorScreen(anchorSlot, canvas.width, canvas.height);
+  if (!menu_selection.classList.contains('show') || slots_selection.length === 0) return;
+  const slot_anchor = slots_selection[slots_selection.length - 1];
+  const anchor = nimAnchorScreen(slot_anchor, canvas.width, canvas.height);
   if (anchor[2] <= 0.5) return; // Off-screen -- leave the menu at its last valid spot.
   const w = canvas.clientWidth, h = canvas.clientHeight;
   positionSelectionMenuAt({
@@ -1375,54 +1430,54 @@ function updateSelectionMenuPosition() {
   });
 }
 
-selectionMenuApply.addEventListener('click', () => {
+menu_selection_apply.addEventListener('click', () => {
   // First press: open the picker (animates open to this same button's own right --
   //   the button itself never moves or relabels). Second press, picker already open:
   //   commit with whatever operation is currently selected -- one button serves both
   //   roles instead of a separate "go" button appearing once the picker opens.
-  if (!selectionMenuReveal.classList.contains('open')) {
+  if (!menu_selection_reveal.classList.contains('open')) {
     openSelectionMenuOp();
     return;
   }
-  const n = selectionSlots.length;
+  const n = slots_selection.length;
   if (n !== 1 && n !== 2) return; // Guard only -- apply is hidden for 0/3+ anyway.
   if (nimSceneCount() >= nimSceneCapacity()) { toast('Scene is full.'); return; }
-  const first = selectionSlots[0];
-  const second = n === 2 ? selectionSlots[1] : first; // Unary ignores the second operand.
-  const result = nimApplyOperation(parseInt(selectionMenuSelect.value, 10), first, second, now());
+  const first = slots_selection[0];
+  const second = n === 2 ? slots_selection[1] : first; // Unary ignores the second operand.
+  const result = nimApplyOperation(parseInt(menu_selection_select.value, 10), first, second, now());
   toast(result.message);
   adoptConstructionSelection();
 });
-selectionMenuEdit.addEventListener('click', () => {
+menu_selection_edit.addEventListener('click', () => {
   // Reaching an object's editor otherwise means opening the drawer and hunting its row,
   //   even with that object already picked and its own menu on screen.
-  if (selectionSlots.length !== 1) return; // Guard only -- hidden for 0 and 2+ anyway.
-  openWorkbenchTo(selectionSlots[0]);
+  if (slots_selection.length !== 1) return; // Guard only -- hidden for 0 and 2+ anyway.
+  openWorkbenchTo(slots_selection[0]);
   hideSelectionMenu(); // The workbench owns the interaction now; the pick itself stays.
 });
 
-selectionMenuBack.addEventListener('click', closeSelectionMenuOp);
+menu_selection_back.addEventListener('click', closeSelectionMenuOp);
 
-selectionMenuHide.addEventListener('click', () => {
+menu_selection_hide.addEventListener('click', () => {
   // Whichever way the button reads is what it does, so the objects it hid can be brought
   //   back from the same place -- `nimSelectionAllHidden` owns what "hidden" means for a
   //   whole selection, the way the row button reads `nimItemVisible` for one object.
   const show = nimSelectionAllHidden();
-  for (const slot of selectionSlots) nimSetVisible(slot, show);
-  toast((show ? 'Showed ' : 'Hid ') + selectionSlots.length + ' object(s).');
+  for (const slot of slots_selection) nimSetVisible(slot, show);
+  toast((show ? 'Showed ' : 'Hid ') + slots_selection.length + ' object(s).');
   refreshSelectionMenu(null); // Relabels the button for what it would now do.
   refreshObjectsUI(); // Selection itself is kept -- hiding doesn't invalidate the slot.
 });
 
-selectionMenuDelete.addEventListener('click', () => {
-  const n = selectionSlots.length;
-  for (const slot of selectionSlots) nimRemoveItem(slot);
+menu_selection_delete.addEventListener('click', () => {
+  const n = slots_selection.length;
+  for (const slot of slots_selection) nimRemoveItem(slot);
   toast('Deleted ' + n + ' object(s).');
   clearSelection();
   refreshObjectsUI();
 });
 
-selectionMenuClose.addEventListener('click', clearSelection);
+menu_selection_close.addEventListener('click', clearSelection);
 
 document.addEventListener('pointerdown', (e) => {
   // Only a tap/click landing outside the canvas, the menu itself, the drawer
@@ -1430,16 +1485,17 @@ document.addEventListener('pointerdown', (e) => {
   //   or clear selection), and the top chip-row (save/load scene lives there too)
   //   should dismiss it here -- dismissing on the canvas's own down event would race
   //   handleTap/endMouseDrag's own resolution of that same gesture.
-  if (selectionMenu.classList.contains('show') && !selectionMenu.contains(e.target) &&
-      e.target !== canvas && !drawer.contains(e.target) && !chipRow.contains(e.target)) {
+  if (menu_selection.classList.contains('show') && !menu_selection.contains(e.target) &&
+      e.target !== canvas && !drawer.contains(e.target) && !row_chip.contains(e.target)) {
     clearSelection();
   }
   // Top menu: same shape of guard, its own state/target -- a tap landing outside the
   //   popover and outside its own trigger button closes it.
-  if (topMenu.classList.contains('show') && !topMenu.contains(e.target) && e.target !== menuBtn
-      && !menuBtn.contains(e.target)) {
-    topMenu.classList.remove('show');
-    menuBtn.classList.remove('on');
+  if (menu_top.classList.contains('show') && !menu_top.contains(e.target)
+      && e.target !== button_menu
+      && !button_menu.contains(e.target)) {
+    menu_top.classList.remove('show');
+    button_menu.classList.remove('on');
   }
 });
 
@@ -1448,15 +1504,15 @@ document.addEventListener('pointerdown', (e) => {
 /* ---------------------------------------------------------------------- */
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  const w = Math.round(canvas.clientWidth * dpr);
-  const h = Math.round(canvas.clientHeight * dpr);
+  const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
+  const w = Math.round(canvas.clientWidth * ratio_pixel);
+  const h = Math.round(canvas.clientHeight * ratio_pixel);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
     gl.viewport(0, 0, w, h);
   }
-  overlaySvg.setAttribute('viewBox', '0 0 ' + canvas.clientWidth + ' ' + canvas.clientHeight);
+  svg_overlay.setAttribute('viewBox', '0 0 ' + canvas.clientWidth + ' ' + canvas.clientHeight);
 }
 window.addEventListener('resize', resize);
 
@@ -1465,33 +1521,33 @@ window.addEventListener('resize', resize);
 /* matrix out of the compiled Nim module and upload them straight to GL.   */
 /* ---------------------------------------------------------------------- */
 
-let uiRefreshAccum = 0;
+let count_refresh_ui = 0;
 
 function frame() {
   resize();
-  const nowSeconds = now();
+  const now_seconds = now();
   const aspect = canvas.width / canvas.height;
 
-  const nowMs = performance.now();
-  recordFrameTime(nowMs - lastFrameTime);
-  lastFrameTime = nowMs;
+  const now_milliseconds = performance.now();
+  recordFrameTime(now_milliseconds - time_frame_last);
+  time_frame_last = now_milliseconds;
 
-  const data = nimBuildFrame(aspect, nowSeconds, showAxes, showGrid);
+  const data = nimBuildFrame(aspect, now_seconds, is_axes_shown, is_grid_shown);
 
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.uniformMatrix4fv(uMVP, false, new Float32Array(data.view_projection));
+  gl.uniformMatrix4fv(uniform_view_projection, false, new Float32Array(data.view_projection));
 
   // World furniture first, at its own thinner line width, with normal depth test/write.
   // Mirrors renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
   gl.lineWidth(WIDTH_LINE_FURNITURE);
-  drawBuffer(data.furn_line_verts, gl.LINES, false, vbo.furnLine);
+  drawBuffer(data.furn_line_verts, gl.LINES, false, vbo.line_furniture);
 
   // Scene objects last, at their own wider line width; opaque kinds before plane washes
   // (triangles), with depth writes off for those, so a translucent plane never occludes
   // a line or point that happens to sit behind it -- it only tints over whatever was
   // already drawn there. Mirrors renderer.nim's own drawMeshes(MESHES, ...) call exactly.
-  gl.uniform1f(uPointSize, SIZE_POINT * dpr);
+  gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
   gl.lineWidth(WIDTH_LINE_OBJECT);
   drawBuffer(data.line_verts, gl.LINES, false, vbo.line);
   drawBuffer(data.point_verts, gl.POINTS, true, vbo.point);
@@ -1499,14 +1555,14 @@ function frame() {
   drawBuffer(data.tri_verts, gl.TRIANGLES, false, vbo.tri);
   gl.depthMask(true);
 
-  refreshOverlay(lastCursor);
+  refreshOverlay(cursor_last);
   updateSelectionMenuPosition();
 
   // UI (camera fields, diagnostics) refresh at a lower cadence than the draw loop --
   // no visual harm in a number lagging one frame, and it keeps DOM writes off the hot path.
-  uiRefreshAccum += 1;
-  if (uiRefreshAccum >= 6) {
-    uiRefreshAccum = 0;
+  count_refresh_ui += 1;
+  if (count_refresh_ui >= 6) {
+    count_refresh_ui = 0;
     refreshCameraFields();
     refreshDiagnostics();
     refreshUndoRedoButtons(); // catches every history-touching path this tick's own

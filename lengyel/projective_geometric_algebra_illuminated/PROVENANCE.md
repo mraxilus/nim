@@ -979,6 +979,39 @@ The codebase was brought into compliance across two audits. Notable outcomes sti
 - The `when defined(js)` seams in `scene.nim` and the `shapeDescription`/`labelString`
   duplicates in `browser_bridge.nim` are documented backend-compatibility necessities, not
   shortcuts. Leave them.
+- `EditSession` owns `geometry`/`stage`, the two directions its staged coefficients and a
+  `Multivector` convert between. Both were written out by hand at four sites across two
+  files before the audit found them.
+- Camera aiming is `visualiser.offerCameraAim`, not a tail block inside `assembleMeshes`:
+  where to look is not mesh assembly, and having it there had the staged ghost built twice
+  in one function.
+- `runStoryboard` tracks which slots a step touched as flags per slot rather than as a
+  `seq[int]`, matching the fixed shape `are_dimmed` beside it already had.
+- `panel.layoutItem` is an orchestrator over the row's three parts (name, actions,
+  description) sharing an `ItemRow` record; `layoutApply` sheds the catalogue filter, the
+  selection adoption and the apply itself. `layoutItemButtons` and what remains of
+  `layoutApply` justify their length in a comment rather than being split further -- a run
+  whose whole width must be measured before any of it is placed cannot be split without
+  measuring twice.
+
+**`glue.js` and `shell.html` were audited for the first time** once they became tracked
+(see Browser UI): they had never been read against the guide because they were not in the
+repository. The naming was uniformly JavaScript-idiomatic camelCase -- 89 data bindings,
+none snake_case -- against a guide whose first naming rule is that the case *is* the
+signal, adopted "even where the language community differs". Every data binding and
+parameter is now snake_case, callables stay camelCase, and the forbidden coined
+truncations (`btn`, `cam`, `diag`, `coeff`, `el`, `cur`, `arr`, `lbl`, `opt`, `sel`,
+`dist`, `pts`) are spelled out. Shader attribute and uniform *strings* are untouched: they
+name GLSL identifiers in the shader source, so only the JS bindings holding their
+locations were renamed. Forty-eight lines over the hundred-column limit across the two
+files were wrapped.
+
+That rename introduced exactly one bug and the browser drive caught it: a callback
+parameter renamed at its use but not at its binding, which `node --check` passes happily
+because it is a scope error, not a syntax error. Every control was then driven -- apply,
+undo, redo, add, save, both view toggles, a camera field, all four drawer sections, and a
+selection through the bridge -- with the scene count checked at each step and no console
+errors.
 
 The vendored `pga` library was reviewed against the guide and left unmodified by request.
 It is the source of several of the guide's rules and largely complies; known deviations are

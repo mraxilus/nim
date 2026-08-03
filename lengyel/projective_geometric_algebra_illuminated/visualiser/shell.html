@@ -313,7 +313,11 @@
     padding: 4px 2px;
     cursor: pointer;
   }
-  .section-header .chev { color: var(--ink-faint); transition: transform var(--anim) var(--ease); font-size: 11px; }
+  .section-header .chev {
+    color: var(--ink-faint);
+    transition: transform var(--anim) var(--ease);
+    font-size: 11px;
+  }
   .section.open .section-header .chev { transform: rotate(90deg); }
   .section-body { display: none; padding-top: 10px; }
   .section.open .section-body { display: block; }
@@ -361,13 +365,24 @@
   }
   .btn:active { background: #222a35; }
   .btn:disabled { opacity: 0.4; cursor: default; }
-  .btn.primary { background: rgba(0, 167, 165, 0.18); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary {
+    background: rgba(0, 167, 165, 0.18);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
   #btn-apply { margin-top: 10px; } /* hr.rule elsewhere in this drawer uses the same
     10px margin; the operand field-row directly above has no <hr> of its own now that
     "operate" no longer shares a section with "add". */
   .btn.danger { color: var(--danger); }
 
-  .check-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink); margin-bottom: 8px; }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
   .check-row input { accent-color: var(--accent); width: 15px; height: 15px; }
 
   hr.rule { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
@@ -400,15 +415,33 @@
     .item-row.selected's own role as a lightweight whole-row state cue, just for
     "hidden" instead of "selected"; the two are independent and may combine. */
   .item-top { display: flex; align-items: center; gap: 8px; }
-  .item-top input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
-  .item-label { flex: 1; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-top input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+  .item-label {
+    flex: 1;
+    font-size: 12.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .item-remove, .item-visibility, .item-edit-toggle, .item-edit-cancel {
     font-size: 10.5px; padding: 4px 8px;
   }
   /* A row being composed has no object behind it yet -- mark it so an unsaved row is
      never mistaken for one that already exists. */
   .item-row.pending-item { border-left: 2px solid var(--accent); padding-left: 8px; }
-  .item-coeff { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin: 3px 0 0 23px; word-break: break-word; }
+  .item-coeff {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    margin: 3px 0 0 23px;
+    word-break: break-word;
+  }
   .item-edit { display: none; margin: 8px 0 0 23px; }
   .item-edit.open { display: block; }
   /* Coefficient grid: stacked one row per grade (0 to n), each row itself wrapping --
@@ -424,10 +457,23 @@
   .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
   /* ---- Diagnostics ---- */
-  .diag-line { font-size: 11.5px; color: var(--ink-muted); margin: 6px 0; display: flex; justify-content: space-between; }
+  .diag-line {
+    font-size: 11.5px;
+    color: var(--ink-muted);
+    margin: 6px 0;
+    display: flex;
+    justify-content: space-between;
+  }
   .diag-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .sparkline { width: 100%; height: 40px; display: block; }
-  .pool-strip { display: flex; gap: 1px; height: 12px; margin: 6px 0; border-radius: 3px; overflow: hidden; }
+  .pool-strip {
+    display: flex;
+    gap: 1px;
+    height: 12px;
+    margin: 6px 0;
+    border-radius: 3px;
+    overflow: hidden;
+  }
   /* Every cell's own colour comes from `nimPoolCellColors`, set inline per frame; this
      background only covers the moment before the first diagnostics refresh runs. */
   .pool-strip span { flex: 1; background: var(--surface-solid); }
@@ -554,19 +600,42 @@
     </div>
     <input type="file" id="file-load-scene" accept=".rgascene" style="display:none;">
   </div>
-  <div class="hint" id="hint">drag to orbit · pinch to zoom · two fingers to pan · long-press an object to select</div>
+  <div
+    class="hint"
+    id="hint"
+  >drag to orbit · pinch to zoom · two fingers to pan · long-press an object to select</div>
 </div>
 
 <div class="top-menu" id="top-menu">
   <div class="top-menu-title">save</div>
   <div class="top-menu-group">
-    <button class="btn" id="btn-save-scene" type="button" title="Save this scene as a .rgascene file.">scene</button>
-    <button class="btn" id="btn-export-png" type="button" title="Save the current view as a PNG image.">image</button>
+    <button
+      class="btn"
+      id="btn-save-scene"
+      type="button"
+      title="Save this scene as a .rgascene file."
+    >scene</button>
+    <button
+      class="btn"
+      id="btn-export-png"
+      type="button"
+      title="Save the current view as a PNG image."
+    >image</button>
   </div>
   <div class="top-menu-title">load</div>
   <div class="top-menu-group">
-    <button class="btn" id="btn-load-scene" type="button" title="Load a .rgascene file, replacing this scene.">scene</button>
-    <button class="btn" id="btn-load-demo" type="button" title="Load the eleven-step demo construction.">demo</button>
+    <button
+      class="btn"
+      id="btn-load-scene"
+      type="button"
+      title="Load a .rgascene file, replacing this scene."
+    >scene</button>
+    <button
+      class="btn"
+      id="btn-load-demo"
+      type="button"
+      title="Load the eleven-step demo construction."
+    >demo</button>
   </div>
 </div>
 
@@ -581,7 +650,12 @@
   </div>
   <button id="selection-menu-hide" type="button">hide</button>
   <button id="selection-menu-delete" type="button" class="selection-menu-delete">delete</button>
-  <button id="selection-menu-close" type="button" class="selection-menu-close" aria-label="cancel">✕</button>
+  <button
+    id="selection-menu-close"
+    type="button"
+    class="selection-menu-close"
+    aria-label="cancel"
+  >✕</button>
 </div>
 
 <div class="drawer" id="drawer">
@@ -596,7 +670,10 @@
 
     <!-- Apply -->
     <div class="section" data-section="apply">
-      <button class="section-header" type="button"><span>apply</span><span class="chev">&#9656;</span></button>
+      <button
+        class="section-header"
+        type="button"
+      ><span>apply</span><span class="chev">&#9656;</span></button>
       <div class="section-body">
         <div class="field">
           <label>arity</label>
@@ -611,7 +688,10 @@
         </div>
         <div class="field-row">
           <div class="field"><label>operand m</label><select id="op-first"></select></div>
-          <div class="field" id="op-second-field"><label>operand n</label><select id="op-second"></select></div>
+          <div
+            class="field"
+            id="op-second-field"
+          ><label>operand n</label><select id="op-second"></select></div>
         </div>
         <button class="btn primary" id="btn-apply" type="button" style="width:100%;">apply</button>
       </div>
@@ -619,9 +699,17 @@
 
     <!-- Diagnostics -->
     <div class="section" data-section="diagnostics">
-      <button class="section-header" type="button"><span>diagnostics</span><span class="chev">&#9656;</span></button>
+      <button
+        class="section-header"
+        type="button"
+      ><span>diagnostics</span><span class="chev">&#9656;</span></button>
       <div class="section-body">
-        <div class="help-text">Browser-side stand-ins for the desktop build's own arena/frame-time panel: this build's own JS heap and draw loop have no equivalent to those native allocator figures, so this shows what a browser build can actually measure instead.</div>
+        <div class="help-text">
+          Browser-side stand-ins for the desktop build's own arena/frame-time panel:
+          this build's own JS heap and draw loop have no equivalent to those native
+          allocator figures, so this shows what a browser build can actually measure
+          instead.
+        </div>
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
         <div class="diag-line"><span>JS heap</span><b id="diag-heap">unavailable</b></div>
@@ -634,7 +722,10 @@
     <!-- Objects -->
     <div class="section open" data-section="objects">
       <button class="section-header" type="button">
-        <span class="objects-header" style="width:100%;"><span>objects</span> <span class="objects-count" id="objects-count">(0 of 64)</span></span>
+        <span
+          class="objects-header"
+          style="width:100%;"
+        ><span>objects</span> <span class="objects-count" id="objects-count">(0 of 64)</span></span>
         <span class="chev">&#9656;</span>
       </button>
       <div class="section-body">
@@ -644,15 +735,30 @@
 
     <!-- View -->
     <div class="section" data-section="view">
-      <button class="section-header" type="button"><span>view</span><span class="chev">&#9656;</span></button>
+      <button
+        class="section-header"
+        type="button"
+      ><span>view</span><span class="chev">&#9656;</span></button>
       <div class="section-body">
         <div class="field-row">
-          <div class="field"><label>azimuth</label><input type="number" id="cam-azimuth" step="0.05"></div>
-          <div class="field"><label>elevation</label><input type="number" id="cam-elevation" step="0.05"></div>
+          <div class="field">
+            <label>azimuth</label>
+            <input type="number" id="cam-azimuth" step="0.05">
+          </div>
+          <div class="field">
+            <label>elevation</label>
+            <input type="number" id="cam-elevation" step="0.05">
+          </div>
         </div>
         <div class="field-row">
-          <div class="field"><label>distance</label><input type="number" id="cam-distance" step="0.1"></div>
-          <div class="field"><label>field of view</label><input type="number" id="cam-fov" step="1"></div>
+          <div class="field">
+            <label>distance</label>
+            <input type="number" id="cam-distance" step="0.1">
+          </div>
+          <div class="field">
+            <label>field of view</label>
+            <input type="number" id="cam-fov" step="1">
+          </div>
         </div>
         <div class="field">
           <label>target</label>
