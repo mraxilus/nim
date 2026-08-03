@@ -94,6 +94,15 @@ const
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
     ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
+  SIZE_POINT* = 9.0'f32
+    ## Set diameter of drawn points, in pixels.
+  WIDTH_LINE_FURNITURE* = 1.5'f32
+    ## Set width of the ground grid and world axes, in pixels -- kept thinner than a
+    ## scene line object's own width (`WIDTH_LINE_OBJECT`), so reference furniture
+    ## recedes behind whatever the workbench is actually showing.
+  WIDTH_LINE_OBJECT* = 2.5'f32
+    ## Set width of a scene line object, in pixels -- wider than furniture, so it reads
+    ## as what the workbench is actually showing.
 
 static:
   doAssert EXTENT_PLANE > 0, &"Plane radius must be positive; got `{EXTENT_PLANE}`."
@@ -110,6 +119,9 @@ static:
   doAssert VERTICES_MAX >= 1024, &"Vertex storage must hold 1024; got `{VERTICES_MAX}`."
   doAssert ANIMATION_MILLISECONDS > 0,
     &"Appear animation must take positive time; got `{ANIMATION_MILLISECONDS}` ms."
+  doAssert WIDTH_LINE_OBJECT > WIDTH_LINE_FURNITURE,
+    &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
+    &"`{WIDTH_LINE_FURNITURE}`."
 
 const EXTENT_PLANE_F* = float(EXTENT_PLANE)
   ## `EXTENT_PLANE` itself stays an integer default, since Nim's `.define` pragma

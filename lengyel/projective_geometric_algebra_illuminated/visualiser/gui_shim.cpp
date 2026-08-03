@@ -375,4 +375,19 @@ void guiOverlayCircle(float cx, float cy, float radius, float red, float green, 
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), 0, thickness);
 }
 
+// Draw a marker's own polyline as one path rather than a run of separate line calls, so
+//   Dear ImGui joins its corners instead of leaving a nick at each one -- visible on a
+//   thin overlay stroke, and the whole reason a plane's marker is a path at all. `points`
+//   addresses `count` pairs of floats, x then y.
+void guiOverlayPolyline(const float *points, int count, float red, float green, float blue,
+                        float alpha, float thickness, int is_closed) {
+  if (count < 2) return;
+  ImDrawList *list = ImGui::GetForegroundDrawList();
+  for (int i = 0; i < count; ++i) {
+    list->PathLineTo(ImVec2(points[2 * i], points[2 * i + 1]));
+  }
+  list->PathStroke(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)),
+                   is_closed ? ImDrawFlags_Closed : ImDrawFlags_None, thickness);
+}
+
 } // extern "C"

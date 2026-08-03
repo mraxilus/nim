@@ -19,8 +19,8 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
 import ../../visualiser/[
-  arena, camera, format, gif, history, image, interaction, mesh, objects, picking, scene,
-  selection,
+  arena, camera, format, gif, history, image, interaction, marker, mesh, objects, picking,
+  scene, selection,
 ]
 
 randomize(0)
@@ -1701,3 +1701,145 @@ suite "Interaction":
     interaction.updateCursor(400.0, 300.0)
     interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
     check interaction.index_hover == some(0)
+
+
+suite "Marker":
+  const (WIDTH_MARK, HEIGHT_MARK) = (800, 600)
+
+  proc setUp(distance = 19.0): (Camera, Matrix4, DrawExtent) =
+    ## Build a camera looking at the origin, with the transform and extent a frame carries.
+    let placement = initCamera(
+      target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = 0.9,
+      elevation = 0.4,
+    )
+    let scale = DrawExtent(
+      extent_furniture: extentFurnitureFor(placement.distanceFar),
+      eye: placement.eye,
+      radius_horizon: radiusHorizonFor(placement.distanceFar),
+    )
+    (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
+
+  proc markerOf(geometry: Multivector; anchor = none(Position)): Option[Marker] =
+    let (placement, view_projection, scale) = setUp()
+    markerFor(
+      geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+    )
+
+  let
+    POINT_A = toMultivector(Position(x: 1.0, y: 0.0, z: 2.0))
+    POINT_B = toMultivector(Position(x: 4.0, y: 1.0, z: 2.0))
+    POINT_C = toMultivector(Position(x: 2.0, y: 5.0, z: 3.5))
+    LINE = POINT_A ∧ POINT_B
+    PLANE = POINT_A ∧ POINT_B ∧ POINT_C
+
+  test "each shape asks for the outline that echoes it":
+    check markerOf(POINT_A).get.kind == MarkerKind.Ring
+    check markerOf(LINE).get.kind == MarkerKind.Rails
+    check markerOf(PLANE).get.kind == MarkerKind.Loop
+
+
+  test "a point's ring clears the drawn point by the shared gap":
+    let marker = markerOf(POINT_A).get
+    check marker.radius =~ 0.5*float(SIZE_POINT) + GAP_MARKER
+
+
+  test "a line's rails run parallel to its projection, one to each side":
+    let (_, view_projection, _) = setUp()
+    let marker = markerOf(LINE).get
+    let
+      first = marker.rail_first
+      second = marker.rail_second
+      along_first = (first[1].x - first[0].x, first[1].y - first[0].y)
+      along_second = (second[1].x - second[0].x, second[1].y - second[0].y)
+
+    # Parallel: the cross product of the two unit directions vanishes. Taken on unit
+    #   directions rather than raw ones, whose own lengths run to thousands of pixels and
+    #   would swamp any fixed tolerance with their product.
+    let
+      length_first = hypot(along_first[0], along_first[1])
+      length_second = hypot(along_second[0], along_second[1])
+    check along_first[0]/length_first*(along_second[1]/length_second) -
+      along_first[1]/length_first*(along_second[0]/length_second) =~ 0.0
+
+    # Each rail sits its own offset from the line, and on opposite sides -- measured
+    #   against the line's own support, which lies on the line by definition.
+    let
+      support = projectToScreen(
+        view_projection, WIDTH_MARK, HEIGHT_MARK, positionAnchor(LINE).get
+      )
+      normal = (-along_first[1]/length_first, along_first[0]/length_first)
+    proc sideOf(point: ScreenPosition): float =
+      normal[0]*(point.x - support.x) + normal[1]*(point.y - support.y)
+    # A rail's own ends run out to the line's vanishing points, hundreds of thousands of
+    #   pixels off screen, so measuring a 12.75 px offset from a support on screen cancels
+    #   two large numbers and keeps about seven digits. A ten-thousandth of a pixel is far
+    #   below anything a reader could see, and far above what that cancellation costs.
+    const TOLERANCE_PIXEL = 1.0e-4
+    check abs(abs(sideOf(first[0])) - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
+    check abs(abs(sideOf(second[0])) - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
+    check sideOf(first[0])*sideOf(second[0]) < 0.0
+
+
+  test "a plane's marker circle lies on that plane, at every one of its points":
+    let (placement, _, scale) = setUp()
+    let
+      centre = positionAnchor(PLANE).get
+      radius = radiusMarkerLoop(centre, scale, placement, HEIGHT_MARK)
+      ring = positionsMarkerLoop(centre, frame(PLANE).get, radius)
+    # A unitized point wedged with a unitized plane leaves its own signed distance from
+    #   that plane on the antiscalar, so this reads as "how far off the surface".
+    for point in ring:
+      check abs((unitize(toMultivector(point)) ∧ unitize(PLANE))[Basis.scalarAnti]) =~ 0.0
+
+
+  test "a plane's marker circle clears the drawn rim by the shared gap":
+    let (placement, _, scale) = setUp()
+    let
+      centre = positionAnchor(PLANE).get
+      radius = radiusMarkerLoop(centre, scale, placement, HEIGHT_MARK)
+      per_pixel = 2.0*norm(centre - scale.eye)*
+        tan(0.5*degToRad(placement.degrees_field_of_view))/float(HEIGHT_MARK)
+    check (radius - EXTENT_PLANE_F)/per_pixel =~ GAP_MARKER
+
+
+  test "a plane's marker follows its stored creation anchor, as its disc does":
+    let elsewhere = positionAnchor(PLANE).get + 3.0*frame(PLANE).get.axis_first
+    let
+      centred = markerOf(PLANE).get
+      shifted = markerOf(PLANE, some(elsewhere)).get
+      moved = hypot(
+        shifted.points[0].x - centred.points[0].x,
+        shifted.points[0].y - centred.points[0].y,
+      )
+    check moved > 1.0
+
+
+  test "a line or plane at horizon gets no marker, drawing fixed to the eye as it does":
+    check markerOf(attitude(PLANE)).isNone
+    check markerOf(attitude(POINT_A ∧ PLANE)).isNone
+
+
+  test "a point at horizon keeps its ring, on the star it is drawn as":
+    # Its own star stands one horizon radius along its direction, so it is markable only
+    #   while the camera is turned toward it -- behind the eye it reports the same
+    #   "nothing to draw" every other unmarkable case does.
+    proc ringAt(azimuth: float): Option[Marker] =
+      let placement = initCamera(
+        target = Position(x: 0, y: 0, z: 0), distance = 19.0, azimuth = azimuth,
+        elevation = 0.4,
+      )
+      let scale = DrawExtent(
+        extent_furniture: extentFurnitureFor(placement.distanceFar),
+        eye: placement.eye,
+        radius_horizon: radiusHorizonFor(placement.distanceFar),
+      )
+      markerFor(
+        attitude(LINE), none(Position), scale, placement,
+        placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), WIDTH_MARK, HEIGHT_MARK,
+      )
+    check ringAt(1.9).get.kind == MarkerKind.Ring
+    check ringAt(0.0).isNone
+
+
+  test "geometry standing for no shape gets no marker":
+    check markerOf(POINT_A + PLANE).isNone

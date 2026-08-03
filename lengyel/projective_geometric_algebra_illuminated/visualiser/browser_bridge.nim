@@ -44,7 +44,7 @@ import std/[options, strformat]
 
 import ../pga
 import ./[
-  camera, format, history, interaction, mesh, objects, picking, scene, selection,
+  camera, format, history, interaction, marker, mesh, objects, picking, scene, selection,
   storyboard,
 ]
 
@@ -493,29 +493,6 @@ proc nimPoolCellColors(): seq[float32] {.exportc.} =
 
 #[ Render Metrics ]#
 
-const
-  SIZE_POINT = 9.0'f32
-    ## Mirror `renderer.SIZE_POINT` exactly (duplicated rather than imported, since
-    ## `renderer.nim` binds straight to OpenGL and does not compile under `nim js`).
-  WIDTH_LINE_FURNITURE = 1.5'f32
-    ## Mirror `renderer.WIDTH_LINE_FURNITURE` exactly; see that constant's own doc
-    ## comment for why furniture draws thinner than a scene line object.
-  WIDTH_LINE_OBJECT = 2.5'f32
-    ## Mirror `renderer.WIDTH_LINE_OBJECT` exactly; see that constant's own doc comment.
-  RADIUS_OVERLAY_HOVER = 16.0'f32
-    ## Mirror `visualiser.RADIUS_OVERLAY_HOVER` exactly (duplicated rather than
-    ## imported, since `visualiser.nim` binds straight to SDL/Dear ImGui and does not
-    ## compile under `nim js`).
-  WIDTH_OVERLAY_LINE = 2.0'f32
-    ## Mirror `visualiser.WIDTH_OVERLAY_LINE` exactly; see that constant's own doc
-    ## comment.
-
-static:
-  doAssert WIDTH_LINE_OBJECT > WIDTH_LINE_FURNITURE,
-    &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
-    &"`{WIDTH_LINE_FURNITURE}`."
-
-
 proc nimRenderLineWidths(): seq[float32] {.exportc.} =
   ## Report `[point_size, furniture_line_width, object_line_width]`, so the browser's
   ## own `gl.uniform1f`/`gl.lineWidth` calls draw at the same sizes the desktop build's
@@ -524,11 +501,13 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[hover_ring_radius, overlay_line_width]`, so the browser's own SVG
-  ## overlay (hover/selection rings, drag rubber-band) matches the desktop build's
-  ## `visualiser.drawInteractionOverlay` exactly, without a hand-copied literal to
-  ## drift out of sync with it.
-  @[RADIUS_OVERLAY_HOVER, WIDTH_OVERLAY_LINE]
+  ## Report `[overlay_line_width, hover_alpha]`, so the browser's own SVG overlay
+  ## strokes markers and the drag rubber-band at the same weight the desktop build's
+  ## `visualiser.drawMarker` does, without a hand-copied literal to drift out of sync
+  ## with it.
+  ##   A marker's own size is not here: it depends on the shape being marked, and comes
+  ##   back from `nimSelectionMarker` with the marker itself.
+  @[WIDTH_MARKER, ALPHA_MARKER_HOVER]
 
 
 
@@ -868,6 +847,44 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   let screen = projectToScreen(vp, int(width), int(height), anchor.get)
   @[cfloat(screen.x), cfloat(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)]
+
+
+proc nimSelectionMarker(slot, width, height: cint): seq[float32] {.exportc.} =
+  ## Shape this item's own selection/hover marker and report it flat, for the browser's
+  ## SVG overlay to stroke: `[kind, is_closed, radius, x0, y0, x1, y1, ...]`.
+  ##   `kind` is `marker.MarkerKind`'s own ordinal -- 0 a ring about a point, 1 a pair of
+  ##   rails flanking a line (four points, two per rail), 2 a polyline lying on a plane.
+  ##   `radius` is meaningful for a ring alone and 0 otherwise; `is_closed` for a
+  ##   polyline alone. Point count is whatever is left, so a caller reads it off the
+  ##   length rather than being handed a count it could disagree with.
+  ##   Empty where there is nothing to draw -- a dead slot, geometry with no shape, or an
+  ##   object at horizon, which draws fixed to the eye with nothing to surround. That is
+  ##   the same "nothing to draw" answer `nimAnchorScreen` gives, and callers here read a
+  ##   slot carried across frames, so any of them can go stale the moment its item is
+  ##   removed.
+  if not g_scene.isAlive(int(slot)): return
+  let
+    scale = drawExtentFor(g_camera)
+    vp = g_camera.initMatrixViewProjection(float(width) / float(height))
+    shaped = markerFor(
+      g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
+      g_camera, vp, int(width), int(height),
+    )
+  if shaped.isNone: return
+
+  let marker = shaped.get
+  result = @[cfloat(ord(marker.kind)), 0.0'f32, 0.0'f32]
+  case marker.kind
+  of MarkerKind.Ring:
+    result[2] = cfloat(marker.radius)
+    result.add([cfloat(marker.centre.x), cfloat(marker.centre.y)])
+  of MarkerKind.Rails:
+    for rail in [marker.rail_first, marker.rail_second]:
+      for point in rail: result.add([cfloat(point.x), cfloat(point.y)])
+  of MarkerKind.Loop:
+    result[1] = (if marker.is_closed: 1.0'f32 else: 0.0'f32)
+    for i in 0 ..< marker.count:
+      result.add([cfloat(marker.points[i].x), cfloat(marker.points[i].y)])
 
 
 

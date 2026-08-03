@@ -27,23 +27,13 @@ import ./opengl as gl
 
 #[ Renderer Configuration ]#
 
-const
-  SIZE_POINT* = 9.0'f32
-    ## Set diameter of drawn points, in pixels.
-  WIDTH_LINE_FURNITURE* = 1.5'f32
-    ## Set width of the ground grid and world axes, in pixels -- kept thinner than a
-    ## scene line object's own width (`WIDTH_LINE_OBJECT`), so reference furniture
-    ## recedes behind whatever the workbench is actually showing.
-  WIDTH_LINE_OBJECT* = 2.5'f32
-    ## Set width of a scene line object, in pixels -- wider than furniture, so it reads
-    ## as what the workbench is actually showing.
-  LOG_MAX = 1024
-    ## Bound how much of driver's compile log is reported.
-
-static:
-  doAssert WIDTH_LINE_OBJECT > WIDTH_LINE_FURNITURE,
-    &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
-    &"`{WIDTH_LINE_FURNITURE}`."
+# `SIZE_POINT`, `WIDTH_LINE_FURNITURE` and `WIDTH_LINE_OBJECT` are declared in `mesh`
+#   rather than here, though this module is their only OpenGL consumer: `marker` derives
+#   a selection marker's own clearance from them and cannot import this module, which
+#   binds straight to OpenGL. One home, read by both render paths, instead of the copy
+#   `browser_bridge` used to carry.
+const LOG_MAX = 1024
+  ## Bound how much of driver's compile log is reported.
 
 
 const SOURCE_VERTEX = """

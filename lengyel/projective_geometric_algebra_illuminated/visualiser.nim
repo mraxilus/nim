@@ -23,6 +23,7 @@
 ##   pga -> objects -> mesh -> scene -> panel ------------> visualiser
 ##                       |       ^--------^                  ^
 ##   camera -> picking --+-> interaction ---------------------
+##                       +-> marker ---------------------------
 ##   sdl3 -> gui ----------------------------------------------
 ##   opengl -> renderer -----------------------------------------
 ##   scene -> storyboard -------------------------------------------
@@ -31,6 +32,7 @@
 ##   mesh tessellates those quantities into vertices, into fixed storage.
 ##   camera orbits, and assembles transforms from its own RGA-derived frame.
 ##   picking hit-tests scene items in screen space, against those same transforms.
+##   marker shapes a selection or hover outline to the object it marks, in the same space.
 ##   renderer owns OpenGL names and draws the meshes.
 ##   scene holds objects and catalogue of operations that derive new ones.
 ##   selection holds which objects are picked, in the order that names an operation's operands.
@@ -56,6 +58,7 @@
 ##   | scene             | Shared  | Both.                                         |
 ##   | selection         | Shared  | Both.                                         |
 ##   | picking           | Shared  | Both.                                         |
+##   | marker            | Shared  | Both.                                         |
 ##   | interaction       | Shared  | Both.                                         |
 ##   | storyboard        | Shared  | Both.                                         |
 ##   | format            | Shared  | Both (transitively, through interaction).     |
@@ -96,8 +99,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/[
-  arena, camera, format, gif, gui, history, image, interaction, mesh, objects, panel, picking,
-  renderer, scene, selection, storyboard,
+  arena, camera, format, gif, gui, history, image, interaction, marker, mesh, objects, panel,
+  picking, renderer, scene, selection, storyboard,
 ]
 import ./visualiser/opengl as gl
 import ./visualiser/sdl3
@@ -138,10 +141,6 @@ const
     ## Palette slot the add panel's own uncommitted multivector draws in, muted -- reuses
     ## `Ink.Guide`'s existing "construction helper" meaning rather than adding a palette
     ## entry for this alone. Mirrors `browser_bridge.INK_GHOST`.
-  RADIUS_OVERLAY_HOVER = 16.0'f32
-    ## Set radius of ring drawn around whatever the cursor is over.
-  WIDTH_OVERLAY_LINE = 2.0'f32
-    ## Set thickness of drag rubber-band and hover ring.
   FRAMES_GIF_GROW = 6
     ## Set how many sub-frames sweep each storyboard step's own appear animation.
   FRAMES_GIF_HOLD = 4
@@ -351,53 +350,80 @@ const lut_drag_to_ink: array[DragOperation, Ink] = [
 ] ## Match the panel's own drag legend, so the rubber-band names its outcome as it's drawn.
 
 
-proc drawSelectionRing(
-  scene: Scene; selection: Selection; view_projection: Matrix4;
+proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
+  ## Stroke one marker onto the foreground layer, in whichever outline its shape asked
+  ## for.
+  ##   Takes alpha separately from `tint` so selection and hover reach this through the
+  ##   identical call and differ only in weight, rather than in what is drawn.
+  case marker.kind
+  of MarkerKind.Ring:
+    gui.overlayCircle(
+      cfloat(marker.centre.x), cfloat(marker.centre.y), cfloat(marker.radius),
+      tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
+    )
+  of MarkerKind.Rails:
+    for rail in [marker.rail_first, marker.rail_second]:
+      gui.overlayLine(
+        cfloat(rail[0].x), cfloat(rail[0].y), cfloat(rail[1].x), cfloat(rail[1].y),
+        tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
+      )
+  of MarkerKind.Loop:
+    # Flatten to the x/y pairs the shim's own path call takes; stack storage, since this
+    #   runs once per marked item per frame and the bound is a compile-time constant.
+    var points: array[2*SEGMENTS_MARKER_LOOP, cfloat]
+    for i in 0 ..< marker.count:
+      points[2*i] = cfloat(marker.points[i].x)
+      points[2*i + 1] = cfloat(marker.points[i].y)
+    gui.overlayPolyline(
+      addr points[0], cint(marker.count), tint.red, tint.green, tint.blue, alpha,
+      WIDTH_MARKER, cint(ord(marker.is_closed)),
+    )
+
+
+proc drawSelectionMarker(
+  scene: Scene; selection: Selection; camera: Camera; view_projection: Matrix4;
   width, height: int; scale: DrawExtent
 ): int {.discardable.} =
-  ## Draw one ring per selected item, directly onto the foreground layer, with the exact
-  ## same `gui.overlayCircle` call the hover ring below uses -- tinted with `Ink.Outline`
-  ## instead of hover's own inline white, so both read as one family of plain circle
-  ## markers rather than two different mechanisms. Report how many rings were drawn.
+  ## Draw one marker per selected item, directly onto the foreground layer, shaped to
+  ## that item by `marker.markerFor` and tinted with `Ink.Outline`. Report how many were
+  ## drawn.
   ##   One per selected slot rather than one overall: an operation reads two operands, and
   ##   a selection that cannot be seen in the view it acts on is not worth much. Matches
   ##   the browser overlay's own per-slot loop.
   ##   The count exists so a test can assert what was drawn without reading pixels; a
   ##   caller uninterested in it may discard it.
-  ##   Unconditional, unlike hover/drag below: a storyboard step uses this same ring to
+  ##   Unconditional, unlike hover/drag below: a storyboard step uses this same marker to
   ##   show which object it just built, so it must still draw with interaction disabled.
   let tint = Ink.Outline.colour
   for position in 0 ..< selection.len:
     let slot = selection.at(position)
     if not (scene.isAlive(slot) and scene[slot].isVisible): continue
-    let anchor = anchorFor(scene[slot].geometry, scale)
-    if anchor.isNone: continue
-    let screen = projectToScreen(view_projection, width, height, anchor.get)
-    if not screen.isInFront: continue
-    gui.overlayCircle(
-      cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
-      tint.red, tint.green, tint.blue, tint.alpha, WIDTH_OVERLAY_LINE,
+    let item = scene[slot]
+    let marker = markerFor(
+      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
     )
+    if marker.isNone: continue
+    drawMarker(marker.get, tint, tint.alpha)
     result.inc
 
 
 proc drawInteractionOverlay(
-  interaction: Interaction; scene: Scene; view_projection: Matrix4; width, height: int;
-  scale: DrawExtent
+  interaction: Interaction; scene: Scene; camera: Camera; view_projection: Matrix4;
+  width, height: int; scale: DrawExtent
 ) =
-  ## Draw drag's rubber-band and hover's ring directly onto the foreground layer.
+  ## Draw drag's rubber-band and hover's marker directly onto the foreground layer.
   ##   Off entirely during storyboard capture, where interaction is never enabled.
   if not interaction.is_enabled: return
 
+  # Hover wears the selection's own marker at lower opacity rather than a shape of its
+  #   own, so hovering a line previews exactly the rails selecting it would draw.
   if interaction.index_hover.isSome:
-    let anchor = anchorFor(scene[interaction.index_hover.get].geometry, scale)
-    if anchor.isSome:
-      let screen = projectToScreen(view_projection, width, height, anchor.get)
-      if screen.isInFront:
-        gui.overlayCircle(
-          cfloat(screen.x), cfloat(screen.y), RADIUS_OVERLAY_HOVER,
-          1.0, 1.0, 1.0, 0.8, WIDTH_OVERLAY_LINE,
-        )
+    let item = scene[interaction.index_hover.get]
+    let marker = markerFor(
+      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
+    )
+    if marker.isSome:
+      drawMarker(marker.get, Ink.Outline.colour, ALPHA_MARKER_HOVER)
 
   if interaction.operation.isSome:
     let anchor = anchorFor(scene[interaction.index_source].geometry, scale)
@@ -408,7 +434,7 @@ proc drawInteractionOverlay(
         gui.overlayLine(
           cfloat(screen.x), cfloat(screen.y),
           cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
-          tint.red, tint.green, tint.blue, 0.85, WIDTH_OVERLAY_LINE,
+          tint.red, tint.green, tint.blue, 0.85, WIDTH_MARKER,
         )
 
 
@@ -458,10 +484,12 @@ proc renderFrame(
   renderer.drawMeshes(MESHES, view_projection)
 
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
-  drawSelectionRing(
-    scene, workbench.selection, view_projection, int(width), int(height), scale
+  drawSelectionMarker(
+    scene, workbench.selection, camera, view_projection, int(width), int(height), scale
   )
-  drawInteractionOverlay(interaction, scene, view_projection, int(width), int(height), scale)
+  drawInteractionOverlay(
+    interaction, scene, camera, view_projection, int(width), int(height), scale
+  )
 
   gui.frameEnd()
   (int(width), int(height))

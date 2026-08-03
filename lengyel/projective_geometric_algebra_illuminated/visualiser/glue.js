@@ -965,9 +965,11 @@ function refreshDiagnostics() {
 /* ---------------------------------------------------------------------- */
 
 const overlaySvg = document.getElementById('overlay');
-// Read from visualiser.nim's own constants via nimOverlayMetrics, rather than a hand-
-// copied literal that could drift out of sync with them.
-const [RADIUS_OVERLAY_HOVER, WIDTH_OVERLAY_LINE] = nimOverlayMetrics();
+// Read from marker.nim's own constants via nimOverlayMetrics, rather than a hand-copied
+// literal that could drift out of sync with them.
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_HOVER] = nimOverlayMetrics();
+// Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
+const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2;
 
 function svgEl(tag, attrs) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -975,32 +977,53 @@ function svgEl(tag, attrs) {
   return el;
 }
 
+// Stroke one object's marker into the overlay. Every geometric decision -- which outline,
+// how far off the object it sits, where its points land on screen -- was made by
+// marker.nim; this only turns the flat array it reports into SVG elements, and scales
+// from framebuffer pixels to CSS pixels the way every other overlay here does.
+function appendMarker(slot, alpha, w, h) {
+  const marker = nimSelectionMarker(slot, canvas.width, canvas.height);
+  if (marker.length === 0) return;
+  const kind = marker[0], isClosed = marker[1] > 0.5, radius = marker[2];
+  const stroke = 'rgba(255,255,255,' + alpha + ')';
+  const points = [];
+  for (let i = 3; i + 1 < marker.length; i += 2) {
+    points.push([marker[i] * (w / canvas.width), marker[i + 1] * (h / canvas.height)]);
+  }
+
+  if (kind === MARKER_RING) {
+    overlaySvg.appendChild(svgEl('circle', {
+      cx: points[0][0], cy: points[0][1], r: radius,
+      fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+    }));
+  } else if (kind === MARKER_RAILS) {
+    for (let i = 0; i < points.length; i += 2) {
+      overlaySvg.appendChild(svgEl('line', {
+        x1: points[i][0], y1: points[i][1], x2: points[i + 1][0], y2: points[i + 1][1],
+        stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+      }));
+    }
+  } else if (kind === MARKER_LOOP) {
+    overlaySvg.appendChild(svgEl(isClosed ? 'polygon' : 'polyline', {
+      points: points.map((p) => p[0] + ',' + p[1]).join(' '),
+      fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+    }));
+  }
+}
+
 function refreshOverlay(cursor) {
   overlaySvg.innerHTML = '';
   const w = canvas.clientWidth, h = canvas.clientHeight;
 
-  // One ring per selected object -- same circle the hover ring below draws, just at
-  // full opacity instead of hover's 0.8, so both read as one family of plain markers.
-  for (const slot of selectionSlots) {
-    const anchor = nimAnchorScreen(slot, canvas.width, canvas.height);
-    if (anchor[2] <= 0.5) continue;
-    const sx = anchor[0] * (w / canvas.width), sy = anchor[1] * (h / canvas.height);
-    overlaySvg.appendChild(svgEl('circle', {
-      cx: sx, cy: sy, r: RADIUS_OVERLAY_HOVER,
-      fill: 'none', stroke: 'rgba(255,255,255,1.0)', 'stroke-width': WIDTH_OVERLAY_LINE,
-    }));
-  }
+  // One marker per selected object, shaped to that object by marker.nim -- a ring about
+  // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
+  // marker at lower opacity, so both read as one family and hovering a line previews
+  // exactly what selecting it will draw.
+  for (const slot of selectionSlots) appendMarker(slot, 1.0, w, h);
 
   const hoverSlot = nimHoverSlot();
   if (hoverSlot >= 0 && !selectionSlots.includes(hoverSlot)) {
-    const anchor = nimAnchorScreen(hoverSlot, canvas.width, canvas.height);
-    if (anchor[2] > 0.5) {
-      const sx = anchor[0] * (w / canvas.width), sy = anchor[1] * (h / canvas.height);
-      overlaySvg.appendChild(svgEl('circle', {
-        cx: sx, cy: sy, r: RADIUS_OVERLAY_HOVER,
-        fill: 'none', stroke: 'rgba(255,255,255,0.8)', 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
-    }
+    appendMarker(hoverSlot, ALPHA_MARKER_HOVER, w, h);
   }
 
   if (nimDragActive()) {

@@ -96,7 +96,7 @@ func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
 
 #[ Segment Test ]#
 
-func clipToEyeSide(
+func clipToEyeSide*(
   tail, head: Position; eye: Position; forward: Direction; distance_near: float
 ): Option[(Position, Position)] =
   ## Clip segment `tail`-`head` to the half-space at least `distance_near` in front of
@@ -105,6 +105,9 @@ func clipToEyeSide(
   ## each endpoint's own depth, which the far reach `mesh.addLine` now gives a line can
   ## put at or behind the eye from some camera angles even though the near half of the
   ## very same segment stays plainly on screen.
+  ##   Exported for `marker.markerRails`, which flanks exactly the run this clips and
+  ##   therefore has to clip it the same way; a marker drawn past the eye plane wraps to
+  ##   the opposite side of the screen.
   ##   None where the whole segment lies behind `eye`.
   let
     depth_tail = dot(tail - eye, forward)

@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 101 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 110 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -37,7 +37,7 @@ Render Paths
 ---
 | Scope | Files |
 |-------|-------|
-| Shared | `pga`, `objects`, `mesh`, `camera`, `scene`, `selection`, `picking`, `interaction`, `storyboard`, `history`, `format`, `arena` |
+| Shared | `pga`, `objects`, `mesh`, `camera`, `scene`, `selection`, `picking`, `marker`, `interaction`, `storyboard`, `history`, `format`, `arena` |
 | Desktop only | `visualiser.nim`, `panel`, `renderer`, `opengl`, `gui`, `sdl3`, `image`, `gif` |
 | Browser only | `browser_bridge.nim`, `shell.html`, `glue.js` |
 
@@ -249,9 +249,12 @@ y green, z blue).
 muted object indistinguishable from the ground grid; `FRACTION_DIMMED_ALPHA` = 0.55 so
 muted objects read as present background context, not washed out.
 
-**Draw sizes** (`renderer.nim`, mirrored into `browser_bridge.nim` — see Browser Pipeline):
-`SIZE_POINT` 9.0, `WIDTH_LINE_FURNITURE` 1.5, `WIDTH_LINE_OBJECT` 2.5 px, with a
+**Draw sizes** live in `mesh.nim`, not in `renderer.nim` where they are actually handed to
+OpenGL: `SIZE_POINT` 9.0, `WIDTH_LINE_FURNITURE` 1.5, `WIDTH_LINE_OBJECT` 2.5 px, with a
 `static: doAssert` that object lines exceed furniture lines so reference geometry recedes.
+`marker` derives every marker's own clearance from them and cannot import `renderer`, which
+binds straight to OpenGL — so one shared home, read by both render paths, replacing the
+copy `browser_bridge` used to carry.
 
 
 Selection And Picking
@@ -270,22 +273,66 @@ slot numbers need not match what was picked against the live scene. `pruneDead` 
 a removal, because a freed slot goes straight back to the next add and a pick left behind
 would silently reattach to an unrelated object.
 
-"Just built" and "currently selected" are one concept with one mechanism: a plain white
-billboarded ring (`RADIUS_OVERLAY_HOVER` 16.0 px, `WIDTH_OVERLAY_LINE` 2.0 px) drawn by
-`gui.overlayCircle` (desktop) / an SVG `<circle>` (browser), **one per selected slot** in
-both. The hover ring is the same circle at 80% opacity. Every construction path replaces
-the selection with the slot it just created.
+"Just built" and "currently selected" are one concept with one mechanism, **one marker per
+selected slot** in both UIs, plain white, 2.0 px, and every construction path replaces the
+selection with the slot it just created. Hover draws the identical marker at 80% opacity —
+weight is the only thing that tells the two apart, so hovering a line previews exactly what
+selecting it will draw.
+
+`marker.nim` shapes that outline to what it marks, because a marker says "this one" best
+when its own outline echoes the thing it surrounds:
+
+| Shape | Marker |
+|-------|--------|
+| Point | Circle in screen space about the drawn point. |
+| Line | Two straight segments flanking its projection, one to each side. |
+| Plane | A circle lying *on the plane*, outside its own rim. |
+| Anything at horizon | None — all three draw fixed to the eye, with nothing to surround. |
+
+All three keep the same clearance, `GAP_MARKER` = 11.5 px, between the object's own drawn
+edge and the marker, measured out from the size that object is actually drawn at. That is
+where the point's ring radius of 16 px now comes from (`SIZE_POINT`/2 + gap) rather than
+being written down; a line's rails sit at 12.75 px (`WIDTH_LINE_OBJECT`/2 + gap). Changing
+a draw size moves its marker with it.
+
+**A line's rails are offset in screen space, not in world space.** A world offset
+foreshortens, so the two rails converge on the line's own vanishing point and meet it,
+reading as an arrowhead rather than a highlight. They span exactly what `mesh.addLine`
+draws — both halves, support out to each vanishing point — found by projecting each half's
+clipped ends and keeping the furthest-apart pair, which works because those ends are
+collinear on screen to floating-point precision (see Geometry And Drawing). This is why
+`picking.clipToEyeSide` is exported: a marker drawn past the eye plane wraps to the
+opposite side of the screen.
+
+**A plane's marker circle genuinely lies on the plane**, traced from the plane's own
+spanning frame about the same anchor `mesh.addPlane` centres its disc on — the stored
+creation anchor where there is one, so the marker is concentric with the drawn disc rather
+than with a support the disc is not even drawn around. Its clearance therefore has to be a
+world distance, and `radiusMarkerLoop` sizes it so the gap reads as `GAP_MARKER` pixels *at
+the disc's own depth*, which is the depth a reader judges it at. Everywhere else around the
+ellipse the gap foreshortens exactly as the disc does — that is the point; a constant-pixel
+ring would sit off the plane and read as floating above it. Asserted in the suite point by
+point: a unitized ring point wedged with the unitized plane leaves 1.1e-15 on the
+antiscalar, against 1.0 for a control point one unit off.
+
+Markers are described in `marker.nim` and stroked by each render path's own **foreground**
+layer — `gui.overlayPolyline` on the desktop (one joined path, so corners do not nick), an
+SVG `<circle>`/`<line>`/`<polygon>` in the browser. Never as scene geometry: a loop lying
+exactly on a plane would z-fight with that plane's own fill, and a marker that the object
+it marks can occlude is not a marker. A circle whose rim crosses the eye plane is cut to
+the surviving arc and reported open rather than dropped — a camera close to a large plane
+is exactly when the selection still needs saying.
 
 An elaborate 3D-modelling-style outline (oversized silhouette, depth-write off, dedicated
 shader uniforms, second mesh set) was built and then **deleted entirely** in favour of this;
 do not reintroduce it without being asked. Most WebGL/ANGLE browsers clamp `gl.lineWidth`
 to 1px regardless, which is one reason the outline approach could never look right in-browser.
 
-Desktop draws the selection rings from `drawSelectionRing`, called directly from
+Desktop draws the selection markers from `drawSelectionMarker`, called directly from
 `renderFrame` — deliberately **not** folded into `drawInteractionOverlay`, whose first line
 is `if not interaction.is_enabled: return` and which is therefore dead during storyboard
-capture, where the ring is still wanted. It returns how many rings it drew, so a probe can
-assert that count directly instead of reading pixels; verified 0/1/2/3 rings against 0/1/2/3
+capture, where the marker is still wanted. It returns how many it drew, so a probe can
+assert that count directly instead of reading pixels; verified 0/1/2/3 against 0/1/2/3
 picked.
 
 **Picking** (`picking.pickNearest`, shared): point beats line beats plane, strictly,

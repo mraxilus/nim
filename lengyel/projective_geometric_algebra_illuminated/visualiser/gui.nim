@@ -157,3 +157,9 @@ proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayLine".}
 proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayCircle".}
+proc overlayPolyline*(
+  points: ptr cfloat; count: cint; red, green, blue, alpha, thickness: cfloat;
+  is_closed: cint
+) {.importc: "guiOverlayPolyline".}
+  ## Stroke one joined path through `count` points, `points` addressing that many x/y
+  ## pairs -- one call rather than a segment each, so corners join cleanly.
