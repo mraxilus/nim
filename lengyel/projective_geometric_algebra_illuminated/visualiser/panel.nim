@@ -131,6 +131,16 @@ type
       ## the scene's own buffer must not change before save.
     index_ink*: cint ## Staged palette slot.
 
+  ItemRow* = object ## Hold what one object row has resolved about itself.
+    ## Computed once at the top of `layoutItem` and handed to each part of the row, so
+    ## the three agree on what they are drawing rather than each deriving it again.
+    slot*: Option[int] ## Item backing the row. None for the composing row, which has
+      ## nothing in the scene until its own save commits it.
+    is_open*: bool ## Whether this row's own edit session is the one open.
+    is_visible*: bool ## Whether the object is shown in the 3D view.
+    tint*: Rgba ## Colour the row's name draws in -- staged where a session is open, so
+      ## recolouring previews itself.
+
   Workbench* = object ## Hold GUI's own state between frames.
     session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
       ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
@@ -187,6 +197,25 @@ func initWorkbench*(path_export: string): Workbench =
   toChars(path_export, result.path_export)
   toChars("scene.rgascene", result.path_scene)
   toChars("Ready.", result.message)
+
+
+func isPending*(row: ItemRow): bool = row.slot.isNone
+  ## Report whether the row is composing an object that does not exist yet.
+
+
+func geometry*(session: EditSession): Multivector =
+  ## Read what the session is staging, as the multivector saving it would commit.
+  ##   Coefficients are held as `cfloat` because that is what the drag widget writes, so
+  ##   every reader needs this widening. Written out at each of them once -- the ghost,
+  ##   the row's own description line, the save, and the camera's aim -- until one of the
+  ##   four drifted from the others was only a matter of time.
+  for b in Basis: result[b] = float(session.coefficients[b])
+
+
+proc stage*(session: var EditSession; geometry: Multivector) =
+  ## Load a multivector into the session, as the values its widgets edit.
+  ##   Inverse of `geometry` above, and the only other place the two representations meet.
+  for b in Basis: session.coefficients[b] = cfloat(geometry[b])
 
 
 
@@ -272,7 +301,7 @@ proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int])
   ##   tween every frame by `layoutObjects` below, which covers the moment it opens too.
   var session = EditSession(slot: slot)
   if slot.isSome:
-    for b in Basis: session.coefficients[b] = cfloat(scene.geometryAt(slot.get)[b])
+    session.stage(scene.geometryAt(slot.get))
     session.label = scene.labelAt(slot.get)
     session.index_ink = cint(scene.inkAt(slot.get))
   else:
@@ -308,6 +337,120 @@ proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
   discard layoutCoefficientGrid(workbench.session.get.coefficients)
 
 
+proc layoutItemName(workbench: var Workbench; scene: var Scene; row: ItemRow) =
+  ## Lay out the row's leading checkbox and its name.
+  ##   Checkbox toggles membership, the way the browser's own row checkbox does, so a
+  ##   second and third object join the selection in the order they were picked -- that
+  ##   order is what names operands m and n over in `layoutApply`. The name beside it
+  ##   picks that one object alone: the browser gets single-select from a plain canvas
+  ##   click, which this build has no equivalent of, so the row carries both gestures.
+  var is_selected = (not row.isPending) and row.slot.get in workbench.selection
+  gui.disabledPush(row.isPending) # Nothing to select until it exists.
+  if gui.checkbox("", addr is_selected): workbench.selection.toggle(row.slot.get)
+  gui.disabledPop()
+  gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
+  gui.sameLine()
+
+  let label_shown =
+    if row.is_open: toCstring(workbench.session.get.label)
+    else: toCstring(scene.labelAt(row.slot.get))
+  gui.textColorPush(row.tint.red, row.tint.green, row.tint.blue)
+  if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not row.isPending:
+    if is_selected and workbench.selection.len == 1: workbench.selection.clear()
+    else: workbench.selection.selectOnly(row.slot.get)
+  gui.textColorPop()
+
+
+proc layoutItemButtons(
+  workbench: var Workbench; scene: var Scene; history: var History; row: ItemRow;
+  now: float
+): bool =
+  ## Lay out the row's own actions; report whether user asked for the object to go.
+  ##   Longer than the sixty-line default, and not split further: the run's whole width
+  ##   has to be measured before any of it is placed, so the buttons after that
+  ##   measurement cannot move out without measuring them twice and letting the two
+  ##   readings drift.
+  ##   Buttons end flush against the panel's own right edge, as the browser's row does,
+  ##   so they form one column down the list instead of starting wherever each name
+  ##   happens to end. Their run has to be measured before any of it is placed, which is
+  ##   what `buttonSmallWidth` is for.
+  let
+    label_commit = if row.is_open: cstring"save" else: cstring"edit"
+    width_buttons =
+      gui.buttonSmallWidth(label_commit) +
+      (if row.is_open: gui.buttonSmallWidth("✕") + SPACING_SEGMENT else: 0.0'f32) +
+      (
+        if row.isPending or row.is_open: 0.0'f32
+        else:
+          gui.buttonSmallWidth(if row.is_visible: cstring"hide" else: cstring"show") +
+          gui.buttonSmallWidth("remove") + 2.0'f32*SPACING_SEGMENT
+      )
+  gui.alignRight(width_buttons)
+  if gui.buttonSmall(label_commit):
+    if not row.is_open:
+      beginSession(workbench, scene, row.slot)
+    else:
+      let session = workbench.session.get
+      let geometry = session.geometry
+      if row.isPending:
+        let slot_added =
+          scene.addItem(geometry, $toCstring(session.label), Ink(session.index_ink), now)
+        workbench.selection.selectOnly(slot_added)
+      else:
+        scene.geometryAt(row.slot.get) = geometry
+        scene.labelAt(row.slot.get) = session.label
+        scene.setInk(row.slot.get, Ink(session.index_ink))
+      history.record(scene)
+      workbench.session = none(EditSession)
+  gui.tooltip(
+    if row.is_open: cstring"Commit these values to the scene."
+    else: cstring"Rename, recolour or reshape this object; nothing changes until you save."
+  )
+
+  if row.is_open:
+    # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
+    #   scene was never touched either way, so this only has to drop the session.
+    gui.sameLine()
+    if gui.buttonSmall("✕"): workbench.session = none(EditSession)
+    gui.tooltip(
+      if row.isPending: cstring"Discard this new object."
+      else: cstring"Discard these changes."
+    )
+
+  # Hide and remove act on the object as the scene holds it, which is exactly what an open
+  #   session is staging a replacement for -- offering them mid-edit invites acting on one
+  #   version while looking at another. Absent for a composing row for the same reason its
+  #   own object does not exist yet.
+  if not (row.isPending or row.is_open):
+    gui.sameLine()
+    if gui.buttonSmall(if row.is_visible: cstring"hide" else: cstring"show"):
+      scene.setVisible(row.slot.get, not row.is_visible)
+      history.record(scene)
+    gui.tooltip("Show or hide this object without removing it.")
+    gui.sameLine()
+    result = gui.buttonSmall("remove")
+    gui.tooltip("Delete this object; its slot is reused by the next one you add.")
+
+
+proc layoutItemDescription(workbench: Workbench; scene: var Scene; row: ItemRow) =
+  ## Lay out the row's own shape word and coefficients, on one line.
+  ##   Built into a stack buffer rather than a `string`, since every visible item redraws
+  ##   this line every frame; a fresh heap string per item per frame is exactly the kind
+  ##   of allocator churn an arena-backed scene should not turn around and reintroduce.
+  ##   Shape word first on the same line as the coefficients, matching the browser's own
+  ##   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
+  ##   that reads as a prefix to the equation anyway.
+  let geometry_shown =
+    if row.is_open: workbench.session.get.geometry else: scene.geometryAt(row.slot.get)
+  var line: array[WIDTH_ITEM_LINE, char]
+  let description = buildChars(line):
+    appendChars(line, cursor, "  ")
+    describeShape(geometry_shown, line, cursor)
+    appendChars(line, cursor, ": ")
+    formatMultivector(geometry_shown, line, cursor)
+  gui.textWrapped(description)
+
+
 proc layoutItem(
   workbench: var Workbench; scene: var Scene; history: var History; slot: Option[int];
   now: float
@@ -318,122 +461,31 @@ proc layoutItem(
   ##   that act on an object that exists (hide, remove).
   ##   A hidden item's whole row dims rather than disappearing, so it stays readable and
   ##   its own show button stays clickable -- `alphaPush`, not `disabledPush`.
+  ##   An orchestrator over the row's three parts, which is what the row is: a name, the
+  ##   actions on it, and what it currently says.
   let is_pending = slot.isNone
   gui.idPush(if is_pending: cint(ITEMS_MAX) else: cint(slot.get))
   defer: gui.idPop()
 
-  let
-    is_open = is_pending or
+  let row = block:
+    let is_open = is_pending or
       (workbench.session.isSome and workbench.session.get.slot == slot)
-    is_visible = is_pending or scene.isVisible(slot.get)
-    tint =
-      if is_open: Ink(workbench.session.get.index_ink).colour
-      else: scene.inkAt(slot.get).colour
-  if not is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
-  defer:
-    if not is_visible: gui.alphaPop()
-
-  # Checkbox toggles membership, the way the browser's own row checkbox does, so a second
-  #   and third object join the selection in the order they were picked -- that order is
-  #   what names operands m and n over in `layoutApply`. The name beside it picks that one
-  #   object alone: the browser gets single-select from a plain canvas click, which this
-  #   build has no equivalent of, so the row carries both gestures instead.
-  var is_selected = (not is_pending) and slot.get in workbench.selection
-  gui.disabledPush(is_pending) # Nothing to select until it exists.
-  if gui.checkbox("", addr is_selected): workbench.selection.toggle(slot.get)
-  gui.disabledPop()
-  gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
-  gui.sameLine()
-
-  let label_shown =
-    if is_open: toCstring(workbench.session.get.label) else: toCstring(scene.labelAt(slot.get))
-  gui.textColorPush(tint.red, tint.green, tint.blue)
-  if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not is_pending:
-    if is_selected and workbench.selection.len == 1: workbench.selection.clear()
-    else: workbench.selection.selectOnly(slot.get)
-  gui.textColorPop()
-
-  # Buttons end flush against the panel's own right edge, as the browser's row does, so
-  #   they form one column down the list instead of starting wherever each name happens to
-  #   end. Their run has to be measured before any of it is placed, which is what
-  #   `buttonSmallWidth` is for.
-  let
-    label_commit = if is_open: cstring"save" else: cstring"edit"
-    width_buttons =
-      gui.buttonSmallWidth(label_commit) +
-      (if is_open: gui.buttonSmallWidth("✕") + SPACING_SEGMENT else: 0.0'f32) +
-      (
-        if is_pending or is_open: 0.0'f32
-        else:
-          gui.buttonSmallWidth(if is_visible: cstring"hide" else: cstring"show") +
-          gui.buttonSmallWidth("remove") + 2.0'f32*SPACING_SEGMENT
-      )
-  gui.alignRight(width_buttons)
-  if gui.buttonSmall(label_commit):
-    if not is_open:
-      beginSession(workbench, scene, slot)
-    else:
-      let session = workbench.session.get
-      var geometry: Multivector
-      for b in Basis: geometry[b] = float(session.coefficients[b])
-      if is_pending:
-        let slot_added =
-          scene.addItem(geometry, $toCstring(session.label), Ink(session.index_ink), now)
-        workbench.selection.selectOnly(slot_added)
-      else:
-        scene.geometryAt(slot.get) = geometry
-        scene.labelAt(slot.get) = session.label
-        scene.setInk(slot.get, Ink(session.index_ink))
-      history.record(scene)
-      workbench.session = none(EditSession)
-  gui.tooltip(
-    if is_open: cstring"Commit these values to the scene."
-    else: cstring"Rename, recolour or reshape this object; nothing changes until you save."
-  )
-
-  if is_open:
-    # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
-    #   scene was never touched either way, so this only has to drop the session.
-    gui.sameLine()
-    if gui.buttonSmall("✕"): workbench.session = none(EditSession)
-    gui.tooltip(
-      if is_pending: cstring"Discard this new object." else: cstring"Discard these changes."
+    ItemRow(
+      slot: slot,
+      is_open: is_open,
+      is_visible: is_pending or scene.isVisible(slot.get),
+      tint:
+        if is_open: Ink(workbench.session.get.index_ink).colour
+        else: scene.inkAt(slot.get).colour,
     )
+  if not row.is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
+  defer:
+    if not row.is_visible: gui.alphaPop()
 
-  # Hide and remove act on the object as the scene holds it, which is exactly what an open
-  #   session is staging a replacement for -- offering them mid-edit invites acting on one
-  #   version while looking at another. Absent for a composing row for the same reason its
-  #   own object does not exist yet.
-  if not (is_pending or is_open):
-    gui.sameLine()
-    if gui.buttonSmall(if is_visible: cstring"hide" else: cstring"show"):
-      scene.setVisible(slot.get, not is_visible)
-      history.record(scene)
-    gui.tooltip("Show or hide this object without removing it.")
-    gui.sameLine()
-    result = gui.buttonSmall("remove")
-    gui.tooltip("Delete this object; its slot is reused by the next one you add.")
-
-  # Built into a stack buffer rather than a `string`, since every visible item redraws
-  #   this line every frame; a fresh heap string per item per frame is exactly the kind
-  #   of allocator churn an arena-backed scene should not turn around and reintroduce.
-  #   Shape word first on the same line as the coefficients, matching the browser's own
-  #   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
-  #   that reads as a prefix to the equation anyway.
-  var geometry_shown: Multivector
-  if is_open:
-    for b in Basis: geometry_shown[b] = float(workbench.session.get.coefficients[b])
-  else:
-    geometry_shown = scene.geometryAt(slot.get)
-  var line: array[WIDTH_ITEM_LINE, char]
-  let description = buildChars(line):
-    appendChars(line, cursor, "  ")
-    describeShape(geometry_shown, line, cursor)
-    appendChars(line, cursor, ": ")
-    formatMultivector(geometry_shown, line, cursor)
-  gui.textWrapped(description)
-
-  if is_open: layoutSessionFields(workbench, is_pending)
+  layoutItemName(workbench, scene, row)
+  result = layoutItemButtons(workbench, scene, history, row, now)
+  layoutItemDescription(workbench, scene, row)
+  if row.is_open: layoutSessionFields(workbench, is_pending)
   gui.separator()
 
 
@@ -531,10 +583,100 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
     workbench.session = none(EditSession)
 
 
+proc offerOperationsOfArity*(
+  arity: Arity
+): (array[COUNT_OPERATION, cstring], array[COUNT_OPERATION, Operation], int) =
+  ## List the catalogue's operations of one arity, with the notation each is offered
+  ## under and the operation each offered position names.
+  ##   Only the operations of the chosen arity, rather than all of them with the second
+  ##   operand greyed out for the unary ones: the catalogue is long enough that halving
+  ##   it is the difference between scanning and hunting.
+  ##   Reports the operations alongside the notations because a combo hands back a dense
+  ##   position, which names nothing on its own once the list has been filtered.
+  ##   A `proc` rather than a `func`, though it is pure in effect: the notation table it
+  ##   reads is bound as `let` rather than `const` so a picker can take the address of
+  ##   its first entry, and `strictFuncs` counts reading a module global as an effect.
+  for operation in Operation:
+    if lut_operation_to_arity[operation] != arity: continue
+    result[0][result[2]] = lut_operation_to_notation[operation]
+    result[1][result[2]] = operation
+    inc result[2]
+
+
+proc adoptSelectionAsOperands(
+  workbench: var Workbench; slots: openArray[int]; count: int
+) =
+  ## Fill the arity and operand pickers in from whatever is selected in the 3D view.
+  ##   Everything the selection already says is taken rather than asked for a second
+  ##   time: how many objects are picked names the arity, and the order they were picked
+  ##   names m and n. Only right when the selection itself changes -- see
+  ##   `selection_synced`'s own doc -- so a later manual pick of either still sticks.
+  if workbench.selection == workbench.selection_synced: return
+  workbench.selection_synced = workbench.selection
+  if workbench.selection.len == 0: return
+
+  func positionOf(slots: openArray[int]; count, slot: int): Option[cint] =
+    ## Translate a slot back to the operand combo's own dense position.
+    for position in 0 ..< count:
+      if slots[position] == slot: return some(cint(position))
+
+  let arity_implied = cint(ord(workbench.selection.impliedArity))
+  if workbench.index_arity != arity_implied:
+    # A filtered operation list is indexed per arity, so a position carried across from
+    #   the other list names an unrelated operation -- the arity control resets the same
+    #   way for the same reason.
+    workbench.index_arity = arity_implied
+    workbench.index_operation = 0
+  let position_first = positionOf(slots, count, workbench.selection.at(0))
+  if position_first.isSome: workbench.index_operand_first = position_first.get
+  if workbench.selection.len >= 2:
+    let position_second = positionOf(slots, count, workbench.selection.at(1))
+    if position_second.isSome: workbench.index_operand_second = position_second.get
+
+
+proc applyPickedOperation(
+  workbench: var Workbench; scene: var Scene; history: var History; operation: Operation;
+  is_binary: bool; slots: openArray[int]; count: int; now: float
+) =
+  ## Derive a fresh object from the picked operation and operands, and say what it gave.
+  ##   Leaves the result solely selected, which is what carries the camera to it: the
+  ##   standing aim in `visualiser.offerCameraAim` reads exactly that, so this path needs
+  ##   to know nothing about the camera.
+  let
+    first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
+    second =
+      if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
+      else: first # A unary operation ignores its second operand; naming the first
+        # keeps a stale picker reading from ever reaching `applyOperation`.
+    operand_first = scene[first].geometry
+    operand_second = scene[second].geometry
+    derived = applyOperation(operation, operand_first, operand_second)
+    anchor = creationAnchor(operation, operand_first, operand_second, derived)
+    name_first = $toCstring(scene.labelAt(first))
+    name_second = $toCstring(scene.labelAt(second))
+    label = notationSubstituted(operation, name_first, name_second)
+  workbench.selection.selectOnly(
+    scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
+  )
+  history.record(scene)
+
+  var shape_word: array[WIDTH_SHAPE_WORD, char]
+  var cursor_shape = 0
+  describeShape(derived, shape_word, cursor_shape)
+  finishChars(shape_word, cursor_shape)
+  toChars(&"{label} gave {$toCstring(shape_word)}.", workbench.message)
+
+
 proc layoutApply*(
   workbench: var Workbench; scene: var Scene; history: var History; now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
+  ##   Longer than the sixty-line default, and not split further: what is left after the
+  ##   catalogue filter, the selection adoption and the apply itself moved out is one run
+  ##   of controls over one set of offer lists, and those lists live exactly as long as
+  ##   the controls indexing them do -- the item names are `cstring`s borrowed from the
+  ##   scene's own label storage, so handing them across another boundary would be
+  ##   lending out a pointer for no gain.
   if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
     gui.text("Scene is empty; add a multivector first.")
@@ -551,45 +693,10 @@ proc layoutApply*(
     slots[count] = slot
     inc count
 
-  # Everything the selection already says is filled in here rather than asked for a second
-  #   time: how many objects are picked names the arity, and the order they were picked
-  #   names m and n. Only right when the selection itself changes -- see
-  #   `selection_synced`'s own doc -- so a later manual pick of either still sticks.
-  if workbench.selection != workbench.selection_synced:
-    workbench.selection_synced = workbench.selection
-    proc positionOf(slots: openArray[int]; count, slot: int): Option[cint] =
-      ## Translate a slot back to the operand combo's own dense position.
-      for position in 0 ..< count:
-        if slots[position] == slot: return some(cint(position))
-    if workbench.selection.len > 0:
-      let arity_implied = cint(ord(workbench.selection.impliedArity))
-      if workbench.index_arity != arity_implied:
-        # A filtered operation list is indexed per arity, so a position carried across
-        #   from the other list names an unrelated operation -- the arity combo below
-        #   resets the same way for the same reason.
-        workbench.index_arity = arity_implied
-        workbench.index_operation = 0
-      let position_first = positionOf(slots, count, workbench.selection.at(0))
-      if position_first.isSome: workbench.index_operand_first = position_first.get
-      if workbench.selection.len >= 2:
-        let position_second = positionOf(slots, count, workbench.selection.at(1))
-        if position_second.isSome: workbench.index_operand_second = position_second.get
+  adoptSelectionAsOperands(workbench, slots, count)
 
-  # Offer only the operations of the chosen arity, rather than all of them with the
-  #   second operand greyed out for the unary ones: the catalogue is long enough that
-  #   halving it is the difference between scanning and hunting. `operations` translates
-  #   the filtered combo's dense position back to the operation it names, the same shape
-  #   `slots` uses for operands above.
-  var
-    notations: array[COUNT_OPERATION, cstring]
-    operations: array[COUNT_OPERATION, Operation]
-    count_offered = 0
   let arity_wanted = Arity(workbench.index_arity)
-  for operation in Operation:
-    if lut_operation_to_arity[operation] != arity_wanted: continue
-    notations[count_offered] = lut_operation_to_notation[operation]
-    operations[count_offered] = operation
-    inc count_offered
+  let (notations, operations, count_offered) = offerOperationsOfArity(arity_wanted)
 
   # Arity is a segmented control rather than a dropdown: there are exactly two choices,
   #   both worth seeing at once, and switching should cost one click. Matches the
@@ -635,32 +742,8 @@ proc layoutApply*(
 
   gui.disabledPush(scene.isFull)
   if gui.buttonWide("apply", gui.contentWidth()):
-    let
-      first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
-      second =
-        if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
-        else: first # A unary operation ignores its second operand; naming the first
-          # keeps a stale picker reading from ever reaching `applyOperation`.
-      operand_first = scene[first].geometry
-      operand_second = scene[second].geometry
-      derived = applyOperation(operation, operand_first, operand_second)
-      anchor = creationAnchor(operation, operand_first, operand_second, derived)
-      name_first = $toCstring(scene.labelAt(first))
-      name_second = $toCstring(scene.labelAt(second))
-      label = notationSubstituted(operation, name_first, name_second)
-    workbench.selection.selectOnly(
-      scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
-    )
-    history.record(scene)
-
-    var shape_word: array[WIDTH_SHAPE_WORD, char]
-    var cursor_shape = 0
-    describeShape(derived, shape_word, cursor_shape)
-    finishChars(shape_word, cursor_shape)
-    toChars(&"{label} gave {$toCstring(shape_word)}.", workbench.message)
+    applyPickedOperation(workbench, scene, history, operation, is_binary, slots, count, now)
   gui.disabledPop()
-
-
 
 
 

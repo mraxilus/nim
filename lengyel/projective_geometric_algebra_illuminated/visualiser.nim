@@ -269,6 +269,29 @@ proc secondsNow(): float =
   float(getMonoTime().ticks) / 1_000_000_000.0
 
 
+proc offerCameraAim(
+  workbench: var Workbench; scene: Scene; camera: Camera; now: float; scale: DrawExtent
+) =
+  ## Offer the camera whatever is being worked on to look at, from one rule rather than
+  ## from each path that could change it: an open session's own staged multivector, or
+  ## else the object solely selected -- which is exactly what every construction path
+  ## leaves behind (`selectOnly`), so applying an operation, releasing a drag and stepping
+  ## the storyboard all aim without knowing anything about the camera.
+  ##   A standing offer, re-made every frame rather than at each event: `aimAt` ignores a
+  ##   goal it already holds, so an unchanged scene costs nothing while a moving one -- a
+  ##   coefficient being dragged -- reads as one continuous chase.
+  ##   Anything that draws nothing (a still-empty composing session) aims at nothing and
+  ##   releases, which is what lets picking the same object again aim at it afresh.
+  let geometry =
+    if workbench.session.isSome: some(workbench.session.get.geometry)
+    elif workbench.selection.len == 1 and scene.isAlive(workbench.selection.at(0)):
+      some(scene[workbench.selection.at(0)].geometry)
+    else: none(Multivector)
+  let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
+  if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
+  else: workbench.tween_camera.release()
+
+
 proc assembleMeshes(
   workbench: var Workbench; scene: Scene; camera: Camera; now: float; scale: DrawExtent;
   are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
@@ -277,6 +300,8 @@ proc assembleMeshes(
   ##   `are_dimmed` grays an item out rather than skipping it -- empty (nothing dimmed)
   ##   for ordinary interactive rendering; the storyboard's own rolling emphasis is the
   ##   only caller that fills it in.
+  ##   Assembles alone: where the camera should be looking is `offerCameraAim`'s own job,
+  ##   called beside this one rather than from inside it.
   let ticks_start = getMonoTime().ticks
   MESHES_FURNITURE.clearMeshes
   if workbench.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture)
@@ -310,31 +335,7 @@ proc assembleMeshes(
   #   empty-shape branch. While editing an existing object, this draws beside it: the
   #   object holds its committed position and the ghost shows where it would land.
   if workbench.session.isSome:
-    var ghost: Multivector
-    for b in Basis: ghost[b] = float(workbench.session.get.coefficients[b])
-    discard MESHES.addObject(ghost, muted(INK_GHOST.colour), scale)
-
-
-  # Aim the camera at whatever is being worked on, from one rule rather than from each
-  #   path that could change it: an open session's own staged multivector, or else the
-  #   object solely selected -- which is exactly what every construction path leaves
-  #   behind (`selectOnly`), so applying an operation, releasing a drag and stepping the
-  #   storyboard all aim without knowing anything about the camera. Offered every frame
-  #   rather than at each event: `aimAt` ignores a goal it already holds, so an unchanged
-  #   scene costs nothing while a moving one -- a coefficient being dragged -- reads as one
-  #   continuous chase. Anything that draws nothing (a still-empty composing session)
-  #   aims at nothing and leaves the camera alone.
-  block:
-    var geometry = none(Multivector)
-    if workbench.session.isSome:
-      var ghost: Multivector
-      for b in Basis: ghost[b] = float(workbench.session.get.coefficients[b])
-      geometry = some(ghost)
-    elif workbench.selection.len == 1 and scene.isAlive(workbench.selection.at(0)):
-      geometry = some(scene[workbench.selection.at(0)].geometry)
-    let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-    if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
-    else: workbench.tween_camera.release()
+    discard MESHES.addObject(workbench.session.get.geometry, muted(INK_GHOST.colour), scale)
 
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
@@ -467,9 +468,9 @@ proc renderFrame(
   layoutWorkbench(workbench, scene, camera, HISTORY, now)
 
   # Advance before this frame's transforms are built, so the frame draws where the camera
-  #   has reached rather than a frame behind. Aiming happens inside `assembleMeshes`
-  #   below, which is one frame later by design -- there is nothing to advance toward
-  #   until something has been aimed at.
+  #   has reached rather than a frame behind. `offerCameraAim` below sets the goal this
+  #   advance consumes next frame, which is one frame later by design -- there is nothing
+  #   to advance toward until something has been aimed at.
   workbench.tween_camera.advance(camera, now, easeOutCubic)
 
   let eye = camera.eye
@@ -478,6 +479,7 @@ proc renderFrame(
     eye: eye,
     radius_horizon: radiusHorizonFor(camera.distanceFar),
   )
+  offerCameraAim(workbench, scene, camera, now, scale)
   assembleMeshes(workbench, scene, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   let view_projection = camera.initMatrixViewProjection(width / height)
@@ -797,18 +799,24 @@ proc runStoryboard(
   let
     azimuth_default = camera.azimuth
     elevation_default = camera.elevation
-  var operative_previous: seq[int] = @[]
+  # Which slots this step and the one before it read or wrote, as flags per slot rather
+  #   than as a list of slot numbers: the same fixed-capacity shape `are_dimmed` beside
+  #   them already has, so membership is an index rather than a scan, and the loop
+  #   allocates nothing per step.
+  var are_operative_previous: array[ITEMS_MAX, bool]
   for index, step in STEPS:
     clock += 1.0
     let derived = applyStep(scene, step, clock)
 
-    var operative_current = @[step.index_first, count_seeds + index]
+    var are_operative: array[ITEMS_MAX, bool]
+    are_operative[step.index_first] = true
+    are_operative[count_seeds + index] = true
     if lut_operation_to_arity[step.operation] == Arity.Two:
-      operative_current.add(step.index_second)
+      are_operative[step.index_second] = true
     for slot, _ in scene.pairs:
       are_dimmed[slot] =
-        not (slot < count_seeds or slot in operative_current or slot in operative_previous)
-    operative_previous = operative_current
+        not (slot < count_seeds or are_operative[slot] or are_operative_previous[slot])
+    are_operative_previous = are_operative
 
     # A finite object is anchored somewhere the fixed demo angle already frames; a
     #   horizon object is not -- it stands wherever its own construction happened to

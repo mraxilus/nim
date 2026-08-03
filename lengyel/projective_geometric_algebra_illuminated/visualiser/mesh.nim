@@ -123,6 +123,7 @@ static:
     &"Object line width must exceed furniture's; got `{WIDTH_LINE_OBJECT}` <= " &
     &"`{WIDTH_LINE_FURNITURE}`."
 
+
 const EXTENT_PLANE_F* = float(EXTENT_PLANE)
   ## `EXTENT_PLANE` itself stays an integer default, since Nim's `.define` pragma
   ## cannot take a float literal; every use site, in this module and beyond, wants a
@@ -446,6 +447,7 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
     some(scale.eye + scale.radius_horizon*heading.get)
   of Shape.Line, Shape.Plane:
     positionAnchor(m)
+
 
 
 #[ Appear Animation ]#
