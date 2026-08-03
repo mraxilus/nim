@@ -610,9 +610,9 @@ func drawExtentFor(cam: Camera): DrawExtent =
   ## the desktop build (duplicated rather than imported, since that proc lives in
   ## `visualiser.nim` itself, which does not compile under `nim js`).
   DrawExtent(
-    extent_furniture: extentFurnitureFor(cam.distance_far),
+    extent_furniture: extentFurnitureFor(cam.distanceFar),
     eye: cam.eye,
-    radius_horizon: radiusHorizonFor(cam.distance_far),
+    radius_horizon: radiusHorizonFor(cam.distanceFar),
   )
 
 

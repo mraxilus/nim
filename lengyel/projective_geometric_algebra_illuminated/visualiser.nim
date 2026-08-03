@@ -447,9 +447,9 @@ proc renderFrame(
 
   let eye = camera.eye
   let scale = DrawExtent(
-    extent_furniture: extentFurnitureFor(camera.distance_far),
+    extent_furniture: extentFurnitureFor(camera.distanceFar),
     eye: eye,
-    radius_horizon: radiusHorizonFor(camera.distance_far),
+    radius_horizon: radiusHorizonFor(camera.distanceFar),
   )
   assembleMeshes(workbench, scene, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
@@ -796,9 +796,9 @@ proc runStoryboard(
     #   where an object is worth looking from.
     if isHorizon(derived):
       let scale_aim = DrawExtent(
-        extent_furniture: extentFurnitureFor(camera.distance_far),
+        extent_furniture: extentFurnitureFor(camera.distanceFar),
         eye: camera.eye,
-        radius_horizon: radiusHorizonFor(camera.distance_far),
+        radius_horizon: radiusHorizonFor(camera.distanceFar),
       )
       let aim = aimFor(derived, scale_aim)
       if aim.isSome:

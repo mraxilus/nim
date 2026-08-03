@@ -121,9 +121,15 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
 
 const
   SIZE_CELL_GRID* = 2.0
-    ## Fix ground grid's own cell size, regardless of how far it reaches -- so filling
-    ## further out toward the far clip plane adds more cells rather than stretching the
-    ## existing ones until they lose all use as a local reference near the camera.
+    ## Set the ground grid's own finest cell size, used whenever the grid's reach is
+    ## short enough that `CELLS_GRID_HALF_MAX` cells cover it; see `sizeCellGridFor`.
+  CELLS_GRID_HALF_MAX* = 24
+    ## Bound how many cells the ground grid lays between the origin and the edge of its
+    ## own reach, in each direction. The reach follows the camera's own far clip plane,
+    ## which follows orbit distance, so a cell size fixed against it would multiply
+    ## without limit as the camera pulls back -- past the vertex budget, and long past
+    ## the point where cells crowd below one screen pixel and stop being a reference at
+    ## all. Bounding the count instead is what keeps both finite.
   SEGMENTS_GRID_FADE* = 8
     ## Cut each ground grid line into this many pieces, independent of `SIZE_CELL_GRID`,
     ## so `alphaGridFade` can fade it smoothly by distance without one piece per cell.
@@ -169,6 +175,8 @@ const
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
+  doAssert CELLS_GRID_HALF_MAX > 0,
+    &"Grid must lay at least one cell each way; got `{CELLS_GRID_HALF_MAX}`."
   doAssert SEGMENTS_GRID_FADE >= 2,
     &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
   doAssert FRACTION_NORMAL_SHAFT > 0,
@@ -261,6 +269,17 @@ func radiusHorizonFor*(distance_far: float): float =
   ## near the renderer's own outer depth limit regardless of how far the camera has
   ## dollied in or out to view finite content.
   distance_far * FRACTION_HORIZON
+
+
+func sizeCellGridFor*(radius_fade_end: float): float =
+  ## Choose the ground grid's own cell size for a given reach: `SIZE_CELL_GRID`, doubled
+  ## as many times as it takes to lay no more than `CELLS_GRID_HALF_MAX` cells across it.
+  ##   Doubling rather than dividing the reach evenly, so a cell size only ever steps
+  ## between fixed multiples of the finest one as the camera dollies. Every coarser grid
+  ## then has its lines exactly on a subset of the finer grid's, and the change reads as
+  ## alternate lines dropping out rather than as the whole grid sliding to new positions.
+  result = SIZE_CELL_GRID
+  while radius_fade_end/result > float(CELLS_GRID_HALF_MAX): result *= 2.0
 
 
 func extentFurnitureFor*(distance_far: float): float =
@@ -583,8 +602,8 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
 
 
 proc addGrid*(meshes: var MeshSet; extent: float) =
-  ## Append reference grid on ground, so distance and direction stay judgeable, held
-  ## at fixed cell size (`SIZE_CELL_GRID`) regardless of how far it reaches. Rather
+  ## Append reference grid on ground, so distance and direction stay judgeable, at the
+  ## cell size `sizeCellGridFor` picks for how far it reaches. Rather
   ## than drawing all the way out to `extent` at ever-fainter alpha, every line is cut
   ## off entirely at `radius_fade_end` -- well short of `extent` -- since past that
   ## point cells crowd into so few screen pixels under perspective that even a faint
@@ -600,7 +619,8 @@ proc addGrid*(meshes: var MeshSet; extent: float) =
     tint = Ink.Grid.colour
     radius_fade_end = FRACTION_GRID_FADE_END * extent
     radius_fade_start = FRACTION_GRID_FADE_START * extent
-    count = int(ceil(radius_fade_end / SIZE_CELL_GRID))
+    size_cell = sizeCellGridFor(radius_fade_end)
+    count = int(ceil(radius_fade_end / size_cell))
   func tintAt(u, offset: float): Rgba =
     tint.fade(
       tint.alpha * alphaGridFade(
@@ -609,7 +629,7 @@ proc addGrid*(meshes: var MeshSet; extent: float) =
     )
   for i in -count .. count:
     if i == 0: continue
-    let offset = float(i) * SIZE_CELL_GRID
+    let offset = float(i) * size_cell
     let reach = sqrt(max(0.0, radius_fade_end*radius_fade_end - offset*offset))
     for j in 0 ..< SEGMENTS_GRID_FADE:
       let
@@ -648,17 +668,25 @@ proc addPoint(
 proc addLine(
   meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
 ): Placement =
-  ## Append grade-2 object as segment along its attitude: backward `scale.radius_horizon`
-  ## from support, forward the same radius from the eye instead, so the forward end
-  ## lands exactly on `scale.eye + scale.radius_horizon*axis` -- precisely where
-  ## `addPoint` draws this same line's own attitude as a horizon marker, closing what
-  ## would otherwise be a gap between a finite reach measured from support and an
-  ## infinite one measured from the eye. The one straight segment between two ends each
-  ## anchored a touch differently bends by an angle no wider than the support-to-eye
-  ## separation over `scale.radius_horizon` itself -- imperceptible at the scale a
-  ## radius reaching toward the camera's own far clip plane is drawn at, and the price
-  ## of a line that visibly continues to exactly where its own attitude stands, rather
-  ## than short of it.
+  ## Append grade-2 object as two segments meeting on the line at its support, each
+  ## running out to one of the line's own two vanishing points, `scale.eye` plus and
+  ## minus `scale.radius_horizon` along its attitude. The forward one is exactly where
+  ## `addPoint` draws this line's attitude as a horizon marker, so the drawn line
+  ## reaches its own attitude with no gap.
+  ##   Two segments rather than one because a vanishing point is a property of the
+  ## *eye*, not of the line: an end anchored a fixed reach from the support instead
+  ## stops short of it by roughly the eye-to-line separation over that reach, which is
+  ## a visible gap as soon as the line's support is not close to the camera. Anchoring
+  ## both ends to the eye is what closes it at both, and a single segment cannot -- one
+  ## running eye-to-eye passes through the eye and projects to a point.
+  ##   Each segment has one end on the true line and one at `eye ± radius*axis`, so both
+  ## lie in the plane through the eye containing the line. That plane projects to a
+  ## single screen line, so the pair draws exactly over the true line's own projection
+  ## however far the far ends sit from it in world space -- verified as zero screen skew
+  ## to floating-point precision, not argued. What it costs is depth: the far ends are
+  ## displaced along the view ray, so occlusion against other objects is approximate
+  ## there. Rebuilt every frame against the current eye, so this holds as the camera
+  ## orbits.
   ##   Or, at horizon, as a great circle around `scale.eye` -- the pencil of directions
   ##   the line stands for, traced across the sky at `scale.radius_horizon`.
   ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
@@ -671,7 +699,8 @@ proc addLine(
     let
       reach = progress*scale.radius_horizon
       tint_progress = tint.fade(tint.alpha*progress)
-    meshes.addSegment(anchor.get - reach*axis.get, scale.eye + reach*axis.get, tint_progress)
+    meshes.addSegment(anchor.get, scale.eye + reach*axis.get, tint_progress)
+    meshes.addSegment(anchor.get, scale.eye - reach*axis.get, tint_progress)
     return Placement.Finite
 
   let normal = directionNormalHorizon(geometry)

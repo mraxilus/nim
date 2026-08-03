@@ -44,6 +44,20 @@ const
     ## Bound how close eye may orbit to target.
   DISTANCE_LIMIT_FAR* = 500.0
     ## Bound how far eye may orbit from target.
+  FACTOR_CLIP_FAR* = 20.0
+    ## Set the far clip plane this many times the orbit distance out. Scaled rather than
+    ## fixed so everything meant to read as "at the horizon" -- `mesh.radiusHorizonFor`,
+    ## `mesh.extentFurnitureFor`, and the far end of every drawn line -- stays past what
+    ## the frame can show at any orbit distance. A fixed plane cannot: the view's own
+    ## extent grows with distance while the plane does not, so dollying out eventually
+    ## brings a line's own far end inside the frame, where it reads as stopping in
+    ## mid-air. Worse, a plane fixed nearer than `DISTANCE_LIMIT_FAR` clips the target
+    ## itself away once the eye orbits past it.
+  FACTOR_CLIP_NEAR* = 1.0/400.0
+    ## Set the near clip plane this fraction of the orbit distance out. Scaled alongside
+    ## `FACTOR_CLIP_FAR` so the frustum stays the same shape at every distance, which
+    ## holds depth-buffer precision -- a function of the far-to-near ratio -- constant
+    ## rather than letting it decay as the camera pulls back.
 
 
 
@@ -59,8 +73,6 @@ type
     azimuth*: float ## Angle about world up, in radians.
     elevation*: float ## Angle above horizon, in radians.
     degrees_field_of_view*: float ## Vertical field of view, in degrees.
-    distance_near*: float ## Nearest depth kept by clip volume.
-    distance_far*: float ## Farthest depth kept by clip volume.
 
   FrameCamera* = object ## Hold orthonormal directions of camera's own axes.
     axis_right*: Direction ## Unit direction of view's +x.
@@ -130,9 +142,18 @@ func initCamera*(target: Position; distance, azimuth, elevation: float): Camera 
     azimuth: azimuth,
     elevation: clamp(elevation, -ELEVATION_LIMIT, ELEVATION_LIMIT),
     degrees_field_of_view: 45.0,
-    distance_near: 0.05,
-    distance_far: 400.0,
   )
+
+
+func distanceNear*(camera: Camera): float = camera.distance*FACTOR_CLIP_NEAR
+  ## Read nearest depth the clip volume keeps.
+  ##   Derived from orbit distance rather than stored, so it cannot go stale: a stored
+  ##   pair set once at construction stays at its original value through every dolly,
+  ##   which is exactly the bug this replaced.
+
+
+func distanceFar*(camera: Camera): float = camera.distance*FACTOR_CLIP_FAR
+  ## Read farthest depth the clip volume keeps; see `distanceNear` for why it is derived.
 
 
 func eye*(camera: Camera): Position =
@@ -217,7 +238,7 @@ func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
   ## Compose whole transform from world space to clip space.
   let eye = camera.eye
   initMatrixProjection(
-    camera.degrees_field_of_view, aspect, camera.distance_near, camera.distance_far
+    camera.degrees_field_of_view, aspect, camera.distanceNear, camera.distanceFar
   ) * initMatrixView(eye, camera.frame(eye))
 
 
@@ -308,7 +329,10 @@ proc aimAt*(tween: var CameraTween; camera: Camera; goal: CameraAim; now, durati
   tween.target_from = camera.target
 
 
-proc advance*(tween: var CameraTween; camera: var Camera; now: float; ease: proc(t: float): float {.noSideEffect.}) =
+proc advance*(
+  tween: var CameraTween; camera: var Camera; now: float;
+  ease: proc(t: float): float {.noSideEffect.},
+) =
   ## Carry the camera one frame further toward its goal, and drop the goal on arrival.
   ##   `ease` is passed in rather than imported so this module stays independent of where
   ##   the project keeps its easing curve; callers hand it `mesh.easeOutCubic`, which is

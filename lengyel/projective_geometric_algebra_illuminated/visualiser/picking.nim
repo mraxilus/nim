@@ -195,7 +195,7 @@ func pickNearest*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    scale = DrawExtent(eye: eye, radius_horizon: radiusHorizonFor(camera.distance_far))
+    scale = DrawExtent(eye: eye, radius_horizon: radiusHorizonFor(camera.distanceFar))
 
   var
     slot_best = none(int)
@@ -224,20 +224,24 @@ func pickNearest*(
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
     of Shape.Line:
+      # Test both halves `mesh.addLine` draws -- support out to each of the line's own
+      #   two vanishing points. Testing one would leave the other half of a line on
+      #   screen unpickable, and which half that is changes as the camera orbits.
       let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
       if anchor.isNone or axis.isNone: continue
-      let clipped = clipToEyeSide(
-        anchor.get - scale.radius_horizon*axis.get, eye + scale.radius_horizon*axis.get,
-        eye, frame_camera.forward, camera.distance_near,
-      )
-      if clipped.isNone: continue
-      let (position_tail, position_head) = clipped.get
-      let
-        tail = projectToScreen(view_projection, width, height, position_tail)
-        head = projectToScreen(view_projection, width, height, position_head)
-      if not (tail.isInFront and head.isInFront): continue
-      let distance = distanceToSegment(cursor, tail, head)
-      if distance <= RADIUS_PICK_LINE: consider(1, distance)
+      var distance_nearest = Inf
+      for reach in [scale.radius_horizon, -scale.radius_horizon]:
+        let clipped = clipToEyeSide(
+          anchor.get, eye + reach*axis.get, eye, frame_camera.forward, camera.distanceNear,
+        )
+        if clipped.isNone: continue
+        let (position_tail, position_head) = clipped.get
+        let
+          tail = projectToScreen(view_projection, width, height, position_tail)
+          head = projectToScreen(view_projection, width, height, position_head)
+        if not (tail.isInFront and head.isInFront): continue
+        distance_nearest = min(distance_nearest, distanceToSegment(cursor, tail, head))
+      if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
 
     of Shape.Plane:
       let

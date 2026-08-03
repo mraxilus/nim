@@ -297,21 +297,54 @@ suite "Mesh":
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
 
 
-  test "line becomes segment reaching radius_horizon backward from support, forward from eye":
+  test "line becomes two segments, each running from support to a vanishing point":
     for line in LINES:
       MESHES.clearMeshes
       check MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
-      check MESHES[Primitive.Line].count_vertices == 2
+      check MESHES[Primitive.Line].count_vertices == 4
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
       check MESHES[Primitive.Point].count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
       check anchor.isSome and axis.isSome
+      # Both halves start on the line, at its support, so they meet with no gap.
+      check isNear(MESHES[Primitive.Line].vertices[0].toPosition, anchor.get)
+      check isNear(MESHES[Primitive.Line].vertices[2].toPosition, anchor.get)
+      # Each ends on one of the line's own two vanishing points, both fixed to the eye.
+      check isNear(MESHES[Primitive.Line].vertices[1].toPosition,
+                   SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get)
+      check isNear(MESHES[Primitive.Line].vertices[3].toPosition,
+                   SCALE_TEST.eye - SCALE_TEST.radius_horizon*axis.get)
+
+
+  test "a drawn line projects onto the true line, however far its ends leave it":
+    # Each half has one end on the line and one at `eye +- radius*axis`, so both lie in
+    #   the plane through the eye containing the line. That plane projects to a single
+    #   screen line, which is what lets the far ends sit well off the line in world
+    #   space -- displaced along the view ray -- without the drawing showing it.
+    let camera = initCamera(Position(x: 0, y: 0, z: 1), 19.0, 1.05, 0.42)
+    let
+      eye = camera.eye
+      frame_camera = camera.frame(eye)
+      radius = radiusHorizonFor(camera.distanceFar)
+    proc screen(p: Position): (float, float) =
+      let v = p - eye
+      (dot(v, frame_camera.axis_right)/dot(v, frame_camera.forward),
+       dot(v, frame_camera.axis_up)/dot(v, frame_camera.forward))
+    for line in LINES:
+      let (anchor, axis) = (positionAnchor(line).get, direction(line).get)
       let
-        tail = MESHES[Primitive.Line].vertices[0].toPosition
-        head = MESHES[Primitive.Line].vertices[1].toPosition
-      check isNear(tail, anchor.get - SCALE_TEST.radius_horizon*axis.get)
-      check isNear(head, SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get)
+        (ax, ay) = screen(anchor)
+        (bx, by) = screen(anchor + 5.0*axis) # A second point on the TRUE line.
+        length = hypot(bx - ax, by - ay)
+        (ux, uy) = ((bx - ax)/length, (by - ay)/length)
+      for reach in [radius, -radius]:
+        let far_end = eye + reach*axis
+        # Reject any end that falls behind the eye, where a projection is meaningless.
+        if dot(far_end - eye, frame_camera.forward) <= camera.distanceNear: continue
+        let (fx, fy) = screen(far_end)
+        # Perpendicular screen distance of the drawn end from the true line's own ray.
+        check abs((fx - ax)*uy - (fy - ay)*ux) < 1e-9
 
 
   test "line's own far end coincides exactly with where its attitude is drawn":
