@@ -1,4 +1,4 @@
-## Print the derived ontology and its disagreements with the workbook.
+## Print the derived ontology and everything it has to say about the workbook.
 ##
 ## This is the reading tool for the model: the frame list, the transition matrix
 ## and the audit, in the terms the workbook uses, so the two can be compared by
@@ -9,33 +9,33 @@ import std/[options, strutils]
 import ../src/partnerwork
 
 
-proc printFrames(convention: Convention) =
-  ## List the frames one idiom admits, with their names and move counts.
-  echo "frames admitted by ", convention, ":"
-  for target in convention.admitted:
+proc printFrames() =
+  ## List every frame, with its name and the number of moves it carries.
+  echo "frames (", FRAMES.len, "):"
+  for target in FRAMES:
     let known = if workbookName(target).isSome: "  " else: "* "
-    echo "  ", known, target.key, "  ", target.title.alignLeft(34),
-      target.describe.alignLeft(38), $moves(target, convention).len, " moves"
+    echo "  ", known, target.key, "  ", target.describe.alignLeft(38),
+      $moves(target).len, " moves"
   echo "  (* marks a frame the workbook has no row for)"
 
 
-proc printMatrix(convention: Convention) =
+proc printMatrix() =
   ## Print every derived move, grouped by the frame it starts from.
-  echo "\nderived transitions (", convention, "):"
-  for source in convention.admitted:
-    echo "  from ", source.title, "  [", source.key, "]"
-    for move in moves(source, convention):
-      let cell = cellText(
-        workbookName(source).get(""), workbookName(move.to).get(""))
+  echo "\nderived transitions:"
+  for source in FRAMES:
+    echo "  from ", source.describe, "  [", source.key, "]"
+    for move in moves(source):
+      let cell = cellText(workbookName(source).get(""), workbookName(move.to).get(""))
       let mark = if cell.isSome: "  " else: "* "
-      echo "    ", mark, ($move.helper).alignLeft(9), move.to.title.alignLeft(36),
-        phrase(source, move)
+      echo "    ", mark, ($move.helper).alignLeft(9),
+        move.to.describe.alignLeft(36), phrase(source, move)
 
 
-proc printAudit(convention: Convention) =
-  ## Report the workbook's disagreements with the model, grouped by kind.
-  let findings = audit(convention)
-  echo "\naudit of the base sheet against the model (", findings.len, " findings):"
+proc printAudit() =
+  ## Report what the model says about the workbook, grouped by kind.
+  let findings = audit()
+  echo "\naudit of the base sheet (", findings.len, " findings, ",
+    CELLS.len - countDeferredCells(), " of ", CELLS.len, " cells checkable):"
   for kind in FindingKind:
     var shown = false
     for finding in findings:
@@ -49,10 +49,6 @@ proc printAudit(convention: Convention) =
 
 
 when isMainModule:
-  printFrames(Convention.Salsa)
-  printMatrix(Convention.Salsa)
-  printAudit(Convention.Salsa)
-  echo "\nframes the physics allows beyond the idiom:"
-  for target in Convention.Physical.admitted:
-    if not Convention.Salsa.admits(target):
-      echo "  ", target.key, "  ", target.describe
+  printFrames()
+  printMatrix()
+  printAudit()

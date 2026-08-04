@@ -1,7 +1,7 @@
 ## Test the laws of the transition relation over every pair of frames.
 ##
 ## The state space is small enough to check exhaustively, so nothing here is a
-## sample: each law is asserted for all 225 ordered pairs.
+## sample: each law is asserted for all 64 ordered pairs.
 
 import std/[options, unittest]
 
@@ -35,7 +35,7 @@ suite "the relation":
       for destination in FRAMES:
         if classify(source, destination).isSome:
           inc edges
-    check edges == 62
+    check edges == 26
     check edges < FRAMES.len * (FRAMES.len - 1)
 
 
@@ -52,17 +52,16 @@ suite "the primitives":
         of Helper.Drop: check change == -1
         else: check change == 0
 
-  test "a trace keeps the hand and passes through the torso":
-    for source in FRAMES:
-      for destination in FRAMES:
-        if classify(source, destination) != some(Helper.Trace):
-          continue
-        let side = actingSide(source, destination, Helper.Trace)
-        check source.hold[side].isSome and destination.hold[side].isSome
-        check source.hold[side] != destination.hold[side]
-        check source.hold[side] == some(Site.Torso) or
-          destination.hold[side] == some(Site.Torso)
-        check source.hold[other(side)] == destination.hold[other(side)]
+  test "one hand cannot travel from one hand of the follow to the other":
+    # That move is a trace, and there is nothing between the follow's hands to
+    # trace along. It becomes a move when the arms and body are places to hold.
+    for side in Side:
+      var source = Frame()
+      var destination = Frame()
+      source.hold[side] = some(Site.LeftHand)
+      destination.hold[side] = some(Site.RightHand)
+      check classify(source, destination).isNone
+      check route(source, destination).len == 2
 
   test "a pass keeps the place and changes the hand":
     for source in FRAMES:
@@ -83,62 +82,47 @@ suite "the primitives":
         check source.hasOverlap and destination.hasOverlap
         check source.over != destination.over
 
-  test "there is no path from one hand of the follow to the other":
-    for side in Side:
-      check not isTraceable(side, Site.LeftHand, Site.RightHand)
-      check isTraceable(side, Site.Torso, parallelSite(side))
-      check not isTraceable(side, Site.Torso, crossedSite(side))
-
 
 suite "moves":
   test "the offered moves are exactly the frames one primitive away":
-    for convention in Convention:
-      for source in convention.admitted:
-        var offered: seq[Frame] = @[]
-        for move in moves(source, convention):
-          check classify(source, move.to) == some(move.helper)
-          check convention.admits(move.to)
-          check move.to notin offered
-          check phrase(source, move).len > 0
-          offered.add move.to
-        for destination in convention.admitted:
-          if classify(source, destination).isSome:
-            check destination in offered
-
-  test "an idiom can only remove moves":
-    for source in Convention.Salsa.admitted:
-      check moves(source, Convention.Salsa).len <=
-        moves(source, Convention.Physical).len
+    for source in FRAMES:
+      var offered: seq[Frame] = @[]
+      for move in moves(source):
+        check classify(source, move.to) == some(move.helper)
+        check move.to notin offered
+        check phrase(source, move).len > 0
+        offered.add move.to
+      for destination in FRAMES:
+        if classify(source, destination).isSome:
+          check destination in offered
 
   test "the open frame is where every dance starts and ends":
     let open = fromKey("--.").get
     check open.countHolds == 0
-    check moves(open, Convention.Salsa).len == 5
-    check moves(open, Convention.Physical).len == 6
-    for move in moves(open, Convention.Physical):
+    check moves(open).len == 4
+    for move in moves(open):
       check move.helper == Helper.Collect
 
 
 suite "routes":
   test "every frame reaches every other, and a route is a chain of moves":
-    for convention in Convention:
-      for source in convention.admitted:
-        for destination in convention.admitted:
-          if source == destination:
-            check route(source, destination, convention).len == 0
-            continue
-          let steps = route(source, destination, convention)
-          check steps.len > 0
-          var current = source
-          for step in steps:
-            check classify(current, step.to) == some(step.helper)
-            current = step.to
-          check current == destination
+    for source in FRAMES:
+      for destination in FRAMES:
+        if source == destination:
+          check route(source, destination).len == 0
+          continue
+        let steps = route(source, destination)
+        check steps.len > 0
+        var current = source
+        for step in steps:
+          check classify(current, step.to) == some(step.helper)
+          current = step.to
+        check current == destination
 
   test "a route is one move long exactly where a primitive exists":
     for source in FRAMES:
       for destination in FRAMES:
         if source == destination:
           continue
-        let steps = route(source, destination, Convention.Physical)
+        let steps = route(source, destination)
         check (steps.len == 1) == classify(source, destination).isSome

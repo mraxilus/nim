@@ -7,7 +7,7 @@ import ../src/partnerwork/frame
 
 suite "frames":
   test "every enumerated frame is valid and distinct":
-    check FRAMES.len == 15
+    check FRAMES.len == 8
     for target in FRAMES:
       check target.isValid
     for index, target in FRAMES:
@@ -40,9 +40,10 @@ suite "frames":
     check fromKey("").isNone
     check fromKey("--").isNone
     check fromKey("zz.").isNone
+    check fromKey("t-.").isNone  # A hand on the body is not a hand-to-hand frame.
     check fromKey("ll.").isNone  # One follow hand cannot be held twice.
     check fromKey("lr.").isNone  # Overlapping forearms need an order.
-    check fromKey("rl L").isNone # A parallel pair has no order to record.
+    check fromKey("rlL").isNone  # A parallel pair has no order to record.
 
   test "reflection is an involution and permutes the frames":
     for target in FRAMES:
@@ -61,37 +62,15 @@ suite "frames":
     check fromKey("l-.").get.reflect == fromKey("-r.").get
 
 
-suite "conventions":
-  test "salsa admits the frames the workbook draws from":
-    var salsa = 0
-    for target in Convention.Salsa.admitted:
-      inc salsa
-    check salsa == 11
-    var physical = 0
-    for target in Convention.Physical.admitted:
-      inc physical
-    check physical == FRAMES.len
-
-  test "an idiom is not a symmetry, so salsa is not closed under reflection":
-    var mirrored_out = 0
-    for target in Convention.Salsa.admitted:
-      if not Convention.Salsa.admits(target.reflect):
-        inc mirrored_out
-    # The three frames whose mirror puts the follow's torso in the lead's left
-    # hand: half-closed, closed, and Left-to-left with the right hand on the torso.
-    check mirrored_out == 3
-
-
 suite "naming":
-  test "every frame is named, and the idiom names three of them":
-    var idioms: seq[string] = @[]
+  test "every frame is named":
+    var names: seq[string] = @[]
     for target in FRAMES:
       check target.describe.len > 0
-      check target.title.len > 0
       check target.position.len > 0
-      if target.idiom.isSome:
-        idioms.add target.idiom.get
-    check idioms == @["open", "half-closed", "closed"]
+      check target.describe notin names
+      names.add target.describe
+    check fromKey("--.").get.describe == "open"
 
   test "the workbook's names come out of the structure":
     check fromKey("l-.").get.describe == "Left to left"

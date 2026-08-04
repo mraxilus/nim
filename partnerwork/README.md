@@ -4,6 +4,10 @@ An executable ontology of the frames a couple can hold in partner dance, and the
 moves between them. Written for salsa, but nothing in it is salsa-specific: it is
 two humanoid bodies, four hands and the geometry of facing each other.
 
+Hands only. A hand resting on a partner's body is real and deliberately absent:
+it adds no frame, it takes a turn away, and it is where a wound arm lands, so it
+belongs with rotation rather than here.
+
 The model has one state and one relation. A **frame** is what each of the lead's
 hands holds and how the arms lie where they overlap. A **move** exists between
 two frames exactly when the difference between them is one primitive. Everything
@@ -34,19 +38,16 @@ nimble app          # or: nim js -d:release -o:app/app.js app/app.nim
 
 Three views: **Dance** walks the state machine, **Atlas** shows the whole derived
 transition matrix with the cells the workbook leaves blank outlined, and
-**Audit** lists every disagreement between the workbook and the model. The
-**Salsa/Physical** switch chooses whether to admit the four frames that put the
-follow's torso in the lead's left hand — physical, but not what a salsa lead
-does.
+**Audit** reports what the model has to say about the workbook.
 
 
 ## Layout
 
 ```
 src/partnerwork/frame.nim       frames, their laws, their names, reflection
-src/partnerwork/transition.nim  the five primitives and the routes between frames
+src/partnerwork/transition.nim  the four primitives and the routes between frames
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
-src/partnerwork/rotation.nim    the unfinished rotation axis, kept separate
+src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
 app/                            the browser validator
 tools/audit.nim                 the same audit, printed
 tests/                          the laws, checked over every pair of frames
@@ -55,20 +56,22 @@ doc/analysis.md                 what the workbook says, what it is missing
 
 ```
 nimble test         # the laws
-nimble audit        # the model and its disagreements with the workbook, printed
+nimble audit        # the model and what it says about the workbook, printed
 ```
 
 
 ## What it says
 
-Fifteen frames exist; eleven of them are idiomatic salsa. Sixty-two directed
-moves join them, forty within the salsa convention. The `base` sheet of
-`ontology.partnerwork.xlsx` records twenty-five of the twenty-six that fall
-between the nine states it names, and every one of those twenty-five names the
-same primitive the model derives independently.
+Eight frames exist and twenty-six moves join them. The `base` sheet of
+`ontology.partnerwork.xlsx` names nine states, seven of them hand-to-hand, and
+eighteen of its twenty-seven cells hold between those seven. All eighteen name
+the same primitive the model derives independently, and they are every move that
+exists between those seven states: nothing missing, nothing spare.
 
-The gaps are in `doc/analysis.md`. The two largest: there is no state for having
-let go, and none for holding the follow's left hand with a hand on their back.
+Three things are outstanding, set out in `doc/analysis.md`: `open` has no row,
+`closed` and `half-closed` need a vocabulary for places on the body, and two
+words have drifted between the `base` and `vocabulary` sheets.
 
-Rotation is not modelled beyond what the base model forces. What it forces is in
-`doc/analysis.md` §6, along with the four cells worth dancing to settle the rest.
+Rotation is not modelled beyond what the hand-to-hand model forces. What it
+forces is in `doc/analysis.md` §6, along with the four cells worth dancing to
+settle the rest.
