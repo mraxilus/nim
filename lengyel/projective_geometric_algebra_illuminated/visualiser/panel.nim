@@ -60,15 +60,11 @@ const
     ## is open, and the grid divides itself out of whatever it is given.
   SPEED_DRAG* = 0.01'f32
     ## Set how fast a coefficient moves per pixel dragged.
-  WIDTH_ITEM_LINE = 640
+  WIDTH_ITEM_LINE = WIDTH_SHAPE_WORD + WIDTH_MULTIVECTOR
     ## Bound one item's shape-and-coefficient line in *bytes*, redrawn every frame. Sized
-    ## for the worst case that line can reach: the longest shape word plus all sixteen
-    ## basis terms written out, which a mixed-grade object genuinely does print. A basis
-    ## name costs up to 13 bytes rather than 5, since the library names elements in
-    ## mathematical bold with subscript digits; the buffer counts bytes, and truncating a
-    ## line mid-name would leave a half-written codepoint for the GUI to draw.
-  WIDTH_SHAPE_WORD = 32
-    ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
+    ## from what the two printers that fill it declare for themselves, rather than by a
+    ## number tuned by hand here: the line is a shape word followed by a whole multivector,
+    ## and a mixed-grade object genuinely does print every basis term.
   COEFFICIENTS_PER_ROW = 6
     ## Wrap a grade's own elements after this many. In this build's 4D metric the largest
     ## grade holds exactly six, so every grade fits one line and the desktop grid matches
@@ -394,7 +390,7 @@ proc layoutItemButtons(
       let geometry = session.geometry
       if row.isPending:
         let slot_added =
-          scene.addItem(geometry, $toCstring(session.label), Ink(session.index_ink), now)
+          scene.addItem(geometry, toText(session.label), Ink(session.index_ink), now)
         workbench.selection.selectOnly(slot_added)
       else:
         scene.geometryAt(row.slot.get) = geometry
@@ -575,10 +571,10 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
   gui.tooltip("File `save scene` writes to and `load scene` reads from.")
   gui.widthPop()
   if gui.button("save scene"):
-    toChars(saveScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+    toChars(saveScene(scene, toText(workbench.path_scene)), workbench.message)
   gui.sameLine()
   if gui.button("load scene"):
-    toChars(loadScene(scene, $toCstring(workbench.path_scene)), workbench.message)
+    toChars(loadScene(scene, toText(workbench.path_scene)), workbench.message)
     # A loaded scene's slots are not the ones any open session was opened against.
     workbench.session = none(EditSession)
 
@@ -652,19 +648,15 @@ proc applyPickedOperation(
     operand_second = scene[second].geometry
     derived = applyOperation(operation, operand_first, operand_second)
     anchor = creationAnchor(operation, operand_first, operand_second, derived)
-    name_first = $toCstring(scene.labelAt(first))
-    name_second = $toCstring(scene.labelAt(second))
+    name_first = toText(scene.labelAt(first))
+    name_second = toText(scene.labelAt(second))
     label = notationSubstituted(operation, name_first, name_second)
   workbench.selection.selectOnly(
     scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
   )
   history.record(scene)
 
-  var shape_word: array[WIDTH_SHAPE_WORD, char]
-  var cursor_shape = 0
-  describeShape(derived, shape_word, cursor_shape)
-  finishChars(shape_word, cursor_shape)
-  toChars(&"{label} gave {$toCstring(shape_word)}.", workbench.message)
+  toChars(&"{label} gave {shapeText(derived)}.", workbench.message)
 
 
 proc layoutApply*(

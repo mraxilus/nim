@@ -15,10 +15,10 @@
 ## as plain exported procs a hand-written presentation layer drives instead.
 ##
 ## What does NOT carry over, and why:
-##   `scene.formatMultivector`/`scene.describeShape`+`toCstring` and every desktop-only
-##   diagnostic (the arena bump-allocators, `arena.nim`'s own accounting, the SDL/OpenGL
-##   frame loop's own timing) either depend on a C FFI (`format.nim`'s `snprintf` binding)
-##   that does not exist in a browser, or describe implementation details specific to the
+##   `scene.toCstring`, `format.appendMagnitude` and every desktop-only diagnostic (the
+##   arena bump-allocators, `arena.nim`'s own accounting, the SDL/OpenGL frame loop's own
+##   timing) either depend on a C FFI (`format.nim`'s `snprintf` binding) or on an address
+##   the JS backend has no notion of, or describe implementation details specific to the
 ##   native build's own allocator and draw loop with no browser/JS-GC equivalent worth
 ##   fabricating. What a *coefficient* should read as is this project's own rule rather
 ##   than C's, so `nimFormatNumber` below answers it from `format.formatMagnitude`
@@ -122,30 +122,6 @@ proc flatten(mesh: Mesh): seq[float32] =
     result.add(v.alpha)
 
 
-proc shapeDescription(m: Multivector): string =
-  ## Name what shape `m` stands for, or that it stands for none at all. Built by hand
-  ## rather than through `scene.describeShape`+`toCstring`: that pattern's fixed-buffer,
-  ## `unsafeAddr`-based design does not carry over correctly to the JS backend (the same
-  ## kind of gap `scene.Item`'s own doc comment already flags for a value parameter's
-  ## address), and a plain string costs nothing extra here, called only on a user action,
-  ## not once a frame.
-  let s = shape(m)
-  if s.isNone: return "mixed grade, nothing to draw"
-  case s.get
-  of Shape.Point: (if isHorizon(m): "point at horizon" else: "point")
-  of Shape.Line: (if isHorizon(m): "line at horizon" else: "line")
-  of Shape.Plane: (if isHorizon(m): "plane at horizon" else: "plane")
-
-
-proc labelString(label: Label): string =
-  ## Read a fixed-char label buffer into a plain Nim string, byte by byte until the first
-  ## `\0` -- avoids `toCstring`'s `unsafeAddr` pattern (see `shapeDescription`'s own doc
-  ## comment for why that does not carry over to the JS backend).
-  for ch in label:
-    if ch == '\0': break
-    result.add(ch)
-
-
 
 #[ Setup ]#
 
@@ -221,7 +197,7 @@ proc nimIsAlive(slot: cint): bool {.exportc.} = g_scene.isAlive(int(slot))
 
 proc nimItemLabel(slot: cint): cstring {.exportc.} =
   ## Report item's display label, by slot.
-  cstring(labelString(g_scene.labelAt(int(slot))))
+  cstring(toText(g_scene.labelAt(int(slot))))
 
 
 proc nimItemInk(slot: cint): cint {.exportc.} = cint(g_scene.inkAt(int(slot)))
@@ -238,8 +214,9 @@ proc nimItemBorn(slot: cint): cfloat {.exportc.} = cfloat(g_borns[int(slot)])
 
 
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
-  ## Report item's shape, by slot, in the same words `shapeDescription` names it.
-  cstring(shapeDescription(g_scene.geometryAt(int(slot))))
+  ## Report item's shape, by slot, in the words `scene.shapeText` names it -- the same
+  ## words the desktop status line uses, because it is the same call.
+  cstring(shapeText(g_scene.geometryAt(int(slot))))
 
 
 proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
@@ -266,13 +243,13 @@ proc nimFormatNumber(value: float): cstring {.exportc.} =
 
 
 proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
-  ## Format item's own multivector for display, by slot, through the library's own `$`
-  ## operator directly -- confirmed (both `nim c` and `nim js`, byte-identical output)
-  ## to compile and run cleanly under this backend with no C/snprintf dependency, unlike
-  ## `scene.formatMultivector`'s own fixed-buffer, `format.nim`-backed path the desktop
-  ## build still needs. The browser has no font-atlas limitation the desktop's ImGui
-  ## build has, so nothing here needs to avoid the library's own bold Unicode.
-  cstring($g_scene.geometryAt(int(slot)))
+  ## Format item's own multivector for display, by slot, through `scene.multivectorText`
+  ## -- the same writer the desktop panel's own item line uses, so a coefficient reads
+  ## identically in both front-ends.
+  ##   This used the library's own `$` until the suite began running on this backend too:
+  ##   `$` writes magnitudes at the library's `%G`, not at this project's four significant
+  ##   digits, so the same object printed differently in the two UIs.
+  cstring(multivectorText(g_scene.geometryAt(int(slot))))
 
 
 
@@ -340,15 +317,15 @@ proc nimApplyOperation(
     operand_second = g_scene.geometryAt(int(slot_second))
     derived = applyOperation(operation, operand_first, operand_second)
     anchor = creationAnchor(operation, operand_first, operand_second, derived)
-    name_first = labelString(g_scene.labelAt(int(slot_first)))
-    name_second = labelString(g_scene.labelAt(int(slot_second)))
+    name_first = toText(g_scene.labelAt(int(slot_first)))
+    name_second = toText(g_scene.labelAt(int(slot_second)))
     label = notationSubstituted(operation, name_first, name_second)
     slot_created =
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
   g_selection.selectOnly(slot_created)
   g_history.record(g_scene)
-  let shape_word = shapeDescription(derived)
+  let shape_word = shapeText(derived)
   OperationResult(
     created_slot: cint(slot_created),
     message: cstring(&"{label} gave {shape_word}."),
@@ -409,7 +386,7 @@ proc nimDescribeCoefficients(coefficients: seq[float]): cstring {.exportc.} =
   ## sentence for itself out of two separate exports.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
-  cstring(shapeDescription(geometry) & ": " & $geometry)
+  cstring(shapeText(geometry) & ": " & multivectorText(geometry))
 
 
 proc nimClearGhost() {.exportc.} =
@@ -587,9 +564,8 @@ const SLOT_NONE = -1'i32
   ## Cross the `{.exportc.}` boundary as "no slot" -- `cint` cannot carry `Option[int]`
   ## into JS, so every exported proc reporting an optional slot translates through this
   ## one constant at its own return, rather than inventing its own inline `-1`. See
-  ## `shapeDescription`'s own doc comment for the precedent: the boundary is where a
-  ## JS-incompatible representation gets translated, not a reason to use it upstream --
-  ## everything on this side of that translation stays `Option[int]`.
+  ## The boundary is where a JS-incompatible representation gets translated, not a reason
+  ## to use it upstream -- everything on this side of that translation stays `Option[int]`.
 
 
 func drawExtentFor(cam: Camera): DrawExtent =
@@ -778,53 +754,21 @@ type DragResult = object ## Report what ending a drag produced.
 
 proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   ## End the drag in progress, applying its operation between source and hovered item.
-  ##   Calls straight into `interaction.endDrag` for the mutation itself -- the same
-  ##   catalogue call, anchor resolution and slot bookkeeping the desktop build's own
-  ##   mouse-release handler runs -- but re-labels the created item and rebuilds the
-  ##   outcome message by hand afterward: `endDrag` builds both its own returned message
-  ##   AND the label it stores on the new item through `scene.labelAt`+`$toCstring`,
-  ##   which -- confirmed empirically, not just suspected -- comes out empty under the
-  ##   JS backend (the same gap `shapeDescription`'s own doc comment flags), so without
-  ##   this fix-up every object built by dragging would carry a blank label forever, not
-  ##   just show a blank status line once.
-  let drag = g_interaction.operation
-  # Read both operands' labels *before* `endDrag` runs: it clears `operation` (though
-  #   not `index_hover`) once done, and the source/destination slots themselves may no
-  #   longer hold what a caller expects once the new item lands in one of them (a freed
-  #   slot is reused by the very next `addItem`, which this call itself may be).
-  #   Guarded by `isAlive` first: either slot may have been removed (or replaced by
-  #   undo/redo) since the drag began, since both are carried across frames rather than
-  #   re-picked at release time -- reading a freed slot's label here would otherwise
-  #   crash before `endDrag` below ever gets a chance to reject the stale drag itself.
-  let is_source_alive = g_scene.isAlive(g_interaction.index_source)
-  let is_destination_alive =
-    g_interaction.index_hover.isNone or g_scene.isAlive(g_interaction.index_hover.get)
-  let
-    label_source =
-      if is_source_alive: labelString(g_scene.labelAt(g_interaction.index_source)) else: ""
-    label_destination =
-      if is_destination_alive and g_interaction.index_hover.isSome:
-        labelString(g_scene.labelAt(g_interaction.index_hover.get))
-      else: ""
-    notation_text = if drag.isSome: interaction.notation(drag.get) else: "?"
-    outcome = interaction.endDrag(g_interaction, g_scene, float(now))
+  ##   Calls straight into `interaction.endDrag` for everything it reports -- the same
+  ##   catalogue call, anchor resolution, slot bookkeeping, operand-derived label and
+  ##   outcome message the desktop build's own mouse-release handler gets -- and adds only
+  ##   what is this build's own business: the birth clock, the selection and the history
+  ##   entry. This once re-labelled the created item by hand, because `endDrag` read its
+  ##   operands' labels through `$toCstring`, which comes out empty under the JS backend;
+  ##   `scene.toText` now reads them the same on both, so there is nothing left to fix up.
+  let outcome = interaction.endDrag(g_interaction, g_scene, float(now))
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
     g_borns[slot] = float(now)
     g_selection.selectOnly(slot)
-    let
-      label_fixed = &"{label_source} {notation_text} {label_destination}"
-      shape_word = shapeDescription(g_scene.geometryAt(slot))
-    toChars(label_fixed, g_scene.labelAt(slot))
     g_history.record(g_scene)
-    return DragResult(
-      created_slot: cint(slot),
-      message: cstring(&"{label_fixed} gave {shape_word}."),
-    )
-  DragResult(
-    created_slot: SLOT_NONE,
-    message: cstring("Drag released on empty space or its own source; nothing done."),
-  )
+    return DragResult(created_slot: cint(slot), message: cstring(outcome.message))
+  DragResult(created_slot: SLOT_NONE, message: cstring(outcome.message))
 
 
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
@@ -984,7 +928,7 @@ proc nimBuildFrame(
   #   this cost alone was ~150ms/frame, worse than useless for a 60fps draw loop: fixed
   #   by adding `inkAt`/`anchorOverrideAt` beside the geometry/label/visibility "At"
   #   readers `scene.nim` already had (purely additive there, native-inert, mirroring
-  #   the existing `geometryAt`/`isVisibleAt` pattern) and reading every field here by
+  #   the existing `geometryAt`/`isVisible` pattern) and reading every field here by
   #   slot instead.
   for slot in 0 ..< ITEMS_MAX:
     if not g_scene.isAlive(slot): continue

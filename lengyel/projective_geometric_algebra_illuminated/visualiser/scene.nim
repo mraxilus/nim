@@ -34,7 +34,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, os, strformat, strutils, syncio, unicode]
+import std/[options, strformat, strutils, unicode]
 
 import ../pga
 import ./[format, mesh, objects]
@@ -315,6 +315,19 @@ const lut_basis_to_name* = block:
   lut
 
 
+const
+  WIDTH_TERM = 32
+    ## Bound one printed term in *bytes*: a separator (` + `/` - `), a magnitude at
+    ## `DIGITS_SIGNIFICANT` significant digits with sign and exponent, a space, and a
+    ## basis name, which the library writes in mathematical bold with subscript digits at
+    ## up to 13 bytes. Bytes rather than characters, since that is what a buffer holds,
+    ## and truncating mid-name would leave the GUI half a codepoint to draw.
+  WIDTH_MULTIVECTOR* = (ord(Basis.high) + 1)*WIDTH_TERM + 1
+    ## Bound one printed multivector: every basis term this build's metric carries, at
+    ## `WIDTH_TERM` each, plus the terminator. Derived from `Basis` rather than fixed, so
+    ## a build of another dimension sizes its own buffers rather than silently truncating.
+
+
 proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: var int) =
   ## Print multivector into fixed storage, in same shape library's own `$` uses.
   ##   Basis elements are named exactly as the library names them, mathematical bold and
@@ -336,6 +349,10 @@ proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: va
     appendChars(storage, cursor, lut_basis_to_name[Basis.scalar])
 
 
+const WIDTH_SHAPE_WORD* = 32
+  ## Bound the shape word alone, the longest being "mixed grade, nothing to draw".
+
+
 proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =
   ## Name geometry multivector stands for into fixed storage, for reporting to user.
   ##   Appends from `cursor` onward; see `formatMultivector` for why.
@@ -350,6 +367,36 @@ proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var in
   )
 
 
+func multivectorText*(m: Multivector): string =
+  ## Print `m` as a string, for a caller with nowhere fixed to put it.
+  ##   Wraps `formatMultivector` for the same reason `shapeText` wraps `describeShape`:
+  ##   the browser's item list showed the library's own `$` here, at the library's `%G`
+  ##   rather than this project's four significant digits, so the same object read
+  ##   differently in the two front-ends. One writer, one answer.
+  var
+    storage: array[WIDTH_MULTIVECTOR, char]
+    cursor = 0
+  formatMultivector(m, storage, cursor)
+  finishChars(storage, cursor)
+  toText(storage)
+
+
+func shapeText*(m: Multivector): string =
+  ## Name the geometry `m` stands for, as a string, for a caller with nowhere fixed to
+  ## put it.
+  ##   Wraps `describeShape` rather than restating its words, so a status line, a panel
+  ##   row and the browser's own item list cannot drift apart from each other -- three
+  ##   copies of this wording is exactly what was there before. Allocating is affordable
+  ##   here and not in `describeShape`: this is called on a user action, that one on every
+  ##   visible item, every frame.
+  var
+    storage: array[WIDTH_SHAPE_WORD, char]
+    cursor = 0
+  describeShape(m, storage, cursor)
+  finishChars(storage, cursor)
+  toText(storage)
+
+
 
 #[ Label Storage ]#
 
@@ -361,10 +408,14 @@ proc toChars*(text: string; storage: var openArray[char]) =
   finishChars(storage, cursor)
 
 
-template toCstring*(storage: untyped): cstring = cast[cstring](unsafeAddr storage[0])
-  ## Point at fixed char storage, for handing to GUI or to formatter.
-  ##   Template rather than function, so address is taken of caller's own storage
-  ##   rather than of a copy made for a parameter.
+when not defined(js):
+  template toCstring*(storage: untyped): cstring = cast[cstring](unsafeAddr storage[0])
+    ## Point at fixed char storage, for handing to the GUI as the pointer C expects.
+    ##   Template rather than function, so address is taken of caller's own storage
+    ##   rather than of a copy made for a parameter.
+    ##   Desktop-only, and guarded so rather than left for a comment to police: taking an
+    ##   address is meaningless on the JS backend, so a shared module reading storage as
+    ##   text wants `toText` above. Only a hand-off to a C entry point wants this.
 
 
 
@@ -438,25 +489,15 @@ proc labelAt*(scene: var Scene; slot: int): var Label =
   scene.labels[slot]
 
 
-proc isVisibleAt*(scene: var Scene; slot: int): var bool =
-  ## Reach item's visibility for editing, by slot.
-  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.are_visible[slot]
-
-
 func isVisible*(scene: Scene; slot: int): bool =
   ## Read item's visibility by value, by slot rather than through an `Item` handle --
   ## see `inkAt`'s own doc comment for why a by-slot reader beside the `Item`-based one
-  ## earns its keep, and keep this one separate from `isVisibleAt` rather than reusing
-  ## it for reads too: confirmed empirically that a `var bool`-returning proc reading
-  ## an `array[N, bool]` field miscompiles under the JS backend specifically when its
-  ## result is used as a value (an exported proc's own return, or a plain `if`
-  ## condition) rather than as an lvalue to assign through -- it reads back `undefined`
-  ## there, silently false in every boolean context, which made every object invisible
-  ## the moment a caller tried to *read* through `isVisibleAt` instead of write through
-  ## it. `isVisibleAt` itself is unaffected for its own real job (`isVisibleAt(...) =
-  ## newValue`, an assignment target, not a read) and stays as the setter path;
-  ## this is the reader.
+  ## earns its keep.
+  ##   Visibility is read and written through this pair of plain accessors and never
+  ## through a `var bool`-returning one: confirmed empirically that a proc handing back
+  ## `var bool` over an `array[N, bool]` field miscompiles under the JS backend, reading
+  ## `undefined` (silently false in every boolean context) and writing to a copy that is
+  ## then dropped. `setVisible` below is the writer.
   scene.are_visible[slot]
 
 
@@ -486,15 +527,10 @@ proc setInk*(scene: var Scene; slot: int; ink: Ink) =
 
 
 proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
-  ## Rewrite item's visibility, by slot -- a plain setter beside `isVisibleAt`'s own
-  ## `addr scene.isVisibleAt(slot)` idiom (which `panel.nim`'s checkbox widget still
-  ## uses, and which works fine there), for a caller that cannot use that idiom: under
-  ## the JS backend, writing through `isVisibleAt(...) = visible` compiles to the same
-  ## miscompiled `var bool`-over-`array[N, bool]` pattern `isVisible`'s own doc comment
-  ## already documents breaking reads -- confirmed separately that the write silently
-  ## does nothing there either (the assignment lands on a copied primitive, not the
-  ## backing array), so a direct, ordinary assignment through a plain setter is the
-  ## only path this backend can rely on for both directions, mirroring `setInk` exactly.
+  ## Rewrite item's visibility, by slot, mirroring `setInk` exactly.
+  ##   The only writer: an `isVisibleAt(...) = visible` accessor stood here until the
+  ## suite began running on the JS backend, where the assignment silently landed on a
+  ## copied primitive rather than the backing array -- see `isVisible` above.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.are_visible[slot] = is_visible
 
@@ -580,6 +616,12 @@ proc removeItem*(scene: var Scene; slot: int) =
 ## depend on the `LABEL_MAX` the writing build happened to use.
 
 when not defined(js):
+  # Imported here rather than at the top of the module: a filesystem and a file handle are
+  #   exactly what the browser build has none of, so the guard that excludes save and load
+  #   should exclude what they need too, rather than leaving the JS build to warn about two
+  #   imports nothing on that path can use.
+  import std/[os, syncio]
+
   const
     MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
       ## First four bytes of a `.rgascene` file, the format table above documents.
@@ -607,7 +649,7 @@ when not defined(js):
       file.write(char(ord(item.ink)))
       file.write(char(ord(item.isVisible)))
       let
-        text = $toCstring(item.label)
+        text = toText(item.label)
         geometry = item.geometry
       file.write(char(len(text)))
       discard file.writeChars(text, 0, len(text))
@@ -681,7 +723,7 @@ when not defined(js):
         geometry[b] = coefficient
 
       let slot = staging.addItem(geometry, label, ink)
-      staging.isVisibleAt(slot) = is_visible
+      staging.setVisible(slot, is_visible)
 
     scene = staging
     &"Loaded {count} object(s) from `{path}`."

@@ -37,12 +37,18 @@ Render Paths
 ---
 | Scope | Files |
 |-------|-------|
-| Shared | `pga`, `objects`, `mesh`, `camera`, `scene`, `selection`, `picking`, `marker`, `interaction`, `storyboard`, `history`, `format`, `arena` |
+| Shared | `pga`, `objects`, `mesh`, `camera`, `scene`, `selection`, `picking`, `marker`,
+  `interaction`, `storyboard`, `history`, `format`, `arena` |
 | Desktop only | `visualiser.nim`, `panel`, `renderer`, `opengl`, `gui`, `sdl3`, `image`, `gif` |
 | Browser only | `browser_bridge.nim`, `shell.html`, `glue.js` |
 
 `visualiser.nim`'s module doc carries this table; every other module cross-references it.
 The two entry points share all geometry and never import each other.
+
+A shared module reaching for something only one path has is a **compile error, not a
+comment**: `toCstring`, `buildChars`, `appendInt`, `appendFixed`, `saveScene`/`loadScene`
+and their `std/os` and `std/syncio` imports are all guarded `when not defined(js)`. The
+suite runs on both backends (see Testing), so the guard is exercised rather than trusted.
 
 
 Scene Storage
@@ -521,9 +527,11 @@ single-desktop tool.
 |----------|-------|
 | 4        | Magic `RGAS` |
 | 1        | Format version (currently 1) |
-| 1        | Basis count (16 under this build's 4D rigid metric); must match, or the file was saved under a different PGA dimension/metric |
+| 1        | Basis count (16 under this build's 4D rigid metric); must match, or the
+             file was saved under a different PGA dimension or metric |
 | 4        | Item count, native `uint32` |
-| per item | Ink (1), visibility (1), label length (1) + that many bytes, then one native `float` per basis term |
+| per item | Ink (1), visibility (1), label length (1) + that many bytes, then one
+             native `float` per basis term |
 
 Only live items are written, in slot order. Deliberately omitted: slot numbers (meaningless
 once reloaded — a fresh scene assigns its own free-list order); `born` (meaningless across
@@ -851,23 +859,51 @@ mathematical bold; the merged atlas removed the constraint, so the workaround we
 
 Magnitudes read to **four significant digits, not four decimal places** (`format.nim`'s
 `DIGITS_SIGNIFICANT`), so 3.5 reads `3.5` rather than `3.5000` and 1664 keeps its integer
-part. One rule, two mechanisms, because the browser has no C runtime:
+part. One rule, two mechanisms, because the browser has no C runtime. `appendMagnitude` is
+the single entry point and branches inside itself:
 
-- Desktop: `appendMagnitude` through `snprintf("%.4g")`, plus `%.4g` in `guiDragFloat`'s own
-  format string. Writes into a stack buffer, since it runs once per item per frame.
-- Browser: `format.formatMagnitude` behind `nimFormatNumber`, which states `%g`'s own rule
-  over `ffScientific` and
-  `ffDecimal`. Every editable number goes through it — coefficients and the camera's own
+- Desktop: `snprintf("%.4g")` into a stack buffer, since it runs once per coefficient, per
+  item, per frame, and must not allocate. `guiDragFloat`'s own format string is `%.4g` too.
+- Browser: `format.formatMagnitude`, which derives the digits in plain Nim. Every editable
+  number goes through it behind `nimFormatNumber` — coefficients and the camera's own
   angles, distance and target — because the desktop draws every one of them with the same
-  `%.4g` widget. Nim's `g` is no substitute — under the JS backend it ignores the precision
-  asked for and returns the shortest round-tripping form, so 1234567 stays as-is where C
-  writes `1.235e+06`. It allocates, which is fine only because a browser rebuilds its number
-  fields when the grid changes rather than every frame.
+  `%.4g` widget. It allocates one string, which is affordable only because a browser
+  rebuilds its number fields when the grid changes rather than every frame.
 
-The two are held together by `magnitudesAgree` in the suite, which runs the C path and the
-Nim path over the same twenty values, edge cases included. Diagnostics readings deliberately
-keep `%.*f` through `appendFixed`: a live number that changes width every frame is harder to
-read than one padded to a fixed width.
+**`formatMagnitude` derives its own digits rather than delegating.** Measured, not assumed:
+`formatBiggestFloat(v, ffScientific, 16)` disagreed with itself across the two backends on
+**1655 of 7000** values, so it is no usable primitive to build on. The rule is stated
+directly instead — a decimal exponent by `log10`, the digits scaled to `DIGITS_SIGNIFICANT`,
+and a **half-to-even** rounding step, which is what C rounds decimal ties by and what Nim's
+own `round` does not (it breaks a half away from zero, so 1012.5 reads `1012` here and
+`1013` there). Verified over 17,001 values across 25 decades including every exact eighth:
+**zero disagreements against C's own `%.4g`, and zero between the backends.**
+
+That divergence shipped, and it shipped because the test that was supposed to catch it —
+`magnitudesAgree`, which compares the C path against the Nim path — could only ever run on
+the C backend, where it asks the C runtime whether it agrees with itself. **330 of 7000
+values** differed between the two front-ends while that test stayed green. The suite now
+also runs under `nim js`, and the JS entry point pins the text of the tie cases directly
+rather than against a second mechanism.
+
+Both front-ends print a whole multivector through **one writer**, `scene.multivectorText`
+over `formatMultivector`, and name a shape through **one writer**, `scene.shapeText` over
+`describeShape`. The browser's item list used the library's own `$` for the first of those,
+at the library's `%G` rather than at this project's four significant digits, so the same
+object read differently in the two UIs; there were four separate transcriptions of the shape
+wording. Diagnostics readings deliberately keep `%.*f` through `appendFixed`: a live number
+that changes width every frame is harder to read than one padded to a fixed width.
+
+Fixed char storage is read back through `format.toText`, never through `$toCstring`.
+`toCstring` casts the storage's *address*, which is exactly what Dear ImGui wants and what
+the JS backend has no notion of — measured there, it yields an empty string rather than the
+text held, which silently blanked every label a drag produced until the bridge worked around
+it by hand. `toCstring`, `buildChars`, `appendInt` and `appendFixed` are now all guarded
+`when not defined(js)`, so reaching for one from shared code is a compile error on the
+browser build rather than a blank field at run time. Visibility was the same trap in the
+other direction: an `isVisibleAt(...): var bool` accessor over an `array[N, bool]` compiled
+on both backends and silently wrote to a copy on JS. It is gone; `isVisible` reads and
+`setVisible` writes, both plain.
 
 Animation
 ---
@@ -1045,6 +1081,76 @@ vendoring rules them out, the last because it is build output. Everything consis
 needed to build or test either target is committed: `build_browser.sh` assembles the
 browser page from tracked sources plus those vendored faces, and `PROVENANCE.md`,
 `STYLE.md`, `REQUIREMENTS.md` and `dependencies.list` are tracked alongside the code.
+
+
+Verification Tools
+---
+`tools/verify.sh` runs everything below, in cheapest-first order, and fails on the first
+failure. Passing it is necessary and never sufficient — several bugs here survived a green
+run of all of it, so the script closes by saying so.
+
+| Check | What it holds | Reads from |
+|-------|---------------|------------|
+| `check_columns` | Line width, trailing whitespace, tabs, final newline | The filesystem |
+| `check_palette` | Palette separation floors | `mesh.lut_ink_to_rgba` |
+| `check_atlas` | Every drawable codepoint has a glyph range | `lut_*` and `gui_shim.cpp` |
+| Suite ×3 | Every invariant, on both backends and two capacities | `tests/visualiser/` |
+
+Each reads the thing being checked rather than a transcription of it, which is the whole
+point: a mirror of the palette or of the atlas ranges would pass happily while the compiled
+build disagreed. `check_atlas` parses the `ImWchar RANGES` arrays out of `gui_shim.cpp`
+itself and enumerates the codepoints from the notation table, the basis names, the shape
+words and the formatter — 62 printable codepoints today, all covered. `check_columns`
+counts **characters, not bytes**, which is why it exists as a tool at all: a `wc -L` reports
+a compliant line full of `∧`, `⟑` and `𝐦` as eleven columns too long, and gets ignored
+within a day. It skips the testament spec block a test file opens with, whose `matrix` line
+is one line by testament's own rules with nowhere to wrap to.
+
+`check_palette` measures under **Machado, Oliveira and Fernandes (2009) at severity 1.0**,
+because that is the model every floor quoted in `REQUIREMENTS.md` was calibrated against.
+Viénot-1999 is equally respectable and moves borderline pairs materially — measured here,
+it puts Jade/Cobalt at 0.9 ΔE where Machado puts it at 12.7 — so the model is part of the
+standard rather than an implementation detail, and changing it means remeasuring every
+floor. Red-green (the minimum of protan and deutan) carries the floors; tritanopia is
+measured separately, since it is rarer by three orders of magnitude and holding both to one
+floor collapses the palette to a single arc for no reader's benefit.
+
+**One declared exception, and it is a new finding.** Jade and Cobalt separate by only
+**3.7 ΔE under tritanopia** — a case no floor covered before this tool existed, because the
+original validation gated on red-green alone. It is carried rather than repainted: the pair
+clears 12.7 under red-green deficiency and 15.8 to typical vision, tritanopia affects fewer
+than one reader in ten thousand, and every object also carries its own shape, screen
+position and written label. The exception lives in `check_palette.nim`'s own `EXCEPTIONS`
+table with a floor of 3.5 pinned just under where it measures, so drifting further fails the
+run; the reason prints on every run so it stays argued rather than inherited.
+
+
+Testing
+---
+The suite is one file, `tests/visualiser/suites.nim`, run from three thin entry points that
+differ only in their testament spec:
+
+| Entry point | Backend | Capacities | Why it exists |
+|-------------|---------|-----------|---------------|
+| `test_4d.nim` | C | Default | The desktop build, as shipped |
+| `test_4d_browser.nim` | JS | Default | The browser build's own backend |
+| `test_4d_small.nim` | C | 12 items, 12-char labels, 4 steps | Boundaries a test reaches |
+
+The JS row is not a formality. A rule stated once and reached through two mechanisms is only
+held together where both mechanisms run; compiled to C alone, `magnitudesAgree` asks the C
+runtime whether it agrees with itself, and 330 of 7000 values differed between the front-ends
+while it stayed green. Adding that row also found `$toCstring` reading empty, `isVisibleAt`
+writing to a copy, and the browser's multivector text coming from the library's `$` — three
+divergences that had each been worked around or documented rather than fixed.
+
+The reduced-capacity row makes any constant tuned to the *default* rather than derived from
+its `.define` fail here rather than in a build somebody configured. `LABEL_MAX` at 12 is the
+sharpest of the three: it is under the length of several labels the suite constructs, so
+truncation happens for real.
+
+Cases needing a C entry point — `snprintf`, the PNG and GIF encoders, the arena, and scene
+save/load, which needs a filesystem — guard themselves `when not defined(js)` and are skipped
+on the JS row. That row runs 104 of the 115 tests; the small-capacity row runs all 115.
 
 
 Measurements

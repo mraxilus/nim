@@ -561,9 +561,11 @@ A compact binary format, `.rgascene`, matching the scene's own layout:
 |-------|-------|
 | 4 | magic `RGAS` |
 | 1 | format version |
-| 1 | basis count (16 here); must match, or the file was saved under a different dimension or metric |
+| 1 | basis count (16 here); must match, or the file was saved under a different
+      dimension or metric |
 | 4 | item count, native unsigned 32-bit |
-| per item | colour (1), visibility (1), label length (1) + that many bytes, then one native float per basis term |
+| per item | colour (1), visibility (1), label length (1) + that many bytes, then one
+             native float per basis term |
 
 Native-endian throughout: there is no external spec to match, unlike the image formats which
 follow their own required endianness. Document that a file will not cross endianness.

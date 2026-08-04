@@ -20,11 +20,6 @@ import ./[camera, format, picking, scene]
 
 #[ Drag Configuration ]#
 
-const WIDTH_SHAPE_WORD = 32
-  ## Bound length of the shape word alone, longest being "mixed grade, nothing to draw".
-
-
-
 #[ Type Definitions ]#
 
 type
@@ -125,8 +120,8 @@ proc endDrag*(
     return ("Drag's source or destination no longer exists; nothing done.", none(int))
 
   let
-    label_source = $toCstring(scene.labelAt(interaction.index_source))
-    label_destination = $toCstring(scene.labelAt(index_destination))
+    label_source = toText(scene.labelAt(interaction.index_source))
+    label_destination = toText(scene.labelAt(index_destination))
     operand_source = scene[interaction.index_source].geometry
     operand_destination = scene[index_destination].geometry
     derived = applyOperation(drag.toOperation, operand_source, operand_destination)
@@ -136,11 +131,7 @@ proc endDrag*(
       anchor,
     )
 
-  var shape_word: array[WIDTH_SHAPE_WORD, char]
-  var cursor_shape = 0
-  describeShape(derived, shape_word, cursor_shape)
-  finishChars(shape_word, cursor_shape)
   (
-    &"{label_source} {drag.notation} {label_destination} gave {$toCstring(shape_word)}.",
+    &"{label_source} {drag.notation} {label_destination} gave {shapeText(derived)}.",
     some(index_created),
   )

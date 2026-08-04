@@ -19,9 +19,12 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
 import ../../visualiser/[
-  arena, camera, format, gif, history, image, interaction, mesh, objects, picking, scene,
-  selection,
+  camera, format, history, interaction, mesh, objects, picking, scene, selection,
 ]
+# The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
+#   point the JS backend has none of. Their own suites are guarded to match, below.
+when not defined(js):
+  import ../../visualiser/[arena, gif, image]
 # `{.all.}` so the suite can check `marker`'s own private helpers directly rather than
 #   only through the markers they end up shaping -- `directionAcross` is the whole of why
 #   a line's rails converge, and is worth asserting on its own terms.
@@ -114,18 +117,7 @@ proc formatMultivectorString(m: Multivector): string =
     cursor = 0
   formatMultivector(m, buffer, cursor)
   finishChars(buffer, cursor)
-  $toCstring(buffer)
-
-
-proc describeShapeString(m: Multivector): string =
-  ## Format into a stack buffer exactly as the panel does; see `formatMultivectorString`.
-  var
-    buffer: array[32, char]
-    cursor = 0
-  describeShape(m, buffer, cursor)
-  finishChars(buffer, cursor)
-  $toCstring(buffer)
-
+  toText(buffer)
 
 
 suite "Objects":
@@ -750,24 +742,49 @@ suite "Scene":
   test "labels truncate and stay terminated":
     var storage: Label
     toChars("short", storage)
-    check $toCstring(storage) == "short"
+    check toText(storage) == "short"
     toChars('x'.repeat(LABEL_MAX*2), storage)
-    check len($toCstring(storage)) == LABEL_MAX - 1
+    check len(toText(storage)) == LABEL_MAX - 1
 
+
+  # Every magnitude the two front-ends show has to read the same in both, and the values
+  #   most likely to break that are exact binary ties -- a coefficient of 10.125 or 12345,
+  #   which a user can simply type. C rounds a tie to even and JavaScript rounds it away
+  #   from zero, so a formatter that delegates to the runtime disagrees with itself across
+  #   backends. Measured before the rule was stated here: 330 of 7000 values differed.
+  const MAGNITUDES = [
+    0.0, 1.0, -1.0, 3.5, -2.0, 0.25, 1664.0, 1234567.0, 0.00012345, 1e-7, 1e7,
+    99999.0, 0.099999, 123.456, -0.0001, 1e-5, 9.9999e-5, 1000.0, 999.95, 6.02e23,
+    10.125, 12345.0, 0.125, 1.0005, 9999.6, -10.125, 2.5, 0.5, 1.5, 1012.5,
+  ]
+
+  test "magnitudes read the same whichever backend formats them":
+    # Pinned as text rather than against a reference the backend supplies, because that is
+    #   exactly what differs. These are what C's own `%.4g` writes, verified against it.
+    check formatMagnitude(10.125) == "10.12"   # Tie, rounds to even.
+    check formatMagnitude(-10.125) == "-10.12"
+    check formatMagnitude(12345.0) == "1.234e+04"
+    check formatMagnitude(0.125) == "0.125"
+    check formatMagnitude(2.5) == "2.5"
+    check formatMagnitude(1012.5) == "1012"    # Tie at the fourth digit, rounds to even.
+    check formatMagnitude(9999.6) == "1e+04"   # Rounding carries into another digit.
+    check formatMagnitude(0.0) == "0"
+    check formatMagnitude(-0.0) == "0"         # A sign on nothing reads as a bug.
 
   test "magnitudesAgree: the browser's own formatter answers what C's does":
     # One rule, two mechanisms: the desktop reaches C's `%.4g` through `snprintf`, which
     #   the browser build has no runtime for, so `formatMagnitude` states the same rule in
     #   plain Nim. Only this test holds the two together -- run it before changing either.
-    for value in [
-      0.0, 1.0, -1.0, 3.5, -2.0, 0.25, 1664.0, 1234567.0, 0.00012345, 1e-7, 1e7,
-      99999.0, 0.099999, 123.456, -0.0001, 1e-5, 9.9999e-5, 1000.0, 999.95, 6.02e23,
-    ]:
-      var
-        storage: array[64, char]
-        cursor = 0
-      appendMagnitude(storage, cursor, value)
-      check formatMagnitude(value) == $toCstring(storage)
+    #   Skipped on the JS backend, which has no `snprintf` to compare against; the test
+    #   above is what runs there, and it pins the text rather than a second mechanism.
+    when not defined(js):
+      for value in MAGNITUDES:
+        if value == 0.0: continue  # C signs a zero, this does not; pinned above.
+        var
+          storage: array[64, char]
+          cursor = 0
+        appendMagnitude(storage, cursor, value)
+        check formatMagnitude(value) == toText(storage)
 
 
   test "multivectors print every term they carry, and nothing else":
@@ -786,122 +803,127 @@ suite "Scene":
       let named = ($initElement(b, 1.0)).strip()
       check lut_basis_to_name[b] == named
     for i in 0 ..< SAMPLES:
-      check describeShapeString(POINTS[i]) == "point"
-      check describeShapeString(LINES[i]) == "line"
-      check describeShapeString(PLANES[i]) == "plane"
+      check shapeText(POINTS[i]) == "point"
+      check shapeText(LINES[i]) == "line"
+      check shapeText(PLANES[i]) == "plane"
       # Attitude of a line is its direction, which is a point standing at the horizon.
-      check describeShapeString(⊖ LINES[i]) == "point at horizon"
-    check describeShapeString(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
+      check shapeText(⊖ LINES[i]) == "point at horizon"
+    check shapeText(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
 
 
-  test "save then load reproduces every live item, compacting freed slots":
-    var original = initScene()
-    discard original.addItem(POINTS[0], "a", Ink.Rose)
-    discard original.addItem(POINTS[1], "bb", Ink.Jade)
-    let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Olive)
-    original.removeItem(slot_doomed) # leaves a hole a fresh load must not reproduce
-    let slot_last = original.addItem(POINTS[3], "d", Ink.Cobalt)
-    original.isVisibleAt(slot_last) = false
+  # Saving and loading name a filesystem, which a browser has none of: `scene.nim`
+  #   declares that pair for the desktop backend alone, so their tests are guarded to
+  #   match. Every other invariant in this suite holds on both backends and is checked
+  #   on both.
+  when not defined(js):
+    test "save then load reproduces every live item, compacting freed slots":
+      var original = initScene()
+      discard original.addItem(POINTS[0], "a", Ink.Rose)
+      discard original.addItem(POINTS[1], "bb", Ink.Jade)
+      let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Olive)
+      original.removeItem(slot_doomed) # leaves a hole a fresh load must not reproduce
+      let slot_last = original.addItem(POINTS[3], "d", Ink.Cobalt)
+      original.setVisible(slot_last, false)
 
-    let path = getTempDir() / "visualiser_suite_scene.rgascene"
-    check saveScene(original, path).contains("Saved 3")
-    defer: removeFile(path)
+      let path = getTempDir() / "visualiser_suite_scene.rgascene"
+      check saveScene(original, path).contains("Saved 3")
+      defer: removeFile(path)
 
-    var loaded = initScene()
-    discard loaded.addItem(POINTS[9], "stale", Ink.Cobalt) # load must replace, not merge
-    check loadScene(loaded, path).contains("Loaded 3")
-    check loaded.len == 3
+      var loaded = initScene()
+      discard loaded.addItem(POINTS[9], "stale", Ink.Cobalt) # load must replace, not merge
+      check loadScene(loaded, path).contains("Loaded 3")
+      check loaded.len == 3
 
-    # Freed slot 2 is compacted away: loaded items land at slots 0, 1, 2 in save order.
-    check loaded[0].geometry =~ POINTS[0]
-    check $toCstring(loaded[0].label) == "a"
-    check loaded[0].ink == Ink.Rose
-    check loaded[0].isVisible
-    check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
+      # Freed slot 2 is compacted away: loaded items land at slots 0, 1, 2 in save order.
+      check loaded[0].geometry =~ POINTS[0]
+      check toText(loaded[0].label) == "a"
+      check loaded[0].ink == Ink.Rose
+      check loaded[0].isVisible
+      check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
 
-    check loaded[1].geometry =~ POINTS[1]
-    check $toCstring(loaded[1].label) == "bb"
-    check loaded[1].ink == Ink.Jade
-    check loaded[1].isVisible
+      check loaded[1].geometry =~ POINTS[1]
+      check toText(loaded[1].label) == "bb"
+      check loaded[1].ink == Ink.Jade
+      check loaded[1].isVisible
 
-    check loaded[2].geometry =~ POINTS[3]
-    check $toCstring(loaded[2].label) == "d"
-    check loaded[2].ink == Ink.Cobalt
-    check not loaded[2].isVisible
-
-
-  test "empty scene round-trips":
-    let original = initScene()
-    let path = getTempDir() / "visualiser_suite_scene_empty.rgascene"
-    check saveScene(original, path).contains("Saved 0")
-    defer: removeFile(path)
-
-    var loaded = initScene()
-    discard loaded.addItem(POINTS[0], "will be cleared", Ink.Rose)
-    check loadScene(loaded, path).contains("Loaded 0")
-    check loaded.len == 0
+      check loaded[2].geometry =~ POINTS[3]
+      check toText(loaded[2].label) == "d"
+      check loaded[2].ink == Ink.Cobalt
+      check not loaded[2].isVisible
 
 
-  test "loading a foreign file leaves scene untouched and reports why":
-    var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
-    let path = getTempDir() / "visualiser_suite_scene_bogus.rgascene"
-    writeFile(path, "not a scene file at all")
-    defer: removeFile(path)
+    test "empty scene round-trips":
+      let original = initScene()
+      let path = getTempDir() / "visualiser_suite_scene_empty.rgascene"
+      check saveScene(original, path).contains("Saved 0")
+      defer: removeFile(path)
 
-    check loadScene(scene, path).contains("not a scene file")
-    check scene.len == 1
-    check $toCstring(scene[0].label) == "keep"
-
-
-  test "loading a file saved under a different PGA dimension is rejected":
-    var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
-    let path = getTempDir() / "visualiser_suite_scene_wrongbasis.rgascene"
-    writeFile(path, "RGAS" & char(2) & char(99)) # no build here carries 99 basis terms
-    defer: removeFile(path)
-
-    check loadScene(scene, path).contains("different PGA dimension")
-    check scene.len == 1
+      var loaded = initScene()
+      discard loaded.addItem(POINTS[0], "will be cleared", Ink.Rose)
+      check loadScene(loaded, path).contains("Loaded 0")
+      check loaded.len == 0
 
 
-  test "a scene file from before the palette changed is refused, not misread":
-    # An item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered
-    #   that enum -- a version 1 file's bytes name different colours now. Refusing it is
-    #   the honest outcome; reading it back in the wrong colours silently is not.
-    var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
-    let path = getTempDir() / "visualiser_suite_scene_v1.rgascene"
-    writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1))
-    defer: removeFile(path)
+    test "loading a foreign file leaves scene untouched and reports why":
+      var scene = initScene()
+      discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_bogus.rgascene"
+      writeFile(path, "not a scene file at all")
+      defer: removeFile(path)
 
-    check loadScene(scene, path).contains("version this build cannot read")
-    check scene.len == 1
+      check loadScene(scene, path).contains("not a scene file")
+      check scene.len == 1
+      check toText(scene[0].label) == "keep"
 
 
-  test "loading a missing path reports cleanly and leaves scene untouched":
-    var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
-    let path = getTempDir() / "visualiser_suite_scene_does_not_exist.rgascene"
+    test "loading a file saved under a different PGA dimension is rejected":
+      var scene = initScene()
+      discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_wrongbasis.rgascene"
+      writeFile(path, "RGAS" & char(2) & char(99)) # no build here carries 99 basis terms
+      defer: removeFile(path)
 
-    check loadScene(scene, path).contains("No such file")
-    check scene.len == 1
+      check loadScene(scene, path).contains("different PGA dimension")
+      check scene.len == 1
 
 
-  test "loading a file naming more items than this build's capacity is rejected":
-    var scene = initScene()
-    discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+    test "a scene file from before the palette changed is refused, not misread":
+      # An item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered
+      #   that enum -- a version 1 file's bytes name different colours now. Refusing it is
+      #   the honest outcome; reading it back in the wrong colours silently is not.
+      var scene = initScene()
+      discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_v1.rgascene"
+      writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1))
+      defer: removeFile(path)
 
-    var
-      count = uint32(ITEMS_MAX + 1)
-      count_bytes = newString(4)
-    copyMem(addr count_bytes[0], addr count, 4)
-    let path = getTempDir() / "visualiser_suite_scene_toobig.rgascene"
-    writeFile(path, "RGAS" & char(2) & char(ord(Basis.high) + 1) & count_bytes)
-    defer: removeFile(path)
+      check loadScene(scene, path).contains("version this build cannot read")
+      check scene.len == 1
 
-    check loadScene(scene, path).contains("more than")
-    check scene.len == 1
+
+    test "loading a missing path reports cleanly and leaves scene untouched":
+      var scene = initScene()
+      discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_does_not_exist.rgascene"
+
+      check loadScene(scene, path).contains("No such file")
+      check scene.len == 1
+
+
+    test "loading a file naming more items than this build's capacity is rejected":
+      var scene = initScene()
+      discard scene.addItem(POINTS[0], "keep", Ink.Rose)
+
+      var
+        count = uint32(ITEMS_MAX + 1)
+        count_bytes = newString(4)
+      copyMem(addr count_bytes[0], addr count, 4)
+      let path = getTempDir() / "visualiser_suite_scene_toobig.rgascene"
+      writeFile(path, "RGAS" & char(2) & char(ord(Basis.high) + 1) & count_bytes)
+      defer: removeFile(path)
+
+      check loadScene(scene, path).contains("more than")
+      check scene.len == 1
 
 
 
@@ -1233,188 +1255,192 @@ suite "Selection":
 
 
 
-suite "Image":
-  var buffer_arena: array[1024*1024, byte]
+# PNG and GIF encoding, and the arena backing both, are desktop-only: each binds a C
+#   entry point the JS backend has none of, so these run on that backend alone.
+when not defined(js):
+  suite "Image":
+    var buffer_arena: array[1024*1024, byte]
 
-  test "written file is a PNG carrying the size it was given":
-    const (WIDTH, HEIGHT) = (37, 21)
-    var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
-    for i in 0 ..< len(pixels): pixels[i] = uint8((i*7) mod 256)
+    test "written file is a PNG carrying the size it was given":
+      const (WIDTH, HEIGHT) = (37, 21)
+      var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
+      for i in 0 ..< len(pixels): pixels[i] = uint8((i*7) mod 256)
 
-    var test_arena = initArena(buffer_arena)
-    let path = getTempDir() / "visualiser_suite.png"
-    writePng(test_arena, path, WIDTH, HEIGHT, pixels)
-    defer: removeFile(path)
-    let document = readFile(path)
+      var test_arena = initArena(buffer_arena)
+      let path = getTempDir() / "visualiser_suite.png"
+      writePng(test_arena, path, WIDTH, HEIGHT, pixels)
+      defer: removeFile(path)
+      let document = readFile(path)
 
-    check len(document) > 8
-    check document[0 .. 7] == "\x89PNG\r\n\x1A\n"
-    check document[12 .. 15] == "IHDR"
-    check document[16 .. 19] == "\0\0\0" & char(WIDTH)
-    check document[20 .. 23] == "\0\0\0" & char(HEIGHT)
-    check document[24] == char(8) # Bit depth.
-    check document[25] == char(2) # Colour type: truecolour.
-    check document.find("IDAT") > 0
-    check document[^8 .. ^5] == "IEND"
-
-
-  test "chunk lengths and checksums agree end to end":
-    const (WIDTH, HEIGHT) = (16, 9)
-    var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
-    var test_arena = initArena(buffer_arena)
-    let path = getTempDir() / "visualiser_suite_chunks.png"
-    writePng(test_arena, path, WIDTH, HEIGHT, pixels)
-    defer: removeFile(path)
-    let document = readFile(path)
-
-    # Walk chunks by their own lengths; landing exactly on the end proves each is sound.
-    var
-      offset = 8
-      names: seq[string]
-    while offset < len(document):
-      var length = 0
-      for i in 0 .. 3: length = length*256 + int(uint8(document[offset + i]))
-      names.add(document[offset + 4 .. offset + 7])
-      offset += 12 + length
-    check offset == len(document)
-    check names == @["IHDR", "IDAT", "IEND"]
+      check len(document) > 8
+      check document[0 .. 7] == "\x89PNG\r\n\x1A\n"
+      check document[12 .. 15] == "IHDR"
+      check document[16 .. 19] == "\0\0\0" & char(WIDTH)
+      check document[20 .. 23] == "\0\0\0" & char(HEIGHT)
+      check document[24] == char(8) # Bit depth.
+      check document[25] == char(2) # Colour type: truecolour.
+      check document.find("IDAT") > 0
+      check document[^8 .. ^5] == "IEND"
 
 
+    test "chunk lengths and checksums agree end to end":
+      const (WIDTH, HEIGHT) = (16, 9)
+      var pixels = newSeq[uint8](WIDTH*HEIGHT*3)
+      var test_arena = initArena(buffer_arena)
+      let path = getTempDir() / "visualiser_suite_chunks.png"
+      writePng(test_arena, path, WIDTH, HEIGHT, pixels)
+      defer: removeFile(path)
+      let document = readFile(path)
 
-suite "Gif":
-  var buffer_arena: array[1024*1024, byte]
+      # Walk chunks by their own lengths; landing exactly on the end proves each is sound.
+      var
+        offset = 8
+        names: seq[string]
+      while offset < len(document):
+        var length = 0
+        for i in 0 .. 3: length = length*256 + int(uint8(document[offset + i]))
+        names.add(document[offset + 4 .. offset + 7])
+        offset += 12 + length
+      check offset == len(document)
+      check names == @["IHDR", "IDAT", "IEND"]
 
-  test "written file carries the size and frame count it was given":
-    const (WIDTH, HEIGHT) = (12, 8)
-    var frames = newSeq[uint8](3*WIDTH*HEIGHT*3)
-    var test_arena = initArena(buffer_arena)
-    let path = getTempDir() / "visualiser_suite.gif"
-    writeGif(test_arena, path, WIDTH, HEIGHT, frames, 3, 8)
-    defer: removeFile(path)
-    let document = readFile(path)
 
-    check document[0 .. 5] == "GIF89a"
-    check uint8(document[6]) == uint8(WIDTH) and uint8(document[7]) == 0
-    check uint8(document[8]) == uint8(HEIGHT) and uint8(document[9]) == 0
-    check document[^1] == char(0x3B)
 
-    # Walk every frame's own blocks by their own lengths, landing exactly on the
-    #   trailer proves each frame's sub-blocks are sound, exactly as the PNG test does.
-    const HEADER_LEN = 6 + 7 + 256*3 + 19 # Signature, logical screen, colour table, app extension.
-    var
-      offset = HEADER_LEN
-      count_frames = 0
-    while document[offset] == '\x21':
-      offset += 8 # Graphic Control Extension is fixed length.
-      check document[offset] == '\x2C' # Image Descriptor.
-      offset += 10 + 1 # Image Descriptor fields, then the LZW minimum code size byte.
+  suite "Gif":
+    var buffer_arena: array[1024*1024, byte]
+
+    test "written file carries the size and frame count it was given":
+      const (WIDTH, HEIGHT) = (12, 8)
+      var frames = newSeq[uint8](3*WIDTH*HEIGHT*3)
+      var test_arena = initArena(buffer_arena)
+      let path = getTempDir() / "visualiser_suite.gif"
+      writeGif(test_arena, path, WIDTH, HEIGHT, frames, 3, 8)
+      defer: removeFile(path)
+      let document = readFile(path)
+
+      check document[0 .. 5] == "GIF89a"
+      check uint8(document[6]) == uint8(WIDTH) and uint8(document[7]) == 0
+      check uint8(document[8]) == uint8(HEIGHT) and uint8(document[9]) == 0
+      check document[^1] == char(0x3B)
+
+      # Walk every frame's own blocks by their own lengths, landing exactly on the
+      #   trailer proves each frame's sub-blocks are sound, exactly as the PNG test does.
+      # Signature, logical screen, colour table, application extension.
+      const HEADER_LEN = 6 + 7 + 256*3 + 19
+      var
+        offset = HEADER_LEN
+        count_frames = 0
+      while document[offset] == '\x21':
+        offset += 8 # Graphic Control Extension is fixed length.
+        check document[offset] == '\x2C' # Image Descriptor.
+        offset += 10 + 1 # Image Descriptor fields, then the LZW minimum code size byte.
+        while true:
+          let length = int(uint8(document[offset]))
+          offset += 1
+          if length == 0: break
+          offset += length
+        inc count_frames
+      check count_frames == 3
+      check offset == len(document) - 1
+      check document[offset] == char(0x3B)
+
+
+    proc decodeGifFrame(data: seq[uint8]): seq[uint8] =
+      ## Decode one frame's own LZW sub-block stream back to palette indices, by exactly
+      ## the algorithm any GIF89a reader implements -- mirroring `gif.nim`'s encoder, not
+      ## calling into it, so this stands as an independent check of what it wrote.
+      ##   Widens its own code width one step earlier than the encoder does: GIF's LZW
+      ##   is asymmetric here by design ("early change"), since the decoder's dictionary
+      ##   always trails the encoder's by the one entry it has not yet been told about.
+      const
+        BITS_CODE = 8
+        COUNT_TABLE = 1 shl BITS_CODE
+        CODE_CLEAR = COUNT_TABLE
+        CODE_END = CODE_CLEAR + 1
+        CODE_MAX = 4096
+      var
+        pos_bit = 0
+        dict: Table[int, seq[uint8]]
+        next_code = CODE_END + 1
+        width = BITS_CODE + 1
+        prev: seq[uint8]
+        has_prev = false
+
+      proc readCode(width: int): int =
+        for i in 0 ..< width:
+          let (byte_index, bit_index) = ((pos_bit + i) div 8, (pos_bit + i) mod 8)
+          if byte_index < len(data):
+            result = result or (int((data[byte_index].int shr bit_index) and 1) shl i)
+        pos_bit += width
+
+      while true:
+        let code = readCode(width)
+        if code == CODE_CLEAR:
+          dict.clear()
+          next_code = CODE_END + 1
+          width = BITS_CODE + 1
+          has_prev = false
+          continue
+        if code == CODE_END: break
+
+        var entry: seq[uint8]
+        if code < COUNT_TABLE: entry = @[uint8(code)]
+        elif dict.hasKey(code): entry = dict[code]
+        elif code == next_code and has_prev: entry = prev & @[prev[0]]
+        else: doAssert false, &"Bad LZW code {code}."
+        result.add(entry)
+        if has_prev and next_code < CODE_MAX:
+          dict[next_code] = prev & @[entry[0]]
+          inc next_code
+          if next_code >= (1 shl width) and width < 12: inc width
+        prev = entry
+        has_prev = true
+
+
+    test "written frame decodes back to what it was quantized to, past a code-width growth":
+      ## Regression test for a real bug: growing the LZW code width one symbol too early
+      ##   packed bits a real reader disagreed with, corrupting every code from there on.
+      ##   A flat or small image never reaches the dictionary sizes where that bites, so
+      ##   this drives enough distinct colour pairs to grow the code width at least once.
+      const (WIDTH, HEIGHT) = (64, 64)
+      var frame = newSeq[uint8](WIDTH*HEIGHT*3)
+      for i in 0 ..< WIDTH*HEIGHT:
+        frame[i*3] = uint8((i*173) mod 256)
+        frame[i*3 + 1] = uint8((i*97) mod 256)
+        frame[i*3 + 2] = uint8((i*211) mod 256)
+
+      # `writeGif` takes rows bottom-up and writes them top-down, exactly as `writePng`
+      #   does; build the expected indices in that same written order, not the source's.
+      var expected: seq[uint8]
+      for row_top in 0 ..< HEIGHT:
+        let row_source = HEIGHT - 1 - row_top
+        for column in 0 ..< WIDTH:
+          let at = (row_source*WIDTH + column)*3
+          expected.add(paletteIndex(frame[at], frame[at + 1], frame[at + 2]))
+
+      var test_arena = initArena(buffer_arena)
+      let path = getTempDir() / "visualiser_suite_growth.gif"
+      writeGif(test_arena, path, WIDTH, HEIGHT, frame, 1, 8)
+      defer: removeFile(path)
+      let document = readFile(path)
+
+      const HEADER_LEN = 6 + 7 + 256*3 + 19
+      var offset = HEADER_LEN + 8 + 10 # Past Graphic Control Extension and Image Descriptor.
+      let width_code = uint8(document[offset])
+      check width_code == 8
+      offset += 1
+
+      var sub_blocks: seq[uint8]
       while true:
         let length = int(uint8(document[offset]))
         offset += 1
         if length == 0: break
+        for i in 0 ..< length: sub_blocks.add(uint8(document[offset + i]))
         offset += length
-      inc count_frames
-    check count_frames == 3
-    check offset == len(document) - 1
-    check document[offset] == char(0x3B)
 
-
-  proc decodeGifFrame(data: seq[uint8]): seq[uint8] =
-    ## Decode one frame's own LZW sub-block stream back to palette indices, by exactly
-    ## the algorithm any GIF89a reader implements -- mirroring `gif.nim`'s encoder, not
-    ## calling into it, so this stands as an independent check of what it wrote.
-    ##   Widens its own code width one step earlier than the encoder does: GIF's LZW
-    ##   is asymmetric here by design ("early change"), since the decoder's dictionary
-    ##   always trails the encoder's by the one entry it has not yet been told about.
-    const
-      BITS_CODE = 8
-      COUNT_TABLE = 1 shl BITS_CODE
-      CODE_CLEAR = COUNT_TABLE
-      CODE_END = CODE_CLEAR + 1
-      CODE_MAX = 4096
-    var
-      pos_bit = 0
-      dict: Table[int, seq[uint8]]
-      next_code = CODE_END + 1
-      width = BITS_CODE + 1
-      prev: seq[uint8]
-      has_prev = false
-
-    proc readCode(width: int): int =
-      for i in 0 ..< width:
-        let (byte_index, bit_index) = ((pos_bit + i) div 8, (pos_bit + i) mod 8)
-        if byte_index < len(data):
-          result = result or (int((data[byte_index].int shr bit_index) and 1) shl i)
-      pos_bit += width
-
-    while true:
-      let code = readCode(width)
-      if code == CODE_CLEAR:
-        dict.clear()
-        next_code = CODE_END + 1
-        width = BITS_CODE + 1
-        has_prev = false
-        continue
-      if code == CODE_END: break
-
-      var entry: seq[uint8]
-      if code < COUNT_TABLE: entry = @[uint8(code)]
-      elif dict.hasKey(code): entry = dict[code]
-      elif code == next_code and has_prev: entry = prev & @[prev[0]]
-      else: doAssert false, &"Bad LZW code {code}."
-      result.add(entry)
-      if has_prev and next_code < CODE_MAX:
-        dict[next_code] = prev & @[entry[0]]
-        inc next_code
-        if next_code >= (1 shl width) and width < 12: inc width
-      prev = entry
-      has_prev = true
-
-
-  test "written frame decodes back to what it was quantized to, past a code-width growth":
-    ## Regression test for a real bug: growing the LZW code width one symbol too early
-    ##   packed bits a real reader disagreed with, corrupting every code from there on.
-    ##   A flat or small image never reaches the dictionary sizes where that bites, so
-    ##   this drives enough distinct colour pairs to grow the code width at least once.
-    const (WIDTH, HEIGHT) = (64, 64)
-    var frame = newSeq[uint8](WIDTH*HEIGHT*3)
-    for i in 0 ..< WIDTH*HEIGHT:
-      frame[i*3] = uint8((i*173) mod 256)
-      frame[i*3 + 1] = uint8((i*97) mod 256)
-      frame[i*3 + 2] = uint8((i*211) mod 256)
-
-    # `writeGif` takes rows bottom-up and writes them top-down, exactly as `writePng`
-    #   does; build the expected indices in that same written order, not the source's.
-    var expected: seq[uint8]
-    for row_top in 0 ..< HEIGHT:
-      let row_source = HEIGHT - 1 - row_top
-      for column in 0 ..< WIDTH:
-        let at = (row_source*WIDTH + column)*3
-        expected.add(paletteIndex(frame[at], frame[at + 1], frame[at + 2]))
-
-    var test_arena = initArena(buffer_arena)
-    let path = getTempDir() / "visualiser_suite_growth.gif"
-    writeGif(test_arena, path, WIDTH, HEIGHT, frame, 1, 8)
-    defer: removeFile(path)
-    let document = readFile(path)
-
-    const HEADER_LEN = 6 + 7 + 256*3 + 19
-    var offset = HEADER_LEN + 8 + 10 # Past Graphic Control Extension and Image Descriptor.
-    let width_code = uint8(document[offset])
-    check width_code == 8
-    offset += 1
-
-    var sub_blocks: seq[uint8]
-    while true:
-      let length = int(uint8(document[offset]))
-      offset += 1
-      if length == 0: break
-      for i in 0 ..< length: sub_blocks.add(uint8(document[offset + i]))
-      offset += length
-
-    let decoded = decodeGifFrame(sub_blocks)
-    check len(decoded) == WIDTH*HEIGHT
-    check decoded == expected
+      let decoded = decodeGifFrame(sub_blocks)
+      check len(decoded) == WIDTH*HEIGHT
+      check decoded == expected
 
 
 
@@ -1448,7 +1474,7 @@ suite "Picking":
   test "hidden item is never picked":
     var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
-    scene.isVisibleAt(0) = false
+    scene.setVisible(0, false)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE).isNone

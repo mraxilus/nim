@@ -702,7 +702,7 @@ proc runInteractive(
 
     if workbench.is_export_requested:
       workbench.is_export_requested = false
-      let report = exportFrame($toCstring(workbench.path_export), width, height)
+      let report = exportFrame(toText(workbench.path_export), width, height)
       toChars(report, workbench.message)
       echo report
 
@@ -845,11 +845,7 @@ proc runStoryboard(
         workbench.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
         workbench.tween_camera.settle(camera)
 
-    var shape_word: array[WIDTH_SHAPE_WORD, char]
-    var cursor_shape = 0
-    describeShape(derived, shape_word, cursor_shape)
-    finishChars(shape_word, cursor_shape)
-    toChars(&"{step.label} gave {$toCstring(shape_word)}.", workbench.message)
+    toChars(&"{step.label} gave {shapeText(derived)}.", workbench.message)
     workbench.selection.selectOnly(count_seeds + index)
     captureStep(step.stem)
 

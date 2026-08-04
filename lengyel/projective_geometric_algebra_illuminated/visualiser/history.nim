@@ -21,17 +21,26 @@
 
 {.experimental: "strictFuncs".}
 
+import std/strformat
+
 import ./scene
 
 
 
 #[ History Configuration ]#
 
-const CAPACITY_HISTORY* = 32
+const CAPACITY_HISTORY* {.define: "visualiser.history_capacity".} = 32
   ## Steps of timeline retained; a round number past what one editing session
   ## plausibly needs. Costs CAPACITY_HISTORY * sizeof(Scene) of fixed reservation --
   ## Scene is already small and fixed-size, so this is cheap; see
   ## panel.layoutDiagnosticsObjectPool's own BYTES_SCENE figure.
+  ##   Settable alongside `visualiser.items_max` and `visualiser.label_max`, so the suite
+  ## can run once at these defaults and once at capacities small enough that a test
+  ## reaches them, e.g. `--define:visualiser.history_capacity=8`.
+
+static:
+  doAssert CAPACITY_HISTORY >= 2,
+    &"History must hold an initial state and one edit; got `{CAPACITY_HISTORY}`."
 
 
 
