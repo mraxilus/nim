@@ -53,25 +53,36 @@ suite "the transcription":
   test "the helper words of the ontology are read, including its synonyms":
     check readHelper("collect") == some(Helper.Collect)
     check readHelper("drop") == readHelper("flick")
-    check readHelper("pass") == readHelper("place")
-    check readHelper(" cut ") == some(Helper.Cut)
+    check readHelper("pass").isNone
     check readHelper("slide").isNone
     check readHelper("dip").isNone
+    check readCompound(" cut ") == some(Compound.Cut)
+    check readCompound("pass") == readCompound("place")
+    check readCompound("collect").isNone
     check readCell("place, drop, collect").len == 3
 
 
 suite "the audit":
-  test "every checkable cell is exactly the primitive the model derives":
-    var checked = 0
+  test "every checkable cell is exactly the move the model derives":
+    var primitives, compounds = 0
     for cell in CELLS:
       if cell.source.isDeferred or cell.destination.isDeferred:
         continue
-      inc checked
-      let derived = classify(
-        workbookFrame(cell.source).get, workbookFrame(cell.destination).get)
-      check derived.isSome
-      check derived == readHelper(cell.text)
-    check checked == 18
+      let
+        source = workbookFrame(cell.source).get
+        destination = workbookFrame(cell.destination).get
+        named = readCompound(cell.text)
+      if named.isSome:
+        inc compounds
+        check compound(source, destination) == named
+        check route(source, destination).len == 2
+        continue
+      inc primitives
+      check classify(source, destination) == readHelper(cell.text)
+      check readHelper(cell.text).isSome
+    check primitives == 12
+    check compounds == 6
+    check primitives + compounds == 18
 
   test "the checkable cells are every move between the states they name":
     var derived = 0
@@ -79,8 +90,10 @@ suite "the audit":
       for destination in WORKBOOK_STATES:
         if source.isDeferred or destination.isDeferred:
           continue
-        if classify(workbookFrame(source).get,
-            workbookFrame(destination).get).isSome:
+        let
+          a = workbookFrame(source).get
+          b = workbookFrame(destination).get
+        if classify(a, b).isSome or compound(a, b).isSome:
           inc derived
     check derived == 18
 

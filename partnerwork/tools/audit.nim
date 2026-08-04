@@ -21,14 +21,22 @@ proc printFrames() =
 
 proc printMatrix() =
   ## Print every derived move, grouped by the frame it starts from.
-  echo "\nderived transitions:"
+  echo "\nderived transitions, with the compounds beneath the moves:"
   for source in FRAMES:
     echo "  from ", source.describe, "  [", source.key, "]"
     for move in moves(source):
       let cell = cellText(workbookName(source).get(""), workbookName(move.to).get(""))
       let mark = if cell.isSome: "  " else: "* "
-      echo "    ", mark, ($move.helper).alignLeft(9),
+      echo "    ", mark, move.helper.name.alignLeft(9),
         move.to.describe.alignLeft(36), phrase(source, move)
+    for target in FRAMES:
+      let named = compound(source, target)
+      if named.isNone:
+        continue
+      let cell = cellText(workbookName(source).get(""), workbookName(target).get(""))
+      let mark = if cell.isSome: "  " else: "* "
+      echo "    ", mark, ($named.get).toLowerAscii.alignLeft(9),
+        target.describe.alignLeft(36), compoundPhrase(source, target)
 
 
 proc printAudit() =

@@ -146,16 +146,23 @@ func workbookName*(target: Frame): Option[string] =
 
 
 func readHelper*(word: string): Option[Helper] =
-  ## Read one helper word from a cell, including the workbook's synonyms.
+  ## Read one primitive from a cell, including the workbook's synonyms.
   ##
   ## `slide` and `trace` are absent because they slide a hand along the partner,
-  ## and every cell that names one reaches a deferred state.
+  ## and every cell that names one reaches a deferred state.  `pass`, `place` and
+  ## `cut` are absent because they are compounds; `readCompound` reads those.
   case word.strip()
   of "collect": some(Helper.Collect)
   of "drop", "flick": some(Helper.Drop)
-  of "pass", "place": some(Helper.Pass)
-  of "cut": some(Helper.Cut)
   else: none(Helper)
+
+
+func readCompound*(word: string): Option[Compound] =
+  ## Read one compound from a cell, in any of the words the workbook uses.
+  case word.strip()
+  of "pass", "place": some(Compound.Place)
+  of "cut": some(Compound.Cut)
+  else: none(Compound)
 
 
 func readCell*(text: string): seq[string] =
@@ -252,16 +259,32 @@ func auditCells(): seq[Finding] =
           $route(source, destination).len & " primitives, so this is a path, not a move",
       )
       continue
+    let
+      named_helper = readHelper(words[0])
+      named_compound = readCompound(words[0])
+      derived_compound = compound(source, destination)
+    if named_compound.isSome:
+      # A cell naming a compound is right when the model derives that compound
+      # for the pair, and the compound is two primitives long.
+      if derived_compound == named_compound and
+          route(source, destination).len == 2:
+        continue
+      result.add Finding(
+        kind: FindingKind.HelperDiffers,
+        subject: subject,
+        detail: "cell says '" & cell.text & "'; the model derives " &
+          (if derived_compound.isSome: $derived_compound.get else: "no compound"),
+      )
+      continue
     if helper.isNone:
       result.add Finding(
         kind: FindingKind.EdgeUnsupported,
         subject: subject,
-        detail: "no single primitive joins these frames; the shortest route is " &
-          $route(source, destination).len & " primitives",
+        detail: "no primitive and no compound joins these frames; the shortest " &
+          "route is " & $route(source, destination).len & " primitives",
       )
       continue
-    let named = readHelper(words[0])
-    if named.isNone or named.get != helper.get:
+    if named_helper.isNone or named_helper.get != helper.get:
       result.add Finding(
         kind: FindingKind.HelperDiffers,
         subject: subject,
@@ -281,29 +304,34 @@ func auditEdges(): seq[Finding] =
         source = workbookFrame(source_name).get
         destination = workbookFrame(destination_name).get
         helper = classify(source, destination)
+        named = compound(source, destination)
         filled = cellText(source_name, destination_name)
-      if helper.isNone or filled.isSome:
+      if (helper.isNone and named.isNone) or filled.isSome:
         continue
-      let subject = source_name & " -> " & destination_name
-      let reversed = cellText(destination_name, source_name)
+      let
+        subject = source_name & " -> " & destination_name
+        reversed = cellText(destination_name, source_name)
+        derived =
+          if helper.isSome:
+            manner(helper.get) & ": " & phrase(source, Move(
+              helper: helper.get,
+              side: actingSide(source, destination, helper.get),
+              to: destination,
+            ))
+          else:
+            ($named.get).toLowerAscii & ": " & compoundPhrase(source, destination)
       if reversed.isSome:
         result.add Finding(
           kind: FindingKind.ReverseAbsent,
           subject: subject,
           detail: "the sheet fills the opposite cell with '" & reversed.get &
-            "'; every primitive reverses, so this one is " &
-            manner(helper.get),
+            "'; every move reverses, so this one is " & derived,
         )
       else:
         result.add Finding(
           kind: FindingKind.EdgeAbsent,
           subject: subject,
-          detail: "the model derives " & manner(helper.get) & ": " &
-            phrase(source, Move(
-              helper: helper.get,
-              side: actingSide(source, destination, helper.get),
-              to: destination,
-            )),
+          detail: "the model derives " & derived,
         )
 
 

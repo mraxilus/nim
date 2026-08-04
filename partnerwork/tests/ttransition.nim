@@ -35,7 +35,7 @@ suite "the relation":
       for destination in FRAMES:
         if classify(source, destination).isSome:
           inc edges
-    check edges == 26
+    check edges == 20
     check edges < FRAMES.len * (FRAMES.len - 1)
 
 
@@ -50,7 +50,6 @@ suite "the primitives":
         case helper.get
         of Helper.Collect: check change == 1
         of Helper.Drop: check change == -1
-        else: check change == 0
 
   test "one hand cannot travel from one hand of the follow to the other":
     # That move is a trace, and there is nothing between the follow's hands to
@@ -63,24 +62,69 @@ suite "the primitives":
       check classify(source, destination).isNone
       check route(source, destination).len == 2
 
-  test "a pass keeps the place and changes the hand":
+  test "one hand cannot take what the other already holds":
+    # The only remaining way for both hands to change at once is a hand-off, and
+    # a hand-off is two moves: `place` keeps contact by overlapping on the way
+    # past, which needs a frame this model does not carry, and `cut` lets go.
     for source in FRAMES:
       for destination in FRAMES:
-        if classify(source, destination) != some(Helper.Pass):
+        if source.countHolds != 1 or destination.countHolds != 1:
           continue
-        check source.countHolds == 1 and destination.countHolds == 1
-        let side = actingSide(source, destination, Helper.Pass)
-        check destination.hold[side] == source.hold[other(side)]
-        check destination.hold[other(side)].isNone
+        if source.hold == destination.hold:
+          continue
+        check classify(source, destination).isNone
 
-  test "a cut changes only which arm is on top":
+
+suite "the compounds":
+  test "a compound is exactly two primitives, and no primitive is one":
     for source in FRAMES:
       for destination in FRAMES:
-        if classify(source, destination) != some(Helper.Cut):
+        let named = compound(source, destination)
+        if named.isNone:
+          continue
+        check classify(source, destination).isNone
+        check route(source, destination).len == 2
+        check compoundPhrase(source, destination).len > 0
+
+  test "every compound reverses, and undoes itself":
+    for source in FRAMES:
+      for destination in FRAMES:
+        check compound(source, destination) == compound(destination, source)
+
+  test "a cut exchanges the arm order and nothing else":
+    for source in FRAMES:
+      for destination in FRAMES:
+        if compound(source, destination) != some(Compound.Cut):
           continue
         check source.hold == destination.hold
         check source.hasOverlap and destination.hasOverlap
         check source.over != destination.over
+
+  test "a place keeps the hand held and changes the hand holding it":
+    for source in FRAMES:
+      for destination in FRAMES:
+        if compound(source, destination) != some(Compound.Place):
+          continue
+        check source.countHolds == 1 and destination.countHolds == 1
+        for side in Side:
+          check source.hold[side] == destination.hold[other(side)]
+
+  test "the two crossing orders are two moves apart, and only by a cut":
+    let over_left = fromKey("lrL").get
+    let over_right = fromKey("lrR").get
+    check compound(over_left, over_right) == some(Compound.Cut)
+    check route(over_left, over_right).len == 2
+    # The frame in between is whichever hand stays held while the other re-takes.
+    let between = route(over_left, over_right)[0].to
+    check between.countHolds == 1
+
+  test "a hand-off passes through the open frame":
+    # Which is why the missing `open` row costs the workbook four cells.
+    for source in FRAMES:
+      for destination in FRAMES:
+        if compound(source, destination) != some(Compound.Place):
+          continue
+        check route(source, destination)[0].to == fromKey("--.").get
 
 
 suite "moves":
@@ -129,7 +173,7 @@ suite "routes":
 
 
 suite "the vocabulary":
-  test "no two primitives share a mark, a name or a change":
+  test "no two moves share a mark, a name or a change":
     var marks: seq[char] = @[]
     var names, changes: seq[string] = @[]
     for helper in Helper:
@@ -140,9 +184,14 @@ suite "the vocabulary":
       marks.add HELPER_MARKS[helper]
       names.add helper.name
       changes.add HELPER_CHANGES[helper]
+    for named in Compound:
+      check COMPOUND_MARKS[named] notin marks
+      check COMPOUND_CHANGES[named] notin changes
+      marks.add COMPOUND_MARKS[named]
+      changes.add COMPOUND_CHANGES[named]
 
   test "a primitive with another word says so, and one without does not":
     check HELPER_SYNONYMS[Helper.Drop].len > 0
     check Helper.Drop.manner.contains("flick")
-    check HELPER_SYNONYMS[Helper.Cut].len == 0
-    check Helper.Cut.manner == "cut"
+    check HELPER_SYNONYMS[Helper.Collect].len == 0
+    check Helper.Collect.manner == "collect"

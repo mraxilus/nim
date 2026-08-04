@@ -1,10 +1,17 @@
 ## Derive every change of frame from the primitive transition helpers.
 ##
-## The ontology names its helpers `collect`, `drop`, `trace`, `pass`/`place`,
-## `cut` and `flick`.  Four of them change a hand-to-hand frame: a `flick` is a
-## `drop` led with momentum, `place` is the workbook's `pass`, and a `trace`
-## slides a hand along the partner's body, which needs a place on the body to
-## slide to and so waits for the rotation axis.
+## The ontology names six helpers, and marks two of them with an asterisk:
+## `place*` is "collect then drop" and `cut*` is "drop then collect", each
+## keeping contact through a trace.  The asterisks are right, so neither is a
+## primitive here.  Of the remaining four, `flick` is a `drop` led with momentum
+## and changes no frame, and `trace` slides a hand along the partner's body,
+## which needs a place on the body to slide to and so waits for the rotation
+## axis.
+##
+## That leaves two primitives, `collect` and `drop`, and one relation: two frames
+## are one move apart exactly when one connection separates them.  `place` and
+## `cut` are kept as *compounds*, because a lead thinks of each as one move even
+## though the arms do two, and because the workbook writes them in single cells.
 ##
 ## Nothing here is a table of moves.  A move exists between two frames exactly
 ## when the difference between them is one primitive, so the transition relation
@@ -28,9 +35,11 @@ import ./frame
 type
   Helper* {.pure.} = enum ## Name a primitive way one frame becomes another.
     Collect,              ## Form a connection with a free hand.
-    Drop,                 ## Break a connection, releasing the hand.
-    Pass,                 ## Hand one connection from one lead hand to the other.
-    Cut                   ## Re-route an arm around the arm obstructing it.
+    Drop                  ## Break a connection, releasing the hand.
+
+  Compound* {.pure.} = enum ## Name a pair of primitives the dance calls one move.
+    Place,                  ## Hand one connection over to the other lead hand.
+    Cut                     ## Re-route an arm around the arm in its way.
 
   Move* = object ## Hold one primitive change of frame.
     helper*: Helper ## Primitive that carries the change.
@@ -42,25 +51,43 @@ type
 const HELPER_CHANGES*: array[Helper, string] = [
   Helper.Collect: "a free hand takes a hand",
   Helper.Drop: "a held hand is released",
-  Helper.Pass: "a hand of the follow changes which lead hand holds it",
-  Helper.Cut: "an arm re-routes around the arm obstructing it",
 ] ## Say what each primitive changes about the frame.
 
 
 const HELPER_SYNONYMS*: array[Helper, string] = [
   Helper.Collect: "",
   Helper.Drop: "flick when led with momentum",
-  Helper.Pass: "place when named for its shape",
-  Helper.Cut: "",
 ] ## Give the workbook's other word for a primitive, where it has one.
 
 
 const HELPER_MARKS*: array[Helper, char] = [
   Helper.Collect: 'c',
   Helper.Drop: 'd',
-  Helper.Pass: 'p',
-  Helper.Cut: 'x',
 ] ## Abbreviate each primitive to the one letter a matrix cell has room for.
+
+
+const COMPOUND_CHANGES*: array[Compound, string] = [
+  Compound.Place: "one hand of the follow changes which lead hand holds it",
+  Compound.Cut: "the arms exchange which one lies on top",
+] ## Say what each compound changes about the frame.
+
+
+const COMPOUND_ORDERS*: array[Compound, string] = [
+  Compound.Place: "collect, then drop",
+  Compound.Cut: "drop, then collect",
+] ## Give the order the workbook writes each compound in.
+
+
+const COMPOUND_OBSTRUCTED*: array[Compound, bool] = [
+  Compound.Place: false,
+  Compound.Cut: true,
+] ## Say whether the other arm lies in the path the trace has to take.
+
+
+const COMPOUND_MARKS*: array[Compound, char] = [
+  Compound.Place: 'p',
+  Compound.Cut: 'x',
+] ## Abbreviate each compound for a matrix cell.
   ##
   ## `cut` takes the letter it does because `collect` has the one it would want.
 
@@ -82,8 +109,6 @@ func inverse*(helper: Helper): Helper =
   case helper
   of Helper.Collect: Helper.Drop
   of Helper.Drop: Helper.Collect
-  of Helper.Pass: Helper.Pass
-  of Helper.Cut: Helper.Cut
 
 
 
@@ -97,7 +122,9 @@ func classify*(a, b: Frame): Option[Helper] =
     moved_left = a.hold[Side.Left] != b.hold[Side.Left]
     moved_right = a.hold[Side.Right] != b.hold[Side.Right]
   if not moved_left and not moved_right:
-    return some(Helper.Cut) # Same connections, so only the arm order can differ.
+    # Same connections, so only the arm order differs, which is a `cut`: the arm
+    # underneath has to be released and re-taken over the other one.
+    return none(Helper)
   if moved_left != moved_right:
     let side = if moved_left: Side.Left else: Side.Right
     if a.hold[side].isNone:
@@ -108,28 +135,32 @@ func classify*(a, b: Frame): Option[Helper] =
     # trace with nothing to trace along: the space between the follow's hands is
     # empty air.  It becomes a move once the arms and body are places to hold.
     return none(Helper)
+  none(Helper)
 
-  # Both hands changed, so the only single action left is a hand-off, and a
-  # hand-off needs the receiving hand free: that leaves the one-connection frames.
+
+func compound*(a, b: Frame): Option[Compound] =
+  ## Get the compound joining two frames, where the ontology names one.
+  ##
+  ## Both are two primitives with a name, and both are a hand-off in the sense
+  ## that the couple stays joined while the arms rearrange.  A `place` hands one
+  ## connection to the lead's other hand; a `cut` hands one arm over the other.
+  if a == b or not a.isValid or not b.isValid:
+    return none(Compound)
+  if a.hold == b.hold:
+    return some(Compound.Cut)
   if a.countHolds != 1 or b.countHolds != 1:
-    return none(Helper)
+    return none(Compound)
   let
     source = if a.hold[Side.Left].isSome: a.hold[Side.Left] else: a.hold[Side.Right]
     destination = if b.hold[Side.Left].isSome: b.hold[Side.Left] else: b.hold[Side.Right]
   if source == destination:
-    return some(Helper.Pass)
-  none(Helper)
+    return some(Compound.Place)
+  none(Compound)
 
 
 func actingSide*(a, b: Frame; helper: Helper): Side =
   ## Get the lead hand that carries a change of frame.
-  case helper
-  of Helper.Cut:
-    b.over.get
-  of Helper.Pass:
-    if b.hold[Side.Left].isSome: Side.Left else: Side.Right
-  else:
-    if a.hold[Side.Left] != b.hold[Side.Left]: Side.Left else: Side.Right
+  if a.hold[Side.Left] != b.hold[Side.Left]: Side.Left else: Side.Right
 
 
 
@@ -174,11 +205,25 @@ func phrase*(source: Frame; move: Move): string =
   of Helper.Drop:
     result = "drop " & hand & " from the follow's " &
       followName(source.hold[move.side].get)
-  of Helper.Pass:
-    result = "pass the follow's " & followName(move.to.hold[move.side].get) &
-      " from " & leadName(other(move.side)) & " to " & hand
-  of Helper.Cut:
-    result = "cut " & hand & " over " & leadName(other(move.side))
+
+
+
+func compoundPhrase*(source, destination: Frame): string =
+  ## Say a compound the way a teacher would call it, with the two arms named.
+  let named = compound(source, destination)
+  if named.isNone:
+    return ""
+  case named.get
+  of Compound.Cut:
+    let over = destination.over.get
+    "cut " & leadName(over) & " over " & leadName(other(over)) &
+      ": drop " & leadName(over) & ", then collect it over the " &
+      leadName(other(over)) & " arm"
+  of Compound.Place:
+    let taker =
+      if destination.hold[Side.Left].isSome: Side.Left else: Side.Right
+    "place the follow's " & followName(destination.hold[taker].get) &
+      " from " & leadName(other(taker)) & " into " & leadName(taker)
 
 
 

@@ -181,6 +181,7 @@ table.matrix td.on { background: var(--panel); font-weight: 600;
 table.matrix td.new { border-color: var(--left); color: var(--left);
   box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--left) 10%, transparent); }
 table.matrix td.self { background: var(--rule); border-color: var(--rule); }
+table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 
 /* ---------- findings ---------- */
 
@@ -313,28 +314,42 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
     <h2>Every cell you filled in is the right one</h2>
   </div>
   <p>{{checkable}} of your {{cells}} cells hold between two hand-to-hand frames.
-  All {{checkable}} name exactly the primitive the model derives independently,
-  and they are <em>every</em> move that exists between the {{named}} states they
-  name.
-  Nothing missing, nothing spare. For a hand-written 9&times;9 matrix that is
-  not a small thing.</p>
+  All {{checkable}} name exactly what the model derives independently &mdash;
+  {{primitive_cells}} of them a primitive, {{compound_cells}} of them one of the
+  two compounds &mdash; and together they are <em>every</em> move that exists
+  between the {{named}} states they name. Nothing missing, nothing spare. For a
+  hand-written 9&times;9 matrix that is not a small thing.</p>
   <div class="scroll">
     {{matrix}}
   </div>
   <p class="dim" style="font-size: .85rem">Rows are the frame danced from,
   columns the frame danced to. {{legend}}.
   Outlined cells are moves the model derives that your sheet has no row for
-  &mdash; every one of them touches <em class="term">open</em>.</p>
+  &mdash; every one of them touches <em class="term">open</em>. Faded cells are
+  the compounds.</p>
 
   <h3>{{primitive_count}} primitives, not six</h3>
   {{primitives}}
-  <p><code>cut</code> turns out to be needed for exactly one thing: exchanging
-  which arm is on top. Every other re-routing has a clear path.
-  <code>flick</code> changes no state, so it is a manner of <code>drop</code>
-  rather than a helper of its own. And <code>trace</code>/<code>slide</code> has
-  nothing to do here at all &mdash; it slides a hand <em>along</em> the partner,
-  and the space between the follow's two hands is empty air. It comes back with
-  the body, below.</p>
+  <p>Your vocabulary marks two of its six helpers with an asterisk, and gives
+  each the same shape: <em class="term">place*</em> is &ldquo;collect then
+  drop&rdquo;, <em class="term">cut*</em> is &ldquo;drop then collect&rdquo;,
+  both keeping contact through a trace. The asterisks are right. Neither is a
+  unit &mdash; each is two moves that a lead thinks of as one, which is worth a
+  name but not a place in the alphabet.</p>
+  <p>Of the four left, <code>flick</code> changes no frame, so it is a manner of
+  <code>drop</code> rather than a helper of its own; and
+  <code>trace</code>/<code>slide</code> has nothing to do here at all, because it
+  slides a hand <em>along</em> the partner and the space between the follow's two
+  hands is empty air. It comes back with the body, below. Two primitives are
+  left, and they are the two that change what is held.</p>
+
+  <h3>{{compound_count}} compounds worth naming</h3>
+  {{compounds}}
+  <p>The difference between them is only whether the other arm is in the way. A
+  <code>place</code> has a clear path, so the hands can overlap on the way past
+  and the couple never quite lets go. A <code>cut</code> does not, so the arm
+  must be released and re-taken on the far side of the one obstructing it
+  &mdash; which is why it is the only way between the two crossing orders.</p>
 </section>
 
 <section>
@@ -353,9 +368,12 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
       <p>Every single-hold state in your sheet has a <code>drop</code> that leads
       nowhere, because a frame with no connection is not in the sheet. Without it
       the matrix is not closed under <code>drop</code>, which means the sheet
-      cannot express &ldquo;let go&rdquo;. It is where every dance begins, where
-      every shine lives, and where every hand change that passes through nothing
-      goes.</p>
+      cannot express &ldquo;let go&rdquo;.</p>
+      <p>It matters more now that <code>place</code> is two moves rather than
+      one: every hand-off in your sheet &mdash; all four <em
+      class="term">pass</em> cells &mdash; is a drop and a collect, and the frame
+      in between the two is precisely <em class="term">open</em>. The sheet
+      names four routes through a state it does not have.</p>
       <p class="do"><b>Do:</b> add one row and one column. Four collects out,
       four drops in, and the graph closes.</p>
     </div>

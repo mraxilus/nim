@@ -25,12 +25,15 @@ suite "the review page":
 
   test "the page shows every frame and every move":
     let page = readFile(PAGE_PATH)
-    var edges = 0
+    var cells = 0
     for source in FRAMES:
       check page.contains(">" & source.describe & "<")
-      edges += moves(source).len
-    # One cell per move in the matrix, plus one title per frame in each picture.
-    check page.count("<td class=\"on") == edges
+      cells += moves(source).len
+      for target in FRAMES:
+        if compound(source, target).isSome:
+          inc cells
+    # The matrix carries one cell per move and one per compound.
+    check page.count("<td class=\"on") == cells
 
   test "the pictures fix no colour of their own":
     # They are shown inside two pages that theme them and as standalone files

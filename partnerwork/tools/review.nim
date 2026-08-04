@@ -101,7 +101,7 @@ func renderGallery(): string =
 
 
 func renderLegend(): string =
-  ## Say which letter in the matrix stands for which primitive.
+  ## Say which letter in the matrix stands for which move.
   for helper in Helper:
     if result.len > 0:
       result.add " &middot; "
@@ -109,6 +109,9 @@ func renderLegend(): string =
     if HELPER_SYNONYMS[helper].len > 0:
       result.add " (your <em class=\"term\">" &
         HELPER_SYNONYMS[helper].split(' ')[0] & "</em>)"
+  for named in Compound:
+    result.add " &middot; <b>" & COMPOUND_MARKS[named] & "</b> " &
+      ($named).toLowerAscii & ", two moves"
 
 
 func renderMatrix(): string =
@@ -123,15 +126,20 @@ func renderMatrix(): string =
       if source == target:
         result.add "<td class=\"self\"></td>"
         continue
-      let helper = classify(source, target)
-      if helper.isNone:
+      let
+        helper = classify(source, target)
+        named = compound(source, target)
+      if helper.isNone and named.isNone:
         result.add "<td></td>"
         continue
       let known = cellText(
         workbookName(source).get(""), workbookName(target).get(""))
       result.add "<td class=\"on" & (if known.isSome: "" else: " new") &
+        (if helper.isNone: " two" else: "") &
         "\" title=\"" & escape(source.describe) & " to " &
-        escape(target.describe) & "\">" & HELPER_MARKS[helper.get] & "</td>"
+        escape(target.describe) & "\">" &
+        (if helper.isSome: HELPER_MARKS[helper.get]
+         else: COMPOUND_MARKS[named.get]) & "</td>"
     result.add "</tr>"
   result.add "</tbody></table>"
 
@@ -148,6 +156,29 @@ func renderPrimitives(): string =
     result.add "<tr><td>" & helper.name & "</td><td>" & HELPER_CHANGES[helper] &
       "</td><td>" & synonym & "</td></tr>"
   result.add "</tbody></table>"
+
+
+func renderCompounds(): string =
+  ## List the compounds, what each does, and why the ontology names it.
+  result = "<table class=\"plain\"><thead><tr><th>Compound</th>" &
+    "<th>What changes</th><th>The two moves</th><th>Obstructed</th>" &
+    "</tr></thead><tbody>"
+  for named in Compound:
+    result.add "<tr><td>" & ($named).toLowerAscii & "</td><td>" &
+      COMPOUND_CHANGES[named] & "</td><td>" & COMPOUND_ORDERS[named] &
+      "</td><td>" & (if COMPOUND_OBSTRUCTED[named]:
+        "yes, by the other arm" else: "<span class=\"dim\">no</span>") &
+      "</td></tr>"
+  result.add "</tbody></table>"
+
+
+func countCells(is_compound: bool): int =
+  ## Count the checkable cells that name a compound, or that name a primitive.
+  for cell in CELLS:
+    if cell.source.isDeferred or cell.destination.isDeferred:
+      continue
+    if (readCompound(readCell(cell.text)[0]).isSome) == is_compound:
+      inc result
 
 
 func renderAudit(): string =
@@ -173,6 +204,10 @@ proc renderReview*(): string =
     "gallery": renderGallery(),
     "matrix": renderMatrix(),
     "primitives": renderPrimitives(),
+    "compounds": renderCompounds(),
+    "compound_count": $(ord(high(Compound)) + 1),
+    "primitive_cells": $countCells(false),
+    "compound_cells": $countCells(true),
     "audit": renderAudit(),
     "legend": renderLegend(),
     "frames": $FRAMES.len,

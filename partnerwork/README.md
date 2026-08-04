@@ -48,7 +48,7 @@ transition matrix with the cells the workbook leaves blank outlined, and
 
 ```
 src/partnerwork/frame.nim       frames, their laws, their names, reflection
-src/partnerwork/transition.nim  the four primitives and the routes between frames
+src/partnerwork/transition.nim  the two primitives, the two compounds, the routes
 src/partnerwork/diagram.nim     one drawing of a frame, for everything that shows one
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
@@ -71,7 +71,10 @@ nimble review       # rewrite doc/review.html and doc/frames/ from the model
 
 ## What it says
 
-Eight frames exist and twenty-six moves join them. The `base` sheet of
+Eight frames exist and twenty moves join them, each adding or removing one
+connection. Two named compounds -- `place` and `cut`, the two your vocabulary
+marks with an asterisk -- are pairs of those moves that a lead thinks of as
+one. The `base` sheet of
 `ontology.partnerwork.xlsx` names nine states, seven of them hand-to-hand, and
 eighteen of its twenty-seven cells hold between those seven. All eighteen name
 the same primitive the model derives independently, and they are every move that

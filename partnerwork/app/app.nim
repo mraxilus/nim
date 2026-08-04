@@ -95,7 +95,10 @@ func renderElsewhere(source: Frame): string =
     for step in steps:
       if detail.len > 0:
         detail.add " &rarr; "
-      detail.add esc(($step.helper).toLowerAscii)
+      detail.add esc(step.helper.name)
+    let named = compound(source, target)
+    if named.isSome:
+      detail.add " &mdash; a " & esc(($named.get).toLowerAscii)
     rows.add tag("div", "class=\"far\"",
       tag("span", "class=\"phrase\"", esc(target.describe)) &
       tag("span", "class=\"target\"", $steps.len & " moves: " & detail))
@@ -136,11 +139,14 @@ func renderDance(current: Frame; danced: seq[Step]): string =
 #[ Atlas View ]#
 
 func renderLegend(): string =
-  ## Say which letter in the matrix stands for which primitive.
+  ## Say which letter in the matrix stands for which move.
   for helper in Helper:
     if result.len > 0:
       result.add " &middot; "
     result.add HELPER_MARKS[helper] & " " & helper.name
+  for named in Compound:
+    result.add " &middot; " & COMPOUND_MARKS[named] & " " &
+      ($named).toLowerAscii & " (two moves)"
 
 
 func renderAtlas(): string =
@@ -153,16 +159,23 @@ func renderAtlas(): string =
   for source in FRAMES:
     var row = tag("th", "class=\"row\"", esc(source.describe))
     for target in FRAMES:
-      let helper = classify(source, target)
+      let
+        helper = classify(source, target)
+        named = compound(source, target)
       if source == target:
         row.add tag("td", "class=\"self\"", "")
-      elif helper.isNone:
+      elif helper.isNone and named.isNone:
         row.add tag("td", "", "")
       else:
         let known = cellText(
           workbookName(source).get(""), workbookName(target).get(""))
-        let classes = if known.isSome: "on" else: "on new"
-        row.add tag("td", "class=\"" & classes & "\"", $HELPER_MARKS[helper.get])
+        var classes = if known.isSome: "on" else: "on new"
+        if helper.isNone:
+          classes.add " two"
+        let glyph =
+          if helper.isSome: $HELPER_MARKS[helper.get]
+          else: $COMPOUND_MARKS[named.get]
+        row.add tag("td", "class=\"" & classes & "\"", glyph)
     body.add tag("tr", "", row)
   var starts = ""
   for target in FRAMES:
@@ -174,8 +187,9 @@ func renderAtlas(): string =
       "leaves blank.") &
     tag("table", "class=\"matrix\"", head & body) &
     tag("p", "class=\"note\"", "Rows are the frame danced from, columns the frame " &
-      "danced to. Every primitive reverses, so the matrix is symmetric except " &
-      "that collect and drop are each other's mirror.") &
+      "danced to. Every move reverses, so the matrix is symmetric except that " &
+      "collect and drop are each other's mirror. Faded cells are the two " &
+      "compounds: a pair of primitives the dance calls one move.") &
     tag("div", "class=\"starts\"", starts))
 
 
