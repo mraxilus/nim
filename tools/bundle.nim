@@ -132,3 +132,21 @@ when isMainModule:
   createDir(output_path.parentDir)
   writeFile(output_path, page)
   echo "bundled ", output_path, " (", page.len div 1024, " KB)"
+
+  # Write the same page again without its document wrapper, for a host that supplies one.
+  #   An artifact host wraps what it is given in its own doctype, head and body, so a second
+  #   copy of those tags would nest a document inside a document. Everything else — the faces,
+  #   the compiled core, the glue — is byte for byte the page above.
+  let
+    style_start = page.find("<style>")
+    style_end = page.find("</style>") + "</style>".len
+    body_start = page.find("<body>") + "<body>".len
+    body_end = page.find("</body>")
+  if style_start < 0 or body_end < 0:
+    stderr.writeLine("bundle: the shell no longer has the shape the artifact copy expects.")
+    quit(1)
+  let embedded =
+    page[style_start ..< style_end] & "\n" & page[body_start ..< body_end]
+  writeFile(output_path.parentDir / "artifact.html", embedded)
+  echo "bundled ", output_path.parentDir / "artifact.html",
+    " (", embedded.len div 1024, " KB, no document wrapper)"
