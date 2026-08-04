@@ -1,0 +1,55 @@
+diff --git a/compiler/lexer.nim b/compiler/lexer.nim
+index bc94542..4a1970e 100644
+--- a/compiler/lexer.nim
++++ b/compiler/lexer.nim
+@@ -959,6 +959,11 @@ proc getOperator(L: var Lexer, tok: var Token) =
+     elif c in UnicodeOperatorStartChars:
+       let oprLen = unicodeOprLen(L.buf, pos)[0]
+       if oprLen == 0: break
++      if pos == L.bufpos + 1 and L.buf[L.bufpos] == '.':
++        # A lone '.' in front of a Unicode operator starts a dot call, `m.⟑ n`, not a
++        # dot-like operator `.⟑`: the call has no other spelling, while a dot-like Unicode
++        # operator can still be declared and used with a longer prefix, e.g. `..⟑`.
++        break
+       for i in 0..<oprLen:
+         h = h !& ord(L.buf[pos])
+         inc pos
+diff --git a/compiler/parser.nim b/compiler/parser.nim
+index 38f556e..57007b6 100644
+--- a/compiler/parser.nim
++++ b/compiler/parser.nim
+@@ -410,6 +410,14 @@ proc parseSymbol(p: var Parser, mode = smNormal): PNode =
+         parMessage(p, errIdentifierExpected, p.tok)
+         break
+     eat(p, tkAccent)
++  of tkOpr:
++    if mode == smAfterDot:
++      # `m.⟑ n` and `m.& n` name the routine to call; an operator is a valid name there.
++      result = newIdentNodeP(p.tok.ident, p)
++      getTok(p)
++    else:
++      parMessage(p, errIdentifierExpected, p.tok)
++      result = p.emptyNode
+   else:
+     parMessage(p, errIdentifierExpected, p.tok)
+     # BUGFIX: We must consume a token here to prevent endless loops!
+diff --git a/tests/lexer/tunicode_operators.nim b/tests/lexer/tunicode_operators.nim
+index 93e430f..7917b75 100644
+--- a/tests/lexer/tunicode_operators.nim
++++ b/tests/lexer/tunicode_operators.nim
+@@ -37,3 +37,15 @@ var w = 45
+ w *= 9 * 4 * 3
+ 
+ assert z == w
++
++# A lone '.' in front of a Unicode operator starts a dot call, not a dot-like operator.
++proc `∘`(x, y: int): int = x + y
++
++assert (2.⟑ 3) == 6
++assert (2.∘ 3) == 5
++assert 4.⟑(5) == 20
++
++# A dot-like Unicode operator can still be declared and used with a longer prefix.
++proc `..⟑`(x, y: int): int = x - y
++
++assert (9 ..⟑ 4) == 5

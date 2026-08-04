@@ -1,0 +1,13 @@
+# Vendored source is kept locally and never committed; `tools/fetch_vendor.sh` restores it.
+vendor/
+
+# Build outputs: the assembled browser page, the native binaries, capture runs.
+build/
+nimcache/
+
+# Compiled test outputs.
+tests/*.js
+tests/test_desktop
+tests/test_browser
+
+# The compiler patch is tracked; build outputs and vendored source are not.
