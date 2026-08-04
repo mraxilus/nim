@@ -49,18 +49,23 @@ transition matrix with the cells the workbook leaves blank outlined, and
 ```
 src/partnerwork/frame.nim       frames, their laws, their names, reflection
 src/partnerwork/transition.nim  the four primitives and the routes between frames
+src/partnerwork/diagram.nim     one drawing of a frame, for everything that shows one
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
 app/                            the browser validator
 tools/audit.nim                 the same audit, printed
+tools/review.nim                writes the review page from the model
 tests/                          the laws, checked over every pair of frames
-doc/review.html                 the standing review: what the workbook says and
+doc/review.template.html        the prose of the review; every number is a marker
+doc/review.html                 the review, generated: what the workbook says and
                                 what is outstanding, rewritten each iteration
+doc/frames/*.svg                one picture per frame, for anything that is not HTML
 ```
 
 ```
-nimble test         # the laws
+nimble test         # the laws, including that the review page is not stale
 nimble audit        # the model and what it says about the workbook, printed
+nimble review       # rewrite doc/review.html and doc/frames/ from the model
 ```
 
 
@@ -80,5 +85,8 @@ Rotation is not modelled beyond what the hand-to-hand model forces. What it
 forces is in `doc/review.html`, along with the four cells worth dancing to
 settle the rest.
 
-`doc/review.html` is rewritten and republished each time the model changes, so
-its history in git is the history of what the ontology has been claimed to say.
+`doc/review.html` is generated from the model and from the prose in
+`doc/review.template.html`, so every figure and every picture in it is derived
+rather than transcribed, and a test fails if the committed page has fallen
+behind. It is rewritten and republished each time the model changes, so its
+history in git is the history of what the ontology has been claimed to say.

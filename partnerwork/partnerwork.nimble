@@ -26,7 +26,7 @@ proc bundleApp() =
 
 
 task test, "Run the law tests":
-  for name in ["tframe", "ttransition", "tworkbook", "trotation"]:
+  for name in ["tframe", "ttransition", "tworkbook", "trotation", "treview"]:
     exec "nim c -r --hints:off tests/" & name & ".nim"
 
 task app, "Build the browser validator, and bundle it into one file":
@@ -35,6 +35,9 @@ task app, "Build the browser validator, and bundle it into one file":
 
 task bundle, "Fold the built script into one self-contained page":
   bundleApp()
+
+task review, "Write the review page and the frame pictures from the model":
+  exec "nim c -r --hints:off tools/review.nim"
 
 task audit, "Print the model and what it says about the workbook":
   exec "nim c -r --hints:off tools/audit.nim"

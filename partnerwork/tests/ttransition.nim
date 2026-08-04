@@ -3,7 +3,7 @@
 ## The state space is small enough to check exhaustively, so nothing here is a
 ## sample: each law is asserted for all 64 ordered pairs.
 
-import std/[options, unittest]
+import std/[options, strutils, unittest]
 
 import ../src/partnerwork/frame
 import ../src/partnerwork/transition
@@ -126,3 +126,23 @@ suite "routes":
           continue
         let steps = route(source, destination)
         check (steps.len == 1) == classify(source, destination).isSome
+
+
+suite "the vocabulary":
+  test "no two primitives share a mark, a name or a change":
+    var marks: seq[char] = @[]
+    var names, changes: seq[string] = @[]
+    for helper in Helper:
+      check HELPER_MARKS[helper] notin marks
+      check helper.name notin names
+      check HELPER_CHANGES[helper] notin changes
+      check helper.manner.startsWith(helper.name)
+      marks.add HELPER_MARKS[helper]
+      names.add helper.name
+      changes.add HELPER_CHANGES[helper]
+
+  test "a primitive with another word says so, and one without does not":
+    check HELPER_SYNONYMS[Helper.Drop].len > 0
+    check Helper.Drop.manner.contains("flick")
+    check HELPER_SYNONYMS[Helper.Cut].len == 0
+    check Helper.Cut.manner == "cut"

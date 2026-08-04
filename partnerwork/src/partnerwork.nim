@@ -7,9 +7,10 @@
 
 {.experimental: "strictFuncs".}
 
+import ./partnerwork/diagram
 import ./partnerwork/frame
 import ./partnerwork/rotation
 import ./partnerwork/transition
 import ./partnerwork/workbook
 
-export frame, rotation, transition, workbook
+export diagram, frame, rotation, transition, workbook

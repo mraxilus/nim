@@ -17,7 +17,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[algorithm, options]
+import std/[algorithm, options, strutils]
 
 import ./frame
 
@@ -39,12 +39,42 @@ type
     to*: Frame      ## Frame the couple arrives in.
 
 
-const HELPER_MANNERS*: array[Helper, string] = [
-  Helper.Collect: "collect",
-  Helper.Drop: "drop, or flick when led with momentum",
-  Helper.Pass: "pass, called place when named for its shape",
-  Helper.Cut: "cut",
-] ## Name each primitive together with the workbook's synonyms for it.
+const HELPER_CHANGES*: array[Helper, string] = [
+  Helper.Collect: "a free hand takes a hand",
+  Helper.Drop: "a held hand is released",
+  Helper.Pass: "a hand of the follow changes which lead hand holds it",
+  Helper.Cut: "an arm re-routes around the arm obstructing it",
+] ## Say what each primitive changes about the frame.
+
+
+const HELPER_SYNONYMS*: array[Helper, string] = [
+  Helper.Collect: "",
+  Helper.Drop: "flick when led with momentum",
+  Helper.Pass: "place when named for its shape",
+  Helper.Cut: "",
+] ## Give the workbook's other word for a primitive, where it has one.
+
+
+const HELPER_MARKS*: array[Helper, char] = [
+  Helper.Collect: 'c',
+  Helper.Drop: 'd',
+  Helper.Pass: 'p',
+  Helper.Cut: 'x',
+] ## Abbreviate each primitive to the one letter a matrix cell has room for.
+  ##
+  ## `cut` takes the letter it does because `collect` has the one it would want.
+
+
+func name*(helper: Helper): string = ($helper).toLowerAscii
+  ## Name a primitive as the ontology writes it.
+
+
+func manner*(helper: Helper): string =
+  ## Name a primitive together with the workbook's other word for it.
+  if HELPER_SYNONYMS[helper].len == 0:
+    helper.name
+  else:
+    helper.name & ", or " & HELPER_SYNONYMS[helper]
 
 
 func inverse*(helper: Helper): Helper =

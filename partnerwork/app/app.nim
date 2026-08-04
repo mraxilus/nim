@@ -59,119 +59,6 @@ func button(action, value, classes, body: string): string =
 
 
 
-#[ Diagram ]#
-
-const
-  DIAGRAM_WIDTH = 360
-  DIAGRAM_HEIGHT = 250
-  LEAD_BODY_X = 88
-  FOLLOW_BODY_X = 272
-  BODY_Y = 125
-  BODY_RADIUS = 30
-  REACH_X = 56
-  REST_X = 24
-  UPPER_Y = 66
-  LOWER_Y = 184
-
-
-func handPoint(side: Side; held: bool): (int, int) =
-  ## Get where a lead hand is drawn, forward when it holds and back when it does not.
-  ##
-  ## The couple is seen from above with the lead on the left, so the lead's left
-  ## hand and the follow's right hand share the upper edge: a connection between
-  ## them is a straight line, and one that crosses the midline is a diagonal.
-  let x = LEAD_BODY_X + (if held: REACH_X else: REST_X)
-  case side
-  of Side.Left: (x, UPPER_Y)
-  of Side.Right: (x, LOWER_Y)
-
-
-func sitePoint(site: Site; held: bool): (int, int) =
-  ## Get where a hand of the follow is drawn.
-  let x = FOLLOW_BODY_X - (if held: REACH_X else: REST_X)
-  case site
-  of Site.RightHand: (x, UPPER_Y)
-  of Site.LeftHand: (x, LOWER_Y)
-
-
-func line(from_x, from_y, to_x, to_y: int): string =
-  ## Form a straight path between two points.
-  "M" & $from_x & " " & $from_y & "L" & $to_x & " " & $to_y
-
-
-func dot(point: (int, int); classes: string): string =
-  ## Draw one hand marker.
-  "<circle class=\"" & classes & "\" cx=\"" & $point[0] & "\" cy=\"" & $point[1] &
-    "\" r=\"7\"/>"
-
-
-func label(x, y: int; text: string): string =
-  ## Draw one small caption.
-  "<text class=\"caption\" x=\"" & $x & "\" y=\"" & $y & "\">" & esc(text) & "</text>"
-
-
-func isHeld(target: Frame; site: Site): bool =
-  ## Test whether either lead hand holds this hand of the follow.
-  for side in Side:
-    if target.hold[side] == some(site):
-      return true
-  false
-
-
-func renderDiagram(target: Frame): string =
-  ## Draw the frame from above: two bodies, four hands, and what they hold.
-  var parts = "<svg viewBox=\"0 0 " & $DIAGRAM_WIDTH & " " & $DIAGRAM_HEIGHT &
-    "\" class=\"diagram\" role=\"img\">"
-  for x in [LEAD_BODY_X, FOLLOW_BODY_X]:
-    parts.add "<circle class=\"body\" cx=\"" & $x & "\" cy=\"" & $BODY_Y &
-      "\" r=\"" & $BODY_RADIUS & "\"/>"
-  parts.add label(LEAD_BODY_X, BODY_Y + 5, "lead")
-  parts.add label(FOLLOW_BODY_X, BODY_Y + 5, "follow")
-
-  # Arms first, so that the connections are drawn over them.
-  for side in Side:
-    let (hand_x, hand_y) = handPoint(side, target.hold[side].isSome)
-    let shoulder_y = if side == Side.Left: BODY_Y - 21 else: BODY_Y + 21
-    parts.add "<path class=\"arm\" d=\"" &
-      line(LEAD_BODY_X + 16, shoulder_y, hand_x, hand_y) & "\"/>"
-  for site in Site:
-    let (site_x, site_y) = sitePoint(site, target.isHeld(site))
-    let shoulder_y = if site == Site.RightHand: BODY_Y - 21 else: BODY_Y + 21
-    parts.add "<path class=\"arm\" d=\"" &
-      line(FOLLOW_BODY_X - 16, shoulder_y, site_x, site_y) & "\"/>"
-
-  # The overlapping pair is drawn under-arm first, then the over-arm masked, so
-  # the crossing reads the way it looks from above.
-  var order = @[Side.Left, Side.Right]
-  if target.over == some(Side.Left):
-    order = @[Side.Right, Side.Left]
-  for side in order:
-    if target.hold[side].isNone:
-      continue
-    let (hand_x, hand_y) = handPoint(side, true)
-    let (site_x, site_y) = sitePoint(target.hold[side].get, true)
-    let path = line(hand_x, hand_y, site_x, site_y)
-    if target.over == some(side):
-      parts.add "<path class=\"mask\" d=\"" & path & "\"/>"
-    parts.add "<path class=\"link " & (if side == Side.Left: "left" else: "right") &
-      "\" d=\"" & path & "\"/>"
-
-  for side in Side:
-    let held = target.hold[side].isSome
-    parts.add dot(handPoint(side, held), "hand" & (if held: " held" else: ""))
-  for site in Site:
-    let held = target.isHeld(site)
-    parts.add dot(sitePoint(site, held), "hand" & (if held: " held" else: ""))
-
-  parts.add label(LEAD_BODY_X + REACH_X, UPPER_Y - 16, "Left")
-  parts.add label(LEAD_BODY_X + REACH_X, LOWER_Y + 24, "Right")
-  parts.add label(FOLLOW_BODY_X - REACH_X, UPPER_Y - 16, "right")
-  parts.add label(FOLLOW_BODY_X - REACH_X, LOWER_Y + 24, "left")
-  parts.add "</svg>"
-  parts
-
-
-
 #[ Dance View ]#
 
 func renderMoves(source: Frame): string =
@@ -183,7 +70,7 @@ func renderMoves(source: Frame): string =
     let helper = $move.helper
     if helper != previous:
       rows.add tag("h4", "", esc(helper.toLowerAscii) & " &mdash; " &
-        esc(HELPER_MANNERS[move.helper]))
+        esc(manner(move.helper)))
       previous = helper
     rows.add button("move", move.to.key, "move",
       tag("span", "class=\"phrase\"", esc(phrase(source, move))) &
@@ -237,20 +124,22 @@ func renderDance(current: Frame; danced: seq[Step]): string =
       tag("p", "class=\"note\"", "position: " & esc(current.position) &
         " &middot; connections: " & $current.countHolds &
         " &middot; key: " & esc(current.key)) &
-      renderDiagram(current)) &
+      renderFrame(current) &
+      tag("p", "class=\"note\"", "Seen from above, lead on the left. The dashed " &
+        "line is the midline between the bodies: a link that crosses it is a " &
+        "crossed connection.")) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
 
 #[ Atlas View ]#
 
-func helperMark(helper: Helper): string =
-  ## Abbreviate a primitive for the matrix.
-  case helper
-  of Helper.Collect: "c"
-  of Helper.Drop: "d"
-  of Helper.Pass: "p"
-  of Helper.Cut: "x"
+func renderLegend(): string =
+  ## Say which letter in the matrix stands for which primitive.
+  for helper in Helper:
+    if result.len > 0:
+      result.add " &middot; "
+    result.add HELPER_MARKS[helper] & " " & helper.name
 
 
 func renderAtlas(): string =
@@ -272,16 +161,16 @@ func renderAtlas(): string =
         let known = cellText(
           workbookName(source).get(""), workbookName(target).get(""))
         let classes = if known.isSome: "on" else: "on new"
-        row.add tag("td", "class=\"" & classes & "\"", helperMark(helper.get))
+        row.add tag("td", "class=\"" & classes & "\"", $HELPER_MARKS[helper.get])
     body.add tag("tr", "", row)
   var starts = ""
   for target in FRAMES:
     starts.add button("start", target.key, "flat", esc(target.describe))
   tag("section", "class=\"panel wide\"",
     tag("h3", "", "derived transition matrix") &
-    tag("p", "class=\"note\"",
-      "c collect &middot; d drop &middot; p pass (place) &middot; x cut. " &
-      "Outlined cells are moves the model derives that the workbook leaves blank.") &
+    tag("p", "class=\"note\"", renderLegend() &
+      ". Outlined cells are moves the model derives that the workbook " &
+      "leaves blank.") &
     tag("table", "class=\"matrix\"", head & body) &
     tag("p", "class=\"note\"", "Rows are the frame danced from, columns the frame " &
       "danced to. Every primitive reverses, so the matrix is symmetric except " &

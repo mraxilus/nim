@@ -4,4 +4,6 @@ tests/tframe
 tests/ttransition
 tests/tworkbook
 tests/trotation
+tests/treview
 tools/audit
+tools/review

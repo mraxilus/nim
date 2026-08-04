@@ -224,6 +224,17 @@ func key*(frame: Frame): string =
   )
 
 
+func slug*(frame: Frame): string =
+  ## Form a file-safe name for a frame, from the name it is described by.
+  for character in frame.describe:
+    if character in {'a'..'z', '0'..'9'}:
+      result.add character
+    elif character in {'A'..'Z'}:
+      result.add chr(ord(character) + 32)
+    elif result.len > 0 and result[^1] != '-':
+      result.add '-'
+
+
 func fromKey*(key: string): Option[Frame] =
   ## Decode a frame identifier, rejecting anything that is not a valid frame.
   if key.len != 3:

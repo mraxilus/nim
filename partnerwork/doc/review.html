@@ -170,6 +170,7 @@ table.matrix th { font-weight: 400; }
 table.matrix thead th { padding: .35rem 0 .45rem; vertical-align: bottom; }
 table.matrix thead th svg { width: 48px; height: 40px; display: block;
   margin: 0 auto; }
+table.matrix thead th .caption { display: none; }
 table.matrix th.row { text-align: right; padding: 0 .7rem 0 0; color: var(--dim);
   font-family: var(--body); font-size: .78rem; white-space: nowrap; }
 table.matrix td { width: 2.1rem; height: 2.1rem; text-align: center;
@@ -268,20 +269,13 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
 <header class="masthead reveal">
   <div>
     <p class="eyebrow">Ontology review &middot; partner work</p>
-    <h1>Eight frames, twenty-six moves, and the three things left to settle</h1>
+    <h1>8 frames, 26 moves, and three things left to settle</h1>
   </div>
   <p class="lede">Your <code>base</code> sheet was rebuilt from first principles
   and then checked against itself. The hand-to-hand half of it is complete and
   correct &mdash; every cell, the right primitive, and no move missing.</p>
   <div class="rule"></div>
-  <div class="stats">
-    <div class="stat"><b>8</b><span>frames the model derives</span></div>
-    <div class="stat"><b>26</b><span>moves between them</span></div>
-    <div class="stat"><b>18</b><span>cells checkable today</span></div>
-    <div class="stat good"><b>0</b><span>cells that disagree</span></div>
-    <div class="stat"><b>9</b><span>cells waiting on the body</span></div>
-    <div class="stat"><b>43</b><span>laws under test</span></div>
-  </div>
+  <div class="stats"><div class="stat"><b>8</b><span>frames the model derives</span></div><div class="stat"><b>26</b><span>moves between them</span></div><div class="stat"><b>18</b><span>cells checkable today</span></div><div class="stat good"><b>0</b><span>cells that disagree</span></div><div class="stat"><b>9</b><span>cells waiting on the body</span></div><div class="stat"><b>50</b><span>laws under test</span></div></div>
 </header>
 
 <section>
@@ -293,7 +287,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   arm lies on top where the forearms overlap. Two laws close it: a hand of the
   follow is held by at most one hand of the lead, and an arm order is recorded
   exactly where the forearms overlap. That is the whole state space.</p>
-  <div class="gallery" id="gallery"></div>
+  <div class="gallery"><div class="card absent"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>open</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">open</div><div class="meta">4 moves &middot; no row in the sheet</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right to left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="94.0" y2="72.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Right to left</div><div class="meta">3 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right to right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Right to right</div><div class="meta">4 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left to left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Left to left</div><div class="meta">4 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left-to-left over Right-to-right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="55.3" y2="54.8" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><line x1="64.7" y1="49.2" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="32.0" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Left-to-left over Right-to-right</div><div class="meta">3 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right-to-right over Left-to-left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="55.3" y2="49.2" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="64.7" y1="54.8" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="72.0" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Right-to-right over Left-to-left</div><div class="meta">3 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left to right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="32.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Left to right</div><div class="meta">3 moves</div></div></div><div class="card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left-to-right and Right-to-left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="32.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="72.0" x2="94.0" y2="72.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg><div><div class="name">Left-to-right and Right-to-left</div><div class="meta">2 moves</div></div></div></div>
   <div class="legend">
     <span class="swatch"><i style="background: var(--left)"></i> lead's Left arm</span>
     <span class="swatch"><i style="background: var(--right)"></i> lead's Right arm</span>
@@ -316,30 +310,22 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
     <p class="eyebrow">The verdict</p>
     <h2>Every cell you filled in is the right one</h2>
   </div>
-  <p>Eighteen of your twenty-seven cells hold between two hand-to-hand frames.
-  All eighteen name exactly the primitive the model derives independently, and
-  they are <em>every</em> move that exists between the seven states they name.
+  <p>18 of your 27 cells hold between two hand-to-hand frames.
+  All 18 name exactly the primitive the model derives independently,
+  and they are <em>every</em> move that exists between the 7 states they
+  name.
   Nothing missing, nothing spare. For a hand-written 9&times;9 matrix that is
   not a small thing.</p>
   <div class="scroll">
-    <table class="matrix" id="matrix"></table>
+    <table class="matrix"><thead><tr><th></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>open</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right to left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="94.0" y2="72.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right to right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left to left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left-to-left over Right-to-right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="72.0" x2="55.3" y2="54.8" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><line x1="64.7" y1="49.2" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="32.0" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Right-to-right over Left-to-left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="55.3" y2="49.2" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="64.7" y1="54.8" x2="94.0" y2="72.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="72.0" x2="94.0" y2="32.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left to right</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="32.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: none; stroke: var(--rule-strong, #b9bfba); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th><th><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" class="frame" role="img"><title>Left-to-right and Right-to-left</title><line x1="60.0" y1="18.0" x2="60.0" y2="86.0" style="stroke: var(--rule-strong, #b9bfba); stroke-width: 1; stroke-dasharray: 3 4"/><line x1="26.0" y1="32.0" x2="94.0" y2="32.0" style="stroke: var(--left, #a85f22); stroke-width: 3.4; stroke-linecap: round"/><line x1="26.0" y1="72.0" x2="94.0" y2="72.0" style="stroke: var(--right, #2b6c8c); stroke-width: 3.4; stroke-linecap: round"/><circle cx="26" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><circle cx="26" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="72" r="6" style="fill: var(--right, #2b6c8c); stroke: var(--right, #2b6c8c); stroke-width: 1.5"/><circle cx="94" cy="32" r="6" style="fill: var(--left, #a85f22); stroke: var(--left, #a85f22); stroke-width: 1.5"/><text class="caption" x="26" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Left</text><text class="caption" x="26" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">Right</text><text class="caption" x="94" y="15" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">right</text><text class="caption" x="94" y="93" text-anchor="middle" style="font: 8px ui-sans-serif, system-ui, sans-serif; fill: var(--faint, #9aa19d)">left</text></svg></th></tr></thead><tbody><tr><th class="row">open</th><td class="self"></td><td class="on new" title="open to Right to left">c</td><td class="on new" title="open to Right to right">c</td><td class="on new" title="open to Left to left">c</td><td></td><td></td><td class="on new" title="open to Left to right">c</td><td></td></tr><tr><th class="row">Right to left</th><td class="on new" title="Right to left to open">d</td><td class="self"></td><td></td><td class="on" title="Right to left to Left to left">p</td><td></td><td></td><td></td><td class="on" title="Right to left to Left-to-right and Right-to-left">c</td></tr><tr><th class="row">Right to right</th><td class="on new" title="Right to right to open">d</td><td></td><td class="self"></td><td></td><td class="on" title="Right to right to Left-to-left over Right-to-right">c</td><td class="on" title="Right to right to Right-to-right over Left-to-left">c</td><td class="on" title="Right to right to Left to right">p</td><td></td></tr><tr><th class="row">Left to left</th><td class="on new" title="Left to left to open">d</td><td class="on" title="Left to left to Right to left">p</td><td></td><td class="self"></td><td class="on" title="Left to left to Left-to-left over Right-to-right">c</td><td class="on" title="Left to left to Right-to-right over Left-to-left">c</td><td></td><td></td></tr><tr><th class="row">Left-to-left over Right-to-right</th><td></td><td></td><td class="on" title="Left-to-left over Right-to-right to Right to right">d</td><td class="on" title="Left-to-left over Right-to-right to Left to left">d</td><td class="self"></td><td class="on" title="Left-to-left over Right-to-right to Right-to-right over Left-to-left">x</td><td></td><td></td></tr><tr><th class="row">Right-to-right over Left-to-left</th><td></td><td></td><td class="on" title="Right-to-right over Left-to-left to Right to right">d</td><td class="on" title="Right-to-right over Left-to-left to Left to left">d</td><td class="on" title="Right-to-right over Left-to-left to Left-to-left over Right-to-right">x</td><td class="self"></td><td></td><td></td></tr><tr><th class="row">Left to right</th><td class="on new" title="Left to right to open">d</td><td></td><td class="on" title="Left to right to Right to right">p</td><td></td><td></td><td></td><td class="self"></td><td class="on" title="Left to right to Left-to-right and Right-to-left">c</td></tr><tr><th class="row">Left-to-right and Right-to-left</th><td></td><td class="on" title="Left-to-right and Right-to-left to Right to left">d</td><td></td><td></td><td></td><td></td><td class="on" title="Left-to-right and Right-to-left to Left to right">d</td><td class="self"></td></tr></tbody></table>
   </div>
   <p class="dim" style="font-size: .85rem">Rows are the frame danced from,
-  columns the frame danced to. <b>c</b> collect &middot; <b>d</b> drop &middot;
-  <b>p</b> pass (your <em class="term">place</em>) &middot; <b>x</b> cut.
+  columns the frame danced to. <b>c</b> collect &middot; <b>d</b> drop (your <em class="term">flick</em>) &middot; <b>p</b> pass (your <em class="term">place</em>) &middot; <b>x</b> cut.
   Outlined cells are moves the model derives that your sheet has no row for
   &mdash; every one of them touches <em class="term">open</em>.</p>
 
-  <h3>Four primitives, not six</h3>
-  <table class="plain">
-    <thead><tr><th>Primitive</th><th>What changes</th><th>Your words</th></tr></thead>
-    <tbody>
-      <tr><td>collect</td><td>a free hand takes a hand</td><td class="dim">&mdash;</td></tr>
-      <tr><td>drop</td><td>a held hand is released</td><td>also <code>flick</code>, when led with momentum</td></tr>
-      <tr><td>pass</td><td>a hand of the follow changes which lead hand holds it</td><td>also <code>place</code></td></tr>
-      <tr><td>cut</td><td>an arm re-routes around the arm obstructing it</td><td class="dim">&mdash;</td></tr>
-    </tbody>
-  </table>
+  <h3>4 primitives, not six</h3>
+  <table class="plain"><thead><tr><th>Primitive</th><th>What changes</th><th>Your words</th></tr></thead><tbody><tr><td>collect</td><td>a free hand takes a hand</td><td><span class="dim">&mdash;</span></td></tr><tr><td>drop</td><td>a held hand is released</td><td>also <code>flick</code>, when led with momentum</td></tr><tr><td>pass</td><td>a hand of the follow changes which lead hand holds it</td><td>also <code>place</code>, when named for its shape</td></tr><tr><td>cut</td><td>an arm re-routes around the arm obstructing it</td><td><span class="dim">&mdash;</span></td></tr></tbody></table>
   <p><code>cut</code> turns out to be needed for exactly one thing: exchanging
   which arm is on top. Every other re-routing has a clear path.
   <code>flick</code> changes no state, so it is a manner of <code>drop</code>
@@ -358,7 +344,8 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
 
     <div class="finding add">
       <div class="head">
-        <h3>1. There is no <em class="term">open</em> &mdash; and it is 8 of the 26 moves</h3>
+        <h3>1. There is no <em class="term">open</em> &mdash; and it is
+        8 of the 26 moves</h3>
         <span class="chip">add a row</span>
       </div>
       <p>Every single-hold state in your sheet has a <code>drop</code> that leads
@@ -417,6 +404,16 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
     </div>
 
   </div>
+  <h3>What the audit prints</h3>
+  <pre>StateDeferred
+  closed
+    rests the lead's right hand on the follow rather than in their hand, so it waits for the rotation axis; 6 of the sheet's 27 cells touch it
+StateDeferred
+  half-closed
+    rests the lead's right hand on the follow rather than in their hand, so it waits for the rotation axis; 5 of the sheet's 27 cells touch it
+FrameAbsent
+  open
+    the model derives 4 moves from it, and the sheet has no row for it</pre>
 </section>
 
 <section>
@@ -588,23 +585,28 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
     </div>
     <div>
       <h3>Laws, not examples</h3>
-      <p>43 tests over all 64 ordered pairs of frames: reversibility, mirror
-      symmetry, one law per primitive, full connectivity, and every cell of your
-      sheet checked against the model.</p>
+      <p>50 tests over all 64 ordered pairs of frames:
+      reversibility, mirror symmetry, one law per primitive, full connectivity,
+      and every cell of your sheet checked against the model.</p>
     </div>
   </div>
   <pre>partnerwork/
   src/partnerwork/frame.nim       frames, their laws, their names, reflection
   src/partnerwork/transition.nim  the four primitives and the routes between frames
+  src/partnerwork/diagram.nim     one drawing of a frame, for everything that shows one
   src/partnerwork/workbook.nim    your base sheet as data, and the audit against it
   src/partnerwork/rotation.nim    twist, capacity, wraps and locks &mdash; provisional
   app/index.html                  the validator; open it, no build needed
   app/artifact.html               the same validator as one self-contained file
+  tools/review.nim                writes this page from the model
+  doc/review.template.html        the prose of this page; every number is a marker
   doc/review.html                 this page, versioned with the code it describes
+  doc/frames/*.svg                one picture per frame, for anything that is not HTML
 
-nimble test     # the laws
+nimble test     # the laws, including that this page is not stale
 nimble audit    # the model and what it says about the workbook
-nimble app      # rebuild the validator, then bundle it into one file</pre>
+nimble app      # rebuild the validator, then bundle it into one file
+nimble review   # rewrite this page and the frame pictures</pre>
   <p class="dim" style="font-size: .88rem">Nim throughout, compiled to JavaScript
   for the browser. Pushed to <code>mraxilus/nim</code> on
   <code>claude/dance-move-ontology-7l15pd</code>.</p>
@@ -616,98 +618,3 @@ nimble app      # rebuild the validator, then bundle it into one file</pre>
 </footer>
 
 </div>
-
-<script>
-const FRAMES = [
-  { key: "--.", name: "open", moves: 4, absent: true },
-  { key: "-l.", name: "Right to left", moves: 3 },
-  { key: "-r.", name: "Right to right", moves: 4 },
-  { key: "l-.", name: "Left to left", moves: 4 },
-  { key: "lrL", name: "Left-to-left over Right-to-right", moves: 3 },
-  { key: "lrR", name: "Right-to-right over Left-to-left", moves: 3 },
-  { key: "r-.", name: "Left to right", moves: 3 },
-  { key: "rl.", name: "Left-to-right and Right-to-left", moves: 2 },
-];
-
-// from, to, primitive. Every edge that does not touch "--." is in the base sheet.
-const EDGES = [
-  ["--.", "l-.", "c"], ["--.", "r-.", "c"], ["--.", "-l.", "c"], ["--.", "-r.", "c"],
-  ["-l.", "--.", "d"], ["-l.", "rl.", "c"], ["-l.", "l-.", "p"],
-  ["-r.", "--.", "d"], ["-r.", "lrL", "c"], ["-r.", "lrR", "c"], ["-r.", "r-.", "p"],
-  ["l-.", "--.", "d"], ["l-.", "lrL", "c"], ["l-.", "lrR", "c"], ["l-.", "-l.", "p"],
-  ["lrL", "l-.", "d"], ["lrL", "-r.", "d"], ["lrL", "lrR", "x"],
-  ["lrR", "l-.", "d"], ["lrR", "-r.", "d"], ["lrR", "lrL", "x"],
-  ["r-.", "--.", "d"], ["r-.", "rl.", "c"], ["r-.", "-r.", "p"],
-  ["rl.", "r-.", "d"], ["rl.", "-l.", "d"],
-];
-
-const LEAD = { L: [26, 24], R: [26, 76] };
-const FOLLOW = { r: [94, 24], l: [94, 76] };
-
-function diagram(key, scale) {
-  const holds = [["L", key[0]], ["R", key[1]]];
-  const over = key[2];
-  const order = over === "L" ? ["R", "L"] : ["L", "R"];
-  let svg = `<svg viewBox="0 0 120 100" role="img" aria-label="frame ${key}">`;
-  svg += `<line x1="60" y1="6" x2="60" y2="94" stroke="var(--rule-strong)"
-    stroke-width="1" stroke-dasharray="3 4"/>`;
-  for (const side of order) {
-    const site = key[side === "L" ? 0 : 1];
-    if (site === "-") continue;
-    const [ax, ay] = LEAD[side], [bx, by] = FOLLOW[site];
-    const colour = side === "L" ? "var(--left)" : "var(--right)";
-    const path = `x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}"`;
-    if (over === side) {
-      svg += `<line ${path} stroke="var(--panel)" stroke-width="${9 * scale}"/>`;
-    }
-    svg += `<line ${path} stroke="${colour}" stroke-width="${3.4 * scale}"
-      stroke-linecap="round"/>`;
-  }
-  const filled = {};
-  for (const [side, site] of holds) {
-    if (site === "-") continue;
-    filled["lead" + side] = side === "L" ? "var(--left)" : "var(--right)";
-    filled["follow" + site] = side === "L" ? "var(--left)" : "var(--right)";
-  }
-  for (const side of ["L", "R"]) {
-    const [x, y] = LEAD[side];
-    const fill = filled["lead" + side] || "var(--panel)";
-    svg += `<circle cx="${x}" cy="${y}" r="${5.5 * scale}" fill="${fill}"
-      stroke="${filled["lead" + side] || "var(--rule-strong)"}" stroke-width="1.5"/>`;
-  }
-  for (const site of ["r", "l"]) {
-    const [x, y] = FOLLOW[site];
-    const fill = filled["follow" + site] || "var(--panel)";
-    svg += `<circle cx="${x}" cy="${y}" r="${5.5 * scale}" fill="${fill}"
-      stroke="${filled["follow" + site] || "var(--rule-strong)"}" stroke-width="1.5"/>`;
-  }
-  return svg + "</svg>";
-}
-
-document.getElementById("gallery").innerHTML = FRAMES.map(f => `
-  <div class="card${f.absent ? " absent" : ""}">
-    ${diagram(f.key, 1)}
-    <div>
-      <div class="name">${f.name}</div>
-      <div class="meta">${f.moves} moves${f.absent ? " &middot; no row in the sheet" : ""}</div>
-    </div>
-  </div>`).join("");
-
-const table = document.getElementById("matrix");
-let head = "<thead><tr><th></th>";
-for (const f of FRAMES) head += `<th title="${f.name}">${diagram(f.key, 1.5)}</th>`;
-head += "</tr></thead><tbody>";
-let body = "";
-for (const from of FRAMES) {
-  body += `<tr><th class="row">${from.name}</th>`;
-  for (const to of FRAMES) {
-    if (from.key === to.key) { body += `<td class="self"></td>`; continue; }
-    const edge = EDGES.find(e => e[0] === from.key && e[1] === to.key);
-    if (!edge) { body += "<td></td>"; continue; }
-    const fresh = from.key === "--." || to.key === "--.";
-    body += `<td class="on${fresh ? " new" : ""}" title="${from.name} &rarr; ${to.name}">${edge[2]}</td>`;
-  }
-  body += "</tr>";
-}
-table.innerHTML = head + body + "</tbody>";
-</script>

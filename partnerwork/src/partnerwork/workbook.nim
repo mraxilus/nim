@@ -266,7 +266,7 @@ func auditCells(): seq[Finding] =
         kind: FindingKind.HelperDiffers,
         subject: subject,
         detail: "cell says '" & cell.text & "'; the model derives " &
-          HELPER_MANNERS[helper.get],
+          manner(helper.get),
       )
 
 
@@ -292,13 +292,13 @@ func auditEdges(): seq[Finding] =
           subject: subject,
           detail: "the sheet fills the opposite cell with '" & reversed.get &
             "'; every primitive reverses, so this one is " &
-            HELPER_MANNERS[helper.get],
+            manner(helper.get),
         )
       else:
         result.add Finding(
           kind: FindingKind.EdgeAbsent,
           subject: subject,
-          detail: "the model derives " & HELPER_MANNERS[helper.get] & ": " &
+          detail: "the model derives " & manner(helper.get) & ": " &
             phrase(source, Move(
               helper: helper.get,
               side: actingSide(source, destination, helper.get),
