@@ -132,42 +132,54 @@ func renderVisSwitch(vis: Vis): string =
   tag("div", "class=\"tabs small\"", tabs)
 
 
-func renderPicture(current: Frame; vis: Vis): string =
-  ## Show the frame the couple are in, drawn as the two bodies.
-  tag("section", "class=\"panel\"",
-    tag("h3", "", "frame") &
-    renderVisSwitch(vis) &
+func renderArms(): string =
+  ## Say which ink is which arm, since both drawings are inked the same way.
+  var swatches = ""
+  for side in Side:
+    swatches.add tag("span", "class=\"swatch\"",
+      "<i class=\"arm-" & (if side == Side.Left: "left" else: "right") & "\"></i>" &
+      "the lead's " & esc(leadName(side)) & " arm")
+  tag("div", "class=\"legend\"", swatches)
+
+
+func renderPicture(current: Frame): string =
+  ## Draw the frame the couple are in, as the two bodies.
+  tag("div", "class=\"view-frame\"",
     tag("h2", "", esc(current.describe)) &
     tag("p", "class=\"note\"", "position: " & esc(current.position) &
       " &middot; connections: " & $current.countHolds) &
     tag("div", "class=\"enter\"", renderFrame(current)) &
     tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
-      "dashed line is the couple's midline, between their left and their " &
-      "right: a connection that crosses it is a crossed connection, and two " &
-      "crossed connections overlap."))
+      "dashed line is the couple's midline: a connection that crosses it is a " &
+      "crossed connection, and two crossed connections overlap."))
 
 
-func renderMapPanel(current, before: Frame; vis: Vis): string =
-  ## Show where the couple stand in the whole ontology.
+func renderMapView(current, before: Frame): string =
+  ## Draw where the couple stand in the whole ontology.
+  tag("div", "class=\"view-map\"",
+    tag("div", "class=\"scroll\"", renderMap(some(current), some(before))) &
+    tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
+      "above, so a line down the page is a collect and a line up is a drop. A " &
+      "lit line is named for the move away from where you stand; dashed curves " &
+      "are the two compounds, which are two moves each. Only the lit frames can " &
+      "be clicked."))
+
+
+func renderStage(current, before: Frame; vis: Vis): string =
+  ## Show both drawings of the same frame, side by side, changing together.
   tag("section", "class=\"panel wide\"",
-    tag("h3", "", "map") &
-    (if vis == Vis.Map: renderVisSwitch(vis) else: "") &
-    tag("div", "class=\"scroll\"",
-      renderMap(some(current), some(before))) &
-    tag("p", "class=\"note\"", "Every frame, and every move between them. Each " &
-      "row holds one more connection than the row above, so a step down the " &
-      "page is a collect and a step up is a drop; the label on a lit line is " &
-      "the hand that acts. Dashed curves are the two compounds, which are two " &
-      "moves and so cannot be a line. Lit frames are the ones you can dance to " &
-      "from here &mdash; and they are the only ones you can click."))
+    tag("div", "class=\"stage-head\"",
+      tag("h3", "", "frame") & renderVisSwitch(vis) & renderArms()) &
+    tag("div", "class=\"views\"",
+      (if vis == Vis.Map: "" else: renderPicture(current)) &
+      (if vis == Vis.Picture: "" else: renderMapView(current, before))))
 
 
 func renderDance(current, before: Frame; vis: Vis; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
-    (if vis == Vis.Map: "" else: renderPicture(current, vis)) &
-    renderMoves(current) & renderElsewhere(current) & renderHistory(danced) &
-    (if vis == Vis.Picture: "" else: renderMapPanel(current, before, vis)))
+    renderStage(current, before, vis) &
+    renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
 

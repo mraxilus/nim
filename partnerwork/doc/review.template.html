@@ -187,12 +187,16 @@ table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 
 .map { width: 100%; min-width: 620px; height: auto; display: block;
   margin: .5rem auto; }
-.map .edge { stroke-width: 2; }
+.map .edge { stroke-width: 2; opacity: .3; }
+.map.still .edge { opacity: .75; }
+.map .edge.lit { opacity: 1; }
 .map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
   stroke-dasharray: 5 4; }
 .map .arc-plate, .map .edge-plate { fill: var(--ground); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node-name { fill: var(--ink); }
+.swatch i.arm-left { background: var(--left); }
+.swatch i.arm-right { background: var(--right); }
 
 /* ---------- findings ---------- */
 
@@ -327,7 +331,9 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   <p>Each row holds one more connection than the row above, so the direction of
   a move is readable from the drawing: a step down the page is a
   <code>collect</code> and a step up is a <code>drop</code>. That leaves each
-  line with only one thing to say, which is the arm that acts.</p>
+  line with only one thing left to say, which is the arm that acts, and it says
+  it in ink.</p>
+  {{arms}}
   <div class="scroll">
     {{map}}
   </div>

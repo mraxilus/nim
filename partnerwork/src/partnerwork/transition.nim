@@ -233,6 +233,26 @@ func compoundPhrase*(source, destination: Frame): string =
       " from " & leadName(other(taker)) & " into " & leadName(taker)
 
 
+func label*(source: Frame; move: Move): seq[string] =
+  ## Name a move in the fewest words that still say what to do, a line at a time.
+  ##
+  ## A `collect` has to say which hand of the follow it takes, because the same
+  ## hand of the lead can reach either, and it has to say over or under where
+  ## both arms cross, because that is the whole difference between the two frames
+  ## it could arrive in.  A `drop` says neither: the hand that acts is already
+  ## holding one thing, so there is nothing left to choose.
+  ##
+  ## The lines are short so that the words fit where a drawing has room for them,
+  ## which is usually beside a line rather than along it.
+  case move.helper
+  of Helper.Collect:
+    result = @["collect", "their " & followName(move.to.hold[move.side].get)]
+    if move.to.hasOverlap:
+      result.add(if move.to.over.get == move.side: "over" else: "under")
+  of Helper.Drop:
+    result = @["drop"]
+
+
 
 #[ Routes ]#
 

@@ -107,6 +107,16 @@ func renderGallery(): string =
   result.add "</div>"
 
 
+func renderArms(): string =
+  ## Say which ink is which arm, since both drawings are inked the same way.
+  result = "<div class=\"legend\">"
+  for side in Side:
+    result.add "<span class=\"swatch\"><i class=\"arm-" &
+      ($side).toLowerAscii & "\"></i>the lead's " & leadName(side) &
+      " arm</span>"
+  result.add "</div>"
+
+
 func renderLegend(): string =
   ## Say which letter in the matrix stands for which move.
   for helper in Helper:
@@ -211,6 +221,7 @@ proc renderReview*(): string =
     "gallery": renderGallery(),
     "matrix": renderMatrix(),
     "map": renderMap(none(Frame), none(Frame)),
+    "arms": renderArms(),
     "primitives": renderPrimitives(),
     "compounds": renderCompounds(),
     "compound_count": $(ord(high(Compound)) + 1),

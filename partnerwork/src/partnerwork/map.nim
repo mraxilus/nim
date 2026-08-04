@@ -26,12 +26,13 @@ import ./transition
 
 const
   MAP_WIDTH* = 780
-  MAP_HEIGHT* = 575
+  MAP_HEIGHT* = 595
   MARGIN = 44
-  ROW_Y = [70, 250, 450] ## Row for each number of connections a frame can carry.
+  ROW_Y = [70, 250, 470] ## Row for each number of connections a frame can carry.
   NODE_WIDTH = 74
   NAME_RISE = 12 ## Distance from the top of a picture up to its name.
-  ARC_DIP = 130  ## How far a compound curve hangs below the row it joins.
+  ARC_DIP = 100  ## How far a compound curve hangs below the row it joins.
+  LABEL_ALONG = 62 ## How far along a line its name sits, in hundredths.
 
 
 const NODE_ORDER* = ["--.", "-r.", "l-.", "-l.", "r-.", "lrL", "lrR", "rl."]
@@ -80,10 +81,10 @@ func centreOf*(target: Frame): (int, int) =
 const
   COLOUR_LEFT = "var(--left, #a85f22)"
   COLOUR_RIGHT = "var(--right, #2b6c8c)"
-  COLOUR_QUIET = "var(--rule-strong, #b9bfba)"
   COLOUR_INK = "var(--ink, #1a1f1e)"
-  COLOUR_PANEL = "var(--panel, #ffffff)"
-  LABEL_FONT = "font: 12px ui-sans-serif, system-ui, sans-serif"
+  COLOUR_DIM = "var(--dim, #6b716e)"
+  LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
+  LINE_HEIGHT = 12
   NAME_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
 
 
@@ -103,48 +104,80 @@ func text(x, y: int; body, style: string; classes = "map-label"): string =
     "\" text-anchor=\"middle\" style=\"" & style & "\">" & body & "</text>"
 
 
-func plate(x, y, width: int; classes: string): string =
-  ## Draw a backing plate, so a label over a line stays readable.
-  "<rect class=\"" & classes & "\" x=\"" & $(x - width div 2) & "\" y=\"" &
-    $(y - 10) & "\" width=\"" & $width & "\" height=\"14\" rx=\"3\"/>"
+func widest(lines: seq[string]): int =
+  ## Get the length of the longest line, in characters.
+  for line in lines:
+    result = max(result, line.len)
 
 
-func edge(a, b: Frame; side: Side; is_lit: bool): string =
-  ## Draw the pair of moves that join two frames, and name the arm that acts.
+func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
+  ## Draw a label of several short lines, centred on a point, over a plate.
+  ##
+  ## Stacking is what lets a label sit beside a line without reaching across the
+  ## drawing: three short words are a third of the width of one long phrase.
+  let
+    height = lines.len * LINE_HEIGHT + 4
+    width = widest(lines) * 6 + 14
+    top = y - height div 2
+  result = "<rect class=\"" & plate_class & "\" x=\"" & $(x - width div 2) &
+    "\" y=\"" & $top & "\" width=\"" & $width & "\" height=\"" & $height &
+    "\" rx=\"3\"/>"
+  for index, line in lines:
+    result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, line, style)
+
+
+func edge(a, b: Frame; side: Side; here: Option[Frame]): string =
+  ## Draw the pair of moves that join two frames.
+  ##
+  ## The line is named only when the couple are standing on one end of it, and
+  ## then it is named for the move *away* from where they are: an edge is a
+  ## collect one way and a drop the other, so which one it is depends on which
+  ## end you read it from.  The ink is the arm that acts, either way.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
+    is_lit = here == some(a) or here == some(b)
     lit = if is_lit: " lit" else: ""
-    label = leadName(side)
   result = "<line class=\"edge" & lit & "\" x1=\"" & $ax & "\" y1=\"" & $ay &
     "\" x2=\"" & $bx & "\" y2=\"" & $by & "\" style=\"stroke: " &
-    (if is_lit: armColour(side) else: COLOUR_QUIET) & "\"/>"
+    armColour(side) & "\"/>"
   if not is_lit:
     return
   let
-    mx = (ax + bx) div 2
-    my = (ay + by) div 2
-  result.add plate(mx, my, label.len * 8 + 10, "edge-plate")
-  result.add text(mx, my, label, LABEL_FONT & "; fill: " & armColour(side))
+    source = here.get
+    destination = if source == a: b else: a
+    helper = classify(source, destination).get
+    naming = label(source, Move(helper: helper, side: side, to: destination))
+    (sx, sy) = centreOf(source)
+    (dx, dy) = centreOf(destination)
+  # The name sits along the line, well away from where the couple stand: lines
+  # leaving one frame fan out, so near their far ends they have room apiece.
+  result.add stack(
+    sx + (dx - sx) * LABEL_ALONG div 100,
+    sy + (dy - sy) * LABEL_ALONG div 100,
+    naming, LABEL_FONT & "; fill: " & armColour(side), "edge-plate")
 
 
-func arc(a, b: Frame; name: string; is_lit: bool): string =
+func arc(a, b: Frame; name: string; here: Option[Frame]): string =
   ## Draw a compound as a curve, since no single move joins the two frames.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
     mx = (ax + bx) div 2
     dip = ARC_DIP + (abs(ax - bx) div 5)
+    is_lit = here == some(a) or here == some(b)
     lit = if is_lit: " lit" else: ""
   result = "<path class=\"arc" & lit & "\" d=\"M" & $ax & " " & $ay & "Q" & $mx &
     " " & $(max(ay, by) + dip) & " " & $bx & " " & $by & "\"/>"
+  # A curve is named when the couple could take it, or when nobody is dancing
+  # and the map is being read rather than used.  Naming every curve while one is
+  # lit only fills the space between the rows with grey.
+  if here.isSome and not is_lit:
+    return
   # A curve is at its lowest halfway along, which is half the dip below the row.
-  let
-    label_x = mx
-    label_y = max(ay, by) + dip div 2 + 4
-  result.add plate(label_x, label_y, name.len * 8 + 10, "arc-plate")
-  result.add text(label_x, label_y, name, LABEL_FONT & "; fill: " &
-    (if is_lit: COLOUR_INK else: COLOUR_QUIET))
+  result.add stack(mx, max(ay, by) + dip div 2 + 4, @[name],
+    LABEL_FONT & "; fill: " & (if is_lit: COLOUR_INK else: COLOUR_DIM),
+    "arc-plate")
 
 
 func node(target: Frame; is_here, is_reachable: bool): string =
@@ -176,7 +209,8 @@ func renderMap*(here, before: Option[Frame]): string =
   ## going, so a page that moves it after drawing gets an animation for free and
   ## a page that does not still shows the truth.
   result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " &
-    $MAP_WIDTH & " " & $MAP_HEIGHT & "\" class=\"map\" role=\"img\">" &
+    $MAP_WIDTH & " " & $MAP_HEIGHT & "\" class=\"map" &
+    (if here.isNone: " still" else: "") & "\" role=\"img\">" &
     "<title>Every frame, and every move between them</title>"
 
   var drawn: seq[string] = @[]
@@ -186,8 +220,7 @@ func renderMap*(here, before: Option[Frame]): string =
       if pair in drawn:
         continue
       drawn.add pair
-      let lit = here == some(source) or here == some(move.to)
-      result.add edge(source, move.to, move.side, lit)
+      result.add edge(source, move.to, move.side, here)
 
   drawn = @[]
   for source in FRAMES:
@@ -199,8 +232,7 @@ func renderMap*(here, before: Option[Frame]): string =
       if pair in drawn:
         continue
       drawn.add pair
-      result.add arc(source, target, ($named.get).toLowerAscii,
-        here == some(source) or here == some(target))
+      result.add arc(source, target, ($named.get).toLowerAscii, here)
 
   for target in FRAMES:
     let reachable =
