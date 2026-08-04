@@ -1,10 +1,16 @@
 ## Draw a frame, once, for every place that shows one.
 ##
-## The picture is the couple seen from above, with the lead on the left.  The
-## lead's left hand and the follow's right hand share the upper edge, so a
-## connection between them is a straight line and one that crosses the midline
-## is a diagonal: the dashed line down the middle is that midline, and whether a
-## link crosses it is the whole of what `crossed` means.
+## The picture is the couple seen from above, with the lead at the bottom facing
+## up the page.  Seen from there the lead's Left hand and the follow's right hand
+## are in the same column, because the partners are in mirror, so a connection
+## between them runs straight up the picture and one that crosses the midline
+## runs across it.
+##
+## The dashed line down the middle is that midline: not the divide between the
+## two people, which every connection crosses, but the plane between the left
+## and the right of the couple, which only a crossed connection crosses.  Whether
+## a link crosses it is the whole of what `crossed` means, so the picture makes
+## the distinction visible rather than asking to be read.
 ##
 ## Where both links cross they overlap, and the one underneath is drawn with a
 ## break in it.  A break rather than a masking stroke, because a mask has to know
@@ -27,13 +33,17 @@ import ./frame
 #[ Geometry ]#
 
 const
-  WIDTH = 120
-  HEIGHT = 100
-  LEAD_X = 26      ## Column the lead's hands are drawn in.
-  FOLLOW_X = 94    ## Column the follow's hands are drawn in.
-  UPPER_Y = 32     ## Row shared by the lead's Left and the follow's right.
-  LOWER_Y = 72     ## Row shared by the lead's Right and the follow's left.
-  MIDLINE_X = 60
+  WIDTH = 100
+  HEIGHT = 116
+  LEFT_X = 30      ## Column shared by the lead's Left hand and the follow's right.
+  RIGHT_X = 70     ## Column shared by the lead's Right hand and the follow's left.
+  FOLLOW_Y = 30    ## Row the follow's hands are drawn in, at the top.
+  LEAD_Y = 88      ## Row the lead's hands are drawn in, at the bottom.
+  MIDLINE_X = 50
+  MIDLINE_TOP = 12
+  MIDLINE_BOTTOM = 106
+  CAPTION_TOP_Y = 16
+  CAPTION_BOTTOM_Y = 108
   RADIUS = 6
   BREAK_WIDTH = 11.0 ## Gap left in the link that passes underneath.
 
@@ -49,15 +59,18 @@ const
 func leadPoint(side: Side): (int, int) =
   ## Get where a hand of the lead is drawn.
   case side
-  of Side.Left: (LEAD_X, UPPER_Y)
-  of Side.Right: (LEAD_X, LOWER_Y)
+  of Side.Left: (LEFT_X, LEAD_Y)
+  of Side.Right: (RIGHT_X, LEAD_Y)
 
 
 func followPoint(site: Site): (int, int) =
   ## Get where a hand of the follow is drawn.
+  ##
+  ## The follow faces the other way, so their right hand shares a column with the
+  ## lead's Left: that shared column is what makes a parallel connection parallel.
   case site
-  of Site.RightHand: (FOLLOW_X, UPPER_Y)
-  of Site.LeftHand: (FOLLOW_X, LOWER_Y)
+  of Site.RightHand: (LEFT_X, FOLLOW_Y)
+  of Site.LeftHand: (RIGHT_X, FOLLOW_Y)
 
 
 func colour(side: Side): string =
@@ -139,7 +152,8 @@ func renderFrame*(target: Frame): string =
   result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " & $WIDTH &
     " " & $HEIGHT & "\" class=\"frame\" role=\"img\">" &
     "<title>" & target.describe & "</title>"
-  result.add line(MIDLINE_X.float, 18.0, MIDLINE_X.float, 86.0,
+  result.add line(MIDLINE_X.float, MIDLINE_TOP.float, MIDLINE_X.float,
+    MIDLINE_BOTTOM.float,
     "stroke: " & COLOUR_QUIET & "; stroke-width: 1; stroke-dasharray: 3 4")
 
   var order = @[Side.Left, Side.Right]
@@ -155,8 +169,8 @@ func renderFrame*(target: Frame): string =
   for site in Site:
     result.add hand(followPoint(site), target.holder(site))
 
-  result.add caption(LEAD_X, UPPER_Y - 17, "Left")
-  result.add caption(LEAD_X, LOWER_Y + 21, "Right")
-  result.add caption(FOLLOW_X, UPPER_Y - 17, "right")
-  result.add caption(FOLLOW_X, LOWER_Y + 21, "left")
+  result.add caption(LEFT_X, CAPTION_TOP_Y, "right")
+  result.add caption(RIGHT_X, CAPTION_TOP_Y, "left")
+  result.add caption(LEFT_X, CAPTION_BOTTOM_Y, "Left")
+  result.add caption(RIGHT_X, CAPTION_BOTTOM_Y, "Right")
   result.add "</svg>"

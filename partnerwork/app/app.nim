@@ -125,9 +125,10 @@ func renderDance(current: Frame; danced: seq[Step]): string =
         " &middot; connections: " & $current.countHolds &
         " &middot; key: " & esc(current.key)) &
       renderFrame(current) &
-      tag("p", "class=\"note\"", "Seen from above, lead on the left. The dashed " &
-        "line is the midline between the bodies: a link that crosses it is a " &
-        "crossed connection.")) &
+      tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
+        "dashed line is the couple's midline, between their left and their " &
+        "right: a connection that crosses it is a crossed connection, and two " &
+        "crossed connections overlap.")) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
