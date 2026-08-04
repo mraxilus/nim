@@ -62,6 +62,41 @@ suite "frames":
     check fromKey("l-.").get.reflect == fromKey("-r.").get
 
 
+suite "hands":
+  test "the two readings of a connection agree with each other":
+    for target in FRAMES:
+      var held = 0
+      for site in Site:
+        check target.isHeld(site) == target.holder(site).isSome
+        if target.isHeld(site):
+          inc held
+          check target.hold[target.holder(site).get] == some(site)
+      var reaching = 0
+      for side in Side:
+        check target.usesHand(side) == target.hold[side].isSome
+        if target.usesHand(side):
+          inc reaching
+      # A connection is one hand of each, so counting either end counts it.
+      check held == target.countHolds
+      check reaching == target.countHolds
+
+  test "reflection swaps which hand is asked about":
+    for target in FRAMES:
+      for side in Side:
+        check target.usesHand(side) == target.reflect.usesHand(other(side))
+      check target.isHeld(Site.LeftHand) == target.reflect.isHeld(Site.RightHand)
+
+  test "a hand of the follow is held by at most one hand of the lead":
+    let both = fromKey("lrL").get
+    check both.holder(Site.LeftHand) == some(Side.Left)
+    check both.holder(Site.RightHand) == some(Side.Right)
+    let open_frame = fromKey("--.").get
+    for site in Site:
+      check open_frame.holder(site).isNone
+    for side in Side:
+      check not open_frame.usesHand(side)
+
+
 suite "naming":
   test "every frame is named":
     var names: seq[string] = @[]

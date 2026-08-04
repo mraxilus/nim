@@ -39,15 +39,21 @@ nimble app          # compiles app/app.js, then bundles app/artifact.html
 `app/artifact.html` is the same page as one self-contained file, for publishing
 or for sending to someone who should not have to keep two files together.
 
-Three views: **Dance** walks the state machine, **Atlas** shows the whole derived
-transition matrix with the cells the workbook leaves blank outlined, and
-**Audit** reports what the model has to say about the workbook.
+Three views: **Dance** walks the state machine, **Atlas** shows every frame as a
+picture and the whole derived transition matrix with the cells the workbook
+leaves blank outlined, and **Audit** reports what the model has to say about the
+workbook.
 
-The Dance view draws the frame three ways, one at a time. **Static** is the
-couple alone. **Dynamic** puts the frame in the middle and every way out of it
-as a spoke, and nothing else — take a spoke and it travels in to become the
-middle. **Overview** is the whole ontology with the couple standing somewhere in
-it, and the marker travelling the line it dances.
+The Dance view draws the frame two ways, one at a time. **Dynamic** puts the
+frame in the middle and every way out of it as a spoke, and nothing else — take
+a spoke and it travels in to become the middle. **Overview** is the whole
+ontology with the couple standing somewhere in it, and the marker travelling the
+line it dances.
+
+The Atlas opens on the gallery: each frame drawn, named and counted, and
+clickable to dance from. It narrows on three questions — how many connections,
+which hand of the lead holds, which hand of the follow is held — which are read
+together, so a frame has to answer all of the ones asked.
 
 Only the frames one move away can be clicked, in any of them. A compound is
 offered too, dashed, and taking one dances both of its moves in turn rather than

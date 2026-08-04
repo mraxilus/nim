@@ -22,9 +22,13 @@ type
     Dance, Atlas, Audit
 
   Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
-    Static,   ## The couple alone: two bodies and what they hold.
     Dynamic,  ## The frame in the middle and every way out of it.
     Overview  ## The whole ontology, with the couple somewhere in it.
+
+  Filter = object ## Narrow the list of frames to the ones worth looking at.
+    holds: Option[int]   ## Number of connections, where that is being asked for.
+    lead: Option[Side]   ## Hand of the lead that must be holding something.
+    follow: Option[Site] ## Hand of the follow that must be held.
 
   Step = object ## Hold one danced move, for the history.
     phrase: string
@@ -49,6 +53,7 @@ var
   before = startFrame() ## Frame the couple left, so the map can animate away from it.
   view = View.Dance
   vis = Vis.Dynamic
+  filter = Filter()
   history: seq[Step] = @[]
 
 
@@ -172,15 +177,6 @@ func renderArms(): string =
   tag("div", "class=\"legend\"", swatches)
 
 
-func renderPicture(current: Frame): string =
-  ## Draw the frame the couple are in, as the two bodies.
-  tag("div", "class=\"view-still\"",
-    tag("div", "class=\"enter\"", renderFrame(current)) &
-    tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
-      "dashed line is the couple's midline: a connection that crosses it is a " &
-      "crossed connection, and two crossed connections overlap."))
-
-
 func renderSpokesView(current, before: Frame): string =
   ## Draw where the couple are and every way out, and nothing else.
   tag("div", "class=\"view-spokes\"",
@@ -208,7 +204,6 @@ func renderStage(current, before: Frame; vis: Vis): string =
   ## Show the frame the couple hold, drawn the way the dancer has asked for.
   let drawing =
     case vis
-    of Vis.Static: renderPicture(current)
     of Vis.Dynamic: renderSpokesView(current, before)
     of Vis.Overview: renderMapView(current, before)
   tag("section", "class=\"panel wide\"",
@@ -239,7 +234,75 @@ func renderLegend(): string =
       ($named).toLowerAscii & " (two moves)"
 
 
-func renderAtlas(): string =
+func admits(narrowing: Filter; target: Frame): bool =
+  ## Test whether a frame answers everything the dancer has asked to see.
+  ##
+  ## Every question left unasked admits everything, and the asked ones are read
+  ## together: a dancer looking for a two-handed frame that uses the lead's left
+  ## wants both to be true of the same frame.
+  if narrowing.holds.isSome and target.countHolds != narrowing.holds.get:
+    return false
+  if narrowing.lead.isSome and not target.usesHand(narrowing.lead.get):
+    return false
+  if narrowing.follow.isSome and not target.isHeld(narrowing.follow.get):
+    return false
+  true
+
+
+func chip(action, value, label: string; chosen: bool): string =
+  ## Offer one answer to one question, marked when it is the one in force.
+  button(action, value, (if chosen: "chip on" else: "chip"), esc(label))
+
+
+func renderFilters(narrowing: Filter): string =
+  ## Ask the three questions that narrow the gallery: how many, whose, which.
+  var holds = chip("holds", "any", "any", narrowing.holds.isNone)
+  for count in 0 .. 2:
+    holds.add chip("holds", $count, $count & (if count == 1: " hand" else: " hands"),
+      narrowing.holds == some(count))
+  var lead = chip("lead", "any", "either", narrowing.lead.isNone)
+  for side in Side:
+    lead.add chip("lead", $side, leadName(side), narrowing.lead == some(side))
+  var follow = chip("follow", "any", "either", narrowing.follow.isNone)
+  for site in Site:
+    follow.add chip("follow", $site, followName(site), narrowing.follow == some(site))
+  tag("div", "class=\"filters\"",
+    tag("div", "class=\"question\"", tag("span", "class=\"asks\"", "connections") & holds) &
+    tag("div", "class=\"question\"",
+      tag("span", "class=\"asks\"", "lead's hand holds") & lead) &
+    tag("div", "class=\"question\"",
+      tag("span", "class=\"asks\"", "follow's hand held") & follow))
+
+
+func renderGallery(narrowing: Filter): string =
+  ## Show every frame as its own picture, and let one of them be started from.
+  ##
+  ## A name is a claim about a frame; the picture is the frame.  Showing both
+  ## means the vocabulary can be read off the drawing rather than trusted, which
+  ## is the same reason the review page carries the pictures too.
+  var cards = ""
+  var shown = 0
+  for target in FRAMES:
+    if not narrowing.admits(target):
+      continue
+    inc shown
+    let ways = moves(target).len
+    cards.add button("start", target.key, "card",
+      renderFrame(target) &
+      tag("span", "class=\"phrase\"", esc(target.describe)) &
+      tag("span", "class=\"target\"", $ways & " moves &middot; " &
+        $target.countHolds & (if target.countHolds == 1: " hand" else: " hands")))
+  tag("section", "class=\"panel wide\"",
+    tag("h3", "", "every frame &middot; " & $shown & " of " & $FRAMES.len) &
+    renderFilters(narrowing) &
+    tag("p", "class=\"note\"", "Click a frame to begin the dance from it.") &
+    (if shown == 0:
+      tag("p", "class=\"note\"", "No frame holds all three of those at once.")
+    else:
+      tag("div", "class=\"gallery\"", cards)))
+
+
+func renderAtlas(narrowing: Filter): string =
   ## Show the whole derived transition matrix beside the workbook's cells.
   var head = "<tr><th></th>"
   for target in FRAMES:
@@ -267,20 +330,18 @@ func renderAtlas(): string =
           else: $COMPOUND_MARKS[named.get]
         row.add tag("td", "class=\"" & classes & "\"", glyph)
     body.add tag("tr", "", row)
-  var starts = ""
-  for target in FRAMES:
-    starts.add button("start", target.key, "flat", esc(target.describe))
-  tag("section", "class=\"panel wide\"",
-    tag("h3", "", "derived transition matrix") &
-    tag("p", "class=\"note\"", renderLegend() &
-      ". Outlined cells are moves the model derives that the workbook " &
-      "leaves blank.") &
-    tag("table", "class=\"matrix\"", head & body) &
-    tag("p", "class=\"note\"", "Rows are the frame danced from, columns the frame " &
-      "danced to. Every move reverses, so the matrix is symmetric except that " &
-      "collect and drop are each other's mirror. Faded cells are the two " &
-      "compounds: a pair of primitives the dance calls one move.") &
-    tag("div", "class=\"starts\"", starts))
+  tag("div", "class=\"stage\"",
+    renderGallery(narrowing) &
+    tag("section", "class=\"panel wide\"",
+      tag("h3", "", "derived transition matrix") &
+      tag("p", "class=\"note\"", renderLegend() &
+        ". Outlined cells are moves the model derives that the workbook " &
+        "leaves blank.") &
+      tag("div", "class=\"scroll\"", tag("table", "class=\"matrix\"", head & body)) &
+      tag("p", "class=\"note\"", "Rows are the frame danced from, columns the " &
+        "frame danced to. Every move reverses, so the matrix is symmetric except " &
+        "that collect and drop are each other's mirror. Faded cells are the two " &
+        "compounds: a pair of primitives the dance calls one move.")))
 
 
 func renderAudit(): string =
@@ -330,7 +391,7 @@ proc render() =
   let body =
     case view
     of View.Dance: renderDance(current, before, vis, history)
-    of View.Atlas: renderAtlas()
+    of View.Atlas: renderAtlas(filter)
     of View.Audit: renderAudit()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   let marker = document.getElementById("here")
@@ -426,6 +487,21 @@ proc handle(event: Event) =
     for candidate in Vis:
       if $candidate == value:
         vis = candidate
+  of "holds":
+    filter.holds = none(int)
+    for count in 0 .. 2:
+      if $count == value:
+        filter.holds = some(count)
+  of "lead":
+    filter.lead = none(Side)
+    for candidate in Side:
+      if $candidate == value:
+        filter.lead = some(candidate)
+  of "follow":
+    filter.follow = none(Site)
+    for candidate in Site:
+      if $candidate == value:
+        filter.follow = some(candidate)
   of "undo":
     if history.len > 0:
       discard history.pop()

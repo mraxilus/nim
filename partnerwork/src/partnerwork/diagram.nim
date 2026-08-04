@@ -136,14 +136,6 @@ func caption(x, y: int; text: string): string =
 
 #[ Frames ]#
 
-func holder(target: Frame; site: Site): Option[Side] =
-  ## Get which hand of the lead holds this hand of the follow, if either does.
-  for side in Side:
-    if target.hold[side] == some(site):
-      return some(side)
-  none(Side)
-
-
 func frameBody(target: Frame): string =
   ## Draw the contents of a frame picture, without the frame around them.
   ##

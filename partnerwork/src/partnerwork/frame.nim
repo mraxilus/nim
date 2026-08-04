@@ -100,6 +100,22 @@ func countHolds*(frame: Frame): int =
       inc result
 
 
+func usesHand*(frame: Frame; side: Side): bool = frame.hold[side].isSome
+  ## Test whether one hand of the lead is holding anything.
+
+
+func holder*(frame: Frame; site: Site): Option[Side] =
+  ## Get which hand of the lead holds this hand of the follow, if either does.
+  for side in Side:
+    if frame.hold[side] == some(site):
+      return some(side)
+  none(Side)
+
+
+func isHeld*(frame: Frame; site: Site): bool = frame.holder(site).isSome
+  ## Test whether one hand of the follow is held.
+
+
 func isValid*(frame: Frame): bool =
   ## Test the two laws every frame obeys.
   ##
