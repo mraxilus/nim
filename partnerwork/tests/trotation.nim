@@ -12,12 +12,11 @@ import ../src/partnerwork/rotation
 
 suite "twist":
   test "a rotation of the whole couple stores nothing":
-    # Closed position holds no twist at all, yet a couple travels round the floor
-    # in it all night, so a shared rotation cannot be counted as one.
-    let closed = fromKey("rt.").get.rest
-    check closed.turn(together(2)) == some(closed)
-    check closed.turn(together(-1)).isSome
-    check closed.turn(rotates(Dancer.Lead, 1)).isNone
+    # A couple travels round the floor without unwinding, so a shared rotation
+    # cannot be counted as a turn of each dancer in turn.
+    let pair = fromKey("rl.").get.rest
+    check pair.turn(together(2)) == some(pair)
+    check pair.turn(together(-3)) == some(pair)
 
   test "a turn one dancer takes alone is stored as twist":
     let hand_to_hand = fromKey("l-.").get.rest
@@ -39,18 +38,20 @@ suite "twist":
 
 suite "capacity":
   test "one full turn is comfortable on one hand-to-hand connection":
-    check fromKey("l-.").get.capacity == 2
-    check fromKey("-r.").get.capacity == 2
+    check fromKey("l-.").get.rest.capacity == 2
+    check fromKey("-r.").get.rest.capacity == 2
 
   test "a pair of connections binds at half a turn":
-    check fromKey("rl.").get.capacity == 1
-    check fromKey("lrL").get.capacity == 1
+    check fromKey("rl.").get.rest.capacity == 1
+    check fromKey("lrL").get.rest.capacity == 1
 
-  test "a hand on the torso gives no turn away":
-    check fromKey("rt.").get.capacity == 0
-    check fromKey("-t.").get.capacity == 0
-    check fromKey("lt.").get.capacity == 0
-    check fromKey("rt.").get.rest.turn(rotates(Dancer.Follow, 1)).isNone
+  test "a hand resting on the body gives no turn away":
+    # This is what closed position is, and why a turn out of it needs the lead's
+    # right hand to leave the follow's back first.
+    let closed = fromKey("r-.").get.rest.rests(Side.Right, BodySite.Torso)
+    check closed.capacity == 0
+    check closed.turn(rotates(Dancer.Follow, 1)).isNone
+    check closed.turn(together(2)) == some(closed)
 
 
 suite "geometry":
@@ -74,5 +75,11 @@ suite "modifiers":
     check modifier(2) == some(Modifier.Lock)
 
   test "a wrap is reachable from a pair and a lock is not":
-    check modifier(fromKey("rl.").get.capacity) == some(Modifier.Wrap)
-    check modifier(fromKey("l-.").get.capacity) == some(Modifier.Lock)
+    check modifier(fromKey("rl.").get.rest.capacity) == some(Modifier.Wrap)
+    check modifier(fromKey("l-.").get.rest.capacity) == some(Modifier.Lock)
+
+  test "the level an arm is carried at decides where it lands":
+    check around(Modifier.Wrap, Level.Low) == BodySite.Torso
+    check around(Modifier.Wrap, Level.High) == BodySite.Neck
+    check around(Modifier.Lock, Level.Low) == BodySite.Waist
+    check around(Modifier.Lock, Level.High) == BodySite.Shoulder

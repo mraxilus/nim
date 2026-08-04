@@ -10,6 +10,10 @@
 ## The transcription is of the `base` sheet only.  The `rotations` sheet and the
 ## twelve turn sheets carry headers and no cells, apart from three entries in
 ## `rotations`, which `rotation.nim` records instead.
+##
+## Two of the sheet's nine states, `closed` and `half-closed`, rest a lead hand
+## on the follow's body rather than on a hand, so they are outside the
+## hand-to-hand model and are reported as deferred rather than checked.
 
 {.experimental: "strictFuncs".}
 
@@ -90,20 +94,25 @@ const CELLS*: array[27, Cell] = [
 
 #[ Reading The Workbook ]#
 
-func workbookFrame*(name: string): Option[Frame] =
-  ## Read a workbook state name as a frame.
+const DEFERRED_STATES* = ["closed", "half-closed"]
+  ## Name the states that rest a lead hand on the follow's body.
   ##
-  ## The two body-contact names are the reading the matrix forces: `closed`
-  ## slides to `Left-to-right and Right-to-left` and `half-closed` slides to
-  ## `Right to left`, and only a right hand resting on the follow's torso can do
-  ## either, because a hand can only travel down the arm it already touches.
+  ## Both are forced to be body-contact frames by the cells that reach them.  A
+  ## `slide` keeps contact, and contact can only travel along a body: there is no
+  ## path from one hand of the follow to the other, because the space between
+  ## them is empty air.  So in `half-closed --slide--> Right to left` and in
+  ## `closed --slide--> Left-to-right and Right-to-left` the lead's right hand
+  ## must start on the follow, not in their hand.  Reading them instead as the
+  ## vocabulary sheet does, where `half-closed` is `Left to right` and `closed`
+  ## is `Left-to-left and Right-to-right`, makes them duplicates of rows the
+  ## sheet already has and contradicts six of its cells.  Either way they need a
+  ## place on the body, so they wait for the rotation axis.
+
+
+func workbookFrame*(name: string): Option[Frame] =
+  ## Read a workbook state name as a hand-to-hand frame, where it is one.
   var built = Frame()
   case name
-  of "closed":
-    built.hold[Side.Left] = some(Site.RightHand)
-    built.hold[Side.Right] = some(Site.Torso)
-  of "half-closed":
-    built.hold[Side.Right] = some(Site.Torso)
   of "Left to left":
     built.hold[Side.Left] = some(Site.LeftHand)
   of "Left to right":
@@ -138,10 +147,12 @@ func workbookName*(target: Frame): Option[string] =
 
 func readHelper*(word: string): Option[Helper] =
   ## Read one helper word from a cell, including the workbook's synonyms.
+  ##
+  ## `slide` and `trace` are absent because they slide a hand along the partner,
+  ## and every cell that names one reaches a deferred state.
   case word.strip()
   of "collect": some(Helper.Collect)
   of "drop", "flick": some(Helper.Drop)
-  of "slide", "trace": some(Helper.Trace)
   of "pass", "place": some(Helper.Pass)
   of "cut": some(Helper.Cut)
   else: none(Helper)
@@ -163,40 +174,70 @@ func cellText*(source, destination: string): Option[string] =
   none(string)
 
 
+func isDeferred*(name: string): bool = name in DEFERRED_STATES
+  ## Test whether a workbook state waits for a place on the body.
+
+
+func countDeferredCells*(): int =
+  ## Count the cells that cannot be checked until the body sites arrive.
+  for cell in CELLS:
+    if cell.source.isDeferred or cell.destination.isDeferred:
+      inc result
+
+
 
 #[ Audit ]#
 
 type
-  FindingKind* {.pure.} = enum ## Name a way the workbook and the model disagree.
-    FrameAbsent,      ## Frame the idiom admits that the workbook has no row for.
-    EdgeAbsent,       ## Single primitive between two workbook states, with an empty cell.
+  FindingKind* {.pure.} = enum ## Name a way the workbook and the model relate.
+    StateDeferred,    ## State that rests a hand on the body, outside this model.
+    FrameAbsent,      ## Frame the model derives that the workbook has no row for.
+    EdgeAbsent,       ## Single primitive between two checkable states, cell empty.
     ReverseAbsent,    ## Filled cell whose mirror cell is empty, though moves reverse.
     EdgeCompound,     ## Cell naming a sequence, so a route rather than a move.
     HelperDiffers,    ## Cell naming a primitive other than the derived one.
-    EdgeUnsupported   ## Filled cell the physics gives no route for.
+    EdgeUnsupported   ## Filled cell the model gives no single primitive for.
 
-  Finding* = object ## Hold one disagreement between the workbook and the model.
+  Finding* = object ## Hold one thing the audit has to say about the workbook.
     kind*: FindingKind
-    subject*: string ## Frame or pair of frames the finding concerns.
+    subject*: string ## Frame, state or pair of states the finding concerns.
     detail*: string  ## What the model says, in the ontology's vocabulary.
 
 
-func auditFrames(convention: Convention): seq[Finding] =
-  ## Report frames the idiom admits that the workbook never names.
-  for target in convention.admitted:
+func auditStates(): seq[Finding] =
+  ## Report the states held back for want of a place on the body.
+  for name in DEFERRED_STATES:
+    var touched = 0
+    for cell in CELLS:
+      if cell.source == name or cell.destination == name:
+        inc touched
+    result.add Finding(
+      kind: FindingKind.StateDeferred,
+      subject: name,
+      detail: "rests the lead's right hand on the follow rather than in their " &
+        "hand, so it waits for the rotation axis; " & $touched &
+        " of the sheet's " & $CELLS.len & " cells touch it",
+    )
+
+
+func auditFrames(): seq[Finding] =
+  ## Report frames the model derives that the workbook never names.
+  for target in FRAMES:
     if workbookName(target).isSome:
       continue
     result.add Finding(
       kind: FindingKind.FrameAbsent,
-      subject: target.title,
-      detail: target.describe & " is admitted by the idiom and has " &
-        $moves(target, convention).len & " moves, but the sheet has no row for it",
+      subject: target.describe,
+      detail: "the model derives " & $moves(target).len &
+        " moves from it, and the sheet has no row for it",
     )
 
 
-func auditCells(convention: Convention): seq[Finding] =
-  ## Report cells that disagree with the primitive the physics gives.
+func auditCells(): seq[Finding] =
+  ## Report cells that disagree with the primitive the model gives.
   for cell in CELLS:
+    if cell.source.isDeferred or cell.destination.isDeferred:
+      continue
     let
       source = workbookFrame(cell.source).get
       destination = workbookFrame(cell.destination).get
@@ -204,21 +245,19 @@ func auditCells(convention: Convention): seq[Finding] =
       words = readCell(cell.text)
       subject = cell.source & " -> " & cell.destination
     if words.len > 1:
-      let steps = route(source, destination, convention)
       result.add Finding(
         kind: FindingKind.EdgeCompound,
         subject: subject,
         detail: "cell names " & $words.len & " helpers; the model derives a route of " &
-          $steps.len & " primitives, so this is a path and not a move",
+          $route(source, destination).len & " primitives, so this is a path, not a move",
       )
       continue
     if helper.isNone:
-      let steps = route(source, destination, convention)
       result.add Finding(
         kind: FindingKind.EdgeUnsupported,
         subject: subject,
-        detail: "no single primitive joins these frames; shortest route is " &
-          $steps.len & " primitives",
+        detail: "no single primitive joins these frames; the shortest route is " &
+          $route(source, destination).len & " primitives",
       )
       continue
     let named = readHelper(words[0])
@@ -231,11 +270,12 @@ func auditCells(convention: Convention): seq[Finding] =
       )
 
 
-func auditEdges(convention: Convention): seq[Finding] =
-  ## Report moves between named states that the workbook leaves blank.
+func auditEdges(): seq[Finding] =
+  ## Report moves between checkable states that the workbook leaves blank.
   for source_name in WORKBOOK_STATES:
     for destination_name in WORKBOOK_STATES:
-      if source_name == destination_name:
+      if source_name == destination_name or source_name.isDeferred or
+          destination_name.isDeferred:
         continue
       let
         source = workbookFrame(source_name).get
@@ -258,8 +298,8 @@ func auditEdges(convention: Convention): seq[Finding] =
         result.add Finding(
           kind: FindingKind.EdgeAbsent,
           subject: subject,
-          detail: "the model derives " & HELPER_MANNERS[helper.get] &
-            ": " & phrase(source, Move(
+          detail: "the model derives " & HELPER_MANNERS[helper.get] & ": " &
+            phrase(source, Move(
               helper: helper.get,
               side: actingSide(source, destination, helper.get),
               to: destination,
@@ -267,8 +307,9 @@ func auditEdges(convention: Convention): seq[Finding] =
         )
 
 
-func audit*(convention = Convention.Salsa): seq[Finding] =
-  ## Report every disagreement between the workbook's `base` sheet and the model.
-  result.add auditFrames(convention)
-  result.add auditCells(convention)
-  result.add auditEdges(convention)
+func audit*(): seq[Finding] =
+  ## Report everything the model has to say about the workbook's `base` sheet.
+  result.add auditStates()
+  result.add auditFrames()
+  result.add auditCells()
+  result.add auditEdges()

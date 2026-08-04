@@ -1,11 +1,11 @@
 ## Model the frame two dancers hold, and name it in the vocabulary of the dance.
 ##
 ## A *frame* is everything the two bodies hold at one instant: which hand of the
-## lead is on which place of the follow, and how the arms lie when they overlap.
+## lead holds which hand of the follow, and how the arms lie where they overlap.
 ## It is the state of the ontology.  Every non-rotating move is a change of
 ## frame, and every change is derived from three physical facts:
 ##
-## - a hand holds at most one place, and a hand of the follow is held by at most
+## - a hand holds at most one hand, and a hand of the follow is held by at most
 ##   one hand of the lead;
 ## - the partners face each other, so a lead hand reaches the *opposite* hand of
 ##   the follow without crossing the midline between the bodies, and the
@@ -15,8 +15,12 @@
 ##
 ## The third fact is why `Left-to-left and Right-to-right` has an over/under
 ## distinction and `Left-to-right and Right-to-left` does not: only the first
-## pair crosses.  Nothing here knows about rotation; see `rotation.nim` for the
-## unfinished axis and what it would add.
+## pair crosses.
+##
+## Only hands connect here.  A hand resting on a partner's body is real and is
+## deliberately absent: nothing in the hand-to-hand ontology depends on it, and
+## where it does matter is in stopping a turn, so it belongs with the rotation
+## axis in `rotation.nim`.
 
 {.experimental: "strictFuncs".}
 
@@ -30,23 +34,18 @@ type
   Side* {.pure.} = enum ## Name a side of a body, and so one hand of the lead.
     Left, Right
 
-  Site* {.pure.} = enum ## Name a place on the follow that one lead hand can hold.
-    LeftHand, RightHand, Torso
+  Site* {.pure.} = enum ## Name a hand of the follow that one lead hand can hold.
+    LeftHand, RightHand
 
   Frame* = object ## Hold every connection between the two bodies at one instant.
-    hold*: array[Side, Option[Site]] ## Place each lead hand holds, where it holds one.
+    hold*: array[Side, Option[Site]] ## Hand each lead hand holds, where it holds one.
     over*: Option[Side]              ## Lead arm lying over the other, where they overlap.
-
-  Convention* {.pure.} = enum ## Select the frames one dance idiom admits.
-    Physical,                 ## Admit every frame two humanoid bodies can hold.
-    Salsa                     ## Admit only frames salsa leads use.
 
 
 const SITE_OPTIONS = [
   none(Site),
   some(Site.LeftHand),
   some(Site.RightHand),
-  some(Site.Torso),
 ]
 
 
@@ -87,10 +86,6 @@ func other*(side: Side): Side =
 
 func hasOverlap*(frame: Frame): bool =
   ## Test whether both forearms cross the midline and so lie on top of each other.
-  ##
-  ## Only a hand-to-hand pair can overlap.  A torso connection travels around the
-  ## partner rather than through the space between the bodies, so it passes under
-  ## nothing; this is a modelling decision, not a measurement.
   frame.hold[Side.Left] == some(crossedSite(Side.Left)) and
     frame.hold[Side.Right] == some(crossedSite(Side.Right))
 
@@ -108,13 +103,10 @@ func countHolds*(frame: Frame): int =
 func isValid*(frame: Frame): bool =
   ## Test the two laws every frame obeys.
   ##
-  ## One hand of the follow cannot be held twice; a torso may take both lead
-  ## hands, which is an embrace.  An arm order is recorded exactly when the
-  ## forearms overlap, so equal frames cannot differ by an unobservable field.
-  let
-    left = frame.hold[Side.Left]
-    right = frame.hold[Side.Right]
-  if left.isSome and left == right and left != some(Site.Torso):
+  ## One hand of the follow cannot be held twice.  An arm order is recorded
+  ## exactly where the forearms overlap, so two frames that a dancer cannot tell
+  ## apart cannot be different values.
+  if frame.hold[Side.Left].isSome and frame.hold[Side.Left] == frame.hold[Side.Right]:
     return false
   frame.over.isSome == frame.hasOverlap
 
@@ -122,8 +114,9 @@ func isValid*(frame: Frame): bool =
 func reflect*(frame: Frame): Frame =
   ## Mirror a frame through the plane between the bodies, swapping left and right.
   ##
-  ## Reflection is a symmetry of the physics: the whole ontology must be
-  ## invariant under it.  Where it is not, the asymmetry comes from an idiom.
+  ## Reflection is a symmetry of the physics, so the whole ontology is invariant
+  ## under it.  Anywhere it is not, the asymmetry has come from an idiom rather
+  ## than from the bodies.
   for side in Side:
     result.hold[other(side)] =
       if frame.hold[side].isNone:
@@ -132,7 +125,6 @@ func reflect*(frame: Frame): Frame =
         case frame.hold[side].get
         of Site.LeftHand: some(Site.RightHand)
         of Site.RightHand: some(Site.LeftHand)
-        of Site.Torso: some(Site.Torso)
   result.over =
     if frame.over.isNone: none(Side) else: some(other(frame.over.get))
 
@@ -153,7 +145,7 @@ func constructFrames(): seq[Frame] {.compileTime.} =
 
 
 const FRAMES* = constructFrames()
-  ## Hold every frame two facing humanoid bodies can take, in display order.
+  ## Hold every frame two facing humanoid bodies can take hand to hand.
 
 
 func frameIndex*(frame: Frame): int =
@@ -162,23 +154,6 @@ func frameIndex*(frame: Frame): int =
     if candidate == frame:
       return index
   -1
-
-
-func admits*(convention: Convention; frame: Frame): bool =
-  ## Test whether a dance idiom admits a frame.
-  ##
-  ## Salsa gives the lead's right arm the job of holding the follow's back, so
-  ## the mirrored frames and the embrace are physical but not idiomatic.
-  case convention
-  of Convention.Physical: true
-  of Convention.Salsa: frame.hold[Side.Left] != some(Site.Torso)
-
-
-iterator admitted*(convention: Convention): Frame =
-  ## Enumerate the frames one idiom admits, in display order.
-  for frame in FRAMES:
-    if convention.admits(frame):
-      yield frame
 
 
 
@@ -192,11 +167,10 @@ func leadName*(side: Side): string =
 
 
 func followName*(site: Site): string =
-  ## Name a place on the follow, in lower case as the ontology writes it.
+  ## Name a hand of the follow, in lower case as the ontology writes it.
   case site
   of Site.LeftHand: "left"
   of Site.RightHand: "right"
-  of Site.Torso: "torso"
 
 
 func describeConnection*(side: Side; site: Site; joiner = "-to-"): string =
@@ -205,10 +179,10 @@ func describeConnection*(side: Side; site: Site; joiner = "-to-"): string =
 
 
 func describe*(frame: Frame): string =
-  ## Name a frame structurally, in the ontology's own vocabulary.
+  ## Name a frame in the vocabulary of the ontology.
   case frame.countHolds
   of 0:
-    "no connection"
+    "open"
   of 1:
     let side = if frame.hold[Side.Left].isSome: Side.Left else: Side.Right
     describeConnection(side, frame.hold[side].get, " to ")
@@ -232,25 +206,6 @@ func position*(frame: Frame): string =
   plain.describe
 
 
-func idiom*(frame: Frame): Option[string] =
-  ## Get the dance-floor name of a frame, where salsa has one.
-  if frame.countHolds == 0:
-    return some("open")
-  if frame.hold[Side.Right] != some(Site.Torso):
-    return none(string)
-  if frame.hold[Side.Left].isNone:
-    return some("half-closed")
-  if frame.hold[Side.Left] == some(Site.RightHand):
-    return some("closed")
-  none(string)
-
-
-func title*(frame: Frame): string =
-  ## Name a frame the way a dancer would, preferring the idiom's word.
-  let name = frame.idiom
-  if name.isSome: name.get else: frame.describe
-
-
 func key*(frame: Frame): string =
   ## Encode a frame as a short stable identifier for storage and markup.
   for side in Side:
@@ -261,7 +216,6 @@ func key*(frame: Frame): string =
         case frame.hold[side].get
         of Site.LeftHand: 'l'
         of Site.RightHand: 'r'
-        of Site.Torso: 't'
     )
   result.add(
     if frame.over.isNone: '.'
@@ -281,7 +235,6 @@ func fromKey*(key: string): Option[Frame] =
       of '-': none(Site)
       of 'l': some(Site.LeftHand)
       of 'r': some(Site.RightHand)
-      of 't': some(Site.Torso)
       else: return none(Frame)
   frame.over =
     case key[2]
