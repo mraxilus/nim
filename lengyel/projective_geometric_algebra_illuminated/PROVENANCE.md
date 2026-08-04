@@ -1093,6 +1093,74 @@ browser page from tracked sources plus those vendored faces, and `PROVENANCE.md`
 `STYLE.md`, `REQUIREMENTS.md` and `dependencies.list` are tracked alongside the code.
 
 
+Hold Feedback, Help And Keys
+---
+A touch long-press was a 500 ms wait with **no feedback of any kind** -- a `setTimeout` in
+`glue.js` and nothing on screen -- so a hold could not be told from a tap that had not
+registered. `interaction` now owns it: `MILLISECONDS_LONG_PRESS`, a `Hold`, and
+`progressHold`/`isHoldMature` derived from it. The clock moved out of JavaScript because
+how long a hold takes and whether one is due are rules about the gesture, and because a
+timer that fires on its own cannot draw anything.
+
+**The indicator is the marker itself, drawn part-built.** `markerFor` gained one
+`progress` parameter, defaulting to 1, and each outline interprets it in the terms that
+outline is read in:
+
+| Shape | Fills by |
+|-------|----------|
+| Point (`Ring`) | Sweeping clockwise from twelve o'clock. It is drawn at one fixed
+  size, so a ring that grew would read as the point swelling. |
+| Line (`Rails`) | Both rails running out from the support toward each horizon. |
+| Plane (`Loop`) | Its circle opening from the disc's own centre out to the rim gap. |
+
+Rails are shortened **after projecting**, along the screen segment. Scaling the world reach
+walks the head back toward the *eye*, because the far end is a point one horizon radius
+from the eye along the axis -- that was written first and was wrong. Interpolating on
+screen still keeps every partial rail exactly on the line's own projection (both endpoints
+lie on it, and a projected straight segment is straight) and is what makes the growth read
+as even: a world-space interpolation toward a point that distant spends almost its whole
+range within a few pixels of the vanishing point. The plane's circle scales in world units
+on the plane, so every intermediate circle lies on it as exactly as the finished one.
+
+**Progress is linear, never eased**, unlike every other animation here. This is a clock
+being shown rather than a transition being softened, and an eased clock appears to stall
+just before it fires -- precisely where a reader is deciding whether the hold is working.
+
+A line or plane **at horizon** has no marker at all, so a hold on one still fills nothing.
+Known, and deliberately not invented around.
+
+Both front-ends carry a `?` in the bottom-right corner, at least 44 px (Apple's guideline;
+WCAG 2.5.8 asks 24). It opens the same table, `help.lut_help_entries`, which **both UIs
+render** -- the desktop wrote the controls out in its panel and the browser wrote them in a
+hint, the two had drifted, and only one could be got back. The construct rows are derived
+from `interaction.dragForButton` and each operation's own `outcome`, so rebinding a button
+rewrites the help with it. `dragForButton` is also now the single statement of which button
+carries which operation: each render path translates only its own numbering (SDL's and the
+DOM's differ) into `PointerButton` and asks. The entry count is asserted against the array
+length at compile time, which caught a miscount immediately.
+
+The hint **persists until the reader first acts** -- a gesture that moves the camera or
+changes the scene, not a hover -- rather than for four seconds. A timer cuts off whoever
+reads slowly, and a first-time reader is exactly who reads slowly.
+
+Keyboard exists at all for the first time; before this there was none in either build
+(`grep keydown`, `grep SDLK_`, both empty), which fails **WCAG 2.1.1 at Level A**. `Escape`
+sheds what is in progress, innermost first; `ctrl`/`cmd`+`Z` and `ctrl`+`shift`+`Z` step
+the timeline. Both reach the timeline through one function per build (`panel.stepHistory`,
+`glue.js`'s own `stepHistory`) rather than through the button: routing the browser
+shortcut through `button_undo.click()` made it depend on that button's `disabled`
+attribute, refreshed on the low-cadence UI tick, so a key pressed in the frames after an
+edit did nothing while the timeline plainly had something on it. Measured while driving
+it, not suspected.
+
+On the desktop `Escape` **no longer quits** -- `ctrl+Q` does. Pressing escape twice to be
+sure a drag had cancelled would otherwise have thrown away an unsaved scene.
+
+**Still open**: this is a partial 2.1.1 fix. There is no way to tab between objects or to
+move the camera from the keyboard, so the canvas itself remains unreachable without a
+pointer.
+
+
 Verification Tools
 ---
 `tools/verify.sh` runs everything below, in cheapest-first order, and fails on the first

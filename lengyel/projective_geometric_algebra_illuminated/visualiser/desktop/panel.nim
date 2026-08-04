@@ -43,7 +43,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ./gui
-import ../core/[camera, format, history, mesh, objects, scene, selection]
+import ../core/[camera, format, help, history, mesh, objects, scene, selection]
 
 
 
@@ -139,6 +139,9 @@ type
       ## recolouring previews itself.
 
   Workbench* = object ## Hold GUI's own state between frames.
+    is_help_open*: bool ## Whether the help panel is showing. Closed at startup: the
+      ## legend below the drag line already says the common half, and a reference that
+      ## opens itself is one a returning user closes every session.
     session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
       ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
       ## later in the same frame this panel writes it, so there is no lag.
@@ -167,6 +170,11 @@ type
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
+    is_undo_requested*, is_redo_requested*: bool ## Whether a key asked to step the
+      ## timeline. Set by the key handler and consumed by the caller right after layout,
+      ## rather than stepping history from inside the event loop: `handleEvent` has no
+      ## `History` to step, and routing both the button and the key through one call is
+      ## what stops the two drifting apart.
     is_vsync_enabled*: bool ## Whether swap waits for display refresh before returning.
     microseconds_tessellate*: float ## Cost of rebuilding vertex storage, last frame.
     count_vertices*: int ## Vertices assembled, last frame.
@@ -966,6 +974,80 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
 
 
 
+#[ History Stepping ]#
+
+proc stepHistory*(
+  workbench: var Workbench; scene: var Scene; history: var History; is_undo: bool
+): bool =
+  ## Step the timeline one way, and drop whatever an open edit was staged against.
+  ##   Reports whether anything moved, so a caller may say so.
+  ##   One proc for the buttons and for the keys that do the same thing: a restored
+  ##   snapshot's slot numbers need not match the ones a session or a selection was
+  ##   holding, and that consequence is easy to remember in one place and easy to forget
+  ##   in the second.
+  result = if is_undo: history.undo(scene) else: history.redo(scene)
+  if result:
+    workbench.selection.clear()
+    workbench.session = none(EditSession)
+
+
+
+#[ Help ]#
+
+const
+  MARGIN_HELP = 16.0'f32
+    ## Hold the help affordance this far off the bottom-right corner, in pixels.
+  GAP_HELP_COLUMN = 18.0'f32
+    ## Separate an entry's action from its outcome by at least this much, so the two
+    ## columns read as columns rather than as one run-on line.
+
+func helpActionOf(entry: HelpEntry): string =
+  ## Write one entry's action as the panel draws it, indent and touch marker included.
+  ##   One writer, because the column is sized by measuring exactly what is then drawn.
+  "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
+
+
+proc layoutHelp*(workbench: var Workbench) =
+  ## Lay out the help affordance: a `?` pinned to the bottom-right corner, and the panel
+  ## it opens.
+  ##   Sited in the corner rather than inside the workbench window because it has to be
+  ##   reachable when the workbench is the thing a reader does not yet understand, and
+  ##   because the browser build puts it in the same corner -- the two UIs are 1-1 here as
+  ##   everywhere else, down to what the panel says, which both read from `help.nim`.
+  let (width, height) = (gui.viewportWidth(), gui.viewportHeight())
+  # Where the outcome column starts, measured from the widest action there actually is
+  #   rather than set by eye: an entry longer than whatever was longest when this was
+  #   written would otherwise run straight into its own outcome, which is precisely what
+  #   a hand-tuned number did here first time out.
+  var offset_outcome = 0.0'f32
+  for entry in lut_help_entries:
+    offset_outcome = max(offset_outcome, gui.textWidth(cstring(helpActionOf(entry))))
+  offset_outcome += GAP_HELP_COLUMN
+  if gui.windowBeginPinned(
+    "##help_open", width - MARGIN_HELP, height - MARGIN_HELP, 1.0, 1.0
+  ):
+    if gui.button("  ?  "): workbench.is_help_open = not workbench.is_help_open
+  gui.windowEnd()
+
+  if not workbench.is_help_open: return
+  if gui.windowBeginPinned(
+    "##help_panel", width - MARGIN_HELP, height - MARGIN_HELP - 44.0, 1.0, 1.0
+  ):
+    var topic_last = none(HelpTopic)
+    for entry in lut_help_entries:
+      if topic_last.isNone or topic_last.get != entry.topic:
+        if topic_last.isSome: gui.text("")
+        gui.separatorText(cstring(titleOf(entry.topic)))
+        topic_last = some(entry.topic)
+      # The touch rows say so in a word rather than only in a tint, so which input a line
+      #   describes survives a reader who cannot tell two greys apart.
+      gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
+      gui.sameLineAt(offset_outcome)
+      gui.text(cstring(entry.outcome))
+  gui.windowEnd()
+
+
+
 #[ Whole Workbench ]#
 
 proc layoutWorkbench*(
@@ -991,9 +1073,6 @@ proc layoutWorkbench*(
     gui.textTinted("project", project.red, project.green, project.blue)
     gui.sameLine()
     gui.text("middle click.")
-    gui.textWrapped(
-      "Drag empty space instead to move the camera: left orbits, right pans, wheel dollies."
-    )
 
     # Scene-content edits only -- camera moves are not on this timeline; see
     #   `history.nim`. Each button greys out where its own side of the timeline is empty,
@@ -1001,18 +1080,12 @@ proc layoutWorkbench*(
     #   A successful step drops any open session too: a restored snapshot's slot numbers
     #   need not match the one it was opened against.
     gui.disabledPush(not history.canUndo)
-    if gui.button("undo"):
-      if history.undo(scene):
-        workbench.selection.clear()
-        workbench.session = none(EditSession)
+    if gui.button("undo"): discard stepHistory(workbench, scene, history, is_undo = true)
     gui.disabledPop()
     gui.tooltip("Step back through scene-content edits; camera moves are not on this timeline.")
     gui.sameLine()
     gui.disabledPush(not history.canRedo)
-    if gui.button("redo"):
-      if history.redo(scene):
-        workbench.selection.clear()
-        workbench.session = none(EditSession)
+    if gui.button("redo"): discard stepHistory(workbench, scene, history, is_undo = false)
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
     gui.separator()

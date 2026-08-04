@@ -133,6 +133,10 @@ function refreshSelectionSnapshot() {
 }
 
 function onSelectionChanged(position_local) {
+  // Choosing something is itself one of the things the hint teaches, and a plain click
+  //   that selects moves the pointer far too little to trip the movement test that
+  //   dismisses it on an orbit.
+  dismissHint();
   refreshSelectionSnapshot();
   refreshSelectionMenu(position_local);
   refreshObjectsUI(); // Also re-syncs the apply controls and the row checkboxes.
@@ -215,10 +219,61 @@ document.getElementById('toggle-axes').addEventListener('click', (e) => {
 document.getElementById('toggle-grid').addEventListener('click', (e) => {
   is_grid_shown = !is_grid_shown; e.target.classList.toggle('on', is_grid_shown);
 });
-// Four seconds to read it, then a 0.6s fade. One clock: the stylesheet used to carry a
-//   transition-delay too, which ran from the moment this class was added rather than from
-//   load, so the two stacked and the hint outstayed both numbers.
-setTimeout(() => document.getElementById('hint').classList.add('hidden'), 4000);
+/* ---------------------------------------------------------------------- */
+/* Help: the hint says it once, the ? button says it whenever asked.       */
+/* ---------------------------------------------------------------------- */
+
+// The hint stays until the reader does something, rather than for a fixed four seconds.
+//   A timer cuts off whoever reads slowly, and a first-time reader is exactly who reads
+//   slowly; a reader who has already orbited has told us they do not need it. Dismissed
+//   by a gesture that moves the camera or changes the scene -- not by a hover, which is
+//   not a decision.
+let has_hint_shown = true;
+function dismissHint() {
+  if (!has_hint_shown) return;
+  has_hint_shown = false;
+  document.getElementById('hint').classList.add('hidden');
+}
+
+// Built from `help.lut_help_entries` across the bridge, so this panel and the desktop's
+//   own say the same thing by construction. Four strings per entry; see nimHelpEntries.
+const button_help = document.getElementById('btn-help');
+const panel_help = document.getElementById('help-panel');
+function buildHelp() {
+  const flat = nimHelpEntries();
+  let topic_last = null;
+  for (let i = 0; i + 3 < flat.length; i += 4) {
+    const [topic, action, outcome, touch] = [flat[i], flat[i + 1], flat[i + 2], flat[i + 3]];
+    if (topic !== topic_last) {
+      const heading = document.createElement('div');
+      heading.className = 'help-topic';
+      heading.textContent = topic;
+      panel_help.appendChild(heading);
+      topic_last = topic;
+    }
+    const row = document.createElement('div');
+    row.className = 'help-row';
+    const cell_action = document.createElement('div');
+    cell_action.className = 'help-action' + (touch ? ' help-touch' : '');
+    cell_action.textContent = action;
+    const cell_outcome = document.createElement('div');
+    cell_outcome.className = 'help-outcome';
+    cell_outcome.textContent = outcome;
+    row.appendChild(cell_action);
+    row.appendChild(cell_outcome);
+    panel_help.appendChild(row);
+  }
+}
+buildHelp();
+
+function showHelp(is_shown) {
+  panel_help.classList.toggle('show', is_shown);
+  button_help.setAttribute('aria-expanded', is_shown ? 'true' : 'false');
+}
+button_help.addEventListener('click', (e) => {
+  e.stopPropagation();
+  showHelp(!panel_help.classList.contains('show'));
+});
 
 /* ---------------------------------------------------------------------- */
 /* Undo/redo: scene-content edits only, mirrors panel.layoutWorkbench's    */
@@ -251,17 +306,70 @@ button_add.addEventListener('click', () => {
   openWorkbenchTo(null);
 });
 
-button_undo.addEventListener('click', () => {
-  // A restored snapshot's slot numbers need not match, so an open session has nothing
-  //   trustworthy left to commit against.
-  if (nimUndo()) { endEditSession(); adoptConstructionSelection(); refreshObjectsUI(); }
-  else toast('Nothing to undo.');
+// One function for the buttons and for the keys that do the same thing. The keys used to
+//   go through `button.click()`, which quietly made them depend on that button's own
+//   `disabled` attribute -- refreshed on the low-cadence UI tick, so a key pressed in the
+//   frames after an edit did nothing at all while the timeline plainly had something on
+//   it. Measured, not suspected. Mirrors `panel.stepHistory` on the desktop side.
+//   A restored snapshot's slot numbers need not match, so an open session has nothing
+//   trustworthy left to commit against and is dropped.
+function stepHistory(is_undo) {
+  if (is_undo ? nimUndo() : nimRedo()) {
+    endEditSession();
+    adoptConstructionSelection();
+    refreshObjectsUI();
+  } else {
+    toast(is_undo ? 'Nothing to undo.' : 'Nothing to redo.');
+  }
   refreshUndoRedoButtons();
-});
-button_redo.addEventListener('click', () => {
-  if (nimRedo()) { endEditSession(); adoptConstructionSelection(); refreshObjectsUI(); }
-  else toast('Nothing to redo.');
-  refreshUndoRedoButtons();
+}
+
+button_undo.addEventListener('click', () => stepHistory(true));
+button_redo.addEventListener('click', () => stepHistory(false));
+
+/* ---------------------------------------------------------------------- */
+/* Keyboard. Undo and redo were reachable only by pressing their buttons,  */
+/*   and a drag once begun had no way out at all, though `cancelDrag` has  */
+/*   existed and been tested throughout. Nothing new happens here: these   */
+/*   are second ways to reach what the buttons already do.                 */
+/* ---------------------------------------------------------------------- */
+
+document.addEventListener('keydown', (e) => {
+  // Typing in a field is not a shortcut: a coefficient or a label is edited with the very
+  //   keys these bind, and ctrl+z inside an input already means the browser's own undo.
+  const target = e.target;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+      target.isContentEditable)) {
+    return;
+  }
+
+  if (e.key === 'Escape') {
+    // Everything in progress, in the order a reader would expect to shed it: the panel
+    //   they just opened, then a menu, then the gesture underneath.
+    if (panel_help.classList.contains('show')) { showHelp(false); return; }
+    if (menu_top.classList.contains('show')) {
+      menu_top.classList.remove('show');
+      button_menu.classList.remove('on');
+      return;
+    }
+    if (nimDragActive()) { nimCancelDrag(); toast('Cancelled.'); return; }
+    nimCancelHold();
+    if (menu_selection.classList.contains('show')) { clearSelection(); return; }
+    if (session_edit !== null) { endEditSession(); refreshObjectsUI(); }
+    return;
+  }
+
+  // Ctrl on every platform, and cmd as well on macOS, where ctrl+z is not what a reader
+  //   with muscle memory presses.
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    stepHistory(true);
+  } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+    e.preventDefault();
+    stepHistory(false);
+  }
 });
 
 function refreshUndoRedoButtons() {
@@ -1023,21 +1131,40 @@ function svgEl(tag, attrs) {
 // from framebuffer pixels to CSS pixels the way every other overlay here does.
 // Rails arrive as consecutive pairs, one per drawn piece, so the pairwise loop below
 // covers a line clipped into any number of them without knowing how many to expect.
-function appendMarker(slot, alpha, w, h) {
-  const marker = nimSelectionMarker(slot, canvas.width, canvas.height);
+function appendMarker(slot, alpha, w, h, progress) {
+  const marker = nimSelectionMarker(slot, canvas.width, canvas.height, progress);
   if (marker.length === 0) return;
-  const kind = marker[0], is_closed = marker[1] > 0.5, radius = marker[2];
+  const kind = marker[0], is_closed = marker[1] > 0.5;
+  const radius = marker[2], fraction = marker[3];
   const stroke = 'rgba(255,255,255,' + alpha + ')';
   const points = [];
-  for (let i = 3; i + 1 < marker.length; i += 2) {
+  for (let i = 4; i + 1 < marker.length; i += 2) {
     points.push([marker[i] * (w / canvas.width), marker[i + 1] * (h / canvas.height)]);
   }
 
   if (kind === MARKER_RING) {
-    svg_overlay.appendChild(svgEl('circle', {
-      cx: points[0][0], cy: points[0][1], r: radius,
-      fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-    }));
+    // A whole ring stays a <circle>, the element it has always been, so a marker that is
+    // not filling draws exactly as it did before holds were animated. Only a partial one
+    // becomes an arc path.
+    if (fraction >= 1) {
+      svg_overlay.appendChild(svgEl('circle', {
+        cx: points[0][0], cy: points[0][1], r: radius,
+        fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+      }));
+    } else if (fraction > 0) {
+      // Clockwise from twelve o'clock, measuring the angle from the top so the sweep
+      // reads the way every other progress dial does. With y downward, SVG's positive
+      // sweep direction (flag 1) is that same clockwise sense.
+      const [cx, cy] = points[0];
+      const turn = fraction * 2 * Math.PI;
+      const ex = cx + radius * Math.sin(turn), ey = cy - radius * Math.cos(turn);
+      svg_overlay.appendChild(svgEl('path', {
+        d: 'M ' + cx + ',' + (cy - radius) +
+           ' A ' + radius + ',' + radius + ' 0 ' + (fraction > 0.5 ? 1 : 0) + ',1 ' +
+           ex + ',' + ey,
+        fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+      }));
+    }
   } else if (kind === MARKER_RAILS) {
     for (let i = 0; i < points.length; i += 2) {
       svg_overlay.appendChild(svgEl('line', {
@@ -1061,11 +1188,20 @@ function refreshOverlay(cursor) {
   // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
   // marker at lower opacity, so both read as one family and hovering a line previews
   // exactly what selecting it will draw.
-  for (const slot of slots_selection) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h);
+  for (const slot of slots_selection) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
+
+  // A press maturing into a selection fills that item's own marker as it goes, so the
+  // wait reads as filling rather than as nothing happening. Drawn at the selected weight
+  // it is about to become, and skipped for an item already selected, whose finished
+  // marker is on screen already.
+  const slot_hold = nimHoldSlot();
+  if (slot_hold >= 0 && !slots_selection.includes(slot_hold)) {
+    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(performance.now()));
+  }
 
   const slot_hover = nimHoverSlot();
-  if (slot_hover >= 0 && !slots_selection.includes(slot_hover)) {
-    appendMarker(slot_hover, ALPHA_MARKER_HOVER, w, h);
+  if (slot_hover >= 0 && slot_hover !== slot_hold && !slots_selection.includes(slot_hover)) {
+    appendMarker(slot_hover, ALPHA_MARKER_HOVER, w, h, 1);
   }
 
   if (nimDragActive()) {
@@ -1106,8 +1242,8 @@ let cursor_last = null;
 
 // Touch long-press-to-select / tap-to-toggle state.
 let touch_down_at = null, position_touch_down = null, has_touch_moved = false;
-let timer_touch_long_press = null, has_long_press_fired = false;
-const TAP_MAX_MS = 350, TAP_MAX_MOVE = 12, LONG_PRESS_MS = 500;
+let has_long_press_fired = false;
+const TAP_MAX_MS = 350, TAP_MAX_MOVE = 12;
 
 // Mouse click-vs-drag disambiguation state -- a plain click (no movement) selects/
 //   shift-selects; an actual drag still applies join/meet/project exactly as before.
@@ -1157,24 +1293,17 @@ canvas.addEventListener('pointerdown', (e) => {
     position_touch_down = local;
     has_touch_moved = false;
     has_long_press_fired = false;
-    clearTimeout(timer_touch_long_press);
-    timer_touch_long_press = setTimeout(() => {
-      if (has_touch_moved) return; // Moved into an orbit gesture before the hold matured.
-      const rect2 = canvas.getBoundingClientRect();
-      const ratio_pixel_now = canvas.width / rect2.width;
-      nimUpdateCursor(
-        position_touch_down.x * ratio_pixel_now, position_touch_down.y * ratio_pixel_now,
-      );
-      nimUpdateHover(canvas.width, canvas.height);
-      const hovered = nimHoverSlot();
-      if (hovered >= 0) {
-        has_long_press_fired = true;
-        toggleSelection(hovered, position_touch_down);
-      }
-    }, LONG_PRESS_MS);
+    // Pick the item under the finger now and hand the press to Nim, which owns how long a
+    //   hold takes and whether one is due. The frame loop asks it both, which is also what
+    //   fills the item's own marker -- a timer firing on its own could not draw anything.
+    const ratio_pixel_touch = canvas.width / rect.width;
+    nimUpdateCursor(local.x * ratio_pixel_touch, local.y * ratio_pixel_touch);
+    nimUpdateHover(canvas.width, canvas.height);
+    const pressed = nimHoverSlot();
+    if (pressed >= 0) nimBeginHold(pressed, performance.now());
   } else {
     touch_down_at = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
-    clearTimeout(timer_touch_long_press);
+    nimCancelHold();
   }
   if (pointers.size === 2) {
     const points_flat = [...pointers.values()];
@@ -1194,6 +1323,7 @@ canvas.addEventListener('pointermove', (e) => {
       Math.hypot(e.clientX - position_mouse_down.x, e.clientY - position_mouse_down.y);
     if (reach_mouse > MOUSE_CLICK_MAX_MOVE) {
       has_mouse_moved = true;
+      dismissHint();
     }
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
       // Re-check hover for the drag's own destination preview.
@@ -1224,7 +1354,8 @@ canvas.addEventListener('pointermove', (e) => {
     Math.hypot(cursor_last.x - position_touch_down.x, cursor_last.y - position_touch_down.y);
   if (reach_touch > TAP_MAX_MOVE) {
     has_touch_moved = true;
-    clearTimeout(timer_touch_long_press);
+    dismissHint();
+    nimCancelHold(); // Moved into an orbit gesture before the hold matured.
   }
 
   if (pointers.size === 1) {
@@ -1293,9 +1424,10 @@ function releasePointer(e) {
   // Touch: a tap is a same-finger down+up within time/distance bounds, with no second
   // finger ever joining and no long-press already having fired -- resolves into a
   // selection toggle (see `handleTap`).
-  clearTimeout(timer_touch_long_press);
-  if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved && pointers.size === 1 &&
-      performance.now() - touch_down_at < TAP_MAX_MS) {
+  nimCancelHold(); // Released, whether or not the hold had matured; the frame that matured
+    //   it has already selected the item.
+  if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved &&
+      pointers.size === 1 && performance.now() - touch_down_at < TAP_MAX_MS) {
     handleTap(position_touch_down);
   }
   touch_down_at = null;
@@ -1312,6 +1444,7 @@ canvas.addEventListener('pointerleave', (e) => { if (e.buttons === 0) releasePoi
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  dismissHint();
   nimCameraDolly(Math.exp(e.deltaY * 0.0012));
 }, { passive: false });
 
@@ -1489,6 +1622,13 @@ document.addEventListener('pointerdown', (e) => {
       e.target !== canvas && !drawer.contains(e.target) && !row_chip.contains(e.target)) {
     clearSelection();
   }
+  // Help panel: same shape of guard, its own state/target. Closed by a tap anywhere
+  //   outside it and outside its own button, including on the canvas -- unlike the
+  //   selection menu, nothing about it is mid-gesture, so there is no resolution to race.
+  if (panel_help.classList.contains('show') && !panel_help.contains(e.target) &&
+      e.target !== button_help && !button_help.contains(e.target)) {
+    showHelp(false);
+  }
   // Top menu: same shape of guard, its own state/target -- a tap landing outside the
   //   popover and outside its own trigger button closes it.
   if (menu_top.classList.contains('show') && !menu_top.contains(e.target)
@@ -1531,6 +1671,17 @@ function frame() {
   const now_milliseconds = performance.now();
   recordFrameTime(now_milliseconds - time_frame_last);
   time_frame_last = now_milliseconds;
+
+  // A press that has now lasted long enough selects its item. Checked here rather than by
+  //   a timer that fires on its own, so that the moment the marker finishes filling is the
+  //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
+  //   progress the marker was just drawn at, so the two cannot disagree by a frame.
+  if (nimHoldMature(now_milliseconds)) {
+    const slot_matured = nimHoldSlot();
+    nimCancelHold();
+    has_long_press_fired = true;
+    toggleSelection(slot_matured, position_touch_down);
+  }
 
   const data = nimBuildFrame(aspect, now_seconds, is_axes_shown, is_grid_shown);
 

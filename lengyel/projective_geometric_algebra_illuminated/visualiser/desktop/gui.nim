@@ -82,6 +82,12 @@ proc frameEnd*() {.importc: "guiFrameEnd".}
 proc windowPlace*(x, y, width, height: cfloat) {.importc: "guiWindowPlace".}
 proc windowBegin*(name: cstring): bool {.importc: "guiWindowBegin".}
 proc windowEnd*() {.importc: "guiWindowEnd".}
+proc viewportWidth*(): cfloat {.importc: "guiViewportWidth".}
+proc viewportHeight*(): cfloat {.importc: "guiViewportHeight".}
+proc windowBeginPinned*(name: cstring; x, y, pivot_x, pivot_y: cfloat): bool
+  {.importc: "guiWindowBeginPinned".}
+  ## Begin an undecorated window pinned to `x`/`y`, `pivot` naming which of its own
+  ## corners that is; closed with `windowEnd` like any other.
 proc childBegin*(name: cstring; width, height: cfloat): bool {.importc: "guiChildBegin".}
 proc childEnd*() {.importc: "guiChildEnd".}
 proc text*(text: cstring) {.importc: "guiText".}
@@ -122,6 +128,9 @@ proc groupEnd*() {.importc: "guiGroupEnd".}
 proc buttonSmallWidth*(label: cstring): cfloat {.importc: "guiButtonSmallWidth".}
   ## Report the width `buttonSmall` would draw this label at, for a caller that has to know
   ## before it places anything.
+proc textWidth*(text: cstring): cfloat {.importc: "guiTextWidth".}
+  ## Measure text as it will be drawn, in pixels, for a caller sizing a column from what
+  ## actually goes in it.
 proc alignRight*(width: cfloat) {.importc: "guiAlignRight".}
   ## Continue the current line with `width` reserved against the right edge, so a run of
   ## controls ends flush there whatever sits to its left.
@@ -158,6 +167,10 @@ proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayLine".}
 proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayCircle".}
+proc overlayArc*(
+  cx, cy, radius, fraction, red, green, blue, alpha, thickness: cfloat
+) {.importc: "guiOverlayArc".}
+  ## Stroke `fraction` of a circle, clockwise from twelve o'clock; a whole one at 1.
 proc overlayPolyline*(
   points: ptr cfloat; count: cint; red, green, blue, alpha, thickness: cfloat;
   is_closed: cint

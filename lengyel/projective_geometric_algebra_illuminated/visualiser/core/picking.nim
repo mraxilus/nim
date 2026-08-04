@@ -67,6 +67,21 @@ type ScreenPosition* = object ## Hold projected position, in window pixels, y do
   depth*: float ## View-space depth; positive and smaller is nearer the eye.
 
 
+func towards*(start, finish: ScreenPosition; fraction: float): ScreenPosition =
+  ## Step `fraction` of the way from `start` to `finish`, along the screen.
+  ##   Returns `finish` itself at a fraction of 1 rather than computing
+  ##   `start + 1.0*(finish - start)`, which is the same point in arithmetic and not
+  ##   always the same bits: an overlay that shortens a segment for an animation has to
+  ##   land on exactly the segment it drew before the animation existed, or every frame
+  ##   the animation is *not* running moves by a rounding step.
+  if fraction >= 1.0: return finish
+  ScreenPosition(
+    x: start.x + fraction*(finish.x - start.x),
+    y: start.y + fraction*(finish.y - start.y),
+    depth: start.depth + fraction*(finish.depth - start.depth),
+  )
+
+
 
 #[ Screen Projection ]#
 

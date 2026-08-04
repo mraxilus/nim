@@ -44,8 +44,8 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  camera, format, history, interaction, marker, mesh, objects, picking, scene, selection,
-  storyboard,
+  camera, format, help, history, interaction, marker, mesh, objects, picking, scene,
+  selection, storyboard,
 ]
 
 
@@ -683,16 +683,63 @@ proc nimCanRedo(): bool {.exportc.} =
 
 proc nimDragOperationForButton(dom_button: cint): cint {.exportc.} =
   ## Name the drag operation a pointer button starts, as a `DragOperation` ordinal, or
-  ## `SLOT_NONE` for a button that starts none -- the browser's own counterpart to
-  ## `visualiser.dragOperationFor`, duplicated rather than imported since that proc is
-  ## tied to SDL's own button numbering (`visualiser.nim` does not compile under
-  ## `nim js`) while this one is tied to `PointerEvent.button`'s (0 left, 1 middle, 2
-  ## right -- a different numbering for the same three physical buttons).
-  case dom_button
-  of 0: cint(DragOperation.Join)
-  of 2: cint(DragOperation.Meet)
-  of 1: cint(DragOperation.Project)
-  else: SLOT_NONE
+  ## `SLOT_NONE` for a button that starts none.
+  ##   Only the *numbering* is this build's own: `PointerEvent.button` counts 0 left, 1
+  ## middle, 2 right, where SDL counts them differently, so each render path translates
+  ## into `interaction.PointerButton` and asks the one shared rule which operation that
+  ## button carries. Which button does what used to be written out here as well, and the
+  ## help panel would have made it a third copy.
+  let button = case dom_button
+    of 0: some(PointerButton.Left)
+    of 1: some(PointerButton.Middle)
+    of 2: some(PointerButton.Right)
+    else: none(PointerButton)
+  if button.isNone: return SLOT_NONE
+  let drag = dragForButton(button.get)
+  if drag.isNone: SLOT_NONE else: cint(drag.get)
+
+
+proc nimHelpEntries(): seq[cstring] {.exportc.} =
+  ## Report every help entry flat, four strings each: topic heading, action, outcome, and
+  ## `"touch"` or `""` for whether it is the touch way of doing it.
+  ##   Flat rather than an array of records, for the same reason `nimSelectionMarker` is:
+  ##   an object crossing this boundary would be a second shape to keep in step, and the
+  ##   presentation layer only ever walks these in order to build rows.
+  ##   The entries themselves are `help.lut_help_entries`, which the desktop panel renders
+  ##   too -- neither UI writes this text.
+  for entry in lut_help_entries:
+    result.add([
+      cstring(titleOf(entry.topic)), cstring(entry.action), cstring(entry.outcome),
+      cstring(if entry.is_touch: "touch" else: ""),
+    ])
+
+
+proc nimBeginHold(slot: cint; now: cfloat) {.exportc.} =
+  ## Forward to `interaction.beginHold`; see its own doc comment.
+  interaction.beginHold(g_interaction, int(slot), float(now))
+
+
+proc nimCancelHold() {.exportc.} =
+  ## Forward to `interaction.cancelHold`; see its own doc comment.
+  interaction.cancelHold(g_interaction)
+
+
+proc nimHoldSlot(): cint {.exportc.} =
+  ## Report which item a press in progress is filling, or `SLOT_NONE` where none is.
+  if g_interaction.hold.isSome: cint(g_interaction.hold.get.slot) else: SLOT_NONE
+
+
+proc nimHoldProgress(now: cfloat): cfloat {.exportc.} =
+  ## Forward to `interaction.progressHold`; see its own doc comment.
+  ##   Exported rather than left to a subtraction in the presentation layer: how long a
+  ##   hold takes is a rule about this gesture, and a second copy of it in JS is a second
+  ##   thing to keep in step with the marker it is supposed to be filling.
+  cfloat(progressHold(g_interaction, float(now)))
+
+
+proc nimHoldMature(now: cfloat): bool {.exportc.} =
+  ## Forward to `interaction.isHoldMature`; see its own doc comment.
+  isHoldMature(g_interaction, float(now))
 
 
 proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
@@ -793,14 +840,19 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   @[cfloat(screen.x), cfloat(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)]
 
 
-proc nimSelectionMarker(slot, width, height: cint): seq[float32] {.exportc.} =
+proc nimSelectionMarker(slot, width, height: cint; progress: cfloat): seq[float32]
+  {.exportc.} =
   ## Shape this item's own selection/hover marker and report it flat, for the browser's
-  ## SVG overlay to stroke: `[kind, is_closed, radius, x0, y0, x1, y1, ...]`.
+  ## SVG overlay to stroke: `[kind, is_closed, radius, fraction, x0, y0, x1, y1, ...]`.
   ##   `kind` is `marker.MarkerKind`'s own ordinal -- 0 a ring about a point, 1 a pair of
   ##   rails flanking a line (four points, two per rail), 2 a polyline lying on a plane.
-  ##   `radius` is meaningful for a ring alone and 0 otherwise; `is_closed` for a
-  ##   polyline alone. Point count is whatever is left, so a caller reads it off the
-  ##   length rather than being handed a count it could disagree with.
+  ##   `radius` and `fraction` are meaningful for a ring alone and 0 otherwise;
+  ##   `is_closed` for a polyline alone. Point count is whatever is left, so a caller
+  ##   reads it off the length rather than being handed a count it could disagree with.
+  ##   `progress` draws the marker part-built for a press maturing into a selection; pass
+  ##   1 for a finished one. What a partial marker looks like is `marker.markerFor`'s own
+  ##   decision, not this bridge's and not the overlay's -- a ring comes back swept, rails
+  ##   come back short, a loop comes back small, and the overlay strokes what it is given.
   ##   Empty where there is nothing to draw -- a dead slot, geometry with no shape, or an
   ##   object at horizon, which draws fixed to the eye with nothing to surround. That is
   ##   the same "nothing to draw" answer `nimAnchorScreen` gives, and callers here read a
@@ -812,15 +864,16 @@ proc nimSelectionMarker(slot, width, height: cint): seq[float32] {.exportc.} =
     vp = g_camera.initMatrixViewProjection(float(width) / float(height))
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
-      g_camera, vp, int(width), int(height),
+      g_camera, vp, int(width), int(height), float(progress),
     )
   if shaped.isNone: return
 
   let marker = shaped.get
-  result = @[cfloat(ord(marker.kind)), 0.0'f32, 0.0'f32]
+  result = @[cfloat(ord(marker.kind)), 0.0'f32, 0.0'f32, 0.0'f32]
   case marker.kind
   of MarkerKind.Ring:
     result[2] = cfloat(marker.radius)
+    result[3] = cfloat(marker.fraction)
     result.add([cfloat(marker.centre.x), cfloat(marker.centre.y)])
   of MarkerKind.Rails:
     for i in 0 ..< marker.count_segment:

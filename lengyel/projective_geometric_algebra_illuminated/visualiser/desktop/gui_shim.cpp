@@ -115,6 +115,26 @@ void guiWindowPlace(float x, float y, float width, float height) {
   ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
 }
 
+// Report the drawable area, so a caller can anchor something to a corner of it rather
+//   than to a coordinate it guessed. Changes with the window, which is the point.
+float guiViewportWidth() { return ImGui::GetIO().DisplaySize.x; }
+float guiViewportHeight() { return ImGui::GetIO().DisplaySize.y; }
+
+// Begin a window pinned where it is put, with nothing a reader could grab: no title bar,
+//   no resize corner, no scrollbar, and sized to whatever it ends up holding. `pivot` is
+//   which of the window's own corners `x`/`y` names -- (1, 1) anchors its bottom-right,
+//   which is what a corner affordance wants and what a caller would otherwise have to
+//   compute by laying the window out once and measuring it.
+bool guiWindowBeginPinned(const char *name, float x, float y, float pivot_x,
+                          float pivot_y) {
+  ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(pivot_x, pivot_y));
+  return ImGui::Begin(name, nullptr,
+                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                          ImGuiWindowFlags_NoSavedSettings |
+                          ImGuiWindowFlags_AlwaysAutoResize);
+}
+
 bool guiWindowBegin(const char* name) { return ImGui::Begin(name); }
 
 void guiWindowEnd() { ImGui::End(); }
@@ -241,6 +261,11 @@ void guiGroupEnd() { ImGui::EndGroup(); }
 
 // Width `guiButtonSmall` would draw this label at, for a caller lining a run of them up
 // against the right edge rather than letting whatever precedes them decide where they sit.
+// Measure text as it will be drawn, so a caller laying out a column can size it from what
+//   actually goes in the column rather than from a number tuned by eye against today's
+//   longest entry.
+float guiTextWidth(const char *text) { return ImGui::CalcTextSize(text).x; }
+
 float guiButtonSmallWidth(const char* label) {
   return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
 }
@@ -373,6 +398,28 @@ void guiOverlayCircle(float cx, float cy, float radius, float red, float green, 
   ImGui::GetForegroundDrawList()->AddCircle(
       ImVec2(cx, cy), radius,
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), 0, thickness);
+}
+
+// Draw part of a circle, clockwise from twelve o'clock, for a press filling its own marker
+//   as it matures into a selection. `fraction` is how much of the turn to stroke, in 0 .. 1.
+//   A whole turn is handed to AddCircle above rather than traced here, so a marker that is
+//   not animating draws through exactly the call it drew through before this existed and
+//   lands on exactly the same pixels.
+//   Clockwise in *screen* terms, which is why the angle subtracts: y runs downward here, so
+//   the sense that reads as clockwise to a viewer is the one that decreases the angle.
+void guiOverlayArc(float cx, float cy, float radius, float fraction, float red, float green,
+                   float blue, float alpha, float thickness) {
+  if (fraction <= 0.0f) return;
+  if (fraction >= 1.0f) {
+    guiOverlayCircle(cx, cy, radius, red, green, blue, alpha, thickness);
+    return;
+  }
+  const float TURN = 6.28318530717958647692f;
+  const float START = -TURN * 0.25f; // Twelve o'clock, with y downward.
+  ImDrawList *list = ImGui::GetForegroundDrawList();
+  list->PathArcTo(ImVec2(cx, cy), radius, START, START - TURN * fraction, 0);
+  list->PathStroke(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)),
+                   ImDrawFlags_None, thickness);
 }
 
 // Draw a marker's own polyline as one path rather than a run of separate line calls, so

@@ -110,6 +110,10 @@ type
     of MarkerKind.Ring:
       centre*: ScreenPosition ## Where the point itself projects.
       radius*: float ## Ring radius, in pixels.
+      fraction*: float ## How much of the circle to stroke, clockwise from twelve o'clock,
+        ## in 0 .. 1. A whole ring at 1, which is what every finished marker is; less only
+        ## while a hold is filling it. Clockwise and from the top because that is how every
+        ## other progress dial a reader has met is drawn, and this one is read the same way.
     of MarkerKind.Rails:
       count_segment*: int ## Segments used of `segments` below.
       segments*: array[SEGMENTS_MARKER_RAILS, array[2, ScreenPosition]]
@@ -128,17 +132,24 @@ type
 #[ Point And Line ]#
 
 func markerRing(
-  geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
+  geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
+  progress: float
 ): Option[Marker] =
   ## Build a point's own ring, about wherever that point is drawn.
   ##   Screen-space rather than a world-space circle facing the camera, because a point
   ##   has no orientation to echo: any world circle would have to pick a facing, and
   ##   every choice looks the same from the one angle it is seen from anyway.
+  ##   `progress` sweeps the ring rather than growing it: a point is drawn at one fixed
+  ##   size, so a ring that grew outward would read as the point itself swelling, and one
+  ##   that grew inward would collide with it. A sweep leaves the geometry alone and says
+  ##   the one thing a hold needs to say, which is how much of it is left.
   let anchor = anchorFor(geometry, scale)
   if anchor.isNone: return
   let centre = projectToScreen(view_projection, width, height, anchor.get)
   if not centre.isInFront: return
-  some(Marker(kind: MarkerKind.Ring, centre: centre, radius: RADIUS_MARKER_POINT))
+  some(Marker(
+    kind: MarkerKind.Ring, centre: centre, radius: RADIUS_MARKER_POINT, fraction: progress
+  ))
 
 
 func worldPerPixel*(
@@ -187,7 +198,7 @@ func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
 
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
-  view_projection: Matrix4; width, height: int
+  view_projection: Matrix4; width, height: int; progress: float
 ): Option[Marker] =
   ## Build a line's own pair of rails: two lines parallel to it in world space, one to
   ## each side, converging with it toward its own vanishing points.
@@ -196,6 +207,16 @@ func markerRails(
   ##   the three meet at the same two points on screen rather than merely running near
   ##   one another, and each rail projects onto its own true line for the same reason
   ##   the drawn line does.
+  ##   `progress` shortens each rail toward its own start, so a filling hold runs both
+  ##   rails out from the line's own support toward each horizon.
+  ##   Shortened *after* projection, along the screen segment, rather than by scaling the
+  ##   world reach: the far end is a point one horizon radius from the *eye* along the
+  ##   axis, so scaling that reach walks the head back to the camera rather than in toward
+  ##   the support. Interpolating on screen still keeps every partial rail exactly on the
+  ##   line's own projection -- both endpoints lie on it and a projected straight segment
+  ##   is straight -- and it is what makes the growth read as even, which a world-space
+  ##   interpolation toward a point that distant would not: almost the whole parameter
+  ##   range would land within a few pixels of the vanishing point.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the eye lies on the line (see `directionAcross`).
   let
@@ -220,7 +241,7 @@ func markerRails(
         tail = projectToScreen(view_projection, width, height, position_tail)
         head = projectToScreen(view_projection, width, height, position_head)
       if not (tail.isInFront and head.isInFront): continue
-      marker.segments[marker.count_segment] = [tail, head]
+      marker.segments[marker.count_segment] = [tail, tail.towards(head, progress)]
       inc marker.count_segment
   if marker.count_segment == 0: return
   some(marker)
@@ -257,7 +278,7 @@ func positionsMarkerLoop*(
 
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
-  placement: Camera; view_projection: Matrix4; width, height: int
+  placement: Camera; view_projection: Matrix4; width, height: int; progress: float
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
@@ -268,6 +289,11 @@ func markerLoop(
   ##   an arc, rather than dropping the marker outright: a camera close to a large plane
   ##   puts part of its rim behind the eye, which is exactly when the selection still
   ##   needs saying.
+  ##   `progress` scales the circle's own radius, so a filling hold opens it outward from
+  ##   the disc's centre until it reaches the rim it will finally stand outside. In world
+  ##   units on the plane, which keeps every intermediate circle lying on that plane as
+  ##   exactly as the finished one does -- growing it on screen instead would lift it off
+  ##   the surface for the whole of the animation and only settle at the end.
   ##   None at horizon, where a plane draws as a dome fixed to the eye.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
@@ -275,7 +301,8 @@ func markerLoop(
   if anchor.isNone or axes.isNone: return
 
   let positions = positionsMarkerLoop(
-    anchor.get, axes.get, radiusMarkerLoop(anchor.get, scale, placement, height)
+    anchor.get, axes.get,
+    progress*radiusMarkerLoop(anchor.get, scale, placement, height),
   )
   var
     ring: array[SEGMENTS_MARKER_LOOP, ScreenPosition]
@@ -312,20 +339,27 @@ func markerLoop(
 
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
-  placement: Camera; view_projection: Matrix4; width, height: int
+  placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0
 ): Option[Marker] =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for.
   ##   `anchor_override` is the item's own stored creation anchor, used for a plane and
   ##   ignored for a point or line, matching `mesh.addObject`'s own treatment of it.
+  ##   `progress` draws the marker part-built, for a press maturing into a selection: 1
+  ##   is the finished marker and is what every caller not animating a hold wants, which
+  ##   is why it is the default. How a partial marker is shaped is each outline's own
+  ##   business -- a ring sweeps, rails run outward, a circle opens -- because what reads
+  ##   as *filling* differs by shape as much as what reads as *surrounding* does.
   ##   None where the object has no drawable geometry, or where it lies at horizon and
   ##   is drawn fixed to the eye with nothing a marker could surround. Both are the same
-  ##   "nothing to draw" answer every overlay caller already handles.
+  ##   "nothing to draw" answer every overlay caller already handles. A hold on a line or
+  ##   plane at horizon therefore fills nothing; that gap is known and open.
   let shape = shape(geometry)
   if shape.isNone: return
   case shape.get
-  of Shape.Point: markerRing(geometry, scale, view_projection, width, height)
-  of Shape.Line: markerRails(geometry, scale, placement, view_projection, width, height)
+  of Shape.Point: markerRing(geometry, scale, view_projection, width, height, progress)
+  of Shape.Line:
+    markerRails(geometry, scale, placement, view_projection, width, height, progress)
   of Shape.Plane:
     markerLoop(
-      geometry, anchor_override, scale, placement, view_projection, width, height
+      geometry, anchor_override, scale, placement, view_projection, width, height, progress
     )

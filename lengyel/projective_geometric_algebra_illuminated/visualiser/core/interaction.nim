@@ -7,6 +7,13 @@
 ## Hover is tracked independently of dragging, every frame, purely so the item a drag would
 ## start from can be shown before any button is pressed.
 ##
+## A *hold* is the touch counterpart, where there are no buttons to name an operation with:
+## press an item and keep still, and once the press has lasted `MILLISECONDS_LONG_PRESS` it
+## selects that item. The elapsed fraction lives here rather than in either presentation
+## layer, because how long a hold takes and whether one is due are rules about this gesture,
+## not about a timer -- and because both are what the item's own marker is drawn part-built
+## from, which is the only reason a half-second wait is bearable.
+##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
@@ -18,7 +25,17 @@ import ./[camera, format, picking, scene]
 
 
 
-#[ Drag Configuration ]#
+#[ Gesture Configuration ]#
+
+const MILLISECONDS_LONG_PRESS* = 500.0
+  ## Hold a touch this long on an item to select it.
+  ##   Long enough that a tap, or the first instant of a drag meant to orbit the camera,
+  ##   never matures into one; short enough that a deliberate hold does not feel stuck.
+  ##   The wait is only tolerable because it is *shown* -- `progressHold` below drives the
+  ##   item's own marker being drawn part-built, so a hold reads as filling rather than as
+  ##   nothing happening. A hold with no feedback at this duration reads as a broken tap.
+
+
 
 #[ Type Definitions ]#
 
@@ -28,16 +45,38 @@ type
     Meet, ## Right button; antiwedge, i.e. meet.
     Project, ## Middle button; orthogonal projection of source onto destination.
 
-  Interaction* = object ## Hold cursor and drag state between frames.
+  Hold* = object ## Hold a press that will select its item once it has lasted long enough.
+    slot*: int ## Item pressed, and the one whose marker fills as the press matures.
+    started*: float ## When the press landed, on the same clock every caller passes as `now`.
+
+  Interaction* = object ## Hold cursor, drag and press state between frames.
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
     operation*: Option[DragOperation] ## Operation of drag in progress, if any.
     index_source*: int ## Item drag started from; meaningful only while `operation` is some.
+    hold*: Option[Hold] ## Press maturing into a selection, if one is in progress.
 
 
 
 #[ Operation Vocabulary ]#
+
+type PointerButton* {.pure.} = enum ## Name a physical mouse button, however numbered.
+  ## Neither backend's own numbering: SDL and the DOM count the three buttons
+  ## differently (SDL 1/2/3 left/middle/right, the DOM 0/1/2 left/middle/right), so each
+  ## render path translates its own numbers into this and asks `dragForButton` below.
+  ## That keeps *which button does what* stated once, while leaving each path the
+  ## translation only it can do.
+  Left, Middle, Right
+
+
+func dragForButton*(button: PointerButton): Option[DragOperation] =
+  ## Name the operation a button starts a drag with, if it starts one at all.
+  case button
+  of PointerButton.Left: some(DragOperation.Join)
+  of PointerButton.Right: some(DragOperation.Meet)
+  of PointerButton.Middle: some(DragOperation.Project)
+
 
 func toOperation*(drag: DragOperation): Operation =
   ## Translate drag's own vocabulary to library's operation catalogue.
@@ -53,6 +92,18 @@ func notation*(drag: DragOperation): string =
   of DragOperation.Join: "^"
   of DragOperation.Meet: "v"
   of DragOperation.Project: "->"
+
+
+func outcome*(drag: DragOperation): string =
+  ## Say what dragging one object onto another with this operation does, in plain words.
+  ##   Here beside the operation rather than in the help table that prints it, so the two
+  ##   cannot come to disagree, and because only one of the three reads naturally as
+  ##   "<verb> them" -- a projection is asymmetric and has to say which way round it goes,
+  ##   which is exactly the thing a reader dragging for the first time needs told.
+  case drag
+  of DragOperation.Join: "join them into a new object"
+  of DragOperation.Meet: "meet them, where they cross"
+  of DragOperation.Project: "project the first onto the second"
 
 
 
@@ -73,6 +124,43 @@ proc updateHover*(
       pickNearest(scene, camera, view_projection, width, height, interaction.cursor)
     else:
       none(int)
+
+
+
+#[ Hold Lifecycle ]#
+
+proc beginHold*(interaction: var Interaction; slot: int; now: float) =
+  ## Start a press on `slot` that will select it once it has lasted long enough.
+  interaction.hold = some(Hold(slot: slot, started: now))
+
+
+proc cancelHold*(interaction: var Interaction) =
+  ## Abandon a press in progress, selecting nothing.
+  ##   What the caller reaches for when the finger moved into a camera gesture, a second
+  ##   finger landed, the press was released early, or the user pressed escape.
+  interaction.hold = none(Hold)
+
+
+func progressHold*(interaction: Interaction; now: float): float =
+  ## Report how far a press in progress has matured, from 0 at the press to 1 once it is
+  ## due; 0 where no press is in progress.
+  ##   Clamped at both ends, so a caller may keep asking after the press is due and after
+  ##   the clock has jumped, and still get something it can draw.
+  ##   Linear, deliberately, and not through `mesh.easeOutCubic` as every other animation
+  ##   here is: this is a clock being shown rather than a transition being softened, and an
+  ##   eased clock reads as stalling just before it fires -- exactly where a user is
+  ##   deciding whether the hold is working.
+  if interaction.hold.isNone: return 0.0
+  let elapsed = now - interaction.hold.get.started
+  max(0.0, min(1.0, elapsed/MILLISECONDS_LONG_PRESS))
+
+
+func isHoldMature*(interaction: Interaction; now: float): bool =
+  ## Report whether a press in progress has lasted long enough to select its item.
+  ##   Stated against `progressHold` rather than against the elapsed time again, so the
+  ##   moment the marker finishes filling is the same moment the selection lands. Two
+  ##   comparisons against the same duration would be two chances to disagree.
+  interaction.hold.isSome and progressHold(interaction, now) >= 1.0
 
 
 

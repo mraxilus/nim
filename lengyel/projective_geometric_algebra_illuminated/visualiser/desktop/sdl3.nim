@@ -46,6 +46,9 @@ type
   Scancode* {.pure.} = enum ## Name physical keys visualiser reacts to.
     Escape = 41,
     S = 22,
+    Y = 28,
+    Z = 29,
+    Q = 20,
 
   MouseButton* {.pure.} = enum ## Name mouse buttons visualiser reacts to.
     Left = 1,
@@ -55,6 +58,7 @@ type
   KeyboardEvent* {.importc: "SDL_KeyboardEvent", header: HEADER, bycopy.} = object
     scancode* {.importc.}: uint32 ## Physical key, independent of layout.
     is_down* {.importc: "down".}: bool ## Whether key is pressed rather than released.
+    modifiers* {.importc: "mod".}: uint16 ## Modifier keys held as this one went down.
 
   MouseMotionEvent* {.importc: "SDL_MouseMotionEvent", header: HEADER, bycopy.} = object
     x* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.
@@ -77,6 +81,13 @@ type
 
 
 const
+  MODIFIER_CONTROL* = 0x00C0'u16
+    ## Test a key event's own modifiers for either control key.
+  MODIFIER_SHIFT* = 0x0003'u16
+    ## Test a key event's own modifiers for either shift key.
+  MODIFIER_COMMAND* = 0x0C00'u16
+    ## Test a key event's own modifiers for either command key, which is what a reader on
+    ## macOS presses where everyone else presses control.
   INIT_VIDEO* = 0x20'u32
     ## Ask `init` for video and event subsystems.
   WINDOW_OPENGL* = 0x02'u64
@@ -133,6 +144,12 @@ const lut_mirror_to_symbol = [
   (int(EventKind.MouseWheel), "SDL_EVENT_MOUSE_WHEEL"),
   (int(Scancode.Escape), "SDL_SCANCODE_ESCAPE"),
   (int(Scancode.S), "SDL_SCANCODE_S"),
+  (int(Scancode.Y), "SDL_SCANCODE_Y"),
+  (int(Scancode.Z), "SDL_SCANCODE_Z"),
+  (int(Scancode.Q), "SDL_SCANCODE_Q"),
+  (int(MODIFIER_CONTROL), "SDL_KMOD_CTRL"),
+  (int(MODIFIER_SHIFT), "SDL_KMOD_SHIFT"),
+  (int(MODIFIER_COMMAND), "SDL_KMOD_GUI"),
   (int(MouseButton.Left), "SDL_BUTTON_LEFT"),
   (int(MouseButton.Middle), "SDL_BUTTON_MIDDLE"),
   (int(MouseButton.Right), "SDL_BUTTON_RIGHT"),

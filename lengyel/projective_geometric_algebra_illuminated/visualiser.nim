@@ -69,7 +69,13 @@
 ##   projects the object dragged from onto the object dragged to. The rubber-band drawn
 ##   while dragging is tinted to match, and the panel's own top line names the same colours.
 ##   Drag from empty space instead to move the camera: left orbits, right pans, wheel dollies.
-##   `S` writes current frame to the export path; `Escape` quits.
+##   `S` writes current frame to the export path. `Escape` abandons whatever is in
+##   progress -- the help panel, a drag, an open edit, a selection -- and `ctrl+Z` and
+##   `ctrl+shift+Z` step the same timeline the panel's own undo and redo buttons do.
+##   `ctrl+Q` quits; `Escape` used to, and pressing it twice to be sure of a cancel would
+##   have thrown away an unsaved scene.
+##   The `?` in the bottom-right corner says all of this, from `help.nim`, which the
+##   browser build's own help panel reads too.
 ##   Every panel is a collapsing header; `diagnostics` starts closed and holds live frame
 ##   time, memory use of both arenas, and the object pool -- nothing needed day to day.
 ##
@@ -90,8 +96,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  camera, format, history, interaction, marker, mesh, objects, picking, scene, selection,
-  storyboard,
+  camera, format, help, history, interaction, marker, mesh, objects, picking, scene,
+  selection, storyboard,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
 import ./visualiser/desktop/opengl as gl
@@ -350,9 +356,9 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
   ##   identical call and differ only in weight, rather than in what is drawn.
   case marker.kind
   of MarkerKind.Ring:
-    gui.overlayCircle(
+    gui.overlayArc(
       cfloat(marker.centre.x), cfloat(marker.centre.y), cfloat(marker.radius),
-      tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
+      cfloat(marker.fraction), tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER,
     )
   of MarkerKind.Rails:
     for i in 0 ..< marker.count_segment:
@@ -457,7 +463,20 @@ proc renderFrame(
   workbench.bytes_memory_total = BYTES_MEMORY_TOTAL
 
   gui.frameBegin()
+  # Consumed before layout, so a key pressed this frame and the button beside it reach the
+  #   timeline through the identical call and land on the same frame.
+  if workbench.is_undo_requested or workbench.is_redo_requested:
+    let is_undo = workbench.is_undo_requested
+    (workbench.is_undo_requested, workbench.is_redo_requested) = (false, false)
+    toChars(
+      if stepHistory(workbench, scene, HISTORY, is_undo):
+        (if is_undo: "Stepped back." else: "Stepped forward.")
+      else:
+        (if is_undo: "Nothing to undo." else: "Nothing to redo."),
+      workbench.message,
+    )
   layoutWorkbench(workbench, scene, camera, HISTORY, now)
+  layoutHelp(workbench)
 
   # Advance before this frame's transforms are built, so the frame draws where the camera
   #   has reached rather than a frame behind. `offerCameraAim` below sets the goal this
@@ -527,9 +546,12 @@ proc downsampleInto(
 
 func dragOperationFor(button: uint8): Option[DragOperation] =
   ## Name operation a mouse button performs while dragging, if any.
-  if button == uint8(MouseButton.Left): some(DragOperation.Join)
-  elif button == uint8(MouseButton.Right): some(DragOperation.Meet)
-  elif button == uint8(MouseButton.Middle): some(DragOperation.Project)
+  ##   Only the numbering is this build's own -- SDL's, which the browser does not share.
+  ##   Which button carries which operation is `interaction.dragForButton`'s to say, so
+  ##   both render paths and the help panel answer from one rule.
+  if button == uint8(MouseButton.Left): dragForButton(PointerButton.Left)
+  elif button == uint8(MouseButton.Right): dragForButton(PointerButton.Right)
+  elif button == uint8(MouseButton.Middle): dragForButton(PointerButton.Middle)
   else: none(DragOperation)
 
 
@@ -550,8 +572,33 @@ proc handleEvent(
     is_running = false
   of uint32(EventKind.KeyDown):
     if gui.wantsKeyboard(): return
-    if event.key.scancode == uint32(Scancode.Escape): is_running = false
-    if event.key.scancode == uint32(Scancode.S): workbench.is_export_requested = true
+    # Control on every platform, and command as well, which is what a reader on macOS
+    #   presses for the same shortcut.
+    let is_accelerator =
+      (event.key.modifiers and (MODIFIER_CONTROL or MODIFIER_COMMAND)) != 0
+    let is_shifted = (event.key.modifiers and MODIFIER_SHIFT) != 0
+    if event.key.scancode == uint32(Scancode.Escape):
+      # Cancels what is in progress rather than quitting, which is what it used to do.
+      #   Escape is the key a reader presses to get out of something, and pressing it
+      #   twice to be sure would have thrown away an unsaved scene; quitting moved to
+      #   ctrl+Q, beside every other accelerator, and the window's own close button is
+      #   unaffected.
+      if workbench.is_help_open: workbench.is_help_open = false
+      elif interaction.operation.isSome:
+        interaction.cancelDrag()
+        toChars("Cancelled.", workbench.message)
+      elif workbench.session.isSome: workbench.session = none(EditSession)
+      elif len(workbench.selection) > 0: workbench.selection.clear()
+    elif event.key.scancode == uint32(Scancode.S) and not is_accelerator:
+      workbench.is_export_requested = true
+    elif is_accelerator and event.key.scancode == uint32(Scancode.Q):
+      is_running = false
+    elif is_accelerator and event.key.scancode == uint32(Scancode.Z) and not is_shifted:
+      workbench.is_undo_requested = true
+    elif is_accelerator and
+        (event.key.scancode == uint32(Scancode.Y) or
+         (event.key.scancode == uint32(Scancode.Z) and is_shifted)):
+      workbench.is_redo_requested = true
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
     # Press on a pickable item starts an operation drag; press on empty space falls back

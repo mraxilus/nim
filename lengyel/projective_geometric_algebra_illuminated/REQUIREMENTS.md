@@ -934,6 +934,26 @@ so the two stack and the hint outstays both numbers.
   derived basis names against the library's own printing, the two number-formatting paths
   agreeing, the palette's categorical count, the tween's mid-flight and arrival behaviour,
   history walked to capacity and back, and a scene file round-trip.
+- **Every wait must be shown.** A press that has to be held before it does anything needs
+  feedback from the first frame, or it cannot be told from a press that did not register.
+  Show it by drawing the *selection outline that press is about to produce*, part-built, in
+  whatever way that outline is read: a ring about a point sweeps, a pair of rails flanking a
+  line runs outward, a circle on a plane opens from its centre. One progress parameter on
+  the one shaper both front-ends already share buys this on both at once, and keeps the
+  growth in world space where the geometry is. **Linear, never eased** — this is a clock
+  being shown, and an eased clock appears to stall just before it fires.
+- **Ship a persistent way to reach the controls**: a `?` in a corner, at least 44 px,
+  opening a table of every gesture, button and key. State that table **once, in the core**,
+  derived where possible from the bindings themselves, and have both front-ends render it.
+  A timed hint is not a substitute — it cuts off whoever reads slowly, which is the reader
+  who needs it — and one front-end keeping a legend the other loses is a parity break.
+  Dismiss any first-run hint on the reader's first real action, not on a timer.
+- **Bind the keyboard.** Escape sheds what is in progress, innermost first; the platform's
+  undo and redo chords step the timeline. Route each through the same function the button
+  uses, never through the button itself: a disabled attribute refreshed on a slow UI tick
+  will silently swallow the key. Never let Escape do something destructive as a fallback —
+  a reader presses it twice to be sure. Note plainly that this is a *partial* keyboard fix
+  unless the canvas itself can also be navigated without a pointer.
 - **Commit the measurements as runnable checks**, not as numbers in a document: a layout check
   counting **characters, not bytes** (a byte counter reports a compliant line full of multi-byte
   operators as over-long and gets ignored within a day); a palette-separation check that

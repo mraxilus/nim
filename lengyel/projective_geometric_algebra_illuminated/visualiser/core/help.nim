@@ -1,0 +1,117 @@
+## Say what every gesture, button and key in this workbench does, once, for both UIs.
+##
+## The desktop wrote this out in its panel and the browser wrote it out in a hint that
+## disappeared after four seconds; the two had already drifted, and only one of them could
+## be got back. Both now render this table, so a control that gains a binding is described
+## in one place or in neither.
+##
+## Entries name the *user's* action and its outcome, in the words a reader would use, not
+## the handler that implements it -- "drag one object onto another", not "pointerdown then
+## pointermove". Where a binding is derived from a rule stated elsewhere, it is read from
+## there rather than transcribed: `lut_help_entries` builds its construct rows out of
+## `interaction.dragForButton`, so rebinding a button rewrites the help with it.
+##
+## Kept deliberately short. A reference a reader has to scroll is one they stop opening,
+## and everything here has to fit a popup on a phone.
+##
+## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
+## paths; see `visualiser.nim`'s own "Render Paths" table.
+
+{.experimental: "strictFuncs".}
+
+import std/[options, strutils]
+
+import ./interaction
+
+
+
+#[ Type Definitions ]#
+
+type
+  HelpTopic* {.pure.} = enum ## Group entries under the heading a reader looks for them by.
+    Build, ## Deriving new objects from the ones already there.
+    Look, ## Moving the camera.
+    Choose, ## Selecting, and what a selection is for.
+    Keys, ## Keyboard.
+
+  HelpEntry* = object ## Hold one thing a reader can do and what it does.
+    topic*: HelpTopic ## Heading it sits under.
+    action*: string ## What the reader does.
+    outcome*: string ## What happens when they do it.
+    is_touch*: bool ## Whether this is the touch way of doing it rather than the pointer
+      ## way. Both are always listed: a laptop with a touchscreen is one device, and
+      ## hiding either set behind a guess about the hardware is how a reader ends up
+      ## believing a gesture does not exist.
+
+
+func titleOf*(topic: HelpTopic): string =
+  ## Head one group as a reader would name it.
+  case topic
+  of HelpTopic.Build: "build"
+  of HelpTopic.Look: "look around"
+  of HelpTopic.Choose: "choose"
+  of HelpTopic.Keys: "keys"
+
+
+
+#[ The Table ]#
+
+func nameOf(button: PointerButton): string =
+  ## Name a mouse button as a reader would say it.
+  toLowerAscii($button)
+
+
+const lut_help_entries* = block:
+  ## Every entry the two UIs render, in the order a reader meets them: build first,
+  ## because that is what the workbench is for; keys last, because they are the
+  ## accelerator rather than the way in.
+  ##   A fixed array rather than a `seq`, with `count` asserted against its length at
+  ## compile time, so adding an entry without resizing fails the build rather than leaving
+  ## a blank row at the bottom of the panel.
+  var lut: array[18, HelpEntry]
+  var count = 0
+  proc add(topic: HelpTopic; action, outcome: string; is_touch = false) =
+    lut[count] = HelpEntry(
+      topic: topic, action: action, outcome: outcome, is_touch: is_touch
+    )
+    inc count
+
+  # The three drag rows are derived from `interaction.dragForButton` and that operation's
+  #   own `outcome`, so rebinding a button or rewording an operation rewrites its line here
+  #   rather than leaving this text quietly wrong.
+  #   Walked in reading order rather than in `PointerButton`'s own, which runs left, middle,
+  #   right by physical position: a reader meets the two common buttons first.
+  for button in [PointerButton.Left, PointerButton.Right, PointerButton.Middle]:
+    let drag = dragForButton(button)
+    if drag.isNone: continue
+    add(
+      HelpTopic.Build, nameOf(button) & "-drag one object onto another",
+      outcome(drag.get),
+    )
+  add(
+    HelpTopic.Build, "the apply section",
+    "any operation in the catalogue, on the objects you have chosen",
+  )
+  add(HelpTopic.Build, "add", "a new point you type the coordinates of")
+
+  add(HelpTopic.Look, "drag empty space", "orbit around what you are looking at")
+  add(HelpTopic.Look, "right-drag empty space", "pan across")
+  add(HelpTopic.Look, "wheel", "dolly in and out")
+  add(HelpTopic.Look, "drag with one finger", "orbit", is_touch = true)
+  add(HelpTopic.Look, "pinch", "dolly in and out", is_touch = true)
+  add(HelpTopic.Look, "drag with two fingers", "pan across", is_touch = true)
+
+  add(HelpTopic.Choose, "click an object", "choose it alone")
+  add(HelpTopic.Choose, "shift-click an object", "add it to what you have chosen")
+  add(HelpTopic.Choose, "click empty space", "choose nothing")
+  add(
+    HelpTopic.Choose, "press and hold an object",
+    "choose it; its own outline fills while you hold", is_touch = true,
+  )
+  add(HelpTopic.Choose, "tap another object", "add it, once you have chosen one", true)
+
+  add(HelpTopic.Keys, "escape", "abandon whatever is in progress")
+  add(HelpTopic.Keys, "ctrl+z, ctrl+shift+z", "undo, redo")
+
+  doAssert count == len(lut), "Every help slot must be filled; adjust the array's size."
+  lut

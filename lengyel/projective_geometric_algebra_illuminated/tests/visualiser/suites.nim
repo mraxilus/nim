@@ -1733,6 +1733,41 @@ suite "Interaction":
     check interaction.index_hover == some(0)
 
 
+  test "a hold reports no progress until one is begun, and none again once cancelled":
+    var interaction = Interaction(is_enabled: true)
+    check progressHold(interaction, 1000.0) == 0.0
+    check not isHoldMature(interaction, 1000.0)
+    interaction.beginHold(3, 1000.0)
+    check progressHold(interaction, 1000.0 + MILLISECONDS_LONG_PRESS) == 1.0
+    interaction.cancelHold()
+    check progressHold(interaction, 1000.0 + MILLISECONDS_LONG_PRESS) == 0.0
+    check not isHoldMature(interaction, 1000.0 + MILLISECONDS_LONG_PRESS)
+
+
+  test "a hold fills linearly, is clamped at both ends, and is due exactly when full":
+    var interaction = Interaction(is_enabled: true)
+    interaction.beginHold(0, 1000.0)
+    # Linear, not eased: half the wait is half the fill. This is the property that makes
+    #   the marker a clock a reader can judge the remaining time from, and it is what an
+    #   `easeOutCubic` here would break -- see `progressHold`'s own doc comment.
+    check progressHold(interaction, 1000.0 + 0.5*MILLISECONDS_LONG_PRESS) =~ 0.5
+    check progressHold(interaction, 1000.0 + 0.25*MILLISECONDS_LONG_PRESS) =~ 0.25
+    var previous = 0.0
+    for step in 0 .. 20:
+      let progress = progressHold(
+        interaction, 1000.0 + float(step)/20.0*MILLISECONDS_LONG_PRESS
+      )
+      check progress >= previous
+      previous = progress
+    # Clamped below, so a clock that steps backward cannot un-fill a marker, and above, so
+    #   a frame arriving late still draws a whole one rather than overshooting past it.
+    check progressHold(interaction, 900.0) == 0.0
+    check progressHold(interaction, 1000.0 + 10.0*MILLISECONDS_LONG_PRESS) == 1.0
+    # Maturity lands exactly where the fill completes, never a frame either side of it.
+    check not isHoldMature(interaction, 1000.0 + 0.999*MILLISECONDS_LONG_PRESS)
+    check isHoldMature(interaction, 1000.0 + MILLISECONDS_LONG_PRESS)
+
+
 suite "Marker":
   const (WIDTH_MARK, HEIGHT_MARK) = (800, 600)
 
@@ -1749,11 +1784,28 @@ suite "Marker":
     )
     (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
 
-  proc markerOf(geometry: Multivector; anchor = none(Position)): Option[Marker] =
+  proc markerOf(
+    geometry: Multivector; anchor = none(Position); progress = 1.0
+  ): Option[Marker] =
     let (placement, view_projection, scale) = setUp()
     markerFor(
-      geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+      geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK, progress
     )
+
+  proc reachRails(marker: Marker): float =
+    ## Total screen length of every rail piece, which is what a filling hold grows.
+    for i in 0 ..< marker.count_segment:
+      let piece = marker.segments[i]
+      result += hypot(piece[1].x - piece[0].x, piece[1].y - piece[0].y)
+
+  proc radiusLoop(marker: Marker): float =
+    ## Greatest screen distance between two of a loop's own points, which stands in for
+    ## its radius without needing the centre it was built around.
+    for i in 0 ..< marker.count_point:
+      for j in i + 1 ..< marker.count_point:
+        result = max(result, hypot(
+          marker.points[j].x - marker.points[i].x, marker.points[j].y - marker.points[i].y
+        ))
 
   let
     POINT_A = toMultivector(Position(x: 1.0, y: 0.0, z: 2.0))
@@ -1905,6 +1957,58 @@ suite "Marker":
       )
     check ringAt(1.9).get.kind == MarkerKind.Ring
     check ringAt(0.0).isNone
+
+
+  test "a marker at full progress is exactly the marker drawn with no progress asked for":
+    # The property the whole animation rests on: adding `progress` moved nothing for any
+    #   caller that is not animating a hold. Held here as well as by the storyboard's own
+    #   byte comparison, so a regression names itself rather than showing up as a pixel.
+    check markerOf(POINT_A, progress = 1.0).get.fraction == 1.0
+    check reachRails(markerOf(LINE, progress = 1.0).get) =~ reachRails(markerOf(LINE).get)
+    check radiusLoop(markerOf(PLANE, progress = 1.0).get) =~ radiusLoop(markerOf(PLANE).get)
+
+
+  test "each shape fills the way its own outline is read":
+    # A point sweeps, because it is drawn at one fixed size and has nothing to grow into;
+    #   a line runs outward toward its horizons; a plane's circle opens from its centre.
+    check markerOf(POINT_A, progress = 0.25).get.fraction =~ 0.25
+    check markerOf(POINT_A, progress = 0.25).get.radius =~
+      markerOf(POINT_A).get.radius # Swept, never shrunk.
+    var
+      reach_previous = 0.0
+      radius_previous = 0.0
+    for step in 1 .. 8:
+      let progress = float(step)/8.0
+      let (reach, radius) = (
+        reachRails(markerOf(LINE, progress = progress).get),
+        radiusLoop(markerOf(PLANE, progress = progress).get),
+      )
+      check reach > reach_previous
+      check radius > radius_previous
+      (reach_previous, radius_previous) = (reach, radius)
+
+
+  test "a rail that is only part grown still lies along the rail it will become":
+    # Growing a rail must not slide it off the line it flanks. Every partial head sits on
+    #   the segment between the finished rail's own two ends, which is the line's own
+    #   screen projection -- the reason the shortening is done after projecting, along
+    #   that segment, rather than by scaling a world reach anchored at the eye.
+    let whole = markerOf(LINE).get
+    for step in 1 .. 4:
+      let part = markerOf(LINE, progress = float(step)/4.0).get
+      check part.count_segment == whole.count_segment
+      for i in 0 ..< whole.count_segment:
+        let
+          (tail, head) = (whole.segments[i][0], whole.segments[i][1])
+          grown = part.segments[i][1]
+          along = hypot(head.x - tail.x, head.y - tail.y)
+          # Distance from the grown head to the whole rail, as twice the triangle's area
+          #   over its base: zero exactly when the three points are collinear.
+          area_twice = abs(
+            (head.x - tail.x)*(grown.y - tail.y) - (head.y - tail.y)*(grown.x - tail.x)
+          )
+        check part.segments[i][0] == tail # Still starts where the finished rail starts.
+        check area_twice/along < TOLERANCE_SINGLE
 
 
   test "geometry standing for no shape gets no marker":
