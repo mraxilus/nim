@@ -180,24 +180,32 @@ func arc(a, b: Frame; name: string; here: Option[Frame]): string =
     "arc-plate")
 
 
-func node(target: Frame; is_here, is_reachable, is_compound: bool): string =
-  ## Draw one frame in its place, with its name above it.
-  let
-    (cx, cy) = centreOf(target)
-    height = frameHeight(NODE_WIDTH)
-    classes = "node" & (if is_here: " here" else: "") &
-      (if is_reachable: " reachable" else: "") &
-      (if is_compound: " two" else: "")
-  result = "<g class=\"" & classes & "\" data-frame=\"" & target.key & "\">"
-  result.add "<rect class=\"node-plate\" x=\"" & $(cx - NODE_WIDTH div 2 - 8) &
-    "\" y=\"" & $(cy - height div 2 - 6) & "\" width=\"" & $(NODE_WIDTH + 16) &
+func nodeAt*(target: Frame; cx, cy, width: int; classes: string;
+    extra = ""): string =
+  ## Draw one frame at a place, with its name above it.
+  ##
+  ## Both drawings put frames somewhere; only they know where.  Keeping the
+  ## drawing of a node here means the two agree on what a frame looks like even
+  ## though they disagree about everything else.
+  let height = frameHeight(width)
+  result = "<g class=\"node " & classes & "\" data-frame=\"" & target.key &
+    "\"" & extra & ">"
+  result.add "<rect class=\"node-plate\" x=\"" & $(cx - width div 2 - 8) &
+    "\" y=\"" & $(cy - height div 2 - 6) & "\" width=\"" & $(width + 16) &
     "\" height=\"" & $(height + 12) & "\" rx=\"8\"/>"
-  result.add renderFramePlaced(
-    target, cx - NODE_WIDTH div 2, cy - height div 2, NODE_WIDTH)
+  result.add renderFramePlaced(target, cx - width div 2, cy - height div 2, width)
   # The name goes above the picture, leaving the space below for the curves.
   result.add text(cx, cy - height div 2 - NAME_RISE, target.describe,
     NAME_FONT & "; fill: " & COLOUR_INK, "node-name")
   result.add "</g>"
+
+
+func node(target: Frame; is_here, is_reachable, is_compound: bool): string =
+  ## Draw one frame in its row, on the map of everything.
+  let (cx, cy) = centreOf(target)
+  nodeAt(target, cx, cy, NODE_WIDTH,
+    (if is_here: "here " else: "") & (if is_reachable: "reachable " else: "") &
+    (if is_compound: "two" else: ""))
 
 
 

@@ -79,11 +79,32 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   gap: 0.5rem 1.25rem; margin-bottom: 0.75rem; }
 .stage-head h3 { margin: 0; }
 .stage-head .tabs.small { margin: 0; }
-.views { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
-.view-frame { flex: 0 1 230px; min-width: 200px; }
-.view-frame h2 { margin-top: 0; }
-.view-map { flex: 1 1 560px; min-width: 0; }
-.view-map .note { margin: 0.5rem 0 0; }
+.views { display: block; }
+.view-still { max-width: 260px; margin: 0 auto; }
+.view-spokes, .view-map { min-width: 0; }
+.view-spokes .note, .view-map .note { margin: 0.5rem 0 0; }
+.stage-head h2 { font-size: 1.05rem; margin: 0; }
+.spokes { max-width: 100%; height: auto; display: block; margin: 0 auto;
+  overflow: visible; }
+.view-spokes .scroll { overflow: visible; }
+.spokes .spoke-line { stroke-width: 3; }
+.spokes .spoke.two .spoke-line { stroke-dasharray: 6 5; stroke-width: 2; }
+.spokes .spoke-plate { fill: var(--page); }
+.spokes .node-plate { fill: var(--panel); stroke: var(--rule-strong);
+  stroke-width: 1; }
+.spokes .node.two .node-plate { stroke-dasharray: 5 4; }
+.spokes .node.here .node-plate { stroke: var(--ink); stroke-width: 2; }
+.spokes .node-name { fill: var(--ink); }
+.spokes .node.reachable, .spokes .node.two { cursor: pointer; }
+.spokes .node.reachable:hover .node-plate,
+.spokes .node.two:hover .node-plate { stroke: var(--ink); }
+.spokes #core { transition: transform .5s cubic-bezier(.4, 0, .2, 1); }
+@keyframes fan { from { opacity: 0; transform: scale(.82); } }
+.spokes .spoke { animation: fan .45s ease both; transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: reduce) {
+  .spokes #core { transition: none; }
+  .spokes .spoke { animation: none; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.78rem;
   color: var(--dim); align-items: center; margin-left: auto; }
 .swatch { display: inline-flex; align-items: center; gap: 0.4rem; }

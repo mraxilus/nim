@@ -11,7 +11,8 @@ import ./partnerwork/diagram
 import ./partnerwork/frame
 import ./partnerwork/map
 import ./partnerwork/rotation
+import ./partnerwork/spokes
 import ./partnerwork/transition
 import ./partnerwork/workbook
 
-export diagram, frame, map, rotation, transition, workbook
+export diagram, frame, map, rotation, spokes, transition, workbook

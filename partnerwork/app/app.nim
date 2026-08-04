@@ -22,7 +22,9 @@ type
     Dance, Atlas, Audit
 
   Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
-    Both, Picture, Map
+    Static,   ## The couple alone: two bodies and what they hold.
+    Dynamic,  ## The frame in the middle and every way out of it.
+    Overview  ## The whole ontology, with the couple somewhere in it.
 
   Step = object ## Hold one danced move, for the history.
     phrase: string
@@ -46,7 +48,7 @@ var
   current = startFrame()
   before = startFrame() ## Frame the couple left, so the map can animate away from it.
   view = View.Dance
-  vis = Vis.Both
+  vis = Vis.Dynamic
   history: seq[Step] = @[]
 
 
@@ -172,14 +174,22 @@ func renderArms(): string =
 
 func renderPicture(current: Frame): string =
   ## Draw the frame the couple are in, as the two bodies.
-  tag("div", "class=\"view-frame\"",
-    tag("h2", "", esc(current.describe)) &
-    tag("p", "class=\"note\"", "position: " & esc(current.position) &
-      " &middot; connections: " & $current.countHolds) &
+  tag("div", "class=\"view-still\"",
     tag("div", "class=\"enter\"", renderFrame(current)) &
     tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
       "dashed line is the couple's midline: a connection that crosses it is a " &
       "crossed connection, and two crossed connections overlap."))
+
+
+func renderSpokesView(current, before: Frame): string =
+  ## Draw where the couple are and every way out, and nothing else.
+  tag("div", "class=\"view-spokes\"",
+    tag("div", "class=\"scroll\"", renderSpokes(current, before)) &
+    tag("p", "class=\"note\"", "The frame in the middle is the one being held. " &
+      "Every spoke is a way out of it and nothing else is drawn. A drop " &
+      "releases a hand so it points up, a collect takes one so it points down, " &
+      "and a compound is two moves so it goes out to the side. Take a spoke and " &
+      "it becomes the middle."))
 
 
 func renderMapView(current, before: Frame): string =
@@ -195,13 +205,17 @@ func renderMapView(current, before: Frame): string =
 
 
 func renderStage(current, before: Frame; vis: Vis): string =
-  ## Show both drawings of the same frame, side by side, changing together.
+  ## Show the frame the couple hold, drawn the way the dancer has asked for.
+  let drawing =
+    case vis
+    of Vis.Static: renderPicture(current)
+    of Vis.Dynamic: renderSpokesView(current, before)
+    of Vis.Overview: renderMapView(current, before)
   tag("section", "class=\"panel wide\"",
     tag("div", "class=\"stage-head\"",
-      tag("h3", "", "frame") & renderVisSwitch(vis) & renderArms()) &
-    tag("div", "class=\"views\"",
-      (if vis == Vis.Map: "" else: renderPicture(current)) &
-      (if vis == Vis.Picture: "" else: renderMapView(current, before))))
+      tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
+      renderVisSwitch(vis) & renderArms()) &
+    tag("div", "class=\"views\"", drawing))
 
 
 func renderDance(current, before: Frame; vis: Vis; danced: seq[Step]): string =
@@ -320,11 +334,14 @@ proc render() =
     of View.Audit: renderAudit()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   let marker = document.getElementById("here")
-  if marker == nil:
-    return
-  discard marker.getBoundingClientRect() # Settle the drawn position first.
-  marker.setAttribute("transform", cstring("translate(" &
-    $marker.getAttribute("data-x") & "," & $marker.getAttribute("data-y") & ")"))
+  if marker != nil:
+    discard marker.getBoundingClientRect() # Settle the drawn position first.
+    marker.setAttribute("transform", cstring("translate(" &
+      $marker.getAttribute("data-x") & "," & $marker.getAttribute("data-y") & ")"))
+  let core = document.getElementById("core")
+  if core != nil:
+    discard core.getBoundingClientRect()
+    core.setAttribute("transform", "translate(0,0)")
 
 
 proc dance(key: string) =
