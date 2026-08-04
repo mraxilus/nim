@@ -1,0 +1,7 @@
+nimcache/
+*.exe
+tests/tframe
+tests/ttransition
+tests/tworkbook
+tests/trotation
+tools/audit
