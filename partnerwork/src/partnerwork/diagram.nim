@@ -49,8 +49,8 @@ const
 
 
 const
-  COLOUR_LEFT = "var(--left, #a85f22)"
-  COLOUR_RIGHT = "var(--right, #2b6c8c)"
+  COLOUR_LEFT = "var(--left, #2b6c8c)"
+  COLOUR_RIGHT = "var(--right, #a85f22)"
   COLOUR_QUIET = "var(--rule-strong, #b9bfba)"
   COLOUR_CAPTION = "var(--faint, #9aa19d)"
   CAPTION_FONT = "font: 8px ui-sans-serif, system-ui, sans-serif"

@@ -246,7 +246,7 @@ func label*(source: Frame; move: Move): seq[string] =
   ## which is usually beside a line rather than along it.
   case move.helper
   of Helper.Collect:
-    result = @["collect", "their " & followName(move.to.hold[move.side].get)]
+    result = @["collect", "follow's " & followName(move.to.hold[move.side].get)]
     if move.to.hasOverlap:
       result.add(if move.to.over.get == move.side: "over" else: "under")
   of Helper.Drop:

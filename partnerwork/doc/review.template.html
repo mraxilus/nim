@@ -9,9 +9,11 @@
   --faint: #9aa19d;
   --rule: #d4d8d4;
   --rule-strong: #b9bfba;
-  --left: #a85f22;
-  --right: #2b6c8c;
+  --left: #2b6c8c;
+  --right: #a85f22;
   --agree: #3f7550;
+  --accent: #a85f22;
+  --accent-cool: #2b6c8c;
   --shadow: 0 1px 2px rgba(26, 31, 30, .05);
   --display: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -26,9 +28,11 @@
     --faint: #6d7571;
     --rule: #2e3532;
     --rule-strong: #414945;
-    --left: #dd8f4d;
-    --right: #6aa9c7;
+    --left: #6aa9c7;
+    --right: #dd8f4d;
     --agree: #6cab80;
+    --accent: #dd8f4d;
+    --accent-cool: #6aa9c7;
     --shadow: none;
   }
 }
@@ -40,8 +44,8 @@
   --faint: #6d7571;
   --rule: #2e3532;
   --rule-strong: #414945;
-  --left: #dd8f4d;
-  --right: #6aa9c7;
+  --left: #6aa9c7;
+  --right: #dd8f4d;
   --agree: #6cab80;
   --shadow: none;
 }
@@ -53,9 +57,11 @@
   --faint: #9aa19d;
   --rule: #d4d8d4;
   --rule-strong: #b9bfba;
-  --left: #a85f22;
-  --right: #2b6c8c;
+  --left: #2b6c8c;
+  --right: #a85f22;
   --agree: #3f7550;
+  --accent: #a85f22;
+  --accent-cool: #2b6c8c;
   --shadow: 0 1px 2px rgba(26, 31, 30, .05);
 }
 
@@ -155,7 +161,7 @@ a { color: inherit; text-underline-offset: .18em; }
 .card .meta { font-family: var(--data); font-size: .68rem; color: var(--faint);
   letter-spacing: .06em; text-transform: uppercase; }
 .card.absent { border-style: dashed; border-color: var(--rule-strong); }
-.card.absent .meta { color: var(--left); }
+.card.absent .meta { color: var(--accent); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 1.25rem; font-size: .8rem;
   color: var(--dim); align-items: center; }
@@ -178,8 +184,8 @@ table.matrix td { width: 2.1rem; height: 2.1rem; text-align: center;
   border: 1px solid var(--rule); }
 table.matrix td.on { background: var(--panel); font-weight: 600;
   box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--ink) 4%, transparent); }
-table.matrix td.new { border-color: var(--left); color: var(--left);
-  box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--left) 10%, transparent); }
+table.matrix td.new { border-color: var(--accent); color: var(--accent);
+  box-shadow: inset 0 0 0 100px color-mix(in srgb, var(--accent) 10%, transparent); }
 table.matrix td.self { background: var(--rule); border-color: var(--rule); }
 table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 
@@ -212,8 +218,8 @@ table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
   gap: .6rem;
   box-shadow: var(--shadow);
 }
-.finding.add { border-left-color: var(--left); }
-.finding.defer { border-left-color: var(--right); }
+.finding.add { border-left-color: var(--accent); }
+.finding.defer { border-left-color: var(--accent-cool); }
 .finding.tidy { border-left-color: var(--rule-strong); }
 .finding .head { display: flex; flex-wrap: wrap; align-items: baseline;
   gap: .6rem; }
@@ -429,9 +435,9 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
       <p>A <code>slide</code> keeps contact, and contact can only travel along a
       body &mdash; there is no path from one of the follow's hands to the other.
       So in both cells the lead's right hand must <em>start on the follow's
-      body</em> and slide down the arm it is already touching to reach their left
-      hand. That is the classic closed hold: left hand to the follow's right,
-      right hand on their back.</p>
+      body</em> and slide down the arm it is already touching to reach the
+      follow's left hand. That is the classic closed hold: left hand to the follow's right,
+      right hand on the follow's back.</p>
       <p>Reading them the way <code>vocabulary</code> does instead &mdash;
       <em class="term">half-closed</em> = <em class="term">Left to right</em>,
       <em class="term">closed</em> = <em class="term">Left-to-left and
@@ -572,8 +578,8 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   you can travel round the floor without unwinding &mdash; and why a model that
   added up each dancer's turns separately would be wrong.</p>
   <p><strong>The parity of the twist re-reads the whole base matrix.</strong> At
-  half a turn the follow's back is to the lead, their left hand is now on the
-  lead's left, and every connection that was crossed is parallel. The frames do
+  half a turn the follow's back is to the lead, the follow's left hand is now on
+  the lead's left, and every connection that was crossed is parallel. The frames do
   not change; the way they are read does. That is one function, not a second
   matrix.</p>
 

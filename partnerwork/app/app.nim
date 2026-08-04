@@ -29,6 +29,13 @@ type
     to: Frame
 
 
+const STEP_PAUSE = 560
+  ## Wait between the two moves of a compound, in milliseconds.
+  ##
+  ## Long enough for the marker to finish travelling, which is what makes the
+  ## frame between the two moves something the eye can catch.
+
+
 func startFrame(): Frame =
   ## Get the frame the page opens in: the plain one-hand hold.
   fromKey("r-.").get
@@ -67,7 +74,12 @@ func button(action, value, classes, body: string): string =
 #[ Dance View ]#
 
 func renderMoves(source: Frame): string =
-  ## List every frame one primitive away, as the only things that can be danced.
+  ## List what can be danced from here: every move, then every named compound.
+  ##
+  ## A compound is offered as one button because a lead leads it as one thing,
+  ## and taking it dances both of its moves in turn rather than jumping the frame
+  ## in between.  It is grouped and counted apart from the moves so that the page
+  ## never says two things are one.
   let available = moves(source)
   var rows = ""
   var previous = ""
@@ -80,8 +92,26 @@ func renderMoves(source: Frame): string =
     rows.add button("move", move.to.key, "move",
       tag("span", "class=\"phrase\"", esc(phrase(source, move))) &
       tag("span", "class=\"target\"", esc(move.to.describe)))
+  var shortcuts = ""
+  for target in FRAMES:
+    let named = compound(source, target)
+    if named.isNone:
+      continue
+    let steps = route(source, target)
+    var spelled = ""
+    for step in steps:
+      if spelled.len > 0:
+        spelled.add " &rarr; "
+      spelled.add esc(step.helper.name)
+    shortcuts.add button("compound", target.key, "move two",
+      tag("span", "class=\"phrase\"", esc(compoundPhrase(source, target))) &
+      tag("span", "class=\"target\"", esc(target.describe) & " &middot; " &
+        spelled))
+  if shortcuts.len > 0:
+    shortcuts = tag("h4", "", "two moves, led as one") & shortcuts
   tag("section", "class=\"panel\"",
-    tag("h3", "", "available now &middot; " & $available.len) & rows)
+    tag("h3", "", "available now &middot; " & $available.len & " moves") &
+    rows & shortcuts)
 
 
 func renderElsewhere(source: Frame): string =
@@ -92,7 +122,8 @@ func renderElsewhere(source: Frame): string =
   var rows = ""
   var count = 0
   for target in FRAMES:
-    if target == source or classify(source, target).isSome:
+    if target == source or classify(source, target).isSome or
+        compound(source, target).isSome:
       continue
     inc count
     var detail = ""
@@ -101,9 +132,6 @@ func renderElsewhere(source: Frame): string =
       if detail.len > 0:
         detail.add " &rarr; "
       detail.add esc(step.helper.name)
-    let named = compound(source, target)
-    if named.isSome:
-      detail.add " &mdash; a " & esc(($named.get).toLowerAscii)
     rows.add tag("div", "class=\"far\"",
       tag("span", "class=\"phrase\"", esc(target.describe)) &
       tag("span", "class=\"target\"", $steps.len & " moves: " & detail))
@@ -161,8 +189,9 @@ func renderMapView(current, before: Frame): string =
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. A " &
       "lit line is named for the move away from where you stand; dashed curves " &
-      "are the two compounds, which are two moves each. Only the lit frames can " &
-      "be clicked."))
+      "are the two compounds. A frame ringed in a solid line is one move away " &
+      "and a dashed one is a compound, two moves away; both can be clicked, and " &
+      "a compound dances its two moves in turn."))
 
 
 func renderStage(current, before: Frame; vis: Vis): string =
@@ -315,6 +344,29 @@ proc dance(key: string) =
     return
 
 
+proc danceCompound(key: string) =
+  ## Take a named compound, one move at a time, so the way through is danced.
+  ##
+  ## The second move waits for the first to finish crossing the map.  It is only
+  ## taken if the couple are still standing where the first move left them, so a
+  ## click elsewhere in the meantime cancels the rest rather than teleporting
+  ## them out of wherever they went.
+  let target = fromKey(key)
+  if target.isNone or compound(current, target.get).isNone:
+    return
+  let steps = route(current, target.get)
+  if steps.len != 2:
+    return
+  let waypoint = steps[0].to
+  dance(waypoint.key)
+  render()
+  discard setTimeout(proc () =
+    if current != waypoint:
+      return
+    dance(target.get.key)
+    render(), STEP_PAUSE)
+
+
 proc start(key: string) =
   ## Begin again from a chosen frame.
   let target = fromKey(key)
@@ -334,6 +386,10 @@ proc handle(event: Event) =
     dance($stepped.getAttribute("data-frame"))
     render()
     return
+  let led = event.target.closest("g.node.two")
+  if led != nil:
+    danceCompound($led.getAttribute("data-frame"))
+    return
   let node = event.target.closest("button")
   if node == nil:
     return
@@ -341,6 +397,9 @@ proc handle(event: Event) =
   let value = $node.getAttribute("data-value")
   case action
   of "move": dance(value)
+  of "compound":
+    danceCompound(value)
+    return
   of "start": start(value)
   of "view":
     for candidate in View:

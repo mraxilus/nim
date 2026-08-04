@@ -81,3 +81,27 @@ suite "the drawing":
     for here in FRAMES:
       let picture = renderMap(some(here), some(here))
       check picture.count("reachable") == moves(here).len
+
+  test "a frame a compound away is offered, and marked as two moves":
+    for here in FRAMES:
+      var named = 0
+      for target in FRAMES:
+        if compound(here, target).isSome:
+          inc named
+      check renderMap(some(here), some(here)).count(" two\"") == named
+
+  test "the ink of a line is the arm that acts, whichever way it is read":
+    # Once a line is unlit the two arms are told apart by colour alone, so every
+    # line has to carry an arm's ink and not the quiet ink of the background.
+    let picture = renderMap(none(Frame), none(Frame))
+    var lines = 0
+    for fragment in picture.split("<line class=\"edge"):
+      if not fragment.startsWith("\"") and not fragment.startsWith(" lit"):
+        continue
+      inc lines
+      let element = fragment[0 ..< fragment.find("/>")]
+      check element.contains("var(--left") or element.contains("var(--right")
+    var moved = 0
+    for source in FRAMES:
+      moved += moves(source).len
+    check lines == moved div 2

@@ -14,8 +14,8 @@
   --rule-strong: #c2bbb0;
   --faint: #948d85;
   --panel: #ffffff;
-  --left: #b4541f;
-  --right: #1f5fb4;
+  --left: #1f5fb4;
+  --right: #b4541f;
   --new: #a3801a;
 }
 @media (prefers-color-scheme: dark) {
@@ -27,8 +27,8 @@
     --rule-strong: #4a4754;
     --faint: #857f8e;
     --panel: #1e1d24;
-    --left: #e8813f;
-    --right: #6ba4ea;
+    --left: #6ba4ea;
+    --right: #e8813f;
     --new: #d9b64a;
   }
 }
@@ -104,9 +104,14 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node { opacity: .5; }
 .map .node.here, .map .node.reachable { opacity: 1; }
+.map .node.here .node-plate { stroke: var(--ink); }
 .map .node.reachable { cursor: pointer; }
 .map .node.reachable .node-plate { stroke: var(--rule-strong); }
-.map .node.reachable:hover .node-plate { stroke: var(--ink); }
+.map .node.reachable:hover .node-plate, .map .node.two:hover .node-plate {
+  stroke: var(--ink); }
+.map .node.two { opacity: 1; cursor: pointer; }
+.map .node.two .node-plate { stroke: var(--rule-strong); stroke-dasharray: 5 4; }
+.move.two { border-style: dashed; }
 .map .marker { fill: none; stroke: var(--ink); stroke-width: 2.5;
   transition: transform .5s cubic-bezier(.4, 0, .2, 1); }
 @keyframes enter { from { opacity: 0; transform: translateY(5px); } }

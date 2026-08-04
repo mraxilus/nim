@@ -79,8 +79,8 @@ func centreOf*(target: Frame): (int, int) =
 #[ Ink ]#
 
 const
-  COLOUR_LEFT = "var(--left, #a85f22)"
-  COLOUR_RIGHT = "var(--right, #2b6c8c)"
+  COLOUR_LEFT = "var(--left, #2b6c8c)"
+  COLOUR_RIGHT = "var(--right, #a85f22)"
   COLOUR_INK = "var(--ink, #1a1f1e)"
   COLOUR_DIM = "var(--dim, #6b716e)"
   LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
@@ -180,13 +180,14 @@ func arc(a, b: Frame; name: string; here: Option[Frame]): string =
     "arc-plate")
 
 
-func node(target: Frame; is_here, is_reachable: bool): string =
-  ## Draw one frame in its place, with its name beneath it.
+func node(target: Frame; is_here, is_reachable, is_compound: bool): string =
+  ## Draw one frame in its place, with its name above it.
   let
     (cx, cy) = centreOf(target)
     height = frameHeight(NODE_WIDTH)
     classes = "node" & (if is_here: " here" else: "") &
-      (if is_reachable: " reachable" else: "")
+      (if is_reachable: " reachable" else: "") &
+      (if is_compound: " two" else: "")
   result = "<g class=\"" & classes & "\" data-frame=\"" & target.key & "\">"
   result.add "<rect class=\"node-plate\" x=\"" & $(cx - NODE_WIDTH div 2 - 8) &
     "\" y=\"" & $(cy - height div 2 - 6) & "\" width=\"" & $(NODE_WIDTH + 16) &
@@ -235,9 +236,9 @@ func renderMap*(here, before: Option[Frame]): string =
       result.add arc(source, target, ($named.get).toLowerAscii, here)
 
   for target in FRAMES:
-    let reachable =
-      here.isSome and classify(here.get, target).isSome
-    result.add node(target, here == some(target), reachable)
+    result.add node(target, here == some(target),
+      here.isSome and classify(here.get, target).isSome,
+      here.isSome and compound(here.get, target).isSome)
 
   if here.isSome:
     let
