@@ -28,31 +28,31 @@ const FACES = [
   ##   Used only where `tools/subset_faces.py` has not run; the subsets are a fiftieth the size.
   Face(
     family: "Noto Sans",
-    path: "vendor/fonts/noto-sans-latin-400-normal.woff2",
+    path: "vendor/fonts/noto-sans-400.woff2",
     ranges: "",
     weight: "400",
   ),
   Face(
     family: "Noto Sans",
-    path: "vendor/fonts/noto-sans-latin-600-normal.woff2",
+    path: "vendor/fonts/noto-sans-600.woff2",
     ranges: "",
     weight: "600",
   ),
   Face(
     family: "Noto Sans",
-    path: "vendor/fonts/noto-sans-math-math-400-normal.woff2",
+    path: "vendor/fonts/noto-sans-math-400.woff2",
     ranges: "U+2200-22FF, U+27C0-27EF, U+2A00-2AFF, U+1D400-1D7FF",
     weight: "400",
   ),
   Face(
     family: "Noto Sans",
-    path: "vendor/fonts/noto-sans-symbols-2-symbols-400-normal.woff2",
+    path: "vendor/fonts/noto-sans-symbols2-400.woff2",
     ranges: "U+2190-21FF, U+2500-259F, U+25A0-25FF, U+2600-27BF",
     weight: "400",
   ),
   Face(
     family: "Commit Mono",
-    path: "vendor/fonts/commit-mono-latin-400-normal.woff2",
+    path: "vendor/fonts/commit-mono-400.woff2",
     ranges: "",
     weight: "400",
   ),

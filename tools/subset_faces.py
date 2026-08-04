@@ -20,11 +20,11 @@ from fontTools.ttLib import TTFont
 #   other target may not have, and both targets must draw the same glyphs.
 VENDORED = pathlib.Path(__file__).resolve().parent.parent / "vendor" / "fonts"
 FACES = [
-    ("Noto Sans", VENDORED / "noto-sans-latin-400-normal.woff2", "400", True),
-    ("Noto Sans", VENDORED / "noto-sans-latin-600-normal.woff2", "600", True),
-    ("Noto Sans", VENDORED / "noto-sans-math-math-400-normal.woff2", "400", False),
-    ("Noto Sans", VENDORED / "noto-sans-symbols-2-symbols-400-normal.woff2", "400", False),
-    ("Commit Mono", VENDORED / "commit-mono-latin-400-normal.woff2", "400", True),
+    ("Noto Sans", VENDORED / "noto-sans-400.woff2", "400", True),
+    ("Noto Sans", VENDORED / "noto-sans-600.woff2", "600", True),
+    ("Noto Sans", VENDORED / "noto-sans-math-400.woff2", "400", False),
+    ("Noto Sans", VENDORED / "noto-sans-symbols2-400.woff2", "400", False),
+    ("Commit Mono", VENDORED / "commit-mono-400.woff2", "400", True),
 ]
 
 TEXT_RANGE = range(0x20, 0x7F)

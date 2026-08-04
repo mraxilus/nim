@@ -7,7 +7,7 @@ Provenance — RGA Workbench
 | **Author** | Written end to end by that agent; no human wrote any line of it |
 | **Date** | 12026-08-03 (Holocene), from the brief in `REQUIREMENTS.md` |
 | **Style contract** | `STYLE.md`, followed for every line |
-| **Where it lives** | Kept locally, deliberately unpushed. The workbench is its own local git repository under `rga_workbench/`; the Nim repository it sits beside carries none of it. |
+| **Where it lives** | Kept locally, deliberately unpushed: its own git repository at `~/rga_workbench`, with no remote. It sits **beside** the Nim checkout rather than inside it, so that repository's working tree stays pristine; the compiler change it needs lives here as `tools/nim_dot_call.patch`. |
 | **Review line** | **No human has read this code line by line, and no human has driven either build.** Every claim below is either marked as measured — with the measurement named — or marked as assumed. |
 
 This file describes what the code **currently does** and why, organised by subsystem. It is not
@@ -35,7 +35,8 @@ Vendored Dependencies
 |------|-----------|--------|---------|
 | PGA library | `https://gitlab.com/mraxilus/replications.git`, path `lengyel/projective_geometric_algebra_illuminated` | `f8861e0b5ab6e868382126aa7b109503f2fe16d3` | Prosperity Public License 3.0.0 (noncommercial). The fetch script copies `LICENSE.md` alongside the source, as its notice clause requires. |
 | `stb_truetype.h` | `https://raw.githubusercontent.com/nothings/stb/master/stb_truetype.h` | master at fetch time | MIT / public domain (dual) |
-| Faces | fontsource CDN, `@fontsource/{noto-sans,noto-sans-math,noto-sans-symbols-2,noto-serif,commit-mono}` | package 5.3.0 | SIL Open Font License 1.1, notices fetched beside the files |
+| Noto faces | `https://raw.githubusercontent.com/notofonts/notofonts.github.io`, `fonts/*/hinted/ttf` | main at fetch time | SIL Open Font License 1.1; licence text fetched beside them |
+| Commit Mono | `https://commitmono.com/src/fonts/fontlab/CommitMonoV143-VF.woff2` — the variable font the project's own page loads | V143 (1.143) | SIL Open Font License 1.1, carried in the face's own name table |
 
 Neither is committed. System packages are listed in `dependencies.list`, each with what it is
 for.
@@ -288,8 +289,10 @@ Numbers, Colour, Typography
   each face whether it carries a codepoint — `stb_truetype` reports glyph index zero when it
   does not — rather than trusting a range table.
 - **Font payload, measured**: subsetting each vendored face to the codepoints the tool writes
-  (the list derived from the core, not transcribed) makes 33 KB of faces and a **571 KB page**,
-  which works with no network access. Embedding the whole faces instead measured 4.9 MB.
+  (the list derived from the core, not transcribed) makes 49 KB of faces and a page under
+  600 KB, which works with no network access. Embedding the whole faces instead measured
+  4.9 MB. Commit Mono arrives as a variable font and is instantiated at weight 400 before
+  subsetting: shipping a whole design space to draw one weight is payload for nothing.
 
 
 Front-Ends

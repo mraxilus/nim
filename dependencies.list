@@ -20,15 +20,19 @@ stb_truetype.h      # Glyph rasterisation for the desktop font atlas; the GUI is
                     #   so nothing else turns a TTF outline into coverage.
                     #   curl -L https://raw.githubusercontent.com/nothings/stb/master/stb_truetype.h
                     #   licence MIT / public domain (dual). Never committed.
-fonts               # Every face both targets draw with, from the fontsource CDN at 5.3.0:
+fonts               # Every face both targets draw with, each from the project that makes it.
                     #   Noto Sans 400 and 600 (UI text), Noto Sans Math (operators, bold
-                    #   operands), Noto Sans Symbols 2 (dual stars, abandon cross), Noto Serif
-                    #   (prose), Commit Mono (code, data, figures). All SIL Open Font License
-                    #   1.1; the licence text is fetched beside the files and kept with them.
-                    #   base=https://cdn.jsdelivr.net/npm/@fontsource
-                    #   curl -LO $base/commit-mono/files/commit-mono-latin-400-normal.woff2
-                    #   ... and the five Noto faces; `tools/fetch_vendor.sh` fetches all six
-                    #   and converts each to TrueType for the desktop rasteriser. Never
-                    #   committed.
+                    #   operands), Noto Sans Symbols 2 (dual stars, abandon cross) and Noto
+                    #   Serif (prose), from the Noto project's own release repository:
+                    #   noto=https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts
+                    #   curl -LO $noto/NotoSans/hinted/ttf/NotoSans-Regular.ttf
+                    #   Commit Mono (code, data, figures), from its own site, which serves the
+                    #   variable font the project's page itself loads; the build instantiates
+                    #   it at weight 400:
+                    #   curl -LO https://commitmono.com/src/fonts/fontlab/CommitMonoV143-VF.woff2
+                    #   All SIL Open Font License 1.1 — each face carries that notice in its own
+                    #   name table, and the Noto licence text is fetched beside the files.
+                    #   `tools/fetch_vendor.sh` fetches all six and prepares each in both forms:
+                    #   TrueType for the desktop rasteriser, WOFF2 for the page. Never committed.
 fonttools, brotli   # Convert WOFF2 to TrueType for the desktop atlas, and subset each face to
                     #   the codepoints the tool writes for the browser page (pip).

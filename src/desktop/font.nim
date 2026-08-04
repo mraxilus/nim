@@ -101,14 +101,14 @@ const LUT_FAMILY_TO_FACES*: array[Family, seq[string]] = [
   ##   finished until the other is checked. Both targets ship the faces they draw with, or the
   ##   two stop matching, which is the whole point of having the rule.
   Family.Text: @[
-    "noto-sans-latin-400-normal.ttf",
-    "noto-sans-math-math-400-normal.ttf",
-    "noto-sans-symbols-2-symbols-400-normal.ttf",
+    "noto-sans-400.ttf",
+    "noto-sans-math-400.ttf",
+    "noto-sans-symbols2-400.ttf",
   ],
   Family.Mono: @[
-    "commit-mono-latin-400-normal.ttf",
-    "noto-sans-math-math-400-normal.ttf",
-    "noto-sans-symbols-2-symbols-400-normal.ttf",
+    "commit-mono-400.ttf",
+    "noto-sans-math-400.ttf",
+    "noto-sans-symbols2-400.ttf",
   ],
 ]
 
