@@ -33,8 +33,11 @@ clicked, so a move the ontology does not derive cannot be danced.
 Open `app/index.html` in a browser. To rebuild it after a change:
 
 ```
-nimble app          # or: nim js -d:release -o:app/app.js app/app.nim
+nimble app          # compiles app/app.js, then bundles app/artifact.html
 ```
+
+`app/artifact.html` is the same page as one self-contained file, for publishing
+or for sending to someone who should not have to keep two files together.
 
 Three views: **Dance** walks the state machine, **Atlas** shows the whole derived
 transition matrix with the cells the workbook leaves blank outlined, and
@@ -51,7 +54,8 @@ src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
 app/                            the browser validator
 tools/audit.nim                 the same audit, printed
 tests/                          the laws, checked over every pair of frames
-doc/analysis.md                 what the workbook says, what it is missing
+doc/review.html                 the standing review: what the workbook says and
+                                what is outstanding, rewritten each iteration
 ```
 
 ```
@@ -68,10 +72,13 @@ eighteen of its twenty-seven cells hold between those seven. All eighteen name
 the same primitive the model derives independently, and they are every move that
 exists between those seven states: nothing missing, nothing spare.
 
-Three things are outstanding, set out in `doc/analysis.md`: `open` has no row,
+Three things are outstanding, set out in `doc/review.html`: `open` has no row,
 `closed` and `half-closed` need a vocabulary for places on the body, and two
 words have drifted between the `base` and `vocabulary` sheets.
 
 Rotation is not modelled beyond what the hand-to-hand model forces. What it
-forces is in `doc/analysis.md` §6, along with the four cells worth dancing to
+forces is in `doc/review.html`, along with the four cells worth dancing to
 settle the rest.
+
+`doc/review.html` is rewritten and republished each time the model changes, so
+its history in git is the history of what the ontology has been claimed to say.
