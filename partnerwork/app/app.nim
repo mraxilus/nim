@@ -21,6 +21,9 @@ type
   View {.pure.} = enum ## Select what the page is showing.
     Dance, Atlas, Audit
 
+  Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
+    Both, Picture, Map
+
   Step = object ## Hold one danced move, for the history.
     phrase: string
     to: Frame
@@ -34,7 +37,9 @@ func startFrame(): Frame =
 var
   origin = startFrame()
   current = startFrame()
+  before = startFrame() ## Frame the couple left, so the map can animate away from it.
   view = View.Dance
+  vis = Vis.Both
   history: seq[Step] = @[]
 
 
@@ -118,21 +123,51 @@ func renderHistory(danced: seq[Step]): string =
     tag("ol", "class=\"history\"", rows))
 
 
-func renderDance(current: Frame; danced: seq[Step]): string =
+func renderVisSwitch(vis: Vis): string =
+  ## Show the choice between the two drawings.
+  var tabs = ""
+  for candidate in Vis:
+    let classes = if candidate == vis: "tab on" else: "tab"
+    tabs.add button("vis", $candidate, classes, esc($candidate))
+  tag("div", "class=\"tabs small\"", tabs)
+
+
+func renderPicture(current: Frame; vis: Vis): string =
+  ## Show the frame the couple are in, drawn as the two bodies.
+  tag("section", "class=\"panel\"",
+    tag("h3", "", "frame") &
+    renderVisSwitch(vis) &
+    tag("h2", "", esc(current.describe)) &
+    tag("p", "class=\"note\"", "position: " & esc(current.position) &
+      " &middot; connections: " & $current.countHolds) &
+    tag("div", "class=\"enter\"", renderFrame(current)) &
+    tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
+      "dashed line is the couple's midline, between their left and their " &
+      "right: a connection that crosses it is a crossed connection, and two " &
+      "crossed connections overlap."))
+
+
+func renderMapPanel(current, before: Frame; vis: Vis): string =
+  ## Show where the couple stand in the whole ontology.
+  tag("section", "class=\"panel wide\"",
+    tag("h3", "", "map") &
+    (if vis == Vis.Map: renderVisSwitch(vis) else: "") &
+    tag("div", "class=\"scroll\"",
+      renderMap(some(current), some(before))) &
+    tag("p", "class=\"note\"", "Every frame, and every move between them. Each " &
+      "row holds one more connection than the row above, so a step down the " &
+      "page is a collect and a step up is a drop; the label on a lit line is " &
+      "the hand that acts. Dashed curves are the two compounds, which are two " &
+      "moves and so cannot be a line. Lit frames are the ones you can dance to " &
+      "from here &mdash; and they are the only ones you can click."))
+
+
+func renderDance(current, before: Frame; vis: Vis; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
-    tag("section", "class=\"panel\"",
-      tag("h3", "", "frame") &
-      tag("h2", "", esc(current.describe)) &
-      tag("p", "class=\"note\"", "position: " & esc(current.position) &
-        " &middot; connections: " & $current.countHolds &
-        " &middot; key: " & esc(current.key)) &
-      renderFrame(current) &
-      tag("p", "class=\"note\"", "Seen from above, lead at the bottom. The " &
-        "dashed line is the couple's midline, between their left and their " &
-        "right: a connection that crosses it is a crossed connection, and two " &
-        "crossed connections overlap.")) &
-    renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
+    (if vis == Vis.Map: "" else: renderPicture(current, vis)) &
+    renderMoves(current) & renderElsewhere(current) & renderHistory(danced) &
+    (if vis == Vis.Picture: "" else: renderMapPanel(current, before, vis)))
 
 
 
@@ -231,13 +266,24 @@ func renderControls(view: View): string =
 
 
 proc render() =
-  ## Draw the page from the session state.
+  ## Draw the page from the session state, then let the marker travel.
+  ##
+  ## The map is drawn with the marker still on the frame the couple left.  Moving
+  ## it after the browser has laid the page out is what turns a change of state
+  ## into a movement across the picture; a page that never runs this still shows
+  ## the couple somewhere true, one frame behind.
   let body =
     case view
-    of View.Dance: renderDance(current, history)
+    of View.Dance: renderDance(current, before, vis, history)
     of View.Atlas: renderAtlas()
     of View.Audit: renderAudit()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
+  let marker = document.getElementById("here")
+  if marker == nil:
+    return
+  discard marker.getBoundingClientRect() # Settle the drawn position first.
+  marker.setAttribute("transform", cstring("translate(" &
+    $marker.getAttribute("data-x") & "," & $marker.getAttribute("data-y") & ")"))
 
 
 proc dance(key: string) =
@@ -252,6 +298,7 @@ proc dance(key: string) =
     if move.to != target.get:
       continue
     history.add Step(phrase: phrase(current, move), to: move.to)
+    before = current
     current = move.to
     return
 
@@ -262,6 +309,7 @@ proc start(key: string) =
   if target.isNone:
     return
   origin = target.get
+  before = origin
   current = origin
   history = @[]
   view = View.Dance
@@ -269,6 +317,11 @@ proc start(key: string) =
 
 proc handle(event: Event) =
   ## Route one click to the session change it asks for.
+  let stepped = event.target.closest("g.node.reachable")
+  if stepped != nil:
+    dance($stepped.getAttribute("data-frame"))
+    render()
+    return
   let node = event.target.closest("button")
   if node == nil:
     return
@@ -281,11 +334,17 @@ proc handle(event: Event) =
     for candidate in View:
       if $candidate == value:
         view = candidate
+  of "vis":
+    for candidate in Vis:
+      if $candidate == value:
+        vis = candidate
   of "undo":
     if history.len > 0:
       discard history.pop()
+      before = current
       current = if history.len > 0: history[^1].to else: origin
   of "reset":
+    before = current
     current = origin
     history = @[]
   else: return

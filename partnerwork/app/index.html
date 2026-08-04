@@ -73,7 +73,32 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .target { display: block; font-size: 0.8rem; color: var(--dim); }
 .history { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
 .history li { margin-bottom: 0.3rem; }
-.frame { width: 100%; max-width: 190px; display: block; margin: .25rem auto .75rem; }
+.enter .frame { width: 100%; max-width: 190px; display: block;
+  margin: .25rem auto .75rem; }
+.scroll { overflow-x: auto; }
+.tabs.small { margin-bottom: .6rem; }
+.tabs.small .tab { font-size: 0.72rem; padding: 0.16rem 0.5rem; }
+.map { width: 100%; min-width: 620px; height: auto; display: block; }
+.map .edge { stroke-width: 2; }
+.map .edge.lit { stroke-width: 3.5; }
+.map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
+  stroke-dasharray: 5 4; }
+.map .arc.lit { stroke: var(--dim); stroke-width: 2; }
+.map .edge-plate, .map .arc-plate { fill: var(--page); }
+.map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
+.map .node { opacity: .5; }
+.map .node.here, .map .node.reachable { opacity: 1; }
+.map .node.reachable { cursor: pointer; }
+.map .node.reachable .node-plate { stroke: var(--rule-strong); }
+.map .node.reachable:hover .node-plate { stroke: var(--ink); }
+.map .marker { fill: none; stroke: var(--ink); stroke-width: 2.5;
+  transition: transform .5s cubic-bezier(.4, 0, .2, 1); }
+@keyframes enter { from { opacity: 0; transform: translateY(5px); } }
+.enter { animation: enter .5s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .map .marker { transition: none; }
+  .enter { animation: none; }
+}
 .matrix { border-collapse: collapse; font-size: 0.78rem; }
 .matrix th { font-weight: 500; color: var(--dim); text-align: left;
   padding: 0.2rem 0.35rem; }

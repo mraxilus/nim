@@ -183,6 +183,17 @@ table.matrix td.new { border-color: var(--left); color: var(--left);
 table.matrix td.self { background: var(--rule); border-color: var(--rule); }
 table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 
+/* ---------- map ---------- */
+
+.map { width: 100%; min-width: 620px; height: auto; display: block;
+  margin: .5rem auto; }
+.map .edge { stroke-width: 2; }
+.map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
+  stroke-dasharray: 5 4; }
+.map .arc-plate, .map .edge-plate { fill: var(--ground); }
+.map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
+.map .node-name { fill: var(--ink); }
+
 /* ---------- findings ---------- */
 
 .findings { display: flex; flex-direction: column; gap: 1rem; }
@@ -306,6 +317,28 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   distinction and <em class="term">Left-to-right and Right-to-left</em> does not,
   and your sheet already has it exactly that way. Nothing has to remember the
   rule; it falls out of who faces whom.</p>
+</section>
+
+<section>
+  <div>
+    <p class="eyebrow">The shape of it</p>
+    <h2>Every frame, and every move between them</h2>
+  </div>
+  <p>Each row holds one more connection than the row above, so the direction of
+  a move is readable from the drawing: a step down the page is a
+  <code>collect</code> and a step up is a <code>drop</code>. That leaves each
+  line with only one thing to say, which is the arm that acts.</p>
+  <div class="scroll">
+    {{map}}
+  </div>
+  <p>One line stands for two moves, because every move reverses; twenty moves
+  are ten lines. The dashed curves are the compounds, drawn apart from the lines
+  because they are not moves &mdash; a <code>place</code> is the two ways in and
+  out of <em class="term">open</em> taken together, and a <code>cut</code> is the
+  two ways in and out of a single hold.</p>
+  <p>The picture also shows the ontology has no dead ends and no islands: from
+  any frame you can reach any other, and the longest way round is
+  {{diameter}} moves.</p>
 </section>
 
 <section>

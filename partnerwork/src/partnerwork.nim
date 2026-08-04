@@ -9,8 +9,9 @@
 
 import ./partnerwork/diagram
 import ./partnerwork/frame
+import ./partnerwork/map
 import ./partnerwork/rotation
 import ./partnerwork/transition
 import ./partnerwork/workbook
 
-export diagram, frame, rotation, transition, workbook
+export diagram, frame, map, rotation, transition, workbook

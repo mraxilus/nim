@@ -144,14 +144,12 @@ func holder(target: Frame; site: Site): Option[Side] =
   none(Side)
 
 
-func renderFrame*(target: Frame): string =
-  ## Draw a frame as a self-contained picture.
+func frameBody(target: Frame): string =
+  ## Draw the contents of a frame picture, without the frame around them.
   ##
   ## The under-arm is drawn first so that the reading order of the markup is the
   ## reading order of the picture, from the ground up.
-  result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " & $WIDTH &
-    " " & $HEIGHT & "\" class=\"frame\" role=\"img\">" &
-    "<title>" & target.describe & "</title>"
+  result = "<title>" & target.describe & "</title>"
   result.add line(MIDLINE_X.float, MIDLINE_TOP.float, MIDLINE_X.float,
     MIDLINE_BOTTOM.float,
     "stroke: " & COLOUR_QUIET & "; stroke-width: 1; stroke-dasharray: 3 4")
@@ -173,4 +171,24 @@ func renderFrame*(target: Frame): string =
   result.add caption(RIGHT_X, CAPTION_TOP_Y, "left")
   result.add caption(LEFT_X, CAPTION_BOTTOM_Y, "Left")
   result.add caption(RIGHT_X, CAPTION_BOTTOM_Y, "Right")
-  result.add "</svg>"
+
+
+func frameHeight*(width: int): int =
+  ## Get how tall a frame picture is when drawn to a given width.
+  (width * HEIGHT) div WIDTH
+
+
+func renderFrame*(target: Frame): string =
+  ## Draw a frame as a picture that stands on its own.
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " & $WIDTH & " " &
+    $HEIGHT & "\" class=\"frame\" role=\"img\">" & frameBody(target) & "</svg>"
+
+
+func renderFramePlaced*(target: Frame; x, y, width: int): string =
+  ## Draw a frame picture at a place inside a larger drawing.
+  ##
+  ## The same body, given its own viewport: a nested picture keeps its own
+  ## coordinates, so the drawing around it never has to know how a frame is made.
+  "<svg x=\"" & $x & "\" y=\"" & $y & "\" width=\"" & $width & "\" height=\"" &
+    $frameHeight(width) & "\" viewBox=\"0 0 " & $WIDTH & " " & $HEIGHT &
+    "\" class=\"frame\">" & frameBody(target) & "</svg>"

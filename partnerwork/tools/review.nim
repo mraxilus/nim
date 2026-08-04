@@ -43,6 +43,13 @@ func countDisagreements(): int =
       inc result
 
 
+func longestRoute(): int =
+  ## Get the most moves any frame is from any other.
+  for source in FRAMES:
+    for destination in FRAMES:
+      result = max(result, route(source, destination).len)
+
+
 func countNamedStates(): int =
   ## Count the workbook states the hand-to-hand model can check.
   for name in WORKBOOK_STATES:
@@ -203,6 +210,7 @@ proc renderReview*(): string =
     "stats": renderStats(),
     "gallery": renderGallery(),
     "matrix": renderMatrix(),
+    "map": renderMap(none(Frame), none(Frame)),
     "primitives": renderPrimitives(),
     "compounds": renderCompounds(),
     "compound_count": $(ord(high(Compound)) + 1),
@@ -220,6 +228,7 @@ proc renderReview*(): string =
     "primitive_count": $(ord(high(Helper)) + 1),
     "laws": $countLaws(),
     "pairs": $(FRAMES.len * FRAMES.len),
+    "diameter": $longestRoute(),
   }
   for (marker, value) in fills:
     page = page.replace("{{" & marker & "}}", value)

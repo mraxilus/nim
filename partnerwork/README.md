@@ -43,6 +43,12 @@ Three views: **Dance** walks the state machine, **Atlas** shows the whole derive
 transition matrix with the cells the workbook leaves blank outlined, and
 **Audit** reports what the model has to say about the workbook.
 
+The Dance view draws the frame two ways at once — the two bodies, and a map of
+the whole ontology with the couple standing on one frame. Taking a move animates
+both together: the marker travels along the line it is dancing while the picture
+of the bodies changes under it. **Both / Picture / Map** chooses how much of that
+to show, and on the map only the frames one move away can be clicked.
+
 
 ## Layout
 
@@ -50,6 +56,7 @@ transition matrix with the cells the workbook leaves blank outlined, and
 src/partnerwork/frame.nim       frames, their laws, their names, reflection
 src/partnerwork/transition.nim  the two primitives, the two compounds, the routes
 src/partnerwork/diagram.nim     one drawing of a frame, for everything that shows one
+src/partnerwork/map.nim         the whole graph as one picture: frames and moves
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
 app/                            the browser validator

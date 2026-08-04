@@ -163,6 +163,13 @@ suite "routes":
           current = step.to
         check current == destination
 
+  test "no frame is more than four moves from any other":
+    var longest = 0
+    for source in FRAMES:
+      for destination in FRAMES:
+        longest = max(longest, route(source, destination).len)
+    check longest == 4
+
   test "a route is one move long exactly where a primitive exists":
     for source in FRAMES:
       for destination in FRAMES:
