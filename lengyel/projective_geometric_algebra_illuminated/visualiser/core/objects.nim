@@ -31,7 +31,7 @@
 
 import std/[math, options]
 
-import ../pga
+import ../../pga
 
 # Fail early rather than emit meaningless picture from algebra of wrong dimension.
 static:

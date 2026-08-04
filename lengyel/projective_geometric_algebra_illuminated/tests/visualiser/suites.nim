@@ -18,17 +18,17 @@ when compileOption("profiler"):
 import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
-import ../../visualiser/[
+import ../../visualiser/core/[
   camera, format, history, interaction, mesh, objects, picking, scene, selection,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
 when not defined(js):
-  import ../../visualiser/[arena, gif, image]
+  import ../../visualiser/desktop/[arena, gif, image]
 # `{.all.}` so the suite can check `marker`'s own private helpers directly rather than
 #   only through the markers they end up shaping -- `directionAcross` is the whole of why
 #   a line's rails converge, and is worth asserting on its own terms.
-import ../../visualiser/marker {.all.}
+import ../../visualiser/core/marker {.all.}
 
 randomize(0)
 

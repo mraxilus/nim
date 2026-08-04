@@ -41,8 +41,9 @@
 
 import std/[options, strformat]
 
-import ../pga
-import ./[camera, format, gui, history, mesh, objects, scene, selection]
+import ../../pga
+import ./gui
+import ../core/[camera, format, history, mesh, objects, scene, selection]
 
 
 

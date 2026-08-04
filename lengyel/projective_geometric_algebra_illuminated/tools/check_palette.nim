@@ -13,7 +13,7 @@
 
 import std/[options, strformat, strutils, wordwrap]
 
-import ../visualiser/mesh
+import ../visualiser/core/mesh
 import ./colour
 
 

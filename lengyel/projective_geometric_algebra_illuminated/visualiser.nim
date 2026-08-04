@@ -42,36 +42,27 @@
 ##   image encodes a frame readback as PNG.
 ##
 ## Render paths: this file is the native desktop entry point (SDL3/OpenGL/Dear ImGui,
-## compiled `--backend:cpp` per `visualiser.nim.cfg`); `visualiser/browser_bridge.nim`
+## compiled `--backend:cpp` per `visualiser.nim.cfg`); `visualiser/browser/browser_bridge.nim`
 ## is the browser entry point (compiled through `nim js` per its own sibling
 ## `browser_bridge.nim.cfg`, presentation done by hand-written JS living outside this
 ## repo). Neither imports the other, and nothing shared imports either render target's
-## own presentation layer -- verified by import graph, not just by convention:
+## own presentation layer.
 ##
-##   |-------------------|---------|-----------------------------------------------|
-##   | Module            | Path    | Reachable from                                |
-##   |-------------------|---------|-----------------------------------------------|
-##   | pga               | Shared  | Both (external, vendored at build time only). |
-##   | objects           | Shared  | Both.                                         |
-##   | mesh              | Shared  | Both.                                         |
-##   | camera            | Shared  | Both.                                         |
-##   | scene             | Shared  | Both.                                         |
-##   | selection         | Shared  | Both.                                         |
-##   | picking           | Shared  | Both.                                         |
-##   | marker            | Shared  | Both.                                         |
-##   | interaction       | Shared  | Both.                                         |
-##   | storyboard        | Shared  | Both.                                         |
-##   | format            | Shared  | Both (transitively, through interaction).     |
-##   | browser_bridge    | Browser | Browser entry point.                          |
-##   | arena             | Desktop | Desktop only.                                 |
-##   | gif               | Desktop | Desktop only.                                 |
-##   | image             | Desktop | Desktop only.                                 |
-##   | gui, gui_shim.cpp | Desktop | Desktop only.                                 |
-##   | opengl            | Desktop | Desktop only.                                 |
-##   | sdl3              | Desktop | Desktop only.                                 |
-##   | renderer          | Desktop | Desktop only.                                 |
-##   | panel             | Desktop | Desktop only.                                 |
-##   |-------------------|---------|-----------------------------------------------|
+## **The directory a module sits in is which render path may reach it**, so the boundary is
+## read off the layout rather than off a table that has to be kept in step with it:
+##
+##   |----------------------|--------------------------------------------------------|
+##   | Directory            | Reachable from                                         |
+##   |----------------------|--------------------------------------------------------|
+##   | `visualiser/core`    | Both. Geometry, scene, and everything derived from it.  |
+##   | `visualiser/desktop` | This file only. SDL3, OpenGL, Dear ImGui, PNG, GIF.     |
+##   | `visualiser/browser` | `browser_bridge.nim` only. Bridge, markup, glue.        |
+##   |----------------------|--------------------------------------------------------|
+##
+## `pga` is vendored above all three and shared by both. `core` imports nothing outside
+## itself and `pga`; `desktop` and `browser` each import `core` and never each other. A
+## `core` module needing something only one path has states that as `when not defined(js)`
+## and is exercised on both backends by the suite, rather than left to a comment to police.
 ##
 ## Controls:
 ##   Drag from one object to another to derive a third: left joins, right meets, middle
@@ -98,12 +89,13 @@ when compileOption("profiler"):
 import std/[algorithm, math, monotimes, options, os, parseopt, strformat, strutils]
 
 import ./pga
-import ./visualiser/[
-  arena, camera, format, gif, gui, history, image, interaction, marker, mesh, objects, panel,
-  picking, renderer, scene, selection, storyboard,
+import ./visualiser/core/[
+  camera, format, history, interaction, marker, mesh, objects, picking, scene, selection,
+  storyboard,
 ]
-import ./visualiser/opengl as gl
-import ./visualiser/sdl3
+import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
+import ./visualiser/desktop/opengl as gl
+import ./visualiser/desktop/sdl3
 
 
 

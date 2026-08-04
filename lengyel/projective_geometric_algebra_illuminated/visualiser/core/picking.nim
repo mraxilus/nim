@@ -33,7 +33,7 @@
 
 import std/[math, options]
 
-import ../pga
+import ../../pga
 import ./[camera, mesh, objects, scene]
 
 

@@ -25,7 +25,7 @@
 
 {.experimental: "strictFuncs".}
 
-import ../pga
+import ../../pga
 import ./[mesh, objects, scene]
 
 

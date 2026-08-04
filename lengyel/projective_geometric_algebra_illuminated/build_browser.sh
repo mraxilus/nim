@@ -3,9 +3,9 @@
 #
 # The browser target is three tracked sources plus vendored fonts:
 #
-#   visualiser/shell.html     markup, stylesheet, `@EMBED:<file>@` font tokens
-#   visualiser/browser_bridge.nim -> browser_bridge.js, every domain rule, via `nim js`
-#   visualiser/glue.js        WebGL upload, DOM construction, pointer wiring
+#   visualiser/browser/shell.html     markup, stylesheet, `@EMBED:<file>@` font tokens
+#   visualiser/browser/browser_bridge.nim -> browser_bridge.js, every domain rule, via `nim js`
+#   visualiser/browser/glue.js        WebGL upload, DOM construction, pointer wiring
 #   fonts/*.woff2             vendored WOFF2 faces, kept locally and never committed
 #
 # `shell.html` ends on an opening `<script>` and the two scripts concatenate into it, so
@@ -28,9 +28,9 @@ PATH_BRIDGE="${DIR_OUT}/browser_bridge.js"
 #   and a missing script renders as a blank canvas -- neither reports itself.
 for path_needed in \
   "${NIM}" \
-  "${DIR_PROJECT}/visualiser/shell.html" \
-  "${DIR_PROJECT}/visualiser/glue.js" \
-  "${DIR_PROJECT}/visualiser/browser_bridge.nim"
+  "${DIR_PROJECT}/visualiser/browser/shell.html" \
+  "${DIR_PROJECT}/visualiser/browser/glue.js" \
+  "${DIR_PROJECT}/visualiser/browser/browser_bridge.nim"
 do
   [ -e "${path_needed}" ] || { echo "Missing \`${path_needed}\`." >&2; exit 1; }
 done
@@ -39,7 +39,7 @@ mkdir -p "${DIR_OUT}"
 
 # Compile every shared module the desktop runs, through the JS backend. Flags come from
 #   `browser_bridge.nim.cfg` beside the source, not from here.
-"${NIM}" js --hints:off -o:"${PATH_BRIDGE}" "${DIR_PROJECT}/visualiser/browser_bridge.nim"
+"${NIM}" js --hints:off -o:"${PATH_BRIDGE}" "${DIR_PROJECT}/visualiser/browser/browser_bridge.nim"
 
 # Inline each face at the token naming it, so the page reaches no external font host.
 : > "${PATH_PAGE}"
@@ -55,9 +55,9 @@ while IFS= read -r line; do
     line="${line/@EMBED:${name_font}@/data:font/woff2;base64,$(base64 -w0 "${path_font}")}"
   done
   printf '%s\n' "${line}"
-done < "${DIR_PROJECT}/visualiser/shell.html" >> "${PATH_PAGE}"
+done < "${DIR_PROJECT}/visualiser/browser/shell.html" >> "${PATH_PAGE}"
 
-cat "${PATH_BRIDGE}" "${DIR_PROJECT}/visualiser/glue.js" >> "${PATH_PAGE}"
+cat "${PATH_BRIDGE}" "${DIR_PROJECT}/visualiser/browser/glue.js" >> "${PATH_PAGE}"
 printf '\n</script>\n' >> "${PATH_PAGE}"
 
 echo "Wrote ${PATH_PAGE} ($(wc -c < "${PATH_PAGE}") bytes)."

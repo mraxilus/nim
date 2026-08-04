@@ -42,8 +42,8 @@
 
 import std/[options, strformat]
 
-import ../pga
-import ./[
+import ../../pga
+import ../core/[
   camera, format, history, interaction, marker, mesh, objects, picking, scene, selection,
   storyboard,
 ]

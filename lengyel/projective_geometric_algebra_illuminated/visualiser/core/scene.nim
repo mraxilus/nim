@@ -36,7 +36,7 @@
 
 import std/[options, strformat, strutils, unicode]
 
-import ../pga
+import ../../pga
 import ./[format, mesh, objects]
 
 

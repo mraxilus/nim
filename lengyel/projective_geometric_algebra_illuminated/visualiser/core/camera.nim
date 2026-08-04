@@ -28,7 +28,7 @@
 
 import std/[math, options]
 
-import ../pga
+import ../../pga
 import ./[mesh, objects]
 
 

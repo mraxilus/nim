@@ -20,13 +20,13 @@
 import std/[algorithm, os, sequtils, sets, strformat, strutils, unicode]
 
 import ../pga
-import ../visualiser/[objects, scene]
+import ../visualiser/core/[objects, scene]
 
 
 
 #[ Source Locations ]#
 
-const PATH_SHIM = "visualiser/gui_shim.cpp"
+const PATH_SHIM = "visualiser/desktop/gui_shim.cpp"
   ## Where the atlas ranges are declared, relative to the project root this is run from.
 
 

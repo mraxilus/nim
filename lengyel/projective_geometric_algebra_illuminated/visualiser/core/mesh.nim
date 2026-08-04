@@ -55,7 +55,7 @@
 
 import std/[math, options, strformat]
 
-import ../pga
+import ../../pga
 import ./objects
 
 

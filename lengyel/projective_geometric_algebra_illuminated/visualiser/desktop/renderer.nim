@@ -20,7 +20,7 @@
 
 import std/strformat
 
-import ./[camera, mesh]
+import ../core/[camera, mesh]
 import ./opengl as gl
 
 

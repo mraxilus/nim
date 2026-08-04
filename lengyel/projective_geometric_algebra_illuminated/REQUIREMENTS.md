@@ -47,6 +47,12 @@ These are the rules a reviewer will check first. Each has cost the project real 
    across the boundary. Repeated audits of this project found drift here every time: a grade
    computed by counting digits in a name, a button-to-operation mapping reimplemented, render
    constants hand-copied. Each was a bug waiting.
+   **Make the boundary structural, not documentary.** Put the core, the desktop-only modules
+   and the browser-only modules in three sibling directories, so which path may reach a module
+   is read off its import path rather than off a table someone has to keep in step. This
+   project kept that table in a module doc for many rounds; every audit found it stale. A core
+   module needing something only one path has states that as a conditional compilation guard,
+   so a shared caller reaching for it fails to build rather than failing at run time.
 2. **Never depend on what the project exists to understand.** The algebra is the subject;
    derive it. External concerns — windowing, GL, codecs, fonts — are fine, and each is
    justified where it is used. There is **no hand-rolled vector arithmetic** anywhere in the
@@ -908,6 +914,18 @@ so the two stack and the hint outstays both numbers.
 - Test entry points are a minimal spec header plus an include of one shared suite,
   parameterised over configurations by the test runner's matrix mechanism. Keep the suites in
   one file so the configurations cannot drift.
+- **Run the suite on both compilation targets, not just the native one.** A rule stated once
+  and reached through two mechanisms — the native formatter and the one written for the target
+  that has no C runtime — is only held together where both mechanisms run. Compiled natively
+  alone, the test comparing them asks the C runtime whether it agrees with itself. Measured on
+  this project: 330 of 7000 magnitudes differed between the two front-ends while that test
+  stayed green, and adding the second target's row also found a fixed-buffer read returning
+  empty and a `var`-returning accessor writing to a copy. Cases genuinely needing a native
+  entry point guard themselves and are skipped on the other row.
+- **Run it again at capacities small enough that its own tests reach them.** Every capacity is
+  a compile-time define; at the defaults a test proving a boundary writes sixty-four entries to
+  reach one. A second native row at a twelfth of each makes any constant tuned to the default
+  rather than derived from the define fail there rather than in a build somebody configured.
 - Suites that need a live GL context (renderer, GUI, panel) are excluded from the unit suite
   and covered by the driven verification below instead.
 - The invariants above that are **stated as requirements must each have a test**: slot
@@ -916,6 +934,17 @@ so the two stack and the hint outstays both numbers.
   derived basis names against the library's own printing, the two number-formatting paths
   agreeing, the palette's categorical count, the tween's mid-flight and arrival behaviour,
   history walked to capacity and back, and a scene file round-trip.
+- **Commit the measurements as runnable checks**, not as numbers in a document: a layout check
+  counting **characters, not bytes** (a byte counter reports a compliant line full of multi-byte
+  operators as over-long and gets ignored within a day); a palette-separation check that
+  imports the palette table itself; a glyph-coverage check that enumerates the codepoints from
+  the tables that produce them and parses the ranges out of the font-atlas source. Each must
+  read the thing being checked rather than a transcription — a mirror would pass happily while
+  the compiled build disagreed. One script runs all of them plus every suite row, fails on the
+  first failure, and says on success that passing it is necessary and never sufficient.
+- A check whose floor a value cannot meet gets a **declared exception in source**, naming the
+  reason and pinning a floor just under where it measures, so drifting further still fails.
+  Never lower the floor globally to make one case pass.
 - **Driven verification, every round**: regenerate the capture frames and **look at them**;
   drive the browser headlessly with **real synthetic events** at the platform's own input
   layer — untrusted synthetic pointer events fail pointer capture, and calling handlers

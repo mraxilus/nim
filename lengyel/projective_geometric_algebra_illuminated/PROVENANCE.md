@@ -35,14 +35,23 @@ GPU hardware; every number and screenshot here is software-rendered.
 
 Render Paths
 ---
-| Scope | Files |
-|-------|-------|
-| Shared | `pga`, `objects`, `mesh`, `camera`, `scene`, `selection`, `picking`, `marker`,
-  `interaction`, `storyboard`, `history`, `format`, `arena` |
-| Desktop only | `visualiser.nim`, `panel`, `renderer`, `opengl`, `gui`, `sdl3`, `image`, `gif` |
-| Browser only | `browser_bridge.nim`, `shell.html`, `glue.js` |
+**The directory a module sits in is which render path may reach it.** The boundary used to
+be a table in `visualiser.nim`'s module doc that every other module cross-referenced; it is
+now the layout itself, so there is nothing to keep in step.
 
-`visualiser.nim`'s module doc carries this table; every other module cross-references it.
+| Directory | Reachable from | Holds |
+|-----------|----------------|-------|
+| `visualiser/core` | Both | `objects`, `mesh`, `camera`, `scene`, `selection`,
+  `picking`, `marker`, `interaction`, `storyboard`, `history`, `format` |
+| `visualiser/desktop` | `visualiser.nim` | `panel`, `renderer`, `opengl`, `gui`,
+  `gui_shim.cpp`, `sdl3`, `image`, `gif`, `arena` |
+| `visualiser/browser` | `browser_bridge.nim` | `browser_bridge.nim`, `shell.html`, `glue.js` |
+
+`pga` is vendored above all three and shared. `core` imports nothing outside itself and
+`pga`; `desktop` and `browser` each import `core` and never each other, which is now
+readable from the import paths (`../core/`) rather than needing an import-graph audit.
+`arena` sits in `desktop` rather than in `core` despite being general-purpose: it is
+reached only by the PNG and GIF encoders, and the JS backend has no use for it.
 The two entry points share all geometry and never import each other.
 
 A shared module reaching for something only one path has is a **compile error, not a
@@ -73,13 +82,13 @@ loop uses — see Browser Pipeline for why constructing an `Item` there is expen
 Memory And Allocation
 ---
 Explicit constraint: keep the GC out of the hot path, arena-style. The interactive render
-loop allocates nothing. `visualiser/format.nim` wraps C `snprintf` so per-frame number
+loop allocates nothing. `visualiser/core/format.nim` wraps C `snprintf` so per-frame number
 formatting writes into stack buffers; `formatMultivector`/`describeShape` append into
 caller-owned storage. Button-driven message building (apply, drag release, storyboard step)
 still uses `strformat` deliberately — once per click, not once per item per frame, and the
 result must become a real `string` for `Scene.addItem` anyway.
 
-`visualiser/arena.nim`: a plain `array[N, byte]` global, carved by `push[T](arena, count)`,
+`visualiser/desktop/arena.nim`: a plain `array[N, byte]` global, carved by `push[T](arena, count)`,
 reclaimed by `reset`. Two instances — **permanent** (`CAPACITY_ARENA_PERMANENT` 160 MiB,
 never reset; backs the reused pixel-readback buffer and the storyboard's accumulated GIF
 frames) and **frame** (`CAPACITY_ARENA_FRAME` 64 MiB, reset after each throwaway unit — one
@@ -266,7 +275,7 @@ copy `browser_bridge` used to carry.
 
 Selection And Picking
 ---
-`visualiser/selection.nim`, shared: an ordered fixed-capacity list of slots, held as a plain
+`visualiser/core/selection.nim`, shared: an ordered fixed-capacity list of slots, held as a plain
 value type like `History` beside it. **Order is the whole point, and the reason it is a list
 rather than a set** — an operation reads its operands positionally, so the first slot picked
 is `m` and the second `n`. `impliedArity` lives here too: one pick names a unary operation,
@@ -437,7 +446,7 @@ including the canvas would clear selection state before the gesture that should 
 
 Undo/Redo
 ---
-`visualiser/history.nim`, shared. Scoped to scene-content edits — add, apply (including
+`visualiser/core/history.nim`, shared. Scoped to scene-content edits — add, apply (including
 drag and the touch flow), remove, visibility toggle, ink recolour, and an edit session's
 `save` — and deliberately **not** camera moves. Coefficients, label and ink used to be
 excluded too, because the widgets driving them are continuous multi-frame inputs and
@@ -550,7 +559,7 @@ does natively.
 
 Browser Pipeline
 ---
-`visualiser/browser_bridge.nim` compiles the same shared modules the desktop runs, through
+`visualiser/browser/browser_bridge.nim` compiles the same shared modules the desktop runs, through
 `nim js`. `glue.js` is presentation only — WebGL buffer upload and draw calls, DOM
 construction, pointer wiring, `DataView` packing, `Blob` download. Every join, meet,
 attitude, support, expansion, projection, pick and drag runs compiled Nim.
@@ -598,8 +607,9 @@ triangles with `depthMask(false)`.
 
 Browser UI
 ---
-`visualiser/shell.html` (markup and stylesheet) and `visualiser/glue.js` (presentation),
-assembled with `browser_bridge.js` by `build_browser.sh` into one self-contained page.
+`visualiser/browser/shell.html` (markup and stylesheet) and its sibling `glue.js`
+(presentation), assembled with `browser_bridge.js` by `build_browser.sh` into one
+self-contained page.
 `shell.html` ends on an opening `<script>` that the two scripts concatenate into, and the
 closing tag is appended by the script rather than living in a file that would then not
 parse on its own.
