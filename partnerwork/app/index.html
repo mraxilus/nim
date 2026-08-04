@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partner work</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --page: #fbfaf8;
+  --ink: #1a1a1a;
+  --dim: #6b6660;
+  --rule: #ddd8d0;
+  --panel: #ffffff;
+  --left: #b4541f;
+  --right: #1f5fb4;
+  --new: #a3801a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #16151a;
+    --ink: #ece9e4;
+    --dim: #9a948c;
+    --rule: #33313a;
+    --panel: #1e1d24;
+    --left: #e8813f;
+    --right: #6ba4ea;
+    --new: #d9b64a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 1.25rem;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;
+  margin-bottom: 1rem; }
+h1 { font-size: 1.1rem; margin: 0 1rem 0 0; letter-spacing: 0.08em;
+  text-transform: uppercase; }
+h2 { font-size: 1.25rem; margin: 0.25rem 0 0.5rem; font-weight: 600; }
+h3 { font-size: 0.72rem; margin: 0 0 0.75rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--dim); font-weight: 600; }
+h4 { font-size: 0.72rem; margin: 1rem 0 0.4rem; letter-spacing: 0.06em;
+  color: var(--dim); font-weight: 600; }
+h4:first-of-type { margin-top: 0; }
+em { font-style: normal; font-weight: 600; }
+.tabs { display: flex; gap: 0.25rem; }
+button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
+  background: var(--panel); border: 1px solid var(--rule); }
+.tab { padding: 0.3rem 0.7rem; font-size: 0.82rem; }
+.tab.on { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.flat { padding: 0.25rem 0.6rem; font-size: 0.8rem; margin: 0 0.35rem 0.35rem 0; }
+.stage { display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 1rem; }
+.panel.wide { grid-column: 1 / -1; }
+.panel.muted { color: var(--dim); }
+.note { font-size: 0.82rem; color: var(--dim); margin: 0 0 0.75rem; }
+.move { display: block; width: 100%; text-align: left; padding: 0.5rem 0.7rem;
+  margin-bottom: 0.35rem; }
+.move:hover { border-color: var(--ink); }
+.far { padding: 0.4rem 0.1rem; border-bottom: 1px solid var(--rule); }
+.far:last-child { border-bottom: 0; }
+.phrase { display: block; }
+.target { display: block; font-size: 0.8rem; color: var(--dim); }
+.history { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.history li { margin-bottom: 0.3rem; }
+.diagram { width: 100%; max-width: 460px; display: block; margin: 0 auto; }
+.diagram .body { fill: none; stroke: var(--rule); stroke-width: 2; }
+.diagram .arm { stroke: var(--rule); stroke-width: 3; fill: none; }
+.diagram .link { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.diagram .link.left { stroke: var(--left); }
+.diagram .link.right { stroke: var(--right); }
+.diagram .mask { fill: none; stroke: var(--panel); stroke-width: 11; }
+.diagram .hand { fill: var(--page); stroke: var(--dim); stroke-width: 2; }
+.diagram .hand.held { fill: var(--ink); stroke: var(--ink); }
+.diagram .caption { fill: var(--dim); font-size: 11px; text-anchor: middle;
+  font-family: inherit; }
+.matrix { border-collapse: collapse; font-size: 0.78rem; }
+.matrix th { font-weight: 500; color: var(--dim); text-align: left;
+  padding: 0.2rem 0.35rem; }
+.matrix thead th span { display: block; }
+.matrix tr th:first-child { max-width: 15rem; }
+.matrix th:not(.row) { height: 9rem; vertical-align: bottom; }
+.matrix th:not(.row) span { writing-mode: vertical-rl; transform: rotate(180deg); }
+.matrix td { width: 1.6rem; height: 1.6rem; text-align: center;
+  border: 1px solid var(--rule); }
+.matrix td.on { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.matrix td.new { outline: 2px solid var(--new); outline-offset: -2px;
+  color: var(--new); font-weight: 700; }
+.matrix td.self { background: var(--rule); }
+.starts { margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="app.js"></script>
+</body>
+</html>
