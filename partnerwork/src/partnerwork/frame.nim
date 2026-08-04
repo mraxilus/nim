@@ -103,9 +103,14 @@ func countHolds*(frame: Frame): int =
 func isValid*(frame: Frame): bool =
   ## Test the two laws every frame obeys.
   ##
-  ## One hand of the follow cannot be held twice.  An arm order is recorded
-  ## exactly where the forearms overlap, so two frames that a dancer cannot tell
-  ## apart cannot be different values.
+  ## No hand is shared.  One hand of the follow cannot be held by both hands of
+  ## the lead, and the ontology leaves out `Left-to-all` for the mirrored reason:
+  ## a hand joined to two things is an ambiguous lead, and it is what makes the
+  ## state space finite.  The law is what sends a hand-off through the open frame
+  ## rather than through a moment where two hands hold one.
+  ##
+  ## An arm order is recorded exactly where the forearms overlap, so two frames
+  ## that a dancer cannot tell apart cannot be different values.
   if frame.hold[Side.Left].isSome and frame.hold[Side.Left] == frame.hold[Side.Right]:
     return false
   frame.over.isSome == frame.hasOverlap

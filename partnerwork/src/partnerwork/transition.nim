@@ -141,9 +141,16 @@ func classify*(a, b: Frame): Option[Helper] =
 func compound*(a, b: Frame): Option[Compound] =
   ## Get the compound joining two frames, where the ontology names one.
   ##
-  ## Both are two primitives with a name, and both are a hand-off in the sense
-  ## that the couple stays joined while the arms rearrange.  A `place` hands one
-  ## connection to the lead's other hand; a `cut` hands one arm over the other.
+  ## Both are two primitives with a name.  A `place` hands one connection to the
+  ## lead's other hand; a `cut` hands one arm over the other.
+  ##
+  ## A `place` is routed through the open frame, letting go and taking again,
+  ## rather than through a moment where both hands of the lead hold one hand of
+  ## the follow.  That moment is the same ambiguity the ontology already refuses
+  ## in `Left-to-all`, one hand joined to two things, so it is refused in this
+  ## direction too.  A lead who keeps contact through the hand-off is dancing the
+  ## quality the workbook means by "maintaining a connection via a trace"; the
+  ## frames either side of it are the same either way.
   if a == b or not a.isValid or not b.isValid:
     return none(Compound)
   if a.hold == b.hold:
