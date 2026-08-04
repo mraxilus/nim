@@ -7,7 +7,7 @@ Provenance — RGA Workbench
 | **Author** | Written end to end by that agent; no human wrote any line of it |
 | **Date** | 12026-08-03 (Holocene), from the brief in `REQUIREMENTS.md` |
 | **Style contract** | `STYLE.md`, followed for every line |
-| **Where it lives** | Kept locally, deliberately unpushed: its own git repository at `~/rga_workbench`, with no remote. It sits **beside** the Nim checkout rather than inside it, so that repository's working tree stays pristine; the compiler change it needs lives here as `tools/nim_dot_call.patch`. |
+| **Where it lives** | `mraxilus/nim`, branch `claude/rga-workbench-source` — an unrelated history whose root is this project, so the branch carries the workbench and nothing of Nim. The compiler change Nim itself needs is `tools/nim_dot_call.patch` here, not a commit on any Nim branch. |
 | **Review line** | **No human has read this code line by line, and no human has driven either build.** Every claim below is either marked as measured — with the measurement named — or marked as assumed. |
 
 This file describes what the code **currently does** and why, organised by subsystem. It is not
