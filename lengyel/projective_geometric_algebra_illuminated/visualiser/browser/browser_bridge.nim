@@ -964,31 +964,45 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   @[cfloat(screen.x), cfloat(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)]
 
 
-proc nimSelectionMarker(slot, width, height: cint; progress: cfloat): seq[float32]
-  {.exportc.} =
+proc nimSelectionMarker(
+  slot, width, height: cint; progress: cfloat; is_touch: bool
+): seq[float32] {.exportc.} =
   ## Shape this item's own selection/hover marker and report it flat, for the browser's
-  ## SVG overlay to stroke: `[kind, is_closed, radius, fraction, x0, y0, x1, y1, ...]`.
-  ##   `kind` is `marker.MarkerKind`'s own ordinal -- 0 a ring about a point, 1 a pair of
-  ##   rails flanking a line (four points, two per rail), 2 a polyline lying on a plane.
-  ##   `radius` and `fraction` are meaningful for a ring alone and 0 otherwise;
-  ##   `is_closed` for a polyline alone. Point count is whatever is left, so a caller
-  ##   reads it off the length rather than being handed a count it could disagree with.
+  ## SVG overlay to stroke: `[kind, first, second, third, x0, y0, x1, y1, ...]`.
+  ##   `kind` is `marker.MarkerKind`'s own ordinal, and the three header slots after it
+  ##   mean whatever that kind needs -- there is one header rather than five, so the
+  ##   overlay reads a fixed prefix and then points, whatever it was handed:
+  ##
+  ##   | Kind | first | second | third | Points |
+  ##   |------|-------|--------|-------|--------|
+  ##   | 0 `Ring` | -- | radius | swept fraction | centre |
+  ##   | 1 `Rails` | -- | -- | -- | two per drawn piece |
+  ##   | 2 `Loop` | closed | -- | -- | around the plane |
+  ##   | 3 `Bands` | first closed | first's count | second closed | both bands, in order |
+  ##   | 4 `Frame` | closed | -- | -- | four corners |
+  ##
+  ##   Point count is whatever is left, so a caller reads it off the length rather than
+  ##   being handed a count it could disagree with -- except `Bands`, which carries two
+  ##   runs in one array and so has to say where the first ends.
+  ##   `is_touch` swells every outline clear of a fingertip partway through a hold; see
+  ##   `marker.clearanceTouch`. The caller knows which kind of gesture is filling the
+  ##   marker and this module does not, so it is asked rather than guessed.
   ##   `progress` draws the marker part-built for a press maturing into a selection; pass
   ##   1 for a finished one. What a partial marker looks like is `marker.markerFor`'s own
   ##   decision, not this bridge's and not the overlay's -- a ring comes back swept, rails
   ##   come back short, a loop comes back small, and the overlay strokes what it is given.
-  ##   Empty where there is nothing to draw -- a dead slot, geometry with no shape, or an
-  ##   object at horizon, which draws fixed to the eye with nothing to surround. That is
-  ##   the same "nothing to draw" answer `nimAnchorScreen` gives, and callers here read a
-  ##   slot carried across frames, so any of them can go stale the moment its item is
-  ##   removed.
+  ##   Empty where there is nothing to draw -- a dead slot, or geometry with no shape at
+  ##   all. That is the same "nothing to draw" answer `nimAnchorScreen` gives, and callers
+  ##   here read a slot carried across frames, so any of them can go stale the moment its
+  ##   item is removed. An object at horizon is no longer among them: both shapes that draw
+  ##   fixed to the eye now have a marker wrapping what is drawn.
   if not g_scene.isAlive(int(slot)): return
   let
     scale = g_camera.drawExtentFor(int(height))
     vp = g_camera.initMatrixViewProjection(float(width) / float(height))
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
-      g_camera, vp, int(width), int(height), float(progress),
+      g_camera, vp, int(width), int(height), float(progress), is_touch,
     )
   if shaped.isNone: return
 
@@ -1007,6 +1021,18 @@ proc nimSelectionMarker(slot, width, height: cint; progress: cfloat): seq[float3
     result[1] = (if marker.is_closed: 1.0'f32 else: 0.0'f32)
     for i in 0 ..< marker.count_point:
       result.add([cfloat(marker.points[i].x), cfloat(marker.points[i].y)])
+  of MarkerKind.Bands:
+    result[1] = (if marker.are_closed_band[0]: 1.0'f32 else: 0.0'f32)
+    result[2] = cfloat(marker.counts_band[0])
+    result[3] = (if marker.are_closed_band[1]: 1.0'f32 else: 0.0'f32)
+    for side in 0 .. 1:
+      for i in 0 ..< marker.counts_band[side]:
+        result.add([
+          cfloat(marker.points_band[side][i].x), cfloat(marker.points_band[side][i].y)
+        ])
+  of MarkerKind.Frame:
+    result[1] = 1.0'f32 # Always closed: a frame is a rectangle, never cut by the eye.
+    for corner in marker.corners: result.add([cfloat(corner.x), cfloat(corner.y)])
 
 
 

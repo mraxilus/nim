@@ -307,6 +307,14 @@ type
 
 #[ Camera-Relative Scale ]#
 
+func radiansPerPixel*(scale: DrawExtent): float =
+  ## Measure how much of the camera's own angular field one pixel of height spans.
+  ##   The small-angle reading of `worldPerPixelAt` at unit depth, and the right unit for
+  ##   anything placed by *direction* rather than by position -- horizon geometry is drawn
+  ##   on a sphere about the eye, where a pixel is an angle and not a distance.
+  2.0*scale.tangent_half_view/float(max(scale.height_pixels, 1))
+
+
 func worldPerPixelAt*(place: Position; scale: DrawExtent): float =
   ## Measure how much world distance one screen pixel spans at `place`'s own depth.
   ##   What turns a width or a clearance stated in pixels into the world offset it has to

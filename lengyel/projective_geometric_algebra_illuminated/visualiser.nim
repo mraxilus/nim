@@ -415,6 +415,27 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
       addr points[0], cint(marker.count_point), tint.red, tint.green, tint.blue, alpha,
       WIDTH_MARKER, cint(ord(marker.is_closed)),
     )
+  of MarkerKind.Bands:
+    # Two independent runs through the same call the loop above uses: each band is cut by
+    #   the eye on its own, so one may be a closed ring while the other is an arc.
+    for side in 0 .. 1:
+      if marker.counts_band[side] == 0: continue
+      var points: array[2*SEGMENTS_MARKER_BANDS, cfloat]
+      for i in 0 ..< marker.counts_band[side]:
+        points[2*i] = cfloat(marker.points_band[side][i].x)
+        points[2*i + 1] = cfloat(marker.points_band[side][i].y)
+      gui.overlayPolyline(
+        addr points[0], cint(marker.counts_band[side]), tint.red, tint.green, tint.blue,
+        alpha, WIDTH_MARKER, cint(ord(marker.are_closed_band[side])),
+      )
+  of MarkerKind.Frame:
+    var points: array[8, cfloat]
+    for i, corner in marker.corners:
+      points[2*i] = cfloat(corner.x)
+      points[2*i + 1] = cfloat(corner.y)
+    gui.overlayPolyline(
+      addr points[0], 4, tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER, 1,
+    )
 
 
 proc drawSelectionMarker(

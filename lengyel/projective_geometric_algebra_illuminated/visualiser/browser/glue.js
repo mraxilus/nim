@@ -1199,7 +1199,8 @@ const svg_overlay = document.getElementById('overlay');
 const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
   nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
-const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2;
+const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
+  MARKER_FRAME = 4;
 // Read from interaction.nim's own constants via nimMenuMetrics, for the same reason the
 // marker's sizes are: a hand-copied literal here would drift from the desktop's menu.
 const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE, RADIUS_MENU_CENTRE,
@@ -1219,8 +1220,9 @@ function svgEl(tag, attrs) {
 // from framebuffer pixels to CSS pixels the way every other overlay here does.
 // Rails arrive as consecutive pairs, one per drawn piece, so the pairwise loop below
 // covers a line clipped into any number of them without knowing how many to expect.
-function appendMarker(slot, alpha, w, h, progress) {
-  const marker = nimSelectionMarker(slot, canvas.width, canvas.height, progress);
+function appendMarker(slot, alpha, w, h, progress, is_touch) {
+  const marker =
+    nimSelectionMarker(slot, canvas.width, canvas.height, progress, is_touch === true);
   if (marker.length === 0) return;
   const kind = marker[0], is_closed = marker[1] > 0.5;
   const radius = marker[2], fraction = marker[3];
@@ -1260,11 +1262,29 @@ function appendMarker(slot, alpha, w, h, progress) {
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       }));
     }
-  } else if (kind === MARKER_LOOP) {
+  } else if (kind === MARKER_LOOP || kind === MARKER_FRAME) {
+    // A frame is four corners and always closed, so it strokes through the very same
+    // element a plane's loop does rather than through a <rect> of its own -- one path
+    // for every closed outline, and nothing to keep in step when one of them changes.
     svg_overlay.appendChild(svgEl(is_closed ? 'polygon' : 'polyline', {
       points: points.map((p) => p[0] + ',' + p[1]).join(' '),
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
     }));
+  } else if (kind === MARKER_BANDS) {
+    // Two runs in one array: the header says how many points the first band holds and
+    // whether each band closed, since either can be cut into an arc by the eye on its own.
+    const count_first = Math.round(marker[2]), is_closed_second = marker[3] > 0.5;
+    const bands = [
+      { run: points.slice(0, count_first), closed: is_closed },
+      { run: points.slice(count_first), closed: is_closed_second },
+    ];
+    for (const band of bands) {
+      if (band.run.length === 0) continue;
+      svg_overlay.appendChild(svgEl(band.closed ? 'polygon' : 'polyline', {
+        points: band.run.map((p) => p[0] + ',' + p[1]).join(' '),
+        fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+      }));
+    }
   }
 }
 
@@ -1282,9 +1302,13 @@ function refreshOverlay(cursor) {
   // wait reads as filling rather than as nothing happening. Drawn at the selected weight
   // it is about to become, and skipped for an item already selected, whose finished
   // marker is on screen already.
+  // Filled markers swell clear of the finger doing the filling. `nimBeginHold` is called
+  // from the touch branch of `pointerdown` and from nowhere else, so a hold in progress on
+  // this build is a finger's by construction -- the flag is passed rather than inferred
+  // inside marker.nim, which cannot see what kind of pointer is on the glass.
   const slot_hold = nimHoldSlot();
   if (slot_hold >= 0 && !slots_selection.includes(slot_hold)) {
-    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()));
+    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true);
   }
 
   // Hover and keyboard focus wear the same marker at the same weight: a reader driving by

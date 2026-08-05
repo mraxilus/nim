@@ -2543,6 +2543,13 @@ suite "Marker":
     POINT_C = toMultivector(Position(x: 2.0, y: 5.0, z: 3.5))
     LINE = POINT_A ∧ POINT_B
     PLANE = POINT_A ∧ POINT_B ∧ POINT_C
+    LINE_HORIZON = attitude(PLANE)
+      ## A plane's own attitude: the pencil of directions lying in it, at horizon.
+    PLANE_HORIZON = attitude(
+      toMultivector(Position(x: 0.0, y: 0.0, z: 0.0)) ∧ PLANE
+    ) ## The whole sky, built the way `storyboard`'s own step 11 builds it -- the attitude
+      ## of a grade-4 volume, which needs a point genuinely *off* the plane or the wedge
+      ## vanishes and there is no volume to take the attitude of.
 
   test "each shape asks for the outline that echoes it":
     check markerOf(POINT_A).get.kind == MarkerKind.Ring
@@ -2662,9 +2669,71 @@ suite "Marker":
     check moved > 1.0
 
 
-  test "a line or plane at horizon gets no marker, drawing fixed to the eye as it does":
-    check markerOf(attitude(PLANE)).isNone
-    check markerOf(attitude(POINT_A ∧ PLANE)).isNone
+  test "a line at horizon is flanked by bands, wrapping the sky as its own circle does":
+    # A plane's own attitude is a line at horizon -- the pencil of directions lying in it.
+    let marker = markerOf(LINE_HORIZON).get
+    check marker.kind == MarkerKind.Bands
+    # Both bands survive: they are circles about the eye, so whatever the camera faces,
+    #   each has points in front of it -- unlike a finite line's rails, which can be
+    #   clipped away entirely.
+    check marker.counts_band[0] > 0
+    check marker.counts_band[1] > 0
+
+    # Only what survives the near plane is reported, so every point handed to an overlay
+    #   is one it can actually stroke -- the rule `Loop` already follows, twice over.
+    for side in 0 .. 1:
+      for i in 0 ..< marker.counts_band[side]:
+        check marker.points_band[side][i].isInFront
+
+
+  test "a horizon line's bands close inward as its hold fills, from outside any view":
+    let (_, _, scale) = setUp()
+    let
+      opening = angleMarkerBands(scale, 0.0, 0.0)
+      midway = angleMarkerBands(scale, 0.5, 0.0)
+      settled = angleMarkerBands(scale, 1.0, 0.0)
+    # A quarter turn off the line at the start -- the pole of its own sky, and so outside
+    #   any field of view this camera offers, which is what "arriving from outside" means
+    #   for an object that has no support to grow out from.
+    check opening =~ ANGLE_MARKER_BANDS_OPEN
+    check midway < opening
+    check settled < midway
+    # And settles at the very gap a finite line's rails keep, read as an angle.
+    check settled =~ OFFSET_MARKER_RAIL*radiansPerPixel(scale)
+
+
+  test "a plane at horizon is framed by the viewport, opening from its centre":
+    # The attitude of a grade-4 object is the plane at horizon -- the whole sky.
+    let marker = markerOf(PLANE_HORIZON).get
+    check marker.kind == MarkerKind.Frame
+
+    # The finished frame stands `GAP_MARKER` inside the viewport, the same clear space
+    #   every other marker in the family keeps from what it surrounds.
+    check marker.corners[0].x =~ GAP_MARKER
+    check marker.corners[0].y =~ GAP_MARKER
+    check marker.corners[2].x =~ float(WIDTH_MARK) - GAP_MARKER
+    check marker.corners[2].y =~ float(HEIGHT_MARK) - GAP_MARKER
+
+    # Part-filled, it is concentric with the finished one and smaller -- the opposite of
+    #   the bands above, which is what tells the two horizon shapes apart while they fill.
+    let (centre_x, centre_y) = (0.5*float(WIDTH_MARK), 0.5*float(HEIGHT_MARK))
+    let half = markerOf(PLANE_HORIZON, progress = 0.5).get
+    check half.corners[0].x > marker.corners[0].x
+    check half.corners[2].x < marker.corners[2].x
+    check 0.5*(half.corners[0].x + half.corners[2].x) =~ centre_x
+    check 0.5*(half.corners[0].y + half.corners[2].y) =~ centre_y
+
+
+  test "a touch hold swells every marker clear of the finger, and settles back exactly":
+    # The reason the swell exists: a fingertip covers what it presses, so a marker filling
+    #   underneath one says nothing to the person filling it.
+    const RADIUS_FINGER = 22.0 # Half the 44-pixel minimum touch target.
+    check clearanceTouch(0.0, is_touch = true) =~ 0.0
+    check clearanceTouch(1.0, is_touch = true) =~ 0.0
+    check RADIUS_MARKER_POINT + clearanceTouch(0.5, is_touch = true) > RADIUS_FINGER
+    # A mouse hides nothing, so it never sees the swell at all.
+    for progress in [0.0, 0.25, 0.5, 0.75, 1.0]:
+      check clearanceTouch(progress, is_touch = false) =~ 0.0
 
 
   test "a point at horizon keeps its ring, on the star it is drawn as":
