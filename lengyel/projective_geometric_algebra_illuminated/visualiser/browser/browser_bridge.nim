@@ -691,8 +691,8 @@ proc nimDragKindForButton(dom_button: cint): cint {.exportc.} =
 
 
 proc nimHelpEntries(): seq[cstring] {.exportc.} =
-  ## Report every help entry flat, four strings each: topic heading, action, outcome, and
-  ## `"touch"` or `""` for whether it is the touch way of doing it.
+  ## Report every help entry flat, four strings each: the tab it belongs under, action,
+  ## outcome, and `"touch"` or `""` for whether it is the touch way of doing it.
   ##   Flat rather than an array of records, for the same reason `nimSelectionMarker` is:
   ##   an object crossing this boundary would be a second shape to keep in step, and the
   ##   presentation layer only ever walks these in order to build rows.
@@ -700,7 +700,7 @@ proc nimHelpEntries(): seq[cstring] {.exportc.} =
   ##   too -- neither UI writes this text.
   for entry in lut_help_entries:
     result.add([
-      cstring(titleOf(entry.topic)), cstring(entry.action), cstring(entry.outcome),
+      cstring(titleOf(entry.path)), cstring(entry.action), cstring(entry.outcome),
       cstring(if entry.is_touch: "touch" else: ""),
     ])
 

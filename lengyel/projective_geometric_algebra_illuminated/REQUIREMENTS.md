@@ -1038,6 +1038,17 @@ so the two stack and the hint outstays both numbers.
   A timed hint is not a substitute — it cuts off whoever reads slowly, which is the reader
   who needs it — and one front-end keeping a legend the other loses is a parity break.
   Dismiss any first-run hint on the reader's first real action, not on a timer.
+- **Cut that table by how the reader is working, one tab per way**, not by what kind of
+  control each row is: a reader opens it in the middle of one thing, and only that thing's
+  rows are of use to them right then. **Bound each tab, not the table**, at compile time, to
+  what fits the smallest screen supported — a count of rows is only a proxy for rendered
+  height, so derive it by measuring the built page at that size and say in the constant that
+  it is a proxy. Growing a full tab must fail the build, and the answer is nearly always to
+  split the tab. Whatever region the rows sit in must be *bounded and scrollable* even so:
+  scrolling is the net that stops a panel silently losing rows off an edge, never the way
+  the reference is meant to be read.
+- **Make the reference reachable from a headless capture** — a flag naming the tab to open.
+  A panel no capture can reach is one whose rows nobody ever checks fit.
 - **Bind the keyboard.** Escape sheds what is in progress, innermost first; the platform's
   undo and redo chords step the timeline. Route each through the same function the button
   uses, never through the button itself: a disabled attribute refreshed on a slow UI tick

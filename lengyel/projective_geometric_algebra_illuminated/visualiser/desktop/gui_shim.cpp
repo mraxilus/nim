@@ -269,6 +269,35 @@ bool guiColorEdit3(const char* label, float* values) {
 
 void guiSeparator() { ImGui::Separator(); }
 
+// One row of tabs, and one tab in it. Split into four calls because Nim cannot import a
+// C++ scope guard, so the caller pairs begin with end exactly as it does for a window.
+// `BeginTabItem` takes no open flag: every tab here is permanent, and a closable tab draws
+// an X the caller has nothing to do about.
+bool guiTabBarBegin(const char *name) { return ImGui::BeginTabBar(name); }
+
+void guiTabBarEnd() { ImGui::EndTabBar(); }
+
+// `is_forced` opens this tab whatever the reader last left open, which is how a headless
+// run reaches a tab it cannot click -- see `visualiser.Options.index_help_driven`. Passed
+// every frame while it is set, so nothing else can take the selection back.
+bool guiTabBegin(const char *label, bool is_forced) {
+  return ImGui::BeginTabItem(label, nullptr,
+                             is_forced ? ImGuiTabItemFlags_SetSelected : 0);
+}
+
+void guiTabEnd() { ImGui::EndTabItem(); }
+
+// Report how tall a bordered child region holding `count` lines of plain text has to be,
+// so a caller sizing one does not have to restate Dear ImGui's own line spacing, window
+// padding and border width -- three numbers it would have to guess at and then re-guess
+// whenever the loaded font changes. `count` lines stack as count*line - one spacing, since
+// the spacing sits between lines rather than after each.
+float guiChildHeightForRows(int count) {
+  const ImGuiStyle &style = ImGui::GetStyle();
+  return count * ImGui::GetTextLineHeightWithSpacing() - style.ItemSpacing.y +
+         2.0f * (style.WindowPadding.y + style.ChildBorderSize);
+}
+
 void guiSeparatorText(const char* label) { ImGui::SeparatorText(label); }
 
 void guiSameLine() { ImGui::SameLine(); }

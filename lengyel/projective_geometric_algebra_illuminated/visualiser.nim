@@ -245,6 +245,9 @@ type Options = object ## Hold what command line asked of this run.
     ## a headless run can show that they reach the view at all. See `driveKeys`.
   is_select_driven: bool ## Whether to script clicks that pick one, two and three objects,
     ## so a headless run can show the floating selection menu at each. See `driveSelect`.
+  path_help_driven: Option[HelpPath] ## Which help tab to open at startup, if any. A
+    ## headless run cannot click a tab strip, so `--drive-help:<tab>` names one; without
+    ## it the panel stays shut, exactly as it does for a reader who has not asked for it.
 
 
 proc parseOptions(): Options =
@@ -264,11 +267,16 @@ proc parseOptions(): Options =
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
       of "drive-select": result.is_select_driven = true
+      of "drive-help":
+        for path in HelpPath:
+          if titleOf(path) == value: result.path_help_driven = some(path)
+        doAssert result.path_help_driven.isSome,
+          &"Unknown help tab `{value}`; expected one this build actually has."
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, drive-drag, drive-keys or " &
-          "drive-select."
+          "frames, hidden, timings, novsync, fill, drive-drag, drive-keys, " &
+          "drive-select or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -553,7 +561,8 @@ proc anchorOfSelection(
 proc renderFrame(
   window: Window; renderer: Renderer;
   workbench: var Workbench; scene: var Scene; camera: var Camera; interaction: var Interaction;
-  now: float; are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
+  now: float; are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool]);
+  path_help: Option[HelpPath] = none(HelpPath)
 ): (int, int) =
   ## Lay panels out, draw scene and interaction overlay, and report framebuffer size.
   ##   Panels run first, so an edit made this frame reaches meshes assembled below it.
@@ -562,6 +571,7 @@ proc renderFrame(
   ##   `now` is this frame's own clock reading; caller decides what clock that is, so a
   ##   real one drives interactive animation and a scripted one drives storyboard capture.
   ##   `are_dimmed` is forwarded to `assembleMeshes` untouched; see its own doc comment.
+  ##   `path_help` is forwarded to `layoutHelp` untouched; see its own doc comment.
   var (width, height) = (cint(PIXELS_WIDTH), cint(PIXELS_HEIGHT))
   sdl3.getWindowSizeInPixels(window, addr width, addr height)
 
@@ -588,7 +598,7 @@ proc renderFrame(
       workbench.message,
     )
   layoutWorkbench(workbench, scene, camera, HISTORY, now)
-  layoutHelp(workbench)
+  layoutHelp(workbench, path_help)
 
   # Advance before this frame's transforms are built, so the frame draws where the camera
   #   has reached rather than a frame behind. `offerCameraAim` below sets the goal this
@@ -1064,7 +1074,10 @@ proc runInteractive(
       )
 
     let (width, height) =
-      renderFrame(window, renderer, workbench, scene, camera, interaction, now)
+      renderFrame(
+        window, renderer, workbench, scene, camera, interaction, now,
+        path_help = options.path_help_driven,
+      )
     if options.is_timed:
       total_tessellate_microseconds += workbench.microseconds_tessellate
       total_vertices += workbench.count_vertices
@@ -1318,6 +1331,8 @@ proc main() =
       else: PATH_EXPORT_DEFAULT
     )
   workbench.is_vsync_enabled = not options.is_novsync
+  # A help tab asked for on the command line is a help panel asked for.
+  workbench.is_help_open = options.path_help_driven.isSome
 
   # Open on storyboard's own seeds alone, so window and script agree on where a
   #   construction starts, unless a saved scene was asked for instead, which replaces

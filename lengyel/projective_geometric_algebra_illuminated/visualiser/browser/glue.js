@@ -237,22 +237,23 @@ function dismissHint() {
 
 // Built from `help.lut_help_entries` across the bridge, so this panel and the desktop's
 //   own say the same thing by construction. Four strings per entry; see nimHelpEntries.
+//   One tab per path, because a reader opens this in the middle of one way of working and
+//   only that way's rows are any use to them right then. The tab a row belongs to is the
+//   core's answer -- the first of its four strings -- so this builds a strip out of the
+//   paths it actually sees rather than naming them here and drifting from the table.
 const button_help = document.getElementById('btn-help');
 const panel_help = document.getElementById('help-panel');
+const strip_help = document.getElementById('help-tabs');
+const rows_help = document.getElementById('help-rows');
 function buildHelp() {
   const flat = nimHelpEntries();
-  let topic_last = null;
+  const paths = [];
   for (let i = 0; i + 3 < flat.length; i += 4) {
-    const [topic, action, outcome, touch] = [flat[i], flat[i + 1], flat[i + 2], flat[i + 3]];
-    if (topic !== topic_last) {
-      const heading = document.createElement('div');
-      heading.className = 'help-topic';
-      heading.textContent = topic;
-      panel_help.appendChild(heading);
-      topic_last = topic;
-    }
+    const [path, action, outcome, touch] = [flat[i], flat[i + 1], flat[i + 2], flat[i + 3]];
+    if (!paths.includes(path)) paths.push(path);
     const row = document.createElement('div');
     row.className = 'help-row';
+    row.dataset.path = path;
     const cell_action = document.createElement('div');
     cell_action.className = 'help-action' + (touch ? ' help-touch' : '');
     cell_action.textContent = action;
@@ -261,8 +262,34 @@ function buildHelp() {
     cell_outcome.textContent = outcome;
     row.appendChild(cell_action);
     row.appendChild(cell_outcome);
-    panel_help.appendChild(row);
+    rows_help.appendChild(row);
   }
+  for (const path of paths) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'help-tab';
+    tab.dataset.path = path;
+    tab.textContent = path;
+    tab.setAttribute('role', 'tab');
+    tab.addEventListener('click', () => showHelpPath(path));
+    strip_help.appendChild(tab);
+  }
+  showHelpPath(paths[0]);
+}
+
+function showHelpPath(path) {
+  // Every row stays in the DOM and is hidden by attribute rather than rebuilt per tab:
+  //   the table never changes at runtime, so rebuilding would be work to no end, and a
+  //   test can count what each tab holds without switching to it.
+  for (const tab of strip_help.children) {
+    const is_open = tab.dataset.path === path;
+    tab.classList.toggle('on', is_open);
+    tab.setAttribute('aria-selected', is_open ? 'true' : 'false');
+  }
+  for (const row of rows_help.children) {
+    row.hidden = row.dataset.path !== path;
+  }
+  rows_help.scrollTop = 0; // A tab always opens at its own first row.
 }
 buildHelp();
 

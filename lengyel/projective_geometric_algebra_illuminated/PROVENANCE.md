@@ -1304,6 +1304,49 @@ button that starts no drag (middle) contributes no row at all. Each render path 
 only its own numbering (SDL's and the DOM's differ) into `PointerButton` and asks. The entry
 count is asserted against the array length at compile time, which caught a miscount twice.
 
+**Tabbed by how you are working, not by what the control is** — `drag`, `choose`, `menu`,
+`workbench`, `camera`, `keys`. A reader opens this in the middle of one thing, and only that
+thing's rows are of any use to them right then. The old grouping was by kind of control and
+the whole table rendered at once; it went 18 → 20 → 26 entries across three rounds while the
+module's own header still claimed everything in it fit one popup on a phone. It did not: the
+desktop panel is `AlwaysAutoResize | NoScrollbar` pinned bottom-right and grows *upward*, so
+below roughly 720 px of window height its top rows ran off the screen with no scrollbar to
+recover them, and the browser's was a 360 px column scrolling inside 70vh however wide the
+window was.
+
+`ENTRIES_MAX_PATH` (8) is what stops a fourth drift, asserted per tab at compile time and
+again in the suite. It is a **proxy and named as one**: the real constraint is rendered
+height, and a count is what compile time can check. Measured rather than estimated — the
+built page driven at 320x568, comparing each tab's `scrollHeight` against its `clientHeight`
+— and the measurement is what split `menu` out of `choose`: ten rows did not fit, because at
+that width the outcome column wraps onto second lines, so a count of rows is not a count of
+lines. It sits exactly at what the largest tab holds, so the next row added to a full tab
+fails the build; the answer is nearly always to split that tab.
+
+The desktop draws the tabs through four new shim calls (`BeginTabBar`/`BeginTabItem` and
+their ends) with each tab's rows inside a `childBegin` region bounded to what the window
+actually has. That region scrolls, and is the safety net rather than the design: no tab may
+ever again lose rows off the top, whatever the window height. Its height comes from
+`guiChildHeightForRows` rather than from a hand-picked row height — Dear ImGui's own line
+spacing, window padding and border, asked for rather than restated, so a tab is exactly as
+tall as its own rows and `workbench`'s two do not float in a panel sized for eight. Its
+*width* is measured from both columns: a bounded region asked to fill nothing inside an
+auto-sizing window collapses to its widest item, and every outcome placed past that by
+`sameLineAt` is then clipped away — which is what the first attempt did, and looking at the
+capture is what caught it.
+
+The browser draws a wrapping button strip plus `data-path` on every row, with only the rows
+scrolling so the strip stays reachable, and the panel widened from 360 px to `min(560px,
+100vw - 28px)`. Rows are hidden by attribute rather than rebuilt per tab, which needs
+`.help-row[hidden] { display: none }`: an author `display: flex` beats the UA stylesheet's
+own `[hidden]` rule, and without that line every tab reported the whole table's height —
+measured, and it is why the check compares `scrollHeight` to `clientHeight` per tab rather
+than trusting the markup.
+
+`--drive-help:<tab>` opens the panel on one named tab at startup, since a headless run cannot
+click a tab strip and a panel no capture can reach is one whose rows nobody ever checks fit.
+It is the only caller of `layoutHelp`'s `path_forced`, and of the shim's `is_forced` flag.
+
 The hint **persists until the reader first acts** -- a gesture that moves the camera or
 changes the scene, not a hover -- rather than for four seconds. A timer cuts off whoever
 reads slowly, and a first-time reader is exactly who reads slowly.
@@ -1390,11 +1433,18 @@ takes focus gives ImGui no navigation focus, so a synthesised Tab shows nothing 
 either hidden or mapped. `gui.isNavEnabled` reports the flag is set, which is the
 configuration rather than the behaviour; the behaviour wants a human at a real window.
 
-Storyboard frames are **pixel-identical outside the workbench panel**. Inside it a handful of
-single pixels moved, bisected to the help table gaining rows — the third round running in
-which growing that shared table shifts subpixel text placement in the desktop panel. The
-mechanism is not pinned down (`guiTextWidth` is a plain `CalcTextSize`); what is established
-is the attribution and that no 3D content changed.
+**The storyboard's old sensitivity to the help table is gone, and was explained on the way
+out.** Three rounds running, growing that shared table moved a handful of single pixels of
+text inside the desktop panel, and the mechanism had never been pinned down. It was
+`layoutHelp` measuring every entry's width *every frame*, open or not, to size its outcome
+column: Dear ImGui 1.92 rasterises glyphs on demand and packs them into the atlas as they
+are first asked for, so measuring a different set of strings changes where later glyphs land
+in the texture and shifts their antialiasing by a subpixel. Measuring only while the panel is
+open removes the coupling entirely, and the proof is a bisect: with that one change applied
+to *both* the 26-entry table and the 31-entry one, the two storyboards come out
+**byte-identical**. The capture did move once more in the process — five subpixels, all
+inside the panel, none of them 3D content — because the measurement stopped happening at
+all.
 
 
 Verification Tools

@@ -1208,6 +1208,9 @@ const
   GAP_HELP_COLUMN = 18.0'f32
     ## Separate an entry's action from its outcome by at least this much, so the two
     ## columns read as columns rather than as one run-on line.
+  MARGIN_HELP_PANEL = 96.0'f32
+    ## Leave this much of the window unclaimed by the help panel: the `?` button below it,
+    ## the tab strip above its rows, and the window's own frame.
 
 func helpActionOf(entry: HelpEntry): string =
   ## Write one entry's action as the panel draws it, indent and touch marker included.
@@ -1215,22 +1218,17 @@ func helpActionOf(entry: HelpEntry): string =
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
-proc layoutHelp*(workbench: var Workbench) =
+proc layoutHelp*(workbench: var Workbench; path_forced: Option[HelpPath] = none(HelpPath)) =
   ## Lay out the help affordance: a `?` pinned to the bottom-right corner, and the panel
   ## it opens.
   ##   Sited in the corner rather than inside the workbench window because it has to be
   ##   reachable when the workbench is the thing a reader does not yet understand, and
   ##   because the browser build puts it in the same corner -- the two UIs are 1-1 here as
   ##   everywhere else, down to what the panel says, which both read from `help.nim`.
+  ##   `path_forced` opens one tab whatever the reader last chose. Only `--drive-help`
+  ##   passes it: a headless run cannot click a tab strip, and a help panel no capture can
+  ##   reach is one whose rows nobody ever checks fit.
   let (width, height) = (gui.viewportWidth(), gui.viewportHeight())
-  # Where the outcome column starts, measured from the widest action there actually is
-  #   rather than set by eye: an entry longer than whatever was longest when this was
-  #   written would otherwise run straight into its own outcome, which is precisely what
-  #   a hand-tuned number did here first time out.
-  var offset_outcome = 0.0'f32
-  for entry in lut_help_entries:
-    offset_outcome = max(offset_outcome, gui.textWidth(cstring(helpActionOf(entry))))
-  offset_outcome += GAP_HELP_COLUMN
   if gui.windowBeginPinned(
     "##help_open", width - MARGIN_HELP, height - MARGIN_HELP, 1.0, 1.0
   ):
@@ -1238,20 +1236,52 @@ proc layoutHelp*(workbench: var Workbench) =
   gui.windowEnd()
 
   if not workbench.is_help_open: return
+  # Where the outcome column starts, and how wide the pair is, measured from the widest
+  #   entries there actually are rather than set by eye: an entry longer than whatever was
+  #   longest when this was written would otherwise run straight into its own outcome,
+  #   which is precisely what a hand-tuned number did here first time out. Measured only
+  #   while the panel is open -- every frame of a storyboard capture was paying for the
+  #   whole table's text metrics to draw nothing.
+  var offset_outcome, width_outcome = 0.0'f32
+  for entry in lut_help_entries:
+    offset_outcome = max(offset_outcome, gui.textWidth(cstring(helpActionOf(entry))))
+    width_outcome = max(width_outcome, gui.textWidth(cstring(entry.outcome)))
+  offset_outcome += GAP_HELP_COLUMN
   if gui.windowBeginPinned(
     "##help_panel", width - MARGIN_HELP, height - MARGIN_HELP - 44.0, 1.0, 1.0
   ):
-    var topic_last = none(HelpTopic)
-    for entry in lut_help_entries:
-      if topic_last.isNone or topic_last.get != entry.topic:
-        if topic_last.isSome: gui.text("")
-        gui.separatorText(cstring(titleOf(entry.topic)))
-        topic_last = some(entry.topic)
-      # The touch rows say so in a word rather than only in a tint, so which input a line
-      #   describes survives a reader who cannot tell two greys apart.
-      gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
-      gui.sameLineAt(offset_outcome)
-      gui.text(cstring(entry.outcome))
+    # One tab per path, because a reader opens this in the middle of one way of working
+    #   and only that way's rows are any use to them right then. The window auto-sizes and
+    #   grows *upward* from the corner, with no scrollbar of its own, so a tall enough
+    #   panel silently loses its top rows off the screen; the region below is bounded to
+    #   what the window actually has and scrolls instead. `ENTRIES_MAX_PATH` is what keeps
+    #   that scrollbar from ever being the way this is read -- it is the safety net.
+    let
+      # Sized from both columns, not left to fill whatever is available: a bounded region
+      #   asked to fill nothing in an auto-sizing window collapses to its widest *item*,
+      #   and every outcome, placed by `sameLineAt` past that, is then clipped away.
+      width_rows = offset_outcome + width_outcome + GAP_HELP_COLUMN
+      height_available = height - MARGIN_HELP_PANEL
+    if gui.tabBarBegin("##help_tabs"):
+      for path in HelpPath:
+        if not gui.tabBegin(cstring(titleOf(path)), path_forced == some(path)): continue
+        # Each tab is as tall as its own rows need, up to what the window has: a fixed
+        #   height sized for the largest would leave `workbench`'s two rows floating in a
+        #   third of a panel of blank.
+        let height_rows = min(
+          gui.childHeightForRows(cint(countOf(path))), height_available
+        )
+        if gui.childBegin(cstring("##help_rows"), width_rows, height_rows):
+          for entry in lut_help_entries:
+            if entry.path != path: continue
+            # The touch rows say so in a word rather than only in a tint, so which input a
+            #   line describes survives a reader who cannot tell two greys apart.
+            gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
+            gui.sameLineAt(offset_outcome)
+            gui.text(cstring(entry.outcome))
+        gui.childEnd()
+        gui.tabEnd()
+      gui.tabBarEnd()
   gui.windowEnd()
 
 

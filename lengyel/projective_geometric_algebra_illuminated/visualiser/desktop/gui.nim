@@ -121,6 +121,17 @@ proc combo*(
   label: cstring; index: ptr cint; entries: ptr cstring; count: cint
 ): bool {.importc: "guiCombo".}
 proc colorEdit3*(label: cstring; values: ptr cfloat): bool {.importc: "guiColorEdit3".}
+proc childHeightForRows*(count: cint): cfloat {.importc: "guiChildHeightForRows".}
+  ## Report how tall a bordered `childBegin` region holding `count` lines of plain text
+  ## must be, measured against the font actually loaded.
+proc tabBarBegin*(name: cstring): bool {.importc: "guiTabBarBegin".}
+  ## Begin a row of tabs; closed with `tabBarEnd`, and only entered where it returns true.
+proc tabBarEnd*() {.importc: "guiTabBarEnd".}
+proc tabBegin*(label: cstring; is_forced: bool): bool {.importc: "guiTabBegin".}
+  ## Begin one tab in the row; true only for the tab currently open, and closed with
+  ## `tabEnd` **only then** -- Dear ImGui pairs the end with the begin that returned true.
+  ## `is_forced` opens it regardless of what the reader last chose; see the shim.
+proc tabEnd*() {.importc: "guiTabEnd".}
 proc separator*() {.importc: "guiSeparator".}
 proc separatorText*(label: cstring) {.importc: "guiSeparatorText".}
 proc sameLine*() {.importc: "guiSameLine".}

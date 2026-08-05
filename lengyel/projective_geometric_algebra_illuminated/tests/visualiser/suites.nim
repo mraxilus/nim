@@ -19,7 +19,7 @@ import std/[math, options, os, random, strformat, strutils, tables, unittest]
 
 import ../../pga
 import ../../visualiser/core/[
-  camera, format, history, interaction, mesh, objects, picking, scene, selection,
+  camera, format, help, history, interaction, mesh, objects, picking, scene, selection,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -1495,6 +1495,40 @@ when not defined(js):
       check len(decoded) == WIDTH*HEIGHT
       check decoded == expected
 
+
+
+suite "Help":
+  test "every entry lands in exactly one tab, and the tabs account for the whole table":
+    # What stops a reflow that quietly drops a row to make the rest fit. `countOf` is what
+    #   both front-ends size a tab from, so summing it is summing what is actually drawn.
+    var total = 0
+    for path in HelpPath: total += countOf(path)
+    check total == len(lut_help_entries)
+
+
+  test "no tab holds more than fits the smallest screen this help supports":
+    # Asserted at compile time too, in `help.nim`'s own `static` block; stated here as well
+    #   because that assertion is invisible in a passing run, and this is the property the
+    #   whole tab split exists to hold.
+    for path in HelpPath:
+      check countOf(path) in 1 .. ENTRIES_MAX_PATH
+
+
+  test "a tab's entries are contiguous, so neither UI renders one tab twice":
+    var
+      seen: set[HelpPath]
+      path_last = none(HelpPath)
+    for entry in lut_help_entries:
+      if path_last == some(entry.path): continue
+      check entry.path notin seen
+      seen.incl(entry.path)
+      path_last = some(entry.path)
+
+
+  test "every action and outcome is written, so no row draws as a blank line":
+    for entry in lut_help_entries:
+      check len(entry.action) > 0
+      check len(entry.outcome) > 0
 
 
 suite "Picking":
