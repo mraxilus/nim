@@ -1,0 +1,20 @@
+# Paths this project keeps in the working tree and never commits. Each is here because a
+#   build or a test needs it present, not because it is ours to publish -- so `git add` on
+#   the project directory cannot sweep them in, which is exactly what it did once.
+#   The repository root's own `.gitignore` already drops extensionless build products (`*`
+#   re-included by `!*.*`), so only the files carrying an extension ever reached this far.
+#   Whole directories are named rather than suffixes, so that stays a detail of how Nim
+#   names its output rather than something to rediscover.
+#   Unlike `dependencies.list`, this format has **no inline comments**: a trailing `# ...`
+#   is part of the pattern, and a rule written that way silently matches nothing.
+
+# Build output, both binaries and the generated browser page; `tools/verify.sh` rebuilds it.
+/bin/
+
+# Vendored PGA library, under Prosperity 3.0.0. Kept locally so builds and tests run, never
+#   staged; PROVENANCE.md records where it came from, at which commit, and under what terms.
+/pga.nim
+/pga/
+
+# Vendored WOFF2 faces under OFL-1.1, embedded into the browser page at build time.
+/fonts/
