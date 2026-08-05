@@ -296,10 +296,24 @@ suite "Camera":
 
 
 suite "Mesh":
-  let SCALE_TEST = DrawExtent(
-    extent_furniture: 30.0,
-    eye: Position(x: 5, y: -3, z: 7), radius_horizon: 50.0
-  ) ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
+  const
+    VERTICES_RIBBON = 6 ## Vertices one ribbon is wound from: two triangles over four
+      ## corners. Stated here rather than imported so that a change to how `addSegment`
+      ## winds a quad has to be noticed here too.
+    HEIGHT_SCALE_TEST = 900 ## Framebuffer height `SCALE_TEST` measures its widths in.
+
+  let SCALE_TEST = block:
+    let eye = Position(x: 5, y: -3, z: 7)
+    DrawExtent(
+      extent_furniture: 30.0,
+      eye: eye, radius_horizon: 50.0,
+      # Looking back at the origin, which is where every fixture below is built around.
+      forward: direction(toMultivector(eye) ∧ toMultivector(ORIGIN)).get,
+      tangent_half_view: tan(0.5*degToRad(45.0)),
+      height_pixels: HEIGHT_SCALE_TEST,
+      depth_near: 0.1,
+    )
+  ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
     ## mistake, instead of to `eye`, would fail every horizon check below.
     ##   `extent_furniture` held distinct from `EXTENT_PLANE_F` (a plane's own fixed
     ##   radius, no longer part of `DrawExtent` at all), so a line test checking against
@@ -310,12 +324,30 @@ suite "Mesh":
     ##   other geometry test in this suite uses, not for the additional rounding a much
     ##   larger radius would carry through unrelated to anything this suite tests here.
 
+  proc ribbonEnds(mesh: Mesh; index: int): (Position, Position) =
+    ## Recover the segment the `index`-th ribbon was built around.
+    ##   Each end's own two corners sit an equal step either side of it, so their midpoint
+    ##   is the endpoint again -- which is also the property being asserted whenever this
+    ##   is used to check where a line was drawn: a ribbon that were not centred on its
+    ##   own line would fail every one of those checks.
+    proc midpoint(a, b: Vertex): Position =
+      Position(
+        x: 0.5*(float(a.x) + float(b.x)),
+        y: 0.5*(float(a.y) + float(b.y)),
+        z: 0.5*(float(a.z) + float(b.z)),
+      )
+    let base = VERTICES_RIBBON*index
+    (
+      midpoint(mesh.vertices[base + 0], mesh.vertices[base + 5]),
+      midpoint(mesh.vertices[base + 1], mesh.vertices[base + 2]),
+    )
+
   setup:
     MESHES.clearMeshes
 
   test "clearing drops every vertex":
     MESHES.addMarker(ORIGIN, Ink.Rose.colour)
-    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour)
+    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour, WIDTH_LINE_OBJECT, SCALE_TEST)
     MESHES.clearMeshes
     for primitive in Primitive:
       check MESHES[primitive].count_vertices == 0
@@ -326,7 +358,7 @@ suite "Mesh":
       MESHES.clearMeshes
       check MESHES.addObject(POINTS[i], Ink.Rose.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Point].count_vertices == 1
-      check MESHES[Primitive.Line].count_vertices == 0
+      check MESHES[Primitive.Ribbon].count_vertices == 0
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
 
 
@@ -334,20 +366,40 @@ suite "Mesh":
     for line in LINES:
       MESHES.clearMeshes
       check MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
-      check MESHES[Primitive.Line].count_vertices == 4
+      check MESHES[Primitive.Ribbon].count_vertices == 2*VERTICES_RIBBON
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
       check MESHES[Primitive.Point].count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
       check anchor.isSome and axis.isSome
+      let
+        (tail_first, head_first) = ribbonEnds(MESHES[Primitive.Ribbon], 0)
+        (tail_second, head_second) = ribbonEnds(MESHES[Primitive.Ribbon], 1)
       # Both halves start on the line, at its support, so they meet with no gap.
-      check isNear(MESHES[Primitive.Line].vertices[0].toPosition, anchor.get)
-      check isNear(MESHES[Primitive.Line].vertices[2].toPosition, anchor.get)
-      # Each ends on one of the line's own two vanishing points, both fixed to the eye.
-      check isNear(MESHES[Primitive.Line].vertices[1].toPosition,
-                   SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get)
-      check isNear(MESHES[Primitive.Line].vertices[3].toPosition,
-                   SCALE_TEST.eye - SCALE_TEST.radius_horizon*axis.get)
+      check isNear(tail_first, anchor.get)
+      check isNear(tail_second, anchor.get)
+      # Each runs toward one of the line's own two vanishing points, both fixed to the
+      #   eye. It *reaches* that point only where the point is in front of the camera:
+      #   a ribbon is clipped to the near plane first, since a width proportional to
+      #   depth is meaningless behind the eye (see `addSegment`). So what is asserted is
+      #   the direction each half runs in, plus that its end stands in front.
+      for (head, vanishing) in [
+        (head_first, SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get),
+        (head_second, SCALE_TEST.eye - SCALE_TEST.radius_horizon*axis.get),
+      ]:
+        let
+          toward = normalize(head - anchor.get)
+          reach = normalize(vanishing - anchor.get)
+        check toward.isSome and reach.isSome
+        # Compared with a tolerance rather than through `=~`: these are read back out of
+        #   `Vertex`'s own float32 storage, which `=~`'s exact-math tolerance is tighter
+        #   than.
+        check abs(toward.get.x - reach.get.x) < 1.0e-4
+        check abs(toward.get.y - reach.get.y) < 1.0e-4
+        check abs(toward.get.z - reach.get.z) < 1.0e-4
+        check dot(head - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depth_near - 1e-6
+        # And it is either the vanishing point itself or short of it, never past.
+        check norm(head - anchor.get) <= norm(vanishing - anchor.get)*(1.0 + 1e-5)
 
 
   test "a drawn line projects onto the true line, however far its ends leave it":
@@ -394,8 +446,15 @@ suite "Mesh":
 
       MESHES.clearMeshes
       discard MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST)
-      let far_end = MESHES[Primitive.Line].vertices[1].toPosition
-      check isNear(far_end, star)
+      let (_, far_first) = ribbonEnds(MESHES[Primitive.Ribbon], 0)
+      let (_, far_second) = ribbonEnds(MESHES[Primitive.Ribbon], 1)
+      # Whichever half runs toward the star has to land on it -- but only where the star
+      #   itself stands in front of the near plane. A ribbon is clipped there (see
+      #   `mesh.addSegment`), so a star behind the camera is met by a half that stops at
+      #   the near plane instead. Nothing is visible there either way; what would be a
+      #   real defect is a gap between the two *on screen*, which this still catches.
+      if dot(star - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depth_near:
+        check isNear(far_first, star) or isNear(far_second, star)
 
 
   test "plane becomes a flat filled disc and a rim, every vertex on it":
@@ -404,10 +463,11 @@ suite "Mesh":
       check MESHES.addObject(plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
       const
         VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
-        VERTICES_RING = 2*SEGMENTS_CIRCLE_HORIZON
-        VERTICES_NORMAL = 2
+        RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
+        RIBBONS_NORMAL = 1
       check MESHES[Primitive.Triangle].count_vertices == VERTICES_FILL
-      check MESHES[Primitive.Line].count_vertices == VERTICES_RING + VERTICES_NORMAL
+      check MESHES[Primitive.Ribbon].count_vertices ==
+        VERTICES_RIBBON*(RIBBONS_RING + RIBBONS_NORMAL)
       # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
       #   plane never adds a scattered dot beyond what the fill, rim and shaft already
       #   draw.
@@ -424,11 +484,24 @@ suite "Mesh":
         #   is no band strictly between the two to rule out.
         let radius_vertex = norm(vertex.toPosition - anchor.get)
         check isNear(radius_vertex, 0) or isNear(radius_vertex, EXTENT_PLANE_F)
-      for i in 0 ..< VERTICES_RING:
-        let vertex = MESHES[Primitive.Line].vertices[i]
-        check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
-        check isNear(float(vertex.alpha), Ink.Olive.colour.alpha)
-        check isNear(norm(vertex.toPosition - anchor.get), EXTENT_PLANE_F)
+      # The rim is drawn as ribbons, so its own *corners* stand half a line width off the
+      #   plane -- the step sideways is perpendicular to the segment and to the sight ray,
+      #   which is only in the plane when the eye happens to lie in it. What is still
+      #   exactly on the plane, and at exactly the plane's own radius, is the segment each
+      #   ribbon was built around; `ribbonEnds` recovers it.
+      for i in 0 ..< RIBBONS_RING:
+        let (tail, head) = ribbonEnds(MESHES[Primitive.Ribbon], i)
+        for place in [tail, head]:
+          check isNear(dot(place - anchor.get, normal.get), 0)
+          check isNear(norm(place - anchor.get), EXTENT_PLANE_F)
+        # And every corner stays within that half width of the plane, so the bulge is a
+        #   fraction of a pixel on screen rather than anything a reader could see.
+        let bound = 0.5*float(WIDTH_LINE_OBJECT)*
+          max(worldPerPixelAt(tail, SCALE_TEST), worldPerPixelAt(head, SCALE_TEST))
+        for j in 0 ..< VERTICES_RIBBON:
+          let corner = MESHES[Primitive.Ribbon].vertices[VERTICES_RIBBON*i + j]
+          check isNear(float(corner.alpha), Ink.Olive.colour.alpha)
+          check abs(dot(corner.toPosition - anchor.get, normal.get)) <= bound + 1e-5
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":
@@ -449,7 +522,12 @@ suite "Mesh":
       MESHES.clearMeshes
       let attitude = ⊖ plane
       check MESHES.addObject(attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
-      check MESHES[Primitive.Line].count_vertices == 2*SEGMENTS_CIRCLE_HORIZON
+      # At most one ribbon per segment, and fewer in practice: a great circle is drawn
+      #   around the eye, so about half of it stands behind the camera and is clipped away
+      #   entirely rather than drawn inside out (see `mesh.addSegment`).
+      let count_ribbon = MESHES[Primitive.Ribbon].count_vertices div VERTICES_RIBBON
+      check MESHES[Primitive.Ribbon].count_vertices == VERTICES_RIBBON*count_ribbon
+      check count_ribbon in 1 .. SEGMENTS_CIRCLE_HORIZON
       # `directionNormalHorizon` reads straight off the horizon line's own raw
       #   coefficients; confirm it agrees with the finite plane's own normal, read
       #   through a wholly different pair of library operators, before trusting either
@@ -459,12 +537,22 @@ suite "Mesh":
         normal_from_horizon = directionNormalHorizon(attitude)
       check normal_from_plane.isSome and normal_from_horizon.isSome
       check normal_from_plane.get =~ normal_from_horizon.get
-      for i in 0 ..< MESHES[Primitive.Line].count_vertices:
-        let
-          vertex = MESHES[Primitive.Line].vertices[i].toPosition
-          offset = vertex - SCALE_TEST.eye
-        check isNear(norm(offset), SCALE_TEST.radius_horizon)
-        check isNear(dot(offset, normal_from_plane.get), 0)
+      # Checked on the segment each ribbon was built around rather than on its corners:
+      #   a corner stands half a line width off that segment, so it is neither exactly on
+      #   the circle's own radius nor exactly in its plane. See the plane rim above.
+      var count_at_radius = 0
+      for i in 0 ..< count_ribbon:
+        let (tail, head) = ribbonEnds(MESHES[Primitive.Ribbon], i)
+        for place in [tail, head]:
+          let offset = place - SCALE_TEST.eye
+          # In the circle's own plane exactly, clipped or not: the clip slides a point
+          #   along the chord, which lies in that plane too.
+          check isNear(dot(offset, normal_from_plane.get), 0)
+          # And out at the circle's own radius, unless the clip pulled it in along that
+          #   chord -- never past it.
+          check norm(offset) <= SCALE_TEST.radius_horizon*(1.0 + 1e-5)
+          if isNear(norm(offset), SCALE_TEST.radius_horizon): inc count_at_radius
+      check count_at_radius > 0
 
 
   test "plane at horizon becomes a dome over the whole sky around eye":
@@ -506,26 +594,46 @@ suite "Mesh":
         check MESHES[primitive].count_vertices == 0
 
 
+  test "a scene filled with planes fits the vertex bound a ribbon mesh reserves":
+    # The binding case for `VERTICES_MAX`, and the reason it was tripled: a plane draws
+    #   the most ribbons of any object, and `addVertex` asserts rather than overflowing.
+    #   Built rather than calculated, so the bound is checked against what is actually
+    #   emitted rather than against arithmetic that could drift from it.
+    MESHES.clearMeshes
+    var built = 0
+    for i in 0 ..< ITEMS_MAX:
+      let angle = 0.7*float(i)
+      let plane =
+        toMultivector(Position(x: 6.0*cos(angle), y: 6.0*sin(angle), z: 0.15*float(i))) ∧
+        toMultivector(Position(x: 6.0*cos(angle + 0.4), y: 1.0, z: 2.0 + 0.1*float(i))) ∧
+        toMultivector(Position(x: 1.0, y: 6.0*sin(angle + 0.9), z: -1.0))
+      if MESHES.addObject(plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite:
+        inc built
+    check built == ITEMS_MAX
+    check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+    check MESHES[Primitive.Triangle].count_vertices <= VERTICES_MAX
+
+
   test "world furniture stays within its own, separately tracked extent":
-    MESHES.addAxes(SCALE_TEST.extent_furniture)
-    MESHES.addGrid(SCALE_TEST.extent_furniture)
-    check MESHES[Primitive.Line].count_vertices > 0
-    for i in 0 ..< MESHES[Primitive.Line].count_vertices:
-      let at = MESHES[Primitive.Line].vertices[i].toPosition
+    MESHES.addAxes(SCALE_TEST.extent_furniture, SCALE_TEST)
+    MESHES.addGrid(SCALE_TEST.extent_furniture, SCALE_TEST)
+    check MESHES[Primitive.Ribbon].count_vertices > 0
+    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
+      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
       check max(abs(at.x), max(abs(at.y), abs(at.z))) <=
         SCALE_TEST.extent_furniture + TOLERANCE_TEST
 
 
   test "ground grid holds full alpha near the origin and fades toward its own reach":
     MESHES.clearMeshes
-    MESHES.addGrid(SCALE_TEST.extent_furniture)
+    MESHES.addGrid(SCALE_TEST.extent_furniture, SCALE_TEST)
     let radius_fade_start = FRACTION_GRID_FADE_START*SCALE_TEST.extent_furniture
     var
       alpha_near_min = 1.0
       alpha_far_max = 0.0
-    for i in 0 ..< MESHES[Primitive.Line].count_vertices:
+    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
       let
-        vertex = MESHES[Primitive.Line].vertices[i]
+        vertex = MESHES[Primitive.Ribbon].vertices[i]
         radius = norm(vertex.toPosition - ORIGIN)
       if radius <= radius_fade_start:
         alpha_near_min = min(alpha_near_min, float(vertex.alpha))
@@ -1062,7 +1170,7 @@ suite "History":
 suite "Camera Aim":
   let SCALE_AIM = DrawExtent(
     extent_furniture: 100.0, eye: ORIGIN, radius_horizon: 90.0,
-  )
+  ) ## No ribbon fields: nothing here tessellates anything, it only aims a camera.
 
   test "a finite object is aimed at by target, a horizon one by orbit angle":
     let aim_point = aimFor(POINTS[0], SCALE_AIM)
@@ -2317,11 +2425,7 @@ suite "Marker":
       target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = 0.9,
       elevation = 0.4,
     )
-    let scale = DrawExtent(
-      extent_furniture: extentFurnitureFor(placement.distanceFar),
-      eye: placement.eye,
-      radius_horizon: radiusHorizonFor(placement.distanceFar),
-    )
+    let scale = placement.drawExtentFor(HEIGHT_MARK)
     (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
 
   proc markerOf(
@@ -2384,7 +2488,7 @@ suite "Marker":
       support = positionAnchor(LINE).get
       axis = direction(LINE).get
       across = directionAcross(LINE, scale.eye).get
-      offset = offsetMarkerRail(support, scale, placement, HEIGHT_MARK)
+      offset = offsetMarkerRail(support, scale)
     proc gapAt(along: float): float =
       ## Measure the pixel gap between line and rail at a point `along` the line.
       let place = support + along*axis
@@ -2414,7 +2518,7 @@ suite "Marker":
     let
       support = positionAnchor(LINE).get
       across = directionAcross(LINE, scale.eye).get
-      offset = offsetMarkerRail(support, scale, placement, HEIGHT_MARK)
+      offset = offsetMarkerRail(support, scale)
       on_screen = projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, support)
     # Measured at the support, where the offset is stated; the same world offset reads
     #   as fewer pixels further off, which is the convergence the rails exist to show.
@@ -2456,7 +2560,7 @@ suite "Marker":
     let
       centre = positionAnchor(PLANE).get
       radius = radiusMarkerLoop(centre, scale, placement, HEIGHT_MARK)
-      per_pixel = worldPerPixel(centre, scale, placement, HEIGHT_MARK)
+      per_pixel = worldPerPixelAt(centre, scale)
     check (radius - EXTENT_PLANE_F)/per_pixel =~ GAP_MARKER
 
 
@@ -2486,11 +2590,7 @@ suite "Marker":
         target = Position(x: 0, y: 0, z: 0), distance = 19.0, azimuth = azimuth,
         elevation = 0.4,
       )
-      let scale = DrawExtent(
-        extent_furniture: extentFurnitureFor(placement.distanceFar),
-        eye: placement.eye,
-        radius_horizon: radiusHorizonFor(placement.distanceFar),
-      )
+      let scale = placement.drawExtentFor(HEIGHT_MARK)
       markerFor(
         attitude(LINE), none(Position), scale, placement,
         placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), WIDTH_MARK, HEIGHT_MARK,

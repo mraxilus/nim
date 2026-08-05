@@ -116,6 +116,10 @@ import ./visualiser/desktop/sdl3
 
 const
   TITLE* = "Projective Geometric Algebra Illuminated — RGA workbench"
+  SAMPLES_MULTISAMPLE* {.define: "visualiser.samples_multisample".} = 4
+    ## Ask the framebuffer for this many samples per pixel. Four is where a 1.5-pixel
+    ## ribbon stops reading as dotted; more buys little on geometry this thin. Settable so
+    ## a machine whose visuals top out lower can still ask for what it has.
   PIXELS_WIDTH* {.define: "visualiser.pixels_width".} = 1440
   PIXELS_HEIGHT* {.define: "visualiser.pixels_height".} = 900
   PATH_FONT* {.define: "visualiser.path_font".} =
@@ -328,8 +332,8 @@ proc assembleMeshes(
   ##   called beside this one rather than from inside it.
   let ticks_start = getMonoTime().ticks
   MESHES_FURNITURE.clearMeshes
-  if workbench.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture)
-  if workbench.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture)
+  if workbench.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture, scale)
+  if workbench.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture, scale)
 
   MESHES.clearMeshes
   # A horizon plane's own dome first, before anything else that might share its own
@@ -606,12 +610,7 @@ proc renderFrame(
   #   to advance toward until something has been aimed at.
   workbench.tween_camera.advance(camera, now, easeOutCubic)
 
-  let eye = camera.eye
-  let scale = DrawExtent(
-    extent_furniture: extentFurnitureFor(camera.distanceFar),
-    eye: eye,
-    radius_horizon: radiusHorizonFor(camera.distanceFar),
-  )
+  let scale = camera.drawExtentFor(int(height))
   offerCameraAim(workbench, scene, camera, now, scale)
   # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
@@ -631,7 +630,7 @@ proc renderFrame(
   interaction.updateDrag(scene, now)
   assembleMeshes(workbench, scene, interaction, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
-  renderer.drawMeshes(MESHES_FURNITURE, view_projection, WIDTH_LINE_FURNITURE)
+  renderer.drawMeshes(MESHES_FURNITURE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
 
   drawSelectionMarker(
@@ -1055,11 +1054,7 @@ proc runInteractive(
 
     if options.is_key_driven: driveKeys(count_drawn)
     if options.is_drag_driven or options.is_select_driven:
-      let scale_driven = DrawExtent(
-        extent_furniture: extentFurnitureFor(camera.distanceFar),
-        eye: camera.eye,
-        radius_horizon: radiusHorizonFor(camera.distanceFar),
-      )
+      let scale_driven = camera.drawExtentFor(PIXELS_HEIGHT)
       if options.is_drag_driven:
         driveDrag(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
       else:
@@ -1235,11 +1230,7 @@ proc runStoryboard(
     #   a half-finished pan. Same `aimFor` the interactive path uses, so both agree on
     #   where an object is worth looking from.
     if isHorizon(derived):
-      let scale_aim = DrawExtent(
-        extent_furniture: extentFurnitureFor(camera.distanceFar),
-        eye: camera.eye,
-        radius_horizon: radiusHorizonFor(camera.distanceFar),
-      )
+      let scale_aim = camera.drawExtentFor(PIXELS_HEIGHT)
       let aim = aimFor(derived, scale_aim)
       if aim.isSome:
         workbench.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
@@ -1302,10 +1293,24 @@ proc main() =
   sdl3.glSetAttribute(GL_CONTEXT_PROFILE_MASK, GL_CONTEXT_PROFILE_CORE)
   sdl3.glSetAttribute(GL_DOUBLEBUFFER, 1)
   sdl3.glSetAttribute(GL_DEPTH_SIZE, 24)
-
   var flags = WINDOW_OPENGL or WINDOW_RESIZABLE
   if options.is_hidden: flags = flags or WINDOW_HIDDEN
-  let window = sdl3.createWindow(TITLE, PIXELS_WIDTH, PIXELS_HEIGHT, flags)
+
+  # Ask for a multisampled framebuffer, and open without one where no visual offers it.
+  #   Every line is now a thin quad rather than a `GL_LINES` run, and nothing else smooths
+  #   its edges: at four samples a 1.5-pixel grid ribbon reads as a line, and with none it
+  #   reads as dotted. Asked for rather than required, because a visual that cannot supply
+  #   it is a real case -- `llvmpipe` under `xvfb`, which every headless capture here runs
+  #   on, refuses the window outright rather than downgrading -- and a workbench that will
+  #   not start at all is worse than one whose thinnest lines alias.
+  sdl3.glSetAttribute(GL_MULTISAMPLEBUFFERS, 1)
+  sdl3.glSetAttribute(GL_MULTISAMPLESAMPLES, SAMPLES_MULTISAMPLE)
+  var window = sdl3.createWindow(TITLE, PIXELS_WIDTH, PIXELS_HEIGHT, flags)
+  if window == nil:
+    echo &"No multisampled visual ({sdl3.getError()}); thin lines will alias."
+    sdl3.glSetAttribute(GL_MULTISAMPLEBUFFERS, 0)
+    sdl3.glSetAttribute(GL_MULTISAMPLESAMPLES, 0)
+    window = sdl3.createWindow(TITLE, PIXELS_WIDTH, PIXELS_HEIGHT, flags)
   doAssert window != nil, &"SDL3 failed to open window: {sdl3.getError()}"
   defer: sdl3.destroyWindow(window)
 

@@ -566,17 +566,6 @@ const SLOT_NONE = -1'i32
   ## to use it upstream -- everything on this side of that translation stays `Option[int]`.
 
 
-func drawExtentFor(cam: Camera): DrawExtent =
-  ## Derive camera-relative draw scale, exactly as `visualiser.drawExtentFor` does for
-  ## the desktop build (duplicated rather than imported, since that proc lives in
-  ## `visualiser.nim` itself, which does not compile under `nim js`).
-  DrawExtent(
-    extent_furniture: extentFurnitureFor(cam.distanceFar),
-    eye: cam.eye,
-    radius_horizon: radiusHorizonFor(cam.distanceFar),
-  )
-
-
 proc nimUpdateCursor(x, y: cfloat) {.exportc.} =
   ## Forward to `interaction.updateCursor`; see its own doc comment.
   interaction.updateCursor(g_interaction, float(x), float(y))
@@ -960,7 +949,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ##   item they name is removed, with no frame boundary forcing a re-check first.
   if not g_scene.isAlive(int(slot)): return @[0.0'f32, 0.0'f32, 0.0'f32]
   let
-    scale = drawExtentFor(g_camera)
+    scale = g_camera.drawExtentFor(int(height))
     anchor = anchorFor(g_scene.geometryAt(int(slot)), scale)
   if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
@@ -988,7 +977,7 @@ proc nimSelectionMarker(slot, width, height: cint; progress: cfloat): seq[float3
   ##   removed.
   if not g_scene.isAlive(int(slot)): return
   let
-    scale = drawExtentFor(g_camera)
+    scale = g_camera.drawExtentFor(int(height))
     vp = g_camera.initMatrixViewProjection(float(width) / float(height))
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
@@ -1048,14 +1037,15 @@ proc nimSceneAddRaw(
 type FrameData = object
   ## Hold one frame's worth of vertex data plus the transform it is drawn through --
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
-  tri_verts, line_verts, point_verts: seq[float32]
+  tri_verts, ribbon_verts, point_verts: seq[float32]
   view_projection: seq[float32]
-  furn_line_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, at
-    ## their own thinner line width (see `renderer.WIDTH_LINE_FURNITURE`).
+  furn_ribbon_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, and
+    ## already built at their own thinner width (see `mesh.WIDTH_LINE_FURNITURE`), since a
+    ## ribbon carries its width as geometry rather than as a draw-call setting.
 
 
 proc nimBuildFrame(
-  aspect, now: cfloat; is_axes_shown, is_grid_shown: bool
+  aspect, now: cfloat; height_pixels: cint; is_axes_shown, is_grid_shown: bool
 ): FrameData {.exportc.} =
   ## Tessellate every visible object in the live scene, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
@@ -1084,7 +1074,9 @@ proc nimBuildFrame(
   #   before `scale` is read keeps this frame's furniture extent and horizon radius
   #   consistent with where the camera actually is.
   g_tween_camera.advance(g_camera, float(now), easeOutCubic)
-  let scale = drawExtentFor(g_camera)
+  # The framebuffer's own height, not the window's: a ribbon's width is measured in the
+  #   pixels actually drawn, and this build renders at a device-pixel-ratio multiple.
+  let scale = g_camera.drawExtentFor(int(height_pixels))
   block:
     var geometry = none(Multivector)
     if g_ghost.isSome: geometry = g_ghost
@@ -1094,8 +1086,8 @@ proc nimBuildFrame(
     if aim.isSome: g_tween_camera.aimAt(g_camera, aim.get, float(now), ANIMATION_SECONDS)
     else: g_tween_camera.release()
 
-  if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture)
-  if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture)
+  if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
+  if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
 
   clearMeshes(g_meshes)
   # A horizon plane's own dome first, before anything else that might share its own
@@ -1151,8 +1143,8 @@ proc nimBuildFrame(
 
   FrameData(
     tri_verts: flatten(g_meshes[Primitive.Triangle]),
-    line_verts: flatten(g_meshes[Primitive.Line]),
+    ribbon_verts: flatten(g_meshes[Primitive.Ribbon]),
     point_verts: flatten(g_meshes[Primitive.Point]),
     view_projection: view_projection,
-    furn_line_verts: flatten(g_meshes_furniture[Primitive.Line]),
+    furn_ribbon_verts: flatten(g_meshes_furniture[Primitive.Ribbon]),
   )

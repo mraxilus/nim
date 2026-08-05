@@ -122,6 +122,10 @@ const
   GL_CONTEXT_PROFILE_MASK* = 20'u32
   GL_DOUBLEBUFFER* = 5'u32
   GL_DEPTH_SIZE* = 6'u32
+  GL_MULTISAMPLEBUFFERS* = 13'u32
+    ## Ask `glSetAttribute` for a multisampled framebuffer at all: 1 for yes, 0 for none.
+  GL_MULTISAMPLESAMPLES* = 14'u32
+    ## Ask for this many samples per pixel in it.
   GL_CONTEXT_PROFILE_CORE* = 0x0001'i32
 
 
@@ -207,6 +211,8 @@ const lut_mirror_to_symbol = [
   (int(GL_CONTEXT_PROFILE_MASK), "SDL_GL_CONTEXT_PROFILE_MASK"),
   (int(GL_DOUBLEBUFFER), "SDL_GL_DOUBLEBUFFER"),
   (int(GL_DEPTH_SIZE), "SDL_GL_DEPTH_SIZE"),
+  (int(GL_MULTISAMPLEBUFFERS), "SDL_GL_MULTISAMPLEBUFFERS"),
+  (int(GL_MULTISAMPLESAMPLES), "SDL_GL_MULTISAMPLESAMPLES"),
   (int(GL_CONTEXT_PROFILE_CORE), "SDL_GL_CONTEXT_PROFILE_CORE"),
 ] ## Pair every mirrored value with header's own name for it.
 

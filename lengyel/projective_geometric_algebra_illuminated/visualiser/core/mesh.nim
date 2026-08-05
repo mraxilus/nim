@@ -43,10 +43,17 @@
 ##   | Primitive | OpenGL       | Carries                              |
 ##   |-----------|--------------|--------------------------------------|
 ##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.        |
-##   | Line      | GL_LINES     | Lines, plane rims and normal shafts,  |
+##   | Ribbon    | GL_TRIANGLES | Lines, plane rims and normal shafts,  |
 ##   |           |              | horizon circles, axes, ground grid.  |
 ##   | Point     | GL_POINTS    | Points, stars.                       |
 ##   |-----------|--------------|--------------------------------------|
+##
+## A line is drawn as a **ribbon** -- a quad sized to a width in screen pixels -- and never
+## as `GL_LINES`, because a line width is a hint a target may ignore: most WebGL
+## implementations clamp it to one pixel outright, and core-profile OpenGL only ever
+## guaranteed one. See `addSegment`. Ribbons stay a primitive kind of their own rather than
+## joining `Triangle` because the two draw differently: a ribbon writes depth, a plane's
+## own translucent wash does not.
 ##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths; see `visualiser.nim`'s own "Render Paths" table.
@@ -90,7 +97,16 @@ const
     ## Cut ground grid lines off entirely at this fraction of their own reach, well
     ## short of it -- a faint line still aliases under perspective, so the fix is to
     ## stop drawing it there, not just to dim it further.
-  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 16384
+  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 49152
+    ## Bound how many vertices one primitive's mesh holds, per frame.
+    ##   Tripled when lines became ribbons: a segment that was two vertices is now six.
+    ## The binding case is a scene filled to `scene.ITEMS_MAX` with planes, each drawing
+    ## `SEGMENTS_CIRCLE_HORIZON` rim ribbons plus one for its normal shaft -- 64 x 97 x 6,
+    ## or 37,248, which the old 16,384 would have asserted on. The suite fills a scene
+    ## exactly that way rather than leaving the arithmetic to be trusted.
+    ##   Costs `3 * VERTICES_MAX * sizeof(Vertex)` per `MeshSet` and there are two of them,
+    ## so this is the largest single reservation this build makes; the diagnostics panel
+    ## reports it alongside the rest rather than hiding it.
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
     ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
@@ -246,7 +262,11 @@ type
     Rose, Copper, Olive, Jade, Cobalt,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
-    Triangle, Line, Point
+    ## Every kind is a triangle or a point on the wire; `Ribbon` is a *line drawn as*
+    ## triangles -- see `addSegment` -- kept a kind of its own rather than folded into
+    ## `Triangle` because the two draw differently: a ribbon writes depth, a plane's own
+    ## translucent wash does not.
+    Triangle, Ribbon, Point
 
   Rgba* = object ## Hold colour channels, in 0 .. 1.
     red*, green*, blue*, alpha*: float32
@@ -272,10 +292,36 @@ type
       ## a real star at effectively infinite distance would.
     radius_horizon*: float ## How far from `eye` horizon geometry -- a star, a great
       ## circle, a whole-sky dome -- is drawn.
+    # The four below are what a *ribbon* needs to hold a constant width on screen; see
+    #   `worldPerPixelAt`. They are the camera's own facts rather than a `Camera`, because
+    #   `camera` imports this module and cannot be imported back.
+    forward*: Direction ## Camera's own sight axis, depth is measured along.
+    tangent_half_view*: float ## Tangent of half the vertical field of view.
+    height_pixels*: int ## Framebuffer height, which the vertical field of view spans.
+    depth_near*: float ## Camera's own near clip distance, depth is clamped at. Nothing
+      ## nearer is drawn, so nothing needs a width measured nearer -- and without the
+      ## clamp a segment running past the eye reads a negative depth and turns its own
+      ## ribbon inside out.
 
 
 
 #[ Camera-Relative Scale ]#
+
+func worldPerPixelAt*(place: Position; scale: DrawExtent): float =
+  ## Measure how much world distance one screen pixel spans at `place`'s own depth.
+  ##   What turns a width or a clearance stated in pixels into the world offset it has to
+  ##   use, wherever it is anchored in space rather than on screen. Every ribbon's own
+  ##   half-width comes through here, and so does every marker's clearance.
+  ##   Depth along the sight axis, not distance from the eye: perspective divides by the
+  ##   former, and the two differ by the cosine of how far off-axis the point sits -- over
+  ##   a percent even near the middle of the frame, which is a visible fraction of a gap
+  ##   this tight.
+  ##   Clamped at the near plane. Depth goes negative behind the eye, and a negative
+  ##   half-width folds a ribbon over on itself; nothing nearer than the near plane is
+  ##   drawn anyway, so there is no width there to get right.
+  let depth = max(dot(place - scale.eye, scale.forward), scale.depth_near)
+  2.0*depth*scale.tangent_half_view/float(max(scale.height_pixels, 1))
+
 
 func radiusHorizonFor*(distance_far: float): float =
   ## Compute how far from the eye horizon geometry sits this frame, given the camera's
@@ -492,10 +538,94 @@ proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   meshes.addVertex(Primitive.Point, at, tint)
 
 
-proc addSegment*(meshes: var MeshSet; tail, head: Position; tint: Rgba) =
-  ## Append line segment joining two positions.
-  meshes.addVertex(Primitive.Line, tail, tint)
-  meshes.addVertex(Primitive.Line, head, tint)
+func directionAcross*(tail, head, eye: Position): Option[Direction] =
+  ## Resolve which way to step off a segment so its own two edges land either side of it
+  ## on screen.
+  ##   Joining the segment's line with the eye gives the one plane containing both; that
+  ##   plane's normal is perpendicular to the line and to every sight ray reaching it,
+  ##   which is exactly the direction that shows as sideways from where the camera stands.
+  ##   The same rule `marker.directionAcross` flanks a line's rails by, stated here over
+  ##   two endpoints rather than over a line's own multivector -- `marker` imports this
+  ##   module, so it delegates here rather than the two carrying a derivation each.
+  ##   None where the eye lies on the segment's own line, or where the segment has no
+  ##   length: neither has a side to step off toward.
+  directionNormal(toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye))
+
+
+proc addSegment*(
+  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
+  scale: DrawExtent
+) =
+  ## Append a line segment joining two positions, as a **ribbon**: a world-space quad
+  ## `width` pixels across, wound as two triangles.
+  ##   A quad rather than a `GL_LINES` pair because a line width is a *hint* both this
+  ## project's targets are entitled to ignore -- most WebGL implementations clamp it to
+  ## one pixel outright, and core-profile OpenGL only ever guaranteed one. Drawing the
+  ## width as geometry is the only way both builds show the same thing.
+  ##   Each end is offset by half a width of *its own* world-per-pixel, so the ribbon
+  ## narrows with distance exactly as the line it draws does, and two parallel lines keep
+  ## their shared vanishing point. A constant world offset would hold the far end open;
+  ## a constant screen offset would not converge at all.
+  ##   Silently appends nothing where the segment has no side to step off toward -- zero
+  ## length, or an eye lying on its own line, where the ribbon is edge-on and covers no
+  ## pixels anyway.
+  ##   Takes a tint per end, since the ground grid fades along its own lines; the pair of
+  ## corners at one end share that end's own tint, so the fade runs along the ribbon
+  ## exactly as it ran along the line.
+  ##   **Clipped to the near plane first.** A world offset proportional to depth gives a
+  ## constant screen width only while the quad's own straight edges interpolate a depth
+  ## that is itself linear along the segment -- which stops being true the moment one end
+  ## stands behind the eye and its depth has to be clamped. Left unclipped, a world axis
+  ## running from far behind the camera to far in front of it drew twenty pixels wide
+  ## near the origin. Clipping restores the property rather than patching the symptom:
+  ## both ends then have real, positive depth, and the interpolation between them is
+  ## exact. Found by rendering a frame and looking at it.
+  let across = directionAcross(tail, head, scale.eye)
+  if across.isNone: return
+  let
+    depth_tail = dot(tail - scale.eye, scale.forward)
+    depth_head = dot(head - scale.eye, scale.forward)
+  if depth_tail < scale.depth_near and depth_head < scale.depth_near: return
+
+  func blend(first, second: Rgba; fraction: float): Rgba =
+    ## Read the colour a fraction of the way along, for an end the clip has moved.
+    let (a, b) = (1.0 - fraction, fraction)
+    Rgba(
+      red: float32(a*float(first.red) + b*float(second.red)),
+      green: float32(a*float(first.green) + b*float(second.green)),
+      blue: float32(a*float(first.blue) + b*float(second.blue)),
+      alpha: float32(a*float(first.alpha) + b*float(second.alpha)),
+    )
+
+  var
+    (near, far) = (tail, head)
+    (tint_near, tint_far) = (tint_tail, tint_head)
+  if depth_tail < scale.depth_near:
+    let fraction = (scale.depth_near - depth_tail)/(depth_head - depth_tail)
+    near = tail + fraction*(head - tail)
+    tint_near = blend(tint_tail, tint_head, fraction)
+  elif depth_head < scale.depth_near:
+    let fraction = (scale.depth_near - depth_head)/(depth_tail - depth_head)
+    far = head + fraction*(tail - head)
+    tint_far = blend(tint_head, tint_tail, fraction)
+
+  let
+    offset_near = 0.5*float(width)*worldPerPixelAt(near, scale)*across.get
+    offset_far = 0.5*float(width)*worldPerPixelAt(far, scale)*across.get
+    corners = [
+      near - offset_near, far - offset_far, far + offset_far, near + offset_near,
+    ]
+    tints = [tint_near, tint_far, tint_far, tint_near]
+  for index in [0, 1, 2, 0, 2, 3]:
+    meshes.addVertex(Primitive.Ribbon, corners[index], tints[index])
+
+
+proc addSegment*(
+  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
+  scale: DrawExtent
+) =
+  ## Append a ribbon of one tint end to end; see the two-tint form above for what it draws.
+  meshes.addSegment(tail, head, tint, tint, width, scale)
 
 
 proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
@@ -506,7 +636,7 @@ proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
 
 proc addPlaneRing(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
 ) =
   ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
   ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is
@@ -517,7 +647,7 @@ proc addPlaneRing(
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
       point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
       point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
-    meshes.addSegment(point_a, point_b, tint)
+    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
 
 
 proc addPlaneFill(
@@ -542,7 +672,7 @@ proc addPlaneFill(
 
 proc addGreatCircle(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
 ) =
   ## Append a closed ring of segments around `center`, in the plane `axis_first` and
   ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
@@ -553,7 +683,7 @@ proc addGreatCircle(
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
       point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
       point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
-    meshes.addSegment(point_a, point_b, tint)
+    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
 
 
 func spherePoint(center: Position; radius: float; theta, phi: float): Position =
@@ -596,7 +726,7 @@ proc addDome(
 
 #[ World Furniture ]#
 
-proc addAxes*(meshes: var MeshSet; extent: float) =
+proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
   ## Append world axes through origin, each in the standard convention: x red, y green,
   ## z blue, so orientation reads at a glance regardless of where the camera stands.
   const AXES_WORLD = [
@@ -605,7 +735,10 @@ proc addAxes*(meshes: var MeshSet; extent: float) =
     (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
   for (axis, ink) in AXES_WORLD:
-    meshes.addSegment(ORIGIN_WORLD - extent*axis, ORIGIN_WORLD + extent*axis, ink.colour)
+    meshes.addSegment(
+      ORIGIN_WORLD - extent*axis, ORIGIN_WORLD + extent*axis, ink.colour,
+      WIDTH_LINE_FURNITURE, scale,
+    )
 
 
 func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
@@ -616,7 +749,7 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
-proc addGrid*(meshes: var MeshSet; extent: float) =
+proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
   ## Append reference grid on ground, so distance and direction stay judgeable, at the
   ## cell size `sizeCellGridFor` picks for how far it reaches. Rather
   ## than drawing all the way out to `extent` at ever-fainter alpha, every line is cut
@@ -650,10 +783,14 @@ proc addGrid*(meshes: var MeshSet; extent: float) =
       let
         a = reach * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
         b = reach * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
-      meshes.addVertex(Primitive.Line, Position(x: offset, y: a, z: 0), tintAt(a, offset))
-      meshes.addVertex(Primitive.Line, Position(x: offset, y: b, z: 0), tintAt(b, offset))
-      meshes.addVertex(Primitive.Line, Position(x: a, y: offset, z: 0), tintAt(a, offset))
-      meshes.addVertex(Primitive.Line, Position(x: b, y: offset, z: 0), tintAt(b, offset))
+      meshes.addSegment(
+        Position(x: offset, y: a, z: 0), Position(x: offset, y: b, z: 0),
+        tintAt(a, offset), tintAt(b, offset), WIDTH_LINE_FURNITURE, scale,
+      )
+      meshes.addSegment(
+        Position(x: a, y: offset, z: 0), Position(x: b, y: offset, z: 0),
+        tintAt(a, offset), tintAt(b, offset), WIDTH_LINE_FURNITURE, scale,
+      )
 
 
 
@@ -714,8 +851,12 @@ proc addLine(
     let
       reach = progress*scale.radius_horizon
       tint_progress = tint.fade(tint.alpha*progress)
-    meshes.addSegment(anchor.get, scale.eye + reach*axis.get, tint_progress)
-    meshes.addSegment(anchor.get, scale.eye - reach*axis.get, tint_progress)
+    meshes.addSegment(
+      anchor.get, scale.eye + reach*axis.get, tint_progress, WIDTH_LINE_OBJECT, scale
+    )
+    meshes.addSegment(
+      anchor.get, scale.eye - reach*axis.get, tint_progress, WIDTH_LINE_OBJECT, scale
+    )
     return Placement.Finite
 
   let normal = directionNormalHorizon(geometry)
@@ -725,7 +866,7 @@ proc addLine(
   let (axis_first, axis_second) = axes.get
   meshes.addGreatCircle(
     scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
-    tint.fade(tint.alpha*progress),
+    tint.fade(tint.alpha*progress), scale,
   )
   Placement.Horizon
 
@@ -757,13 +898,13 @@ proc addPlane(
     # Fill first, so plane reads as a surface rather than a bare outline; flat, since
     #   the rim drawn over it already marks the edge crisply on its own.
     meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
-    meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress)
+    meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
 
     # Show normal as a bare shaft, no marker at its tip: tells plane apart from its own
     #   reflection without adding another point to the scene.
     meshes.addSegment(
       anchor.get, anchor.get + (FRACTION_NORMAL_SHAFT*extent)*axes.get.normal,
-      Ink.Guide.colour.fade(ALPHA_GUIDE*progress),
+      Ink.Guide.colour.fade(ALPHA_GUIDE*progress), WIDTH_LINE_OBJECT, scale,
     )
     return Placement.Finite
 

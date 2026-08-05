@@ -152,25 +152,7 @@ func markerRing(
   ))
 
 
-func worldPerPixel*(
-  place: Position; scale: DrawExtent; placement: Camera; height: int
-): float =
-  ## Measure how much world distance one screen pixel spans at `place`'s own depth.
-  ##   How a marker turns a clearance stated in pixels into the world offset it has to
-  ##   use, wherever it is anchored in space rather than on screen.
-  ##   Depth along the sight axis, not distance from the eye: perspective divides by the
-  ##   former, and the two differ by the cosine of how far off-axis the point sits --
-  ##   over a percent even near the middle of the frame, which is a visible fraction of
-  ##   a gap this tight.
-  let
-    depth = dot(place - scale.eye, placement.frame(scale.eye).forward)
-    half_height = tan(0.5*degToRad(placement.degrees_field_of_view))
-  2.0*depth*half_height/float(height)
-
-
-func offsetMarkerRail*(
-  anchor: Position; scale: DrawExtent; placement: Camera; height: int
-): float =
+func offsetMarkerRail*(anchor: Position; scale: DrawExtent): float =
   ## Size how far to each side of a line its rails stand, in world units.
   ##   Reads as `OFFSET_MARKER_RAIL` pixels where the line's own support is, and closes
   ##   with distance from there exactly as the line's own foreshortening does. That is
@@ -178,7 +160,7 @@ func offsetMarkerRail*(
   ##   converge on the same one the line runs to and the three read as one object seen
   ##   in perspective. A constant screen offset instead holds the pair open all the way
   ##   to the horizon, where the line has long since narrowed to nothing.
-  OFFSET_MARKER_RAIL*worldPerPixel(anchor, scale, placement, height)
+  OFFSET_MARKER_RAIL*worldPerPixelAt(anchor, scale)
 
 
 func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
@@ -226,7 +208,7 @@ func markerRails(
   if anchor.isNone or axis.isNone or across.isNone: return
 
   let
-    offset = offsetMarkerRail(anchor.get, scale, placement, height)
+    offset = offsetMarkerRail(anchor.get, scale)
     frame_camera = placement.frame(scale.eye)
   var marker = Marker(kind: MarkerKind.Rails)
   for side in [offset, -offset]:
@@ -260,7 +242,7 @@ func radiusMarkerLoop*(
   ##   is the depth a reader judges the gap at. Everywhere else around the ellipse the
   ##   gap foreshortens exactly as the disc does, which is the point -- a constant pixel
   ##   ring would sit off the plane and read as floating above it.
-  EXTENT_PLANE_F + GAP_MARKER*worldPerPixel(centre, scale, placement, height)
+  EXTENT_PLANE_F + GAP_MARKER*worldPerPixelAt(centre, scale)
 
 
 func positionsMarkerLoop*(

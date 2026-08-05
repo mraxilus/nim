@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 147 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 152 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -271,6 +271,51 @@ OpenGL: `SIZE_POINT` 9.0, `WIDTH_LINE_FURNITURE` 1.5, `WIDTH_LINE_OBJECT` 2.5 px
 `marker` derives every marker's own clearance from them and cannot import `renderer`, which
 binds straight to OpenGL — so one shared home, read by both render paths, replacing the
 copy `browser_bridge` used to carry.
+
+
+Ribbons
+---
+**Every line is drawn as a quad, never as `GL_LINES`.** A line width is a hint a target is
+entitled to ignore: most WebGL implementations clamp `gl.lineWidth` to one pixel outright,
+and core-profile OpenGL only ever guaranteed one. So `WIDTH_LINE_OBJECT` (2.5) and
+`WIDTH_LINE_FURNITURE` (1.5) meant nothing in the browser — scene lines and reference
+furniture drew identically there — and worked on the desktop only because Mesa is generous.
+`mesh.addSegment` now builds the width as geometry, so both builds draw the same thing and
+neither asks a driver for anything.
+
+Each end is offset half a width along `directionAcross` — the normal of the plane joining
+the segment with the eye, which is the direction that shows as sideways from where the
+camera stands — scaled by `worldPerPixelAt` at *that end's own depth*. Offset proportional
+to depth is what makes the on-screen width constant: the quad's straight edges then
+interpolate a world offset that stays proportional to a depth which is itself linear along
+the segment. Both derivations already existed for a line's own selection rails in
+`marker.nim`, which now delegates to them rather than carrying a second copy.
+
+**The near plane has to be clipped against first**, and this is the one part that was not
+obvious. A depth clamped at the near plane breaks the proportionality the whole scheme rests
+on, and the first frame rendered after the change showed it: a world axis running from far
+behind the camera to far in front drew *twenty pixels wide* near the origin. `addSegment`
+now moves an end that stands behind the near plane up to it, along the segment, blending its
+tint by the same fraction; a segment entirely behind is dropped. A great circle drawn around
+the eye loses about half its segments to this, which is why the suite checks a count it
+computes rather than one it assumes.
+
+`GL_LINE_SMOOTH` went with `gl.lineWidth`, and a 1.5-pixel quad with nothing smoothing it
+rasterises only where it covers a pixel centre — the whole ground grid read as dotted.
+The desktop now asks for a 4-sample framebuffer and **falls back to none if no visual
+offers it**: `llvmpipe` under `xvfb`, which every headless capture here runs on, refuses the
+window outright rather than downgrading, and a workbench that will not start is worse than
+one whose thinnest lines alias. The browser context already asked for `antialias: true`.
+
+`VERTICES_MAX` went from 16,384 to 49,152, because a segment that was two vertices is now
+six. The binding case is a scene filled to `ITEMS_MAX` with planes: 64 x 97 ribbons x 6 =
+37,248, which the old bound would have asserted on. The suite builds exactly that scene
+rather than trusting the arithmetic. Costs about 4 MB per `MeshSet`, of which there are two.
+
+**Measured, on the desktop, by counting lit pixels across a drawn line** and correcting for
+the angle it runs at: a scene line asked for 2.5 px measures 2.39–2.73 px, and reference
+furniture asked for 1.5 px measures 1.29–1.52 px — each constant along the line's own length
+as it recedes, which is the property that fails if `worldPerPixelAt` is fed the wrong depth.
 
 
 Selection And Picking
@@ -767,8 +812,8 @@ both that it is pure Nim and byte-identical across backends. The bold Unicode it
 fine in a browser; the ImGui font atlas is what cannot render it.
 
 Draw order in `glue.js` mirrors `renderer.nim` and must be kept in sync by hand: furniture
-at furniture line width with normal depth, then scene lines and points, then translucent
-triangles with `depthMask(false)`.
+ribbons with normal depth, then scene ribbons and points, then translucent triangles with
+`depthMask(false)`. No line width is set on either side any more; see Ribbons below.
 
 
 Browser UI
@@ -1546,8 +1591,6 @@ Known Limitations
 - Dear ImGui's keyboard navigation is enabled and verified enabled, but Tab actually landing
   on a desktop widget is unverified: a window that never takes focus under `xvfb` gives ImGui
   no navigation focus to move. Wants a human at a real window.
-- Most WebGL/ANGLE browsers clamp `gl.lineWidth` to 1px, so browser line widths are
-  advisory. Fixing it needs screen-space quads per segment.
 - Two crossing translucent washes blend order-dependently (see the draw-order invariant).
 - Undo/redo does not cover camera moves.
 - Conformal metric (`IS_CONFORMAL`) is unfinished in the library; this build is rigid 4D.

@@ -67,11 +67,14 @@ const uniform_is_round = gl.getUniformLocation(program, 'uRound');
 
 // Read from renderer.nim's own constants via nimRenderLineWidths, rather than a hand-
 // copied literal that could drift out of sync with them.
-const [SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT] = nimRenderLineWidths();
+// `SIZE_POINT` is still a draw-call setting here, since `gl_PointSize` is honoured. The
+// two line widths are not: `mesh.addSegment` has already built them into the ribbon
+// geometry, because WebGL clamps `gl.lineWidth` to one pixel on most implementations.
+const [SIZE_POINT] = nimRenderLineWidths();
 
 const vbo = {
-  tri: gl.createBuffer(), line: gl.createBuffer(), point: gl.createBuffer(),
-  line_furniture: gl.createBuffer(),
+  tri: gl.createBuffer(), ribbon: gl.createBuffer(), point: gl.createBuffer(),
+  ribbon_furniture: gl.createBuffer(),
 };
 const STRIDE = 7 * 4;
 
@@ -1860,24 +1863,25 @@ function frame() {
   // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
   if (nimDragActive()) nimUpdateDrag(now_seconds);
 
-  const data = nimBuildFrame(aspect, now_seconds, is_axes_shown, is_grid_shown);
+  const data = nimBuildFrame(
+    aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown,
+  );
 
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.uniformMatrix4fv(uniform_view_projection, false, new Float32Array(data.view_projection));
 
-  // World furniture first, at its own thinner line width, with normal depth test/write.
-  // Mirrors renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
-  gl.lineWidth(WIDTH_LINE_FURNITURE);
-  drawBuffer(data.furn_line_verts, gl.LINES, false, vbo.line_furniture);
+  // World furniture first, with normal depth test/write. Its ribbons already carry their
+  // own thinner width as geometry -- there is no width to set here any more. Mirrors
+  // renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
+  drawBuffer(data.furn_ribbon_verts, gl.TRIANGLES, false, vbo.ribbon_furniture);
 
-  // Scene objects last, at their own wider line width; opaque kinds before plane washes
-  // (triangles), with depth writes off for those, so a translucent plane never occludes
-  // a line or point that happens to sit behind it -- it only tints over whatever was
-  // already drawn there. Mirrors renderer.nim's own drawMeshes(MESHES, ...) call exactly.
+  // Scene objects last; opaque kinds before plane washes (triangles), with depth writes
+  // off for those, so a translucent plane never occludes a line or point that happens to
+  // sit behind it -- it only tints over whatever was already drawn there. Mirrors
+  // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
-  gl.lineWidth(WIDTH_LINE_OBJECT);
-  drawBuffer(data.line_verts, gl.LINES, false, vbo.line);
+  drawBuffer(data.ribbon_verts, gl.TRIANGLES, false, vbo.ribbon);
   drawBuffer(data.point_verts, gl.POINTS, true, vbo.point);
   gl.depthMask(false);
   drawBuffer(data.tri_verts, gl.TRIANGLES, false, vbo.tri);

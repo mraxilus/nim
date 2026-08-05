@@ -9,7 +9,7 @@
 ##   Buys correctness for free: nothing can be stale after user edits a coefficient.
 ##
 ## Draw order is opaque first, translucent second, with depth writes off for translucent:
-##   Lines and points therefore occlude correctly against each other.
+##   Ribbons and points therefore occlude correctly against each other.
 ##   Plane washes never occlude anything, so objects stay visible through them, which is
 ##   what a geometry viewer wants. Cost is that two washes crossing look order-dependent.
 ##
@@ -85,9 +85,11 @@ type
 
 const lut_primitive_to_mode: array[Primitive, gl.Enum] = [
   Primitive.Triangle: gl.TRIANGLES,
-  Primitive.Line: gl.LINES,
+  Primitive.Ribbon: gl.TRIANGLES,
   Primitive.Point: gl.POINTS,
 ] ## Map primitive kind to OpenGL's own mode enumerant.
+  ##   A ribbon is a line drawn as triangles -- see `mesh.addSegment` for why a line width
+  ##   is not something either of this project's targets can be asked to honour.
 
 
 
@@ -163,7 +165,14 @@ proc initRenderer*(): Renderer =
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
   gl.enable(gl.PROGRAM_POINT_SIZE)
-  gl.enable(gl.LINE_SMOOTH)
+  # A ribbon is an ordinary triangle pair, so nothing smooths its edges the way
+  #   `GL_LINE_SMOOTH` once smoothed a line's. Without this a 1.5-pixel grid ribbon is
+  #   rasterised only where it covers a pixel centre and the whole ground grid reads as
+  #   dotted -- which is exactly what the first capture after the change showed. The
+  #   context is asked for a multisampled framebuffer in `visualiser.main`; this is what
+  #   turns it on. The browser's own context asks for `antialias: true` and needs no
+  #   equivalent line.
+  gl.enable(gl.MULTISAMPLE)
 
 
 
@@ -195,24 +204,20 @@ proc drawPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
   gl.drawArrays(lut_primitive_to_mode[primitive], 0, gl.Sizei(count))
 
 
-proc drawMeshes*(
-  renderer: Renderer; meshes: MeshSet; view_projection: Matrix4;
-  width_line: float32 = WIDTH_LINE_OBJECT
-) =
+proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
   ## Draw every mesh, opaque kinds before translucent ones.
-  ##   `width_line` defaults to a scene object's own width; caller passes
-  ##   `WIDTH_LINE_FURNITURE` instead when drawing the ground grid and world axes alone,
-  ##   so furniture reads thinner than whatever object the workbench is actually
-  ##   showing (see `WIDTH_LINE_FURNITURE`'s own doc comment).
+  ##   Took a line width once, and passed it to `gl.lineWidth`. It no longer does: a
+  ##   width is now geometry, built into the ribbon at `mesh.addSegment` from the same
+  ##   `WIDTH_LINE_OBJECT`/`WIDTH_LINE_FURNITURE` this used to hand the driver, so both
+  ##   builds draw it rather than asking a driver to.
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
   gl.uniform1f(renderer.location_size_point, SIZE_POINT)
-  gl.lineWidth(width_line)
 
   # Draw opaque kinds first, so they own depth buffer.
-  renderer.drawPrimitive(meshes, Primitive.Line)
+  renderer.drawPrimitive(meshes, Primitive.Ribbon)
   renderer.drawPrimitive(meshes, Primitive.Point)
 
   # Draw washes without writing depth, so objects stay visible through them.

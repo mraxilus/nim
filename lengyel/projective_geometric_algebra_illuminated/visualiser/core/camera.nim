@@ -259,6 +259,27 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
   )
 
 
+func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
+  ## Derive this frame's own draw scale from the camera: how far its geometry reaches,
+  ## where from, and everything a ribbon needs to hold a constant width on screen.
+  ##   One constructor, because there were four -- three literal copies in `visualiser.nim`
+  ##   and a fourth in `browser_bridge`, whose own doc comment admitted to duplicating
+  ##   them. It lives here rather than in `mesh`, where `DrawExtent` is declared, because
+  ##   it reads a `Camera` and `camera` imports `mesh` rather than the other way round.
+  ##   `height_pixels` is the framebuffer's, not the window's: a ribbon's width is
+  ##   measured in the pixels actually drawn.
+  let eye = camera.eye
+  DrawExtent(
+    extent_furniture: extentFurnitureFor(camera.distanceFar),
+    eye: eye,
+    radius_horizon: radiusHorizonFor(camera.distanceFar),
+    forward: camera.frame(eye).forward,
+    tangent_half_view: tan(0.5*degToRad(camera.degrees_field_of_view)),
+    height_pixels: height_pixels,
+    depth_near: camera.distanceNear,
+  )
+
+
 func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
   ## Compose whole transform from world space to clip space.
   let eye = camera.eye

@@ -341,11 +341,18 @@ not from orbit distance, so it reads as extending indefinitely however far the c
   depth fighting. Axes use the standard convention: x red, y green, z blue.
 
 **Line widths**: furniture 1.5 px, scene objects 2.5 px, with a compile-time assertion that
-object lines exceed furniture lines so reference geometry recedes. Note in the documentation
-that most WebGL implementations clamp line width to 1 px, making the browser's widths
-advisory.
+object lines exceed furniture lines so reference geometry recedes. **Draw the width as
+geometry, never as a draw-call setting**: a line width is a hint a target may ignore, and
+most WebGL implementations clamp it to one pixel, so a build that sets it has two widths on
+one target and one on the other. A quad offset at each end by half a width of that end's own
+world-per-pixel holds the width constant on screen and converges with the line as it
+recedes. **Clip to the near plane before building it** — the proportionality that keeps the
+width constant does not survive a depth clamped behind the eye, and the failure is not
+subtle. Whatever smoothed lines before (`GL_LINE_SMOOTH`) no longer applies; ask for a
+multisampled framebuffer and fall back gracefully where no visual offers one.
 
-**Vertex budget** is fixed at 16384 per primitive kind and asserted, not grown on demand.
+**Vertex budget** is fixed per primitive kind and asserted, not grown on demand. Size it from
+the worst case a full scene can reach and check that case by building it, not by arithmetic.
 
 **Creation-anchored plane centring.** A plane's rim and fill centre on an anchor chosen at
 construction time from the operation and the operand shapes, not always on the plane's own
