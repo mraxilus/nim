@@ -53,6 +53,19 @@ var
   generation = 0            ## Which move is in flight, so an older one can be dropped.
 
 
+func tempoOf(vis: Vis): Tempo =
+  ## Get how long the drawing on show takes to say a move.
+  ##
+  ## The page waits on whichever drawing the dancer is actually watching.  The
+  ## close drawing has to clear its ways out and build the next lot; the map has
+  ## every frame in place already and only has to move the mark.  Making the map
+  ## keep the close drawing's time would leave it finished and waiting, which
+  ## reads as the page having stopped rather than as a move being made.
+  case vis
+  of Vis.Dynamic: CLOSE_TEMPO
+  of Vis.Overview: WIDE_TEMPO
+
+
 proc atOnce(): bool =
   ## Test whether the reader has asked for no movement.
   ##
@@ -199,11 +212,13 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
   tag("div", "class=\"view-map\"",
     tag("div", "class=\"scroll\"", renderMap(some(current), motion, taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
-      "above, so a line down the page is a collect and a line up is a drop. A " &
-      "lit line is named for the move away from where you stand; dashed curves " &
-      "are the two compounds. A frame ringed in a solid line is one move away " &
-      "and a dashed one is a compound, two moves away; both can be clicked, and " &
-      "a compound dances its two moves in turn."))
+      "above, so a line down the page is a collect and a line up is a drop. " &
+      "Every line is named for the hand it takes hold of, since the direction " &
+      "says the rest; dashed curves are the two compounds. The frames you can " &
+      "reach from where you stand come forward and the rest go quiet, and the " &
+      "ring moves along the line you take. A frame ringed in a solid line is " &
+      "one move away and a dashed one is a compound, two moves away; both can " &
+      "be clicked, and a compound dances its two moves in turn."))
 
 
 func renderStageBody(current: Frame; vis: Vis; motion: Motion;
@@ -451,7 +466,9 @@ proc dance(key: string) =
     return
 
   inc generation
-  let mine = generation
+  let
+    mine = generation
+    tempo = tempoOf(vis)
   motion = Motion.Leaving
   taken = target
   paintStage()
@@ -462,7 +479,7 @@ proc dance(key: string) =
     arrive(target.get)
     motion = Motion.Arriving
     taken = none(Frame)
-    render(), LEAVE_TIME)
+    render(), tempo.leaveTime)
 
   discard setTimeout(proc () =
     if generation != mine:
@@ -470,12 +487,12 @@ proc dance(key: string) =
     let next = queued
     queued = none(Frame)
     if next.isSome:
-      dance(next.get.key), LEAD_ON_TIME)
+      dance(next.get.key), tempo.leadOnTime)
 
   discard setTimeout(proc () =
     if generation != mine:
       return
-    motion = Motion.Still, MOVE_TIME)
+    motion = Motion.Still, tempo.moveTime)
 
 
 proc danceCompound(key: string) =

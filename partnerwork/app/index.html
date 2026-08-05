@@ -196,24 +196,41 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .scroll { overflow-x: auto; }
 .tabs.small { margin-bottom: .6rem; }
 .tabs.small .tab { font-size: 0.72rem; padding: 0.16rem 0.5rem; }
+/* The map has every frame in place already, so a move is only the mark going
+   from one to another and what is within reach of it changing as it goes.
+   Nothing is built and nothing is torn down, which is why it is quick. */
 .map { width: 100%; min-width: 620px; height: auto; display: block; }
-.map .edge { stroke-width: 2; opacity: .3; }
-.map.unread .edge { opacity: .75; }
-.map .edge.lit { opacity: 1; stroke-width: 3.5; }
+.map .way { opacity: .4; }
+.map.unread .way { opacity: .8; }
+.map .way.lit { opacity: 1; }
+.map .edge { stroke-width: 2; }
+.map .way.lit .edge { stroke-width: 3.5; }
+.map .way.taking .edge { stroke-width: 5; }
+.map .join { opacity: .5; }
+.map .join.lit { opacity: 1; }
 .map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
   stroke-dasharray: 5 4; }
-.map .arc.lit { stroke: var(--dim); stroke-width: 2; }
+.map .join.lit .arc { stroke: var(--dim); stroke-width: 2; }
 .map .edge-plate, .map .arc-plate { fill: var(--page); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
-.map .node { opacity: .5; }
-.map .node.here, .map .node.reachable { opacity: 1; }
+.map .node { opacity: .4; }
+.map .node.here, .map .node.reachable, .map .node.two { opacity: 1; }
 .map .node.here .node-plate { stroke: var(--ink); }
 .map .node.reachable { cursor: pointer; }
 .map .node.reachable .node-plate { stroke: var(--rule-strong); }
 .map .node.reachable:hover .node-plate, .map .node.two:hover .node-plate {
   stroke: var(--ink); }
-.map .node.two { opacity: 1; cursor: pointer; }
+.map .node.two { cursor: pointer; }
 .map .node.two .node-plate { stroke: var(--rule-strong); stroke-dasharray: 5 4; }
+/* Drawn as the frame being reached will have it, with whatever that changes
+   faded from how the frame being left had it: what the mark lands on is then
+   already the drawing for where it landed. */
+@keyframes wake { from { opacity: .4; } }
+@keyframes doze { from { opacity: 1; } }
+.map.leaving .waking { animation: wake var(--pass) var(--ease-soft) both;
+  animation-delay: var(--pass-at); }
+.map.leaving .dozing { animation: doze var(--pass) var(--ease-soft) both;
+  animation-delay: var(--pass-at); }
 .move.two { border-style: dashed; }
 .map .marker { fill: none; stroke: var(--ink); stroke-width: 2.5;
   transform-box: view-box; }

@@ -96,10 +96,11 @@ suite "the space and the window":
 
 suite "the moving":
   test "the times the drawing declares are the times the page waits on":
-    let declared = motionStyle()
-    for (name, time) in {"--fold-spread": FOLD_SPREAD, "--fold-lag": FOLD_LAG,
-        "--fold-leaf": FOLD_LEAF, "--fold-branch": FOLD_BRANCH,
-        "--pass-at": PASS_AT, "--pass": PASS_TIME, "--shrink-at": SHRINK_AT,
+    let declared = closeStyle()
+    for (name, time) in {"--pass-at": CLOSE_TEMPO.pass_at,
+        "--pass": CLOSE_TEMPO.pass, "--fold-spread": FOLD_SPREAD,
+        "--fold-lag": FOLD_LAG, "--fold-leaf": FOLD_LEAF,
+        "--fold-branch": FOLD_BRANCH, "--shrink-at": SHRINK_AT,
         "--shrink": SHRINK_TIME, "--centre-at": CENTRE_AT,
         "--centre": CENTRE_TIME, "--grow-delay": GROW_DELAY,
         "--grow-spread": GROW_SPREAD, "--leaf-delay": LEAF_DELAY,
@@ -110,9 +111,9 @@ suite "the moving":
     # The ways not taken go first, so that what the mark does next is the only
     # thing moving; the frame left behind goes only once the mark has left it;
     # the drawing recentres only once that frame has gone.
-    check PASS_AT >= FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH
-    check PASS_AT >= FOLD_SPREAD + FOLD_LEAF
-    check SHRINK_AT >= PASS_AT + PASS_TIME
+    check CLOSE_TEMPO.pass_at >= FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH
+    check CLOSE_TEMPO.pass_at >= FOLD_SPREAD + FOLD_LEAF
+    check SHRINK_AT >= CLOSE_TEMPO.pass_at + CLOSE_TEMPO.pass
     check CENTRE_AT >= SHRINK_AT + SHRINK_TIME
     # A leaf folds before its own branch, so a way out goes leaf first.
     check FOLD_LEAF <= FOLD_LAG + FOLD_BRANCH
@@ -122,9 +123,24 @@ suite "the moving":
     # phase, so anything timed to end exactly on time in fact ends late and is
     # cut off wherever it had got to.  That is what a seam looks like.
     check SEAM_MARGIN > 0
-    check CENTRE_AT + CENTRE_TIME <= LEAVE_TIME - SEAM_MARGIN
-    check MOVE_TIME > LEAVE_TIME
-    check LEAD_ON_TIME >= MOVE_TIME
+    check CENTRE_AT + CENTRE_TIME <= CLOSE_TEMPO.leaveTime - SEAM_MARGIN
+    check CLOSE_TEMPO.moveTime > CLOSE_TEMPO.leaveTime
+    check CLOSE_TEMPO.leadOnTime >= CLOSE_TEMPO.moveTime
+
+  test "the map says a move in less time, having less to say":
+    # Both drawings pass the same mark along the same move, and that is all the
+    # map has to do: made to keep the close drawing's time it would stand there
+    # finished, which is read as the page having stopped rather than as a move.
+    check WIDE_TEMPO.leaveTime < CLOSE_TEMPO.leaveTime
+    check WIDE_TEMPO.moveTime < CLOSE_TEMPO.moveTime
+    # Nothing is built or torn down on the map, so the mark leaves at once and
+    # nothing is left running once it lands.
+    check WIDE_TEMPO.pass_at == 0
+    check WIDE_TEMPO.grown == 0
+    check WIDE_TEMPO.settle == SEAM_MARGIN
+    # Both declare the same two times to their stylesheets, in the same words.
+    check passStyle(WIDE_TEMPO).contains("--pass: ")
+    check closeStyle().contains("--pass: ")
 
   test "a stagger is shared out, so a crowded frame still finishes on time":
     for here in FRAMES:

@@ -9,6 +9,16 @@ import std/[options, strutils, unittest]
 import ../src/partnerwork
 
 
+func attr(chunk, name: string): int =
+  ## Read one number out of a drawn element, for measuring what was drawn.
+  let key = name & "=\""
+  let at = chunk.find(key)
+  if at < 0:
+    return 0
+  let rest = chunk[at + key.len .. ^1]
+  parseInt(rest[0 ..< rest.find('"')])
+
+
 suite "the layout":
   test "the drawing order names every frame exactly once":
     check NODE_ORDER.len == FRAMES.len
@@ -90,6 +100,32 @@ suite "the drawing":
         if compound(here, target).isSome:
           inc named
       check renderMap(some(here)).count(" two\"") == named
+
+  test "every line is named, and no name is drawn over anything else":
+    # Naming only the lines underfoot let the rest of the map go unread, and
+    # meant the names moved about every time the couple did.  Naming all of them
+    # is only useful if they can all be read at once, so the drawing places each
+    # one itself and this holds it to having found room.
+    let picture = renderMap(none(Frame))
+    var moved, joined = 0
+    for source in FRAMES:
+      moved += moves(source).len
+      for target in FRAMES:
+        if compound(source, target).isSome:
+          inc joined
+    var boxes: seq[Box] = @[]
+    for chunk in picture.split("<rect class=\""):
+      if not (chunk.startsWith("edge-plate") or chunk.startsWith("arc-plate")):
+        continue
+      let own = chunk[0 ..< chunk.find("/>")]
+      boxes.add (own.attr("x"), own.attr("y"), own.attr("width"),
+        own.attr("height"))
+    check boxes.len == moved div 2 + joined div 2
+    for index, box in boxes:
+      for other in boxes[index + 1 .. ^1]:
+        check not overlaps(box, other)
+      for frame in frameBoxes():
+        check not overlaps(box, frame)
 
   test "the ink of a line is the arm that acts, whichever way it is read":
     # Once a line is unlit the two arms are told apart by colour alone, so every

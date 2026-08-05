@@ -62,6 +62,65 @@ const
   ASIDE = 0.0       ## Direction a compound points.
 
 
+#[ Tempo ]#
+
+const
+  FOLD_SPREAD* = 60
+    ## Budget for starting one way folding after another, in milliseconds.
+  FOLD_LAG* = 50
+    ## How far behind its own leaf a branch begins to fold.
+  FOLD_LEAF* = 120
+    ## Folding one leaf away: a leaf growing, run backwards.
+  FOLD_BRANCH* = 110
+    ## Folding one branch back into the middle: a branch growing, run backwards.
+  SHRINK_TIME* = 140
+    ## Shrinking away the frame left behind, once the mark has left it.
+  CENTRE_TIME* = 340
+    ## Recentring the drawing on the frame reached, which is now all there is.
+  GROW_DELAY* = 50
+    ## Wait after the drawing is replaced before the first new way grows.
+  GROW_SPREAD* = 90
+    ## Budget for starting one way growing after another.
+  LEAF_DELAY* = 100
+    ## Wait between a branch growing and its own leaf, which is what makes the
+    ## drawing read as branches first and leaves after rather than as one bloom.
+  GROW_TIME* = 170
+    ## Growing one branch, or one leaf once its branch has arrived.
+
+
+const CLOSE_TEMPO* = Tempo(
+  ## Hold how long this drawing takes to say a move.
+  ##
+  ## It has the most to do of any of them: the ways not taken have to be out of
+  ## the way before the mark can move, and the ways out of the frame reached have
+  ## to be built afterwards, so the mark sets off late and the drawing is still
+  ## working long after it has arrived.
+  pass_at: FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH,
+  pass: 200,
+  settle: SHRINK_TIME + CENTRE_TIME + SEAM_MARGIN,
+  grown: GROW_DELAY + GROW_SPREAD + LEAF_DELAY + GROW_TIME,
+)
+
+
+const
+  SHRINK_AT* = CLOSE_TEMPO.pass_at + CLOSE_TEMPO.pass
+    ## When the frame left behind starts to go, which is once the mark has left.
+  CENTRE_AT* = SHRINK_AT + SHRINK_TIME
+    ## When the drawing starts recentring on the one frame left in it.
+
+
+func closeStyle*(): string =
+  ## Write this drawing's own times onto it, beside the ones every drawing has.
+  passStyle(CLOSE_TEMPO) & "; --fold-spread: " & $FOLD_SPREAD &
+    "ms; --fold-lag: " & $FOLD_LAG & "ms; --fold-leaf: " & $FOLD_LEAF &
+    "ms; --fold-branch: " & $FOLD_BRANCH & "ms; --shrink-at: " & $SHRINK_AT &
+    "ms; --shrink: " & $SHRINK_TIME & "ms; --centre-at: " & $CENTRE_AT &
+    "ms; --centre: " & $CENTRE_TIME & "ms; --grow-delay: " & $GROW_DELAY &
+    "ms; --grow-spread: " & $GROW_SPREAD & "ms; --leaf-delay: " & $LEAF_DELAY &
+    "ms; --grow: " & $GROW_TIME & "ms"
+
+
+
 type
   Spoke* = object ## Hold one way out of the frame the couple are holding.
     to*: Frame           ## Frame it arrives in.
@@ -305,7 +364,7 @@ func renderSpokes*(here: Frame; motion = Motion.Still;
   # Every number the animation spends is written here, so that the stylesheet
   # holds the shape of the movement and this holds its size.
   result = "<div class=\"viewport " & phase(motion) & "\" style=\"" &
-    motionStyle() & "; --w: " & $window[2] & "px; --h: " & $window[3] &
+    closeStyle() & "; --w: " & $window[2] & "px; --h: " & $window[3] &
     "px; --px: " & $px & "px; --py: " & $py &
     "px; --to-w: " & $reached[2] & "px; --to-h: " & $reached[3] &
     "px; --to-px: " & $qx & "px; --to-py: " & $qy &

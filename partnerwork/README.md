@@ -47,14 +47,24 @@ workbook.
 The Dance view draws the frame two ways, one at a time. **Dynamic** puts the
 frame in the middle and every way out of it as a spoke, and nothing else — take
 a spoke and the drawing recentres on it. **Overview** is the whole ontology with
-the couple standing somewhere in it. Both are marked the same way and both say a
-move the same way: the mark passes along the line to the frame chosen.
+the couple standing somewhere in it, every line named, and the frames within
+reach brought forward while the rest go quiet.
 
-Taking a move is drawn rather than announced, one clause at a time: the ways not
-taken fold away, leaves before branches; the mark that says *you are here* passes
-along the way that was taken; the frame left behind shrinks away; the drawing
-recentres on the frame reached, which by then is all there is; and only then do
-its own ways grow out of it, branches first and leaves after.
+Both say a move the same way — the mark passes along the line to the frame
+chosen — and each takes its own time over it. The close drawing has to clear the
+ways not taken before the mark can move and build the new ones after, so a move
+there is about a second. The map has every frame in place already and nothing to
+build, so its move is the mark going and the dimming changing around it, and is
+over in a third of that. Each drawing tells the page its own `Tempo`
+(`src/partnerwork/motion.nim`) and the page waits on whichever one is on show;
+giving the map the close drawing's schedule left it finished and waiting, which
+reads as the page having stopped.
+
+In the close drawing a move is told one clause at a time: the ways not taken fold
+away, leaves before branches; the mark that says *you are here* passes along the
+way that was taken; the frame left behind shrinks away; the drawing recentres on
+the frame reached, which by then is all there is; and only then do its own ways
+grow out of it, branches first and leaves after.
 
 The whole of that happens in one drawing. The page replaces the drawing exactly
 once, at the end, at the one instant when what is on the screen and what would
