@@ -1012,6 +1012,20 @@ proc nimSelectionMarker(slot, width, height: cint; progress: cfloat): seq[float3
 
 #[ Scene Save/Load Primitives ]#
 
+proc nimSceneMagic(): cstring {.exportc.} = cstring(MAGIC_SCENE)
+  ## Report the four bytes a `.rgascene` file opens with, for the packer in `glue.js`.
+
+
+proc nimSceneVersion(): cint {.exportc.} = cint(VERSION_SCENE)
+  ## Report the format version this build writes and reads, for that same packer.
+  ##   Exported rather than written out again in JavaScript because it *was* written out
+  ##   again in JavaScript: the literal `1` there survived this constant's bump to 2, so
+  ##   the browser stamped version 1 onto version 2 content and rejected every file the
+  ##   desktop wrote. See `scene.MAGIC_SCENE`'s own note. The rule this restores is the
+  ##   project's own -- when one language compiles to another, a derived value belongs
+  ##   behind an export, not in a literal the other language keeps its own copy of.
+
+
 proc nimSceneClear() {.exportc.} =
   ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()

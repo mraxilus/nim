@@ -614,12 +614,16 @@ proc removeItem*(scene: var Scene; slot: int) =
 
 #[ Scene Persistence ]#
 
-## Binary format this project invents for itself -- no external spec to match, so no
-## reason to follow PNG/GIF's own big/little-endian conventions either; every
-## multi-byte field below is written in the host's own native layout, straight through
-## `writeBuffer`/`readBuffer`. A file saved on a big-endian machine will not load
-## correctly on a little-endian one; this tool runs on one desktop at a time, so that
-## trade favours simplicity over a portability nothing here needs yet.
+## Binary format this project invents for itself -- no external spec to match, so the byte
+## order is this project's to choose. **Every multi-byte field below is little-endian**,
+## and that is a rule rather than a habit: `glue.js` writes and reads the very same file
+## through `DataView`, which demands an explicit order at every call and is given `true`
+## there. Leaving the desktop on the host's native layout, as it was first written, left
+## the two agreeing only because every machine this has run on is little-endian -- on a
+## big-endian one the desktop build would write a file its own browser build could not
+## read, which is a parity break rather than a portability nicety.
+##   Little-endian rather than big-endian precisely because it is what every file written
+## so far already contains, so the rule cost no format version and orphaned no saved scene.
 ##
 ##   |----------|--------------------------------------------------------------|
 ##   | Bytes    | Field                                                        |
@@ -629,9 +633,9 @@ proc removeItem*(scene: var Scene; slot: int) =
 ##   | 1        | Basis count (terms per multivector); must match this build's |
 ##   |          |   own count, or the file was saved under a different PGA     |
 ##   |          |   dimension or metric and cannot be read here.               |
-##   | 4        | Item count, native `uint32`.                                 |
+##   | 4        | Item count, little-endian `uint32`.                          |
 ##   | per item | Ink (1), visibility (1), label length (1) then that many     |
-##   |          |   bytes, then one `float` per basis term, native layout.     |
+##   |          |   bytes, then one little-endian `float` per basis term.      |
 ##   |----------|--------------------------------------------------------------|
 ##
 ## Only live items are written, in slot order, never a dead or free slot; slot numbers
@@ -644,22 +648,60 @@ proc removeItem*(scene: var Scene; slot: int) =
 ## so the format costs nothing for the padding no reader ever wants back and does not
 ## depend on the `LABEL_MAX` the writing build happened to use.
 
+const
+  MAGIC_SCENE* = "RGAS"
+    ## First four bytes of a `.rgascene` file, the format table above documents.
+  VERSION_SCENE* = 2'u8
+    ## Format version this build writes and the only one it reads back.
+    ##   Bumped from 1 when `Ink` gained a reserved `Invalid` slot and lost three
+    ##   categorical ones: an item's ink is stored as that enum's own ordinal, so a
+    ##   version 1 file's bytes name different colours here. Refusing it outright is
+    ##   the honest outcome -- silently reading `Cerise` as `Rose` would be worse.
+
+## Both constants sit **outside** the desktop-only guard below, and are exported, because
+## they describe the *format* rather than the file handling: the browser build writes and
+## reads the same bytes through `DataView`, and it gets them from here via
+## `browser_bridge.nimSceneMagic`/`nimSceneVersion` rather than from literals of its own.
+##   That is not decoration. This version was hand-copied into `glue.js` as a `1`, and when
+## the bump to 2 landed here nothing updated it -- so the browser stamped every file it
+## saved as version 1 while writing version 2 content, and refused every file the desktop
+## wrote. Neither build could open the other's scenes, under a comment claiming both could.
+## A derived value behind an export cannot drift like that; a literal in the other language
+## can, and did.
+
 when not defined(js):
   # Imported here rather than at the top of the module: a filesystem and a file handle are
   #   exactly what the browser build has none of, so the guard that excludes save and load
-  #   should exclude what they need too, rather than leaving the JS build to warn about two
-  #   imports nothing on that path can use.
-  import std/[os, syncio]
+  #   should exclude what they need too, rather than leaving the JS build to warn about
+  #   imports nothing on that path can use. `endians` joins them because the byte order it
+  #   converts to is a property of the file, and the file is what this guard is about --
+  #   the browser's own reader gets the same order from `DataView` instead.
+  import std/[endians, os, syncio]
 
-  const
-    MAGIC_SCENE: array[4, char] = ['R', 'G', 'A', 'S']
-      ## First four bytes of a `.rgascene` file, the format table above documents.
-    VERSION_SCENE = 2'u8
-      ## Format version this build writes and the only one it reads back.
-      ##   Bumped from 1 when `Ink` gained a reserved `Invalid` slot and lost three
-      ##   categorical ones: an item's ink is stored as that enum's own ordinal, so a
-      ##   version 1 file's bytes name different colours here. Refusing it outright is
-      ##   the honest outcome -- silently reading `Cerise` as `Rose` would be worse.
+  proc writeLittle[T](file: File; value: T) =
+    ## Write one multi-byte field in the file's own little-endian order.
+    ##   Through a staging array rather than straight out of `value`, because
+    ##   `littleEndian32`/`64` write into their destination: handing them the caller's own
+    ##   variable would byte-swap a live value on a big-endian host as a side effect of
+    ##   saving it.
+    ##   Sized off `T` rather than taking a length, so a field can never be written at a
+    ##   width its own type does not have.
+    var bytes: array[sizeof(T), byte]
+    when sizeof(T) == 4: littleEndian32(addr bytes[0], unsafeAddr value)
+    elif sizeof(T) == 8: littleEndian64(addr bytes[0], unsafeAddr value)
+    else: {.error: "Scene fields are written as 4- or 8-byte little-endian values only.".}
+    discard file.writeBuffer(addr bytes[0], sizeof(T))
+
+
+  proc readLittle[T](file: File; value: var T): bool =
+    ## Read one multi-byte little-endian field back into host order; report whether the
+    ## file actually held that many bytes, so a caller can name the truncation it found.
+    var bytes: array[sizeof(T), byte]
+    if file.readBuffer(addr bytes[0], sizeof(T)) != sizeof(T): return false
+    when sizeof(T) == 4: littleEndian32(addr value, addr bytes[0])
+    elif sizeof(T) == 8: littleEndian64(addr value, addr bytes[0])
+    else: {.error: "Scene fields are read as 4- or 8-byte little-endian values only.".}
+    true
 
 
   proc saveScene*(scene: Scene; path: string): string =
@@ -668,11 +710,10 @@ when not defined(js):
     let file = open(path, fmWrite)
     defer: file.close
 
-    discard file.writeChars(MAGIC_SCENE, 0, 4)
+    discard file.writeChars(MAGIC_SCENE, 0, len(MAGIC_SCENE))
     file.write(char(VERSION_SCENE))
     file.write(char(ord(Basis.high) + 1))
-    let count = uint32(scene.len)
-    discard file.writeBuffer(unsafeAddr count, 4)
+    file.writeLittle(uint32(scene.len))
 
     for item in scene:
       file.write(char(ord(item.ink)))
@@ -682,9 +723,7 @@ when not defined(js):
         geometry = item.geometry
       file.write(char(len(text)))
       discard file.writeChars(text, 0, len(text))
-      for b in Basis:
-        let coefficient = geometry[b]
-        discard file.writeBuffer(unsafeAddr coefficient, 8)
+      for b in Basis: file.writeLittle(geometry[b])
 
     &"Saved {scene.len} object(s) to `{path}`."
 
@@ -706,8 +745,8 @@ when not defined(js):
     let file = open(path, fmRead)
     defer: file.close
 
-    var magic: array[4, char]
-    if file.readChars(magic) != 4 or magic != MAGIC_SCENE:
+    var magic = newString(len(MAGIC_SCENE))
+    if file.readChars(magic) != len(MAGIC_SCENE) or magic != MAGIC_SCENE:
       return &"`{path}` is not a scene file."
 
     var version: array[1, char]
@@ -721,7 +760,7 @@ when not defined(js):
         &"this build reads {basis_count_here}-term multivectors."
 
     var count: uint32
-    if file.readBuffer(addr count, 4) != 4:
+    if not file.readLittle(count):
       return &"`{path}` is truncated; no item count."
     if int(count) > ITEMS_MAX:
       return &"`{path}` holds {count} objects, more than this build's {ITEMS_MAX}-item " &
@@ -747,7 +786,7 @@ when not defined(js):
       var geometry: Multivector
       for b in Basis:
         var coefficient: float
-        if file.readBuffer(addr coefficient, 8) != 8:
+        if not file.readLittle(coefficient):
           return &"`{path}` is truncated partway through object {index}'s geometry."
         geometry[b] = coefficient
 

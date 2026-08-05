@@ -984,10 +984,18 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 function saveScene() {
   const slots = nimSceneSlots();
   const count_basis = nimBasisCount();
+  // Labels go out as UTF-8 bytes, which is what the format holds and what `scene.nim`
+  //   writes: a derived label carries operator notation (`a ∧ b`, `a ∨ b`, `a ⊖ b`), and a
+  //   JavaScript string's own `.length` counts UTF-16 units while `charCodeAt` truncated to
+  //   a byte throws away everything above U+00FF. Both together wrote a shorter length than
+  //   the bytes that followed, so every object after the first non-ASCII label parsed from
+  //   the wrong offset. Measured: `a ⊖ b` came back on the desktop as `a` and a replacement
+  //   glyph.
+  const encoder = new TextEncoder();
   const items = slots.map((slot) => ({
     ink: nimItemInk(slot),
     visible: nimItemVisible(slot),
-    label: nimItemLabel(slot),
+    label: encoder.encode(nimItemLabel(slot)),
     coefficients: nimItemCoefficients(slot),
   }));
 
@@ -997,9 +1005,15 @@ function saveScene() {
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
   let offset = 0;
-  const magic = 'RGAS';
-  for (let i = 0; i < 4; i++) { view.setUint8(offset, magic.charCodeAt(i)); offset += 1; }
-  view.setUint8(offset, 1); offset += 1; // version
+  // Magic and version come from `scene.nim` through the bridge, never from literals here:
+  //   the version was a literal `1` and stayed one through the format's bump to 2, so this
+  //   build stamped every file it saved with a version its own content was not.
+  const magic = nimSceneMagic();
+  for (let i = 0; i < magic.length; i++) {
+    view.setUint8(offset, magic.charCodeAt(i));
+    offset += 1;
+  }
+  view.setUint8(offset, nimSceneVersion()); offset += 1;
   view.setUint8(offset, count_basis); offset += 1;
   view.setUint32(offset, items.length, true); offset += 4;
 
@@ -1007,10 +1021,7 @@ function saveScene() {
     view.setUint8(offset, item.ink); offset += 1;
     view.setUint8(offset, item.visible ? 1 : 0); offset += 1;
     view.setUint8(offset, item.label.length); offset += 1;
-    for (let i = 0; i < item.label.length; i++) {
-      view.setUint8(offset, item.label.charCodeAt(i));
-      offset += 1;
-    }
+    for (const byte of item.label) { view.setUint8(offset, byte); offset += 1; }
     for (let i = 0; i < count_basis; i++) {
       view.setFloat64(offset, item.coefficients[i], true);
       offset += 8;
@@ -1046,13 +1057,17 @@ function parseAndLoadScene(buffer) {
   const view = new DataView(buffer);
   if (buffer.byteLength < 10) throw new Error('`' + 'file' + '` is not a scene file.');
   let offset = 0;
-  const magic = String.fromCharCode(
-    view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3),
-  );
-  offset = 4;
-  if (magic !== 'RGAS') throw new Error('File is not a scene file.');
+  // Both expectations come from `scene.nim` through the bridge, for the reason `saveScene`
+  //   above gives: a literal here is exactly what drifted out of step with the format.
+  const magic_wanted = nimSceneMagic();
+  let magic = '';
+  for (let i = 0; i < magic_wanted.length; i++) magic += String.fromCharCode(view.getUint8(i));
+  offset = magic_wanted.length;
+  if (magic !== magic_wanted) throw new Error('File is not a scene file.');
   const version = view.getUint8(offset); offset += 1;
-  if (version !== 1) throw new Error('File is a scene file of a version this build cannot read.');
+  if (version !== nimSceneVersion()) {
+    throw new Error('File is a scene file of a version this build cannot read.');
+  }
   const count_basis_file = view.getUint8(offset); offset += 1;
   const count_basis_here = nimBasisCount();
   if (count_basis_file !== count_basis_here) {
@@ -1082,11 +1097,12 @@ function parseAndLoadScene(buffer) {
         'File is truncated partway through object ' + i + '’s label.',
       );
     }
-    let label = '';
-    for (let j = 0; j < length_label; j++) {
-      label += String.fromCharCode(view.getUint8(offset));
-      offset += 1;
-    }
+    // Decoded as UTF-8, for the reason `saveScene` gives: byte-per-character would read
+    //   every operator in a derived label as two or three Latin-1 characters of noise.
+    const label = new TextDecoder().decode(
+      new Uint8Array(buffer, offset, length_label),
+    );
+    offset += length_label;
     if (offset + count_basis_here * 8 > buffer.byteLength) {
       throw new Error('File is truncated partway through object ' + i + '’s geometry.');
     }

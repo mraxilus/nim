@@ -997,6 +997,36 @@ suite "Scene":
       check not loaded[2].isVisible
 
 
+    test "every multi-byte field is written little-endian, whatever the host":
+      # The bytes themselves, not a round trip: a round trip passes on any byte order as
+      #   long as one build writes and reads it, and the second implementation of this
+      #   format is `glue.js`, which hands `DataView` an explicit `true` at every call and
+      #   cannot be asked what the desktop felt like doing. Pinning the layout here is what
+      #   keeps the two from drifting apart on a host that is not little-endian.
+      var scene = initScene()
+      var geometry: Multivector
+      geometry[Basis.low] = 2.0 # 0x4000000000000000, whose bytes are unambiguous either way
+      discard scene.addItem(geometry, "e", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_endian.rgascene"
+      check saveScene(scene, path).contains("Saved 1")
+      defer: removeFile(path)
+
+      let bytes = readFile(path)
+      check bytes[0 ..< len(MAGIC_SCENE)] == MAGIC_SCENE
+      check uint8(bytes[len(MAGIC_SCENE)]) == VERSION_SCENE
+
+      # Item count, four bytes straight after magic, version and basis count.
+      let start_count = len(MAGIC_SCENE) + 2
+      check uint8(bytes[start_count]) == 1'u8
+      for offset in 1 .. 3: check uint8(bytes[start_count + offset]) == 0'u8
+
+      # First coefficient, past the count and this item's ink, visibility, label length and
+      #   the one byte of label itself.
+      let start_first = start_count + 4 + 3 + 1
+      check uint8(bytes[start_first + 6]) == 0x00'u8
+      check uint8(bytes[start_first + 7]) == 0x40'u8 # High byte last: little-endian.
+
+
     test "empty scene round-trips":
       let original = initScene()
       let path = getTempDir() / "visualiser_suite_scene_empty.rgascene"

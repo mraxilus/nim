@@ -761,20 +761,43 @@ arithmetic.
 
 Save/Load Format (`.rgascene`)
 ---
-Compact binary matching `Scene`'s SoA layout, native-endian throughout — there is no
-external spec to match, unlike PNG/GIF which follow their own required endianness. A file
-saved on a big-endian machine will not load on a little-endian one; acceptable for a
-single-desktop tool.
+Compact binary matching `Scene`'s SoA layout, **little-endian throughout**. There is no
+external spec to match, unlike PNG/GIF which follow their own required endianness, so the
+order was a free choice — but it had to be *a* choice, because two builds write this format
+and `glue.js` reaches it through `DataView`, which demands an explicit order at every call
+and is given `true`. Little-endian rather than big-endian precisely because it is what every
+file written so far already contains, so the rule cost no version bump and orphaned nothing.
+The desktop converts through `std/endians`, a copy on a little-endian host and a swap on a
+big-endian one.
 
 | Bytes    | Field |
 |----------|-------|
 | 4        | Magic `RGAS` |
-| 1        | Format version (currently 1) |
+| 1        | Format version (currently 2) |
 | 1        | Basis count (16 under this build's 4D rigid metric); must match, or the
              file was saved under a different PGA dimension or metric |
-| 4        | Item count, native `uint32` |
-| per item | Ink (1), visibility (1), label length (1) + that many bytes, then one
-             native `float` per basis term |
+| 4        | Item count, little-endian `uint32` |
+| per item | Ink (1), visibility (1), label length in bytes (1) + that many bytes of
+             UTF-8, then one little-endian `float` per basis term |
+
+**The two builds could not open each other's files at all**, and had not been able to since
+the version bump to 2. Three defects, all in the same shape — a value derived in Nim, copied
+by hand into JavaScript, and left behind:
+
+1. `glue.js` stamped version `1` and refused anything but `1`, while `scene.nim` wrote and
+   demanded `2`. So the browser saved version-2 content under a version-1 label and rejected
+   every desktop file, under a comment claiming both directions worked.
+2. Labels were written with `String.length` and `charCodeAt` truncated to a byte. Those count
+   UTF-16 units and drop everything above U+00FF, so a derived label carrying operator
+   notation (`a ∧ b`, `a ⊖ b` — the catalogue's own names) wrote a length shorter than the
+   bytes that followed and every field after it parsed from the wrong offset.
+3. The endianness above.
+
+Fixed at the root rather than by correcting the copies: `MAGIC_SCENE` and `VERSION_SCENE`
+moved out of the desktop-only guard, are exported, and reach `glue.js` through
+`nimSceneMagic`/`nimSceneVersion` — so there is no literal left to drift. Labels go through
+`TextEncoder`/`TextDecoder`. Found by driving, not by reading: the round-trip suite passed
+throughout, because it only ever asked one build to read what that same build wrote.
 
 Only live items are written, in slot order. Deliberately omitted: slot numbers (meaningless
 once reloaded — a fresh scene assigns its own free-list order); `born` (meaningless across
@@ -785,10 +808,17 @@ on the writing build's `LABEL_MAX`).
 `loadScene` parses into a staging scene and replaces the caller's only on complete success,
 so a bad path, a foreign file, a wrong dimension, or too many items leaves the existing
 scene untouched. Native-only (`when not defined(js)`) — a browser has no filesystem.
-The browser reaches the identical format through `nimSceneAddRaw` plus a hand-written
-`DataView` pack/unpack in `glue.js`; `browser_bridge.nim` exposes raw per-item fields rather
-than bytes, since reinventing IEEE-754 encoding in Nim would only duplicate what `DataView`
-does natively.
+The browser reaches the identical format through `nimSceneAddRaw` plus a `DataView`
+pack/unpack in `glue.js`; `browser_bridge.nim` exposes raw per-item fields rather than bytes,
+since reinventing IEEE-754 encoding in Nim would only duplicate what `DataView` does
+natively. What it does *not* expose that way is any constant describing the format — those
+are exported and read across, for the reason above.
+
+Checked by cross-reading rather than by round-tripping: a scene the desktop saves is fed to
+`glue.js`'s own `parseAndLoadScene` and every coefficient compared, and a scene the browser
+saves through its own button is loaded by `--load-scene` and looked at. A round trip within
+one build passes under any byte order and any label encoding, which is exactly why it missed
+all three defects. A suite case now pins the on-disk bytes of a known float as well.
 
 
 Browser Pipeline
@@ -1653,6 +1683,7 @@ Known Limitations
 - A camera move is not undoable on its own. Undo restores the view each edit was made from,
   but an orbit that changed nothing else leaves no step to step back over.
 - Conformal metric (`IS_CONFORMAL`) is unfinished in the library; this build is rigid 4D.
-- `.rgascene` is native-endian and will not cross endianness.
+- `.rgascene` is little-endian by rule, but only a little-endian host has ever written or
+  read one; the byte-swapping path a big-endian host would take is unexercised.
 
 [replications]: https://gitlab.com/mraxilus/replications

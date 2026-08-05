@@ -663,12 +663,22 @@ A compact binary format, `.rgascene`, matching the scene's own layout:
 | 1 | format version |
 | 1 | basis count (16 here); must match, or the file was saved under a different
       dimension or metric |
-| 4 | item count, native unsigned 32-bit |
-| per item | colour (1), visibility (1), label length (1) + that many bytes, then one
-             native float per basis term |
+| 4 | item count, little-endian unsigned 32-bit |
+| per item | colour (1), visibility (1), label length in **bytes** (1) + that many bytes of
+             UTF-8, then one little-endian float per basis term |
 
-Native-endian throughout: there is no external spec to match, unlike the image formats which
-follow their own required endianness. Document that a file will not cross endianness.
+**State the byte order and hold both implementations to it.** There is no external spec to
+match, so the order is a free choice — but it must be a choice, written down and converted
+to explicitly on every path, not whatever the host happens to use. Two front-ends write this
+format; one of them reaches it through an API that demands an explicit order at every call,
+so leaving the other on native layout means they agree only by coincidence of architecture.
+
+**Every constant the format is made of belongs to one definition, exported.** Magic, version
+and basis count are derived values, and a second copy in the other language is a copy that
+will drift — as it did: a hand-written version literal survived a bump and left neither build
+able to open the other's files. A label is bytes, not characters, and the count is a byte
+count: a language whose string length counts UTF-16 units will otherwise write a length that
+disagrees with the bytes it then emits, and every later field parses from the wrong offset.
 
 Only live items are written, in slot order. **Deliberately omitted**: slot numbers, which are
 meaningless once reloaded since a fresh scene assigns its own free-list order; birth time,
