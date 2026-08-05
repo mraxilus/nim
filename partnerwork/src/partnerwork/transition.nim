@@ -200,37 +200,63 @@ func moves*(source: Frame): seq[Move] =
 
 
 func phrase*(source: Frame; move: Move): string =
-  ## Say a move the way a teacher would call it.
+  ## Say a move the way a teacher would call it, naming both hands.
+  ##
+  ## Which dancer each hand belongs to is said by its case and by nothing else:
+  ## `collect Right to left` is the lead's right hand taking the follow's left.
+  ## See `leadName`.
   let hand = leadName(move.side)
   case move.helper
   of Helper.Collect:
-    result = "collect " & hand & " to the follow's " &
-      followName(move.to.hold[move.side].get)
+    result = "collect " & hand & " to " & followName(move.to.hold[move.side].get)
     if move.to.hasOverlap:
       result.add ", " & (if move.to.over.get == move.side: "over" else: "under") &
         " the " & leadName(other(move.side)) & " arm"
   of Helper.Drop:
-    result = "drop " & hand & " from the follow's " &
-      followName(source.hold[move.side].get)
+    result = "drop " & hand & " from " & followName(source.hold[move.side].get)
 
+
+
+func compoundSide*(source, destination: Frame): Option[Side] =
+  ## Get the hand of the lead that moves when a compound is led.
+  ##
+  ## For a `cut` it is the arm that ends up on top, because that is the one that
+  ## let go and came back over the other.  For a `place` it is the hand that ends
+  ## up holding, because that is the one that took what the other let go of.
+  let named = compound(source, destination)
+  if named.isNone:
+    return none(Side)
+  case named.get
+  of Compound.Cut: destination.over
+  of Compound.Place:
+    some(if destination.hold[Side.Left].isSome: Side.Left else: Side.Right)
+
+
+func compoundName*(source, destination: Frame): string =
+  ## Name a compound and the hand of the follow it moves, as `label` names a move.
+  let
+    named = compound(source, destination)
+    side = compoundSide(source, destination)
+  if named.isNone or side.isNone:
+    return ""
+  ($named.get).toLowerAscii & " " & followName(destination.hold[side.get].get)
 
 
 func compoundPhrase*(source, destination: Frame): string =
-  ## Say a compound the way a teacher would call it, with the two arms named.
+  ## Say a compound the way a teacher would call it, with every hand named.
   let named = compound(source, destination)
   if named.isNone:
     return ""
+  let
+    side = compoundSide(source, destination).get
+    hand = followName(destination.hold[side].get)
   case named.get
   of Compound.Cut:
-    let over = destination.over.get
-    "cut " & leadName(over) & " over " & leadName(other(over)) &
-      ": drop " & leadName(over) & ", then collect it over the " &
-      leadName(other(over)) & " arm"
+    "cut " & hand & ": drop " & leadName(side) & ", then collect it back over " &
+      "the " & leadName(other(side)) & " arm"
   of Compound.Place:
-    let taker =
-      if destination.hold[Side.Left].isSome: Side.Left else: Side.Right
-    "place the follow's " & followName(destination.hold[taker].get) &
-      " from " & leadName(other(taker)) & " into " & leadName(taker)
+    "place " & hand & " from " & leadName(other(side)) & " into " &
+      leadName(side)
 
 
 func label*(source: Frame; move: Move): seq[string] =
@@ -242,10 +268,10 @@ func label*(source: Frame; move: Move): seq[string] =
   ## it could arrive in.  A `drop` says neither: the hand that acts is already
   ## holding one thing, so there is nothing left to choose.
   ##
-  ## The hand named is the follow's, and is not said to be: a move only ever
-  ## takes hold of the follow's hand, so the word would be on every label in
-  ## every drawing and tell a reader nothing they could not already know.  Which
-  ## hand of the *lead* acts is said by the ink the words are written in.
+  ## The hand named is the follow's, and is said to be by its case alone: `left`
+  ## is the follow's where `Left` would be the lead's, throughout the ontology.
+  ## Which hand of the *lead* acts is left to the ink the words are written in,
+  ## which is what a drawing has that a sentence does not.
   ##
   ## The lines are short so that the words fit where a drawing has room for them,
   ## which is usually beside a line rather than along it.

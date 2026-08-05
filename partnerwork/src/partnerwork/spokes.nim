@@ -165,7 +165,7 @@ func spokesOf*(here: Frame): seq[Spoke] =
     named.add Spoke(
       to: target,
       side: actingSide(here, route(here, target)[0].to, Helper.Drop),
-      lines: @[($compounded.get).toLowerAscii, "two moves"],
+      lines: @[compoundName(here, target), "two moves"],
       is_compound: true,
     )
   for index, spoke in named:

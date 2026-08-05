@@ -186,18 +186,19 @@ func renderVisSwitch(vis: Vis): string =
 
 
 func renderArms(): string =
-  ## Say which ink is which arm, and whose hand a move names.
+  ## Say which ink is which arm, and how a hand says whose it is.
   ##
-  ## A move only ever takes hold of the follow's hand, so its name says which
-  ## one without saying whose.  That is only readable if the drawing says once,
-  ## somewhere, that the arm is the lead's and the hand named is the follow's.
+  ## Nothing in the ontology says *whose* hand it means, because the case says
+  ## it: `Left` is the lead's and `left` is the follow's, in a frame's name and
+  ## in a move's alike.  A reader who has not been told that once cannot read
+  ## anything else on the page, so the drawing tells them here.
   var swatches = ""
   for side in Side:
     swatches.add tag("span", "class=\"swatch\"",
       "<i class=\"arm-" & (if side == Side.Left: "left" else: "right") & "\"></i>" &
       "the lead's " & esc(leadName(side)) & " arm")
   swatches.add tag("span", "class=\"swatch aside\"",
-    "a move names the follow's hand")
+    "&ldquo;Left&rdquo; is the lead's hand, &ldquo;left&rdquo; the follow's")
   tag("div", "class=\"legend\"", swatches)
 
 

@@ -267,6 +267,21 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
   result.add "</g>"
 
 
+func arcName(a, b: Frame): string =
+  ## Name the compound a curve stands for, and the hand it moves where it can.
+  ##
+  ## A curve is one drawing of a move that can be led either way, and a `place`
+  ## carries the same hand of the follow whichever way it is led, so it can be
+  ## named for that hand.  A `cut` carries whichever hand ends up on top, which
+  ## is the other one going the other way, so a curve that named one of them
+  ## would be wrong half the time it was read.  There it says only what it is.
+  let named = compound(a, b)
+  if named.isNone:
+    return ""
+  let there = compoundName(a, b)
+  if there == compoundName(b, a): there else: ($named.get).toLowerAscii
+
+
 func arc(a, b: Frame; name: string; standing, was: Option[Frame];
     used: var seq[Box]): string =
   ## Draw a compound as a curve, since no single move joins the two frames.
@@ -397,7 +412,7 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       if pair in drawn:
         continue
       drawn.add pair
-      curves.add arc(source, target, ($named.get).toLowerAscii, standing, was, used)
+      curves.add arc(source, target, arcName(source, target), standing, was, used)
 
   drawn = @[]
   for source in FRAMES:

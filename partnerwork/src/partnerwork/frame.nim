@@ -182,6 +182,12 @@ func frameIndex*(frame: Frame): int =
 
 func leadName*(side: Side): string =
   ## Name a hand of the lead, capitalised as the ontology writes it.
+  ##
+  ## The case is the whole of how the two dancers are told apart in this
+  ## vocabulary: `Left` is the lead's and `left` is the follow's, in a frame's
+  ## name and in a move's alike.  So nothing anywhere needs to say *whose* hand
+  ## it means, and nothing should: a name that said it would be repeating what
+  ## its own first letter has already said.
   case side
   of Side.Left: "Left"
   of Side.Right: "Right"
@@ -189,6 +195,8 @@ func leadName*(side: Side): string =
 
 func followName*(site: Site): string =
   ## Name a hand of the follow, in lower case as the ontology writes it.
+  ##
+  ## Lower case is what marks it as the follow's; see `leadName`.
   case site
   of Site.LeftHand: "left"
   of Site.RightHand: "right"
