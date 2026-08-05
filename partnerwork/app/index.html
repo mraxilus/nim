@@ -95,7 +95,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   transform: translate(var(--px), var(--py)); }
 .spokes .spoke-line { stroke-width: 3; vector-effect: non-scaling-stroke; }
 .spokes .spoke.two .spoke-line { stroke-dasharray: 6 5; stroke-width: 2; }
-.spokes .spoke-plate { fill: var(--page); }
+.spokes .spoke-plate { fill: var(--panel); }
 .spokes .node-plate { fill: var(--panel); stroke: var(--rule-strong);
   stroke-width: 1; }
 .spokes .node.two .node-plate { stroke-dasharray: 5 4; }
@@ -203,21 +203,26 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
    from one to another and what is within reach of it changing as it goes.
    Nothing is built and nothing is torn down, which is why it is quick. */
 .map { width: 100%; min-width: 620px; height: auto; display: block; }
-.map .way { opacity: .4; }
-.map.unread .way { opacity: .8; }
-.map .way.lit { opacity: 1; }
+/* Quiet is put on the ink, never on the group. A group carries its own plates,
+   and a plate at 40% stops hiding what it is there to hide: the lines under a
+   frame, and the lines under a name. */
+.map .way .edge, .map .way text { opacity: .4; }
+.map.unread .way .edge, .map.unread .way text { opacity: .8; }
+.map .way.lit .edge, .map .way.lit text { opacity: 1; }
 .map .edge { stroke-width: 2; }
 .map .way.lit .edge { stroke-width: 3.5; }
 .map .way.taking .edge { stroke-width: 5; }
-.map .join { opacity: .5; }
-.map .join.lit { opacity: 1; }
-.map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
-  stroke-dasharray: 5 4; }
-.map .join.lit .arc { stroke: var(--dim); stroke-width: 2; }
-.map .edge-plate, .map .arc-plate { fill: var(--page); }
+.map .join .arc, .map .join text { opacity: .5; }
+.map .join.lit .arc, .map .join.lit text { opacity: 1; }
+.map .arc { fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.map .join.lit .arc { stroke-width: 2; }
+.map .edge-plate, .map .arc-plate { fill: var(--panel); }
+.name-plate { fill: var(--panel); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
-.map .node { opacity: .4; }
-.map .node.here, .map .node.reachable, .map .node.two { opacity: 1; }
+.map .node .frame, .map .node .node-name { opacity: .4; }
+.map .node.here .frame, .map .node.here .node-name,
+.map .node.reachable .frame, .map .node.reachable .node-name,
+.map .node.two .frame, .map .node.two .node-name { opacity: 1; }
 .map .node.reachable { cursor: pointer; }
 .map .node.reachable .node-plate { stroke: var(--rule-strong); }
 .map .node.reachable:hover .node-plate, .map .node.two:hover .node-plate {
@@ -229,9 +234,15 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
    already the drawing for where it landed. */
 @keyframes wake { from { opacity: .4; } }
 @keyframes doze { from { opacity: 1; } }
-.map.leaving .waking { animation: wake var(--pass) var(--ease-soft) both;
+.map.leaving .waking .edge, .map.leaving .waking .arc,
+.map.leaving .waking .frame, .map.leaving .waking .node-name,
+.map.leaving .waking text {
+  animation: wake var(--pass) var(--ease-soft) both;
   animation-delay: var(--pass-at); }
-.map.leaving .dozing { animation: doze var(--pass) var(--ease-soft) both;
+.map.leaving .dozing .edge, .map.leaving .dozing .arc,
+.map.leaving .dozing .frame, .map.leaving .dozing .node-name,
+.map.leaving .dozing text {
+  animation: doze var(--pass) var(--ease-soft) both;
   animation-delay: var(--pass-at); }
 .move.two { border-style: dashed; }
 .map.leaving .mark { animation: pass var(--pass) var(--ease-soft) both;

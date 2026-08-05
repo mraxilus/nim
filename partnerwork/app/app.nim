@@ -210,8 +210,9 @@ func renderSpokesView(current: Frame; motion: Motion;
     tag("p", "class=\"note\"", "The frame in the middle is the one being held. " &
       "Every spoke is a way out of it and nothing else is drawn. A drop " &
       "releases a hand so it points up, a collect takes one so it points down, " &
-      "and a compound is two moves so it goes out to the side. Take a spoke and " &
-      "it becomes the middle."))
+      "and a compound is two moves so it goes out to the side, inked in both " &
+      "the arms it hands a hand between. Take a spoke and it becomes the " &
+      "middle."))
 
 
 func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string =
@@ -221,11 +222,13 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. " &
       "Every line is named for the move that runs down it, which the same line " &
-      "read upwards undoes; dashed curves are the two compounds. The frames you " &
-      "can reach from where you stand come forward and the rest go quiet, and " &
-      "the ring moves along the line you take. A frame ringed in a solid line " &
-      "is one move away and a dashed one is a compound, two moves away; both " &
-      "can be clicked, and a compound dances its two moves in turn."))
+      "read upwards undoes. A dashed curve is a compound, and is inked in both " &
+      "arms because it hands a hand from one of them to the other: the ink at " &
+      "each end is the arm that acts on the way to it. The frames you can " &
+      "reach from where you stand come forward and the rest go quiet, and the " &
+      "ring moves along the line you take. A frame ringed in a solid line is " &
+      "one move away and a dashed one is a compound, two moves away; both can " &
+      "be clicked, and a compound dances its two moves in turn."))
 
 
 func renderStageBody(current: Frame; vis: Vis; motion: Motion;
@@ -512,7 +515,10 @@ proc danceCompound(key: string) =
   let target = fromKey(key)
   if target.isNone or compound(current, target.get).isNone:
     return
-  let steps = route(current, target.get)
+  # The way the vocabulary means, not any shortest way: a cut can be led with
+  # either arm and only one of those is the one the phrase on this very button
+  # describes.  Dancing the other would be doing one thing while saying another.
+  let steps = compoundWay(current, target.get)
   if steps.len != 2:
     return
   queued = some(target.get)

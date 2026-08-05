@@ -61,9 +61,12 @@ suite "the drawing":
       for target in FRAMES:
         if compound(source, target).isSome:
           inc joined
-    # Each line and each curve stands for the pair of moves that cross it.
+    # Each line stands for the pair of moves that cross it.  A curve stands for
+    # a pair too, but is drawn in halves, because the two moves it stands for
+    # are led by different arms and each half is inked for its own.
     check picture.count("<line class=\"edge") == moved div 2
-    check picture.count("<path class=\"arc") == joined div 2
+    check picture.count("<g class=\"join") == joined div 2
+    check picture.count("<path class=\"arc") == joined
 
   test "every frame is drawn, with its name":
     let picture = renderMap(none(Frame))
@@ -136,6 +139,38 @@ suite "the drawing":
         check not overlaps(box, other)
       for frame in frameBoxes():
         check not overlaps(box, frame)
+
+  test "a compound is inked in both the arms it hands a hand between":
+    # An ordinary line has one ink because the same arm acts whichever way it is
+    # read.  A compound has two, and which one you see depends on which end you
+    # are reading from, because that is what a compound is.
+    let picture = renderMap(none(Frame))
+    for a in FRAMES:
+      for b in FRAMES:
+        if compound(a, b).isNone or frameIndex(a) > frameIndex(b):
+          continue
+        let
+          near = compoundSide(b, a)
+          far = compoundSide(a, b)
+        check near.isSome and far.isSome
+        check near.get != far.get
+        # Both inks are on the drawing, and neither is the quiet ink that would
+        # say the line belongs to no arm at all.
+        for side in [near.get, far.get]:
+          let ink = (if side == Side.Left: "var(--left" else: "var(--right")
+          check picture.contains("class=\"arc\" d=\"M") and picture.contains(ink)
+
+  test "every frame's name has a plate to keep the lines off it":
+    # Lines leave a frame from its middle, so they run out through the words
+    # above it.  Every other name in the drawing has a plate; so does this one.
+    let picture = renderMap(none(Frame))
+    check picture.count("class=\"name-plate\"") == FRAMES.len
+    check renderSpokes(FRAMES[0]).count("class=\"name-plate\"") ==
+      spokesOf(FRAMES[0]).len + 1
+    for here in FRAMES:
+      let (x, y, w, h) = nameBox(here, centreOf(here)[0], centreOf(here)[1], 74)
+      check picture.contains("class=\"name-plate\" x=\"" & $x & "\" y=\"" & $y &
+        "\" width=\"" & $w & "\" height=\"" & $h & "\"")
 
   test "the ink of a line is the arm that acts, whichever way it is read":
     # Once a line is unlit the two arms are told apart by colour alone, so every

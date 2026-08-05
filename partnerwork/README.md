@@ -50,8 +50,15 @@ a spoke and the drawing recentres on it. **Overview** is the whole ontology with
 the couple standing somewhere in it, every line named, and the frames within
 reach brought forward while the rest go quiet.
 
-Both say a move the same way — the mark passes along the line to the frame
-chosen — and each takes its own time over it. The close drawing has to clear the
+A line's ink is the arm that acts as you travel along it. For a primitive that
+is one arm whichever way you read it, so the line has one ink; a compound hands
+the follow's hand from one of the lead's arms to the other, so it is drawn in
+halves, each in the ink of the arm that acts on the way into it, and stays
+dashed because it is still two moves. That is what lets a move be named
+`collect left` or `place left` and still say which of the lead's arms does it.
+
+Both drawings say a move the same way — the mark passes along the line to the
+frame chosen — and each takes its own time over it. The close drawing has to clear the
 ways not taken before the mark can move and build the new ones after, so a move
 there is about a second. The map has every frame in place already and nothing to
 build, so its move is the mark going and the dimming changing around it, and is

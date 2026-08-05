@@ -127,6 +127,7 @@ type
     side*: Side          ## Arm that acts, which is the ink it is drawn in.
     lines*: seq[string]  ## Name of the move, a line at a time.
     is_compound*: bool   ## Whether it is two moves rather than one.
+    back*: Option[Side]  ## Arm that acts coming the other way, where they differ.
     angle*: float        ## Direction it leaves the middle, in degrees.
     radius*: int         ## How far out it puts the frame it arrives in.
     turn*: int           ## Its place in the order the ways grow and fold.
@@ -162,9 +163,13 @@ func spokesOf*(here: Frame): seq[Spoke] =
     let compounded = compound(here, target)
     if compounded.isNone:
       continue
+    # A compound hands the follow's hand from one of the lead's arms to the
+    # other, so it has an arm going out and a different one coming back.  The
+    # drawing is inked in both: one arm for a line that only ever means one.
     named.add Spoke(
       to: target,
-      side: actingSide(here, route(here, target)[0].to, Helper.Drop),
+      side: compoundSide(here, target).get,
+      back: compoundSide(target, here),
       lines: @[compoundName(here, target), "two moves"],
       is_compound: true,
     )
@@ -195,6 +200,8 @@ func labelAt*(spoke: Spoke): (int, int) =
 const
   COLOUR_LEFT = "var(--left, #2b6c8c)"
   COLOUR_RIGHT = "var(--right, #a85f22)"
+  COLOUR_QUIET = "var(--dim, #6b716e)"
+    ## Ink for a name whose line has no one ink of its own to lend it.
   LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
 
 
@@ -378,14 +385,27 @@ func renderSpokes*(here: Frame; motion = Motion.Still;
       "px\">"
     # A branch grows out of the middle and a leaf out of its own place, so each
     # carries the point it moves about rather than borrowing the drawing's.
-    result.add "<g class=\"branch\">" &
-      "<line class=\"spoke-line\" x1=\"" & $CENTRE_X & "\" y1=\"" & $CENTRE_Y &
-      "\" x2=\"" & $x & "\" y2=\"" & $y & "\" style=\"stroke: " & colour &
-      "\"/></g>"
+    result.add "<g class=\"branch\">"
+    if spoke.back.isSome and spoke.back.get != spoke.side:
+      # Two moves, two arms: inked from the middle out in the arm that acts
+      # coming back, and from the halfway out in the arm that acts going.
+      let (hx, hy) = ((CENTRE_X + x) div 2, (CENTRE_Y + y) div 2)
+      result.add "<line class=\"spoke-line\" x1=\"" & $CENTRE_X & "\" y1=\"" &
+        $CENTRE_Y & "\" x2=\"" & $hx & "\" y2=\"" & $hy & "\" style=\"stroke: " &
+        armColour(spoke.back.get) & "\"/>"
+      result.add "<line class=\"spoke-line\" x1=\"" & $hx & "\" y1=\"" & $hy &
+        "\" x2=\"" & $x & "\" y2=\"" & $y & "\" style=\"stroke: " & colour &
+        "\"/>"
+    else:
+      result.add "<line class=\"spoke-line\" x1=\"" & $CENTRE_X & "\" y1=\"" &
+        $CENTRE_Y & "\" x2=\"" & $x & "\" y2=\"" & $y & "\" style=\"stroke: " &
+        colour & "\"/>"
+    result.add "</g>"
     result.add "<g class=\"leaf\">"
     result.add "<g class=\"bud\">" & nodeAt(spoke.to, x, y, NODE_WIDTH,
       (if spoke.is_compound: "two" else: "reachable")) & "</g>"
-    result.add "<g class=\"tag\">" & naming(lx, ly, spoke.lines, colour) & "</g>"
+    result.add "<g class=\"tag\">" & naming(lx, ly, spoke.lines,
+      (if spoke.is_compound: COLOUR_QUIET else: colour)) & "</g>"
     result.add "</g></g>"
 
   # The frame held, and then the mark on it: the mark is drawn last so that it

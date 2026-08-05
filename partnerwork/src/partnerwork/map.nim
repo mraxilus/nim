@@ -154,6 +154,17 @@ func labelBox(x, y: int; lines: seq[string]): Box =
   (x - w div 2, y - h div 2, w, h)
 
 
+func nameBox*(target: Frame; cx, cy, width: int): Box =
+  ## Get the room a frame's name takes up, above the frame it names.
+  ##
+  ## One answer, used both to draw the plate that keeps lines off the words and
+  ## to keep other names away from them, so the two cannot drift apart.
+  let
+    height = frameHeight(width)
+    named = target.describe.len * 6 + 10
+  (cx - named div 2, cy - height div 2 - NAME_RISE - 11, named, 15)
+
+
 func frameBoxes*(): seq[Box] =
   ## Get the room every frame on the map takes up: its picture, and its name.
   ##
@@ -165,10 +176,9 @@ func frameBoxes*(): seq[Box] =
     let
       (cx, cy) = centreOf(target)
       h = frameHeight(NODE_WIDTH)
-      named = target.describe.len * 6 + 10
     result.add (cx - NODE_WIDTH div 2 - 8, cy - h div 2 - 6,
       NODE_WIDTH + 16, h + 12)
-    result.add (cx - named div 2, cy - h div 2 - NAME_RISE - 11, named, 15)
+    result.add nameBox(target, cx, cy, NODE_WIDTH)
 
 
 const
@@ -293,9 +303,26 @@ func arc(a, b: Frame; name: string; standing, was: Option[Frame];
     is_lit = standing == some(a) or standing == some(b)
     was_lit = was == some(a) or was == some(b)
     lit = (if is_lit: " lit" else: "") & waking(is_lit, was_lit, was.isSome)
+  # Drawn as two halves, each in the ink of the arm that acts as you travel into
+  # it.  An ordinary line has one ink because the same arm acts whichever way it
+  # is read; a compound has two because it hands the follow's hand from one of
+  # the lead's arms to the other, and which arm that is depends on which way you
+  # are going.  Splitting the curve is what lets it say both without lying about
+  # either, and it stays dashed, because it is still two moves.
+  let
+    (px, py) = (mx, max(ay, by) + dip)
+    (fx, fy) = ((ax + px) div 2, (ay + py) div 2)
+    (gx, gy) = ((px + bx) div 2, (py + by) div 2)
+    (hx, hy) = ((fx + gx) div 2, (fy + gy) div 2)
+    ink = proc (side: Option[Side]): string =
+      if side.isSome: armColour(side.get) else: COLOUR_DIM
   result = "<g class=\"join" & lit & "\">" &
-    "<path class=\"arc\" d=\"M" & $ax & " " & $ay & "Q" & $mx &
-    " " & $(max(ay, by) + dip) & " " & $bx & " " & $by & "\"/>"
+    "<path class=\"arc\" d=\"M" & $ax & " " & $ay & "Q" & $fx & " " & $fy &
+    " " & $hx & " " & $hy & "\" style=\"stroke: " & ink(compoundSide(b, a)) &
+    "\"/>" &
+    "<path class=\"arc\" d=\"M" & $hx & " " & $hy & "Q" & $gx & " " & $gy &
+    " " & $bx & " " & $by & "\" style=\"stroke: " & ink(compoundSide(a, b)) &
+    "\"/>"
   # A curve is at its lowest halfway along, which is half the dip below the row.
   let (nx, ny) = placeBelow(mx, max(ay, by) + dip div 2 + 4, @[name], used)
   result.add stack(nx, ny, @[name],
@@ -317,7 +344,13 @@ func nodeAt*(target: Frame; cx, cy, width: int; classes: string;
     "\" y=\"" & $(cy - height div 2 - 6) & "\" width=\"" & $(width + 16) &
     "\" height=\"" & $(height + 12) & "\" rx=\"8\"/>"
   result.add renderFramePlaced(target, cx - width div 2, cy - height div 2, width)
-  # The name goes above the picture, leaving the space below for the curves.
+  # The name goes above the picture, leaving the space below for the curves, and
+  # gets a plate of its own as every other name in the drawing has: lines leave a
+  # frame from its middle, so they run out through the words above it, and a word
+  # with a line drawn through it is not a word.
+  let (nx, ny, nw, nh) = nameBox(target, cx, cy, width)
+  result.add "<rect class=\"name-plate\" x=\"" & $nx & "\" y=\"" & $ny &
+    "\" width=\"" & $nw & "\" height=\"" & $nh & "\" rx=\"3\"/>"
   result.add text(cx, cy - height div 2 - NAME_RISE, target.describe,
     NAME_FONT & "; fill: " & COLOUR_INK, "node-name")
   result.add "</g>"

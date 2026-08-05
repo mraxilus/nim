@@ -148,6 +148,57 @@ suite "moves":
       check move.helper == Helper.Collect
 
 
+suite "the way a compound is led":
+  test "it is two primitives, and they land where the compound says":
+    for source in FRAMES:
+      for destination in FRAMES:
+        let way = compoundWay(source, destination)
+        if compound(source, destination).isNone:
+          check way.len == 0
+          continue
+        check way.len == 2
+        check classify(source, way[0].to) == some(way[0].helper)
+        check classify(way[0].to, destination) == some(way[1].helper)
+        check way[1].to == destination
+        check way[0].helper == Helper.Drop
+        check way[1].helper == Helper.Collect
+
+  test "the arm it is danced with is the arm the phrase names":
+    # A cut can be led with either arm and the graph offers both, so a page that
+    # danced whichever the search happened to find first would be doing one
+    # thing while its own words said another.  This is what stops that.
+    for source in FRAMES:
+      for destination in FRAMES:
+        let way = compoundWay(source, destination)
+        if way.len == 0:
+          continue
+        let
+          side = compoundSide(source, destination).get
+          said = compoundPhrase(source, destination)
+        check way[1].side == side
+        case compound(source, destination).get
+        of Compound.Cut:
+          # One arm lets go and comes back over the other, so it does both.
+          check way[0].side == side
+          check said.contains("drop " & leadName(side))
+        of Compound.Place:
+          # One arm lets go and the other takes, so they are not the same arm.
+          check way[0].side == other(side)
+          check said.contains("from " & leadName(other(side)) & " into " &
+            leadName(side))
+
+  test "the two arms of a compound are always the two different arms":
+    for source in FRAMES:
+      for destination in FRAMES:
+        if compound(source, destination).isNone:
+          continue
+        let
+          there = compoundSide(source, destination)
+          back = compoundSide(destination, source)
+        check there.isSome and back.isSome
+        check there.get != back.get
+
+
 suite "routes":
   test "every frame reaches every other, and a route is a chain of moves":
     for source in FRAMES:

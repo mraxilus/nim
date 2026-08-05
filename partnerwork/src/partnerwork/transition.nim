@@ -242,6 +242,36 @@ func compoundName*(source, destination: Frame): string =
   ($named.get).toLowerAscii & " " & followName(destination.hold[side.get].get)
 
 
+func compoundWay*(source, destination: Frame): seq[Move] =
+  ## Get the two moves a compound is led as, in the order a lead leads them.
+  ##
+  ## Not `route`, which takes any shortest path and takes the first one it
+  ## finds.  A `cut` has two of those -- either arm can let go and come back over
+  ## the other -- and only one of them is the one the vocabulary means, which is
+  ## the arm that ends up on top letting go and coming back.  A page that danced
+  ## `route`'s answer while printing this one's would be doing one thing and
+  ## saying another, which for a validator is the whole of what it must not do.
+  let
+    named = compound(source, destination)
+    taking = compoundSide(source, destination)
+  if named.isNone or taking.isNone:
+    return @[]
+  # A cut is one arm letting go and coming back the other side of the other, so
+  # the same arm does both.  A place is a hand passed between the two arms, so
+  # the one that is holding lets go and the one that is not takes.
+  let leaving =
+    case named.get
+    of Compound.Cut: taking.get
+    of Compound.Place: other(taking.get)
+  var away = source
+  away.hold[leaving] = none(Site)
+  away.over = none(Side)
+  if away == source or not away.isValid:
+    return @[]
+  @[Move(helper: Helper.Drop, side: leaving, to: away),
+    Move(helper: Helper.Collect, side: taking.get, to: destination)]
+
+
 func compoundPhrase*(source, destination: Frame): string =
   ## Say a compound the way a teacher would call it, with every hand named.
   let named = compound(source, destination)
