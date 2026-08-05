@@ -73,9 +73,19 @@ suite "the drawing":
 
   test "a map with nobody on it has no marker and lights nothing":
     let picture = renderMap(none(Frame))
-    check not picture.contains("class=\"marker\"")
+    check not picture.contains("class=\"mark\"")
     check not picture.contains(" lit")
     check not picture.contains("reachable")
+
+  test "one frame is marked, and the mark is the same ring the close drawing uses":
+    for here in FRAMES:
+      let picture = renderMap(some(here))
+      check picture.count("class=\"mark\"") == 1
+      # Both drawings ring the frame held from the same numbers, so that the two
+      # say *here* the same way and neither says it twice.
+      check picture.contains(markAt(centreOf(here)[0], centreOf(here)[1],
+        NODE_WIDTH, " style=\"--mx: 0px; --my: 0px\""))
+      check renderSpokes(here).count("class=\"mark\"") == 1
 
   test "the marker stands on the frame held and carries the way to the next":
     for here in FRAMES:

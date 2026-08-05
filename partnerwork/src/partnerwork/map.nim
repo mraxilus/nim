@@ -30,7 +30,7 @@ const
   MAP_HEIGHT* = 640
   MARGIN = 44
   ROW_Y = [70, 265, 510] ## Row for each number of connections a frame can carry.
-  NODE_WIDTH = 74
+  NODE_WIDTH* = 74
   NAME_RISE = 12 ## Distance from the top of a picture up to its name.
   ARC_DIP = 100  ## How far a compound curve hangs below the row it joins.
 
@@ -316,6 +316,23 @@ func standingOf(target: Frame; where: Option[Frame]): (bool, bool, bool) =
     compound(where.get, target).isSome)
 
 
+func markAt*(cx, cy, width: int; extra = ""): string =
+  ## Draw the mark that says which frame is being held.
+  ##
+  ## Its own element rather than a heavier line on the frame's own plate, because
+  ## it has to be able to leave one frame and arrive at another: taking a move is
+  ## the mark passing along the way taken, and a mark that were part of a frame
+  ## could only blink from one to the other.
+  ##
+  ## Drawn to the shape of a frame's plate, from the same numbers, so that both
+  ## drawings say *here* with the same ring in the same place.  A drawing that
+  ## also thickened the plate underneath would be saying it twice.
+  let height = frameHeight(width)
+  "<rect class=\"mark\" x=\"" & $(cx - width div 2 - 8) & "\" y=\"" &
+    $(cy - height div 2 - 6) & "\" width=\"" & $(width + 16) & "\" height=\"" &
+    $(height + 12) & "\" rx=\"8\"" & extra & "/>"
+
+
 func node(target: Frame; standing, was: Option[Frame]): string =
   ## Draw one frame in its row, on the map of everything.
   let
@@ -402,12 +419,8 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
     let
       (hx, hy) = centreOf(here.get)
       (tx, ty) = if leaving: centreOf(taken.get) else: (hx, hy)
-      height = frameHeight(NODE_WIDTH)
     # Placed by where it is rather than moved to it, so that the distance it
     # carries is a distance to travel and not a place to jump to.
-    result.add "<rect class=\"marker\" x=\"" & $(hx - NODE_WIDTH div 2 - 12) &
-      "\" y=\"" & $(hy - height div 2 - 10) & "\" width=\"" &
-      $(NODE_WIDTH + 24) & "\" height=\"" & $(height + 20) &
-      "\" rx=\"10\" style=\"--mx: " & $(tx - hx) & "px; --my: " & $(ty - hy) &
-      "px\"/>"
+    result.add markAt(hx, hy, NODE_WIDTH, " style=\"--mx: " & $(tx - hx) &
+      "px; --my: " & $(ty - hy) & "px\"")
   result.add "</svg>"

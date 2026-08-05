@@ -313,19 +313,6 @@ func spokeClass(spoke: Spoke; motion: Motion; taken: Option[Frame]): string =
   result.add(if taken == some(spoke.to): " taken" else: " going")
 
 
-func markAt(cx, cy: int): string =
-  ## Draw the mark that says which frame is being held.
-  ##
-  ## Its own element rather than a heavier line on the frame's own plate, because
-  ## it has to be able to leave one frame and arrive at another: taking a move is
-  ## the mark passing along the way taken, and a mark that were part of a frame
-  ## could only blink from one to the other.
-  let height = frameHeight(NODE_WIDTH)
-  "<rect class=\"mark\" x=\"" & $(cx - NODE_WIDTH div 2 - 8) & "\" y=\"" &
-    $(cy - height div 2 - 6) & "\" width=\"" & $(NODE_WIDTH + 16) &
-    "\" height=\"" & $(height + 12) & "\" rx=\"8\"/>"
-
-
 func renderSpokes*(here: Frame; motion = Motion.Still;
     taken = none(Frame)): string =
   ## Draw the frame the couple hold, every way out of it, and the move being made.
@@ -405,5 +392,5 @@ func renderSpokes*(here: Frame; motion = Motion.Still;
   # reads over whatever it is marking, and can leave without taking it along.
   result.add "<g class=\"core\">" &
     nodeAt(here, CENTRE_X, CENTRE_Y, NODE_WIDTH, "held") & "</g>"
-  result.add markAt(CENTRE_X, CENTRE_Y)
+  result.add markAt(CENTRE_X, CENTRE_Y, NODE_WIDTH)
   result.add "</svg></div>"

@@ -103,13 +103,14 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .spokes .node.reachable, .spokes .node.two { cursor: pointer; }
 .spokes .node.reachable:hover .node-plate,
 .spokes .node.two:hover .node-plate { stroke: var(--ink); }
-/* Which frame is held is said by the mark around it, not by its size: the mark
-   can leave one frame for another, and a size cannot. */
-.spokes .mark { fill: none; stroke: var(--ink); stroke-width: 2; }
 
 /* A branch grows out of the middle and a leaf out of its own place, so each is
    given the point it moves about rather than borrowing the drawing's. */
 .branch, .leaf, .bud, .tag, .core, .mark { transform-box: view-box; }
+/* Which frame is held is said by the mark around it, in both drawings and by
+   this one rule: a mark can leave one frame for another and a heavier plate
+   cannot, and a drawing that did both would be saying it twice. */
+.mark { fill: none; stroke: var(--ink); stroke-width: 2; }
 .branch { transform-origin: var(--ox) var(--oy); }
 .leaf, .bud, .tag { transform-origin: var(--lx) var(--ly); }
 .core { transform-origin: var(--ox) var(--oy); }
@@ -184,7 +185,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .branch, .leaf, .bud, .tag, .core, .mark, .spokes, .viewport, .marker {
+  .branch, .leaf, .bud, .tag, .core, .mark, .spokes, .viewport {
     animation: none !important; transition: none !important; }
 }
 .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.78rem;
@@ -217,7 +218,6 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node { opacity: .4; }
 .map .node.here, .map .node.reachable, .map .node.two { opacity: 1; }
-.map .node.here .node-plate { stroke: var(--ink); }
 .map .node.reachable { cursor: pointer; }
 .map .node.reachable .node-plate { stroke: var(--rule-strong); }
 .map .node.reachable:hover .node-plate, .map .node.two:hover .node-plate {
@@ -234,9 +234,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .map.leaving .dozing { animation: doze var(--pass) var(--ease-soft) both;
   animation-delay: var(--pass-at); }
 .move.two { border-style: dashed; }
-.map .marker { fill: none; stroke: var(--ink); stroke-width: 2.5;
-  transform-box: view-box; }
-.map.leaving .marker { animation: pass var(--pass) var(--ease-soft) both;
+.map.leaving .mark { animation: pass var(--pass) var(--ease-soft) both;
   animation-delay: var(--pass-at); }
 .map .edge.taking { opacity: 1; stroke-width: 5; }
 .map .node.taking .node-plate { stroke: var(--ink); stroke-width: 2; }
