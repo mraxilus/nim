@@ -147,7 +147,7 @@ const lut_help_entries* = block:
 
   add(HelpPath.Choose, "click an object", "choose it alone")
   add(HelpPath.Choose, "shift-click an object", "add it to what you have chosen")
-  add(HelpPath.Choose, "click empty space", "choose nothing")
+  add(HelpPath.Choose, "click empty space", "choose nothing, or the sky if one is built")
   add(
     HelpPath.Choose, "press and hold an object",
     "choose it; its own outline fills while you hold", is_touch = true,

@@ -582,6 +582,15 @@ proc nimHoverSlot(): cint {.exportc.} =
   if g_interaction.index_hover.isSome: cint(g_interaction.index_hover.get) else: SLOT_NONE
 
 
+proc nimIsHoverBackdrop(): bool {.exportc.} = g_interaction.is_hover_backdrop
+  ## Report whether what is hovered is the whole sky -- a plane at horizon.
+  ##   True wherever nothing else is under the pointer and such a plane is in the scene,
+  ##   since it is drawn as a dome over every direction. Front-ends need it because it is
+  ##   the one hovered thing that must not act like one: it starts no drag (see
+  ##   `interaction.beginDrag`), and a tap on it means "empty space" to the touch flow
+  ##   whose only way to dismiss a selection is tapping empty space.
+
+
 proc nimClearHover() {.exportc.} =
   ## Discard whatever is currently hovered. Touch has no continuous pointer position the
   ## way a mouse does -- `nimUpdateHover` only ever runs at a specific touch-down point
@@ -954,7 +963,15 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ##   line) reads a slot carried across frames -- `nimHoverSlot`/`nimDragSourceSlot`
   ##   are not re-picked at draw time -- so any of them can go stale the moment the
   ##   item they name is removed, with no frame boundary forcing a re-check first.
+  ##   A plane at horizon reports the middle of the view: it has no place in the scene at
+  ##   all, being the whole sky, so the menu that follows it goes to the centre of the very
+  ##   frame `marker.markerFrame` draws around it. Without this a sky could be selected and
+  ##   then not acted on, the menu having nowhere to be.
+  ##   **Duplicated by constraint** in `visualiser.anchorOfSelection`, which answers the
+  ##   same question for the same menu on the other front-end; fix both or neither.
   if not g_scene.isAlive(int(slot)): return @[0.0'f32, 0.0'f32, 0.0'f32]
+  if g_scene.geometryAt(int(slot)).isHorizonPlane:
+    return @[0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32]
   let
     scale = g_camera.drawExtentFor(int(height))
     anchor = anchorFor(g_scene.geometryAt(int(slot)), scale)

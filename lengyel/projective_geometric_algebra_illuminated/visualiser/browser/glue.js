@@ -1602,11 +1602,19 @@ function endMouseDrag(e) {
       if (result.created_slot >= 0) adoptConstructionSelection();
       else if (result.is_more) openApplyWithOperands();
     }
-  } else if (button_mouse_down === 0 && nimIsClick(now()) && !e.shiftKey) {
-    // Plain left click over empty space, which began no drag to end -- mirrors touch's
-    //   own "tapping empty space always cancels" rule. A shift+click over empty space is
-    //   left a no-op, not a clear -- shift signals "preserve what I already have".
-    clearSelection();
+  } else if (button_mouse_down === 0 && nimIsClick(now())) {
+    // A plain left click that began no drag to end -- so it landed on empty space, or on
+    //   the one thing that *is* empty space: a plane at horizon, which nimBeginDrag
+    //   refuses so this press could still have become an orbit. Clicking it selects it,
+    //   which is the only way a pointer can, since it can never be dragged from.
+    if (nimIsHoverBackdrop() && nimHoverSlot() >= 0) {
+      if (e.shiftKey) toggleSelection(nimHoverSlot(), cursor_last);
+      else selectOnly(nimHoverSlot(), cursor_last);
+    } else if (!e.shiftKey) {
+      // Mirrors touch's own "tapping empty space always cancels" rule. A shift+click over
+      //   empty space is left a no-op, not a clear -- shift means "preserve what I have".
+      clearSelection();
+    }
   }
 
   button_mouse_drag = null;
@@ -1679,7 +1687,11 @@ function handleTap(position_local) {
   nimUpdateHover(canvas.width, canvas.height);
   const hovered = nimHoverSlot();
 
-  if (hovered < 0) {
+  // The sky counts as empty space to a *tap*, deliberately, though a mouse click selects
+  //   it: tapping empty space is the only way a finger has to dismiss a selection, and
+  //   spending it on selecting the backdrop would take that away. Touch reaches the sky
+  //   through the long-press instead -- which is where its marker fills anyway.
+  if (hovered < 0 || nimIsHoverBackdrop()) {
     clearSelection(); // Tapping empty space always cancels.
     return;
   }

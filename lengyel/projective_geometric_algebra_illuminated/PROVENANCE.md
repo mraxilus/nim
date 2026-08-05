@@ -343,12 +343,31 @@ selecting it will draw.
 `marker.nim` shapes that outline to what it marks, because a marker says "this one" best
 when its own outline echoes the thing it surrounds:
 
-| Shape | Marker |
-|-------|--------|
-| Point | Circle in screen space about the drawn point. |
-| Line | Two straight segments flanking its projection, one to each side. |
-| Plane | A circle lying *on the plane*, outside its own rim. |
-| Anything at horizon | None — all three draw fixed to the eye, with nothing to surround. |
+| Shape | Marker | How it fills |
+|-------|--------|--------------|
+| Point | Circle in screen space about the drawn point. | Sweeps clockwise. |
+| Line | Two segments flanking its projection, one each side. | Runs out from its support. |
+| Plane | A circle lying *on the plane*, outside its rim. | Opens from the disc's centre. |
+| Line at horizon | Two small circles of the sky it circles. | Closes in from a quarter turn. |
+| Plane at horizon | A rectangle around the whole viewport. | Opens out from the view's centre. |
+| Point at horizon | Circle, about the fixed star it draws as. | Sweeps, as any point does. |
+
+The last two had no marker at all until this round, on the reasoning that an object drawn
+fixed to the eye offers nothing to surround. That was the wrong conclusion from a true
+premise: what a marker surrounds is *whatever is drawn*, and both are drawn. A horizon line's
+bands are built from the same normal and spanning pair `mesh.addLine` builds its great circle
+from, so the three wrap the sky as one family; they settle at the very gap a finite line's
+rails keep, read as an angle through `mesh.radiansPerPixel`. They arrive by closing *inward*
+because a horizon line has no support to grow outward from — and the horizon plane's frame
+opens *outward* from the middle, which is what tells the two apart while they fill.
+
+**On touch every marker swells clear of the finger** partway through a hold and settles back
+exactly (`clearanceTouch`): a fingertip covers what it presses, so a marker filling underneath
+one says nothing to the person filling it. 24 px, added rather than multiplied so one number
+means the same on a point's 10.5 px ring and on a plane's rim hundreds of pixels across; it
+takes the ring to a 69-pixel circle against a 44-pixel minimum touch target. Zero at both ends
+of the hold, so a finished marker is the same outline whichever pointer produced it, and zero
+throughout for a mouse, which hides nothing.
 
 All three keep the same clearance, `GAP_MARKER` = 6.0 px, between the object's own drawn
 edge and the marker, measured out from the size that object is actually drawn at. That is
@@ -424,9 +443,34 @@ point. `RADIUS_PICK_POINT` = 34, `RADIUS_PICK_LINE` = 24 px, sized against a rea
 fingertip's contact patch at phone density; a plane's test is area-based (inside the drawn
 rim). Tests assert both boundaries (one pixel inside picks, one pixel outside does not) and
 all three priority pairings, so changing a constant fails a test rather than only feeling
-different. A line or plane at horizon is never pickable — neither is anchored anywhere a
-screen-space or ray test could land, since both draw fixed to the eye. A horizon point (a
-fixed star) keeps a pickable anchor.
+different.
+
+**Everything drawn is now pickable, horizon included**, ranked point, finite line, horizon
+line, finite plane, horizon plane. A horizon line is tested against the great circle it draws
+as, sampled the way `mesh.addGreatCircle` samples it. A horizon plane matches every ray, since
+it is a dome over every direction — last of all, so anything else under the cursor wins.
+
+That last one costs something the design had to answer rather than discover: **the cursor is
+then over *something* almost everywhere.** Scanning a grid over the eleven-step demo, "nothing
+hovered" no longer occurs anywhere on screen. And a press on empty space becomes an orbit
+*precisely because* nothing was hovered — `beginDrag` failing is the entire mechanism. So the
+rule is: **the sky is a click and hold target, never a drag handle.** `beginDrag` refuses it
+(the press falls through to the camera, exactly as before) and `destinationOf` refuses it (a
+release over it stays "released over empty space; nothing done"). `interaction.is_hover_backdrop`
+carries the answer from `updateHover`, where the scene is in hand, so neither has to be handed
+a scene. Driven and confirmed on both builds: dragging bare sky turns the view and builds
+nothing; clicking it selects it.
+
+Two consequences worth stating. **Clicking empty space no longer clears the selection** when a
+visible horizon plane is in the scene — it selects the sky; hiding that object restores the old
+behaviour, and the help table's `choose` tab says so. And a *tap* still treats the sky as empty
+space on purpose: tapping empty space is a finger's only way to dismiss a selection, so touch
+reaches the sky by long-press instead — which is where its marker fills anyway. The selection
+menu follows the middle of the view for it, since an object filling the sky has no place in the
+scene to sit beside; that rule is duplicated by constraint in `visualiser.anchorOfSelection` and
+`browser_bridge.nimAnchorScreen`, each naming the other.
+
+A horizon point (a fixed star) keeps the pickable anchor it always had.
 
 **Slot-liveness guards.** Hovered, dragged and selected slots are plain values carried
 across frames, not re-picked per frame, so any of them can name a removed item on the very
@@ -647,6 +691,12 @@ reads the previous frame's pick), and sets shift through `sdl3.setModState` — 
 event never reaches the state `SDL_GetModState` reports. Capture one frame *later* than each
 step: Dear ImGui hides an auto-sized window for the one frame it measures it in, which cost
 an hour of looking at an empty patch of scene.
+
+`--drive-sky` guards the regression making a horizon plane pickable could cause: it drags
+across bare sky, which must turn the view and build nothing, and then clicks it, which must
+select it. Where the sky is bare it *scans for* rather than hard-codes — which patch of a
+window is empty depends on the scene and on wherever the camera was left, and a fixed pixel
+would quietly start testing something else the moment either changed.
 
 `--drive-undo` joins the same family, for the one desktop behaviour with no other headless
 handle: it drags `a` onto `b` to build, orbits three steps and rises one, then sends Ctrl+Z,

@@ -1911,6 +1911,36 @@ suite "Interaction":
     check outcome.operands == some((source: 0, destination: 1))
 
 
+  test "the sky starts no drag, so a press on empty space still reaches the camera":
+    # The regression this rule exists to prevent, held directly. `beginDrag` failing when
+    #   nothing is hovered is the *entire* mechanism by which a press on empty space
+    #   becomes an orbit -- and a plane at horizon is hovered wherever nothing else is,
+    #   because it is drawn as a dome over every direction. Were it to start a drag, orbit
+    #   and pan would stop working outright the moment a sky joined the scene.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+
+    interaction.index_hover = some(0)
+    interaction.is_hover_backdrop = true
+    check not interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check not interaction.is_dragging
+
+    # And the same refusal at the far end: a release over the sky commits nothing, rather
+    #   than quietly taking the whole sky as an operand.
+    interaction.is_hover_backdrop = false
+    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.is_hover_backdrop = true
+    check interaction.destinationOf.isNone
+    let outcome = interaction.endDrag(scene)
+    check outcome.index_created.isNone
+    check "empty space" in outcome.message
+
+    # A horizon *line* is an ordinary drag target both ways: it is a curve, not a backdrop.
+    interaction.is_hover_backdrop = false
+    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+
+
   test "a press that never moves is a click on what it came down on, not a drag":
     # The press over an object has to start a drag eagerly -- the press target chooses the
     #   scheme -- so whether it *was* one is only answerable at the release.

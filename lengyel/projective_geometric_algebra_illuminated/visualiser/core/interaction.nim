@@ -170,6 +170,14 @@ type
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
+    is_hover_backdrop*: bool ## Whether what is hovered is a plane at horizon -- the whole
+      ## sky, which every ray meets, so this is true wherever nothing else is under the
+      ## cursor and a sky is in the scene.
+      ##   Recorded at `updateHover`, where the scene is already in hand, so that
+      ## `beginDrag` and `endDrag` can refuse it without being handed the scene as well.
+      ## **Refusing it is what keeps the camera working**: a press on empty space becomes
+      ## an orbit precisely because `beginDrag` fails when nothing is hovered, and a sky
+      ## is hovered everywhere. See `beginDrag`.
     index_focus*: Option[int] ## Item the **keyboard** stands on, which each render path
       ## draws with the same marker hover uses -- so a reader who has never touched a
       ## pointer can still see where they are, and the focus indicator is machinery that
@@ -447,6 +455,10 @@ proc updateHover*(
       pickNearest(scene, camera, view_projection, width, height, interaction.cursor)
     else:
       none(int)
+  # Noted here because this is where the scene is in hand; see `is_hover_backdrop`.
+  interaction.is_hover_backdrop =
+    interaction.index_hover.isSome and
+    scene.geometryOf(interaction.index_hover.get).isHorizonPlane
 
 
 
@@ -543,7 +555,11 @@ func destinationOf*(interaction: Interaction): Option[int] =
   ##   second case is not a refinement: a menu opens *centred on the cursor*, so reaching
   ##   out to a wedge necessarily takes the cursor off the item, and a destination read
   ##   from hover would go none at exactly the moment the release needs it.
+  ##   None over the sky, the same refusal `beginDrag` makes at the other end of the
+  ##   gesture: a release over the backdrop stays "released over empty space; nothing
+  ##   done" rather than quietly taking the whole sky as an operand.
   if interaction.menu.isSome: interaction.index_destination
+  elif interaction.is_hover_backdrop: none(int)
   else: interaction.index_hover
 
 
@@ -581,7 +597,13 @@ proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float):
   ##   the menu and takes the proposal on a plain release, true offers it at once. Both
   ##   reach the same choices -- see `isMenuForcedBy`.
   ##   Expects `beginPress` to have run for this same press; see its own doc.
-  if interaction.index_hover.isNone: return false
+  ##   **A plane at horizon is a click and hold target, never a drag handle.** It is drawn
+  ##   as a dome over every direction, so it is hovered wherever nothing else is, and a
+  ##   press on it starting a construction drag would mean a press on empty space no longer
+  ##   falls through to the camera -- orbit and pan would stop working outright the moment
+  ##   a sky joined the scene. Refusing it here keeps that fall-through, and costs nothing
+  ##   a reader would want: dragging the backdrop *is* moving the view.
+  if interaction.index_hover.isNone or interaction.is_hover_backdrop: return false
   interaction.is_dragging = true
   interaction.index_source = interaction.index_hover.get
   interaction.index_destination = none(int)

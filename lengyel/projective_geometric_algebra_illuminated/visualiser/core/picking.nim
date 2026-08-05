@@ -197,10 +197,15 @@ func pickNearest*(
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   None where nothing visible falls within its shape's pick radius.
-  ##   A line or plane at horizon is never pickable: neither is anchored anywhere a
-  ##   screen-space or ray test could land on, since both are drawn fixed to the eye
-  ##   rather than to a point in the scene (see `mesh.addLine`/`addPlane`'s own horizon
-  ##   branches). Only a point at horizon -- a fixed star -- keeps a pickable anchor.
+  ##   **Every drawn shape is pickable, horizon or not**, ranked point, finite line,
+  ##   horizon line, finite plane, horizon plane. Thin things beat wide ones, and the sky
+  ##   comes last of all: it is drawn as a dome filling every direction, so it matches
+  ##   every ray and would swallow the scene from any other rank.
+  ##   A horizon plane being pickable at all has one consequence worth stating here,
+  ##   because it is easy to reach this proc while chasing it: **the cursor is now over
+  ##   *something* almost everywhere.** `interaction.beginDrag` refuses to start a drag on
+  ##   it for exactly that reason -- a press on empty space has to keep falling through to
+  ##   the camera, or orbit and pan stop working the moment a sky is in the scene.
   ##   Exceeds the working 60-line default: the three shape branches below are
   ##   irreducibly different geometry (point/line/plane hit-testing), each already
   ##   minimal, and all three share the `eye`/`frame_camera`/`ray`/`scale` setup computed
@@ -242,6 +247,33 @@ func pickNearest*(
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
     of Shape.Line:
+      if geometry.isHorizon:
+        # Drawn as a great circle on the sky, so tested against that circle -- sampled the
+        #   way `mesh.addGreatCircle` samples it, so a hit agrees with what is drawn, the
+        #   rule this module already follows for a finite line's two halves.
+        let normal = directionNormalHorizon(geometry)
+        if normal.isNone: continue
+        let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
+        if axes.isNone: continue
+        let (axis_first, axis_second) = axes.get
+        var
+          distance_nearest = Inf
+          previous = none(ScreenPosition)
+        for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
+          let turn = (2.0*PI*float(i mod SEGMENTS_CIRCLE_HORIZON))/
+            float(SEGMENTS_CIRCLE_HORIZON)
+          let here = projectToScreen(
+            view_projection, width, height,
+            eye + scale.radius_horizon*(cos(turn)*axis_first + sin(turn)*axis_second),
+          )
+          if here.isInFront and previous.isSome:
+            distance_nearest = min(
+              distance_nearest, distanceToSegment(cursor, previous.get, here)
+            )
+          previous = if here.isInFront: some(here) else: none(ScreenPosition)
+        if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
+        continue
+
       # Test both halves `mesh.addLine` draws -- support out to each of the line's own
       #   two vanishing points. Testing one would leave the other half of a line on
       #   screen unpickable, and which half that is changes as the camera orbits.
@@ -262,6 +294,13 @@ func pickNearest*(
       if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
 
     of Shape.Plane:
+      if geometry.isHorizon:
+        # The whole sky, drawn as a dome filling every direction, so every ray meets it and
+        #   there is no distance to measure -- only a rank. Last of all, so anything else
+        #   under the cursor wins and this is what a cursor over nothing else finds.
+        consider(4, 0.0)
+        continue
+
       let
         anchor =
           if item.anchorOverride.isSome: item.anchorOverride else: positionAnchor(geometry)
@@ -270,6 +309,6 @@ func pickNearest*(
       let hit = rayPlaneHit(
         ray, eye, frame_camera.forward, geometry, anchor.get, axes.get, EXTENT_PLANE_F
       )
-      if hit.isSome: consider(2, hit.get)
+      if hit.isSome: consider(3, hit.get)
 
   slot_best

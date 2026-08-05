@@ -255,6 +255,8 @@ type Options = object ## Hold what command line asked of this run.
     ## so a headless run can show the floating selection menu at each. See `driveSelect`.
   is_undo_driven: bool ## Whether to script a construction, an orbit away from it and the
     ## undo of it, so a headless run can show where undo leaves the view. See `driveUndo`.
+  is_sky_driven: bool ## Whether to script a drag and a click on bare sky, so a headless
+    ## run can show that a press on it still reaches the camera. See `driveSky`.
   path_help_driven: Option[HelpPath] ## Which help tab to open at startup, if any. A
     ## headless run cannot click a tab strip, so `--drive-help:<tab>` names one; without
     ## it the panel stays shut, exactly as it does for a reader who has not asked for it.
@@ -278,6 +280,7 @@ proc parseOptions(): Options =
       of "drive-keys": result.is_key_driven = true
       of "drive-select": result.is_select_driven = true
       of "drive-undo": result.is_undo_driven = true
+      of "drive-sky": result.is_sky_driven = true
       of "drive-help":
         for path in HelpPath:
           if titleOf(path) == value: result.path_help_driven = some(path)
@@ -287,7 +290,7 @@ proc parseOptions(): Options =
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
           "frames, hidden, timings, novsync, fill, drive-drag, drive-keys, " &
-          "drive-select, drive-undo or drive-help."
+          "drive-select, drive-undo, drive-sky or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -580,9 +583,17 @@ proc anchorOfSelection(
   ##   None where there is nothing picked, where the object has no representative point,
   ##   or where it stands behind the camera -- see `layoutSelectionMenu` for what the menu
   ##   does with that.
+  ##   A plane at horizon is the exception: it has no place in the scene at all, being the
+  ##   whole sky, so its menu goes to the middle of the view -- the centre of the very
+  ##   frame `marker.markerFrame` draws around it. Without this a sky could be selected
+  ##   and then not acted on, since the menu would sit whereever it last was.
+  ##   **Duplicated by constraint** in `browser_bridge.nimAnchorScreen`, which answers the
+  ##   same question for the same menu on the other front-end; fix both or neither.
   if workbench.selection.len == 0: return none(tuple[x, y: cfloat])
   let slot = workbench.selection.at(workbench.selection.len - 1)
   if not scene.isAlive(slot): return none(tuple[x, y: cfloat])
+  if scene[slot].geometry.isHorizonPlane:
+    return some((x: cfloat(0.5*float(width)), y: cfloat(0.5*float(height))))
   let anchor = anchorFor(scene[slot].geometry, scale)
   if anchor.isNone: return none(tuple[x, y: cfloat])
   let screen = projectToScreen(view_projection, width, height, anchor.get)
@@ -842,12 +853,21 @@ proc handleEvent(
         workbench.is_apply_opening = true
         workbench.hideSelectionMenu()
       button_dragging = none(uint8)
-    elif event.button.button == uint8(MouseButton.Left) and
-        interaction.isClick(now) and not is_shifted:
-      # A plain left click over empty space, which began no drag to end. Clears, mirroring
-      #   the browser's own rule; shift is left alone, since shift means "keep what I have".
-      workbench.selection.clear()
-      workbench.hideSelectionMenu()
+    elif event.button.button == uint8(MouseButton.Left) and interaction.isClick(now):
+      # A plain left click that began no drag to end -- so it landed on empty space, or on
+      #   the one thing that *is* empty space: a plane at horizon, which `beginDrag`
+      #   refuses so that this press could still have become an orbit. Clicking it selects
+      #   it, which is the only way a pointer can, since it can never be dragged from.
+      if interaction.is_hover_backdrop and interaction.index_hover.isSome:
+        let slot = interaction.index_hover.get
+        if is_shifted: workbench.selection.toggle(slot)
+        else: workbench.selection.selectOnly(slot)
+        workbench.showSelectionMenu()
+      elif not is_shifted:
+        # Clears, mirroring the browser's own rule; shift is left alone, since shift means
+        #   "keep what I have".
+        workbench.selection.clear()
+        workbench.hideSelectionMenu()
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
   of uint32(EventKind.MouseWheel):
@@ -1105,6 +1125,63 @@ proc driveUndo(
   sdl3.pushEvent(addr event)
 
 
+func positionOverSky(
+  scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int
+): Option[ScreenPosition] =
+  ## Find a point on screen where the topmost thing under the cursor is a plane at horizon.
+  ##   Scanned rather than hard-coded: which patch of a window is bare sky depends on the
+  ##   scene and on wherever the camera has been left, and a fixed pixel would quietly
+  ##   start testing something else the moment either changed.
+  const STEP_SCAN = 40
+  for y in countup(STEP_SCAN, height - STEP_SCAN, STEP_SCAN):
+    for x in countup(STEP_SCAN, width - STEP_SCAN, STEP_SCAN):
+      let at = ScreenPosition(x: float(x), y: float(y))
+      let slot = pickNearest(scene, camera, view_projection, width, height, at)
+      if slot.isSome and scene.geometryOf(slot.get).isHorizonPlane: return some(at)
+
+
+proc driveSky(
+  scene: Scene; camera: Camera; width, height, count_drawn: int
+) =
+  ## Script a left drag across bare sky, then a plain click on it, one step per frame.
+  ##   For `--drive-sky`, and reached from nowhere else. It guards the one regression
+  ##   making a horizon plane pickable could cause: that plane is drawn as a dome over
+  ##   every direction, so it is hovered wherever nothing else is, and a press on it
+  ##   starting a construction drag would mean a press on empty space no longer falls
+  ##   through to the camera. Orbit and pan would stop working outright.
+  ##   So the drag below must *turn the view* and build nothing, and the click after it
+  ##   must select the sky -- the only way a pointer can, since it is never dragged from.
+  ##   Posted to SDL's own queue, for the reason `driveDrag` gives.
+  const
+    FRAME_FIRST = 2
+    STEPS_DRAG = 5 # Reach, press, and three frames of travel; the release follows.
+  let step = count_drawn - FRAME_FIRST
+  if step notin 0 .. STEPS_DRAG + 3: return
+  let over_sky = positionOverSky(
+    scene, camera, camera.initMatrixViewProjection(width/height), width, height
+  )
+  if over_sky.isNone: return
+
+  var event: Event
+  case step
+  of 0, STEPS_DRAG + 1: # Reach the sky, for the drag and then again for the click.
+    event = Event(kind: uint32(EventKind.MouseMotion))
+    event.motion.x = cfloat(over_sky.get.x)
+    event.motion.y = cfloat(over_sky.get.y)
+  of 1, STEPS_DRAG + 2:
+    event = Event(kind: uint32(EventKind.MouseButtonDown))
+    event.button.button = uint8(MouseButton.Left)
+  of STEPS_DRAG, STEPS_DRAG + 3:
+    event = Event(kind: uint32(EventKind.MouseButtonUp))
+    event.button.button = uint8(MouseButton.Left)
+  else: # Travel, which an orbit reads as turning the view.
+    event = Event(kind: uint32(EventKind.MouseMotion))
+    event.motion.x = cfloat(over_sky.get.x + float(40*step))
+    event.motion.y = cfloat(over_sky.get.y)
+    event.motion.xrel = cfloat(40)
+  sdl3.pushEvent(addr event)
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -1153,6 +1230,8 @@ proc runInteractive(
     ticks_previous_frame = ticks_frame_start
 
     if options.is_key_driven: driveKeys(count_drawn)
+    if options.is_sky_driven:
+      driveSky(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn)
     if options.is_drag_driven or options.is_select_driven or options.is_undo_driven:
       let scale_driven = camera.drawExtentFor(PIXELS_HEIGHT)
       if options.is_drag_driven:

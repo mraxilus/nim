@@ -458,12 +458,27 @@ test is area-based, inside the drawn rim. Test both boundaries (one pixel inside
 pixel outside does not) and all three priority pairings, so changing a constant fails a test
 rather than only feeling different.
 
-A line or plane at horizon is **never pickable** — neither is anchored anywhere a screen-space
-or ray test could land, since both draw fixed to the eye. A horizon point keeps a pickable
-anchor. Test both halves of a line: testing one leaves the other half unpickable, and which
-half that is changes as the camera orbits. The hit test divides by each endpoint's depth, so
-it needs a by-hand near-plane clip mirroring what the GPU does when drawing — this reach can
-put an endpoint behind the eye.
+**Everything drawn is pickable, horizon included**, ranked so thin things beat wide ones:
+point, finite line, horizon line, finite plane, horizon plane. A horizon object is anchored
+nowhere in the scene, so test each against *what is drawn* — a horizon line against the great
+circle it draws as, sampled the same way it is drawn; a horizon plane against everything,
+since it is a dome over every direction.
+
+That last one has a consequence the design must answer, not discover: **the cursor is then
+over something almost everywhere.** A press on empty space becomes a camera move precisely
+because nothing was under it, so a horizon plane must be a click and hold target and never a
+drag handle — refuse it where a drag begins *and* where one lands, or orbit and pan stop
+working the moment a sky joins the scene, and a release over nothing quietly takes the whole
+sky as an operand. Clicking it selects it, since that is the only route a pointer has left;
+a *tap* still counts it as empty space, because tapping empty space is a finger's only way to
+dismiss a selection and touch reaches the sky by long-press instead. An object with no place
+in the scene also has nowhere to put the floating menu that follows a selection: give it the
+middle of the view, matching the marker drawn around the viewport.
+
+Test both halves of a line: testing one leaves the other half unpickable, and which half that
+is changes as the camera orbits. The hit test divides by each endpoint's depth, so it needs a
+by-hand near-plane clip mirroring what the GPU does when drawing — this reach can put an
+endpoint behind the eye.
 
 
 12. Interaction
