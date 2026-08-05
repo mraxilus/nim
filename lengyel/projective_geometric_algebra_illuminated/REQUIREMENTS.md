@@ -538,6 +538,27 @@ so hover only ever updates at a touch-down point; without the clear, the last re
 stale forever and its ring — only 20% dimmer than a selection ring — reads as a second
 selected object.
 
+**Keyboard, both front-ends.** Everything must be operable from the keyboard alone
+(**WCAG 2.1.1, Level A**), and that includes the 3D view, not merely the panels around it.
+The view is **one ordinary tab stop**: reached by Tab and left by Tab, with its own keys
+answering only while it holds focus. Show that focus — a focus nobody can see is not one
+(2.4.7) — and reuse the marker hover already draws rather than inventing a second.
+
+**Never rebind Tab inside the view.** Cycling objects with it is the tempting binding and
+risks a keyboard trap (**2.1.2, also Level A**); fixing one Level A failure by creating
+another is not a fix. Traversal takes its own keys.
+
+Where the widget set has its own keyboard navigation, **it must be switched on**. No amount
+of binding keys in the application reaches widgets the application does not own.
+
+That navigation will then claim the keyboard far more eagerly than a "does the GUI want this
+key" flag suggests. **Measure what that flag actually reports before using it as the guard**:
+the view's own keys must still reach the view while the reader is merely looking at the
+scene, and must not while a field is taking text or navigation has landed on a widget.
+
+Keys that move the camera move it by **one shared amount per press**, unlike the per-pixel
+drag rates, which differ per front-end for a real reason. A press has no pixels in it.
+
 The document-level "tap outside closes the floating menu" listener must **exclude the canvas,
 the drawer and the chip row**. It fires on pointer-down, before the tap gesture resolves on
 release, so including the canvas clears selection state before the gesture that should use it
@@ -845,6 +866,7 @@ The two front-ends are the same tool. A parity checklist a reviewer can run:
 - same selection semantics and the same ring, one per selected object;
 - same edit-session table (§13), same ghost;
 - same undo/redo scope and the same greyed-out controls;
+- same keyboard: the same keys, the same amounts, the same focus marker;
 - same file format, round-tripping between the two;
 - same animation duration and curve;
 - same drag: the same proposal, the same preview, the same choice menu, reached by

@@ -70,6 +70,12 @@ proc isFontLoaded*(): bool {.importc: "guiFontLoaded".}
 proc processEvent*(event: ptr Event): bool {.importc: "guiProcessEvent", discardable.}
 proc wantsMouse*(): bool {.importc: "guiWantsMouse".}
 proc wantsKeyboard*(): bool {.importc: "guiWantsKeyboard".}
+proc isNavEnabled*(): bool {.importc: "guiIsNavEnabled".}
+  ## Report whether Dear ImGui's keyboard navigation is in force -- what makes every panel
+  ## control reachable by Tab at all.
+proc wantsKeys*(): bool {.importc: "guiWantsKeys".}
+  ## Report whether a key belongs to Dear ImGui rather than the 3D view; see the shim,
+  ## which explains why this is not `wantsKeyboard`.
 proc framerate*(): cfloat {.importc: "guiFramerate".}
 proc frameBegin*() {.importc: "guiFrameBegin".}
 proc frameEnd*() {.importc: "guiFrameEnd".}

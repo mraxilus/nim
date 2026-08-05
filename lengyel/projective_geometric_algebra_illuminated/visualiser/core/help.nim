@@ -68,7 +68,7 @@ const lut_help_entries* = block:
   ##   A fixed array rather than a `seq`, with `count` asserted against its length at
   ## compile time, so adding an entry without resizing fails the build rather than leaving
   ## a blank row at the bottom of the panel.
-  var lut: array[20, HelpEntry]
+  var lut: array[26, HelpEntry]
   var count = 0
   proc add(topic: HelpTopic; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -123,6 +123,28 @@ const lut_help_entries* = block:
 
   add(HelpTopic.Keys, "escape", "abandon whatever is in progress")
   add(HelpTopic.Keys, "ctrl+z, ctrl+shift+z", "undo, redo")
+  add(HelpTopic.Keys, "tab", "step through every control, and through the view itself")
+  # Read out of `interaction.actionFor` rather than written here, so rebinding a key
+  #   rewrites its own row. Grouped by what they do because a reader looks for the job
+  #   first and the key second; the names still come from `nameOf`, one per key.
+  add(
+    HelpTopic.Keys,
+    nameOf(Key.Left) & ", " & nameOf(Key.Right) & ", " &
+      nameOf(Key.Up) & ", " & nameOf(Key.Down),
+    "orbit; hold shift to pan instead",
+  )
+  add(
+    HelpTopic.Keys, nameOf(Key.Minus) & ", " & nameOf(Key.Plus), "dolly out and in"
+  )
+  add(
+    HelpTopic.Keys, nameOf(Key.BracketLeft) & ", " & nameOf(Key.BracketRight),
+    "step to the previous or next object",
+  )
+  add(
+    HelpTopic.Keys, nameOf(Key.Enter),
+    "choose the object you stepped to; hold shift to add it",
+  )
+  add(HelpTopic.Keys, nameOf(Key.Home), "put the camera back where it started")
 
   doAssert count == len(lut), "Every help slot must be filled; adjust the array's size."
   lut

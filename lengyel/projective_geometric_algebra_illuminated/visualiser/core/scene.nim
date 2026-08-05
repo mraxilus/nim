@@ -34,7 +34,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strformat, strutils, unicode]
+import std/[math, options, strformat, strutils, unicode]
 
 import ../../pga
 import ./[format, mesh, objects]
@@ -441,6 +441,25 @@ func isAlive*(scene: Scene; slot: int): bool =
   ##   Meant for checking a slot read back from across a frame boundary, e.g. an
   ##   operand picked earlier, before trusting it still names something.
   slot in 0 ..< ITEMS_MAX and scene.are_alive[slot]
+
+
+func slotStepped*(scene: Scene; slot: Option[int]; step: int): Option[int] =
+  ## Walk to the next live slot `step` places on from `slot`, wrapping past both ends.
+  ##   None where the scene holds nothing to walk to; the first live slot from the start
+  ##   where `slot` is none, so a caller with nothing focused yet gets somewhere to begin
+  ##   without a special case of its own.
+  ##   Slots are sparse -- items are freed in any order and the free list reuses holes --
+  ##   so this cannot be arithmetic on the slot number; it searches. `ITEMS_MAX` is the
+  ##   bound, which is what makes the search finite even with a scene full of holes.
+  ##   Wraps deliberately: this drives keyboard traversal, and a walk that stopped dead at
+  ##   the end would leave a reader pressing a key that has silently stopped working.
+  if scene.len == 0: return none(int)
+  doAssert step != 0, "Stepping nowhere would search forever; got a step of zero."
+  let start = if slot.isSome: slot.get else: -1
+  for offset in 1 .. ITEMS_MAX:
+    let candidate = floorMod(start + step*offset, ITEMS_MAX)
+    if scene.isAlive(candidate): return some(candidate)
+  none(int)
 
 
 func `[]`*(scene: Scene; slot: int): Item =

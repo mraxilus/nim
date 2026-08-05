@@ -44,11 +44,28 @@ type
     MouseWheel = 0x403,
 
   Scancode* {.pure.} = enum ## Name physical keys visualiser reacts to.
-    Escape = 41,
+    ## USB HID usage IDs, which is what an SDL scancode is; every one below is checked
+    ## against the header's own macro at compile time by `CHECKS_MIRROR`, so a wrong
+    ## number fails the build rather than binding a key nobody pressed.
+    Q = 20,
     S = 22,
     Y = 28,
     Z = 29,
-    Q = 20,
+    Return = 40,
+    Escape = 41,
+    Tab = 43,
+      ## Never bound by this application: Dear ImGui's own keyboard navigation owns it,
+      ## and rebinding it inside the view would risk the keyboard trap WCAG 2.1.2 rules
+      ## out. Declared so `--drive-keys` can synthesise one and prove nav really has it.
+    Minus = 45,
+    Equals = 46,
+    BracketLeft = 47,
+    BracketRight = 48,
+    Home = 74,
+    Right = 79,
+    Left = 80,
+    Down = 81,
+    Up = 82,
 
   MouseButton* {.pure.} = enum ## Name mouse buttons visualiser reacts to.
     Left = 1,
@@ -57,6 +74,10 @@ type
 
   KeyboardEvent* {.importc: "SDL_KeyboardEvent", header: HEADER, bycopy.} = object
     scancode* {.importc.}: uint32 ## Physical key, independent of layout.
+    keycode* {.importc: "key".}: uint32 ## Key as the *layout* names it. Never read by this
+      ## application, which binds physical keys throughout; Dear ImGui's own SDL3 backend
+      ## reads it, so a synthesised event that leaves it zero is one Dear ImGui does not
+      ## recognise -- which is how `--drive-keys` first failed to prove anything about nav.
     is_down* {.importc: "down".}: bool ## Whether key is pressed rather than released.
     modifiers* {.importc: "mod".}: uint16 ## Modifier keys held as this one went down.
 
@@ -153,6 +174,17 @@ const lut_mirror_to_symbol = [
   (int(Scancode.Y), "SDL_SCANCODE_Y"),
   (int(Scancode.Z), "SDL_SCANCODE_Z"),
   (int(Scancode.Q), "SDL_SCANCODE_Q"),
+  (int(Scancode.Return), "SDL_SCANCODE_RETURN"),
+  (int(Scancode.Tab), "SDL_SCANCODE_TAB"),
+  (int(Scancode.Minus), "SDL_SCANCODE_MINUS"),
+  (int(Scancode.Equals), "SDL_SCANCODE_EQUALS"),
+  (int(Scancode.BracketLeft), "SDL_SCANCODE_LEFTBRACKET"),
+  (int(Scancode.BracketRight), "SDL_SCANCODE_RIGHTBRACKET"),
+  (int(Scancode.Home), "SDL_SCANCODE_HOME"),
+  (int(Scancode.Right), "SDL_SCANCODE_RIGHT"),
+  (int(Scancode.Left), "SDL_SCANCODE_LEFT"),
+  (int(Scancode.Down), "SDL_SCANCODE_DOWN"),
+  (int(Scancode.Up), "SDL_SCANCODE_UP"),
   (int(MODIFIER_CONTROL), "SDL_KMOD_CTRL"),
   (int(MODIFIER_SHIFT), "SDL_KMOD_SHIFT"),
   (int(MODIFIER_COMMAND), "SDL_KMOD_GUI"),

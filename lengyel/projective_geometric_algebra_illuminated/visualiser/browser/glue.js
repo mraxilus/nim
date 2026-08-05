@@ -372,6 +372,28 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // The 3D view answers its own keys, but only while it actually has focus -- it is one
+  //   ordinary tab stop (see its `tabindex` in the markup), so a reader tabs into it,
+  //   drives it, and tabs onward. Tab itself is never intercepted: rebinding it inside
+  //   the canvas is the tempting design and risks a keyboard trap, which WCAG 2.1.2 rules
+  //   out at the same level 2.1.1 asks for this in the first place.
+  //   Which key does what is `interaction.actionFor`'s to say; only the DOM's own naming
+  //   of the keys is translated across, exactly as SDL scancodes are on the desktop side.
+  if (document.activeElement === canvas && !(e.ctrlKey || e.metaKey || e.altKey)) {
+    const action = nimKeyAction(e.key, e.shiftKey);
+    if (action >= 0) {
+      e.preventDefault(); // Arrows would otherwise scroll the page under the canvas.
+      dismissHint();
+      const slot = nimApplyKeyAction(action);
+      if (slot >= 0) {
+        // Shift adds rather than replaces, exactly as shift-click does -- the one thing
+        //   the shift state means that the shared action table cannot answer alone.
+        if (e.shiftKey) toggleSelection(slot, null); else selectOnly(slot, null);
+      }
+      return;
+    }
+  }
+
   // Ctrl on every platform, and cmd as well on macOS, where ctrl+z is not what a reader
   //   with muscle memory presses.
   if (!(e.ctrlKey || e.metaKey)) return;
@@ -1218,9 +1240,13 @@ function refreshOverlay(cursor) {
     appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(performance.now()));
   }
 
-  const slot_hover = nimHoverSlot();
-  if (slot_hover >= 0 && slot_hover !== slot_hold && !slots_selection.includes(slot_hover)) {
-    appendMarker(slot_hover, ALPHA_MARKER_HOVER, w, h, 1);
+  // Hover and keyboard focus wear the same marker at the same weight: a reader driving by
+  // key sees exactly what a reader driving by pointer sees, and the focus indicator WCAG
+  // 2.4.7 asks for is machinery already built rather than a second one invented beside it.
+  for (const slot of [nimHoverSlot(), nimFocusSlot()]) {
+    if (slot >= 0 && slot !== slot_hold && !slots_selection.includes(slot)) {
+      appendMarker(slot, ALPHA_MARKER_HOVER, w, h, 1);
+    }
   }
 
   if (nimDragActive()) {

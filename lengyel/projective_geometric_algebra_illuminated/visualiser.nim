@@ -90,7 +90,9 @@
 ##   over a `--frames:N` run; `--novsync` disables vsync from startup for an uncapped
 ##   reading, and `--fill` tops the scene up to capacity first, for the heaviest case.
 ##   `--drive-drag` scripts a construction drag through SDL's own event queue, so a
-##   headless run can be caught mid-gesture with its choice menu open.
+##   headless run can be caught mid-gesture with its choice menu open; `--drive-keys`
+##   scripts a run of view keys through that same queue and reports what the camera and
+##   focus did, which is how "Dear ImGui swallows them" gets measured rather than assumed.
 
 {.experimental: "strictFuncs".}
 
@@ -239,6 +241,8 @@ type Options = object ## Hold what command line asked of this run.
     ## timing the heaviest tessellation and draw load rather than the demo's own light one.
   is_drag_driven: bool ## Whether to script a construction drag through the event queue,
     ## so a headless run can be made to show a drag mid-gesture. See `driveDrag`.
+  is_key_driven: bool ## Whether to script a run of view keys through the event queue, so
+    ## a headless run can show that they reach the view at all. See `driveKeys`.
 
 
 proc parseOptions(): Options =
@@ -256,10 +260,11 @@ proc parseOptions(): Options =
       of "novsync": result.is_novsync = true
       of "fill": result.is_filled = true
       of "drive-drag": result.is_drag_driven = true
+      of "drive-keys": result.is_key_driven = true
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill or drive-drag."
+          "frames, hidden, timings, novsync, fill, drive-drag or drive-keys."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -488,8 +493,12 @@ proc drawInteractionOverlay(
 
   # Hover wears the selection's own marker at lower opacity rather than a shape of its
   #   own, so hovering a line previews exactly the rails selecting it would draw.
-  if interaction.index_hover.isSome:
-    let item = scene[interaction.index_hover.get]
+  #   Keyboard focus wears the very same marker: a reader who has never touched a pointer
+  #   still sees where they are, and the focus indicator WCAG 2.4.7 asks for is machinery
+  #   already built and already tested rather than a second one invented beside it.
+  for index in [interaction.index_hover, interaction.index_focus]:
+    if index.isNone or not scene.isAlive(index.get): continue
+    let item = scene[index.get]
     let marker = markerFor(
       item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
     )
@@ -572,6 +581,7 @@ proc renderFrame(
   #   the transform they pick against needs only the camera, which has already advanced.
   let view_projection = camera.initMatrixViewProjection(width / height)
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
+  interaction.pruneFocus(scene)
   interaction.updateDrag(scene, now)
   assembleMeshes(workbench, scene, interaction, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
@@ -624,6 +634,24 @@ proc downsampleInto(
 
 #[ Input Handling ]#
 
+func keyFor(scancode: uint32): Option[Key] =
+  ## Translate one SDL scancode into the key the view knows it by, if it is one.
+  ##   Only the numbering is this build's own; what each key *does* is
+  ##   `interaction.actionFor`'s to say, so both render paths and the help panel answer
+  ##   from one table.
+  if scancode == uint32(Scancode.Left): some(Key.Left)
+  elif scancode == uint32(Scancode.Right): some(Key.Right)
+  elif scancode == uint32(Scancode.Up): some(Key.Up)
+  elif scancode == uint32(Scancode.Down): some(Key.Down)
+  elif scancode == uint32(Scancode.BracketLeft): some(Key.BracketLeft)
+  elif scancode == uint32(Scancode.BracketRight): some(Key.BracketRight)
+  elif scancode == uint32(Scancode.Minus): some(Key.Minus)
+  elif scancode == uint32(Scancode.Equals): some(Key.Plus)
+  elif scancode == uint32(Scancode.Return): some(Key.Enter)
+  elif scancode == uint32(Scancode.Home): some(Key.Home)
+  else: none(Key)
+
+
 func isMenuForcedFor(button: uint8): Option[bool] =
   ## Say whether a mouse button starts a construction drag, and whether it asks or decides.
   ##   Only the numbering is this build's own -- SDL's, which the browser does not share.
@@ -651,7 +679,9 @@ proc handleEvent(
   of uint32(EventKind.Quit):
     is_running = false
   of uint32(EventKind.KeyDown):
-    if gui.wantsKeyboard(): return
+    # `wantsKeys`, not `wantsKeyboard`: with navigation enabled the latter is true from
+    #   the first frame and would swallow every key the view answers. See `gui_shim.cpp`.
+    if gui.wantsKeys(): return
     # Control on every platform, and command as well, which is what a reader on macOS
     #   presses for the same shortcut.
     let is_accelerator =
@@ -679,6 +709,23 @@ proc handleEvent(
         (event.key.scancode == uint32(Scancode.Y) or
          (event.key.scancode == uint32(Scancode.Z) and is_shifted)):
       workbench.is_redo_requested = true
+    elif not is_accelerator:
+      # The keys the 3D view itself answers, which is what makes the canvas reachable
+      #   without a pointer at all. Nothing here is an accelerator, so a chord that missed
+      #   every branch above falls through rather than orbiting the camera by accident.
+      let key = keyFor(event.key.scancode)
+      if key.isSome:
+        let index_selected = interaction.applyAction(
+          camera, scene, actionFor(key.get, is_shifted)
+        )
+        if index_selected.isSome:
+          # Shift adds rather than replaces, exactly as shift-click does -- the one place
+          #   the shift state means something `actionFor` cannot answer on its own.
+          if is_shifted: workbench.selection.toggle(index_selected.get)
+          else: workbench.selection.selectOnly(index_selected.get)
+        # Moving the camera by key is a camera move like any other, so it abandons a tween
+        #   already carrying it somewhere; otherwise the tween would drag it straight back.
+        workbench.tween_camera.abandon()
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
     # Press on a pickable item starts an operation drag; press on empty space falls back
@@ -792,6 +839,43 @@ proc driveDrag(
     sdl3.pushEvent(addr press)
 
 
+const lut_keys_driven = [
+  Scancode.BracketRight, Scancode.BracketRight, Scancode.Return,
+  Scancode.Right, Scancode.Right, Scancode.Up, Scancode.Equals, Scancode.Tab,
+] ## Script one press per frame for `--drive-keys`: walk the focus on twice, select what it
+  ## lands on, then orbit and dolly. Chosen to touch every kind of action the view answers
+  ## -- traversal, selection, camera -- so one run says whether Dear ImGui's own navigation
+  ## has swallowed the lot. The trailing Tab is the opposite check: the application binds
+  ## it to nothing, so `gui.wantsKeys` turning true afterwards is nav having taken it and
+  ## landed on a panel widget, which is what makes the panels reachable at all.
+
+
+const lut_keycodes_driven = [
+  uint32(ord(']')), uint32(ord(']')), 13'u32, # Return is ASCII carriage return.
+  1073741903'u32, 1073741903'u32, 1073741906'u32, # SDLK_RIGHT, RIGHT, UP.
+  uint32(ord('=')), 9'u32, # Tab is ASCII horizontal tab.
+] ## Pair each scripted scancode with the keycode SDL would have sent beside it; see
+  ## `driveKeys` on why both are needed. One entry per `lut_keys_driven` entry.
+
+
+proc driveKeys(count_drawn: int) =
+  ## Push one scripted key per frame onto SDL's own queue, for `--drive-keys`.
+  ##   Posted to the queue rather than handed to `handleEvent`, for the reason `driveDrag`
+  ##   gives: the wiring between the two is exactly what a scripted test is for.
+  const FRAME_FIRST = 3 # Past startup, so the first frame's own layout has settled.
+  let step = count_drawn - FRAME_FIRST
+  if step notin 0 ..< len(lut_keys_driven): return
+  var event = Event(kind: uint32(EventKind.KeyDown))
+  event.key.scancode = uint32(lut_keys_driven[step])
+  # Dear ImGui's own backend reads the layout keycode rather than the scancode, so an
+  #   event without one is invisible to it -- and the Tab below is aimed at exactly that.
+  #   ASCII is the keycode for every key this script sends.
+  event.key.keycode = lut_keycodes_driven[step]
+  event.key.is_down = true
+  event.key.modifiers = 0
+  sdl3.pushEvent(addr event)
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -839,6 +923,7 @@ proc runInteractive(
         TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] = delta_milliseconds
     ticks_previous_frame = ticks_frame_start
 
+    if options.is_key_driven: driveKeys(count_drawn)
     if options.is_drag_driven:
       driveDrag(
         scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn,
@@ -883,6 +968,14 @@ proc runInteractive(
     if is_final: is_running = false
 
   echo &"Drew {count_drawn} frames."
+  if options.is_key_driven:
+    # What the scripted keys actually reached, so "Dear ImGui swallowed them" is a reading
+    #   rather than a suspicion. A camera still at its opening placement and a focus still
+    #   none means nothing got through.
+    echo &"Keys: focus {interaction.index_focus}, selected {len(workbench.selection)}, " &
+      &"azimuth {camera.azimuth:.4f}, elevation {camera.elevation:.4f}, " &
+      &"distance {camera.distance:.4f}; " &
+      &"gui.wantsKeys {gui.wantsKeys()}, nav enabled {gui.isNavEnabled()}."
   if options.is_timed and count_drawn > 1:
     reportTimings(TIMINGS_FRAME_MILLISECONDS.toOpenArray(0, count_drawn - 2))
     echo &"  tessellate mean {total_tessellate_microseconds/float(count_drawn):.1f}us, " &
@@ -1098,9 +1191,7 @@ proc main() =
   let renderer = initRenderer()
   var
     scene = initScene()
-    camera = initCamera(
-      target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
-    )
+    camera = initCameraDefault()
     workbench = initWorkbench(
       if len(options.path_screenshot) > 0: options.path_screenshot
       else: PATH_EXPORT_DEFAULT

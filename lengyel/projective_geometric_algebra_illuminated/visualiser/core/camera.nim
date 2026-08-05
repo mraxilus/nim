@@ -59,6 +59,20 @@ const
     ## holds depth-buffer precision -- a function of the far-to-near ratio -- constant
     ## rather than letting it decay as the camera pulls back.
 
+const
+  ## How far one **key press** moves the camera. Shared by both front-ends, unlike the
+  ## per-pixel drag rates, which differ for a real reason: `visualiser.SPEED_ORBIT` is
+  ## radians per pixel dragged and `glue.js` works in fractions of canvas width, so those
+  ## two cannot be one number. A press has no pixels in it, so these can be, and are.
+  ##   Sized so a reader crosses the useful range in a handful of presses rather than
+  ## dozens -- a keyboard route nobody can be bothered to hold down is a keyboard route in
+  ## name only -- while still landing somewhere deliberate rather than overshooting.
+  TURN_PRESS* = 0.10 ## Azimuth one arrow press turns through, in radians (about 6 degrees).
+  RISE_PRESS* = 0.08 ## Elevation one arrow press rises through, in radians.
+  PAN_PRESS* = 0.06 ## Target shift one press slides, as a fraction of orbit distance.
+  FACTOR_DOLLY_PRESS* = 1.15 ## Orbit distance one press scales by, dollying out; its
+    ## reciprocal dollies in, so a press each way returns exactly where it started.
+
 
 
 #[ Type Definitions ]#
@@ -142,6 +156,17 @@ func initCamera*(target: Position; distance, azimuth, elevation: float): Camera 
     azimuth: azimuth,
     elevation: clamp(elevation, -ELEVATION_LIMIT, ELEVATION_LIMIT),
     degrees_field_of_view: 45.0,
+  )
+
+
+func initCameraDefault*(): Camera =
+  ## Place the camera where both front-ends open, and where `home` puts it back.
+  ##   One statement of it: this placement was written out twice, in `visualiser.main` and
+  ##   in `browser_bridge.nimInit`, and a keyboard key that returns to it would have made a
+  ##   third copy. Chosen to show the seed scene whole, slightly above the ground plane so
+  ##   the plane reads as a plane rather than as a line.
+  initCamera(
+    target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
 
 

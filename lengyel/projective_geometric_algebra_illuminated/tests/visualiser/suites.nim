@@ -1923,6 +1923,122 @@ suite "Interaction":
     check forced.menu.isSome
 
 
+  test "stepping walks live slots in both directions and wraps at both ends":
+    var scene = initScene()
+    for i in 0 ..< 4: scene.addItem(GENERAL_POINTS[i], "p", Ink.Rose)
+    check scene.slotStepped(none(int), 1) == some(0) # Nothing focused starts at the first.
+    check scene.slotStepped(none(int), -1) == some(3) # ...and backwards, at the last.
+    check scene.slotStepped(some(0), 1) == some(1)
+    check scene.slotStepped(some(3), 1) == some(0) # Wraps rather than stopping dead: a key
+    check scene.slotStepped(some(0), -1) == some(3) #   that quietly stops working is worse.
+
+
+  test "stepping skips slots whose items have gone":
+    var scene = initScene()
+    for i in 0 ..< 4: scene.addItem(GENERAL_POINTS[i], "p", Ink.Rose)
+    scene.removeItem(1)
+    scene.removeItem(2)
+    # Slots are sparse -- the free list reuses holes in any order -- so this cannot be
+    #   arithmetic on the slot number, and a hole must not be a place the keyboard lands.
+    check scene.slotStepped(some(0), 1) == some(3)
+    check scene.slotStepped(some(3), 1) == some(0)
+
+
+  test "stepping an empty scene lands nowhere rather than on a freed slot":
+    var scene = initScene()
+    check scene.slotStepped(none(int), 1).isNone
+    check scene.slotStepped(some(0), 1).isNone
+    scene.addItem(GENERAL_POINTS[0], "p", Ink.Rose)
+    scene.removeItem(0)
+    check scene.slotStepped(none(int), 1).isNone
+
+
+  test "every key does something in both shift states":
+    # The table has to be total: each render path translates its own naming and then trusts
+    #   this, so a key with no answer would be a case nobody handled.
+    for key in Key:
+      for is_shifted in [false, true]:
+        discard actionFor(key, is_shifted) # A missing branch is a compile error in Nim;
+          # this walks the table so a *runtime* gap could not hide either.
+    # Shift is what separates orbiting from panning, and only for the arrows.
+    check actionFor(Key.Left, false) == KeyAction.OrbitLeft
+    check actionFor(Key.Left, true) == KeyAction.PanLeft
+    check actionFor(Key.BracketRight, false) == actionFor(Key.BracketRight, true)
+
+
+  test "each camera key moves the camera by its own shared step":
+    var scene = initScene()
+    scene.addItem(GENERAL_POINTS[0], "a", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    var camera = initCameraDefault()
+    let opening = camera
+
+    discard interaction.applyAction(camera, scene, KeyAction.OrbitRight)
+    check camera.azimuth =~ opening.azimuth + TURN_PRESS
+    discard interaction.applyAction(camera, scene, KeyAction.OrbitLeft)
+    check camera.azimuth =~ opening.azimuth # A press each way returns exactly where it was.
+
+    discard interaction.applyAction(camera, scene, KeyAction.OrbitUp)
+    check camera.elevation =~ opening.elevation + RISE_PRESS
+    discard interaction.applyAction(camera, scene, KeyAction.OrbitDown)
+    check camera.elevation =~ opening.elevation
+
+    discard interaction.applyAction(camera, scene, KeyAction.DollyOut)
+    check camera.distance =~ opening.distance*FACTOR_DOLLY_PRESS
+    discard interaction.applyAction(camera, scene, KeyAction.DollyIn)
+    check camera.distance =~ opening.distance
+
+    discard interaction.applyAction(camera, scene, KeyAction.PanRight)
+    check not (camera.target.x =~ opening.target.x) or
+      not (camera.target.y =~ opening.target.y)
+    discard interaction.applyAction(camera, scene, KeyAction.FrameAll)
+    check camera.target.x =~ opening.target.x
+    check camera.target.y =~ opening.target.y
+    check camera.distance =~ opening.distance
+
+
+  test "enter reports the focused slot for the caller to select, and nothing before then":
+    var scene = initScene()
+    scene.addItem(GENERAL_POINTS[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    var camera = initCameraDefault()
+    # Pressing enter before stepping anywhere is a no-op, not a select of slot zero.
+    check interaction.applyAction(camera, scene, KeyAction.SelectFocused).isNone
+    discard interaction.applyAction(camera, scene, KeyAction.FocusNext)
+    check interaction.index_focus == some(0)
+    check interaction.applyAction(camera, scene, KeyAction.SelectFocused) == some(0)
+
+
+  test "a focus whose item is removed is dropped rather than left pointing at freed storage":
+    var scene = initScene()
+    scene.addItem(GENERAL_POINTS[0], "a", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    var camera = initCameraDefault()
+    discard interaction.applyAction(camera, scene, KeyAction.FocusNext)
+    check interaction.index_focus == some(0)
+    scene.removeItem(0)
+    interaction.pruneFocus(scene)
+    check interaction.index_focus.isNone
+
+
+  test "keyboard focus is not hover, and a pointer moving does not erase it":
+    # The whole reason `index_focus` is its own field: `updateHover` recomputes hover from
+    #   the cursor every frame, so a focus stored there would be gone before it was drawn.
+    var scene = initScene()
+    let target = Position(x: 0, y: 0, z: 0)
+    scene.addItem(toMultivector(target), "p", Ink.Rose)
+    scene.addItem(GENERAL_POINTS[5], "far", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    var camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
+    discard interaction.applyAction(camera, scene, KeyAction.FocusNext)
+    check interaction.index_focus == some(0)
+    interaction.updateCursor(799.0, 1.0) # A corner, away from everything.
+    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    check interaction.index_hover != interaction.index_focus
+    check interaction.index_focus == some(0)
+
+
   test "a drag that keeps moving never opens its menu, however long it stays on target":
     # The dwell measures being *still*, not being over something. While it ran on presence
     #   alone, a slow finger crossing one large object -- a plane's disc spans most of a

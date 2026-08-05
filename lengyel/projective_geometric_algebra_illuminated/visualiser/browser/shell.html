@@ -88,6 +88,16 @@
     display: block;
   }
 
+  /* The view is one ordinary tab stop, reached and left with Tab like every other
+     control -- see `interaction.actionFor` on why Tab is deliberately not rebound. The
+     ring is inset rather than outset because the canvas fills the viewport, so an
+     outside ring would fall off every edge of the screen and show nothing. */
+  canvas#gl:focus { outline: none; }
+  canvas#gl:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
+  }
+
   svg#overlay {
     position: fixed;
     inset: 0;
@@ -670,7 +680,7 @@
   }
 </style>
 
-<canvas id="gl"></canvas>
+<canvas id="gl" tabindex="0" aria-label="3D view of the scene"></canvas>
 <svg id="overlay"></svg>
 
 <div class="veil">

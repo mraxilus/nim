@@ -58,6 +58,11 @@ bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
   IMGUI_CHECKVERSION();
   if (ImGui::CreateContext() == nullptr) return false;
   ImGui::StyleColorsDark();
+  // Let the keyboard reach the panels at all. Without this every button, combo and field
+  // here is pointer-only -- a total WCAG 2.1.1 Level A failure that this one line caused,
+  // and that no amount of binding keys in the application itself could have fixed, since
+  // the widgets are Dear ImGui's and only its own navigation can move between them.
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   // Keep panel layout in memory only, so running the visualiser leaves no file behind.
   ImGui::GetIO().IniFilename = nullptr;
   ImGui::GetStyle().WindowRounding = 4.0f;
@@ -96,6 +101,27 @@ bool guiProcessEvent(const SDL_Event* event) { return ImGui_ImplSDL3_ProcessEven
 bool guiWantsMouse() { return ImGui::GetIO().WantCaptureMouse; }
 
 bool guiWantsKeyboard() { return ImGui::GetIO().WantCaptureKeyboard; }
+
+// Report whether keyboard navigation is actually in force, for a headless run to check
+//   the configuration it cannot check the behaviour of: a window that never takes focus
+//   never gives Dear ImGui the focus its navigation needs, so a scripted Tab demonstrates
+//   nothing there, while this at least demonstrates the flag is set.
+bool guiIsNavEnabled() {
+  return (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
+}
+
+// Report whether Dear ImGui should get a key rather than the 3D view behind it.
+//   Not `WantCaptureKeyboard`, which is what this looked like it should be and is wrong
+//   here: enabling keyboard navigation makes that flag true from the very first frame,
+//   with nothing focused and nobody having pressed Tab, so using it swallowed every view
+//   key outright. Measured, not guessed -- `--drive-keys` reported the camera still at its
+//   opening placement with the flag reading true.
+//   The two things that genuinely mean "these keys are ImGui's": a text field is taking
+//   input, or navigation has actually landed on a widget. Neither is true while the
+//   reader is simply looking at the scene, which is when the view wants its own keys.
+bool guiWantsKeys() {
+  return ImGui::GetIO().WantTextInput || ImGui::IsAnyItemFocused();
+}
 
 float guiFramerate() { return ImGui::GetIO().Framerate; }
 

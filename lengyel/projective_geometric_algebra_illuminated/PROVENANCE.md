@@ -1277,9 +1277,74 @@ tap/click → selection menu → apply, or through the apply section itself. Tha
 safe for the drag to be the *fast* path rather than the only one, and it is the route a
 regression here would break first, so the touch drive exercises it explicitly.
 
-**Still open**: this is a partial 2.1.1 fix. There is no way to tab between objects or to
-move the camera from the keyboard, so the canvas itself remains unreachable without a
-pointer.
+The canvas is now reachable from the keyboard too, which closes that. Reading the tree first
+found **two different gaps, and the desktop's was far worse than the note above admitted**:
+
+- **Desktop: the keyboard reached nothing.** `guiInit` never set `io.ConfigFlags`, so Dear
+  ImGui's own keyboard navigation was off. Tab reached no button, no combo, no field — not
+  "the canvas is unreachable" but the *entire UI* pointer-only, apart from the four
+  accelerators above. One line caused it and one line fixes it, and no amount of binding keys
+  in the application could have: the widgets are Dear ImGui's, and only its navigation moves
+  between them.
+- **Browser: only the canvas.** The drawer is real `<button>`/`<select>`/`<input>`, so Tab
+  already reached every control and constructing was *already* keyboard-operable through the
+  apply section. `shell.html` simply had no `tabindex` anywhere, so the view could not take
+  focus.
+
+**Turning navigation on then swallowed every view key**, and that was measured rather than
+suspected: `--drive-keys` reported the camera still at its opening placement with
+`WantCaptureKeyboard` reading true. That flag looks like the guard and is the wrong one —
+with keyboard navigation enabled it is true from the first frame, nothing focused, nobody
+having pressed Tab. `gui.wantsKeys` asks the two things that genuinely mean "these keys are
+ImGui's": a field is taking text (`WantTextInput`), or navigation has landed on a widget
+(`IsAnyItemFocused`). Neither is true while the reader is simply looking at the scene.
+
+**Tab is deliberately not rebound.** Cycling objects with it inside the view is the tempting
+binding and risks a **keyboard trap — WCAG 2.1.2, also Level A**. Fixing 2.1.1 by creating
+2.1.2 is not a fix, so the view is one ordinary tab stop and traversal took the brackets:
+
+| Key | Does |
+|---|---|
+| arrows | orbit |
+| shift+arrows | pan |
+| `-` / `+` | dolly out / in |
+| `[` / `]` | focus the previous / next object |
+| `enter` | select it, or add it where shift is held |
+| `home` | put the camera back where it started |
+
+`interaction.actionFor` is that table; each path translates only its own naming (SDL
+scancodes, DOM `KeyboardEvent.key`) exactly as each already does for mouse buttons, and
+`help.nim` renders its keyboard rows out of it rather than transcribing them.
+
+**Focus is its own state, not hover.** `updateHover` recomputes hover from the cursor every
+frame, so a keyboard focus stored there would be erased before it could be drawn once.
+`interaction.index_focus` is separate, pruned against liveness like every other slot carried
+across frames, and **drawn with the marker hover already uses** — which satisfies 2.4.7 with
+machinery already built and already tested rather than a second indicator invented beside it.
+The browser adds a `:focus-visible` ring on the canvas itself, inset rather than outset
+because the canvas fills the viewport and an outside ring would fall off every edge.
+
+Camera keys move by one **shared** amount per press (`camera.TURN_PRESS` and friends),
+unlike the per-pixel drag rates, which differ per front-end for a real reason —
+`visualiser.SPEED_ORBIT` is radians per pixel and `glue.js` works in fractions of canvas
+width. A press has no pixels in it. `home` needed the opening placement, which was written
+out twice; it became `camera.initCameraDefault` and both entry points now read it.
+
+**What is verified, and what is not.** The view keys reaching the view with navigation on is
+measured on both builds — the desktop through `--drive-keys` (focus walked, enter selected,
+azimuth/elevation/distance each moved by exactly their own constant), the browser through
+real key events. The browser's **no-trap property is measured**: Tab from the canvas moves to
+the next control and shift+Tab back. Typing `[]-+` into a label still reaches the label on
+both. What is **not** demonstrated is Tab landing on a Dear ImGui widget: a window that never
+takes focus gives ImGui no navigation focus, so a synthesised Tab shows nothing under `xvfb`
+either hidden or mapped. `gui.isNavEnabled` reports the flag is set, which is the
+configuration rather than the behaviour; the behaviour wants a human at a real window.
+
+Storyboard frames are **pixel-identical outside the workbench panel**. Inside it a handful of
+single pixels moved, bisected to the help table gaining rows — the third round running in
+which growing that shared table shifts subpixel text placement in the desktop panel. The
+mechanism is not pinned down (`guiTextWidth` is a plain `CalcTextSize`); what is established
+is the attribution and that no 3D content changed.
 
 
 Verification Tools
@@ -1378,6 +1443,9 @@ actual driver to confirm.
 Known Limitations
 ---
 - No human has run either build. Every result here is software-rendered and machine-driven.
+- Dear ImGui's keyboard navigation is enabled and verified enabled, but Tab actually landing
+  on a desktop widget is unverified: a window that never takes focus under `xvfb` gives ImGui
+  no navigation focus to move. Wants a human at a real window.
 - Most WebGL/ANGLE browsers clamp `gl.lineWidth` to 1px, so browser line widths are
   advisory. Fixing it needs screen-space quads per segment.
 - Two crossing translucent washes blend order-dependently (see the draw-order invariant).

@@ -138,9 +138,7 @@ proc nimInit(now: cfloat) {.exportc.} =
   ## Build the default interactive scene and place the camera at the same default orbit
   ## the desktop app itself opens on.
   placeSeeds(float(now))
-  g_camera = initCamera(
-    target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
-  )
+  g_camera = initCameraDefault()
   g_selection.clear()
   g_history = initHistory(g_scene)
 
@@ -742,6 +740,48 @@ proc nimHoldMature(now: cfloat): bool {.exportc.} =
   isHoldMature(g_interaction, float(now))
 
 
+proc nimKeyAction(name: cstring; is_shifted: bool): cint {.exportc.} =
+  ## Say what one key does to the view, as a `KeyAction` ordinal, or `SLOT_NONE` for a key
+  ## the view does not answer.
+  ##   Named by the DOM's own `KeyboardEvent.key`, which is only the *naming* this build
+  ##   owns; what each key does is `interaction.actionFor`'s to say, exactly as the SDL
+  ##   side translates scancodes and asks the same table.
+  let key = case $name
+    of "ArrowLeft": some(Key.Left)
+    of "ArrowRight": some(Key.Right)
+    of "ArrowUp": some(Key.Up)
+    of "ArrowDown": some(Key.Down)
+    of "[": some(Key.BracketLeft)
+    of "]": some(Key.BracketRight)
+    of "-": some(Key.Minus)
+    # A shifted `=` is what most layouts put `+` on, so both names reach the same action
+    # rather than leaving a reader to discover which one this build happened to bind.
+    of "+", "=": some(Key.Plus)
+    of "Enter": some(Key.Enter)
+    of "Home": some(Key.Home)
+    else: none(Key)
+  if key.isNone: return SLOT_NONE
+  cint(ord(actionFor(key.get, is_shifted)))
+
+
+proc nimApplyKeyAction(action_ordinal: cint): cint {.exportc.} =
+  ## Carry out one key action and report the slot the caller should select, or `SLOT_NONE`.
+  ##   Forwards to `interaction.applyAction`; see its own doc comment for why the selection
+  ##   is the caller's to change rather than this one's.
+  let slot = applyAction(
+    g_interaction, g_camera, g_scene, KeyAction(action_ordinal)
+  )
+  # A key that moved the camera is a camera move like any other, so it abandons whatever
+  #   tween was carrying it somewhere -- otherwise the tween drags it straight back.
+  g_tween_camera.abandon()
+  if slot.isNone: SLOT_NONE else: cint(slot.get)
+
+
+proc nimFocusSlot(): cint {.exportc.} =
+  ## Report which item the keyboard stands on, or `SLOT_NONE` where it stands on none.
+  if g_interaction.index_focus.isSome: cint(g_interaction.index_focus.get) else: SLOT_NONE
+
+
 proc nimTapSlop(): cfloat {.exportc.} = cfloat(PIXELS_TAP_SLOP)
   ## Report how far a press may move and still be a press; see `interaction.PIXELS_TAP_SLOP`
   ## for why this is a rule about the gesture rather than a presentation number.
@@ -1014,6 +1054,9 @@ proc nimBuildFrame(
   ##   `INK_GHOST` and muted -- see that var's own doc comment for why it never touches
   ##   `g_scene` and so is invisible to `nimSceneSlots`/undo/redo/save/picking.
   clearMeshes(g_meshes_furniture)
+  # A focus is a slot carried across frames like any other, so it needs the same liveness
+  #   guard the selection keeps; mirrors `visualiser.renderFrame`.
+  g_interaction.pruneFocus(g_scene)
 
   # Carry the camera one frame further toward whatever is being worked on, then aim it
   #   again from what this frame holds -- the same one rule `visualiser.assembleMeshes`

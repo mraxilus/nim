@@ -123,6 +123,22 @@ type
     ## one nobody ever learns to reach without reading it.
     North, East, South, West
 
+  Key* {.pure.} = enum ## Name a key the 3D view itself reacts to, in neither backend's naming.
+    ## SDL names these by scancode and the DOM by `KeyboardEvent.key`; each render path
+    ## translates its own into this and asks `actionFor` below, exactly as each translates
+    ## its own mouse-button numbering into `PointerButton`. Only keys the *view* reacts to
+    ## are here -- the accelerators that reach the timeline and the panels stay where they
+    ## already are, since those are reached from anywhere rather than from the canvas.
+    Left, Right, Up, Down, BracketLeft, BracketRight, Minus, Plus, Enter, Home
+
+  KeyAction* {.pure.} = enum ## Name what a key does to the view.
+    OrbitLeft, OrbitRight, OrbitUp, OrbitDown,
+    PanLeft, PanRight, PanUp, PanDown,
+    DollyIn, DollyOut,
+    FocusPrevious, FocusNext,
+    SelectFocused, ## Alone, or added to the selection where shift is held.
+    FrameAll ## Return the camera to where it started.
+
   Hold* = object ## Hold a press that will select its item once it has lasted long enough.
     slot*: int ## Item pressed, and the one whose marker fills as the press matures.
     started*: float ## When the press landed, on the same clock every caller passes as `now`.
@@ -131,6 +147,13 @@ type
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
+    index_focus*: Option[int] ## Item the **keyboard** stands on, which each render path
+      ## draws with the same marker hover uses -- so a reader who has never touched a
+      ## pointer can still see where they are, and the focus indicator is machinery that
+      ## was already built and tested rather than a second one invented for it.
+      ##   Separate from `index_hover` rather than sharing it: `updateHover` recomputes
+      ## hover from the cursor every single frame, so a keyboard focus stored there would
+      ## be erased before it could be drawn once.
     is_dragging*: bool ## Whether a construction drag is in progress. Not an
       ## `Option[DragOperation]` as it once was: what a drag applies is decided at release
       ## from the operands, so a field holding an operation could only have held a
@@ -164,10 +187,50 @@ type
 type PointerButton* {.pure.} = enum ## Name a physical mouse button, however numbered.
   ## Neither backend's own numbering: SDL and the DOM count the three buttons
   ## differently (SDL 1/2/3 left/middle/right, the DOM 0/1/2 left/middle/right), so each
-  ## render path translates its own numbers into this and asks `dragForButton` below.
+  ## render path translates its own numbers into this and asks `isMenuForcedBy` below.
   ## That keeps *which button does what* stated once, while leaving each path the
   ## translation only it can do.
   Left, Middle, Right
+
+
+func actionFor*(key: Key; is_shifted: bool): KeyAction =
+  ## Say what one key does to the view, with and without shift.
+  ##   **The binding table**, stated once. `help.nim` renders its keyboard rows out of this
+  ##   rather than transcribing them, so rebinding a key rewrites the help with it -- the
+  ##   same arrangement that has kept the drag rows honest across two rebindings.
+  ##   Arrows orbit and shift+arrows pan, which is the convention every 3D tool a reader
+  ##   has met already uses. **Tab is deliberately absent**: cycling objects with it while
+  ##   the view has focus is the tempting binding, and it risks a keyboard trap -- WCAG
+  ##   2.1.2, also Level A -- so traversal took the brackets instead and Tab keeps meaning
+  ##   "next control" everywhere. Fixing 2.1.1 by breaking 2.1.2 is not a fix.
+  ##   Total by construction: every key does something in both shift states, so no caller
+  ##   has an unhandled case and the suite can walk the whole table.
+  case key
+  of Key.Left: (if is_shifted: KeyAction.PanLeft else: KeyAction.OrbitLeft)
+  of Key.Right: (if is_shifted: KeyAction.PanRight else: KeyAction.OrbitRight)
+  of Key.Up: (if is_shifted: KeyAction.PanUp else: KeyAction.OrbitUp)
+  of Key.Down: (if is_shifted: KeyAction.PanDown else: KeyAction.OrbitDown)
+  of Key.BracketLeft: KeyAction.FocusPrevious
+  of Key.BracketRight: KeyAction.FocusNext
+  of Key.Minus: KeyAction.DollyOut
+  of Key.Plus: KeyAction.DollyIn
+  of Key.Enter: KeyAction.SelectFocused
+  of Key.Home: KeyAction.FrameAll
+
+
+func nameOf*(key: Key): string =
+  ## Name a key as a reader would say it, for the help table to print.
+  case key
+  of Key.Left: "left"
+  of Key.Right: "right"
+  of Key.Up: "up"
+  of Key.Down: "down"
+  of Key.BracketLeft: "["
+  of Key.BracketRight: "]"
+  of Key.Minus: "-"
+  of Key.Plus: "+"
+  of Key.Enter: "enter"
+  of Key.Home: "home"
 
 
 func isMenuForcedBy*(button: PointerButton): Option[bool] =
@@ -345,6 +408,54 @@ proc updateHover*(
       pickNearest(scene, camera, view_projection, width, height, interaction.cursor)
     else:
       none(int)
+
+
+
+#[ Keyboard ]#
+
+proc applyAction*(
+  interaction: var Interaction; camera: var Camera; scene: Scene; action: KeyAction
+): Option[int] =
+  ## Carry out one keyboard action, and report which item the caller should select.
+  ##   Moves the camera and the focus itself, because both are its own state; **does not
+  ##   touch the selection**, which each render path owns differently (a `Workbench` field
+  ##   on one, a module global on the other). Reporting a slot rather than selecting it
+  ##   also leaves the caller to read its own shift state and decide between replacing the
+  ##   selection and adding to it -- see `KeyAction.SelectFocused`.
+  ##   None for every action but a select, and for a select with nothing focused, which is
+  ##   what a reader gets for pressing enter before walking anywhere.
+  case action
+  of KeyAction.OrbitLeft: camera.orbit(-TURN_PRESS, 0.0)
+  of KeyAction.OrbitRight: camera.orbit(TURN_PRESS, 0.0)
+  of KeyAction.OrbitUp: camera.orbit(0.0, RISE_PRESS)
+  of KeyAction.OrbitDown: camera.orbit(0.0, -RISE_PRESS)
+  of KeyAction.PanLeft: camera.pan(PAN_PRESS, 0.0)
+  of KeyAction.PanRight: camera.pan(-PAN_PRESS, 0.0)
+  of KeyAction.PanUp: camera.pan(0.0, -PAN_PRESS)
+  of KeyAction.PanDown: camera.pan(0.0, PAN_PRESS)
+  of KeyAction.DollyIn: camera.dolly(1.0/FACTOR_DOLLY_PRESS)
+  of KeyAction.DollyOut: camera.dolly(FACTOR_DOLLY_PRESS)
+  of KeyAction.FocusPrevious: interaction.index_focus = scene.slotStepped(
+    interaction.index_focus, -1
+  )
+  of KeyAction.FocusNext: interaction.index_focus = scene.slotStepped(
+    interaction.index_focus, 1
+  )
+  of KeyAction.SelectFocused:
+    if interaction.index_focus.isSome and scene.isAlive(interaction.index_focus.get):
+      return interaction.index_focus
+  of KeyAction.FrameAll:
+    # The placement both builds open at, so "home" means the same thing as starting again.
+    camera = initCameraDefault()
+  none(int)
+
+
+proc pruneFocus*(interaction: var Interaction; scene: Scene) =
+  ## Drop a keyboard focus whose item has gone, the same guard the selection already keeps.
+  ##   A slot carried across frames may be freed by any other input path between them, and
+  ##   a focus left pointing at a dead one would have its marker drawn off freed storage.
+  if interaction.index_focus.isSome and not scene.isAlive(interaction.index_focus.get):
+    interaction.index_focus = none(int)
 
 
 
