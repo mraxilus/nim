@@ -1293,13 +1293,18 @@ function appendChoiceMenu(w, h) {
 /* ---------------------------------------------------------------------- */
 /* Pointer input.                                                          */
 /*   Mouse/pen: left-drag-from-object joins, right-drag-from-object meets, */
-/*   middle-drag-from-object projects; drag-from-empty-space falls back to */
-/*   left-orbit/right-pan/wheel-dolly -- mirrors                          */
-/*   `visualiser.handleEvent`/`dragOperationFor` exactly.                  */
-/*   Touch: single-finger drag orbits, pinch zooms, two-finger pan (all    */
-/*   unchanged); a tap on an object selects it as a drag source, a second  */
-/*   tap on a different object opens a small join/meet/project menu,      */
-/*   since touch has no buttons to carry that choice the way a mouse does. */
+/*   One invariant across every pointer: THE PRESS TARGET CHOOSES THE      */
+/*   SCHEME. A press that lands on an object constructs; one that lands on */
+/*   empty space moves the camera. Mirrors `visualiser.handleEvent`.       */
+/*   Mouse: left-drag takes whatever the two objects make, right-drag opens */
+/*   the choice menu on arrival, and holding still over the target opens   */
+/*   the same menu without the second button. From empty space, left       */
+/*   orbits, right pans, the wheel dollies.                                */
+/*   Touch: the same, with the dwell as the only way to open the menu --   */
+/*   there is no second button to force it with. A finger that presses an  */
+/*   object and stays still selects it instead (the long-press), so the    */
+/*   first movement past `TAP_MAX_MOVE` is what decides between the two.   */
+/*   Two fingers still pinch and pan, and cancel any drag in progress.     */
 /* ---------------------------------------------------------------------- */
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1311,10 +1316,17 @@ let pan_last = null;
 let button_mouse_drag = null;
 let cursor_last = null;
 
-// Touch long-press-to-select / tap-to-toggle state.
+// Touch long-press-to-select / tap-to-toggle / drag-to-construct state.
 let touch_down_at = null, position_touch_down = null, has_touch_moved = false;
 let has_long_press_fired = false;
-const TAP_MAX_MS = 350, TAP_MAX_MOVE = 12;
+// The item the finger came down on, and whether that press has become a construction drag.
+//   `slot_touch_down` is read once at pointerdown, while hover still holds it -- picking
+//   again later would report whatever the finger has since moved over.
+let slot_touch_down = -1, is_touch_dragging = false;
+// How far a press may move and still be a press comes from `interaction.PIXELS_TAP_SLOP`:
+//   it decides which scheme the gesture enters, which is a rule about the gesture, not a
+//   presentation number. The tap *timeout* stays here -- that one really is local.
+const TAP_MAX_MS = 350, TAP_MAX_MOVE = nimTapSlop();
 
 // Mouse click-vs-drag disambiguation state -- a plain click (no movement) selects/
 //   shift-selects; an actual drag still applies join/meet/project exactly as before.
@@ -1359,8 +1371,8 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 
   // Touch/pen: track for the existing multi-touch orbit/pinch/pan gesture, for a
-  // single-finger tap that toggles selection membership once a selection exists, and
-  // for a long-press that starts one.
+  // single-finger tap that toggles selection membership once a selection exists, for a
+  // long-press that starts one, and for a drag off an object that constructs.
   if (pointers.size === 1) {
     touch_down_at = performance.now();
     position_touch_down = local;
@@ -1369,14 +1381,20 @@ canvas.addEventListener('pointerdown', (e) => {
     // Pick the item under the finger now and hand the press to Nim, which owns how long a
     //   hold takes and whether one is due. The frame loop asks it both, which is also what
     //   fills the item's own marker -- a timer firing on its own could not draw anything.
+    //   The slot is kept as well: it is what decides, on the first movement, whether this
+    //   press was a construction drag or a camera orbit.
     const ratio_pixel_touch = canvas.width / rect.width;
     nimUpdateCursor(local.x * ratio_pixel_touch, local.y * ratio_pixel_touch);
     nimUpdateHover(canvas.width, canvas.height);
-    const pressed = nimHoverSlot();
-    if (pressed >= 0) nimBeginHold(pressed, performance.now());
+    slot_touch_down = nimHoverSlot();
+    if (slot_touch_down >= 0) nimBeginHold(slot_touch_down, performance.now());
   } else {
     touch_down_at = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
     nimCancelHold();
+    // ...and not a construction either. A drag the reader has visibly abandoned must not
+    //   commit on whichever finger happens to lift first.
+    if (is_touch_dragging) { nimCancelDrag(); is_touch_dragging = false; }
+    slot_touch_down = -1;
   }
   if (pointers.size === 2) {
     const points_flat = [...pointers.values()];
@@ -1425,10 +1443,29 @@ canvas.addEventListener('pointermove', (e) => {
   pointers.set(e.pointerId, current);
   const reach_touch = position_touch_down &&
     Math.hypot(cursor_last.x - position_touch_down.x, cursor_last.y - position_touch_down.y);
-  if (reach_touch > TAP_MAX_MOVE) {
+  if (reach_touch > TAP_MAX_MOVE && !has_touch_moved) {
+    // The one moment this press stops being a press. Decided once, here, and never
+    //   revisited: the press target chooses the scheme, so a finger that came down on an
+    //   object constructs and one that came down on empty space moves the camera.
+    //   `nimBeginDrag` reads the hover reading, which still holds the touch-down slot
+    //   because touch pointermove has not updated the cursor yet -- so it must run before
+    //   the two lines below start following the finger.
     has_touch_moved = true;
     dismissHint();
-    nimCancelHold(); // Moved into an orbit gesture before the hold matured.
+    nimCancelHold(); // Moved, so this press will never mature into a selection.
+    if (slot_touch_down >= 0 && pointers.size === 1) {
+      is_touch_dragging = nimBeginDrag(false, performance.now());
+    }
+  }
+
+  if (is_touch_dragging) {
+    // Follow the finger and let the frame loop's own `nimUpdateDrag` do the rest: the
+    //   preview, the dwell, and the menu are all already driven from there. Returning
+    //   here is what keeps a construction drag from also orbiting the camera under it.
+    const ratio_pixel_drag = canvas.width / rect.width;
+    nimUpdateCursor(cursor_last.x * ratio_pixel_drag, cursor_last.y * ratio_pixel_drag);
+    nimUpdateHover(canvas.width, canvas.height);
+    return;
   }
 
   if (pointers.size === 1) {
@@ -1500,12 +1537,28 @@ function releasePointer(e) {
   // selection toggle (see `handleTap`).
   nimCancelHold(); // Released, whether or not the hold had matured; the frame that matured
     //   it has already selected the item.
-  if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved &&
+  if (is_touch_dragging) {
+    // A construction drag ends exactly as the mouse's own does -- same call, same three
+    //   outcomes -- because it *is* the same gesture reached by a different pointer.
+    //   A drag is never also a tap, so this branch runs instead of `handleTap`.
+    //   `pointercancel` is the browser saying it has taken the gesture over, which is not
+    //   a release: it cancels rather than building something the reader never let go of.
+    if (e.type === 'pointercancel') {
+      nimCancelDrag();
+    } else {
+      const result = nimEndDrag(now());
+      toast(result.message);
+      if (result.created_slot >= 0) adoptConstructionSelection();
+      else if (result.is_more) openApplyWithOperands();
+    }
+    is_touch_dragging = false;
+  } else if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved &&
       pointers.size === 1 && performance.now() - touch_down_at < TAP_MAX_MS) {
     handleTap(position_touch_down);
   }
   touch_down_at = null;
   has_long_press_fired = false;
+  slot_touch_down = -1;
   pointers.delete(e.pointerId);
   if (pointers.size < 2) { separation_pinch_start = null; pan_last = null; }
   if (pointers.size === 0) nimClearHover(); // No finger left touching the canvas -- there's

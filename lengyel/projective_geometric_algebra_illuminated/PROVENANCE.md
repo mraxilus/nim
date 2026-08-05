@@ -482,10 +482,42 @@ degenerate (Nielsen #5). Without that, a scene fills with invisible slots that s
 capacity and undo steps. The menu greys the wedges that would be refused, so that path
 reaches the refusal only by insisting.
 
-**Browser / touch.** One finger drags to orbit, two pinch to zoom and pan. A long press
-(`LONG_PRESS_MS` 500) selects an object; once a selection exists, a tap
-(`TAP_MAX_MS` 350, `TAP_MAX_MOVE` 12 px) toggles another in or out; a tap on empty space
-clears. Selection is an *ordered* set — first selected becomes operand m, second operand n.
+**Browser / touch.** The same invariant reaches touch: **a finger that presses an object
+constructs; one that presses empty space moves the camera.** Two fingers pinch to zoom and
+pan, and cancel any construction in progress. A long press (`MILLISECONDS_LONG_PRESS` 500)
+selects an object; once a selection exists, a tap (`TAP_MAX_MS` 350) toggles another in or
+out; a tap on empty space clears. Selection is an *ordered* set — first selected becomes
+operand m, second operand n.
+
+A press begins as a hold, and the first movement past `PIXELS_TAP_SLOP` is the single moment
+it resolves — construction where it landed on an object, orbit where it did not. `beginDrag`
+reads the hover reading, so it has to run *before* the cursor starts following the finger;
+touch `pointermove` did not update the cursor at all, which is what makes that ordering
+available rather than something to engineer. Touch has no second button, so the dwell is the
+only way to open the choice menu there. `pointercancel` cancels rather than commits: the
+browser taking a gesture over is not the reader letting go.
+
+`PIXELS_TAP_SLOP` moved from `glue.js` into `interaction.nim` when its meaning changed. While
+it only separated a tap from an orbit it was a presentation detail; deciding **which scheme a
+gesture enters** is the same kind of rule as the two durations it now sits beside. `TAP_MAX_MS`
+stayed in JS — a tap timeout really is local.
+
+**Accepted cost:** a finger starting on the ground plane's disc now constructs rather than
+orbiting, and that disc covers most of the lower screen. This is the identical trade the mouse
+already makes, and the camera is still reachable two other ways, so it is consistency rather
+than regression. Measured, not assumed: a point chosen by hand as "empty" for the orbit test
+turned out to sit on the disc, which is the cost showing up in the test fixture before it
+could show up in anyone's hands.
+
+Touch is also where the dwell's own defect finally bit. The clock restarted only when a drag
+*left* a target, so it measured presence rather than stillness; a mouse crosses the screen too
+fast for that to matter, but a finger moving continuously for 1.2 s over one object had the
+menu open on it mid-gesture, and the construction then released into a menu and built nothing.
+Driving it is what found this — the suite was green and the code read fine. `updateDrag` now
+restarts `entered` whenever the cursor moves further than `PIXELS_TAP_SLOP` from where it last
+settled, with two suite cases: one that a drag which keeps moving never opens its menu however
+long it stays on target, and one that a drift smaller than the slop still counts as holding
+still, since a dwell any tremor could restart is a dwell nobody reaches.
 
 `g_selection` (Nim) is the sole source of truth in both builds, reached from the browser
 through `nimSelectionSlots`/`nimSelectionCount`/`nimSelectionArity` and
@@ -1238,6 +1270,12 @@ it, not suspected.
 
 On the desktop `Escape` **no longer quits** -- `ctrl+Q` does. Pressing escape twice to be
 sure a drag had cancelled would otherwise have thrown away an unsaved scene.
+
+**WCAG 2.5.7 (Dragging Movements)** is satisfied and worth stating so it is not re-derived:
+every operation the drag reaches is also reachable with no dragging at all, through
+tap/click → selection menu → apply, or through the apply section itself. That is what makes it
+safe for the drag to be the *fast* path rather than the only one, and it is the route a
+regression here would break first, so the touch drive exercises it explicitly.
 
 **Still open**: this is a partial 2.1.1 fix. There is no way to tab between objects or to
 move the camera from the keyboard, so the canvas itself remains unreachable without a

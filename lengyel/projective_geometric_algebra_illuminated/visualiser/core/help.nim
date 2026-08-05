@@ -68,7 +68,7 @@ const lut_help_entries* = block:
   ##   A fixed array rather than a `seq`, with `count` asserted against its length at
   ## compile time, so adding an entry without resizing fails the build rather than leaving
   ## a blank row at the bottom of the panel.
-  var lut: array[19, HelpEntry]
+  var lut: array[20, HelpEntry]
   var count = 0
   proc add(topic: HelpTopic; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -89,6 +89,10 @@ const lut_help_entries* = block:
       else: "make whatever the two of them make",
     )
   add(
+    HelpTopic.Build, "drag one object onto another",
+    "make whatever the two of them make", is_touch = true,
+  )
+  add(
     HelpTopic.Build, "hold still over the target",
     "the same choice, without needing the other button",
   )
@@ -102,7 +106,9 @@ const lut_help_entries* = block:
   add(HelpTopic.Look, "drag empty space", "orbit around what you are looking at")
   add(HelpTopic.Look, "right-drag empty space", "pan across")
   add(HelpTopic.Look, "wheel", "dolly in and out")
-  add(HelpTopic.Look, "drag with one finger", "orbit", is_touch = true)
+  # "empty space", not just "with one finger": a finger that starts on an *object* builds
+  #   something now, so the unqualified row would send a reader to the wrong gesture.
+  add(HelpTopic.Look, "drag empty space with one finger", "orbit", is_touch = true)
   add(HelpTopic.Look, "pinch", "dolly in and out", is_touch = true)
   add(HelpTopic.Look, "drag with two fingers", "pan across", is_touch = true)
 

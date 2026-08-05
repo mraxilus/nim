@@ -38,7 +38,12 @@ import ./[camera, format, mesh, objects, picking, scene]
 #[ Gesture Configuration ]#
 
 const MILLISECONDS_DWELL_MENU* = 450.0
-  ## Hold a drag still over its target this long and the choice menu opens.
+  ## Hold a drag **still** over its target this long and the choice menu opens.
+  ##   Still, not merely present: the clock restarts whenever the cursor moves further than
+  ##   `PIXELS_TAP_SLOP` from where it last settled, so time spent crossing a target does
+  ##   not count toward opening a menu over it. This was measured, not supposed -- while
+  ##   the clock ran on presence alone, a slow finger crossing the ground plane tripped it
+  ##   mid-drag and the construction it was in the middle of ended up building nothing.
   ##   Longer than a threshold triggered on its own would dare be, and deliberately so:
   ##   a reader who wants the menu without waiting presses the right button instead, so
   ##   this only has to be slow enough never to fire on a hesitation. The usual failure of
@@ -51,6 +56,19 @@ const MILLISECONDS_LONG_PRESS* = 500.0
   ##   The wait is only tolerable because it is *shown* -- `progressHold` below drives the
   ##   item's own marker being drawn part-built, so a hold reads as filling rather than as
   ##   nothing happening. A hold with no feedback at this duration reads as a broken tap.
+
+const PIXELS_TAP_SLOP* = 12.0
+  ## Move a press further than this and it stops being a press.
+  ##   **Which scheme the gesture enters**, not merely whether it was a tap: a press that
+  ##   stays inside this matures into a selection, and one that leaves it becomes a
+  ##   construction drag where it landed on an item and a camera move where it did not.
+  ##   That is why it sits beside the two durations above rather than in either
+  ##   presentation layer -- it decides the same kind of thing they do. It lived in
+  ##   `glue.js` while it only meant "tap or orbit"; deciding the scheme is a rule about
+  ##   the gesture.
+  ##   Sized for a fingertip rather than a mouse: a finger rolls a few pixels on contact
+  ##   even when its owner meant to hold perfectly still, and a threshold tight enough for
+  ##   a mouse would make long-press unreachable on a touchscreen.
 
 const PIXELS_MENU_REACH* = 76.0
   ## Distance from the menu's centre to the centre of each of its four wedges.
@@ -132,8 +150,11 @@ type
       ## is the only warning before a refused release.
     is_menu_forced*: bool ## Whether this drag asks for the menu without waiting, which is
       ## what the right button means. Set at `beginDrag` and read every frame after.
-    entered*: float ## When the drag last arrived over a target, for the dwell to run from;
-      ## reset every time the hovered item changes, so pausing counts only where you are.
+    entered*: float ## When the cursor last settled over a target, for the dwell to run
+      ## from. Restarted both when the hovered item changes and when the cursor moves
+      ## away from `settled`, so the dwell measures being still rather than being present.
+    settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
+      ## what movement is measured against to decide the dwell has been interrupted.
     menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
 
 
@@ -389,6 +410,7 @@ proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float):
   interaction.index_destination = none(int)
   interaction.is_menu_forced = is_menu_forced
   interaction.entered = now
+  interaction.settled = interaction.cursor
   interaction.menu = none(ScreenPosition)
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
@@ -435,7 +457,19 @@ proc updateDrag*(
     interaction.proposal = none(DragChoice)
     interaction.preview = none(Multivector)
     interaction.entered = now
+    interaction.settled = interaction.cursor
     return
+
+  # Moving restarts the dwell, so what it measures is being *still* rather than being over
+  #   something. Without this the clock ran on presence alone, and a slow drag that stayed
+  #   over one large object -- a plane's disc spans most of a phone screen -- had the menu
+  #   open on it mid-gesture and built nothing on release. Measured on a real finger.
+  let
+    dx = interaction.cursor.x - interaction.settled.x
+    dy = interaction.cursor.y - interaction.settled.y
+  if dx*dx + dy*dy > PIXELS_TAP_SLOP*PIXELS_TAP_SLOP:
+    interaction.entered = now
+    interaction.settled = interaction.cursor
 
   let
     m = scene.geometryOf(interaction.index_source)

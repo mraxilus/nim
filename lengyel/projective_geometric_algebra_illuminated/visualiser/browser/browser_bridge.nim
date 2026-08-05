@@ -742,6 +742,11 @@ proc nimHoldMature(now: cfloat): bool {.exportc.} =
   isHoldMature(g_interaction, float(now))
 
 
+proc nimTapSlop(): cfloat {.exportc.} = cfloat(PIXELS_TAP_SLOP)
+  ## Report how far a press may move and still be a press; see `interaction.PIXELS_TAP_SLOP`
+  ## for why this is a rule about the gesture rather than a presentation number.
+
+
 proc nimBeginDrag(is_menu_forced: bool; now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
   interaction.beginDrag(g_interaction, is_menu_forced, float(now))

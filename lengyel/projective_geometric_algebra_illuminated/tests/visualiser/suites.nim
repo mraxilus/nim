@@ -1923,6 +1923,50 @@ suite "Interaction":
     check forced.menu.isSome
 
 
+  test "a drag that keeps moving never opens its menu, however long it stays on target":
+    # The dwell measures being *still*, not being over something. While it ran on presence
+    #   alone, a slow finger crossing one large object -- a plane's disc spans most of a
+    #   phone screen -- had the menu open on it mid-gesture, and the construction it was in
+    #   the middle of then released into a menu and built nothing. Found by driving a real
+    #   touch drag, not by reading the code.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(100.0, 100.0)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.index_hover = some(1)
+    for step in 1 .. 20:
+      # Three times the dwell, and never still for two frames together.
+      interaction.updateCursor(100.0 + 2.0*PIXELS_TAP_SLOP*float(step), 100.0)
+      interaction.updateDrag(scene, 0.15*MILLISECONDS_DWELL_MENU*float(step))
+      check interaction.menu.isNone
+    # Stop moving, and the same drag opens it a dwell later -- the clock is restarted, not
+    #   disabled, so the gesture the reader actually wanted still works.
+    interaction.updateDrag(scene, 3.0*MILLISECONDS_DWELL_MENU + MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isSome
+
+
+  test "a drift smaller than the tap slop still counts as holding still":
+    # The other half of the rule: a hand shakes. A dwell that any tremor could restart is
+    #   a dwell nobody can ever reach, which is why the threshold is the same fingertip
+    #   slop that decides a press from a drag rather than exact equality.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(100.0, 100.0)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.index_hover = some(1)
+    for step in 1 .. 4:
+      interaction.updateCursor(100.0 + 0.2*PIXELS_TAP_SLOP*float(step), 100.0)
+      interaction.updateDrag(scene, 0.2*MILLISECONDS_DWELL_MENU*float(step))
+    interaction.updateDrag(scene, MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isSome
+
+
   test "leaving the target restarts the dwell, so pausing on the way across never opens":
     var scene = initScene()
     scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)

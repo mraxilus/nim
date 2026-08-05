@@ -767,6 +767,10 @@ proc driveDrag(
   ##   Positions come from the same `anchorFor`/`projectToScreen` pair the overlay draws
   ##   its rubber-band through, so the cursor lands where the item was actually drawn
   ##   rather than where a hard-coded pixel guessed it would be.
+  ##   **Not reproducible frame for frame**, unlike `--storyboard`: this runs the real loop
+  ##   on the real clock, so every seed's own birth animation stands wherever eight frames
+  ##   of wall time put it. Two runs of one binary differ by a few pixels of scene. Look at
+  ##   the capture; do not byte-compare it against another run.
   const (FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET) = (2, 3, 4)
   if count_drawn notin [FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET]: return
   let slot = if count_drawn == FRAME_REACH_TARGET: 1 else: 0

@@ -518,9 +518,20 @@ button instead.
 The button→meaning mapping is **one rule in the core**, called by both front-ends. They
 number their buttons differently; that translation is the only part either may hold.
 
-**Touch, browser.** One finger drags to orbit, two pinch to zoom and pan. A long press
-(500 ms) selects an object; once a selection exists, a tap (under 350 ms, 12 px) toggles
-another in or out; a tap on empty space clears. Show an opening hint naming these gestures.
+**Touch, browser.** The same invariant, not a second vocabulary: a finger that presses an
+**object** constructs, one that presses **empty space** moves the camera. Two fingers pinch
+to zoom and pan, and cancel any construction in progress. A long press (500 ms) selects an
+object; once a selection exists, a tap (under 350 ms) toggles another in or out; a tap on
+empty space clears. Show an opening hint naming these gestures.
+
+A press begins as a hold. The first movement past the slop is the one moment it resolves —
+into a construction drag where it landed on an object, an orbit where it did not — and it
+never resolves twice. Touch has no second button, so the dwell is the only way to open the
+choice menu there; that is what the dwell was sized for.
+
+Touch is where a dwell measured on presence rather than stillness actually bites: a finger
+crossing a large object is over it for well past the dwell while plainly still moving. Both
+front-ends share one gesture core, so fixing the rule there fixed it for both.
 
 Clear the hover reading once the last finger lifts. Touch has no continuous pointer position,
 so hover only ever updates at a touch-down point; without the clear, the last reading sits
@@ -836,7 +847,8 @@ The two front-ends are the same tool. A parity checklist a reviewer can run:
 - same undo/redo scope and the same greyed-out controls;
 - same file format, round-tripping between the two;
 - same animation duration and curve;
-- same drag→operation mapping.
+- same drag: the same proposal, the same preview, the same choice menu, reached by
+  mouse or by finger.
 
 Assert the catalogue parity **mechanically**: a test comparing what each front-end reports for
 all 27 operations. Trivially true once there is one table — which is the point.
