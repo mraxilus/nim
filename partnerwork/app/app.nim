@@ -474,11 +474,17 @@ proc dance(key: string) =
   ## the middle, and the ways out of *it* grow.  Each phase is scheduled against
   ## the times the drawing itself declares, so the page never advances the state
   ## out from under an animation that is still running.
+  ##
+  ## A dancer who changes their mind while the ways not taken are still folding
+  ## is taken at their word: the state has not moved yet, so the fold begins
+  ## again aimed at the new frame.  Bumping the generation is what drops the
+  ## first move's remaining phases, and is the same guard that stops a compound
+  ## finishing itself after something else has been asked for.
   let target = fromKey(key)
   if target.isNone or classify(current, target.get).isNone:
     return
-  if motion == Motion.Leaving:
-    return # The couple are already on their way somewhere.
+  if motion == Motion.Leaving and taken == target:
+    return # Asked twice for the same move, which is once.
   if atOnce():
     arrive(target.get)
     render()

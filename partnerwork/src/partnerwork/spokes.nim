@@ -206,12 +206,15 @@ func extentOf(here: Frame): (int, int, int, int) =
     let
       (x, y) = endOf(spoke)
       (_, ly) = labelAt(spoke)
+      # Measured at the size a way out grows to when it is the one taken, since
+      # it grows where it stands and a window cut any tighter would clip it.
       half = max(max(widest(spoke.lines), spoke.to.describe.len) * 3 + 7,
-        SPOKE_WIDTH div 2 + 8)
+        CENTRE_WIDTH div 2 + 8)
     left = min(left, x - half)
     right = max(right, x + half)
-    top = min(top, y - frameHeight(SPOKE_WIDTH) div 2 - NAME_ROOM)
-    bottom = max(bottom, ly + (spoke.lines.len * LINE_HEIGHT + 4) div 2)
+    top = min(top, y - frameHeight(CENTRE_WIDTH) div 2 - NAME_ROOM)
+    bottom = max(bottom, max(ly + (spoke.lines.len * LINE_HEIGHT + 4) div 2,
+      y + frameHeight(CENTRE_WIDTH) div 2))
   (left - PAD, top - PAD, right - left + 2 * PAD, bottom - top + 2 * PAD)
 
 
@@ -292,21 +295,28 @@ func renderSpokes*(here, before: Frame; motion = Motion.Still;
   result = "<div class=\"viewport " & phase(motion) & "\" style=\"" &
     motionStyle() & "; --w: " & $start[2] & "px; --h: " & $start[3] &
     "px; --px: " & $px & "px; --py: " & $py &
-    "px; --ox: " & $CENTRE_X & "px; --oy: " & $CENTRE_Y & "px; --swell: " &
-    formatFloat(CENTRE_WIDTH / SPOKE_WIDTH, ffDecimal, 3) & "\"" &
+    "px; --ox: " & $CENTRE_X & "px; --oy: " & $CENTRE_Y & "px; --bud: " &
+    formatFloat(SPOKE_WIDTH / CENTRE_WIDTH, ffDecimal, 3) & "\"" &
     carrying(shut) & ">"
   result.add "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"" & $bx & " " &
     $by & " " & $bw & " " & $bh & "\" width=\"" & $bw & "\" height=\"" & $bh &
     "\" class=\"spokes\" role=\"img\">" &
     "<title>" & here.describe & ", and every move away from it</title>"
 
-  for spoke in spokesOf(here):
+  let ways = spokesOf(here)
+  for spoke in ways:
     let
       (x, y) = endOf(spoke)
       (lx, ly) = labelAt(spoke)
       colour = armColour(spoke.side)
+      is_taken = motion == Motion.Leaving and taken == some(spoke.to)
+      # A stagger is a share of one budget rather than a step of its own, so the
+      # last way out finishes when the phase does however many there are.
+      share =
+        if ways.len < 2: "0"
+        else: formatFloat(spoke.turn / (ways.len - 1), ffDecimal, 3)
     result.add "<g class=\"" & spokeClass(spoke, motion, taken) &
-      "\" style=\"--turn: " & $spoke.turn & "\">"
+      "\" style=\"--turn: " & share & "\">"
     # A branch grows out of the middle and a leaf out of its own place, so each
     # carries the point it moves about rather than borrowing the drawing's.
     result.add "<g class=\"branch\">" &
@@ -315,8 +325,14 @@ func renderSpokes*(here, before: Frame; motion = Motion.Still;
       "\"/></g>"
     result.add "<g class=\"leaf\" style=\"--lx: " & $x & "px; --ly: " & $y &
       "px\">"
-    result.add "<g class=\"bud\">" & nodeAt(spoke.to, x, y, SPOKE_WIDTH,
-      (if spoke.is_compound: "two" else: "reachable")) & "</g>"
+    # The way being taken is drawn at the size it is about to be in the middle,
+    # and grows into it from where a way out is normally drawn.  Drawn any other
+    # way, the drawing thrown away at the end of this phase and the one that
+    # replaces it would not line up, and the seam between them would be seen.
+    result.add "<g class=\"bud\">" & (
+      if is_taken: nodeAt(spoke.to, x, y, CENTRE_WIDTH, "here")
+      else: nodeAt(spoke.to, x, y, SPOKE_WIDTH,
+        (if spoke.is_compound: "two" else: "reachable"))) & "</g>"
     result.add "<g class=\"tag\">" & naming(lx, ly, spoke.lines, colour) & "</g>"
     result.add "</g></g>"
 

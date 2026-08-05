@@ -113,45 +113,52 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .branch, .leaf, .bud, .tag, #core { transform-box: view-box; }
 .branch { transform-origin: var(--ox) var(--oy); }
 .leaf, .bud, .tag { transform-origin: var(--lx) var(--ly); }
+/* The frame in flight and the window it is seen through take the same curve, so
+   the two read as one movement rather than as a card racing its own frame. */
 #core { transform-origin: var(--ox) var(--oy);
-  transition: transform var(--travel) var(--ease); }
+  transition: transform var(--travel) var(--ease-soft); }
 
 /* Arriving: the frame taken travels into the middle, then the ways out of it
-   grow -- branches first and leaves after, in the order they are drawn. */
+   grow -- branches first and leaves after, in the order they are drawn.
+   `--turn` is a share of the stagger's budget, not a step, so however many ways
+   a frame has they finish together. */
 @keyframes branch-grow { from { transform: scale(.02); opacity: 0; } }
 @keyframes leaf-grow {
   from { transform: scale(.55); opacity: 0; pointer-events: none; }
 }
 .arriving .branch {
   animation: branch-grow var(--grow) var(--ease) both;
-  animation-delay: calc(var(--grow-delay) + var(--turn) * var(--grow-step));
+  animation-delay: calc(var(--grow-delay) + var(--turn) * var(--grow-spread));
 }
 .arriving .leaf {
   animation: leaf-grow var(--grow) var(--ease-out) both;
   animation-delay: calc(var(--grow-delay) + var(--leaf-delay) +
-    var(--turn) * var(--grow-step));
+    var(--turn) * var(--grow-spread));
 }
 
 /* Leaving: the ways not taken fold back in, leaves before branches, while the
-   way taken lights up and swells to the size it is about to be in the middle. */
+   way taken lights up and grows into the size it is about to be in the middle.
+   Every fold ends together, and before the drawing is replaced: a fold still
+   running when that happens is thrown away mid-flight and seen as a flash. */
 @keyframes leaf-fold { to { transform: scale(.4); opacity: 0; } }
 @keyframes branch-fold { to { transform: scale(.02); opacity: 0; } }
-@keyframes swell { to { transform: scale(var(--swell)); } }
+@keyframes bud-grow { from { transform: scale(var(--bud)); } }
 @keyframes fade { to { opacity: 0; } }
 .leaving .going .leaf {
-  animation: leaf-fold calc(var(--leave) * .6) var(--ease-in) both;
-  animation-delay: calc(var(--turn) * 15ms);
+  animation: leaf-fold var(--fold-leaf) var(--ease-in) both;
+  animation-delay: calc(var(--turn) * var(--fold-spread));
 }
 .leaving .going .branch {
-  animation: branch-fold calc(var(--leave) * .65) var(--ease-in) both;
-  animation-delay: calc(var(--leave) * .35 + var(--turn) * 15ms);
+  animation: branch-fold var(--fold-branch) var(--ease-in) both;
+  animation-delay: calc(var(--fold-lag) + var(--turn) * var(--fold-spread));
 }
-.leaving .taken .bud { animation: swell calc(var(--leave) * .95) var(--ease) both; }
-.leaving .taken .bud .node-plate { stroke: var(--ink); stroke-width: 2; }
-.leaving .taken .tag { animation: fade calc(var(--leave) * .5) ease both; }
+.leaving .taken .bud {
+  animation: bud-grow calc(var(--fold-spread) + var(--fold-lag)) var(--ease) both;
+}
+.leaving .taken .tag { animation: fade var(--fold-leaf) ease both; }
 .leaving .taken .branch {
-  animation: fade calc(var(--leave) * .55) ease both;
-  animation-delay: calc(var(--leave) * .45);
+  animation: fade var(--fold-branch) ease both;
+  animation-delay: var(--fold-lag);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -97,12 +97,35 @@ suite "the space and the window":
 suite "the moving":
   test "the times the drawing declares are the times the page waits on":
     let declared = motionStyle()
-    for (name, time) in {"--leave": LEAVE_TIME, "--travel": TRAVEL_TIME,
-        "--grow-delay": GROW_DELAY, "--grow": GROW_TIME,
-        "--grow-step": GROW_STEP, "--leaf-delay": LEAF_DELAY}:
+    for (name, time) in {"--fold-spread": FOLD_SPREAD, "--fold-lag": FOLD_LAG,
+        "--fold-leaf": FOLD_LEAF, "--fold-branch": FOLD_BRANCH,
+        "--travel": TRAVEL_TIME, "--grow-delay": GROW_DELAY,
+        "--grow-spread": GROW_SPREAD, "--leaf-delay": LEAF_DELAY,
+        "--grow": GROW_TIME, "--fold-margin": FOLD_MARGIN}:
       check declared.contains(name & ": " & $time & "ms")
     check LEAD_ON_TIME > LEAVE_TIME
     check MOVE_TIME >= LEAD_ON_TIME
+
+  test "nothing is still folding when the drawing is thrown away":
+    # The page replaces the drawing at LEAVE_TIME.  A fold still running then is
+    # cut off mid-flight, which reads as a flash rather than as a fold, so every
+    # fold has to have finished by the time that happens.
+    # With room to spare, because an animation's clock starts a frame or two
+    # after the page asks for the phase: ending exactly on time ends late.
+    check FOLD_MARGIN > 0
+    check FOLD_SPREAD + FOLD_LEAF <= LEAVE_TIME - FOLD_MARGIN
+    check FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH <= LEAVE_TIME - FOLD_MARGIN
+    # A leaf folds before its own branch, so a way out goes leaf first.
+    check FOLD_LEAF <= FOLD_LAG + FOLD_BRANCH
+
+  test "a stagger is shared out, so a crowded frame still finishes on time":
+    for here in FRAMES:
+      let picture = renderSpokes(here, here)
+      # The last way out is given the whole budget and no more, however many
+      # ways there are: a step per way would run past the end of the phase.
+      check picture.count("--turn: 0") >= 1
+      if spokesOf(here).len > 1:
+        check picture.contains("--turn: 1.000")
 
   test "every phase names itself to the stylesheet, distinctly":
     var named: seq[string] = @[]
