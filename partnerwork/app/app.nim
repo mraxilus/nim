@@ -186,12 +186,18 @@ func renderVisSwitch(vis: Vis): string =
 
 
 func renderArms(): string =
-  ## Say which ink is which arm, since both drawings are inked the same way.
+  ## Say which ink is which arm, and whose hand a move names.
+  ##
+  ## A move only ever takes hold of the follow's hand, so its name says which
+  ## one without saying whose.  That is only readable if the drawing says once,
+  ## somewhere, that the arm is the lead's and the hand named is the follow's.
   var swatches = ""
   for side in Side:
     swatches.add tag("span", "class=\"swatch\"",
       "<i class=\"arm-" & (if side == Side.Left: "left" else: "right") & "\"></i>" &
       "the lead's " & esc(leadName(side)) & " arm")
+  swatches.add tag("span", "class=\"swatch aside\"",
+    "a move names the follow's hand")
   tag("div", "class=\"legend\"", swatches)
 
 
@@ -213,12 +219,12 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
     tag("div", "class=\"scroll\"", renderMap(some(current), motion, taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. " &
-      "Every line is named for the hand it takes hold of, since the direction " &
-      "says the rest; dashed curves are the two compounds. The frames you can " &
-      "reach from where you stand come forward and the rest go quiet, and the " &
-      "ring moves along the line you take. A frame ringed in a solid line is " &
-      "one move away and a dashed one is a compound, two moves away; both can " &
-      "be clicked, and a compound dances its two moves in turn."))
+      "Every line is named for the move that runs down it, which the same line " &
+      "read upwards undoes; dashed curves are the two compounds. The frames you " &
+      "can reach from where you stand come forward and the rest go quiet, and " &
+      "the ring moves along the line you take. A frame ringed in a solid line " &
+      "is one move away and a dashed one is a compound, two moves away; both " &
+      "can be clicked, and a compound dances its two moves in turn."))
 
 
 func renderStageBody(current: Frame; vis: Vis; motion: Motion;

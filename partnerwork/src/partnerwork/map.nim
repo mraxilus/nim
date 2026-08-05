@@ -257,11 +257,7 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
     upper = if rowOf(a) < rowOf(b): a else: b
     lower = if rowOf(a) < rowOf(b): b else: a
     helper = classify(upper, lower).get
-    spoken = label(upper, Move(helper: helper, side: side, to: lower))
-    # Named for what the move takes hold of, and not for the taking: the rows
-    # already say that a line read downwards is a collect and upwards a drop, so
-    # the verb on all ten lines would be ten words saying what the layout says.
-    naming = spoken[1 .. ^1]
+    naming = label(upper, Move(helper: helper, side: side, to: lower))
     (sx, sy) = centreOf(upper)
     (dx, dy) = centreOf(lower)
   # The name sits along the line, wherever along it there is room.

@@ -242,11 +242,16 @@ func label*(source: Frame; move: Move): seq[string] =
   ## it could arrive in.  A `drop` says neither: the hand that acts is already
   ## holding one thing, so there is nothing left to choose.
   ##
+  ## The hand named is the follow's, and is not said to be: a move only ever
+  ## takes hold of the follow's hand, so the word would be on every label in
+  ## every drawing and tell a reader nothing they could not already know.  Which
+  ## hand of the *lead* acts is said by the ink the words are written in.
+  ##
   ## The lines are short so that the words fit where a drawing has room for them,
   ## which is usually beside a line rather than along it.
   case move.helper
   of Helper.Collect:
-    result = @["collect", "follow's " & followName(move.to.hold[move.side].get)]
+    result = @["collect " & followName(move.to.hold[move.side].get)]
     if move.to.hasOverlap:
       result.add(if move.to.over.get == move.side: "over" else: "under")
   of Helper.Drop:
