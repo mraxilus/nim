@@ -1093,11 +1093,12 @@ suite "History":
 
   test "undo and redo retrace every recorded state exactly, and canUndo/canRedo agree":
     var scene = initScene()
-    var history = initHistory(scene)
+    var camera = initCameraDefault()
+    var history = initHistory(scene, camera)
     var snapshots = @[scene] # Index 0 is the seeded initial state.
     for i in 0 ..< CAPACITY_HISTORY - 1:
       scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
-      history.record(scene)
+      history.record(scene, camera)
       snapshots.add(scene)
 
     # Cursor sits at the last recorded state: nothing to redo yet, everything to undo.
@@ -1109,61 +1110,116 @@ suite "History":
     #   seeded state undo can never reach past.
     for i in countdown(len(snapshots) - 1, 1):
       check history.canUndo
-      check history.undo(scene)
+      check history.undo(scene, camera)
       check scenesEqual(scene, snapshots[i - 1])
     check not history.canUndo
-    check not history.undo(scene)
+    check not history.undo(scene, camera)
     check scenesEqual(scene, snapshots[0])
 
     # Walk all the way forward again, the same way.
     for i in 1 ..< len(snapshots):
       check history.canRedo
-      check history.redo(scene)
+      check history.redo(scene, camera)
       check scenesEqual(scene, snapshots[i])
     check not history.canRedo
-    check not history.redo(scene)
+    check not history.redo(scene, camera)
 
 
   test "recording past capacity drops the oldest entry instead of growing":
     var scene = initScene()
-    var history = initHistory(scene)
+    var camera = initCameraDefault()
+    var history = initHistory(scene, camera)
     var snapshots = @[scene]
     for i in 0 ..< CAPACITY_HISTORY + 4: # Four states past what the timeline retains.
       scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
-      history.record(scene)
+      history.record(scene, camera)
       snapshots.add(scene)
 
     # Only the most recent CAPACITY_HISTORY states are still reachable: undoing all the
     #   way back lands on the oldest still-retained one, CAPACITY_HISTORY - 1 steps back
     #   from the latest, not on the very first state ever recorded.
     var count_undone = 0
-    while history.undo(scene): inc count_undone
+    while history.undo(scene, camera): inc count_undone
     check count_undone == CAPACITY_HISTORY - 1
     check scenesEqual(scene, snapshots[^CAPACITY_HISTORY])
 
 
   test "a fresh record after undo truncates the redo-able future":
     var scene = initScene()
-    var history = initHistory(scene)
+    var camera = initCameraDefault()
+    var history = initHistory(scene, camera)
     scene.addItem(POINTS[0], "a", Ink.Rose)
-    history.record(scene)
+    history.record(scene, camera)
     let state_a = scene
 
     scene.addItem(POINTS[1], "b", Ink.Rose)
-    history.record(scene) # A state undo will later discard, never redone.
+    history.record(scene, camera) # A state undo will later discard, never redone.
 
-    discard history.undo(scene)
+    discard history.undo(scene, camera)
     check scenesEqual(scene, state_a)
     check history.canRedo
 
     scene.addItem(POINTS[2], "c", Ink.Rose) # Diverges from the discarded state above.
-    history.record(scene)
+    history.record(scene, camera)
     check not history.canRedo
-    check not history.redo(scene)
+    check not history.redo(scene, camera)
 
     check history.canUndo
-    discard history.undo(scene)
+    discard history.undo(scene, camera)
     check scenesEqual(scene, state_a)
+
+
+  test "crossing a step either way restores the view that step's own edit was made from":
+    # The whole point of carrying the camera: whatever a step adds or takes away has to be
+    #   on screen as it happens, which means under the view that edit was made from -- not
+    #   under wherever the camera has since been orbited to, and not under the view the
+    #   *previous* edit happened to be made from however long ago.
+    template checkAimedLike(taken, wanted: Camera) =
+      check taken.azimuth =~ wanted.azimuth
+      check taken.elevation =~ wanted.elevation
+      check taken.distance =~ wanted.distance
+
+    var scene = initScene()
+    var camera = initCameraDefault()
+    var history = initHistory(scene, camera)
+
+    # Two edits, each made from its own distinctly different viewpoint.
+    camera.azimuth = 0.25
+    camera.distance = 11.0
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    history.record(scene, camera)
+    let camera_a = camera
+
+    camera.azimuth = 1.75
+    camera.distance = 29.0
+    camera.elevation = -0.4
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    history.record(scene, camera)
+    let camera_b = camera
+
+    # Orbiting after the fact records nothing of its own, so a step ignores wherever the
+    #   camera has drifted to since.
+    camera.azimuth = -2.5
+    camera.distance = 3.0
+    camera.elevation = 1.1
+
+    # Undoing `b` takes the scene back to one item and the view back to where `b` was
+    #   built -- `b` is what vanishes, so `b`'s own view is the one to watch it from.
+    check history.undo(scene, camera)
+    checkAimedLike(camera, camera_b)
+    check scene.len == 1
+
+    # Redoing it crosses the same step the other way, and lands on the same view.
+    check history.redo(scene, camera)
+    checkAimedLike(camera, camera_b)
+    check scene.len == 2
+
+    # Back past `a` in turn: its own view, not the default the timeline was seeded under.
+    check history.undo(scene, camera)
+    check history.undo(scene, camera)
+    checkAimedLike(camera, camera_a)
+    check scene.len == 0
+    check not (camera.azimuth =~ initCameraDefault().azimuth)
 
 
 

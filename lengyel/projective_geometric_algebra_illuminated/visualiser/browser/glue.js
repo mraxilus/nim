@@ -308,7 +308,8 @@ button_help.addEventListener('click', (e) => {
 /* ---------------------------------------------------------------------- */
 /* Undo/redo: scene-content edits only, mirrors panel.layoutWorkbench's    */
 /* own undo/redo buttons exactly -- see `history.nim` for what is and is   */
-/* not on this timeline.                                                   */
+/* not on this timeline. A step carries the view its edit was made from,   */
+/* so the camera moves under these too; an orbit alone is not a step.      */
 /* ---------------------------------------------------------------------- */
 
 const button_add = document.getElementById('btn-add');

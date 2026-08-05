@@ -85,7 +85,7 @@ var
     ## camera should move.
   g_history: History ## Undo/redo timeline of scene-content edits; scoped exactly as
     ## `visualiser.HISTORY` is -- see `history.nim`'s own doc comment for what is and is
-    ## not on this timeline. Seeded via `initHistory(g_scene)` wherever `g_scene` itself
+    ## not on this timeline. Seeded via `initHistory(g_scene, g_camera)` wherever `g_scene`
     ## is (re)initialized (`nimInit`, `nimLoadDemo`, `nimSceneClear`), so undo never
     ## reaches earlier than the moment tracking began for whatever scene is live now.
   g_ghost = none(Multivector) ## Multivector the open edit session is staging, rendered
@@ -140,7 +140,7 @@ proc nimInit(now: cfloat) {.exportc.} =
   placeSeeds(float(now))
   g_camera = initCameraDefault()
   g_selection.clear()
-  g_history = initHistory(g_scene)
+  g_history = initHistory(g_scene, g_camera)
 
 
 proc nimLoadDemo(now: cfloat) {.exportc.} =
@@ -164,7 +164,7 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
     applyStep(g_scene, step, clock)
     g_borns[count_seeds + index] = clock
   g_selection.clear()
-  g_history = initHistory(g_scene)
+  g_history = initHistory(g_scene, g_camera)
 
 
 
@@ -279,7 +279,7 @@ proc nimAddItem(
   result = cint(g_scene.addItem(geometry, $label, Ink(ink_ordinal), float(now)))
   g_borns[int(result)] = float(now)
   g_selection.selectOnly(int(result))
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
 
 
 proc nimCommitItem(
@@ -295,7 +295,7 @@ proc nimCommitItem(
   for b in Basis: g_scene.geometryAt(index)[b] = coefficients[ord(b)]
   toChars($label, g_scene.labelAt(index))
   g_scene.setInk(index, Ink(ink_ordinal))
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
 
 
 type OperationResult = object ## Report what applying a catalogue operation produced.
@@ -322,7 +322,7 @@ proc nimApplyOperation(
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
   g_borns[slot_created] = float(now)
   g_selection.selectOnly(slot_created)
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
   let shape_word = shapeText(derived)
   OperationResult(
     created_slot: cint(slot_created),
@@ -334,7 +334,7 @@ proc nimApplyOperation(
 proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
   ## Rewrite item's visibility, by slot.
   g_scene.setVisible(int(slot), is_visible)
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
 
 
 proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
@@ -345,7 +345,7 @@ proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
 proc nimSetInk(slot: cint; ink_ordinal: cint) {.exportc.} =
   ## Rewrite item's palette slot, by slot.
   g_scene.setInk(int(slot), Ink(ink_ordinal))
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
 
 
 proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
@@ -359,7 +359,7 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
   ##   add, so a pick left behind would silently reattach to an unrelated new object.
   g_scene.removeItem(int(slot))
   g_selection.pruneDead(g_scene)
-  g_history.record(g_scene)
+  g_history.record(g_scene, g_camera)
 
 
 
@@ -634,20 +634,27 @@ proc nimAnimationMilliseconds(): cint {.exportc.} = cint(ANIMATION_MILLISECONDS)
 
 
 proc nimUndo(): bool {.exportc.} =
-  ## Move scene back one step on its own edit timeline; report whether there was an
-  ## earlier step to move to. Clears the current selection unconditionally on success,
-  ## since a restored snapshot's slot numbers may not match whatever was highlighted
-  ## before.
-  result = g_history.undo(g_scene)
-  if result: g_selection.clear()
+  ## Move scene back one step on its own edit timeline, putting the view back where that
+  ## step was made from; report whether there was an earlier step to move to. Clears the
+  ## current selection unconditionally on success, since a restored snapshot's slot numbers
+  ## may not match whatever was highlighted before.
+  ##   Abandons the standing camera tween along with it, or the aim it was carrying drags
+  ##   the view straight off the placement just restored -- the same pairing
+  ##   `panel.stepHistory` makes on the desktop build.
+  result = g_history.undo(g_scene, g_camera)
+  if result:
+    g_selection.clear()
+    g_tween_camera.abandon()
 
 
 proc nimRedo(): bool {.exportc.} =
-  ## Move scene forward one step on its own edit timeline; report whether there was a
-  ## later step to move to. Clears the current selection unconditionally on success,
-  ## for the same reason `nimUndo` does.
-  result = g_history.redo(g_scene)
-  if result: g_selection.clear()
+  ## Move scene forward one step on its own edit timeline, view and all; report whether
+  ## there was a later step to move to. Clears the selection and abandons the camera tween
+  ## on success, for the same reasons `nimUndo` does.
+  result = g_history.redo(g_scene, g_camera)
+  if result:
+    g_selection.clear()
+    g_tween_camera.abandon()
 
 
 proc nimCanUndo(): bool {.exportc.} =
@@ -916,7 +923,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     let slot = outcome.index_created.get
     g_borns[slot] = float(now)
     g_selection.selectOnly(slot)
-    g_history.record(g_scene)
+    g_history.record(g_scene, g_camera)
     return DragResult(
       created_slot: cint(slot), message: cstring(outcome.message), clicked_slot: SLOT_NONE
     )
@@ -1009,7 +1016,7 @@ proc nimSceneClear() {.exportc.} =
   ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()
   g_selection.clear()
-  g_history = initHistory(g_scene)
+  g_history = initHistory(g_scene, g_camera)
 
 
 proc nimSceneAddRaw(

@@ -404,8 +404,8 @@ proc layoutItemName(workbench: var Workbench; scene: var Scene; row: ItemRow) =
 
 
 proc layoutItemButtons(
-  workbench: var Workbench; scene: var Scene; history: var History; row: ItemRow;
-  now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  row: ItemRow; now: float
 ): bool =
   ## Lay out the row's own actions; report whether user asked for the object to go.
   ##   Longer than the sixty-line default, and not split further: the run's whole width
@@ -442,7 +442,7 @@ proc layoutItemButtons(
         scene.geometryAt(row.slot.get) = geometry
         scene.labelAt(row.slot.get) = session.label
         scene.setInk(row.slot.get, Ink(session.index_ink))
-      history.record(scene)
+      history.record(scene, camera)
       workbench.session = none(EditSession)
   gui.tooltip(
     if row.is_open: cstring"Commit these values to the scene."
@@ -467,7 +467,7 @@ proc layoutItemButtons(
     gui.sameLine()
     if gui.buttonSmall(if row.is_visible: cstring"hide" else: cstring"show"):
       scene.setVisible(row.slot.get, not row.is_visible)
-      history.record(scene)
+      history.record(scene, camera)
     gui.tooltip("Show or hide this object without removing it.")
     gui.sameLine()
     result = gui.buttonSmall("remove")
@@ -494,8 +494,8 @@ proc layoutItemDescription(workbench: Workbench; scene: var Scene; row: ItemRow)
 
 
 proc layoutItem(
-  workbench: var Workbench; scene: var Scene; history: var History; slot: Option[int];
-  now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  slot: Option[int]; now: float
 ): bool =
   ## Lay out one item's controls; report whether user asked for it to be removed.
   ##   A none `slot` lays out the composing row instead: same shape, but nothing backs it
@@ -525,14 +525,15 @@ proc layoutItem(
     if not row.is_visible: gui.alphaPop()
 
   layoutItemName(workbench, scene, row)
-  result = layoutItemButtons(workbench, scene, history, row, now)
+  result = layoutItemButtons(workbench, scene, camera, history, row, now)
   layoutItemDescription(workbench, scene, row)
   if row.is_open: layoutSessionFields(workbench, is_pending)
   gui.separator()
 
 
 proc layoutObjects*(
-  workbench: var Workbench; scene: var Scene; history: var History; now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  now: float
 ) =
   ## Lay out every live item's controls, plus the row being composed if there is one,
   ## applying at most one removal per frame.
@@ -556,7 +557,7 @@ proc layoutObjects*(
 
   # A composing row heads the list: it is the newest thing here, and it has no `born`
   #   reading to sort by since nothing backs it in the scene yet.
-  if is_composing: discard layoutItem(workbench, scene, history, none(int), now)
+  if is_composing: discard layoutItem(workbench, scene, camera, history, none(int), now)
 
   # Most recently added first, matching the browser's own list order: the object just
   #   built is the one a user is looking for, and it would otherwise sit at whatever
@@ -575,14 +576,15 @@ proc layoutObjects*(
   var slot_removed = none(int)
   for position in 0 ..< count:
     let slot = slots_ordered[position]
-    if layoutItem(workbench, scene, history, some(slot), now): slot_removed = some(slot)
+    if layoutItem(workbench, scene, camera, history, some(slot), now):
+      slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
     workbench.selection.pruneDead(scene)
     # Its session has nothing left to commit against.
     if workbench.session.isSome and workbench.session.get.slot == slot_removed:
       workbench.session = none(EditSession)
-    history.record(scene)
+    history.record(scene, camera)
 
 
 
@@ -677,8 +679,8 @@ proc adoptSelectionAsOperands(
 
 
 proc applyPickedOperation(
-  workbench: var Workbench; scene: var Scene; history: var History; operation: Operation;
-  first, second: int; now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  operation: Operation; first, second: int; now: float
 ) =
   ## Derive a fresh object from the picked operation and operands, and say what it gave.
   ##   Leaves the result solely selected, which is what carries the camera to it: the
@@ -700,13 +702,14 @@ proc applyPickedOperation(
   workbench.selection.selectOnly(
     scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
   )
-  history.record(scene)
+  history.record(scene, camera)
 
   toChars(&"{label} gave {shapeText(derived)}.", workbench.message)
 
 
 proc layoutApply*(
-  workbench: var Workbench; scene: var Scene; history: var History; now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
   ##   Longer than the sixty-line default, and not split further: what is left after the
@@ -790,7 +793,7 @@ proc layoutApply*(
         if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
         else: first # A unary operation ignores its second operand; naming the first
           # keeps a stale picker reading from ever reaching `applyOperation`.
-    applyPickedOperation(workbench, scene, history, operation, first, second, now)
+    applyPickedOperation(workbench, scene, camera, history, operation, first, second, now)
     workbench.hideSelectionMenu() # Built something; see `showSelectionMenu`.
   gui.disabledPop()
 
@@ -1025,19 +1028,24 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
 #[ History Stepping ]#
 
 proc stepHistory*(
-  workbench: var Workbench; scene: var Scene; history: var History; is_undo: bool
+  workbench: var Workbench; scene: var Scene; camera: var Camera; history: var History;
+  is_undo: bool
 ): bool =
-  ## Step the timeline one way, and drop whatever an open edit was staged against.
+  ## Step the timeline one way, putting the view back where the restored edit was made,
+  ## and drop whatever an open edit was staged against.
   ##   Reports whether anything moved, so a caller may say so.
   ##   One proc for the buttons and for the keys that do the same thing: a restored
   ##   snapshot's slot numbers need not match the ones a session or a selection was
   ##   holding, and that consequence is easy to remember in one place and easy to forget
   ##   in the second.
-  result = if is_undo: history.undo(scene) else: history.redo(scene)
+  ##   Abandons the standing tween, which is aiming at whatever was last selected: left
+  ##   running it would drag the view straight off the placement just restored.
+  result = if is_undo: history.undo(scene, camera) else: history.redo(scene, camera)
   if result:
     workbench.selection.clear()
     workbench.session = none(EditSession)
     workbench.hideSelectionMenu()
+    workbench.tween_camera.abandon()
 
 
 
@@ -1059,7 +1067,8 @@ const
     ## Slack added to the widest notation offered, for the combo's own frame and arrow.
 
 proc layoutSelectionMenuApply(
-  workbench: var Workbench; scene: var Scene; history: var History; now: float
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  now: float
 ) =
   ## Lay out the menu's `apply` button and the operation picker it reveals beside it.
   ##   One button in both roles: the first press opens the picker, the second commits
@@ -1085,7 +1094,7 @@ proc layoutSelectionMenuApply(
         first = workbench.selection.at(0)
         second = if count >= 2: workbench.selection.at(1) else: first
       applyPickedOperation(
-        workbench, scene, history, operations[index], first, second, now
+        workbench, scene, camera, history, operations[index], first, second, now
       )
       workbench.hideSelectionMenu()
   gui.disabledPop()
@@ -1112,7 +1121,7 @@ proc layoutSelectionMenuApply(
 
 
 proc layoutSelectionMenu*(
-  workbench: var Workbench; scene: var Scene; history: var History;
+  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
   anchor: Option[tuple[x, y: cfloat]]; now: float
 ) =
   ## Lay out the floating menu over whatever is picked: apply, edit, hide, delete, close.
@@ -1146,7 +1155,7 @@ proc layoutSelectionMenu*(
     0.5, 1.0,
   ):
     if count <= 2:
-      layoutSelectionMenuApply(workbench, scene, history, now)
+      layoutSelectionMenuApply(workbench, scene, camera, history, now)
       is_line_started = true
 
     # Edit and the two bulk actions stand aside while an operation is being picked, so the
@@ -1166,7 +1175,7 @@ proc layoutSelectionMenu*(
       if gui.buttonSmall(if is_all_hidden: cstring"show" else: cstring"hide"):
         for position in 0 ..< count:
           scene.setVisible(workbench.selection.at(position), is_all_hidden)
-        history.record(scene)
+        history.record(scene, camera)
         toChars(
           if is_all_hidden: "Showed what you chose." else: "Hid what you chose.",
           workbench.message,
@@ -1186,7 +1195,7 @@ proc layoutSelectionMenu*(
           workbench.session = none(EditSession)
         for position in 0 ..< count: scene.removeItem(slots[position])
         workbench.selection.clear()
-        history.record(scene)
+        history.record(scene, camera)
         toChars("Deleted what you chose.", workbench.message)
         workbench.hideSelectionMenu()
       gui.tooltip("Delete everything you have chosen; each slot is reused by the next add.")
@@ -1310,18 +1319,21 @@ proc layoutWorkbench*(
     gui.sameLine()
     gui.text("-- right-drag to pick.")
 
-    # Scene-content edits only -- camera moves are not on this timeline; see
-    #   `history.nim`. Each button greys out where its own side of the timeline is empty,
-    #   rather than staying live and reporting "nothing to undo" only once pressed.
-    #   A successful step drops any open session too: a restored snapshot's slot numbers
-    #   need not match the one it was opened against.
+    # Scene-content edits only -- an orbit is not a step of its own, though each step
+    #   restores the view it was made from; see `history.nim`. Each button greys out where
+    #   its own side of the timeline is empty, rather than staying live and reporting
+    #   "nothing to undo" only once pressed. A successful step drops any open session too:
+    #   a restored snapshot's slot numbers need not match the one it was opened against.
     gui.disabledPush(not history.canUndo)
-    if gui.button("undo"): discard stepHistory(workbench, scene, history, is_undo = true)
+    if gui.button("undo"):
+      discard stepHistory(workbench, scene, camera, history, is_undo = true)
     gui.disabledPop()
-    gui.tooltip("Step back through scene-content edits; camera moves are not on this timeline.")
+    gui.tooltip("Step back through scene-content edits, view and all; an orbit on its own " &
+      "is not a step.")
     gui.sameLine()
     gui.disabledPush(not history.canRedo)
-    if gui.button("redo"): discard stepHistory(workbench, scene, history, is_undo = false)
+    if gui.button("redo"):
+      discard stepHistory(workbench, scene, camera, history, is_undo = false)
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
     gui.separator()
@@ -1331,9 +1343,9 @@ proc layoutWorkbench*(
     # Sections in alphabetical order, matching the browser's own drawer, with `objects`
     #   the one open by default: it is what a returning session looks at first, and the
     #   rest are reached for deliberately.
-    layoutApply(workbench, scene, history, now)
+    layoutApply(workbench, scene, camera, history, now)
     layoutDiagnostics(workbench, scene)
-    layoutObjects(workbench, scene, history, now)
+    layoutObjects(workbench, scene, camera, history, now)
     layoutView(workbench, camera)
     gui.separator()
     gui.text(toCstring(workbench.message))

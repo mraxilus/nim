@@ -92,7 +92,9 @@
 ##   `--drive-drag` scripts a construction drag through SDL's own event queue, so a
 ##   headless run can be caught mid-gesture with its choice menu open; `--drive-keys`
 ##   scripts a run of view keys through that same queue and reports what the camera and
-##   focus did, which is how "Dear ImGui swallows them" gets measured rather than assumed.
+##   focus did, which is how "Dear ImGui swallows them" gets measured rather than assumed;
+##   `--drive-undo` builds something, orbits away from it and undoes it, so where undo
+##   leaves the view can be looked at rather than reasoned about.
 
 {.experimental: "strictFuncs".}
 
@@ -197,9 +199,11 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet ## Every scene object, excluding world furniture below.
-var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn separately, so
-  ## they can hold their own, thinner line width distinct from a scene object's own
-  ## (`renderer.WIDTH_LINE_FURNITURE`).
+var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn in their own pass
+  ## before the scene's, so every object's translucent wash blends over the reference marks
+  ## rather than under whichever of them happened to be emitted later. Their thinner width
+  ## (`mesh.WIDTH_LINE_FURNITURE`) is geometry now, not a draw setting, so it no longer
+  ## needs a pass of its own -- this ordering does.
 var HISTORY: History ## Undo/redo timeline of scene-content edits; too large for a stack
   ## frame for the same reason `MESHES` is (`history.CAPACITY_HISTORY * sizeof(Scene)`).
   ## Holds a zeroed placeholder nothing reads until `main` seeds it via `initHistory`
@@ -249,6 +253,8 @@ type Options = object ## Hold what command line asked of this run.
     ## a headless run can show that they reach the view at all. See `driveKeys`.
   is_select_driven: bool ## Whether to script clicks that pick one, two and three objects,
     ## so a headless run can show the floating selection menu at each. See `driveSelect`.
+  is_undo_driven: bool ## Whether to script a construction, an orbit away from it and the
+    ## undo of it, so a headless run can show where undo leaves the view. See `driveUndo`.
   path_help_driven: Option[HelpPath] ## Which help tab to open at startup, if any. A
     ## headless run cannot click a tab strip, so `--drive-help:<tab>` names one; without
     ## it the panel stays shut, exactly as it does for a reader who has not asked for it.
@@ -271,6 +277,7 @@ proc parseOptions(): Options =
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
       of "drive-select": result.is_select_driven = true
+      of "drive-undo": result.is_undo_driven = true
       of "drive-help":
         for path in HelpPath:
           if titleOf(path) == value: result.path_help_driven = some(path)
@@ -280,7 +287,7 @@ proc parseOptions(): Options =
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
           "frames, hidden, timings, novsync, fill, drive-drag, drive-keys, " &
-          "drive-select or drive-help."
+          "drive-select, drive-undo or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -595,7 +602,7 @@ proc renderFrame(
     let is_undo = workbench.is_undo_requested
     (workbench.is_undo_requested, workbench.is_redo_requested) = (false, false)
     toChars(
-      if stepHistory(workbench, scene, HISTORY, is_undo):
+      if stepHistory(workbench, scene, camera, HISTORY, is_undo):
         (if is_undo: "Stepped back." else: "Stepped forward.")
       else:
         (if is_undo: "Nothing to undo." else: "Nothing to redo."),
@@ -621,7 +628,7 @@ proc renderFrame(
   #   it is placed *before* meshes are assembled, so a delete pressed on it leaves the
   #   scene this frame draws rather than one object stale.
   layoutSelectionMenu(
-    workbench, scene, HISTORY,
+    workbench, scene, camera, HISTORY,
     anchorOfSelection(workbench, scene, view_projection, int(width), int(height), scale),
     now,
   )
@@ -804,7 +811,7 @@ proc handleEvent(
       elif outcome.index_created.isSome:
         workbench.selection.selectOnly(outcome.index_created.get)
         workbench.hideSelectionMenu()
-        HISTORY.record(scene)
+        HISTORY.record(scene, camera)
       elif outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
         # The way out of the gesture's own three operations into the other twenty-four:
         #   both operands selected in the order they were dragged, which is the order the
@@ -1005,6 +1012,78 @@ proc driveSelect(
     sdl3.pushEvent(addr release)
 
 
+const lut_keys_undo_driven = [
+  (Scancode.Right, uint32(1073741903), 0'u16), # SDLK_RIGHT, no modifier: orbit.
+  (Scancode.Right, uint32(1073741903), 0'u16),
+  (Scancode.Right, uint32(1073741903), 0'u16),
+  (Scancode.Up, uint32(1073741906), 0'u16), # SDLK_UP: rise.
+  (Scancode.Z, uint32(ord('z')), MODIFIER_CONTROL), # The undo under test.
+] ## Script the keys `--drive-undo` sends after its construction lands: three orbit steps
+  ## and a rise, far enough that a view left where they put it cannot be mistaken for the
+  ## one the construction was made from, then the undo itself. Scancode, keycode and
+  ## modifiers together, for the reason `driveKeys` gives about the keycode.
+
+proc driveUndo(
+  scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
+) =
+  ## Script a construction drag onto the second scene item, an orbit well away from where
+  ## it was built, and then the undo of it, one step per frame.
+  ##   For `--drive-undo`, and reached from nowhere else. The point is the view, not the
+  ##   scene: undo puts the camera back where the construction was made from, and the only
+  ##   way to see that it really does -- through the key wiring, the panel and the tween a
+  ##   restored view has to survive -- is to look at the frames. Capture around frame 6 for
+  ##   the view it was built from, frame 10 for how far the orbit went, and frame 12 or
+  ##   later for where undo left it: 6 and 12 should show the same viewpoint.
+  ##   Posted to SDL's own queue, and split across frames per gesture, for the reasons
+  ##   `driveDrag` and `driveSelect` give. Shares their warning too: this runs the real
+  ##   loop on the real clock, so look at the captures rather than byte-comparing them.
+  const
+    FRAME_FIRST = 2 # Past startup, so the first frame's own layout has settled.
+    STEPS_DRAG = 4 # Reach the source, press, reach the target, release.
+    lut_step_to_slot = [0, 0, 1, 1]
+  let step = count_drawn - FRAME_FIRST
+  if step < 0: return
+
+  if step < STEPS_DRAG:
+    let slot = lut_step_to_slot[step]
+    if not scene.isAlive(slot): return
+    let anchor = anchorFor(scene[slot].geometry, scale)
+    if anchor.isNone: return
+    let screen = projectToScreen(
+      camera.initMatrixViewProjection(width/height), width, height, anchor.get
+    )
+    if not screen.isInFront: return
+    if (step mod 2) == 0:
+      var reach = Event(kind: uint32(EventKind.MouseMotion))
+      reach.motion.x = cfloat(screen.x)
+      reach.motion.y = cfloat(screen.y)
+      sdl3.pushEvent(addr reach)
+      return
+    var event = Event(
+      kind:
+        if step == 1: uint32(EventKind.MouseButtonDown)
+        else: uint32(EventKind.MouseButtonUp)
+    )
+    # The left button, not the right: a right release commits the wedge the cursor stands
+    #   in, and a scripted cursor sitting on its target stands in none of them. The left
+    #   one takes the proposal, which is the construction this driver is here to undo.
+    event.button.button = uint8(MouseButton.Left)
+    sdl3.pushEvent(addr event)
+    return
+
+  # A frame of slack after the release, so the construction is committed and its own
+  #   camera aim armed before the orbit that has to override it starts.
+  let index = step - STEPS_DRAG - 1
+  if index notin 0 ..< len(lut_keys_undo_driven): return
+  let (scancode, keycode, modifiers) = lut_keys_undo_driven[index]
+  var event = Event(kind: uint32(EventKind.KeyDown))
+  event.key.scancode = uint32(scancode)
+  event.key.keycode = keycode
+  event.key.is_down = true
+  event.key.modifiers = modifiers
+  sdl3.pushEvent(addr event)
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -1053,12 +1132,14 @@ proc runInteractive(
     ticks_previous_frame = ticks_frame_start
 
     if options.is_key_driven: driveKeys(count_drawn)
-    if options.is_drag_driven or options.is_select_driven:
+    if options.is_drag_driven or options.is_select_driven or options.is_undo_driven:
       let scale_driven = camera.drawExtentFor(PIXELS_HEIGHT)
       if options.is_drag_driven:
         driveDrag(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
-      else:
+      elif options.is_select_driven:
         driveSelect(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
+      else:
+        driveUndo(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
 
     var event: Event
     while sdl3.pollEvent(addr event):
@@ -1348,7 +1429,7 @@ proc main() =
   else:
     constructSeeds(scene, now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
-  HISTORY = initHistory(scene)
+  HISTORY = initHistory(scene, camera)
 
   if len(options.path_storyboard) > 0:
     runStoryboard(window, renderer, options.path_storyboard, workbench, scene, camera)

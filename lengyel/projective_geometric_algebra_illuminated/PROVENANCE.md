@@ -648,34 +648,63 @@ event never reaches the state `SDL_GetModState` reports. Capture one frame *late
 step: Dear ImGui hides an auto-sized window for the one frame it measures it in, which cost
 an hour of looking at an empty patch of scene.
 
+`--drive-undo` joins the same family, for the one desktop behaviour with no other headless
+handle: it drags `a` onto `b` to build, orbits three steps and rises one, then sends Ctrl+Z,
+so where undo leaves the view can be looked at. It drags with the **left** button, not the
+right: a right release commits the wedge the cursor stands in, and a scripted cursor resting
+on its target stands in none of them, so the right button's own release reports "released
+without choosing" and builds nothing. Capture frames 6, 10 and 13 or later — 6 and 13 show
+the same viewpoint to the pixel, 10 shows how far the orbit went.
+
 
 Undo/Redo
 ---
 `visualiser/core/history.nim`, shared. Scoped to scene-content edits — add, apply (including
 drag and the touch flow), remove, visibility toggle, ink recolour, and an edit session's
-`save` — and deliberately **not** camera moves. Coefficients, label and ink used to be
-excluded too, because the widgets driving them are continuous multi-frame inputs and
-recording every keystroke would flood the timeline; the staged edit session (see Edit
-Sessions) supplies the "edit committed" moment they lacked, so one `save` records one
-entry covering all three at once.
+`save`. Coefficients, label and ink used to be excluded too, because the widgets driving
+them are continuous multi-frame inputs and recording every keystroke would flood the
+timeline; the staged edit session (see Edit Sessions) supplies the "edit committed" moment
+they lacked, so one `save` records one entry covering all three at once.
 
-One fixed-size array plus one cursor, not separate past/future stacks: `Scene` is a plain
-fixed-size value type (arrays of `Multivector`/`Label`/`Ink`/`bool`/`float`/`Option`, no
-pointers), so recording is a value copy and `entries[cursor]` is always exactly the live
-scene. Undo/redo move the cursor and copy back; a fresh edit truncates past the cursor.
-Halves the memory of a two-stack design and collapses two invariants into one.
+One fixed-size array plus one cursor, not separate past/future stacks: an entry is a
+`Step {scene, camera}`, and both are plain fixed-size value types (`Scene` is arrays of
+`Multivector`/`Label`/`Ink`/`bool`/`float`/`Option` with no pointers; `Camera` is five
+floats), so recording is a value copy and `entries[cursor].scene` is always exactly the
+live scene. Undo/redo move the cursor and copy back; a fresh edit truncates past the
+cursor. Halves the memory of a two-stack design and collapses two invariants into one.
 `CAPACITY_HISTORY` = 32; recording past it drops the oldest entry rather than growing.
 
-Seeded via `initHistory(scene)` wherever the scene is (re)initialised — desktop startup;
-browser `nimInit`/`nimLoadDemo`/`nimSceneClear` — so undo never reaches past the moment
-tracking began. A successful undo/redo clears the selection unconditionally, since a
+**The camera rides along; an orbit is never a step of its own.** Each step records where
+the view stood when *that step's* edit was made, so crossing a step in either direction
+restores that one camera: undo reads it off the entry being stepped away from, redo off the
+entry arrived at. Chosen over restoring the camera of the state arrived at, which was the
+first implementation and is wrong in a way only running it shows — it hands back whatever
+view the *previous* edit happened to be made from, so undoing the first construction of a
+session teleports you to the startup view. Driving the browser build found that; the suite
+had passed. Not recording an orbit as its own entry is the accepted cost of not needing a
+gesture-settle rule (a camera drag emits an event per pixel), and it means **an accidental
+orbit is still not undoable on its own**. The first entry's camera is stored but never
+restored: no edit leads into the seeded state.
+
+Both front-ends abandon their camera tween on a successful step (`panel.stepHistory`,
+`nimUndo`/`nimRedo`). Without it the standing aim — armed by the selection an edit leaves
+behind — drags the view straight back off the placement just restored.
+
+Seeded via `initHistory(scene, camera)` wherever the scene is (re)initialised — desktop
+startup; browser `nimInit`/`nimLoadDemo`/`nimSceneClear` — so undo never reaches past the
+moment tracking began. A successful undo/redo clears the selection unconditionally, since a
 restored snapshot's slot numbers need not match. `nimCanUndo`/`nimCanRedo` drive the
-browser's disabled-button state. No keyboard shortcut: SDL3 modifier state is not currently
-bound.
+browser's disabled-button state. Bound to Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (and Ctrl+Y) on
+both builds; the desktop reads the modifiers off the key event rather than `getModState`.
 
 Tested by recording to capacity, walking all the way back and forward, and comparing against
 the actually-recorded state at every step. `Scene` embeds `Multivector`, whose `==` is an
 intentional compile error, so `scenesEqual` compares item by item using `=~` for geometry.
+Camera restoration is pinned by a suite case that makes two edits from two distinct
+viewpoints and checks both directions across each step, and verified end to end by running:
+`--drive-undo` on the desktop and `drive_undo_tween.js` on the browser both build something,
+orbit well away, undo, and show the view back where the construction was made from and
+holding there while the abandoned tween would otherwise have pulled it off.
 
 
 Storyboard And Seeds
@@ -1592,7 +1621,8 @@ Known Limitations
   on a desktop widget is unverified: a window that never takes focus under `xvfb` gives ImGui
   no navigation focus to move. Wants a human at a real window.
 - Two crossing translucent washes blend order-dependently (see the draw-order invariant).
-- Undo/redo does not cover camera moves.
+- A camera move is not undoable on its own. Undo restores the view each edit was made from,
+  but an orbit that changed nothing else leaves no step to step back over.
 - Conformal metric (`IS_CONFORMAL`) is unfinished in the library; this build is rigid 4D.
 - `.rgascene` is native-endian and will not cross endianness.
 

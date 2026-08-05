@@ -621,16 +621,24 @@ animation drift between two runs pollutes a pixel diff with thousands of false d
 ---
 
 Scoped to **scene-content edits** — add, apply (including drag and the touch flow), remove,
-visibility toggle, recolour, and an edit session's `save` — and deliberately **not** camera
-moves. One `save` records one entry covering coefficients, label and colour at once; that
-committed moment is exactly what the staged session exists to supply, since the widgets
-driving those three are continuous multi-frame inputs that would otherwise flood the timeline.
+visibility toggle, recolour, and an edit session's `save`. One `save` records one entry
+covering coefficients, label and colour at once; that committed moment is exactly what the
+staged session exists to supply, since the widgets driving those three are continuous
+multi-frame inputs that would otherwise flood the timeline.
 
 **One fixed-size array of snapshots plus one cursor**, not separate past and future stacks.
 The scene is a plain fixed-size value type, so recording is a value copy and the entry under
 the cursor is always exactly the live scene. Undo and redo move the cursor and copy back; a
 fresh edit truncates past it. Capacity 32; recording past it drops the oldest rather than
 growing.
+
+**Each entry records the camera the view stood at as that entry's own edit was made**, so
+crossing a step in either direction restores that one camera and whatever appears or vanishes
+does so on screen. Not the camera of the state arrived at, which hands back the view the
+*previous* edit was made from — a different moment, arbitrarily long ago. A camera move
+records no entry of its own, so an orbit alone is not undoable; say so where a user can read
+it. A front-end holding a camera tween must abandon it on a successful step, or the standing
+aim pulls the view straight off what was just restored.
 
 Seed the timeline wherever the scene is initialised or replaced — startup, demo load, clear —
 so undo never reaches past the moment tracking began. A successful undo or redo **clears the
@@ -639,7 +647,9 @@ out when they are not.
 
 Test by recording to capacity, walking all the way back and forward, and comparing against the
 actually-recorded state at every step — with an approximate comparison, since exact float
-equality is a compile error on these types (§24).
+equality is a compile error on these types (§24). Test the camera the same way, from two
+distinct viewpoints, and verify it by driving each front-end: build, orbit away, undo, and
+look at where the view ends up and whether it stays there.
 
 
 15. Save / Load
