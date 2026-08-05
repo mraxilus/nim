@@ -1064,6 +1064,12 @@ so the two stack and the hint outstays both numbers.
   split the tab. Whatever region the rows sit in must be *bounded and scrollable* even so:
   scrolling is the net that stops a panel silently losing rows off an edge, never the way
   the reference is meant to be read.
+- **Size the reference's action column from the widest action in it, never from a fraction
+  of the panel.** A fraction is a guess, and it is wrong at both ends: too wide on a roomy
+  panel, so outcomes wrap beside empty space, and too narrow on a phone. Give the outcome
+  column a floor of its own as well, or the widest-action rule takes a narrow panel's whole
+  width; check both floors against the container's own right edge, since an overflowing
+  column scrolls rather than clipping and so looks fine in a screenshot.
 - **Make the reference reachable from a headless capture** — a flag naming the tab to open.
   A panel no capture can reach is one whose rows nobody ever checks fit.
 - **Bind the keyboard.** Escape sheds what is in progress, innermost first; the platform's

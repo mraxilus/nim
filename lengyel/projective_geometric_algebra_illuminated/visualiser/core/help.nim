@@ -35,12 +35,32 @@ import ./interaction
 const ENTRIES_MAX_PATH* = 8
   ## Bound how many entries one path may hold, checked at compile time.
   ##   A proxy, and named as one: the real constraint is *rendered height*, and a count is
-  ##   what compile time can check. **Measured, not estimated**: the built page was driven
-  ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- and each tab's
-  ##   `scrollHeight` compared against its `clientHeight`. Eight rows fit there; ten did
-  ##   not, because at that width the outcome column wraps onto second lines, so a count
-  ##   of rows is not a count of lines and the honest bound is the one that survived the
-  ##   wrapping. That measurement is what split `menu` out of `choose`.
+  ##   what compile time can check. **Measured, not estimated**: the built page is driven
+  ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- with each tab's
+  ##   own rows cloned into it until `scrollHeight` passes `clientHeight`, so the added
+  ##   rows wrap exactly as that tab's real ones do. In a 384-pixel-tall rows box:
+  ##
+  ##   | Path | Rows | Of its own kind that fit |
+  ##   |------|------|--------------------------|
+  ##   | `drag` | 5 | 7 |
+  ##   | `choose` | 5 | 10 |
+  ##   | `menu` | 5 | 8 |
+  ##   | `workbench` | 2 | 6 |
+  ##   | `camera` | 6 | 10 |
+  ##   | `keys` | 8 | 9 |
+  ##
+  ##   Read the spread, not just the minimum: **a count of rows is not a count of lines.**
+  ##   `workbench`'s actions are long enough to wrap onto three lines at that width and
+  ##   `drag`'s onto two, so eight of *those* would scroll while eight of `keys`' fit with
+  ##   a row to spare. Eight is therefore right for the table as it stands and would be
+  ##   wrong for a table shaped differently -- a path nearing the cap is a prompt to
+  ##   re-run this measurement, not to trust the number.
+  ##   Re-measured after the browser panel's columns became a grid sized from the widest
+  ##   action rather than a flat 44% (`shell.html`, `.help-rows`). That change is worth
+  ##   real width on a 558-pixel panel -- outcomes wrapping went from seven rows to one --
+  ##   but bought almost nothing here, where the panel is 262 pixels wide and the long
+  ##   actions wrap whatever the column rule is. Hence the cap stays at 8 rather than
+  ##   rising: it was the wrapping that improved, not the height at the size that binds.
   ##   It sits exactly at what the largest path holds, deliberately: the next row added to
   ##   a full path fails the build, and the answer is nearly always to split that path
   ##   rather than to raise this. Raising it is a decision about the smallest screen this

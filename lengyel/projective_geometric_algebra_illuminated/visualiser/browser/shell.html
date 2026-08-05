@@ -309,19 +309,42 @@
   .help-tab.on { color: var(--accent-ink); border-color: var(--accent-ink); }
   /* Only the rows scroll, so the tab strip stays reachable however long a tab grows.
      `help.ENTRIES_MAX_PATH` is what keeps this from ever being how the panel is read. */
-  .help-rows { overflow-y: auto; max-height: calc(min(82vh, 620px) - 82px); }
-  .help-row { display: flex; gap: 10px; padding: 2px 0; }
+  /* One grid over every row, not a flex box per row: a column has to be one width down
+     the whole table, and only a shared grid container can size it from the widest action
+     in it. `max-content` is that rule -- the same one the desktop panel follows, where
+     `panel.layoutHelp` measures `offset_outcome` off the widest action rather than
+     guessing a fraction. A flat `44%` was the guess, and on the 558px panel it handed the
+     actions 245px they did not want while the outcomes beside them wrapped.
+     Both tracks carry the same 122px floor, and the pair of them is measured rather than
+     picked: the action floor keeps a tab of short actions from starting its outcomes hard
+     left of where every other tab starts them, and the outcome floor is what stops
+     `max-content` being greedy on the 262px-wide rows a 320px phone leaves -- without it
+     the actions took 208 of those 262 and three tabs grew a scrollbar. 122 + 122 + the
+     10px gap is 254, which fits. The rows are one grid but a hidden row contributes no
+     track sizing, so each column is measured per tab, from what is actually on screen. */
+  .help-rows {
+    overflow-y: auto;
+    max-height: calc(min(82vh, 620px) - 82px);
+    display: grid;
+    grid-template-columns: minmax(122px, max-content) minmax(122px, 1fr);
+    column-gap: 10px;
+    align-content: start;
+  }
+  /* `display: contents` so each row's two cells become items of the grid above rather
+     than of a box of their own. Safe for the `touch` marker, which hangs off the action
+     cell and so keeps a box to hang from. */
+  .help-row { display: contents; }
   /* An author `display` beats the UA stylesheet's own `[hidden] { display: none }`, so a
      row hidden by attribute would keep its box and every tab would report the whole table's
      height. Measured: without this line all five tabs scrolled, including the two-row one. */
   .help-row[hidden] { display: none; }
   .help-action {
-    flex: 0 0 44%;
+    padding: 2px 0;
     font-family: var(--mono);
     font-size: 11.5px;
     color: var(--accent-ink);
   }
-  .help-outcome { flex: 1; color: var(--ink-muted); }
+  .help-outcome { padding: 2px 0; color: var(--ink-muted); }
   /* Touch rows carry a word rather than only a colour, so which input a line describes
      survives a reader who cannot tell the two tints apart. */
   .help-touch::after {

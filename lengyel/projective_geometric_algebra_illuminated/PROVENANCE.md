@@ -1397,6 +1397,16 @@ that width the outcome column wraps onto second lines, so a count of rows is not
 lines. It sits exactly at what the largest tab holds, so the next row added to a full tab
 fails the build; the answer is nearly always to split that tab.
 
+Re-measured after the column change below, this time by cloning each tab's *own* rows into
+it until it scrolls, so the added rows wrap exactly as that tab's real ones do. In the
+384 px-tall rows box a 320 px phone leaves: `drag` fits 7 of its own rows, `choose` 10,
+`menu` 8, `workbench` 6, `camera` 10, `keys` 9. The spread is the point — `workbench`'s
+actions wrap onto three lines at that width and `drag`'s onto two, so eight of *those* would
+scroll while eight of `keys`' fit with one to spare. So the cap stays at 8 rather than
+rising: the column change bought real width on the 558 px panel and almost nothing at the
+size that binds. A tab nearing the cap is a prompt to re-run this measurement, not to trust
+the number.
+
 The desktop draws the tabs through four new shim calls (`BeginTabBar`/`BeginTabItem` and
 their ends) with each tab's rows inside a `childBegin` region bounded to what the window
 actually has. That region scrolls, and is the safety net rather than the design: no tab may
@@ -1412,10 +1422,29 @@ capture is what caught it.
 The browser draws a wrapping button strip plus `data-path` on every row, with only the rows
 scrolling so the strip stays reachable, and the panel widened from 360 px to `min(560px,
 100vw - 28px)`. Rows are hidden by attribute rather than rebuilt per tab, which needs
-`.help-row[hidden] { display: none }`: an author `display: flex` beats the UA stylesheet's
-own `[hidden]` rule, and without that line every tab reported the whole table's height —
+`.help-row[hidden] { display: none }`: an author `display` beats the UA stylesheet's own
+`[hidden]` rule, and without that line every tab reported the whole table's height —
 measured, and it is why the check compares `scrollHeight` to `clientHeight` per tab rather
 than trusting the markup.
+
+Its two columns are **one grid over the whole table** — `.help-rows` is the grid and each
+`.help-row` is `display: contents` — because a column has to be one width down the table and
+only a shared container can size it from the widest action in it. That is the rule the
+desktop panel already follows, where `layoutHelp` measures `offset_outcome` off the widest
+action; the browser's flat `44%` was the guess it replaces, and on the 558 px panel it gave
+the actions 245 px they did not want while the outcomes beside them wrapped. Measured, both
+viewports, wrapped outcomes out of 31 rows: 7 → 1 at 1400x900, tallest tab 213 px → 177 px;
+21 → 20 at 320x568, tallest unchanged at 337 px in a 384 px box.
+
+Both tracks carry a 122 px floor — `minmax(122px, max-content) minmax(122px, 1fr)` — and the
+pair was measured, not picked. The action floor keeps a tab of short actions (`menu`,
+`workbench`) from starting its outcomes hard left of where every other tab starts them. The
+outcome floor is what stops `max-content` being greedy where there is nothing to be greedy
+with: without it the actions took 208 px of the 262 px a 320 px phone leaves, and `drag`,
+`choose` and `keys` all grew a scrollbar. Candidates with a larger outcome floor (150–184 px)
+read better still until the cells were checked against the container's own right edge —
+122 + 122 + the 10 px gap is 254 and fits, 122 + 150 does not, and the difference is invisible
+in a screenshot because the overflow scrolls rather than clipping.
 
 `--drive-help:<tab>` opens the panel on one named tab at startup, since a headless run cannot
 click a tab strip and a panel no capture can reach is one whose rows nobody ever checks fit.
