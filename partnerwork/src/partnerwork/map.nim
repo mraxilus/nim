@@ -18,6 +18,7 @@ import std/[algorithm, options, strutils]
 
 import ./diagram
 import ./frame
+import ./motion
 import ./transition
 
 
@@ -126,7 +127,7 @@ func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
     result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, line, style)
 
 
-func edge(a, b: Frame; side: Side; here: Option[Frame]): string =
+func edge(a, b: Frame; side: Side; here, taken: Option[Frame]): string =
   ## Draw the pair of moves that join two frames.
   ##
   ## The line is named only when the couple are standing on one end of it, and
@@ -137,7 +138,10 @@ func edge(a, b: Frame; side: Side; here: Option[Frame]): string =
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
     is_lit = here == some(a) or here == some(b)
-    lit = if is_lit: " lit" else: ""
+    # The line the couple are taking is marked while they leave, so the moment
+    # before the marker moves reads as the move starting rather than as a wait.
+    is_taken = is_lit and (taken == some(a) or taken == some(b))
+    lit = (if is_lit: " lit" else: "") & (if is_taken: " taking" else: "")
   result = "<line class=\"edge" & lit & "\" x1=\"" & $ax & "\" y1=\"" & $ay &
     "\" x2=\"" & $bx & "\" y2=\"" & $by & "\" style=\"stroke: " &
     armColour(side) & "\"/>"
@@ -200,18 +204,19 @@ func nodeAt*(target: Frame; cx, cy, width: int; classes: string;
   result.add "</g>"
 
 
-func node(target: Frame; is_here, is_reachable, is_compound: bool): string =
+func node(target: Frame; is_here, is_reachable, is_compound,
+    is_taken: bool): string =
   ## Draw one frame in its row, on the map of everything.
   let (cx, cy) = centreOf(target)
   nodeAt(target, cx, cy, NODE_WIDTH,
     (if is_here: "here " else: "") & (if is_reachable: "reachable " else: "") &
-    (if is_compound: "two" else: ""))
+    (if is_compound: "two" else: "") & (if is_taken: " taking" else: ""))
 
 
 
 #[ The Map ]#
 
-func renderMap*(here, before: Option[Frame]): string =
+func renderMap*(here, before: Option[Frame]; taken = none(Frame)): string =
   ## Draw the graph, with the couple standing on one frame if they are dancing.
   ##
   ## The marker is drawn where the couple *were*, and carries where they are
@@ -219,7 +224,8 @@ func renderMap*(here, before: Option[Frame]): string =
   ## a page that does not still shows the truth.
   result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " &
     $MAP_WIDTH & " " & $MAP_HEIGHT & "\" class=\"map" &
-    (if here.isNone: " still" else: "") & "\" role=\"img\">" &
+    (if here.isNone: " still" else: "") & "\" style=\"" & motionStyle() &
+    "\" role=\"img\">" &
     "<title>Every frame, and every move between them</title>"
 
   var drawn: seq[string] = @[]
@@ -229,7 +235,7 @@ func renderMap*(here, before: Option[Frame]): string =
       if pair in drawn:
         continue
       drawn.add pair
-      result.add edge(source, move.to, move.side, here)
+      result.add edge(source, move.to, move.side, here, taken)
 
   drawn = @[]
   for source in FRAMES:
@@ -246,7 +252,7 @@ func renderMap*(here, before: Option[Frame]): string =
   for target in FRAMES:
     result.add node(target, here == some(target),
       here.isSome and classify(here.get, target).isSome,
-      here.isSome and compound(here.get, target).isSome)
+      here.isSome and compound(here.get, target).isSome, taken == some(target))
 
   if here.isSome:
     let

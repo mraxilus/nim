@@ -50,6 +50,15 @@ a spoke and it travels in to become the middle. **Overview** is the whole
 ontology with the couple standing somewhere in it, and the marker travelling the
 line it dances.
 
+Taking a move is drawn rather than announced. The way taken lights up and swells
+where it stands while the ways not taken fold back into the middle, leaves before
+branches; the frame taken then travels into the middle, carrying the window with
+it; and the ways out of *it* grow outward, branches first and leaves after. Each
+phase is timed by the numbers in `src/partnerwork/motion.nim`, which the drawing
+writes onto itself for the stylesheet to spend, so the page can never advance the
+state out from under an animation still running. A reader who has asked for
+reduced motion gets the change at once instead.
+
 The Atlas opens on the gallery: each frame drawn, named and counted, and
 clickable to dance from. It narrows on three questions — how many connections,
 which hand of the lead holds, which hand of the follow is held — which are read
@@ -68,6 +77,7 @@ src/partnerwork/transition.nim  the two primitives, the two compounds, the route
 src/partnerwork/diagram.nim     one drawing of a frame, for everything that shows one
 src/partnerwork/map.nim         the whole graph as one picture: frames and moves
 src/partnerwork/spokes.nim      the frame held and every way out of it, and no more
+src/partnerwork/motion.nim      when a drawing moves: the phases and their times
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
 app/                            the browser validator

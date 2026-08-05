@@ -35,13 +35,6 @@ type
     to: Frame
 
 
-const STEP_PAUSE = 560
-  ## Wait between the two moves of a compound, in milliseconds.
-  ##
-  ## Long enough for the marker to finish travelling, which is what makes the
-  ## frame between the two moves something the eye can catch.
-
-
 func startFrame(): Frame =
   ## Get the frame the page opens in: the plain one-hand hold.
   fromKey("r-.").get
@@ -55,6 +48,19 @@ var
   vis = Vis.Dynamic
   filter = Filter()
   history: seq[Step] = @[]
+  motion = Motion.Still     ## What the drawings are doing at this instant.
+  taken = none(Frame)       ## Frame being moved to, while the couple are leaving.
+  queued = none(Frame)      ## Second move of a compound, waiting for the first.
+  generation = 0            ## Which move is in flight, so an older one can be dropped.
+
+
+proc atOnce(): bool =
+  ## Test whether the reader has asked for no movement.
+  ##
+  ## A reader who has turned animation off should not be made to wait out an
+  ## animation that is not running: every phase collapses into the one change of
+  ## state that the phases were spelling out.
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
 
 
@@ -177,10 +183,11 @@ func renderArms(): string =
   tag("div", "class=\"legend\"", swatches)
 
 
-func renderSpokesView(current, before: Frame): string =
+func renderSpokesView(current, before: Frame; motion: Motion;
+    taken: Option[Frame]): string =
   ## Draw where the couple are and every way out, and nothing else.
   tag("div", "class=\"view-spokes\"",
-    tag("div", "class=\"scroll\"", renderSpokes(current, before)) &
+    tag("div", "class=\"scroll\"", renderSpokes(current, before, motion, taken)) &
     tag("p", "class=\"note\"", "The frame in the middle is the one being held. " &
       "Every spoke is a way out of it and nothing else is drawn. A drop " &
       "releases a hand so it points up, a collect takes one so it points down, " &
@@ -188,10 +195,10 @@ func renderSpokesView(current, before: Frame): string =
       "it becomes the middle."))
 
 
-func renderMapView(current, before: Frame): string =
+func renderMapView(current, before: Frame; taken: Option[Frame]): string =
   ## Draw where the couple stand in the whole ontology.
   tag("div", "class=\"view-map\"",
-    tag("div", "class=\"scroll\"", renderMap(some(current), some(before))) &
+    tag("div", "class=\"scroll\"", renderMap(some(current), some(before), taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. A " &
       "lit line is named for the move away from where you stand; dashed curves " &
@@ -200,23 +207,29 @@ func renderMapView(current, before: Frame): string =
       "a compound dances its two moves in turn."))
 
 
-func renderStage(current, before: Frame; vis: Vis): string =
+func renderStageBody(current, before: Frame; vis: Vis; motion: Motion;
+    taken: Option[Frame]): string =
   ## Show the frame the couple hold, drawn the way the dancer has asked for.
+  ##
+  ## The name shown is the frame being *left* until the move lands, because the
+  ## drawing is still showing that frame: a heading that changed before the
+  ## picture did would name something nobody can see.
   let drawing =
     case vis
-    of Vis.Dynamic: renderSpokesView(current, before)
-    of Vis.Overview: renderMapView(current, before)
-  tag("section", "class=\"panel wide\"",
-    tag("div", "class=\"stage-head\"",
-      tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
-      renderVisSwitch(vis) & renderArms()) &
-    tag("div", "class=\"views\"", drawing))
+    of Vis.Dynamic: renderSpokesView(current, before, motion, taken)
+    of Vis.Overview: renderMapView(current, before, taken)
+  tag("div", "class=\"stage-head\"",
+    tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
+    renderVisSwitch(vis) & renderArms()) &
+    tag("div", "class=\"views\"", drawing)
 
 
-func renderDance(current, before: Frame; vis: Vis; danced: seq[Step]): string =
+func renderDance(current, before: Frame; vis: Vis; motion: Motion;
+    taken: Option[Frame]; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
-    renderStage(current, before, vis) &
+    tag("section", "class=\"panel wide\" id=\"stage\"",
+      renderStageBody(current, before, vis, motion, taken)) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
@@ -381,19 +394,30 @@ func renderControls(view: View): string =
   tag("header", "", tag("h1", "", "partner work") & tag("div", "class=\"tabs\"", views))
 
 
-proc render() =
-  ## Draw the page from the session state, then let the marker travel.
+proc resize() =
+  ## Hand the drawing the window it was drawn carrying.
   ##
-  ## The map is drawn with the marker still on the frame the couple left.  Moving
-  ## it after the browser has laid the page out is what turns a change of state
-  ## into a movement across the picture; a page that never runs this still shows
-  ## the couple somewhere true, one frame behind.
-  let body =
-    case view
-    of View.Dance: renderDance(current, before, vis, history)
-    of View.Atlas: renderAtlas(filter)
-    of View.Audit: renderAudit()
-  document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
+  ## Written straight onto the drawing rather than drawing it again, because
+  ## drawing it again would start every animation on the page over from nothing.
+  ## The window is drawn at the size the reader can already see and given its new
+  ## one here, so that it closes alongside the frame in flight rather than
+  ## catching up once the frame has landed.
+  let viewport = document.querySelector(".viewport")
+  if viewport == nil:
+    return
+  for name in ["w", "h", "px", "py"]:
+    let measure = viewport.getAttribute(cstring("data-" & name))
+    if measure != nil:
+      viewport.style.setProperty(cstring("--" & name), cstring($measure & "px"))
+
+
+proc travel() =
+  ## Let whatever was drawn where it was a moment ago move to where it is now.
+  ##
+  ## Both drawings are rendered with the couple still at the frame they left, and
+  ## are moved once the browser has laid the page out: that is what turns a change
+  ## of state into a movement across the picture, and a page that never runs this
+  ## still shows the couple somewhere true, one frame behind.
   let marker = document.getElementById("here")
   if marker != nil:
     discard marker.getBoundingClientRect() # Settle the drawn position first.
@@ -403,18 +427,37 @@ proc render() =
   if core != nil:
     discard core.getBoundingClientRect()
     core.setAttribute("transform", "translate(0,0)")
+  resize()
 
 
-proc dance(key: string) =
-  ## Take one offered move, refusing anything that is not offered.
+proc paintStage() =
+  ## Draw the frame and its ways out again, and nothing else on the page.
   ##
-  ## The guard is the point of the page: a frame reached any other way would be
-  ## a claim the ontology does not make.
-  let target = fromKey(key)
-  if target.isNone:
+  ## A move changes only the drawing.  Leaving the lists alone keeps the button
+  ## under the pointer from being rebuilt out from under it, and keeps the page
+  ## from being laid out again in the middle of an animation.
+  let stage = document.getElementById("stage")
+  if stage == nil:
     return
+  stage.innerHTML = cstring(renderStageBody(current, before, vis, motion, taken))
+  travel()
+
+
+proc render() =
+  ## Draw the whole page from the session state.
+  let body =
+    case view
+    of View.Dance: renderDance(current, before, vis, motion, taken, history)
+    of View.Atlas: renderAtlas(filter)
+    of View.Audit: renderAudit()
+  document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
+  travel()
+
+
+proc arrive(target: Frame) =
+  ## Stand in the frame a move reached, and remember the way there.
   for move in moves(current):
-    if move.to != target.get:
+    if move.to != target:
       continue
     history.add Step(phrase: phrase(current, move), to: move.to)
     before = current
@@ -422,27 +465,76 @@ proc dance(key: string) =
     return
 
 
+proc dance(key: string) =
+  ## Take one offered move, refusing anything that is not offered.
+  ##
+  ## The guard is the point of the page: a frame reached any other way would be
+  ## a claim the ontology does not make.  What follows the guard is only the
+  ## telling of it: the ways not taken fold away, the frame taken travels into
+  ## the middle, and the ways out of *it* grow.  Each phase is scheduled against
+  ## the times the drawing itself declares, so the page never advances the state
+  ## out from under an animation that is still running.
+  let target = fromKey(key)
+  if target.isNone or classify(current, target.get).isNone:
+    return
+  if motion == Motion.Leaving:
+    return # The couple are already on their way somewhere.
+  if atOnce():
+    arrive(target.get)
+    render()
+    return
+
+  inc generation
+  let mine = generation
+  motion = Motion.Leaving
+  taken = target
+  paintStage()
+
+  discard setTimeout(proc () =
+    if generation != mine:
+      return
+    arrive(target.get)
+    motion = Motion.Arriving
+    taken = none(Frame)
+    render(), LEAVE_TIME)
+
+  discard setTimeout(proc () =
+    if generation != mine:
+      return
+    let next = queued
+    queued = none(Frame)
+    if next.isSome:
+      dance(next.get.key), LEAD_ON_TIME)
+
+  discard setTimeout(proc () =
+    if generation != mine:
+      return
+    motion = Motion.Still, MOVE_TIME)
+
+
 proc danceCompound(key: string) =
   ## Take a named compound, one move at a time, so the way through is danced.
   ##
-  ## The second move waits for the first to finish crossing the map.  It is only
-  ## taken if the couple are still standing where the first move left them, so a
-  ## click elsewhere in the meantime cancels the rest rather than teleporting
-  ## them out of wherever they went.
+  ## A lead thinks of it as one thing and the ontology knows it is two, so the
+  ## page dances both: the second is queued behind the first rather than timed
+  ## against it, and it starts as the frame between them lands.  Anything else
+  ## the dancer does in the meantime is a newer move, and drops the queue.
   let target = fromKey(key)
   if target.isNone or compound(current, target.get).isNone:
     return
   let steps = route(current, target.get)
   if steps.len != 2:
     return
-  let waypoint = steps[0].to
-  dance(waypoint.key)
-  render()
-  discard setTimeout(proc () =
-    if current != waypoint:
-      return
-    dance(target.get.key)
-    render(), STEP_PAUSE)
+  queued = some(target.get)
+  dance(steps[0].to.key)
+
+
+proc rest() =
+  ## Stop whatever was moving, for a change of state that is not a move.
+  inc generation
+  motion = Motion.Still
+  taken = none(Frame)
+  queued = none(Frame)
 
 
 proc start(key: string) =
@@ -450,6 +542,7 @@ proc start(key: string) =
   let target = fromKey(key)
   if target.isNone:
     return
+  rest()
   origin = target.get
   before = origin
   current = origin
@@ -462,7 +555,6 @@ proc handle(event: Event) =
   let stepped = event.target.closest("g.node.reachable")
   if stepped != nil:
     dance($stepped.getAttribute("data-frame"))
-    render()
     return
   let led = event.target.closest("g.node.two")
   if led != nil:
@@ -474,7 +566,9 @@ proc handle(event: Event) =
   let action = $node.getAttribute("data-action")
   let value = $node.getAttribute("data-value")
   case action
-  of "move": dance(value)
+  of "move":
+    dance(value)
+    return
   of "compound":
     danceCompound(value)
     return
@@ -504,10 +598,12 @@ proc handle(event: Event) =
         filter.follow = some(candidate)
   of "undo":
     if history.len > 0:
+      rest()
       discard history.pop()
       before = current
       current = if history.len > 0: history[^1].to else: origin
   of "reset":
+    rest()
     before = current
     current = origin
     history = @[]

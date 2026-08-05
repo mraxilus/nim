@@ -50,6 +50,108 @@ suite "the spokes":
           check rise > 0
 
 
+suite "the space and the window":
+  test "every frame is drawn inside the one space":
+    # The space is what lets a node travel: a coordinate has to mean the same
+    # place in the frame arrived at as it did in the frame left behind.
+    let (bx, by, bw, bh) = SPOKES_BOX
+    for here in FRAMES:
+      let (x, y, w, h) = windowOf(here)
+      check x >= bx
+      check y >= by
+      check x + w <= bx + bw
+      check y + h <= by + bh
+
+  test "a window holds the whole of the frame it is cut for":
+    for here in FRAMES:
+      let (x, y, w, h) = windowOf(here)
+      for spoke in spokesOf(here):
+        let (sx, sy) = endOf(spoke)
+        check sx > x and sx < x + w
+        check sy > y and sy < y + h
+        let (lx, ly) = labelAt(spoke)
+        check lx > x and lx < x + w
+        check ly > y and ly < y + h
+
+  test "a window is cut to its frame rather than to the widest one":
+    # Every frame in one box would leave the frames with ways out one way only
+    # mostly empty, which is the whole reason the window moves at all.
+    var sizes: seq[(int, int)] = @[]
+    for here in FRAMES:
+      let (_, _, w, h) = windowOf(here)
+      if (w, h) notin sizes:
+        sizes.add (w, h)
+    check sizes.len > 1
+    for here in FRAMES:
+      let (_, _, w, h) = windowOf(here)
+      check w <= SPOKES_BOX[2]
+      check h <= SPOKES_BOX[3]
+
+  test "the middle is inside every window, with the drawing around it":
+    for here in FRAMES:
+      let (x, y, w, h) = windowOf(here)
+      check MIDDLE[0] > x and MIDDLE[0] < x + w
+      check MIDDLE[1] > y and MIDDLE[1] < y + h
+
+
+suite "the moving":
+  test "the times the drawing declares are the times the page waits on":
+    let declared = motionStyle()
+    for (name, time) in {"--leave": LEAVE_TIME, "--travel": TRAVEL_TIME,
+        "--grow-delay": GROW_DELAY, "--grow": GROW_TIME,
+        "--grow-step": GROW_STEP, "--leaf-delay": LEAF_DELAY}:
+      check declared.contains(name & ": " & $time & "ms")
+    check LEAD_ON_TIME > LEAVE_TIME
+    check MOVE_TIME >= LEAD_ON_TIME
+
+  test "every phase names itself to the stylesheet, distinctly":
+    var named: seq[string] = @[]
+    for moving in Motion:
+      check phase(moving).len > 0
+      check phase(moving) notin named
+      named.add phase(moving)
+
+  test "while leaving, the way taken is marked and every other is folding":
+    for here in FRAMES:
+      for spoke in spokesOf(here):
+        let picture = renderSpokes(here, here, Motion.Leaving, some(spoke.to))
+        check picture.count("spoke taken") + picture.count("spoke two taken") == 1
+        check picture.count(" taken\"") == 1
+        check picture.count(" going\"") == spokesOf(here).len - 1
+
+  test "a frame standing still is neither taking nor folding":
+    for here in FRAMES:
+      let picture = renderSpokes(here, here)
+      check not picture.contains(" taken\"")
+      check not picture.contains(" going\"")
+
+  test "every leaf is grown from the place it occupies":
+    for here in FRAMES:
+      let picture = renderSpokes(here, here)
+      for spoke in spokesOf(here):
+        let (x, y) = endOf(spoke)
+        check picture.contains("--lx: " & $x & "px; --ly: " & $y & "px")
+      # A branch grows from the middle, and the middle is one place for them all.
+      check picture.count("--ox: ") == 1
+
+  test "an arriving frame is drawn in the window it is leaving":
+    for before in FRAMES:
+      for spoke in spokesOf(before):
+        let
+          picture = renderSpokes(spoke.to, before, Motion.Arriving)
+          (_, _, w, h) = windowOf(before)
+          (_, _, tw, th) = windowOf(spoke.to)
+        # Drawn where the reader can already see it, carrying where it is going:
+        # the window and the frame in flight then set off together.
+        let
+          (px, py) = panOf(windowOf(before))
+          (tx, ty) = panOf(windowOf(spoke.to))
+        check picture.contains("--w: " & $w & "px; --h: " & $h & "px; --px: " &
+          $px & "px; --py: " & $py & "px")
+        check picture.contains("data-w=\"" & $tw & "\" data-h=\"" & $th &
+          "\" data-px=\"" & $tx & "\" data-py=\"" & $ty & "\"")
+
+
 suite "the drawing":
   test "only the frame held and the frames it reaches are drawn":
     for here in FRAMES:
