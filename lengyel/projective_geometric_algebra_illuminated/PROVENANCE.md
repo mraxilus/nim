@@ -395,14 +395,92 @@ next frame after a delete. Three guards exist and must stay:
 
 Interaction Model
 ---
-**Desktop / mouse and pen.** Drag from an object onto another to derive a third: left joins
-(`Wedge`), right meets (`WedgeAnti`), middle projects (`ProjectOrthogonal`) —
-`visualiser.dragOperationFor` maps SDL button numbers,
-`browser_bridge.nimDragOperationForButton` maps DOM `PointerEvent.button` numbers (0/1/2,
-a different numbering for the same three buttons). Dragging from empty space moves the
-camera instead: left orbits, right pans, wheel dollies. A plain click (no movement, under
-`MOUSE_CLICK_MAX_MS` 350 ms / `MOUSE_CLICK_MAX_MOVE` 6 px) selects instead of dragging;
-shift-click toggles into a multi-selection; a plain click on empty space clears it.
+**Desktop / mouse and pen.** Drag from an object onto another to derive a third. **The
+press target chooses the scheme; the button chooses whether you are asked.** Press an object
+and you are constructing; press empty space and you are moving the camera (left orbits,
+right pans, wheel dollies). Left then takes the algebra's own answer on release; right opens
+a four-way choice menu instead, as does holding still over the target for
+`MILLISECONDS_DWELL_MENU` (450). Both buttons reach the same choices, so this is redundancy
+for different expertise rather than a mode split — which is exactly why it is safe where the
+button-per-operation mapping it replaced was not. `interaction.isMenuForcedBy` states it
+once; `visualiser.isMenuForcedFor` maps SDL button numbers and
+`browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button` numbers (0/1/2, a
+different numbering for the same three buttons) into it. **Middle is unbound**: `project`
+used to live there, which put a third of the vocabulary behind hardware most trackpads lack.
+A plain click (no movement, under `MOUSE_CLICK_MAX_MS` 350 ms / `MOUSE_CLICK_MAX_MOVE` 6 px)
+selects instead of dragging; shift-click toggles into a multi-selection; a plain click on
+empty space clears it.
+
+**What a drag builds is read off the operands, not off the button.** `∧` adds grades and is
+drawable when the sum ≤ 4; `∨` adds antigrades and is drawable when the sum ≥ 4. Measured
+over every ordered pair of point, line and plane — with two disjoint families of operands in
+general position, points off the moment curve (t, t², t³), where "no three collinear and no
+four coplanar" is a Vandermonde theorem rather than a hope:
+
+| first → second | join `∧` | meet `∨` | project | plain release takes |
+|---|---|---|---|---|
+| point → point | line | — | point | join |
+| point → line | plane | — | point | join |
+| point → plane | — | — | point | project |
+| line → point | plane | — | — | join |
+| line → line | — | — | line | project |
+| line → plane | — | point | line | meet |
+| plane → point | — | — | — | **nothing** |
+| plane → line | — | point | — | meet |
+| plane → plane | — | line | plane | meet |
+
+**At most one of join and meet is ever drawable**, so `proposalFor` is a plain priority
+order (Join → Meet → Project) with no tie to arbitrate. That property is what the whole
+design rests on, so the suite pins it exhaustively along with every cell of the table.
+Two consequences the first design got wrong: `plane → point` offers **nothing at all**, so
+`proposalFor` genuinely returns none and a release on such a pair refuses rather than
+inventing something; and the table is **asymmetric** (`point → plane` projects, `plane →
+point` makes nothing), so drag direction carries meaning — an argument for the preview
+rather than against it.
+
+A first measurement of that table was invalid: it crossed a point lying *on* the line it was
+paired with and read zeros that came from the fixture, not the algebra. General position is
+what makes a zero here mean something, and it is why the suite's `GENERAL_FIRST` /
+`GENERAL_SECOND` are separate from the random `POINTS`/`LINES`/`PLANES`, whose `LINES[i]` is
+built out of neighbouring `POINTS` and is therefore incident with them.
+
+**Self-revelation.** The drag was the weakest of the three ways to build something, for one
+reason: it showed nothing. The workbench lists every operation and the selection menu shows
+what applies, but a drag's whole vocabulary lived in a button mapping the reader had to have
+been told. So the drag now *shows its answer before committing it*: `interaction.preview`
+holds what a plain release would build, drawn as a ghost in `INK_GHOST` through the same
+`addObject` dispatch an open edit session's ghost uses — one "not committed yet" appearance,
+not two. The rubber-band is tinted by `inkOfDrag`: the operation's own colour over a pair
+that makes something, `Ink.Invalid` magenta over one that makes nothing, neutral crossing
+empty space. That magenta is what the palette reserved a slot for and had no use for until
+now; it is never leaned on alone, since the ghost simultaneously fails to appear.
+
+**The choice menu.** Four wedges at fixed compass points — join north, meet east, project
+south, `more…` west — with unoffered ones drawn greyed rather than packed out, because a
+menu whose items move is one nobody learns to reach without reading it. **One release rule:
+a release commits whatever is under the cursor.** `endDrag` resolves the wedge itself
+through `choiceAt`, rather than each render path resolving it, so the two cannot disagree
+about where a release landed; back at the centre (inside `PIXELS_MENU_DEADZONE`, 26 px)
+commits nothing, which is also why a dwell menu is safe to open unasked — it opens *centred
+on the cursor*, so a reader who did not want it is already in the deadzone. The menu
+**latches its destination** when it opens (`destinationOf`): reaching out to a wedge
+necessarily takes the cursor off the item, and a destination read from hover would go none
+at exactly the moment the release needs it.
+
+`more…` is the ramp from this gesture to the other twenty-four operations: it builds nothing
+itself and instead selects both operands in drag order and opens the apply section, which
+fills its own m and n from the selection. Without it the gesture is a dead end at three
+operations out of twenty-seven.
+
+**Flick-marks are impossible on this path**, which is why the menu earns its speed from
+fixed positions instead. A marking menu's accelerator is the direction of the stroke, and a
+construction drag has already spent its direction reaching the target. The accelerator here
+is the right button.
+
+A degenerate construction is **refused**: no item is added and the message names what was
+degenerate (Nielsen #5). Without that, a scene fills with invisible slots that still consume
+capacity and undo steps. The menu greys the wedges that would be refused, so that path
+reaches the refusal only by insisting.
 
 **Browser / touch.** One finger drags to orbit, two pinch to zoom and pan. A long press
 (`LONG_PRESS_MS` 500) selects an object; once a selection exists, a tap
@@ -570,13 +648,19 @@ was rejected, because being a testbed for the real library is the point. Anythin
 derives a value from domain data belongs in Nim behind an `{.exportc.}`, not in `glue.js`.
 Audits have repeatedly found drift here — a grade computed by counting digits in a basis
 name, a button-to-operation mapping reimplemented, five render constants hand-copied — each
-replaced by an export (`nimBasisGrade`, `nimDragOperationForButton`, `nimRenderLineWidths`,
-`nimOverlayMetrics`).
+replaced by an export (`nimBasisGrade`, `nimDragKindForButton`, `nimRenderLineWidths`,
+`nimOverlayMetrics`, `nimMenuMetrics`). The choice menu's own wedge label widths are the
+one thing measured on the JS side rather than exported: only the browser knows what its own
+font actually laid out, and estimating from a character count drifts the moment the face
+loaded is not the one the estimate was tuned against.
 
 Where a desktop-only module holds the authoritative value, `browser_bridge.nim` duplicates
-it in **Nim** with a comment naming the original (`lut_drag_to_ink`, `drawExtentFor`, the
-render metrics above) — `renderer.nim` and `visualiser.nim` bind to OpenGL/SDL and cannot
-compile under `nim js`. A fix to one copy is not finished until the sibling is checked.
+it in **Nim** with a comment naming the original (`drawExtentFor`, the render metrics above)
+— `renderer.nim` and `visualiser.nim` bind to OpenGL/SDL and cannot compile under `nim js`.
+A fix to one copy is not finished until the sibling is checked. One such pair is now gone:
+the drag-to-ink table lived in both files, each with a comment telling the reader to check
+the other; it moved to `interaction.inkOf`, which both render paths and the desktop panel's
+own legend now read.
 
 **Three JS-backend gotchas, all confirmed empirically, all still load-bearing:**
 
@@ -1011,7 +1095,7 @@ sentinels) as explicit rules.
 The codebase was brought into compliance across two audits. Notable outcomes still in force:
 
 - `gif.nim`'s internal `-1`-means-none became `Option[int]`. `browser_bridge.nim`'s
-  genuine FFI-boundary cases (`DragResult.created_slot`, `nimDragOperation`,
+  genuine FFI-boundary cases (`DragResult.created_slot`, `nimDragMenuHighlighted`,
   `nimHoverSlot`) keep `Option[int]` internally and translate through one named
   `SLOT_NONE` at each proc's return — the boundary is where a JS-incompatible
   representation is translated, not a licence to use it upstream.
@@ -1133,11 +1217,10 @@ Both front-ends carry a `?` in the bottom-right corner, at least 44 px (Apple's 
 WCAG 2.5.8 asks 24). It opens the same table, `help.lut_help_entries`, which **both UIs
 render** -- the desktop wrote the controls out in its panel and the browser wrote them in a
 hint, the two had drifted, and only one could be got back. The construct rows are derived
-from `interaction.dragForButton` and each operation's own `outcome`, so rebinding a button
-rewrites the help with it. `dragForButton` is also now the single statement of which button
-carries which operation: each render path translates only its own numbering (SDL's and the
-DOM's differ) into `PointerButton` and asks. The entry count is asserted against the array
-length at compile time, which caught a miscount immediately.
+from `interaction.isMenuForcedBy`, so rebinding a button rewrites the help with it, and a
+button that starts no drag (middle) contributes no row at all. Each render path translates
+only its own numbering (SDL's and the DOM's differ) into `PointerButton` and asks. The entry
+count is asserted against the array length at compile time, which caught a miscount twice.
 
 The hint **persists until the reader first acts** -- a gesture that moves the camera or
 changes the scene, not a hover -- rather than for four seconds. A timer cuts off whoever

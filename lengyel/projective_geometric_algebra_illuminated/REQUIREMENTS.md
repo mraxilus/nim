@@ -264,11 +264,11 @@ Rules:
   something else. Name that boundary **once** (first categorical slot, count) and derive both
   pickers and the cycler from it, with a compile-time assertion on the count so appending a
   structural slot after the last hue fails the build.
-- **Invalid is reserved, not used.** Nothing draws in it; it exists so the rest of the palette
-  can be held clear of it, and so seeing magenta always means something is wrong. Whatever
-  comes to use it must add a word or a marker — magenta reads as blue under deuteranopia,
-  which is where every assignable hue sits furthest from it. No ordinary interaction may wear
-  it, including drag rubber-bands and demo steps.
+- **Invalid is reserved for what is wrong**, and never assignable to an object. It exists so
+  the rest of the palette can be held clear of it, and so seeing magenta always means
+  something is wrong. Its one use is the rubber-band of a drag standing over a pair that
+  makes nothing (§12). Whatever wears it must add a word or a marker — magenta reads as blue
+  under deuteranopia, which is where every assignable hue sits furthest from it.
 - **Never remove or reorder an enumeration entry** once scenes have been saved: ordinals are
   written to file, and shifting them silently recolours saved work.
 - **Muting** blends a colour toward its own luminance by 0.6 and drops alpha to 0.55 — not
@@ -462,20 +462,60 @@ put an endpoint behind the eye.
 12. Interaction
 ---
 
-**Mouse and pen, both front-ends.** Drag from one object onto another to derive a third:
+**Any gesture vocabulary must reveal itself.** A control the reader can only discover by
+having been told about it does not count as reachable, however few keystrokes it takes once
+known. Every gesture here either shows what it will do before it commits, or offers a menu
+that names the alternatives — and a gesture that can build something must have a route to
+the operations it cannot build, or it is a dead end.
 
-| Button | Operation |
-|--------|-----------|
-| left | join (wedge) |
-| right | meet (antiwedge) |
-| middle | orthogonal projection of source onto destination |
+**Mouse and pen, both front-ends.** Drag from one object onto another to derive a third.
 
-Dragging from empty space moves the camera instead: left orbits, right pans, wheel dollies.
-Orbit 0.008 rad per pixel; pan 0.0016 × orbit distance per pixel; one wheel notch scales
-distance by 1.12. A plain click — under 350 ms and 6 px of movement — selects instead of
-dragging; shift-click toggles into a multi-selection; a plain click on empty space clears it.
+**The press target chooses the scheme; the button chooses whether you are asked.** Press an
+object and the drag constructs; press empty space and it moves the camera (left orbits,
+right pans, wheel dollies). Orbit 0.008 rad per pixel; pan 0.0016 × orbit distance per
+pixel; one wheel notch scales distance by 1.12. A plain click — under 350 ms and 6 px of
+movement — selects instead of dragging; shift-click toggles into a multi-selection; a plain
+click on empty space clears it.
 
-The button→operation mapping is **one rule in the core**, called by both front-ends. They
+| Button | Starts |
+|--------|--------|
+| left | a drag that takes the algebra's own answer on release |
+| right | the same drag, with the choice menu open from the moment it reaches a target |
+| middle | nothing — no operation may depend on hardware most trackpads lack |
+
+**What a drag builds is derived from the two operands, never from the button.** Join adds
+grades and is drawable when they sum to at most the dimension; meet adds antigrades and is
+drawable when those sum to at least it. At most one of the two is ever drawable for a given
+pair, so a plain priority order — join, then meet, then projection — resolves every pair
+with nothing to arbitrate. That property must be pinned by an exhaustive test over operands
+in **general position**; a fixture whose operands lie on each other reads zeros that come
+from the fixture, not the algebra, and proves nothing.
+
+Some pairs make nothing at all. Such a drag must **refuse**: add no object, and say what was
+degenerate. A scene must never gain a slot holding geometry with no shape.
+
+**While dragging, show the answer.** Ghost what a plain release would build, in the same
+appearance an uncommitted edit already wears. Tint the rubber-band by that answer, and use
+the reserved invalid colour over a pair that makes nothing — the warning belongs before the
+release, not in a message after it. That colour is never the only signal; the ghost is
+absent at the same time.
+
+**The choice menu** opens on the right button at once, or on holding still over the target.
+Its choices sit at **fixed positions** that never move from pair to pair, with unoffered
+ones drawn greyed rather than packed out. **One release rule: a release commits whatever is
+under the cursor** — a choice if the menu is open, the derived answer if it is not, nothing
+at the menu's own centre. The core resolves which choice a release landed on, so no
+front-end can hold a second opinion about it. The menu latches its destination when it
+opens: reaching a choice takes the cursor off the object.
+
+The menu's fourth choice hands both operands to the full operation catalogue, in drag order.
+Without it the gesture reaches three operations out of twenty-seven and stops.
+
+Directional flick-marks are **not available on this path**: a construction drag has already
+spent its direction reaching its target. Speed comes from the fixed positions and the second
+button instead.
+
+The button→meaning mapping is **one rule in the core**, called by both front-ends. They
 number their buttons differently; that translation is the only part either may hold.
 
 **Touch, browser.** One finger drags to orbit, two pinch to zoom and pan. A long press

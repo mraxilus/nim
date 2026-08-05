@@ -129,6 +129,12 @@ proc glSetSwapInterval*(interval: cint): bool
 proc glSwapWindow*(window: Window): bool
   {.importc: "SDL_GL_SwapWindow", header: HEADER, discardable.}
 proc pollEvent*(event: ptr Event): bool {.importc: "SDL_PollEvent", header: HEADER.}
+proc pushEvent*(event: ptr Event): bool
+  {.importc: "SDL_PushEvent", header: HEADER, discardable.}
+  ## Put an event on the same queue `pollEvent` drains, so a scripted gesture reaches the
+  ## application through the identical path a real one does -- see `visualiser.driveDrag`.
+  ## Posting one straight to the handler instead would prove nothing about the wiring
+  ## between them, which is exactly where bugs here have hidden before.
 
 
 

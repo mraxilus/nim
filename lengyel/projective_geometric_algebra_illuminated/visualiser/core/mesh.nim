@@ -221,10 +221,11 @@ type
       ## magenta no object may be assigned, so seeing it always means something is
       ## invalid. Structural for exactly that reason: a status colour a caller could
       ## also pick for an ordinary object would say nothing.
-      ##   Nothing draws in it yet; it is reserved here so the palette below can be
-      ## held clear of it. Whatever comes to use it must not lean on the colour alone:
+      ##   Worn by the rubber-band of a drag standing over a pair that makes nothing
+      ## (`interaction.inkOfDrag`), which is the warning that arrives before the release
+      ## rather than as a message after it. Never leaned on alone, as it must not be:
       ## magenta reads as blue under deuteranopia, which is where every assignable hue
-      ## is furthest from it, so an invalid object needs a word or a marker too.
+      ## is furthest from it, so that drag simultaneously shows no ghost.
     ## Categorical slots, spent by caller on telling one object from another.
     ##   Named by hue rather than by role, as caller alone knows what objects mean.
     ##   Grade is already legible from shape drawn, so colour is free to carry identity.

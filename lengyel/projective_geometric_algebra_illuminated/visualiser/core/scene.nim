@@ -477,6 +477,16 @@ func anchorOverride*(item: Item): Option[Position] = item.scene.anchor_overrides
   ## specifically than its own support does; see `creationAnchor`.
 
 
+func geometryOf*(scene: Scene; slot: int): Multivector =
+  ## Read item's geometry by value, by slot, without needing a mutable scene.
+  ##   Beside `geometryAt` below for the same reason `isVisible` sits beside `setVisible`:
+  ##   a reader that only wants to look at an item should not have to hold it mutably, and
+  ##   a `var`-returning accessor used for reading is the pattern that miscompiled under
+  ##   the JS backend once already.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.geometries[slot]
+
+
 proc geometryAt*(scene: var Scene; slot: int): var Multivector =
   ## Reach item's geometry for editing, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."

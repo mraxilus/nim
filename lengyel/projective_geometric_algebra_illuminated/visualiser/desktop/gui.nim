@@ -171,6 +171,15 @@ proc overlayArc*(
   cx, cy, radius, fraction, red, green, blue, alpha, thickness: cfloat
 ) {.importc: "guiOverlayArc".}
   ## Stroke `fraction` of a circle, clockwise from twelve o'clock; a whole one at 1.
+proc overlayChip*(
+  cx, cy, width, height, red, green, blue, alpha, rounding: cfloat
+) {.importc: "guiOverlayChip".}
+  ## Fill a rounded rectangle centred on `cx`/`cy`, for one wedge of the drag menu.
+proc overlayText*(cx, cy, red, green, blue, alpha: cfloat; text: cstring)
+  {.importc: "guiOverlayText".}
+  ## Write text centred on `cx`/`cy`, measured against the font actually loaded.
+proc openNext*() {.importc: "guiOpenNext".}
+  ## Force the next `header` open, whatever the reader last left it as.
 proc overlayPolyline*(
   points: ptr cfloat; count: cint; red, green, blue, alpha, thickness: cfloat;
   is_closed: cint

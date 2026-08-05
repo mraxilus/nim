@@ -9,7 +9,7 @@
 ## the handler that implements it -- "drag one object onto another", not "pointerdown then
 ## pointermove". Where a binding is derived from a rule stated elsewhere, it is read from
 ## there rather than transcribed: `lut_help_entries` builds its construct rows out of
-## `interaction.dragForButton`, so rebinding a button rewrites the help with it.
+## `interaction.isMenuForcedBy`, so rebinding a button rewrites the help with it.
 ##
 ## Kept deliberately short. A reference a reader has to scroll is one they stop opening,
 ## and everything here has to fit a popup on a phone.
@@ -68,7 +68,7 @@ const lut_help_entries* = block:
   ##   A fixed array rather than a `seq`, with `count` asserted against its length at
   ## compile time, so adding an entry without resizing fails the build rather than leaving
   ## a blank row at the bottom of the panel.
-  var lut: array[18, HelpEntry]
+  var lut: array[19, HelpEntry]
   var count = 0
   proc add(topic: HelpTopic; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -76,18 +76,23 @@ const lut_help_entries* = block:
     )
     inc count
 
-  # The three drag rows are derived from `interaction.dragForButton` and that operation's
-  #   own `outcome`, so rebinding a button or rewording an operation rewrites its line here
-  #   rather than leaving this text quietly wrong.
+  # Which button asks and which decides is `interaction.isMenuForcedBy`'s to say, so
+  #   rebinding one rewrites its line here rather than leaving this text quietly wrong.
   #   Walked in reading order rather than in `PointerButton`'s own, which runs left, middle,
-  #   right by physical position: a reader meets the two common buttons first.
+  #   right by physical position.
   for button in [PointerButton.Left, PointerButton.Right, PointerButton.Middle]:
-    let drag = dragForButton(button)
-    if drag.isNone: continue
+    let is_forced = isMenuForcedBy(button)
+    if is_forced.isNone: continue
     add(
       HelpTopic.Build, nameOf(button) & "-drag one object onto another",
-      outcome(drag.get),
+      if is_forced.get: "choose what to make of them"
+      else: "make whatever the two of them make",
     )
+  add(
+    HelpTopic.Build, "hold still over the target",
+    "the same choice, without needing the other button",
+  )
+  add(HelpTopic.Build, "more… in that choice", "hand both objects to the apply section")
   add(
     HelpTopic.Build, "the apply section",
     "any operation in the catalogue, on the objects you have chosen",

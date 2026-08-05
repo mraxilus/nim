@@ -67,6 +67,43 @@ for i in 0 ..< SAMPLES:
   LINES[i] = POINTS[i] ∧ POINTS[j]
   PLANES[i] = POINTS[i] ∧ POINTS[j] ∧ POINTS[k]
 
+const COUNT_GENERAL = 12
+  ## Points enough for two disjoint families of one point, one line and one plane.
+
+func generalPlace(index: int): Position =
+  ## Place one of a family of points in **general position**: no three collinear and no
+  ## four coplanar, so a shape built from any of them is incident with none of the rest.
+  ##   Read off the moment curve (t, t², t³), where that is a theorem rather than a hope:
+  ##   the 4x4 matrix of (1, t, t², t³) over four distinct parameters is Vandermonde and
+  ##   so never singular. Scaled to the extent the rest of the suite works at.
+  let t = -1.1 + 0.2*float(index)
+  Position(x: 4.0*t, y: 4.0*t*t, z: 4.0*t*t*t)
+
+var
+  GENERAL_POINTS: array[COUNT_GENERAL, Multivector]
+  GENERAL_FIRST: array[3, Multivector] ## Point, line, plane, in grade order.
+  GENERAL_SECOND: array[3, Multivector] ## A second such triple, sharing no point with the
+    ## first -- so a test walking every ordered pair of shapes crosses two *different*
+    ## objects even on the diagonal.
+    ##   Kept separate from `POINTS`/`LINES`/`PLANES` above, which are random and whose
+    ## `LINES[i]` is built out of neighbouring `POINTS`, so every one of them lies on
+    ## points the suite would otherwise pair it against. A first measurement of the drag
+    ## proposal table did exactly that -- crossed a point with a line running through it,
+    ## and read zeros that came from the fixture rather than from the algebra. Two
+    ## families in general position are what make a zero here mean something.
+for i in 0 ..< COUNT_GENERAL:
+  GENERAL_POINTS[i] = toMultivector(generalPlace(i))
+GENERAL_FIRST = [
+  GENERAL_POINTS[0],
+  GENERAL_POINTS[1] ∧ GENERAL_POINTS[2],
+  GENERAL_POINTS[3] ∧ GENERAL_POINTS[4] ∧ GENERAL_POINTS[5],
+]
+GENERAL_SECOND = [
+  GENERAL_POINTS[6],
+  GENERAL_POINTS[7] ∧ GENERAL_POINTS[8],
+  GENERAL_POINTS[9] ∧ GENERAL_POINTS[10] ∧ GENERAL_POINTS[11],
+]
+
 # Mesh storage is far too large for a stack frame, exactly as it is in the application.
 var MESHES: MeshSet
 
@@ -1610,27 +1647,31 @@ suite "Interaction":
     check DragOperation.Project.toOperation == Operation.ProjectOrthogonal
 
 
-  test "drag applies its operation and appends the result":
+  test "drag applies the proposal and appends the result":
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    check interaction.beginDrag(DragOperation.Join)
+    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
     check scene.len == 3
+    # Two points propose `join`, and the item that lands is that join -- not a button's
+    #   choice, which is what this used to be.
+    check outcome.choice == some(DragChoice.Join)
     check scene[2].geometry =~ (POINTS[0] ∧ POINTS[1])
-    check interaction.operation.isNone
+    check not interaction.is_dragging
     check "gave" in outcome.message
     check outcome.index_created == some(2)
+    check outcome.operands == some((source: 0, destination: 1))
 
 
   test "drag cannot start without a hovered item":
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = none(int)
-    check not interaction.beginDrag(DragOperation.Meet)
-    check interaction.operation.isNone
+    check not interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    check not interaction.is_dragging
 
 
   test "releasing over empty space adds nothing":
@@ -1638,11 +1679,11 @@ suite "Interaction":
     scene.addItem(POINTS[0], "a", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(DragOperation.Join)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
     interaction.index_hover = none(int)
     let outcome = interaction.endDrag(scene)
     check scene.len == 1
-    check interaction.operation.isNone
+    check not interaction.is_dragging
     check "empty space" in outcome.message
     check outcome.index_created.isNone
 
@@ -1652,7 +1693,7 @@ suite "Interaction":
     scene.addItem(POINTS[0], "a", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(DragOperation.Meet)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
     let outcome = interaction.endDrag(scene)
     check scene.len == 1
     check "own source" in outcome.message
@@ -1665,13 +1706,13 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(DragOperation.Join) # index_source = 0.
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0) # index_source = 0.
     scene.removeItem(0) # Source vanishes mid-drag -- e.g. removed by another input path.
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
     check "no longer exists" in outcome.message
     check outcome.index_created.isNone
-    check interaction.operation.isNone
+    check not interaction.is_dragging
     check scene.len == 1
 
 
@@ -1681,7 +1722,7 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(DragOperation.Join) # index_source = 0.
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0) # index_source = 0.
     scene.removeItem(1)
     interaction.index_hover = some(1) # Still reports the now-dead slot as hovered.
     let outcome = interaction.endDrag(scene)
@@ -1696,9 +1737,9 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(DragOperation.Project)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
     interaction.cancelDrag()
-    check interaction.operation.isNone
+    check not interaction.is_dragging
     check scene.len == 2
 
 
@@ -1709,7 +1750,214 @@ suite "Interaction":
     let outcome = interaction.endDrag(scene)
     check outcome.message == ""
     check outcome.index_created.isNone
+    check outcome.choice.isNone
     check scene.len == 1
+
+
+  test "a drag onto a pair that makes nothing refuses rather than adding a blank":
+    # A plane dragged onto a point: join overflows grade 4, meet falls short of antigrade
+    #   4, and projecting a plane onto a point gives nothing drawable. The one pair in the
+    #   nine that offers no operation at all, and the reason `proposalFor` is an `Option`.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[2], "G", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "f", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.index_hover = some(1)
+    let outcome = interaction.endDrag(scene)
+    check scene.len == 2
+    check outcome.index_created.isNone
+    check outcome.choice.isNone
+    check "nothing drawable" in outcome.message
+
+
+  test "an insisted-on wedge that makes nothing refuses rather than adding a blank":
+    # Two points at the same place join to zero. The menu greys that wedge, so this is
+    #   only reachable by releasing on it anyway -- and what happens then is a message and
+    #   no item, never a slot holding geometry with no shape.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_FIRST[0], "a again", Ink.Rose)
+    check not isOffered(DragChoice.Join, GENERAL_FIRST[0], GENERAL_FIRST[0])
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.index_hover = some(1)
+    let outcome = interaction.commitChoice(scene, DragChoice.Join, 0.0)
+    check scene.len == 2
+    check outcome.index_created.isNone
+    check "nothing drawable" in outcome.message
+
+
+  test "at most one of join and meet is offered, over every ordered pair of shapes":
+    # The property the whole design rests on: because join and meet are never both
+    #   drawable, `proposalFor` can be a plain priority order rather than a table of nine
+    #   cases with a tiebreak. Measured here rather than asserted in prose, over operands
+    #   in general position -- an earlier measurement used a point lying *on* the line it
+    #   was crossed with and read zeros that came from the fixture, not the algebra.
+    for m in GENERAL_FIRST:
+      for n in GENERAL_SECOND:
+        check not (isOffered(DragChoice.Join, m, n) and isOffered(DragChoice.Meet, m, n))
+        # Whatever is proposed is drawable, so a plain release never adds a blank item.
+        let proposal = proposalFor(m, n)
+        if proposal.isSome: check resultOf(proposal.get, m, n).isSome
+        # And `more…` is always there, which is what keeps the menu from ever being empty.
+        check isOffered(DragChoice.More, m, n)
+
+
+  test "the proposal for each ordered pair of shapes is the measured one":
+    # The table in `PROVENANCE.md`, pinned. A change to the library's grades that moved
+    #   any cell would otherwise silently redefine what every plain drag builds.
+    const lut_expected = [
+      # point -> point, line, plane.
+      some(DragChoice.Join), some(DragChoice.Join), some(DragChoice.Project),
+      # line -> point, line, plane.
+      some(DragChoice.Join), some(DragChoice.Project), some(DragChoice.Meet),
+      # plane -> point, line, plane.
+      none(DragChoice), some(DragChoice.Meet), some(DragChoice.Meet),
+    ]
+    var index = 0
+    for m in GENERAL_FIRST:
+      for n in GENERAL_SECOND:
+        check proposalFor(m, n) == lut_expected[index]
+        inc index
+
+
+  test "a menu release picks the wedge the cursor is in, and nothing at its centre":
+    for choice in DragChoice:
+      let centre = ScreenPosition(x: 400.0, y: 300.0, depth: 0.0)
+      check choiceAt(centre, anchorOf(centre, choice)) == some(choice)
+    # Back at the middle is how a reader changes their mind without letting go.
+    let centre = ScreenPosition(x: 400.0, y: 300.0, depth: 0.0)
+    check choiceAt(centre, centre).isNone
+    check choiceAt(
+      centre, ScreenPosition(x: 400.0, y: 300.0 - 0.9*PIXELS_MENU_DEADZONE, depth: 0.0)
+    ).isNone
+    # Overshooting a wedge still picks it, so a fast throw is not punished.
+    check choiceAt(
+      centre, ScreenPosition(x: 400.0, y: 300.0 - 8.0*PIXELS_MENU_REACH, depth: 0.0)
+    ) == some(DragChoice.Join)
+
+
+  test "an open menu commits the wedge under the cursor, over its latched destination":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    check interaction.menu.isSome
+    check interaction.proposal == some(DragChoice.Join)
+    check interaction.preview.isSome
+    # Reaching for a wedge takes the cursor off the item; the destination must survive it.
+    interaction.index_hover = none(int)
+    let south = anchorOf(interaction.menu.get, DragChoice.Project)
+    interaction.updateCursor(south.x, south.y)
+    interaction.updateDrag(scene, 0.0)
+    check destinationOf(interaction) == some(1)
+    let outcome = interaction.endDrag(scene)
+    check outcome.choice == some(DragChoice.Project)
+    check outcome.index_created == some(2)
+    check scene[2].geometry =~ projectOrthogonal(GENERAL_FIRST[0], GENERAL_SECOND[0])
+
+
+  test "a menu release back at the centre commits nothing":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    let outcome = interaction.endDrag(scene)
+    check scene.len == 2
+    check outcome.index_created.isNone
+    check "without choosing" in outcome.message
+
+
+  test "`more…` builds nothing and hands both operands over, in drag order":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    let west = anchorOf(interaction.menu.get, DragChoice.More)
+    interaction.updateCursor(west.x, west.y)
+    let outcome = interaction.endDrag(scene)
+    check scene.len == 2
+    check outcome.choice == some(DragChoice.More)
+    check outcome.index_created.isNone
+    check outcome.operands == some((source: 0, destination: 1))
+
+
+  test "a left drag waits out the dwell before offering the menu; a right one never does":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 1000.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 1000.0)
+    check interaction.menu.isNone
+    interaction.updateDrag(scene, 1000.0 + 0.99*MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isNone
+    interaction.updateDrag(scene, 1000.0 + MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isSome
+
+    var forced = Interaction(is_enabled: true)
+    forced.index_hover = some(0)
+    discard forced.beginDrag(is_menu_forced = true, now = 1000.0)
+    forced.index_hover = some(1)
+    forced.updateDrag(scene, 1000.0)
+    check forced.menu.isSome
+
+
+  test "leaving the target restarts the dwell, so pausing on the way across never opens":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 1000.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 1000.0 + 0.9*MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isNone
+    interaction.index_hover = none(int) # Slipped off the target.
+    interaction.updateDrag(scene, 1000.0 + 0.95*MILLISECONDS_DWELL_MENU)
+    check interaction.preview.isNone
+    interaction.index_hover = some(1) # And back on, with the dwell owed in full again.
+    interaction.updateDrag(scene, 1000.0 + 1.5*MILLISECONDS_DWELL_MENU)
+    check interaction.menu.isNone
+
+
+  test "the rubber-band warns before the release, never after it":
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[2], "G", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "f", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    # Crossing empty space says nothing either way.
+    interaction.index_hover = none(int)
+    interaction.updateDrag(scene, 0.0)
+    check interaction.inkOfDrag == Ink.Guide
+    # Standing over a pair that makes nothing wears the reserved magenta, and shows no
+    #   ghost -- two signals, so the warning is never colour alone.
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    check interaction.inkOfDrag == Ink.Invalid
+    check interaction.preview.isNone
 
 
   test "disabled interaction never hovers":

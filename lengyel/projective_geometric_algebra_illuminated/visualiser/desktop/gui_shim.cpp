@@ -437,4 +437,32 @@ void guiOverlayPolyline(const float *points, int count, float red, float green, 
                    is_closed ? ImDrawFlags_Closed : ImDrawFlags_None, thickness);
 }
 
+// Fill a rounded rectangle centred on `cx`/`cy` straight onto the foreground layer, for
+//   one wedge of the drag menu. Centred rather than placed from a corner because every
+//   caller of it knows where the wedge's middle goes and nothing else about its size --
+//   which comes from the label it has to hold.
+void guiOverlayChip(float cx, float cy, float width, float height, float red, float green,
+                    float blue, float alpha, float rounding) {
+  ImGui::GetForegroundDrawList()->AddRectFilled(
+      ImVec2(cx - 0.5f * width, cy - 0.5f * height),
+      ImVec2(cx + 0.5f * width, cy + 0.5f * height),
+      ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), rounding);
+}
+
+// Write text centred on `cx`/`cy` onto the foreground layer, in the font already loaded.
+//   Centred here rather than by the caller so the measurement and the placement use the
+//   same font metrics; a caller offsetting by its own guess drifts as soon as the face
+//   loaded is not the one it guessed against.
+void guiOverlayText(float cx, float cy, float red, float green, float blue, float alpha,
+                    const char *text) {
+  const ImVec2 size = ImGui::CalcTextSize(text);
+  ImGui::GetForegroundDrawList()->AddText(
+      ImVec2(cx - 0.5f * size.x, cy - 0.5f * size.y),
+      ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), text);
+}
+
+// Force the next collapsing header open regardless of what the reader last left it as, so
+//   a gesture elsewhere can hand its operands to a section they can actually see.
+void guiOpenNext() { ImGui::SetNextItemOpen(true); }
+
 } // extern "C"

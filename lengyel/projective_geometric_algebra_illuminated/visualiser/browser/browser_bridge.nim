@@ -681,22 +681,22 @@ proc nimCanRedo(): bool {.exportc.} =
   g_history.canRedo
 
 
-proc nimDragOperationForButton(dom_button: cint): cint {.exportc.} =
-  ## Name the drag operation a pointer button starts, as a `DragOperation` ordinal, or
-  ## `SLOT_NONE` for a button that starts none.
+proc nimDragKindForButton(dom_button: cint): cint {.exportc.} =
+  ## Say what a pointer button starts: `SLOT_NONE` for no drag at all, 0 for one that
+  ## takes the proposal on release, 1 for one that opens the choice menu at once.
   ##   Only the *numbering* is this build's own: `PointerEvent.button` counts 0 left, 1
   ## middle, 2 right, where SDL counts them differently, so each render path translates
-  ## into `interaction.PointerButton` and asks the one shared rule which operation that
-  ## button carries. Which button does what used to be written out here as well, and the
-  ## help panel would have made it a third copy.
+  ## into `interaction.PointerButton` and asks the one shared rule what that button means.
+  ## Which button does what used to be written out here as well, and the help panel would
+  ## have made it a third copy.
   let button = case dom_button
     of 0: some(PointerButton.Left)
     of 1: some(PointerButton.Middle)
     of 2: some(PointerButton.Right)
     else: none(PointerButton)
   if button.isNone: return SLOT_NONE
-  let drag = dragForButton(button.get)
-  if drag.isNone: SLOT_NONE else: cint(drag.get)
+  let is_menu_forced = isMenuForcedBy(button.get)
+  if is_menu_forced.isNone: SLOT_NONE else: cint(ord(is_menu_forced.get))
 
 
 proc nimHelpEntries(): seq[cstring] {.exportc.} =
@@ -742,9 +742,16 @@ proc nimHoldMature(now: cfloat): bool {.exportc.} =
   isHoldMature(g_interaction, float(now))
 
 
-proc nimBeginDrag(drag_ordinal: cint): bool {.exportc.} =
+proc nimBeginDrag(is_menu_forced: bool; now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
-  interaction.beginDrag(g_interaction, DragOperation(drag_ordinal))
+  interaction.beginDrag(g_interaction, is_menu_forced, float(now))
+
+
+proc nimUpdateDrag(now: cfloat) {.exportc.} =
+  ## Forward to `interaction.updateDrag`; see its own doc comment.
+  ##   Called once a frame, after `nimUpdateHover`, and before the frame that reads the
+  ##   preview is built -- exactly the order `visualiser.renderFrame` runs them in.
+  interaction.updateDrag(g_interaction, g_scene, float(now))
 
 
 proc nimCancelDrag() {.exportc.} =
@@ -752,13 +759,8 @@ proc nimCancelDrag() {.exportc.} =
   interaction.cancelDrag(g_interaction)
 
 
-proc nimDragActive(): bool {.exportc.} = g_interaction.operation.isSome
+proc nimDragActive(): bool {.exportc.} = g_interaction.is_dragging
   ## Report whether a drag is currently in progress.
-
-
-proc nimDragOperation(): cint {.exportc.} =
-  ## Report drag's own operation ordinal, or `SLOT_NONE` where no drag is active.
-  if g_interaction.operation.isSome: cint(g_interaction.operation.get) else: SLOT_NONE
 
 
 proc nimDragSourceSlot(): cint {.exportc.} = cint(g_interaction.index_source)
@@ -768,46 +770,98 @@ proc nimDragSourceSlot(): cint {.exportc.} = cint(g_interaction.index_source)
   ## guard rather than an independently optional value.
 
 
-proc nimDragOperationToOperation(drag_ordinal: cint): cint {.exportc.} =
-  ## Translate a `DragOperation` ordinal to the catalogue `Operation` it names -- the
-  ## same translation `interaction.toOperation` makes, exposed directly for a caller
-  ## (the touch tap-then-pick flow) that wants to call `nimApplyOperation` with an
-  ## explicit pair of slots rather than go through the press-drag-release lifecycle a
-  ## mouse or pen naturally offers and a tap does not.
-  cint(toOperation(DragOperation(drag_ordinal)))
+proc nimDragTint(): seq[float32] {.exportc.} =
+  ## Report the colour the rubber-band wears right now, as an `[r, g, b]` triple.
+  ##   Answered by `interaction.inkOfDrag` rather than from a table here: this file used
+  ##   to keep its own copy of the operation-to-ink mapping, with a comment telling the
+  ##   next reader to check the desktop's. Both now read the one in `core`.
+  toRgbSeq(inkOfDrag(g_interaction).colour)
 
 
-const lut_drag_to_ink = [
-  DragOperation.Join: Ink.Jade,
-  DragOperation.Meet: Ink.Rose,
-  DragOperation.Project: Ink.Olive,
-] ## Mirror `visualiser.lut_drag_to_ink` exactly, so the browser's own rubber-band and
-  ## tap-then-pick menu tint each operation the same colour the desktop build's own
-  ## panel legend and drag overlay do -- duplicated rather than imported, since that
-  ## table lives in `visualiser.nim` itself, which does not compile under `nim js`.
+proc nimMenuMetrics(): seq[float32] {.exportc.} =
+  ## Report the sizes a choice menu is drawn at, so the presentation layer holds no copy
+  ## of them: wedge height, label padding, corner rounding, centre-dot radius, and the
+  ## opacity of an offered wedge then of an unoffered one.
+  ##   The same arrangement `nimOverlayMetrics` already uses for the marker's own sizes.
+  @[
+    float32(HEIGHT_MENU_WEDGE), float32(PADDING_MENU_WEDGE),
+    float32(ROUNDING_MENU_WEDGE), float32(RADIUS_MENU_CENTRE),
+    float32(ALPHA_MENU_WEDGE), float32(ALPHA_MENU_UNOFFERED),
+  ]
 
 
-proc nimDragTint(drag_ordinal: cint): seq[float32] {.exportc.} =
-  ## Report the colour a drag's own operation tints its rubber-band, as an `[r, g, b]`
-  ## triple.
-  toRgbSeq(lut_drag_to_ink[DragOperation(drag_ordinal)].colour)
+proc nimDragMenuOpen(): bool {.exportc.} = g_interaction.menu.isSome
+  ## Report whether the choice menu is open on the drag in progress.
+
+
+proc nimDragMenuCentre(): seq[float32] {.exportc.} =
+  ## Report where the open menu is centred, in canvas pixels, or empty where none is.
+  if g_interaction.menu.isNone: return
+  @[float32(g_interaction.menu.get.x), float32(g_interaction.menu.get.y)]
+
+
+proc nimDragMenuLabels(): seq[cstring] {.exportc.} =
+  ## Name every wedge, in `DragChoice` order, which is the order the layout below is in.
+  for choice in DragChoice: result.add(cstring(labelOf(choice)))
+
+
+proc nimDragMenuLayout(): seq[float32] {.exportc.} =
+  ## Lay the open menu out, six floats per wedge in `DragChoice` order: centre x and y in
+  ## canvas pixels, whether it is offered as 1 or 0, then its own red, green and blue.
+  ##   Flat rather than a record per wedge, exactly as `nimSelectionMarker` is: an object
+  ##   crossing this boundary is a second shape to keep in step, and the presentation
+  ##   layer only ever walks these in order to place four elements.
+  ##   Empty where no menu is open, so the caller needs no second guard.
+  if g_interaction.menu.isNone: return
+  let
+    centre = g_interaction.menu.get
+    over = destinationOf(g_interaction)
+    is_pair_live =
+      over.isSome and over.get != g_interaction.index_source and
+      g_scene.isAlive(over.get) and g_scene.isAlive(g_interaction.index_source)
+  for choice in DragChoice:
+    let
+      at = anchorOf(centre, choice)
+      tint = inkOf(choice).colour
+      is_offered =
+        choice == DragChoice.More or
+        (is_pair_live and isOffered(
+          choice, g_scene.geometryOf(g_interaction.index_source),
+          g_scene.geometryOf(over.get),
+        ))
+    result.add([
+      float32(at.x), float32(at.y), float32(ord(is_offered)),
+      tint.red, tint.green, tint.blue,
+    ])
+
+
+proc nimDragMenuHighlighted(): cint {.exportc.} =
+  ## Report which wedge the cursor stands in as a `DragChoice` ordinal, or `SLOT_NONE`
+  ## where it is back at the centre and nothing is chosen.
+  ##   Asked of `interaction.choiceAt`, the same call the release itself resolves through,
+  ##   so what is highlighted is never a second opinion about where the cursor is.
+  if g_interaction.menu.isNone: return SLOT_NONE
+  let choice = choiceAt(g_interaction.menu.get, g_interaction.cursor)
+  if choice.isNone: SLOT_NONE else: cint(ord(choice.get))
 
 
 type DragResult = object ## Report what ending a drag produced.
-  created_slot: cint ## `SLOT_NONE` where nothing was added (released over empty space,
-    ## or on the drag's own source).
+  created_slot: cint ## `SLOT_NONE` where nothing was added -- released over empty space,
+    ## on the drag's own source, on a pair that makes nothing, or on `more…`.
   message: cstring ## Outcome, for display exactly as the desktop panel's own status line.
+  is_more: bool ## Whether the release chose `more…`, which builds nothing itself and
+    ## instead leaves both operands selected for the apply section.
 
 
 proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
-  ## End the drag in progress, applying its operation between source and hovered item.
-  ##   Calls straight into `interaction.endDrag` for everything it reports -- the same
-  ##   catalogue call, anchor resolution, slot bookkeeping, operand-derived label and
-  ##   outcome message the desktop build's own mouse-release handler gets -- and adds only
-  ##   what is this build's own business: the birth clock, the selection and the history
-  ##   entry. This once re-labelled the created item by hand, because `endDrag` read its
-  ##   operands' labels through `$toCstring`, which comes out empty under the JS backend;
-  ##   `scene.toText` now reads them the same on both, so there is nothing left to fix up.
+  ## End the drag in progress, applying whatever the release resolved to.
+  ##   Calls straight into `interaction.endDrag` for everything it reports -- the wedge
+  ##   resolution, the catalogue call, anchor resolution, slot bookkeeping,
+  ##   operand-derived label and outcome message the desktop build's own mouse-release
+  ##   handler gets -- and adds only what is this build's own business: the birth clock,
+  ##   the selection and the history entry. This once re-labelled the created item by
+  ##   hand, because `endDrag` read its operands' labels through `$toCstring`, which comes
+  ##   out empty under the JS backend; `scene.toText` now reads them the same on both.
   let outcome = interaction.endDrag(g_interaction, g_scene, float(now))
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
@@ -815,6 +869,15 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     g_selection.selectOnly(slot)
     g_history.record(g_scene)
     return DragResult(created_slot: cint(slot), message: cstring(outcome.message))
+  if outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
+    # The way out of the gesture's own three operations into the other twenty-four: both
+    #   operands selected in the order they were dragged, which is the order the apply
+    #   section reads as m then n.
+    g_selection.selectOnly(outcome.operands.get.source)
+    g_selection.toggle(outcome.operands.get.destination)
+    return DragResult(
+      created_slot: SLOT_NONE, message: cstring(outcome.message), is_more: true
+    )
   DragResult(created_slot: SLOT_NONE, message: cstring(outcome.message))
 
 
@@ -1005,6 +1068,12 @@ proc nimBuildFrame(
 
   if g_ghost.isSome:
     discard g_meshes.addObject(g_ghost.get, INK_GHOST.colour.muted(), scale)
+
+  # What the drag in progress would build, in that same ghost ink, so a reader learns one
+  #   "this is not committed yet" appearance rather than two. Mirrors
+  #   `visualiser.assembleMeshes`.
+  if g_interaction.preview.isSome:
+    discard g_meshes.addObject(g_interaction.preview.get, INK_GHOST.colour.muted(), scale)
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)

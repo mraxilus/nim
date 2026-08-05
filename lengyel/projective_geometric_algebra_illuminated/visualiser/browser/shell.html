@@ -96,6 +96,15 @@
     pointer-events: none;
   }
 
+  /* One wedge of the drag choice menu. Sized here rather than in the script so the rect
+     behind it can be measured from what the browser actually laid the label out as --
+     see `appendChoiceMenu`. */
+  .menu-wedge-label {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
   .veil {
     position: fixed;
     inset: 0;
@@ -752,11 +761,12 @@
 <div class="drawer" id="drawer">
   <div class="drawer-scroll">
     <p class="drawer-intro">
-      Drag one object onto another to derive a new one:
-      <span class="op-join">join</span> left click,
-      <span class="op-meet">meet</span> right click,
-      <span class="op-project">project</span> middle click.
-      Drag empty space instead to move the camera: left orbits, right pans, wheel dollies.
+      Drag one object onto another; the two of them choose what it makes:
+      <span class="op-join">join</span>,
+      <span class="op-meet">meet</span>,
+      <span class="op-project">project</span>.
+      Right-drag, or hold still over the target, to pick instead.
+      Drag empty space to move the camera: left orbits, right pans, wheel dollies.
     </p>
 
     <!-- Apply -->

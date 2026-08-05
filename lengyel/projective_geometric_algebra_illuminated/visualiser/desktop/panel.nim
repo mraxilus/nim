@@ -43,7 +43,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ./gui
-import ../core/[camera, format, help, history, mesh, objects, scene, selection]
+import ../core/[camera, format, help, history, interaction, mesh, objects, scene, selection]
 
 
 
@@ -167,6 +167,10 @@ type
     index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
       ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
       ## rather than offering all 27 and greying the second operand for the unary ones.
+    is_apply_opening*: bool ## Whether something outside this panel asked for the apply
+      ## section to be open. Set by the drag menu's `more…`, which is only worth choosing
+      ## if the section it hands its operands to is one the reader can then see; consumed
+      ## by `layoutApply` on the next frame it draws.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
@@ -678,6 +682,10 @@ proc layoutApply*(
   ##   the controls indexing them do -- the item names are `cstring`s borrowed from the
   ##   scene's own label storage, so handing them across another boundary would be
   ##   lending out a pointer for no gain.
+  # A gesture elsewhere may have asked for this section, having just handed it operands.
+  if workbench.is_apply_opening:
+    workbench.is_apply_opening = false
+    gui.openNext()
   if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
     gui.text("Scene is empty; add a multivector first.")
@@ -1058,21 +1066,19 @@ proc layoutWorkbench*(
   ##   control adds an item this frame, so it animates in from the moment it appears.
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA workbench"):
-    # Coloured words match the rubber-band drawn while dragging, so the line on screen
-    #   names its own outcome before the button is even released.
-    gui.textWrapped("Drag one object onto another to derive a new one:")
-    let (join, meet, project) = (Ink.Jade.colour, Ink.Rose.colour, Ink.Olive.colour)
-    gui.textTinted("  join", join.red, join.green, join.blue)
+    # Coloured words match the rubber-band drawn while dragging and the wedges of the
+    #   choice menu, so a line on screen names its own outcome before it is released.
+    #   Which colour belongs to which is `interaction.inkOf`'s to say, so this legend
+    #   cannot come to disagree with what is actually drawn; the *names* come from
+    #   `interaction.labelOf`, for the same reason.
+    gui.textWrapped("Drag one object onto another; the two of them choose what it makes:")
+    gui.text(" ")
+    for choice in [DragChoice.Join, DragChoice.Meet, DragChoice.Project]:
+      let tint = inkOf(choice).colour
+      gui.sameLine()
+      gui.textTinted(cstring(labelOf(choice)), tint.red, tint.green, tint.blue)
     gui.sameLine()
-    gui.text("left click,")
-    gui.sameLine()
-    gui.textTinted("meet", meet.red, meet.green, meet.blue)
-    gui.sameLine()
-    gui.text("right click,")
-    gui.sameLine()
-    gui.textTinted("project", project.red, project.green, project.blue)
-    gui.sameLine()
-    gui.text("middle click.")
+    gui.text("-- right-drag to pick.")
 
     # Scene-content edits only -- camera moves are not on this timeline; see
     #   `history.nim`. Each button greys out where its own side of the timeline is empty,

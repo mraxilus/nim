@@ -285,6 +285,19 @@ const button_add = document.getElementById('btn-add');
 const button_undo = document.getElementById('btn-undo');
 const button_redo = document.getElementById('btn-redo');
 
+function openApplyWithOperands() {
+  // Where the drag menu's `more…` lands: nimEndDrag has already selected both operands in
+  //   the order they were dragged, so this only has to bring the section that reads that
+  //   selection into view. Refusing to open it would make `more…` a dead end, which is
+  //   exactly what it exists to stop the gesture being.
+  refreshSelectionSnapshot();
+  hideSelectionMenu();
+  document.querySelector('.section[data-section="apply"]').classList.add('open');
+  drawer.classList.add('open');
+  button_drawer.classList.add('on');
+  refreshObjectsUI();
+}
+
 function openWorkbenchTo(slot) {
   // Open an edit session on `slot` (or a composing one where null) and bring the drawer
   //   and the Objects section far enough open to see it -- shared by the top bar's `add`
@@ -1118,6 +1131,12 @@ const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
   nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2;
+// Read from interaction.nim's own constants via nimMenuMetrics, for the same reason the
+// marker's sizes are: a hand-copied literal here would drift from the desktop's menu.
+const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE, RADIUS_MENU_CENTRE,
+  ALPHA_MENU_WEDGE, ALPHA_MENU_UNOFFERED] = nimMenuMetrics();
+// Floats per wedge in nimDragMenuLayout: x, y, offered, then red, green and blue.
+const FLOATS_MENU_WEDGE = 6;
 
 function svgEl(tag, attrs) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -1208,7 +1227,10 @@ function refreshOverlay(cursor) {
     const src = nimAnchorScreen(nimDragSourceSlot(), canvas.width, canvas.height);
     if (src[2] > 0.5 && cursor) {
       const sx = src[0] * (w / canvas.width), sy = src[1] * (h / canvas.height);
-      const tint = nimDragTint(nimDragOperation());
+      // Tinted by what releasing would do, not by which button started the drag: the
+      // operation's own colour over a pair that makes something, the reserved magenta
+      // over one that makes nothing, neutral while crossing empty space.
+      const tint = nimDragTint();
       svg_overlay.appendChild(svgEl('line', {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
         stroke: 'rgba(' + Math.round(tint[0] * 255) + ',' +
@@ -1216,7 +1238,56 @@ function refreshOverlay(cursor) {
         'stroke-width': WIDTH_OVERLAY_LINE,
       }));
     }
+    appendChoiceMenu(w, h);
   }
+}
+
+// Draw the four wedges of an open choice menu. Every position, colour, label and whether
+// a wedge is offered comes from interaction.nim through nimDragMenuLayout/Labels, and
+// which one the cursor stands in from nimDragMenuHighlighted -- the same call the release
+// resolves through, so the highlight is never a second opinion about where the cursor is.
+function appendChoiceMenu(w, h) {
+  const layout = nimDragMenuLayout();
+  if (layout.length === 0) return;
+  const labels = nimDragMenuLabels();
+  const highlighted = nimDragMenuHighlighted();
+  const centre = nimDragMenuCentre();
+  for (let i = 0; i * FLOATS_MENU_WEDGE < layout.length; i += 1) {
+    const at = i * FLOATS_MENU_WEDGE;
+    const x = layout[at] * (w / canvas.width), y = layout[at + 1] * (h / canvas.height);
+    const is_offered = layout[at + 2] > 0.5;
+    const fill = 'rgb(' + Math.round(layout[at + 3] * 255) + ',' +
+      Math.round(layout[at + 4] * 255) + ',' + Math.round(layout[at + 5] * 255) + ')';
+    // Label first, then a rect sized from what the browser actually laid it out as --
+    // measured rather than estimated from a character count, which drifts the moment the
+    // face loaded is not the one the estimate was tuned against.
+    const text = svgEl('text', {
+      x: x, y: y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      // An offered wedge is a solid fill and reads best with dark text on it; an
+      // unoffered one is barely a fill at all, so dark text there disappears into the
+      // scene behind. Light text instead, dimmed -- legible, and still not a choice.
+      fill: is_offered ? 'rgb(13,17,23)' : 'rgba(255,255,255,0.55)',
+      class: 'menu-wedge-label',
+    });
+    text.textContent = labels[i];
+    svg_overlay.appendChild(text);
+    const width = text.getBBox().width + PADDING_MENU_WEDGE;
+    svg_overlay.insertBefore(svgEl('rect', {
+      x: x - width / 2, y: y - HEIGHT_MENU_WEDGE / 2,
+      width: width, height: HEIGHT_MENU_WEDGE, rx: ROUNDING_MENU_WEDGE,
+      fill: fill, 'fill-opacity': is_offered ? ALPHA_MENU_WEDGE : ALPHA_MENU_UNOFFERED,
+      // The wedge under the cursor wears an outline as well as its fill, so the
+      // highlight survives a reader who cannot tell its fill from its neighbour's.
+      stroke: i === highlighted ? 'rgba(255,255,255,0.9)' : 'none',
+      'stroke-width': WIDTH_OVERLAY_LINE,
+    }), text);
+  }
+  // The middle is where nothing is chosen, and the way out of a menu that opened unasked.
+  svg_overlay.appendChild(svgEl('circle', {
+    cx: centre[0] * (w / canvas.width), cy: centre[1] * (h / canvas.height),
+    r: RADIUS_MENU_CENTRE,
+    fill: 'none', stroke: 'rgba(255,255,255,0.7)', 'stroke-width': WIDTH_OVERLAY_LINE,
+  }));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1274,8 +1345,10 @@ canvas.addEventListener('pointerdown', (e) => {
     position_mouse_down = { x: e.clientX, y: e.clientY };
     button_mouse_down = e.button;
     has_mouse_moved = false;
-    const drag = nimDragOperationForButton(e.button);
-    if (drag >= 0 && nimBeginDrag(drag)) {
+    // The button says whether the drag decides for you or asks; what it builds is read
+    // off the operands at release. Mirrors `visualiser.isMenuForcedFor`.
+    const kind_drag = nimDragKindForButton(e.button);
+    if (kind_drag >= 0 && nimBeginDrag(kind_drag === 1, performance.now())) {
       button_mouse_drag = e.button;
     } else if (e.button === 0) {
       button_mouse_drag = 'orbit';
@@ -1401,6 +1474,7 @@ function endMouseDrag(e) {
       const result = nimEndDrag(now());
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
+      else if (result.is_more) openApplyWithOperands();
     }
   } else if (is_click && button_mouse_down === 0 && !e.shiftKey) {
     // Plain left click over empty space -- mirrors touch's own "tapping empty space
@@ -1682,6 +1756,12 @@ function frame() {
     has_long_press_fired = true;
     toggleSelection(slot_matured, position_touch_down);
   }
+
+  // Recompute what the drag in progress would build, and whether its dwell has come due,
+  // before the frame that ghosts the answer is assembled. Runs every frame rather than on
+  // pointermove alone: a dwell is time passing over a cursor that is deliberately still,
+  // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
+  if (nimDragActive()) nimUpdateDrag(now_milliseconds);
 
   const data = nimBuildFrame(aspect, now_seconds, is_axes_shown, is_grid_shown);
 

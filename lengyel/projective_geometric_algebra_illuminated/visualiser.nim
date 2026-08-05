@@ -36,7 +36,7 @@
 ##   renderer owns OpenGL names and draws the meshes.
 ##   scene holds objects and catalogue of operations that derive new ones.
 ##   selection holds which objects are picked, in the order that names an operation's operands.
-##   interaction tracks a mouse drag from one item to another, and applies what it names.
+##   interaction tracks a mouse drag from one item to another, and applies what they make.
 ##   panel lays out the widgets user edits scene through.
 ##   storyboard scripts a construction, one operation per exported frame.
 ##   image encodes a frame readback as PNG.
@@ -65,9 +65,12 @@
 ## and is exercised on both backends by the suite, rather than left to a comment to police.
 ##
 ## Controls:
-##   Drag from one object to another to derive a third: left joins, right meets, middle
-##   projects the object dragged from onto the object dragged to. The rubber-band drawn
-##   while dragging is tinted to match, and the panel's own top line names the same colours.
+##   Drag from one object to another to derive a third. What it derives is read off the
+##   two grades, not off the button, and ghosted while you drag so the gesture shows its
+##   answer before it commits it; the rubber-band is tinted to match, and wears the
+##   reserved magenta over a pair that makes nothing. Left takes that answer; right opens
+##   a four-way choice menu instead, as does holding still over the target. `more…` in
+##   that menu hands both operands to the apply section, for the other twenty-four.
 ##   Drag from empty space instead to move the camera: left orbits, right pans, wheel dollies.
 ##   `S` writes current frame to the export path. `Escape` abandons whatever is in
 ##   progress -- the help panel, a drag, an open edit, a selection -- and `ctrl+Z` and
@@ -86,6 +89,8 @@
 ##   `--timings` reports frame-time statistics (mean, percentiles, tessellation cost)
 ##   over a `--frames:N` run; `--novsync` disables vsync from startup for an uncapped
 ##   reading, and `--fill` tops the scene up to capacity first, for the heaviest case.
+##   `--drive-drag` scripts a construction drag through SDL's own event queue, so a
+##   headless run can be caught mid-gesture with its choice menu open.
 
 {.experimental: "strictFuncs".}
 
@@ -232,6 +237,8 @@ type Options = object ## Hold what command line asked of this run.
   is_novsync: bool ## Whether to disable vsync from startup, for uncapped timing runs.
   is_filled: bool ## Whether to top scene up to capacity with synthetic items, for
     ## timing the heaviest tessellation and draw load rather than the demo's own light one.
+  is_drag_driven: bool ## Whether to script a construction drag through the event queue,
+    ## so a headless run can be made to show a drag mid-gesture. See `driveDrag`.
 
 
 proc parseOptions(): Options =
@@ -248,10 +255,11 @@ proc parseOptions(): Options =
       of "timings": result.is_timed = true
       of "novsync": result.is_novsync = true
       of "fill": result.is_filled = true
+      of "drive-drag": result.is_drag_driven = true
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync or fill."
+          "frames, hidden, timings, novsync, fill or drive-drag."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -291,7 +299,8 @@ proc offerCameraAim(
 
 
 proc assembleMeshes(
-  workbench: var Workbench; scene: Scene; camera: Camera; now: float; scale: DrawExtent;
+  workbench: var Workbench; scene: Scene; interaction: Interaction;
+  camera: Camera; now: float; scale: DrawExtent;
   are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
 ) =
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
@@ -335,18 +344,18 @@ proc assembleMeshes(
   if workbench.session.isSome:
     discard MESHES.addObject(workbench.session.get.geometry, muted(INK_GHOST.colour), scale)
 
+  # What the drag in progress would build, drawn through that same dispatch and in that
+  #   same ghost ink, so a reader learns one "this is not committed yet" appearance rather
+  #   than two. This is the whole answer to the drag having had no self-revelation: the
+  #   gesture stops being a guess about a button and becomes a thing you watch happen.
+  if interaction.preview.isSome:
+    discard MESHES.addObject(interaction.preview.get, muted(INK_GHOST.colour), scale)
+
   workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   workbench.count_vertices = 0
   for primitive in Primitive:
     workbench.count_vertices += MESHES[primitive].count_vertices +
       MESHES_FURNITURE[primitive].count_vertices
-
-
-const lut_drag_to_ink: array[DragOperation, Ink] = [
-  DragOperation.Join: Ink.Jade,
-  DragOperation.Meet: Ink.Rose,
-  DragOperation.Project: Ink.Olive,
-] ## Match the panel's own drag legend, so the rubber-band names its outcome as it's drawn.
 
 
 proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
@@ -407,6 +416,68 @@ proc drawSelectionMarker(
     result.inc
 
 
+proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
+  ## Draw the four wedges of an open choice menu onto the foreground layer.
+  ##   Every wedge is drawn at every opening, at its own fixed compass point, whether or
+  ##   not it is offered -- so the position of `meet` is something a reader learns once
+  ##   rather than something they read off each time. Which one the cursor stands in is
+  ##   `interaction.choiceAt`'s answer, the same one the release will act on, so what is
+  ##   highlighted is never a second opinion about where the cursor is.
+  let
+    centre = interaction.menu.get
+    over = destinationOf(interaction)
+    highlighted = choiceAt(centre, interaction.cursor)
+    is_pair_live =
+      over.isSome and over.get != interaction.index_source and
+      scene.isAlive(over.get) and scene.isAlive(interaction.index_source)
+
+  let dot = Ink.Outline.colour
+  gui.overlayCircle(
+    cfloat(centre.x), cfloat(centre.y), RADIUS_MENU_CENTRE,
+    dot.red, dot.green, dot.blue, 0.7, WIDTH_MARKER,
+  )
+  for choice in DragChoice:
+    let
+      label = labelOf(choice)
+      is_offered =
+        choice == DragChoice.More or
+        (is_pair_live and isOffered(
+          choice, scene.geometryOf(interaction.index_source), scene.geometryOf(over.get)
+        ))
+      at = anchorOf(centre, choice)
+      tint = inkOf(choice).colour
+      width = gui.textWidth(cstring(label)) + PADDING_MENU_WEDGE
+    gui.overlayChip(
+      cfloat(at.x), cfloat(at.y), width, HEIGHT_MENU_WEDGE,
+      tint.red, tint.green, tint.blue,
+      cfloat(if is_offered: ALPHA_MENU_WEDGE else: ALPHA_MENU_UNOFFERED),
+      ROUNDING_MENU_WEDGE,
+    )
+    # The wedge the cursor is in wears an outline as well as its fill, so the highlight
+    #   survives being read by someone who cannot tell its fill from its neighbour's.
+    if highlighted == some(choice):
+      let edge = Ink.Outline.colour
+      gui.overlayChip(
+        cfloat(at.x), cfloat(at.y), width + 2.0*WIDTH_MARKER,
+        HEIGHT_MENU_WEDGE + 2.0*WIDTH_MARKER,
+        edge.red, edge.green, edge.blue, 0.9, ROUNDING_MENU_WEDGE + WIDTH_MARKER,
+      )
+      gui.overlayChip(
+        cfloat(at.x), cfloat(at.y), width, HEIGHT_MENU_WEDGE,
+        tint.red, tint.green, tint.blue,
+        cfloat(if is_offered: ALPHA_MENU_WEDGE else: ALPHA_MENU_UNOFFERED),
+        ROUNDING_MENU_WEDGE,
+      )
+    # An offered wedge is a solid fill and reads best with dark text on it; an unoffered
+    #   one is barely a fill at all, so dark text on it disappears into the scene behind.
+    #   Light text there instead, dimmed -- legible, and still obviously not a choice.
+    let ink_label = (if is_offered: Ink.Backdrop else: Ink.Outline).colour
+    gui.overlayText(
+      cfloat(at.x), cfloat(at.y), ink_label.red, ink_label.green, ink_label.blue,
+      cfloat(if is_offered: 1.0 else: 0.55), cstring(label),
+    )
+
+
 proc drawInteractionOverlay(
   interaction: Interaction; scene: Scene; camera: Camera; view_projection: Matrix4;
   width, height: int; scale: DrawExtent
@@ -425,17 +496,22 @@ proc drawInteractionOverlay(
     if marker.isSome:
       drawMarker(marker.get, Ink.Outline.colour, ALPHA_MARKER_HOVER)
 
-  if interaction.operation.isSome:
+  if interaction.is_dragging:
     let anchor = anchorFor(scene[interaction.index_source].geometry, scale)
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
-        let tint = lut_drag_to_ink[interaction.operation.get].colour
+        # Tinted by what releasing would do rather than by which button started the drag,
+        #   which is the same rule the browser's rubber-band answers from.
+        let tint = interaction.inkOfDrag.colour
         gui.overlayLine(
           cfloat(screen.x), cfloat(screen.y),
           cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
           tint.red, tint.green, tint.blue, 0.85, WIDTH_MARKER,
         )
+  if interaction.menu.isSome:
+    drawChoiceMenu(interaction, scene)
+
 
 
 proc renderFrame(
@@ -491,13 +567,17 @@ proc renderFrame(
     radius_horizon: radiusHorizonFor(camera.distanceFar),
   )
   offerCameraAim(workbench, scene, camera, now, scale)
-  assembleMeshes(workbench, scene, camera, now, scale, are_dimmed)
-  clearFrame(int(width), int(height))
+  # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
+  #   preview is this frame's rather than last frame's. Costs nothing to order this way:
+  #   the transform they pick against needs only the camera, which has already advanced.
   let view_projection = camera.initMatrixViewProjection(width / height)
+  interaction.updateHover(scene, camera, view_projection, int(width), int(height))
+  interaction.updateDrag(scene, now)
+  assembleMeshes(workbench, scene, interaction, camera, now, scale, are_dimmed)
+  clearFrame(int(width), int(height))
   renderer.drawMeshes(MESHES_FURNITURE, view_projection, WIDTH_LINE_FURNITURE)
   renderer.drawMeshes(MESHES, view_projection)
 
-  interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   drawSelectionMarker(
     scene, workbench.selection, camera, view_projection, int(width), int(height), scale
   )
@@ -544,15 +624,15 @@ proc downsampleInto(
 
 #[ Input Handling ]#
 
-func dragOperationFor(button: uint8): Option[DragOperation] =
-  ## Name operation a mouse button performs while dragging, if any.
+func isMenuForcedFor(button: uint8): Option[bool] =
+  ## Say whether a mouse button starts a construction drag, and whether it asks or decides.
   ##   Only the numbering is this build's own -- SDL's, which the browser does not share.
-  ##   Which button carries which operation is `interaction.dragForButton`'s to say, so
-  ##   both render paths and the help panel answer from one rule.
-  if button == uint8(MouseButton.Left): dragForButton(PointerButton.Left)
-  elif button == uint8(MouseButton.Right): dragForButton(PointerButton.Right)
-  elif button == uint8(MouseButton.Middle): dragForButton(PointerButton.Middle)
-  else: none(DragOperation)
+  ##   What each button means is `interaction.isMenuForcedBy`'s to say, so both render
+  ##   paths and the help panel answer from one rule.
+  if button == uint8(MouseButton.Left): isMenuForcedBy(PointerButton.Left)
+  elif button == uint8(MouseButton.Right): isMenuForcedBy(PointerButton.Right)
+  elif button == uint8(MouseButton.Middle): isMenuForcedBy(PointerButton.Middle)
+  else: none(bool)
 
 
 proc handleEvent(
@@ -584,7 +664,7 @@ proc handleEvent(
       #   ctrl+Q, beside every other accelerator, and the window's own close button is
       #   unaffected.
       if workbench.is_help_open: workbench.is_help_open = false
-      elif interaction.operation.isSome:
+      elif interaction.is_dragging:
         interaction.cancelDrag()
         toChars("Cancelled.", workbench.message)
       elif workbench.session.isSome: workbench.session = none(EditSession)
@@ -603,8 +683,8 @@ proc handleEvent(
     if gui.wantsMouse(): return
     # Press on a pickable item starts an operation drag; press on empty space falls back
     #   to camera control, exactly as before this feature existed.
-    let drag = dragOperationFor(event.button.button)
-    if drag.isSome and interaction.beginDrag(drag.get):
+    let is_menu_forced = isMenuForcedFor(event.button.button)
+    if is_menu_forced.isSome and interaction.beginDrag(is_menu_forced.get, now):
       button_dragging = some(event.button.button)
     elif event.button.button == uint8(MouseButton.Left):
       is_dragging_orbit = true
@@ -617,6 +697,13 @@ proc handleEvent(
       if outcome.index_created.isSome:
         workbench.selection.selectOnly(outcome.index_created.get)
         HISTORY.record(scene)
+      elif outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
+        # The way out of the gesture's own three operations into the other twenty-four:
+        #   both operands selected in the order they were dragged, which is the order the
+        #   apply section reads as m then n, and that section opened so they are visible.
+        workbench.selection.selectOnly(outcome.operands.get.source)
+        workbench.selection.toggle(outcome.operands.get.destination)
+        workbench.is_apply_opening = true
       button_dragging = none(uint8)
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
@@ -668,6 +755,39 @@ proc reportTimings(milliseconds: var openArray[float32]) =
     &"max {milliseconds[^1]:.3f} ({1000.0/float(milliseconds[^1]):.1f})"
 
 
+proc driveDrag(
+  scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
+) =
+  ## Script a right-button construction drag from the first scene item onto the second,
+  ## one step per frame, so a headless run can be made to show the choice menu open.
+  ##   For `--drive-drag`, and reached from nowhere else. Every step is posted to SDL's own
+  ##   queue rather than handed to `handleEvent` directly: the point of driving this at all
+  ##   is to exercise the wiring between the two, and this project has already shipped one
+  ##   bug that survived a test calling a handler straight.
+  ##   Positions come from the same `anchorFor`/`projectToScreen` pair the overlay draws
+  ##   its rubber-band through, so the cursor lands where the item was actually drawn
+  ##   rather than where a hard-coded pixel guessed it would be.
+  const (FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET) = (2, 3, 4)
+  if count_drawn notin [FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET]: return
+  let slot = if count_drawn == FRAME_REACH_TARGET: 1 else: 0
+  if not scene.isAlive(slot): return
+  let anchor = anchorFor(scene[slot].geometry, scale)
+  if anchor.isNone: return
+  let screen = projectToScreen(
+    camera.initMatrixViewProjection(width/height), width, height, anchor.get
+  )
+  if not screen.isInFront: return
+
+  var event = Event(kind: uint32(EventKind.MouseMotion))
+  event.motion.x = cfloat(screen.x)
+  event.motion.y = cfloat(screen.y)
+  sdl3.pushEvent(addr event)
+  if count_drawn == FRAME_PRESS:
+    var press = Event(kind: uint32(EventKind.MouseButtonDown))
+    press.button.button = uint8(MouseButton.Right)
+    sdl3.pushEvent(addr press)
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -714,6 +834,16 @@ proc runInteractive(
           "`--define:visualiser.frames_timing_max` or shorten `--frames`."
         TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] = delta_milliseconds
     ticks_previous_frame = ticks_frame_start
+
+    if options.is_drag_driven:
+      driveDrag(
+        scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn,
+        DrawExtent(
+          extent_furniture: extentFurnitureFor(camera.distanceFar),
+          eye: camera.eye,
+          radius_horizon: radiusHorizonFor(camera.distanceFar),
+        ),
+      )
 
     var event: Event
     while sdl3.pollEvent(addr event):
