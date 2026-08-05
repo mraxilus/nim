@@ -99,28 +99,36 @@ suite "the moving":
     let declared = motionStyle()
     for (name, time) in {"--fold-spread": FOLD_SPREAD, "--fold-lag": FOLD_LAG,
         "--fold-leaf": FOLD_LEAF, "--fold-branch": FOLD_BRANCH,
-        "--travel": TRAVEL_TIME, "--grow-delay": GROW_DELAY,
+        "--pass-at": PASS_AT, "--pass": PASS_TIME, "--shrink-at": SHRINK_AT,
+        "--shrink": SHRINK_TIME, "--centre-at": CENTRE_AT,
+        "--centre": CENTRE_TIME, "--grow-delay": GROW_DELAY,
         "--grow-spread": GROW_SPREAD, "--leaf-delay": LEAF_DELAY,
-        "--grow": GROW_TIME, "--fold-margin": FOLD_MARGIN}:
+        "--grow": GROW_TIME}:
       check declared.contains(name & ": " & $time & "ms")
-    check LEAD_ON_TIME > LEAVE_TIME
-    check MOVE_TIME >= LEAD_ON_TIME
 
-  test "nothing is still folding when the drawing is thrown away":
-    # The page replaces the drawing at LEAVE_TIME.  A fold still running then is
-    # cut off mid-flight, which reads as a flash rather than as a fold, so every
-    # fold has to have finished by the time that happens.
-    # With room to spare, because an animation's clock starts a frame or two
-    # after the page asks for the phase: ending exactly on time ends late.
-    check FOLD_MARGIN > 0
-    check FOLD_SPREAD + FOLD_LEAF <= LEAVE_TIME - FOLD_MARGIN
-    check FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH <= LEAVE_TIME - FOLD_MARGIN
+  test "the move is told one clause at a time, in the one order":
+    # The ways not taken go first, so that what the mark does next is the only
+    # thing moving; the frame left behind goes only once the mark has left it;
+    # the drawing recentres only once that frame has gone.
+    check PASS_AT >= FOLD_SPREAD + FOLD_LAG + FOLD_BRANCH
+    check PASS_AT >= FOLD_SPREAD + FOLD_LEAF
+    check SHRINK_AT >= PASS_AT + PASS_TIME
+    check CENTRE_AT >= SHRINK_AT + SHRINK_TIME
     # A leaf folds before its own branch, so a way out goes leaf first.
     check FOLD_LEAF <= FOLD_LAG + FOLD_BRANCH
 
+  test "nothing is still moving when the drawing is replaced":
+    # An animation's clock starts a frame or two after the page asks for the
+    # phase, so anything timed to end exactly on time in fact ends late and is
+    # cut off wherever it had got to.  That is what a seam looks like.
+    check SEAM_MARGIN > 0
+    check CENTRE_AT + CENTRE_TIME <= LEAVE_TIME - SEAM_MARGIN
+    check MOVE_TIME > LEAVE_TIME
+    check LEAD_ON_TIME >= MOVE_TIME
+
   test "a stagger is shared out, so a crowded frame still finishes on time":
     for here in FRAMES:
-      let picture = renderSpokes(here, here)
+      let picture = renderSpokes(here)
       # The last way out is given the whole budget and no more, however many
       # ways there are: a step per way would run past the end of the phase.
       check picture.count("--turn: 0") >= 1
@@ -137,75 +145,79 @@ suite "the moving":
   test "while leaving, the way taken is marked and every other is folding":
     for here in FRAMES:
       for spoke in spokesOf(here):
-        let picture = renderSpokes(here, here, Motion.Leaving, some(spoke.to))
+        let picture = renderSpokes(here, Motion.Leaving, some(spoke.to))
         check picture.count("spoke taken") + picture.count("spoke two taken") == 1
         check picture.count(" taken\"") == 1
         check picture.count(" going\"") == spokesOf(here).len - 1
 
   test "a frame standing still is neither taking nor folding":
     for here in FRAMES:
-      let picture = renderSpokes(here, here)
+      let picture = renderSpokes(here)
       check not picture.contains(" taken\"")
       check not picture.contains(" going\"")
 
   test "every leaf is grown from the place it occupies":
     for here in FRAMES:
-      let picture = renderSpokes(here, here)
+      let picture = renderSpokes(here)
       for spoke in spokesOf(here):
         let (x, y) = endOf(spoke)
         check picture.contains("--lx: " & $x & "px; --ly: " & $y & "px")
       # A branch grows from the middle, and the middle is one place for them all.
       check picture.count("--ox: ") == 1
 
-  test "an arriving frame is drawn in the window it is leaving":
-    for before in FRAMES:
-      for spoke in spokesOf(before):
+  test "a move ends on the very drawing the frame reached is given at rest":
+    # This is the whole of why the swap cannot be seen.  What the leaving drawing
+    # recentres on has to be, to the pixel, what the frame reached is drawn as
+    # when it is standing still: same window, same place on the screen.
+    for here in FRAMES:
+      for spoke in spokesOf(here):
         let
-          picture = renderSpokes(spoke.to, before, Motion.Arriving)
-          (_, _, w, h) = windowOf(before)
+          leaving = renderSpokes(here, Motion.Leaving, some(spoke.to))
+          resting = renderSpokes(spoke.to)
           (_, _, tw, th) = windowOf(spoke.to)
-        # Drawn where the reader can already see it, carrying where it is going:
-        # the window and the frame in flight then set off together.
-        let
-          (px, py) = panOf(windowOf(before))
           (tx, ty) = panOf(windowOf(spoke.to))
-        check picture.contains("--w: " & $w & "px; --h: " & $h & "px; --px: " &
-          $px & "px; --py: " & $py & "px")
-        check picture.contains("data-w=\"" & $tw & "\" data-h=\"" & $th &
-          "\" data-px=\"" & $tx & "\" data-py=\"" & $ty & "\"")
+          (ex, ey) = endOf(spoke)
+        # The window it ends in is the window the frame reached is given.
+        check leaving.contains("--to-w: " & $tw & "px; --to-h: " & $th & "px")
+        check resting.contains("--w: " & $tw & "px; --h: " & $th & "px")
+        # And it ends panned so that the frame reached, which is standing out
+        # where its way out put it, is left exactly where the middle will be.
+        check leaving.contains("--to-px: " & $(tx + MIDDLE[0] - ex) &
+          "px; --to-py: " & $(ty + MIDDLE[1] - ey) & "px")
+        check resting.contains("--px: " & $tx & "px; --py: " & $ty & "px")
+
+  test "the mark carries the distance from the frame held to the one chosen":
+    for here in FRAMES:
+      for spoke in spokesOf(here):
+        let
+          picture = renderSpokes(here, Motion.Leaving, some(spoke.to))
+          (ex, ey) = endOf(spoke)
+        check picture.contains("--mx: " & $(ex - MIDDLE[0]) & "px; --my: " &
+          $(ey - MIDDLE[1]) & "px")
+    # Standing still it goes nowhere.
+    check renderSpokes(FRAMES[0]).contains("--mx: 0px; --my: 0px")
 
 
 suite "the drawing":
   test "only the frame held and the frames it reaches are drawn":
     for here in FRAMES:
-      let picture = renderSpokes(here, here)
+      let picture = renderSpokes(here)
       for target in FRAMES:
         let drawn = picture.contains("data-frame=\"" & target.key & "\"")
         let reachable = target == here or classify(here, target).isSome or
           compound(here, target).isSome
         check drawn == reachable
 
-  test "the frame held is the one in the middle, and it can travel":
+  test "the frame held is the one in the middle":
     for here in FRAMES:
-      check renderSpokes(here, here).contains("id=\"core\"")
-      check renderSpokes(here, here).contains("translate(0,0)")
+      let picture = renderSpokes(here)
+      # Drawn at the middle of the space, whatever window that frame is seen
+      # through: the window moves, the middle does not.
+      check picture.contains("<g class=\"core\"><g class=\"node held\" " &
+        "data-frame=\"" & here.key & "\">")
 
-  test "a frame arrived at travels from where it was drawn to the one middle":
-    var middle: seq[(int, int)] = @[]
-    for before in FRAMES:
-      for spoke in spokesOf(before):
-        let
-          (x, y) = endOf(spoke)
-          (dx, dy) = offsetOf(spoke.to, before)
-        # Taking away the travel from where the frame was drawn has to land on
-        # the middle, and the middle is the same wherever the couple came from.
-        if middle.len == 0:
-          middle.add (x - dx, y - dy)
-        check (x - dx, y - dy) == middle[0]
-        check dx != 0 or dy != 0
-        check renderSpokes(spoke.to, before).contains(
-          "translate(" & $dx & "," & $dy & ")")
-
-  test "a frame nobody moved from does not travel":
+  test "one frame is marked, and it is the frame being held":
     for here in FRAMES:
-      check offsetOf(here, here) == (0, 0)
+      let picture = renderSpokes(here)
+      check picture.count("class=\"mark\"") == 1
+      check picture.count("class=\"core\"") == 1

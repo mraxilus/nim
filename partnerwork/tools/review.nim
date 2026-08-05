@@ -220,7 +220,7 @@ proc renderReview*(): string =
     "stats": renderStats(),
     "gallery": renderGallery(),
     "matrix": renderMatrix(),
-    "map": renderMap(none(Frame), none(Frame)),
+    "map": renderMap(none(Frame)),
     "arms": renderArms(),
     "primitives": renderPrimitives(),
     "compounds": renderCompounds(),

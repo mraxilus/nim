@@ -87,41 +87,88 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .stage-head h2 { font-size: 1.05rem; margin: 0; }
 
 /* The window on the drawing. Every frame is drawn in one fixed space and seen
-   through a window cut to what that frame needs; the window is centred on the
-   middle, so it can open and close without the drawing moving underneath it. */
+   through a window cut to what that frame needs, which is why the window and
+   the drawing behind it always move together. */
 .viewport { position: relative; overflow: hidden;
-  margin: 0 auto; width: var(--w); height: var(--h);
-  transition: width var(--travel) var(--ease-soft),
-    height var(--travel) var(--ease-soft); }
+  margin: 0 auto; width: var(--w); height: var(--h); }
 .spokes { position: absolute; left: 0; top: 0; display: block;
-  transform: translate(var(--px), var(--py));
-  transition: transform var(--travel) var(--ease-soft); }
+  transform: translate(var(--px), var(--py)); }
 .spokes .spoke-line { stroke-width: 3; vector-effect: non-scaling-stroke; }
 .spokes .spoke.two .spoke-line { stroke-dasharray: 6 5; stroke-width: 2; }
 .spokes .spoke-plate { fill: var(--page); }
 .spokes .node-plate { fill: var(--panel); stroke: var(--rule-strong);
   stroke-width: 1; }
 .spokes .node.two .node-plate { stroke-dasharray: 5 4; }
-.spokes .node.here .node-plate { stroke: var(--ink); stroke-width: 2; }
 .spokes .node-name { fill: var(--ink); }
 .spokes .node.reachable, .spokes .node.two { cursor: pointer; }
 .spokes .node.reachable:hover .node-plate,
 .spokes .node.two:hover .node-plate { stroke: var(--ink); }
+/* Which frame is held is said by the mark around it, not by its size: the mark
+   can leave one frame for another, and a size cannot. */
+.spokes .mark { fill: none; stroke: var(--ink); stroke-width: 2; }
 
 /* A branch grows out of the middle and a leaf out of its own place, so each is
    given the point it moves about rather than borrowing the drawing's. */
-.branch, .leaf, .bud, .tag, #core { transform-box: view-box; }
+.branch, .leaf, .bud, .tag, .core, .mark { transform-box: view-box; }
 .branch { transform-origin: var(--ox) var(--oy); }
 .leaf, .bud, .tag { transform-origin: var(--lx) var(--ly); }
-/* The frame in flight and the window it is seen through take the same curve, so
-   the two read as one movement rather than as a card racing its own frame. */
-#core { transform-origin: var(--ox) var(--oy);
-  transition: transform var(--travel) var(--ease-soft); }
+.core { transform-origin: var(--ox) var(--oy); }
 
-/* Arriving: the frame taken travels into the middle, then the ways out of it
-   grow -- branches first and leaves after, in the order they are drawn.
-   `--turn` is a share of the stagger's budget, not a step, so however many ways
-   a frame has they finish together. */
+/* Leaving: the whole move, told in one drawing and in one order.
+   The ways not taken fold away, leaves before branches and each a share of the
+   budget behind the last. The mark then passes along the way that was taken.
+   The frame left behind shrinks away, and the branch it stood on with it. Then
+   the drawing recentres on the frame reached, which by now is all there is --
+   and what is left is exactly the drawing this frame gets when it is standing
+   still, which is why the page can swap one for the other and not be seen. */
+@keyframes leaf-fold { to { transform: scale(.4); opacity: 0; } }
+@keyframes branch-fold { to { transform: scale(.02); opacity: 0; } }
+@keyframes fade { to { opacity: 0; } }
+@keyframes pass { to { transform: translate(var(--mx), var(--my)); } }
+@keyframes shrink { to { transform: scale(.35); opacity: 0; } }
+@keyframes retract { to { transform: scale(.02); opacity: 0; } }
+@keyframes reframe { to { width: var(--to-w); height: var(--to-h); } }
+@keyframes repan { to { transform: translate(var(--to-px), var(--to-py)); } }
+
+.leaving .going .leaf {
+  animation: leaf-fold var(--fold-leaf) var(--ease-in) both;
+  animation-delay: calc(var(--turn) * var(--fold-spread));
+}
+.leaving .going .branch {
+  animation: branch-fold var(--fold-branch) var(--ease-in) both;
+  animation-delay: calc(var(--fold-lag) + var(--turn) * var(--fold-spread));
+}
+.leaving .taken .tag {
+  animation: fade var(--fold-leaf) ease both;
+}
+.leaving .mark {
+  animation: pass var(--pass) var(--ease-soft) both;
+  animation-delay: var(--pass-at);
+}
+.leaving .core {
+  animation: shrink var(--shrink) var(--ease-in) both;
+  animation-delay: var(--shrink-at);
+}
+.leaving .taken .branch {
+  /* Retracts into the frame reached rather than into the one being left, since
+     that is the end of it that is staying. */
+  transform-origin: var(--lx) var(--ly);
+  animation: retract var(--shrink) var(--ease-in) both;
+  animation-delay: var(--shrink-at);
+}
+.leaving.viewport {
+  animation: reframe var(--centre) var(--ease-soft) both;
+  animation-delay: var(--centre-at);
+}
+.leaving .spokes {
+  animation: repan var(--centre) var(--ease-soft) both;
+  animation-delay: var(--centre-at);
+}
+
+/* Arriving: the frame reached is where it belongs, so its own ways grow out of
+   it -- branches first and leaves after, in the order they are drawn. `--turn`
+   is a share of the stagger's budget, not a step, so however many ways a frame
+   has they finish together. */
 @keyframes branch-grow { from { transform: scale(.02); opacity: 0; } }
 @keyframes leaf-grow {
   from { transform: scale(.55); opacity: 0; pointer-events: none; }
@@ -136,34 +183,9 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
     var(--turn) * var(--grow-spread));
 }
 
-/* Leaving: the ways not taken fold back in, leaves before branches, while the
-   way taken lights up and grows into the size it is about to be in the middle.
-   Every fold ends together, and before the drawing is replaced: a fold still
-   running when that happens is thrown away mid-flight and seen as a flash. */
-@keyframes leaf-fold { to { transform: scale(.4); opacity: 0; } }
-@keyframes branch-fold { to { transform: scale(.02); opacity: 0; } }
-@keyframes bud-grow { from { transform: scale(var(--bud)); } }
-@keyframes fade { to { opacity: 0; } }
-.leaving .going .leaf {
-  animation: leaf-fold var(--fold-leaf) var(--ease-in) both;
-  animation-delay: calc(var(--turn) * var(--fold-spread));
-}
-.leaving .going .branch {
-  animation: branch-fold var(--fold-branch) var(--ease-in) both;
-  animation-delay: calc(var(--fold-lag) + var(--turn) * var(--fold-spread));
-}
-.leaving .taken .bud {
-  animation: bud-grow calc(var(--fold-spread) + var(--fold-lag)) var(--ease) both;
-}
-.leaving .taken .tag { animation: fade var(--fold-leaf) ease both; }
-.leaving .taken .branch {
-  animation: fade var(--fold-branch) ease both;
-  animation-delay: var(--fold-lag);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .viewport, .spokes, #core { transition: none; }
-  .branch, .leaf, .bud, .tag { animation: none !important; }
+  .branch, .leaf, .bud, .tag, .core, .mark, .spokes, .viewport, .marker {
+    animation: none !important; transition: none !important; }
 }
 .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.78rem;
   color: var(--dim); align-items: center; margin-left: auto; }
@@ -176,7 +198,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .tabs.small .tab { font-size: 0.72rem; padding: 0.16rem 0.5rem; }
 .map { width: 100%; min-width: 620px; height: auto; display: block; }
 .map .edge { stroke-width: 2; opacity: .3; }
-.map.still .edge { opacity: .75; }
+.map.unread .edge { opacity: .75; }
 .map .edge.lit { opacity: 1; stroke-width: 3.5; }
 .map .arc { fill: none; stroke: var(--rule-strong); stroke-width: 1.5;
   stroke-dasharray: 5 4; }
@@ -194,12 +216,11 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .map .node.two .node-plate { stroke: var(--rule-strong); stroke-dasharray: 5 4; }
 .move.two { border-style: dashed; }
 .map .marker { fill: none; stroke: var(--ink); stroke-width: 2.5;
-  transition: transform var(--travel) var(--ease); }
+  transform-box: view-box; }
+.map.leaving .marker { animation: pass var(--pass) var(--ease-soft) both;
+  animation-delay: var(--pass-at); }
 .map .edge.taking { opacity: 1; stroke-width: 5; }
 .map .node.taking .node-plate { stroke: var(--ink); stroke-width: 2; }
-@media (prefers-reduced-motion: reduce) {
-  .map .marker { transition: none; }
-}
 .matrix { border-collapse: collapse; font-size: 0.78rem; }
 .matrix th { font-weight: 500; color: var(--dim); text-align: left;
   padding: 0.2rem 0.35rem; }

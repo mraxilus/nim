@@ -39,8 +39,14 @@ import ./transition
 const
   CENTRE_X = 330
   CENTRE_Y = 268
-  CENTRE_WIDTH = 118 ## Width of the frame in the middle.
-  SPOKE_WIDTH = 86  ## Width of a frame the couple could move to.
+  NODE_WIDTH = 112
+    ## Width every frame in the drawing is drawn at, the one held included.
+    ##
+    ## One size for all of them, because the frame chosen stays on the screen
+    ## across the moment the drawing is replaced: drawn at two sizes it would
+    ## have to be scaled from one to the other, and a node's plate and its name
+    ## do not scale with its width, so the two would never quite line up.  Which
+    ## frame is held is said by the mark around it instead of by its size.
   SPOKE_RADIUS = 240 ## Length of a lone spoke; a crowded one reaches further.
   SPOKE_STEP = 40.0  ## Angle between two spokes of the same kind, in degrees.
   LINE_HEIGHT = 12   ## Height of one line of a name.
@@ -123,28 +129,8 @@ func endOf*(spoke: Spoke): (int, int) =
 func labelAt*(spoke: Spoke): (int, int) =
   ## Get where the name of a spoke sits, under the frame it arrives in.
   let (x, y) = endOf(spoke)
-  (x, y + frameHeight(SPOKE_WIDTH) div 2 + LABEL_DROP +
+  (x, y + frameHeight(NODE_WIDTH) div 2 + LABEL_DROP +
     (spoke.lines.len * LINE_HEIGHT + 4) div 2)
-
-
-func offsetOf*(here, before: Frame): (int, int) =
-  ## Get where the middle frame was drawn a moment ago, relative to the middle.
-  ##
-  ## When the couple take a spoke, the frame it arrives in becomes the middle.
-  ## Starting it out where it was and letting it travel in is the whole of the
-  ## animation: the drawing says the move was taken rather than that the world
-  ## changed.
-  if here == before:
-    return (0, 0)
-  for spoke in spokesOf(before):
-    if spoke.to != here:
-      continue
-    let (x, y) = endOf(spoke)
-    return (x - CENTRE_X, y - CENTRE_Y)
-  (0, 0)
-
-
-
 #[ Ink ]#
 
 const
@@ -198,10 +184,10 @@ func extentOf(here: Frame): (int, int, int, int) =
   # A frame's name is often wider than the frame it names, and a name is part of
   # the drawing: a box measured to the pictures alone would cut the words off.
   var
-    left = CENTRE_X - max(CENTRE_WIDTH div 2 + 8, textHalf(here.describe))
-    right = CENTRE_X + max(CENTRE_WIDTH div 2 + 8, textHalf(here.describe))
-    top = CENTRE_Y - frameHeight(CENTRE_WIDTH) div 2 - NAME_ROOM
-    bottom = CENTRE_Y + frameHeight(CENTRE_WIDTH) div 2 + 6
+    left = CENTRE_X - max(NODE_WIDTH div 2 + 8, textHalf(here.describe))
+    right = CENTRE_X + max(NODE_WIDTH div 2 + 8, textHalf(here.describe))
+    top = CENTRE_Y - frameHeight(NODE_WIDTH) div 2 - NAME_ROOM
+    bottom = CENTRE_Y + frameHeight(NODE_WIDTH) div 2 + 6
   for spoke in spokesOf(here):
     let
       (x, y) = endOf(spoke)
@@ -209,12 +195,12 @@ func extentOf(here: Frame): (int, int, int, int) =
       # Measured at the size a way out grows to when it is the one taken, since
       # it grows where it stands and a window cut any tighter would clip it.
       half = max(max(widest(spoke.lines), spoke.to.describe.len) * 3 + 7,
-        CENTRE_WIDTH div 2 + 8)
+        NODE_WIDTH div 2 + 8)
     left = min(left, x - half)
     right = max(right, x + half)
-    top = min(top, y - frameHeight(CENTRE_WIDTH) div 2 - NAME_ROOM)
+    top = min(top, y - frameHeight(NODE_WIDTH) div 2 - NAME_ROOM)
     bottom = max(bottom, max(ly + (spoke.lines.len * LINE_HEIGHT + 4) div 2,
-      y + frameHeight(CENTRE_WIDTH) div 2))
+      y + frameHeight(NODE_WIDTH) div 2))
   (left - PAD, top - PAD, right - left + 2 * PAD, bottom - top + 2 * PAD)
 
 
@@ -257,13 +243,6 @@ func panOf*(window: (int, int, int, int)): (int, int) =
   (SPOKES_BOX[0] - window[0], SPOKES_BOX[1] - window[1])
 
 
-func carrying(window: (int, int, int, int)): string =
-  ## Carry the window the drawing is to take, for the page to hand it over.
-  let (px, py) = panOf(window)
-  " data-w=\"" & $window[2] & "\" data-h=\"" & $window[3] &
-    "\" data-px=\"" & $px & "\" data-py=\"" & $py & "\""
-
-
 
 #[ The Drawing ]#
 
@@ -275,29 +254,63 @@ func spokeClass(spoke: Spoke; motion: Motion; taken: Option[Frame]): string =
   result.add(if taken == some(spoke.to): " taken" else: " going")
 
 
-func renderSpokes*(here, before: Frame; motion = Motion.Still;
-    taken = none(Frame)): string =
-  ## Draw the frame the couple hold, every way out of it, and what is moving.
+func markAt(cx, cy: int): string =
+  ## Draw the mark that says which frame is being held.
   ##
-  ## An arriving frame is drawn in the window of the frame it came from, and
-  ## carries the window it is going to.  Handing that over once the page has been
-  ## laid out sends the window and the frame in flight the same way at the same
-  ## time: they arrive together, rather than the drawing settling and the window
-  ## catching up afterwards.
+  ## Its own element rather than a heavier line on the frame's own plate, because
+  ## it has to be able to leave one frame and arrive at another: taking a move is
+  ## the mark passing along the way taken, and a mark that were part of a frame
+  ## could only blink from one to the other.
+  let height = frameHeight(NODE_WIDTH)
+  "<rect class=\"mark\" x=\"" & $(cx - NODE_WIDTH div 2 - 8) & "\" y=\"" &
+    $(cy - height div 2 - 6) & "\" width=\"" & $(NODE_WIDTH + 16) &
+    "\" height=\"" & $(height + 12) & "\" rx=\"8\"/>"
+
+
+func renderSpokes*(here: Frame; motion = Motion.Still;
+    taken = none(Frame)): string =
+  ## Draw the frame the couple hold, every way out of it, and the move being made.
+  ##
+  ## While a move is being told, this draws the frame it is being made *from*:
+  ## the whole sentence -- the ways not taken folding, the mark passing along the
+  ## way taken, the frame left behind going, the drawing recentring on the frame
+  ## reached -- happens in this one drawing, without the page touching it again.
+  ##
+  ## What that leaves at the end is one frame, marked, in the middle of a window
+  ## cut for it, with nothing around it.  That is exactly the drawing this
+  ## function returns for that frame standing still, which is why the page can
+  ## replace the one with the other there and no reader can tell.
   let
     (bx, by, bw, bh) = SPOKES_BOX
-    (dx, dy) = offsetOf(here, before)
-    shut = windowOf(here)
-    start = if motion == Motion.Arriving: windowOf(before) else: shut
+    leaving = motion == Motion.Leaving and taken.isSome
+    window = windowOf(here)
+    (px, py) = panOf(window)
+  # Where the drawing has to end up for the frame reached to be sitting where a
+  # frame it is holding sits: its own window, shifted by the distance from the
+  # middle out to wherever along the drawing that frame is standing now.
+  var
+    reached = window
+    (qx, qy) = (px, py)
+    (mx, my) = (0, 0)
+  if leaving:
+    for spoke in spokesOf(here):
+      if spoke.to != taken.get:
+        continue
+      let (ex, ey) = endOf(spoke)
+      reached = windowOf(taken.get)
+      let (rx, ry) = panOf(reached)
+      (qx, qy) = (rx + CENTRE_X - ex, ry + CENTRE_Y - ey)
+      (mx, my) = (ex - CENTRE_X, ey - CENTRE_Y)
+
   # Every number the animation spends is written here, so that the stylesheet
   # holds the shape of the movement and this holds its size.
-  let (px, py) = panOf(start)
   result = "<div class=\"viewport " & phase(motion) & "\" style=\"" &
-    motionStyle() & "; --w: " & $start[2] & "px; --h: " & $start[3] &
+    motionStyle() & "; --w: " & $window[2] & "px; --h: " & $window[3] &
     "px; --px: " & $px & "px; --py: " & $py &
-    "px; --ox: " & $CENTRE_X & "px; --oy: " & $CENTRE_Y & "px; --bud: " &
-    formatFloat(SPOKE_WIDTH / CENTRE_WIDTH, ffDecimal, 3) & "\"" &
-    carrying(shut) & ">"
+    "px; --to-w: " & $reached[2] & "px; --to-h: " & $reached[3] &
+    "px; --to-px: " & $qx & "px; --to-py: " & $qy &
+    "px; --mx: " & $mx & "px; --my: " & $my &
+    "px; --ox: " & $CENTRE_X & "px; --oy: " & $CENTRE_Y & "px\">"
   result.add "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"" & $bx & " " &
     $by & " " & $bw & " " & $bh & "\" width=\"" & $bw & "\" height=\"" & $bh &
     "\" class=\"spokes\" role=\"img\">" &
@@ -309,33 +322,29 @@ func renderSpokes*(here, before: Frame; motion = Motion.Still;
       (x, y) = endOf(spoke)
       (lx, ly) = labelAt(spoke)
       colour = armColour(spoke.side)
-      is_taken = motion == Motion.Leaving and taken == some(spoke.to)
       # A stagger is a share of one budget rather than a step of its own, so the
       # last way out finishes when the phase does however many there are.
       share =
         if ways.len < 2: "0"
         else: formatFloat(spoke.turn / (ways.len - 1), ffDecimal, 3)
     result.add "<g class=\"" & spokeClass(spoke, motion, taken) &
-      "\" style=\"--turn: " & share & "\">"
+      "\" style=\"--turn: " & share & "; --lx: " & $x & "px; --ly: " & $y &
+      "px\">"
     # A branch grows out of the middle and a leaf out of its own place, so each
     # carries the point it moves about rather than borrowing the drawing's.
     result.add "<g class=\"branch\">" &
       "<line class=\"spoke-line\" x1=\"" & $CENTRE_X & "\" y1=\"" & $CENTRE_Y &
       "\" x2=\"" & $x & "\" y2=\"" & $y & "\" style=\"stroke: " & colour &
       "\"/></g>"
-    result.add "<g class=\"leaf\" style=\"--lx: " & $x & "px; --ly: " & $y &
-      "px\">"
-    # The way being taken is drawn at the size it is about to be in the middle,
-    # and grows into it from where a way out is normally drawn.  Drawn any other
-    # way, the drawing thrown away at the end of this phase and the one that
-    # replaces it would not line up, and the seam between them would be seen.
-    result.add "<g class=\"bud\">" & (
-      if is_taken: nodeAt(spoke.to, x, y, CENTRE_WIDTH, "here")
-      else: nodeAt(spoke.to, x, y, SPOKE_WIDTH,
-        (if spoke.is_compound: "two" else: "reachable"))) & "</g>"
+    result.add "<g class=\"leaf\">"
+    result.add "<g class=\"bud\">" & nodeAt(spoke.to, x, y, NODE_WIDTH,
+      (if spoke.is_compound: "two" else: "reachable")) & "</g>"
     result.add "<g class=\"tag\">" & naming(lx, ly, spoke.lines, colour) & "</g>"
     result.add "</g></g>"
 
-  result.add nodeAt(here, CENTRE_X, CENTRE_Y, CENTRE_WIDTH, "here",
-    " id=\"core\" transform=\"translate(" & $dx & "," & $dy & ")\"")
+  # The frame held, and then the mark on it: the mark is drawn last so that it
+  # reads over whatever it is marking, and can leave without taking it along.
+  result.add "<g class=\"core\">" &
+    nodeAt(here, CENTRE_X, CENTRE_Y, NODE_WIDTH, "held") & "</g>"
+  result.add markAt(CENTRE_X, CENTRE_Y)
   result.add "</svg></div>"

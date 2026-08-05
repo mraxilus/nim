@@ -44,7 +44,7 @@ suite "the layout":
 
 suite "the drawing":
   test "every move is one line and every compound is one curve":
-    let picture = renderMap(none(Frame), none(Frame))
+    let picture = renderMap(none(Frame))
     var moved, joined = 0
     for source in FRAMES:
       moved += moves(source).len
@@ -56,30 +56,31 @@ suite "the drawing":
     check picture.count("<path class=\"arc") == joined div 2
 
   test "every frame is drawn, with its name":
-    let picture = renderMap(none(Frame), none(Frame))
+    let picture = renderMap(none(Frame))
     for target in FRAMES:
       check picture.contains("data-frame=\"" & target.key & "\"")
       check picture.contains(">" & target.describe & "<")
 
   test "a map with nobody on it has no marker and lights nothing":
-    let picture = renderMap(none(Frame), none(Frame))
-    check not picture.contains("id=\"here\"")
+    let picture = renderMap(none(Frame))
+    check not picture.contains("class=\"marker\"")
     check not picture.contains(" lit")
     check not picture.contains("reachable")
 
-  test "the marker starts where the couple were and carries where they are":
-    let
-      before = fromKey("r-.").get
-      here = fromKey("--.").get
-      picture = renderMap(some(here), some(before))
-    check picture.contains("translate(" & $centreOf(before)[0] & "," &
-      $centreOf(before)[1] & ")")
-    check picture.contains("data-x=\"" & $centreOf(here)[0] & "\"")
-    check picture.contains("data-y=\"" & $centreOf(here)[1] & "\"")
+  test "the marker stands on the frame held and carries the way to the next":
+    for here in FRAMES:
+      # Standing still it goes nowhere; taking a move, it carries exactly the
+      # distance along the line to the frame chosen, which is the move itself.
+      check renderMap(some(here)).contains("--mx: 0px; --my: 0px")
+      for move in moves(here):
+        let picture = renderMap(some(here), Motion.Leaving, some(move.to))
+        check picture.contains("--mx: " & $(centreOf(move.to)[0] -
+          centreOf(here)[0]) & "px; --my: " & $(centreOf(move.to)[1] -
+          centreOf(here)[1]) & "px")
 
   test "only the frames one move away are offered":
     for here in FRAMES:
-      let picture = renderMap(some(here), some(here))
+      let picture = renderMap(some(here))
       check picture.count("reachable") == moves(here).len
 
   test "a frame a compound away is offered, and marked as two moves":
@@ -88,12 +89,12 @@ suite "the drawing":
       for target in FRAMES:
         if compound(here, target).isSome:
           inc named
-      check renderMap(some(here), some(here)).count(" two\"") == named
+      check renderMap(some(here)).count(" two\"") == named
 
   test "the ink of a line is the arm that acts, whichever way it is read":
     # Once a line is unlit the two arms are told apart by colour alone, so every
     # line has to carry an arm's ink and not the quiet ink of the background.
-    let picture = renderMap(none(Frame), none(Frame))
+    let picture = renderMap(none(Frame))
     var lines = 0
     for fragment in picture.split("<line class=\"edge"):
       if not fragment.startsWith("\"") and not fragment.startsWith(" lit"):

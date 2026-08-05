@@ -216,15 +216,13 @@ func node(target: Frame; is_here, is_reachable, is_compound,
 
 #[ The Map ]#
 
-func renderMap*(here, before: Option[Frame]; taken = none(Frame)): string =
+func renderMap*(here: Option[Frame]; motion = Motion.Still;
+    taken = none(Frame)): string =
   ## Draw the graph, with the couple standing on one frame if they are dancing.
-  ##
-  ## The marker is drawn where the couple *were*, and carries where they are
-  ## going, so a page that moves it after drawing gets an animation for free and
-  ## a page that does not still shows the truth.
   result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " &
     $MAP_WIDTH & " " & $MAP_HEIGHT & "\" class=\"map" &
-    (if here.isNone: " still" else: "") & "\" style=\"" & motionStyle() &
+    (if motion == Motion.Leaving: " leaving" else: "") &
+    (if here.isNone: " unread" else: "") & "\" style=\"" & motionStyle() &
     "\" role=\"img\">" &
     "<title>Every frame, and every move between them</title>"
 
@@ -255,13 +253,19 @@ func renderMap*(here, before: Option[Frame]; taken = none(Frame)): string =
       here.isSome and compound(here.get, target).isSome, taken == some(target))
 
   if here.isSome:
+    # The mark sits on the frame held and, while a move is being made, carries
+    # the distance to the frame chosen: taking a move is the mark passing along
+    # the line between them, which is the same thing the close drawing says.
     let
       (hx, hy) = centreOf(here.get)
-      (fx, fy) = centreOf(if before.isSome: before.get else: here.get)
+      (tx, ty) =
+        if taken.isSome: centreOf(taken.get) else: (hx, hy)
       height = frameHeight(NODE_WIDTH)
-    result.add "<rect id=\"here\" class=\"marker\" x=\"" &
-      $(-NODE_WIDTH div 2 - 12) & "\" y=\"" & $(-height div 2 - 10) &
-      "\" width=\"" & $(NODE_WIDTH + 24) & "\" height=\"" & $(height + 20) &
-      "\" rx=\"10\" transform=\"translate(" & $fx & "," & $fy &
-      ")\" data-x=\"" & $hx & "\" data-y=\"" & $hy & "\"/>"
+    # Placed by where it is rather than moved to it, so that the distance it
+    # carries is a distance to travel and not a place to jump to.
+    result.add "<rect class=\"marker\" x=\"" & $(hx - NODE_WIDTH div 2 - 12) &
+      "\" y=\"" & $(hy - height div 2 - 10) & "\" width=\"" &
+      $(NODE_WIDTH + 24) & "\" height=\"" & $(height + 20) &
+      "\" rx=\"10\" style=\"--mx: " & $(tx - hx) & "px; --my: " & $(ty - hy) &
+      "px\"/>"
   result.add "</svg>"

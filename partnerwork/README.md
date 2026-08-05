@@ -46,18 +46,32 @@ workbook.
 
 The Dance view draws the frame two ways, one at a time. **Dynamic** puts the
 frame in the middle and every way out of it as a spoke, and nothing else — take
-a spoke and it travels in to become the middle. **Overview** is the whole
-ontology with the couple standing somewhere in it, and the marker travelling the
-line it dances.
+a spoke and the drawing recentres on it. **Overview** is the whole ontology with
+the couple standing somewhere in it. Both are marked the same way and both say a
+move the same way: the mark passes along the line to the frame chosen.
 
-Taking a move is drawn rather than announced. The way taken lights up and swells
-where it stands while the ways not taken fold back into the middle, leaves before
-branches; the frame taken then travels into the middle, carrying the window with
-it; and the ways out of *it* grow outward, branches first and leaves after. Each
-phase is timed by the numbers in `src/partnerwork/motion.nim`, which the drawing
-writes onto itself for the stylesheet to spend, so the page can never advance the
-state out from under an animation still running. A reader who has asked for
-reduced motion gets the change at once instead.
+Taking a move is drawn rather than announced, one clause at a time: the ways not
+taken fold away, leaves before branches; the mark that says *you are here* passes
+along the way that was taken; the frame left behind shrinks away; the drawing
+recentres on the frame reached, which by then is all there is; and only then do
+its own ways grow out of it, branches first and leaves after.
+
+The whole of that happens in one drawing. The page replaces the drawing exactly
+once, at the end, at the one instant when what is on the screen and what would
+replace it are the same picture — one frame, marked, with nothing around it yet —
+so the swap cannot be seen. `tests/tspokes.nim` holds it to that: the window a
+move ends in, and where it leaves the frame standing, have to be the window and
+the place that frame is given when it is standing still.
+
+Every frame is drawn at one size for the same reason. A frame chosen stays on the
+screen across that swap, and a node's plate and its name do not scale with its
+width, so a frame drawn small and scaled up would never quite line up with the
+same frame drawn large. Which frame is held is said by the mark around it.
+
+The times live in `src/partnerwork/motion.nim` and the drawing writes them onto
+itself for the stylesheet to spend, so the page waits on the same numbers the
+animation runs on. A reader who has asked for reduced motion gets the change at
+once instead.
 
 The Atlas opens on the gallery: each frame drawn, named and counted, and
 clickable to dance from. It narrows on three questions — how many connections,

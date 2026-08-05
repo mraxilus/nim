@@ -43,7 +43,6 @@ func startFrame(): Frame =
 var
   origin = startFrame()
   current = startFrame()
-  before = startFrame() ## Frame the couple left, so the map can animate away from it.
   view = View.Dance
   vis = Vis.Dynamic
   filter = Filter()
@@ -183,11 +182,11 @@ func renderArms(): string =
   tag("div", "class=\"legend\"", swatches)
 
 
-func renderSpokesView(current, before: Frame; motion: Motion;
+func renderSpokesView(current: Frame; motion: Motion;
     taken: Option[Frame]): string =
   ## Draw where the couple are and every way out, and nothing else.
   tag("div", "class=\"view-spokes\"",
-    tag("div", "class=\"scroll\"", renderSpokes(current, before, motion, taken)) &
+    tag("div", "class=\"scroll\"", renderSpokes(current, motion, taken)) &
     tag("p", "class=\"note\"", "The frame in the middle is the one being held. " &
       "Every spoke is a way out of it and nothing else is drawn. A drop " &
       "releases a hand so it points up, a collect takes one so it points down, " &
@@ -195,10 +194,10 @@ func renderSpokesView(current, before: Frame; motion: Motion;
       "it becomes the middle."))
 
 
-func renderMapView(current, before: Frame; taken: Option[Frame]): string =
+func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string =
   ## Draw where the couple stand in the whole ontology.
   tag("div", "class=\"view-map\"",
-    tag("div", "class=\"scroll\"", renderMap(some(current), some(before), taken)) &
+    tag("div", "class=\"scroll\"", renderMap(some(current), motion, taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. A " &
       "lit line is named for the move away from where you stand; dashed curves " &
@@ -207,7 +206,7 @@ func renderMapView(current, before: Frame; taken: Option[Frame]): string =
       "a compound dances its two moves in turn."))
 
 
-func renderStageBody(current, before: Frame; vis: Vis; motion: Motion;
+func renderStageBody(current: Frame; vis: Vis; motion: Motion;
     taken: Option[Frame]): string =
   ## Show the frame the couple hold, drawn the way the dancer has asked for.
   ##
@@ -216,20 +215,20 @@ func renderStageBody(current, before: Frame; vis: Vis; motion: Motion;
   ## picture did would name something nobody can see.
   let drawing =
     case vis
-    of Vis.Dynamic: renderSpokesView(current, before, motion, taken)
-    of Vis.Overview: renderMapView(current, before, taken)
+    of Vis.Dynamic: renderSpokesView(current, motion, taken)
+    of Vis.Overview: renderMapView(current, motion, taken)
   tag("div", "class=\"stage-head\"",
     tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
     renderVisSwitch(vis) & renderArms()) &
     tag("div", "class=\"views\"", drawing)
 
 
-func renderDance(current, before: Frame; vis: Vis; motion: Motion;
+func renderDance(current: Frame; vis: Vis; motion: Motion;
     taken: Option[Frame]; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
     tag("section", "class=\"panel wide\" id=\"stage\"",
-      renderStageBody(current, before, vis, motion, taken)) &
+      renderStageBody(current, vis, motion, taken)) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
@@ -394,42 +393,6 @@ func renderControls(view: View): string =
   tag("header", "", tag("h1", "", "partner work") & tag("div", "class=\"tabs\"", views))
 
 
-proc resize() =
-  ## Hand the drawing the window it was drawn carrying.
-  ##
-  ## Written straight onto the drawing rather than drawing it again, because
-  ## drawing it again would start every animation on the page over from nothing.
-  ## The window is drawn at the size the reader can already see and given its new
-  ## one here, so that it closes alongside the frame in flight rather than
-  ## catching up once the frame has landed.
-  let viewport = document.querySelector(".viewport")
-  if viewport == nil:
-    return
-  for name in ["w", "h", "px", "py"]:
-    let measure = viewport.getAttribute(cstring("data-" & name))
-    if measure != nil:
-      viewport.style.setProperty(cstring("--" & name), cstring($measure & "px"))
-
-
-proc travel() =
-  ## Let whatever was drawn where it was a moment ago move to where it is now.
-  ##
-  ## Both drawings are rendered with the couple still at the frame they left, and
-  ## are moved once the browser has laid the page out: that is what turns a change
-  ## of state into a movement across the picture, and a page that never runs this
-  ## still shows the couple somewhere true, one frame behind.
-  let marker = document.getElementById("here")
-  if marker != nil:
-    discard marker.getBoundingClientRect() # Settle the drawn position first.
-    marker.setAttribute("transform", cstring("translate(" &
-      $marker.getAttribute("data-x") & "," & $marker.getAttribute("data-y") & ")"))
-  let core = document.getElementById("core")
-  if core != nil:
-    discard core.getBoundingClientRect()
-    core.setAttribute("transform", "translate(0,0)")
-  resize()
-
-
 proc paintStage() =
   ## Draw the frame and its ways out again, and nothing else on the page.
   ##
@@ -439,19 +402,17 @@ proc paintStage() =
   let stage = document.getElementById("stage")
   if stage == nil:
     return
-  stage.innerHTML = cstring(renderStageBody(current, before, vis, motion, taken))
-  travel()
+  stage.innerHTML = cstring(renderStageBody(current, vis, motion, taken))
 
 
 proc render() =
   ## Draw the whole page from the session state.
   let body =
     case view
-    of View.Dance: renderDance(current, before, vis, motion, taken, history)
+    of View.Dance: renderDance(current, vis, motion, taken, history)
     of View.Atlas: renderAtlas(filter)
     of View.Audit: renderAudit()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
-  travel()
 
 
 proc arrive(target: Frame) =
@@ -460,7 +421,6 @@ proc arrive(target: Frame) =
     if move.to != target:
       continue
     history.add Step(phrase: phrase(current, move), to: move.to)
-    before = current
     current = move.to
     return
 
@@ -550,7 +510,6 @@ proc start(key: string) =
     return
   rest()
   origin = target.get
-  before = origin
   current = origin
   history = @[]
   view = View.Dance
@@ -606,11 +565,9 @@ proc handle(event: Event) =
     if history.len > 0:
       rest()
       discard history.pop()
-      before = current
       current = if history.len > 0: history[^1].to else: origin
   of "reset":
     rest()
-    before = current
     current = origin
     history = @[]
   else: return
