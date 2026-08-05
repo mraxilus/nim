@@ -149,6 +149,13 @@ proc glSetSwapInterval*(interval: cint): bool
   {.importc: "SDL_GL_SetSwapInterval", header: HEADER, discardable.}
 proc glSwapWindow*(window: Window): bool
   {.importc: "SDL_GL_SwapWindow", header: HEADER, discardable.}
+proc getModState*(): uint16 {.importc: "SDL_GetModState", header: HEADER.}
+  ## Read which modifier keys are held right now, testable against the `MODIFIER_` masks.
+  ## A mouse-button event carries no modifiers of its own, so shift-clicking has to ask.
+proc setModState*(modifiers: uint16) {.importc: "SDL_SetModState", header: HEADER.}
+  ## Say which modifiers are held, for a scripted gesture that has no real keyboard behind
+  ## it -- `SDL_PushEvent` only enqueues, and never touches the state `getModState` reads.
+  ## See `visualiser.driveSelect`, which is the only caller.
 proc pollEvent*(event: ptr Event): bool {.importc: "SDL_PollEvent", header: HEADER.}
 proc pushEvent*(event: ptr Event): bool
   {.importc: "SDL_PushEvent", header: HEADER, discardable.}

@@ -1230,6 +1230,22 @@ suite "Selection":
     for position in 0 ..< selection.len: result.add(selection.at(position))
 
 
+  test "a selection is hidden only when every one of its objects is":
+    # What the one hide/show button on both front-ends reads to name what it would do.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var selection: Selection
+    check not selection.isAllHidden(scene) # Nothing picked: nothing to show.
+    selection.toggle(0)
+    selection.toggle(1)
+    check not selection.isAllHidden(scene)
+    scene.setVisible(0, false)
+    check not selection.isAllHidden(scene) # One of the two still drawn.
+    scene.setVisible(1, false)
+    check selection.isAllHidden(scene)
+
+
   test "toggle appends in pick order, so the first two picks name m and n":
     var selection: Selection
     selection.toggle(4)
@@ -1667,6 +1683,85 @@ suite "Interaction":
     check outcome.operands == some((source: 0, destination: 1))
 
 
+  test "a press that never moves is a click on what it came down on, not a drag":
+    # The press over an object has to start a drag eagerly -- the press target chooses the
+    #   scheme -- so whether it *was* one is only answerable at the release.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 10.0)
+    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    let outcome = interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK)
+    check outcome.index_clicked == some(0)
+    check outcome.index_created.isNone
+    check scene.len == 2 # Nothing built; a click picks, it does not construct.
+
+
+  test "a press that moves past the click slop is a drag, however briefly it lasted":
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 10.0)
+    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    interaction.updateCursor(200.0 + 2.0*PIXELS_CLICK_SLOP, 200.0)
+    # Back where it started: the reading is latched, so a pointer that swung out and
+    #   returned is still a drag rather than a click that happened to end where it began.
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(1)
+    let outcome = interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK)
+    check outcome.index_clicked.isNone
+    check outcome.index_created == some(2)
+
+
+  test "a press held past the click window is a drag even if it never moved":
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 10.0)
+    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    interaction.index_hover = some(1)
+    let outcome = interaction.endDrag(scene, 10.0 + 2.0*SECONDS_CLICK)
+    check outcome.index_clicked.isNone
+    check outcome.index_created == some(2)
+
+
+  test "the button that forces the menu never reports a click instead":
+    # It asked for the menu; offering one and then quietly selecting would make the right
+    #   button mean two things depending on how fast the reader let go.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 10.0)
+    check interaction.beginDrag(is_menu_forced = true, now = 10.0)
+    check interaction.isClick(10.0 + 0.5*SECONDS_CLICK)
+    check interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK).index_clicked.isNone
+
+
+  test "a drag driven without a press is never mistaken for a click":
+    # The safe default `is_press_still` exists for: a caller that never went through
+    #   `beginPress` gets the behaviour that predates clicks, whatever the clock reads.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    check not interaction.isClick(0.0)
+    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    interaction.index_hover = some(1)
+    check interaction.endDrag(scene, 0.0).index_created == some(2)
+
+
   test "drag cannot start without a hovered item":
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = none(int)
@@ -1910,9 +2005,9 @@ suite "Interaction":
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 1000.0)
     check interaction.menu.isNone
-    interaction.updateDrag(scene, 1000.0 + 0.99*MILLISECONDS_DWELL_MENU)
+    interaction.updateDrag(scene, 1000.0 + 0.99*SECONDS_DWELL_MENU)
     check interaction.menu.isNone
-    interaction.updateDrag(scene, 1000.0 + MILLISECONDS_DWELL_MENU)
+    interaction.updateDrag(scene, 1000.0 + SECONDS_DWELL_MENU)
     check interaction.menu.isSome
 
     var forced = Interaction(is_enabled: true)
@@ -2056,11 +2151,14 @@ suite "Interaction":
     for step in 1 .. 20:
       # Three times the dwell, and never still for two frames together.
       interaction.updateCursor(100.0 + 2.0*PIXELS_TAP_SLOP*float(step), 100.0)
-      interaction.updateDrag(scene, 0.15*MILLISECONDS_DWELL_MENU*float(step))
+      interaction.updateDrag(scene, 0.15*SECONDS_DWELL_MENU*float(step))
       check interaction.menu.isNone
     # Stop moving, and the same drag opens it a dwell later -- the clock is restarted, not
     #   disabled, so the gesture the reader actually wanted still works.
-    interaction.updateDrag(scene, 3.0*MILLISECONDS_DWELL_MENU + MILLISECONDS_DWELL_MENU)
+    #   A dwell past the last movement with room to spare: what is being checked here is
+    #   that the clock restarts rather than stops, not where its own boundary lies, and the
+    #   two tests below pin that boundary exactly.
+    interaction.updateDrag(scene, 0.15*SECONDS_DWELL_MENU*20.0 + 1.5*SECONDS_DWELL_MENU)
     check interaction.menu.isSome
 
 
@@ -2078,8 +2176,8 @@ suite "Interaction":
     interaction.index_hover = some(1)
     for step in 1 .. 4:
       interaction.updateCursor(100.0 + 0.2*PIXELS_TAP_SLOP*float(step), 100.0)
-      interaction.updateDrag(scene, 0.2*MILLISECONDS_DWELL_MENU*float(step))
-    interaction.updateDrag(scene, MILLISECONDS_DWELL_MENU)
+      interaction.updateDrag(scene, 0.2*SECONDS_DWELL_MENU*float(step))
+    interaction.updateDrag(scene, SECONDS_DWELL_MENU)
     check interaction.menu.isSome
 
 
@@ -2091,13 +2189,13 @@ suite "Interaction":
     interaction.index_hover = some(0)
     discard interaction.beginDrag(is_menu_forced = false, now = 1000.0)
     interaction.index_hover = some(1)
-    interaction.updateDrag(scene, 1000.0 + 0.9*MILLISECONDS_DWELL_MENU)
+    interaction.updateDrag(scene, 1000.0 + 0.9*SECONDS_DWELL_MENU)
     check interaction.menu.isNone
     interaction.index_hover = none(int) # Slipped off the target.
-    interaction.updateDrag(scene, 1000.0 + 0.95*MILLISECONDS_DWELL_MENU)
+    interaction.updateDrag(scene, 1000.0 + 0.95*SECONDS_DWELL_MENU)
     check interaction.preview.isNone
     interaction.index_hover = some(1) # And back on, with the dwell owed in full again.
-    interaction.updateDrag(scene, 1000.0 + 1.5*MILLISECONDS_DWELL_MENU)
+    interaction.updateDrag(scene, 1000.0 + 1.5*SECONDS_DWELL_MENU)
     check interaction.menu.isNone
 
 
@@ -2146,10 +2244,10 @@ suite "Interaction":
     check progressHold(interaction, 1000.0) == 0.0
     check not isHoldMature(interaction, 1000.0)
     interaction.beginHold(3, 1000.0)
-    check progressHold(interaction, 1000.0 + MILLISECONDS_LONG_PRESS) == 1.0
+    check progressHold(interaction, 1000.0 + SECONDS_LONG_PRESS) == 1.0
     interaction.cancelHold()
-    check progressHold(interaction, 1000.0 + MILLISECONDS_LONG_PRESS) == 0.0
-    check not isHoldMature(interaction, 1000.0 + MILLISECONDS_LONG_PRESS)
+    check progressHold(interaction, 1000.0 + SECONDS_LONG_PRESS) == 0.0
+    check not isHoldMature(interaction, 1000.0 + SECONDS_LONG_PRESS)
 
 
   test "a hold fills linearly, is clamped at both ends, and is due exactly when full":
@@ -2158,22 +2256,22 @@ suite "Interaction":
     # Linear, not eased: half the wait is half the fill. This is the property that makes
     #   the marker a clock a reader can judge the remaining time from, and it is what an
     #   `easeOutCubic` here would break -- see `progressHold`'s own doc comment.
-    check progressHold(interaction, 1000.0 + 0.5*MILLISECONDS_LONG_PRESS) =~ 0.5
-    check progressHold(interaction, 1000.0 + 0.25*MILLISECONDS_LONG_PRESS) =~ 0.25
+    check progressHold(interaction, 1000.0 + 0.5*SECONDS_LONG_PRESS) =~ 0.5
+    check progressHold(interaction, 1000.0 + 0.25*SECONDS_LONG_PRESS) =~ 0.25
     var previous = 0.0
     for step in 0 .. 20:
       let progress = progressHold(
-        interaction, 1000.0 + float(step)/20.0*MILLISECONDS_LONG_PRESS
+        interaction, 1000.0 + float(step)/20.0*SECONDS_LONG_PRESS
       )
       check progress >= previous
       previous = progress
     # Clamped below, so a clock that steps backward cannot un-fill a marker, and above, so
     #   a frame arriving late still draws a whole one rather than overshooting past it.
     check progressHold(interaction, 900.0) == 0.0
-    check progressHold(interaction, 1000.0 + 10.0*MILLISECONDS_LONG_PRESS) == 1.0
+    check progressHold(interaction, 1000.0 + 10.0*SECONDS_LONG_PRESS) == 1.0
     # Maturity lands exactly where the fill completes, never a frame either side of it.
-    check not isHoldMature(interaction, 1000.0 + 0.999*MILLISECONDS_LONG_PRESS)
-    check isHoldMature(interaction, 1000.0 + MILLISECONDS_LONG_PRESS)
+    check not isHoldMature(interaction, 1000.0 + 0.999*SECONDS_LONG_PRESS)
+    check isHoldMature(interaction, 1000.0 + SECONDS_LONG_PRESS)
 
 
 suite "Marker":

@@ -61,6 +61,19 @@ func impliedArity*(selection: Selection): Arity =
   if selection.count >= 2: Arity.Two else: Arity.One
 
 
+func isAllHidden*(selection: Selection; scene: Scene): bool =
+  ## Report whether every picked object is hidden, so a control acting on the whole
+  ## selection can name what it would do -- `show` where they are all hidden, `hide`
+  ## otherwise.
+  ##   A rule about a selection rather than about either object, which is why it lives
+  ##   here instead of each front-end folding `isVisible` over the list its own way.
+  ##   An empty selection is not hidden: there is nothing there to show.
+  if selection.count == 0: return false
+  for position in 0 ..< selection.count:
+    if scene.isVisible(selection.slots[position]): return false
+  true
+
+
 
 #[ Editing A Selection ]#
 

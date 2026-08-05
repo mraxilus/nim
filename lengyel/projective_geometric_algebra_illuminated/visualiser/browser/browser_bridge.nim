@@ -634,15 +634,8 @@ proc nimSelectClear() {.exportc.} = g_selection.clear()
 
 
 proc nimSelectionAllHidden(): bool {.exportc.} =
-  ## Report whether every picked object is hidden, so a control acting on the whole
-  ##   selection can name what it would do -- `show` where they are all hidden, `hide`
-  ##   otherwise. Answered here rather than by the caller folding `nimItemVisible` over
-  ##   the list, since what "the selection is hidden" means is a rule about a selection.
-  ##   An empty selection is not hidden; there is nothing to show.
-  if g_selection.len == 0: return false
-  for position in 0 ..< g_selection.len:
-    if g_scene.isVisible(g_selection.at(position)): return false
-  true
+  ## Forward to `selection.isAllHidden`; see its own doc comment.
+  g_selection.isAllHidden(g_scene)
 
 
 proc nimAnimationMilliseconds(): cint {.exportc.} = cint(ANIMATION_MILLISECONDS)
@@ -787,6 +780,19 @@ proc nimTapSlop(): cfloat {.exportc.} = cfloat(PIXELS_TAP_SLOP)
   ## for why this is a rule about the gesture rather than a presentation number.
 
 
+proc nimBeginPress(now: cfloat) {.exportc.} =
+  ## Forward to `interaction.beginPress`; see its own doc comment for why every press goes
+  ## through it, including the ones that go on to move the camera rather than build.
+  interaction.beginPress(g_interaction, float(now))
+
+
+proc nimIsClick(now: cfloat): bool {.exportc.} =
+  ## Forward to `interaction.isClick`; see its own doc comment.
+  ##   Reached directly only for a press that started over empty space, which begins no
+  ##   drag and so has no `nimEndDrag` to report itself through.
+  isClick(g_interaction, float(now))
+
+
 proc nimBeginDrag(is_menu_forced: bool; now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
   interaction.beginDrag(g_interaction, is_menu_forced, float(now))
@@ -896,6 +902,9 @@ type DragResult = object ## Report what ending a drag produced.
   message: cstring ## Outcome, for display exactly as the desktop panel's own status line.
   is_more: bool ## Whether the release chose `more…`, which builds nothing itself and
     ## instead leaves both operands selected for the apply section.
+  clicked_slot: cint ## Item a press that never became a drag came down on, or `SLOT_NONE`
+    ## for every actual drag. The caller selects it -- alone, or added where shift is
+    ## held, which is a modifier only the caller can read.
 
 
 proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
@@ -908,12 +917,20 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   ##   hand, because `endDrag` read its operands' labels through `$toCstring`, which comes
   ##   out empty under the JS backend; `scene.toText` now reads them the same on both.
   let outcome = interaction.endDrag(g_interaction, g_scene, float(now))
+  if outcome.index_clicked.isSome:
+    # A press that never moved. Reported rather than acted on: whether it replaces the
+    #   selection or joins it is the shift key's to say, and that is the caller's to read.
+    return DragResult(
+      created_slot: SLOT_NONE, clicked_slot: cint(outcome.index_clicked.get)
+    )
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
     g_borns[slot] = float(now)
     g_selection.selectOnly(slot)
     g_history.record(g_scene)
-    return DragResult(created_slot: cint(slot), message: cstring(outcome.message))
+    return DragResult(
+      created_slot: cint(slot), message: cstring(outcome.message), clicked_slot: SLOT_NONE
+    )
   if outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
     # The way out of the gesture's own three operations into the other twenty-four: both
     #   operands selected in the order they were dragged, which is the order the apply
@@ -921,9 +938,12 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     g_selection.selectOnly(outcome.operands.get.source)
     g_selection.toggle(outcome.operands.get.destination)
     return DragResult(
-      created_slot: SLOT_NONE, message: cstring(outcome.message), is_more: true
+      created_slot: SLOT_NONE, message: cstring(outcome.message), is_more: true,
+      clicked_slot: SLOT_NONE,
     )
-  DragResult(created_slot: SLOT_NONE, message: cstring(outcome.message))
+  DragResult(
+    created_slot: SLOT_NONE, message: cstring(outcome.message), clicked_slot: SLOT_NONE
+  )
 
 
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =

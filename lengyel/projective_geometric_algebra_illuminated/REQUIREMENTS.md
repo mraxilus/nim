@@ -473,9 +473,14 @@ the operations it cannot build, or it is a dead end.
 **The press target chooses the scheme; the button chooses whether you are asked.** Press an
 object and the drag constructs; press empty space and it moves the camera (left orbits,
 right pans, wheel dollies). Orbit 0.008 rad per pixel; pan 0.0016 × orbit distance per
-pixel; one wheel notch scales distance by 1.12. A plain click — under 350 ms and 6 px of
+pixel; one wheel notch scales distance by 1.12. A plain click — under 0.35 s and 6 px of
 movement — selects instead of dragging; shift-click toggles into a multi-selection; a plain
-click on empty space clears it.
+click on empty space clears it. Both bounds are **one rule in the core**, asked at the
+release: a press over an object must start its drag eagerly, so whether it was a click is
+not knowable until the release. Six pixels rather than the fingertip slop, because a mouse
+on a desk does not roll. Every duration in the gesture vocabulary is in **seconds**, on the
+same clock an object's birth is stamped with; a front-end whose own clock reads otherwise
+converts once, at its edge.
 
 | Button | Starts |
 |--------|--------|
@@ -731,8 +736,9 @@ must not drift.
 
 **Object rows.** The leading checkbox toggles selection membership, so a second and third
 object join in pick order — that order names the operands. Clicking the name selects that one
-object alone. (The browser gets single-select from a plain canvas click; this build has no
-equivalent, so the row carries both gestures.) Hidden rows dim to 0.45 opacity, independent of
+object alone — the same two gestures a click and a shift-click in the 3D view reach, offered
+here as well because the list is where a reader who has not found the view gestures looks.
+Hidden rows dim to 0.45 opacity, independent of
 the selection highlight so the two combine. Rows are ordered by recency. Dim through a
 style-alpha push, **not** a disabled-scope, which would also make the row's own show button
 unclickable. The edit toggle is a **small button over session state**, not a collapsing
@@ -811,7 +817,9 @@ and per-section contents matching §17 field for field.
 at a fixed column count that cuts across grade boundaries. Grade comes from the core, so
 nothing hardcodes this build's dimension.
 
-**Floating selection menu**, one row, following its anchor object every frame:
+**Floating selection menu**, one row, following its anchor object every frame. **Both
+front-ends carry it**, from the same rules; it is specified here because this is where it
+was first built.
 
 - `apply` sits **leftmost and never moves**. Pressing it reveals an operation picker to its
   right; pressing it again commits with whatever is picked. `back` collapses without
@@ -828,6 +836,14 @@ nothing hardcodes this build's dimension.
 - **`apply` is hidden entirely at three or more selected**: this menu has no operand pickers,
   so it cannot say *which* two of three it would use. The drawer's apply section can, and
   stays usable.
+- It is raised by the gestures that **pick** and lowered by the ones that **build**, rather
+  than derived from the selection being non-empty: every construction path leaves its own
+  result selected, and a menu appearing over each new object would sit in the way of the
+  next drag.
+- It sits **above** its object, never on it, by enough to clear the object's own selection
+  marker. A menu straddling its object would take the press that should have started the
+  next drag off that object — which on the desktop is literal, since a GUI window there
+  claims the pointer wherever it sits.
 
 The script layer keeps only a **render snapshot** of the selection, refreshed when the
 selection changes, so the per-frame overlay loop does not cross the boundary — a cache of the

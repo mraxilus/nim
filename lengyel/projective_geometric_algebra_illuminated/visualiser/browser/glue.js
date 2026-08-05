@@ -1237,7 +1237,7 @@ function refreshOverlay(cursor) {
   // marker is on screen already.
   const slot_hold = nimHoldSlot();
   if (slot_hold >= 0 && !slots_selection.includes(slot_hold)) {
-    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(performance.now()));
+    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()));
   }
 
   // Hover and keyboard focus wear the same marker at the same weight: a reader driving by
@@ -1354,11 +1354,12 @@ let slot_touch_down = -1, is_touch_dragging = false;
 //   presentation number. The tap *timeout* stays here -- that one really is local.
 const TAP_MAX_MS = 350, TAP_MAX_MOVE = nimTapSlop();
 
-// Mouse click-vs-drag disambiguation state -- a plain click (no movement) selects/
-//   shift-selects; an actual drag still applies join/meet/project exactly as before.
-let mouse_down_at = null, position_mouse_down = null;
-let button_mouse_down = null, has_mouse_moved = false;
-const MOUSE_CLICK_MAX_MS = 350, MOUSE_CLICK_MAX_MOVE = 6;
+// Mouse click-vs-drag disambiguation -- a plain click (no movement) selects/shift-selects;
+//   an actual drag still applies join/meet/project exactly as before. *Whether* a press
+//   stayed a click is `interaction.isClick`'s to say: both of its bounds lived here as
+//   MOUSE_CLICK_MAX_MS/MOUSE_CLICK_MAX_MOVE until the desktop needed the same answer. All
+//   that is left here is which button went down, which is this layer's own numbering.
+let button_mouse_down = null;
 
 function pointerDist(points_flat) {
   const [a, b] = points_flat;
@@ -1379,14 +1380,14 @@ canvas.addEventListener('pointerdown', (e) => {
     const ratio_pixel = canvas.width / rect.width;
     nimUpdateCursor(local.x * ratio_pixel, local.y * ratio_pixel);
     nimUpdateHover(canvas.width, canvas.height);
-    mouse_down_at = performance.now();
-    position_mouse_down = { x: e.clientX, y: e.clientY };
+    // Note the press before anything is decided about it: whether it was a click is only
+    //   knowable at the release, and both branches below can end in one.
+    nimBeginPress(now());
     button_mouse_down = e.button;
-    has_mouse_moved = false;
     // The button says whether the drag decides for you or asks; what it builds is read
     // off the operands at release. Mirrors `visualiser.isMenuForcedFor`.
     const kind_drag = nimDragKindForButton(e.button);
-    if (kind_drag >= 0 && nimBeginDrag(kind_drag === 1, performance.now())) {
+    if (kind_drag >= 0 && nimBeginDrag(kind_drag === 1, now())) {
       button_mouse_drag = e.button;
     } else if (e.button === 0) {
       button_mouse_drag = 'orbit';
@@ -1412,8 +1413,11 @@ canvas.addEventListener('pointerdown', (e) => {
     const ratio_pixel_touch = canvas.width / rect.width;
     nimUpdateCursor(local.x * ratio_pixel_touch, local.y * ratio_pixel_touch);
     nimUpdateHover(canvas.width, canvas.height);
+    // Noted like any other press, so that a finger's own construction drag is measured
+    //   against where the finger landed rather than against the last mouse press.
+    nimBeginPress(now());
     slot_touch_down = nimHoverSlot();
-    if (slot_touch_down >= 0) nimBeginHold(slot_touch_down, performance.now());
+    if (slot_touch_down >= 0) nimBeginHold(slot_touch_down, now());
   } else {
     touch_down_at = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
     nimCancelHold();
@@ -1436,12 +1440,9 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'mouse') {
     const ratio_pixel = canvas.width / rect.width;
     nimUpdateCursor(cursor_last.x * ratio_pixel, cursor_last.y * ratio_pixel);
-    const reach_mouse = position_mouse_down &&
-      Math.hypot(e.clientX - position_mouse_down.x, e.clientY - position_mouse_down.y);
-    if (reach_mouse > MOUSE_CLICK_MAX_MOVE) {
-      has_mouse_moved = true;
-      dismissHint();
-    }
+    // `nimUpdateCursor` above is what notices a press leaving its own landing spot, so
+    //   the hint only has to react to that having happened.
+    if (button_mouse_down !== null && !nimIsClick(now())) dismissHint();
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
       // Re-check hover for the drag's own destination preview.
       nimUpdateHover(canvas.width, canvas.height);
@@ -1480,7 +1481,7 @@ canvas.addEventListener('pointermove', (e) => {
     dismissHint();
     nimCancelHold(); // Moved, so this press will never mature into a selection.
     if (slot_touch_down >= 0 && pointers.size === 1) {
-      is_touch_dragging = nimBeginDrag(false, performance.now());
+      is_touch_dragging = nimBeginDrag(false, now());
     }
   }
 
@@ -1516,39 +1517,29 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endMouseDrag(e) {
-  const is_click = !has_mouse_moved && mouse_down_at !== null &&
-    performance.now() - mouse_down_at < MOUSE_CLICK_MAX_MS;
-
   if (typeof button_mouse_drag === 'number') {
-    if (is_click && button_mouse_down === 0) {
-      // A plain left click over a hovered object: today this eagerly-begun Join drag
-      //   would complete as a harmless "released on its own source" no-op and toast
-      //   that; a plain click now means select/shift-select instead, so abandon the
-      //   drag without applying anything.
-      nimCancelDrag();
-      const hovered = nimHoverSlot();
-      if (hovered >= 0) {
-        if (e.shiftKey) toggleSelection(hovered, cursor_last);
-        else selectOnly(hovered, cursor_last);
-      }
+    // `nimEndDrag` resolves the press itself: a click over an object comes back as a
+    //   `clicked_slot` with the eagerly-begun drag already abandoned, an actual drag as
+    //   whatever it built. Which of the two it was is `interaction.endDrag`'s answer, so
+    //   this build and the desktop cannot come to disagree about where the line is.
+    const result = nimEndDrag(now());
+    if (result.clicked_slot >= 0) {
+      if (e.shiftKey) toggleSelection(result.clicked_slot, cursor_last);
+      else selectOnly(result.clicked_slot, cursor_last);
     } else {
-      // A genuine drag (moved, or held past the click window), or a non-left-button
-      //   plain click -- both keep exactly today's behaviour unchanged.
-      const result = nimEndDrag(now());
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
       else if (result.is_more) openApplyWithOperands();
     }
-  } else if (is_click && button_mouse_down === 0 && !e.shiftKey) {
-    // Plain left click over empty space -- mirrors touch's own "tapping empty space
-    //   always cancels" rule. A shift+click over empty space is left a no-op, not a
-    //   clear -- shift signals "preserve what I already have".
+  } else if (button_mouse_down === 0 && nimIsClick(now()) && !e.shiftKey) {
+    // Plain left click over empty space, which began no drag to end -- mirrors touch's
+    //   own "tapping empty space always cancels" rule. A shift+click over empty space is
+    //   left a no-op, not a clear -- shift signals "preserve what I already have".
     clearSelection();
   }
 
   button_mouse_drag = null;
-  mouse_down_at = null; position_mouse_down = null;
-  button_mouse_down = null; has_mouse_moved = false;
+  button_mouse_down = null;
 }
 
 function releasePointer(e) {
@@ -1829,7 +1820,7 @@ function frame() {
   //   a timer that fires on its own, so that the moment the marker finishes filling is the
   //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
   //   progress the marker was just drawn at, so the two cannot disagree by a frame.
-  if (nimHoldMature(now_milliseconds)) {
+  if (nimHoldMature(now_seconds)) {
     const slot_matured = nimHoldSlot();
     nimCancelHold();
     has_long_press_fired = true;
@@ -1840,7 +1831,7 @@ function frame() {
   // before the frame that ghosts the answer is assembled. Runs every frame rather than on
   // pointermove alone: a dwell is time passing over a cursor that is deliberately still,
   // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
-  if (nimDragActive()) nimUpdateDrag(now_milliseconds);
+  if (nimDragActive()) nimUpdateDrag(now_seconds);
 
   const data = nimBuildFrame(aspect, now_seconds, is_axes_shown, is_grid_shown);
 

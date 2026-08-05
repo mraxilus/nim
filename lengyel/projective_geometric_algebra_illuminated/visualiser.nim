@@ -243,6 +243,8 @@ type Options = object ## Hold what command line asked of this run.
     ## so a headless run can be made to show a drag mid-gesture. See `driveDrag`.
   is_key_driven: bool ## Whether to script a run of view keys through the event queue, so
     ## a headless run can show that they reach the view at all. See `driveKeys`.
+  is_select_driven: bool ## Whether to script clicks that pick one, two and three objects,
+    ## so a headless run can show the floating selection menu at each. See `driveSelect`.
 
 
 proc parseOptions(): Options =
@@ -261,10 +263,12 @@ proc parseOptions(): Options =
       of "fill": result.is_filled = true
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
+      of "drive-select": result.is_select_driven = true
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, drive-drag or drive-keys."
+          "frames, hidden, timings, novsync, fill, drive-drag, drive-keys or " &
+          "drive-select."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -523,6 +527,29 @@ proc drawInteractionOverlay(
 
 
 
+proc anchorOfSelection(
+  workbench: Workbench; scene: Scene; view_projection: Matrix4; width, height: int;
+  scale: DrawExtent
+): Option[tuple[x, y: cfloat]] =
+  ## Say where the most recently picked object sits on screen, for the floating selection
+  ## menu to follow.
+  ##   The *most recent* rather than the middle of them all: an average would jump about
+  ##   as membership changes, for nothing. Projected through the same `anchorFor` the
+  ##   rubber-band and the browser's own `nimAnchorScreen` use, so the menu, the marker and
+  ##   the drag line all agree on where an object is.
+  ##   None where there is nothing picked, where the object has no representative point,
+  ##   or where it stands behind the camera -- see `layoutSelectionMenu` for what the menu
+  ##   does with that.
+  if workbench.selection.len == 0: return none(tuple[x, y: cfloat])
+  let slot = workbench.selection.at(workbench.selection.len - 1)
+  if not scene.isAlive(slot): return none(tuple[x, y: cfloat])
+  let anchor = anchorFor(scene[slot].geometry, scale)
+  if anchor.isNone: return none(tuple[x, y: cfloat])
+  let screen = projectToScreen(view_projection, width, height, anchor.get)
+  if not screen.isInFront: return none(tuple[x, y: cfloat])
+  some((x: cfloat(screen.x), y: cfloat(screen.y)))
+
+
 proc renderFrame(
   window: Window; renderer: Renderer;
   workbench: var Workbench; scene: var Scene; camera: var Camera; interaction: var Interaction;
@@ -580,6 +607,15 @@ proc renderFrame(
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
   #   the transform they pick against needs only the camera, which has already advanced.
   let view_projection = camera.initMatrixViewProjection(width / height)
+  # The floating menu is placed here rather than beside the other panels because it has to
+  #   be told where its object is on screen, which needs this frame's own transform -- and
+  #   it is placed *before* meshes are assembled, so a delete pressed on it leaves the
+  #   scene this frame draws rather than one object stale.
+  layoutSelectionMenu(
+    workbench, scene, HISTORY,
+    anchorOfSelection(workbench, scene, view_projection, int(width), int(height), scale),
+    now,
+  )
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   interaction.pruneFocus(scene)
   interaction.updateDrag(scene, now)
@@ -698,6 +734,7 @@ proc handleEvent(
         interaction.cancelDrag()
         toChars("Cancelled.", workbench.message)
       elif workbench.session.isSome: workbench.session = none(EditSession)
+      elif workbench.is_menu_selection_shown: workbench.hideSelectionMenu()
       elif len(workbench.selection) > 0: workbench.selection.clear()
     elif event.key.scancode == uint32(Scancode.S) and not is_accelerator:
       workbench.is_export_requested = true
@@ -723,11 +760,18 @@ proc handleEvent(
           #   the shift state means something `actionFor` cannot answer on its own.
           if is_shifted: workbench.selection.toggle(index_selected.get)
           else: workbench.selection.selectOnly(index_selected.get)
+          # Reached without a pointer at all, so the menu is the only place the keyboard
+          #   can get at apply, edit, hide and delete for what it just picked.
+          workbench.showSelectionMenu()
         # Moving the camera by key is a camera move like any other, so it abandons a tween
         #   already carrying it somewhere; otherwise the tween would drag it straight back.
         workbench.tween_camera.abandon()
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
+    # Every press is noted before anything is decided about it: whether it was a click is
+    #   only knowable at the release, and both branches below can end in one -- over an
+    #   object it selects, over empty space it clears.
+    interaction.beginPress(now)
     # Press on a pickable item starts an operation drag; press on empty space falls back
     #   to camera control, exactly as before this feature existed.
     let is_menu_forced = isMenuForcedFor(event.button.button)
@@ -738,11 +782,19 @@ proc handleEvent(
     elif event.button.button == uint8(MouseButton.Right):
       is_dragging_pan = true
   of uint32(EventKind.MouseButtonUp):
+    let is_shifted = (sdl3.getModState() and MODIFIER_SHIFT) != 0
     if button_dragging == some(event.button.button):
       let outcome = interaction.endDrag(scene, now)
       if len(outcome.message) > 0: toChars(outcome.message, workbench.message)
-      if outcome.index_created.isSome:
+      if outcome.index_clicked.isSome:
+        # A press that never became a drag. Shift adds, exactly as shift+enter does from
+        #   the keyboard, and either way the selection menu follows what was picked.
+        if is_shifted: workbench.selection.toggle(outcome.index_clicked.get)
+        else: workbench.selection.selectOnly(outcome.index_clicked.get)
+        workbench.showSelectionMenu()
+      elif outcome.index_created.isSome:
         workbench.selection.selectOnly(outcome.index_created.get)
+        workbench.hideSelectionMenu()
         HISTORY.record(scene)
       elif outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
         # The way out of the gesture's own three operations into the other twenty-four:
@@ -751,7 +803,14 @@ proc handleEvent(
         workbench.selection.selectOnly(outcome.operands.get.source)
         workbench.selection.toggle(outcome.operands.get.destination)
         workbench.is_apply_opening = true
+        workbench.hideSelectionMenu()
       button_dragging = none(uint8)
+    elif event.button.button == uint8(MouseButton.Left) and
+        interaction.isClick(now) and not is_shifted:
+      # A plain left click over empty space, which began no drag to end. Clears, mirroring
+      #   the browser's own rule; shift is left alone, since shift means "keep what I have".
+      workbench.selection.clear()
+      workbench.hideSelectionMenu()
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
   of uint32(EventKind.MouseWheel):
@@ -876,6 +935,67 @@ proc driveKeys(count_drawn: int) =
   sdl3.pushEvent(addr event)
 
 
+proc driveSelect(
+  scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
+) =
+  ## Script a click, then two shift-clicks, on the first three scene items, and finally a
+  ## construction drag off the object the menu is sitting over, so a headless run can show
+  ## the floating selection menu at each size and prove it does not swallow the next drag.
+  ##   For `--drive-select`, and reached from nowhere else. Which state is captured is
+  ##   `--frames`' to choose: the menu over one object by frame 5, two by 7, three by 9,
+  ##   the drag off the object it follows resolved by 13. One frame later than each step,
+  ##   because Dear ImGui hides an auto-sized window for the one frame it measures it in.
+  ##   Posted to SDL's own queue for the reason `driveDrag` gives, and split across two
+  ##   frames per gesture for a reason of its own: hover is recomputed inside `renderFrame`,
+  ##   so a press arriving in the same drain as the motion that should have caused it
+  ##   would still read the previous frame's pick.
+  ##   Shift is set through `sdl3.setModState` rather than by pushing a key event, because
+  ##   a pushed event never reaches the state `getModState` reads.
+  ##   Shares `driveDrag`'s own warning: this runs the real loop on the real clock, so two
+  ##   captures differ by a few pixels of birth animation. Look at it; do not byte-compare.
+  const
+    FRAME_FIRST = 2 # Past startup, so the first frame's own layout has settled.
+    STEPS_CLICK = 6 # Three clicks, each a frame to reach and a frame to press.
+    lut_step_to_slot = [0, 0, 1, 1, 2, 2, 2, 2, 0, 0]
+      ## Which item each step aims at: three clicks on 0, 1 and 2 in turn, then a drag
+      ## from 2 -- the one the menu is by then following -- onto 0.
+  let step = count_drawn - FRAME_FIRST
+  if step notin 0 ..< len(lut_step_to_slot): return
+  let
+    slot = lut_step_to_slot[step]
+    is_acting = (step mod 2) == 1
+  if not scene.isAlive(slot): return
+  let anchor = anchorFor(scene[slot].geometry, scale)
+  if anchor.isNone: return
+  let screen = projectToScreen(
+    camera.initMatrixViewProjection(width/height), width, height, anchor.get
+  )
+  if not screen.isInFront: return
+
+  if not is_acting:
+    var reach = Event(kind: uint32(EventKind.MouseMotion))
+    reach.motion.x = cfloat(screen.x)
+    reach.motion.y = cfloat(screen.y)
+    sdl3.pushEvent(addr reach)
+    return
+  # The first click picks alone; the two after it add, which is what shift means here.
+  sdl3.setModState(if slot == 0 and step == 1: 0'u16 else: MODIFIER_SHIFT)
+  var event = Event(
+    kind:
+      if step < STEPS_CLICK or step == STEPS_CLICK + 1:
+        uint32(EventKind.MouseButtonDown)
+      else: uint32(EventKind.MouseButtonUp)
+  )
+  event.button.button = uint8(MouseButton.Left)
+  sdl3.pushEvent(addr event)
+  # A click is a press and a release in one drain; the drag's own two halves are frames
+  #   apart, so that the cursor really travels between them.
+  if step < STEPS_CLICK:
+    var release = Event(kind: uint32(EventKind.MouseButtonUp))
+    release.button.button = uint8(MouseButton.Left)
+    sdl3.pushEvent(addr release)
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   workbench: var Workbench; scene: var Scene; camera: var Camera;
@@ -924,15 +1044,16 @@ proc runInteractive(
     ticks_previous_frame = ticks_frame_start
 
     if options.is_key_driven: driveKeys(count_drawn)
-    if options.is_drag_driven:
-      driveDrag(
-        scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn,
-        DrawExtent(
-          extent_furniture: extentFurnitureFor(camera.distanceFar),
-          eye: camera.eye,
-          radius_horizon: radiusHorizonFor(camera.distanceFar),
-        ),
+    if options.is_drag_driven or options.is_select_driven:
+      let scale_driven = DrawExtent(
+        extent_furniture: extentFurnitureFor(camera.distanceFar),
+        eye: camera.eye,
+        radius_horizon: radiusHorizonFor(camera.distanceFar),
       )
+      if options.is_drag_driven:
+        driveDrag(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
+      else:
+        driveSelect(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
 
     var event: Event
     while sdl3.pollEvent(addr event):

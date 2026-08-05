@@ -17,7 +17,7 @@
 ## start from can be shown before any button is pressed.
 ##
 ## A *hold* is the touch counterpart, where there are no buttons to name an operation with:
-## press an item and keep still, and once the press has lasted `MILLISECONDS_LONG_PRESS` it
+## press an item and keep still, and once the press has lasted `SECONDS_LONG_PRESS` it
 ## selects that item. The elapsed fraction lives here rather than in either presentation
 ## layer, because how long a hold takes and whether one is due are rules about this gesture,
 ## not about a timer -- and because both are what the item's own marker is drawn part-built
@@ -37,7 +37,14 @@ import ./[camera, format, mesh, objects, picking, scene]
 
 #[ Gesture Configuration ]#
 
-const MILLISECONDS_DWELL_MENU* = 450.0
+# Every `now` this module takes is **seconds**, on whatever monotonic clock the caller
+#   owns, and it is the same clock `scene.addItem` records a birth on -- one reading
+#   threaded through a whole release rather than two that could disagree. Named in the
+#   constants below rather than left to a comment: the browser's own clock reads in
+#   milliseconds, and while the durations here were named for those, the desktop passed
+#   seconds against them and its dwell menu quietly needed 450 seconds to open.
+
+const SECONDS_DWELL_MENU* = 0.45
   ## Hold a drag **still** over its target this long and the choice menu opens.
   ##   Still, not merely present: the clock restarts whenever the cursor moves further than
   ##   `PIXELS_TAP_SLOP` from where it last settled, so time spent crossing a target does
@@ -49,7 +56,7 @@ const MILLISECONDS_DWELL_MENU* = 450.0
   ##   this only has to be slow enough never to fire on a hesitation. The usual failure of
   ##   a dwell menu is popping up at someone who was still moving.
 
-const MILLISECONDS_LONG_PRESS* = 500.0
+const SECONDS_LONG_PRESS* = 0.50
   ## Hold a touch this long on an item to select it.
   ##   Long enough that a tap, or the first instant of a drag meant to orbit the camera,
   ##   never matures into one; short enough that a deliberate hold does not feel stuck.
@@ -69,6 +76,22 @@ const PIXELS_TAP_SLOP* = 12.0
   ##   Sized for a fingertip rather than a mouse: a finger rolls a few pixels on contact
   ##   even when its owner meant to hold perfectly still, and a threshold tight enough for
   ##   a mouse would make long-press unreachable on a touchscreen.
+
+const PIXELS_CLICK_SLOP* = 6.0
+  ## Move a *pointer* press further than this and it stops being a click.
+  ##   Deliberately not `PIXELS_TAP_SLOP`, which is sized for a fingertip: a mouse resting
+  ##   on a desk does not roll, so a pointer that wandered six pixels was being moved on
+  ##   purpose, and a fingertip's allowance here would swallow the short deliberate drags
+  ##   between two objects that happen to overlap on screen.
+  ##   Lived in `glue.js` as `MOUSE_CLICK_MAX_MOVE` while only the browser had a click to
+  ##   disambiguate; deciding whether a press was a click is a rule about the gesture, and
+  ##   the desktop needs the same answer.
+
+const SECONDS_CLICK* = 0.35
+  ## Release a pointer press within this of its landing and it is still a click.
+  ##   A press held longer over an object was being held there, which is what opens the
+  ##   dwell menu at `SECONDS_DWELL_MENU` -- comfortably past this, so no press can
+  ##   ever be both. Was `MOUSE_CLICK_MAX_MS` in `glue.js`, for the same reason as above.
 
 const PIXELS_MENU_REACH* = 76.0
   ## Distance from the menu's centre to the centre of each of its four wedges.
@@ -161,6 +184,16 @@ type
     index_source*: int ## Item drag started from; meaningful only while `is_dragging`.
     index_destination*: Option[int] ## Item the drag points at, latched the moment its menu
       ## opens; see `destinationOf`, which is what every reader of this should ask instead.
+    pressed*: ScreenPosition ## Where the last pointer press landed, whatever it became.
+    started*: float ## When that press landed, on the same clock every caller passes as
+      ## `now`. Read only through `isClick`.
+    is_press_still*: bool ## Whether the last press has stayed inside `PIXELS_CLICK_SLOP`
+      ## of where it landed. Latched rather than recomputed from the cursor each time it
+      ## is asked: a pointer that swung out and came back was still dragged, and a reading
+      ## taken at release alone would call that a click.
+      ##   Stated as *still* rather than as *moved* so that the default is false: a press
+      ## that never went through `beginPress` -- a caller that forgot, a drag a test drives
+      ## by hand -- is then never mistaken for a click, whatever the clock happens to read.
     hold*: Option[Hold] ## Press maturing into a selection, if one is in progress.
     is_over_target*: bool ## Whether the drag currently points at an item that is not its
       ## own source. Distinct from `proposal` being none, which it also is over a pair
@@ -394,8 +427,14 @@ func notation*(drag: DragOperation): string =
 #[ Cursor And Hover ]#
 
 proc updateCursor*(interaction: var Interaction; x, y: float) =
-  ## Record cursor's latest window position.
+  ## Record cursor's latest window position, and note whether a press has become a drag.
   interaction.cursor = ScreenPosition(x: x, y: y, depth: 0.0)
+  if interaction.is_press_still:
+    let
+      dx = interaction.cursor.x - interaction.pressed.x
+      dy = interaction.cursor.y - interaction.pressed.y
+    if dx*dx + dy*dy > PIXELS_CLICK_SLOP*PIXELS_CLICK_SLOP:
+      interaction.is_press_still = false
 
 
 proc updateHover*(
@@ -484,7 +523,7 @@ func progressHold*(interaction: Interaction; now: float): float =
   ##   deciding whether the hold is working.
   if interaction.hold.isNone: return 0.0
   let elapsed = now - interaction.hold.get.started
-  max(0.0, min(1.0, elapsed/MILLISECONDS_LONG_PRESS))
+  max(0.0, min(1.0, elapsed/SECONDS_LONG_PRESS))
 
 
 func isHoldMature*(interaction: Interaction; now: float): bool =
@@ -508,6 +547,32 @@ func destinationOf*(interaction: Interaction): Option[int] =
   else: interaction.index_hover
 
 
+proc beginPress*(interaction: var Interaction; now: float) =
+  ## Note where and when a pointer press landed, whatever that press turns out to be.
+  ##   Every press goes through this -- the ones that start a construction drag and the
+  ##   ones that fall through to the camera alike -- because `isClick` below answers the
+  ##   same question about both: a click on an object selects it and a click on empty
+  ##   space clears the selection, and neither is a drag.
+  ##   Call it **at the press**, before `beginDrag` -- not from inside `beginDrag`, which
+  ##   a touch path only reaches once the finger has already travelled far enough to stop
+  ##   being a tap, and which would then re-anchor the press mid-gesture and let a short
+  ##   deliberate drag report itself as a click.
+  ##   Forgetting it fails safe: `is_press_still` is false until this raises it, so the
+  ##   gesture behaves exactly as it did before clicks existed rather than reporting one.
+  interaction.pressed = interaction.cursor
+  interaction.started = now
+  interaction.is_press_still = true
+
+
+func isClick*(interaction: Interaction; now: float): bool =
+  ## Report whether the press in progress is still a click rather than a drag.
+  ##   Both bounds have to hold: it has not left `PIXELS_CLICK_SLOP` of where it landed,
+  ##   and it has not lasted `SECONDS_CLICK`. Asked at the release, by whichever path
+  ##   is resolving the press -- `endDrag` for one that started over an object, the render
+  ##   path itself for one that started over empty space, which begins no drag to end.
+  interaction.is_press_still and now - interaction.started < SECONDS_CLICK
+
+
 proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float): bool =
   ## Start a construction drag from the item currently hovered.
   ##   Reports whether one actually started, so a caller knows whether to fall back to
@@ -515,6 +580,7 @@ proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float):
   ##   `is_menu_forced` is what the button chose: false waits for a dwell before offering
   ##   the menu and takes the proposal on a plain release, true offers it at once. Both
   ##   reach the same choices -- see `isMenuForcedBy`.
+  ##   Expects `beginPress` to have run for this same press; see its own doc.
   if interaction.index_hover.isNone: return false
   interaction.is_dragging = true
   interaction.index_source = interaction.index_hover.get
@@ -590,7 +656,7 @@ proc updateDrag*(
     if interaction.proposal.isSome: resultOf(interaction.proposal.get, m, n)
     else: none(Multivector)
   if interaction.menu.isNone and
-      (interaction.is_menu_forced or now - interaction.entered >= MILLISECONDS_DWELL_MENU):
+      (interaction.is_menu_forced or now - interaction.entered >= SECONDS_DWELL_MENU):
     interaction.menu = some(interaction.cursor)
 
 
@@ -603,6 +669,9 @@ type DragOutcome* = object ## Report everything a released drag did, for the cal
   operands*: Option[tuple[source, destination: int]] ## The two items, where both were
     ## alive and distinct. What `More` hands to the apply section, and the only reason it
     ## is reported: the drag's own state is cleared by the time a caller reads this.
+  index_clicked*: Option[int] ## Item a press that never became a drag came down on, for
+    ## the caller to select. None for every actual drag, so a caller may branch on this
+    ## alone rather than re-deriving what kind of gesture it just ended.
 
 
 proc commitChoice*(
@@ -675,6 +744,19 @@ proc endDrag*(
   ##   Always clears drag state; the message names the outcome even where nothing was done.
   defer: interaction.cancelDrag()
   if not interaction.is_dragging: return DragOutcome()
+
+  # A press that never moved is a click, not a drag, and a click selects what it came down
+  #   on. Answered here rather than in each render path because the drag it abandons was
+  #   begun here: the press target chooses the scheme, so the press over an object has to
+  #   start a drag eagerly, and *whether it was one* is only knowable at the release.
+  #   The button that forces the menu is excluded: it asked for the menu, and offering it
+  #   and then quietly selecting instead would make the right button unreliable.
+  if not interaction.is_menu_forced and interaction.isClick(now):
+    return
+      if scene.isAlive(interaction.index_source):
+        DragOutcome(index_clicked: some(interaction.index_source))
+      else:
+        DragOutcome() # Removed under the press; nothing to select and nothing to say.
 
   if interaction.menu.isSome:
     let choice = choiceAt(interaction.menu.get, interaction.cursor)

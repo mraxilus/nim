@@ -167,6 +167,22 @@ type
     index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
       ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
       ## rather than offering all 27 and greying the second operand for the unary ones.
+    is_menu_selection_shown*: bool ## Whether the floating selection menu is on screen --
+      ## see `layoutSelectionMenu`. Not derived from the selection being non-empty: every
+      ## construction path leaves its own result selected, and a menu appearing over each
+      ## new object would sit in the way of the next drag. Raised by the gestures that
+      ## *pick* something and lowered by the ones that build, exactly as the browser's own
+      ## `refreshSelectionMenu`/`adoptConstructionSelection` pair does.
+    is_menu_selection_picking*: bool ## Whether that menu's own operation picker is
+      ## revealed, which is what its `apply` button opens before it commits anything.
+    position_menu_selection*: array[2, cfloat] ## Where that menu sits, in window pixels.
+      ## Kept between frames rather than recomputed from the selection each time: the
+      ## object it follows can pass behind the camera, and a menu that vanished or flew to
+      ## a corner for those frames would be worse than one that stays put.
+    index_operation_menu*: cint ## Operation picked in that menu. Its own reading rather
+      ## than the apply section's `index_operation`: the section's list is indexed per
+      ## whichever arity the reader last chose *there*, while the menu's is always the
+      ## arity the selection implies, so one number could not name a position in both.
     is_apply_opening*: bool ## Whether something outside this panel asked for the apply
       ## section to be open. Set by the drag menu's `more…`, which is only worth choosing
       ## if the section it hands its operands to is one the reader can then see; consumed
@@ -210,6 +226,20 @@ func initWorkbench*(path_export: string): Workbench =
 
 func isPending*(row: ItemRow): bool = row.slot.isNone
   ## Report whether the row is composing an object that does not exist yet.
+
+
+func showSelectionMenu*(workbench: var Workbench) =
+  ## Bring the floating selection menu up over whatever is picked, closed on the picker.
+  ##   Every gesture that *picks* calls this, so the menu is never something a reader has
+  ##   to go and find; every gesture that *builds* calls `hideSelectionMenu` instead.
+  workbench.is_menu_selection_shown = true
+  workbench.is_menu_selection_picking = false
+
+
+func hideSelectionMenu*(workbench: var Workbench) =
+  ## Put the floating selection menu away, leaving the selection itself alone.
+  workbench.is_menu_selection_shown = false
+  workbench.is_menu_selection_picking = false
 
 
 func geometry*(session: EditSession): Multivector =
@@ -355,7 +385,9 @@ proc layoutItemName(workbench: var Workbench; scene: var Scene; row: ItemRow) =
   ##   click, which this build has no equivalent of, so the row carries both gestures.
   var is_selected = (not row.isPending) and row.slot.get in workbench.selection
   gui.disabledPush(row.isPending) # Nothing to select until it exists.
-  if gui.checkbox("", addr is_selected): workbench.selection.toggle(row.slot.get)
+  if gui.checkbox("", addr is_selected):
+    workbench.selection.toggle(row.slot.get)
+    workbench.showSelectionMenu() # Picking from the list is picking; see its own doc.
   gui.disabledPop()
   gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
   gui.sameLine()
@@ -367,6 +399,7 @@ proc layoutItemName(workbench: var Workbench; scene: var Scene; row: ItemRow) =
   if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not row.isPending:
     if is_selected and workbench.selection.len == 1: workbench.selection.clear()
     else: workbench.selection.selectOnly(row.slot.get)
+    workbench.showSelectionMenu()
   gui.textColorPop()
 
 
@@ -645,18 +678,18 @@ proc adoptSelectionAsOperands(
 
 proc applyPickedOperation(
   workbench: var Workbench; scene: var Scene; history: var History; operation: Operation;
-  is_binary: bool; slots: openArray[int]; count: int; now: float
+  first, second: int; now: float
 ) =
   ## Derive a fresh object from the picked operation and operands, and say what it gave.
   ##   Leaves the result solely selected, which is what carries the camera to it: the
   ##   standing aim in `visualiser.offerCameraAim` reads exactly that, so this path needs
   ##   to know nothing about the camera.
+  ##   Takes the two operands as *slots*, not as positions in a picker's own list: the
+  ##   apply section reads them off its combos and the floating selection menu reads them
+  ##   straight off the selection, and neither should have to learn the other's indexing.
+  ##   A unary operation is applied by naming the same slot twice, which is what its
+  ##   caller has to decide anyway.
   let
-    first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
-    second =
-      if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
-      else: first # A unary operation ignores its second operand; naming the first
-        # keeps a stale picker reading from ever reaching `applyOperation`.
     operand_first = scene[first].geometry
     operand_second = scene[second].geometry
     derived = applyOperation(operation, operand_first, operand_second)
@@ -751,7 +784,14 @@ proc layoutApply*(
 
   gui.disabledPush(scene.isFull)
   if gui.buttonWide("apply", gui.contentWidth()):
-    applyPickedOperation(workbench, scene, history, operation, is_binary, slots, count, now)
+    let
+      first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
+      second =
+        if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
+        else: first # A unary operation ignores its second operand; naming the first
+          # keeps a stale picker reading from ever reaching `applyOperation`.
+    applyPickedOperation(workbench, scene, history, operation, first, second, now)
+    workbench.hideSelectionMenu() # Built something; see `showSelectionMenu`.
   gui.disabledPop()
 
 
@@ -997,6 +1037,166 @@ proc stepHistory*(
   if result:
     workbench.selection.clear()
     workbench.session = none(EditSession)
+    workbench.hideSelectionMenu()
+
+
+
+#[ Selection Menu ]#
+
+const
+  OFFSET_MENU_SELECTION = 46.0'f32
+    ## Lift the menu this far above the object it follows, in pixels.
+    ##   Above rather than on: an ImGui window makes `gui.wantsMouse` true wherever it
+    ## sits, and a menu straddling its own object would swallow the next drag off that
+    ## object. Far enough to clear the selection marker drawn around it too, so the menu
+    ## never hides the thing it names. Matches the browser's own 60-pixel lift, less the
+    ## height this row draws at, which the browser measures in CSS pixels rather than the
+    ## framebuffer ones this window is placed in.
+  MARGIN_MENU_SELECTION = 8.0'f32
+    ## Keep the menu at least this far inside the viewport, so an object near an edge does
+    ## not push half of it off screen.
+  PADDING_MENU_PICKER = 36.0'f32
+    ## Slack added to the widest notation offered, for the combo's own frame and arrow.
+
+proc layoutSelectionMenuApply(
+  workbench: var Workbench; scene: var Scene; history: var History; now: float
+) =
+  ## Lay out the menu's `apply` button and the operation picker it reveals beside it.
+  ##   One button in both roles: the first press opens the picker, the second commits
+  ##   whatever it is showing. `apply` itself never moves or relabels while that happens,
+  ##   so the picker reads as opening *out of* it rather than replacing it.
+  ##   Only for one or two picked objects; three or more have no operand pickers here, so
+  ##   this menu cannot say which two of them it would use, and it offers nothing rather
+  ##   than guessing. Matches the browser's own `refreshSelectionMenu`.
+  let
+    count = workbench.selection.len
+    arity = workbench.selection.impliedArity
+    (notations, operations, count_offered) = offerOperationsOfArity(arity)
+  gui.disabledPush(scene.isFull and workbench.is_menu_selection_picking)
+  if gui.buttonSmall("apply"):
+    if not workbench.is_menu_selection_picking:
+      workbench.is_menu_selection_picking = true
+      # The list is per arity, so a position carried over from the other one would name an
+      #   unrelated operation -- the same reset the apply section's own arity control does.
+      workbench.index_operation_menu = 0
+    else:
+      let
+        index = clamp(int(workbench.index_operation_menu), 0, count_offered - 1)
+        first = workbench.selection.at(0)
+        second = if count >= 2: workbench.selection.at(1) else: first
+      applyPickedOperation(
+        workbench, scene, history, operations[index], first, second, now
+      )
+      workbench.hideSelectionMenu()
+  gui.disabledPop()
+  gui.tooltip(
+    "Pick an operation to apply to what you have chosen, then press this again to " &
+    "apply it."
+  )
+  if not workbench.is_menu_selection_picking: return
+
+  var width_picker = 0.0'f32
+  for index in 0 ..< count_offered:
+    width_picker = max(width_picker, gui.textWidth(notations[index]))
+  gui.sameLine()
+  gui.widthPush(width_picker + PADDING_MENU_PICKER)
+  discard gui.combo(
+    "##operation_menu", addr workbench.index_operation_menu,
+    addr notations[0], cint(count_offered),
+  )
+  gui.widthPop()
+  gui.tooltip("Library operation; its own notation names m and n, the objects you chose.")
+  gui.sameLine()
+  if gui.buttonSmall("back"): workbench.is_menu_selection_picking = false
+  gui.tooltip("Leave the operation unapplied.")
+
+
+proc layoutSelectionMenu*(
+  workbench: var Workbench; scene: var Scene; history: var History;
+  anchor: Option[tuple[x, y: cfloat]]; now: float
+) =
+  ## Lay out the floating menu over whatever is picked: apply, edit, hide, delete, close.
+  ##   Follows the *most recently* picked object rather than the middle of them all, which
+  ##   would jump around as membership changes for no gain. `anchor` is where that object
+  ##   is on screen; none where it is behind the camera, which leaves the menu where it
+  ##   last was rather than flinging it to a corner.
+  ##   Longer than the sixty-line default and not split further: past `apply`, which has
+  ##   its own proc above, this is one run of buttons whose only shared state is which of
+  ##   them is on the line so far, and threading that through another boundary would buy
+  ##   nothing.
+  if not workbench.is_menu_selection_shown or workbench.selection.len == 0: return
+  if anchor.isSome:
+    workbench.position_menu_selection = [
+      anchor.get.x,
+      max(anchor.get.y - OFFSET_MENU_SELECTION, MARGIN_MENU_SELECTION),
+    ]
+  let count = workbench.selection.len
+  var is_line_started = false # Whether anything is on the row yet, so the first button
+    # placed does not ask for a `sameLine` that has nothing to continue.
+  if gui.windowBeginPinned(
+    "##selection_menu",
+    clamp(
+      workbench.position_menu_selection[0],
+      MARGIN_MENU_SELECTION, gui.viewportWidth() - MARGIN_MENU_SELECTION,
+    ),
+    clamp(
+      workbench.position_menu_selection[1],
+      MARGIN_MENU_SELECTION, gui.viewportHeight() - MARGIN_MENU_SELECTION,
+    ),
+    0.5, 1.0,
+  ):
+    if count <= 2:
+      layoutSelectionMenuApply(workbench, scene, history, now)
+      is_line_started = true
+
+    # Edit and the two bulk actions stand aside while an operation is being picked, so the
+    #   row stays one line at any width. Closing the menu stays reachable throughout.
+    if not workbench.is_menu_selection_picking:
+      if count == 1:
+        if is_line_started: gui.sameLine()
+        is_line_started = true
+        if gui.buttonSmall("edit"):
+          beginSession(workbench, scene, some(workbench.selection.at(0)))
+          workbench.hideSelectionMenu() # The workbench owns it now; the pick itself stays.
+        gui.tooltip("Rename, recolour or reshape it; nothing changes until you save.")
+
+      let is_all_hidden = workbench.selection.isAllHidden(scene)
+      if is_line_started: gui.sameLine()
+      is_line_started = true
+      if gui.buttonSmall(if is_all_hidden: cstring"show" else: cstring"hide"):
+        for position in 0 ..< count:
+          scene.setVisible(workbench.selection.at(position), is_all_hidden)
+        history.record(scene)
+        toChars(
+          if is_all_hidden: "Showed what you chose." else: "Hid what you chose.",
+          workbench.message,
+        )
+      gui.tooltip("Show or hide everything you have chosen, without removing any of it.")
+
+      gui.sameLine()
+      if gui.buttonSmall("delete"):
+        # Read the slots out before removing any: removal prunes the selection this loop
+        #   would otherwise be walking.
+        var slots: array[ITEMS_MAX, int]
+        for position in 0 ..< count: slots[position] = workbench.selection.at(position)
+        # An open session against one of these has nothing left to commit against, the
+        #   same guard `layoutObjects` keeps around its own single removal.
+        if workbench.session.isSome and workbench.session.get.slot.isSome and
+            workbench.session.get.slot.get in workbench.selection:
+          workbench.session = none(EditSession)
+        for position in 0 ..< count: scene.removeItem(slots[position])
+        workbench.selection.clear()
+        history.record(scene)
+        toChars("Deleted what you chose.", workbench.message)
+        workbench.hideSelectionMenu()
+      gui.tooltip("Delete everything you have chosen; each slot is reused by the next add.")
+
+    gui.sameLine()
+    if gui.buttonSmall("✕"):
+      workbench.selection.clear()
+      workbench.hideSelectionMenu()
+    gui.tooltip("Choose nothing, and put this menu away.")
+  gui.windowEnd()
 
 
 

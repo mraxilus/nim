@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 114 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 147 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -400,16 +400,33 @@ press target chooses the scheme; the button chooses whether you are asked.** Pre
 and you are constructing; press empty space and you are moving the camera (left orbits,
 right pans, wheel dollies). Left then takes the algebra's own answer on release; right opens
 a four-way choice menu instead, as does holding still over the target for
-`MILLISECONDS_DWELL_MENU` (450). Both buttons reach the same choices, so this is redundancy
+`SECONDS_DWELL_MENU` (0.45). Both buttons reach the same choices, so this is redundancy
 for different expertise rather than a mode split — which is exactly why it is safe where the
 button-per-operation mapping it replaced was not. `interaction.isMenuForcedBy` states it
 once; `visualiser.isMenuForcedFor` maps SDL button numbers and
 `browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button` numbers (0/1/2, a
 different numbering for the same three buttons) into it. **Middle is unbound**: `project`
 used to live there, which put a third of the vocabulary behind hardware most trackpads lack.
-A plain click (no movement, under `MOUSE_CLICK_MAX_MS` 350 ms / `MOUSE_CLICK_MAX_MOVE` 6 px)
-selects instead of dragging; shift-click toggles into a multi-selection; a plain click on
-empty space clears it.
+A plain click selects instead of dragging; shift-click toggles into a multi-selection; a
+plain click on empty space clears it. The press over an object has to start a drag
+*eagerly* — the press target chooses the scheme — so whether it was a click is only
+answerable at the release, and `interaction.isClick` answers it there: the press has stayed
+inside `PIXELS_CLICK_SLOP` (6 px) and lasted under `SECONDS_CLICK` (0.35). Both bounds lived
+in `glue.js` as `MOUSE_CLICK_MAX_MOVE`/`MOUSE_CLICK_MAX_MS` while only the browser had a
+click to disambiguate; the desktop had none at all, so its own help table described a
+gesture it did not have. Six pixels, not `PIXELS_TAP_SLOP`'s twelve: a mouse on a desk does
+not roll, and a fingertip's allowance would swallow the short deliberate drags between two
+objects that overlap on screen. The stillness reading is **latched, and false until a press
+raises it** — a pointer that swung out and came back is still a drag, and a caller that
+never announced a press (a test driving `beginDrag` by hand) gets the behaviour that
+predates clicks rather than a spurious click.
+
+**The gesture clock is seconds**, on whichever monotonic clock the caller owns, and it is
+the same reading `scene.addItem` stamps a birth with. It had to be said out loud: the
+durations were named `MILLISECONDS_*` for the browser's `performance.now()`, the desktop
+passed seconds against them, and its dwell menu therefore needed 450 *seconds* to open and
+never had. Found while wiring the click rule, which needed the same clock to be right.
+`glue.js` now divides once, in its own `now()`, and passes that everywhere.
 
 **What a drag builds is read off the operands, not off the button.** `∧` adds grades and is
 drawable when the sum ≤ 4; `∨` adds antigrades and is drawable when the sum ≥ 4. Measured
@@ -484,7 +501,7 @@ reaches the refusal only by insisting.
 
 **Browser / touch.** The same invariant reaches touch: **a finger that presses an object
 constructs; one that presses empty space moves the camera.** Two fingers pinch to zoom and
-pan, and cancel any construction in progress. A long press (`MILLISECONDS_LONG_PRESS` 500)
+pan, and cancel any construction in progress. A long press (`SECONDS_LONG_PRESS` 0.5)
 selects an object; once a selection exists, a tap (`TAP_MAX_MS` 350) toggles another in or
 out; a tap on empty space clears. Selection is an *ordered* set — first selected becomes
 operand m, second operand n.
@@ -532,8 +549,10 @@ position, so `nimUpdateHover` only ever runs at a touch-down point; without this
 reading sits stale forever and its ring (only 20% dimmer than a selection ring) reads as a
 second selected object.
 
-**Selection menu** (browser, one row, follows its anchor object every frame via
-`nimAnchorScreen`): `apply` sits leftmost and never moves. Pressing it opens an operation
+**Selection menu** (both builds, one row, following its anchor object every frame — the
+browser through `nimAnchorScreen`, the desktop through `visualiser.anchorOfSelection`, both
+projecting the same `picking.anchorFor` the rubber-band uses): `apply` sits leftmost and
+never moves. Pressing it opens an operation
 picker to its right via a `max-width` transition on `.selection-menu-reveal`
 (`width: auto` cannot animate, which is why a max-width bound is animated instead); pressing
 it again commits with whatever is picked. `back` collapses without committing. `hide` and
@@ -552,6 +571,37 @@ with the top bar's own `add`, which differs only in opening onto a composing row
 The document-level "tap outside closes the menu" listener excludes the canvas, the drawer
 and the chip row. It fires on `pointerdown`, before the tap gesture resolves on release, so
 including the canvas would clear selection state before the gesture that should use it ran.
+
+The desktop's own copy is `panel.layoutSelectionMenu`, an undecorated `windowBeginPinned`
+window over the 3D view laid out from the same rules — the row is `buttonSmall`s and the
+picker a `combo` sized to the widest notation offered. It reuses `offerOperationsOfArity`,
+`applyPickedOperation`, `beginSession` and `selection.isAllHidden` rather than restating any
+of them; `applyPickedOperation` was changed to take operand **slots** instead of positions
+in the apply section's own combo lists, since the menu reads its two operands straight off
+the selection and neither caller should have to learn the other's indexing.
+
+**It is shown by the gestures that pick and hidden by the ones that build** — not derived
+from the selection being non-empty, because every construction path leaves its own result
+selected and a menu appearing over each new object would sit in the way of the next drag.
+That is the browser's `refreshSelectionMenu`/`adoptConstructionSelection` split, written on
+the desktop as `showSelectionMenu`/`hideSelectionMenu`.
+
+Placed `OFFSET_MENU_SELECTION` (46 px) **above** its object, not on it. A Dear ImGui window
+makes `gui.wantsMouse()` true wherever it sits and `handleEvent` returns early on that, so a
+menu straddling its own object would swallow the next drag off it; the lift also clears the
+selection marker drawn around the object. Measured rather than assumed: `--drive-select`
+scripts three clicks and then a construction drag off the very object the menu is following,
+and that drag builds (`c ^ a gave line`). The menu's screen position is kept between frames
+so an object passing behind the camera leaves it where it was instead of flinging it into a
+corner.
+
+`--drive-select` also exists because a headless run could not otherwise be caught with the
+menu open. It posts to SDL's own queue like `--drive-drag`, splits each gesture across two
+frames (hover is recomputed inside `renderFrame`, so a press in the same drain as its motion
+reads the previous frame's pick), and sets shift through `sdl3.setModState` — a pushed key
+event never reaches the state `SDL_GetModState` reports. Capture one frame *later* than each
+step: Dear ImGui hides an auto-sized window for the one frame it measures it in, which cost
+an hour of looking at an empty patch of scene.
 
 
 Undo/Redo
@@ -1213,7 +1263,7 @@ Hold Feedback, Help And Keys
 ---
 A touch long-press was a 500 ms wait with **no feedback of any kind** -- a `setTimeout` in
 `glue.js` and nothing on screen -- so a hold could not be told from a tap that had not
-registered. `interaction` now owns it: `MILLISECONDS_LONG_PRESS`, a `Hold`, and
+registered. `interaction` now owns it: `SECONDS_LONG_PRESS`, a `Hold`, and
 `progressHold`/`isHoldMature` derived from it. The clock moved out of JavaScript because
 how long a hold takes and whether one is due are rules about the gesture, and because a
 timer that fires on its own cannot draw anything.
