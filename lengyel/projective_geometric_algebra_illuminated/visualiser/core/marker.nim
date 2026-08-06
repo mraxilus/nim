@@ -59,11 +59,14 @@ const
     ##   annotation of the first, and on a scene of several selected items the bands
     ##   themselves become the busiest thing on screen.
   WIDTH_MARKER_PULSE* = 3.5'f32
-    ## Stroke the orientation pulse this thick, in pixels.
-    ##   Thicker than `WIDTH_MARKER` below, which is the whole of how it reads: the pulse
-    ##   is the outline swelling along a stretch of itself, so weight is what separates the
-    ##   lit part from the rest. Colour would not do it -- the marker is already pure white
-    ##   at the top of this palette, with nowhere brighter to go.
+    ## Swell the orientation pulse to this thickness at its head, in pixels, tapering back
+    ## to `WIDTH_MARKER` below at its tail.
+    ##   Thicker than `WIDTH_MARKER`, which is the whole of how it reads: the pulse is the
+    ##   outline swelling along a stretch of itself, so weight is what separates the lit
+    ##   part from the rest. Colour would not do it -- the marker is already pure white at
+    ##   the top of this palette, with nowhere brighter to go.
+    ##   The tail meets the outline at *exactly* the outline's own width, so the run has no
+    ##   visible back end to read as a second mark; only the head is an edge.
   WIDTH_MARKER* = 1.5'f32
     ## Set thickness of every marker outline, and of the drag rubber-band beside it, in
     ## pixels.
@@ -130,40 +133,62 @@ const
     ##   trusted to land: a corner missed by a fraction of a step is a corner visibly cut
     ##   off the finished frame. Points on a straight edge lie *on* that edge by
     ##   construction, so nothing else needs extra sampling.
-  SEGMENTS_MARKER_PULSE* = 8
-    ## Cut the travelling pulse into this many points.
+  SEGMENTS_MARKER_PULSE* = 16
+    ## Cut the travelling pulse's spine into this many points.
     ##   Enough for the run to bend with a curved outline it is riding; it is a short arc,
     ##   not a shape of its own, and it lies on points already sampled from the outline
-    ##   rather than on a curve of its own.
+    ##   rather than on a curve of its own. Doubled from eight when the run gained a taper:
+    ##   the width now changes from point to point, so a coarse spine reads as a run of
+    ##   steps rather than as a thinning, and the run itself covers more of the outline.
+  SEGMENTS_MARKER_CAP* = 3
+    ## Round the pulse's head with this many points between its two sides.
+    ##   The head is the one end that is an edge, and a flat cut across the outline at
+    ##   `WIDTH_MARKER_PULSE` reads as the run having been chopped. Three points is enough
+    ##   at that width for the cap to read as round rather than as a bevel; the tail needs
+    ##   none, because it ends at the outline's own width and merges into it.
+  POINTS_MARKER_PULSE* = 2*SEGMENTS_MARKER_PULSE + SEGMENTS_MARKER_CAP
+    ## Bound the points in one run's finished outline: both sides of the spine, plus the
+    ## head's cap.
   RUNS_MARKER_PULSE* = SEGMENTS_MARKER_RAILS
     ## Bound how many separate runs one marker's pulse comes in.
     ##   A line's rails is the worst case at four -- two sides, each in the two halves the
     ##   line is drawn as -- and a horizon line's two bands need two. An outline drawn in
     ##   pieces has to pulse in all of them, or the half that stays still reads as the
     ##   marker having broken rather than as one signal.
-  FRACTION_MARKER_PULSE* = 0.13
+  FRACTION_MARKER_PULSE* = 0.20
     ## Span this much of the outline with the pulse, as a fraction of its whole length.
     ##   Long enough to have a direction visible at a glance -- a dot travelling round a
     ##   circle says *that* it moves long before it says which way -- and short enough
     ##   that the outline still reads as an outline with something running along it.
-  SECONDS_MARKER_PULSE* = 2.4
+    ##   Chosen against 0.09 and 0.13 drawn side by side on both a plane's circle and a
+    ##   line's rails: the shorter two read as a bead sliding rather than as a run with a
+    ##   direction of its own, which is the whole message.
+  FALLOFF_MARKER_PULSE* = 1.2
+    ## Thin the pulse down its own tail on this power of the distance from the head.
+    ##   Above 1, so the run loses width slowly near the head and quickly at the tail,
+    ##   which is what makes the head read as the front rather than the run reading as a
+    ##   bar. Chosen against 1.6 and 2.4: the sharper two put nearly all the width in the
+    ##   first fifth of the run, leaving the rest indistinguishable from the outline and
+    ##   the run itself looking shorter than it is.
+  SECONDS_MARKER_PULSE* = 4.8
     ## Take this long to carry the pulse once round its outline.
     ##   Slow enough to read as circulation rather than as a spinner, and slow enough that
     ##   several selected objects pulsing at once do not add up to a busy screen. Its
     ##   *direction* is the whole message, and direction needs time to be read.
-  LENGTH_ARROW_DRAG* = 13.0
-    ## Draw the drag band's own arrowhead this long, in pixels, measured back along the
+  LENGTH_COMET_DRAG* = 64.0
+    ## Light this much of the drag band into its head, in pixels, measured back along the
     ## band from the point it aims at.
-    ##   Long enough to read as a head rather than as a kink in the line at
-    ##   `WIDTH_MARKER`'s 1.5 pixels, and short enough that it stays a mark on the band
-    ##   rather than a second object floating at the cursor. It does not scale with the
-    ##   band's length: a head is an annotation, and one that grew with a long drag would
-    ##   read as the drag having got heavier.
-  ANGLE_ARROW_DRAG* = 0.40
-    ## Open each of the arrowhead's barbs this far off the band, in radians.
-    ##   About 23 degrees, so the pair spans 46. Wider reads as a chevron sitting across
-    ##   the band rather than as a head pointing along it, and narrower closes onto the
-    ##   line and is lost against it at this weight.
+    ##   Measured in pixels rather than as a fraction of the band, and that is the point:
+    ##   a fraction would grow the head as the drag went further, and the head is the part
+    ##   carrying the direction, so it has to look the same at arm's length as it does an
+    ##   inch from where the drag started. A band shorter than this simply lights all of
+    ##   itself.
+  WIDTH_COMET_DRAG* = 3.4'f32
+    ## Swell the drag band's head to this thickness, in pixels, tapering back to
+    ## `WIDTH_MARKER` along `LENGTH_COMET_DRAG`.
+    ##   The band's own answer to `WIDTH_MARKER_PULSE`, and a hair thinner because it runs
+    ##   over empty scene rather than over an outline of its own: nothing sits under it to
+    ##   set a floor for how heavy it has to be before it separates.
   ANGLE_MARKER_BANDS_OPEN* = 0.5*PI
     ## Start a horizon line's own bands this far off it, in radians, at zero progress.
     ##   A quarter turn is the pole of the very sphere the line's great circle runs
@@ -202,18 +227,22 @@ type
 
   Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
     count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
-    counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Points used of each run.
+    counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Outline points used of each run.
     pulses*: array[
-      RUNS_MARKER_PULSE, array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+      RUNS_MARKER_PULSE, array[POINTS_MARKER_PULSE, ScreenPosition]
     ] ## Short runs travelling along this marker's own outline, in screen space, for the
-      ## render paths to stroke over it. **Which way they travel is the object's
+      ## render paths to **fill** over it. **Which way they travel is the object's
       ## orientation** -- the thing a plane's normal shaft used to say, said only about the
       ## object being asked about rather than about every plane in the scene at once.
+      ## Each run is one closed outline, not a spine: a run tapers from head to tail, and a
+      ## stroke carries one width for its whole length. Shaped here rather than in each
+      ## render path, because a ribbon worked out twice is a ribbon that drifts -- and
+      ## because neither Dear ImGui nor SVG offers a varying-width stroke to hand it to.
       ## Points rather than a span of indices into the outline, because `Rails` is
       ## segments while `Loop`, `Bands` and `Frame` are polylines, and an index range would
       ## leave each render path re-deriving the walk in its own language.
       ## Common to every kind rather than per-variant: what pulses varies, that a marker
-      ## may pulse does not, and a renderer strokes these without asking which kind it has.
+      ## may pulse does not, and a renderer fills these without asking which kind it has.
     case kind*: MarkerKind
     of MarkerKind.Ring:
       centre*: ScreenPosition ## Where the point itself projects.
@@ -262,6 +291,75 @@ func phasePulse*(now: float): float =
   laps - floor(laps)
 
 
+func ribbonAlong(
+  spine: openArray[ScreenPosition]; count: int; width_head, width_tail: float;
+  outline: var openArray[ScreenPosition]
+): int =
+  ## Wrap `count` points of a run's spine in one closed outline, tapering from
+  ## `width_head` at `spine[0]` to `width_tail` at its last point, and report how many
+  ## points of `outline` were filled.
+  ##   A ribbon rather than a stroke because the width changes along the run, and no stroke
+  ##   either render path offers does that. Shaped once here for both of them.
+  ##   The taper is spread over whatever length the run actually came out at, so a run cut
+  ##   short by the end of an arc is a shorter comet rather than the front half of one.
+  ##   Each point's normal comes from its own neighbours on the spine, not from a second
+  ##   sample a guessed step away, which at either end would fall off the run entirely.
+  if count < 2 or outline.len < 2*count + SEGMENTS_MARKER_CAP: return
+  var
+    normal_x = 0.0
+    normal_y = 0.0
+  for i in 0 ..< count:
+    let
+      before = spine[max(0, i - 1)]
+      after = spine[min(count - 1, i + 1)]
+      dx = after.x - before.x
+      dy = after.y - before.y
+      span = hypot(dx, dy)
+    if span > 0.0:
+      normal_x = -dy/span
+      normal_y = dx/span
+    let
+      falling = pow(1.0 - float(i)/float(count - 1), FALLOFF_MARKER_PULSE)
+      half = 0.5*(width_tail + (width_head - width_tail)*falling)
+    # Both sides at once, the far one filled from the back so the outline closes as one
+    #   loop rather than crossing itself at the tail.
+    outline[i] = ScreenPosition(
+      x: spine[i].x + normal_x*half, y: spine[i].y + normal_y*half, depth: spine[i].depth,
+    )
+    outline[2*count - 1 - i] = ScreenPosition(
+      x: spine[i].x - normal_x*half, y: spine[i].y - normal_y*half, depth: spine[i].depth,
+    )
+  result = 2*count
+
+  # Round the head, sweeping from its far side through straight ahead to its near one.
+  let
+    dx = spine[0].x - spine[1].x
+    dy = spine[0].y - spine[1].y
+    ahead = hypot(dx, dy)
+  var
+    forward_x = 0.0
+    forward_y = 0.0
+  if ahead > 0.0:
+    forward_x = dx/ahead
+    forward_y = dy/ahead
+  let half_head = 0.5*width_head
+  # The head normal, which the loop above left behind at `i` of `count - 1`, recovered from
+  #   the outline's own first point rather than kept in a variable across the whole walk.
+  let
+    head_x = (outline[0].x - spine[0].x)/half_head
+    head_y = (outline[0].y - spine[0].y)/half_head
+  for j in 1 .. SEGMENTS_MARKER_CAP:
+    let
+      turn = PI*float(j)/float(SEGMENTS_MARKER_CAP + 1)
+      swing_x = -head_x*cos(turn) + forward_x*sin(turn)
+      swing_y = -head_y*cos(turn) + forward_y*sin(turn)
+    outline[result] = ScreenPosition(
+      x: spine[0].x + swing_x*half_head, y: spine[0].y + swing_y*half_head,
+      depth: spine[0].depth,
+    )
+    inc result
+
+
 func samplePulse(
   points: openArray[ScreenPosition]; count: int; is_closed: bool; phase: float;
   run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
@@ -304,8 +402,12 @@ func addPulse(
   ##   already holds every run it has room for -- both are "there is no more to say here",
   ##   not failures a caller could act on.
   if marker.count_run_pulse >= RUNS_MARKER_PULSE: return
-  let used = samplePulse(
-    points, count, is_closed, phase, marker.pulses[marker.count_run_pulse]
+  var spine: array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+  let sampled = samplePulse(points, count, is_closed, phase, spine)
+  if sampled == 0: return
+  let used = ribbonAlong(
+    spine, sampled, float(WIDTH_MARKER_PULSE), float(WIDTH_MARKER),
+    marker.pulses[marker.count_run_pulse],
   )
   if used == 0: return
   marker.counts_pulse[marker.count_run_pulse] = used
@@ -313,31 +415,42 @@ func addPulse(
 
 
 
-#[ Drag Arrowhead ]#
+#[ Drag Comet ]#
 
-func arrowheadFor*(tail, head: ScreenPosition): Option[array[3, ScreenPosition]] =
-  ## Shape the head of the drag band running `tail` -> `head`, as barb, tip, barb -- an
-  ## open polyline drawn over the band itself, in screen pixels.
+func cometFor*(
+  tail, head: ScreenPosition
+): Option[array[POINTS_MARKER_PULSE, ScreenPosition]] =
+  ## Shape the head of the drag band running `tail` -> `head` as a closed outline, in
+  ## screen pixels, for a render path to fill over the band itself.
   ##   A drag is not symmetric: `a ∨ b` and `b ∨ a` are different operations, and a bare
   ##   line between two objects draws identically for either. The head is what says which
   ##   way round the pair is being taken, at the end where the answer lands.
-  ##   Open rather than a filled triangle, so it wears the band's own weight and reads as
-  ##   part of it; a solid head at this size is a blob, and one large enough not to be is
-  ##   larger than the objects it points at.
+  ##   The band swelling into its own last stretch rather than a barbed head sitting at the
+  ##   end of it: the same shape the orientation pulse wears, through the same
+  ##   `ribbonAlong`, so a reader meets one vocabulary for direction instead of two.
   ##   None where the two coincide, which has no direction to point in. That is an
   ##   ordinary moment in a drag -- the cursor resting on its own source -- rather than an
   ##   error, so it draws nothing and the band, itself zero length, draws nothing either.
-  let (dx, dy) = (head.x - tail.x, head.y - tail.y)
-  let length = hypot(dx, dy)
+  let
+    dx = head.x - tail.x
+    dy = head.y - tail.y
+    length = hypot(dx, dy)
   if length <= 0.0: return
-  # Back along the band from the tip, then a barb swung either side of that.
-  let facing = arctan2(dy, dx)
-  func barbAt(turn: float): ScreenPosition =
-    ScreenPosition(
-      x: head.x - LENGTH_ARROW_DRAG*cos(turn), y: head.y - LENGTH_ARROW_DRAG*sin(turn),
-      depth: head.depth,
+  # A band shorter than the comet lights all of itself rather than reaching past its own
+  #   source, which would leave the head hanging off the object the drag started on.
+  let reach = min(LENGTH_COMET_DRAG, length)
+  var spine: array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+  for i in 0 ..< SEGMENTS_MARKER_PULSE:
+    let back = reach*float(i)/float(SEGMENTS_MARKER_PULSE - 1)
+    spine[i] = ScreenPosition(
+      x: head.x - dx/length*back, y: head.y - dy/length*back, depth: head.depth,
     )
-  some([barbAt(facing - ANGLE_ARROW_DRAG), head, barbAt(facing + ANGLE_ARROW_DRAG)])
+  var outline: array[POINTS_MARKER_PULSE, ScreenPosition]
+  let used = ribbonAlong(
+    spine, SEGMENTS_MARKER_PULSE, float(WIDTH_COMET_DRAG), float(WIDTH_MARKER), outline
+  )
+  if used == 0: return
+  some(outline)
 
 
 

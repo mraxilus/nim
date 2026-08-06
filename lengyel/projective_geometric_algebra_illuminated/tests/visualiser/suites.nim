@@ -3073,8 +3073,9 @@ suite "Marker":
     # Nothing pulses unless a caller says the object is selected by passing a time.
     check markerOf(PLANE).get.count_run_pulse == 0
 
-    # Every point of it lies on the very outline it rides, to within a pixel: the run is
-    #   sampled from the marker's own points rather than traced on a curve of its own.
+    # Every point of it lies on the very outline it rides, to within its own half-width:
+    #   the run is sampled from the marker's own points rather than traced on a curve of
+    #   its own, and then wrapped in a ribbon standing off that spine either side.
     let marker = pulsed(PLANE, 0.3)
     proc distanceToLoop(point: ScreenPosition; marker: Marker): float =
       result = high(float)
@@ -3088,8 +3089,25 @@ suite "Marker":
         let on = first.towards(second, along)
         result = min(result, hypot(point.x - on.x, point.y - on.y))
     for run in 0 ..< marker.count_run_pulse:
+      # Both sides and the head's cap, so every run is one closed loop of them.
+      check marker.counts_pulse[run] mod 2 == SEGMENTS_MARKER_CAP mod 2
       for i in 0 ..< marker.counts_pulse[run]:
-        check distanceToLoop(marker.pulses[run][i], marker) < 1.0
+        check distanceToLoop(marker.pulses[run][i], marker) <
+          0.5*float(WIDTH_MARKER_PULSE) + 1.0
+
+    # The run tapers: its head stands off the spine by half `WIDTH_MARKER_PULSE`, and its
+    #   tail meets the outline at the outline's own width, so only the head is an edge.
+    let outline = marker.pulses[0]
+    let count = marker.counts_pulse[0]
+    let spans = (count - SEGMENTS_MARKER_CAP) div 2
+    proc widthAcross(i: int): float =
+      hypot(outline[i].x - outline[2*spans - 1 - i].x,
+        outline[i].y - outline[2*spans - 1 - i].y)
+    check widthAcross(0) =~ float(WIDTH_MARKER_PULSE)
+    check widthAcross(spans - 1) =~ float(WIDTH_MARKER)
+    # And it thins the whole way, never swelling again behind its own head.
+    for i in 1 ..< spans:
+      check widthAcross(i) <= widthAcross(i - 1) + TOLERANCE_SINGLE
 
 
   test "a pulse travels, and laps rather than stopping":
@@ -3112,35 +3130,43 @@ suite "Marker":
     check phasePulse(0.25*SECONDS_MARKER_PULSE) =~ phasePulse(3.25*SECONDS_MARKER_PULSE)
 
 
-  test "the drag band's head points along the band, whichever way it runs":
-    proc headOf(tail, head: ScreenPosition): array[3, ScreenPosition] =
-      arrowheadFor(tail, head).get
-
+  test "the drag band swells into its head, whichever way it runs":
+    const SPANS = SEGMENTS_MARKER_PULSE
     for (dx, dy) in [(120.0, 0.0), (-120.0, 0.0), (0.0, 90.0), (-70.0, -70.0)]:
       let
         tail = ScreenPosition(x: 200.0, y: 150.0)
         head = ScreenPosition(x: tail.x + dx, y: tail.y + dy)
-        drawn = headOf(tail, head)
-      # The tip is the point aimed at, and both barbs stand off it by one head's length.
-      check drawn[1].x =~ head.x
-      check drawn[1].y =~ head.y
-      for barb in [drawn[0], drawn[2]]:
-        check hypot(barb.x - head.x, barb.y - head.y) =~ LENGTH_ARROW_DRAG
-        # Behind the tip, never past it: a barb on the far side reads as an arrow pointing
-        #   back the way it came.
-        check (barb.x - head.x)*dx + (barb.y - head.y)*dy < 0.0
-      # Symmetric about the band, so the head reads as centred on it rather than swung.
-      let midpoint = ScreenPosition(
-        x: 0.5*(drawn[0].x + drawn[2].x), y: 0.5*(drawn[0].y + drawn[2].y)
-      )
-      let across = (midpoint.x - head.x)*dy - (midpoint.y - head.y)*dx
-      check abs(across) < TOLERANCE_SINGLE
+        drawn = cometFor(tail, head).get
+      # Widest across the point aimed at, thinning to the band's own width behind it, so
+      #   the swell itself is what says which end the answer lands at.
+      proc widthAcross(i: int): float =
+        hypot(drawn[i].x - drawn[2*SPANS - 1 - i].x, drawn[i].y - drawn[2*SPANS - 1 - i].y)
+      check widthAcross(0) =~ float(WIDTH_COMET_DRAG)
+      check widthAcross(SPANS - 1) =~ float(WIDTH_MARKER)
+      # Centred on the band rather than swung to one side of it.
+      for i in [0, SPANS div 2, SPANS - 1]:
+        let middle = ScreenPosition(
+          x: 0.5*(drawn[i].x + drawn[2*SPANS - 1 - i].x),
+          y: 0.5*(drawn[i].y + drawn[2*SPANS - 1 - i].y),
+        )
+        check abs((middle.x - head.x)*dy - (middle.y - head.y)*dx) < TOLERANCE_SINGLE
+      # Lying behind the point aimed at, never past it, apart from the head's own cap.
+      for i in 0 ..< 2*SPANS:
+        check (drawn[i].x - head.x)*dx + (drawn[i].y - head.y)*dy <= TOLERANCE_SINGLE
+
+  test "a drag band shorter than the comet lights all of itself, and no more":
+    # Otherwise the head would reach back past the very object the drag started on.
+    let
+      tail = ScreenPosition(x: 100.0, y: 100.0)
+      near = ScreenPosition(x: 100.0 + 0.5*LENGTH_COMET_DRAG, y: 100.0)
+      drawn = cometFor(tail, near).get
+    for point in drawn: check point.x >= tail.x - TOLERANCE_SINGLE
 
 
   test "a band with nowhere to point draws no head":
     # The cursor resting on its own source: an ordinary moment in a drag, not an error.
     let at = ScreenPosition(x: 40.0, y: 90.0)
-    check arrowheadFor(at, at).isNone
+    check cometFor(at, at).isNone
 
 
   test "geometry standing for no shape gets no marker":

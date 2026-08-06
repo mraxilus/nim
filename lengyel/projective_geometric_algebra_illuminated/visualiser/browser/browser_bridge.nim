@@ -476,13 +476,15 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[overlay_line_width, selected_alpha, hover_alpha, pulse_width]`, so the
-  ## browser's SVG overlay strokes markers, the drag rubber-band and the orientation pulse
-  ## at the same weights the desktop build's `visualiser.drawMarker` does, without a
-  ## hand-copied literal to drift out of sync with them.
+  ## Report `[overlay_line_width, selected_alpha, hover_alpha]`, so the browser's SVG
+  ## overlay strokes markers and the drag rubber-band at the same weights the desktop
+  ## build's `visualiser.drawMarker` does, without a hand-copied literal to drift out of
+  ## sync with them.
   ##   A marker's own size is not here: it depends on the shape being marked, and comes
-  ##   back from `nimSelectionMarker` with the marker itself.
-  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, WIDTH_MARKER_PULSE]
+  ##   back from `nimSelectionMarker` with the marker itself. Neither is the orientation
+  ##   pulse's, which stopped being a width the moment the run gained a taper -- it is
+  ##   shaped into the outline `nimSelectionPulse` reports, and filled rather than stroked.
+  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER]
 
 
 
@@ -870,10 +872,10 @@ proc nimDragTint(): seq[float32] {.exportc.} =
   toRgbSeq(inkOfDrag(g_interaction).colour)
 
 
-proc nimDragArrowhead(width, height: cint): seq[float32] {.exportc.} =
-  ## Report the drag band's own arrowhead flat, `[x0, y0, x1, y1, x2, y2]` -- barb, tip,
-  ## barb -- for the overlay to stroke as an open polyline over the band.
-  ##   Shaped by `marker.arrowheadFor`, and aimed from the drag source's anchor at **this
+proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
+  ## Report the drag band's own head flat, `[x0, y0, x1, y1, ...]`, as one closed outline
+  ## for the overlay to fill over the band.
+  ##   Shaped by `marker.cometFor`, and aimed from the drag source's anchor at **this
   ##   module's own cursor** rather than at the one the presentation layer is holding.
   ##   Both are updated from the same pointer events, but only one of them can be the
   ##   answer, and the geometry belongs on the side that owns the gesture.
@@ -889,9 +891,9 @@ proc nimDragArrowhead(width, height: cint): seq[float32] {.exportc.} =
     int(width), int(height), anchor.get,
   )
   if not screen.isInFront: return
-  let arrow = arrowheadFor(screen, g_interaction.cursor)
-  if arrow.isNone: return
-  for point in arrow.get: result.add([cfloat(point.x), cfloat(point.y)])
+  let comet = cometFor(screen, g_interaction.cursor)
+  if comet.isNone: return
+  for point in comet.get: result.add([cfloat(point.x), cfloat(point.y)])
 
 
 proc nimMenuMetrics(): seq[float32] {.exportc.} =
@@ -1122,7 +1124,8 @@ proc nimSelectionPulse(
 ): seq[float32] {.exportc.} =
   ## Report the orientation pulse travelling along this item's own marker, flat, as a run
   ## count then each run's own point count followed by its points:
-  ## `[runs, count0, x, y, ..., count1, x, y, ...]`.
+  ## `[runs, count0, x, y, ..., count1, x, y, ...]`. Each run is a **closed outline to
+  ## fill**, not a path to stroke -- the run tapers, and a stroke has one width.
   ##   Its own call rather than a tail on `nimSelectionMarker`, whose format promises that
   ## the points are "whatever is left" -- appending a second array behind them would make
   ## that false for every kind at once. The cost is shaping the marker twice for a

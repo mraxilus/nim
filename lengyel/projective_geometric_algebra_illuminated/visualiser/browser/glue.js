@@ -1207,8 +1207,8 @@ function refreshDiagnostics() {
 const svg_overlay = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics, rather than a hand-copied
 // literal that could drift out of sync with them.
-const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER,
-  WIDTH_OVERLAY_PULSE] = nimOverlayMetrics();
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
+  nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
@@ -1241,24 +1241,23 @@ function svgEl(tag, attrs) {
 // covers a line clipped into any number of them without knowing how many to expect.
 // The orientation pulse travelling along a selected object's marker: which way it goes is
 // the object's own orientation, and the shape of every run comes across the bridge already
-// in screen space. Drawn over the outline at a heavier weight, so it reads as the outline
-// lit along a stretch of itself rather than as a second mark riding on it. Only a caller
+// in screen space. Filled rather than stroked, because each run tapers from a swollen head
+// back to the outline's own width and a stroke carries one width for its whole length --
+// marker.ribbonAlong shapes that outline, this only fills what it is handed. Only a caller
 // passing a time gets one -- hover and focus wear the same marker standing still.
 function appendMarkerPulse(slot, alpha, progress, is_touch, now_seconds) {
   const flat = nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, progress,
     is_touch === true, now_seconds);
   if (flat.length === 0) return;
-  const stroke = 'rgba(255,255,255,' + alpha + ')';
+  const fill = 'rgba(255,255,255,' + alpha + ')';
   let at = 1;
   for (let run = 0; run < flat[0]; run++) {
     const count = flat[at++];
     const points = [];
     for (let i = 0; i < count; i++) points.push(flat[at + 2 * i] + ',' + flat[at + 2 * i + 1]);
     at += 2 * count;
-    svg_overlay.appendChild(svgEl('polyline', {
-      points: points.join(' '),
-      fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_PULSE,
-      'stroke-linecap': 'round',
+    svg_overlay.appendChild(svgEl('polygon', {
+      points: points.join(' '), fill: fill, stroke: 'none',
     }));
   }
 }
@@ -1387,17 +1386,17 @@ function refreshOverlay(cursor) {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       }));
-      // Which way round the pair is being taken. Shaped by `marker.arrowheadFor` across
-      // the bridge rather than worked out here: the band's direction is the gesture's own
-      // business, and this layer strokes what it is handed. Empty while the cursor rests
-      // on its own source, which points nowhere.
-      const arrow = nimDragArrowhead(w, h);
-      if (arrow.length) {
+      // Which way round the pair is being taken: the band swelling into its own last
+      // stretch, the same shape the orientation pulse wears. Shaped by `marker.cometFor`
+      // across the bridge rather than worked out here -- the band's direction is the
+      // gesture's own business, and this layer fills what it is handed. Empty while the
+      // cursor rests on its own source, which points nowhere.
+      const comet = nimDragComet(w, h);
+      if (comet.length) {
         const points = [];
-        for (let i = 0; i + 1 < arrow.length; i += 2) points.push(arrow[i] + ',' + arrow[i + 1]);
-        svg_overlay.appendChild(svgEl('polyline', {
-          points: points.join(' '),
-          fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+        for (let i = 0; i + 1 < comet.length; i += 2) points.push(comet[i] + ',' + comet[i + 1]);
+        svg_overlay.appendChild(svgEl('polygon', {
+          points: points.join(' '), fill: stroke, stroke: 'none',
         }));
       }
     }

@@ -390,20 +390,21 @@ proc assembleMeshes(
 
 
 proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
-  ## Stroke the orientation pulse travelling along a marker's own outline, if it has one.
-  ##   Over the outline rather than instead of it, and at the same weight: the pulse is
-  ##   the outline being lit along a stretch of itself, not a second mark riding on it.
+  ## Fill the orientation pulse travelling along a marker's own outline, if it has one.
+  ##   Over the outline rather than instead of it: the pulse is the outline swelling along
+  ##   a stretch of itself, not a second mark riding on it, and it tapers back to the
+  ##   outline's own width so only its head is an edge.
   ##   Whichever kind of marker built it, this walks the same runs -- the shape of what
-  ##   pulses is `marker.nim`'s business and every run arrives here already in screen
-  ##   space.
+  ##   pulses is `marker.nim`'s business and every run arrives here already closed and in
+  ##   screen space.
   for run in 0 ..< marker.count_run_pulse:
-    var points: array[2*SEGMENTS_MARKER_PULSE, cfloat]
+    var points: array[2*POINTS_MARKER_PULSE, cfloat]
     for i in 0 ..< marker.counts_pulse[run]:
       points[2*i] = cfloat(marker.pulses[run][i].x)
       points[2*i + 1] = cfloat(marker.pulses[run][i].y)
-    gui.overlayPolyline(
+    gui.overlayRibbon(
       addr points[0], cint(marker.counts_pulse[run]), tint.red, tint.green, tint.blue,
-      alpha, WIDTH_MARKER_PULSE, 0,
+      alpha,
     )
 
 
@@ -593,14 +594,14 @@ proc drawInteractionOverlay(
         )
         # Which way round the pair is being taken, drawn at the end where the answer
         #   lands. None while the cursor rests on its own source, which points nowhere.
-        let arrow = arrowheadFor(screen, interaction.cursor)
-        if arrow.isSome:
-          var points: array[6, cfloat]
-          for i, point in arrow.get:
+        let comet = cometFor(screen, interaction.cursor)
+        if comet.isSome:
+          var points: array[2*POINTS_MARKER_PULSE, cfloat]
+          for i, point in comet.get:
             points[2*i] = cfloat(point.x)
             points[2*i + 1] = cfloat(point.y)
-          gui.overlayPolyline(
-            addr points[0], 3, tint.red, tint.green, tint.blue, 0.85, WIDTH_MARKER, 0,
+          gui.overlayRibbon(
+            addr points[0], POINTS_MARKER_PULSE, tint.red, tint.green, tint.blue, 0.85,
           )
   if interaction.menu.isSome:
     drawChoiceMenu(interaction, scene)

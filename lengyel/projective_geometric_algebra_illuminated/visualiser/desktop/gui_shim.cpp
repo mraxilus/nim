@@ -503,6 +503,35 @@ void guiOverlayPolyline(const float *points, int count, float red, float green, 
                    is_closed ? ImDrawFlags_Closed : ImDrawFlags_None, thickness);
 }
 
+// Fill a marker's own closed outline, for a shape whose width varies along its length and
+//   so cannot be a stroke: the orientation pulse tapering down its tail, and the drag
+//   band's head. `points` addresses `count` pairs of floats, x then y, already closed --
+//   the caller shapes the ribbon (`marker.ribbonAlong`), this only fills it.
+//   Concave rather than convex: a ribbon following a curved outline bends away from
+//   straight, and the convex fill would bridge that bend with a chord across the marker.
+//   Wound to a fixed handedness here rather than by the caller, because it is Dear ImGui
+//   that cares and no one else: its antialiased fill offsets each edge by the normal
+//   `(dy, -dx)`, which points out of the shape for one winding and into it for the other.
+//   Handed a ribbon wound the wrong way it pushes the whole transparent fringe *inward*,
+//   under the fill, and the mark comes out with hard aliased edges -- measurably so: a
+//   column across it steps 16 to 248 with nothing between, where every other overlay
+//   stroke ramps through it. The pulse's own winding flips with the orientation it
+//   reports, so this cannot be settled once at the call site.
+void guiOverlayRibbon(const float *points, int count, float red, float green, float blue,
+                      float alpha) {
+  if (count < 3) return;
+  float twice_area = 0.0f;
+  for (int i = 0, j = count - 1; i < count; j = i++) {
+    twice_area += points[2 * j] * points[2 * i + 1] - points[2 * i] * points[2 * j + 1];
+  }
+  ImDrawList *list = ImGui::GetForegroundDrawList();
+  for (int n = 0; n < count; ++n) {
+    const int i = twice_area >= 0.0f ? n : count - 1 - n;
+    list->PathLineTo(ImVec2(points[2 * i], points[2 * i + 1]));
+  }
+  list->PathFillConcave(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)));
+}
+
 // Fill a rounded rectangle centred on `cx`/`cy` straight onto the foreground layer, for
 //   one wedge of the drag menu. Centred rather than placed from a corner because every
 //   caller of it knows where the wedge's middle goes and nothing else about its size --

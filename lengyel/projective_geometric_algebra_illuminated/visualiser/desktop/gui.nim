@@ -204,3 +204,8 @@ proc overlayPolyline*(
 ) {.importc: "guiOverlayPolyline".}
   ## Stroke one joined path through `count` points, `points` addressing that many x/y
   ## pairs -- one call rather than a segment each, so corners join cleanly.
+proc overlayRibbon*(
+  points: ptr cfloat; count: cint; red, green, blue, alpha: cfloat
+) {.importc: "guiOverlayRibbon".}
+  ## Fill one closed outline through `count` points, for a mark whose width varies along
+  ## its length and so cannot be stroked: the orientation pulse, and the drag band's head.

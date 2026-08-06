@@ -423,13 +423,17 @@ nothing left for a settle to be about. `isHoldSpent` is stated against `swellHol
 against the shrink duration a second time, which is `isHoldMature`'s own rule and necessary
 here: subtracting two large timestamps measured 0.14999999999997 against a 0.15 s shrink.
 
-**A drag band carries an arrowhead** (`marker.arrowheadFor`), because a drag is not symmetric
-— `a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical.
-Barb-tip-barb at the end where the answer lands, open rather than filled so it wears the
-band's own weight: solid at this size is a blob, and one large enough not to be is larger than
-the objects it points at. None where the cursor rests on its own source, which points nowhere.
-The browser aims it from the *core's* cursor rather than the one the presentation layer holds
-— both come from the same pointer events, but only one can be the answer.
+**A drag band swells into its head** (`marker.cometFor`), because a drag is not symmetric —
+`a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical. The
+last `LENGTH_COMET_DRAG` of the band thickens to `WIDTH_COMET_DRAG` at the point it aims at,
+the same shape the orientation pulse wears and through the same `ribbonAlong`, so a reader
+meets one vocabulary for direction instead of two. **Fixed pixels, not a fraction of the
+band**: a fraction would grow the head as the drag went further, and the head is the part
+carrying direction — driven at 61, 125, 200 and 277 px of drag, the head held its size. A band
+shorter than the comet lights all of itself rather than reaching back past the object the drag
+started on. None where the cursor rests on its own source, which points nowhere. The browser
+aims it from the *core's* cursor rather than the one the presentation layer holds — both come
+from the same pointer events, but only one can be the answer.
 
 **Orientation is a pulse travelling round the selection marker, and the shaft is gone.** A
 plane used to draw a bare normal shaft out of its anchor, *always*, on every plane in the
@@ -437,6 +441,34 @@ scene, to answer a question a reader asks about one object at a time; a line had
 all. `marker.markerFor` now runs a short lit run along a selected object's own outline
 (`SEGMENTS_MARKER_PULSE` points spanning `FRACTION_MARKER_PULSE` of it, one lap per
 `SECONDS_MARKER_PULSE`), and **which way it travels is the orientation**.
+
+The run **tapers**, from `WIDTH_MARKER_PULSE` at its head down `FALLOFF_MARKER_PULSE` to
+`WIDTH_MARKER` at its tail, so the head reads as the front rather than the run reading as a
+bar. It ends at exactly the outline's own width, which is why the tail needs no cap and no
+alpha ramp: it merges into the line behind it, and only the head is an edge. The three
+constants were chosen from thirteen variants drawn side by side on a plane's circle and a
+line's rails; against 0.09 and 0.13 spans, against 2.8 px and 4.5 px heads, and against 1.6
+and 2.4 falloffs. **Scale caveat, measured and not designed around**: the span is a fraction,
+so the run's length follows the outline it rides — 96 px on a line's rail, 334 px round a
+plane's circle seen close up on a phone, where the specimens judged were ~280 px around. The
+same fraction is a compact comet on one and a long gradient on the other.
+
+That taper is why each run is a **closed outline to fill rather than a path to stroke**: a
+stroke carries one width for its whole length. `ribbonAlong` wraps the sampled spine in both
+sides plus a rounded head cap, once, for both render paths — a ribbon worked out twice is a
+ribbon that drifts, and neither Dear ImGui nor SVG offers a varying-width stroke to hand it
+to. Each point's normal comes from its own neighbours on the spine rather than a second sample
+an epsilon away, which at either end would fall off the run. A run cut short by the end of an
+open arc spreads its taper over what survives, so it is a shorter comet rather than the front
+half of one.
+
+The desktop fill needs a **fixed winding**, which `gui_shim.guiOverlayRibbon` imposes rather
+than the caller: Dear ImGui's antialiased fill offsets each edge by `(dy, -dx)`, outward for
+one winding and inward for the other, and a ribbon handed to it the wrong way round comes out
+with the whole transparent fringe under the fill. That was measured, not guessed — a column
+across the mark stepped 16 to 248 with nothing between, where every other overlay stroke ramps
+through it. It cannot be settled once at the call site, because the pulse's winding flips with
+the very orientation it reports. SVG needs none of this.
 
 Nothing computes that sense. A plane's loop is generated around the plane's own frame, so the
 *projection* decides whether that order comes out clockwise or anticlockwise, and the pulse
