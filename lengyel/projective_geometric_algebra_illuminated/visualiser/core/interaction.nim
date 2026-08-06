@@ -183,6 +183,13 @@ type
   Hold* = object ## Hold a press that will select its item once it has lasted long enough.
     slot*: int ## Item pressed, and the one whose marker fills as the press matures.
     started*: float ## When the press landed, on the same clock every caller passes as `now`.
+    is_taken*: bool ## Whether this hold's maturity has already been acted on.
+      ## The one-shot lives here rather than beside the caller, because a hold now
+      ## outlives its own release: a flag the release handler resets goes stale while the
+      ## hold is still settling, the maturity test is still true, and the selection fires
+      ## a *second* time and undoes itself. Measured -- a hold of 1.62 s selected its item
+      ## and then lost it within 50 ms of the lift. Whether a hold is *due* was already
+      ## this module's to say; whether anyone has done anything about it belongs with it.
     released*: Option[float] ## When the finger lifted, if it has.
       ## A hold outlives its own maturity: the marker stays swollen for as long as the
       ## finger is down, however long that is, and only settles once this says it may.
@@ -538,7 +545,9 @@ proc pruneFocus*(interaction: var Interaction; scene: Scene) =
 
 proc beginHold*(interaction: var Interaction; slot: int; now: float) =
   ## Start a press on `slot` that will select it once it has lasted long enough.
-  interaction.hold = some(Hold(slot: slot, started: now, released: none(float)))
+  interaction.hold = some(
+    Hold(slot: slot, started: now, is_taken: false, released: none(float))
+  )
 
 
 proc releaseHold*(interaction: var Interaction; now: float) =
@@ -624,6 +633,23 @@ func isHoldMature*(interaction: Interaction; now: float): bool =
   ##   moment the marker finishes filling is the same moment the selection lands. Two
   ##   comparisons against the same duration would be two chances to disagree.
   interaction.hold.isSome and progressHold(interaction, now) >= 1.0
+
+
+proc takeHold*(interaction: var Interaction; now: float): Option[int] =
+  ## Report the slot a matured hold selects, **exactly once**, and nothing on any later
+  ## call; none while the hold is still filling, and none where there is no hold at all.
+  ##   The one call a frame loop needs, replacing "is it mature" asked beside a flag the
+  ## caller kept for "have I already acted on that". Those two facts have to agree, and
+  ## they stopped agreeing the moment a hold began outliving its own release: the caller
+  ## cleared its flag on the lift while the hold was still settling and still mature, so
+  ## the next frame selected the item a second time and toggled it straight back off. A
+  ## 1.62-second hold selected its item and lost it within 50 ms of the finger leaving.
+  ##   Taking it does not end it. The hold stays for its swell to settle out of -- what is
+  ## spent is the *selection*, not the gesture.
+  if interaction.hold.isNone or interaction.hold.get.is_taken: return
+  if not isHoldMature(interaction, now): return
+  interaction.hold.get.is_taken = true
+  some(interaction.hold.get.slot)
 
 
 

@@ -1962,13 +1962,17 @@ function frame() {
   //   a timer that fires on its own, so that the moment the marker finishes filling is the
   //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
   //   progress the marker was just drawn at, so the two cannot disagree by a frame.
-  if (nimHoldMature(now_seconds) && !has_long_press_fired) {
-    // Select, but **keep the hold**: the marker stays swollen clear of the finger for as
-    // long as that finger is down, and only settles once `nimReleaseHold` says it may.
-    // Cancelling here is what used to put it back to its true size at exactly the moment
-    // the selection landed -- shrinking while the reader was still deciding.
-    has_long_press_fired = true;
-    toggleSelection(nimHoldSlot(), position_touch_down);
+  // One question, not two. Asking "is it mature" beside a flag kept here for "have I
+  // already acted on that" needs the two to agree, and they stopped agreeing once a hold
+  // outlived its own release: this handler clears its flag on the lift while the hold is
+  // still settling and still mature, so the next frame selected the item again and toggled
+  // it straight back off. `nimTakeMaturedHold` answers once and never again.
+  const slot_matured = nimTakeMaturedHold(now_seconds);
+  if (slot_matured >= 0) {
+    // Selected, but the hold is **kept**: its marker stays swollen clear of the finger for
+    // as long as that finger is down, and settles only once `nimReleaseHold` says it may.
+    has_long_press_fired = true; // Still needed, to stop the release also reading as a tap.
+    toggleSelection(slot_matured, position_touch_down);
   }
   // And retire it once that settle is spent, so a finished hold stops being drawn at all.
   if (nimIsHoldSpent(now_seconds)) nimCancelHold();

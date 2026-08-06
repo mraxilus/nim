@@ -2606,6 +2606,40 @@ suite "Interaction":
     check isHoldSpent(interaction, MATURED + 5.0 + 1.1*SECONDS_SWELL_SHRINK)
 
 
+  test "a matured hold is taken once, and never again however long it is held":
+    # The regression this pins, measured: a hold of 1.62 s selected its item and then lost
+    #   it within 50 ms of the lift. The caller asked "is it mature" beside its own flag for
+    #   "have I acted on that", cleared the flag on the release, and the still-settling --
+    #   still mature -- hold selected a second time and toggled it straight back off.
+    var interaction = Interaction(is_enabled: true)
+    interaction.beginHold(4, 1000.0)
+    const MATURED = 1000.0 + SECONDS_SWELL_GROW + SECONDS_LONG_PRESS
+    # Nothing to take while it is still filling.
+    check takeHold(interaction, MATURED - 0.01).isNone
+    check takeHold(interaction, MATURED) == some(4)
+    # Not a second time, at any later moment of the hold...
+    for now in [MATURED, MATURED + 0.001, MATURED + 5.0, MATURED + 600.0]:
+      check takeHold(interaction, now).isNone
+    # ...nor across the release and its whole settle, which is exactly where it fired.
+    interaction.releaseHold(MATURED + 5.0)
+    for now in [MATURED + 5.0, MATURED + 5.0 + 0.5*SECONDS_SWELL_SHRINK,
+                MATURED + 5.0 + 2.0*SECONDS_SWELL_SHRINK]:
+      check takeHold(interaction, now).isNone
+    # Taking it does not end it: the swell still has a settle to run out.
+    check swellHold(interaction, MATURED + 5.0) =~ 1.0
+
+    # And a fresh press is a fresh hold, takeable on its own terms.
+    #   Asked a frame past the boundary rather than exactly on it: summing a large base
+    #   with two small durations does not land there. The same arithmetic reads
+    #   0.9999999999997817 from a base of 2000 and 1.000000000000009 from 1000, and no
+    #   caller asks at an instant anyway -- they ask once a frame.
+    interaction.beginHold(7, 2000.0)
+    check takeHold(interaction, 2000.0).isNone
+    check takeHold(
+      interaction, 2000.0 + SECONDS_SWELL_GROW + 1.01*SECONDS_LONG_PRESS
+    ) == some(7)
+
+
   test "a cancelled hold snaps away rather than settling":
     # Cancelling is a press that stopped being one -- moved into a camera gesture, or
     #   interrupted -- so there is nothing left for a settle to be about.

@@ -736,6 +736,16 @@ proc nimHoldSlot(): cint {.exportc.} =
   if g_interaction.hold.isSome: cint(g_interaction.hold.get.slot) else: SLOT_NONE
 
 
+proc nimTakeMaturedHold(now: cfloat): cint {.exportc.} =
+  ## Forward to `interaction.takeHold`: the slot a matured hold selects, reported exactly
+  ## once, or `SLOT_NONE` where there is nothing to take.
+  ##   One question rather than "is it mature" asked beside a flag the caller keeps for
+  ##   whether it has already acted; see `takeHold` for the regression those two disagreeing
+  ##   produced.
+  let taken = interaction.takeHold(g_interaction, float(now))
+  if taken.isNone: SLOT_NONE else: cint(taken.get)
+
+
 proc nimReleaseHold(now: cfloat) {.exportc.} =
   ## Forward to `interaction.releaseHold`; see its own doc comment.
   interaction.releaseHold(g_interaction, float(now))
