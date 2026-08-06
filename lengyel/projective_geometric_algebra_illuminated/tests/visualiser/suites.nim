@@ -3093,9 +3093,9 @@ suite "Marker":
       check marker.counts_pulse[run] mod 2 == SEGMENTS_MARKER_CAP mod 2
       for i in 0 ..< marker.counts_pulse[run]:
         check distanceToLoop(marker.pulses[run][i], marker) <
-          0.5*float(WIDTH_MARKER_PULSE) + 1.0
+          0.5*float(WIDTH_MARKER_COMET) + 1.0
 
-    # The run tapers: its head stands off the spine by half `WIDTH_MARKER_PULSE`, and its
+    # The run tapers: its head stands off the spine by half `WIDTH_MARKER_COMET`, and its
     #   tail meets the outline at the outline's own width, so only the head is an edge.
     let outline = marker.pulses[0]
     let count = marker.counts_pulse[0]
@@ -3103,11 +3103,36 @@ suite "Marker":
     proc widthAcross(i: int): float =
       hypot(outline[i].x - outline[2*spans - 1 - i].x,
         outline[i].y - outline[2*spans - 1 - i].y)
-    check widthAcross(0) =~ float(WIDTH_MARKER_PULSE)
+    check widthAcross(0) =~ float(WIDTH_MARKER_COMET)
     check widthAcross(spans - 1) =~ float(WIDTH_MARKER)
     # And it thins the whole way, never swelling again behind its own head.
     for i in 1 ..< spans:
       check widthAcross(i) <= widthAcross(i - 1) + TOLERANCE_SINGLE
+
+
+  test "a pulse is the same length whatever shape it rides":
+    # The point of measuring the run in pixels. Under a fraction of the outline it came out
+    #   96 px along a line's rail against 334 px round a plane's circle -- one constant, a
+    #   compact comet on one shape and a long gradient on another.
+    proc lengthOfRun(marker: Marker; run: int): float =
+      # Down the middle of the ribbon, which recovers the spine it was built around: its
+      #   own two edges splay wherever the width changes, and are longer than the run.
+      let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
+      proc middleAt(i: int): ScreenPosition =
+        marker.pulses[run][i].towards(marker.pulses[run][2*spans - 1 - i], 0.5)
+      for i in 1 ..< spans:
+        let (a, b) = (middleAt(i - 1), middleAt(i))
+        result += hypot(b.x - a.x, b.y - a.y)
+
+    # Half a lap in, so no run is one shortened by the end of an open arc.
+    for geometry in [PLANE, LINE, LINE_HORIZON]:
+      let shaped = markerOf(geometry, now = some(0.5*SECONDS_MARKER_PULSE)).get
+      check shaped.count_run_pulse > 0
+      for run in 0 ..< shaped.count_run_pulse:
+        # A run laid along a curve is a chain of chords, so it falls a hair short of the
+        #   arc it covers; nothing else may.
+        check lengthOfRun(shaped, run) <= LENGTH_MARKER_COMET + TOLERANCE_SINGLE
+        check lengthOfRun(shaped, run) > 0.98*LENGTH_MARKER_COMET
 
 
   test "a pulse travels, and laps rather than stopping":
@@ -3141,7 +3166,7 @@ suite "Marker":
       #   the swell itself is what says which end the answer lands at.
       proc widthAcross(i: int): float =
         hypot(drawn[i].x - drawn[2*SPANS - 1 - i].x, drawn[i].y - drawn[2*SPANS - 1 - i].y)
-      check widthAcross(0) =~ float(WIDTH_COMET_DRAG)
+      check widthAcross(0) =~ float(WIDTH_MARKER_COMET)
       check widthAcross(SPANS - 1) =~ float(WIDTH_MARKER)
       # Centred on the band rather than swung to one side of it.
       for i in [0, SPANS div 2, SPANS - 1]:
@@ -3158,7 +3183,7 @@ suite "Marker":
     # Otherwise the head would reach back past the very object the drag started on.
     let
       tail = ScreenPosition(x: 100.0, y: 100.0)
-      near = ScreenPosition(x: 100.0 + 0.5*LENGTH_COMET_DRAG, y: 100.0)
+      near = ScreenPosition(x: 100.0 + 0.5*LENGTH_MARKER_COMET, y: 100.0)
       drawn = cometFor(tail, near).get
     for point in drawn: check point.x >= tail.x - TOLERANCE_SINGLE
 

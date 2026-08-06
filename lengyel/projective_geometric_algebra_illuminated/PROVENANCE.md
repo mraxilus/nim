@@ -425,10 +425,10 @@ here: subtracting two large timestamps measured 0.14999999999997 against a 0.15 
 
 **A drag band swells into its head** (`marker.cometFor`), because a drag is not symmetric —
 `a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical. The
-last `LENGTH_COMET_DRAG` of the band thickens to `WIDTH_COMET_DRAG` at the point it aims at,
-the same shape the orientation pulse wears and through the same `ribbonAlong`, so a reader
-meets one vocabulary for direction instead of two. **Fixed pixels, not a fraction of the
-band**: a fraction would grow the head as the drag went further, and the head is the part
+last `LENGTH_MARKER_COMET` of the band thickens to `WIDTH_MARKER_COMET` at the point it aims
+at — the same length, the same width and the same `ribbonAlong` as the orientation pulse, so a
+reader meets one vocabulary for direction instead of two. **Fixed pixels, not a fraction of
+the band**: a fraction would grow the head as the drag went further, and the head is the part
 carrying direction — driven at 61, 125, 200 and 277 px of drag, the head held its size. A band
 shorter than the comet lights all of itself rather than reaching back past the object the drag
 started on. None where the cursor rests on its own source, which points nowhere. The browser
@@ -442,16 +442,22 @@ all. `marker.markerFor` now runs a short lit run along a selected object's own o
 (`SEGMENTS_MARKER_PULSE` points spanning `FRACTION_MARKER_PULSE` of it, one lap per
 `SECONDS_MARKER_PULSE`), and **which way it travels is the orientation**.
 
-The run **tapers**, from `WIDTH_MARKER_PULSE` at its head down `FALLOFF_MARKER_PULSE` to
+The run **tapers**, from `WIDTH_MARKER_COMET` at its head down `FALLOFF_MARKER_COMET` to
 `WIDTH_MARKER` at its tail, so the head reads as the front rather than the run reading as a
 bar. It ends at exactly the outline's own width, which is why the tail needs no cap and no
-alpha ramp: it merges into the line behind it, and only the head is an edge. The three
-constants were chosen from thirteen variants drawn side by side on a plane's circle and a
-line's rails; against 0.09 and 0.13 spans, against 2.8 px and 4.5 px heads, and against 1.6
-and 2.4 falloffs. **Scale caveat, measured and not designed around**: the span is a fraction,
-so the run's length follows the outline it rides — 96 px on a line's rail, 334 px round a
-plane's circle seen close up on a phone, where the specimens judged were ~280 px around. The
-same fraction is a compact comet on one and a long gradient on the other.
+alpha ramp: it merges into the line behind it, and only the head is an edge. The constants
+were chosen from thirteen variants drawn side by side on a plane's circle and a line's rails;
+against 2.8 px and 4.5 px heads, and against 1.6 and 2.4 falloffs.
+
+**The run is `LENGTH_MARKER_COMET` pixels long, not a share of the outline**, and it is walked
+by arc length to make that true. A fraction made the mark's size a property of the thing it
+annotates: measured, 96 px along a line's rail against 334 px round a plane's circle seen
+close up on a phone — a compact comet on one shape and a long gradient on another, from one
+constant. Stepping by *index* rather than by pixels would have left a second version of the
+same fault, since perspective bunches a tilted circle's points on its far side. Both shapes
+now measure 64 px, and so does the drag band's head; `FRACTION_MARKER_PULSE` survives only as
+a cap, for a marker smaller than the run itself, where a fixed length would light most of the
+outline and leave nothing plain to read the lit part against.
 
 That taper is why each run is a **closed outline to fill rather than a path to stroke**: a
 stroke carries one width for its whole length. `ribbonAlong` wraps the sampled spine in both
