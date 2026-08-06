@@ -1,6 +1,6 @@
 ## Test the laws of the frame: validity, naming, keys and reflection.
 
-import std/[options, unittest]
+import std/[options, strutils, unittest]
 
 import ../src/partnerwork/frame
 
@@ -120,3 +120,32 @@ suite "naming":
     check over_left != over_right
     check over_left.position == over_right.position
     check over_left.position == "Left-to-left and Right-to-right"
+
+  test "the short name says everything the long one does, in fewer letters":
+    # It is used where the long name will not fit, so it has to name the frame
+    # on its own: two frames sharing a short name would be two rows of the
+    # matrix a reader could not tell apart.
+    var brieflyNamed: seq[string] = @[]
+    for target in FRAMES:
+      check target.brief.len > 0
+      check target.brief.len <= target.describe.len
+      check target.brief notin brieflyNamed
+      brieflyNamed.add target.brief
+
+  test "a short name keeps the case that says whose hand it is":
+    # The case is the whole of how the two dancers are told apart, and a letter
+    # has a case: an abbreviation that lost it would lose the one thing the
+    # vocabulary cannot say any other way.
+    for side in Side:
+      check briefName(side) == leadName(side)[0 .. 0]
+      check isUpperAscii(briefName(side)[0])
+    for site in Site:
+      check briefName(site) == followName(site)[0 .. 0]
+      check isLowerAscii(briefName(site)[0])
+    for target in FRAMES:
+      if target.countHolds == 0:
+        continue
+      for side in Side:
+        if target.hold[side].isSome:
+          check target.brief.contains(briefName(side))
+          check target.brief.contains(briefName(target.hold[side].get))

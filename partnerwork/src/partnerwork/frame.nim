@@ -222,6 +222,39 @@ func describe*(frame: Frame): string =
       describeConnection(other(first), frame.hold[other(first)].get)
 
 
+func briefName*(side: Side): string = leadName(side)[0 .. 0]
+  ## Abbreviate a hand of the lead to the one letter that says which.
+
+
+func briefName*(site: Site): string = followName(site)[0 .. 0]
+  ## Abbreviate a hand of the follow to the one letter that says which.
+
+
+func brief*(frame: Frame): string =
+  ## Name a frame in as few letters as still say which frame it is.
+  ##
+  ## `Left-to-left over Right-to-right` is the name, and where the name will not
+  ## fit -- down the side of the matrix, across the top of it -- the choice is
+  ## between abbreviating it and wrapping it over three lines.  Wrapped, the
+  ## reader has to parse a paragraph per axis; abbreviated, `L-to-l over R-to-r`
+  ## is read at a glance.
+  ##
+  ## Nothing is lost, because a hand's case is the whole of what says whose it
+  ## is and a letter has a case: `L` is the lead's where `l` is the follow's,
+  ## exactly as the words are.  See `leadName`.
+  case frame.countHolds
+  of 0:
+    "open"
+  of 1:
+    let side = if frame.hold[Side.Left].isSome: Side.Left else: Side.Right
+    briefName(side) & " to " & briefName(frame.hold[side].get)
+  else:
+    let first = if frame.over.isSome: frame.over.get else: Side.Left
+    let joiner = if frame.over.isSome: " over " else: " and "
+    briefName(first) & "-to-" & briefName(frame.hold[first].get) & joiner &
+      briefName(other(first)) & "-to-" & briefName(frame.hold[other(first)].get)
+
+
 func position*(frame: Frame): string =
   ## Name the frame position: which hands hold what, without the order of the arms.
   ##

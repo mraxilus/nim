@@ -265,9 +265,10 @@ func renderKey(): string =
   ## the names, the matrix or the map -- so it is said once, next to the first
   ## drawing they meet, in the fewest words that will do it.
   tag("p", "class=\"key\"",
-    "Seen from above: the lead along the bottom, the follow along the top, and " &
-    "the dashed line between them is the couple's midline. A filled circle is " &
-    "a hand being held; a line with a gap in it passes under the other.")
+    "Seen from above: the lead along the bottom in squares, the follow along " &
+    "the top in circles, and the dashed line between them is the couple's " &
+    "midline. A filled hand is one being held; a line with a gap in it passes " &
+    "under the other.")
 
 
 func renderSpokesView(current: Frame; motion: Motion;
@@ -511,14 +512,20 @@ func renderMatrix(): string =
     tag("span", "class=\"axis\"", "to &rarr;") &
     tag("span", "class=\"axis\"", "from &darr;"))
   for index, target in order:
-    head.add tag("th", "class=\"head" & (if opens[index]: " gap" else: "") & "\"",
-      renderFrame(target) & tag("span", "class=\"who\"", esc(target.describe)))
+    head.add tag("th", "class=\"head" & (if opens[index]: " gap" else: "") &
+      "\" title=\"" & esc(target.describe) & "\"",
+      renderFrame(target) & tag("span", "class=\"who\"", esc(target.brief)))
   var body = ""
   for down, source in order:
     let step = if opens[down]: " top" else: ""
-    # No picture down the side: the column carrying the same frame has one,
-    # and a frame drawn small enough to sit beside a name is a smudge.
-    var row = tag("th", "class=\"row" & step & "\"", esc(source.describe))
+    # The same picture down the side as across the top, so a reader following a
+    # row never has to count columns back to find out what they are reading.
+    # It fits beside the name now that the name is short, and it is legible at
+    # that size now that the lead's hands are squares: whose row is whose is in
+    # the marks, where before it was only in captions too small to read.
+    var row = tag("th", "class=\"row" & step & "\" title=\"" &
+      esc(source.describe) & "\"",
+      tag("span", "class=\"who\"", esc(source.brief)) & renderFrame(source))
     for across, target in order:
       let
         edge = (if opens[across]: " gap" else: "") & step

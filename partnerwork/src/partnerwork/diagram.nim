@@ -12,6 +12,9 @@
 ## a link crosses it is the whole of what `crossed` means, so the picture makes
 ## the distinction visible rather than asking to be read.
 ##
+## The lead's hands are squares and the follow's are circles, so a picture drawn
+## too small for its captions still says which row is whose.
+##
 ## Where both links cross they overlap, and the one underneath is drawn with a
 ## break in it.  A break rather than a masking stroke, because a mask has to know
 ## the colour of the ground it sits on and these pictures are also written out as
@@ -115,15 +118,29 @@ func link(side: Side; site: Site; is_under: bool): string =
     line(at(far, x1, x2), at(far, y1, y2), x2.float, y2.float, style)
 
 
-func hand(point: (int, int); held: Option[Side]): string =
+func hand(point: (int, int); held: Option[Side]; leads: bool): string =
   ## Draw one hand: filled in the colour of the arm holding it, or left open.
+  ##
+  ## The lead's hands are squares and the follow's are circles.  Which row is
+  ## whose was said only by the captions under and over the picture, and those
+  ## are the first thing to go when a frame is drawn small -- down the side of
+  ## the matrix, or as a node on the map, they are a smudge.  Shape survives any
+  ## size, so the picture says it the way the vocabulary does: whose hand it is,
+  ## carried by the mark itself rather than by a word beside it.
   let style =
     if held.isSome:
       "fill: " & colour(held.get) & "; stroke: " & colour(held.get)
     else:
       "fill: none; stroke: " & COLOUR_QUIET
-  "<circle cx=\"" & $point[0] & "\" cy=\"" & $point[1] & "\" r=\"" & $RADIUS &
-    "\" style=\"" & style & "; stroke-width: 1.5\"/>"
+  if leads:
+    # Drawn to the circle's own width, so a square hand and a round one are the
+    # same size on the page rather than the same measurement.
+    "<rect x=\"" & $(point[0] - RADIUS) & "\" y=\"" & $(point[1] - RADIUS) &
+      "\" width=\"" & $(RADIUS * 2) & "\" height=\"" & $(RADIUS * 2) &
+      "\" rx=\"1.5\" style=\"" & style & "; stroke-width: 1.5\"/>"
+  else:
+    "<circle cx=\"" & $point[0] & "\" cy=\"" & $point[1] & "\" r=\"" & $RADIUS &
+      "\" style=\"" & style & "; stroke-width: 1.5\"/>"
 
 
 func caption(x, y: int; text: string): string =
@@ -155,9 +172,9 @@ func frameBody(target: Frame): string =
 
   for side in Side:
     result.add hand(leadPoint(side),
-      if target.hold[side].isSome: some(side) else: none(Side))
+      (if target.hold[side].isSome: some(side) else: none(Side)), leads = true)
   for site in Site:
-    result.add hand(followPoint(site), target.holder(site))
+    result.add hand(followPoint(site), target.holder(site), leads = false)
 
   result.add caption(LEFT_X, CAPTION_TOP_Y, "right")
   result.add caption(RIGHT_X, CAPTION_TOP_Y, "left")

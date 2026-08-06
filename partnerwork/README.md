@@ -49,8 +49,12 @@ it. **Dance** walks the state machine. **Matrix** is every move there is at once
 which is the thing you consult once you know what a frame is rather than the
 thing you meet first.
 
-The matrix is drawn rather than tabulated. Its axes carry the frames' pictures,
-so the vocabulary can be checked rather than trusted; a cell carries the move's
+The matrix is drawn rather than tabulated. Both axes carry the frames' pictures,
+the same size down the side as across the top, so that following a row and
+reading a column are the same act of recognition and the vocabulary can be
+checked rather than trusted. The names beside them are abbreviated — `L-to-l
+over R-to-r` — which loses nothing, because a hand's case is the whole of what
+says whose it is and a letter has a case. A cell carries the move's
 direction as a mark and the lead's arm as its ink, which is what the map says
 and how it says it. Both axes run down the tower, taking their order from the
 drawing that owns it (`towerOrder`), so reading the matrix top to bottom and
@@ -73,6 +77,13 @@ frame in the middle and every way out of it as a spoke, and nothing else — tak
 a spoke and the drawing recentres on it. **Overview** is the whole ontology with
 the couple standing somewhere in it, every line named, and the frames within
 reach brought forward while the rest go quiet.
+
+In a picture of a frame the lead's hands are squares and the follow's are
+circles. Which row is whose used to be said only by the captions over and under
+the picture, and those are the first thing to go when a frame is drawn small —
+as a node on the map, or down the side of the matrix. A shape survives any size,
+so the picture says whose hand it is the way the vocabulary does: by the mark
+itself rather than by a word beside it.
 
 A line's ink is the arm that acts as you travel along it. For a primitive that
 is one arm whichever way you read it, so the line has one ink; a compound hands
