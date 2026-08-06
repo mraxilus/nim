@@ -44,8 +44,14 @@ type
 
 
 func startFrame(): Frame =
-  ## Get the frame the page opens in: the plain one-hand hold.
-  fromKey("r-.").get
+  ## Get the frame the dance opens in: nothing held.
+  ##
+  ## Where a couple starts, and the one frame nothing has to lead up to.  A
+  ## reader who opens the Dance view without first picking a frame in the atlas
+  ## used to be put down in a one-hand hold, in the middle of the ontology, with
+  ## no account of how they got there.  From here every way out is a collect,
+  ## which is the ladder seen from the bottom of it.
+  fromKey("--.").get
 
 
 var
@@ -53,6 +59,7 @@ var
   current = startFrame()
   view = View.Atlas
   vis = Vis.Dynamic
+  visChosen = false        ## Whether the reader has picked a drawing themselves.
   filter = Filter()
   history: seq[Step] = @[]
   motion = Motion.Still     ## What the drawings are doing at this instant.
@@ -125,6 +132,55 @@ proc atOnce(): bool =
   ## animation that is not running: every phase collapses into the one change of
   ## state that the phases were spelling out.
   window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+
+proc roomForMap(): bool =
+  ## Test whether the screen has room to draw the map at a legible size.
+  ##
+  ## Asked of the stylesheet rather than answered here.  Which widths are wide
+  ## is a question about the layout, and the layout is written there: the answer
+  ## is the map's own least width plus the margins the page is laid out with,
+  ## and a copy of that sum kept in the script would be a second thing to change
+  ## and a second thing to get wrong.  This is the mirror of `motion.nim`, which
+  ## owns the times and writes them out for the stylesheet to spend.
+  ($window.getComputedStyle(document.documentElement)
+    .getPropertyValue("--wide")).strip() == "1"
+
+
+proc setScrollLeft(e: Node; value: int) {.importcpp: "#.scrollLeft = #", nodecl.}
+  ## Set how far a scrolling box is scrolled; `std/dom` only reads it.
+
+
+proc centreOnHeld() =
+  ## Slide the close drawing so the frame being held is the part you can see.
+  ##
+  ## The drawing is cut to the frame, and the widest frame is wider than a
+  ## phone: `open` fans four ways out and wants 728 pixels.  Left where the
+  ## browser puts a scrolling box, a narrow screen shows the left edge of that
+  ## fan and not the frame the whole view is about.  Nothing is unreachable
+  ## either way -- every way out is a button in the list beside the drawing --
+  ## so this is only about what you are looking at when you arrive.
+  let
+    scroller = document.querySelector(".view-spokes .scroll")
+    held = document.querySelector(".view-spokes .core")
+  if scroller == nil or held == nil:
+    return
+  let
+    room = scroller.getBoundingClientRect()
+    on = held.getBoundingClientRect()
+    off = (on.left + on.width / 2) - (room.left + room.width / 2)
+  setScrollLeft(scroller, scroller.scrollLeft + int(off))
+
+
+proc suitVis() =
+  ## Open in whichever drawing the screen has room for.
+  ##
+  ## The map says more and only wants width; the close drawing is the one that
+  ## survives a phone.  So the page follows the screen -- and stops the moment
+  ## the reader picks a drawing, because a choice made is worth more than a
+  ## default, and a window dragged narrower should not take it back.
+  if not visChosen:
+    vis = if roomForMap(): Vis.Overview else: Vis.Dynamic
 
 
 
@@ -590,6 +646,7 @@ proc paintStage() =
   let held = holding()
   stage.innerHTML = cstring(renderStageBody(current, vis, motion, taken))
   standAgain(held)
+  centreOnHeld()
 
 
 proc render() =
@@ -602,6 +659,7 @@ proc render() =
   let held = holding()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   standAgain(held)
+  centreOnHeld()
 
 
 proc arrive(target: Frame) =
@@ -756,6 +814,7 @@ proc handle(event: Event) =
     for candidate in Vis:
       if $candidate == value:
         vis = candidate
+        visChosen = true
   of "holds":
     filter.holds = none(int)
     for count in 0 .. 2:
@@ -784,6 +843,22 @@ proc handle(event: Event) =
   render()
 
 
+proc reflow(event: Event) =
+  ## Follow the screen when it changes size, while the reader has not chosen.
+  ##
+  ## Only when the drawing would actually change.  The event arrives on every
+  ## pixel of a drag, and rebuilding the page on each one would take the focus
+  ## ring off whatever the reader was standing on and tear any move that was
+  ## halfway through being told.
+  let showing = vis
+  suitVis()
+  if vis != showing:
+    rest()
+    render()
+
+
 when isMainModule:
   document.addEventListener("click", handle)
+  window.addEventListener("resize", reflow)
+  suitVis()
   render()

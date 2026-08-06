@@ -72,11 +72,28 @@ It is a finding about a document rather than a fact about two bodies, it does no
 change as you dance, and it wants reading rather than clicking through: it lives
 in `doc/review.html` and in `nimble audit`.
 
-The Dance view draws the frame two ways, one at a time. **Dynamic** puts the
-frame in the middle and every way out of it as a spoke, and nothing else — take
-a spoke and the drawing recentres on it. **Overview** is the whole ontology with
-the couple standing somewhere in it, every line named, and the frames within
-reach brought forward while the rest go quiet.
+The Dance view starts at `open`, which is where a couple starts and the one
+frame nothing has to lead up to: from there every way out is a collect, which is
+the ladder seen from the bottom of it.
+
+It draws the frame two ways, one at a time. **Dynamic** puts the frame in the
+middle and every way out of it as a spoke, and nothing else — take a spoke and
+the drawing recentres on it. **Overview** is the whole ontology with the couple
+standing somewhere in it, every line named, and the frames within reach brought
+forward while the rest go quiet.
+
+Which one you get is whichever the screen has room for: the map says more and
+only wants width, the close drawing is the one that survives a phone. The page
+keeps following the screen until you pick a drawing, and then leaves your choice
+alone — a window dragged narrower should not take it back. The threshold is the
+map's own least width plus the page's margins, and it is written once, in the
+stylesheet, as `--wide`: which widths are wide is a question about the layout,
+so the script asks the layout rather than keeping a second copy of the number.
+
+The close drawing is cut to the frame, and the widest frame is wider than a
+phone — `open` fans four ways out and wants 728 pixels. It scrolls, and it opens
+scrolled to the frame being held rather than to the left edge of the fan. Every
+way out is still a button in the list beside it, so nothing is out of reach.
 
 In a picture of a frame the lead's hands are squares and the follow's are
 circles. Which row is whose used to be said only by the captions over and under

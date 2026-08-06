@@ -23,7 +23,15 @@
   --ease-in: cubic-bezier(.55, 0, 1, .45);
   --ease-out: cubic-bezier(0, .6, .3, 1);
   --ease-soft: cubic-bezier(.4, 0, .2, 1);
+  /* Whether there is room to draw the map at the least width it stays legible
+     at.  That is the 620px `.map` will not go below, plus the 1.25rem the body
+     is inset by and the 1rem the panel is padded by, on each side.  The page
+     reads this to pick which drawing to open on, rather than keeping a second
+     copy of the number: which widths are wide is a question about the layout,
+     and the layout is written here. */
+  --wide: 0;
 }
+@media (min-width: 700px) { :root { --wide: 1; } }
 @media (prefers-color-scheme: dark) {
   :root {
     --page: #16151a;
@@ -224,6 +232,8 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 /* The map has every frame in place already, so a move is only the mark going
    from one to another and what is within reach of it changing as it goes.
    Nothing is built and nothing is torn down, which is why it is quick. */
+/* The least width the names on the map stay readable at; `--wide` is this plus
+   the page's margins, and is what decides whether the map is worth opening on. */
 .map { width: 100%; min-width: 620px; height: auto; display: block; }
 /* Quiet is put on the ink, never on the group. A group carries its own plates,
    and a plate at 40% stops hiding what it is there to hide: the lines under a
