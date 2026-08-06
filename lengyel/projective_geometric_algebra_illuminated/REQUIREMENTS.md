@@ -310,8 +310,9 @@ axis`. Requirements behind this shape:
 **Plane.** A solid rim plus a flat translucent fill (alpha 0.16) bounded by that rim. No
 crosshair, no ruled grid, no anchor marker. Flat rather than fading, because the rim already
 marks the boundary. Fixed radius 8 world units around the plane's anchor — **not**
-camera-distance scaled, which visibly resizes a plane as the camera orbits. The normal draws
-as a bare shaft at 0.25 × extent, no tip.
+camera-distance scaled, which visibly resizes a plane as the camera orbits. **No normal is
+drawn.** Orientation belongs on the selection marker, not on every plane in the scene at once
+— see §11.
 
 The drawn radius is a **rendering choice only**. Every construction path reads the full
 untruncated multivector, so a meet lands correctly arbitrarily far outside the drawn disc.
@@ -532,6 +533,26 @@ having been told about it does not count as reachable, however few keystrokes it
 known. Every gesture here either shows what it will do before it commits, or offers a menu
 that names the alternatives — and a gesture that can build something must have a route to
 the operations it cannot build, or it is a dead end.
+
+**A drag must say which way round it is.** `a ∨ b` and `b ∨ a` are different operations, so a
+bare line between two objects is ambiguous about the very thing the gesture decides. Put a
+head on it, at the end where the answer lands.
+
+**Orientation is stated about the object being asked about, not about every object at once.**
+A permanent mark on every plane is clutter answering a question a reader has about one thing
+at a time. State it on the selection marker instead, as the direction a pulse travels round
+that marker's own outline — and let the *projection* decide which way that reads, so it
+reverses as the camera crosses a plane rather than being computed. Shapes with no orientation
+to state get no pulse: a point either way, and a plane at horizon, which carries no normal at
+all. Selection only — hover keeps a still outline, so motion means selected rather than merely
+under the cursor.
+
+**A swell that hides under a finger must outlast the gesture, not the animation.** A marker
+swollen clear of a fingertip has to stay clear for as long as that finger is down, however
+long that is, and settle only once it lifts — otherwise it is back to its true size at exactly
+the moment the reader is deciding. That makes the swell four phases on its own clock (grow,
+fill, hold, settle) rather than a function of how far the fill has run, and it means the
+swollen marker must keep being drawn after its object is selected.
 
 **The written help is read one line at a time, so every line must survive being read alone.**
 A reader opens a tab, finds the line they need, and leaves; they do not read the tab. So no

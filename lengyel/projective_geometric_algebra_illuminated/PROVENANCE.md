@@ -198,8 +198,10 @@ Geometry And Drawing
 `ALPHA_WASH` = 0.16) bounded by that rim; no crosshair, no ruled grid, no anchor marker.
 Flat rather than fading because the rim already marks the boundary. Fixed radius
 `EXTENT_PLANE` = 8 world units around the plane's support/anchor — **not** camera-distance
-scaled, which visibly resizes a plane as the camera orbits. Normal drawn as a bare shaft,
-`FRACTION_NORMAL_SHAFT` (0.25) × extent, no tip marker.
+scaled, which visibly resizes a plane as the camera orbits. **No normal drawn**: a bare
+shaft at 0.25 × extent used to mark one on every plane in the scene, permanently, to answer
+a question a reader asks about one object at a time. Orientation moved onto the selection
+marker's own pulse instead (see Selection).
 
 The drawn radius is a rendering choice only: `EXTENT_PLANE` appears in `mesh.nim` (drawing)
 and `picking.nim` (click bound) and nowhere else — every construction path reads the full
@@ -390,19 +392,78 @@ lies *on* that edge by construction. Measured in a 900×800 view: 68 points, rad
 quarters, and 394.0–593.6 px with all 68 on the edge when finished — read back off the live
 `<polygon>` the browser overlay strokes, not off the core alone.
 
-**On touch every marker swells clear of the finger** partway through a hold and settles back
-exactly (`clearanceTouch`): a fingertip covers what it presses, so a marker filling underneath
-one says nothing to the person filling it. 54.5 px, added rather than multiplied so one number
-means the same on a point's 10.5 px ring and on a plane's rim hundreds of pixels across; it
-takes the ring to a **130-pixel circle**, about twice a thumb's contact patch, so the halo
-stands outside the hand rather than at its edge. Zero at both ends of the hold, so a finished
-marker is the same outline whichever pointer produced it, and zero throughout for a mouse,
-which hides nothing. It was 24 px, sized against a 44-pixel *minimum* touch target and
+**On touch every marker swells clear of the finger** (`clearanceTouch`): a fingertip covers
+what it presses, so a marker filling underneath one says nothing to the person filling it.
+54.5 px, added rather than multiplied so one number means the same on a point's 10.5 px ring
+and on a plane's rim hundreds of pixels across; it takes the ring to a **130-pixel circle**,
+about twice a thumb's contact patch, so the halo stands outside the hand rather than at its
+edge. Zero throughout for a mouse, which hides nothing.
+
+**The swell runs on its own clock, in four phases** (`interaction.swellHold`): it grows over
+`SECONDS_SWELL_GROW` (0.12 s), sits at full through the whole fill, **stays there for as long
+as the finger is down past maturity**, and settles over `SECONDS_SWELL_SHRINK` (0.15 s) once
+the finger lifts. Only the middle two phases have anything to do with the fill. It was a half
+sine over the fill instead, which put the marker back at its true size at exactly the moment
+the selection landed — shrinking while the reader was still deciding, and gone when it
+mattered. `progressHold` now starts *after* the grow, so the marker is already at the size it
+will fill at before it begins filling and the fill keeps its whole half second; a press is
+0.62 s end to end rather than 0.50. Measured on a Pixel 5 in CSS pixels, sampled against the
+real clock: 10.5 → 58.2 → 65.0 through the grow with the fill still at 0, flat 65.0 across the
+fill, still 65.0 at 2 s and 10 s past maturity with the item already selected, then 64.9 →
+17.3 → 10.5 through the settle.
+
+That last property forces a rule the overlay breaks nowhere else: **the swollen marker is
+drawn even once its slot is selected**, and the plain selected marker for that slot is
+skipped. The plain one is the very size the swell is animating away from, so drawing it too
+would snap the outline at the moment the selection lands. The browser therefore keeps the hold
+past maturity rather than cancelling it, and retires it only once `isHoldSpent` says the
+settle is over. `cancelHold` still snaps away without settling — that is a press which
+*stopped* being one (moved into a camera gesture, a second finger, escape), and there is
+nothing left for a settle to be about. `isHoldSpent` is stated against `swellHold` rather than
+against the shrink duration a second time, which is `isHoldMature`'s own rule and necessary
+here: subtracting two large timestamps measured 0.14999999999997 against a 0.15 s shrink.
+
+**A drag band carries an arrowhead** (`marker.arrowheadFor`), because a drag is not symmetric
+— `a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical.
+Barb-tip-barb at the end where the answer lands, open rather than filled so it wears the
+band's own weight: solid at this size is a blob, and one large enough not to be is larger than
+the objects it points at. None where the cursor rests on its own source, which points nowhere.
+The browser aims it from the *core's* cursor rather than the one the presentation layer holds
+— both come from the same pointer events, but only one can be the answer.
+
+**Orientation is a pulse travelling round the selection marker, and the shaft is gone.** A
+plane used to draw a bare normal shaft out of its anchor, *always*, on every plane in the
+scene, to answer a question a reader asks about one object at a time; a line had nothing at
+all. `marker.markerFor` now runs a short lit run along a selected object's own outline
+(`SEGMENTS_MARKER_PULSE` points spanning `FRACTION_MARKER_PULSE` of it, one lap per
+`SECONDS_MARKER_PULSE`), and **which way it travels is the orientation**.
+
+Nothing computes that sense. A plane's loop is generated around the plane's own frame, so the
+*projection* decides whether that order comes out clockwise or anticlockwise, and the pulse
+reverses of its own accord as the camera crosses the plane. Measured by orbiting past
+`ground` and taking the sign of the swept angle about the outline's centre: +74,393 from
+above, −82,167 from below. A line's rails pulse *along*, mirrored on the half stored running
+against the line, so both halves travel the line's own way rather than outward from the
+support in opposite directions — measured, all four rails at −23°. A horizon line's bands
+pulse round both, sense from the great circle's own normal.
+
+Two shapes get none. A point has no orientation, and its ring's sweep already means something
+else. **A plane at horizon has none either**, which was probed rather than assumed: `frame`,
+`directionNormal` and `direction` all report nothing for one, and negating it changes none of
+that, so there is no sense for a pulse to carry. Only a caller passing a time gets a pulse at
+all, which is how "selected" is said — hover and keyboard focus wear the same marker standing
+still, so motion means selected rather than merely under the cursor.
+
+The pulse crosses to the browser as `nimSelectionPulse`, its own call rather than a tail on
+`nimSelectionMarker`, whose format promises the points are "whatever is left"; appending a
+second array behind them would make that false for every kind at once. It costs shaping a
+selected item's marker twice, a few dozen projections against a whole frame of mesh.
+
+`CLEARANCE_MARKER_TOUCH` was 24 px, sized against a 44-pixel *minimum* touch target and
 reported here as clearing a fingertip; it did not, and the correction came from a thumb rather
 than from the suite. The measurement behind the old number compared framebuffer pixels against
 a CSS-pixel target — see the two-layer rule below, which had to be fixed before "bigger" meant
-anything stable. Measured after both changes on a Pixel 5 (ratio 2.5), in CSS pixels:
-10.5 → 49.0 → **65.0** → 49.0 → 10.5 across the hold, flat at 10.5 for a mouse.
+anything stable.
 
 All three keep the same clearance, `GAP_MARKER` = 6.0 px, between the object's own drawn
 edge and the marker, measured out from the size that object is actually drawn at. That is
