@@ -45,11 +45,30 @@ suite "the layout":
       for b in FRAMES:
         check (centreOf(a)[1] == centreOf(b)[1]) == (a.countHolds == b.countHolds)
 
-  test "a move always runs down the page, from fewer connections to more":
+  test "a move always runs up the page, from fewer connections to more":
+    # Which is the whole of what the rows buy: a reader who knows which way is
+    # up knows which primitive a line is without reading its name.
     for source in FRAMES:
       for move in moves(source):
         let rising = move.helper == Helper.Collect
-        check (centreOf(move.to)[1] > centreOf(source)[1]) == rising
+        check (centreOf(move.to)[1] < centreOf(source)[1]) == rising
+
+  test "open is at the foot of the tower and the fullest frames at its head":
+    for target in FRAMES:
+      for other in FRAMES:
+        if target.countHolds < other.countHolds:
+          check centreOf(target)[1] > centreOf(other)[1]
+
+  test "the order the tower stacks the frames is the order it draws them in":
+    # Anything that puts the frames in a line -- the matrix orders both its axes
+    # this way -- takes the order from here, so it cannot drift from the drawing
+    # and leave the two saying opposite things about which way the ladder runs.
+    let order = towerOrder()
+    check order.len == FRAMES.len
+    for target in FRAMES:
+      check target in order
+    for index in 1 ..< order.len:
+      check centreOf(order[index - 1])[1] <= centreOf(order[index])[1]
 
 
 suite "the drawing":
@@ -65,8 +84,28 @@ suite "the drawing":
     # a pair too, but is drawn in halves, because the two moves it stands for
     # are led by different arms and each half is inked for its own.
     check picture.count("<line class=\"edge") == moved div 2
-    check picture.count("<g class=\"join") == joined div 2
     check picture.count("<path class=\"arc") == joined
+    # One group of ink and one of words for each, wearing the same marks, so
+    # that dimming and lighting still take them as one thing.
+    check picture.count("<g class=\"join\"") + picture.count("<g class=\"join ") -
+      picture.count("<g class=\"join naming") == joined div 2
+    check picture.count("<g class=\"join naming") == joined div 2
+    check picture.count("<g class=\"way naming") == moved div 2
+
+  test "every line is drawn before any name is written":
+    # A name carries a plate to keep the drawing out from under it, and a plate
+    # can only hide what is already there.  Written as each line was drawn, a
+    # name was struck through by the next line to cross it, which is a wrong
+    # drawing rather than an ugly one: the reader is told the wrong move.
+    for standing in FRAMES:
+      let picture = renderMap(some(standing))
+      var lastInk = 0
+      for mark in ["<line class=\"edge", "<path class=\"arc"]:
+        lastInk = max(lastInk, picture.rfind(mark))
+      var firstName = picture.len
+      for mark in ["<g class=\"way naming", "<g class=\"join naming"]:
+        firstName = min(firstName, picture.find(mark))
+      check lastInk < firstName
 
   test "every frame is drawn, with its name":
     let picture = renderMap(none(Frame))

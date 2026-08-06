@@ -5,8 +5,8 @@
 ## spoke: nothing else is drawn, because everything else is a distraction from
 ## the one decision being made.
 ##
-## The spokes keep the map's sense of direction.  A `drop` releases a hand, so it
-## points up; a `collect` takes one, so it points down; a compound is two moves
+## The spokes keep the map's sense of direction.  A `collect` takes a hand, so it
+## points up; a `drop` releases one, so it points down; a compound is two moves
 ## and goes out to the side.  A dancer who has read one drawing can read the
 ## other.
 ##
@@ -17,7 +17,7 @@
 ## Every frame is drawn in one fixed space, so a coordinate means the same place
 ## whichever frame is held, and a node can travel from where it was to where it
 ## is.  What changes between frames is the *window* on that space, cut to what
-## that frame needs: a frame whose ways out all point down has nothing above it
+## that frame needs: a frame whose ways out all point up has nothing below it
 ## and is seen through a shorter window than one with ways out both ways.  The
 ## window and the drawing behind it move together, which is what makes a change
 ## of frame one movement rather than a cut.
@@ -57,8 +57,8 @@ const
   ## that leads there.  Along the line, four names leaving one middle crowd each
   ## other however far out they are put; under the frames, they are as far apart
   ## as the frames are.
-  UP = 270.0        ## Direction a drop points, in degrees clockwise from east.
-  DOWN = 90.0       ## Direction a collect points.
+  UP = 270.0        ## Direction a collect points, in degrees clockwise from east.
+  DOWN = 90.0       ## Direction a drop points.
   ASIDE = 0.0       ## Direction a compound points.
 
 
@@ -136,9 +136,9 @@ type
 func spokesOf*(here: Frame): seq[Spoke] =
   ## Get every way out of a frame, in the order they are drawn.
   ##
-  ## Drops, then collects, then compounds: the order the eye reads them in, up
+  ## Collects, then drops, then compounds: the order the eye reads them in, up
   ## the page and then down it and then out to the side.
-  for helper in [Helper.Drop, Helper.Collect]:
+  for helper in [Helper.Collect, Helper.Drop]:
     var kin: seq[Spoke] = @[]
     for move in moves(here):
       if move.helper != helper:
@@ -151,7 +151,7 @@ func spokesOf*(here: Frame): seq[Spoke] =
       )
     # A crowded fan reaches further out, so that its spokes end up as far apart
     # as a pair of them would be.
-    let base = if helper == Helper.Drop: UP else: DOWN
+    let base = if helper == Helper.Collect: UP else: DOWN
     for index, spoke in kin:
       var placed = spoke
       placed.angle = base + (index.float - (kin.len - 1).float / 2) * SPOKE_STEP
@@ -242,8 +242,8 @@ func naming(x, y: int; lines: seq[string]; colour: string): string =
 func extentOf(here: Frame): (int, int, int, int) =
   ## Get the box one frame's drawing needs, and no more.
   ##
-  ## A frame with only collects has nothing above it and a frame with only drops
-  ## has nothing below, so the box that holds one frame is not the box that holds
+  ## A frame with only collects has nothing below it and a frame with only drops
+  ## has nothing above, so the box that holds one frame is not the box that holds
   ## another.  This is what the window is cut to; it is not what the frame is
   ## drawn in.
   const PAD = 14
@@ -298,8 +298,8 @@ const MIDDLE* = (CENTRE_X, CENTRE_Y)
 func windowOf*(here: Frame): (int, int, int, int) =
   ## Get the window one frame is seen through: exactly what that frame needs.
   ##
-  ## A frame with only collects has nothing above it, so a window that reserved
-  ## room above would be mostly empty.  The window is cut to the drawing and the
+  ## A frame with only collects has nothing below it, so a window that reserved
+  ## room below would be mostly empty.  The window is cut to the drawing and the
   ## drawing slides under it, which is why both have to move together.
   extentOf(here)
 

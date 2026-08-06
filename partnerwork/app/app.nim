@@ -276,8 +276,8 @@ func renderSpokesView(current: Frame; motion: Motion;
   tag("div", "class=\"view-spokes\"",
     tag("div", "class=\"scroll\"", renderSpokes(current, motion, taken)) &
     tag("p", "class=\"note\"", "The frame in the middle is the one being held. " &
-      "Every spoke is a way out of it and nothing else is drawn. A drop " &
-      "releases a hand so it points up, a collect takes one so it points down, " &
+      "Every spoke is a way out of it and nothing else is drawn. A collect " &
+      "takes a hand so it points up, a drop releases one so it points down, " &
       "and a compound is two moves so it goes out to the side, inked in both " &
       "the arms it hands a hand between. Take a spoke and it becomes the " &
       "middle."))
@@ -288,10 +288,10 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
   tag("div", "class=\"view-map\"",
     tag("div", "class=\"scroll\"", renderMap(some(current), motion, taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
-      "above, so a line down the page is a collect and a line up is a drop. " &
+      "below, so a line up the page is a collect and a line down is a drop. " &
       "A line you are standing on is named for the move away from you, which is " &
       "the one you could make; a line you are not is named for the move that " &
-      "runs down it. A dashed curve is a compound, and is inked in both " &
+      "runs up it. A dashed curve is a compound, and is inked in both " &
       "arms because it hands a hand from one of them to the other: the ink at " &
       "each end is the arm that acts on the way to it. The frames you can " &
       "reach from where you stand come forward and the rest go quiet, and the " &
@@ -401,18 +401,15 @@ func renderGallery(narrowing: Filter): string =
 #[ Matrix View ]#
 
 const
-  MOST_HOLDS = ord(Side.high) + 1
-    ## A frame holds at most one connection per hand of the lead, and that is
-    ## what bounds the ladder the matrix is ordered along.
   HELPER_GLYPHS: array[Helper, string] = [
-    Helper.Collect: "&darr;",
-    Helper.Drop: "&uarr;",
+    Helper.Collect: "&uarr;",
+    Helper.Drop: "&darr;",
   ] ## Point a primitive the way every other drawing points it.
     ##
     ## A collect adds a connection and a drop takes one away, and both the map
-    ## and the close drawing say that by direction: down the page for a collect,
-    ## up for a drop.  A cell that said `c` and `d` made the reader learn the
-    ## same fact a second way.
+    ## and the close drawing say that by direction: up the page for a collect,
+    ## since a collect builds the frame up, and down for a drop.  A cell that
+    ## said `c` and `d` made the reader learn the same fact a second way.
   COMPOUND_GLYPHS: array[Compound, string] = [
     Compound.Place: "&#8644;",
     Compound.Cut: "&times;",
@@ -433,22 +430,6 @@ func cell(classes, tone, told, body: string): string =
   ## states the stylesheet has to enumerate.
   tag("td", "class=\"" & classes & "\" style=\"--tone: " & tone & "\"" &
     (if told.len > 0: " title=\"" & esc(told) & "\"" else: ""), body)
-
-
-func laddered(): seq[Frame] =
-  ## Order the frames by how many connections they hold, fewest first.
-  ##
-  ## `FRAMES` is in the order the frames are built, which puts the matrix's
-  ## marks where no pattern can be read off them.  Along the ladder every
-  ## collect runs from a row to a column further along it and every drop runs
-  ## back, so the two primitives fall either side of the diagonal and the
-  ## compounds -- which change what holds without changing how much -- fall in
-  ## the blocks on it.  The structure is then in the picture rather than in the
-  ## paragraph under it.
-  for count in 0 .. MOST_HOLDS:
-    for target in FRAMES:
-      if target.countHolds == count:
-        result.add target
 
 
 func renderMark(kind, tone, glyph: string): string =
@@ -508,13 +489,21 @@ func renderMatrix(): string =
   ## is half the chart saying nothing; it now carries how many moves apart the
   ## two frames are, which is the question a blank cell provokes.
   ##
+  ## Both axes run down the tower, taking their order from the drawing that owns
+  ## it, so that reading the matrix top to bottom and reading the map top to
+  ## bottom are the same reading.  Down the tower every collect runs from a row
+  ## to a column *earlier* than it and every drop the other way, so the two
+  ## primitives fall either side of the diagonal and the compounds -- which
+  ## change what is held without changing how much -- fall in the blocks on it.
+  ## The structure is then in the picture rather than in the paragraph under it.
+  ##
   ## What the source spreadsheet has and has not got is not marked here.  Which
   ## cells its author has filled in is a fact about a document being written, not
   ## about two bodies, and the app is the ontology: `doc/review.html` says it, at
   ## length and in order, which is how it wants to be read.
-  let order = laddered()
-  # A band opens wherever the ladder steps up, and the gap that marks it has to
-  # fall in the same place down the rows as it does across the columns.
+  let order = towerOrder()
+  # A band opens wherever the tower steps down a row, and the gap that marks it
+  # has to fall in the same place down the rows as it does across the columns.
   var opens: seq[bool] = @[]
   for index, target in order:
     opens.add index > 0 and order[index - 1].countHolds != target.countHolds
@@ -562,8 +551,9 @@ func renderMatrix(): string =
           tag("thead", "", tag("tr", "", head)) & tag("tbody", "", body))) &
       tag("p", "class=\"note\"", "A cell is the move from its row to its " &
         "column, inked in the arm of the lead that dances it. The frames are " &
-        "ordered by how many connections they hold, so every collect falls " &
-        "above the diagonal and every drop below it, and the compounds &mdash; " &
+        "ordered down the tower, the same way the map stacks them, so every " &
+        "collect falls below the diagonal and every drop above it, and the " &
+        "compounds &mdash; " &
         "which change what is held without changing how much &mdash; fall in " &
         "the blocks along it. A faded number is a pair no single move joins, " &
         "and is how far apart they are.")))

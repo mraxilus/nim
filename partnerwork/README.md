@@ -15,12 +15,15 @@ else — the names, the routes, the audit of the source workbook, the browser ap
 — is derived from those two things.
 
 ```
-open ── collect ──> Left to left ── collect ──> Left-to-left over Right-to-right
-                          │                              │
-                        pass                            cut
-                          v                              v
                    Right to left               Right-to-right over Left-to-left
+                          ^                              ^
+                        pass                            cut
+                          │                              │
+open ── collect ──> Left to left ── collect ──> Left-to-left over Right-to-right
 ```
+
+The drawings stack this as a tower: `open` at the foot, both hands held at the
+head, so a collect climbs and a drop falls.
 
 
 ## The app
@@ -49,14 +52,16 @@ thing you meet first.
 The matrix is drawn rather than tabulated. Its axes carry the frames' pictures,
 so the vocabulary can be checked rather than trusted; a cell carries the move's
 direction as a mark and the lead's arm as its ink, which is what the map says
-and how it says it. The frames are ordered by how many connections they hold, so
-every collect falls above the diagonal and every drop below it, and the two
-compounds — which change what is held without changing how much — fall in the
-blocks along it: the structure is in the picture rather than in the paragraph
-under it. A pair no single move joins used to be a blank cell, which is half the
-chart saying nothing; it now carries how far apart the two frames are. There is
-no grid, and what ruled lines were for — knowing which column you are in — is
-done by lighting the row and column under the pointer instead.
+and how it says it. Both axes run down the tower, taking their order from the
+drawing that owns it (`towerOrder`), so reading the matrix top to bottom and
+reading the map top to bottom are the same reading. Every collect then falls
+below the diagonal and every drop above it, and the two compounds — which change
+what is held without changing how much — fall in the blocks along it: the
+structure is in the picture rather than in the paragraph under it. A pair no
+single move joins used to be a blank cell, which is half the chart saying
+nothing; it now carries how far apart the two frames are. There is no grid, and
+what ruled lines were for — knowing which column you are in — is done by lighting
+the row and column under the pointer instead.
 
 What the model has to say about the spreadsheet is deliberately not in the app.
 It is a finding about a document rather than a fact about two bodies, it does not
@@ -75,6 +80,13 @@ the follow's hand from one of the lead's arms to the other, so it is drawn in
 halves, each in the ink of the arm that acts on the way into it, and stays
 dashed because it is still two moves. That is what lets a move be named
 `collect left` or `place left` and still say which of the lead's arms does it.
+
+Every line on the map goes down before a single word does. A name carries a plate
+to keep the drawing out from under it, and a plate can only hide what is already
+there: written as each line was drawn, a name was struck through by the next line
+to cross it, which is a wrong drawing rather than an ugly one — the reader is
+told the wrong move. The names are still *placed* in the other order, curves
+first, because a curve has only the one place it can be named.
 
 Both drawings say a move the same way — the mark passes along the line to the
 frame chosen — and each takes its own time over it. The close drawing has to clear the

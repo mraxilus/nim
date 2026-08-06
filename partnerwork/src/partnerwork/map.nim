@@ -2,10 +2,15 @@
 ## the ways between them.
 ##
 ## The graph is laid out in rows by how many connections a frame carries, which
-## makes the direction of a move readable from the drawing alone: every step down
-## the page adds a connection and is a `collect`, every step up releases one and
-## is a `drop`.  So an edge needs to say only which arm acts, and the row it
+## makes the direction of a move readable from the drawing alone: every step up
+## the page adds a connection and is a `collect`, every step down releases one
+## and is a `drop`.  So an edge needs to say only which arm acts, and the row it
 ## moves between says the rest.
+##
+## `open` is at the bottom and the two-handed frames are at the top, because a
+## collect builds the frame up and a drop lets it fall.  The rows are a tower
+## rather than a list, and the whole page keeps that sense: the close drawing
+## points its ways out the same way, and the matrix orders its axes down it.
 ##
 ## Each edge stands for the pair of moves that cross it, because every move
 ## reverses.  Twenty moves are ten lines.  The compounds are drawn too, dashed
@@ -27,9 +32,17 @@ import ./transition
 
 const
   MAP_WIDTH* = 780
-  MAP_HEIGHT* = 640
+  MAP_HEIGHT* = 570
+    ## Measured, not chosen: the tallest the drawing gets in any of the states
+    ## it can be read in.  The compounds hang below their own row, and the row
+    ## that has none of them is now the bottom one, so turning the tower up the
+    ## right way left the old height carrying eighty pixels of nothing.
   MARGIN = 44
-  ROW_Y = [70, 265, 510] ## Row for each number of connections a frame can carry.
+  ROW_Y = [510, 265, 70]
+    ## Row for each number of connections a frame can carry.
+    ##
+    ## Descending, because the tower is built upwards: hold nothing and you are
+    ## at the bottom, hold both hands and you are at the top.
   NODE_WIDTH* = 74
   NAME_RISE = 12 ## Distance from the top of a picture up to its name.
   ARC_DIP = 100  ## How far a compound curve hangs below the row it joins.
@@ -46,6 +59,21 @@ const NODE_ORDER* = ["--.", "-r.", "l-.", "-l.", "r-.", "lrL", "lrR", "rl."]
 
 func rowOf(target: Frame): int = target.countHolds
   ## Get the row a frame is drawn in.
+
+
+func towerOrder*(): seq[Frame] =
+  ## Get every frame in the order the tower stacks them, top row first.
+  ##
+  ## Here rather than where it is read, because where a frame goes is what this
+  ## module already decides, for `NODE_ORDER` and `rowOf` alike.  Anything else
+  ## that puts the frames in order -- the matrix orders both its axes down the
+  ## tower, so that reading it and reading the map are the same reading -- takes
+  ## the order from here and cannot drift from the drawing.
+  for row in countdown(ROW_Y.high, 0):
+    for key in NODE_ORDER:
+      let candidate = fromKey(key)
+      if candidate.isSome and rowOf(candidate.get) == row:
+        result.add candidate.get
 
 
 func placeOf(target: Frame): int =
@@ -240,8 +268,13 @@ func placeLabel(ax, ay, bx, by: int; lines: seq[string];
 
 
 func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
-    used: var seq[Box]): string =
+    used: var seq[Box]): (string, string) =
   ## Draw the pair of moves that join two frames, and name them.
+  ##
+  ## The ink and the name come back apart so that the drawing can put every line
+  ## down before it writes a single word.  Together, a line drawn later crossed
+  ## the plate of a name written earlier and struck it through -- a plate can
+  ## only hide what is already under it.
   ##
   ## A line is two moves, one each way, and it is named for the one the reader
   ## could make: the move *away* from where they stand, when they stand on an end
@@ -250,8 +283,9 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
   ## thing the reader cannot do from there.
   ##
   ## A line nobody stands on has no away, so it keeps the reading that needs no
-  ## reader: the move that runs down the page.  Naming those too is what lets the
-  ## map be read as a map rather than only from where you happen to be.
+  ## reader: the move that adds a connection, which is the one that runs up the
+  ## page.  Naming those too is what lets the map be read as a map rather than
+  ## only from where you happen to be.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
@@ -263,30 +297,38 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
     marks = (if is_lit: " lit" else: "") & (if is_taken: " taking" else: "") &
       waking(is_lit, was_lit, was.isSome)
   # A line and the name of the line are one thing, and dim or come forward as
-  # one: a name without its line to belong to says nothing.
-  result = "<g class=\"way" & marks & "\">" &
+  # one: a name without its line to belong to says nothing.  So the two are put
+  # in two groups wearing the same marks rather than in one group.
+  let ink = "<g class=\"way" & marks & "\">" &
     "<line class=\"edge\" x1=\"" & $ax & "\" y1=\"" & $ay &
     "\" x2=\"" & $bx & "\" y2=\"" & $by & "\" style=\"stroke: " &
-    armColour(side) & "\"/>"
+    armColour(side) & "\"/></g>"
+  # Two ends, asked for two different reasons, and since the tower was turned up
+  # the right way they are no longer the same end: what a line is *called* is
+  # read from the frame holding less, and where the name is *written* is
+  # measured from whichever end is higher up the drawing.
   let
-    upper = if rowOf(a) < rowOf(b): a else: b
-    lower = if rowOf(a) < rowOf(b): b else: a
-    # Read from where the couple stand if they stand here, and from the top
-    # otherwise.  Where the name *sits* is taken from the top either way, so
-    # that a line's name does not jump from one end to the other as the couple
-    # move: what a move is called can change under a reader, where it is written
-    # should not.
-    source = if is_lit and standing == some(lower): lower else: upper
-    destination = if source == upper: lower else: upper
+    fewer = if rowOf(a) < rowOf(b): a else: b
+    more = if rowOf(a) < rowOf(b): b else: a
+    # Read from where the couple stand if they stand here, and from the frame
+    # holding less otherwise, so a line nobody stands on is named for the move
+    # that builds rather than the one that lets go.
+    source = if is_lit and standing == some(more): more else: fewer
+    destination = if source == fewer: more else: fewer
     helper = classify(source, destination).get
     naming = label(source, Move(helper: helper, side: side, to: destination))
-    (sx, sy) = centreOf(upper)
-    (dx, dy) = centreOf(lower)
+    # Measured from the top either way, so that a line's name does not jump from
+    # one end to the other as the couple move: what a move is called can change
+    # under a reader, where it is written should not.
+    top = if centreOf(a)[1] <= centreOf(b)[1]: a else: b
+    bottom = if top == a: b else: a
+    (sx, sy) = centreOf(top)
+    (dx, dy) = centreOf(bottom)
   # The name sits along the line, wherever along it there is room.
   let (nx, ny) = placeLabel(sx, sy, dx, dy, naming, used)
-  result.add stack(nx, ny, naming,
-    LABEL_FONT & "; fill: " & armColour(side), "edge-plate")
-  result.add "</g>"
+  (ink, "<g class=\"way naming" & marks & "\">" &
+    stack(nx, ny, naming, LABEL_FONT & "; fill: " & armColour(side),
+      "edge-plate") & "</g>")
 
 
 func arcName(a, b: Frame; standing: Option[Frame]): string =
@@ -313,8 +355,10 @@ func arcName(a, b: Frame; standing: Option[Frame]): string =
 
 
 func arc(a, b: Frame; name: string; standing, was: Option[Frame];
-    used: var seq[Box]): string =
+    used: var seq[Box]): (string, string) =
   ## Draw a compound as a curve, since no single move joins the two frames.
+  ##
+  ## Ink and name apart, for the reason `edge` parts them.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
@@ -336,18 +380,19 @@ func arc(a, b: Frame; name: string; standing, was: Option[Frame];
     (hx, hy) = ((fx + gx) div 2, (fy + gy) div 2)
     ink = proc (side: Option[Side]): string =
       if side.isSome: armColour(side.get) else: COLOUR_DIM
-  result = "<g class=\"join" & lit & "\">" &
+  var curve = "<g class=\"join" & lit & "\">" &
     "<path class=\"arc\" d=\"M" & $ax & " " & $ay & "Q" & $fx & " " & $fy &
     " " & $hx & " " & $hy & "\" style=\"stroke: " & ink(compoundSide(b, a)) &
     "\"/>" &
     "<path class=\"arc\" d=\"M" & $hx & " " & $hy & "Q" & $gx & " " & $gy &
     " " & $bx & " " & $by & "\" style=\"stroke: " & ink(compoundSide(a, b)) &
     "\"/>"
+  curve.add "</g>"
   # A curve is at its lowest halfway along, which is half the dip below the row.
   let (nx, ny) = placeBelow(mx, max(ay, by) + dip div 2 + 4, @[name], used)
-  result.add stack(nx, ny, @[name],
-    LABEL_FONT & "; fill: " & COLOUR_DIM, "arc-plate")
-  result.add "</g>"
+  (curve, "<g class=\"join naming" & lit & "\">" &
+    stack(nx, ny, @[name], LABEL_FONT & "; fill: " & COLOUR_DIM, "arc-plate") &
+    "</g>")
 
 
 func nodeAt*(target: Frame; cx, cy, width: int; classes: string;
@@ -451,10 +496,17 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
     passStyle(WIDE_TEMPO) & "\" role=\"img\">" &
     "<title>Every frame, and every move between them</title>"
 
-  # Everything already in the drawing, so that no name is put on top of it.  The
-  # curves go down first because each has only the one place it can be named.
+  # Every line goes down before any word does.  A name carries a plate to keep
+  # the drawing out from under it, and a plate can only hide what is already
+  # there: written as each line was drawn, a name was struck through by the next
+  # line to cross it.  So ink and names are gathered apart and laid in turn.
+  #
+  # Names are *placed* in the other order.  The curves are placed first because
+  # each has only the one place it can be named, and every name after has to
+  # keep clear of the ones already put down.
   var used = frameBoxes()
-  var curves = ""
+  var ink, names = ""
+  var curveInk, curveNames = ""
   var drawn: seq[string] = @[]
   for source in FRAMES:
     for target in FRAMES:
@@ -465,8 +517,10 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       if pair in drawn:
         continue
       drawn.add pair
-      curves.add arc(source, target, arcName(source, target, standing),
-        standing, was, used)
+      let (drawing, naming) = arc(source, target,
+        arcName(source, target, standing), standing, was, used)
+      curveInk.add drawing
+      curveNames.add naming
 
   drawn = @[]
   for source in FRAMES:
@@ -475,8 +529,11 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       if pair in drawn:
         continue
       drawn.add pair
-      result.add edge(source, move.to, move.side, standing, was, taken, used)
-  result.add curves
+      let (drawing, naming) = edge(source, move.to, move.side, standing, was,
+        taken, used)
+      ink.add drawing
+      names.add naming
+  result.add ink & curveInk & names & curveNames
 
   for target in FRAMES:
     result.add node(target, standing, was)

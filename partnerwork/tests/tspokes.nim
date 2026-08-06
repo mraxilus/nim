@@ -38,13 +38,15 @@ suite "the spokes":
         seen.add spoke.to
         places.add endOf(spoke)
 
-  test "a drop points up, a collect points down, and a compound goes aside":
+  test "a collect points up, a drop points down, and a compound goes aside":
+    # The tower is built upwards, so taking a hand climbs and letting one go
+    # falls.  A screen's y grows downwards, so climbing is a negative rise.
     for here in FRAMES:
       for spoke in spokesOf(here):
         let rise = sin(spoke.angle * PI / 180)
         if spoke.is_compound:
           check abs(rise) < 0.5
-        elif classify(here, spoke.to) == some(Helper.Drop):
+        elif classify(here, spoke.to) == some(Helper.Collect):
           check rise < 0
         else:
           check rise > 0
