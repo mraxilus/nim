@@ -1216,20 +1216,29 @@ function svgEl(tag, attrs) {
 
 // Stroke one object's marker into the overlay. Every geometric decision -- which outline,
 // how far off the object it sits, where its points land on screen -- was made by
-// marker.nim; this only turns the flat array it reports into SVG elements, and scales
-// from framebuffer pixels to CSS pixels the way every other overlay here does.
+// marker.nim; this only turns the flat array it reports into SVG elements.
+//
+// **The interaction layer works in CSS pixels; the render layer works in framebuffer
+// pixels.** Two layers, two units, and each is told which it is in: the cursor, hover,
+// markers and menus are all asked and answered in CSS pixels, while `nimBuildFrame` and
+// the WebGL uniforms below take the framebuffer size and scale their own constants by the
+// device pixel ratio. This used to be half-done -- positions were converted from
+// framebuffer to CSS but every *length* was not, so a marker's radius and a menu wedge's
+// height were drawn at ratio times their intended size, and "make the marker bigger" had
+// no stable meaning. Converting nothing is simpler than converting some of it.
 // Rails arrive as consecutive pairs, one per drawn piece, so the pairwise loop below
 // covers a line clipped into any number of them without knowing how many to expect.
 function appendMarker(slot, alpha, w, h, progress, is_touch) {
   const marker =
-    nimSelectionMarker(slot, canvas.width, canvas.height, progress, is_touch === true);
+    nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, progress,
+      is_touch === true);
   if (marker.length === 0) return;
   const kind = marker[0], is_closed = marker[1] > 0.5;
   const radius = marker[2], fraction = marker[3];
   const stroke = 'rgba(255,255,255,' + alpha + ')';
   const points = [];
   for (let i = 4; i + 1 < marker.length; i += 2) {
-    points.push([marker[i] * (w / canvas.width), marker[i + 1] * (h / canvas.height)]);
+    points.push([marker[i], marker[i + 1]]);
   }
 
   if (kind === MARKER_RING) {
@@ -1321,9 +1330,9 @@ function refreshOverlay(cursor) {
   }
 
   if (nimDragActive()) {
-    const src = nimAnchorScreen(nimDragSourceSlot(), canvas.width, canvas.height);
+    const src = nimAnchorScreen(nimDragSourceSlot(), canvas.clientWidth, canvas.clientHeight);
     if (src[2] > 0.5 && cursor) {
-      const sx = src[0] * (w / canvas.width), sy = src[1] * (h / canvas.height);
+      const [sx, sy] = [src[0], src[1]];
       // Tinted by what releasing would do, not by which button started the drag: the
       // operation's own colour over a pair that makes something, the reserved magenta
       // over one that makes nothing, neutral while crossing empty space.
@@ -1351,7 +1360,7 @@ function appendChoiceMenu(w, h) {
   const centre = nimDragMenuCentre();
   for (let i = 0; i * FLOATS_MENU_WEDGE < layout.length; i += 1) {
     const at = i * FLOATS_MENU_WEDGE;
-    const x = layout[at] * (w / canvas.width), y = layout[at + 1] * (h / canvas.height);
+    const [x, y] = [layout[at], layout[at + 1]];
     const is_offered = layout[at + 2] > 0.5;
     const fill = 'rgb(' + Math.round(layout[at + 3] * 255) + ',' +
       Math.round(layout[at + 4] * 255) + ',' + Math.round(layout[at + 5] * 255) + ')';
@@ -1381,7 +1390,7 @@ function appendChoiceMenu(w, h) {
   }
   // The middle is where nothing is chosen, and the way out of a menu that opened unasked.
   svg_overlay.appendChild(svgEl('circle', {
-    cx: centre[0] * (w / canvas.width), cy: centre[1] * (h / canvas.height),
+    cx: centre[0], cy: centre[1],
     r: RADIUS_MENU_CENTRE,
     fill: 'none', stroke: 'rgba(255,255,255,0.7)', 'stroke-width': WIDTH_OVERLAY_LINE,
   }));
@@ -1448,9 +1457,8 @@ canvas.addEventListener('pointerdown', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   if (e.pointerType === 'mouse') {
-    const ratio_pixel = canvas.width / rect.width;
-    nimUpdateCursor(local.x * ratio_pixel, local.y * ratio_pixel);
-    nimUpdateHover(canvas.width, canvas.height);
+    nimUpdateCursor(local.x, local.y);
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
     // Note the press before anything is decided about it: whether it was a click is only
     //   knowable at the release, and both branches below can end in one.
     nimBeginPress(now());
@@ -1481,9 +1489,8 @@ canvas.addEventListener('pointerdown', (e) => {
     //   fills the item's own marker -- a timer firing on its own could not draw anything.
     //   The slot is kept as well: it is what decides, on the first movement, whether this
     //   press was a construction drag or a camera orbit.
-    const ratio_pixel_touch = canvas.width / rect.width;
-    nimUpdateCursor(local.x * ratio_pixel_touch, local.y * ratio_pixel_touch);
-    nimUpdateHover(canvas.width, canvas.height);
+    nimUpdateCursor(local.x, local.y);
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
     // Noted like any other press, so that a finger's own construction drag is measured
     //   against where the finger landed rather than against the last mouse press.
     nimBeginPress(now());
@@ -1509,14 +1516,13 @@ canvas.addEventListener('pointermove', (e) => {
   cursor_last = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
   if (e.pointerType === 'mouse') {
-    const ratio_pixel = canvas.width / rect.width;
-    nimUpdateCursor(cursor_last.x * ratio_pixel, cursor_last.y * ratio_pixel);
+    nimUpdateCursor(cursor_last.x, cursor_last.y);
     // `nimUpdateCursor` above is what notices a press leaving its own landing spot, so
     //   the hint only has to react to that having happened.
     if (button_mouse_down !== null && !nimIsClick(now())) dismissHint();
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
       // Re-check hover for the drag's own destination preview.
-      nimUpdateHover(canvas.width, canvas.height);
+      nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
       return;
     }
     if (!pointers.has(e.pointerId)) return;
@@ -1531,7 +1537,7 @@ canvas.addEventListener('pointermove', (e) => {
     } else if (button_mouse_drag === 'pan') {
       nimCameraPan(-dx / canvas.clientWidth * 1.4, dy / canvas.clientHeight * 1.4);
     }
-    nimUpdateHover(canvas.width, canvas.height);
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
     return;
   }
 
@@ -1560,9 +1566,8 @@ canvas.addEventListener('pointermove', (e) => {
     // Follow the finger and let the frame loop's own `nimUpdateDrag` do the rest: the
     //   preview, the dwell, and the menu are all already driven from there. Returning
     //   here is what keeps a construction drag from also orbiting the camera under it.
-    const ratio_pixel_drag = canvas.width / rect.width;
-    nimUpdateCursor(cursor_last.x * ratio_pixel_drag, cursor_last.y * ratio_pixel_drag);
-    nimUpdateHover(canvas.width, canvas.height);
+    nimUpdateCursor(cursor_last.x, cursor_last.y);
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
     return;
   }
 
@@ -1682,9 +1687,8 @@ canvas.addEventListener('wheel', (e) => {
 
 function handleTap(position_local) {
   const rect = canvas.getBoundingClientRect();
-  const ratio_pixel = canvas.width / rect.width;
-  nimUpdateCursor(position_local.x * ratio_pixel, position_local.y * ratio_pixel);
-  nimUpdateHover(canvas.width, canvas.height);
+  nimUpdateCursor(position_local.x, position_local.y);
+  nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
   const hovered = nimHoverSlot();
 
   // The sky counts as empty space to a *tap*, deliberately, though a mouse click selects
@@ -1781,13 +1785,9 @@ function updateSelectionMenuPosition() {
   //   across all selected would jump around as membership changes for no real benefit.
   if (!menu_selection.classList.contains('show') || slots_selection.length === 0) return;
   const slot_anchor = slots_selection[slots_selection.length - 1];
-  const anchor = nimAnchorScreen(slot_anchor, canvas.width, canvas.height);
+  const anchor = nimAnchorScreen(slot_anchor, canvas.clientWidth, canvas.clientHeight);
   if (anchor[2] <= 0.5) return; // Off-screen -- leave the menu at its last valid spot.
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  positionSelectionMenuAt({
-    x: anchor[0] * (w / canvas.width),
-    y: anchor[1] * (h / canvas.height),
-  });
+  positionSelectionMenuAt({ x: anchor[0], y: anchor[1] });
 }
 
 menu_selection_apply.addEventListener('click', () => {

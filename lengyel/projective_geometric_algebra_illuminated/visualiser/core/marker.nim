@@ -90,16 +90,20 @@ const
     ## Place each of a line's own rails this far from the line, in pixels, measured at
     ## the line's own support, to within a fraction of a pixel -- see `offsetMarkerRail`
     ## for what happens elsewhere along it, and `directionAcross` for the fraction.
-  CLEARANCE_MARKER_TOUCH* = 24.0
+  CLEARANCE_MARKER_TOUCH* = 54.5
     ## Push every marker outward by up to this many pixels partway through a **touch**
     ## hold, settling back to its true size as the hold completes.
     ##   A fingertip covers what it presses, so a marker that fills underneath one says
     ##   nothing to the person filling it -- the whole point of drawing a hold's progress
-    ##   is lost to the hand doing it. Chosen against the 44-pixel minimum touch target
-    ##   this project already sizes its `?` affordance to: a point's ring is
-    ##   `RADIUS_MARKER_POINT` (10.5 px) and 24 px of clearance takes it to 34.5, a 69-pixel
-    ##   circle around a target whose *minimum* width is 44 -- clear of an average fingertip
-    ##   rather than merely clear of the smallest one anybody designs for.
+    ##   is lost to the hand doing it. Sized from the far end: a point's ring should reach
+    ##   a **130-pixel diameter** at the peak, which is 65 of radius less
+    ##   `RADIUS_MARKER_POINT`'s own 10.5. That is about twice a thumb's contact patch, so
+    ##   the halo stands outside the hand rather than at its edge.
+    ##   Was 24, sized against a 44-pixel *minimum* touch target and reported as clearing a
+    ##   fingertip. It did not: the measurement compared framebuffer pixels against a
+    ##   CSS-pixel target, and the answer came back from a real thumb rather than from the
+    ##   suite. Both units now mean the same thing -- see `glue.js`'s own note on the two
+    ##   layers -- so this number is what a reader actually sees.
     ##   Added in pixels rather than multiplied, so it means one thing on a point's 10.5-px
     ##   ring and on a plane's rim hundreds of pixels across; each shape converts it into
     ##   its own units. Mouse gestures never see it -- a cursor hides nothing.
