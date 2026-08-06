@@ -243,10 +243,15 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
     used: var seq[Box]): string =
   ## Draw the pair of moves that join two frames, and name them.
   ##
-  ## Named for the move that runs *down* the page, which is the collect: the rows
-  ## say that much on their own, so the drop is the same line read upwards and
-  ## needs no second name.  Naming every line rather than only the ones underfoot
-  ## means the map can be read as a map, by somebody not standing on it.
+  ## A line is two moves, one each way, and it is named for the one the reader
+  ## could make: the move *away* from where they stand, when they stand on an end
+  ## of it.  Named for the collect either way, a line leaving the frame held
+  ## upwards would be labelled with the move that comes back down it -- the one
+  ## thing the reader cannot do from there.
+  ##
+  ## A line nobody stands on has no away, so it keeps the reading that needs no
+  ## reader: the move that runs down the page.  Naming those too is what lets the
+  ## map be read as a map rather than only from where you happen to be.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
@@ -266,8 +271,15 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
   let
     upper = if rowOf(a) < rowOf(b): a else: b
     lower = if rowOf(a) < rowOf(b): b else: a
-    helper = classify(upper, lower).get
-    naming = label(upper, Move(helper: helper, side: side, to: lower))
+    # Read from where the couple stand if they stand here, and from the top
+    # otherwise.  Where the name *sits* is taken from the top either way, so
+    # that a line's name does not jump from one end to the other as the couple
+    # move: what a move is called can change under a reader, where it is written
+    # should not.
+    source = if is_lit and standing == some(lower): lower else: upper
+    destination = if source == upper: lower else: upper
+    helper = classify(source, destination).get
+    naming = label(source, Move(helper: helper, side: side, to: destination))
     (sx, sy) = centreOf(upper)
     (dx, dy) = centreOf(lower)
   # The name sits along the line, wherever along it there is room.
@@ -277,17 +289,25 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
   result.add "</g>"
 
 
-func arcName(a, b: Frame): string =
+func arcName(a, b: Frame; standing: Option[Frame]): string =
   ## Name the compound a curve stands for, and the hand it moves where it can.
   ##
-  ## A curve is one drawing of a move that can be led either way, and a `place`
-  ## carries the same hand of the follow whichever way it is led, so it can be
-  ## named for that hand.  A `cut` carries whichever hand ends up on top, which
-  ## is the other one going the other way, so a curve that named one of them
-  ## would be wrong half the time it was read.  There it says only what it is.
+  ## Stood on one end, a curve has a direction like any other line, so it can be
+  ## named for the move away from the reader -- hand and all.
+  ##
+  ## Stood on neither, it is one drawing of a move that can be led either way.  A
+  ## `place` carries the same hand of the follow whichever way it is led, so it
+  ## can still be named for that hand.  A `cut` carries whichever hand ends up on
+  ## top, which is the other one going the other way, so a curve that named one
+  ## of them would be wrong half the times it was read.  There it says only what
+  ## it is.
   let named = compound(a, b)
   if named.isNone:
     return ""
+  if standing == some(a):
+    return compoundName(a, b)
+  if standing == some(b):
+    return compoundName(b, a)
   let there = compoundName(a, b)
   if there == compoundName(b, a): there else: ($named.get).toLowerAscii
 
@@ -445,7 +465,8 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       if pair in drawn:
         continue
       drawn.add pair
-      curves.add arc(source, target, arcName(source, target), standing, was, used)
+      curves.add arc(source, target, arcName(source, target, standing),
+        standing, was, used)
 
   drawn = @[]
   for source in FRAMES:

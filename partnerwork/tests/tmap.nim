@@ -119,26 +119,65 @@ suite "the drawing":
     # meant the names moved about every time the couple did.  Naming all of them
     # is only useful if they can all be read at once, so the drawing places each
     # one itself and this holds it to having found room.
-    let picture = renderMap(none(Frame))
     var moved, joined = 0
     for source in FRAMES:
       moved += moves(source).len
       for target in FRAMES:
         if compound(source, target).isSome:
           inc joined
-    var boxes: seq[Box] = @[]
-    for chunk in picture.split("<rect class=\""):
-      if not (chunk.startsWith("edge-plate") or chunk.startsWith("arc-plate")):
-        continue
-      let own = chunk[0 ..< chunk.find("/>")]
-      boxes.add (own.attr("x"), own.attr("y"), own.attr("width"),
-        own.attr("height"))
-    check boxes.len == moved div 2 + joined div 2
-    for index, box in boxes:
-      for other in boxes[index + 1 .. ^1]:
-        check not overlaps(box, other)
-      for frame in frameBoxes():
-        check not overlaps(box, frame)
+    # In every state, not just the unread map: a name is read from where the
+    # couple stand, so the words change as they dance and the room they need
+    # changes with them.
+    var wheres = @[none(Frame)]
+    for here in FRAMES:
+      wheres.add some(here)
+    for where in wheres:
+      let picture = renderMap(where)
+      var boxes: seq[Box] = @[]
+      for chunk in picture.split("<rect class=\""):
+        if not (chunk.startsWith("edge-plate") or chunk.startsWith("arc-plate")):
+          continue
+        let own = chunk[0 ..< chunk.find("/>")]
+        boxes.add (own.attr("x"), own.attr("y"), own.attr("width"),
+          own.attr("height"))
+      check boxes.len == moved div 2 + joined div 2
+      for index, box in boxes:
+        for other in boxes[index + 1 .. ^1]:
+          check not overlaps(box, other)
+        for frame in frameBoxes():
+          check not overlaps(box, frame)
+
+  test "a line is named for the move away from where the couple stand":
+    # A line is two moves, one each way.  Named for the collect either way, a
+    # line leaving the frame held upwards would be labelled with the move that
+    # comes back down it -- the one thing the reader cannot do from there.
+    for here in FRAMES:
+      let picture = renderMap(some(here))
+      for move in moves(here):
+        let naming = label(here, Move(helper: move.helper, side: move.side,
+          to: move.to))
+        for line in naming:
+          check picture.contains(">" & line & "<")
+      # A drop from here is named as a drop, and there is one to name.
+      var drops = 0
+      for move in moves(here):
+        if move.helper == Helper.Drop:
+          inc drops
+      if drops > 0:
+        check picture.contains(">drop<")
+
+  test "a compound underfoot names the hand it moves, and one nobody stands on may not":
+    # Stood on one end a curve has a direction like any other line.  Stood on
+    # neither, a cut carries whichever hand ends up on top -- the other one going
+    # the other way -- so naming one of them would be wrong half the time.
+    let idle = renderMap(none(Frame))
+    check idle.contains(">cut<")
+    for here in FRAMES:
+      for target in FRAMES:
+        if compound(here, target).isNone:
+          continue
+        let picture = renderMap(some(here))
+        check picture.contains(">" & compoundName(here, target) & "<")
 
   test "a compound is inked in both the arms it hands a hand between":
     # An ordinary line has one ink because the same arm acts whichever way it is

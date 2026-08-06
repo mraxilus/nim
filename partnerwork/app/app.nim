@@ -281,8 +281,9 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
     tag("div", "class=\"scroll\"", renderMap(some(current), motion, taken)) &
     tag("p", "class=\"note\"", "Each row holds one more connection than the row " &
       "above, so a line down the page is a collect and a line up is a drop. " &
-      "Every line is named for the move that runs down it, which the same line " &
-      "read upwards undoes. A dashed curve is a compound, and is inked in both " &
+      "A line you are standing on is named for the move away from you, which is " &
+      "the one you could make; a line you are not is named for the move that " &
+      "runs down it. A dashed curve is a compound, and is inked in both " &
       "arms because it hands a hand from one of them to the other: the ink at " &
       "each end is the arm that acts on the way to it. The frames you can " &
       "reach from where you stand come forward and the rest go quiet, and the " &
