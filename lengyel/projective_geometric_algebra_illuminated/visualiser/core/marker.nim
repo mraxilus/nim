@@ -124,6 +124,19 @@ const
     ##   trusted to land: a corner missed by a fraction of a step is a corner visibly cut
     ##   off the finished frame. Points on a straight edge lie *on* that edge by
     ##   construction, so nothing else needs extra sampling.
+  LENGTH_ARROW_DRAG* = 13.0
+    ## Draw the drag band's own arrowhead this long, in pixels, measured back along the
+    ## band from the point it aims at.
+    ##   Long enough to read as a head rather than as a kink in the line at
+    ##   `WIDTH_MARKER`'s 1.5 pixels, and short enough that it stays a mark on the band
+    ##   rather than a second object floating at the cursor. It does not scale with the
+    ##   band's length: a head is an annotation, and one that grew with a long drag would
+    ##   read as the drag having got heavier.
+  ANGLE_ARROW_DRAG* = 0.40
+    ## Open each of the arrowhead's barbs this far off the band, in radians.
+    ##   About 23 degrees, so the pair spans 46. Wider reads as a chevron sitting across
+    ##   the band rather than as a head pointing along it, and narrower closes onto the
+    ##   line and is lost against it at this weight.
   ANGLE_MARKER_BANDS_OPEN* = 0.5*PI
     ## Start a horizon line's own bands this far off it, in radians, at zero progress.
     ##   A quarter turn is the pole of the very sphere the line's great circle runs
@@ -195,6 +208,34 @@ type
         ## throughout, and the one marker that is: the sky has no place in the scene to
         ## surround, so its marker surrounds the view instead. Always closed -- nothing in
         ## screen space can be cut away by the eye, unlike `Loop` and `Bands`.
+
+
+
+#[ Drag Arrowhead ]#
+
+func arrowheadFor*(tail, head: ScreenPosition): Option[array[3, ScreenPosition]] =
+  ## Shape the head of the drag band running `tail` -> `head`, as barb, tip, barb -- an
+  ## open polyline drawn over the band itself, in screen pixels.
+  ##   A drag is not symmetric: `a ∨ b` and `b ∨ a` are different operations, and a bare
+  ##   line between two objects draws identically for either. The head is what says which
+  ##   way round the pair is being taken, at the end where the answer lands.
+  ##   Open rather than a filled triangle, so it wears the band's own weight and reads as
+  ##   part of it; a solid head at this size is a blob, and one large enough not to be is
+  ##   larger than the objects it points at.
+  ##   None where the two coincide, which has no direction to point in. That is an
+  ##   ordinary moment in a drag -- the cursor resting on its own source -- rather than an
+  ##   error, so it draws nothing and the band, itself zero length, draws nothing either.
+  let (dx, dy) = (head.x - tail.x, head.y - tail.y)
+  let length = hypot(dx, dy)
+  if length <= 0.0: return
+  # Back along the band from the tip, then a barb swung either side of that.
+  let facing = arctan2(dy, dx)
+  func barbAt(turn: float): ScreenPosition =
+    ScreenPosition(
+      x: head.x - LENGTH_ARROW_DRAG*cos(turn), y: head.y - LENGTH_ARROW_DRAG*sin(turn),
+      depth: head.depth,
+    )
+  some([barbAt(facing - ANGLE_ARROW_DRAG), head, barbAt(facing + ANGLE_ARROW_DRAG)])
 
 
 

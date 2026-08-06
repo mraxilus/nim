@@ -1349,12 +1349,25 @@ function refreshOverlay(cursor) {
       // operation's own colour over a pair that makes something, the reserved magenta
       // over one that makes nothing, neutral while crossing empty space.
       const tint = nimDragTint();
+      const stroke = 'rgba(' + Math.round(tint[0] * 255) + ',' +
+        Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)';
       svg_overlay.appendChild(svgEl('line', {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
-        stroke: 'rgba(' + Math.round(tint[0] * 255) + ',' +
-          Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)',
-        'stroke-width': WIDTH_OVERLAY_LINE,
+        stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       }));
+      // Which way round the pair is being taken. Shaped by `marker.arrowheadFor` across
+      // the bridge rather than worked out here: the band's direction is the gesture's own
+      // business, and this layer strokes what it is handed. Empty while the cursor rests
+      // on its own source, which points nowhere.
+      const arrow = nimDragArrowhead(w, h);
+      if (arrow.length) {
+        const points = [];
+        for (let i = 0; i + 1 < arrow.length; i += 2) points.push(arrow[i] + ',' + arrow[i + 1]);
+        svg_overlay.appendChild(svgEl('polyline', {
+          points: points.join(' '),
+          fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
+        }));
+      }
     }
     appendChoiceMenu(w, h);
   }

@@ -568,6 +568,17 @@ proc drawInteractionOverlay(
           cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
           tint.red, tint.green, tint.blue, 0.85, WIDTH_MARKER,
         )
+        # Which way round the pair is being taken, drawn at the end where the answer
+        #   lands. None while the cursor rests on its own source, which points nowhere.
+        let arrow = arrowheadFor(screen, interaction.cursor)
+        if arrow.isSome:
+          var points: array[6, cfloat]
+          for i, point in arrow.get:
+            points[2*i] = cfloat(point.x)
+            points[2*i + 1] = cfloat(point.y)
+          gui.overlayPolyline(
+            addr points[0], 3, tint.red, tint.green, tint.blue, 0.85, WIDTH_MARKER, 0,
+          )
   if interaction.menu.isSome:
     drawChoiceMenu(interaction, scene)
 

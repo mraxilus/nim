@@ -2973,5 +2973,36 @@ suite "Marker":
     ) =~ 0.0
 
 
+  test "the drag band's head points along the band, whichever way it runs":
+    proc headOf(tail, head: ScreenPosition): array[3, ScreenPosition] =
+      arrowheadFor(tail, head).get
+
+    for (dx, dy) in [(120.0, 0.0), (-120.0, 0.0), (0.0, 90.0), (-70.0, -70.0)]:
+      let
+        tail = ScreenPosition(x: 200.0, y: 150.0)
+        head = ScreenPosition(x: tail.x + dx, y: tail.y + dy)
+        drawn = headOf(tail, head)
+      # The tip is the point aimed at, and both barbs stand off it by one head's length.
+      check drawn[1].x =~ head.x
+      check drawn[1].y =~ head.y
+      for barb in [drawn[0], drawn[2]]:
+        check hypot(barb.x - head.x, barb.y - head.y) =~ LENGTH_ARROW_DRAG
+        # Behind the tip, never past it: a barb on the far side reads as an arrow pointing
+        #   back the way it came.
+        check (barb.x - head.x)*dx + (barb.y - head.y)*dy < 0.0
+      # Symmetric about the band, so the head reads as centred on it rather than swung.
+      let midpoint = ScreenPosition(
+        x: 0.5*(drawn[0].x + drawn[2].x), y: 0.5*(drawn[0].y + drawn[2].y)
+      )
+      let across = (midpoint.x - head.x)*dy - (midpoint.y - head.y)*dx
+      check abs(across) < TOLERANCE_SINGLE
+
+
+  test "a band with nowhere to point draws no head":
+    # The cursor resting on its own source: an ordinary moment in a drag, not an error.
+    let at = ScreenPosition(x: 40.0, y: 90.0)
+    check arrowheadFor(at, at).isNone
+
+
   test "geometry standing for no shape gets no marker":
     check markerOf(POINT_A + PLANE).isNone

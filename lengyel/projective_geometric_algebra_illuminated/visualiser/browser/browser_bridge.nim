@@ -845,6 +845,30 @@ proc nimDragTint(): seq[float32] {.exportc.} =
   toRgbSeq(inkOfDrag(g_interaction).colour)
 
 
+proc nimDragArrowhead(width, height: cint): seq[float32] {.exportc.} =
+  ## Report the drag band's own arrowhead flat, `[x0, y0, x1, y1, x2, y2]` -- barb, tip,
+  ## barb -- for the overlay to stroke as an open polyline over the band.
+  ##   Shaped by `marker.arrowheadFor`, and aimed from the drag source's anchor at **this
+  ##   module's own cursor** rather than at the one the presentation layer is holding.
+  ##   Both are updated from the same pointer events, but only one of them can be the
+  ##   answer, and the geometry belongs on the side that owns the gesture.
+  ##   Empty where no drag is in flight, where the source's anchor is behind the eye, or
+  ##   where the cursor rests on that anchor and there is no direction to point in.
+  if not g_interaction.is_dragging: return
+  let
+    scale = g_camera.drawExtentFor(int(height))
+    anchor = anchorFor(g_scene.geometryAt(g_interaction.index_source), scale)
+  if anchor.isNone: return
+  let screen = projectToScreen(
+    g_camera.initMatrixViewProjection(float(width) / float(height)),
+    int(width), int(height), anchor.get,
+  )
+  if not screen.isInFront: return
+  let arrow = arrowheadFor(screen, g_interaction.cursor)
+  if arrow.isNone: return
+  for point in arrow.get: result.add([cfloat(point.x), cfloat(point.y)])
+
+
 proc nimMenuMetrics(): seq[float32] {.exportc.} =
   ## Report the sizes a choice menu is drawn at, so the presentation layer holds no copy
   ## of them: wedge height, label padding, corner rounding, centre-dot radius, and the
