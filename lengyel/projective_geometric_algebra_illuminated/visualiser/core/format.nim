@@ -134,13 +134,45 @@ func formatMagnitude*(value: float): string =
 
 #[ Fixed Text Buffers ]#
 
+func bytesCharacter*(lead: char): int =
+  ## Say how many bytes the UTF-8 character starting with this byte occupies.
+  ##   One for ASCII and for any byte that is not a valid lead, so a buffer holding
+  ##   something that is not UTF-8 at all still advances a byte at a time rather than
+  ##   stalling. The three multi-byte widths are what this project actually writes:
+  ##   operator notation (`∧`, `∨`, `⊖`) is three bytes each, and subscripts and the
+  ##   ellipsis below are too.
+  let value = uint8(lead)
+  if value < 0x80: 1
+  elif value < 0xC0: 1 # A stray continuation byte; not a lead, so not a character start.
+  elif value < 0xE0: 2
+  elif value < 0xF0: 3
+  else: 4
+
+
+func lengthFitting*(text: openArray[char]; capacity: int): int =
+  ## Measure how many leading bytes of `text` fit in `capacity` **without splitting a
+  ## character**, which is always a whole number of characters.
+  ##   Separate from the copy below so the boundary rule is stated once: `toChars` needs
+  ##   the same answer against a smaller capacity, to leave room for the mark it adds.
+  let bound = min(capacity, len(text))
+  while result < len(text):
+    let width = bytesCharacter(text[result])
+    if result + width > bound: break
+    result += width
+
+
 proc appendChars*(storage: var openArray[char]; cursor: var int; text: openArray[char]) =
   ## Copy as much of `text` as still fits after `cursor`, advancing it.
   ##   Silently truncates rather than overrunning `storage`, exactly as `toChars` does;
   ##   storage is display only, and the GUI must never write past its own buffer.
-  for ch in text:
-    if cursor >= len(storage) - 1: return
-    storage[cursor] = ch
+  ##   **Truncates whole characters, never part of one.** Copying byte by byte until the
+  ##   buffer filled used to cut a three-byte operator in half, and the invalid tail left
+  ##   behind reached the browser as a literal `%e2%8a` where a glyph should have been --
+  ##   Nim's JS backend percent-escapes what it cannot decode. A buffer measured in bytes
+  ##   and a text measured in characters is the same mismatch the `.rgascene` label field
+  ##   had; this is the other half of it, in the store beside it.
+  for offset in 0 ..< lengthFitting(text, len(storage) - 1 - cursor):
+    storage[cursor] = text[offset]
     inc cursor
 
 

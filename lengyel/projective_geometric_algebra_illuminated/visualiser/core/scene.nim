@@ -400,11 +400,29 @@ func shapeText*(m: Multivector): string =
 
 #[ Label Storage ]#
 
+const ELLIPSIS_LABEL = "…"
+  ## Mark a label that did not fit with this, so a shortened name says it was shortened.
+  ##   Three bytes of the buffer it is warning about, which is the trade: a name reading
+  ##   as complete when it is not costs more than three characters of it do. Derived names
+  ##   compound -- an operation names its result after both operands -- so a few steps in,
+  ##   every name is long enough to be cut, and one that ends mid-word without saying so
+  ##   reads as a name someone chose.
+
 proc toChars*(text: string; storage: var openArray[char]) =
-  ## Copy text into fixed char storage, truncating where it will not fit.
+  ## Copy text into fixed char storage, marking it with `…` where it will not fit.
   ##   Truncation is deliberate: storage is display only, and GUI must never overrun it.
+  ##   The room for the mark is measured by asking `lengthFitting` against the smaller
+  ##   capacity rather than by backing up over what was already written, so the
+  ##   character-boundary rule is applied by the one function that knows it and a rewind
+  ##   can never land inside a character.
+  let capacity = len(storage) - 1
   var cursor = 0
-  appendChars(storage, cursor, text)
+  if lengthFitting(text, capacity) == len(text):
+    appendChars(storage, cursor, text)
+  else:
+    let kept = lengthFitting(text, capacity - len(ELLIPSIS_LABEL))
+    if kept > 0: appendChars(storage, cursor, text.toOpenArray(0, kept - 1))
+    appendChars(storage, cursor, ELLIPSIS_LABEL)
   finishChars(storage, cursor)
 
 

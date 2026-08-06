@@ -15,7 +15,7 @@
 when compileOption("profiler"):
   import std/nimprof
 
-import std/[math, options, os, random, strformat, strutils, tables, unittest]
+import std/[math, options, os, random, strformat, strutils, tables, unicode, unittest]
 
 import ../../pga
 import ../../visualiser/core/[
@@ -889,7 +889,31 @@ suite "Scene":
     toChars("short", storage)
     check toText(storage) == "short"
     toChars('x'.repeat(LABEL_MAX*2), storage)
-    check len(toText(storage)) == LABEL_MAX - 1
+    check len(toText(storage)) <= LABEL_MAX - 1
+    check toText(storage).endsWith("…") # Says it was shortened rather than reading whole.
+
+
+  test "a truncated label never splits a character, whatever the buffer lands on":
+    # The bug this pins: bytes were copied until the buffer filled, so a three-byte
+    #   operator could be cut in half. The invalid tail reached the browser as a literal
+    #   `%e2%8a` where a glyph belonged -- Nim's JS backend percent-escapes what it cannot
+    #   decode -- which is how it was found, in a screenshot of the objects list.
+    #   Every offset is walked, so whichever byte of an operator the cut lands on is
+    #   covered rather than whichever one this test's own text happens to produce.
+    for pad in 0 .. 6:
+      var storage: Label
+      let text = 'x'.repeat(pad) & "∧∨⊖".repeat(LABEL_MAX)
+      toChars(text, storage)
+      let kept = toText(storage)
+      check kept.validateUtf8 == -1 # -1 is "valid throughout"; any other value is an index.
+      check kept.endsWith("…")
+      check len(kept) <= LABEL_MAX - 1
+
+    # A text that fits exactly is left alone: no mark, nothing dropped.
+    var storage: Label
+    let exact = "∧".repeat((LABEL_MAX - 1) div 3)
+    toChars(exact, storage)
+    check toText(storage) == exact
 
 
   # Every magnitude the two front-ends show has to read the same in both, and the values
