@@ -37,6 +37,13 @@
   }
 }
 * { box-sizing: border-box; }
+/* Said aloud, not shown: the drawing is the page for anyone who can see it. */
+.said { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The keyboard's answer to :hover. Drawn outside the control, because a chosen
+   tab or chip is filled with the very ink the browser would ring it in. */
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+#stage:focus-visible { outline-offset: -2px; }
 body {
   margin: 0;
   padding: 1.25rem;
@@ -61,13 +68,26 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .tab { padding: 0.3rem 0.7rem; font-size: 0.82rem; }
 .tab.on { background: var(--ink); color: var(--page); border-color: var(--ink); }
 .flat { padding: 0.25rem 0.6rem; font-size: 0.8rem; margin: 0 0.35rem 0.35rem 0; }
-.stage { display: grid; gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); align-items: start; }
+/* Never more columns than there are panels: auto-fit will happily reserve a
+   fourth track for three panels on a wide screen and leave it empty. */
+.stage { display: grid; gap: 1rem; align-items: start;
+  grid-template-columns:
+    repeat(auto-fit, minmax(max(310px, calc((100% - 2rem) / 3)), 1fr)); }
+/* The drawing and the words for its ways out are one thing to read, so once
+   there is room for the widest window a frame is cut to with the phrases beside
+   it, put them side by side. Before this, no move was on screen at any width
+   without scrolling -- on a page whose whole point is which moves are offered. */
+@media (min-width: 1100px) {
+  .stage:has(> #stage) { grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem); }
+  .stage:has(> #stage) > #stage { grid-column: 1; grid-row: 1 / span 3; }
+}
 .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px;
   padding: 1rem; }
 .panel.wide { grid-column: 1 / -1; }
 .panel.muted { color: var(--dim); }
 .note { font-size: 0.82rem; color: var(--dim); margin: 0 0 0.75rem; }
+.key { font-size: 0.8rem; color: var(--dim); margin: 0 0 0.75rem;
+  padding-left: 0.7rem; border-left: 2px solid var(--rule); }
 .move { display: block; width: 100%; text-align: left; padding: 0.5rem 0.7rem;
   margin-bottom: 0.35rem; }
 .move:hover { border-color: var(--ink); }
@@ -281,6 +301,9 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 </head>
 <body>
 <div id="app"></div>
+<!-- Outside #app, because #app is rewritten on every change and a live region
+     that is itself replaced has no old text to announce against. -->
+<p id="said" class="said" aria-live="polite"></p>
 <script src="app.js"></script>
 </body>
 </html>

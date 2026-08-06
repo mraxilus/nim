@@ -66,6 +66,50 @@ func tempoOf(vis: Vis): Tempo =
   of Vis.Overview: WIDE_TEMPO
 
 
+proc holding(): string =
+  ## Remember which control the reader is standing on, before it is replaced.
+  ##
+  ## Every change of state rewrites the page, so the element under the reader's
+  ## finger is deleted and the browser drops focus to the document.  For a
+  ## pointer that costs nothing; for a keyboard it means the next key does
+  ## nothing at all, which on a page whose whole claim is that what it refuses
+  ## is meaningful is a refusal that means nothing.
+  let on = document.activeElement
+  if on == nil or on.getAttribute("data-action") == nil:
+    return ""
+  $on.getAttribute("data-action") & " " & $on.getAttribute("data-value")
+
+
+proc standAgain(held: string) =
+  ## Put the reader back where they were standing, or on the frame if it moved.
+  if held.len == 0:
+    return
+  let
+    parts = held.split(' ')
+    sought = document.querySelector(cstring("[data-action=\"" & parts[0] &
+      "\"][data-value=\"" & parts[1] & "\"]"))
+  if sought != nil:
+    sought.focus()
+    return
+  # The control is gone because taking it changed the frame.  Land on the frame
+  # itself rather than on whatever move now sits where that button was: a key
+  # pressed again should not dance a move nobody chose.
+  let stage = document.getElementById("stage")
+  if stage != nil:
+    stage.focus()
+
+
+proc say(sentence: string) =
+  ## Tell a reader who cannot see the drawing what the drawing now shows.
+  ##
+  ## The live region lives outside the part of the page that is rewritten,
+  ## because a live region that is itself replaced announces nothing: the
+  ## browser has no old text to compare the new text against.
+  let voice = document.getElementById("said")
+  if voice != nil:
+    voice.textContent = cstring(sentence)
+
+
 proc atOnce(): bool =
   ## Test whether the reader has asked for no movement.
   ##
@@ -173,7 +217,9 @@ func renderHistory(danced: seq[Step]): string =
   tag("section", "class=\"panel\"",
     tag("h3", "", "danced &middot; " & $danced.len) &
     button("undo", "", "flat", "undo") & button("reset", "", "flat", "reset") &
-    tag("ol", "class=\"history\"", rows))
+    # Newest first, because that is the end you are dancing from -- and numbered
+    # from the far end, so "1." is the first move danced rather than the last.
+    tag("ol", "class=\"history\" reversed", rows))
 
 
 func renderVisSwitch(vis: Vis): string =
@@ -200,6 +246,20 @@ func renderArms(): string =
   swatches.add tag("span", "class=\"swatch aside\"",
     "&ldquo;Left&rdquo; is the lead's hand, &ldquo;left&rdquo; the follow's")
   tag("div", "class=\"legend\"", swatches)
+
+
+func renderKey(): string =
+  ## Say what the picture of a frame is a picture of.
+  ##
+  ## Every view is built on it, and until now nothing anywhere said that it is
+  ## the couple seen from above, which row is whose, or what the dashed line
+  ## down the middle is.  A reader who has not been told cannot read the frames,
+  ## the names, the matrix or the map -- so it is said once, next to the first
+  ## drawing they meet, in the fewest words that will do it.
+  tag("p", "class=\"key\"",
+    "Seen from above: the lead along the bottom, the follow along the top, and " &
+    "the dashed line between them is the couple's midline. A filled circle is " &
+    "a hand being held; a line with a gap in it passes under the other.")
 
 
 func renderSpokesView(current: Frame; motion: Motion;
@@ -245,14 +305,14 @@ func renderStageBody(current: Frame; vis: Vis; motion: Motion;
   tag("div", "class=\"stage-head\"",
     tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
     renderVisSwitch(vis) & renderArms()) &
-    tag("div", "class=\"views\"", drawing)
+    renderKey() & tag("div", "class=\"views\"", drawing)
 
 
 func renderDance(current: Frame; vis: Vis; motion: Motion;
     taken: Option[Frame]; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
-    tag("section", "class=\"panel wide\" id=\"stage\"",
+    tag("section", "class=\"panel wide\" id=\"stage\" tabindex=\"-1\"",
       renderStageBody(current, vis, motion, taken)) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
@@ -331,6 +391,7 @@ func renderGallery(narrowing: Filter): string =
         $target.countHolds & (if target.countHolds == 1: " hand" else: " hands")))
   tag("section", "class=\"panel wide\"",
     tag("h3", "", "every frame &middot; " & $shown & " of " & $FRAMES.len) &
+    renderArms() & renderKey() &
     renderFilters(narrowing) &
     tag("p", "class=\"note\"", "Click a frame to begin the dance from it.") &
     (if shown == 0:
@@ -427,7 +488,9 @@ proc paintStage() =
   let stage = document.getElementById("stage")
   if stage == nil:
     return
+  let held = holding()
   stage.innerHTML = cstring(renderStageBody(current, vis, motion, taken))
+  standAgain(held)
 
 
 proc render() =
@@ -437,7 +500,9 @@ proc render() =
     of View.Dance: renderDance(current, vis, motion, taken, history)
     of View.Atlas: renderAtlas(filter)
     of View.Audit: renderAudit()
+  let held = holding()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
+  standAgain(held)
 
 
 proc arrive(target: Frame) =
@@ -447,7 +512,20 @@ proc arrive(target: Frame) =
       continue
     history.add Step(phrase: phrase(current, move), to: move.to)
     current = move.to
+    say(history[^1].phrase & ". Now " & current.describe & ", with " &
+      $moves(current).len & " moves out of it.")
     return
+
+
+proc dance(key: string)
+
+
+proc leadOn() =
+  ## Take the second move of a compound, if one is waiting on the first.
+  let next = queued
+  queued = none(Frame)
+  if next.isSome:
+    dance(next.get.key)
 
 
 proc dance(key: string) =
@@ -471,7 +549,13 @@ proc dance(key: string) =
   if motion == Motion.Leaving and taken == target:
     return # Asked twice for the same move, which is once.
   if atOnce():
+    # Every phase collapses into the change of state it was spelling out.  But a
+    # compound is two changes of state, and the phase that would have taken its
+    # second half has collapsed along with the rest, so it is taken here instead
+    # -- or the page offers a move and then does not make it, which is the one
+    # thing a validator must never do.
     arrive(target.get)
+    leadOn()
     render()
     return
 
@@ -494,10 +578,7 @@ proc dance(key: string) =
   discard setTimeout(proc () =
     if generation != mine:
       return
-    let next = queued
-    queued = none(Frame)
-    if next.isSome:
-      dance(next.get.key), tempo.leadOnTime)
+    leadOn(), tempo.leadOnTime)
 
   discard setTimeout(proc () =
     if generation != mine:

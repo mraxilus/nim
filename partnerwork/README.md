@@ -100,6 +100,14 @@ offered too, dashed, and taking one dances both of its moves in turn rather than
 jumping the frame in between.
 
 
+The page is usable from the keyboard: Tab reaches every control, the focus ring
+is drawn outside the control so a chosen tab does not swallow it, and focus is
+put back where it was after each move — on the frame itself when the button that
+was pressed no longer exists, so a second keypress cannot dance a move nobody
+chose. A live region outside the part of the page that is rewritten says what was
+danced and where it landed, for a reader who cannot see the drawing.
+
+
 ## Layout
 
 ```
