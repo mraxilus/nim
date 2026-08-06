@@ -248,10 +248,18 @@ func renderMoves(source: Frame): string =
 
 
 func renderElsewhere(source: Frame): string =
-  ## List every frame that is not one primitive away, and how far away it is.
+  ## List every frame that is not one primitive away, and the way to it.
   ##
   ## This half of the panel is what makes the page a validator: a frame here can
   ## be seen but not danced, and the route says exactly what is missing.
+  ##
+  ## Named a step at a time, in the words the moves panel uses for the same
+  ## move.  `collect, then collect` is the shape of an answer rather than an
+  ## answer: from `open` it was what all three frames two moves away said, so the
+  ## panel gave the same seven words for three different places, while four
+  ## collects sat unlabelled above it -- two of which, for any one of those
+  ## places, lead away from it rather than towards it.  The route always knew
+  ## which two; it was throwing the answer away and printing only its shape.
   var rows = ""
   var count = 0
   for target in FRAMES:
@@ -260,14 +268,21 @@ func renderElsewhere(source: Frame): string =
       continue
     inc count
     var detail = ""
-    let steps = route(source, target)
-    for step in steps:
-      if detail.len > 0:
-        detail.add " &rarr; "
-      detail.add esc(step.helper.name)
+    # Each step is named against the frame it departs from, because that is the
+    # frame it is a move out of.  It happens to read the same named from here --
+    # a drop is the only phrase that looks at the frame it leaves, and no
+    # shortest route drops a hand it collected, so a hand a route drops was held
+    # before the route began.  `tests/ttransition.nim` holds both of those, so
+    # this is written the way it is true rather than the way it is convenient.
+    var standing = source
+    for step in route(source, target):
+      detail.add tag("span", "class=\"step\"",
+        esc(phrase(standing, step)) & tag("i", "", esc(step.to.describe)))
+      standing = step.to
     rows.add tag("div", "class=\"far\"",
       tag("span", "class=\"phrase\"", esc(target.describe)) &
-      tag("span", "class=\"target\"", $steps.len & " moves: " & detail))
+      tag("span", "class=\"target\"", $route(source, target).len & " moves") &
+      detail)
   tag("section", "class=\"panel muted\"",
     tag("h3", "", "not from here &middot; " & $count) & rows)
 

@@ -29,8 +29,8 @@ head, so a collect climbs and a drop falls.
 ## The app
 
 `app/index.html` is a validator. It shows the frame you are in, every frame one
-primitive away with the phrase that leads it, and every frame that is *not*, with
-the number of moves it would take to get there. Only what is offered can be
+primitive away with the phrase that leads it, and every frame that is *not*,
+with the way there spelled out a move at a time. Only what is offered can be
 clicked, so a move the ontology does not derive cannot be danced.
 
 Open `app/index.html` in a browser. To rebuild it after a change:
@@ -75,6 +75,16 @@ in `doc/review.html` and in `nimble audit`.
 The Dance view starts at `open`, which is where a couple starts and the one
 frame nothing has to lead up to: from there every way out is a collect, which is
 the ladder seen from the bottom of it.
+
+A frame further off is named a step at a time, in the words the panel above uses
+for the same move. `collect, then collect` is the shape of an answer rather than
+an answer, and from `open` it was what all three frames two moves away said —
+the same seven words for three different places, while four collects sat
+unlabelled above, two of which lead away from any one of those places rather
+than towards it. The route always knew which two. Each step is named against the
+frame it leaves rather than the frame you stand in, because that is the frame it
+is a move out of; on a shortest route the two read the same, and there is a law
+for each half of why.
 
 It draws the frame two ways, one at a time. **Dynamic** puts the frame in the
 middle and every way out of it as a spoke, and nothing else — take a spoke and

@@ -214,6 +214,46 @@ suite "routes":
           current = step.to
         check current == destination
 
+  test "every step of a route is a move the frame it leaves is offering":
+    # Stronger than the chain above, which only checks the primitive.  A step
+    # also names the hand of the lead that acts, and anything reading a route
+    # back to a dancer -- as the page does, a step at a time -- is naming that
+    # hand.  A step whose side disagreed with the offered move would be a
+    # sentence telling them to use the wrong arm.
+    for source in FRAMES:
+      for destination in FRAMES:
+        var current = source
+        for step in route(source, destination):
+          check step in moves(current)
+          current = step.to
+
+  test "a shortest route never drops a hand it has just collected":
+    # Taking a hand and then letting it go is wasted work, and wasted work is
+    # what makes a route longer than it has to be.  The other order is ordinary
+    # -- letting a hand go and taking it somewhere else is how a hand moves --
+    # so this is not symmetric.
+    for source in FRAMES:
+      for destination in FRAMES:
+        var collected: seq[Side] = @[]
+        for step in route(source, destination):
+          case step.helper
+          of Helper.Collect: collected.add step.side
+          of Helper.Drop: check step.side notin collected
+
+  test "a step of a route reads the same from anywhere along it":
+    # Which is what lets the page name every step of a route in the same words
+    # the move panel names that move in.  It follows from the law above rather
+    # than from anything about phrasing: a drop is the only phrase that reads
+    # the frame it leaves, and by that law a hand a route drops is one that was
+    # held before the route began, at the site it was held.  Checked because the
+    # page leans on it, and it would be an odd thing to have to rediscover.
+    for source in FRAMES:
+      for destination in FRAMES:
+        var current = source
+        for step in route(source, destination):
+          check phrase(current, step) == phrase(source, step)
+          current = step.to
+
   test "no frame is more than four moves from any other":
     var longest = 0
     for source in FRAMES:

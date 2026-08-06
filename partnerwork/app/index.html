@@ -103,6 +103,13 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .move:hover { border-color: var(--ink); }
 .far { padding: 0.4rem 0.1rem; border-bottom: 1px solid var(--rule); }
 .far:last-child { border-bottom: 0; }
+/* A step of a route: what to do, then where it lands. Set quieter than the
+   frame it is a way to, and ruled down the side so several steps read as one
+   sequence rather than as several more frames out of reach. */
+.step { display: block; font-size: 0.8rem; margin-top: 0.25rem;
+  padding-left: 0.55rem; border-left: 2px solid var(--rule); }
+.step i { display: block; font-style: normal; color: var(--faint);
+  font-size: 0.76rem; }
 .phrase { display: block; }
 .target { display: block; font-size: 0.8rem; color: var(--dim); }
 .history { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
