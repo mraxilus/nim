@@ -1274,8 +1274,12 @@ proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath
     if gui.tabBarBegin("##help_tabs"):
       for path in HelpPath:
         if not gui.tabBegin(cstring(titleOf(path)), path_forced == some(path)): continue
+        # What the tab is about, before the rows that assume it. Wrapped rather than
+        #   truncated, and drawn outside the rows child so it stays put while they scroll:
+        #   a sentence that scrolls away is one a reader loses exactly when they need it.
+        gui.textWrappedAt(cstring(descriptionOf(path)), width_rows)
         # Each tab is as tall as its own rows need, up to what the window has: a fixed
-        #   height sized for the largest would leave `panel`'s two rows floating in a
+        #   height sized for the largest would leave `menu`'s five rows floating in a
         #   third of a panel of blank.
         let height_rows = min(
           gui.childHeightForRows(cint(countOf(path))), height_available

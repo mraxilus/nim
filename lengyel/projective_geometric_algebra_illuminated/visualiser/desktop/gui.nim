@@ -98,6 +98,7 @@ proc childBegin*(name: cstring; width, height: cfloat): bool {.importc: "guiChil
 proc childEnd*() {.importc: "guiChildEnd".}
 proc text*(text: cstring) {.importc: "guiText".}
 proc textWrapped*(text: cstring) {.importc: "guiTextWrapped".}
+proc textWrappedAt*(text: cstring; width: cfloat) {.importc: "guiTextWrappedAt".}
 proc textTinted*(text: cstring; red, green, blue: cfloat) {.importc: "guiTextTinted".}
 proc header*(label: cstring; is_open_first: bool): bool {.importc: "guiHeader".}
 proc button*(label: cstring): bool {.importc: "guiButton".}

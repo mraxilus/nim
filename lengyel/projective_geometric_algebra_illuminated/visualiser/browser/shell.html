@@ -267,6 +267,13 @@
        reading a phone-width column. */
     width: min(560px, calc(100vw - 28px));
     max-height: min(82vh, 620px);
+    /* A column, so the rows box can be given whatever is left rather than a height worked
+       out by hand. It used to subtract a flat 82px for the tab strip, which was wrong the
+       moment anything else joined it above the rows -- the strip wraps to two lines on a
+       phone, and there is now a description as well. Nothing here is measured off a
+       constant any more, so the panel cannot outgrow the screen. */
+    display: flex;
+    flex-direction: column;
     padding: 12px 14px 14px;
     border-radius: 14px;
     background: var(--surface-solid);
@@ -285,6 +292,7 @@
   /* Tabs wrap rather than scroll sideways: five short words fit one line on a desktop and
      two on a phone, and a horizontally scrolling strip hides the tabs past its edge. */
   .help-tabs {
+    flex: none;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
@@ -307,6 +315,17 @@
   }
   .help-tab:hover, .help-tab:focus-visible { color: var(--ink); border-color: var(--border); }
   .help-tab.on { color: var(--accent-ink); border-color: var(--accent-ink); }
+  /* What the open tab is about, above its rows. Outside `.help-rows` so it stays put while
+     they scroll: a sentence that scrolls away is one a reader loses exactly when they need
+     it. Its text comes from `help.descriptionOf` through `nimHelpDescriptions`, so this and
+     the desktop's own line are the same sentence by construction. */
+  .help-description {
+    flex: none;
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink-muted);
+  }
   /* Only the rows scroll, so the tab strip stays reachable however long a tab grows.
      `help.ENTRIES_MAX_PATH` is what keeps this from ever being how the panel is read. */
   /* One grid over every row, not a flex box per row: a column has to be one width down
@@ -324,7 +343,10 @@
      track sizing, so each column is measured per tab, from what is actually on screen. */
   .help-rows {
     overflow-y: auto;
-    max-height: calc(min(82vh, 620px) - 82px);
+    /* Takes whatever the column has left; `min-height: 0` because a flex item defaults to
+       its content's minimum and would refuse to shrink, pushing the panel off screen. */
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     grid-template-columns: minmax(122px, max-content) minmax(122px, 1fr);
     column-gap: 10px;
@@ -767,6 +789,7 @@
 </button>
 <div class="help-panel" id="help-panel" role="dialog" aria-label="help">
   <div class="help-tabs" id="help-tabs" role="tablist" aria-label="help sections"></div>
+  <p class="help-description" id="help-description"></p>
   <div class="help-rows" id="help-rows"></div>
 </div>
 

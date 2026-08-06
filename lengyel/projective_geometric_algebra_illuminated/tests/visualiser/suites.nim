@@ -1749,6 +1749,16 @@ suite "Help":
       check len(entry.outcome) > 0
 
 
+  test "every tab says what it is about, so none opens on rows with no context":
+    # The line above the rows carries what a two-column row cannot -- which menu this is,
+    #   what a wedge is. A path added without one would render that line blank, which reads
+    #   as a gap rather than as an omission.
+    for path in HelpPath:
+      check len(descriptionOf(path)) > 0
+      # A sentence, not a label: the tab strip already carries the short form.
+      check len(descriptionOf(path)) > len(titleOf(path))
+
+
 suite "Picking":
   const (WIDTH_PICK, HEIGHT_PICK) = (800, 600)
   let CENTRE = ScreenPosition(x: float(WIDTH_PICK)/2.0, y: float(HEIGHT_PICK)/2.0, depth: 0.0)

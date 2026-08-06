@@ -248,7 +248,15 @@ const button_help = document.getElementById('btn-help');
 const panel_help = document.getElementById('help-panel');
 const strip_help = document.getElementById('help-tabs');
 const rows_help = document.getElementById('help-rows');
+const note_help = document.getElementById('help-description');
+const descriptions_help = new Map();
 function buildHelp() {
+  // What each tab is about, in one sentence, keyed by the very title the rows are grouped
+  //   by -- so the two exports join on a string rather than on a matching order.
+  const described = nimHelpDescriptions();
+  for (let i = 0; i + 1 < described.length; i += 2) {
+    descriptions_help.set(described[i], described[i + 1]);
+  }
   const flat = nimHelpEntries();
   const paths = [];
   for (let i = 0; i + 3 < flat.length; i += 4) {
@@ -292,6 +300,9 @@ function showHelpPath(path) {
   for (const row of rows_help.children) {
     row.hidden = row.dataset.path !== path;
   }
+  // Swapped with the tab rather than one note per tab hidden alongside its rows: there is
+  //   only ever one showing, so one element that changes text cannot go stale.
+  note_help.textContent = descriptions_help.get(path) || '';
   rows_help.scrollTop = 0; // A tab always opens at its own first row.
 }
 buildHelp();

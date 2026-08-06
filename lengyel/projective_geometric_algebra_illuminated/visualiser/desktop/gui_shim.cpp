@@ -181,6 +181,17 @@ void guiTextWrapped(const char* text) {
   ImGui::PopTextWrapPos();
 }
 
+// Wrap at a width the caller states, for a window that sizes itself to its contents. Zero
+// -- what `guiTextWrapped` passes -- means "the content region's right edge", which in an
+// auto-sizing window is decided by the widest item in it; a wrapped paragraph is then both
+// an input to that width and a consequence of it, and settles wherever the circularity
+// leaves it. The help panel already knows the width it wants, so it says so.
+void guiTextWrappedAt(const char* text, float width) {
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+  ImGui::TextUnformatted(text);
+  ImGui::PopTextWrapPos();
+}
+
 void guiTextTinted(const char* text, float red, float green, float blue) {
   ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(red, green, blue, 1.0f));
   ImGui::TextUnformatted(text);

@@ -11,8 +11,20 @@
 ## there rather than transcribed: `lut_help_entries` builds its construct rows out of
 ## `interaction.isMenuForcedBy`, so rebinding a button rewrites the help with it.
 ##
+## **Every row has to make sense with the rows above it covered up**, because that is how
+## this is read: a reader opens one tab, finds the line they need, and leaves. Three ways a
+## row failed that, all of them found by reading the rendered panel cold rather than by any
+## test -- circular ("drag one object onto another" → "make whatever the two of them
+## make"), leaning on its neighbour ("hold still over the target" → "the same choice,
+## without needing the other button"), and naming internals a reader has never met ("more…
+## in that choice", "the apply section", "dolly in and out"). What a row genuinely cannot
+## carry -- which menu this is, what a wedge is -- goes in `descriptionOf` instead.
+##
+## One word, one meaning: objects are **selected**, operations are **chosen**. "Choose" used
+## to do both jobs, which left it saying nothing about which was meant.
+##
 ## **Cut by how you are working, not by what the control is.** A reader opens this in the
-## middle of one thing -- dragging, or choosing, or moving the camera -- and only that
+## middle of one thing -- dragging, or selecting, or moving the camera -- and only that
 ## thing's rows are of any use to them right then. So `HelpPath` is the axis, one tab per
 ## path, and `ENTRIES_MAX_PATH` holds each tab to what fits a phone without scrolling. The
 ## table as a whole is under no such bound and no longer pretends to be: it grew from 18
@@ -36,35 +48,37 @@ const ENTRIES_MAX_PATH* = 8
   ## Bound how many entries one path may hold, checked at compile time.
   ##   A proxy, and named as one: the real constraint is *rendered height*, and a count is
   ##   what compile time can check. **Measured, not estimated**: the built page is driven
-  ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- with each tab's
-  ##   own rows cloned into it until `scrollHeight` passes `clientHeight`, so the added
-  ##   rows wrap exactly as that tab's real ones do. In a 384-pixel-tall rows box:
+  ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- and each tab is
+  ##   asked how far its own rows overflow the box they are given, with that tab's
+  ##   description above them. Re-measured after every row was rewritten to stand on its
+  ##   own and a `descriptionOf` line was added above each tab:
   ##
-  ##   | Path | Rows | Of its own kind that fit |
-  ##   |------|------|--------------------------|
-  ##   | `drag` | 5 | 7 |
-  ##   | `select` | 5 | 10 |
-  ##   | `menu` | 5 | 8 |
-  ##   | `panel` | 2 | 6 |
-  ##   | `camera` | 6 | 10 |
-  ##   | `keys` | 8 | 9 |
+  ##   | Path | Rows | Rows box | Overflow |
+  ##   |------|------|----------|----------|
+  ##   | `drag` | 5 | 301 px | 0 |
+  ##   | `select` | 5 | 269 px | 0 |
+  ##   | `menu` | 5 | 219 px | 0 |
+  ##   | `panel` | 5 | 328 px | 0 |
+  ##   | `camera` | 6 | 314 px | 0 |
+  ##   | `keys` | 8 | 320 px | **129 px** |
   ##
-  ##   Read the spread, not just the minimum: **a count of rows is not a count of lines.**
-  ##   `panel`'s actions are long enough to wrap onto three lines at that width and
-  ##   `drag`'s onto two, so eight of *those* would scroll while eight of `keys`' fit with
-  ##   a row to spare. Eight is therefore right for the table as it stands and would be
-  ##   wrong for a table shaped differently -- a path nearing the cap is a prompt to
-  ##   re-run this measurement, not to trust the number.
-  ##   Re-measured after the browser panel's columns became a grid sized from the widest
-  ##   action rather than a flat 44% (`shell.html`, `.help-rows`). That change is worth
-  ##   real width on a 558-pixel panel -- outcomes wrapping went from seven rows to one --
-  ##   but bought almost nothing here, where the panel is 262 pixels wide and the long
-  ##   actions wrap whatever the column rule is. Hence the cap stays at 8 rather than
-  ##   rising: it was the wrapping that improved, not the height at the size that binds.
-  ##   It sits exactly at what the largest path holds, deliberately: the next row added to
-  ##   a full path fails the build, and the answer is nearly always to split that path
-  ##   rather than to raise this. Raising it is a decision about the smallest screen this
-  ##   help still works on.
+  ##   **`keys` is the one tab that scrolls on that screen, and it is left scrolling.** Its
+  ##   eight rows come to 449 px against a 320 px box. Fitting them means every outcome
+  ##   under about 39 characters, which costs real bindings -- `enter`'s "hold shift to add
+  ##   it" and `escape`'s "one step at a time" are exactly the things a reader cannot
+  ##   discover any other way. Paying that on every screen to serve a 320-pixel one is the
+  ##   wrong trade for a tab describing a keyboard, since a viewport that size is a phone.
+  ##   The other five fit *exactly*, and two of them only after their descriptions were cut
+  ##   to fewer wrapped lines: `drag`'s went from four lines to two and `panel`'s from two
+  ##   to one, each worth about 17 px. **A count of rows is not a count of lines**, and a
+  ##   description is worth a row or two of height -- so a path nearing this cap is a
+  ##   prompt to re-run the measurement, never to trust the number.
+  ##   What the cap is *not* any more is a promise that nothing scrolls; it is the bound
+  ##   that forces the question to be asked again. Raising it is a decision about the
+  ##   smallest screen this help still works on, and splitting the path is nearly always
+  ##   the better answer -- though not here: regrouping the keyboard rows onto the tabs
+  ##   whose work they do was tried and measured, and left `camera` 133 px over and
+  ##   `select` 66 px over, which is worse than what it fixed.
 
 type
   HelpPath* {.pure.} = enum ## Group entries by which way of working they belong to.
@@ -99,6 +113,30 @@ func titleOf*(path: HelpPath): string =
   of HelpPath.Keys: "keys"
 
 
+func descriptionOf*(path: HelpPath): string =
+  ## Say in one sentence what a tab is about, for the line above its rows.
+  ##   A row can only stand on its own so far. "the more… wedge" and "the apply section"
+  ##   name things a reader meets *inside* one way of working, and the `menu` rows name
+  ##   five buttons without ever saying which menu they are on or how one gets it -- all
+  ##   answerable in a sentence, and unanswerable in a two-column row. So the context that
+  ##   would otherwise have to be repeated into every row is stated once, above them.
+  ##   Written for a reader who has just opened this tab and nothing else, which is the
+  ##   only state this text is ever read in.
+  case path
+  of HelpPath.Drag:
+    "Drag one object onto another to build a new one. Some pairs open a wheel of choices."
+  of HelpPath.Select:
+    "Say which objects to work on. Whatever is selected wears a white outline."
+  of HelpPath.Menu:
+    "The small menu that appears beside whatever you just selected."
+  of HelpPath.Panel:
+    "The panel and the buttons above it."
+  of HelpPath.Camera:
+    "Move your viewpoint. None of this changes the scene itself."
+  of HelpPath.Keys:
+    "Keyboard shortcuts. The 3D view needs focus first — press tab until it has it."
+
+
 
 #[ The Table ]#
 
@@ -115,7 +153,7 @@ const lut_help_entries* = block:
   ##   Entries of one path are written together, and the assertion below insists they stay
   ## that way: both front-ends walk this once in order, so a path split across two runs
   ## would render as two tabs of the same name.
-  var lut: array[31, HelpEntry]
+  var lut: array[34, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -132,55 +170,90 @@ const lut_help_entries* = block:
     if is_forced.isNone: continue
     add(
       HelpPath.Drag, nameOf(button) & "-drag one object onto another",
-      if is_forced.get: "choose what to make of them"
-      else: "make whatever the two of them make",
+      if is_forced.get: "open the wheel, whatever the pair would have made on its own"
+      else: "build the one object those two define",
     )
   add(
     HelpPath.Drag, "drag one object onto another",
-    "make whatever the two of them make", is_touch = true,
+    "build the one object those two define", is_touch = true,
   )
   add(
-    HelpPath.Drag, "hold still over the target",
-    "the same choice, without needing the other button",
+    HelpPath.Drag, "pause on the target mid-drag",
+    "open the wheel without needing a second button",
   )
-  add(HelpPath.Drag, "more… in that choice", "hand both objects to the apply section")
+  add(
+    HelpPath.Drag, "the more… wedge",
+    "hand both objects to the panel, which lists every operation",
+  )
 
-  add(HelpPath.Select, "click an object", "choose it alone")
-  add(HelpPath.Select, "shift-click an object", "add it to what you have chosen")
-  add(HelpPath.Select, "click empty space", "choose nothing, or the sky if one is built")
+  add(HelpPath.Select, "click an object", "select just that one, dropping anything else")
+  add(
+    HelpPath.Select, "shift-click an object",
+    "add it to the selection rather than replacing it",
+  )
+  add(
+    HelpPath.Select, "click empty space",
+    "clear the selection, or select the sky if the scene has one",
+  )
   add(
     HelpPath.Select, "press and hold an object",
-    "choose it; its own outline fills while you hold", is_touch = true,
+    "select it — its outline fills as you hold", is_touch = true,
   )
-  add(HelpPath.Select, "tap another object", "add it, once you have chosen one", true)
-  # The menu that follows whatever is chosen. Undocumented in either build until now, on
-  #   the grounds that it was obvious once you saw it -- but nothing said it was there.
+  add(
+    HelpPath.Select, "tap another object while one is selected",
+    "add it to the selection", is_touch = true,
+  )
+  # The menu beside the selection. Undocumented in either build until recently, on the
+  #   grounds that it was obvious once you saw it -- but nothing said it was there.
   #   A tab of its own rather than the tail of `select`: ten rows on a phone wrap their
-  #   outcomes onto second lines and scroll, which is what this whole round is undoing.
-  add(HelpPath.Menu, "apply", "any operation, on the one or two you chose")
-  add(HelpPath.Menu, "edit", "rename, recolour or reshape the one you chose")
-  add(HelpPath.Menu, "hide", "take everything you chose out of the view")
-  add(HelpPath.Menu, "delete", "remove everything you chose")
-  add(HelpPath.Menu, "✕", "choose nothing, and put the menu away")
+  #   outcomes onto second lines and scroll, which is what the tab split undid.
+  add(HelpPath.Menu, "apply", "run any operation on what you selected")
+  add(HelpPath.Menu, "edit", "change the selected object's name, colour or coordinates")
+  add(HelpPath.Menu, "hide", "keep the selection but stop drawing it")
+  add(HelpPath.Menu, "delete", "remove the selection from the scene")
+  add(HelpPath.Menu, "✕", "clear the selection and close this menu")
 
-  add(HelpPath.Panel, "add", "a new point you type the coordinates of")
+  # Named by button rather than by where the button sits: `add` and the axes/grid toggles
+  #   are in the desktop's top bar and the browser's chip row, so a row naming a place
+  #   would be false on one of the two builds.
+  add(HelpPath.Panel, "add", "create a point by typing its coordinates")
   add(
     HelpPath.Panel, "the apply section",
-    "any operation in the catalogue, on the objects you have chosen",
+    "run any operation in the catalogue on what you selected",
+  )
+  add(
+    HelpPath.Panel, "the objects section",
+    "every object in the scene, each with rename, hide and delete",
+  )
+  add(
+    HelpPath.Panel, "save scene, load scene",
+    "write the whole scene to a file, or read one back",
+  )
+  add(
+    HelpPath.Panel, "axes, grid",
+    "show or hide the reference furniture, leaving the scene alone",
   )
 
-  add(HelpPath.Camera, "drag empty space", "orbit around what you are looking at")
-  add(HelpPath.Camera, "right-drag empty space", "pan across")
-  add(HelpPath.Camera, "wheel", "dolly in and out")
+  add(HelpPath.Camera, "drag empty space", "orbit the view around what you are looking at")
+  add(HelpPath.Camera, "right-drag empty space", "slide the view sideways and up or down")
+  add(HelpPath.Camera, "wheel", "move closer in or further out")
   # "empty space", not just "with one finger": a finger that starts on an *object* builds
   #   something now, so the unqualified row would send a reader to the wrong gesture.
-  add(HelpPath.Camera, "drag empty space with one finger", "orbit", is_touch = true)
-  add(HelpPath.Camera, "pinch", "dolly in and out", is_touch = true)
-  add(HelpPath.Camera, "drag with two fingers", "pan across", is_touch = true)
+  add(
+    HelpPath.Camera, "drag empty space with one finger",
+    "orbit the view around what you are looking at", is_touch = true,
+  )
+  add(HelpPath.Camera, "pinch", "move closer in or further out", is_touch = true)
+  add(
+    HelpPath.Camera, "drag with two fingers",
+    "slide the view sideways and up or down", is_touch = true,
+  )
 
-  add(HelpPath.Keys, "escape", "abandon whatever is in progress")
-  add(HelpPath.Keys, "ctrl+z, ctrl+shift+z", "undo, redo")
-  add(HelpPath.Keys, "tab", "step through every control, and through the view itself")
+  add(
+    HelpPath.Keys, "escape", "back out of whatever is part-way through, one step at a time"
+  )
+  add(HelpPath.Keys, "ctrl+z, ctrl+shift+z", "undo, then redo, the last change to the scene")
+  add(HelpPath.Keys, "tab", "move focus between the controls and the 3D view")
   # Read out of `interaction.actionFor` rather than written here, so rebinding a key
   #   rewrites its own row. Grouped by what they do because a reader looks for the job
   #   first and the key second; the names still come from `nameOf`, one per key.
@@ -188,18 +261,18 @@ const lut_help_entries* = block:
     HelpPath.Keys,
     nameOf(Key.Left) & ", " & nameOf(Key.Right) & ", " &
       nameOf(Key.Up) & ", " & nameOf(Key.Down),
-    "orbit; hold shift to pan instead",
+    "orbit the view; hold shift to slide it instead",
   )
   add(
-    HelpPath.Keys, nameOf(Key.Minus) & ", " & nameOf(Key.Plus), "dolly out and in"
+    HelpPath.Keys, nameOf(Key.Minus) & ", " & nameOf(Key.Plus), "move further out, or closer in"
   )
   add(
     HelpPath.Keys, nameOf(Key.BracketLeft) & ", " & nameOf(Key.BracketRight),
-    "step to the previous or next object",
+    "move the highlight to the previous or next object",
   )
   add(
     HelpPath.Keys, nameOf(Key.Enter),
-    "choose the object you stepped to; hold shift to add it",
+    "select the highlighted object; hold shift to add it",
   )
   add(HelpPath.Keys, nameOf(Key.Home), "put the camera back where it started")
 

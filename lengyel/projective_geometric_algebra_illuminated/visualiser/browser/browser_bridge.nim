@@ -710,6 +710,17 @@ proc nimHelpEntries(): seq[cstring] {.exportc.} =
     ])
 
 
+proc nimHelpDescriptions(): seq[cstring] {.exportc.} =
+  ## Report what each tab is about, flat, two strings each: the tab's title and its own
+  ## one-line description.
+  ##   Its own export rather than a fifth string on `nimHelpEntries`, which is per *row*
+  ##   and would carry the same sentence once for every row of a tab. Keyed by the title
+  ##   the entries themselves carry, so the presentation layer joins the two on the string
+  ##   it already groups rows by rather than on a position it would have to keep in step.
+  for path in HelpPath:
+    result.add([cstring(titleOf(path)), cstring(descriptionOf(path))])
+
+
 proc nimBeginHold(slot: cint; now: cfloat) {.exportc.} =
   ## Forward to `interaction.beginHold`; see its own doc comment.
   interaction.beginHold(g_interaction, int(slot), float(now))
