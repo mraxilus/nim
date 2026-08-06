@@ -533,6 +533,20 @@ known. Every gesture here either shows what it will do before it commits, or off
 that names the alternatives — and a gesture that can build something must have a route to
 the operations it cannot build, or it is a dead end.
 
+**The written help is read one line at a time, so every line must survive being read alone.**
+A reader opens a tab, finds the line they need, and leaves; they do not read the tab. So no
+row may be circular ("drag one object onto another" → "make whatever the two of them make"),
+lean on the row above it ("the same choice, without needing the other button"), or name
+something internal the reader has never met ("the apply section", "dolly"). What a
+two-column row genuinely cannot carry — which menu this is, what a wedge is — belongs in one
+sentence above the tab's rows, written for someone who has just opened that tab and nothing
+else. Both front-ends read that sentence and those rows from the same table, so neither can
+drift from the other.
+
+**One word, one meaning.** Objects are *selected*; operations are *chosen*. A word doing two
+jobs tells the reader nothing about which is meant, and the two are adjacent here — the
+selection, and the wheel of operations a drag offers.
+
 **Mouse and pen, both front-ends.** Drag from one object onto another to derive a third.
 
 **The press target chooses the scheme; the button chooses whether you are asked.** Press an
@@ -885,8 +899,10 @@ rectangles, axes and grid as a segmented pill, then a menu button. **The visual 
 deliberate** — a pill shows state you can read at a glance, a bordered rectangle is a momentary
 action. Sorting by frequency matters: undo/redo and the view toggles are reached constantly and
 must not cost an extra click, while the menu holds only the genuinely rare file actions (save
-scene/image, load scene/demo, under `save` and `load` headings). Below 480 px the brand label
-drops to its mark alone, or five controls plus the label overflow a narrow phone.
+scene/image, load scene/demo, under `save` and `load` headings). Below 520 px the brand label
+drops to its mark alone, or five controls plus the label overflow a narrow phone. **Sweep for
+that breakpoint rather than picking one**: it was set at a round 480 while the row needed 520,
+so a 40 px band of viewport widths overflowed unnoticed.
 
 **Stacking.** The chip row's container sits above the drawer and below the floating menus, and
 the z-index must be set on that **container**, not on the row: fixed positioning always opens a

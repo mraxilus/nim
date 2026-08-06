@@ -1013,8 +1013,12 @@ The visual grammar is deliberate — a pill shows state you can read at a glance
 rectangle is a momentary action. Sorting by frequency matters: undo/redo and the view
 toggles are reached constantly and must not cost an extra click, while the menu holds only
 the genuinely rare file actions (save scene/image, load scene/demo, under `save` and `load`
-titles). Below 480px the brand label drops to its mark alone, or five controls plus the full
-label overflow a narrow phone.
+titles). Below 520px the brand label drops to its mark alone, or five controls plus the full
+label overflow a narrow phone. **That breakpoint was 480 and wrong by 39 px**: the row does
+not actually fit until 520, so every width from 481 to 519 overflowed. Found by checking the
+rename that shortened the label, and measured by sweeping the viewport a pixel at a time
+rather than by picking a rounder number — with the old "RGA workbench" label it was 50 px
+over, so this predated the rename rather than being caused by it.
 
 **Stacking.** `.veil` (which contains the chip row) is `z-index: 5`, above `.drawer`'s 4 and
 below `.selection-menu`/`.top-menu`'s 6. It must be set on `.veil`, not on `.chip-row`:
@@ -1539,15 +1543,56 @@ that width the outcome column wraps onto second lines, so a count of rows is not
 lines. It sits exactly at what the largest tab holds, so the next row added to a full tab
 fails the build; the answer is nearly always to split that tab.
 
-Re-measured after the column change below, this time by cloning each tab's *own* rows into
-it until it scrolls, so the added rows wrap exactly as that tab's real ones do. In the
-384 px-tall rows box a 320 px phone leaves: `drag` fits 7 of its own rows, `select` 10,
-`menu` 8, `panel` 6, `camera` 10, `keys` 9. The spread is the point — `panel`'s
-actions wrap onto three lines at that width and `drag`'s onto two, so eight of *those* would
-scroll while eight of `keys`' fit with one to spare. So the cap stays at 8 rather than
-rising: the column change bought real width on the 558 px panel and almost nothing at the
-size that binds. A tab nearing the cap is a prompt to re-run this measurement, not to trust
-the number.
+**Every row has to make sense with the rows above it covered up**, because that is how this
+is read: a reader opens one tab, finds the line they need, and leaves. Three ways a row
+failed that, all found by reading the rendered panel cold rather than by any test — circular
+("drag one object onto another" → "make whatever the two of them make"), leaning on its
+neighbour ("hold still over the target" → "the same choice, without needing the other
+button"), and naming internals a reader has never met ("more… in that choice", "the apply
+section", "dolly in and out"). Every row is now written to stand on its own.
+
+What a two-column row genuinely cannot carry — which menu this is, what a wedge is — goes in
+`descriptionOf` instead, one sentence above each tab, drawn by `guiTextWrappedAt` on the
+desktop and a `<p>` in the browser, both fed from the same `case`. It crosses the bridge as
+`nimHelpDescriptions`, its own export rather than a fifth string on `nimHelpEntries`, which
+is per *row* and would repeat the sentence once per row of a tab; the two join on the tab
+title the rows are already grouped by rather than on a matching order.
+
+One word, one meaning: objects are **selected**, operations are **chosen**. "Choose" was
+doing both jobs — the tab now called `select` was about picking objects while "the two of
+them choose what it makes" is about picking an operation off the drag wheel — so it said
+nothing about which was meant.
+
+Re-measured at 320x568 after all of that, per tab, as overflow of the rows box rather than
+by cloning rows into it: `drag` 0, `select` 0, `menu` 0, `panel` 0, `camera` 0, **`keys`
+129 px over**. Five fit exactly, two of them only after their descriptions were cut to fewer
+wrapped lines — `drag`'s from four lines to two and `panel`'s from two to one, each worth
+about 17 px. A count of rows is still not a count of lines, and now a description is worth a
+row or two of height as well.
+
+**`keys` is left scrolling on that screen, deliberately.** Its eight rows come to 449 px
+against a 320 px box, and fitting them means every outcome under about 39 characters, which
+costs `enter`'s "hold shift to add it" and `escape`'s "one step at a time" — the things a
+reader cannot discover any other way — on every screen, to serve a 320 px one that has no
+keyboard. Two alternatives were tried and measured rather than argued about: stacking each
+row's cells into one column made it *worse* (161 px over, because a short action like `tab`
+then costs a whole line of its own), and regrouping the keyboard rows onto the tabs whose
+work they do — camera keys under `camera`, traversal under `select` — left `camera` 133 px
+over and `select` 66 px over. So the cap stays at 8, and what it means has changed: it is no
+longer a promise that nothing scrolls, but the bound that forces this measurement to be
+re-run. A tab nearing it is a prompt to measure, never to trust the number.
+
+The browser's rows box used to take `calc(min(82vh, 620px) - 82px)`, subtracting a flat
+allowance for the tab strip. That was already wrong wherever the strip wrapped to two lines,
+which it does on a phone, and a description above the rows made the panel able to grow
+taller than the screen. It is now a flex column — the panel caps its own height, the strip
+and the description take theirs, and the rows box takes what is left with `min-height: 0` so
+it can actually shrink. Nothing about the height is worked out by hand any more.
+
+`guiTextWrappedAt` exists because `guiTextWrapped` pushes wrap position 0, meaning "the
+content region's right edge", which in an auto-sizing window is decided by the widest item in
+it — a wrapped paragraph is then both an input to that width and a consequence of it. The
+help panel already knows the width it wants, so it says so.
 
 The desktop draws the tabs through four new shim calls (`BeginTabBar`/`BeginTabItem` and
 their ends) with each tab's rows inside a `childBegin` region bounded to what the window
@@ -1576,7 +1621,9 @@ desktop panel already follows, where `layoutHelp` measures `offset_outcome` off 
 action; the browser's flat `44%` was the guess it replaces, and on the 558 px panel it gave
 the actions 245 px they did not want while the outcomes beside them wrapped. Measured, both
 viewports, wrapped outcomes out of 31 rows: 7 → 1 at 1400x900, tallest tab 213 px → 177 px;
-21 → 20 at 320x568, tallest unchanged at 337 px in a 384 px box.
+21 → 20 at 320x568, tallest unchanged at 337 px in the fixed 384 px box that sizing then
+had. (That box is no longer fixed — see the flex column above — so those two figures are the
+comparison that justified the grid, not current heights.)
 
 Both tracks carry a 122 px floor — `minmax(122px, max-content) minmax(122px, 1fr)` — and the
 pair was measured, not picked. The action floor keeps a tab of short actions (`menu`,
@@ -1586,7 +1633,11 @@ with: without it the actions took 208 px of the 262 px a 320 px phone leaves, an
 `select` and `keys` all grew a scrollbar. Candidates with a larger outcome floor (150–184 px)
 read better still until the cells were checked against the container's own right edge —
 122 + 122 + the 10 px gap is 254 and fits, 122 + 150 does not, and the difference is invisible
-in a screenshot because the overflow scrolls rather than clipping.
+in a screenshot because the overflow scrolls rather than clipping. Re-tested when the rows
+were rewritten longer, since `keys` has short actions and looked like it wanted the floor
+gone: dropping the action track to bare `max-content` put `drag` 533 px over, `camera` 538 px
+over and `select` 461 px over, because a tab with one long action then hands it the whole
+width. The floors are load-bearing.
 
 `--drive-help:<tab>` opens the panel on one named tab at startup, since a headless run cannot
 click a tab strip and a panel no capture can reach is one whose rows nobody ever checks fit.
