@@ -716,7 +716,14 @@ func renderTurning(stood: Posture): string =
       tag("div", "class=\"stage-head\"",
         tag("h3", "", "posture") & tag("h2", "", stood.describe) & renderArms()) &
       renderTwistKey() &
-      tag("div", "class=\"posture-now\"", renderPosture(stood, "frame-big"))) &
+      tag("div", "class=\"view-axle\"",
+        tag("div", "class=\"scroll\"", renderAxle(stood)) &
+        tag("p", "class=\"note\"", "Rotation is one quantity, so it is one " &
+          "line: every posture this frame can stand in at these heights, laid " &
+          "out by how far it has turned, with the ring on the one being held. " &
+          "An arc is a turn out of it, named for the dancer who takes it; a " &
+          "dashed arc is a turn the couple cannot take, and the panel beside " &
+          "says which ceiling refuses it. Click a posture to stand in it."))) &
     renderTurns(stood) & renderMeasured())
 
 
@@ -952,6 +959,14 @@ proc start(key: string) =
 
 proc handle(event: Event) =
   ## Route one click to the session change it asks for.
+  let turnedTo = event.target.closest("g.node.reachable[data-posture]")
+  if turnedTo != nil:
+    let stood = fromPostureKey($turnedTo.getAttribute("data-posture"))
+    if stood.isSome:
+      posture = stood.get
+      say(posture.describe & ".")
+      render()
+    return
   let stepped = event.target.closest("g.node.reachable")
   if stepped != nil:
     dance($stepped.getAttribute("data-frame"))

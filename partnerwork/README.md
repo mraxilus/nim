@@ -196,6 +196,12 @@ is to the lead and their hands have swapped columns — which is the picture's
 half of `crossedSite`, the one place the hand-to-hand model already reads
 rotation. A drawing that left them where they were would contradict it.
 
+Rotation is one quantity, so it is drawn as one line rather than as a graph:
+an **axle**, with every posture that frame can stand in at those heights laid
+out along it by how far it has turned, the ring on the one being held, and every
+turn out of it as an arc over the top. Click a posture to stand in it. Twelve
+turns draw six arcs, because twelve turns land in six places.
+
 A turn is refused with its reason, which is what makes this half a validator
 too. There are two ceilings and a posture has to be under both: what joins the
 couple can only give so much turn away, and the arm can only carry so much
