@@ -64,6 +64,24 @@ const SECONDS_LONG_PRESS* = 0.50
   ##   item's own marker being drawn part-built, so a hold reads as filling rather than as
   ##   nothing happening. A hold with no feedback at this duration reads as a broken tap.
 
+const SECONDS_SWELL_GROW* = 0.12
+  ## Take this long to swell a touched item's marker clear of the finger, before its own
+  ## fill begins.
+  ##   Its own phase ahead of the fill rather than folded into it, so the marker is
+  ##   already at the size it will fill at when it starts filling -- a bar that grows and
+  ##   fills at once is two motions saying one thing, and the growing wins. Quick enough
+  ##   to read as the marker getting out of the way rather than as a delay before anything
+  ##   happens, which is what a press must never feel like.
+  ##   It does lengthen a press end to end, to `SECONDS_SWELL_GROW + SECONDS_LONG_PRESS`;
+  ##   the fill keeps its whole duration, so the part a reader watches is unchanged.
+
+const SECONDS_SWELL_SHRINK* = 0.15
+  ## Take this long to settle a swollen marker back to its true size after the finger
+  ## lifts.
+  ##   Slower than the grow: the grow is getting out of the way and wants to be over, while
+  ##   this is the marker arriving at what it will stay as, and an outline that snaps to its
+  ##   final size reads as a second marker replacing the first.
+
 const PIXELS_TAP_SLOP* = 12.0
   ## Move a press further than this and it stops being a press.
   ##   **Which scheme the gesture enters**, not merely whether it was a tap: a press that
@@ -165,6 +183,12 @@ type
   Hold* = object ## Hold a press that will select its item once it has lasted long enough.
     slot*: int ## Item pressed, and the one whose marker fills as the press matures.
     started*: float ## When the press landed, on the same clock every caller passes as `now`.
+    released*: Option[float] ## When the finger lifted, if it has.
+      ## A hold outlives its own maturity: the marker stays swollen for as long as the
+      ## finger is down, however long that is, and only settles once this says it may.
+      ## Without it the swell had to be a function of the fill and was therefore back to
+      ## its true size at exactly the moment the selection landed -- shrinking while the
+      ## reader was still deciding, and gone when it mattered.
 
   Interaction* = object ## Hold cursor, drag and press state between frames.
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
@@ -514,7 +538,19 @@ proc pruneFocus*(interaction: var Interaction; scene: Scene) =
 
 proc beginHold*(interaction: var Interaction; slot: int; now: float) =
   ## Start a press on `slot` that will select it once it has lasted long enough.
-  interaction.hold = some(Hold(slot: slot, started: now))
+  interaction.hold = some(Hold(slot: slot, started: now, released: none(float)))
+
+
+proc releaseHold*(interaction: var Interaction; now: float) =
+  ## Note that the finger has lifted, starting the marker's settle back to its true size.
+  ##   Distinct from `cancelHold` on purpose. This is a press ending the way a press is
+  ##   meant to, so its marker settles; cancelling is a press that stopped being one --
+  ##   moved into a camera gesture, interrupted by a second finger, escaped -- and that
+  ##   snaps away, because there is nothing left for a settle to be about.
+  ##   Recording the moment rather than clearing the hold outright: the swell still has a
+  ##   phase left to run, and `swellHold` retires the hold once it is spent.
+  if interaction.hold.isNone or interaction.hold.get.released.isSome: return
+  interaction.hold.get.released = some(now)
 
 
 proc cancelHold*(interaction: var Interaction) =
@@ -533,9 +569,53 @@ func progressHold*(interaction: Interaction; now: float): float =
   ##   here is: this is a clock being shown rather than a transition being softened, and an
   ##   eased clock reads as stalling just before it fires -- exactly where a user is
   ##   deciding whether the hold is working.
+  ##   Starts only once `SECONDS_SWELL_GROW` has passed, so the marker is already at the
+  ##   size it will fill at before it begins filling; see `swellHold`.
   if interaction.hold.isNone: return 0.0
-  let elapsed = now - interaction.hold.get.started
+  let elapsed = now - interaction.hold.get.started - SECONDS_SWELL_GROW
   max(0.0, min(1.0, elapsed/SECONDS_LONG_PRESS))
+
+
+func swellHold*(interaction: Interaction; now: float): float =
+  ## Report how far a touched item's marker is swollen clear of the finger, from 0 at its
+  ## true size to 1 fully out; 0 where no press is in progress.
+  ##   **On its own clock, not on the fill's.** Four phases, and only the middle two are
+  ## about the fill at all:
+  ##
+  ##   | Phase | While | Swell |
+  ##   |-------|-------|-------|
+  ##   | grow | the first `SECONDS_SWELL_GROW` | 0 rising to 1 |
+  ##   | fill | the `SECONDS_LONG_PRESS` after that | 1 |
+  ##   | held | however long the finger stays down past maturity | 1 |
+  ##   | settle | `SECONDS_SWELL_SHRINK` after the lift | 1 falling to 0 |
+  ##
+  ##   The *held* phase is the point of the whole arrangement. The swell used to be a half
+  ## sine over the fill, which put the marker back at its true size at exactly the moment
+  ## the selection landed -- shrinking while the reader was still deciding, and gone when
+  ## it mattered. It now stays out until the finger says otherwise, for as long as that
+  ## takes.
+  ##   Eased at both ends through `mesh.easeOutCubic`, unlike `progressHold` beside it:
+  ## these are transitions being softened, where that is a clock being shown.
+  if interaction.hold.isNone: return 0.0
+  let hold = interaction.hold.get
+  if hold.released.isSome:
+    let settling = (now - hold.released.get)/SECONDS_SWELL_SHRINK
+    return 1.0 - easeOutCubic(clamp(settling, 0.0, 1.0))
+  easeOutCubic(clamp((now - hold.started)/SECONDS_SWELL_GROW, 0.0, 1.0))
+
+
+func isHoldSpent*(interaction: Interaction; now: float): bool =
+  ## Report whether a released hold has finished settling and may be forgotten.
+  ##   Asked by the caller that owns the frame loop, so a hold retires on a frame boundary
+  ## rather than inside whichever query happened to be asked last. A hold still under a
+  ## finger is never spent, however long it has been held.
+  ##   Stated against `swellHold` rather than against `SECONDS_SWELL_SHRINK` a second time,
+  ## which is `isHoldMature`'s rule and for the same reason: two comparisons against one
+  ## duration are two chances to disagree, and here they genuinely would -- subtracting two
+  ## large timestamps loses enough precision that a hold released at 1005.62 and asked at
+  ## 1005.77 measures 0.14999999999997 against a 0.15 shrink.
+  interaction.hold.isSome and interaction.hold.get.released.isSome and
+    swellHold(interaction, now) <= 0.0
 
 
 func isHoldMature*(interaction: Interaction; now: float): bool =

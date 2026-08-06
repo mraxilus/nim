@@ -736,6 +736,21 @@ proc nimHoldSlot(): cint {.exportc.} =
   if g_interaction.hold.isSome: cint(g_interaction.hold.get.slot) else: SLOT_NONE
 
 
+proc nimReleaseHold(now: cfloat) {.exportc.} =
+  ## Forward to `interaction.releaseHold`; see its own doc comment.
+  interaction.releaseHold(g_interaction, float(now))
+
+
+proc nimSwellHold(now: cfloat): cfloat {.exportc.} =
+  ## Forward to `interaction.swellHold`; see its own doc comment.
+  cfloat(interaction.swellHold(g_interaction, float(now)))
+
+
+proc nimIsHoldSpent(now: cfloat): bool {.exportc.} =
+  ## Forward to `interaction.isHoldSpent`; see its own doc comment.
+  interaction.isHoldSpent(g_interaction, float(now))
+
+
 proc nimHoldProgress(now: cfloat): cfloat {.exportc.} =
   ## Forward to `interaction.progressHold`; see its own doc comment.
   ##   Exported rather than left to a subtraction in the presentation layer: how long a
@@ -1017,7 +1032,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
 
 
 proc nimSelectionMarker(
-  slot, width, height: cint; progress: cfloat; is_touch: bool
+  slot, width, height: cint; progress: cfloat; is_touch: bool; swell: cfloat = 0.0
 ): seq[float32] {.exportc.} =
   ## Shape this item's own selection/hover marker and report it flat, for the browser's
   ## SVG overlay to stroke: `[kind, first, second, third, x0, y0, x1, y1, ...]`.
@@ -1036,9 +1051,11 @@ proc nimSelectionMarker(
   ##   Point count is whatever is left, so a caller reads it off the length rather than
   ##   being handed a count it could disagree with -- except `Bands`, which carries two
   ##   runs in one array and so has to say where the first ends.
-  ##   `is_touch` swells every outline clear of a fingertip partway through a hold; see
-  ##   `marker.clearanceTouch`. The caller knows which kind of gesture is filling the
-  ##   marker and this module does not, so it is asked rather than guessed.
+  ##   `is_touch` says a finger is doing the holding and `swell` how far clear of it the
+  ##   outline stands right now -- `nimSwellHold`'s answer, which runs on its own clock
+  ##   rather than on the fill's; see `interaction.swellHold`. The caller knows which kind
+  ##   of gesture is filling the marker and this module does not, so it is asked rather
+  ##   than guessed.
   ##   `progress` draws the marker part-built for a press maturing into a selection; pass
   ##   1 for a finished one. What a partial marker looks like is `marker.markerFor`'s own
   ##   decision, not this bridge's and not the overlay's -- a ring comes back swept, rails
@@ -1055,6 +1072,7 @@ proc nimSelectionMarker(
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
       g_camera, vp, int(width), int(height), float(progress), is_touch,
+      swell = float(swell),
     )
   if shaped.isNone: return
 
@@ -1089,7 +1107,8 @@ proc nimSelectionMarker(
 
 
 proc nimSelectionPulse(
-  slot, width, height: cint; progress: cfloat; is_touch: bool; now: cfloat
+  slot, width, height: cint; progress: cfloat; is_touch: bool; now: cfloat;
+  swell: cfloat = 0.0
 ): seq[float32] {.exportc.} =
   ## Report the orientation pulse travelling along this item's own marker, flat, as a run
   ## count then each run's own point count followed by its points:
@@ -1110,6 +1129,7 @@ proc nimSelectionPulse(
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
       g_camera, vp, int(width), int(height), float(progress), is_touch, some(float(now)),
+      swell = float(swell),
     )
   if shaped.isNone or shaped.get.count_run_pulse == 0: return
 

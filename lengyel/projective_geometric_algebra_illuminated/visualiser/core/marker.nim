@@ -343,17 +343,17 @@ func arrowheadFor*(tail, head: ScreenPosition): Option[array[3, ScreenPosition]]
 
 #[ Touch Clearance ]#
 
-func clearanceTouch*(progress: float; is_touch: bool): float =
-  ## Measure how far outward to push a marker, in pixels, at this point in a hold.
-  ##   Zero at both ends and `CLEARANCE_MARKER_TOUCH` halfway, along a half sine: the
-  ##   marker leaves and returns to its true size exactly, so a finished marker is the
-  ##   same outline whether a finger or a mouse produced it, and nothing has to be undone
-  ##   at the end. A curve rather than a step because the swell is meant to read as the
-  ##   marker breathing out from under the finger, not as a second marker appearing.
+func clearanceTouch*(swell: float; is_touch: bool): float =
+  ## Measure how far outward to push a marker, in pixels, at this much of a swell.
+  ##   A plain scaling of `CLEARANCE_MARKER_TOUCH`, because the *shape* of the swell is
+  ##   the caller's to say -- `interaction.swellHold` runs it through four phases, of
+  ##   which only two have anything to do with how far the hold has filled. This was a
+  ##   half sine over the fill, which meant the marker was back to its true size at exactly
+  ##   the moment the selection landed: shrinking while the reader was still deciding.
   ##   Zero throughout for a mouse: a cursor hides nothing, and swelling under one would
   ##   be motion with nothing to say.
   if not is_touch: return 0.0
-  CLEARANCE_MARKER_TOUCH*sin(PI*clamp(progress, 0.0, 1.0))
+  CLEARANCE_MARKER_TOUCH*clamp(swell, 0.0, 1.0)
 
 
 
@@ -775,7 +775,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0;
-  is_touch: bool = false; now: Option[float] = none(float)
+  is_touch: bool = false; now: Option[float] = none(float); swell: float = 0.0
 ): Option[Marker] =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
@@ -787,8 +787,9 @@ func markerFor*(
   ##   business -- a ring sweeps, rails run outward, a circle opens, bands close inward,
   ##   a frame opens from the middle -- because what reads as *filling* differs by shape
   ##   as much as what reads as *surrounding* does.
-  ##   `is_touch` says the hold is a finger's, which swells every outline clear of it
-  ##   partway through; see `clearanceTouch`. One flag rather than a per-shape rule,
+  ##   `is_touch` says the hold is a finger's, and `swell` how far clear of it every
+  ##   outline is pushed right now; see `clearanceTouch`, and `interaction.swellHold` for
+  ##   the four phases that number comes from. One flag rather than a per-shape rule,
   ##   because what it compensates for -- a fingertip over the thing being marked -- does
   ##   not vary by what is under it.
   ##   `now` runs the orientation pulse round the outline, and **is what a caller passes
@@ -804,7 +805,7 @@ func markerFor*(
   if shape.isNone: return
   let
     is_horizon = geometry.isHorizon
-    clearance = clearanceTouch(progress, is_touch)
+    clearance = clearanceTouch(swell, is_touch)
     phase_pulse =
       if now.isSome: some(phasePulse(now.get)) else: none(float)
   case shape.get

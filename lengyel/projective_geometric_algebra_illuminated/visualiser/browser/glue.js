@@ -1263,10 +1263,10 @@ function appendMarkerPulse(slot, alpha, progress, is_touch, now_seconds) {
   }
 }
 
-function appendMarker(slot, alpha, w, h, progress, is_touch) {
+function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
   const marker =
     nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, progress,
-      is_touch === true);
+      is_touch === true, swell || 0);
   if (marker.length === 0) return;
   const kind = marker[0], is_closed = marker[1] > 0.5;
   const radius = marker[2], fraction = marker[3];
@@ -1342,6 +1342,7 @@ function refreshOverlay(cursor) {
   // marker at lower opacity, so both read as one family and hovering a line previews
   // exactly what selecting it will draw.
   for (const slot of slots_selection) {
+    if (slot === nimHoldSlot()) continue; // Its own swollen marker is drawn below.
     appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
     appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false, now());
   }
@@ -1354,9 +1355,13 @@ function refreshOverlay(cursor) {
   // from the touch branch of `pointerdown` and from nowhere else, so a hold in progress on
   // this build is a finger's by construction -- the flag is passed rather than inferred
   // inside marker.nim, which cannot see what kind of pointer is on the glass.
+  // Drawn **even once the slot is selected**, unlike every other overlay rule here: a
+  // matured hold keeps its swollen marker until the finger lifts and it settles, and the
+  // plain selected marker underneath it is the very size this is animating away from.
   const slot_hold = nimHoldSlot();
-  if (slot_hold >= 0 && !slots_selection.includes(slot_hold)) {
-    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true);
+  if (slot_hold >= 0) {
+    appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true,
+      nimSwellHold(now()));
   }
 
   // Hover and keyboard focus wear the same marker at the same weight: a reader driving by
@@ -1688,8 +1693,10 @@ function releasePointer(e) {
   // Touch: a tap is a same-finger down+up within time/distance bounds, with no second
   // finger ever joining and no long-press already having fired -- resolves into a
   // selection toggle (see `handleTap`).
-  nimCancelHold(); // Released, whether or not the hold had matured; the frame that matured
-    //   it has already selected the item.
+  // Released, whether or not the hold had matured; the frame that matured it has already
+  //   selected the item. The hold itself lives on for one settle, which is what shrinks
+  //   the marker back -- `nimIsHoldSpent` retires it in the draw loop.
+  nimReleaseHold(now());
   if (is_touch_dragging) {
     // A construction drag ends exactly as the mouse's own does -- same call, same three
     //   outcomes -- because it *is* the same gesture reached by a different pointer.
@@ -1955,12 +1962,16 @@ function frame() {
   //   a timer that fires on its own, so that the moment the marker finishes filling is the
   //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
   //   progress the marker was just drawn at, so the two cannot disagree by a frame.
-  if (nimHoldMature(now_seconds)) {
-    const slot_matured = nimHoldSlot();
-    nimCancelHold();
+  if (nimHoldMature(now_seconds) && !has_long_press_fired) {
+    // Select, but **keep the hold**: the marker stays swollen clear of the finger for as
+    // long as that finger is down, and only settles once `nimReleaseHold` says it may.
+    // Cancelling here is what used to put it back to its true size at exactly the moment
+    // the selection landed -- shrinking while the reader was still deciding.
     has_long_press_fired = true;
-    toggleSelection(slot_matured, position_touch_down);
+    toggleSelection(nimHoldSlot(), position_touch_down);
   }
+  // And retire it once that settle is spent, so a finished hold stops being drawn at all.
+  if (nimIsHoldSpent(now_seconds)) nimCancelHold();
 
   // Recompute what the drag in progress would build, and whether its dwell has come due,
   // before the frame that ghosts the answer is assembled. Runs every frame rather than on

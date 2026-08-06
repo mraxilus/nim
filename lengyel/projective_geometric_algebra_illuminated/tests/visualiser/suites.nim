@@ -2536,34 +2536,85 @@ suite "Interaction":
     check progressHold(interaction, 1000.0) == 0.0
     check not isHoldMature(interaction, 1000.0)
     interaction.beginHold(3, 1000.0)
-    check progressHold(interaction, 1000.0 + SECONDS_LONG_PRESS) == 1.0
+    # Measured past the grow, which the fill starts after; see `swellHold`.
+    const FULL = 1000.0 + SECONDS_SWELL_GROW + SECONDS_LONG_PRESS
+    check progressHold(interaction, FULL) == 1.0
     interaction.cancelHold()
-    check progressHold(interaction, 1000.0 + SECONDS_LONG_PRESS) == 0.0
-    check not isHoldMature(interaction, 1000.0 + SECONDS_LONG_PRESS)
+    check progressHold(interaction, FULL) == 0.0
+    check not isHoldMature(interaction, FULL)
 
 
   test "a hold fills linearly, is clamped at both ends, and is due exactly when full":
     var interaction = Interaction(is_enabled: true)
     interaction.beginHold(0, 1000.0)
+    # The fill starts once the marker has grown clear of the finger, so every time below is
+    #   measured from the end of that grow rather than from the press.
+    const FILLING = 1000.0 + SECONDS_SWELL_GROW
     # Linear, not eased: half the wait is half the fill. This is the property that makes
     #   the marker a clock a reader can judge the remaining time from, and it is what an
     #   `easeOutCubic` here would break -- see `progressHold`'s own doc comment.
-    check progressHold(interaction, 1000.0 + 0.5*SECONDS_LONG_PRESS) =~ 0.5
-    check progressHold(interaction, 1000.0 + 0.25*SECONDS_LONG_PRESS) =~ 0.25
+    check progressHold(interaction, FILLING + 0.5*SECONDS_LONG_PRESS) =~ 0.5
+    check progressHold(interaction, FILLING + 0.25*SECONDS_LONG_PRESS) =~ 0.25
+    # Nothing fills while the marker is still getting out of the way.
+    check progressHold(interaction, 1000.0 + 0.5*SECONDS_SWELL_GROW) == 0.0
     var previous = 0.0
     for step in 0 .. 20:
       let progress = progressHold(
-        interaction, 1000.0 + float(step)/20.0*SECONDS_LONG_PRESS
+        interaction, FILLING + float(step)/20.0*SECONDS_LONG_PRESS
       )
       check progress >= previous
       previous = progress
     # Clamped below, so a clock that steps backward cannot un-fill a marker, and above, so
     #   a frame arriving late still draws a whole one rather than overshooting past it.
     check progressHold(interaction, 900.0) == 0.0
-    check progressHold(interaction, 1000.0 + 10.0*SECONDS_LONG_PRESS) == 1.0
+    check progressHold(interaction, FILLING + 10.0*SECONDS_LONG_PRESS) == 1.0
     # Maturity lands exactly where the fill completes, never a frame either side of it.
-    check not isHoldMature(interaction, 1000.0 + 0.999*SECONDS_LONG_PRESS)
-    check isHoldMature(interaction, 1000.0 + SECONDS_LONG_PRESS)
+    check not isHoldMature(interaction, FILLING + 0.999*SECONDS_LONG_PRESS)
+    check isHoldMature(interaction, FILLING + SECONDS_LONG_PRESS)
+
+
+  test "the swell grows, waits out the whole hold, and settles only once the finger lifts":
+    # The defect this pins: the swell used to be a half sine over the fill, so the marker
+    #   was back to its true size at exactly the moment the selection landed -- shrinking
+    #   while the reader was still deciding, and gone when it mattered.
+    var interaction = Interaction(is_enabled: true)
+    interaction.beginHold(0, 1000.0)
+    check swellHold(interaction, 1000.0) =~ 0.0
+    check swellHold(interaction, 1000.0 + SECONDS_SWELL_GROW) =~ 1.0
+    # Fully out before the fill starts, so the marker fills at the size it will fill at.
+    check swellHold(interaction, 1000.0 + SECONDS_SWELL_GROW) >=
+      swellHold(interaction, 1000.0 + 0.5*SECONDS_SWELL_GROW)
+
+    # Out for the whole fill, past maturity, and for as long as the finger stays down --
+    #   an unreleased hold never settles, however long it is held.
+    const MATURED = 1000.0 + SECONDS_SWELL_GROW + SECONDS_LONG_PRESS
+    for now in [MATURED - 0.5*SECONDS_LONG_PRESS, MATURED, MATURED + 60.0]:
+      check swellHold(interaction, now) =~ 1.0
+      check not isHoldSpent(interaction, now)
+
+    # And settles exactly one shrink after the lift, not before and not later.
+    interaction.releaseHold(MATURED + 5.0)
+    check swellHold(interaction, MATURED + 5.0) =~ 1.0
+    check swellHold(interaction, MATURED + 5.0 + SECONDS_SWELL_SHRINK) =~ 0.0
+    check not isHoldSpent(interaction, MATURED + 5.0 + 0.5*SECONDS_SWELL_SHRINK)
+    # A frame past the shrink rather than exactly on it: subtracting two large timestamps
+    #   does not land on the boundary exactly, and no caller asks at an exact instant --
+    #   they ask once a frame. What matters is that it is not spent early and is spent.
+    check isHoldSpent(interaction, MATURED + 5.0 + 1.1*SECONDS_SWELL_SHRINK)
+    # A second lift is not a second settle: the first one owns the clock.
+    interaction.releaseHold(MATURED + 900.0)
+    check isHoldSpent(interaction, MATURED + 5.0 + 1.1*SECONDS_SWELL_SHRINK)
+
+
+  test "a cancelled hold snaps away rather than settling":
+    # Cancelling is a press that stopped being one -- moved into a camera gesture, or
+    #   interrupted -- so there is nothing left for a settle to be about.
+    var interaction = Interaction(is_enabled: true)
+    interaction.beginHold(0, 1000.0)
+    check swellHold(interaction, 1000.0 + SECONDS_SWELL_GROW) =~ 1.0
+    interaction.cancelHold()
+    check swellHold(interaction, 1000.0 + SECONDS_SWELL_GROW) =~ 0.0
+    check not isHoldSpent(interaction, 1000.0 + 10.0)
 
 
 suite "Marker":
@@ -2846,16 +2897,15 @@ suite "Marker":
     check count_corner == CORNERS_MARKER_FRAME
 
 
-  test "a touch hold swells every marker clear of the finger, and settles back exactly":
+  test "a touch hold swells every marker clear of the finger, and a mouse never sees it":
     # The reason the swell exists: a fingertip covers what it presses, so a marker filling
-    #   underneath one says nothing to the person filling it.
+    #   underneath one says nothing to the person filling it. How far out it stands is now
+    #   a plain scaling of the swell, whose *shape* is `interaction.swellHold`'s to decide.
     const RADIUS_FINGER = 22.0 # Half the 44-pixel minimum touch target.
     check clearanceTouch(0.0, is_touch = true) =~ 0.0
-    check clearanceTouch(1.0, is_touch = true) =~ 0.0
-    check RADIUS_MARKER_POINT + clearanceTouch(0.5, is_touch = true) > RADIUS_FINGER
-    # A mouse hides nothing, so it never sees the swell at all.
-    for progress in [0.0, 0.25, 0.5, 0.75, 1.0]:
-      check clearanceTouch(progress, is_touch = false) =~ 0.0
+    check RADIUS_MARKER_POINT + clearanceTouch(1.0, is_touch = true) > RADIUS_FINGER
+    for swell in [0.0, 0.25, 0.5, 0.75, 1.0]:
+      check clearanceTouch(swell, is_touch = false) =~ 0.0
 
 
   test "a point at horizon keeps its ring, on the star it is drawn as":
