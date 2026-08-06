@@ -20,7 +20,7 @@
 ##   | Plane            | `Loop`  -- circle lying *on the plane*, outside its own rim.  |
 ##   | Line at horizon  | `Bands` -- two small circles on the sky flanking the great    |
 ##   |                  |   circle the line itself is drawn as.                         |
-##   | Plane at horizon | `Frame` -- rectangle around the whole viewport, since the     |
+##   | Plane at horizon | `Frame` -- boundary around the whole viewport, since the      |
 ##   |                  |   object it marks is the whole sky.                           |
 ##   | Point at horizon | `Ring`, about the star it is drawn as.                        |
 ##   |------------------|---------------------------------------------------------------|
@@ -111,6 +111,19 @@ const
     ## Cut each of a horizon line's own two flanking circles into this many pieces.
     ##   Fewer than the `SEGMENTS_CIRCLE_HORIZON` the drawn great circle uses, for the
     ##   reason `SEGMENTS_MARKER_LOOP` gives: this is a thin overlay, not scene geometry.
+  SEGMENTS_MARKER_FRAME* = 64
+    ## Cut a horizon plane's own boundary into this many even angular steps, before the
+    ## four corner directions are merged in.
+    ##   A multiple of four, so the four edge midpoints -- the first places the expanding
+    ##   circle meets the screen -- are sampled exactly rather than straddled. The rest of
+    ##   `SEGMENTS_MARKER_LOOP`'s reasoning applies unchanged: a thin overlay, not scene
+    ##   geometry, whose polygon corners fall below a pixel long before they are visible.
+  CORNERS_MARKER_FRAME* = 4
+    ## Sample this many corner directions on top of the even steps above.
+    ##   A rectangle has four, and they are the one place an even sampling cannot be
+    ##   trusted to land: a corner missed by a fraction of a step is a corner visibly cut
+    ##   off the finished frame. Points on a straight edge lie *on* that edge by
+    ##   construction, so nothing else needs extra sampling.
   ANGLE_MARKER_BANDS_OPEN* = 0.5*PI
     ## Start a horizon line's own bands this far off it, in radians, at zero progress.
     ##   A quarter turn is the pole of the very sphere the line's great circle runs
@@ -130,6 +143,9 @@ static:
   doAssert SEGMENTS_MARKER_LOOP >= 12,
     &"A plane's marker needs 12 segments to read as a circle; got " &
     &"`{SEGMENTS_MARKER_LOOP}`."
+  doAssert SEGMENTS_MARKER_FRAME mod 4 == 0,
+    &"A frame's steps must land on the four edge midpoints; got " &
+    &"`{SEGMENTS_MARKER_FRAME}`."
 
 
 
@@ -141,7 +157,8 @@ type
     Rails, ## Pair of world-space lines flanking a line, converging as it does.
     Loop, ## Polyline lying on a plane in world space, projected, for a plane.
     Bands, ## Pair of circles on the sky flanking a horizon line's own great circle.
-    Frame, ## Rectangle around the whole viewport, for the whole sky a horizon plane is.
+    Frame, ## Boundary around the whole viewport, for the whole sky a horizon plane is:
+      ## a circle while it expands, the viewport's own rectangle once it arrives.
 
   Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
     case kind*: MarkerKind
@@ -171,9 +188,13 @@ type
       points_band*: array[2, array[SEGMENTS_MARKER_BANDS, ScreenPosition]]
         ## Each band's own points, in order around the sky, already projected.
     of MarkerKind.Frame:
-      corners*: array[4, ScreenPosition] ## Rectangle's own corners, clockwise from the
-        ## top left. Screen space throughout, and the one marker that is: the sky has no
-        ## place in the scene to surround, so its marker surrounds the view instead.
+      count_frame*: int ## Points used of `points_frame` below.
+      points_frame*: array[
+        SEGMENTS_MARKER_FRAME + CORNERS_MARKER_FRAME, ScreenPosition
+      ] ## Boundary's own points, in order around the centre of the view. Screen space
+        ## throughout, and the one marker that is: the sky has no place in the scene to
+        ## surround, so its marker surrounds the view instead. Always closed -- nothing in
+        ## screen space can be cut away by the eye, unlike `Loop` and `Bands`.
 
 
 
@@ -493,33 +514,75 @@ func markerBands(
   some(marker)
 
 
+func radiusToEdge(half_width, half_height, angle: float): float =
+  ## Measure how far the edge of an axis-aligned rectangle stands from its own centre
+  ## along `angle`, in the same units its half-extents are given in.
+  ##   Which of the two edge pairs is met first is whichever bound the ray reaches
+  ##   sooner. A ray straight along an axis never reaches the pair parallel to it, so
+  ##   that term is dropped rather than divided by zero.
+  let (across, down) = (abs(cos(angle)), abs(sin(angle)))
+  if across <= 0.0: return half_height/down
+  if down <= 0.0: return half_width/across
+  min(half_width/across, half_height/down)
+
+
 func markerFrame(width, height: int; progress, clearance: float): Option[Marker] =
-  ## Build a horizon plane's own frame: a rectangle around the viewport itself.
+  ## Build a horizon plane's own frame: a boundary around the viewport itself, expanding
+  ## from the centre of the view as a circle and settling as the viewport's own rectangle.
   ##   A plane at horizon is the whole sky, the same universal object however it was
   ##   built, and it is drawn as a dome filling every direction -- so there is no place in
   ##   the scene for an outline to surround, and the honest marker surrounds the view. It
   ##   does not move with the camera, which is right rather than a shortcut: what it marks
   ##   does not either.
-  ##   `progress` scales it about the centre of the view, so a filling hold opens it
-  ##   outward from the middle -- the same mechanic as a finite plane's circle opening
-  ##   from the centre of its disc, and the exact opposite of the bands above, which is
-  ##   what tells the two horizon shapes apart while they fill.
+  ##   `progress` sets one reach in pixels, and each direction's boundary point stands at
+  ##   that reach *or* at the screen edge, whichever is nearer. So the marker is a circle
+  ##   for as long as the circle fits, and then *becomes* the edge piece by piece as the
+  ##   circle passes each part of it -- the four edge midpoints first, the corners last.
+  ##   A rectangle scaled about the centre instead reached every edge at once, which read
+  ##   as a shrunken copy of the screen rather than as something opening out into it.
+  ##   Full reach is the half-diagonal, which is the corners' own distance and so the
+  ##   largest `radiusToEdge` can return: at `progress` 1 no direction is still bounded by
+  ##   the circle and the whole boundary is the rectangle, to the pixel.
   ##   `clearance` pushes it outward past the inset, which on this shape means past the
   ##   edge of the screen: a frame is never under a finger, and shrinking the inset would
   ##   read as the marker retreating rather than swelling.
+  ##   None only for a viewport too small to hold the inset at all, which has no room to
+  ##   draw a frame in.
   let
     inset = GAP_MARKER - clearance
     (centre_x, centre_y) = (0.5*float(width), 0.5*float(height))
-    reach = clamp(progress, 0.0, 1.0)
-    half_width = reach*(centre_x - inset)
-    half_height = reach*(centre_y - inset)
-  func at(x, y: float): ScreenPosition = ScreenPosition(x: x, y: y, depth: 1.0)
-  some(Marker(kind: MarkerKind.Frame, corners: [
-    at(centre_x - half_width, centre_y - half_height),
-    at(centre_x + half_width, centre_y - half_height),
-    at(centre_x + half_width, centre_y + half_height),
-    at(centre_x - half_width, centre_y + half_height),
-  ]))
+    (half_width, half_height) = (centre_x - inset, centre_y - inset)
+  if half_width <= 0.0 or half_height <= 0.0: return
+  let
+    reach = clamp(progress, 0.0, 1.0)*hypot(half_width, half_height)
+    turn_corner = arctan2(half_height, half_width)
+    # Ascending, and the corners are the only directions an even sampling cannot be
+    #   trusted to land on -- see `CORNERS_MARKER_FRAME`.
+    turns_corner = [
+      turn_corner, PI - turn_corner, PI + turn_corner, 2.0*PI - turn_corner
+    ]
+  var marker = Marker(kind: MarkerKind.Frame)
+  template emit(angle: float) =
+    let radius = min(reach, radiusToEdge(half_width, half_height, angle))
+    marker.points_frame[marker.count_frame] = ScreenPosition(
+      x: centre_x + radius*cos(angle), y: centre_y + radius*sin(angle), depth: 1.0,
+    )
+    inc marker.count_frame
+  # Merge the two ascending runs of angles into one, so the boundary comes out in order
+  #   around the centre and strokes as a simple closed outline.
+  var next_corner = 0
+  for step in 0 ..< SEGMENTS_MARKER_FRAME:
+    let angle = (2.0*PI*float(step))/float(SEGMENTS_MARKER_FRAME)
+    while next_corner < CORNERS_MARKER_FRAME and turns_corner[next_corner] <= angle:
+      # A corner landing exactly on a step is emitted by the step itself; emitting it
+      #   here as well would leave a repeated point in the outline.
+      if turns_corner[next_corner] < angle: emit(turns_corner[next_corner])
+      inc next_corner
+    emit(angle)
+  while next_corner < CORNERS_MARKER_FRAME:
+    emit(turns_corner[next_corner])
+    inc next_corner
+  some(marker)
 
 
 

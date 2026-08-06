@@ -996,7 +996,7 @@ proc nimSelectionMarker(
   ##   | 1 `Rails` | -- | -- | -- | two per drawn piece |
   ##   | 2 `Loop` | closed | -- | -- | around the plane |
   ##   | 3 `Bands` | first closed | first's count | second closed | both bands, in order |
-  ##   | 4 `Frame` | closed | -- | -- | four corners |
+  ##   | 4 `Frame` | closed | -- | -- | around the view |
   ##
   ##   Point count is whatever is left, so a caller reads it off the length rather than
   ##   being handed a count it could disagree with -- except `Bands`, which carries two
@@ -1048,8 +1048,9 @@ proc nimSelectionMarker(
           cfloat(marker.points_band[side][i].x), cfloat(marker.points_band[side][i].y)
         ])
   of MarkerKind.Frame:
-    result[1] = 1.0'f32 # Always closed: a frame is a rectangle, never cut by the eye.
-    for corner in marker.corners: result.add([cfloat(corner.x), cfloat(corner.y)])
+    result[1] = 1.0'f32 # Always closed: a frame is screen space, never cut by the eye.
+    for i in 0 ..< marker.count_frame:
+      result.add([cfloat(marker.points_frame[i].x), cfloat(marker.points_frame[i].y)])
 
 
 

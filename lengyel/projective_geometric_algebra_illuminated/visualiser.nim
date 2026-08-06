@@ -432,12 +432,15 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
         alpha, WIDTH_MARKER, cint(ord(marker.are_closed_band[side])),
       )
   of MarkerKind.Frame:
-    var points: array[8, cfloat]
-    for i, corner in marker.corners:
-      points[2*i] = cfloat(corner.x)
-      points[2*i + 1] = cfloat(corner.y)
+    # Closed unconditionally: this outline is built in screen space, so unlike the two
+    #   above there is no eye to cut it into an arc.
+    var points: array[2*(SEGMENTS_MARKER_FRAME + CORNERS_MARKER_FRAME), cfloat]
+    for i in 0 ..< marker.count_frame:
+      points[2*i] = cfloat(marker.points_frame[i].x)
+      points[2*i + 1] = cfloat(marker.points_frame[i].y)
     gui.overlayPolyline(
-      addr points[0], 4, tint.red, tint.green, tint.blue, alpha, WIDTH_MARKER, 1,
+      addr points[0], cint(marker.count_frame), tint.red, tint.green, tint.blue, alpha,
+      WIDTH_MARKER, 1,
     )
 
 

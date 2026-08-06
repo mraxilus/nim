@@ -1272,9 +1272,10 @@ function appendMarker(slot, alpha, w, h, progress, is_touch) {
       }));
     }
   } else if (kind === MARKER_LOOP || kind === MARKER_FRAME) {
-    // A frame is four corners and always closed, so it strokes through the very same
-    // element a plane's loop does rather than through a <rect> of its own -- one path
-    // for every closed outline, and nothing to keep in step when one of them changes.
+    // A frame is a closed polyline too -- a circle while it expands, the screen's own
+    // rectangle once it arrives -- so it strokes through the very same element a plane's
+    // loop does rather than through a <rect> of its own: one path for every closed
+    // outline, and nothing to keep in step when one of them changes.
     svg_overlay.appendChild(svgEl(is_closed ? 'polygon' : 'polyline', {
       points: points.map((p) => p[0] + ',' + p[1]).join(' '),
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,

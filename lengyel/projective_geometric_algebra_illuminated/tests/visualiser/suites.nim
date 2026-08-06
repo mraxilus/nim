@@ -2756,26 +2756,82 @@ suite "Marker":
     check settled =~ OFFSET_MARKER_RAIL*radiansPerPixel(scale)
 
 
-  test "a plane at horizon is framed by the viewport, opening from its centre":
+  test "a plane at horizon is framed by the viewport, arriving as the screen's edge":
     # The attitude of a grade-4 object is the plane at horizon -- the whole sky.
     let marker = markerOf(PLANE_HORIZON).get
     check marker.kind == MarkerKind.Frame
 
-    # The finished frame stands `GAP_MARKER` inside the viewport, the same clear space
-    #   every other marker in the family keeps from what it surrounds.
-    check marker.corners[0].x =~ GAP_MARKER
-    check marker.corners[0].y =~ GAP_MARKER
-    check marker.corners[2].x =~ float(WIDTH_MARK) - GAP_MARKER
-    check marker.corners[2].y =~ float(HEIGHT_MARK) - GAP_MARKER
+    let
+      (centre_x, centre_y) = (0.5*float(WIDTH_MARK), 0.5*float(HEIGHT_MARK))
+      (inside_x, inside_y) =
+        (float(WIDTH_MARK) - GAP_MARKER, float(HEIGHT_MARK) - GAP_MARKER)
+    proc distancesFromCentre(marker: Marker): seq[float] =
+      for i in 0 ..< marker.count_frame:
+        let point = marker.points_frame[i]
+        result.add(hypot(point.x - centre_x, point.y - centre_y))
 
-    # Part-filled, it is concentric with the finished one and smaller -- the opposite of
-    #   the bands above, which is what tells the two horizon shapes apart while they fill.
-    let (centre_x, centre_y) = (0.5*float(WIDTH_MARK), 0.5*float(HEIGHT_MARK))
-    let half = markerOf(PLANE_HORIZON, progress = 0.5).get
-    check half.corners[0].x > marker.corners[0].x
-    check half.corners[2].x < marker.corners[2].x
-    check 0.5*(half.corners[0].x + half.corners[2].x) =~ centre_x
-    check 0.5*(half.corners[0].y + half.corners[2].y) =~ centre_y
+    # The finished frame *is* the viewport's rectangle, standing `GAP_MARKER` inside it --
+    #   the same clear space every other marker in the family keeps from what it surrounds.
+    #   Every point lies on that rectangle, and its extremes reach the whole way to it.
+    check marker.count_frame >= SEGMENTS_MARKER_FRAME
+    var (reached_x, reached_y) = (false, false)
+    for i in 0 ..< marker.count_frame:
+      let point = marker.points_frame[i]
+      check point.x >= GAP_MARKER - TOLERANCE_SINGLE
+      check point.x <= inside_x + TOLERANCE_SINGLE
+      check point.y >= GAP_MARKER - TOLERANCE_SINGLE
+      check point.y <= inside_y + TOLERANCE_SINGLE
+      # On the rectangle, not merely within it: one coordinate is pinned to an edge.
+      check point.x =~ GAP_MARKER or point.x =~ inside_x or
+        point.y =~ GAP_MARKER or point.y =~ inside_y
+      if point.x =~ GAP_MARKER or point.x =~ inside_x: reached_x = true
+      if point.y =~ GAP_MARKER or point.y =~ inside_y: reached_y = true
+    check reached_x and reached_y
+
+    # Barely started, it is a circle about the centre of the view: every point stands the
+    #   same distance out, which a scaled rectangle never does. That is the mechanic the
+    #   user asked for -- expanding outward from the middle rather than shrinking inward
+    #   from the edge -- and it is the opposite of the bands above, which close in from
+    #   outside any view at all.
+    # Full reach is the corners' own distance, so `progress` of it is the circle's radius
+    #   for as long as the circle is the thing bounding it.
+    let half_diagonal = hypot(centre_x - GAP_MARKER, centre_y - GAP_MARKER)
+    proc reachAt(progress: float): float = progress*half_diagonal
+    let opening = distancesFromCentre(markerOf(PLANE_HORIZON, progress = 0.1).get)
+    for distance in opening: check distance =~ reachAt(0.1)
+    check reachAt(0.1) < centre_y - GAP_MARKER # Still clear of the nearest edge.
+
+    # Part way, the circle has passed the short edges but not the corners, so the boundary
+    #   is edge in some directions and still circle in others -- which is what "highlights
+    #   each part of the edge as it gets there" means, checked rather than assumed.
+    let partial = markerOf(PLANE_HORIZON, progress = 0.75).get
+    var (count_on_edge, count_off_edge) = (0, 0)
+    for i in 0 ..< partial.count_frame:
+      let point = partial.points_frame[i]
+      if point.x =~ GAP_MARKER or point.x =~ inside_x or
+          point.y =~ GAP_MARKER or point.y =~ inside_y:
+        inc count_on_edge
+      else:
+        inc count_off_edge
+    check count_on_edge > 0
+    check count_off_edge > 0
+    # And the part still short of the edge is circular at that same shared reach, so the
+    #   marker really is one expanding circle bitten into by the screen, not two shapes.
+    for i in 0 ..< partial.count_frame:
+      let point = partial.points_frame[i]
+      if point.x =~ GAP_MARKER or point.x =~ inside_x or
+          point.y =~ GAP_MARKER or point.y =~ inside_y: continue
+      check hypot(point.x - centre_x, point.y - centre_y) =~ reachAt(0.75)
+
+    # A frame's four corners are sampled explicitly, so the finished outline has real
+    #   corners rather than corners cut across by wherever the even steps happened to land.
+    var count_corner = 0
+    for i in 0 ..< marker.count_frame:
+      let point = marker.points_frame[i]
+      if (point.x =~ GAP_MARKER or point.x =~ inside_x) and
+          (point.y =~ GAP_MARKER or point.y =~ inside_y):
+        inc count_corner
+    check count_corner == CORNERS_MARKER_FRAME
 
 
   test "a touch hold swells every marker clear of the finger, and settles back exactly":
