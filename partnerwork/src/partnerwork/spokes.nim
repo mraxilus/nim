@@ -50,6 +50,14 @@ const
   SPOKE_RADIUS = 240 ## Length of a lone spoke; a crowded one reaches further.
   SPOKE_STEP = 40.0  ## Angle between two spokes of the same kind, in degrees.
   LINE_HEIGHT = 12   ## Height of one line of a name.
+  LABEL_SIZE* = 11   ## Size a name is drawn at, in the drawing's own units.
+  LEAST_READABLE* = 8
+    ## Smallest a name may end up on a screen, once the drawing has been shrunk.
+    ##
+    ## The drawing shrinks to whatever room there is, and the whole of it shrinks
+    ## together, names included.  Past this the names are shapes rather than
+    ## words, and a drawing of your options whose options cannot be read is not
+    ## worth fitting: below it the drawing keeps its size and scrolls instead.
   NAME_ROOM = 24     ## Room a frame's own name takes above it.
   LABEL_DROP = 6     ## Gap between a frame and the name of the move that reaches it.
   ##
@@ -117,7 +125,12 @@ func closeStyle*(): string =
     "ms; --shrink: " & $SHRINK_TIME & "ms; --centre-at: " & $CENTRE_AT &
     "ms; --centre: " & $CENTRE_TIME & "ms; --grow-delay: " & $GROW_DELAY &
     "ms; --grow-spread: " & $GROW_SPREAD & "ms; --leaf-delay: " & $LEAF_DELAY &
-    "ms; --grow: " & $GROW_TIME & "ms"
+    "ms; --grow: " & $GROW_TIME & "ms" &
+    # The drawing is laid out in numbers rather than lengths so that the
+    # stylesheet can divide the room it has by them; these are what it
+    # multiplies them back up by, and how far down it may go.
+    "; --least-unit: " & formatFloat(LEAST_READABLE / LABEL_SIZE, ffDecimal, 3) &
+    "px"
 
 
 
@@ -202,7 +215,7 @@ const
   COLOUR_RIGHT = "var(--right, #a85f22)"
   COLOUR_QUIET = "var(--dim, #6b716e)"
     ## Ink for a name whose line has no one ink of its own to lend it.
-  LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
+  LABEL_FONT = "font: " & $LABEL_SIZE & "px ui-sans-serif, system-ui, sans-serif"
 
 
 func armColour(side: Side): string =
@@ -357,12 +370,21 @@ func renderSpokes*(here: Frame; motion = Motion.Still;
 
   # Every number the animation spends is written here, so that the stylesheet
   # holds the shape of the movement and this holds its size.
+  # The window and the pan are bare numbers, not lengths.  The stylesheet has to
+  # divide the room it has by the width the drawing wants, and a length cannot
+  # be divided by a length -- so the drawing hands over the numbers and takes
+  # back one unit to multiply them by.  Everything the drawing is made of is a
+  # multiple of that one unit, so scaling it is one value changing.
+  #
+  # `--mx`, `--my`, `--ox` and `--oy` stay lengths: they are read inside the
+  # picture, in its own units, and scale with it already.
   result = "<div class=\"viewport " & phase(motion) & "\" style=\"" &
-    closeStyle() & "; --w: " & $window[2] & "px; --h: " & $window[3] &
-    "px; --px: " & $px & "px; --py: " & $py &
-    "px; --to-w: " & $reached[2] & "px; --to-h: " & $reached[3] &
-    "px; --to-px: " & $qx & "px; --to-py: " & $qy &
-    "px; --mx: " & $mx & "px; --my: " & $my &
+    closeStyle() & "; --bw: " & $bw & "; --bh: " & $bh &
+    "; --w: " & $window[2] & "; --h: " & $window[3] &
+    "; --px: " & $px & "; --py: " & $py &
+    "; --to-w: " & $reached[2] & "; --to-h: " & $reached[3] &
+    "; --to-px: " & $qx & "; --to-py: " & $qy &
+    "; --mx: " & $mx & "px; --my: " & $my &
     "px; --ox: " & $CENTRE_X & "px; --oy: " & $CENTRE_Y & "px\">"
   result.add "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"" & $bx & " " &
     $by & " " & $bw & " " & $bh & "\" width=\"" & $bw & "\" height=\"" & $bh &

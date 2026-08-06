@@ -118,11 +118,33 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 
 /* The window on the drawing. Every frame is drawn in one fixed space and seen
    through a window cut to what that frame needs, which is why the window and
-   the drawing behind it always move together. */
-.viewport { position: relative; overflow: hidden;
-  margin: 0 auto; width: var(--w); height: var(--h); }
+   the drawing behind it always move together.
+
+   The drawing hands over its geometry as bare numbers, because the one thing
+   the stylesheet has to work out is the room it has divided by the width the
+   drawing wants -- and a length cannot be divided by a length. What comes back
+   is one unit, and everything the drawing is made of is a multiple of it, so
+   the whole thing scales by one value changing.
+
+   Registered, so they interpolate: the recentring animates these numbers, and
+   because the unit is worked out from `--w` the scale follows the animation on
+   its own. That is also what keeps the swap invisible -- the drawing being left
+   ends at exactly the width the frame reached is drawn at, so it ends at
+   exactly that frame's scale. */
+@property --w { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --h { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --px { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --py { syntax: "<number>"; inherits: true; initial-value: 0; }
+.view-spokes { container-type: inline-size; }
+.viewport {
+  /* Never bigger than it is drawn, never smaller than its names stay words. */
+  --unit: clamp(var(--least-unit), 100cqi / var(--w), 1px);
+  position: relative; overflow: hidden; margin: 0 auto;
+  width: calc(var(--w) * var(--unit)); height: calc(var(--h) * var(--unit)); }
 .spokes { position: absolute; left: 0; top: 0; display: block;
-  transform: translate(var(--px), var(--py)); }
+  width: calc(var(--bw) * var(--unit)); height: calc(var(--bh) * var(--unit));
+  transform: translate(calc(var(--px) * var(--unit)),
+    calc(var(--py) * var(--unit))); }
 .spokes .spoke-line { stroke-width: 3; vector-effect: non-scaling-stroke; }
 .spokes .spoke.two .spoke-line { stroke-dasharray: 6 5; stroke-width: 2; }
 .spokes .spoke-plate { fill: var(--panel); }
@@ -158,8 +180,10 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 @keyframes pass { to { transform: translate(var(--mx), var(--my)); } }
 @keyframes shrink { to { transform: scale(.35); opacity: 0; } }
 @keyframes retract { to { transform: scale(.02); opacity: 0; } }
-@keyframes reframe { to { width: var(--to-w); height: var(--to-h); } }
-@keyframes repan { to { transform: translate(var(--to-px), var(--to-py)); } }
+/* One clause, not two: the window and the pan are the same numbers now, and
+   the pan reaches the drawing by inheriting rather than by a rule of its own. */
+@keyframes recentre { to { --w: var(--to-w); --h: var(--to-h);
+  --px: var(--to-px); --py: var(--to-py); } }
 
 .leaving .going .leaf {
   animation: leaf-fold var(--fold-leaf) var(--ease-in) both;
@@ -188,11 +212,7 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   animation-delay: var(--shrink-at);
 }
 .leaving.viewport {
-  animation: reframe var(--centre) var(--ease-soft) both;
-  animation-delay: var(--centre-at);
-}
-.leaving .spokes {
-  animation: repan var(--centre) var(--ease-soft) both;
+  animation: recentre var(--centre) var(--ease-soft) both;
   animation-delay: var(--centre-at);
 }
 

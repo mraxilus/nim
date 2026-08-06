@@ -90,10 +90,23 @@ map's own least width plus the page's margins, and it is written once, in the
 stylesheet, as `--wide`: which widths are wide is a question about the layout,
 so the script asks the layout rather than keeping a second copy of the number.
 
-The close drawing is cut to the frame, and the widest frame is wider than a
-phone — `open` fans four ways out and wants 728 pixels. It scrolls, and it opens
-scrolled to the frame being held rather than to the left edge of the fan. Every
-way out is still a button in the list beside it, so nothing is out of reach.
+The close drawing is cut to the frame, and the widest frame wants more room than
+a phone has — `open` fans four ways out over 728 pixels. So it shrinks to the
+room there is, and stops shrinking when its names reach 8 pixels, because the
+whole drawing shrinks together and a drawing of your options whose options
+cannot be read is not worth fitting. Below that it keeps its size and scrolls,
+opening on the frame being held rather than on the left edge of the fan.
+
+It shrinks by handing its geometry to the stylesheet as bare numbers rather than
+lengths. The one thing that has to be worked out is the room there is divided by
+the width the drawing wants, and a length cannot be divided by a length — so the
+drawing gives numbers and takes back a unit, and everything it is made of is a
+multiple of that one unit. Those numbers are registered with `@property`, so the
+recentring animates them and the scale follows on its own; and because the
+drawing being left ends at exactly the width the frame reached is drawn at, it
+ends at exactly that frame's scale, which is what keeps the swap invisible at
+every size. Measured at 390, 600 and 1200 pixels: the mark and the frame reached
+land in the same place either side of it.
 
 In a picture of a frame the lead's hands are squares and the follow's are
 circles. Which row is whose used to be said only by the captions over and under

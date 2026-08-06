@@ -129,6 +129,30 @@ suite "the moving":
     check CLOSE_TEMPO.moveTime > CLOSE_TEMPO.leaveTime
     check CLOSE_TEMPO.leadOnTime >= CLOSE_TEMPO.moveTime
 
+  test "the drawing is sized in numbers, so the room it has can be divided by it":
+    # A length cannot be divided by a length, and the one thing the stylesheet
+    # has to work out is the room it has over the width the drawing wants.  So
+    # the drawing hands over numbers and takes back the unit to multiply them
+    # by, and everything it is made of is a multiple of that one unit.
+    for here in FRAMES:
+      let picture = renderSpokes(here)
+      let (_, _, w, h) = windowOf(here)
+      check picture.contains("--w: " & $w & "; --h: " & $h & ";")
+      check not picture.contains("--w: " & $w & "px")
+      check picture.contains("--bw: " & $SPOKES_BOX[2] & "; --bh: " &
+        $SPOKES_BOX[3])
+    # What is read inside the picture stays a length: those are its own units,
+    # and they scale with it already.
+    check renderSpokes(FRAMES[0]).contains("--ox: " & $MIDDLE[0] & "px")
+
+  test "a drawing may shrink to fit, but never past reading its own names":
+    # The whole drawing shrinks together, names included, so fitting it into any
+    # room at all would mean fitting it into a room where it says nothing.  The
+    # floor is tied to the size a name is drawn at, so the two cannot drift.
+    check LEAST_READABLE < LABEL_SIZE
+    check closeStyle().contains("--least-unit: " &
+      formatFloat(LEAST_READABLE / LABEL_SIZE, ffDecimal, 3) & "px")
+
   test "the map says a move in less time, having less to say":
     # Both drawings pass the same mark along the same move, and that is all the
     # map has to do: made to keep the close drawing's time it would stand there
@@ -196,13 +220,13 @@ suite "the moving":
           (tx, ty) = panOf(windowOf(spoke.to))
           (ex, ey) = endOf(spoke)
         # The window it ends in is the window the frame reached is given.
-        check leaving.contains("--to-w: " & $tw & "px; --to-h: " & $th & "px")
-        check resting.contains("--w: " & $tw & "px; --h: " & $th & "px")
+        check leaving.contains("--to-w: " & $tw & "; --to-h: " & $th)
+        check resting.contains("--w: " & $tw & "; --h: " & $th)
         # And it ends panned so that the frame reached, which is standing out
         # where its way out put it, is left exactly where the middle will be.
         check leaving.contains("--to-px: " & $(tx + MIDDLE[0] - ex) &
-          "px; --to-py: " & $(ty + MIDDLE[1] - ey) & "px")
-        check resting.contains("--px: " & $tx & "px; --py: " & $ty & "px")
+          "; --to-py: " & $(ty + MIDDLE[1] - ey))
+        check resting.contains("--px: " & $tx & "; --py: " & $ty)
 
   test "the mark carries the distance from the frame held to the one chosen":
     for here in FRAMES:
