@@ -72,6 +72,18 @@ Chosen over a shift-on-delete array whose O(n) removal also renumbered every hel
 cross-frame index (hovered/dragged/operand slot) — the property everything else relies on
 is that **a slot number stays valid until its item is removed**.
 
+**`LABEL_MAX` counts bytes, so a label is cut on a character boundary and says it was cut.**
+`format.appendChars` reads each lead byte's own sequence length (`bytesCharacter`) and copies
+a sequence only if all of it fits, so it can never leave a partial character behind whatever
+the caller or the buffer size; `scene.toChars` then rewinds far enough to append `…`. Before
+this, a 3-byte operator glyph (`∧ ∨ ⊖`) straddling the 40-byte limit left invalid UTF-8, which
+Nim's JS backend percent-escapes — `%e2%8a` appeared in an object's name in the browser, which
+is how it was found. Exactly the byte-versus-character bug fixed in the scene file format one
+round earlier and not looked for in the label store beside it. Note what the fix does *not*
+address: derived names compound, so `b ^ ground⊖ ∧ b ∨ (o ∧ ground…` is unreadable because of
+the compounding rather than the cut. That is a deliberate choice to leave — the full name is
+what the object *is*.
+
 `Item` is a handle (pointer into `Scene` + slot number), not an assembled copy;
 `.geometry`/`.label` resolve via `lent`. Do not hold one across a mutation of its own slot.
 By-slot accessors (`geometryAt`/`labelAt`/`isVisibleAt`/`inkAt`/`anchorOverrideAt`, plus
@@ -349,7 +361,7 @@ when its own outline echoes the thing it surrounds:
 | Line | Two segments flanking its projection, one each side. | Runs out from its support. |
 | Plane | A circle lying *on the plane*, outside its rim. | Opens from the disc's centre. |
 | Line at horizon | Two small circles of the sky it circles. | Closes in from a quarter turn. |
-| Plane at horizon | A rectangle around the whole viewport. | Opens out from the view's centre. |
+| Plane at horizon | The viewport's edge, inset by the gap. | Expands as a circle from the middle. |
 | Point at horizon | Circle, about the fixed star it draws as. | Sweeps, as any point does. |
 
 The last two had no marker at all until this round, on the reasoning that an object drawn
@@ -361,13 +373,36 @@ rails keep, read as an angle through `mesh.radiansPerPixel`. They arrive by clos
 because a horizon line has no support to grow outward from — and the horizon plane's frame
 opens *outward* from the middle, which is what tells the two apart while they fill.
 
+**The horizon plane's frame is an expanding circle that becomes the screen edge.**
+`markerFrame` samples a closed polyline: at each angle the boundary radius is `progress ×
+half-diagonal` or the distance to the inset viewport edge along that angle, whichever is
+smaller. So it is a circle for as long as the circle fits, and then *becomes* the edge piece
+by piece as the circle passes each part of it — the four edge midpoints first, the corners
+last, since full reach is the half-diagonal and that is exactly the corners' own distance.
+Scaling a rectangle about the centre instead, which is what shipped first, reached every
+edge simultaneously and read as a shrunken copy of the screen rather than as something
+opening out into it. `SEGMENTS_MARKER_FRAME` = 64 even angular steps, a multiple of four so
+the edge midpoints are sampled exactly, plus the four corner directions merged in by angle
+(`CORNERS_MARKER_FRAME`): a corner missed by a fraction of a step is a corner visibly cut off
+the finished frame, and nothing else needs extra sampling because a sample on a straight edge
+lies *on* that edge by construction. Measured in a 900×800 view: 68 points, radius flat at
+296.8 px at half progress (a circle), 394.0–445.2 px with 20 points on the edge at three
+quarters, and 394.0–593.6 px with all 68 on the edge when finished — read back off the live
+`<polygon>` the browser overlay strokes, not off the core alone.
+
 **On touch every marker swells clear of the finger** partway through a hold and settles back
 exactly (`clearanceTouch`): a fingertip covers what it presses, so a marker filling underneath
-one says nothing to the person filling it. 24 px, added rather than multiplied so one number
+one says nothing to the person filling it. 54.5 px, added rather than multiplied so one number
 means the same on a point's 10.5 px ring and on a plane's rim hundreds of pixels across; it
-takes the ring to a 69-pixel circle against a 44-pixel minimum touch target. Zero at both ends
-of the hold, so a finished marker is the same outline whichever pointer produced it, and zero
-throughout for a mouse, which hides nothing.
+takes the ring to a **130-pixel circle**, about twice a thumb's contact patch, so the halo
+stands outside the hand rather than at its edge. Zero at both ends of the hold, so a finished
+marker is the same outline whichever pointer produced it, and zero throughout for a mouse,
+which hides nothing. It was 24 px, sized against a 44-pixel *minimum* touch target and
+reported here as clearing a fingertip; it did not, and the correction came from a thumb rather
+than from the suite. The measurement behind the old number compared framebuffer pixels against
+a CSS-pixel target — see the two-layer rule below, which had to be fixed before "bigger" meant
+anything stable. Measured after both changes on a Pixel 5 (ratio 2.5), in CSS pixels:
+10.5 → 49.0 → **65.0** → 49.0 → 10.5 across the hold, flat at 10.5 for a mouse.
 
 All three keep the same clearance, `GAP_MARKER` = 6.0 px, between the object's own drawn
 edge and the marker, measured out from the size that object is actually drawn at. That is
@@ -390,6 +425,19 @@ another. A constant screen offset instead holds the pair open all the way to the
 where the line has long since narrowed to nothing; that was the first attempt and it was
 wrong on the geometry. This is why `picking.clipToEyeSide` is exported: a marker drawn past
 the eye plane wraps to the opposite side of the screen.
+
+**A rail's growth is measured against the edge of the view, not against its own length**
+(`fractionLeavingView`). Each rail runs from the line's support to one of the line's two
+vanishing points, and those sit at wildly unequal screen distances: measured on the demo's
+own `L = a ^ b`, one half's projected length came to 1,140,706 px and the other's to 3,634,
+a ratio of 314. Shortening each rail by a fraction of its own length — which is what shipped
+first — therefore made one half finish 314 times sooner than the other, and put both wholly
+off a 900 px screen within the first percent of the hold. Growing toward a vanishing point
+is growing into nothing. Bounding the reach at the viewport fixes both at once: the halves
+come out comparable because the same rectangle bounds them, and every pixel of the growth
+happens where it can be seen. Re-measured in a 900×800 view: 142 px against 100 px at
+quarter progress, a ratio of 1.5. The suite had been green throughout — it checked that a
+partial rail lay along the rail it would become, which was true the whole time.
 
 Which way is "sideways" is `marker.directionAcross`, and it stays RGA-native: joining the
 line with the eye gives the one plane containing both, and that plane's own normal is
@@ -944,6 +992,20 @@ Family, weight and `unicode-range` stay in the tracked file beside the codepoint
 cover; only the bytes are injected. Verified by assembling both ways and comparing: the
 six payloads hash identically and the pages differ only by the comment explaining the
 split.
+
+**Two pixel spaces, and each layer works in exactly one of them.** The **render** layer
+(`nimBuildFrame`, the WebGL viewport, `gl.viewport`) works in framebuffer pixels —
+`canvas.clientWidth × devicePixelRatio`, capped at 2.5. The **interaction and overlay**
+layer — `nimUpdateCursor`, `nimUpdateHover`, `nimSelectionMarker`, `nimAnchorScreen`,
+`nimDragMenuLayout`, and the SVG whose viewBox they feed — works in **CSS pixels**, and is
+handed `canvas.clientWidth`/`clientHeight` to say so. It previously received framebuffer
+dimensions and converted marker *positions* back down per point while using every *length*
+raw, so a marker's real size scaled with device pixel ratio and any answer to "make it
+bigger" was unstable by a factor of the ratio. Asking in CSS pixels throughout deletes the
+conversions rather than adding any, and it silently fixed a second bug of the same family:
+`picking.RADIUS_PICK_POINT` (34) is now 34 CSS pixels, so a point's real touch target on a
+Pixel 5 went from ~13.6 to a measured **34.0** CSS px. Nothing in `picking.nim` changed;
+it was always the caller's units that were wrong.
 
 **Chip row** (always visible): brand/drawer toggle, then undo and redo as plain bordered
 `.btn` rectangles, axes and grid as a segmented `.toggles` pill, then a `☰` menu button.

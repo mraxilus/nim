@@ -182,9 +182,15 @@ Requirements on this table:
 6. Objects And Scene
 ---
 
-- **Capacity is fixed**: 64 items, labels up to 40 characters, both overridable at compile
+- **Capacity is fixed**: 64 items, labels up to 40 **bytes**, both overridable at compile
   time. An item carries geometry, label, colour, visibility, a birth timestamp, and an
   optional anchor override (§9).
+- **A label is cut on a character boundary, and a cut label says it was cut.** The cap counts
+  bytes while a derived name carries three-byte operator glyphs, so copying byte by byte
+  leaves a partial character and invalid UTF-8 — which the JS backend prints as a raw percent
+  escape in the middle of an object's name. Truncate whole characters only, and append `…`,
+  so a shortened name never reads as a complete one. This is the same byte-versus-character
+  trap as the scene format's label field (§16); fixing one is not fixing the other.
 - Storage is **structure-of-arrays addressed by a slot assigned once and never moved**, with
   free slots on an intrusive free list so add and remove are O(1). The invariant everything
   else relies on: **a slot number stays valid until its item is removed.** A shift-on-delete
@@ -442,13 +448,50 @@ need not match what was picked. Prune dead slots after any removal — a freed s
 straight back to the next add, and a stale pick would silently reattach to an unrelated object.
 
 **"Just built" and "currently selected" are one concept with one mechanism**: a plain white
-billboarded ring, 16 px radius, 2 px line, drawn **once per selected slot** in both
-front-ends. The hover ring is the same circle at 80% opacity. Every construction path replaces
-the selection with the slot it just created.
+outline drawn **once per selected slot** in both front-ends, with hover drawing the identical
+outline fainter. Weight is the only thing that separates the two, so hovering something
+previews exactly what selecting it will draw. Every construction path replaces the selection
+with the slot it just created.
+
+**The outline echoes what it surrounds**, because a marker says "this one" best when its own
+shape is the shape of the thing: a ring on a point, two flanking rails on a line, a circle
+lying *on* a plane, two flanking circles of the sky a horizon line circles, the screen's own
+edge for the sky a horizon plane is. All keep one clearance from the object's *drawn* size, so
+changing a draw size moves its marker with it. Every shape must have a marker: an object drawn
+fixed to the eye still offers something to surround, namely whatever is drawn.
+
+**How a marker fills says which object it is.** A ring sweeps, a plane's circle opens from its
+disc's centre, a horizon line's bands close in from outside any view (it has no support to grow
+from), and a horizon plane's boundary expands from the middle. Two rules the shapes must obey
+while filling:
+
+- **Growth is bounded by the view, never by an object's own projected length.** A line's rails
+  run to vanishing points at wildly unequal screen distances — a measured ratio of 314 — so
+  growing each by a fraction of itself makes one half finish hundreds of times sooner and puts
+  both off screen almost immediately. Growing toward a vanishing point is growing into nothing.
+- **The sky's boundary expands as a circle and becomes the screen edge as it reaches it** —
+  edge midpoints first, corners last — rather than scaling a rectangle, which arrives at every
+  edge at once and reads as a shrunken copy of the screen. Sample the corner directions
+  explicitly: a corner missed by a fraction of a sampling step is a corner visibly cut off.
+
+**On touch a marker must clear the finger filling it**, swelling partway through the hold to a
+diameter clear of a thumb's contact patch and settling back to its true size exactly, so a
+finished marker is the same outline whichever pointer produced it. A mouse never sees it — a
+cursor hides nothing. Measure this in the pixels the finger works in (below), on a real phone
+profile: the number that was measured in framebuffer pixels and reported as clearing a
+fingertip was wrong by the device pixel ratio, and a thumb, not the suite, is what said so.
 
 An oversized-silhouette outline with its own shader and mesh set was built and **deleted
 entirely** in favour of this. Do not build one. Among other reasons, browsers clamp line width
 to 1 px, so it can never look right there.
+
+**Two pixel spaces, and each layer works in exactly one.** The render layer works in
+framebuffer pixels; the interaction and overlay layer — picking, hover, markers, anchors, menu
+layout — works in **CSS pixels**, the units a reader's finger and eye actually work in, and is
+told the viewport in those units rather than converting per point. Mixing them makes every
+length silently scale with device pixel ratio, which is a bug in both directions at once: it
+shrank a nominal 34-pixel point target to ~13.6 on a phone, and made "make the marker bigger"
+mean nothing stable.
 
 **Picking priority is strict: point beats line beats plane**, regardless of pixel distance,
 once a shape's own radius is met. That priority is what makes generous radii safe — a wide
