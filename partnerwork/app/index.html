@@ -16,7 +16,6 @@
   --panel: #ffffff;
   --left: #1f5fb4;
   --right: #b4541f;
-  --new: #a3801a;
   --ease: cubic-bezier(.32, .72, 0, 1);
   --ease-in: cubic-bezier(.55, 0, 1, .45);
   --ease-out: cubic-bezier(0, .6, .3, 1);
@@ -33,7 +32,6 @@
     --panel: #1e1d24;
     --left: #6ba4ea;
     --right: #e8813f;
-    --new: #d9b64a;
   }
 }
 * { box-sizing: border-box; }
@@ -279,8 +277,6 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .matrix td { width: 1.6rem; height: 1.6rem; text-align: center;
   border: 1px solid var(--rule); }
 .matrix td.on { background: color-mix(in srgb, var(--ink) 10%, transparent); }
-.matrix td.new { outline: 2px solid var(--new); outline-offset: -2px;
-  color: var(--new); font-weight: 700; }
 .matrix td.self { background: var(--rule); }
 .matrix td.two { color: var(--dim); font-style: italic; }
 .filters { display: flex; flex-wrap: wrap; gap: 0.35rem 1.5rem;

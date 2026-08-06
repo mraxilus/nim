@@ -39,10 +39,13 @@ nimble app          # compiles app/app.js, then bundles app/artifact.html
 `app/artifact.html` is the same page as one self-contained file, for publishing
 or for sending to someone who should not have to keep two files together.
 
-Three views: **Dance** walks the state machine, **Atlas** shows every frame as a
-picture and the whole derived transition matrix with the cells the workbook
-leaves blank outlined, and **Audit** reports what the model has to say about the
-workbook.
+Two views: **Dance** walks the state machine, and **Atlas** shows every frame as
+a picture and the whole derived transition matrix.
+
+What the model has to say about the spreadsheet is deliberately not in the app.
+It is a finding about a document rather than a fact about two bodies, it does not
+change as you dance, and it wants reading rather than clicking through: it lives
+in `doc/review.html` and in `nimble audit`.
 
 The Dance view draws the frame two ways, one at a time. **Dynamic** puts the
 frame in the middle and every way out of it as a spoke, and nothing else — take

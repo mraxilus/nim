@@ -5,8 +5,14 @@
 ## number of primitives it would take to get there.  Nothing outside the offered
 ## list can be clicked, so a move the ontology does not derive cannot be danced.
 ##
-## Only the rendering lives here.  The frames, the moves and the audit come from
+## Only the rendering lives here.  The frames and the moves come from
 ## `partnerwork`, unchanged, so the page cannot quietly disagree with the tests.
+##
+## What the model has to say about the spreadsheet it was read from is not here
+## and should not be: it is a finding about a document rather than a fact about
+## two bodies, it is true whether or not anyone is dancing, and a reader who
+## wants it wants to read it rather than click through it.  It lives in
+## `doc/review.html`, which is written from the same model, and in `nimble audit`.
 
 import std/[options, strutils]
 import std/dom except Frame ## Exclude the browser's own `Frame`, which is a window.
@@ -19,7 +25,7 @@ import ../src/partnerwork
 
 type
   View {.pure.} = enum ## Select what the page is showing.
-    Dance, Atlas, Audit
+    Dance, Atlas
 
   Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
     Dynamic,  ## The frame in the middle and every way out of it.
@@ -402,7 +408,12 @@ func renderGallery(narrowing: Filter): string =
 
 
 func renderAtlas(narrowing: Filter): string =
-  ## Show the whole derived transition matrix beside the workbook's cells.
+  ## Show the whole derived transition matrix.
+  ##
+  ## What the source spreadsheet has and has not got is not marked here.  Which
+  ## cells its author has filled in is a fact about a document being written, not
+  ## about two bodies, and the app is the ontology: `doc/review.html` says it, at
+  ## length and in order, which is how it wants to be read.
   var head = "<tr><th></th>"
   for target in FRAMES:
     head.add tag("th", "", tag("span", "", esc(target.describe)))
@@ -419,9 +430,7 @@ func renderAtlas(narrowing: Filter): string =
       elif helper.isNone and named.isNone:
         row.add tag("td", "", "")
       else:
-        let known = cellText(
-          workbookName(source).get(""), workbookName(target).get(""))
-        var classes = if known.isSome: "on" else: "on new"
+        var classes = "on"
         if helper.isNone:
           classes.add " two"
         let glyph =
@@ -433,42 +442,12 @@ func renderAtlas(narrowing: Filter): string =
     renderGallery(narrowing) &
     tag("section", "class=\"panel wide\"",
       tag("h3", "", "derived transition matrix") &
-      tag("p", "class=\"note\"", renderLegend() &
-        ". Outlined cells are moves the model derives that the workbook " &
-        "leaves blank.") &
+      tag("p", "class=\"note\"", renderLegend() & ".") &
       tag("div", "class=\"scroll\"", tag("table", "class=\"matrix\"", head & body)) &
       tag("p", "class=\"note\"", "Rows are the frame danced from, columns the " &
         "frame danced to. Every move reverses, so the matrix is symmetric except " &
         "that collect and drop are each other's mirror. Faded cells are the two " &
         "compounds: a pair of primitives the dance calls one move.")))
-
-
-func renderAudit(): string =
-  ## Report what the model has to say about the workbook.
-  let findings = audit()
-  var rows = ""
-  var previous = FindingKind.StateDeferred
-  var first = true
-  for kind in FindingKind:
-    for finding in findings:
-      if finding.kind != kind:
-        continue
-      if first or previous != kind:
-        rows.add tag("h4", "", esc($kind))
-        previous = kind
-        first = false
-      rows.add tag("div", "class=\"far\"",
-        tag("span", "class=\"phrase\"", esc(finding.subject)) &
-        tag("span", "class=\"target\"", esc(finding.detail)))
-  tag("section", "class=\"panel wide\"",
-    tag("h3", "", "workbook audit &middot; " & $findings.len & " findings") &
-    tag("p", "class=\"note\"", $(CELLS.len - countDeferredCells()) & " of the " &
-      $CELLS.len & " filled cells of the base sheet hold between hand-to-hand " &
-      "frames and are checked against the primitive the model derives for the " &
-      "same pair. The rest wait for a place on the body.") & rows)
-
-
-
 #[ Page ]#
 
 func renderControls(view: View): string =
@@ -500,7 +479,6 @@ proc render() =
     case view
     of View.Dance: renderDance(current, vis, motion, taken, history)
     of View.Atlas: renderAtlas(filter)
-    of View.Audit: renderAudit()
   let held = holding()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   standAgain(held)
