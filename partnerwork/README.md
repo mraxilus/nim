@@ -202,6 +202,19 @@ out along it by how far it has turned, the ring on the one being held, and every
 turn out of it as an arc over the top. Click a posture to stand in it. Twelve
 turns draw six arcs, because twelve turns land in six places.
 
+A **blocker** is what stops an arm carrying any more twist: a `wrap` across the
+front of a body, a `lock` behind the line of it. An arm is carried `low`, `high`
+or `above` — and an arm above the head is on the axis the couple turns about, so
+it is around nothing, carries no blocker, and does not run out. There is a case
+where it blocks anyway; `ABOVE_BLOCKS` says so out loud rather than being quietly
+absent, because a model that silently allowed something it had not been told
+about would be guessing.
+
+A rotation goes `clockwise` or `anticlockwise` seen from above, and turns about
+either the dancer's own `axis` or the couple's centre of mass — its `orbit`.
+Only axis turns are offered: how much twist an orbit stores has not been settled,
+and offering one before knowing would be the page inventing a move.
+
 A turn is refused with its reason, which is what makes this half a validator
 too. There are two ceilings and a posture has to be under both: what joins the
 couple can only give so much turn away, and the arm can only carry so much

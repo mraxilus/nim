@@ -757,7 +757,7 @@ func renderTurnMatrix(): string =
   for level in Level:
     var row = tag("th", "class=\"row\"", esc(levelName(level)))
     for size in 0 .. MOST_TURN:
-      let what = modifier(size)
+      let what = blocker(size)
       var stood = fromKey("l-.").get.rest
       stood.level = [level, level]
       let held = stood.holds(size)

@@ -71,18 +71,18 @@ suite "what the arm can carry":
   test "the measured table is reproduced, cell by cell":
     # `Left to left`, one hand, danced.  A low wrap holds half a turn; a low
     # lock, a high wrap and a high lock each hold a full one.
-    check armCapacity(some(Modifier.Wrap), Level.Low) == 1
-    check armCapacity(some(Modifier.Lock), Level.Low) == 2
-    check armCapacity(some(Modifier.Wrap), Level.High) == 2
-    check armCapacity(some(Modifier.Lock), Level.High) == 2
+    check armCapacity(some(Blocker.Wrap), Level.Low) == 1
+    check armCapacity(some(Blocker.Lock), Level.Low) == 2
+    check armCapacity(some(Blocker.Wrap), Level.High) == 2
+    check armCapacity(some(Blocker.Lock), Level.High) == 2
 
   test "a low wrap is the one thing that binds tighter than its hold":
     # Which is the whole finding: the limit is not a property of what joins the
     # couple, it is a property of what the arm is doing.
     let low = fromKey("l-.").get.rest
     for twist in -2 .. 2:
-      let arm = armCapacity(modifier(twist), low.level[Side.Left])
-      if modifier(twist) == some(Modifier.Wrap):
+      let arm = armCapacity(blocker(twist), low.level[Side.Left])
+      if blocker(twist) == some(Blocker.Wrap):
         check arm < low.capacity
       else:
         check arm >= low.capacity
@@ -94,10 +94,10 @@ suite "what the arm can carry":
     for way in [1, -1]:
       let half = low.turn(rotates(Dancer.Follow, way))
       check half.isSome
-      check modifier(half.get.twist) == some(Modifier.Wrap)
+      check blocker(half.get.twist) == some(Blocker.Wrap)
       let full = low.turn(rotates(Dancer.Follow, 2 * way))
       check full.isSome
-      check modifier(full.get.twist) == some(Modifier.Lock)
+      check blocker(full.get.twist) == some(Blocker.Lock)
 
   test "one and a half turns is refused, and the hold is what refuses it":
     let low = fromKey("l-.").get.rest
@@ -106,7 +106,7 @@ suite "what the arm can carry":
       # Past the hold's ceiling, which is the one that binds there: the arm is
       # a lock by then, and a lock is the roomier of the two.
       check 3 > low.capacity
-      check armCapacity(modifier(3 * way), Level.Low) == CAPACITY_ARM
+      check armCapacity(blocker(3 * way), Level.Low) == CAPACITY_ARM
 
   test "a posture stands only where both ceilings allow it":
     for target in FRAMES:
@@ -141,19 +141,32 @@ suite "what the arm can carry":
 suite "modifiers":
   test "the two filled cells of the rotations sheet are reproduced":
     # `Left to left` held low: half a turn left wraps, a full turn right locks.
-    check modifier(0).isNone
-    check modifier(-1) == some(Modifier.Wrap)
-    check modifier(2) == some(Modifier.Lock)
+    check blocker(0).isNone
+    check blocker(-1) == some(Blocker.Wrap)
+    check blocker(2) == some(Blocker.Lock)
 
   test "a wrap is reachable from a pair and a lock is not":
-    check modifier(fromKey("rl.").get.rest.capacity) == some(Modifier.Wrap)
-    check modifier(fromKey("l-.").get.rest.capacity) == some(Modifier.Lock)
+    check blocker(fromKey("rl.").get.rest.capacity) == some(Blocker.Wrap)
+    check blocker(fromKey("l-.").get.rest.capacity) == some(Blocker.Lock)
 
   test "the level an arm is carried at decides where it lands":
-    check around(Modifier.Wrap, Level.Low) == BodySite.Torso
-    check around(Modifier.Wrap, Level.High) == BodySite.Neck
-    check around(Modifier.Lock, Level.Low) == BodySite.Waist
-    check around(Modifier.Lock, Level.High) == BodySite.Shoulder
+    check around(Blocker.Wrap, Level.Low) == some(BodySite.Torso)
+    check around(Blocker.Wrap, Level.High) == some(BodySite.Neck)
+    check around(Blocker.Lock, Level.Low) == some(BodySite.Waist)
+    check around(Blocker.Lock, Level.High) == some(BodySite.Shoulder)
+
+  test "an arm over the head is around nothing, and blocks on nothing":
+    # It is on the axis the couple turns about, so there is nothing for it to be
+    # across the front of or behind the line of.  That is why it does not run
+    # out -- and why a case where it blocks anyway is a thing the model is
+    # waiting to be told rather than a thing it has decided.
+    for what in Blocker:
+      check around(what, Level.Above).isNone
+    for twist in -6 .. 6:
+      check blockerOf(twist, Level.Above).isNone
+      check armCapacity(blockerOf(twist, Level.Above), Level.Above) ==
+        high(HalfTurns)
+    check not ABOVE_BLOCKS
 
 
 suite "what there is":

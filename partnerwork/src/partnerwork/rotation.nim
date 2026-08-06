@@ -37,14 +37,24 @@ type
     Lead, Follow
 
   Level* {.pure.} = enum ## Name the height an arm is carried at.
-    Low, High
+    Low,   ## At about the waist.
+    High,  ## At about the shoulder.
+    Above  ## Over the head, on the axis the couple turns about.
+
+  Way* {.pure.} = enum ## Name which way a dancer turns, seen from above.
+    Clockwise,
+    Anticlockwise
+
+  About* {.pure.} = enum ## Name what a dancer turns around.
+    Axis,  ## Their own, so their facing changes where they stand.
+    Orbit  ## The couple's centre of mass, so they travel around it.
 
   BodySite* {.pure.} = enum ## Name a place on a body an arm rests on or wraps around.
     Waist, Torso, Shoulder, Neck
 
-  Modifier* {.pure.} = enum ## Name what an arm does while it carries twist.
-    Wrap, ## Carry the arm across the front of a body.
-    Lock  ## Carry the arm behind the line of a body.
+  Blocker* {.pure.} = enum ## Name what stops an arm carrying any more twist.
+    Wrap, ## The arm is carried across the front of a body.
+    Lock  ## The arm is carried behind the line of a body.
 
   HalfTurns* = int ## Count rotation in half turns, the granularity the workbook uses.
 
@@ -71,6 +81,10 @@ const
   CAPACITY_ARM* = 2
     ## Hold a full turn while the arm is anywhere else.  Measured for a low
     ## lock; assumed for the two high ones, which is the next thing to dance.
+  ABOVE_BLOCKS* = false
+    ## Whether an arm over the head blocks a turn.  It does in some cases and
+    ## nobody has said which, so the model turns freely there and says here that
+    ## it is doing so on no authority.
 
 
 
@@ -99,7 +113,7 @@ func parallelSite*(side: Side; twist: HalfTurns): Site =
 
 #[ Capacity ]#
 
-func armCapacity*(modifier: Option[Modifier]; level: Level): HalfTurns =
+func armCapacity*(blocker: Option[Blocker]; level: Level): HalfTurns =
   ## Get how much twist the arm itself can carry, wherever it has ended up.
   ##
   ## Measured on `Left to left`, one hand: a low wrap holds half a turn and
@@ -110,8 +124,15 @@ func armCapacity*(modifier: Option[Modifier]; level: Level): HalfTurns =
   ## This is the second of two ceilings, and the reason there are two: the first
   ## is a property of what joins the couple, this one of what the arm is doing.
   ## Which of them binds is what makes a wrap a wrap and a lock a lock -- see
-  ## `modifier`.
-  if modifier == some(Modifier.Wrap) and level == Level.Low:
+  ## `blocker`.
+  ##
+  ## An arm above the head is on the axis the couple turns about, so it has
+  ## nothing to wind round and nothing to run out of.  There is a case in which
+  ## it blocks anyway and this does not know it yet, which is why `ABOVE_BLOCKS`
+  ## says so out loud rather than being quietly absent.
+  if level == Level.Above:
+    return high(HalfTurns)
+  if blocker == some(Blocker.Wrap) and level == Level.Low:
     CAPACITY_WRAP_LOW
   else:
     CAPACITY_ARM
@@ -135,7 +156,7 @@ func capacity*(posture: Posture): HalfTurns =
   else: CAPACITY_PAIR
 
 
-func modifier*(twist: HalfTurns): Option[Modifier] =
+func blocker*(twist: HalfTurns): Option[Blocker] =
   ## Get what the arms are doing at a given twist.
   ##
   ## Size decides, not direction: half a turn wraps and a full turn locks,
@@ -154,9 +175,18 @@ func modifier*(twist: HalfTurns): Option[Modifier] =
   ## lock, and it makes a wrap and a lock two different motions rather than two
   ## depths of one.  The measurement is what chose between them.
   case abs(twist)
-  of 0: none(Modifier)
-  of 1: some(Modifier.Wrap)
-  else: some(Modifier.Lock)
+  of 0: none(Blocker)
+  of 1: some(Blocker.Wrap)
+  else: some(Blocker.Lock)
+
+
+func blockerOf*(twist: HalfTurns; level: Level): Option[Blocker] =
+  ## Get what blocks an arm at a given twist, at the height it is carried.
+  ##
+  ## Only a low or a high arm is wound round anything: an arm over the head is
+  ## on the axis, so there is nothing for it to be across the front of or behind
+  ## the line of, and it carries no blocker however far the couple turns.
+  if level == Level.Above: none(Blocker) else: blocker(twist)
 
 
 func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
@@ -174,10 +204,11 @@ func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
   result = high(HalfTurns)
   for side in Side:
     if posture.frame.hold[side].isSome:
-      result = min(result, armCapacity(modifier(twist), posture.level[side]))
+      result = min(result, armCapacity(blockerOf(twist, posture.level[side]),
+        posture.level[side]))
 
 
-func around*(modifier: Modifier; level: Level): BodySite =
+func around*(blocker: Blocker; level: Level): Option[BodySite] =
   ## Get the place on the body a wound arm is carried around.
   ##
   ## The workbook asks whether an upper and a lower wrap are separate modifiers.
@@ -186,15 +217,22 @@ func around*(modifier: Modifier; level: Level): BodySite =
   ## vocabulary's own definitions, a low lock is behind the back and a high lock
   ## is at the shoulder of the same arm; a low wrap crosses the torso and a high
   ## wrap goes round the neck.
-  case modifier
-  of Modifier.Wrap:
+  ##
+  ## Nothing, for an arm over the head: it is on the axis rather than around
+  ## anything, which is why it carries no blocker to begin with.
+  if level == Level.Above:
+    return none(BodySite)
+  case blocker
+  of Blocker.Wrap:
     case level
-    of Level.Low: BodySite.Torso
-    of Level.High: BodySite.Neck
-  of Modifier.Lock:
+    of Level.Low: some(BodySite.Torso)
+    of Level.High: some(BodySite.Neck)
+    of Level.Above: none(BodySite)
+  of Blocker.Lock:
     case level
-    of Level.Low: BodySite.Waist
-    of Level.High: BodySite.Shoulder
+    of Level.Low: some(BodySite.Waist)
+    of Level.High: some(BodySite.Shoulder)
+    of Level.Above: none(BodySite)
 
 
 
@@ -347,6 +385,12 @@ func turnsOf*(posture: Posture): seq[Offer] =
   ## The refused ones are carried rather than dropped.  A page that listed only
   ## what can be danced would be a menu; what makes it a validator is that it
   ## can say what cannot be danced, and why.
+  ##
+  ## On axis only.  A dancer can also turn about the couple's centre of mass
+  ## rather than their own -- `About.Orbit` -- and how much twist that stores is
+  ## not something this model has been told.  Offering an orbit before knowing
+  ## that would be the page inventing a move, which is the one thing it is for
+  ## not doing.
   for who in Dancer:
     for way in TURN_WAYS:
       for size in 1 .. MOST_TURN:
@@ -366,15 +410,34 @@ const TURN_NAMES* = ["", "half a turn", "one turn", "one and a half turns"]
   ## Name each size of turn as the workbook's sheets name it.
 
 
+func wayOf*(amount: HalfTurns): Way =
+  ## Get which way a turn of this sign goes.
+  ##
+  ## Clockwise seen from above, which is how the drawings see the couple, and
+  ## unlike a dancer's own right and left it means the same thing whichever of
+  ## them is turning.
+  if amount >= 0: Way.Clockwise else: Way.Anticlockwise
+
+
+func wayName*(way: Way): string =
+  ## Name a way round as the vocabulary names it.
+  case way
+  of Way.Clockwise: "clockwise"
+  of Way.Anticlockwise: "anticlockwise"
+
+
 func turnName*(amount: HalfTurns): string =
   ## Name a turn by its size and the way it goes.
-  ##
-  ## The way is named from the turning dancer's own right and left, which is the
-  ## only reading that does not change when the other dancer moves.
   if amount == 0:
     return "no turn"
-  result = TURN_NAMES[min(abs(amount), TURN_NAMES.high)]
-  result.add(if amount > 0: " right" else: " left")
+  TURN_NAMES[min(abs(amount), TURN_NAMES.high)] & " " & wayName(wayOf(amount))
+
+
+func aboutName*(about: About): string =
+  ## Name what a dancer turns around, as the vocabulary names it.
+  case about
+  of About.Axis: "on axis"
+  of About.Orbit: "on orbit"
 
 
 func levelName*(level: Level): string = ($level).toLowerAscii
@@ -385,9 +448,9 @@ func armName*(posture: Posture): string =
   ## Name what the arms are doing, where they are doing anything.
   ##
   ## The height comes first because it is the thing that decides how far the arm
-  ## can go: a low wrap and a high wrap are one modifier at two heights, and it
+  ## can go: a low wrap and a high wrap are one blocker at two heights, and it
   ## is the height that says which of them runs out first.
-  let what = modifier(posture.twist)
+  let what = blockerOf(posture.twist, posture.level[Side.Left])
   if what.isNone:
     return ""
   var heights: seq[string] = @[]
