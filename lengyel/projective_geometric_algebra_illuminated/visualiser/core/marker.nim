@@ -246,6 +246,32 @@ func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
   directionNormal(geometry ∧ toMultivector(eye))
 
 
+func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float =
+  ## Say how far along `tail` -> `head` the segment is still inside the viewport, as a
+  ## fraction in 0 .. 1, taking 1 where it ends inside.
+  ##   What a growing marker should measure itself against. A rail runs to one of its
+  ##   line's vanishing points, which is *not* a screen distance in any useful sense --
+  ##   measured on the demo's own `L = a ^ b`, one half's projected length came to
+  ##   1,140,706 pixels and the other's to 3,634, a ratio of 314. Growing each by a
+  ##   fraction of its own length made one half finish 314 times sooner than the other,
+  ##   and put both wholly off a 900-pixel screen within the first percent of the hold.
+  ##   Bounding the reach at the edge of the view fixes both at once: the two halves come
+  ##   out comparable because the viewport bounds them, and the whole growth is visible
+  ##   because none of it happens past the edge.
+  ##   Zero where the segment is heading away from a viewport it already left, which draws
+  ##   nothing -- correct, since none of it could be seen.
+  result = 1.0
+  let (dx, dy) = (head.x - tail.x, head.y - tail.y)
+  # Each edge bounds the parameter only when the segment is crossing it *outward*.
+  template limit(rate, room: float) =
+    if rate > 0.0: result = min(result, room/rate)
+  limit(-dx, tail.x)
+  limit(dx, float(width) - tail.x)
+  limit(-dy, tail.y)
+  limit(dy, float(height) - tail.y)
+  result = max(result, 0.0)
+
+
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
   view_projection: Matrix4; width, height: int; progress, clearance: float
@@ -257,16 +283,16 @@ func markerRails(
   ##   the three meet at the same two points on screen rather than merely running near
   ##   one another, and each rail projects onto its own true line for the same reason
   ##   the drawn line does.
-  ##   `progress` shortens each rail toward its own start, so a filling hold runs both
-  ##   rails out from the line's own support toward each horizon.
+  ##   `progress` runs both rails out from the line's own support toward each horizon, and
+  ##   **measures that reach against the edge of the view** rather than against each rail's
+  ##   own projected length -- see `fractionLeavingView` for the 314-to-1 ratio that fixes,
+  ##   and why growing toward a vanishing point is growing into nothing.
   ##   Shortened *after* projection, along the screen segment, rather than by scaling the
   ##   world reach: the far end is a point one horizon radius from the *eye* along the
   ##   axis, so scaling that reach walks the head back to the camera rather than in toward
   ##   the support. Interpolating on screen still keeps every partial rail exactly on the
   ##   line's own projection -- both endpoints lie on it and a projected straight segment
-  ##   is straight -- and it is what makes the growth read as even, which a world-space
-  ##   interpolation toward a point that distant would not: almost the whole parameter
-  ##   range would land within a few pixels of the vanishing point.
+  ##   is straight.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the eye lies on the line (see `directionAcross`).
   let
@@ -291,7 +317,8 @@ func markerRails(
         tail = projectToScreen(view_projection, width, height, position_tail)
         head = projectToScreen(view_projection, width, height, position_head)
       if not (tail.isInFront and head.isInFront): continue
-      marker.segments[marker.count_segment] = [tail, tail.towards(head, progress)]
+      marker.segments[marker.count_segment] =
+        [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
       inc marker.count_segment
   if marker.count_segment == 0: return
   some(marker)

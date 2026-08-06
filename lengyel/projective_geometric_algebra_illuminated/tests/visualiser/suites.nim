@@ -2860,5 +2860,52 @@ suite "Marker":
         check area_twice/along < TOLERANCE_SINGLE
 
 
+  test "a line's rails grow across the view, both halves at a comparable rate":
+    # The defect this pins: a rail was shortened by a fraction of its *own* projected
+    #   length, and that length runs to a vanishing point. Measured on the demo's own
+    #   line, one half came to 1,140,706 pixels and the other to 3,634 -- so one finished
+    #   314 times sooner than the other, and both were wholly off a 900-pixel screen
+    #   within the first percent of the hold. Growing toward a vanishing point is growing
+    #   into nothing; the reach is measured against the edge of the view instead.
+    proc lengthsAt(progress: float): seq[float] =
+      let marker = markerOf(LINE, progress = progress).get
+      for i in 0 ..< marker.count_segment:
+        let (tail, head) = (marker.segments[i][0], marker.segments[i][1])
+        result.add(hypot(head.x - tail.x, head.y - tail.y))
+
+    let whole = lengthsAt(1.0)
+    check len(whole) >= 2
+    # No rail runs further than the view's own diagonal: the growth is all on screen.
+    let diagonal = hypot(float(WIDTH_MARK), float(HEIGHT_MARK))
+    for length in whole: check length <= diagonal
+
+    # The halves stay within a small factor of one another rather than a wild one, and
+    #   each is a straight multiple of progress -- one speed, from the support, both ways.
+    check max(whole)/max(min(whole), 1.0) < 4.0
+    for step in 1 .. 3:
+      let progress = float(step)/4.0
+      let partial = lengthsAt(progress)
+      check len(partial) == len(whole)
+      for i in 0 ..< len(whole): check partial[i] =~ progress*whole[i]
+
+
+  test "a rail bounded by the view stops at the edge it leaves through":
+    const (WIDE, TALL) = (200.0, 100.0)
+    let inside = ScreenPosition(x: 100.0, y: 50.0)
+    # Straight out to the right: half the width away, so half of a segment twice as long.
+    check fractionLeavingView(
+      inside, ScreenPosition(x: 300.0, y: 50.0), int(WIDE), int(TALL)
+    ) =~ 0.5
+    # Ending inside is not shortened at all.
+    check fractionLeavingView(
+      inside, ScreenPosition(x: 150.0, y: 60.0), int(WIDE), int(TALL)
+    ) =~ 1.0
+    # Starting outside and heading further out draws nothing, which is what can be seen.
+    check fractionLeavingView(
+      ScreenPosition(x: 400.0, y: 50.0), ScreenPosition(x: 900.0, y: 50.0),
+      int(WIDE), int(TALL),
+    ) =~ 0.0
+
+
   test "geometry standing for no shape gets no marker":
     check markerOf(POINT_A + PLANE).isNone
