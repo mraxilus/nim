@@ -63,7 +63,11 @@ const HELPER_SYNONYMS*: array[Helper, string] = [
 const HELPER_MARKS*: array[Helper, char] = [
   Helper.Collect: 'c',
   Helper.Drop: 'd',
-] ## Abbreviate each primitive to the one letter a matrix cell has room for.
+] ## Abbreviate each primitive to the one letter a printed cell has room for.
+  ##
+  ## For `doc/review.html`, which is a document and sets its matrix as a table.
+  ## The app draws its own matrix and points the move instead, because a drawing
+  ## has a direction to spend where a printed page has only a letter.
 
 
 const COMPOUND_CHANGES*: array[Compound, string] = [
@@ -87,7 +91,7 @@ const COMPOUND_OBSTRUCTED*: array[Compound, bool] = [
 const COMPOUND_MARKS*: array[Compound, char] = [
   Compound.Place: 'p',
   Compound.Cut: 'x',
-] ## Abbreviate each compound for a matrix cell.
+] ## Abbreviate each compound for a printed matrix cell, as `HELPER_MARKS` does.
   ##
   ## `cut` takes the letter it does because `collect` has the one it would want.
 

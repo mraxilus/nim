@@ -42,9 +42,21 @@ or for sending to someone who should not have to keep two files together.
 Three views, in the order a reader wants them. **Atlas** is every frame there is,
 drawn, named and counted, and is where the page opens: what the ontology *is*
 comes before what you can do with it, and clicking a frame starts the dance from
-it. **Dance** walks the state machine. **Matrix** is every move there is as one
-table, which is the thing you consult once you know what a frame is rather than
-the thing you meet first.
+it. **Dance** walks the state machine. **Matrix** is every move there is at once,
+which is the thing you consult once you know what a frame is rather than the
+thing you meet first.
+
+The matrix is drawn rather than tabulated. Its axes carry the frames' pictures,
+so the vocabulary can be checked rather than trusted; a cell carries the move's
+direction as a mark and the lead's arm as its ink, which is what the map says
+and how it says it. The frames are ordered by how many connections they hold, so
+every collect falls above the diagonal and every drop below it, and the two
+compounds — which change what is held without changing how much — fall in the
+blocks along it: the structure is in the picture rather than in the paragraph
+under it. A pair no single move joins used to be a blank cell, which is half the
+chart saying nothing; it now carries how far apart the two frames are. There is
+no grid, and what ruled lines were for — knowing which column you are in — is
+done by lighting the row and column under the pointer instead.
 
 What the model has to say about the spreadsheet is deliberately not in the app.
 It is a finding about a document rather than a fact about two bodies, it does not

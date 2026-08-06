@@ -329,17 +329,6 @@ func renderDance(current: Frame; vis: Vis; motion: Motion;
 
 #[ Atlas View ]#
 
-func renderLegend(): string =
-  ## Say which letter in the matrix stands for which move.
-  for helper in Helper:
-    if result.len > 0:
-      result.add " &middot; "
-    result.add HELPER_MARKS[helper] & " " & helper.name
-  for named in Compound:
-    result.add " &middot; " & COMPOUND_MARKS[named] & " " &
-      ($named).toLowerAscii & " (two moves)"
-
-
 func admits(narrowing: Filter; target: Frame): bool =
   ## Test whether a frame answers everything the dancer has asked to see.
   ##
@@ -409,8 +398,98 @@ func renderGallery(narrowing: Filter): string =
       tag("div", "class=\"gallery\"", cards))))
 
 
+#[ Matrix View ]#
+
+const
+  MOST_HOLDS = ord(Side.high) + 1
+    ## A frame holds at most one connection per hand of the lead, and that is
+    ## what bounds the ladder the matrix is ordered along.
+  HELPER_GLYPHS: array[Helper, string] = [
+    Helper.Collect: "&darr;",
+    Helper.Drop: "&uarr;",
+  ] ## Point a primitive the way every other drawing points it.
+    ##
+    ## A collect adds a connection and a drop takes one away, and both the map
+    ## and the close drawing say that by direction: down the page for a collect,
+    ## up for a drop.  A cell that said `c` and `d` made the reader learn the
+    ## same fact a second way.
+  COMPOUND_GLYPHS: array[Compound, string] = [
+    Compound.Place: "&#8644;",
+    Compound.Cut: "&times;",
+  ] ## Draw a compound as what it does: a place hands a hand across, a cut
+    ## crosses one arm over the other.
+
+
+func toneOf(side: Side): string =
+  ## Name the custom property holding the ink of one of the lead's arms.
+  if side == Side.Left: "var(--left)" else: "var(--right)"
+
+
+func cell(classes, tone, told, body: string): string =
+  ## Form one cell of the matrix, inked and named for what it says.
+  ##
+  ## The ink is carried as a property rather than a class because the thing a
+  ## cell varies by is which arm dances it, and that is one value, not a set of
+  ## states the stylesheet has to enumerate.
+  tag("td", "class=\"" & classes & "\" style=\"--tone: " & tone & "\"" &
+    (if told.len > 0: " title=\"" & esc(told) & "\"" else: ""), body)
+
+
+func laddered(): seq[Frame] =
+  ## Order the frames by how many connections they hold, fewest first.
+  ##
+  ## `FRAMES` is in the order the frames are built, which puts the matrix's
+  ## marks where no pattern can be read off them.  Along the ladder every
+  ## collect runs from a row to a column further along it and every drop runs
+  ## back, so the two primitives fall either side of the diagonal and the
+  ## compounds -- which change what holds without changing how much -- fall in
+  ## the blocks on it.  The structure is then in the picture rather than in the
+  ## paragraph under it.
+  for count in 0 .. MOST_HOLDS:
+    for target in FRAMES:
+      if target.countHolds == count:
+        result.add target
+
+
+func renderMark(kind, tone, glyph: string): string =
+  ## Draw the mark a cell carries, in the ink of the arm that dances it.
+  tag("span", "class=\"tile " & kind & "\" style=\"--tone: " & tone & "\"", glyph)
+
+
+func renderMarks(): string =
+  ## Show what each mark in the matrix means, drawn as the matrix draws it.
+  ##
+  ## The old legend spelled the four letters out in a sentence, which asked the
+  ## reader to hold a code in their head while they read a grid.  Drawn, the
+  ## legend and the cell are the same thing seen twice.
+  var items = ""
+  for helper in Helper:
+    items.add tag("span", "class=\"swatch\"",
+      renderMark("one", "var(--dim)", HELPER_GLYPHS[helper]) & helper.name)
+  for named in Compound:
+    items.add tag("span", "class=\"swatch\"",
+      renderMark("two", "var(--dim)", COMPOUND_GLYPHS[named]) &
+      ($named).toLowerAscii & ", two moves")
+  tag("div", "class=\"legend\"", items)
+
+
+func renderCrosshair(across: int): string =
+  ## Write the rules that light the column under the pointer.
+  ##
+  ## A row lights itself, because a row is one element; a column is not, so it
+  ## takes one rule per column and the count of them is a fact about the model.
+  ## Written here it cannot fall out of step with how many frames there are, and
+  ## a gridless table needs it: without lines to follow, the whole difficulty of
+  ## an eight-by-eight is knowing which column you are in.
+  result = "<style>"
+  for column in 2 .. across + 1:
+    result.add ".matrix:has(td:nth-child(" & $column & "):hover) " &
+      ":is(th, td):nth-child(" & $column & ") { background: var(--cross); }"
+  result.add "</style>"
+
+
 func renderMatrix(): string =
-  ## Show every move there is, as one table.
+  ## Show every move there is, as one chart.
   ##
   ## Its own view, because it answers a different question from the gallery.  The
   ## gallery is what the frames *are*, one picture each, and is where a reader
@@ -418,43 +497,79 @@ func renderMatrix(): string =
   ## what you consult once you know what a frame is.  Under one heading the table
   ## was a wall below the pictures that nobody scrolled to.
   ##
+  ## Drawn rather than tabulated, for the reason the gallery is: a frame's name
+  ## is a claim about it and its picture is the frame, so the axes carry the
+  ## pictures and a reader can check the vocabulary instead of trusting it.  A
+  ## cell carries the move's direction as a mark and the lead's arm as its ink,
+  ## which is the vocabulary the map already uses, so the same three facts are
+  ## said the same way wherever the page says them.
+  ##
+  ## Every pair is answered.  A pair no primitive joins used to be blank, which
+  ## is half the chart saying nothing; it now carries how many moves apart the
+  ## two frames are, which is the question a blank cell provokes.
+  ##
   ## What the source spreadsheet has and has not got is not marked here.  Which
   ## cells its author has filled in is a fact about a document being written, not
   ## about two bodies, and the app is the ontology: `doc/review.html` says it, at
   ## length and in order, which is how it wants to be read.
-  var head = "<tr><th></th>"
-  for target in FRAMES:
-    head.add tag("th", "", tag("span", "", esc(target.describe)))
-  head.add "</tr>"
+  let order = laddered()
+  # A band opens wherever the ladder steps up, and the gap that marks it has to
+  # fall in the same place down the rows as it does across the columns.
+  var opens: seq[bool] = @[]
+  for index, target in order:
+    opens.add index > 0 and order[index - 1].countHolds != target.countHolds
+  var head = tag("th", "class=\"corner\"",
+    tag("span", "class=\"axis\"", "to &rarr;") &
+    tag("span", "class=\"axis\"", "from &darr;"))
+  for index, target in order:
+    head.add tag("th", "class=\"head" & (if opens[index]: " gap" else: "") & "\"",
+      renderFrame(target) & tag("span", "class=\"who\"", esc(target.describe)))
   var body = ""
-  for source in FRAMES:
-    var row = tag("th", "class=\"row\"", esc(source.describe))
-    for target in FRAMES:
+  for down, source in order:
+    let step = if opens[down]: " top" else: ""
+    # No picture down the side: the column carrying the same frame has one,
+    # and a frame drawn small enough to sit beside a name is a smudge.
+    var row = tag("th", "class=\"row" & step & "\"", esc(source.describe))
+    for across, target in order:
       let
+        edge = (if opens[across]: " gap" else: "") & step
         helper = classify(source, target)
         named = compound(source, target)
       if source == target:
-        row.add tag("td", "class=\"self\"", "")
-      elif helper.isNone and named.isNone:
-        row.add tag("td", "", "")
+        row.add cell("self" & edge, "var(--rule-strong)", source.describe,
+          tag("span", "class=\"tile here\"", ""))
+      elif helper.isSome:
+        let move = Move(helper: helper.get, to: target,
+          side: actingSide(source, target, helper.get))
+        row.add cell("one" & edge, toneOf(move.side), phrase(source, move),
+          tag("span", "class=\"tile one\"", HELPER_GLYPHS[move.helper]))
+      elif named.isSome:
+        row.add cell("two" & edge, toneOf(compoundSide(source, target).get),
+          compoundPhrase(source, target),
+          tag("span", "class=\"tile two\"", COMPOUND_GLYPHS[named.get]))
       else:
-        var classes = "on"
-        if helper.isNone:
-          classes.add " two"
-        let glyph =
-          if helper.isSome: $HELPER_MARKS[helper.get]
-          else: $COMPOUND_MARKS[named.get]
-        row.add tag("td", "class=\"" & classes & "\"", glyph)
+        let far = route(source, target).len
+        row.add cell("away" & edge, "var(--faint)",
+          (if far > 0: $far & " moves apart" else: ""),
+          (if far > 0: $far else: ""))
     body.add tag("tr", "", row)
   tag("div", "class=\"stage\"",
     tag("section", "class=\"panel wide\"",
       tag("h3", "", "derived transition matrix") &
-      tag("p", "class=\"note\"", renderLegend() & ".") &
-      tag("div", "class=\"scroll\"", tag("table", "class=\"matrix\"", head & body)) &
-      tag("p", "class=\"note\"", "Rows are the frame danced from, columns the " &
-        "frame danced to. Every move reverses, so the matrix is symmetric except " &
-        "that collect and drop are each other's mirror. Faded cells are the two " &
-        "compounds: a pair of primitives the dance calls one move.")))
+      renderMarks() & renderArms() & renderKey() &
+      tag("div", "class=\"scroll\"", renderCrosshair(order.len) &
+        tag("table", "class=\"matrix\"",
+          tag("thead", "", tag("tr", "", head)) & tag("tbody", "", body))) &
+      tag("p", "class=\"note\"", "A cell is the move from its row to its " &
+        "column, inked in the arm of the lead that dances it. The frames are " &
+        "ordered by how many connections they hold, so every collect falls " &
+        "above the diagonal and every drop below it, and the compounds &mdash; " &
+        "which change what is held without changing how much &mdash; fall in " &
+        "the blocks along it. A faded number is a pair no single move joins, " &
+        "and is how far apart they are.")))
+
+
+
 #[ Page ]#
 
 func renderControls(view: View): string =

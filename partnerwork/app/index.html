@@ -14,6 +14,9 @@
   --rule-strong: #c2bbb0;
   --faint: #948d85;
   --panel: #ffffff;
+  /* The band that lights the row and column under the pointer, standing in for
+     the ruled lines a gridless chart does without. */
+  --cross: #efece7;
   --left: #1f5fb4;
   --right: #b4541f;
   --ease: cubic-bezier(.32, .72, 0, 1);
@@ -30,6 +33,7 @@
     --rule-strong: #4a4754;
     --faint: #857f8e;
     --panel: #1e1d24;
+    --cross: #2a2833;
     --left: #6ba4ea;
     --right: #e8813f;
   }
@@ -267,18 +271,47 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   animation-delay: var(--pass-at); }
 .map .edge.taking { opacity: 1; stroke-width: 5; }
 .map .node.taking .node-plate { stroke: var(--ink); stroke-width: 2; }
-.matrix { border-collapse: collapse; font-size: 0.78rem; }
-.matrix th { font-weight: 500; color: var(--dim); text-align: left;
-  padding: 0.2rem 0.35rem; }
-.matrix thead th span { display: block; }
-.matrix tr th:first-child { max-width: 15rem; }
-.matrix th:not(.row) { height: 9rem; vertical-align: bottom; }
-.matrix th:not(.row) span { writing-mode: vertical-rl; transform: rotate(180deg); }
-.matrix td { width: 1.6rem; height: 1.6rem; text-align: center;
-  border: 1px solid var(--rule); }
-.matrix td.on { background: color-mix(in srgb, var(--ink) 10%, transparent); }
-.matrix td.self { background: var(--rule); }
-.matrix td.two { color: var(--dim); font-style: italic; }
+/* The matrix is a chart, not a spreadsheet. There is no grid: a cell is one
+   mark, drawn the way the map draws the same move -- pointed for its direction,
+   inked for the lead's arm -- and the axes carry the frames' pictures rather
+   than their names turned on their sides. What ruled lines were for, knowing
+   which column you are in, is done by lighting the row and column instead. */
+.matrix { border-collapse: separate; border-spacing: 4px; font-size: 0.8rem;
+  margin-inline: auto; }
+.matrix th { font-weight: 400; text-align: left; padding: 0; color: var(--dim); }
+.matrix td { padding: 0; text-align: center; vertical-align: middle;
+  border-radius: 8px; transition: background 140ms var(--ease-soft); }
+.matrix .gap { padding-left: 0.7rem; }
+.matrix .top { padding-top: 0.7rem; }
+.matrix .corner { vertical-align: bottom; padding-bottom: 0.25rem; }
+.matrix .axis { display: block; font-size: 0.66rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--faint); }
+/* Sized so the chart keeps its shape and the panel scrolls, rather than the
+   columns collapsing until the pictures are unreadable. */
+.matrix .head { min-width: 5.6rem; width: 5.6rem; vertical-align: bottom;
+  text-align: center; }
+.matrix .head .frame { width: 100%; height: auto; display: block; }
+.matrix .head .who { display: block; font-size: 0.66rem; line-height: 1.25;
+  margin-top: 0.25rem; }
+.matrix th.row { text-align: right; vertical-align: middle; line-height: 1.25;
+  min-width: 10rem; max-width: 12rem; padding-right: 0.5rem; }
+/* One shape for every mark, so a cell reads as a cell before it is read. Not
+   scoped to the table: the legend draws the same tile, and a legend drawn some
+   other way is one more thing to trust rather than read. */
+.tile { display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 9px; line-height: 1;
+  transition: transform 160ms var(--ease-out); }
+.tile.one { background: var(--tone); color: var(--page); font-size: 1.05rem; }
+/* Dashed wherever a compound is drawn, because it is still two moves. */
+.tile.two { border: 1.5px dashed var(--tone); color: var(--tone);
+  font-size: 1rem; }
+.tile.here { width: 0.4rem; height: 0.4rem; border-radius: 999px;
+  background: var(--tone); }
+.matrix td.away { color: var(--faint); font-size: 0.74rem; }
+.matrix td:hover .tile { transform: scale(1.12); }
+.matrix tbody tr:hover > * { background: var(--cross); }
+.legend .tile { width: 1.6rem; height: 1.6rem; border-radius: 7px;
+  font-size: 0.9rem; }
 .filters { display: flex; flex-wrap: wrap; gap: 0.35rem 1.5rem;
   margin-bottom: 0.75rem; }
 .question { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
