@@ -1,4 +1,4 @@
-## Bridge the interactive RGA workbench to a WebGL front end, compiled through Nim's own
+## Bridge the interactive RGA panel to a WebGL front end, compiled through Nim's own
 ## JS backend rather than reimplemented in JS -- every join, meet, attitude, support,
 ## expansion, projection, pick and drag the browser offers is computed by the same `pga`,
 ## `objects`, `mesh`, `camera`, `scene`, `picking`, `interaction` and `storyboard` modules
@@ -50,7 +50,7 @@ import ../core/[
 
 
 
-#[ Workbench State ]#
+#[ Panel State ]#
 
 var
   g_scene: Scene

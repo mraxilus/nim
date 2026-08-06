@@ -115,10 +115,10 @@ const
   WIDTH_LINE_FURNITURE* = 1.5'f32
     ## Set width of the ground grid and world axes, in pixels -- kept thinner than a
     ## scene line object's own width (`WIDTH_LINE_OBJECT`), so reference furniture
-    ## recedes behind whatever the workbench is actually showing.
+    ## recedes behind whatever the visualiser is actually showing.
   WIDTH_LINE_OBJECT* = 2.5'f32
     ## Set width of a scene line object, in pixels -- wider than furniture, so it reads
-    ## as what the workbench is actually showing.
+    ## as what the visualiser is actually showing.
 
 static:
   doAssert EXTENT_PLANE > 0, &"Plane radius must be positive; got `{EXTENT_PLANE}`."

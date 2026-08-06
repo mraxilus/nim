@@ -316,7 +316,7 @@ computes rather than one it assumes.
 rasterises only where it covers a pixel centre — the whole ground grid read as dotted.
 The desktop now asks for a 4-sample framebuffer and **falls back to none if no visual
 offers it**: `llvmpipe` under `xvfb`, which every headless capture here runs on, refuses the
-window outright rather than downgrading, and a workbench that will not start is worse than
+window outright rather than downgrading, and a visualiser that will not start is worse than
 one whose thinnest lines alias. The browser context already asked for `antialias: true`.
 
 `VERTICES_MAX` went from 16,384 to 49,152, because a segment that was two vertices is now
@@ -511,7 +511,7 @@ nothing; clicking it selects it.
 
 Two consequences worth stating. **Clicking empty space no longer clears the selection** when a
 visible horizon plane is in the scene — it selects the sky; hiding that object restores the old
-behaviour, and the help table's `choose` tab says so. And a *tap* still treats the sky as empty
+behaviour, and the help table's `select` tab says so. And a *tap* still treats the sky as empty
 space on purpose: tapping empty space is a finger's only way to dismiss a selection, so touch
 reaches the sky by long-press instead — which is where its marker fills anyway. The selection
 menu follows the middle of the view for it, since an object filling the sky has no place in the
@@ -599,7 +599,7 @@ what makes a zero here mean something, and it is why the suite's `GENERAL_FIRST`
 built out of neighbouring `POINTS` and is therefore incident with them.
 
 **Self-revelation.** The drag was the weakest of the three ways to build something, for one
-reason: it showed nothing. The workbench lists every operation and the selection menu shows
+reason: it showed nothing. The panel lists every operation and the selection menu shows
 what applies, but a drag's whole vocabulary lived in a button mapping the reader had to have
 been told. So the drag now *shows its answer before committing it*: `interaction.preview`
 holds what a plain release would build, drawn as a ghost in `INK_GHOST` through the same
@@ -701,8 +701,8 @@ selected slot.
 
 `edit` sits immediately right of `apply` and is shown only for exactly one selected object,
 since one object has one editor. It opens the drawer and the objects section, starts an edit
-session on that slot, scrolls its row into view and hides the menu — the workbench owns the
-interaction from there — while keeping the selection itself. It shares `openWorkbenchTo`
+session on that slot, scrolls its row into view and hides the menu — the panel owns the
+interaction from there — while keeping the selection itself. It shares `openPanelTo`
 with the top bar's own `add`, which differs only in opening onto a composing row instead.
 
 The document-level "tap outside closes the menu" listener excludes the canvas, the drawer
@@ -1147,7 +1147,7 @@ for "new". In the browser the same state sits at module scope, not on the row: `
 rebuilds every row through `innerHTML = ''`, destroying any closure held there.
 
 **Ghost preview.** Editing any session field fires `nimSetGhost` (browser) or updates
-`workbench.session` (desktop), drawing a live muted preview through the same
+`panel.session` (desktop), drawing a live muted preview through the same
 `mesh.addObject` dispatch a real object uses, tinted `INK_GHOST = Ink.Guide` (reusing its
 documented "construction helper" meaning). One ghost serves both modes — that is a direct
 consequence of unifying the sessions; two independent add/edit previews would have needed
@@ -1364,7 +1364,7 @@ Diagnostics Panel (desktop)
 ---
 A closed-by-default section holding: a raw (not smoothed — smoothing hides exactly the rare
 slow frame this exists for) per-frame-ms line graph over ~4 s from a ring buffer on
-`Workbench`; a fill-fraction bar for the permanent arena; a `peak_used` high-water bar for
+`Panel`; a fill-fraction bar for the permanent arena; a `peak_used` high-water bar for
 the frame arena (instantaneous usage reads ~empty almost any time this could sample it,
 since carve and reset both happen within one frame); a coloured cell per object-pool slot
 plus active/free counts; the pool's fixed memory as "N allocated, M used, per-slot"; and a
@@ -1520,8 +1520,8 @@ button that starts no drag (middle) contributes no row at all. Each render path 
 only its own numbering (SDL's and the DOM's differ) into `PointerButton` and asks. The entry
 count is asserted against the array length at compile time, which caught a miscount twice.
 
-**Tabbed by how you are working, not by what the control is** — `drag`, `choose`, `menu`,
-`workbench`, `camera`, `keys`. A reader opens this in the middle of one thing, and only that
+**Tabbed by how you are working, not by what the control is** — `drag`, `select`, `menu`,
+`panel`, `camera`, `keys`. A reader opens this in the middle of one thing, and only that
 thing's rows are of any use to them right then. The old grouping was by kind of control and
 the whole table rendered at once; it went 18 → 20 → 26 entries across three rounds while the
 module's own header still claimed everything in it fit one popup on a phone. It did not: the
@@ -1534,15 +1534,15 @@ window was.
 again in the suite. It is a **proxy and named as one**: the real constraint is rendered
 height, and a count is what compile time can check. Measured rather than estimated — the
 built page driven at 320x568, comparing each tab's `scrollHeight` against its `clientHeight`
-— and the measurement is what split `menu` out of `choose`: ten rows did not fit, because at
+— and the measurement is what split `menu` out of `select`: ten rows did not fit, because at
 that width the outcome column wraps onto second lines, so a count of rows is not a count of
 lines. It sits exactly at what the largest tab holds, so the next row added to a full tab
 fails the build; the answer is nearly always to split that tab.
 
 Re-measured after the column change below, this time by cloning each tab's *own* rows into
 it until it scrolls, so the added rows wrap exactly as that tab's real ones do. In the
-384 px-tall rows box a 320 px phone leaves: `drag` fits 7 of its own rows, `choose` 10,
-`menu` 8, `workbench` 6, `camera` 10, `keys` 9. The spread is the point — `workbench`'s
+384 px-tall rows box a 320 px phone leaves: `drag` fits 7 of its own rows, `select` 10,
+`menu` 8, `panel` 6, `camera` 10, `keys` 9. The spread is the point — `panel`'s
 actions wrap onto three lines at that width and `drag`'s onto two, so eight of *those* would
 scroll while eight of `keys`' fit with one to spare. So the cap stays at 8 rather than
 rising: the column change bought real width on the 558 px panel and almost nothing at the
@@ -1555,7 +1555,7 @@ actually has. That region scrolls, and is the safety net rather than the design:
 ever again lose rows off the top, whatever the window height. Its height comes from
 `guiChildHeightForRows` rather than from a hand-picked row height — Dear ImGui's own line
 spacing, window padding and border, asked for rather than restated, so a tab is exactly as
-tall as its own rows and `workbench`'s two do not float in a panel sized for eight. Its
+tall as its own rows and `panel`'s two do not float in a panel sized for eight. Its
 *width* is measured from both columns: a bounded region asked to fill nothing inside an
 auto-sizing window collapses to its widest item, and every outcome placed past that by
 `sameLineAt` is then clipped away — which is what the first attempt did, and looking at the
@@ -1580,10 +1580,10 @@ viewports, wrapped outcomes out of 31 rows: 7 → 1 at 1400x900, tallest tab 213
 
 Both tracks carry a 122 px floor — `minmax(122px, max-content) minmax(122px, 1fr)` — and the
 pair was measured, not picked. The action floor keeps a tab of short actions (`menu`,
-`workbench`) from starting its outcomes hard left of where every other tab starts them. The
+`panel`) from starting its outcomes hard left of where every other tab starts them. The
 outcome floor is what stops `max-content` being greedy where there is nothing to be greedy
 with: without it the actions took 208 px of the 262 px a 320 px phone leaves, and `drag`,
-`choose` and `keys` all grew a scrollbar. Candidates with a larger outcome floor (150–184 px)
+`select` and `keys` all grew a scrollbar. Candidates with a larger outcome floor (150–184 px)
 read better still until the cells were checked against the container's own right edge —
 122 + 122 + the 10 px gap is 254 and fits, 122 + 150 does not, and the difference is invisible
 in a screenshot because the overflow scrolls rather than clipping.

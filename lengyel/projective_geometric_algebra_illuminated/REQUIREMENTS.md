@@ -1,4 +1,4 @@
-Requirements — RGA Workbench
+Requirements — RGA Visualiser
 ===
 
 _A brief for building this tool from nothing. Not a description maintained alongside the
@@ -12,7 +12,7 @@ the shape of everything after them.
 1. What To Build
 ---
 
-An interactive workbench for the **rigid geometric algebra of 3D space** — the degenerate
+An interactive visualiser for the **rigid geometric algebra of 3D space** — the degenerate
 4D projective geometric algebra Eric Lengyel writes as RGA. A user places points, lines and
 planes in a 3D scene, selects them, applies the algebra's operations to derive new objects,
 and watches what those operations mean geometrically.
@@ -911,7 +911,7 @@ was first built.
   committing. Animate the reveal with a max-width transition — `width: auto` cannot animate.
 - `edit` sits immediately right of `apply` and shows **only for exactly one selected object**,
   since one object has one editor. It opens the drawer and the objects section, starts an edit
-  session on that slot, scrolls the row into view and hides the menu — the workbench owns the
+  session on that slot, scrolls the row into view and hides the menu — the panel owns the
   interaction from there — while keeping the selection.
 - `hide`/`delete` are hidden while the picker is open and restored when it closes; both act on
   every selected slot. **`hide` is a toggle**: it reads `show` when every picked object is

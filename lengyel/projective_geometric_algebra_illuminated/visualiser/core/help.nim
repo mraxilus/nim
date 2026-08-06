@@ -1,4 +1,4 @@
-## Say what every gesture, button and key in this workbench does, once, for both UIs.
+## Say what every gesture, button and key in this visualiser does, once, for both UIs.
 ##
 ## The desktop wrote this out in its panel and the browser wrote it out in a hint that
 ## disappeared after four seconds; the two had already drifted, and only one of them could
@@ -43,14 +43,14 @@ const ENTRIES_MAX_PATH* = 8
   ##   | Path | Rows | Of its own kind that fit |
   ##   |------|------|--------------------------|
   ##   | `drag` | 5 | 7 |
-  ##   | `choose` | 5 | 10 |
+  ##   | `select` | 5 | 10 |
   ##   | `menu` | 5 | 8 |
-  ##   | `workbench` | 2 | 6 |
+  ##   | `panel` | 2 | 6 |
   ##   | `camera` | 6 | 10 |
   ##   | `keys` | 8 | 9 |
   ##
   ##   Read the spread, not just the minimum: **a count of rows is not a count of lines.**
-  ##   `workbench`'s actions are long enough to wrap onto three lines at that width and
+  ##   `panel`'s actions are long enough to wrap onto three lines at that width and
   ##   `drag`'s onto two, so eight of *those* would scroll while eight of `keys`' fit with
   ##   a row to spare. Eight is therefore right for the table as it stands and would be
   ##   wrong for a table shaped differently -- a path nearing the cap is a prompt to
@@ -69,12 +69,12 @@ const ENTRIES_MAX_PATH* = 8
 type
   HelpPath* {.pure.} = enum ## Group entries by which way of working they belong to.
     ## What a reader is in the middle of when they open the help, rather than what kind of
-    ## control it is. Ordered as a reader meets them: the drag is what the workbench is
+    ## control it is. Ordered as a reader meets them: the drag is what the visualiser is
     ## for, and the keys are the accelerator rather than the way in.
     Drag, ## Building one object out of two by dragging between them.
-    Choose, ## Picking objects.
-    Menu, ## What the menu that follows what you picked offers.
-    Workbench, ## The panel: adding an object outright, and the whole operation catalogue.
+    Select, ## Saying which objects to work on.
+    Menu, ## What the menu beside the selection offers.
+    Panel, ## The panel and the buttons above it.
     Camera, ## Moving the view.
     Keys, ## Keyboard.
 
@@ -92,9 +92,9 @@ func titleOf*(path: HelpPath): string =
   ## Name one tab as a reader would say what they are doing.
   case path
   of HelpPath.Drag: "drag"
-  of HelpPath.Choose: "choose"
+  of HelpPath.Select: "select"
   of HelpPath.Menu: "menu"
-  of HelpPath.Workbench: "workbench"
+  of HelpPath.Panel: "panel"
   of HelpPath.Camera: "camera"
   of HelpPath.Keys: "keys"
 
@@ -145,17 +145,17 @@ const lut_help_entries* = block:
   )
   add(HelpPath.Drag, "more… in that choice", "hand both objects to the apply section")
 
-  add(HelpPath.Choose, "click an object", "choose it alone")
-  add(HelpPath.Choose, "shift-click an object", "add it to what you have chosen")
-  add(HelpPath.Choose, "click empty space", "choose nothing, or the sky if one is built")
+  add(HelpPath.Select, "click an object", "choose it alone")
+  add(HelpPath.Select, "shift-click an object", "add it to what you have chosen")
+  add(HelpPath.Select, "click empty space", "choose nothing, or the sky if one is built")
   add(
-    HelpPath.Choose, "press and hold an object",
+    HelpPath.Select, "press and hold an object",
     "choose it; its own outline fills while you hold", is_touch = true,
   )
-  add(HelpPath.Choose, "tap another object", "add it, once you have chosen one", true)
+  add(HelpPath.Select, "tap another object", "add it, once you have chosen one", true)
   # The menu that follows whatever is chosen. Undocumented in either build until now, on
   #   the grounds that it was obvious once you saw it -- but nothing said it was there.
-  #   A tab of its own rather than the tail of `choose`: ten rows on a phone wrap their
+  #   A tab of its own rather than the tail of `select`: ten rows on a phone wrap their
   #   outcomes onto second lines and scroll, which is what this whole round is undoing.
   add(HelpPath.Menu, "apply", "any operation, on the one or two you chose")
   add(HelpPath.Menu, "edit", "rename, recolour or reshape the one you chose")
@@ -163,9 +163,9 @@ const lut_help_entries* = block:
   add(HelpPath.Menu, "delete", "remove everything you chose")
   add(HelpPath.Menu, "✕", "choose nothing, and put the menu away")
 
-  add(HelpPath.Workbench, "add", "a new point you type the coordinates of")
+  add(HelpPath.Panel, "add", "a new point you type the coordinates of")
   add(
-    HelpPath.Workbench, "the apply section",
+    HelpPath.Panel, "the apply section",
     "any operation in the catalogue, on the objects you have chosen",
   )
 

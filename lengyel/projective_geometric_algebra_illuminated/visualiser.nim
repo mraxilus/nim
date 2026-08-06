@@ -117,7 +117,7 @@ import ./visualiser/desktop/sdl3
 #[ Application Configuration ]#
 
 const
-  TITLE* = "Projective Geometric Algebra Illuminated — RGA workbench"
+  TITLE* = "Projective Geometric Algebra Illuminated — RGA visualiser"
   SAMPLES_MULTISAMPLE* {.define: "visualiser.samples_multisample".} = 4
     ## Ask the framebuffer for this many samples per pixel. Four is where a 1.5-pixel
     ## ribbon stops reading as dotted; more buys little on geometry this thin. Settable so
@@ -137,7 +137,7 @@ const
     ## Carry the bulk and weight dual stars and the abandon button's cross, which neither
     ## face above has. Merged the same way.
   SIZE_FONT* = 16.0'f32
-  PATH_EXPORT_DEFAULT* = "rga_workbench.png"
+  PATH_EXPORT_DEFAULT* = "rga_visualiser.png"
 
 const
   SPEED_ORBIT = 0.008
@@ -183,7 +183,7 @@ const
     ## either arena was carved to serve.
   BYTES_MEMORY_TOTAL* =
     CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME +
-    sizeof(MeshSet) + sizeof(Scene) + sizeof(Workbench) + FRAMES_TIMING_MAX*sizeof(float32)
+    sizeof(MeshSet) + sizeof(Scene) + sizeof(Panel) + FRAMES_TIMING_MAX*sizeof(float32)
     ## Sum of every fixed-size reservation this binary makes for itself: both arenas at
     ## their full capacity, committed in the data segment regardless of use; tessellation
     ## storage; the object pool; the panel's own state, frame-time ring buffer included;
@@ -307,7 +307,7 @@ proc secondsNow(): float =
 
 
 proc offerCameraAim(
-  workbench: var Workbench; scene: Scene; camera: Camera; now: float; scale: DrawExtent
+  panel: var Panel; scene: Scene; camera: Camera; now: float; scale: DrawExtent
 ) =
   ## Offer the camera whatever is being worked on to look at, from one rule rather than
   ## from each path that could change it: an open session's own staged multivector, or
@@ -320,17 +320,17 @@ proc offerCameraAim(
   ##   Anything that draws nothing (a still-empty composing session) aims at nothing and
   ##   releases, which is what lets picking the same object again aim at it afresh.
   let geometry =
-    if workbench.session.isSome: some(workbench.session.get.geometry)
-    elif workbench.selection.len == 1 and scene.isAlive(workbench.selection.at(0)):
-      some(scene[workbench.selection.at(0)].geometry)
+    if panel.session.isSome: some(panel.session.get.geometry)
+    elif panel.selection.len == 1 and scene.isAlive(panel.selection.at(0)):
+      some(scene[panel.selection.at(0)].geometry)
     else: none(Multivector)
   let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-  if aim.isSome: workbench.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
-  else: workbench.tween_camera.release()
+  if aim.isSome: panel.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
+  else: panel.tween_camera.release()
 
 
 proc assembleMeshes(
-  workbench: var Workbench; scene: Scene; interaction: Interaction;
+  panel: var Panel; scene: Scene; interaction: Interaction;
   camera: Camera; now: float; scale: DrawExtent;
   are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
 ) =
@@ -342,8 +342,8 @@ proc assembleMeshes(
   ##   called beside this one rather than from inside it.
   let ticks_start = getMonoTime().ticks
   MESHES_FURNITURE.clearMeshes
-  if workbench.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture, scale)
-  if workbench.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture, scale)
+  if panel.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture, scale)
+  if panel.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture, scale)
 
   MESHES.clearMeshes
   # A horizon plane's own dome first, before anything else that might share its own
@@ -372,8 +372,8 @@ proc assembleMeshes(
   #   all-zero staging degrades to "nothing to draw" through `addObject`'s own
   #   empty-shape branch. While editing an existing object, this draws beside it: the
   #   object holds its committed position and the ghost shows where it would land.
-  if workbench.session.isSome:
-    discard MESHES.addObject(workbench.session.get.geometry, muted(INK_GHOST.colour), scale)
+  if panel.session.isSome:
+    discard MESHES.addObject(panel.session.get.geometry, muted(INK_GHOST.colour), scale)
 
   # What the drag in progress would build, drawn through that same dispatch and in that
   #   same ghost ink, so a reader learns one "this is not committed yet" appearance rather
@@ -382,10 +382,10 @@ proc assembleMeshes(
   if interaction.preview.isSome:
     discard MESHES.addObject(interaction.preview.get, muted(INK_GHOST.colour), scale)
 
-  workbench.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
-  workbench.count_vertices = 0
+  panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
+  panel.count_vertices = 0
   for primitive in Primitive:
-    workbench.count_vertices += MESHES[primitive].count_vertices +
+    panel.count_vertices += MESHES[primitive].count_vertices +
       MESHES_FURNITURE[primitive].count_vertices
 
 
@@ -574,7 +574,7 @@ proc drawInteractionOverlay(
 
 
 proc anchorOfSelection(
-  workbench: Workbench; scene: Scene; view_projection: Matrix4; width, height: int;
+  panel: Panel; scene: Scene; view_projection: Matrix4; width, height: int;
   scale: DrawExtent
 ): Option[tuple[x, y: cfloat]] =
   ## Say where the most recently picked object sits on screen, for the floating selection
@@ -592,8 +592,8 @@ proc anchorOfSelection(
   ##   and then not acted on, since the menu would sit whereever it last was.
   ##   **Duplicated by constraint** in `browser_bridge.nimAnchorScreen`, which answers the
   ##   same question for the same menu on the other front-end; fix both or neither.
-  if workbench.selection.len == 0: return none(tuple[x, y: cfloat])
-  let slot = workbench.selection.at(workbench.selection.len - 1)
+  if panel.selection.len == 0: return none(tuple[x, y: cfloat])
+  let slot = panel.selection.at(panel.selection.len - 1)
   if not scene.isAlive(slot): return none(tuple[x, y: cfloat])
   if scene[slot].geometry.isHorizonPlane:
     return some((x: cfloat(0.5*float(width)), y: cfloat(0.5*float(height))))
@@ -606,7 +606,7 @@ proc anchorOfSelection(
 
 proc renderFrame(
   window: Window; renderer: Renderer;
-  workbench: var Workbench; scene: var Scene; camera: var Camera; interaction: var Interaction;
+  panel: var Panel; scene: var Scene; camera: var Camera; interaction: var Interaction;
   now: float; are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool]);
   path_help: Option[HelpPath] = none(HelpPath)
 ): (int, int) =
@@ -623,37 +623,37 @@ proc renderFrame(
 
   # Snapshot both arenas before the panel that reads them draws, so what it shows this
   #   frame is this frame's own state; shared by both run modes, so a storyboard capture
-  #   reports real figures too rather than whatever `Workbench` happened to start zeroed at.
-  workbench.bytes_arena_permanent_used = ARENA_PERMANENT.used
-  workbench.bytes_arena_permanent_capacity = ARENA_PERMANENT.capacity
-  workbench.bytes_arena_frame_peak = ARENA_FRAME.peakUsed
-  workbench.bytes_arena_frame_capacity = ARENA_FRAME.capacity
-  workbench.bytes_memory_total = BYTES_MEMORY_TOTAL
+  #   reports real figures too rather than whatever `Panel` happened to start zeroed at.
+  panel.bytes_arena_permanent_used = ARENA_PERMANENT.used
+  panel.bytes_arena_permanent_capacity = ARENA_PERMANENT.capacity
+  panel.bytes_arena_frame_peak = ARENA_FRAME.peakUsed
+  panel.bytes_arena_frame_capacity = ARENA_FRAME.capacity
+  panel.bytes_memory_total = BYTES_MEMORY_TOTAL
 
   gui.frameBegin()
   # Consumed before layout, so a key pressed this frame and the button beside it reach the
   #   timeline through the identical call and land on the same frame.
-  if workbench.is_undo_requested or workbench.is_redo_requested:
-    let is_undo = workbench.is_undo_requested
-    (workbench.is_undo_requested, workbench.is_redo_requested) = (false, false)
+  if panel.is_undo_requested or panel.is_redo_requested:
+    let is_undo = panel.is_undo_requested
+    (panel.is_undo_requested, panel.is_redo_requested) = (false, false)
     toChars(
-      if stepHistory(workbench, scene, camera, HISTORY, is_undo):
+      if stepHistory(panel, scene, camera, HISTORY, is_undo):
         (if is_undo: "Stepped back." else: "Stepped forward.")
       else:
         (if is_undo: "Nothing to undo." else: "Nothing to redo."),
-      workbench.message,
+      panel.message,
     )
-  layoutWorkbench(workbench, scene, camera, HISTORY, now)
-  layoutHelp(workbench, path_help)
+  layoutPanel(panel, scene, camera, HISTORY, now)
+  layoutHelp(panel, path_help)
 
   # Advance before this frame's transforms are built, so the frame draws where the camera
   #   has reached rather than a frame behind. `offerCameraAim` below sets the goal this
   #   advance consumes next frame, which is one frame later by design -- there is nothing
   #   to advance toward until something has been aimed at.
-  workbench.tween_camera.advance(camera, now, easeOutCubic)
+  panel.tween_camera.advance(camera, now, easeOutCubic)
 
   let scale = camera.drawExtentFor(int(height))
-  offerCameraAim(workbench, scene, camera, now, scale)
+  offerCameraAim(panel, scene, camera, now, scale)
   # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
   #   the transform they pick against needs only the camera, which has already advanced.
@@ -663,20 +663,20 @@ proc renderFrame(
   #   it is placed *before* meshes are assembled, so a delete pressed on it leaves the
   #   scene this frame draws rather than one object stale.
   layoutSelectionMenu(
-    workbench, scene, camera, HISTORY,
-    anchorOfSelection(workbench, scene, view_projection, int(width), int(height), scale),
+    panel, scene, camera, HISTORY,
+    anchorOfSelection(panel, scene, view_projection, int(width), int(height), scale),
     now,
   )
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   interaction.pruneFocus(scene)
   interaction.updateDrag(scene, now)
-  assembleMeshes(workbench, scene, interaction, camera, now, scale, are_dimmed)
+  assembleMeshes(panel, scene, interaction, camera, now, scale, are_dimmed)
   clearFrame(int(width), int(height))
   renderer.drawMeshes(MESHES_FURNITURE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
 
   drawSelectionMarker(
-    scene, workbench.selection, camera, view_projection, int(width), int(height), scale
+    scene, panel.selection, camera, view_projection, int(width), int(height), scale
   )
   drawInteractionOverlay(
     interaction, scene, camera, view_projection, int(width), int(height), scale
@@ -752,11 +752,11 @@ func isMenuForcedFor(button: uint8): Option[bool] =
 
 proc handleEvent(
   event: Event;
-  camera: var Camera; workbench: var Workbench; scene: var Scene; interaction: var Interaction;
+  camera: var Camera; panel: var Panel; scene: var Scene; interaction: var Interaction;
   is_dragging_orbit, is_dragging_pan, is_running: var bool; button_dragging: var Option[uint8];
   now: float;
 ) =
-  ## Fold one SDL3 event into camera placement, drag state, workbench state or run state.
+  ## Fold one SDL3 event into camera placement, drag state, panel state or run state.
   ##   Mouse is ignored while GUI wants it, so dragging a widget never turns the view or
   ##   starts an operation drag.
   ##   Case runs on raw kind rather than on `EventKind`, since SDL3 sends kinds this
@@ -780,23 +780,23 @@ proc handleEvent(
       #   twice to be sure would have thrown away an unsaved scene; quitting moved to
       #   ctrl+Q, beside every other accelerator, and the window's own close button is
       #   unaffected.
-      if workbench.is_help_open: workbench.is_help_open = false
+      if panel.is_help_open: panel.is_help_open = false
       elif interaction.is_dragging:
         interaction.cancelDrag()
-        toChars("Cancelled.", workbench.message)
-      elif workbench.session.isSome: workbench.session = none(EditSession)
-      elif workbench.is_menu_selection_shown: workbench.hideSelectionMenu()
-      elif len(workbench.selection) > 0: workbench.selection.clear()
+        toChars("Cancelled.", panel.message)
+      elif panel.session.isSome: panel.session = none(EditSession)
+      elif panel.is_menu_selection_shown: panel.hideSelectionMenu()
+      elif len(panel.selection) > 0: panel.selection.clear()
     elif event.key.scancode == uint32(Scancode.S) and not is_accelerator:
-      workbench.is_export_requested = true
+      panel.is_export_requested = true
     elif is_accelerator and event.key.scancode == uint32(Scancode.Q):
       is_running = false
     elif is_accelerator and event.key.scancode == uint32(Scancode.Z) and not is_shifted:
-      workbench.is_undo_requested = true
+      panel.is_undo_requested = true
     elif is_accelerator and
         (event.key.scancode == uint32(Scancode.Y) or
          (event.key.scancode == uint32(Scancode.Z) and is_shifted)):
-      workbench.is_redo_requested = true
+      panel.is_redo_requested = true
     elif not is_accelerator:
       # The keys the 3D view itself answers, which is what makes the canvas reachable
       #   without a pointer at all. Nothing here is an accelerator, so a chord that missed
@@ -809,14 +809,14 @@ proc handleEvent(
         if index_selected.isSome:
           # Shift adds rather than replaces, exactly as shift-click does -- the one place
           #   the shift state means something `actionFor` cannot answer on its own.
-          if is_shifted: workbench.selection.toggle(index_selected.get)
-          else: workbench.selection.selectOnly(index_selected.get)
+          if is_shifted: panel.selection.toggle(index_selected.get)
+          else: panel.selection.selectOnly(index_selected.get)
           # Reached without a pointer at all, so the menu is the only place the keyboard
           #   can get at apply, edit, hide and delete for what it just picked.
-          workbench.showSelectionMenu()
+          panel.showSelectionMenu()
         # Moving the camera by key is a camera move like any other, so it abandons a tween
         #   already carrying it somewhere; otherwise the tween would drag it straight back.
-        workbench.tween_camera.abandon()
+        panel.tween_camera.abandon()
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
     # Every press is noted before anything is decided about it: whether it was a click is
@@ -836,25 +836,25 @@ proc handleEvent(
     let is_shifted = (sdl3.getModState() and MODIFIER_SHIFT) != 0
     if button_dragging == some(event.button.button):
       let outcome = interaction.endDrag(scene, now)
-      if len(outcome.message) > 0: toChars(outcome.message, workbench.message)
+      if len(outcome.message) > 0: toChars(outcome.message, panel.message)
       if outcome.index_clicked.isSome:
         # A press that never became a drag. Shift adds, exactly as shift+enter does from
         #   the keyboard, and either way the selection menu follows what was picked.
-        if is_shifted: workbench.selection.toggle(outcome.index_clicked.get)
-        else: workbench.selection.selectOnly(outcome.index_clicked.get)
-        workbench.showSelectionMenu()
+        if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
+        else: panel.selection.selectOnly(outcome.index_clicked.get)
+        panel.showSelectionMenu()
       elif outcome.index_created.isSome:
-        workbench.selection.selectOnly(outcome.index_created.get)
-        workbench.hideSelectionMenu()
+        panel.selection.selectOnly(outcome.index_created.get)
+        panel.hideSelectionMenu()
         HISTORY.record(scene, camera)
       elif outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
         # The way out of the gesture's own three operations into the other twenty-four:
         #   both operands selected in the order they were dragged, which is the order the
         #   apply section reads as m then n, and that section opened so they are visible.
-        workbench.selection.selectOnly(outcome.operands.get.source)
-        workbench.selection.toggle(outcome.operands.get.destination)
-        workbench.is_apply_opening = true
-        workbench.hideSelectionMenu()
+        panel.selection.selectOnly(outcome.operands.get.source)
+        panel.selection.toggle(outcome.operands.get.destination)
+        panel.is_apply_opening = true
+        panel.hideSelectionMenu()
       button_dragging = none(uint8)
     elif event.button.button == uint8(MouseButton.Left) and interaction.isClick(now):
       # A plain left click that began no drag to end -- so it landed on empty space, or on
@@ -863,29 +863,29 @@ proc handleEvent(
       #   it, which is the only way a pointer can, since it can never be dragged from.
       if interaction.is_hover_backdrop and interaction.index_hover.isSome:
         let slot = interaction.index_hover.get
-        if is_shifted: workbench.selection.toggle(slot)
-        else: workbench.selection.selectOnly(slot)
-        workbench.showSelectionMenu()
+        if is_shifted: panel.selection.toggle(slot)
+        else: panel.selection.selectOnly(slot)
+        panel.showSelectionMenu()
       elif not is_shifted:
         # Clears, mirroring the browser's own rule; shift is left alone, since shift means
         #   "keep what I have".
-        workbench.selection.clear()
-        workbench.hideSelectionMenu()
+        panel.selection.clear()
+        panel.hideSelectionMenu()
     if event.button.button == uint8(MouseButton.Left): is_dragging_orbit = false
     if event.button.button == uint8(MouseButton.Right): is_dragging_pan = false
   of uint32(EventKind.MouseWheel):
     if gui.wantsMouse(): return
-    workbench.tween_camera.abandon()
+    panel.tween_camera.abandon()
     camera.dolly(pow(FACTOR_DOLLY, -float(event.wheel.y)))
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))
     if is_dragging_orbit:
-      workbench.tween_camera.abandon()
+      panel.tween_camera.abandon()
       camera.orbit(
         -SPEED_ORBIT*float(event.motion.xrel), SPEED_ORBIT*float(event.motion.yrel)
       )
     if is_dragging_pan:
-      workbench.tween_camera.abandon()
+      panel.tween_camera.abandon()
       camera.pan(-SPEED_PAN*float(event.motion.xrel), SPEED_PAN*float(event.motion.yrel))
   else: discard
 
@@ -1187,7 +1187,7 @@ proc driveSky(
 
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
-  workbench: var Workbench; scene: var Scene; camera: var Camera;
+  panel: var Panel; scene: var Scene; camera: var Camera;
 ) =
   ## Draw frames, folding input in, until user or command line asks to stop.
   ##   Exceeds the working 60-line default: a sequential per-frame state machine
@@ -1201,7 +1201,7 @@ proc runInteractive(
     is_running = true
     is_dragging_orbit = false
     is_dragging_pan = false
-    is_vsync_active = workbench.is_vsync_enabled # Matches the swap interval already set.
+    is_vsync_active = panel.is_vsync_enabled # Matches the swap interval already set.
     count_drawn = 0
     ticks_previous_frame = getMonoTime().ticks
     total_tessellate_microseconds = 0.0
@@ -1223,8 +1223,8 @@ proc runInteractive(
     let ticks_frame_start = getMonoTime().ticks
     if count_drawn > 0:
       let delta_milliseconds = float32(ticks_frame_start - ticks_previous_frame) / 1_000_000.0
-      workbench.milliseconds_history[workbench.index_history] = cfloat(delta_milliseconds)
-      workbench.index_history = (workbench.index_history + 1) mod FRAMES_HISTORY
+      panel.milliseconds_history[panel.index_history] = cfloat(delta_milliseconds)
+      panel.index_history = (panel.index_history + 1) mod FRAMES_HISTORY
       if options.is_timed:
         doAssert count_drawn - 1 < FRAMES_TIMING_MAX,
           &"Timing run passed its own {FRAMES_TIMING_MAX}-frame bound; raise " &
@@ -1248,33 +1248,33 @@ proc runInteractive(
     while sdl3.pollEvent(addr event):
       gui.processEvent(addr event)
       handleEvent(
-        event, camera, workbench, scene, interaction,
+        event, camera, panel, scene, interaction,
         is_dragging_orbit, is_dragging_pan, is_running, button_dragging, now,
       )
 
     let (width, height) =
       renderFrame(
-        window, renderer, workbench, scene, camera, interaction, now,
+        window, renderer, panel, scene, camera, interaction, now,
         path_help = options.path_help_driven,
       )
     if options.is_timed:
-      total_tessellate_microseconds += workbench.microseconds_tessellate
-      total_vertices += workbench.count_vertices
+      total_tessellate_microseconds += panel.microseconds_tessellate
+      total_vertices += panel.count_vertices
 
     # Change the swap interval only when the checkbox actually flips, not every frame.
-    if workbench.is_vsync_enabled != is_vsync_active:
-      is_vsync_active = workbench.is_vsync_enabled
+    if panel.is_vsync_enabled != is_vsync_active:
+      is_vsync_active = panel.is_vsync_enabled
       sdl3.glSetSwapInterval(if is_vsync_active: 1 else: 0)
 
     # Export on final frame of a bounded run, so a build can be checked without a screen.
     inc count_drawn
     let is_final = options.count_frames > 0 and count_drawn >= options.count_frames
-    if is_final and len(options.path_screenshot) > 0: workbench.is_export_requested = true
+    if is_final and len(options.path_screenshot) > 0: panel.is_export_requested = true
 
-    if workbench.is_export_requested:
-      workbench.is_export_requested = false
-      let report = exportFrame(toText(workbench.path_export), width, height)
-      toChars(report, workbench.message)
+    if panel.is_export_requested:
+      panel.is_export_requested = false
+      let report = exportFrame(toText(panel.path_export), width, height)
+      toChars(report, panel.message)
       echo report
 
     sdl3.glSwapWindow(window)
@@ -1285,7 +1285,7 @@ proc runInteractive(
     # What the scripted keys actually reached, so "Dear ImGui swallowed them" is a reading
     #   rather than a suspicion. A camera still at its opening placement and a focus still
     #   none means nothing got through.
-    echo &"Keys: focus {interaction.index_focus}, selected {len(workbench.selection)}, " &
+    echo &"Keys: focus {interaction.index_focus}, selected {len(panel.selection)}, " &
       &"azimuth {camera.azimuth:.4f}, elevation {camera.elevation:.4f}, " &
       &"distance {camera.distance:.4f}; " &
       &"gui.wantsKeys {gui.wantsKeys()}, nav enabled {gui.isNavEnabled()}."
@@ -1298,7 +1298,7 @@ proc runInteractive(
 
 proc runStoryboard(
   window: Window; renderer: Renderer; directory: string;
-  workbench: var Workbench; scene: var Scene; camera: var Camera;
+  panel: var Panel; scene: var Scene; camera: var Camera;
 ) =
   ## Apply each scripted step in turn, writing one settled frame after each, plus one
   ## short animated GIF sweeping through every step's own appear-in animation.
@@ -1320,7 +1320,7 @@ proc runStoryboard(
       ## seeds-only frame captured below before any step has a rolling window to dim.
 
   template renderAt(now: float): (int, int) =
-    renderFrame(window, renderer, workbench, scene, camera, interaction_disabled, now, are_dimmed)
+    renderFrame(window, renderer, panel, scene, camera, interaction_disabled, now, are_dimmed)
 
   template captureGif(now: float) =
     ## Render one frame at `now`, downsample it, and append it to the GIF's own frames.
@@ -1346,7 +1346,7 @@ proc runStoryboard(
     ## Sweep this step's own items from freshly born to settled into the GIF, hold on
     ## the settled result a moment, then settle widget layout and write the numbered PNG
     ## exactly as before this feature existed -- the still frames never show mid-animation.
-    ##   Template rather than nested procedure, as scene and workbench arrive by `var`
+    ##   Template rather than nested procedure, as scene and panel arrive by `var`
     ##   and a closure may not capture those.
     block:
       let now_settled = clock + 2.0*ANIMATION_SECONDS
@@ -1363,7 +1363,7 @@ proc runStoryboard(
   scene = initScene()
   constructSeeds(scene, clock)
   let count_seeds = scene.len
-  toChars("Seeds placed.", workbench.message)
+  toChars("Seeds placed.", panel.message)
   captureStep("00_seeds")
 
   # Every object stays visible once added: a construction's own history should stay
@@ -1417,11 +1417,11 @@ proc runStoryboard(
       let scale_aim = camera.drawExtentFor(PIXELS_HEIGHT)
       let aim = aimFor(derived, scale_aim)
       if aim.isSome:
-        workbench.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
-        workbench.tween_camera.settle(camera)
+        panel.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
+        panel.tween_camera.settle(camera)
 
-    toChars(&"{step.label} gave {shapeText(derived)}.", workbench.message)
-    workbench.selection.selectOnly(count_seeds + index)
+    toChars(&"{step.label} gave {shapeText(derived)}.", panel.message)
+    panel.selection.selectOnly(count_seeds + index)
     captureStep(step.stem)
 
   let
@@ -1485,7 +1485,7 @@ proc main() =
   #   its edges: at four samples a 1.5-pixel grid ribbon reads as a line, and with none it
   #   reads as dotted. Asked for rather than required, because a visual that cannot supply
   #   it is a real case -- `llvmpipe` under `xvfb`, which every headless capture here runs
-  #   on, refuses the window outright rather than downgrading -- and a workbench that will
+  #   on, refuses the window outright rather than downgrading -- and a visualiser that will
   #   not start at all is worse than one whose thinnest lines alias.
   sdl3.glSetAttribute(GL_MULTISAMPLEBUFFERS, 1)
   sdl3.glSetAttribute(GL_MULTISAMPLESAMPLES, SAMPLES_MULTISAMPLE)
@@ -1515,13 +1515,13 @@ proc main() =
   var
     scene = initScene()
     camera = initCameraDefault()
-    workbench = initWorkbench(
+    panel = initPanel(
       if len(options.path_screenshot) > 0: options.path_screenshot
       else: PATH_EXPORT_DEFAULT
     )
-  workbench.is_vsync_enabled = not options.is_novsync
+  panel.is_vsync_enabled = not options.is_novsync
   # A help tab asked for on the command line is a help panel asked for.
-  workbench.is_help_open = options.path_help_driven.isSome
+  panel.is_help_open = options.path_help_driven.isSome
 
   # Open on storyboard's own seeds alone, so window and script agree on where a
   #   construction starts, unless a saved scene was asked for instead, which replaces
@@ -1535,8 +1535,8 @@ proc main() =
   HISTORY = initHistory(scene, camera)
 
   if len(options.path_storyboard) > 0:
-    runStoryboard(window, renderer, options.path_storyboard, workbench, scene, camera)
+    runStoryboard(window, renderer, options.path_storyboard, panel, scene, camera)
   else:
-    runInteractive(window, renderer, options, workbench, scene, camera)
+    runInteractive(window, renderer, options, panel, scene, camera)
 
 main()

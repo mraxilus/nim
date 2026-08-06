@@ -469,7 +469,7 @@ proc applyAction*(
 ): Option[int] =
   ## Carry out one keyboard action, and report which item the caller should select.
   ##   Moves the camera and the focus itself, because both are its own state; **does not
-  ##   touch the selection**, which each render path owns differently (a `Workbench` field
+  ##   touch the selection**, which each render path owns differently (a `Panel` field
   ##   on one, a module global on the other). Reporting a slot rather than selecting it
   ##   also leaves the caller to read its own shift state and decide between replacing the
   ##   selection and adding to it -- see `KeyAction.SelectFocused`.

@@ -306,7 +306,7 @@ button_help.addEventListener('click', (e) => {
 });
 
 /* ---------------------------------------------------------------------- */
-/* Undo/redo: scene-content edits only, mirrors panel.layoutWorkbench's    */
+/* Undo/redo: scene-content edits only, mirrors panel.layoutPanel's    */
 /* own undo/redo buttons exactly -- see `history.nim` for what is and is   */
 /* not on this timeline. A step carries the view its edit was made from,   */
 /* so the camera moves under these too; an orbit alone is not a step.      */
@@ -329,7 +329,7 @@ function openApplyWithOperands() {
   refreshObjectsUI();
 }
 
-function openWorkbenchTo(slot) {
+function openPanelTo(slot) {
   // Open an edit session on `slot` (or a composing one where null) and bring the drawer
   //   and the Objects section far enough open to see it -- shared by the top bar's `add`
   //   and the selection menu's `edit`, which differ only in what they open onto.
@@ -347,7 +347,7 @@ button_add.addEventListener('click', () => {
   // Compose a new object as a row in the Objects list rather than in a section of its
   //   own: adding and editing stage the same four things through the same interface, so
   //   there is one grid and one ghost instead of two of each.
-  openWorkbenchTo(null);
+  openPanelTo(null);
 });
 
 // One function for the buttons and for the keys that do the same thing. The keys used to
@@ -505,10 +505,10 @@ document.getElementById('btn-export-png').addEventListener('click', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'rga_workbench.png';
+    a.download = 'rga_visualiser.png';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    toast('Wrote ' + canvas.width + 'x' + canvas.height + ' frame to `rga_workbench.png`.');
+    toast('Wrote ' + canvas.width + 'x' + canvas.height + ' frame to `rga_visualiser.png`.');
   }, 'image/png');
 });
 
@@ -1813,8 +1813,8 @@ menu_selection_edit.addEventListener('click', () => {
   // Reaching an object's editor otherwise means opening the drawer and hunting its row,
   //   even with that object already picked and its own menu on screen.
   if (slots_selection.length !== 1) return; // Guard only -- hidden for 0 and 2+ anyway.
-  openWorkbenchTo(slots_selection[0]);
-  hideSelectionMenu(); // The workbench owns the interaction now; the pick itself stays.
+  openPanelTo(slots_selection[0]);
+  hideSelectionMenu(); // The panel owns the interaction now; the pick itself stays.
 });
 
 menu_selection_back.addEventListener('click', closeSelectionMenuOp);
@@ -1842,7 +1842,7 @@ menu_selection_close.addEventListener('click', clearSelection);
 
 document.addEventListener('pointerdown', (e) => {
   // Only a tap/click landing outside the canvas, the menu itself, the drawer
-  //   (interacting with the Objects list/workbench must not dismiss the selection menu
+  //   (interacting with the Objects list/panel must not dismiss the selection menu
   //   or clear selection), and the top chip-row (save/load scene lives there too)
   //   should dismiss it here -- dismissing on the canvas's own down event would race
   //   handleTap/endMouseDrag's own resolution of that same gesture.

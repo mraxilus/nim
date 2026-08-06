@@ -1,6 +1,6 @@
 ## Lay out panels user edits scene and camera through.
 ##
-## Workbench holds what the GUI needs between frames and the scene does not own:
+## Panel holds what the GUI needs between frames and the scene does not own:
 ## which operands are picked, what an open edit is staging, where to export.
 ##   Everything else is read straight off scene and camera, so there is one source of truth
 ##   and no synchronisation step.
@@ -23,7 +23,7 @@
 ## matching the browser build's own drawer section for section. The top bar sits outside
 ## them all, because its `add` button has to be able to open Objects. Only Objects opens by
 ## default: it is what a returning session looks at first, and opening all four at once
-## buries the 3D view the workbench exists to show.
+## buries the 3D view the visualiser exists to show.
 ##
 ## Coefficients are staged through 32-bit floats because that is what the widget writes,
 ## and written back only where widget reports a change, so editing costs no precision
@@ -47,7 +47,7 @@ import ../core/[camera, format, help, history, interaction, mesh, objects, scene
 
 
 
-#[ Workbench Configuration ]#
+#[ Panel Configuration ]#
 
 const
   MESSAGE_MAX* = 96
@@ -138,7 +138,7 @@ type
     tint*: Rgba ## Colour the row's name draws in -- staged where a session is open, so
       ## recolouring previews itself.
 
-  Workbench* = object ## Hold GUI's own state between frames.
+  Panel* = object ## Hold GUI's own state between frames.
     is_help_open*: bool ## Whether the help panel is showing. Closed at startup: the
       ## legend below the drag line already says the common half, and a reference that
       ## opens itself is one a returning user closes every session.
@@ -214,8 +214,8 @@ type
       ## see the arenas' own backing storage or the mesh and timing buffers beside them.
 
 
-func initWorkbench*(path_export: string): Workbench =
-  ## Construct workbench with world furniture shown and export aimed at `path_export`.
+func initPanel*(path_export: string): Panel =
+  ## Construct panel with world furniture shown and export aimed at `path_export`.
   result.is_grid_shown = true
   result.is_axes_shown = true
   result.is_vsync_enabled = true
@@ -228,18 +228,18 @@ func isPending*(row: ItemRow): bool = row.slot.isNone
   ## Report whether the row is composing an object that does not exist yet.
 
 
-func showSelectionMenu*(workbench: var Workbench) =
+func showSelectionMenu*(panel: var Panel) =
   ## Bring the floating selection menu up over whatever is picked, closed on the picker.
   ##   Every gesture that *picks* calls this, so the menu is never something a reader has
   ##   to go and find; every gesture that *builds* calls `hideSelectionMenu` instead.
-  workbench.is_menu_selection_shown = true
-  workbench.is_menu_selection_picking = false
+  panel.is_menu_selection_shown = true
+  panel.is_menu_selection_picking = false
 
 
-func hideSelectionMenu*(workbench: var Workbench) =
+func hideSelectionMenu*(panel: var Panel) =
   ## Put the floating selection menu away, leaving the selection itself alone.
-  workbench.is_menu_selection_shown = false
-  workbench.is_menu_selection_picking = false
+  panel.is_menu_selection_shown = false
+  panel.is_menu_selection_picking = false
 
 
 func geometry*(session: EditSession): Multivector =
@@ -332,7 +332,7 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
       inc placed
 
 
-proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int]) =
+proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
   ## Open an edit session against `slot`, or a composing one where slot is none.
   ##   A composing session starts on the same auto-label and cycled ink every other
   ##   construction path assigns, leaving both editable before the object exists.
@@ -346,65 +346,65 @@ proc beginSession(workbench: var Workbench; scene: var Scene; slot: Option[int])
   else:
     toChars(&"m{scene.len}", session.label)
     session.index_ink = cint(inkCycled(scene.len))
-  workbench.session = some(session)
+  panel.session = some(session)
 
 
-proc layoutSessionFields(workbench: var Workbench; is_pending: bool) =
+proc layoutSessionFields(panel: var Panel; is_pending: bool) =
   ## Lay out the label, colour and coefficient controls an open session stages.
   ##   Everything here writes into the session, never the scene: the row above previews
   ##   the change and the ghost previews the geometry, but nothing lands until save.
   widthPushField()
   fieldLabel("label")
-  discard gui.inputText("##label", toCstring(workbench.session.get.label), cint(LABEL_MAX))
+  discard gui.inputText("##label", toCstring(panel.session.get.label), cint(LABEL_MAX))
   # Offer the categorical run alone: the structural slots before it belong to the drawing's
   #   own furniture, and the combo therefore counts positions within that run rather than
   #   whole-palette ordinals. Names come from the shared table at its own offset, since the
   #   run is contiguous -- see `mesh.COUNT_INK_CATEGORICAL` for what holds that true.
-  var index_categorical = cint(categoricalIndex(Ink(workbench.session.get.index_ink)))
+  var index_categorical = cint(categoricalIndex(Ink(panel.session.get.index_ink)))
   fieldLabel("colour")
   if gui.combo(
     "##colour", addr index_categorical,
     addr lut_ink_to_name[INK_CATEGORICAL_FIRST], cint(COUNT_INK_CATEGORICAL),
   ):
-    workbench.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
+    panel.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
   gui.widthPop()
   gui.textTinted("coefficients", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLine()
   gui.helpMarker(
     if is_pending: HELP_COEFFICIENTS_PENDING else: HELP_COEFFICIENTS_EDITING
   )
-  discard layoutCoefficientGrid(workbench.session.get.coefficients)
+  discard layoutCoefficientGrid(panel.session.get.coefficients)
 
 
-proc layoutItemName(workbench: var Workbench; scene: var Scene; row: ItemRow) =
+proc layoutItemName(panel: var Panel; scene: var Scene; row: ItemRow) =
   ## Lay out the row's leading checkbox and its name.
   ##   Checkbox toggles membership, the way the browser's own row checkbox does, so a
   ##   second and third object join the selection in the order they were picked -- that
   ##   order is what names operands m and n over in `layoutApply`. The name beside it
   ##   picks that one object alone: the browser gets single-select from a plain canvas
   ##   click, which this build has no equivalent of, so the row carries both gestures.
-  var is_selected = (not row.isPending) and row.slot.get in workbench.selection
+  var is_selected = (not row.isPending) and row.slot.get in panel.selection
   gui.disabledPush(row.isPending) # Nothing to select until it exists.
   if gui.checkbox("", addr is_selected):
-    workbench.selection.toggle(row.slot.get)
-    workbench.showSelectionMenu() # Picking from the list is picking; see its own doc.
+    panel.selection.toggle(row.slot.get)
+    panel.showSelectionMenu() # Picking from the list is picking; see its own doc.
   gui.disabledPop()
   gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
   gui.sameLine()
 
   let label_shown =
-    if row.is_open: toCstring(workbench.session.get.label)
+    if row.is_open: toCstring(panel.session.get.label)
     else: toCstring(scene.labelAt(row.slot.get))
   gui.textColorPush(row.tint.red, row.tint.green, row.tint.blue)
   if gui.selectable(label_shown, is_selected, WIDTH_ITEM_LABEL) and not row.isPending:
-    if is_selected and workbench.selection.len == 1: workbench.selection.clear()
-    else: workbench.selection.selectOnly(row.slot.get)
-    workbench.showSelectionMenu()
+    if is_selected and panel.selection.len == 1: panel.selection.clear()
+    else: panel.selection.selectOnly(row.slot.get)
+    panel.showSelectionMenu()
   gui.textColorPop()
 
 
 proc layoutItemButtons(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   row: ItemRow; now: float
 ): bool =
   ## Lay out the row's own actions; report whether user asked for the object to go.
@@ -430,20 +430,20 @@ proc layoutItemButtons(
   gui.alignRight(width_buttons)
   if gui.buttonSmall(label_commit):
     if not row.is_open:
-      beginSession(workbench, scene, row.slot)
+      beginSession(panel, scene, row.slot)
     else:
-      let session = workbench.session.get
+      let session = panel.session.get
       let geometry = session.geometry
       if row.isPending:
         let slot_added =
           scene.addItem(geometry, toText(session.label), Ink(session.index_ink), now)
-        workbench.selection.selectOnly(slot_added)
+        panel.selection.selectOnly(slot_added)
       else:
         scene.geometryAt(row.slot.get) = geometry
         scene.labelAt(row.slot.get) = session.label
         scene.setInk(row.slot.get, Ink(session.index_ink))
       history.record(scene, camera)
-      workbench.session = none(EditSession)
+      panel.session = none(EditSession)
   gui.tooltip(
     if row.is_open: cstring"Commit these values to the scene."
     else: cstring"Rename, recolour or reshape this object; nothing changes until you save."
@@ -453,7 +453,7 @@ proc layoutItemButtons(
     # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
     #   scene was never touched either way, so this only has to drop the session.
     gui.sameLine()
-    if gui.buttonSmall("✕"): workbench.session = none(EditSession)
+    if gui.buttonSmall("✕"): panel.session = none(EditSession)
     gui.tooltip(
       if row.isPending: cstring"Discard this new object."
       else: cstring"Discard these changes."
@@ -474,7 +474,7 @@ proc layoutItemButtons(
     gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
 
-proc layoutItemDescription(workbench: Workbench; scene: var Scene; row: ItemRow) =
+proc layoutItemDescription(panel: Panel; scene: var Scene; row: ItemRow) =
   ## Lay out the row's own shape word and coefficients, on one line.
   ##   Built into a stack buffer rather than a `string`, since every visible item redraws
   ##   this line every frame; a fresh heap string per item per frame is exactly the kind
@@ -483,7 +483,7 @@ proc layoutItemDescription(workbench: Workbench; scene: var Scene; row: ItemRow)
   ##   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
   ##   that reads as a prefix to the equation anyway.
   let geometry_shown =
-    if row.is_open: workbench.session.get.geometry else: scene.geometryAt(row.slot.get)
+    if row.is_open: panel.session.get.geometry else: scene.geometryAt(row.slot.get)
   var line: array[WIDTH_ITEM_LINE, char]
   let description = buildChars(line):
     appendChars(line, cursor, "  ")
@@ -494,7 +494,7 @@ proc layoutItemDescription(workbench: Workbench; scene: var Scene; row: ItemRow)
 
 
 proc layoutItem(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   slot: Option[int]; now: float
 ): bool =
   ## Lay out one item's controls; report whether user asked for it to be removed.
@@ -511,28 +511,28 @@ proc layoutItem(
 
   let row = block:
     let is_open = is_pending or
-      (workbench.session.isSome and workbench.session.get.slot == slot)
+      (panel.session.isSome and panel.session.get.slot == slot)
     ItemRow(
       slot: slot,
       is_open: is_open,
       is_visible: is_pending or scene.isVisible(slot.get),
       tint:
-        if is_open: Ink(workbench.session.get.index_ink).colour
+        if is_open: Ink(panel.session.get.index_ink).colour
         else: scene.inkAt(slot.get).colour,
     )
   if not row.is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
   defer:
     if not row.is_visible: gui.alphaPop()
 
-  layoutItemName(workbench, scene, row)
-  result = layoutItemButtons(workbench, scene, camera, history, row, now)
-  layoutItemDescription(workbench, scene, row)
-  if row.is_open: layoutSessionFields(workbench, is_pending)
+  layoutItemName(panel, scene, row)
+  result = layoutItemButtons(panel, scene, camera, history, row, now)
+  layoutItemDescription(panel, scene, row)
+  if row.is_open: layoutSessionFields(panel, is_pending)
   gui.separator()
 
 
 proc layoutObjects*(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   now: float
 ) =
   ## Lay out every live item's controls, plus the row being composed if there is one,
@@ -550,14 +550,14 @@ proc layoutObjects*(
   if not gui.header(label, is_open_first = true): return
 
   let is_composing =
-    workbench.session.isSome and workbench.session.get.slot.isNone
+    panel.session.isSome and panel.session.get.slot.isNone
   if scene.len == 0 and not is_composing:
     gui.text("Nothing here yet -- press `add` above, or drag between two objects.")
     return
 
   # A composing row heads the list: it is the newest thing here, and it has no `born`
   #   reading to sort by since nothing backs it in the scene yet.
-  if is_composing: discard layoutItem(workbench, scene, camera, history, none(int), now)
+  if is_composing: discard layoutItem(panel, scene, camera, history, none(int), now)
 
   # Most recently added first, matching the browser's own list order: the object just
   #   built is the one a user is looking for, and it would otherwise sit at whatever
@@ -576,30 +576,30 @@ proc layoutObjects*(
   var slot_removed = none(int)
   for position in 0 ..< count:
     let slot = slots_ordered[position]
-    if layoutItem(workbench, scene, camera, history, some(slot), now):
+    if layoutItem(panel, scene, camera, history, some(slot), now):
       slot_removed = some(slot)
   if slot_removed.isSome:
     scene.removeItem(slot_removed.get)
-    workbench.selection.pruneDead(scene)
+    panel.selection.pruneDead(scene)
     # Its session has nothing left to commit against.
-    if workbench.session.isSome and workbench.session.get.slot == slot_removed:
-      workbench.session = none(EditSession)
+    if panel.session.isSome and panel.session.get.slot == slot_removed:
+      panel.session = none(EditSession)
     history.record(scene, camera)
 
 
 
 #[ Construct Panel ]#
 
-proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
+proc layoutTopBar*(panel: var Panel; scene: var Scene) =
   ## Lay out the controls reached for constantly, above every collapsing section: start a
   ## new object, toggle world furniture, and save or load the scene.
   ##   These sit outside the sections for the same reason the browser's own chip row and
   ##   menu hold them -- each is either flipped repeatedly while working or applies to the
   ##   whole scene, so neither should cost opening a section first. `add` in particular
   ##   has to live outside `objects`, since pressing it opens that section.
-  gui.disabledPush(workbench.session.isSome or scene.isFull)
+  gui.disabledPush(panel.session.isSome or scene.isFull)
   if gui.button("add"):
-    beginSession(workbench, scene, none(int))
+    beginSession(panel, scene, none(int))
   gui.disabledPop()
   gui.tooltip(
     "Compose a new object in the Objects list below; nothing joins the scene until you " &
@@ -607,24 +607,24 @@ proc layoutTopBar*(workbench: var Workbench; scene: var Scene) =
   )
 
   gui.sameLine()
-  discard gui.checkbox("axes", addr workbench.is_axes_shown)
+  discard gui.checkbox("axes", addr panel.is_axes_shown)
   gui.tooltip("Toggle the red/green/blue x/y/z axis lines through the origin.")
   gui.sameLine()
-  discard gui.checkbox("grid", addr workbench.is_grid_shown)
+  discard gui.checkbox("grid", addr panel.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
 
   widthPushField()
   fieldLabel("scene file")
-  discard gui.inputText("##scene_file", toCstring(workbench.path_scene), cint(PATH_MAX))
+  discard gui.inputText("##scene_file", toCstring(panel.path_scene), cint(PATH_MAX))
   gui.tooltip("File `save scene` writes to and `load scene` reads from.")
   gui.widthPop()
   if gui.button("save scene"):
-    toChars(saveScene(scene, toText(workbench.path_scene)), workbench.message)
+    toChars(saveScene(scene, toText(panel.path_scene)), panel.message)
   gui.sameLine()
   if gui.button("load scene"):
-    toChars(loadScene(scene, toText(workbench.path_scene)), workbench.message)
+    toChars(loadScene(scene, toText(panel.path_scene)), panel.message)
     # A loaded scene's slots are not the ones any open session was opened against.
-    workbench.session = none(EditSession)
+    panel.session = none(EditSession)
 
 
 proc offerOperationsOfArity*(
@@ -648,38 +648,38 @@ proc offerOperationsOfArity*(
 
 
 proc adoptSelectionAsOperands(
-  workbench: var Workbench; slots: openArray[int]; count: int
+  panel: var Panel; slots: openArray[int]; count: int
 ) =
   ## Fill the arity and operand pickers in from whatever is selected in the 3D view.
   ##   Everything the selection already says is taken rather than asked for a second
   ##   time: how many objects are picked names the arity, and the order they were picked
   ##   names m and n. Only right when the selection itself changes -- see
   ##   `selection_synced`'s own doc -- so a later manual pick of either still sticks.
-  if workbench.selection == workbench.selection_synced: return
-  workbench.selection_synced = workbench.selection
-  if workbench.selection.len == 0: return
+  if panel.selection == panel.selection_synced: return
+  panel.selection_synced = panel.selection
+  if panel.selection.len == 0: return
 
   func positionOf(slots: openArray[int]; count, slot: int): Option[cint] =
     ## Translate a slot back to the operand combo's own dense position.
     for position in 0 ..< count:
       if slots[position] == slot: return some(cint(position))
 
-  let arity_implied = cint(ord(workbench.selection.impliedArity))
-  if workbench.index_arity != arity_implied:
+  let arity_implied = cint(ord(panel.selection.impliedArity))
+  if panel.index_arity != arity_implied:
     # A filtered operation list is indexed per arity, so a position carried across from
     #   the other list names an unrelated operation -- the arity control resets the same
     #   way for the same reason.
-    workbench.index_arity = arity_implied
-    workbench.index_operation = 0
-  let position_first = positionOf(slots, count, workbench.selection.at(0))
-  if position_first.isSome: workbench.index_operand_first = position_first.get
-  if workbench.selection.len >= 2:
-    let position_second = positionOf(slots, count, workbench.selection.at(1))
-    if position_second.isSome: workbench.index_operand_second = position_second.get
+    panel.index_arity = arity_implied
+    panel.index_operation = 0
+  let position_first = positionOf(slots, count, panel.selection.at(0))
+  if position_first.isSome: panel.index_operand_first = position_first.get
+  if panel.selection.len >= 2:
+    let position_second = positionOf(slots, count, panel.selection.at(1))
+    if position_second.isSome: panel.index_operand_second = position_second.get
 
 
 proc applyPickedOperation(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   operation: Operation; first, second: int; now: float
 ) =
   ## Derive a fresh object from the picked operation and operands, and say what it gave.
@@ -699,16 +699,16 @@ proc applyPickedOperation(
     name_first = toText(scene.labelAt(first))
     name_second = toText(scene.labelAt(second))
     label = notationSubstituted(operation, name_first, name_second)
-  workbench.selection.selectOnly(
+  panel.selection.selectOnly(
     scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
   )
   history.record(scene, camera)
 
-  toChars(&"{label} gave {shapeText(derived)}.", workbench.message)
+  toChars(&"{label} gave {shapeText(derived)}.", panel.message)
 
 
 proc layoutApply*(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
@@ -719,8 +719,8 @@ proc layoutApply*(
   ##   scene's own label storage, so handing them across another boundary would be
   ##   lending out a pointer for no gain.
   # A gesture elsewhere may have asked for this section, having just handed it operands.
-  if workbench.is_apply_opening:
-    workbench.is_apply_opening = false
+  if panel.is_apply_opening:
+    panel.is_apply_opening = false
     gui.openNext()
   if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
@@ -738,9 +738,9 @@ proc layoutApply*(
     slots[count] = slot
     inc count
 
-  adoptSelectionAsOperands(workbench, slots, count)
+  adoptSelectionAsOperands(panel, slots, count)
 
-  let arity_wanted = Arity(workbench.index_arity)
+  let arity_wanted = Arity(panel.index_arity)
   let (notations, operations, count_offered) = offerOperationsOfArity(arity_wanted)
 
   # Arity is a segmented control rather than a dropdown: there are exactly two choices,
@@ -752,35 +752,35 @@ proc layoutApply*(
   for arity in Arity:
     if arity != Arity.low: gui.sameLine()
     if gui.buttonToggle(
-      lut_arity_to_name[arity], workbench.index_arity == cint(ord(arity)), width_segment
+      lut_arity_to_name[arity], panel.index_arity == cint(ord(arity)), width_segment
     ):
-      workbench.index_arity = cint(ord(arity))
+      panel.index_arity = cint(ord(arity))
       # A filtered operation list is indexed per arity, so a position carried across from
       #   the other list names an unrelated operation.
-      workbench.index_operation = 0
+      panel.index_operation = 0
   gui.tooltip("Whether to list operations reading one operand or two.")
 
   widthPushField()
 
-  let index_offered = clamp(int(workbench.index_operation), 0, count_offered - 1)
-  workbench.index_operation = cint(index_offered)
+  let index_offered = clamp(int(panel.index_operation), 0, count_offered - 1)
+  panel.index_operation = cint(index_offered)
   fieldLabel("operation")
   discard gui.combo(
-    "##operation", addr workbench.index_operation, addr notations[0], cint(count_offered),
+    "##operation", addr panel.index_operation, addr notations[0], cint(count_offered),
   )
   gui.tooltip("Library operation to apply below; its own notation names m and n, " &
     "the operands picked next.")
   let
-    operation = operations[clamp(int(workbench.index_operation), 0, count_offered - 1)]
+    operation = operations[clamp(int(panel.index_operation), 0, count_offered - 1)]
     is_binary = arity_wanted == Arity.Two
 
   fieldLabel("operand m")
-  discard gui.combo("##operand_m", addr workbench.index_operand_first,
+  discard gui.combo("##operand_m", addr panel.index_operand_first,
     addr names[0], cint(count))
   gui.tooltip("First operand -- `m` in the notation above -- every operation reads.")
   if is_binary:
     fieldLabel("operand n")
-    discard gui.combo("##operand_n", addr workbench.index_operand_second,
+    discard gui.combo("##operand_n", addr panel.index_operand_second,
       addr names[0], cint(count))
     gui.tooltip("Second operand -- `n` above -- this operation combines with `m`.")
   gui.widthPop()
@@ -788,20 +788,20 @@ proc layoutApply*(
   gui.disabledPush(scene.isFull)
   if gui.buttonWide("apply", gui.contentWidth()):
     let
-      first = slots[clamp(int(workbench.index_operand_first), 0, count - 1)]
+      first = slots[clamp(int(panel.index_operand_first), 0, count - 1)]
       second =
-        if is_binary: slots[clamp(int(workbench.index_operand_second), 0, count - 1)]
+        if is_binary: slots[clamp(int(panel.index_operand_second), 0, count - 1)]
         else: first # A unary operation ignores its second operand; naming the first
           # keeps a stale picker reading from ever reaching `applyOperation`.
-    applyPickedOperation(workbench, scene, camera, history, operation, first, second, now)
-    workbench.hideSelectionMenu() # Built something; see `showSelectionMenu`.
+    applyPickedOperation(panel, scene, camera, history, operation, first, second, now)
+    panel.hideSelectionMenu() # Built something; see `showSelectionMenu`.
   gui.disabledPop()
 
 
 
 #[ View Panel ]#
 
-proc layoutView*(workbench: var Workbench; camera: var Camera) =
+proc layoutView*(panel: var Panel; camera: var Camera) =
   ## Lay out camera placement and frame export.
   ##   World furniture toggles moved to `layoutTopBar` -- they are flipped constantly
   ##   while orbiting, so they should not cost opening a section first.
@@ -842,21 +842,21 @@ proc layoutView*(workbench: var Workbench; camera: var Camera) =
   gui.separatorText("export")
   widthPushField()
   fieldLabel("path")
-  discard gui.inputText("##path_export", toCstring(workbench.path_export), cint(PATH_MAX))
+  discard gui.inputText("##path_export", toCstring(panel.path_export), cint(PATH_MAX))
   gui.tooltip("File `save PNG` and the `S` key both write the current frame to.")
   gui.widthPop()
-  if gui.button("save PNG"): workbench.is_export_requested = true
+  if gui.button("save PNG"): panel.is_export_requested = true
 
 
 
 #[ Diagnostics Panel ]#
 
-proc layoutDiagnosticsFrameTime(workbench: var Workbench) =
+proc layoutDiagnosticsFrameTime(panel: var Panel) =
   ## Lay out the "frame time" section: rolling frame-time plot, vsync toggle, current
   ## rate, tessellation cost.
   gui.separatorText("frame time")
   var highest = 16.6'f32 # Floor the range at 60fps, so a smooth run doesn't zoom in on noise.
-  for value in workbench.milliseconds_history:
+  for value in panel.milliseconds_history:
     if value > highest: highest = value
   var overlay: array[WIDTH_OVERLAY_TEXT, char]
   let text_now = buildChars(overlay):
@@ -866,15 +866,15 @@ proc layoutDiagnosticsFrameTime(workbench: var Workbench) =
   #   own default *item* width, which is two thirds of the window, and a graph beside two
   #   thirds of a bar reads as one of them being broken.
   gui.plotLines(
-    "##frame_time", addr workbench.milliseconds_history[0], cint(FRAMES_HISTORY),
-    cint(workbench.index_history), text_now, 0.0, highest, gui.contentWidth(), 60.0,
+    "##frame_time", addr panel.milliseconds_history[0], cint(FRAMES_HISTORY),
+    cint(panel.index_history), text_now, 0.0, highest, gui.contentWidth(), 60.0,
   )
   gui.tooltip(
     "Milliseconds per drawn frame, oldest at the left and most recent at the right. " &
     "An fps average can hide an occasional slow frame; a spike here cannot."
   )
 
-  discard gui.checkbox("vsync", addr workbench.is_vsync_enabled)
+  discard gui.checkbox("vsync", addr panel.is_vsync_enabled)
   gui.tooltip(
     "Uncheck to see this build's own uncapped cost rather than the display's own " &
     "refresh rate; the reading below settles over about a second after any change."
@@ -888,20 +888,20 @@ proc layoutDiagnosticsFrameTime(workbench: var Workbench) =
   gui.text(text_rate)
   let text_tessellate = buildChars(line):
     appendChars(line, cursor, "tessellate ")
-    appendFixed(line, cursor, workbench.microseconds_tessellate, 1)
+    appendFixed(line, cursor, panel.microseconds_tessellate, 1)
     appendChars(line, cursor, " us into ")
-    appendInt(line, cursor, workbench.count_vertices)
+    appendInt(line, cursor, panel.count_vertices)
     appendChars(line, cursor, " vertices")
   gui.text(text_tessellate)
 
 
-proc layoutDiagnosticsMemory(workbench: Workbench) =
+proc layoutDiagnosticsMemory(panel: Panel) =
   ## Lay out the "memory" section: permanent and per-frame arena usage bars.
   gui.separatorText("memory")
   block:
     let
-      mb_used = float(workbench.bytes_arena_permanent_used) / (1024.0*1024.0)
-      mb_capacity = float(workbench.bytes_arena_permanent_capacity) / (1024.0*1024.0)
+      mb_used = float(panel.bytes_arena_permanent_used) / (1024.0*1024.0)
+      mb_capacity = float(panel.bytes_arena_permanent_capacity) / (1024.0*1024.0)
     var text: array[WIDTH_OVERLAY_TEXT, char]
     let overlay_text = buildChars(text):
       appendFixed(text, cursor, mb_used, 1)
@@ -921,8 +921,8 @@ proc layoutDiagnosticsMemory(workbench: Workbench) =
 
   block:
     let
-      kb_peak = float(workbench.bytes_arena_frame_peak) / 1024.0
-      mb_capacity = float(workbench.bytes_arena_frame_capacity) / (1024.0*1024.0)
+      kb_peak = float(panel.bytes_arena_frame_peak) / 1024.0
+      mb_capacity = float(panel.bytes_arena_frame_capacity) / (1024.0*1024.0)
     var text: array[WIDTH_OVERLAY_TEXT, char]
     let overlay_text = buildChars(text):
       appendChars(text, cursor, "peak ")
@@ -932,8 +932,8 @@ proc layoutDiagnosticsMemory(workbench: Workbench) =
       appendChars(text, cursor, " MB")
     gui.textTinted("frame arena", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
     let fraction =
-      float(workbench.bytes_arena_frame_peak) /
-      max(float(workbench.bytes_arena_frame_capacity), 1.0)
+      float(panel.bytes_arena_frame_peak) /
+      max(float(panel.bytes_arena_frame_capacity), 1.0)
     gui.progressBar(
       cfloat(fraction), overlay_text, gui.contentWidth(), 0.0,
       0.561, 0.737, 0.353, 0.15, 0.15, 0.18,
@@ -990,12 +990,12 @@ proc layoutDiagnosticsObjectPool(scene: Scene) =
   )
 
 
-proc layoutDiagnosticsTotal(workbench: Workbench) =
+proc layoutDiagnosticsTotal(panel: Panel) =
   ## Lay out the "total" section: every fixed reservation this binary makes, added up.
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
   let text_total = buildChars(total):
-    appendFixed(total, cursor, float(workbench.bytes_memory_total) / (1024.0*1024.0), 1)
+    appendFixed(total, cursor, float(panel.bytes_memory_total) / (1024.0*1024.0), 1)
     appendChars(total, cursor, " MB")
   gui.text(text_total)
   gui.tooltip(
@@ -1007,9 +1007,9 @@ proc layoutDiagnosticsTotal(workbench: Workbench) =
   )
 
 
-proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
+proc layoutDiagnostics*(panel: var Panel; scene: Scene) =
   ## Lay out live performance and memory readouts: closed by default, since nothing here
-  ## is needed to use the workbench, only to understand what using it costs.
+  ## is needed to use the visualiser, only to understand what using it costs.
   if not gui.header("diagnostics", is_open_first = false): return
   gui.text("Live cost of this build, updated every frame.")
   gui.sameLine()
@@ -1018,17 +1018,17 @@ proc layoutDiagnostics*(workbench: var Workbench; scene: Scene) =
     "a full object pool shows itself directly instead of just feeling wrong."
   )
 
-  layoutDiagnosticsFrameTime(workbench)
-  layoutDiagnosticsMemory(workbench)
+  layoutDiagnosticsFrameTime(panel)
+  layoutDiagnosticsMemory(panel)
   layoutDiagnosticsObjectPool(scene)
-  layoutDiagnosticsTotal(workbench)
+  layoutDiagnosticsTotal(panel)
 
 
 
 #[ History Stepping ]#
 
 proc stepHistory*(
-  workbench: var Workbench; scene: var Scene; camera: var Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: var Camera; history: var History;
   is_undo: bool
 ): bool =
   ## Step the timeline one way, putting the view back where the restored edit was made,
@@ -1042,10 +1042,10 @@ proc stepHistory*(
   ##   running it would drag the view straight off the placement just restored.
   result = if is_undo: history.undo(scene, camera) else: history.redo(scene, camera)
   if result:
-    workbench.selection.clear()
-    workbench.session = none(EditSession)
-    workbench.hideSelectionMenu()
-    workbench.tween_camera.abandon()
+    panel.selection.clear()
+    panel.session = none(EditSession)
+    panel.hideSelectionMenu()
+    panel.tween_camera.abandon()
 
 
 
@@ -1067,7 +1067,7 @@ const
     ## Slack added to the widest notation offered, for the combo's own frame and arrow.
 
 proc layoutSelectionMenuApply(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   now: float
 ) =
   ## Lay out the menu's `apply` button and the operation picker it reveals beside it.
@@ -1078,31 +1078,31 @@ proc layoutSelectionMenuApply(
   ##   this menu cannot say which two of them it would use, and it offers nothing rather
   ##   than guessing. Matches the browser's own `refreshSelectionMenu`.
   let
-    count = workbench.selection.len
-    arity = workbench.selection.impliedArity
+    count = panel.selection.len
+    arity = panel.selection.impliedArity
     (notations, operations, count_offered) = offerOperationsOfArity(arity)
-  gui.disabledPush(scene.isFull and workbench.is_menu_selection_picking)
+  gui.disabledPush(scene.isFull and panel.is_menu_selection_picking)
   if gui.buttonSmall("apply"):
-    if not workbench.is_menu_selection_picking:
-      workbench.is_menu_selection_picking = true
+    if not panel.is_menu_selection_picking:
+      panel.is_menu_selection_picking = true
       # The list is per arity, so a position carried over from the other one would name an
       #   unrelated operation -- the same reset the apply section's own arity control does.
-      workbench.index_operation_menu = 0
+      panel.index_operation_menu = 0
     else:
       let
-        index = clamp(int(workbench.index_operation_menu), 0, count_offered - 1)
-        first = workbench.selection.at(0)
-        second = if count >= 2: workbench.selection.at(1) else: first
+        index = clamp(int(panel.index_operation_menu), 0, count_offered - 1)
+        first = panel.selection.at(0)
+        second = if count >= 2: panel.selection.at(1) else: first
       applyPickedOperation(
-        workbench, scene, camera, history, operations[index], first, second, now
+        panel, scene, camera, history, operations[index], first, second, now
       )
-      workbench.hideSelectionMenu()
+      panel.hideSelectionMenu()
   gui.disabledPop()
   gui.tooltip(
-    "Pick an operation to apply to what you have chosen, then press this again to " &
+    "Pick an operation to apply to what you selected, then press this again to " &
     "apply it."
   )
-  if not workbench.is_menu_selection_picking: return
+  if not panel.is_menu_selection_picking: return
 
   var width_picker = 0.0'f32
   for index in 0 ..< count_offered:
@@ -1110,18 +1110,18 @@ proc layoutSelectionMenuApply(
   gui.sameLine()
   gui.widthPush(width_picker + PADDING_MENU_PICKER)
   discard gui.combo(
-    "##operation_menu", addr workbench.index_operation_menu,
+    "##operation_menu", addr panel.index_operation_menu,
     addr notations[0], cint(count_offered),
   )
   gui.widthPop()
-  gui.tooltip("Library operation; its own notation names m and n, the objects you chose.")
+  gui.tooltip("Library operation; its own notation names m and n, the objects you selected.")
   gui.sameLine()
-  if gui.buttonSmall("back"): workbench.is_menu_selection_picking = false
+  if gui.buttonSmall("back"): panel.is_menu_selection_picking = false
   gui.tooltip("Leave the operation unapplied.")
 
 
 proc layoutSelectionMenu*(
-  workbench: var Workbench; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   anchor: Option[tuple[x, y: cfloat]]; now: float
 ) =
   ## Lay out the floating menu over whatever is picked: apply, edit, hide, delete, close.
@@ -1133,78 +1133,78 @@ proc layoutSelectionMenu*(
   ##   its own proc above, this is one run of buttons whose only shared state is which of
   ##   them is on the line so far, and threading that through another boundary would buy
   ##   nothing.
-  if not workbench.is_menu_selection_shown or workbench.selection.len == 0: return
+  if not panel.is_menu_selection_shown or panel.selection.len == 0: return
   if anchor.isSome:
-    workbench.position_menu_selection = [
+    panel.position_menu_selection = [
       anchor.get.x,
       max(anchor.get.y - OFFSET_MENU_SELECTION, MARGIN_MENU_SELECTION),
     ]
-  let count = workbench.selection.len
+  let count = panel.selection.len
   var is_line_started = false # Whether anything is on the row yet, so the first button
     # placed does not ask for a `sameLine` that has nothing to continue.
   if gui.windowBeginPinned(
     "##selection_menu",
     clamp(
-      workbench.position_menu_selection[0],
+      panel.position_menu_selection[0],
       MARGIN_MENU_SELECTION, gui.viewportWidth() - MARGIN_MENU_SELECTION,
     ),
     clamp(
-      workbench.position_menu_selection[1],
+      panel.position_menu_selection[1],
       MARGIN_MENU_SELECTION, gui.viewportHeight() - MARGIN_MENU_SELECTION,
     ),
     0.5, 1.0,
   ):
     if count <= 2:
-      layoutSelectionMenuApply(workbench, scene, camera, history, now)
+      layoutSelectionMenuApply(panel, scene, camera, history, now)
       is_line_started = true
 
     # Edit and the two bulk actions stand aside while an operation is being picked, so the
     #   row stays one line at any width. Closing the menu stays reachable throughout.
-    if not workbench.is_menu_selection_picking:
+    if not panel.is_menu_selection_picking:
       if count == 1:
         if is_line_started: gui.sameLine()
         is_line_started = true
         if gui.buttonSmall("edit"):
-          beginSession(workbench, scene, some(workbench.selection.at(0)))
-          workbench.hideSelectionMenu() # The workbench owns it now; the pick itself stays.
+          beginSession(panel, scene, some(panel.selection.at(0)))
+          panel.hideSelectionMenu() # The panel owns it now; the pick itself stays.
         gui.tooltip("Rename, recolour or reshape it; nothing changes until you save.")
 
-      let is_all_hidden = workbench.selection.isAllHidden(scene)
+      let is_all_hidden = panel.selection.isAllHidden(scene)
       if is_line_started: gui.sameLine()
       is_line_started = true
       if gui.buttonSmall(if is_all_hidden: cstring"show" else: cstring"hide"):
         for position in 0 ..< count:
-          scene.setVisible(workbench.selection.at(position), is_all_hidden)
+          scene.setVisible(panel.selection.at(position), is_all_hidden)
         history.record(scene, camera)
         toChars(
-          if is_all_hidden: "Showed what you chose." else: "Hid what you chose.",
-          workbench.message,
+          if is_all_hidden: "Showed the selection." else: "Hid the selection.",
+          panel.message,
         )
-      gui.tooltip("Show or hide everything you have chosen, without removing any of it.")
+      gui.tooltip("Show or hide the whole selection, without removing any of it.")
 
       gui.sameLine()
       if gui.buttonSmall("delete"):
         # Read the slots out before removing any: removal prunes the selection this loop
         #   would otherwise be walking.
         var slots: array[ITEMS_MAX, int]
-        for position in 0 ..< count: slots[position] = workbench.selection.at(position)
+        for position in 0 ..< count: slots[position] = panel.selection.at(position)
         # An open session against one of these has nothing left to commit against, the
         #   same guard `layoutObjects` keeps around its own single removal.
-        if workbench.session.isSome and workbench.session.get.slot.isSome and
-            workbench.session.get.slot.get in workbench.selection:
-          workbench.session = none(EditSession)
+        if panel.session.isSome and panel.session.get.slot.isSome and
+            panel.session.get.slot.get in panel.selection:
+          panel.session = none(EditSession)
         for position in 0 ..< count: scene.removeItem(slots[position])
-        workbench.selection.clear()
+        panel.selection.clear()
         history.record(scene, camera)
-        toChars("Deleted what you chose.", workbench.message)
-        workbench.hideSelectionMenu()
-      gui.tooltip("Delete everything you have chosen; each slot is reused by the next add.")
+        toChars("Deleted the selection.", panel.message)
+        panel.hideSelectionMenu()
+      gui.tooltip("Delete the whole selection; each slot is reused by the next add.")
 
     gui.sameLine()
     if gui.buttonSmall("✕"):
-      workbench.selection.clear()
-      workbench.hideSelectionMenu()
-    gui.tooltip("Choose nothing, and put this menu away.")
+      panel.selection.clear()
+      panel.hideSelectionMenu()
+    gui.tooltip("Clear the selection, and put this menu away.")
   gui.windowEnd()
 
 
@@ -1227,11 +1227,11 @@ func helpActionOf(entry: HelpEntry): string =
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
-proc layoutHelp*(workbench: var Workbench; path_forced: Option[HelpPath] = none(HelpPath)) =
+proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath)) =
   ## Lay out the help affordance: a `?` pinned to the bottom-right corner, and the panel
   ## it opens.
-  ##   Sited in the corner rather than inside the workbench window because it has to be
-  ##   reachable when the workbench is the thing a reader does not yet understand, and
+  ##   Sited in the corner rather than inside the panel window because it has to be
+  ##   reachable when the panel is the thing a reader does not yet understand, and
   ##   because the browser build puts it in the same corner -- the two UIs are 1-1 here as
   ##   everywhere else, down to what the panel says, which both read from `help.nim`.
   ##   `path_forced` opens one tab whatever the reader last chose. Only `--drive-help`
@@ -1241,10 +1241,10 @@ proc layoutHelp*(workbench: var Workbench; path_forced: Option[HelpPath] = none(
   if gui.windowBeginPinned(
     "##help_open", width - MARGIN_HELP, height - MARGIN_HELP, 1.0, 1.0
   ):
-    if gui.button("  ?  "): workbench.is_help_open = not workbench.is_help_open
+    if gui.button("  ?  "): panel.is_help_open = not panel.is_help_open
   gui.windowEnd()
 
-  if not workbench.is_help_open: return
+  if not panel.is_help_open: return
   # Where the outcome column starts, and how wide the pair is, measured from the widest
   #   entries there actually are rather than set by eye: an entry longer than whatever was
   #   longest when this was written would otherwise run straight into its own outcome,
@@ -1275,7 +1275,7 @@ proc layoutHelp*(workbench: var Workbench; path_forced: Option[HelpPath] = none(
       for path in HelpPath:
         if not gui.tabBegin(cstring(titleOf(path)), path_forced == some(path)): continue
         # Each tab is as tall as its own rows need, up to what the window has: a fixed
-        #   height sized for the largest would leave `workbench`'s two rows floating in a
+        #   height sized for the largest would leave `panel`'s two rows floating in a
         #   third of a panel of blank.
         let height_rows = min(
           gui.childHeightForRows(cint(countOf(path))), height_available
@@ -1295,16 +1295,16 @@ proc layoutHelp*(workbench: var Workbench; path_forced: Option[HelpPath] = none(
 
 
 
-#[ Whole Workbench ]#
+#[ Whole Panel ]#
 
-proc layoutWorkbench*(
-  workbench: var Workbench; scene: var Scene; camera: var Camera; history: var History; now: float
+proc layoutPanel*(
+  panel: var Panel; scene: var Scene; camera: var Camera; history: var History; now: float
 ) =
   ## Lay out every panel inside one window.
   ##   `now` is this frame's own clock reading, passed through to whichever construct
   ##   control adds an item this frame, so it animates in from the moment it appears.
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
-  if gui.windowBegin("RGA workbench"):
+  if gui.windowBegin("RGA visualiser"):
     # Coloured words match the rubber-band drawn while dragging and the wedges of the
     #   choice menu, so a line on screen names its own outcome before it is released.
     #   Which colour belongs to which is `interaction.inkOf`'s to say, so this legend
@@ -1326,27 +1326,27 @@ proc layoutWorkbench*(
     #   a restored snapshot's slot numbers need not match the one it was opened against.
     gui.disabledPush(not history.canUndo)
     if gui.button("undo"):
-      discard stepHistory(workbench, scene, camera, history, is_undo = true)
+      discard stepHistory(panel, scene, camera, history, is_undo = true)
     gui.disabledPop()
     gui.tooltip("Step back through scene-content edits, view and all; an orbit on its own " &
       "is not a step.")
     gui.sameLine()
     gui.disabledPush(not history.canRedo)
     if gui.button("redo"):
-      discard stepHistory(workbench, scene, camera, history, is_undo = false)
+      discard stepHistory(panel, scene, camera, history, is_undo = false)
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
     gui.separator()
-    layoutTopBar(workbench, scene)
+    layoutTopBar(panel, scene)
     gui.separator()
 
     # Sections in alphabetical order, matching the browser's own drawer, with `objects`
     #   the one open by default: it is what a returning session looks at first, and the
     #   rest are reached for deliberately.
-    layoutApply(workbench, scene, camera, history, now)
-    layoutDiagnostics(workbench, scene)
-    layoutObjects(workbench, scene, camera, history, now)
-    layoutView(workbench, camera)
+    layoutApply(panel, scene, camera, history, now)
+    layoutDiagnostics(panel, scene)
+    layoutObjects(panel, scene, camera, history, now)
+    layoutView(panel, camera)
     gui.separator()
-    gui.text(toCstring(workbench.message))
+    gui.text(toCstring(panel.message))
   gui.windowEnd()

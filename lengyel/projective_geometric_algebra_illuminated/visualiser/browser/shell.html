@@ -1,4 +1,4 @@
-<title>RGA workbench — browser</title>
+<title>RGA visualiser — browser</title>
 <style>
   :root {
     --bg: #101318;
@@ -381,7 +381,7 @@
   }
   .toast.show { opacity: 1; }
 
-  /* ---- Drawer toggle (workbench open/close) -- merged onto .brand itself, so this
+  /* ---- Drawer toggle (panel open/close) -- merged onto .brand itself, so this
      ---- rule now only supplies its own open-state accent on top of .brand's base look. */
   .drawer-toggle.on, #btn-menu.on { border-color: var(--accent); color: var(--accent-ink); }
 
@@ -418,10 +418,13 @@
   .drawer-intro .op-meet { color: #e08fe8; font-weight: 600; }
   .drawer-intro .op-project { color: #b8cf5e; font-weight: 600; }
 
-  @media (max-width: 480px) {
+  @media (max-width: 519px) {
     /* Narrow phones: five chip-row controls (undo, redo, axes, grid, menu) plus the
-       brand chip's full "RGA workbench" label don't fit on one line -- drop the label,
-       keeping just the mark, rather than letting the row wrap or overflow. */
+       brand chip's full "RGA visualiser" label don't fit on one line -- drop the label,
+       keeping just the mark, rather than letting the row wrap or overflow.
+       519, measured rather than guessed: the row is swept a pixel at a time and 520 is
+       the narrowest viewport where it stops overflowing. This was 480 and wrong by 39
+       pixels, so every width from 481 to 519 overflowed -- with the old label, by 50. */
     .brand .name { display: none; }
     .brand { padding: 7px 10px; }
   }
@@ -735,7 +738,7 @@
   <div class="chip-row">
     <button class="brand drawer-toggle" id="btn-drawer" type="button">
       <span class="mark" aria-hidden="true"></span>
-      <span class="name">RGA workbench</span>
+      <span class="name">RGA visualiser</span>
     </button>
     <div style="display:flex; gap:8px; pointer-events:auto;">
       <div class="action-group">
