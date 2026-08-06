@@ -181,6 +181,42 @@ offered too, dashed, and taking one dances both of its moves in turn rather than
 jumping the frame in between.
 
 
+## The rotation half
+
+A second set of pages, chosen by the switch beside the title. The three views
+mean the same three things in either half — everything there is, one of them at
+a time, and all of it at once — so which view you want is one choice and which
+half you are in is another. The two halves share nothing but the frames, which
+is what will make them separable when they are joined up.
+
+A **posture** is a frame, the heights its arms are carried at, and how far the
+couple has turned. There are 83 of them. A posture is drawn as its frame with
+the turn in it: the chevron is the follow's front, and at half a turn their back
+is to the lead and their hands have swapped columns — which is the picture's
+half of `crossedSite`, the one place the hand-to-hand model already reads
+rotation. A drawing that left them where they were would contradict it.
+
+A turn is refused with its reason, which is what makes this half a validator
+too. There are two ceilings and a posture has to be under both: what joins the
+couple can only give so much turn away, and the arm can only carry so much
+wherever it has wound up.
+
+The second ceiling is measured. On `Left to left`, one hand, a low wrap holds
+half a turn and everything else holds a full one — the arm has to cross the
+torso to wrap low and runs out before the hold does. That is why half a turn
+wraps and a full turn locks: the only way to be at a full turn while low is with
+the arm behind the back. The rule used to be fitted to two cells of the
+workbook, and the alternative that fitted them equally well — direction deciding
+rather than size — is recorded in `rotation.nim` as rejected, with why. The app
+marks what was danced apart from what is assumed to follow, because a page whose
+claim is that it shows what the model derives cannot show a guess the same way.
+
+One consequence falls out: **the workbook's twelve turn sheets are six.** A turn
+is stored as one number for the couple and that number does not care which of
+them moved, so the lead turning one way and the follow turning the other leave
+the couple in the same posture.
+
+
 The page is usable from the keyboard: Tab reaches every control, the focus ring
 is drawn outside the control so a chosen tab does not swallow it, and focus is
 put back where it was after each move — on the frame itself when the button that

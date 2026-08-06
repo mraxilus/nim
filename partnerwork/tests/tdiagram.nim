@@ -23,9 +23,15 @@ suite "the picture":
 
   test "a hand being held is filled and a free one is not":
     for target in FRAMES:
-      let picture = renderFrame(target)
+      var open = 0
+      # The hands, and not everything in the drawing that happens to be unfilled:
+      # a picture carries marks that are outlines by nature.
+      for element in renderFrame(target).split('<'):
+        if (element.startsWith("rect") or element.startsWith("circle")) and
+            element.contains("fill: none"):
+          inc open
       # Two hands to a connection, one of the lead's and one of the follow's.
-      check picture.count("fill: none") == 4 - 2 * target.countHolds
+      check open == 4 - 2 * target.countHolds
 
   test "every frame is drawn in the one space, whatever it holds":
     # A coordinate has to mean the same place in every frame, because the views
@@ -43,3 +49,30 @@ suite "the picture":
   test "a picture names the frame it draws, for a reader who cannot see it":
     for target in FRAMES:
       check renderFrame(target).contains("<title>" & target.describe & "</title>")
+
+  test "turned back to front, the follow's hands change columns":
+    # The picture's half of `crossedSite`.  At half a turn the hand that was
+    # across the midline is the near one, and a drawing that left the follow's
+    # hands where they were would contradict the one place the hand-to-hand
+    # model reads rotation.
+    for target in FRAMES:
+      if target.countHolds == 0:
+        continue
+      let facing = renderFrame(target, 0)
+      check renderFrame(target, 2) == facing
+      check renderFrame(target, -2) == facing
+      check renderFrame(target, 1) != facing
+      check renderFrame(target, 1) == renderFrame(target, -1)
+
+  test "the captions travel with the hands they name":
+    # Otherwise the picture is right and its labels are wrong, which is worse
+    # than either being wrong on its own.
+    for twist in [0, 1]:
+      let picture = renderFrame(FRAMES[0], twist)
+      check picture.count(">right<") == 1
+      check picture.count(">left<") == 1
+
+  test "every picture says which way the follow is facing":
+    for target in FRAMES:
+      for twist in -2 .. 2:
+        check renderFrame(target, twist).count("<polyline") == 1

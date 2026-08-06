@@ -73,6 +73,11 @@ h4 { font-size: 0.72rem; margin: 1rem 0 0.4rem; letter-spacing: 0.06em;
 h4:first-of-type { margin-top: 0; }
 em { font-style: normal; font-weight: 600; }
 .tabs { display: flex; gap: 0.25rem; }
+/* Which half of the model you are in is a different kind of choice from which
+   view of it, so it is set apart rather than laid out as three more tabs. */
+.tabs.halves { margin-right: 0.5rem; padding-right: 0.9rem;
+  border-right: 1px solid var(--rule); }
+.tabs.halves .tab.on { background: var(--left); border-color: var(--left); }
 button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   background: var(--panel); border: 1px solid var(--rule); }
 .tab { padding: 0.3rem 0.7rem; font-size: 0.82rem; }
@@ -364,6 +369,12 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .gallery { display: grid; gap: 0.75rem;
   grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
 .card { padding: 0.5rem; text-align: center; }
+/* One posture, held: bigger than a card, and centred the way a frame is when
+   it is the frame you are standing in. */
+.posture-now { display: flex; justify-content: center; }
+.frame-big .frame, .posture-now .frame { width: 100%; max-width: 22rem;
+  height: auto; display: block; }
+.posture-now { padding: 0.5rem 0 1rem; }
 .card:hover { border-color: var(--ink); }
 .card .frame { width: 100%; height: auto; display: block; margin-bottom: 0.3rem; }
 .card .phrase { font-size: 0.82rem; line-height: 1.3; }

@@ -24,7 +24,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/options
+import std/[options, strutils]
 
 import ./frame
 
@@ -66,6 +66,11 @@ const
   CAPACITY_SINGLE* = 2 ## Hold one full turn on one hand-to-hand connection.
   CAPACITY_PAIR* = 1   ## Hold half a turn on two hand-to-hand connections.
   CAPACITY_CONTACT* = 0 ## Hold nothing while a hand rests on the partner's body.
+  CAPACITY_WRAP_LOW* = 1
+    ## Hold half a turn while the arm is wrapped low.  Measured, not derived.
+  CAPACITY_ARM* = 2
+    ## Hold a full turn while the arm is anywhere else.  Measured for a low
+    ## lock; assumed for the two high ones, which is the next thing to dance.
 
 
 
@@ -94,6 +99,25 @@ func parallelSite*(side: Side; twist: HalfTurns): Site =
 
 #[ Capacity ]#
 
+func armCapacity*(modifier: Option[Modifier]; level: Level): HalfTurns =
+  ## Get how much twist the arm itself can carry, wherever it has ended up.
+  ##
+  ## Measured on `Left to left`, one hand: a low wrap holds half a turn and
+  ## everything else holds a full one.  The arm has to cross the torso to wrap
+  ## low, and it runs out of length before the hold does; carried behind the
+  ## back, or up at the shoulder or the neck, it has further to go.
+  ##
+  ## This is the second of two ceilings, and the reason there are two: the first
+  ## is a property of what joins the couple, this one of what the arm is doing.
+  ## Which of them binds is what makes a wrap a wrap and a lock a lock -- see
+  ## `modifier`.
+  if modifier == some(Modifier.Wrap) and level == Level.Low:
+    CAPACITY_WRAP_LOW
+  else:
+    CAPACITY_ARM
+
+
+
 func capacity*(posture: Posture): HalfTurns =
   ## Get how much twist a posture can store before the couple must change it.
   ##
@@ -114,24 +138,43 @@ func capacity*(posture: Posture): HalfTurns =
 func modifier*(twist: HalfTurns): Option[Modifier] =
   ## Get what the arms are doing at a given twist.
   ##
-  ## The workbook's `rotations` sheet fills two cells, both for `Left to left`
-  ## held low: half a turn to the left gives a `wrap`, and a full turn to the
-  ## right gives a `lock`.  Read by magnitude alone, one half turn wraps and two
-  ## lock, and both cells fit.
+  ## Size decides, not direction: half a turn wraps and a full turn locks,
+  ## whichever way it is danced.
   ##
-  ## TODO: decide whether the direction of the turn matters as well as its size.
-  ## The two cells are also fitted by a rule where turning one way carries the
-  ## arm across the front and so wraps, and turning the other way carries it
-  ## behind the back and so locks, at either size.  The two rules disagree about
-  ## four cells that nobody has filled in: `Left to left` held low, at half and
-  ## at one turn, in each direction.  Dancing those four and writing down what
-  ## the arm does settles it; until then this module reports the magnitude rule,
-  ## which is the one that keeps `wrap` and `lock` as stages of one motion rather
-  ## than as two different motions.
+  ## This was fitted to two cells of the `rotations` sheet and is now a
+  ## consequence of a measured one.  A low wrap holds half a turn and no more
+  ## (`armCapacity`), so an arm carried low that is asked for a full turn cannot
+  ## still be wrapped -- it has to have gone behind the back, which is a lock.
+  ## The size of the turn decides because the arm runs out at a size.
+  ##
+  ## Rejected: the two cells were equally well fitted by a rule where the
+  ## direction decides -- one way carrying the arm across the front and so
+  ## wrapping, the other behind the back and so locking, at either size.  That
+  ## rule has nothing to say about why a low wrap should bind tighter than a low
+  ## lock, and it makes a wrap and a lock two different motions rather than two
+  ## depths of one.  The measurement is what chose between them.
   case abs(twist)
   of 0: none(Modifier)
   of 1: some(Modifier.Wrap)
   else: some(Modifier.Lock)
+
+
+func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
+  ## Get how much twist the arms of a posture carry between them.
+  ##
+  ## The tightest arm binds.  A couple is held together by all of its
+  ## connections at once, so the first arm to run out is the one that stops the
+  ## turn -- and only the arms that are holding count, because a free arm is
+  ## carrying nothing and has nothing to run out of.
+  ##
+  ## With no arm holding at all there is nothing to run out: two people who are
+  ## not touching can each face wherever they like.
+  if posture.frame.countHolds == 0:
+    return high(HalfTurns)
+  result = high(HalfTurns)
+  for side in Side:
+    if posture.frame.hold[side].isSome:
+      result = min(result, armCapacity(modifier(twist), posture.level[side]))
 
 
 func around*(modifier: Modifier; level: Level): BodySite =
@@ -184,18 +227,217 @@ func together*(amount: HalfTurns): Turn =
   Turn(turns: [amount, amount])
 
 
+func stored*(posture: Posture; motion: Turn): HalfTurns =
+  ## Get the twist a turn would leave stored, whether or not it can be.
+  ##
+  ## A turn is taken as one motion rather than as one dancer after the other,
+  ## because the couple does not pass through the state where only one of them
+  ## has moved.
+  posture.twist + motion.turns[Dancer.Follow] - motion.turns[Dancer.Lead]
+
+
+func holds*(posture: Posture; twist: HalfTurns): bool =
+  ## Test whether a posture can stand at a given twist.
+  ##
+  ## Two ceilings, and a posture has to be under both: what joins the couple can
+  ## only give away so much turn, and the arm can only carry so much wherever it
+  ## has wound up.  One definition, so that everything that refuses a turn
+  ## refuses it for the same reason.
+  ##
+  ## On the hold that has been measured neither ceiling is slack: the arm's is
+  ## what makes a full turn a lock rather than a wrap, and the hold's is what
+  ## refuses one and a half.
+  abs(twist) <= posture.capacity and abs(twist) <= posture.armsCapacity(twist)
+
+
 func turn*(posture: Posture; motion: Turn): Option[Posture] =
   ## Turn the couple, refusing a turn the arms cannot hold.
   ##
   ## The refusal is the point: a turn beyond a posture's capacity is not a turn
   ## the couple can do, it is a turn plus a change of frame, and the change of
-  ## frame has to be led.  A turn is taken as one motion rather than as one
-  ## dancer after the other, because the couple does not pass through the state
-  ## where only one of them has moved.
-  let stored = posture.twist + motion.turns[Dancer.Follow] -
-    motion.turns[Dancer.Lead]
-  if abs(stored) > posture.capacity:
+  ## frame has to be led.
+  let reached = posture.stored(motion)
+  if not posture.holds(reached):
     return none(Posture)
   var turned = posture
-  turned.twist = stored
+  turned.twist = reached
   some(turned)
+
+
+#[ What There Is ]#
+
+const
+  MOST_TURN* = 3
+    ## Largest turn the workbook's sheets record, in half turns.
+    ##
+    ## One and a half turns.  Not a claim that nothing larger is dancable, only
+    ## that nothing larger is written down, so it is where enumerating stops.
+  TURN_WAYS* = [1, -1] ## To the turning dancer's right, then to their left.
+
+
+func normalised*(posture: Posture): Posture =
+  ## Put the arms that are not holding back down.
+  ##
+  ## The height of a free arm cannot stop a turn, so two postures differing only
+  ## in where a free hand is carried are one posture.  Enumerating without this
+  ## would count each of them twice and claim more states than there are.
+  result = posture
+  for side in Side:
+    if posture.frame.hold[side].isNone:
+      result.level[side] = Level.Low
+
+
+func postures*(): seq[Posture] =
+  ## Get every posture the model derives: a frame, the heights it is held at,
+  ## and every twist those two can stand at.
+  ##
+  ## The hand-to-hand half has `FRAMES`; this is its opposite number, and the
+  ## rotation views are built on it the way the frame views are built on that.
+  ## A hand resting on the body is left out: it gives the whole turn away, so it
+  ## adds no posture that turning can reach.
+  for target in FRAMES:
+    for left in Level:
+      for right in Level:
+        let held = normalised(Posture(frame: target, level: [left, right],
+          contact: none(Contact), twist: 0))
+        if held.level != [left, right]:
+          continue
+        for twist in -MOST_TURN .. MOST_TURN:
+          if not held.holds(twist):
+            continue
+          var stood = held
+          stood.twist = twist
+          result.add stood
+
+
+type
+  Refusal* {.pure.} = enum ## Say what stops a turn that cannot be taken.
+    Hold, ## What joins the couple cannot give that much turn away.
+    Arm   ## The arm cannot carry that much, wherever it has wound up.
+
+  Offer* = object ## Hold one turn out of a posture, taken or refused.
+    who*: Dancer            ## Dancer who turns; the other holds their facing.
+    amount*: HalfTurns      ## Half turns, positive to that dancer's right.
+    to*: Posture            ## Where it lands, or would land if it could.
+    refused*: Option[Refusal] ## Why it cannot be taken, where it cannot.
+
+
+func refusal*(posture: Posture; twist: HalfTurns): Option[Refusal] =
+  ## Say which ceiling refuses a twist, if either does.
+  ##
+  ## The hold is named first where both would refuse, because it is the one a
+  ## dancer can do something about: letting a hand go changes the hold, and
+  ## nothing changes how far an arm reaches.
+  if abs(twist) > posture.capacity:
+    some(Refusal.Hold)
+  elif abs(twist) > posture.armsCapacity(twist):
+    some(Refusal.Arm)
+  else:
+    none(Refusal)
+
+
+func turnsOf*(posture: Posture): seq[Offer] =
+  ## Get every turn out of a posture, the refused ones included.
+  ##
+  ## Every turn the workbook has a sheet for: either dancer, either way, by a
+  ## half, a whole or one and a half.  Twelve of them, which is twelve sheets --
+  ## and half of them land where the other half do, because a turn is stored as
+  ## one number for the couple and it does not care which of them moved.
+  ##
+  ## The refused ones are carried rather than dropped.  A page that listed only
+  ## what can be danced would be a menu; what makes it a validator is that it
+  ## can say what cannot be danced, and why.
+  for who in Dancer:
+    for way in TURN_WAYS:
+      for size in 1 .. MOST_TURN:
+        let
+          amount = size * way
+          motion = rotates(who, amount)
+          reached = posture.stored(motion)
+        var landing = posture
+        landing.twist = reached
+        result.add Offer(who: who, amount: amount, to: landing,
+          refused: posture.refusal(reached))
+
+
+#[ Naming ]#
+
+const TURN_NAMES* = ["", "half a turn", "one turn", "one and a half turns"]
+  ## Name each size of turn as the workbook's sheets name it.
+
+
+func turnName*(amount: HalfTurns): string =
+  ## Name a turn by its size and the way it goes.
+  ##
+  ## The way is named from the turning dancer's own right and left, which is the
+  ## only reading that does not change when the other dancer moves.
+  if amount == 0:
+    return "no turn"
+  result = TURN_NAMES[min(abs(amount), TURN_NAMES.high)]
+  result.add(if amount > 0: " right" else: " left")
+
+
+func levelName*(level: Level): string = ($level).toLowerAscii
+  ## Name the height an arm is carried at.
+
+
+func armName*(posture: Posture): string =
+  ## Name what the arms are doing, where they are doing anything.
+  ##
+  ## The height comes first because it is the thing that decides how far the arm
+  ## can go: a low wrap and a high wrap are one modifier at two heights, and it
+  ## is the height that says which of them runs out first.
+  let what = modifier(posture.twist)
+  if what.isNone:
+    return ""
+  var heights: seq[string] = @[]
+  for side in Side:
+    if posture.frame.hold[side].isSome and
+        levelName(posture.level[side]) notin heights:
+      heights.add levelName(posture.level[side])
+  (if heights.len == 1: heights[0] & " " else: "") &
+    ($what.get).toLowerAscii
+
+
+func describe*(posture: Posture): string =
+  ## Name a posture: the frame it is held in, and what turning has done to it.
+  if posture.twist == 0:
+    return posture.frame.describe
+  result = posture.frame.describe & ", " & turnName(posture.twist)
+  let arms = posture.armName
+  if arms.len > 0:
+    result.add ", " & arms
+
+
+func key*(posture: Posture): string =
+  ## Form an identifier for a posture, for a page to name one by.
+  result = posture.frame.key & ":"
+  for side in Side:
+    result.add(if posture.level[side] == Level.High: "H" else: "L")
+  result.add ":" & $posture.twist
+
+
+func fromPostureKey*(key: string): Option[Posture] =
+  ## Decode a posture identifier, rejecting anything the model does not derive.
+  ##
+  ## Rejecting is the point, as it is for a frame: a posture the model does not
+  ## stand at cannot be arrived at by asking for it in a link.
+  let parts = key.split(':')
+  if parts.len != 3 or parts[1].len != 2:
+    return none(Posture)
+  let target = fromKey(parts[0])
+  if target.isNone:
+    return none(Posture)
+  var stood = target.get.rest
+  for index, side in [Side.Left, Side.Right]:
+    stood.level[side] = if parts[1][index] == 'H': Level.High else: Level.Low
+  var twist: int
+  try:
+    twist = parseInt(parts[2])
+  except ValueError:
+    return none(Posture)
+  stood = normalised(stood)
+  if not stood.holds(twist):
+    return none(Posture)
+  stood.twist = twist
+  some(stood)
