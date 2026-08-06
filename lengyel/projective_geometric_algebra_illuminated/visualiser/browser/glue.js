@@ -1207,8 +1207,8 @@ function refreshDiagnostics() {
 const svg_overlay = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics, rather than a hand-copied
 // literal that could drift out of sync with them.
-const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
-  nimOverlayMetrics();
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER,
+  WIDTH_OVERLAY_PULSE] = nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
@@ -1239,6 +1239,30 @@ function svgEl(tag, attrs) {
 // no stable meaning. Converting nothing is simpler than converting some of it.
 // Rails arrive as consecutive pairs, one per drawn piece, so the pairwise loop below
 // covers a line clipped into any number of them without knowing how many to expect.
+// The orientation pulse travelling along a selected object's marker: which way it goes is
+// the object's own orientation, and the shape of every run comes across the bridge already
+// in screen space. Drawn over the outline at a heavier weight, so it reads as the outline
+// lit along a stretch of itself rather than as a second mark riding on it. Only a caller
+// passing a time gets one -- hover and focus wear the same marker standing still.
+function appendMarkerPulse(slot, alpha, progress, is_touch, now_seconds) {
+  const flat = nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, progress,
+    is_touch === true, now_seconds);
+  if (flat.length === 0) return;
+  const stroke = 'rgba(255,255,255,' + alpha + ')';
+  let at = 1;
+  for (let run = 0; run < flat[0]; run++) {
+    const count = flat[at++];
+    const points = [];
+    for (let i = 0; i < count; i++) points.push(flat[at + 2 * i] + ',' + flat[at + 2 * i + 1]);
+    at += 2 * count;
+    svg_overlay.appendChild(svgEl('polyline', {
+      points: points.join(' '),
+      fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_PULSE,
+      'stroke-linecap': 'round',
+    }));
+  }
+}
+
 function appendMarker(slot, alpha, w, h, progress, is_touch) {
   const marker =
     nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, progress,
@@ -1317,7 +1341,10 @@ function refreshOverlay(cursor) {
   // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
   // marker at lower opacity, so both read as one family and hovering a line previews
   // exactly what selecting it will draw.
-  for (const slot of slots_selection) appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
+  for (const slot of slots_selection) {
+    appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
+    appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false, now());
+  }
 
   // A press maturing into a selection fills that item's own marker as it goes, so the
   // wait reads as filling rather than as nothing happening. Drawn at the selected weight

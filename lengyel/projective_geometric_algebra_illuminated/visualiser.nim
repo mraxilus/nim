@@ -389,11 +389,30 @@ proc assembleMeshes(
       MESHES_FURNITURE[primitive].count_vertices
 
 
+proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
+  ## Stroke the orientation pulse travelling along a marker's own outline, if it has one.
+  ##   Over the outline rather than instead of it, and at the same weight: the pulse is
+  ##   the outline being lit along a stretch of itself, not a second mark riding on it.
+  ##   Whichever kind of marker built it, this walks the same runs -- the shape of what
+  ##   pulses is `marker.nim`'s business and every run arrives here already in screen
+  ##   space.
+  for run in 0 ..< marker.count_run_pulse:
+    var points: array[2*SEGMENTS_MARKER_PULSE, cfloat]
+    for i in 0 ..< marker.counts_pulse[run]:
+      points[2*i] = cfloat(marker.pulses[run][i].x)
+      points[2*i + 1] = cfloat(marker.pulses[run][i].y)
+    gui.overlayPolyline(
+      addr points[0], cint(marker.counts_pulse[run]), tint.red, tint.green, tint.blue,
+      alpha, WIDTH_MARKER_PULSE, 0,
+    )
+
+
 proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
   ## Stroke one marker onto the foreground layer, in whichever outline its shape asked
   ## for.
   ##   Takes alpha separately from `tint` so selection and hover reach this through the
   ##   identical call and differ only in weight, rather than in what is drawn.
+  drawMarkerPulse(marker, tint, alpha)
   case marker.kind
   of MarkerKind.Ring:
     gui.overlayArc(
@@ -446,7 +465,7 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
 
 proc drawSelectionMarker(
   scene: Scene; selection: Selection; camera: Camera; view_projection: Matrix4;
-  width, height: int; scale: DrawExtent
+  width, height: int; scale: DrawExtent; now: float
 ): int {.discardable.} =
   ## Draw one marker per selected item, directly onto the foreground layer, shaped to
   ## that item by `marker.markerFor` and tinted with `Ink.Outline`. Report how many were
@@ -463,8 +482,12 @@ proc drawSelectionMarker(
     let slot = selection.at(position)
     if not (scene.isAlive(slot) and scene[slot].isVisible): continue
     let item = scene[slot]
+    # `now` is what says "this one is selected": it runs the orientation pulse round the
+    #   outline, and the hover and focus paths below pass none, so motion means selected
+    #   rather than merely under the cursor.
     let marker = markerFor(
-      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
+      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
+      now = some(now),
     )
     if marker.isNone: continue
     drawMarker(marker.get, tint, ALPHA_MARKER_SELECTED)
@@ -687,7 +710,7 @@ proc renderFrame(
   renderer.drawMeshes(MESHES, view_projection)
 
   drawSelectionMarker(
-    scene, panel.selection, camera, view_projection, int(width), int(height), scale
+    scene, panel.selection, camera, view_projection, int(width), int(height), scale, now
   )
   drawInteractionOverlay(
     interaction, scene, camera, view_projection, int(width), int(height), scale

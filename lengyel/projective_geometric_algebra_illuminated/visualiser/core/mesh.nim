@@ -101,8 +101,10 @@ const
     ## Bound how many vertices one primitive's mesh holds, per frame.
     ##   Tripled when lines became ribbons: a segment that was two vertices is now six.
     ## The binding case is a scene filled to `scene.ITEMS_MAX` with planes, each drawing
-    ## `SEGMENTS_CIRCLE_HORIZON` rim ribbons plus one for its normal shaft -- 64 x 97 x 6,
-    ## or 37,248, which the old 16,384 would have asserted on. The suite fills a scene
+    ## `SEGMENTS_CIRCLE_HORIZON` rim ribbons -- 64 x 96 x 6, or 36,864, which the old
+    ## 16,384 would have asserted on. (It was 97 while every plane also drew a normal
+    ## shaft; that shaft is gone, replaced by the orientation pulse `marker.nim` runs
+    ## round a selected object's outline.) The suite fills a scene
     ## exactly that way rather than leaving the arithmetic to be trusted.
     ##   Costs `3 * VERTICES_MAX * sizeof(Vertex)` per `MeshSet` and there are two of them,
     ## so this is the largest single reservation this build makes; the diagnostics panel
@@ -180,13 +182,6 @@ const
     ## genuinely coloured sky rather than a barely-there hint at a glance, without
     ## overwhelming whatever furniture or objects the ordinary depth test still lets
     ## show through in front of it.
-  ALPHA_GUIDE* = 0.75'f32
-    ## Set opacity of a plane's own normal shaft, shown a touch less boldly than the
-    ## plane's own rim so it reads as a construction aid, not as another competing mark.
-  FRACTION_NORMAL_SHAFT* = 0.25
-    ## Scale a plane's own radius by this to reach the length its normal shaft is drawn
-    ## at -- long enough to read as an arrow rather than a stub, short enough not to
-    ## compete with the disc's own rim for attention.
   FRACTION_DIMMED_ALPHA* = 0.55'f32
     ## Scale an already-constructed but non-focal object's own alpha by this, so it
     ## stays legible as background context -- shown rather than hidden outright -- while
@@ -208,8 +203,6 @@ static:
     &"Grid must lay at least one cell each way; got `{CELLS_GRID_HALF_MAX}`."
   doAssert SEGMENTS_GRID_FADE >= 2,
     &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
-  doAssert FRACTION_NORMAL_SHAFT > 0,
-    &"Normal shaft fraction must be positive; got `{FRACTION_NORMAL_SHAFT}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
   doAssert MUTE_DESATURATION > 0 and MUTE_DESATURATION <= 1.0,
@@ -892,8 +885,13 @@ proc addPlane(
   ##   support does; see `scene.creationAnchor`. `frame`'s own axes do not depend on
   ##   which point anchors the plane (see `spanPerpendicular`'s own doc comment), so
   ##   only where the disc is drawn changes, never how it is oriented.
-  ##   `progress` grows the disc, its rim, and the normal shaft out from nothing, and
-  ##   fades every part of it in alongside.
+  ##   `progress` grows the disc and its rim out from nothing, and fades both in
+  ##   alongside.
+  ##   **No normal is drawn.** A bare shaft out of the anchor used to mark one, which told
+  ##   a plane apart from its own reflection -- but it did so on *every* plane in the
+  ##   scene, permanently, to answer a question a reader asks about one object at a time.
+  ##   Orientation now rides on the selection marker instead, as the direction a pulse
+  ##   travels round it; see `marker.markerFor`.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
@@ -908,12 +906,6 @@ proc addPlane(
     meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
     meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
 
-    # Show normal as a bare shaft, no marker at its tip: tells plane apart from its own
-    #   reflection without adding another point to the scene.
-    meshes.addSegment(
-      anchor.get, anchor.get + (FRACTION_NORMAL_SHAFT*extent)*axes.get.normal,
-      Ink.Guide.colour.fade(ALPHA_GUIDE*progress), WIDTH_LINE_OBJECT, scale,
-    )
     return Placement.Finite
 
   meshes.addDome(scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress))

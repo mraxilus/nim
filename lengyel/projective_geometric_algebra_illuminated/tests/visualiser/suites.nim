@@ -464,13 +464,13 @@ suite "Mesh":
       const
         VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
         RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
-        RIBBONS_NORMAL = 1
       check MESHES[Primitive.Triangle].count_vertices == VERTICES_FILL
-      check MESHES[Primitive.Ribbon].count_vertices ==
-        VERTICES_RIBBON*(RIBBONS_RING + RIBBONS_NORMAL)
+      # The rim and nothing else. A plane used to add one ribbon more for a normal shaft
+      #   out of its anchor; orientation now rides on the selection marker's own pulse,
+      #   so an unselected plane draws no such thing.
+      check MESHES[Primitive.Ribbon].count_vertices == VERTICES_RIBBON*RIBBONS_RING
       # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
-      #   plane never adds a scattered dot beyond what the fill, rim and shaft already
-      #   draw.
+      #   plane never adds a scattered dot beyond what the fill and rim already draw.
       check MESHES[Primitive.Point].count_vertices == 0
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
@@ -2579,11 +2579,13 @@ suite "Marker":
     (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
 
   proc markerOf(
-    geometry: Multivector; anchor = none(Position); progress = 1.0
+    geometry: Multivector; anchor = none(Position); progress = 1.0;
+    now = none(float)
   ): Option[Marker] =
     let (placement, view_projection, scale) = setUp()
     markerFor(
-      geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK, progress
+      geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
+      progress, is_touch = false, now = now,
     )
 
   proc reachRails(marker: Marker): float =
@@ -2971,6 +2973,59 @@ suite "Marker":
       ScreenPosition(x: 400.0, y: 50.0), ScreenPosition(x: 900.0, y: 50.0),
       int(WIDE), int(TALL),
     ) =~ 0.0
+
+
+  test "a pulse rides its own outline, and only where there is an orientation to state":
+    proc pulsed(geometry: Multivector; now: float): Marker =
+      markerOf(geometry, now = some(now)).get
+
+    # A plane's circle and a line's rails both carry one; a point has no orientation and
+    #   a plane at horizon carries no normal at all, so neither says anything.
+    check pulsed(PLANE, 0.3).count_run_pulse > 0
+    check pulsed(LINE, 0.3).count_run_pulse > 0
+    check pulsed(LINE_HORIZON, 0.3).count_run_pulse > 0
+    check pulsed(POINT_A, 0.3).count_run_pulse == 0
+    check pulsed(PLANE_HORIZON, 0.3).count_run_pulse == 0
+    # Nothing pulses unless a caller says the object is selected by passing a time.
+    check markerOf(PLANE).get.count_run_pulse == 0
+
+    # Every point of it lies on the very outline it rides, to within a pixel: the run is
+    #   sampled from the marker's own points rather than traced on a curve of its own.
+    let marker = pulsed(PLANE, 0.3)
+    proc distanceToLoop(point: ScreenPosition; marker: Marker): float =
+      result = high(float)
+      for i in 0 ..< marker.count_point:
+        let (first, second) = (marker.points[i], marker.points[(i + 1) mod marker.count_point])
+        let (dx, dy) = (second.x - first.x, second.y - first.y)
+        let span = dx*dx + dy*dy
+        let along =
+          if span <= 0.0: 0.0
+          else: clamp(((point.x - first.x)*dx + (point.y - first.y)*dy)/span, 0.0, 1.0)
+        let on = first.towards(second, along)
+        result = min(result, hypot(point.x - on.x, point.y - on.y))
+    for run in 0 ..< marker.count_run_pulse:
+      for i in 0 ..< marker.counts_pulse[run]:
+        check distanceToLoop(marker.pulses[run][i], marker) < 1.0
+
+
+  test "a pulse travels, and laps rather than stopping":
+    # The head of the run at a few times through one lap and past the end of it.
+    proc headAt(now: float): ScreenPosition =
+      let marker = markerOf(PLANE, now = some(now)).get
+      marker.pulses[0][0]
+
+    let start = headAt(0.0)
+    var moved = 0
+    for step in 1 .. 5:
+      let now = SECONDS_MARKER_PULSE*float(step)/6.0
+      if hypot(headAt(now).x - start.x, headAt(now).y - start.y) > 1.0: inc moved
+    check moved == 5
+    # One whole lap later it is back where it began, so the motion is circulation rather
+    #   than a run that ends somewhere.
+    let lapped = headAt(SECONDS_MARKER_PULSE)
+    check hypot(lapped.x - start.x, lapped.y - start.y) < 1.0
+    # And the phase itself wraps rather than growing without bound.
+    check phasePulse(0.25*SECONDS_MARKER_PULSE) =~ phasePulse(3.25*SECONDS_MARKER_PULSE)
 
 
   test "the drag band's head points along the band, whichever way it runs":

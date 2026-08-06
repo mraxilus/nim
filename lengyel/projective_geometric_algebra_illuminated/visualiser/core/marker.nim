@@ -58,6 +58,12 @@ const
     ##   Held deliberately tight. A wide band reads as a second object rather than as an
     ##   annotation of the first, and on a scene of several selected items the bands
     ##   themselves become the busiest thing on screen.
+  WIDTH_MARKER_PULSE* = 3.5'f32
+    ## Stroke the orientation pulse this thick, in pixels.
+    ##   Thicker than `WIDTH_MARKER` below, which is the whole of how it reads: the pulse
+    ##   is the outline swelling along a stretch of itself, so weight is what separates the
+    ##   lit part from the rest. Colour would not do it -- the marker is already pure white
+    ##   at the top of this palette, with nowhere brighter to go.
   WIDTH_MARKER* = 1.5'f32
     ## Set thickness of every marker outline, and of the drag rubber-band beside it, in
     ## pixels.
@@ -124,6 +130,27 @@ const
     ##   trusted to land: a corner missed by a fraction of a step is a corner visibly cut
     ##   off the finished frame. Points on a straight edge lie *on* that edge by
     ##   construction, so nothing else needs extra sampling.
+  SEGMENTS_MARKER_PULSE* = 8
+    ## Cut the travelling pulse into this many points.
+    ##   Enough for the run to bend with a curved outline it is riding; it is a short arc,
+    ##   not a shape of its own, and it lies on points already sampled from the outline
+    ##   rather than on a curve of its own.
+  RUNS_MARKER_PULSE* = SEGMENTS_MARKER_RAILS
+    ## Bound how many separate runs one marker's pulse comes in.
+    ##   A line's rails is the worst case at four -- two sides, each in the two halves the
+    ##   line is drawn as -- and a horizon line's two bands need two. An outline drawn in
+    ##   pieces has to pulse in all of them, or the half that stays still reads as the
+    ##   marker having broken rather than as one signal.
+  FRACTION_MARKER_PULSE* = 0.13
+    ## Span this much of the outline with the pulse, as a fraction of its whole length.
+    ##   Long enough to have a direction visible at a glance -- a dot travelling round a
+    ##   circle says *that* it moves long before it says which way -- and short enough
+    ##   that the outline still reads as an outline with something running along it.
+  SECONDS_MARKER_PULSE* = 2.4
+    ## Take this long to carry the pulse once round its outline.
+    ##   Slow enough to read as circulation rather than as a spinner, and slow enough that
+    ##   several selected objects pulsing at once do not add up to a busy screen. Its
+    ##   *direction* is the whole message, and direction needs time to be read.
   LENGTH_ARROW_DRAG* = 13.0
     ## Draw the drag band's own arrowhead this long, in pixels, measured back along the
     ## band from the point it aims at.
@@ -174,6 +201,19 @@ type
       ## a circle while it expands, the viewport's own rectangle once it arrives.
 
   Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
+    count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
+    counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Points used of each run.
+    pulses*: array[
+      RUNS_MARKER_PULSE, array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+    ] ## Short runs travelling along this marker's own outline, in screen space, for the
+      ## render paths to stroke over it. **Which way they travel is the object's
+      ## orientation** -- the thing a plane's normal shaft used to say, said only about the
+      ## object being asked about rather than about every plane in the scene at once.
+      ## Points rather than a span of indices into the outline, because `Rails` is
+      ## segments while `Loop`, `Bands` and `Frame` are polylines, and an index range would
+      ## leave each render path re-deriving the walk in its own language.
+      ## Common to every kind rather than per-variant: what pulses varies, that a marker
+      ## may pulse does not, and a renderer strokes these without asking which kind it has.
     case kind*: MarkerKind
     of MarkerKind.Ring:
       centre*: ScreenPosition ## Where the point itself projects.
@@ -208,6 +248,68 @@ type
         ## throughout, and the one marker that is: the sky has no place in the scene to
         ## surround, so its marker surrounds the view instead. Always closed -- nothing in
         ## screen space can be cut away by the eye, unlike `Loop` and `Bands`.
+
+
+
+#[ Orientation Pulse ]#
+
+func phasePulse*(now: float): float =
+  ## Report how far round its outline the pulse has travelled, in 0 .. 1, at this time.
+  ##   Wrapped rather than clamped, so it laps forever from one clock that never resets;
+  ##   every marker on screen therefore pulses in step, which reads as one signal about
+  ##   the selection rather than as each object keeping its own time.
+  let laps = now/SECONDS_MARKER_PULSE
+  laps - floor(laps)
+
+
+func samplePulse(
+  points: openArray[ScreenPosition]; count: int; is_closed: bool; phase: float;
+  run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+): int =
+  ## Lay a pulse along `count` points of an outline at `phase`, filling `run` and
+  ## reporting how many of it were used.
+  ##   Walks the stored order, which is the whole mechanism: a plane's loop is generated
+  ##   around its own frame, so *the projection decides* whether that order comes out
+  ##   clockwise or anticlockwise on screen, and the pulse reverses of its own accord as
+  ##   the camera crosses the plane. Nothing here computes a sense; it inherits one.
+  ##   The run trails *behind* the leading point, so the outline it has just covered is
+  ##   what is lit -- a head with a tail reads as travel, where an even band reads as a
+  ##   gap in the outline.
+  ##   An open arc clamps rather than wraps: its two ends are a cut the eye made, and a
+  ##   pulse crossing that cut would run straight across the view. It simply shortens
+  ##   there, and reports 0 where too little of it survives to draw.
+  let spans = float(if is_closed: count else: count - 1)
+  if count < 2 or spans <= 0.0: return
+  let
+    reach = FRACTION_MARKER_PULSE*spans
+    head = phase*spans
+  for i in 0 ..< SEGMENTS_MARKER_PULSE:
+    let along = head - reach*(float(i)/float(SEGMENTS_MARKER_PULSE - 1))
+    if not is_closed and (along < 0.0 or along > spans): continue
+    let
+      wrapped = (if is_closed: along - floor(along/spans)*spans else: along)
+      first = int(floor(wrapped)) mod count
+      fraction = wrapped - floor(wrapped)
+    run[result] = points[first].towards(points[(first + 1) mod count], fraction)
+    inc result
+  if result < 2: result = 0 # Too little left of it to read as anything.
+
+
+func addPulse(
+  marker: var Marker; points: openArray[ScreenPosition]; count: int; is_closed: bool;
+  phase: float
+) =
+  ## Add one run of the pulse to `marker`, taken along `count` points of one outline.
+  ##   Silently adds nothing where the run came out too short to draw or where the marker
+  ##   already holds every run it has room for -- both are "there is no more to say here",
+  ##   not failures a caller could act on.
+  if marker.count_run_pulse >= RUNS_MARKER_PULSE: return
+  let used = samplePulse(
+    points, count, is_closed, phase, marker.pulses[marker.count_run_pulse]
+  )
+  if used == 0: return
+  marker.counts_pulse[marker.count_run_pulse] = used
+  inc marker.count_run_pulse
 
 
 
@@ -336,7 +438,8 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
 
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
-  view_projection: Matrix4; width, height: int; progress, clearance: float
+  view_projection: Matrix4; width, height: int; progress, clearance: float;
+  phase_pulse: Option[float]
 ): Option[Marker] =
   ## Build a line's own pair of rails: two lines parallel to it in world space, one to
   ## each side, converging with it toward its own vanishing points.
@@ -355,6 +458,12 @@ func markerRails(
   ##   the support. Interpolating on screen still keeps every partial rail exactly on the
   ##   line's own projection -- both endpoints lie on it and a projected straight segment
   ##   is straight.
+  ##   `phase_pulse` runs a pulse along every rail **in the line's own direction**, which
+  ##   is what a line has instead of a face to be on. Each rail is built outward from the
+  ##   support toward one horizon or the other, so the half reaching `-axis` is stored
+  ##   running against the line and its pulse is mirrored to compensate; without that the
+  ##   two halves would pulse away from the support in opposite directions and say
+  ##   nothing. None leaves the rails still.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the eye lies on the line (see `directionAcross`).
   let
@@ -379,9 +488,19 @@ func markerRails(
         tail = projectToScreen(view_projection, width, height, position_tail)
         head = projectToScreen(view_projection, width, height, position_head)
       if not (tail.isInFront and head.isInFront): continue
-      marker.segments[marker.count_segment] =
+      let drawn =
         [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
+      marker.segments[marker.count_segment] = drawn
       inc marker.count_segment
+      if phase_pulse.isSome:
+        # Stored support-first, so the half running to `-axis` is stored backwards; its
+        #   pulse is read from the other end of the phase to put both on the line's way.
+        let is_with_line = reach > 0.0
+        marker.addPulse(
+          [drawn[if is_with_line: 0 else: 1], drawn[if is_with_line: 1 else: 0]], 2,
+          is_closed = false,
+          phase = phase_pulse.get,
+        )
   if marker.count_segment == 0: return
   some(marker)
 
@@ -421,7 +540,7 @@ func positionsMarkerLoop*(
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
-  progress, clearance: float
+  progress, clearance: float; phase_pulse: Option[float]
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
@@ -437,6 +556,13 @@ func markerLoop(
   ##   units on the plane, which keeps every intermediate circle lying on that plane as
   ##   exactly as the finished one does -- growing it on screen instead would lift it off
   ##   the surface for the whole of the animation and only settle at the end.
+  ##   `phase_pulse` runs a pulse round the circle, **anticlockwise on screen exactly when
+  ##   the plane's normal points at the eye**. Nothing here computes that sense: the points
+  ##   are generated around the plane's own frame, and which way that order comes out on
+  ##   screen is the projection's answer, so the pulse reverses of its own accord as the
+  ##   camera crosses the plane. This is what a plane's normal shaft used to say, said
+  ##   about the object being asked about rather than about every plane at once. None
+  ##   leaves the circle still.
   ##   None at horizon, where a plane draws as a dome fixed to the eye.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
@@ -474,6 +600,8 @@ func markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
+  if phase_pulse.isSome:
+    marker.addPulse(marker.points, marker.count_point, marker.is_closed, phase_pulse.get)
   some(marker)
 
 
@@ -497,7 +625,7 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float
+  progress, clearance: float; phase_pulse: Option[float]
 ): Option[Marker] =
   ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
   ## the great circle the line itself is drawn as.
@@ -509,6 +637,11 @@ func markerBands(
   ##   Cuts each band to whatever stays in front of the eye and reports the remainder as
   ##   an arc, exactly as `markerLoop` does -- half the sky is behind the camera at all
   ##   times, so this is the common case here rather than an edge one.
+  ##   `phase_pulse` runs a pulse round both bands, taking its sense from the great
+  ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
+  ##   laid out around that normal's frame, so the projection answers which way they read.
+  ##   Both bands rather than one -- an outline drawn in pieces that pulses in only some of
+  ##   them reads as the marker having broken. None leaves them still.
   let normal = directionNormalHorizon(geometry)
   if normal.isNone: return
   let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
@@ -551,6 +684,11 @@ func markerBands(
       if not are_in_front[i]: break
       marker.points_band[side][marker.counts_band[side]] = ring[i]
       inc marker.counts_band[side]
+    if phase_pulse.isSome:
+      marker.addPulse(
+        marker.points_band[side], marker.counts_band[side],
+        marker.are_closed_band[side], phase_pulse.get,
+      )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
   some(marker)
 
@@ -587,6 +725,11 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
   ##   `clearance` pushes it outward past the inset, which on this shape means past the
   ##   edge of the screen: a frame is never under a finger, and shrinking the inset would
   ##   read as the marker retreating rather than swelling.
+  ##   **No pulse, unlike every other shape's marker.** The pulse's whole message is
+  ##   orientation, and a plane at horizon has none to read: probed directly, `frame`,
+  ##   `directionNormal` and `direction` all report nothing for one, and *negating it
+  ##   changes none of that*. So there is no sense to travel in, and a pulse here would be
+  ##   motion asserting something the object does not carry.
   ##   None only for a viewport too small to hold the inset at all, which has no room to
   ##   draw a frame in.
   let
@@ -632,7 +775,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0;
-  is_touch: bool = false
+  is_touch: bool = false; now: Option[float] = none(float)
 ): Option[Marker] =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
@@ -648,6 +791,13 @@ func markerFor*(
   ##   partway through; see `clearanceTouch`. One flag rather than a per-shape rule,
   ##   because what it compensates for -- a fingertip over the thing being marked -- does
   ##   not vary by what is under it.
+  ##   `now` runs the orientation pulse round the outline, and **is what a caller passes
+  ##   to say this object is selected**: hover and keyboard focus wear the same marker and
+  ##   pass none, so motion means "selected" rather than "the cursor went past". Its
+  ##   direction carries the orientation a plane's normal shaft used to -- see
+  ##   `markerLoop` for why the projection, not this module, decides which way that reads.
+  ##   None where an object has no orientation to state: a point either way, and a plane
+  ##   at horizon, which carries no normal at all (see `markerFrame`).
   ##   None only where the object has no drawable geometry at all. Every shape that *is*
   ##   drawn now has a marker, horizon or not.
   let shape = shape(geometry)
@@ -655,6 +805,8 @@ func markerFor*(
   let
     is_horizon = geometry.isHorizon
     clearance = clearanceTouch(progress, is_touch)
+    phase_pulse =
+      if now.isSome: some(phasePulse(now.get)) else: none(float)
   case shape.get
   # A point at horizon is drawn as a fixed star, which `anchorFor` already places, so its
   #   ring needs no horizon branch of its own -- unlike the two below, which are drawn as
@@ -663,15 +815,18 @@ func markerFor*(
     markerRing(geometry, scale, view_projection, width, height, progress, clearance)
   of Shape.Line:
     if is_horizon:
-      markerBands(geometry, scale, view_projection, width, height, progress, clearance)
+      markerBands(
+        geometry, scale, view_projection, width, height, progress, clearance, phase_pulse
+      )
     else:
       markerRails(
-        geometry, scale, placement, view_projection, width, height, progress, clearance
+        geometry, scale, placement, view_projection, width, height, progress, clearance,
+        phase_pulse,
       )
   of Shape.Plane:
     if is_horizon: markerFrame(width, height, progress, clearance)
     else:
       markerLoop(
         geometry, anchor_override, scale, placement, view_projection, width, height,
-        progress, clearance,
+        progress, clearance, phase_pulse,
       )

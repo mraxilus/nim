@@ -476,13 +476,13 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[overlay_line_width, selected_alpha, hover_alpha]`, so the browser's SVG overlay
-  ## strokes markers and the drag rubber-band at the same weight the desktop build's
-  ## `visualiser.drawMarker` does, without a hand-copied literal to drift out of sync
-  ## with it.
+  ## Report `[overlay_line_width, selected_alpha, hover_alpha, pulse_width]`, so the
+  ## browser's SVG overlay strokes markers, the drag rubber-band and the orientation pulse
+  ## at the same weights the desktop build's `visualiser.drawMarker` does, without a
+  ## hand-copied literal to drift out of sync with them.
   ##   A marker's own size is not here: it depends on the shape being marked, and comes
   ##   back from `nimSelectionMarker` with the marker itself.
-  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER]
+  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, WIDTH_MARKER_PULSE]
 
 
 
@@ -1086,6 +1086,39 @@ proc nimSelectionMarker(
     result[1] = 1.0'f32 # Always closed: a frame is screen space, never cut by the eye.
     for i in 0 ..< marker.count_frame:
       result.add([cfloat(marker.points_frame[i].x), cfloat(marker.points_frame[i].y)])
+
+
+proc nimSelectionPulse(
+  slot, width, height: cint; progress: cfloat; is_touch: bool; now: cfloat
+): seq[float32] {.exportc.} =
+  ## Report the orientation pulse travelling along this item's own marker, flat, as a run
+  ## count then each run's own point count followed by its points:
+  ## `[runs, count0, x, y, ..., count1, x, y, ...]`.
+  ##   Its own call rather than a tail on `nimSelectionMarker`, whose format promises that
+  ## the points are "whatever is left" -- appending a second array behind them would make
+  ## that false for every kind at once. The cost is shaping the marker twice for a
+  ## selected item, which is a few dozen projections against a whole frame of mesh.
+  ##   Takes the same `progress` and `is_touch` the marker itself was asked for, so the
+  ## pulse lies on the outline actually drawn rather than on the settled one -- a swollen
+  ## marker's pulse has to swell with it.
+  ##   Empty for anything with no orientation to state: a point, a plane at horizon, a
+  ## dead slot, or geometry with no shape. See `marker.markerFor`.
+  if not g_scene.isAlive(int(slot)): return
+  let
+    scale = g_camera.drawExtentFor(int(height))
+    vp = g_camera.initMatrixViewProjection(float(width) / float(height))
+    shaped = markerFor(
+      g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
+      g_camera, vp, int(width), int(height), float(progress), is_touch, some(float(now)),
+    )
+  if shaped.isNone or shaped.get.count_run_pulse == 0: return
+
+  let marker = shaped.get
+  result = @[cfloat(marker.count_run_pulse)]
+  for run in 0 ..< marker.count_run_pulse:
+    result.add(cfloat(marker.counts_pulse[run]))
+    for i in 0 ..< marker.counts_pulse[run]:
+      result.add([cfloat(marker.pulses[run][i].x), cfloat(marker.pulses[run][i].y)])
 
 
 
