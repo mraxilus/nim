@@ -39,8 +39,12 @@ nimble app          # compiles app/app.js, then bundles app/artifact.html
 `app/artifact.html` is the same page as one self-contained file, for publishing
 or for sending to someone who should not have to keep two files together.
 
-Two views: **Dance** walks the state machine, and **Atlas** shows every frame as
-a picture and the whole derived transition matrix.
+Three views, in the order a reader wants them. **Atlas** is every frame there is,
+drawn, named and counted, and is where the page opens: what the ontology *is*
+comes before what you can do with it, and clicking a frame starts the dance from
+it. **Dance** walks the state machine. **Matrix** is every move there is as one
+table, which is the thing you consult once you know what a frame is rather than
+the thing you meet first.
 
 What the model has to say about the spreadsheet is deliberately not in the app.
 It is a finding about a document rather than a fact about two bodies, it does not
@@ -93,8 +97,7 @@ itself for the stylesheet to spend, so the page waits on the same numbers the
 animation runs on. A reader who has asked for reduced motion gets the change at
 once instead.
 
-The Atlas opens on the gallery: each frame drawn, named and counted, and
-clickable to dance from. It narrows on three questions — how many connections,
+The Atlas narrows on three questions — how many connections,
 which hand of the lead holds, which hand of the follow is held — which are read
 together, so a frame has to answer all of the ones asked.
 

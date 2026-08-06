@@ -25,7 +25,9 @@ import ../src/partnerwork
 
 type
   View {.pure.} = enum ## Select what the page is showing.
-    Dance, Atlas
+    Atlas,  ## Every frame there is, which is what the ontology *is*.
+    Dance,  ## One frame at a time, and what can be done from it.
+    Matrix  ## Every move there is, as one table.
 
   Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
     Dynamic,  ## The frame in the middle and every way out of it.
@@ -49,7 +51,7 @@ func startFrame(): Frame =
 var
   origin = startFrame()
   current = startFrame()
-  view = View.Dance
+  view = View.Atlas
   vis = Vis.Dynamic
   filter = Filter()
   history: seq[Step] = @[]
@@ -396,7 +398,7 @@ func renderGallery(narrowing: Filter): string =
       tag("span", "class=\"phrase\"", esc(target.describe)) &
       tag("span", "class=\"target\"", $ways & " moves &middot; " &
         $target.countHolds & (if target.countHolds == 1: " hand" else: " hands")))
-  tag("section", "class=\"panel wide\"",
+  tag("div", "class=\"stage\"", tag("section", "class=\"panel wide\"",
     tag("h3", "", "every frame &middot; " & $shown & " of " & $FRAMES.len) &
     renderArms() & renderKey() &
     renderFilters(narrowing) &
@@ -404,11 +406,17 @@ func renderGallery(narrowing: Filter): string =
     (if shown == 0:
       tag("p", "class=\"note\"", "No frame holds all three of those at once.")
     else:
-      tag("div", "class=\"gallery\"", cards)))
+      tag("div", "class=\"gallery\"", cards))))
 
 
-func renderAtlas(narrowing: Filter): string =
-  ## Show the whole derived transition matrix.
+func renderMatrix(): string =
+  ## Show every move there is, as one table.
+  ##
+  ## Its own view, because it answers a different question from the gallery.  The
+  ## gallery is what the frames *are*, one picture each, and is where a reader
+  ## starts; the matrix is what joins them, all sixty-four pairs at once, and is
+  ## what you consult once you know what a frame is.  Under one heading the table
+  ## was a wall below the pictures that nobody scrolled to.
   ##
   ## What the source spreadsheet has and has not got is not marked here.  Which
   ## cells its author has filled in is a fact about a document being written, not
@@ -439,7 +447,6 @@ func renderAtlas(narrowing: Filter): string =
         row.add tag("td", "class=\"" & classes & "\"", glyph)
     body.add tag("tr", "", row)
   tag("div", "class=\"stage\"",
-    renderGallery(narrowing) &
     tag("section", "class=\"panel wide\"",
       tag("h3", "", "derived transition matrix") &
       tag("p", "class=\"note\"", renderLegend() & ".") &
@@ -478,7 +485,8 @@ proc render() =
   let body =
     case view
     of View.Dance: renderDance(current, vis, motion, taken, history)
-    of View.Atlas: renderAtlas(filter)
+    of View.Atlas: renderGallery(filter)
+    of View.Matrix: renderMatrix()
   let held = holding()
   document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   standAgain(held)
