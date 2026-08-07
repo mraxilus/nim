@@ -342,6 +342,30 @@ two or more a binary one. Both UIs read that rule rather than restating it, whic
 keeps the drawer's `apply` section and the browser's floating menu from disagreeing about
 what a selection means.
 
+**A selected object is drawn over every other object, until it is deselected.** It is the
+one being worked on, and a plane's wash tinting it or a line crossing in front of it is the
+view arguing with the reader about what they just asked to look at. The mechanism is one
+watermark per mesh — `mesh.Mesh.index_overlay`, an `Option[int]`, set once per frame by
+`markOverlay` between the ordinary objects and the selected ones — and then two draws per
+primitive instead of one, the tail with `GL_DEPTH_TEST` off. **`Option`, not a sentinel of
+zero**: an index of zero legitimately means "all of it is the overlay", so a mesh nobody
+marked has to say *none*, and getting that wrong drew every line of world furniture over
+the whole scene. A watermark rather than a third `MeshSet`, because a set reserves
+`VERTICES_MAX` per primitive up front — the largest single reservation this build makes —
+for a run that is usually one object; order already decides what these buckets look like, so
+an index into that order costs nothing and says the same thing.
+
+**The overlay is a second pass over every primitive kind, not a tail on each one.** The tail
+was written first and measured: a selected line came out over the other lines and *still*
+tinted by a plane's wash, because the wash is a later kind and the overlay run, having no
+depth test, writes no depth for that wash to be rejected against. On the desktop that showed
+up as the selected line's own pure-ink pixel count falling from 2,626 to 1,106; with the
+whole ordinary set drawn before any of the overlay it is 2,626 again. Verified on the
+browser too, where the marker and its comet are SVG outside the canvas and the WebGL frame is
+still once the tweens settle: with two crossing planes selected, **15,668 pixels** change
+against a **0**-pixel noise floor between two identical shots — and **0** on the build before
+this change, where selecting altered nothing the canvas drew.
+
 Selection is deliberately **not** part of `Scene`: never saved, never recorded on the undo
 timeline, and cleared outright by a successful undo or redo, since a restored snapshot's
 slot numbers need not match what was picked against the live scene. `pruneDead` runs after
@@ -450,9 +474,13 @@ timeline. Driven: 6,076 vertices without it, 6,160 with, before apply is pressed
 
 **Every seed point takes its own hue.** The startup scene gave `a`, `b`, `c` and `o` one rose
 between them, which says they are one kind of thing — the opposite of what a categorical
-palette is for, and not what adding them by hand would do. They now take four of the five
-categorical slots; `ground` keeps `INK_SEED_GROUND`'s olive, which the four step over, because
-it is the seed every later step is derived against and a reader learns to find it by colour.
+palette is for, and not what adding them by hand would do. **Two of the five categorical
+slots are reserved by hand and the other three are cycled**: `ground` keeps
+`INK_SEED_GROUND`'s olive and `o` keeps `INK_SEED_ORIGIN`'s copper, for the same reason in
+both cases — those are the two seeds that are not arbitrary (one is what every later step is
+derived against, the other is the origin), so both are worth recognising without reading a
+label. `a`, `b` and `c` take exactly the three that are left, so nothing collides and no
+`Ink` is spent twice.
 
 **A drag band swells into its head** (`marker.cometFor`), because a drag is not symmetric —
 `a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical. The
@@ -710,14 +738,25 @@ Interaction Model
 press target chooses the scheme; the button chooses whether you are asked.** Press an object
 and you are constructing; press empty space and you are moving the camera (left orbits,
 right pans, wheel dollies). Left then takes the algebra's own answer on release; right opens
-a four-way choice menu instead, as does holding still over the target for
-`SECONDS_DWELL_MENU` (0.45). Both buttons reach the same choices, so this is redundancy
+a four-way choice menu instead. Both buttons reach the same choices, so this is redundancy
 for different expertise rather than a mode split — which is exactly why it is safe where the
-button-per-operation mapping it replaced was not. `interaction.isMenuForcedBy` states it
-once; `visualiser.isMenuForcedFor` maps SDL button numbers and
-`browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button` numbers (0/1/2, a
-different numbering for the same three buttons) into it. **Middle is unbound**: `project`
-used to live there, which put a third of the vocabulary behind hardware most trackpads lack.
+button-per-operation mapping it replaced was not.
+
+**A mouse never waits.** `interaction.MenuArming` is three-valued — `Never`, `OnDwell`,
+`Always` — rather than the "forced" flag it replaced, because a flag could only say *now* or
+*after a wait* and the left button wants neither: a menu opening under a hand that paused
+mid-gesture is the classic dwell-menu failure, and the left button is where nearly every
+drag is spent. So left arms `Never`, right arms `Always`, and `OnDwell` is reachable from no
+button at all. **It belongs to touch**, which has no second button to ask with and would
+otherwise lose `meet`, `project` and `more…` entirely during a drag — that consequence is
+the whole reason the flag became an enum instead of just being deleted.
+`interaction.armingOf` states the button mapping once; `visualiser.armingFor` maps SDL
+button numbers and `browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button`
+numbers (0/1/2, a different numbering for the same three buttons) into it, while
+`nimDragArmingOnDwell` names the one arming no button carries so `glue.js` writes no ordinal
+of its own. `SECONDS_DWELL_MENU` (0.45) is unchanged and now measures only a finger.
+**Middle is unbound**: `project` used to live there, which put a third of the vocabulary
+behind hardware most trackpads lack.
 A plain click selects instead of dragging; shift-click toggles into a multi-selection; a
 plain click on empty space clears it. The press over an object has to start a drag
 *eagerly* — the press target chooses the scheme — so whether it was a click is only
@@ -785,7 +824,19 @@ now; it is never leaned on alone, since the ghost simultaneously fails to appear
 
 **The choice menu.** Four wedges at fixed compass points — join north, meet east, project
 south, `more…` west — with unoffered ones drawn greyed rather than packed out, because a
-menu whose items move is one nobody learns to reach without reading it. **One release rule:
+menu whose items move is one nobody learns to reach without reading it. **A wedge is the
+floating selection menu's own button, moved**: same surface (`--surface-raised`), same
+hairline `--border`, same 8-px radius, same 12-px semibold face, and the same `--accent`
+border on the one in force that `.btn.on` and `.help-tab.on` wear. The two are one control
+in two postures — one reached by dragging, one by picking — and they used to look like two
+things to learn. What survives from the old solid-slab-of-hue wedge is the hue, on the
+*label*, so join/meet/project still carry the colours the drawer's intro line gives them.
+Verified by reading both out of the live page: wedge fill `rgb(27,33,43)`, stroke
+`rgb(42,50,61)`, radius 8, font `600 12px "Noto Sans UI"` — identical to
+`.selection-menu button`'s computed style. On the browser the wedge takes those from the
+same CSS variables that menu does, so there is nothing to keep in step; the desktop copies
+the three tones into `visualiser.drawChoiceMenu` with the siblings named, exactly as
+`gui_shim.guiButtonToggle` already had to. **One release rule:
 a release commits whatever is under the cursor.** `endDrag` resolves the wedge itself
 through `choiceAt`, rather than each render path resolving it, so the two cannot disagree
 about where a release landed; back at the centre (inside `PIXELS_MENU_DEADZONE`, 26 px)
@@ -796,9 +847,16 @@ necessarily takes the cursor off the item, and a destination read from hover wou
 at exactly the moment the release needs it.
 
 `more…` is the ramp from this gesture to the other twenty-four operations: it builds nothing
-itself and instead selects both operands in drag order and opens the apply section, which
-fills its own m and n from the selection. Without it the gesture is a dead end at three
-operations out of twenty-seven.
+itself and instead selects both operands in drag order and opens **the selection menu's own
+apply picker**, over those operands, already showing the operation last applied at that
+arity. Without it the gesture is a dead end at three operations out of twenty-seven.
+It used to open the drawer's apply section instead, and that was the wrong landing: `more…`
+is a fifth choice on a wheel that opened under the cursor, and answering it by throwing the
+hand across the viewport to a side panel buried the two objects it had just named under
+every other control. `panel.openSelectionMenuPicker` is the one proc both the menu's own
+`apply` button and the drag's `more…` reach it through; `glue.openApplyPickerOnOperands`
+is its browser counterpart. Driven end to end on both builds: the picker comes up on
+`𝐦 ∧ 𝐧` with both operands selected and the drawer untouched.
 
 **Flick-marks are impossible on this path**, which is why the menu earns its speed from
 fixed positions instead. A marking menu's accelerator is the direction of the stroke, and a

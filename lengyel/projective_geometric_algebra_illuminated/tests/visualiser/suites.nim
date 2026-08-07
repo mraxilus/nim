@@ -700,18 +700,18 @@ suite "Scene":
   test "the startup scene gives every seed point a colour of its own":
     # Four points wearing one hue say they are one kind of thing, which is the opposite of
     #   what a categorical palette is for; a hand-added object takes the next hue, so these
-    #   should too. `ground` keeps the olive a reader learns to find it by.
+    #   should too. `ground` and `o` keep the hues a reader learns to find them by.
     var scene = initScene()
     constructSeeds(scene)
     var inks: seq[Ink]
     for slot in 0 ..< scene.len:
-      if toText(scene.labelAt(slot)) == "ground":
-        check scene.inkAt(slot) == INK_SEED_GROUND
-      else:
-        inks.add(scene.inkAt(slot))
-    check inks.len == 4
+      case toText(scene.labelAt(slot))
+      of "ground": check scene.inkAt(slot) == INK_SEED_GROUND
+      of "o": check scene.inkAt(slot) == INK_SEED_ORIGIN
+      else: inks.add(scene.inkAt(slot))
+    check inks.len == 3
     for i in 0 ..< inks.len:
-      check inks[i] != INK_SEED_GROUND
+      check inks[i] notin [INK_SEED_GROUND, INK_SEED_ORIGIN]
       for j in i + 1 ..< inks.len: check inks[i] != inks[j]
 
 
@@ -2028,7 +2028,7 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
     check scene.len == 3
@@ -2054,13 +2054,13 @@ suite "Interaction":
 
     interaction.index_hover = some(0)
     interaction.is_hover_backdrop = true
-    check not interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check not interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     check not interaction.is_dragging
 
     # And the same refusal at the far end: a release over the sky commits nothing, rather
     #   than quietly taking the whole sky as an operand.
     interaction.is_hover_backdrop = false
-    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.is_hover_backdrop = true
     check interaction.destinationOf.isNone
     let outcome = interaction.endDrag(scene)
@@ -2069,7 +2069,7 @@ suite "Interaction":
 
     # A horizon *line* is an ordinary drag target both ways: it is a curve, not a backdrop.
     interaction.is_hover_backdrop = false
-    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
 
 
   test "a press that never moves is a click on what it came down on, not a drag":
@@ -2082,7 +2082,7 @@ suite "Interaction":
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
-    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
     let outcome = interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK)
     check outcome.index_clicked == some(0)
     check outcome.index_created.isNone
@@ -2097,7 +2097,7 @@ suite "Interaction":
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
-    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
     interaction.updateCursor(200.0 + 2.0*PIXELS_CLICK_SLOP, 200.0)
     # Back where it started: the reading is latched, so a pointer that swung out and
     #   returned is still a drag rather than a click that happened to end where it began.
@@ -2116,7 +2116,7 @@ suite "Interaction":
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
-    check interaction.beginDrag(is_menu_forced = false, now = 10.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene, 10.0 + 2.0*SECONDS_CLICK)
     check outcome.index_clicked.isNone
@@ -2132,7 +2132,7 @@ suite "Interaction":
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
-    check interaction.beginDrag(is_menu_forced = true, now = 10.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 10.0)
     check interaction.isClick(10.0 + 0.5*SECONDS_CLICK)
     check interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK).index_clicked.isNone
 
@@ -2146,7 +2146,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
     check not interaction.isClick(0.0)
-    check interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     check interaction.endDrag(scene, 0.0).index_created == some(2)
 
@@ -2154,7 +2154,7 @@ suite "Interaction":
   test "drag cannot start without a hovered item":
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = none(int)
-    check not interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    check not interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
     check not interaction.is_dragging
 
 
@@ -2163,7 +2163,7 @@ suite "Interaction":
     scene.addItem(POINTS[0], "a", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = none(int)
     let outcome = interaction.endDrag(scene)
     check scene.len == 1
@@ -2177,7 +2177,7 @@ suite "Interaction":
     scene.addItem(POINTS[0], "a", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     let outcome = interaction.endDrag(scene)
     check scene.len == 1
     check "own source" in outcome.message
@@ -2190,7 +2190,7 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0) # index_source = 0.
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0) # index_source = 0.
     scene.removeItem(0) # Source vanishes mid-drag -- e.g. removed by another input path.
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
@@ -2206,7 +2206,7 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0) # index_source = 0.
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0) # index_source = 0.
     scene.removeItem(1)
     interaction.index_hover = some(1) # Still reports the now-dead slot as hovered.
     let outcome = interaction.endDrag(scene)
@@ -2221,7 +2221,7 @@ suite "Interaction":
     scene.addItem(POINTS[1], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.cancelDrag()
     check not interaction.is_dragging
     check scene.len == 2
@@ -2247,7 +2247,7 @@ suite "Interaction":
     scene.addItem(GENERAL_SECOND[0], "f", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
     check scene.len == 2
@@ -2266,7 +2266,7 @@ suite "Interaction":
     check not isOffered(DragChoice.Join, GENERAL_FIRST[0], GENERAL_FIRST[0])
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     let outcome = interaction.commitChoice(scene, DragChoice.Join, 0.0)
     check scene.len == 2
@@ -2331,7 +2331,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.updateCursor(400.0, 300.0)
     interaction.index_hover = some(0)
-    check interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     check interaction.menu.isSome
@@ -2356,7 +2356,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.updateCursor(400.0, 300.0)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     let outcome = interaction.endDrag(scene)
@@ -2372,7 +2372,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.updateCursor(400.0, 300.0)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = true, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     let west = anchorOf(interaction.menu.get, DragChoice.More)
@@ -2384,13 +2384,13 @@ suite "Interaction":
     check outcome.operands == some((source: 0, destination: 1))
 
 
-  test "a left drag waits out the dwell before offering the menu; a right one never does":
+  test "a touch drag waits out the dwell before offering the menu; a right one never does":
     var scene = initScene()
     scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
     scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 1000.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 1000.0)
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 1000.0)
     check interaction.menu.isNone
@@ -2401,10 +2401,66 @@ suite "Interaction":
 
     var forced = Interaction(is_enabled: true)
     forced.index_hover = some(0)
-    discard forced.beginDrag(is_menu_forced = true, now = 1000.0)
+    discard forced.beginDrag(arming = MenuArming.Always, now = 1000.0)
     forced.index_hover = some(1)
     forced.updateDrag(scene, 1000.0)
     check forced.menu.isSome
+
+    # And the left button, which is the one a mouse spends nearly every drag on, never
+    #   reaches a menu at all -- however long it is held still over its target. The dwell
+    #   opening under a hand that paused mid-gesture is exactly what it is for.
+    var never = Interaction(is_enabled: true)
+    never.index_hover = some(0)
+    discard never.beginDrag(arming = MenuArming.Never, now = 1000.0)
+    never.index_hover = some(1)
+    never.updateDrag(scene, 1000.0)
+    check never.menu.isNone
+    never.updateDrag(scene, 1000.0 + 10.0*SECONDS_DWELL_MENU)
+    check never.menu.isNone
+
+
+  test "an overlay run covers exactly what was added after it was marked":
+    # The mechanism a selected object is drawn over everything with. Held here because the
+    #   fault it guards against is silent: a mesh nobody marked has to draw *entirely*
+    #   depth-tested, and a sentinel index of zero would have said the opposite -- every
+    #   line of furniture drawn over the scene, on every frame.
+    let scale = DrawExtent(
+      extent_furniture: 10.0, radius_horizon: 10.0, tangent_half_view: 0.5,
+      height_pixels: 600, depth_near: 0.1, forward: Direction(x: 0, y: 0, z: -1),
+    )
+    var meshes: MeshSet
+    clearMeshes(meshes)
+    for primitive in Primitive: check meshes[primitive].index_overlay.isNone
+    discard meshes.addObject(GENERAL_POINTS[0], Ink.Rose.colour, scale)
+    let count_under = meshes[Primitive.Point].count_vertices
+    check count_under > 0
+    check meshes[Primitive.Point].index_overlay.isNone
+
+    markOverlay(meshes)
+    discard meshes.addObject(GENERAL_POINTS[1], Ink.Jade.colour, scale)
+    check meshes[Primitive.Point].index_overlay == some(count_under)
+    check meshes[Primitive.Point].count_vertices > count_under
+    # A bucket nothing was added to after the mark still reports the mark, with an empty
+    #   overlay -- which is what makes "drawn over" a property of order rather than of
+    #   which primitive an object happens to tessellate into.
+    check meshes[Primitive.Triangle].index_overlay == some(0)
+    check meshes[Primitive.Triangle].count_vertices == 0
+
+    # And clearing forgets it, so one frame's selection cannot outlive its own frame.
+    clearMeshes(meshes)
+    for primitive in Primitive: check meshes[primitive].index_overlay.isNone
+
+
+  test "a mouse never waits: left decides, right asks, middle starts nothing":
+    # The one rule both render paths and the help panel read, held here rather than left
+    #   to three copies agreeing by inspection.
+    check armingOf(PointerButton.Left) == some(MenuArming.Never)
+    check armingOf(PointerButton.Right) == some(MenuArming.Always)
+    check armingOf(PointerButton.Middle).isNone
+    # And no button reaches the dwell, which belongs to the one pointer with no second
+    #   button to ask with.
+    for button in PointerButton:
+      check armingOf(button) != some(MenuArming.OnDwell)
 
 
   test "stepping walks live slots in both directions and wraps at both ends":
@@ -2535,7 +2591,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.updateCursor(100.0, 100.0)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     for step in 1 .. 20:
       # Three times the dwell, and never still for two frames together.
@@ -2561,7 +2617,7 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     interaction.updateCursor(100.0, 100.0)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     interaction.index_hover = some(1)
     for step in 1 .. 4:
       interaction.updateCursor(100.0 + 0.2*PIXELS_TAP_SLOP*float(step), 100.0)
@@ -2576,7 +2632,7 @@ suite "Interaction":
     scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 1000.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 1000.0)
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 1000.0 + 0.9*SECONDS_DWELL_MENU)
     check interaction.menu.isNone
@@ -2594,7 +2650,7 @@ suite "Interaction":
     scene.addItem(GENERAL_SECOND[0], "f", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
     interaction.index_hover = some(0)
-    discard interaction.beginDrag(is_menu_forced = false, now = 0.0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     # Crossing empty space says nothing either way.
     interaction.index_hover = none(int)
     interaction.updateDrag(scene, 0.0)

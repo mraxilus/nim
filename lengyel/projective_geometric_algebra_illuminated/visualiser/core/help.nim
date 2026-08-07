@@ -9,7 +9,7 @@
 ## the handler that implements it -- "drag one object onto another", not "pointerdown then
 ## pointermove". Where a binding is derived from a rule stated elsewhere, it is read from
 ## there rather than transcribed: `lut_help_entries` builds its construct rows out of
-## `interaction.isMenuForcedBy`, so rebinding a button rewrites the help with it.
+## `interaction.armingOf`, so rebinding a button rewrites the help with it.
 ##
 ## **Every row has to make sense with the rows above it covered up**, because that is how
 ## this is read: a reader opens one tab, finds the line they need, and leaves. Three ways a
@@ -161,29 +161,32 @@ const lut_help_entries* = block:
     )
     inc count
 
-  # Which button asks and which decides is `interaction.isMenuForcedBy`'s to say, so
-  #   rebinding one rewrites its line here rather than leaving this text quietly wrong.
+  # Which button asks and which decides is `interaction.armingOf`'s to say, so rebinding
+  #   one rewrites its line here rather than leaving this text quietly wrong.
   #   Walked in reading order rather than in `PointerButton`'s own, which runs left, middle,
   #   right by physical position.
   for button in [PointerButton.Left, PointerButton.Right, PointerButton.Middle]:
-    let is_forced = isMenuForcedBy(button)
-    if is_forced.isNone: continue
+    let arming = armingOf(button)
+    if arming.isNone: continue
     add(
       HelpPath.Drag, nameOf(button) & "-drag one object onto another",
-      if is_forced.get: "open the wheel, whatever the pair would have made on its own"
-      else: "build the one object those two define",
+      case arming.get
+      of MenuArming.Never: "build the one object those two define, without ever asking"
+      of MenuArming.OnDwell: "build that object, or pause on the target to be asked"
+      of MenuArming.Always: "open the wheel, whatever the pair would have made on its own",
     )
   add(
     HelpPath.Drag, "drag one object onto another",
     "build the one object those two define", is_touch = true,
   )
+  # Touch alone, now that a mouse decides by which button went down; see `MenuArming`.
   add(
     HelpPath.Drag, "pause on the target mid-drag",
-    "open the wheel without needing a second button",
+    "open the wheel without needing a second button", is_touch = true,
   )
   add(
     HelpPath.Drag, "the more… wedge",
-    "hand both objects to the panel, which lists every operation",
+    "hand both objects to the apply picker, which lists every operation",
   )
 
   add(HelpPath.Select, "click an object", "select just that one, dropping anything else")

@@ -115,6 +115,13 @@ proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
   ## to format one for itself -- DOM styling is not this module's own job.
 
 
+func countOverlay(mesh: Mesh): int =
+  ## Count how many of one mesh's vertices are its overlay run, drawn with no depth test.
+  ##   Zero where nothing asked to be drawn over; see `mesh.Mesh.index_overlay`.
+  if mesh.index_overlay.isNone: return 0
+  max(0, mesh.count_vertices - clamp(mesh.index_overlay.get, 0, mesh.count_vertices))
+
+
 proc flatten(mesh: Mesh): seq[float32] =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, x, y, z, r, g, b, a, ...`,
   ## ready for a caller to hand straight to `gl.bufferData`.
@@ -717,8 +724,8 @@ proc nimCanRedo(): bool {.exportc.} =
 
 
 proc nimDragKindForButton(dom_button: cint): cint {.exportc.} =
-  ## Say what a pointer button starts: `SLOT_NONE` for no drag at all, 0 for one that
-  ## takes the proposal on release, 1 for one that opens the choice menu at once.
+  ## Say what a pointer button starts: `SLOT_NONE` for no drag at all, otherwise the
+  ## ordinal of the `interaction.MenuArming` a drag from that button carries.
   ##   Only the *numbering* is this build's own: `PointerEvent.button` counts 0 left, 1
   ## middle, 2 right, where SDL counts them differently, so each render path translates
   ## into `interaction.PointerButton` and asks the one shared rule what that button means.
@@ -730,8 +737,8 @@ proc nimDragKindForButton(dom_button: cint): cint {.exportc.} =
     of 2: some(PointerButton.Right)
     else: none(PointerButton)
   if button.isNone: return SLOT_NONE
-  let is_menu_forced = isMenuForcedBy(button.get)
-  if is_menu_forced.isNone: SLOT_NONE else: cint(ord(is_menu_forced.get))
+  let arming = armingOf(button.get)
+  if arming.isNone: SLOT_NONE else: cint(ord(arming.get))
 
 
 proc nimHelpEntries(): seq[cstring] {.exportc.} =
@@ -873,9 +880,21 @@ proc nimIsClick(now: cfloat): bool {.exportc.} =
   isClick(g_interaction, float(now))
 
 
-proc nimBeginDrag(is_menu_forced: bool; now: cfloat): bool {.exportc.} =
+proc nimBeginDrag(arming_ordinal: cint; now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
-  interaction.beginDrag(g_interaction, is_menu_forced, float(now))
+  ##   Takes the arming as an ordinal rather than as a flag, since there are now three of
+  ##   them and only two of the three are reachable from a mouse button. `nimDragArming`
+  ##   names the one touch uses, so no caller writes a number of its own.
+  let arming = MenuArming(clamp(int(arming_ordinal), ord(low(MenuArming)), ord(high(MenuArming))))
+  interaction.beginDrag(g_interaction, arming, float(now))
+
+
+proc nimDragArmingOnDwell(): cint {.exportc.} =
+  ## Report the arming a pointer with no second button starts a drag with.
+  ##   Touch alone. Exported rather than written into the glue as a literal, for the same
+  ##   reason every other ordinal crossing this boundary is: an enum reordered in
+  ##   `interaction.nim` must not leave a number here quietly meaning something else.
+  cint(ord(MenuArming.OnDwell))
 
 
 proc nimUpdateDrag(now: cfloat) {.exportc.} =
@@ -935,12 +954,13 @@ proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
 
 proc nimMenuMetrics(): seq[float32] {.exportc.} =
   ## Report the sizes a choice menu is drawn at, so the presentation layer holds no copy
-  ## of them: wedge height, label padding, corner rounding, centre-dot radius, and the
-  ## opacity of an offered wedge then of an unoffered one.
+  ## of them: wedge height, label padding, corner rounding, border thickness, centre-dot
+  ## radius, and the opacity of an offered wedge then of an unoffered one.
   ##   The same arrangement `nimOverlayMetrics` already uses for the marker's own sizes.
   @[
     float32(HEIGHT_MENU_WEDGE), float32(PADDING_MENU_WEDGE),
-    float32(ROUNDING_MENU_WEDGE), float32(RADIUS_MENU_CENTRE),
+    float32(ROUNDING_MENU_WEDGE), float32(WIDTH_MENU_WEDGE_BORDER),
+    float32(RADIUS_MENU_CENTRE),
     float32(ALPHA_MENU_WEDGE), float32(ALPHA_MENU_UNOFFERED),
   ]
 
@@ -1256,6 +1276,12 @@ type FrameData = object
   furn_ribbon_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, and
     ## already built at their own thinner width (see `mesh.WIDTH_LINE_FURNITURE`), since a
     ## ribbon carries its width as geometry rather than as a draw-call setting.
+  tri_over, ribbon_over, point_over: int ## How many vertices at the *end* of each of the
+    ## three above are the overlay run -- drawn after the rest with the depth test off, so
+    ## a selected object lands over whatever stands between it and the camera. A count of
+    ## the tail rather than the index it starts at, so the glue subtracts nothing: see
+    ## `mesh.Mesh.index_overlay`, which is the same split stated from the other end, and
+    ## `renderer.drawPrimitive`, which is the desktop's own two-call draw.
 
 
 proc nimBuildFrame(
@@ -1321,7 +1347,7 @@ proc nimBuildFrame(
   #   the existing `geometryAt`/`isVisible` pattern) and reading every field here by
   #   slot instead.
   for slot in 0 ..< ITEMS_MAX:
-    if not g_scene.isAlive(slot): continue
+    if not g_scene.isAlive(slot) or slot in g_selection: continue
     if g_scene.isVisible(slot):
       let geometry = g_scene.geometryAt(slot)
       if isHorizonPlane(geometry):
@@ -1331,7 +1357,7 @@ proc nimBuildFrame(
         )
 
   for slot in 0 ..< ITEMS_MAX:
-    if not g_scene.isAlive(slot): continue
+    if not g_scene.isAlive(slot) or slot in g_selection: continue
     if g_scene.isVisible(slot):
       let geometry = g_scene.geometryAt(slot)
       if not isHorizonPlane(geometry):
@@ -1349,6 +1375,19 @@ proc nimBuildFrame(
   if g_interaction.preview.isSome:
     discard g_meshes.addObject(g_interaction.preview.get, INK_GHOST.colour.muted(), scale)
 
+  # Everything selected, held back to here and drawn with the depth test off, so a picked
+  #   object is never buried by whatever stands between it and the camera. Mirrors
+  #   `visualiser.assembleMeshes`, which carries the reasoning.
+  markOverlay(g_meshes)
+  for position in 0 ..< g_selection.len:
+    let slot = g_selection.at(position)
+    if not g_scene.isAlive(slot) or not g_scene.isVisible(slot): continue
+    let progress = animationProgress(float(now), g_borns[slot])
+    discard g_meshes.addObject(
+      g_scene.geometryAt(slot), g_scene.inkAt(slot).colour, scale, progress,
+      g_scene.anchorOverrideAt(slot),
+    )
+
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
   for row in 0 .. 3:
@@ -1361,4 +1400,7 @@ proc nimBuildFrame(
     point_verts: flatten(g_meshes[Primitive.Point]),
     view_projection: view_projection,
     furn_ribbon_verts: flatten(g_meshes_furniture[Primitive.Ribbon]),
+    tri_over: countOverlay(g_meshes[Primitive.Triangle]),
+    ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
+    point_over: countOverlay(g_meshes[Primitive.Point]),
   )

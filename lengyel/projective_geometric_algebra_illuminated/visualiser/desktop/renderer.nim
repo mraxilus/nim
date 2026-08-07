@@ -18,7 +18,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/strformat
+import std/[options, strformat]
 
 import ../core/[camera, mesh]
 import ./opengl as gl
@@ -186,13 +186,13 @@ proc clearFrame*(width, height: int) =
   gl.clear(gl.COLOR_BUFFER_BIT or gl.DEPTH_BUFFER_BIT)
 
 
-proc drawPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
-  ## Upload one mesh and draw it, skipping kinds no vertex was assembled for.
+proc uploadPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
+  ## Hand one mesh's vertices to the driver whole, ready to be drawn as one run or two.
+  ##   Separate from drawing because the two runs are issued in different *passes* rather
+  ##   than back to back -- see `drawMeshes` -- and a mesh uploaded twice a frame would be
+  ##   the one real cost of that split.
   let count = meshes[primitive].count_vertices
   if count == 0: return
-
-  # Tell fragment stage whether it is shading point sprites, which are rounded off.
-  gl.uniform1f(renderer.location_as_point, if primitive == Primitive.Point: 1.0 else: 0.0)
   gl.bindVertexArray(renderer.buffers[primitive].array_object)
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffers[primitive].buffer)
   gl.bufferData(
@@ -201,29 +201,73 @@ proc drawPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
     unsafeAddr meshes[primitive].vertices[0],
     gl.DYNAMIC_DRAW,
   )
-  gl.drawArrays(lut_primitive_to_mode[primitive], 0, gl.Sizei(count))
+
+
+func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
+  ## Say which stretch of one mesh belongs to the depth-tested run or to the overlay run.
+  ##   Empty where the mesh has no such run, which is the ordinary case for the overlay:
+  ##   nothing is selected on most frames. See `mesh.Mesh.index_overlay`.
+  let split =
+    if mesh.index_overlay.isSome: clamp(mesh.index_overlay.get, 0, mesh.count_vertices)
+    else: mesh.count_vertices
+  if is_overlay: (first: split, count: mesh.count_vertices - split)
+  else: (first: 0, count: split)
+
+
+proc drawRun(renderer: Renderer; meshes: MeshSet; primitive: Primitive; is_overlay: bool) =
+  ## Draw one run of one already-uploaded mesh, skipping an empty one.
+  let run = runOf(meshes[primitive], is_overlay)
+  if run.count == 0: return
+  # Tell fragment stage whether it is shading point sprites, which are rounded off.
+  gl.uniform1f(renderer.location_as_point, if primitive == Primitive.Point: 1.0 else: 0.0)
+  gl.bindVertexArray(renderer.buffers[primitive].array_object)
+  gl.drawArrays(lut_primitive_to_mode[primitive], gl.Int(run.first), gl.Sizei(run.count))
+
+
+func hasOverlay(meshes: MeshSet): bool =
+  ## Report whether anything in this set asked to be drawn over the rest of it.
+  for primitive in Primitive:
+    if runOf(meshes[primitive], is_overlay = true).count > 0: return true
+  false
 
 
 proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
-  ## Draw every mesh, opaque kinds before translucent ones.
+  ## Draw every mesh, opaque kinds before translucent ones, then the overlay over both.
   ##   Took a line width once, and passed it to `gl.lineWidth`. It no longer does: a
   ##   width is now geometry, built into the ribbon at `mesh.addSegment` from the same
   ##   `WIDTH_LINE_OBJECT`/`WIDTH_LINE_FURNITURE` this used to hand the driver, so both
   ##   builds draw it rather than asking a driver to.
+  ##   **The overlay is a second pass over every kind, not a tail on each one.** A tail was
+  ##   tried and measured: a selected line came out over the other lines and still tinted
+  ##   by a plane's wash, because the wash is a later kind and the overlay run, having no
+  ##   depth test, writes no depth for that wash to be rejected against. A wash over the
+  ##   object you just picked is exactly the complaint this answers, so the whole ordinary
+  ##   set goes down before any of the overlay goes on top.
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
   gl.uniform1f(renderer.location_size_point, SIZE_POINT)
+  for primitive in Primitive: renderer.uploadPrimitive(meshes, primitive)
 
   # Draw opaque kinds first, so they own depth buffer.
-  renderer.drawPrimitive(meshes, Primitive.Ribbon)
-  renderer.drawPrimitive(meshes, Primitive.Point)
+  renderer.drawRun(meshes, Primitive.Ribbon, is_overlay = false)
+  renderer.drawRun(meshes, Primitive.Point, is_overlay = false)
 
   # Draw washes without writing depth, so objects stay visible through them.
   gl.depthMask(gl.FALSE)
-  renderer.drawPrimitive(meshes, Primitive.Triangle)
+  renderer.drawRun(meshes, Primitive.Triangle, is_overlay = false)
   gl.depthMask(gl.TRUE)
+
+  # And the overlay over all of it, with no depth test at all -- which turns writes off
+  #   with it, so nothing here occludes anything either, and the same kind order decides
+  #   what is over what among the selected objects themselves.
+  if meshes.hasOverlay:
+    gl.disable(gl.DEPTH_TEST)
+    renderer.drawRun(meshes, Primitive.Ribbon, is_overlay = true)
+    renderer.drawRun(meshes, Primitive.Point, is_overlay = true)
+    renderer.drawRun(meshes, Primitive.Triangle, is_overlay = true)
+    gl.enable(gl.DEPTH_TEST)
   gl.bindVertexArray(0)
 
 

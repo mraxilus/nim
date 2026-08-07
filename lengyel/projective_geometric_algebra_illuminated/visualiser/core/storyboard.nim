@@ -83,10 +83,16 @@ const STEPS*: array[11, Step] = [
 
 
 const INK_SEED_GROUND* = Ink.Olive
-  ## Colour the startup scene's own ground plane wears, and the one hue its four seed
-  ## points step over.
+  ## Colour the startup scene's own ground plane wears.
   ##   Reserved by hand rather than taken from the cycle, because `ground` is the one seed
   ## every later step is derived against and a reader learns to find it by colour.
+
+const INK_SEED_ORIGIN* = Ink.Copper
+  ## Colour the startup scene's own origin point wears.
+  ##   Reserved for the same reason `INK_SEED_GROUND` is: the origin is the one point in
+  ## the scene that is not arbitrary, so it is worth being able to recognise it without
+  ## reading its label. `a`, `b` and `c` step over both reserved hues, which leaves them
+  ## exactly the three the categorical run has left and no two seeds collide.
 
 
 proc constructSeeds*(scene: var Scene; now: float = 0.0) =
@@ -112,17 +118,17 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
     )
   # A hue each, as adding them by hand would give them: four objects wearing one colour
   #   say they are one kind of thing, which is the opposite of what a categorical palette
-  #   is for. `ground` keeps its own olive, so the four points take the four slots that
-  #   are not it and nothing collides.
+  #   is for. `ground` and `o` keep their own reserved hues, so the three arbitrary points
+  #   take the three slots that are neither and nothing collides.
   var index_ink = 0
   proc inkNext(): Ink =
-    while inkCycled(index_ink) == INK_SEED_GROUND: inc index_ink
+    while inkCycled(index_ink) in [INK_SEED_GROUND, INK_SEED_ORIGIN]: inc index_ink
     result = inkCycled(index_ink)
     inc index_ink
   scene.addItem(point_a, "a", inkNext(), now)
   scene.addItem(point_b, "b", inkNext(), now)
   scene.addItem(point_c, "c", inkNext(), now)
-  scene.addItem(point_origin, "o", inkNext(), now)
+  scene.addItem(point_origin, "o", INK_SEED_ORIGIN, now)
   scene.addItem(ground, "ground", INK_SEED_GROUND, now, anchor_ground)
 
 

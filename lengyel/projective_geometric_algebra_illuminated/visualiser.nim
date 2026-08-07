@@ -358,13 +358,15 @@ proc assembleMeshes(
   #   end up looking hazed by the sky behind it purely from slot ordering, not from
   #   anything about actual position.
   for slot, item in scene.pairs:
-    if not item.isVisible or not isHorizonPlane(item.geometry): continue
+    if not item.isVisible or not isHorizonPlane(item.geometry) or slot in panel.selection:
+      continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
   for slot, item in scene.pairs:
-    if not item.isVisible or isHorizonPlane(item.geometry): continue
+    if not item.isVisible or isHorizonPlane(item.geometry) or slot in panel.selection:
+      continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
@@ -384,6 +386,24 @@ proc assembleMeshes(
   #   gesture stops being a guess about a button and becomes a thing you watch happen.
   if interaction.preview.isSome:
     discard MESHES.addObject(interaction.preview.get, muted(INK_GHOST.colour), scale)
+
+  # Everything selected, held back to here and drawn with the depth test off, so a picked
+  #   object is never buried by whatever happens to stand between it and the camera. It is
+  #   the object being worked on: a plane's wash hiding it, or a line crossing in front of
+  #   it, is the view arguing with the reader about what they just asked to look at. Lasts
+  #   exactly as long as the selection does -- deselect and it takes its ordinary place in
+  #   the depth order again. A horizon plane selected comes through here too, which costs
+  #   its dome the first-in-bucket place above; that only matters against another plane's
+  #   wash, and a sky drawn over one plane while it is the selected object is the whole
+  #   point of this pass.
+  MESHES.markOverlay
+  for position in 0 ..< panel.selection.len:
+    let slot = panel.selection.at(position)
+    if not scene.isAlive(slot) or not scene[slot].isVisible: continue
+    let item = scene[slot]
+    let progress = animationProgress(now, item.born)
+    let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
+    discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
 
   panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   panel.count_vertices = 0
@@ -501,6 +521,18 @@ proc drawSelectionMarker(
     result.inc
 
 
+const
+  # The floating selection menu's own tones, so the wheel and that menu read as one control
+  #   in two postures. Taken from the browser's `--surface-raised`, `--border`, `--accent`
+  #   and `--accent-ink` -- the same copy `gui_shim.guiButtonToggle` already makes, and for
+  #   the same reason: the chrome palette is a stylesheet on one front-end and an ImGui
+  #   theme on the other, with no third place either could read it from. **Check the
+  #   siblings when changing one**: `shell.html`'s `:root` block and `gui_shim.cpp`.
+  TONE_WEDGE_SURFACE = (red: 0.106'f32, green: 0.129'f32, blue: 0.169'f32)
+  TONE_WEDGE_BORDER = (red: 0.165'f32, green: 0.196'f32, blue: 0.239'f32)
+  TONE_WEDGE_CHOSEN = (red: 0.0'f32, green: 0.655'f32, blue: 0.647'f32)
+
+
 proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   ## Draw the four wedges of an open choice menu onto the foreground layer.
   ##   Every wedge is drawn at every opening, at its own fixed compass point, whether or
@@ -508,6 +540,11 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   ##   rather than something they read off each time. Which one the cursor stands in is
   ##   `interaction.choiceAt`'s answer, the same one the release will act on, so what is
   ##   highlighted is never a second opinion about where the cursor is.
+  ##   **A wedge is the selection menu's own button, moved.** Surface fill, one hairline
+  ##   border, label in the choice's own hue -- rather than the solid slab of that hue it
+  ##   used to be, which made the two menus look like two different things a reader had to
+  ##   learn separately. The hue stays, on the text, so `join`/`meet`/`project` still carry
+  ##   the colour the drawer's own intro line gives them.
   let
     centre = interaction.menu.get
     over = destinationOf(interaction)
@@ -529,37 +566,29 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
         (is_pair_live and isOffered(
           choice, scene.geometryOf(interaction.index_source), scene.geometryOf(over.get)
         ))
+      is_chosen = highlighted == some(choice)
       at = anchorOf(centre, choice)
-      tint = inkOf(choice).colour
+      alpha = cfloat(if is_offered: ALPHA_MENU_WEDGE else: ALPHA_MENU_UNOFFERED)
       width = gui.textWidth(cstring(label)) + PADDING_MENU_WEDGE
+    # The border first and the surface inside it, which is how a hairline outline is drawn
+    #   with a widget that only fills: the wedge the cursor is in swaps that border for the
+    #   accent, so the highlight survives a reader who cannot tell one hue from another.
+    let edge = if is_chosen: TONE_WEDGE_CHOSEN else: TONE_WEDGE_BORDER
+    gui.overlayChip(
+      cfloat(at.x), cfloat(at.y), width + 2.0*WIDTH_MENU_WEDGE_BORDER,
+      HEIGHT_MENU_WEDGE + 2.0*WIDTH_MENU_WEDGE_BORDER,
+      edge.red, edge.green, edge.blue, alpha,
+      ROUNDING_MENU_WEDGE + WIDTH_MENU_WEDGE_BORDER,
+    )
     gui.overlayChip(
       cfloat(at.x), cfloat(at.y), width, HEIGHT_MENU_WEDGE,
-      tint.red, tint.green, tint.blue,
-      cfloat(if is_offered: ALPHA_MENU_WEDGE else: ALPHA_MENU_UNOFFERED),
+      TONE_WEDGE_SURFACE.red, TONE_WEDGE_SURFACE.green, TONE_WEDGE_SURFACE.blue, alpha,
       ROUNDING_MENU_WEDGE,
     )
-    # The wedge the cursor is in wears an outline as well as its fill, so the highlight
-    #   survives being read by someone who cannot tell its fill from its neighbour's.
-    if highlighted == some(choice):
-      let edge = Ink.Outline.colour
-      gui.overlayChip(
-        cfloat(at.x), cfloat(at.y), width + 2.0*WIDTH_MARKER,
-        HEIGHT_MENU_WEDGE + 2.0*WIDTH_MARKER,
-        edge.red, edge.green, edge.blue, 0.9, ROUNDING_MENU_WEDGE + WIDTH_MARKER,
-      )
-      gui.overlayChip(
-        cfloat(at.x), cfloat(at.y), width, HEIGHT_MENU_WEDGE,
-        tint.red, tint.green, tint.blue,
-        cfloat(if is_offered: ALPHA_MENU_WEDGE else: ALPHA_MENU_UNOFFERED),
-        ROUNDING_MENU_WEDGE,
-      )
-    # An offered wedge is a solid fill and reads best with dark text on it; an unoffered
-    #   one is barely a fill at all, so dark text on it disappears into the scene behind.
-    #   Light text there instead, dimmed -- legible, and still obviously not a choice.
-    let ink_label = (if is_offered: Ink.Backdrop else: Ink.Outline).colour
+    let ink_label = inkOf(choice).colour
     gui.overlayText(
       cfloat(at.x), cfloat(at.y), ink_label.red, ink_label.green, ink_label.blue,
-      cfloat(if is_offered: 1.0 else: 0.55), cstring(label),
+      cfloat(if is_offered: 1.0 else: 0.6), cstring(label),
     )
 
 
@@ -785,15 +814,15 @@ func keyFor(scancode: uint32): Option[Key] =
   else: none(Key)
 
 
-func isMenuForcedFor(button: uint8): Option[bool] =
-  ## Say whether a mouse button starts a construction drag, and whether it asks or decides.
+func armingFor(button: uint8): Option[MenuArming] =
+  ## Say whether a mouse button starts a construction drag, and how it reaches its menu.
   ##   Only the numbering is this build's own -- SDL's, which the browser does not share.
-  ##   What each button means is `interaction.isMenuForcedBy`'s to say, so both render
-  ##   paths and the help panel answer from one rule.
-  if button == uint8(MouseButton.Left): isMenuForcedBy(PointerButton.Left)
-  elif button == uint8(MouseButton.Right): isMenuForcedBy(PointerButton.Right)
-  elif button == uint8(MouseButton.Middle): isMenuForcedBy(PointerButton.Middle)
-  else: none(bool)
+  ##   What each button means is `interaction.armingOf`'s to say, so both render paths and
+  ##   the help panel answer from one rule.
+  if button == uint8(MouseButton.Left): armingOf(PointerButton.Left)
+  elif button == uint8(MouseButton.Right): armingOf(PointerButton.Right)
+  elif button == uint8(MouseButton.Middle): armingOf(PointerButton.Middle)
+  else: none(MenuArming)
 
 
 proc handleEvent(
@@ -871,8 +900,8 @@ proc handleEvent(
     interaction.beginPress(now)
     # Press on a pickable item starts an operation drag; press on empty space falls back
     #   to camera control, exactly as before this feature existed.
-    let is_menu_forced = isMenuForcedFor(event.button.button)
-    if is_menu_forced.isSome and interaction.beginDrag(is_menu_forced.get, now):
+    let arming = armingFor(event.button.button)
+    if arming.isSome and interaction.beginDrag(arming.get, now):
       button_dragging = some(event.button.button)
     elif event.button.button == uint8(MouseButton.Left):
       is_dragging_orbit = true
@@ -896,11 +925,10 @@ proc handleEvent(
       elif outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
         # The way out of the gesture's own three operations into the other twenty-four:
         #   both operands selected in the order they were dragged, which is the order the
-        #   apply section reads as m then n, and that section opened so they are visible.
+        #   picker reads as m then n, and that picker opened right where the wheel was.
         panel.selection.selectOnly(outcome.operands.get.source)
         panel.selection.toggle(outcome.operands.get.destination)
-        panel.is_apply_opening = true
-        panel.hideSelectionMenu()
+        panel.openSelectionMenuPicker()
       button_dragging = none(uint8)
     elif event.button.button == uint8(MouseButton.Left) and interaction.isClick(now):
       # A plain left click that began no drag to end -- so it landed on empty space, or on
@@ -968,10 +996,12 @@ proc reportTimings(milliseconds: var openArray[float32]) =
 
 
 proc driveDrag(
-  scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
+  scene: Scene; interaction: Interaction; camera: Camera;
+  width, height, count_drawn: int; scale: DrawExtent
 ) =
-  ## Script a right-button construction drag from the first scene item onto the second,
-  ## one step per frame, so a headless run can be made to show the choice menu open.
+  ## Script a right-button construction drag from the first scene item onto the second and
+  ## out onto `more…`, one step per frame, so a headless run can be made to show the choice
+  ## menu open and then show where its way out lands.
   ##   For `--drive-drag`, and reached from nowhere else. Every step is posted to SDL's own
   ##   queue rather than handed to `handleEvent` directly: the point of driving this at all
   ##   is to exercise the wiring between the two, and this project has already shipped one
@@ -983,7 +1013,26 @@ proc driveDrag(
   ##   on the real clock, so every seed's own birth animation stands wherever eight frames
   ##   of wall time put it. Two runs of one binary differ by a few pixels of scene. Look at
   ##   the capture; do not byte-compare it against another run.
-  const (FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET) = (2, 3, 4)
+  const
+    (FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET) = (2, 3, 4)
+    (FRAME_REACH_MORE, FRAME_RELEASE) = (8, 9)
+      ## Two frames past the menu opening: reach the `more…` wedge, then let go on it, so
+      ## a run with `--frames` past this shows where that choice lands rather than only
+      ## that the menu can be opened. Anything short of `FRAME_REACH_MORE` still captures
+      ## the open menu, which is what shorter runs are for.
+  if count_drawn == FRAME_REACH_MORE or count_drawn == FRAME_RELEASE:
+    # The wedge itself, from the same `anchorOf` that drew it -- never a pixel guessed at
+    #   from the compass direction, which would silently stop matching if the reach moved.
+    let at = anchorOf(interaction.menu.get(interaction.cursor), DragChoice.More)
+    var reach = Event(kind: uint32(EventKind.MouseMotion))
+    reach.motion.x = cfloat(at.x)
+    reach.motion.y = cfloat(at.y)
+    sdl3.pushEvent(addr reach)
+    if count_drawn == FRAME_RELEASE:
+      var release = Event(kind: uint32(EventKind.MouseButtonUp))
+      release.button.button = uint8(MouseButton.Right)
+      sdl3.pushEvent(addr release)
+    return
   if count_drawn notin [FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET]: return
   let slot = if count_drawn == FRAME_REACH_TARGET: 1 else: 0
   if not scene.isAlive(slot): return
@@ -1284,7 +1333,10 @@ proc runInteractive(
     if options.is_drag_driven or options.is_select_driven or options.is_undo_driven:
       let scale_driven = camera.drawExtentFor(PIXELS_HEIGHT)
       if options.is_drag_driven:
-        driveDrag(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
+        driveDrag(
+          scene, interaction, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn,
+          scale_driven,
+        )
       elif options.is_select_driven:
         driveSelect(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, scale_driven)
       else:

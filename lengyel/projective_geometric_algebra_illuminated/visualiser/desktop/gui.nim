@@ -196,8 +196,6 @@ proc overlayChip*(
 proc overlayText*(cx, cy, red, green, blue, alpha: cfloat; text: cstring)
   {.importc: "guiOverlayText".}
   ## Write text centred on `cx`/`cy`, measured against the font actually loaded.
-proc openNext*() {.importc: "guiOpenNext".}
-  ## Force the next `header` open, whatever the reader last left it as.
 proc overlayPolyline*(
   points: ptr cfloat; count: cint; red, green, blue, alpha, thickness: cfloat;
   is_closed: cint

@@ -78,17 +78,32 @@ const vbo = {
 };
 const STRIDE = 7 * 4;
 
-function drawBuffer(data, mode, are_points_round, handle_buffer) {
-  if (data.length === 0) return;
+// One mesh handed to the driver whole, ready to be drawn as one run or two. Separate
+// from drawing because the two runs go out in different passes (see the draw loop below),
+// and a mesh uploaded twice a frame would be the one real cost of that split.
+function uploadBuffer(data, handle_buffer) {
+  if (data.length === 0) return null;
   const entries = data instanceof Float32Array ? data : new Float32Array(data);
   gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
   gl.bufferData(gl.ARRAY_BUFFER, entries, gl.DYNAMIC_DRAW);
+  return entries.length / 7;
+}
+
+// `count_over` is how many vertices at the END of the uploaded mesh are its overlay run;
+// `is_overlay` picks which of the two runs to draw. Mirrors `renderer.drawRun`.
+function drawRun(handle_buffer, count, mode, are_points_round, count_over, is_overlay) {
+  if (!count) return;
+  const split = Math.max(0, count - Math.min(count_over || 0, count));
+  const first = is_overlay ? split : 0;
+  const span = is_overlay ? count - split : split;
+  if (span === 0) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
   gl.enableVertexAttribArray(attribute_position);
   gl.vertexAttribPointer(attribute_position, 3, gl.FLOAT, false, STRIDE, 0);
   gl.enableVertexAttribArray(attribute_colour);
   gl.vertexAttribPointer(attribute_colour, 4, gl.FLOAT, false, STRIDE, 12);
   gl.uniform1i(uniform_is_round, are_points_round ? 1 : 0);
-  gl.drawArrays(mode, 0, entries.length / 7);
+  gl.drawArrays(mode, first, span);
 }
 
 function rgbToCss(rgb) {
@@ -327,17 +342,20 @@ const button_add = document.getElementById('btn-add');
 const button_undo = document.getElementById('btn-undo');
 const button_redo = document.getElementById('btn-redo');
 
-function openApplyWithOperands() {
-  // Where the drag menu's `more…` lands: nimEndDrag has already selected both operands in
-  //   the order they were dragged, so this only has to bring the section that reads that
-  //   selection into view. Refusing to open it would make `more…` a dead end, which is
-  //   exactly what it exists to stop the gesture being.
+function openApplyPickerOnOperands(position_local) {
+  // Where the drag menu's `more…` lands: `nimEndDrag` has already selected both operands
+  //   in the order they were dragged, so this only has to open the picker that reads that
+  //   selection. Refusing to open it would make `more…` a dead end, which is exactly what
+  //   it exists to stop the gesture being.
+  //   **The hover menu's picker, not the drawer's apply section.** `more…` is a fifth
+  //   choice on a wheel that opened under the cursor, and sending it to a panel down the
+  //   side of the screen threw the hand across the viewport and buried the two objects it
+  //   had just named under a list of every other control. The picker lands where the wheel
+  //   was, already open, already holding the last operation of that arity.
   refreshSelectionSnapshot();
-  hideSelectionMenu();
-  document.querySelector('.section[data-section="apply"]').classList.add('open');
-  drawer.classList.add('open');
-  button_drawer.classList.add('on');
   refreshObjectsUI();
+  refreshSelectionMenu(position_local);
+  if (menu_selection_apply.style.display !== 'none') openSelectionMenuOp();
 }
 
 function openPanelTo(slot) {
@@ -1229,7 +1247,8 @@ const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
 // Read from interaction.nim's own constants via nimMenuMetrics, for the same reason the
 // marker's sizes are: a hand-copied literal here would drift from the desktop's menu.
-const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE, RADIUS_MENU_CENTRE,
+const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE,
+  WIDTH_MENU_WEDGE_BORDER, RADIUS_MENU_CENTRE,
   ALPHA_MENU_WEDGE, ALPHA_MENU_UNOFFERED] = nimMenuMetrics();
 // Floats per wedge in nimDragMenuLayout: x, y, offered, then red, green and blue.
 const FLOATS_MENU_WEDGE = 6;
@@ -1438,17 +1457,19 @@ function appendChoiceMenu(w, h) {
     const at = i * FLOATS_MENU_WEDGE;
     const [x, y] = [layout[at], layout[at + 1]];
     const is_offered = layout[at + 2] > 0.5;
-    const fill = 'rgb(' + Math.round(layout[at + 3] * 255) + ',' +
+    // The choice's own hue, which now colours the label rather than filling the wedge --
+    // the surface and border come from `.menu-wedge`, which is `.selection-menu button`.
+    const hue = 'rgb(' + Math.round(layout[at + 3] * 255) + ',' +
       Math.round(layout[at + 4] * 255) + ',' + Math.round(layout[at + 5] * 255) + ')';
     // Label first, then a rect sized from what the browser actually laid it out as --
     // measured rather than estimated from a character count, which drifts the moment the
     // face loaded is not the one the estimate was tuned against.
     const text = svgEl('text', {
       x: x, y: y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-      // An offered wedge is a solid fill and reads best with dark text on it; an
-      // unoffered one is barely a fill at all, so dark text there disappears into the
-      // scene behind. Light text instead, dimmed -- legible, and still not a choice.
-      fill: is_offered ? 'rgb(13,17,23)' : 'rgba(255,255,255,0.55)',
+      fill: hue,
+      // An unoffered wedge is dimmed rather than dropped: a gap where a wedge should be is
+      // unreadable, and the point of a fixed compass is that a choice never moves.
+      'fill-opacity': is_offered ? 1 : 0.6,
       class: 'menu-wedge-label',
     });
     text.textContent = labels[i];
@@ -1457,11 +1478,9 @@ function appendChoiceMenu(w, h) {
     svg_overlay.insertBefore(svgEl('rect', {
       x: x - width / 2, y: y - HEIGHT_MENU_WEDGE / 2,
       width: width, height: HEIGHT_MENU_WEDGE, rx: ROUNDING_MENU_WEDGE,
-      fill: fill, 'fill-opacity': is_offered ? ALPHA_MENU_WEDGE : ALPHA_MENU_UNOFFERED,
-      // The wedge under the cursor wears an outline as well as its fill, so the
-      // highlight survives a reader who cannot tell its fill from its neighbour's.
-      stroke: i === highlighted ? 'rgba(255,255,255,0.9)' : 'none',
-      'stroke-width': WIDTH_OVERLAY_LINE,
+      'fill-opacity': is_offered ? ALPHA_MENU_WEDGE : ALPHA_MENU_UNOFFERED,
+      'stroke-width': WIDTH_MENU_WEDGE_BORDER,
+      class: i === highlighted ? 'menu-wedge on' : 'menu-wedge',
     }), text);
   }
   // The middle is where nothing is chosen, and the way out of a menu that opened unasked.
@@ -1474,14 +1493,12 @@ function appendChoiceMenu(w, h) {
 
 /* ---------------------------------------------------------------------- */
 /* Pointer input.                                                          */
-/*   Mouse/pen: left-drag-from-object joins, right-drag-from-object meets, */
 /*   One invariant across every pointer: THE PRESS TARGET CHOOSES THE      */
 /*   SCHEME. A press that lands on an object constructs; one that lands on */
 /*   empty space moves the camera. Mirrors `visualiser.handleEvent`.       */
-/*   Mouse: left-drag takes whatever the two objects make, right-drag opens */
-/*   the choice menu on arrival, and holding still over the target opens   */
-/*   the same menu without the second button. From empty space, left       */
-/*   orbits, right pans, the wheel dollies.                                */
+/*   Mouse: left-drag takes whatever the two objects make and is never     */
+/*   interrupted, right-drag opens the choice menu on arrival. From empty  */
+/*   space, left orbits, right pans, the wheel dollies.                    */
 /*   Touch: the same, with the dwell as the only way to open the menu --   */
 /*   there is no second button to force it with. A finger that presses an  */
 /*   object and stays still selects it instead (the long-press), so the    */
@@ -1509,6 +1526,9 @@ let slot_touch_down = -1, is_touch_dragging = false;
 //   it decides which scheme the gesture enters, which is a rule about the gesture, not a
 //   presentation number. The tap *timeout* stays here -- that one really is local.
 const TAP_MAX_MS = 350, TAP_MAX_MOVE = nimTapSlop();
+// How a finger's construction drag comes to offer the wheel. A mouse reads this off the
+//   button it pressed; touch has no second button, so it names the one arming that waits.
+const ARMING_DRAG_TOUCH = nimDragArmingOnDwell();
 
 // Mouse click-vs-drag disambiguation -- a plain click (no movement) selects/shift-selects;
 //   an actual drag still applies join/meet/project exactly as before. *Whether* a press
@@ -1540,9 +1560,9 @@ canvas.addEventListener('pointerdown', (e) => {
     nimBeginPress(now());
     button_mouse_down = e.button;
     // The button says whether the drag decides for you or asks; what it builds is read
-    // off the operands at release. Mirrors `visualiser.isMenuForcedFor`.
-    const kind_drag = nimDragKindForButton(e.button);
-    if (kind_drag >= 0 && nimBeginDrag(kind_drag === 1, now())) {
+    // off the operands at release. Mirrors `visualiser.armingFor`.
+    const arming_drag = nimDragKindForButton(e.button);
+    if (arming_drag >= 0 && nimBeginDrag(arming_drag, now())) {
       button_mouse_drag = e.button;
     } else if (e.button === 0) {
       button_mouse_drag = 'orbit';
@@ -1634,7 +1654,9 @@ canvas.addEventListener('pointermove', (e) => {
     dismissHint();
     nimCancelHold(); // Moved, so this press will never mature into a selection.
     if (slot_touch_down >= 0 && pointers.size === 1) {
-      is_touch_dragging = nimBeginDrag(false, now());
+      // A finger has no second button to ask the wheel for, so it is the one pointer that
+      //   still reaches the wheel by standing still; see `interaction.MenuArming`.
+      is_touch_dragging = nimBeginDrag(ARMING_DRAG_TOUCH, now());
     }
   }
 
@@ -1681,7 +1703,7 @@ function endMouseDrag(e) {
     } else {
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
-      else if (result.is_more) openApplyWithOperands();
+      else if (result.is_more) openApplyPickerOnOperands(cursor_last);
     }
   } else if (button_mouse_down === 0 && nimIsClick(now())) {
     // A plain left click that began no drag to end -- so it landed on empty space, or on
@@ -1728,7 +1750,7 @@ function releasePointer(e) {
       const result = nimEndDrag(now());
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
-      else if (result.is_more) openApplyWithOperands();
+      else if (result.is_more) openApplyPickerOnOperands(cursor_last);
     }
     is_touch_dragging = false;
   } else if (!has_long_press_fired && touch_down_at !== null && !has_touch_moved &&
@@ -2030,18 +2052,34 @@ function frame() {
   // World furniture first, with normal depth test/write. Its ribbons already carry their
   // own thinner width as geometry -- there is no width to set here any more. Mirrors
   // renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
-  drawBuffer(data.furn_ribbon_verts, gl.TRIANGLES, false, vbo.ribbon_furniture);
+  const count_furn = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture);
+  drawRun(vbo.ribbon_furniture, count_furn, gl.TRIANGLES, false, 0, false);
 
   // Scene objects last; opaque kinds before plane washes (triangles), with depth writes
   // off for those, so a translucent plane never occludes a line or point that happens to
   // sit behind it -- it only tints over whatever was already drawn there. Mirrors
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
-  drawBuffer(data.ribbon_verts, gl.TRIANGLES, false, vbo.ribbon);
-  drawBuffer(data.point_verts, gl.POINTS, true, vbo.point);
+  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon);
+  const count_point = uploadBuffer(data.point_verts, vbo.point);
+  const count_tri = uploadBuffer(data.tri_verts, vbo.tri);
+  drawRun(vbo.ribbon, count_ribbon, gl.TRIANGLES, false, data.ribbon_over, false);
+  drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
   gl.depthMask(false);
-  drawBuffer(data.tri_verts, gl.TRIANGLES, false, vbo.tri);
+  drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, false);
   gl.depthMask(true);
+
+  // The overlay over all of it, with no depth test at all -- which turns writes off with
+  // it, so nothing here occludes anything either. A second pass over every kind rather
+  // than a tail on each: a selected line drawn only after the other lines is still tinted
+  // by a plane's wash, which is a later kind. Mirrors `renderer.drawMeshes`.
+  if (data.ribbon_over + data.point_over + data.tri_over > 0) {
+    gl.disable(gl.DEPTH_TEST);
+    drawRun(vbo.ribbon, count_ribbon, gl.TRIANGLES, false, data.ribbon_over, true);
+    drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, true);
+    drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
+    gl.enable(gl.DEPTH_TEST);
+  }
 
   refreshOverlay(cursor_last);
   updateSelectionMenuPosition();

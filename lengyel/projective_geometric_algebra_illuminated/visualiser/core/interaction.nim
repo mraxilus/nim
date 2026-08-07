@@ -45,15 +45,15 @@ import ./[camera, format, mesh, objects, picking, scene]
 #   seconds against them and its dwell menu quietly needed 450 seconds to open.
 
 const SECONDS_DWELL_MENU* = 0.45
-  ## Hold a drag **still** over its target this long and the choice menu opens.
+  ## Hold a drag **still** over its target this long and the choice menu opens, on a
+  ## pointer armed `MenuArming.OnDwell` -- which now means touch alone.
   ##   Still, not merely present: the clock restarts whenever the cursor moves further than
   ##   `PIXELS_TAP_SLOP` from where it last settled, so time spent crossing a target does
   ##   not count toward opening a menu over it. This was measured, not supposed -- while
   ##   the clock ran on presence alone, a slow finger crossing the ground plane tripped it
   ##   mid-drag and the construction it was in the middle of ended up building nothing.
   ##   Longer than a threshold triggered on its own would dare be, and deliberately so:
-  ##   a reader who wants the menu without waiting presses the right button instead, so
-  ##   this only has to be slow enough never to fire on a hesitation. The usual failure of
+  ##   it only has to be slow enough never to fire on a hesitation. The usual failure of
   ##   a dwell menu is popping up at someone who was still moving.
 
 const SECONDS_LONG_PRESS* = 0.50
@@ -132,15 +132,26 @@ const
   PADDING_MENU_WEDGE* = 22.0
     ## Slack around a wedge's label, so a short name still reads as a button rather than
     ## as text lying loose on the scene.
-  ROUNDING_MENU_WEDGE* = 6.0 ## Corner radius of a wedge.
+  ROUNDING_MENU_WEDGE* = 8.0
+    ## Corner radius of a wedge. The selection menu's own button radius: **this menu and
+    ## that one are the same control in two postures**, one reached by dragging and one by
+    ## picking, so a reader should not have to learn two appearances for it. Was 6 while
+    ## the wedges were solid slabs of their own hue.
+  WIDTH_MENU_WEDGE_BORDER* = 1.0
+    ## Thickness of the hairline round a wedge, matching the selection menu's own buttons.
   RADIUS_MENU_CENTRE* = 5.0
     ## Dot marking the menu's own centre, where nothing is chosen. Drawn well inside
     ## `PIXELS_MENU_DEADZONE` so it reads as a mark rather than as the boundary itself.
-  ALPHA_MENU_WEDGE* = 0.94 ## Opacity of a wedge that can be chosen.
-  ALPHA_MENU_UNOFFERED* = 0.30
+  ALPHA_MENU_WEDGE* = 0.96
+    ## Opacity of a wedge that can be chosen. Near-solid, since the surface behind it is
+    ## now the popover tone rather than the choice's own hue and needs to read as a chip
+    ## standing on the scene rather than as a tint over it.
+  ALPHA_MENU_UNOFFERED* = 0.45
     ## Opacity of one that makes nothing, which is drawn rather than dropped: a gap where
     ## a wedge should be is unreadable, and the point of a fixed compass is that a choice
-    ## never moves.
+    ## never moves. Higher than the 0.30 the coloured slabs wore: a dark chip at 0.30 all
+    ## but disappears against a dark scene, and an unreachable choice still has to be
+    ## legible enough to say what it would have been.
 
 
 
@@ -157,6 +168,16 @@ type
     ## `DragOperation` because `More` applies nothing itself -- it hands both operands to
     ## the apply section, which is what turns this gesture from a dead end into a ramp.
     Join, Meet, Project, More
+
+  MenuArming* {.pure.} = enum ## Say how a drag in progress may come to open its menu.
+    ## What a pointer chose at the press, held for that drag's whole life. Three states
+    ## rather than a "forced" flag, because the flag could only say *now* or *after a
+    ## wait* -- and a mouse wants neither: its left button should take the pair's own
+    ## answer and never be interrupted by a menu, while its right button asks. Only a
+    ## finger, which has no second button to ask with, still waits.
+    Never, ## Take the proposal on release; no menu, however long the drag stands still.
+    OnDwell, ## Open after `SECONDS_DWELL_MENU` of standing still over the target.
+    Always ## Open the moment the drag arrives over a target.
 
   Compass* {.pure.} = enum ## Name where a choice sits in the menu, always.
     ## A fixed position per choice, with unoffered ones left as gaps rather than packed
@@ -243,8 +264,8 @@ type
       ## ghost. None where the drag is over nothing, over its own source, or over a pair
       ## that makes nothing -- and *that* is the case worth drawing nothing for, since it
       ## is the only warning before a refused release.
-    is_menu_forced*: bool ## Whether this drag asks for the menu without waiting, which is
-      ## what the right button means. Set at `beginDrag` and read every frame after.
+    arming*: MenuArming ## How this drag may come to open its menu, as its own pointer
+      ## chose at the press. Set at `beginDrag` and read every frame after.
     entered*: float ## When the cursor last settled over a target, for the dwell to run
       ## from. Restarted both when the hovered item changes and when the cursor moves
       ## away from `settled`, so the dwell measures being still rather than being present.
@@ -259,7 +280,7 @@ type
 type PointerButton* {.pure.} = enum ## Name a physical mouse button, however numbered.
   ## Neither backend's own numbering: SDL and the DOM count the three buttons
   ## differently (SDL 1/2/3 left/middle/right, the DOM 0/1/2 left/middle/right), so each
-  ## render path translates its own numbers into this and asks `isMenuForcedBy` below.
+  ## render path translates its own numbers into this and asks `armingOf` below.
   ## That keeps *which button does what* stated once, while leaving each path the
   ## translation only it can do.
   Left, Middle, Right
@@ -305,19 +326,21 @@ func nameOf*(key: Key): string =
   of Key.Home: "home"
 
 
-func isMenuForcedBy*(button: PointerButton): Option[bool] =
-  ## Say whether a button starts a construction drag, and whether that drag asks to choose
-  ## rather than be chosen for.
+func armingOf*(button: PointerButton): Option[MenuArming] =
+  ## Say whether a button starts a construction drag, and how that drag reaches its menu.
   ##   None for a button that starts no drag at all. Middle is now such a button: `project`
   ##   used to live there, which put a third of the vocabulary behind hardware most
   ##   trackpads do not have. It lives in the menu instead, so nothing is unreachable.
-  ##   Both buttons run the same operations and differ only in whether the reader is
+  ##   **A mouse never waits.** Left takes whatever the pair makes and is never interrupted
+  ##   by a menu opening under a hand that paused mid-gesture; right asks, from the moment
+  ##   it arrives. The two run the same operations and differ only in whether the reader is
   ##   asked -- redundancy for different expertise, not a mode split, which is exactly why
-  ##   it is safe where a button-per-operation mapping was not.
+  ##   it is safe where a button-per-operation mapping was not. `MenuArming.OnDwell` is
+  ##   reachable from no button at all, and belongs to touch alone; see `MenuArming`.
   case button
-  of PointerButton.Left: some(false)
-  of PointerButton.Right: some(true)
-  of PointerButton.Middle: none(bool)
+  of PointerButton.Left: some(MenuArming.Never)
+  of PointerButton.Right: some(MenuArming.Always)
+  of PointerButton.Middle: none(MenuArming)
 
 
 func toDrag*(choice: DragChoice): Option[DragOperation] =
@@ -694,13 +717,13 @@ func isClick*(interaction: Interaction; now: float): bool =
   interaction.is_press_still and now - interaction.started < SECONDS_CLICK
 
 
-proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float): bool =
+proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): bool =
   ## Start a construction drag from the item currently hovered.
   ##   Reports whether one actually started, so a caller knows whether to fall back to
   ##   camera orbit or pan instead.
-  ##   `is_menu_forced` is what the button chose: false waits for a dwell before offering
-  ##   the menu and takes the proposal on a plain release, true offers it at once. Both
-  ##   reach the same choices -- see `isMenuForcedBy`.
+  ##   `arming` is what the pointer chose: see `MenuArming`, and `armingOf` for what each
+  ##   mouse button picks. Every arming reaches the same choices; they differ only in what
+  ##   the reader has to do to be asked.
   ##   Expects `beginPress` to have run for this same press; see its own doc.
   ##   **A plane at horizon is a click and hold target, never a drag handle.** It is drawn
   ##   as a dome over every direction, so it is hovered wherever nothing else is, and a
@@ -712,7 +735,7 @@ proc beginDrag*(interaction: var Interaction; is_menu_forced: bool; now: float):
   interaction.is_dragging = true
   interaction.index_source = interaction.index_hover.get
   interaction.index_destination = none(int)
-  interaction.is_menu_forced = is_menu_forced
+  interaction.arming = arming
   interaction.entered = now
   interaction.settled = interaction.cursor
   interaction.menu = none(ScreenPosition)
@@ -782,8 +805,11 @@ proc updateDrag*(
   interaction.preview =
     if interaction.proposal.isSome: resultOf(interaction.proposal.get, m, n)
     else: none(Multivector)
-  if interaction.menu.isNone and
-      (interaction.is_menu_forced or now - interaction.entered >= SECONDS_DWELL_MENU):
+  let is_menu_due = case interaction.arming
+    of MenuArming.Never: false
+    of MenuArming.OnDwell: now - interaction.entered >= SECONDS_DWELL_MENU
+    of MenuArming.Always: true
+  if interaction.menu.isNone and is_menu_due:
     interaction.menu = some(interaction.cursor)
 
 
@@ -874,9 +900,9 @@ proc endDrag*(
   #   on. Answered here rather than in each render path because the drag it abandons was
   #   begun here: the press target chooses the scheme, so the press over an object has to
   #   start a drag eagerly, and *whether it was one* is only knowable at the release.
-  #   The button that forces the menu is excluded: it asked for the menu, and offering it
-  #   and then quietly selecting instead would make the right button unreliable.
-  if not interaction.is_menu_forced and interaction.isClick(now):
+  #   A drag armed `Always` is excluded: it asked for the menu, and offering it and then
+  #   quietly selecting instead would make the right button unreliable.
+  if interaction.arming != MenuArming.Always and interaction.isClick(now):
     return
       if scene.isAlive(interaction.index_source):
         DragOutcome(index_clicked: some(interaction.index_source))

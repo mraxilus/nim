@@ -185,10 +185,6 @@ type
       ## than the apply section's `index_operation`: the section's list is indexed per
       ## whichever arity the reader last chose *there*, while the menu's is always the
       ## arity the selection implies, so one number could not name a position in both.
-    is_apply_opening*: bool ## Whether something outside this panel asked for the apply
-      ## section to be open. Set by the drag menu's `more…`, which is only worth choosing
-      ## if the section it hands its operands to is one the reader can then see; consumed
-      ## by `layoutApply` on the next frame it draws.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
@@ -680,6 +676,28 @@ proc adoptSelectionAsOperands(
     if position_second.isSome: panel.index_operand_second = position_second.get
 
 
+proc openSelectionMenuPicker*(panel: var Panel) =
+  ## Reveal the selection menu's own operation picker, on the operation last applied at
+  ## whichever arity the selection implies.
+  ##   Shared by that menu's `apply` button and by the drag wheel's `more…`, which lands
+  ##   here rather than in the drawer-side apply section: `more…` is a fifth choice on a
+  ##   wheel that opened under the cursor, and sending it across to a panel buried the two
+  ##   objects it had just named under every other control. See `visualiser.handleEvent`.
+  let
+    arity = panel.selection.impliedArity
+    (_, operations, count_offered) = offerOperationsOfArity(arity)
+    wanted = panel.operations.lastOf(arity)
+  panel.is_menu_selection_shown = true
+  panel.is_menu_selection_picking = true
+  # The head of the list unless the remembered operation is in it: the list is per arity,
+  #   so a position carried over from the other one would name an unrelated operation.
+  panel.index_operation_menu = 0
+  for index in 0 ..< count_offered:
+    if operations[index] == wanted:
+      panel.index_operation_menu = cint(index)
+      break
+
+
 proc applyPickedOperation(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   operation: Operation; first, second: int; now: float
@@ -721,10 +739,6 @@ proc layoutApply*(
   ##   the controls indexing them do -- the item names are `cstring`s borrowed from the
   ##   scene's own label storage, so handing them across another boundary would be
   ##   lending out a pointer for no gain.
-  # A gesture elsewhere may have asked for this section, having just handed it operands.
-  if panel.is_apply_opening:
-    panel.is_apply_opening = false
-    gui.openNext()
   if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
     gui.text("Scene is empty; add a multivector first.")
@@ -1094,10 +1108,7 @@ proc layoutSelectionMenuApply(
   gui.disabledPush(scene.isFull and panel.is_menu_selection_picking)
   if gui.buttonSmall("apply"):
     if not panel.is_menu_selection_picking:
-      panel.is_menu_selection_picking = true
-      # The list is per arity, so a position carried over from the other one would name an
-      #   unrelated operation -- the same reset the apply section's own arity control does.
-      panel.index_operation_menu = 0
+      panel.openSelectionMenuPicker()
     else:
       let
         index = clamp(int(panel.index_operation_menu), 0, count_offered - 1)

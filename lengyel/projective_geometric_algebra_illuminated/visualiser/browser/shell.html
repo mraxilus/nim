@@ -106,14 +106,26 @@
     pointer-events: none;
   }
 
-  /* One wedge of the drag choice menu. Sized here rather than in the script so the rect
-     behind it can be measured from what the browser actually laid the label out as --
-     see `appendChoiceMenu`. */
+  /* One wedge of the drag choice menu, styled to match `.selection-menu button` below:
+     the wheel and that menu are the same control in two postures -- one reached by
+     dragging, one by picking -- so a reader should not have to learn two appearances for
+     it. The label is sized here rather than in the script so the rect behind it can be
+     measured from what the browser actually laid it out as; see `appendChoiceMenu`. The
+     label keeps the choice's own hue, set inline per wedge from `nimDragMenuLayout`, so
+     join/meet/project still carry the colours the drawer's intro line gives them. */
   .menu-wedge-label {
     font-family: var(--sans);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
   }
+  .menu-wedge {
+    fill: var(--surface-raised);
+    stroke: var(--border);
+  }
+  /* The wedge the cursor stands in, in the same accent every other "this one is in force"
+     control on the page wears (`.btn.on`, `.help-tab.on`) -- so the highlight survives a
+     reader who cannot tell one label hue from another. */
+  .menu-wedge.on { stroke: var(--accent); }
 
   .veil {
     position: fixed;
@@ -852,7 +864,7 @@
       <span class="op-join">join</span>,
       <span class="op-meet">meet</span>,
       <span class="op-project">project</span>.
-      Right-drag, or hold still over the target, to pick instead.
+      Right-drag to pick instead; on a touchscreen, hold still over the target.
       Drag empty space to move the camera: left orbits, right pans, wheel dollies.
     </p>
 

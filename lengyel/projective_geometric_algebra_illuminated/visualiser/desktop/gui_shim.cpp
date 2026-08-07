@@ -556,8 +556,4 @@ void guiOverlayText(float cx, float cy, float red, float green, float blue, floa
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), text);
 }
 
-// Force the next collapsing header open regardless of what the reader last left it as, so
-//   a gesture elsewhere can hand its operands to a section they can actually see.
-void guiOpenNext() { ImGui::SetNextItemOpen(true); }
-
 } // extern "C"

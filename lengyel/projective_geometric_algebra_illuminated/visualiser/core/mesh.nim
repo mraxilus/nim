@@ -271,6 +271,18 @@ type
   Mesh* = object ## Hold vertices of one primitive kind, in storage fixed at compile time.
     vertices*: array[VERTICES_MAX, Vertex]
     count_vertices*: int
+    index_overlay*: Option[int] ## Where the overlay run begins, if this mesh has one.
+      ## Vertices below it are drawn against the depth buffer as usual; the rest are drawn
+      ## after them with the test off, so they land over whatever is already there.
+      ## `markOverlay` is what sets it, and each render path draws the two runs as two
+      ## calls -- see `renderer.drawPrimitive`. None where nothing asked to be drawn over,
+      ## which is every furniture mesh and every frame with nothing selected; an index of
+      ## zero says the opposite and means the whole mesh is the overlay.
+      ##   A watermark rather than a second `MeshSet`, because a set reserves `VERTICES_MAX`
+      ## per primitive up front and a third of them is the largest reservation this build
+      ## makes again, for a run that is usually one object. Order already decides what
+      ## these buckets look like (see `visualiser.assembleMeshes`), so an index into the
+      ## order costs nothing and states the same thing.
 
   MeshSet* = array[Primitive, Mesh] ## Hold one mesh per primitive kind.
 
@@ -520,6 +532,17 @@ proc clearMeshes*(meshes: var MeshSet) =
   ## Drop every vertex assembled so far, so frame may be rebuilt from scratch.
   for primitive in Primitive:
     meshes[primitive].count_vertices = 0
+    meshes[primitive].index_overlay = none(int)
+
+
+proc markOverlay*(meshes: var MeshSet) =
+  ## Say that everything appended from here on is drawn over what came before it.
+  ##   Called once, between the ordinary objects and the selected ones; see
+  ##   `Mesh.count_vertices_tested`. Calling it twice would move the boundary rather than
+  ##   add a second one, which is why the assembly order and not this decides what is
+  ##   over what.
+  for primitive in Primitive:
+    meshes[primitive].index_overlay = some(meshes[primitive].count_vertices)
 
 
 proc addVertex(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rgba) =
