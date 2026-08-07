@@ -24,10 +24,6 @@ import ../src/partnerwork
 #[ Session ]#
 
 type
-  Ontology {.pure.} = enum ## Select which half of the model is on show.
-    Hands,   ## What the hands hold, and the moves between those.
-    Rotation ## How far the couple has turned, and the turns between those.
-
   View {.pure.} = enum ## Select what the page is showing.
     Atlas,  ## Every frame there is, which is what the ontology *is*.
     Dance,  ## One frame at a time, and what can be done from it.
@@ -62,9 +58,6 @@ var
   origin = startFrame()
   current = startFrame()
   view = View.Atlas
-  ontology = Ontology.Hands
-  posture = startFrame().rest ## Where the rotation half stands.
-  turned = none(HalfTurns)    ## Twist a refused turn would have reached.
   vis = Vis.Dynamic
   visChosen = false        ## Whether the reader has picked a drawing themselves.
   filter = Filter()
@@ -645,159 +638,15 @@ func renderMatrix(): string =
 
 
 
-#[ Rotation Views ]#
-
-func renderPosture(stood: Posture; classes = "frame-in"): string =
-  ## Draw a posture: the frame, seen with the follow turned as far as they are.
-  tag("div", "class=\"" & classes & "\"", renderFrame(stood.frame, stood.twist))
-
-
-func renderTwistKey(): string =
-  ## Say how to read a turn in the picture, once, beside the first one.
-  tag("p", "class=\"key\"",
-    "The same picture as the frames, with the turn in it. The chevron on the " &
-    "left is the follow's front: pointing down they are facing the lead, " &
-    "pointing up their back is turned &mdash; and their hands have changed " &
-    "columns with them, because the hand that was across the midline is now " &
-    "the near one.")
-
-
-func renderMeasured(): string =
-  ## Mark what has been danced and what is still only derived.
-  ##
-  ## The page's whole claim is that it shows what the ontology derives, so a
-  ## number that came off a floor and a number that came off an assumption
-  ## cannot be shown the same way.  One hold has been measured.
-  tag("section", "class=\"panel muted\"",
-    tag("h3", "", "measured &middot; one hold") &
-    tag("p", "class=\"note\"", "<em>Left to left</em>, one hand, danced: a low " &
-      "wrap holds half a turn and everything else holds a full one. That is " &
-      "why half a turn wraps and a full turn locks &mdash; the arm runs out at " &
-      "a size, so the size is what decides.") &
-    tag("p", "class=\"note\"", "Everything shown for the other holds follows " &
-      "from assuming they behave the same way. A pair binding at half a turn, " &
-      "and a hand on the body giving the whole turn away, are still derived " &
-      "rather than seen."))
-
-
-func renderTurns(stood: Posture): string =
-  ## List every turn out of a posture, and every turn out of it that is refused.
-  ##
-  ## Both, in one panel, because on this side of the model they are the same
-  ## list read two ways: what makes the page a validator for rotation is that a
-  ## turn it will not take says which ceiling stopped it.
-  var offered = ""
-  var refused = ""
-  var free = 0
-  for offer in turnsOf(stood):
-    let told = tag("span", "class=\"phrase\"",
-      esc($offer.who).toLowerAscii & " turns " & esc(turnName(offer.amount)))
-    if offer.refused.isNone:
-      inc free
-      offered.add button("turn", offer.to.key, "move",
-        told & tag("span", "class=\"target\"", esc(offer.to.describe)))
-    else:
-      let why =
-        case offer.refused.get
-        of Refusal.Hold: "the hold cannot give that much turn away"
-        of Refusal.Arm: "the arm cannot carry that much"
-      refused.add tag("div", "class=\"far\"", told &
-        tag("span", "class=\"target\"", esc(why)))
-  tag("section", "class=\"panel\"",
-    tag("h3", "", "turns from here &middot; " & $free) & offered) &
-    tag("section", "class=\"panel muted\"",
-      tag("h3", "", "refused &middot; " & $(turnsOf(stood).len - free)) & refused)
-
-
-func renderTurning(stood: Posture): string =
-  ## Show where the couple stand on the rotation axis, and every turn from it.
-  tag("div", "class=\"stage\"",
-    tag("section", "class=\"panel wide\" id=\"stage\" tabindex=\"-1\"",
-      tag("div", "class=\"stage-head\"",
-        tag("h3", "", "posture") & tag("h2", "", stood.describe) & renderArms()) &
-      renderTwistKey() &
-      tag("div", "class=\"view-axle\"",
-        tag("div", "class=\"scroll\"", renderAxle(stood)) &
-        tag("p", "class=\"note\"", "Rotation is one quantity, so it is one " &
-          "line: every posture this frame can stand in at these heights, laid " &
-          "out by how far it has turned, with the ring on the one being held. " &
-          "An arc is a turn out of it, named for the dancer who takes it; a " &
-          "dashed arc is a turn the couple cannot take, and the panel beside " &
-          "says which ceiling refuses it. Click a posture to stand in it."))) &
-    renderTurns(stood) & renderMeasured())
-
-
-func renderPostureAtlas(): string =
-  ## Show every posture the model derives, drawn and named.
-  var cards = ""
-  for stood in postures():
-    cards.add button("stand", stood.key, "card",
-      renderFrame(stood.frame, stood.twist) &
-      tag("span", "class=\"phrase\"", stood.describe) &
-      tag("span", "class=\"target\"", esc(turnName(stood.twist))))
-  tag("div", "class=\"stage\"", tag("section", "class=\"panel wide\"",
-    tag("h3", "", "every posture &middot; " & $postures().len) &
-    renderArms() & renderTwistKey() &
-    tag("p", "class=\"note\"", "A frame, the heights its arms are carried at, " &
-      "and every turn those two can stand at. Click one to turn from it.") &
-    tag("div", "class=\"gallery\"", cards)))
-
-
-func renderTurnMatrix(): string =
-  ## Show what the arms do at each twist, and how far each can be carried.
-  ##
-  ## The measured table, as a thing you can read off the page rather than a
-  ## sentence about a thing that was danced.
-  var head = tag("th", "class=\"corner\"", tag("span", "class=\"axis\"", "arm")) &
-    tag("th", "class=\"head\"", tag("span", "class=\"who\"", "at rest")) &
-    tag("th", "class=\"head\"", tag("span", "class=\"who\"", "half a turn")) &
-    tag("th", "class=\"head\"", tag("span", "class=\"who\"", "one turn")) &
-    tag("th", "class=\"head\"", tag("span", "class=\"who\"", "one and a half"))
-  var body = ""
-  for level in Level:
-    var row = tag("th", "class=\"row\"", esc(levelName(level)))
-    for size in 0 .. MOST_TURN:
-      let what = blocker(size)
-      var stood = fromKey("l-.").get.rest
-      stood.level = [level, level]
-      let held = stood.holds(size)
-      row.add tag("td", "class=\"" & (if held: "one" else: "away") &
-        "\" style=\"--tone: var(--dim)\"",
-        (if what.isNone: tag("span", "class=\"tile here\"", "")
-         else: tag("span", "class=\"tile " & (if held: "one" else: "two") &
-           "\"", ($what.get)[0 .. 0])))
-    body.add tag("tr", "", row)
-  tag("div", "class=\"stage\"", tag("section", "class=\"panel wide\"",
-    tag("h3", "", "what an arm carries") &
-    tag("p", "class=\"note\"", "<em>Left to left</em>, one hand. " &
-      "<b>W</b> is a wrap and <b>L</b> a lock; a filled mark is a posture the " &
-      "couple can stand in and a dashed one is a turn that is refused.") &
-    tag("div", "class=\"scroll\"", tag("table", "class=\"matrix\"",
-      tag("thead", "", tag("tr", "", head)) & tag("tbody", "", body)))) &
-    renderMeasured())
-
-
 #[ Page ]#
 
-func renderControls(view: View; ontology: Ontology): string =
-  ## Show which half of the model is on show, and which view of it.
-  ##
-  ## Two rows rather than six tabs.  The three views mean the same three things
-  ## in either half -- everything there is, one of them at a time, and all of it
-  ## at once -- so they are one choice, and which half you are in is another.
-  ## Six across would have made two sets look like six unrelated pages.
-  var halves = ""
-  for candidate in Ontology:
-    let classes = if candidate == ontology: "tab on" else: "tab"
-    halves.add button("ontology", $candidate, classes, esc($candidate))
+func renderControls(view: View): string =
+  ## Show the view switches.
   var views = ""
   for candidate in View:
     let classes = if candidate == view: "tab on" else: "tab"
     views.add button("view", $candidate, classes, esc($candidate))
-  tag("header", "",
-    tag("h1", "", "partner work") &
-    tag("div", "class=\"tabs halves\"", halves) &
-    tag("div", "class=\"tabs\"", views))
+  tag("header", "", tag("h1", "", "partner work") & tag("div", "class=\"tabs\"", views))
 
 
 proc paintStage() =
@@ -818,20 +667,12 @@ proc paintStage() =
 proc render() =
   ## Draw the whole page from the session state.
   let body =
-    case ontology
-    of Ontology.Hands:
-      case view
-      of View.Dance: renderDance(current, vis, motion, taken, history)
-      of View.Atlas: renderGallery(filter)
-      of View.Matrix: renderMatrix()
-    of Ontology.Rotation:
-      case view
-      of View.Dance: renderTurning(posture)
-      of View.Atlas: renderPostureAtlas()
-      of View.Matrix: renderTurnMatrix()
+    case view
+    of View.Dance: renderDance(current, vis, motion, taken, history)
+    of View.Atlas: renderGallery(filter)
+    of View.Matrix: renderMatrix()
   let held = holding()
-  document.getElementById("app").innerHTML =
-    cstring(renderControls(view, ontology) & body)
+  document.getElementById("app").innerHTML = cstring(renderControls(view) & body)
   standAgain(held)
   centreOnHeld()
 
@@ -959,14 +800,6 @@ proc start(key: string) =
 
 proc handle(event: Event) =
   ## Route one click to the session change it asks for.
-  let turnedTo = event.target.closest("g.node.reachable[data-posture]")
-  if turnedTo != nil:
-    let stood = fromPostureKey($turnedTo.getAttribute("data-posture"))
-    if stood.isSome:
-      posture = stood.get
-      say(posture.describe & ".")
-      render()
-    return
   let stepped = event.target.closest("g.node.reachable")
   if stepped != nil:
     dance($stepped.getAttribute("data-frame"))
@@ -992,25 +825,6 @@ proc handle(event: Event) =
     for candidate in View:
       if $candidate == value:
         view = candidate
-  of "ontology":
-    for candidate in Ontology:
-      if $candidate == value:
-        ontology = candidate
-  of "stand":
-    # Standing in a posture is the rotation half's answer to starting from a
-    # frame, and refuses the same way: a posture the model does not derive
-    # cannot be reached by naming it.
-    let stood = fromPostureKey(value)
-    if stood.isNone:
-      return
-    posture = stood.get
-    view = View.Dance
-  of "turn":
-    let stood = fromPostureKey(value)
-    if stood.isNone:
-      return
-    posture = stood.get
-    say(posture.describe & ".")
   of "vis":
     for candidate in Vis:
       if $candidate == value:

@@ -73,11 +73,6 @@ h4 { font-size: 0.72rem; margin: 1rem 0 0.4rem; letter-spacing: 0.06em;
 h4:first-of-type { margin-top: 0; }
 em { font-style: normal; font-weight: 600; }
 .tabs { display: flex; gap: 0.25rem; }
-/* Which half of the model you are in is a different kind of choice from which
-   view of it, so it is set apart rather than laid out as three more tabs. */
-.tabs.halves { margin-right: 0.5rem; padding-right: 0.9rem;
-  border-right: 1px solid var(--rule); }
-.tabs.halves .tab.on { background: var(--left); border-color: var(--left); }
 button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   background: var(--panel); border: 1px solid var(--rule); }
 .tab { padding: 0.3rem 0.7rem; font-size: 0.82rem; }
@@ -318,23 +313,6 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
    inked for the lead's arm -- and the axes carry the frames' pictures rather
    than their names turned on their sides. What ruled lines were for, knowing
    which column you are in, is done by lighting the row and column instead. */
-/* The rotation axis: one line, the postures on it, the turns arcing over it.
-   Dashed is refused, here as everywhere else in the page. */
-.view-axle { min-width: 0; }
-.axle { width: 100%; min-width: 560px; height: auto; display: block; }
-.axle-line { stroke: var(--rule); stroke-width: 2; }
-.axle .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
-.axle .node.reachable { cursor: pointer; }
-.axle .node.reachable .node-plate { stroke: var(--rule-strong); }
-.axle .node.reachable:hover .node-plate { stroke: var(--ink); }
-.axle .node-name { fill: var(--ink); }
-.axle .node-arms { fill: var(--dim); }
-/* Stroke only: a fill on a curve is a shape, and this is a line. */
-.axle .turn-line { fill: none; stroke: var(--rule-strong); stroke-width: 2; }
-.axle .turn-name { fill: var(--dim); }
-.axle .turn-plate { fill: var(--panel); }
-.axle .turn.refused .turn-line { stroke-dasharray: 5 4; opacity: .45; }
-.axle .turn.refused .turn-name { opacity: .55; font-style: italic; }
 .matrix { border-collapse: separate; border-spacing: 4px; font-size: 0.8rem;
   margin-inline: auto; }
 .matrix th { font-weight: 400; text-align: left; padding: 0; color: var(--dim); }
@@ -386,12 +364,6 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .gallery { display: grid; gap: 0.75rem;
   grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
 .card { padding: 0.5rem; text-align: center; }
-/* One posture, held: bigger than a card, and centred the way a frame is when
-   it is the frame you are standing in. */
-.posture-now { display: flex; justify-content: center; }
-.frame-big .frame, .posture-now .frame { width: 100%; max-width: 22rem;
-  height: auto; display: block; }
-.posture-now { padding: 0.5rem 0 1rem; }
 .card:hover { border-color: var(--ink); }
 .card .frame { width: 100%; height: auto; display: block; margin-bottom: 0.3rem; }
 .card .phrase { font-size: 0.82rem; line-height: 1.3; }

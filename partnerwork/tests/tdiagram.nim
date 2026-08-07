@@ -72,7 +72,12 @@ suite "the picture":
       check picture.count(">right<") == 1
       check picture.count(">left<") == 1
 
-  test "every picture says which way the follow is facing":
+  test "a picture says the follow has turned, and is quiet when they have not":
+    # A mark on every picture is furniture; a mark on the ones that differ is
+    # information.  Every frame in the hand-to-hand half is held facing, so the
+    # eight of them carry no chevron at all.
     for target in FRAMES:
-      for twist in -2 .. 2:
+      for twist in [-2, 0, 2]:
+        check renderFrame(target, twist).count("<polyline") == 0
+      for twist in [-3, -1, 1, 3]:
         check renderFrame(target, twist).count("<polyline") == 1

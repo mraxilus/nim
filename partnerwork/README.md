@@ -181,60 +181,19 @@ offered too, dashed, and taking one dances both of its moves in turn rather than
 jumping the frame in between.
 
 
-## The rotation half
+## The rotation half, on the bench
 
-A second set of pages, chosen by the switch beside the title. The three views
-mean the same three things in either half — everything there is, one of them at
-a time, and all of it at once — so which view you want is one choice and which
-half you are in is another. The two halves share nothing but the frames, which
-is what will make them separable when they are joined up.
+`src/partnerwork/rotation.nim` and `src/partnerwork/axle.nim` hold what has been
+worked out about turning: blockers, the three arm heights, the two ceilings, the
+postures those derive, and the measured fact that a low wrap holds half a turn
+where everything else holds a full one. `tests/trotation.nim` holds it to all of
+that.
 
-A **posture** is a frame, the heights its arms are carried at, and how far the
-couple has turned. There are 83 of them. A posture is drawn as its frame with
-the turn in it: the chevron is the follow's front, and at half a turn their back
-is to the lead and their hands have swapped columns — which is the picture's
-half of `crossedSite`, the one place the hand-to-hand model already reads
-rotation. A drawing that left them where they were would contradict it.
-
-Rotation is one quantity, so it is drawn as one line rather than as a graph:
-an **axle**, with every posture that frame can stand in at those heights laid
-out along it by how far it has turned, the ring on the one being held, and every
-turn out of it as an arc over the top. Click a posture to stand in it. Twelve
-turns draw six arcs, because twelve turns land in six places.
-
-A **blocker** is what stops an arm carrying any more twist: a `wrap` across the
-front of a body, a `lock` behind the line of it. An arm is carried `low`, `high`
-or `above` — and an arm above the head is on the axis the couple turns about, so
-it is around nothing, carries no blocker, and does not run out. There is a case
-where it blocks anyway; `ABOVE_BLOCKS` says so out loud rather than being quietly
-absent, because a model that silently allowed something it had not been told
-about would be guessing.
-
-A rotation goes `clockwise` or `anticlockwise` seen from above, and turns about
-either the dancer's own `axis` or the couple's centre of mass — its `orbit`.
-Only axis turns are offered: how much twist an orbit stores has not been settled,
-and offering one before knowing would be the page inventing a move.
-
-A turn is refused with its reason, which is what makes this half a validator
-too. There are two ceilings and a posture has to be under both: what joins the
-couple can only give so much turn away, and the arm can only carry so much
-wherever it has wound up.
-
-The second ceiling is measured. On `Left to left`, one hand, a low wrap holds
-half a turn and everything else holds a full one — the arm has to cross the
-torso to wrap low and runs out before the hold does. That is why half a turn
-wraps and a full turn locks: the only way to be at a full turn while low is with
-the arm behind the back. The rule used to be fitted to two cells of the
-workbook, and the alternative that fitted them equally well — direction deciding
-rather than size — is recorded in `rotation.nim` as rejected, with why. The app
-marks what was danced apart from what is assumed to follow, because a page whose
-claim is that it shows what the model derives cannot show a guess the same way.
-
-One consequence falls out: **the workbook's twelve turn sheets are six.** A turn
-is stored as one number for the couple and that number does not care which of
-them moved, so the lead turning one way and the follow turning the other leave
-the couple in the same posture.
-
+None of it is in the app. It was, and it came back out: the drawing is blind to
+almost everything the rotation model knows — 148 postures render as 16 distinct
+pictures, because level, contact and twist beyond its parity have no marks. A
+validator whose picture cannot tell two states apart is not validating, so the
+views wait until the marks are decided and the ontology is finished.
 
 The page is usable from the keyboard: Tab reaches every control, the focus ring
 is drawn outside the control so a chosen tab does not swallow it, and focus is

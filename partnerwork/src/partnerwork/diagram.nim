@@ -157,12 +157,13 @@ func hand(point: (int, int); held: Option[Side]; leads: bool): string =
 func facingMark(facing: bool): string =
   ## Draw which way the follow is facing, out at the edge where nothing else is.
   ##
-  ## A chevron pointing down the page is the follow's front turned towards the
-  ## lead, which is how every frame in the hand-to-hand half is held.  Pointing
-  ## up, their back is turned.  Drawn rather than written, because swapped
-  ## captions alone say what has happened only to a reader who remembers where
-  ## they used to be.
-  let reach = if facing: 5 else: -5
+  ## Only when they have turned.  Every frame in the hand-to-hand half is held
+  ## facing, so a mark saying so on all of them says nothing on any of them --
+  ## it is furniture in eight pictures to be information in none.  A drawing
+  ## carries a mark for what varies.
+  if facing:
+    return ""
+  let reach = -5
   "<polyline points=\"" & $(FACING_X - 4) & "," & $(FOLLOW_Y - reach) & " " &
     $FACING_X & "," & $(FOLLOW_Y + reach) & " " & $(FACING_X + 4) & "," &
     $(FOLLOW_Y - reach) & "\" style=\"fill: none; stroke: " & COLOUR_QUIET &
