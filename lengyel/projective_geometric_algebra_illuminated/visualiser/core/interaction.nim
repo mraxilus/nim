@@ -342,6 +342,11 @@ func compassOf*(choice: DragChoice): Compass =
 
 func labelOf*(choice: DragChoice): string =
   ## Name a choice as its wedge says it, in the words the help table already uses.
+  ##   Words rather than the catalogue's symbols, which the pickers now offer: measured on
+  ##   the rendered menu, the projection's own notation (`𝐧 ∨ (𝐦 ∧ 𝐧☆)`) is nearly twice
+  ##   the width of "project", so symbols make this menu wider rather than slimmer. A
+  ##   picker is a list read at leisure and a wedge is a target read under a thumb; they
+  ##   want opposite things of the same operation, and this is the one that wants a word.
   case choice
   of DragChoice.Join: "join"
   of DragChoice.Meet: "meet"
@@ -454,12 +459,6 @@ func inkOfDrag*(interaction: Interaction): Ink =
   else: inkOf(interaction.proposal.get)
 
 
-func notation*(drag: DragOperation): string =
-  ## Name drag operation for messages, in library's own ASCII notation.
-  case drag
-  of DragOperation.Join: "^"
-  of DragOperation.Meet: "v"
-  of DragOperation.Project: "->"
 
 
 
@@ -832,27 +831,25 @@ proc commitChoice*(
       choice: some(choice), operands: operands,
     )
 
+  # Named through the catalogue's own notation, exactly as the panel's apply button names
+  #   the same pair -- so a drag and a panel apply produce byte-identical labels, and the
+  #   library's real symbols reach the object list rather than an ASCII stand-in for them.
   let
-    notation = toDrag(choice).get.notation
+    operation = toDrag(choice).get.toOperation
+    label = notationSubstituted(operation, label_source, label_destination)
     derived = resultOf(choice, m, n)
   if derived.isNone:
     return DragOutcome(
-      message:
-        &"{label_source} {notation} {label_destination} makes nothing drawable; " &
-        "nothing added.",
+      message: &"{label} makes nothing drawable; nothing added.",
       choice: some(choice), operands: operands,
     )
 
   let
-    operation = toDrag(choice).get.toOperation
     anchor = creationAnchor(operation, m, n, derived.get)
-    index_created = scene.addItem(
-      derived.get, &"{label_source} {notation} {label_destination}",
-      inkCycled(scene.len), now, anchor,
-    )
+    index_created =
+      scene.addItem(derived.get, label, inkCycled(scene.len), now, anchor)
   DragOutcome(
-    message:
-      &"{label_source} {notation} {label_destination} gave {shapeText(derived.get)}.",
+    message: &"{label} gave {shapeText(derived.get)}.",
     index_created: some(index_created), choice: some(choice), operands: operands,
   )
 

@@ -19,7 +19,9 @@
 
 {.experimental: "strictFuncs".}
 
-import ./scene
+import std/options
+
+import ./[marker, scene]
 
 
 
@@ -112,3 +114,78 @@ func pruneDead*(selection: var Selection; scene: Scene) =
     selection.slots[kept] = selection.slots[position]
     kept.inc
   selection.count = kept
+
+
+#[ Pulse Clock ]#
+
+const SECONDS_STEP_PULSE_MAX* = 0.1
+  ## Treat any gap longer than this as an absence rather than as a frame, for the pulse.
+  ##   Six frames at sixty a second. Long enough that no honestly slow frame is clipped,
+  ##   short enough that a tab returning from the background does not hand the comet a
+  ##   whole minute of travel in one step.
+
+
+type PulseClock* = object ## Carry each selected object's orientation pulse between frames.
+  ## **A phase per slot, integrated, not a position computed from the clock.** Reading the
+  ## phase straight off the time would mean `frac(now·speed ÷ around)`, and the outline's
+  ## length changes whenever the camera moves: after a few laps that quotient is tens of
+  ## laps, so a one-percent change in the length throws the answer most of a lap and the
+  ## comet teleports. Measured on the build that did it -- 11.15 px a frame against the 1.0
+  ## it should be, on all ninety sampled frames of an orbit. Carrying the phase instead
+  ## leaves a camera change altering the *rate*, which is the only way a fixed screen speed
+  ## and a smooth pulse are compatible at all.
+  ##
+  ## A plain fixed array, like `Scene` and `MeshSet` beside it, not an arena allocation:
+  ## one float per slot with a compile-time bound and a lifetime as long as the program's
+  ## is exactly what `arena.nim`'s own header says needs no arena. Nor is it double
+  ## buffered, for the same reason it needs no allocator -- the update reads and writes one
+  ## slot and consults no neighbour, so there is no read-while-writing hazard for a swap to
+  ## resolve. `arena.nim` is desktop-only in any case, and this has to serve the browser.
+  ##
+  ## Kept here rather than in `marker.nim` because it is indexed by *slot* and the pulse
+  ## runs on exactly the selected set, which is the view of the scene this module already
+  ## is. A plain value type with no refs, like `Selection` above.
+  phases: array[ITEMS_MAX, float] ## Each slot's own phase, in 0 .. 1.
+  seconds_last: Option[float] ## Clock reading `tick` last saw, for the step between frames.
+
+
+proc tick*(clock: var PulseClock; now: float) =
+  ## Take the frame's own clock reading, so `advance` knows how long the step was.
+  ##   Call once a frame, before advancing any slot. The first call establishes a reading
+  ##   and advances nothing, since one reading is not yet a step.
+  clock.seconds_last = some(now)
+
+
+func secondsStep*(clock: PulseClock; now: float): float =
+  ## Report how long has passed since the reading `tick` last took, in seconds.
+  ##   Zero before the first tick and for a step that ran backwards, which a caller
+  ##   restarting its clock can produce and which no pulse should answer by rewinding.
+  ##   Capped at `SECONDS_STEP_PULSE_MAX`, because a gap longer than that is not a frame:
+  ##   it is a backgrounded tab whose animation callbacks stopped, or a caller that moved
+  ##   its clock. Carrying such a gap would advance the comet by the whole absence at once
+  ##   and land it somewhere arbitrary -- the very teleport this clock exists to prevent,
+  ##   arriving by the other door. Measured: a probe stepping the clock from 1.5 s to 400 s
+  ##   moved the head 83 px in one frame before this cap, and 1 px after it.
+  if clock.seconds_last.isNone: return 0.0
+  min(SECONDS_STEP_PULSE_MAX, max(0.0, now - clock.seconds_last.get))
+
+
+proc advance*(clock: var PulseClock; slot: int; around, seconds: float) =
+  ## Carry one slot's pulse forward along an outline `around` pixels long.
+  ##   `around` is what the marker just shaped actually measured (`Marker.around`), so the
+  ##   rate follows the outline as the camera moves it while the phase never jumps.
+  if slot < 0 or slot >= ITEMS_MAX: return
+  clock.phases[slot] = phaseAdvanced(clock.phases[slot], around, seconds)
+
+
+func phaseAt*(clock: PulseClock; slot: int): float =
+  ## Read one slot's own pulse phase, in 0 .. 1.
+  if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.phases[slot]
+
+
+proc forget*(clock: var PulseClock; slot: int) =
+  ## Send a slot's pulse back to the start of its lap.
+  ##   Call where a slot is handed to a fresh object, so a new selection begins its comet
+  ##   at the head rather than inheriting wherever a since-removed object had got to.
+  if slot < 0 or slot >= ITEMS_MAX: return
+  clock.phases[slot] = 0.0

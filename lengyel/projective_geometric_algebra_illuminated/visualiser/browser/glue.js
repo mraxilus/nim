@@ -558,8 +558,12 @@ function populateOperations() {
   //   leaving opSelect.value pointing at a now-nonexistent <option>.
   if (picker_operation.querySelector('option[value="' + value_previous + '"]')) {
     picker_operation.value = value_previous;
+  } else {
+    // A fresh list opens on what was last applied at this arity, not on its own head.
+    picker_operation.value = String(nimOperationRemembered(arity_current));
   }
   updateOperandEnablement();
+  ghostDrawerOperation();
 }
 
 picker_arity.querySelectorAll('button[data-arity]').forEach((button) => {
@@ -572,7 +576,18 @@ picker_arity.querySelectorAll('button[data-arity]').forEach((button) => {
   });
 });
 
-picker_operation.addEventListener('change', updateOperandEnablement);
+function ghostDrawerOperation() {
+  // The drawer names its own operands, so it reads them rather than the selection.
+  const first = parseInt(picker_operand_first.value, 10);
+  const second = arity_current === 0 ? first : parseInt(picker_operand_second.value, 10);
+  if (!Number.isInteger(first) || !Number.isInteger(second)) return;
+  nimGhostOperation(parseInt(picker_operation.value, 10), first, second);
+}
+
+picker_operation.addEventListener('change', () => {
+  updateOperandEnablement();
+  ghostDrawerOperation();
+});
 function updateOperandEnablement() {
   const arity = nimOperationArity(parseInt(picker_operation.value, 10) || 0);
   field_operand_second.style.display = arity === 0 ? 'none' : '';
@@ -1245,9 +1260,9 @@ function svgEl(tag, attrs) {
 // back to the outline's own width and a stroke carries one width for its whole length --
 // marker.ribbonAlong shapes that outline, this only fills what it is handed. Only a caller
 // passing a time gets one -- hover and focus wear the same marker standing still.
-function appendMarkerPulse(slot, alpha, progress, is_touch, now_seconds) {
+function appendMarkerPulse(slot, alpha, progress, is_touch) {
   const flat = nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, progress,
-    is_touch === true, now_seconds);
+    is_touch === true);
   if (flat.length === 0) return;
   const fill = 'rgba(255,255,255,' + alpha + ')';
   let at = 1;
@@ -1335,6 +1350,11 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
 function refreshOverlay(cursor) {
   svg_overlay.innerHTML = '';
   const w = canvas.clientWidth, h = canvas.clientHeight;
+  // One clock reading for the whole overlay, before any pulse is shaped: every selected
+  // object's comet advances by that same step. A pulse carries its phase between frames
+  // rather than computing it from the time -- see selection.PulseClock for why reading it
+  // off the clock made every comet lurch the moment the camera moved.
+  nimTickPulse(now());
 
   // One marker per selected object, shaped to that object by marker.nim -- a ring about
   // a point, rails flanking a line, a loop lying on a plane. Hover draws the very same
@@ -1343,7 +1363,7 @@ function refreshOverlay(cursor) {
   for (const slot of slots_selection) {
     if (slot === nimHoldSlot()) continue; // Its own swollen marker is drawn below.
     appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
-    appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false, now());
+    appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false);
   }
 
   // A press maturing into a selection fills that item's own marker as it goes, so the
@@ -1795,19 +1815,36 @@ function openSelectionMenuOp() {
   //   right (see .selection-menu-reveal's own max-width transition). hide/delete step
   //   aside while picking an operation, matching the old two-row design's own behaviour
   //   (its second row never carried them either) -- ✕ stays, as it always did.
-  populateSelectionMenuOptions(nimSelectionArity());
+  const arity = nimSelectionArity();
+  populateSelectionMenuOptions(arity);
+  // Open on whatever was last applied at this arity rather than on the head of the list,
+  //   and ghost it straight away: the picker's answer is worth seeing while choosing, not
+  //   only once apply is pressed.
+  menu_selection_select.value = String(nimOperationRemembered(arity));
+  ghostSelectionMenuOperation();
   menu_selection_reveal.classList.add('open');
   menu_selection_edit.style.display = 'none';
   menu_selection_hide.style.display = 'none';
   menu_selection_delete.style.display = 'none';
 }
 
+function ghostSelectionMenuOperation() {
+  // Both operands come from the selection in pick order, exactly as apply reads them.
+  const first = slots_selection[0];
+  const second = slots_selection.length > 1 ? slots_selection[1] : slots_selection[0];
+  if (first === undefined) return;
+  nimGhostOperation(parseInt(menu_selection_select.value, 10), first, second);
+}
+
 function closeSelectionMenuOp() {
+  nimClearGhost(); // Nothing is being chosen any more, so nothing is being previewed.
   menu_selection_reveal.classList.remove('open');
   menu_selection_edit.style.display = slots_selection.length === 1 ? '' : 'none';
   menu_selection_hide.style.display = '';
   menu_selection_delete.style.display = '';
 }
+
+menu_selection_select.addEventListener('change', ghostSelectionMenuOperation);
 
 function refreshSelectionMenu(position_local) {
   const n = slots_selection.length;

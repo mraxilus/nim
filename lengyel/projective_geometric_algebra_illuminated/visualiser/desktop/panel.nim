@@ -163,6 +163,8 @@ type
       ## panel redraws every frame regardless of whether anything changed, and an
       ## unconditional resync would fight a user's own later manual pick right back to
       ## whatever is selected. Empty until the first sync runs.
+    operations*: OperationMemory ## Which operation each arity's picker opens on, carried
+      ## from the last apply so a reader applying five wedges in a row picks once.
     index_operation*: cint ## Operation picked from catalogue.
     index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
       ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
@@ -642,7 +644,7 @@ proc offerOperationsOfArity*(
   ##   its first entry, and `strictFuncs` counts reading a module global as an effect.
   for operation in Operation:
     if lut_operation_to_arity[operation] != arity: continue
-    result[0][result[2]] = lut_operation_to_notation[operation]
+    result[0][result[2]] = cstring(lut_operation_symbolic[operation])
     result[1][result[2]] = operation
     inc result[2]
 
@@ -699,6 +701,7 @@ proc applyPickedOperation(
     name_first = toText(scene.labelAt(first))
     name_second = toText(scene.labelAt(second))
     label = notationSubstituted(operation, name_first, name_second)
+  panel.operations.remember(operation)
   panel.selection.selectOnly(
     scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
   )
@@ -756,8 +759,15 @@ proc layoutApply*(
     ):
       panel.index_arity = cint(ord(arity))
       # A filtered operation list is indexed per arity, so a position carried across from
-      #   the other list names an unrelated operation.
+      #   the other list names an unrelated operation. Land on whatever was last applied
+      #   at the arity being switched to, rather than on the head of its list.
       panel.index_operation = 0
+      let (_, offered, count) = offerOperationsOfArity(arity)
+      let wanted = panel.operations.lastOf(arity)
+      for position in 0 ..< count:
+        if offered[position] == wanted:
+          panel.index_operation = cint(position)
+          break
   gui.tooltip("Whether to list operations reading one operand or two.")
 
   widthPushField()

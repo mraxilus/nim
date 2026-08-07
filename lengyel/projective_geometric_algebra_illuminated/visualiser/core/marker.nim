@@ -244,6 +244,10 @@ type
       ## a circle while it expands, the viewport's own rectangle once it arrives.
 
   Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
+    around*: float ## Length of the outline the runs below were laid along, in pixels; 0
+      ## where nothing pulses. Reported back because it is what a caller advances the
+      ## pulse against -- see `selection.PulseClock`, which needs the length this marker
+      ## actually came out at and cannot know it before the marker is shaped.
     count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
     counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Outline points used of each run.
     pulses*: array[
@@ -315,18 +319,23 @@ func lengthOfOutline*(
     result += hypot(after.x - points[i].x, after.y - points[i].y)
 
 
-func phasePulse*(now, around: float): float =
-  ## Report how far along an outline `around` pixels long the pulse has travelled, in
-  ## 0 .. 1, at this time.
-  ##   Wrapped rather than clamped, so it laps forever from one clock that never resets.
-  ##   Takes the outline's own length because the pulse travels at a fixed *speed*: the
-  ##   phase a given moment stands for is therefore a question about this outline, not one
-  ##   answer shared by every marker on screen. Two markers of the same size still pulse
-  ##   in step, which is as much agreement as a shared clock can honestly buy.
-  ##   Zero for an outline of no length, which has nowhere to travel.
-  if around <= 0.0: return 0.0
-  let laps = now*SPEED_MARKER_PULSE/around
-  laps - floor(laps)
+func phaseAdvanced*(phase, around, seconds: float): float =
+  ## Carry a pulse's phase forward by `seconds` along an outline `around` pixels long,
+  ## wrapping into 0 .. 1.
+  ##   **An advance, not a position.** A phase read straight off the clock would have to be
+  ##   `frac(now·speed ÷ around)`, and `around` changes whenever the camera moves: after a
+  ##   few laps `now·speed` is tens of thousands of pixels, so a one-percent change in the
+  ##   outline's length throws the wrapped answer most of a lap and the comet teleports.
+  ##   Measured on the build that did it: with the camera orbiting, the head moved a median
+  ##   of **11.15 px a frame against the 1.0 it should**, and every one of ninety sampled
+  ##   frames was more than twice the honest step.
+  ##   Integrating instead leaves a camera change altering the *rate* and never the
+  ##   position, which is what makes a fixed screen speed and a smooth pulse compatible at
+  ##   all. `selection.PulseClock` owns the phase this returns; nothing else may.
+  ##   Unchanged for an outline of no length, which has nowhere to travel.
+  if around <= 0.0: return phase
+  let carried = phase + seconds*SPEED_MARKER_PULSE/around
+  carried - floor(carried)
 
 
 func ribbonAlong(
@@ -609,7 +618,7 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
   view_projection: Matrix4; width, height: int; progress, clearance: float;
-  now: Option[float]
+  phase: Option[float]
 ): Option[Marker] =
   ## Build a line's own pair of rails: two lines parallel to it in world space, one to
   ## each side, converging with it toward its own vanishing points.
@@ -628,15 +637,14 @@ func markerRails(
   ##   the support. Interpolating on screen still keeps every partial rail exactly on the
   ##   line's own projection -- both endpoints lie on it and a projected straight segment
   ##   is straight.
-  ##   `now` runs **one** pulse along each rail, **in the line's own direction**, which is
+  ##   `phase` places **one** pulse along each rail, **in the line's own direction**, which is
   ##   what a line has instead of a face to be on. Each rail is *drawn* as two halves,
   ##   outward from the support toward either horizon, but it is *walked* as one path from
   ##   the far horizon through the support to the near one -- so a selected line wears one
   ##   comet travelling its length rather than four at four unrelated places, and the
   ##   direction falls out of the walk instead of needing the `-axis` half mirrored back.
-  ##   Both rails take the phase measured on the first of them rather than each measuring
-  ##   its own: they differ in projected length by a fraction of a percent, which is
-  ##   invisible in a moment and is a pair of comets drifting apart over a long selection.
+  ##   Both rails take the one phase they are handed, so the pair cannot drift apart; the
+  ##   length reported back is the first rail's, which is what the caller advances against.
   ##   None leaves the rails still.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the eye lies on the line (see `directionAcross`).
@@ -649,9 +657,7 @@ func markerRails(
   let
     offset = offsetMarkerRail(anchor.get, scale, clearance)
     frame_camera = placement.frame(scale.eye)
-  var
-    marker = Marker(kind: MarkerKind.Rails)
-    phase = none(float)
+  var marker = Marker(kind: MarkerKind.Rails)
   for side in [offset, -offset]:
     var
       end_before = none(ScreenPosition) # Toward `-axis`.
@@ -685,9 +691,9 @@ func markerRails(
       rail[count_rail] = point.get
       inc count_rail
 
-    if now.isSome and count_rail >= 2:
-      if phase.isNone:
-        phase = some(phasePulse(now.get, lengthOfOutline(rail, count_rail, false)))
+    if phase.isSome and count_rail >= 2:
+      if marker.around <= 0.0:
+        marker.around = lengthOfOutline(rail, count_rail, false)
       marker.addPulse(rail, count_rail, is_closed = false, phase.get)
   if marker.count_segment == 0: return
   some(marker)
@@ -728,7 +734,7 @@ func positionsMarkerLoop*(
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; now: Option[float]
+  progress, clearance: float; phase: Option[float]
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
@@ -744,7 +750,7 @@ func markerLoop(
   ##   units on the plane, which keeps every intermediate circle lying on that plane as
   ##   exactly as the finished one does -- growing it on screen instead would lift it off
   ##   the surface for the whole of the animation and only settle at the end.
-  ##   `now` runs a pulse round the circle, **anticlockwise on screen exactly when
+  ##   `phase` places a pulse round the circle, **anticlockwise on screen exactly when
   ##   the plane's normal points at the eye**. Nothing here computes that sense: the points
   ##   are generated around the plane's own frame, and which way that order comes out on
   ##   screen is the projection's answer, so the pulse reverses of its own accord as the
@@ -788,11 +794,9 @@ func markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
-  if now.isSome:
-    let around = lengthOfOutline(marker.points, marker.count_point, marker.is_closed)
-    marker.addPulse(
-      marker.points, marker.count_point, marker.is_closed, phasePulse(now.get, around)
-    )
+  if phase.isSome:
+    marker.around = lengthOfOutline(marker.points, marker.count_point, marker.is_closed)
+    marker.addPulse(marker.points, marker.count_point, marker.is_closed, phase.get)
   some(marker)
 
 
@@ -816,7 +820,7 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; now: Option[float]
+  progress, clearance: float; phase: Option[float]
 ): Option[Marker] =
   ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
   ## the great circle the line itself is drawn as.
@@ -828,7 +832,7 @@ func markerBands(
   ##   Cuts each band to whatever stays in front of the eye and reports the remainder as
   ##   an arc, exactly as `markerLoop` does -- half the sky is behind the camera at all
   ##   times, so this is the common case here rather than an edge one.
-  ##   `now` runs a pulse round both bands, taking its sense from the great
+  ##   `phase` places a pulse round both bands, taking its sense from the great
   ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
   ##   laid out around that normal's frame, so the projection answers which way they read.
   ##   Both bands rather than one -- an outline drawn in pieces that pulses in only some of
@@ -875,13 +879,14 @@ func markerBands(
       if not are_in_front[i]: break
       marker.points_band[side][marker.counts_band[side]] = ring[i]
       inc marker.counts_band[side]
-    if now.isSome:
-      let around = lengthOfOutline(
-        marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side]
-      )
+    if phase.isSome:
+      if marker.around <= 0.0:
+        marker.around = lengthOfOutline(
+          marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side]
+        )
       marker.addPulse(
         marker.points_band[side], marker.counts_band[side],
-        marker.are_closed_band[side], phasePulse(now.get, around),
+        marker.are_closed_band[side], phase.get,
       )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
   some(marker)
@@ -969,7 +974,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0;
-  is_touch: bool = false; now: Option[float] = none(float); swell: float = 0.0
+  is_touch: bool = false; phase: Option[float] = none(float); swell: float = 0.0
 ): Option[Marker] =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
@@ -986,9 +991,11 @@ func markerFor*(
   ##   the four phases that number comes from. One flag rather than a per-shape rule,
   ##   because what it compensates for -- a fingertip over the thing being marked -- does
   ##   not vary by what is under it.
-  ##   `now` runs the orientation pulse round the outline, and **is what a caller passes
-  ##   to say this object is selected**: hover and keyboard focus wear the same marker and
-  ##   pass none, so motion means "selected" rather than "the cursor went past". Its
+  ##   `phase` places the orientation pulse round the outline, and **is what a caller
+  ##   passes to say this object is selected**: hover and keyboard focus wear the same
+  ##   marker and pass none, so motion means "selected" rather than "went past". It is a
+  ##   *phase*, not a time, and it comes from `selection.PulseClock` -- see there for why
+  ##   a comet's place cannot be a pure function of the clock and the camera together. Its
   ##   direction carries the orientation a plane's normal shaft used to -- see
   ##   `markerLoop` for why the projection, not this module, decides which way that reads.
   ##   None where an object has no orientation to state: a point either way, and a plane
@@ -1009,17 +1016,17 @@ func markerFor*(
   of Shape.Line:
     if is_horizon:
       markerBands(
-        geometry, scale, view_projection, width, height, progress, clearance, now
+        geometry, scale, view_projection, width, height, progress, clearance, phase
       )
     else:
       markerRails(
         geometry, scale, placement, view_projection, width, height, progress, clearance,
-        now,
+        phase,
       )
   of Shape.Plane:
     if is_horizon: markerFrame(width, height, progress, clearance)
     else:
       markerLoop(
         geometry, anchor_override, scale, placement, view_projection, width, height,
-        progress, clearance, now,
+        progress, clearance, phase,
       )

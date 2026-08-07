@@ -79,6 +79,14 @@ var
     ## `nimSelectOnly`/`nimSelectToggle`/`nimSelectClear`. The presentation layer keeps no
     ## list of its own: pick order is what names an operation's operands, so it lives in
     ## `selection.nim` beside every other rule about it, not in hand-written JavaScript.
+  g_operations: OperationMemory ## Which operation each arity's picker opens on, carried
+    ## from the last apply so a reader picking five wedges in a row picks once.
+  g_clock_pulse: PulseClock ## Each selected object's own orientation-pulse phase, carried
+    ## between frames rather than computed from the clock -- see `selection.PulseClock` for
+    ## why a phase read straight off the time teleports whenever the camera moves.
+  g_seconds_step_pulse: float ## How long the frame being drawn is, for that clock. Held
+    ## rather than passed, because `nimTickPulse` takes one reading and every
+    ## `nimSelectionPulse` after it in the same frame must advance by that same step.
   g_tween_camera: CameraTween ## Carries the camera toward whatever is being built or
     ## edited -- see `camera.CameraTween`. Aimed and advanced inside `nimBuildFrame`, from
     ## the same one rule the desktop build uses, so neither UI decides for itself when the
@@ -320,6 +328,8 @@ proc nimApplyOperation(
     label = notationSubstituted(operation, name_first, name_second)
     slot_created =
       g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
+  g_operations.remember(operation)
+  g_clock_pulse.forget(slot_created) # A fresh object starts its comet at the head.
   g_borns[slot_created] = float(now)
   g_selection.selectOnly(slot_created)
   g_history.record(g_scene, g_camera)
@@ -329,6 +339,30 @@ proc nimApplyOperation(
     message: cstring(&"{label} gave {shape_word}."),
     shape_word: cstring(shape_word),
   )
+
+
+proc nimOperationRemembered(arity: cint): cint {.exportc.} =
+  ## Report the operation a picker of this arity should open on: whatever was last
+  ## applied at that arity, or the catalogue's own first choice until something has been.
+  cint(ord(g_operations.lastOf(if arity == 0: Arity.One else: Arity.Two)))
+
+
+proc nimGhostOperation(operation_ordinal, slot_first, slot_second: cint): bool
+  {.exportc.} =
+  ## Stage what applying an operation to these operands *would* build, as the same ghost
+  ## an open edit session draws, without touching the scene or the undo timeline.
+  ##   So a picker previews its own answer the moment one is chosen rather than only once
+  ##   apply is pressed -- the rule the edit session already follows on a keystroke.
+  ##   False, and no ghost, where either operand is gone; a picker left open across a
+  ##   delete is an ordinary thing rather than an error.
+  if not (g_scene.isAlive(int(slot_first)) and g_scene.isAlive(int(slot_second))):
+    g_ghost = none(Multivector)
+    return false
+  g_ghost = some(applyOperation(
+    Operation(operation_ordinal),
+    g_scene.geometryAt(int(slot_first)), g_scene.geometryAt(int(slot_second)),
+  ))
+  true
 
 
 proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
@@ -401,10 +435,13 @@ proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
 
 
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
-  ## Report the Nth catalogue operation's own notation and name, from the one table both
-  ##   render paths read. A parallel browser-only table existed while the desktop font
-  ##   atlas carried no astral-plane glyphs; it does now, so the two cannot drift apart.
-  lut_operation_to_notation[Operation(index)]
+  ## Report the Nth catalogue operation's own notation -- its symbols alone, without the
+  ##   English name the table carries after them, which is three to five times wider and
+  ##   pushed this picker's popover past what a hand can reach on a phone. From the one
+  ##   table both render paths read. A parallel browser-only table existed while the
+  ##   desktop font atlas carried no astral-plane glyphs; it does now, so the two cannot
+  ##   drift apart.
+  cstring(notationSymbolic(Operation(index)))
 
 
 proc nimOperationArity(index: cint): cint {.exportc.} =
@@ -1118,9 +1155,17 @@ proc nimSelectionMarker(
       result.add([cfloat(marker.points_frame[i].x), cfloat(marker.points_frame[i].y)])
 
 
+proc nimTickPulse(now: cfloat) {.exportc.} =
+  ## Take the frame's own clock reading for every orientation pulse on screen.
+  ##   Called once a frame, before any `nimSelectionPulse`, so each selected object
+  ##   advances by the same step; a clock ticked per call would hand the whole step to
+  ##   whichever slot was asked for first and leave the rest standing still.
+  g_seconds_step_pulse = g_clock_pulse.secondsStep(float(now))
+  g_clock_pulse.tick(float(now))
+
+
 proc nimSelectionPulse(
-  slot, width, height: cint; progress: cfloat; is_touch: bool; now: cfloat;
-  swell: cfloat = 0.0
+  slot, width, height: cint; progress: cfloat; is_touch: bool; swell: cfloat = 0.0
 ): seq[float32] {.exportc.} =
   ## Report the orientation pulse travelling along this item's own marker, flat, as a run
   ## count then each run's own point count followed by its points:
@@ -1141,12 +1186,15 @@ proc nimSelectionPulse(
     vp = g_camera.initMatrixViewProjection(float(width) / float(height))
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
-      g_camera, vp, int(width), int(height), float(progress), is_touch, some(float(now)),
-      swell = float(swell),
+      g_camera, vp, int(width), int(height), float(progress), is_touch,
+      phase = some(g_clock_pulse.phaseAt(int(slot))), swell = float(swell),
     )
   if shaped.isNone or shaped.get.count_run_pulse == 0: return
 
   let marker = shaped.get
+  # Carried against the length this marker actually came out at, so orbiting changes how
+  #   fast the comet travels and never where it is. See `selection.PulseClock`.
+  g_clock_pulse.advance(int(slot), marker.around, g_seconds_step_pulse)
   result = @[cfloat(marker.count_run_pulse)]
   for run in 0 ..< marker.count_run_pulse:
     result.add(cfloat(marker.counts_pulse[run]))

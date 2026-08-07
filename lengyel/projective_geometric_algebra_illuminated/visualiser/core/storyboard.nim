@@ -45,9 +45,9 @@ type Step* = object ## Hold one scripted construction step.
 #[ Scripted Construction ]#
 
 const STEPS*: array[11, Step] = [
-  Step(stem: "01_join_line", label: "L = a ^ b",
+  Step(stem: "01_join_line", label: "L = a ∧ b",
     operation: Operation.Wedge, index_first: 0, index_second: 1, ink: Ink.Jade),
-  Step(stem: "02_join_plane", label: "G = L ^ c",
+  Step(stem: "02_join_plane", label: "G = L ∧ c",
     operation: Operation.Wedge, index_first: 5, index_second: 2, ink: Ink.Cobalt),
   Step(stem: "03_meet_line", label: "ground v G",
     operation: Operation.WedgeAnti, index_first: 4, index_second: 6, ink: Ink.Copper),
@@ -57,7 +57,7 @@ const STEPS*: array[11, Step] = [
     operation: Operation.Support, index_first: 5, index_second: 0, ink: Ink.Rose),
   Step(stem: "06_attitude", label: "att(L)",
     operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cobalt),
-  Step(stem: "07_expand_weight", label: "a ^ L*  perp plane",
+  Step(stem: "07_expand_weight", label: "a ∧ L☆  perp plane",
     operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Olive),
   # `a` (and `b`, and `c`) already lie on `G` by construction -- `G` is joined from a
   #   line through `a` and `b`, plus `c` -- so projecting any of them onto `G` is a
@@ -74,12 +74,19 @@ const STEPS*: array[11, Step] = [
   #   horizon is, regardless of which points produced it.
   Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
     operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Jade),
-  Step(stem: "10_wedge_volume", label: "a ^ ground",
+  Step(stem: "10_wedge_volume", label: "a ∧ ground",
     operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Copper),
-  Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ^ ground)",
+  Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ∧ ground)",
     operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Cobalt),
 ] ## Build a line from two points, a plane from that line, then meet, measure and
   ## project; close with attitude taken down to a line, then a plane, at horizon.
+
+
+const INK_SEED_GROUND* = Ink.Olive
+  ## Colour the startup scene's own ground plane wears, and the one hue its four seed
+  ## points step over.
+  ##   Reserved by hand rather than taken from the cycle, because `ground` is the one seed
+  ## every later step is derived against and a reader learns to find it by colour.
 
 
 proc constructSeeds*(scene: var Scene; now: float = 0.0) =
@@ -103,11 +110,20 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
     anchor_ground = position(
       add(add(unitize(point_origin), unitize(point_x)), unitize(point_y))
     )
-  scene.addItem(point_a, "a", Ink.Rose, now)
-  scene.addItem(point_b, "b", Ink.Rose, now)
-  scene.addItem(point_c, "c", Ink.Rose, now)
-  scene.addItem(point_origin, "o", Ink.Rose, now)
-  scene.addItem(ground, "ground", Ink.Olive, now, anchor_ground)
+  # A hue each, as adding them by hand would give them: four objects wearing one colour
+  #   say they are one kind of thing, which is the opposite of what a categorical palette
+  #   is for. `ground` keeps its own olive, so the four points take the four slots that
+  #   are not it and nothing collides.
+  var index_ink = 0
+  proc inkNext(): Ink =
+    while inkCycled(index_ink) == INK_SEED_GROUND: inc index_ink
+    result = inkCycled(index_ink)
+    inc index_ink
+  scene.addItem(point_a, "a", inkNext(), now)
+  scene.addItem(point_b, "b", inkNext(), now)
+  scene.addItem(point_c, "c", inkNext(), now)
+  scene.addItem(point_origin, "o", inkNext(), now)
+  scene.addItem(ground, "ground", INK_SEED_GROUND, now, anchor_ground)
 
 
 proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =

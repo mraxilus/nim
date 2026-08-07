@@ -204,6 +204,9 @@ var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn in thei
   ## rather than under whichever of them happened to be emitted later. Their thinner width
   ## (`mesh.WIDTH_LINE_FURNITURE`) is geometry now, not a draw setting, so it no longer
   ## needs a pass of its own -- this ordering does.
+var CLOCK_PULSE: PulseClock ## Each selected object's own orientation-pulse phase, carried
+  ## between frames. Module scope for the reason `HISTORY` below is: a value this large is
+  ## no business of the stack, and it outlives every frame that reads it.
 var HISTORY: History ## Undo/redo timeline of scene-content edits; too large for a stack
   ## frame for the same reason `MESHES` is (`history.CAPACITY_HISTORY * sizeof(Scene)`).
   ## Holds a zeroed placeholder nothing reads until `main` seeds it via `initHistory`
@@ -465,8 +468,8 @@ proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
 
 
 proc drawSelectionMarker(
-  scene: Scene; selection: Selection; camera: Camera; view_projection: Matrix4;
-  width, height: int; scale: DrawExtent; now: float
+  scene: Scene; selection: Selection; clock: var PulseClock; camera: Camera;
+  view_projection: Matrix4; width, height: int; scale: DrawExtent; seconds_step: float
 ): int {.discardable.} =
   ## Draw one marker per selected item, directly onto the foreground layer, shaped to
   ## that item by `marker.markerFor` and tinted with `Ink.Outline`. Report how many were
@@ -483,14 +486,17 @@ proc drawSelectionMarker(
     let slot = selection.at(position)
     if not (scene.isAlive(slot) and scene[slot].isVisible): continue
     let item = scene[slot]
-    # `now` is what says "this one is selected": it runs the orientation pulse round the
-    #   outline, and the hover and focus paths below pass none, so motion means selected
-    #   rather than merely under the cursor.
+    # A phase is what says "this one is selected": it places the orientation pulse round
+    #   the outline, and the hover and focus paths below pass none, so motion means
+    #   selected rather than merely under the cursor.
     let marker = markerFor(
       item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
-      now = some(now),
+      phase = some(clock.phaseAt(slot)),
     )
     if marker.isNone: continue
+    # Carried forward against the length this marker actually came out at, so orbiting
+    #   changes how fast the comet travels and never where it is. See `PulseClock`.
+    clock.advance(slot, marker.get.around, seconds_step)
     drawMarker(marker.get, tint, ALPHA_MARKER_SELECTED)
     result.inc
 
@@ -710,8 +716,13 @@ proc renderFrame(
   renderer.drawMeshes(MESHES_FURNITURE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)
 
+  # One reading a frame, taken before any slot advances, so every selected object's comet
+  #   moves by the same step and none of them reads a clock the others have already moved.
+  let seconds_step = CLOCK_PULSE.secondsStep(now)
+  CLOCK_PULSE.tick(now)
   drawSelectionMarker(
-    scene, panel.selection, camera, view_projection, int(width), int(height), scale, now
+    scene, panel.selection, CLOCK_PULSE, camera, view_projection, int(width), int(height),
+    scale, seconds_step,
   )
   drawInteractionOverlay(
     interaction, scene, camera, view_projection, int(width), int(height), scale

@@ -20,6 +20,7 @@ import std/[math, options, os, random, strformat, strutils, tables, unicode, uni
 import ../../pga
 import ../../visualiser/core/[
   camera, format, help, history, interaction, mesh, objects, picking, scene, selection,
+  storyboard,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -696,6 +697,24 @@ suite "Mesh":
 
 
 suite "Scene":
+  test "the startup scene gives every seed point a colour of its own":
+    # Four points wearing one hue say they are one kind of thing, which is the opposite of
+    #   what a categorical palette is for; a hand-added object takes the next hue, so these
+    #   should too. `ground` keeps the olive a reader learns to find it by.
+    var scene = initScene()
+    constructSeeds(scene)
+    var inks: seq[Ink]
+    for slot in 0 ..< scene.len:
+      if toText(scene.labelAt(slot)) == "ground":
+        check scene.inkAt(slot) == INK_SEED_GROUND
+      else:
+        inks.add(scene.inkAt(slot))
+    check inks.len == 4
+    for i in 0 ..< inks.len:
+      check inks[i] != INK_SEED_GROUND
+      for j in i + 1 ..< inks.len: check inks[i] != inks[j]
+
+
   test "items are held in order added":
     var scene = initScene()
     for i in 0 ..< 5:
@@ -1446,6 +1465,84 @@ suite "Selection":
     ## Read the whole selection out in pick order, so a test can state the order it
     ## expects in one line rather than indexing position by position.
     for position in 0 ..< selection.len: result.add(selection.at(position))
+
+
+  test "a pulse covers the same ground however many frames it is cut into":
+    # Frame-rate independence, which is the whole reason the phase advances by elapsed
+    #   seconds rather than by a step a frame. Driven on the browser too: 3 s of clock
+    #   moved the head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180.
+    const AROUND = 900.0
+    proc phaseAfter(seconds_total: float; frames: int): float =
+      var clock: PulseClock
+      var seconds = 0.0
+      clock.tick(seconds)
+      for _ in 0 ..< frames:
+        seconds += seconds_total/float(frames)
+        let step = clock.secondsStep(seconds)
+        clock.tick(seconds)
+        clock.advance(0, AROUND, step)
+      clock.phaseAt(0)
+
+    # One second at the shared speed is `SPEED_MARKER_PULSE` pixels of a 900-px outline.
+    let expected = SPEED_MARKER_PULSE/AROUND
+    for frames in [12, 60, 144, 600]:
+      check phaseAfter(1.0, frames) =~ expected
+
+  test "a pulse ignores an absence, rather than travelling all of it at once":
+    # A backgrounded tab stops its animation callbacks; the gap it comes back with is not
+    #   a frame, and spending it in one step would land the comet anywhere.
+    var clock: PulseClock
+    clock.tick(0.0)
+    check clock.secondsStep(1.0/60.0) =~ 1.0/60.0
+    check clock.secondsStep(90.0) =~ SECONDS_STEP_PULSE_MAX
+    # And a clock that ran backwards rewinds nothing.
+    check clock.secondsStep(-5.0) == 0.0
+
+  test "each slot keeps its own pulse, and a reused slot starts afresh":
+    var clock: PulseClock
+    clock.tick(0.0)
+    # The step is read before the tick that consumes it, which is the order both frame
+    #   loops use: one reading, then every slot advanced by it.
+    let step = clock.secondsStep(1.0)
+    clock.tick(1.0)
+    clock.advance(3, 600.0, step)
+    check clock.phaseAt(3) > 0.0
+    check clock.phaseAt(4) == 0.0 # Untouched, so still at the head of its own lap.
+    clock.forget(3)
+    check clock.phaseAt(3) == 0.0
+    # Out of range is a question with no answer, not a crash.
+    check clock.phaseAt(-1) == 0.0
+    check clock.phaseAt(ITEMS_MAX) == 0.0
+
+
+  test "every operator reads in the library's own symbols, not an ASCII stand-in":
+    # A drag used to name what it built with `^`, `v` and `->` while the panel named the
+    #   same pair with the catalogue's symbols, so one object list carried both.
+    check notationSubstituted(Operation.Wedge, "a", "b") == "a ∧ b"
+    check notationSubstituted(Operation.WedgeAnti, "L", "G") == "L ∨ G"
+    check notationSymbolic(Operation.Wedge) == "𝐦 ∧ 𝐧"
+    # A picker offers the symbols alone; the English name after them is what made the
+    #   popover wider than a hand can reach.
+    for operation in Operation:
+      check not notationSymbolic(operation).contains("  ")
+    # The drag wedges keep their words: measured on the rendered menu, the projection's
+    #   own notation is nearly twice the width of "project", so symbols would widen the one
+    #   menu that is read under a thumb.
+    check labelOf(DragChoice.Join) == "join"
+    check labelOf(DragChoice.Project) == "project"
+
+  test "a picker opens on what was last applied at its own arity":
+    var memory: OperationMemory
+    check memory.lastOf(Arity.One) == OPERATION_FIRST_UNARY
+    check memory.lastOf(Arity.Two) == OPERATION_FIRST_BINARY
+    memory.remember(Operation.WedgeAnti)
+    check memory.lastOf(Arity.Two) == Operation.WedgeAnti
+    # Remembering a binary leaves the unary picker where it was: the two lists are
+    #   disjoint, so one arity's choice can say nothing about the other's.
+    check memory.lastOf(Arity.One) == OPERATION_FIRST_UNARY
+    memory.remember(Operation.Bulk)
+    check memory.lastOf(Arity.One) == Operation.Bulk
+    check memory.lastOf(Arity.Two) == Operation.WedgeAnti
 
 
   test "a selection is hidden only when every one of its objects is":
@@ -2665,12 +2762,12 @@ suite "Marker":
 
   proc markerOf(
     geometry: Multivector; anchor = none(Position); progress = 1.0;
-    now = none(float)
+    phase = none(float)
   ): Option[Marker] =
     let (placement, view_projection, scale) = setUp()
     markerFor(
       geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
-      progress, is_touch = false, now = now,
+      progress, is_touch = false, phase = phase,
     )
 
   proc reachRails(marker: Marker): float =
@@ -3060,8 +3157,8 @@ suite "Marker":
 
 
   test "a pulse rides its own outline, and only where there is an orientation to state":
-    proc pulsed(geometry: Multivector; now: float): Marker =
-      markerOf(geometry, now = some(now)).get
+    proc pulsed(geometry: Multivector; phase: float): Marker =
+      markerOf(geometry, phase = some(phase)).get
 
     # A plane's circle and a line's rails both carry one; a point has no orientation and
     #   a plane at horizon carries no normal at all, so neither says anything.
@@ -3126,7 +3223,7 @@ suite "Marker":
 
     # Partway along, so no run is one shortened by the end of an open arc.
     for geometry in [PLANE, LINE, LINE_HORIZON]:
-      let shaped = markerOf(geometry, now = some(3.0)).get
+      let shaped = markerOf(geometry, phase = some(0.4)).get
       check shaped.count_run_pulse > 0
       for run in 0 ..< shaped.count_run_pulse:
         # A run laid along a curve is a chain of chords, so it falls a hair short of the
@@ -3141,27 +3238,27 @@ suite "Marker":
     let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
     marker.pulses[run][0].towards(marker.pulses[run][2*spans - 1], 0.5)
 
-  test "a pulse travels at one speed, whatever shape it rides":
-    # The other half of measuring the run in pixels. Under a fixed lap the head crossed a
-    #   line's rail at 156 px/s and a plane's circle at 348, so the same signal read as a
-    #   drift on one shape and a scurry on another.
-    const SECONDS_STEP = 0.4
+  test "one step of phase carries the head one step of the outline, on every shape":
+    # The marker's half of a constant speed: a phase is a fraction of the outline, so the
+    #   same fraction has to buy the same share of every shape. How many seconds that
+    #   fraction takes is `selection.PulseClock`'s half, tested there.
     for geometry in [PLANE, LINE, LINE_HORIZON]:
-      proc headAt(now: float): ScreenPosition =
-        headOfRun(markerOf(geometry, now = some(now)).get, 0)
+      let shaped = markerOf(geometry, phase = some(0.4)).get
+      proc headAt(phase: float): ScreenPosition =
+        headOfRun(markerOf(geometry, phase = some(phase)).get, 0)
+      const STEP = 0.01
       let crossed = hypot(
-        headAt(2.0 + SECONDS_STEP).x - headAt(2.0).x,
-        headAt(2.0 + SECONDS_STEP).y - headAt(2.0).y,
+        headAt(0.4 + STEP).x - headAt(0.4).x, headAt(0.4 + STEP).y - headAt(0.4).y
       )
-      # A chord again, so a hair under the arc actually travelled.
-      check crossed <= SPEED_MARKER_PULSE*SECONDS_STEP + TOLERANCE_SINGLE
-      check crossed > 0.98*SPEED_MARKER_PULSE*SECONDS_STEP
+      # A chord, so a hair under the arc actually covered.
+      check crossed <= STEP*shaped.around + TOLERANCE_SINGLE
+      check crossed > 0.98*STEP*shaped.around
 
 
   test "a line wears one comet, not one for every piece it is drawn in":
     # A rail is drawn as two halves either side of the line's support, and each used to
     #   pulse on its own -- four comets at four unrelated places on one selected line.
-    let shaped = markerOf(LINE, now = some(2.0)).get
+    let shaped = markerOf(LINE, phase = some(0.4)).get
     check shaped.count_segment == 4
     check shaped.count_run_pulse == 2
     # And the pair travels together rather than each rail keeping its own clock, so the
@@ -3171,27 +3268,23 @@ suite "Marker":
 
 
   test "a pulse laps rather than stopping":
-    proc headAt(now: float): ScreenPosition =
-      headOfRun(markerOf(PLANE, now = some(now)).get, 0)
+    proc headAt(phase: float): ScreenPosition =
+      headOfRun(markerOf(PLANE, phase = some(phase)).get, 0)
 
-    # A lap is now the outline's own length at the shared speed, not a fixed time.
-    let settled = markerOf(PLANE).get
-    let seconds_lap =
-      lengthOfOutline(settled.points, settled.count_point, settled.is_closed)/
-        SPEED_MARKER_PULSE
     let start = headAt(0.0)
     var moved = 0
     for step in 1 .. 5:
-      let now = seconds_lap*float(step)/6.0
-      if hypot(headAt(now).x - start.x, headAt(now).y - start.y) > 1.0: inc moved
+      if hypot(headAt(float(step)/6.0).x - start.x,
+        headAt(float(step)/6.0).y - start.y) > 1.0: inc moved
     check moved == 5
-    # One whole lap later it is back where it began, so the motion is circulation rather
-    #   than a run that ends somewhere.
-    let lapped = headAt(seconds_lap)
+    # A whole lap on is where it began, so the motion is circulation rather than a run
+    #   that ends somewhere.
+    let lapped = headAt(1.0)
     check hypot(lapped.x - start.x, lapped.y - start.y) < 1.0
-    # And the phase itself wraps rather than growing without bound.
+    # And the advance itself wraps rather than growing without bound: three laps' worth of
+    #   seconds lands exactly where one moment of it did.
     const AROUND = 300.0
-    check phasePulse(1.0, AROUND) =~ phasePulse(1.0 + 3.0*AROUND/SPEED_MARKER_PULSE, AROUND)
+    check phaseAdvanced(0.25, AROUND, 3.0*AROUND/SPEED_MARKER_PULSE) =~ 0.25
 
 
   test "the drag band swells into its head, whichever way it runs":

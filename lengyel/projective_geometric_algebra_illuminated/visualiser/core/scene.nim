@@ -191,6 +191,33 @@ const COUNT_OPERATION* = ord(Operation.high) + 1
   ## Count operations, for handing whole catalogue to a picker.
 
 
+let lut_operation_symbolic* = block:
+  ## Each operation's symbols alone, without the English name beside them in the table
+  ## above -- what every picker offers.
+  ##   Bound as `let` and built once for the same reason `lut_operation_to_notation` is: a
+  ##   combo takes the address of its first entry, so these strings have to outlive the
+  ##   call that offers them.
+  var lut: array[Operation, string]
+  for operation in Operation:
+    let full = $lut_operation_to_notation[operation]
+    let cutoff = full.find("  ")
+    lut[operation] = if cutoff >= 0: full[0 ..< cutoff] else: full
+  lut
+
+
+proc notationSymbolic*(operation: Operation): string =
+  ## Report just the symbols an operation is written with, without the English name the
+  ## catalogue table carries after them -- `𝐦 ∧ 𝐧`, not `𝐦 ∧ 𝐧  wedge (join)`.
+  ##   What a picker offers, on both front-ends. The full entry is three to five times
+  ##   wider, which on a phone pushed the selection menu's own popover past what a hand
+  ##   can reach; the name it drops is still there for a tooltip to read.
+  ##   Split on the double space the table separates the two halves with, so this and
+  ##   `notationSubstituted` below cut at exactly one place rather than two that can drift.
+  ##   A `proc` rather than a `func` for the reason `notationSubstituted` is one: the table
+  ##   it reads is a `let`, since a picker needs the address of its first entry.
+  lut_operation_symbolic[operation]
+
+
 proc notationSubstituted*(operation: Operation; name_first, name_second: string): string =
   ## Build the label/message text an applied operation reads as, substituting the
   ## notation template's own `𝐦`/`𝐧` placeholders with the real operand names just
@@ -210,10 +237,8 @@ proc notationSubstituted*(operation: Operation; name_first, name_second: string)
     OPERAND_SECOND = "𝐧"
     SENTINEL_M = "\x01"
     SENTINEL_N = "\x02"
-  let full = $lut_operation_to_notation[operation]
-  let cutoff = full.find("  ")
-  let symbolic = if cutoff >= 0: full[0 ..< cutoff] else: full
-  let staged = symbolic.replace(OPERAND_FIRST, SENTINEL_M).replace(OPERAND_SECOND, SENTINEL_N)
+  let staged = notationSymbolic(operation)
+    .replace(OPERAND_FIRST, SENTINEL_M).replace(OPERAND_SECOND, SENTINEL_N)
   result = staged.replace(SENTINEL_M, name_first).replace(SENTINEL_N, name_second)
 
 
@@ -813,6 +838,49 @@ when not defined(js):
 
     scene = staging
     &"Loaded {count} object(s) from `{path}`."
+
+
+type OperationMemory* = object ## Remember the operation last applied, one per arity.
+  ## So a picker opens on what you last reached for rather than on whatever the catalogue
+  ## happens to list first -- a reader applying five wedges in a row should pick the
+  ## operation once, not five times.
+  ## Kept per *arity* because the two pickers offer disjoint lists: switching from one
+  ## operand to two cannot carry a unary choice across, and falling back to the head of the
+  ## list there would undo the memory for the arity you did not change.
+  ## A plain value type with no refs, like `Selection`, so a GUI holds one by value.
+  unary: Operation
+  binary: Operation
+  is_started: bool ## Whether the two above have been set; false leaves the defaults below.
+
+
+const
+  OPERATION_FIRST_UNARY* = Operation.Attitude
+    ## Open a one-operand picker on this until something else is applied.
+    ##   Attitude is what a reader reaches for first on a single object -- it is the one
+    ##   unary operation whose result is drawn somewhere new rather than on top of its
+    ##   own operand.
+  OPERATION_FIRST_BINARY* = Operation.Wedge
+    ## Open a two-operand picker on this until something else is applied.
+    ##   The join, which is what two objects picked in order most often mean.
+
+
+func lastOf*(memory: OperationMemory; arity: Arity): Operation =
+  ## Read the operation a picker of this arity should open on.
+  if not memory.is_started:
+    return if arity == Arity.One: OPERATION_FIRST_UNARY else: OPERATION_FIRST_BINARY
+  if arity == Arity.One: memory.unary else: memory.binary
+
+
+func remember*(memory: var OperationMemory; operation: Operation) =
+  ## Note an operation as the one its arity should open on next.
+  ##   Call from every path that applies one, the drag menu's own `more…` handover
+  ##   included, or a picker would forget whatever was reached for by another route.
+  if not memory.is_started:
+    memory.unary = OPERATION_FIRST_UNARY
+    memory.binary = OPERATION_FIRST_BINARY
+    memory.is_started = true
+  if lut_operation_to_arity[operation] == Arity.One: memory.unary = operation
+  else: memory.binary = operation
 
 
 func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICAL)

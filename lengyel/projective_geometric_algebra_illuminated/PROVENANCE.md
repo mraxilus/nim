@@ -423,6 +423,37 @@ nothing left for a settle to be about. `isHoldSpent` is stated against `swellHol
 against the shrink duration a second time, which is `isHoldMature`'s own rule and necessary
 here: subtracting two large timestamps measured 0.14999999999997 against a 0.15 s shrink.
 
+**One notation, everywhere.** A drag used to name what it built in ASCII — `a ^ b`, `a v b`,
+`a -> b` — while the panel named the identical pair through the catalogue's own symbols, so
+one object list carried both spellings of the same operation. `commitChoice` now names and
+messages its result through `scene.notationSubstituted`, the very call the panel's apply
+button makes, so the two paths produce byte-identical labels. The storyboard's own step
+captions took the real symbols with them.
+
+**A picker offers symbols alone** (`scene.notationSymbolic`), not the whole catalogue entry:
+`𝐦 ∧ 𝐧`, not `𝐦 ∧ 𝐧  wedge (join)`. The English name is three to five times the width and
+pushed the selection menu's popover past what a hand can reach on a phone; it stays in the
+table for tooltips. The **drag wedges keep their words**, which is the opposite decision on
+purpose and was measured rather than assumed: rendered, the projection's own notation
+`𝐧 ∨ (𝐦 ∧ 𝐧☆)` is nearly twice the width of "project", so symbols widen the one menu that is
+read under a thumb. A picker is a list read at leisure; a wedge is a target.
+
+**A picker opens on what was last applied at its own arity** (`scene.OperationMemory`),
+defaulting to attitude for one operand and wedge for two. Per arity because the two lists are
+disjoint — a unary choice cannot carry across to a binary picker, and falling back to the head
+of the list there would undo the memory for the arity that did not change.
+
+**The picker ghosts its own answer as soon as one is chosen** (`nimGhostOperation`), rather
+than waiting for apply — the rule the edit session already follows on a keystroke. It writes
+the same `g_ghost` an open edit session draws and touches neither the scene nor the undo
+timeline. Driven: 6,076 vertices without it, 6,160 with, before apply is pressed.
+
+**Every seed point takes its own hue.** The startup scene gave `a`, `b`, `c` and `o` one rose
+between them, which says they are one kind of thing — the opposite of what a categorical
+palette is for, and not what adding them by hand would do. They now take four of the five
+categorical slots; `ground` keeps `INK_SEED_GROUND`'s olive, which the four step over, because
+it is the seed every later step is derived against and a reader learns to find it by colour.
+
 **A drag band swells into its head** (`marker.cometFor`), because a drag is not symmetric —
 `a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical. The
 last `LENGTH_MARKER_COMET` of the band thickens to `WIDTH_MARKER_COMET` at the point it aims
@@ -458,6 +489,33 @@ same fault, since perspective bunches a tilted circle's points on its far side. 
 now measure 64 px, and so does the drag band's head; `FRACTION_MARKER_PULSE` survives only as
 a cap, for a marker smaller than the run itself, where a fixed length would light most of the
 outline and leave nothing plain to read the lit part against.
+
+**The phase is carried between frames, not computed from the clock.** A phase read off the
+time has to be `frac(now·speed ÷ around)`, and `around` changes whenever the camera moves:
+after a few laps that quotient is tens of laps, so a one-percent change in the outline's
+length throws the answer most of a lap and the comet teleports. Measured on the build that
+did it — orbiting, the head moved a **median of 11.15 px a frame against the 1.0 it should**,
+and all ninety sampled frames exceeded twice the honest step. `selection.PulseClock` carries
+one phase per slot instead, advanced by `speed·dt ÷ around` each frame, so a camera change
+alters the *rate* and never the position. After: the head's step while orbiting has a median
+of 3.76 px and a **worst of 4.01** — worst and median together, which is what "no jumps"
+looks like — and of that, 3.06 is the marker itself sweeping under the comet, which is motion
+the marker is entitled to.
+
+It is **frame-rate independent** by construction and by measurement: the same three seconds
+of clock moved the head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180. A gap
+longer than `SECONDS_STEP_PULSE_MAX` is treated as an absence rather than a frame, so a
+backgrounded tab resumes where it left off instead of spending the whole absence in one step
+— measured, 83 px in a frame before that cap and 1 px after.
+
+**No arena, and no swap buffer.** `arena.nim`'s own header already settles it: the draw loop
+asks it for nothing because `Scene` and `MeshSet` are fixed arrays with their own lifetimes,
+and this is the same shape — one float per slot, a compile-time bound, alive as long as the
+program. An arena earns its keep on variable-sized short-lived scratch. Two further reasons:
+`arena.nim` is desktop-only and unreachable from the browser build, so an arena-backed pulse
+would serve one front-end and leave the other needing a second mechanism; and a swap buffer
+resolves read-last-while-writing-this, where this update reads and writes one slot and
+consults no neighbour.
 
 **And it travels at a speed, not a lap time**, for exactly the same reason: one lap per fixed
 4.8 s made how fast the mark *moves* a property of the outline too — measured, 156 px/s along
