@@ -36,9 +36,15 @@ type
   Dancer* {.pure.} = enum ## Name the two roles, which rotate independently.
     Lead, Follow
 
-  Level* {.pure.} = enum ## Name the height an arm is carried at.
-    Low,   ## At about the waist.
-    High,  ## At about the shoulder.
+  Level* {.pure.} = enum ## Name where an arm is carried, against the other arm.
+    ## Low and high are relative, not measurements: they say which arm lies over
+    ## which where the two overlap, which is the same question the hand-to-hand
+    ## model already answers with `Frame.over`.  A high arm need not be above the
+    ## shoulder line -- it says only that a wrap or a lock from there would carry
+    ## the hands up.  Above is the one that names a height, and it is a different
+    ## kind of thing: over the head rather than over the other arm.
+    Low,   ## Under the other arm.
+    High,  ## Over the other arm.
     Above  ## Over the head, on the axis the couple turns about.
 
   Way* {.pure.} = enum ## Name which way a dancer turns, seen from above.
