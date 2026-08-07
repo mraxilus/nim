@@ -439,8 +439,8 @@ from the same pointer events, but only one can be the answer.
 plane used to draw a bare normal shaft out of its anchor, *always*, on every plane in the
 scene, to answer a question a reader asks about one object at a time; a line had nothing at
 all. `marker.markerFor` now runs a short lit run along a selected object's own outline
-(`SEGMENTS_MARKER_PULSE` points spanning `FRACTION_MARKER_PULSE` of it, one lap per
-`SECONDS_MARKER_PULSE`), and **which way it travels is the orientation**.
+(`SEGMENTS_MARKER_PULSE` points spanning `LENGTH_MARKER_COMET` of it, travelling at
+`SPEED_MARKER_PULSE`), and **which way it travels is the orientation**.
 
 The run **tapers**, from `WIDTH_MARKER_COMET` at its head down `FALLOFF_MARKER_COMET` to
 `WIDTH_MARKER` at its tail, so the head reads as the front rather than the run reading as a
@@ -458,6 +458,15 @@ same fault, since perspective bunches a tilted circle's points on its far side. 
 now measure 64 px, and so does the drag band's head; `FRACTION_MARKER_PULSE` survives only as
 a cap, for a marker smaller than the run itself, where a fixed length would light most of the
 outline and leave nothing plain to read the lit part against.
+
+**And it travels at a speed, not a lap time**, for exactly the same reason: one lap per fixed
+4.8 s made how fast the mark *moves* a property of the outline too — measured, 156 px/s along
+a line's rail against 348 px/s round a plane's circle seen close up, so the same signal read
+as a drift on one shape and a scurry on another. `SPEED_MARKER_PULSE` is 60 px/s, which is the
+speed the lap was chosen at: the specimens it was judged on were about 300 px around, and one
+lap of those in 4.8 s is 62 px/s. Driven after the change, the plane's own comet crosses the
+browser at 60.0 px/s. The phase is therefore a question about a particular outline rather than
+one answer shared by every marker, which is why `phasePulse` takes the length it laps.
 
 That taper is why each run is a **closed outline to fill rather than a path to stroke**: a
 stroke carries one width for its whole length. `ribbonAlong` wraps the sampled spine in both
@@ -480,10 +489,18 @@ Nothing computes that sense. A plane's loop is generated around the plane's own 
 *projection* decides whether that order comes out clockwise or anticlockwise, and the pulse
 reverses of its own accord as the camera crosses the plane. Measured by orbiting past
 `ground` and taking the sign of the swept angle about the outline's centre: +74,393 from
-above, −82,167 from below. A line's rails pulse *along*, mirrored on the half stored running
-against the line, so both halves travel the line's own way rather than outward from the
-support in opposite directions — measured, all four rails at −23°. A horizon line's bands
-pulse round both, sense from the great circle's own normal.
+above, −82,167 from below. A line's rails pulse *along*: each rail is **drawn** as two halves
+either side of the support but **walked** as one path, from its far horizon through the
+support to the near one, so the direction falls out of the walk. A horizon line's bands pulse
+round both, sense from the great circle's own normal.
+
+**One comet to a line, not one per piece it is drawn in.** Each of a rail's two halves used to
+pulse on its own, so a selected line wore four comets at four unrelated places — four signals
+where there is one line with one direction. Walking each rail whole leaves two, one per rail,
+and they travel together because both take the phase measured on the first: the pair's
+projected lengths differ by a fraction of a percent, invisible in a moment and a slow drift
+apart over a long selection. Measured after: the two heads stay within one comet's length of
+each other, so they overlap as a single mark crossing the line.
 
 Two shapes get none. A point has no orientation, and its ring's sweep already means something
 else. **A plane at horizon has none either**, which was probed rather than assumed: `frame`,

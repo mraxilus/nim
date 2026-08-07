@@ -157,12 +157,14 @@ const
     ##   A plane's loop is the longest of them; a horizon line's bands are shorter and a
     ## rail is a single segment. Sized here rather than per kind because `samplePulse`
     ## measures whatever it is handed, and the assertion below is what keeps that true.
-  RUNS_MARKER_PULSE* = SEGMENTS_MARKER_RAILS
+  RUNS_MARKER_PULSE* = 2
     ## Bound how many separate runs one marker's pulse comes in.
-    ##   A line's rails is the worst case at four -- two sides, each in the two halves the
-    ##   line is drawn as -- and a horizon line's two bands need two. An outline drawn in
-    ##   pieces has to pulse in all of them, or the half that stays still reads as the
-    ##   marker having broken rather than as one signal.
+    ##   Two, because the shapes drawn in pieces are drawn in two of them: a line's pair of
+    ##   rails, and a horizon line's pair of bands. Both pieces have to pulse, or the one
+    ##   that stays still reads as the marker having broken rather than as one signal.
+    ##   Was four, when each rail's two halves pulsed separately -- so a selected line wore
+    ##   four comets at four unrelated places, which reads as four signals rather than as
+    ##   one line with a direction. A rail's halves are now walked as one path.
   LENGTH_MARKER_COMET* = 64.0
     ## Light this much of a line into its head, in pixels, measured back from the point the
     ## head sits at.
@@ -187,11 +189,18 @@ const
     ##   bar. Chosen against 1.6 and 2.4: the sharper two put nearly all the width in the
     ##   first fifth of the run, leaving the rest indistinguishable from the line under it
     ##   and the run itself looking shorter than it is.
-  SECONDS_MARKER_PULSE* = 4.8
-    ## Take this long to carry the pulse once round its outline.
-    ##   Slow enough to read as circulation rather than as a spinner, and slow enough that
-    ##   several selected objects pulsing at once do not add up to a busy screen. Its
-    ##   *direction* is the whole message, and direction needs time to be read.
+  SPEED_MARKER_PULSE* = 60.0
+    ## Carry the pulse along its outline at this many pixels a second.
+    ##   **A speed, not a lap time**, for the reason the run is a length and not a share:
+    ##   one lap per fixed time makes how fast the mark *moves* a property of the outline
+    ##   it rides. Measured, at the 4.8 s lap this replaces: 156 px/s along a line's rail
+    ##   against 348 px/s round a plane's circle seen close up, so the same signal read as
+    ##   a drift on one shape and a scurry on another.
+    ##   Sixty is the speed the lap was chosen at -- the specimens it was judged on were
+    ##   about 300 px around, one lap of which in 4.8 s is 62 px/s. Slow enough to read as
+    ##   circulation rather than as a spinner, and slow enough that several selected
+    ##   objects pulsing at once do not add up to a busy screen. Its *direction* is the
+    ##   whole message, and direction needs time to be read.
   ANGLE_MARKER_BANDS_OPEN* = 0.5*PI
     ## Start a horizon line's own bands this far off it, in radians, at zero progress.
     ##   A quarter turn is the pole of the very sphere the line's great circle runs
@@ -291,12 +300,32 @@ type
 
 #[ Orientation Pulse ]#
 
-func phasePulse*(now: float): float =
-  ## Report how far round its outline the pulse has travelled, in 0 .. 1, at this time.
-  ##   Wrapped rather than clamped, so it laps forever from one clock that never resets;
-  ##   every marker on screen therefore pulses in step, which reads as one signal about
-  ##   the selection rather than as each object keeping its own time.
-  let laps = now/SECONDS_MARKER_PULSE
+func lengthOfOutline*(
+  points: openArray[ScreenPosition]; count: int; is_closed: bool
+): float =
+  ## Measure an outline right round, in screen pixels.
+  ##   What a caller needs to turn `SPEED_MARKER_PULSE` into a phase for the outline in
+  ##   front of it. `samplePulse` walks the same points again for its own table of where
+  ##   each segment starts, which is the price of the phase being the caller's to say --
+  ##   and it has to be, or a line's two rails would each keep their own clock.
+  if count < 2: return
+  let last = if is_closed: count else: count - 1
+  for i in 0 ..< last:
+    let after = points[(i + 1) mod count]
+    result += hypot(after.x - points[i].x, after.y - points[i].y)
+
+
+func phasePulse*(now, around: float): float =
+  ## Report how far along an outline `around` pixels long the pulse has travelled, in
+  ## 0 .. 1, at this time.
+  ##   Wrapped rather than clamped, so it laps forever from one clock that never resets.
+  ##   Takes the outline's own length because the pulse travels at a fixed *speed*: the
+  ##   phase a given moment stands for is therefore a question about this outline, not one
+  ##   answer shared by every marker on screen. Two markers of the same size still pulse
+  ##   in step, which is as much agreement as a shared clock can honestly buy.
+  ##   Zero for an outline of no length, which has nowhere to travel.
+  if around <= 0.0: return 0.0
+  let laps = now*SPEED_MARKER_PULSE/around
   laps - floor(laps)
 
 
@@ -580,7 +609,7 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
   view_projection: Matrix4; width, height: int; progress, clearance: float;
-  phase_pulse: Option[float]
+  now: Option[float]
 ): Option[Marker] =
   ## Build a line's own pair of rails: two lines parallel to it in world space, one to
   ## each side, converging with it toward its own vanishing points.
@@ -599,12 +628,16 @@ func markerRails(
   ##   the support. Interpolating on screen still keeps every partial rail exactly on the
   ##   line's own projection -- both endpoints lie on it and a projected straight segment
   ##   is straight.
-  ##   `phase_pulse` runs a pulse along every rail **in the line's own direction**, which
-  ##   is what a line has instead of a face to be on. Each rail is built outward from the
-  ##   support toward one horizon or the other, so the half reaching `-axis` is stored
-  ##   running against the line and its pulse is mirrored to compensate; without that the
-  ##   two halves would pulse away from the support in opposite directions and say
-  ##   nothing. None leaves the rails still.
+  ##   `now` runs **one** pulse along each rail, **in the line's own direction**, which is
+  ##   what a line has instead of a face to be on. Each rail is *drawn* as two halves,
+  ##   outward from the support toward either horizon, but it is *walked* as one path from
+  ##   the far horizon through the support to the near one -- so a selected line wears one
+  ##   comet travelling its length rather than four at four unrelated places, and the
+  ##   direction falls out of the walk instead of needing the `-axis` half mirrored back.
+  ##   Both rails take the phase measured on the first of them rather than each measuring
+  ##   its own: they differ in projected length by a fraction of a percent, which is
+  ##   invisible in a moment and is a pair of comets drifting apart over a long selection.
+  ##   None leaves the rails still.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the eye lies on the line (see `directionAcross`).
   let
@@ -616,8 +649,14 @@ func markerRails(
   let
     offset = offsetMarkerRail(anchor.get, scale, clearance)
     frame_camera = placement.frame(scale.eye)
-  var marker = Marker(kind: MarkerKind.Rails)
+  var
+    marker = Marker(kind: MarkerKind.Rails)
+    phase = none(float)
   for side in [offset, -offset]:
+    var
+      end_before = none(ScreenPosition) # Toward `-axis`.
+      support = none(ScreenPosition)
+      end_after = none(ScreenPosition) # Toward `+axis`.
     for reach in [scale.radius_horizon, -scale.radius_horizon]:
       let clipped = clipToEyeSide(
         anchor.get + side*across.get, scale.eye + reach*axis.get, scale.eye,
@@ -633,15 +672,23 @@ func markerRails(
         [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
       marker.segments[marker.count_segment] = drawn
       inc marker.count_segment
-      if phase_pulse.isSome:
-        # Stored support-first, so the half running to `-axis` is stored backwards; its
-        #   pulse is read from the other end of the phase to put both on the line's way.
-        let is_with_line = reach > 0.0
-        marker.addPulse(
-          [drawn[if is_with_line: 0 else: 1], drawn[if is_with_line: 1 else: 0]], 2,
-          is_closed = false,
-          phase = phase_pulse.get,
-        )
+      support = some(drawn[0]) # Where both halves start, and the same point for each.
+      if reach > 0.0: end_after = some(drawn[1]) else: end_before = some(drawn[1])
+
+    # The rail as one walk ordered along the line, from its `-axis` end through the
+    #   support to its `+axis` end. Either end may be missing, clipped away by the eye.
+    var
+      rail: array[3, ScreenPosition]
+      count_rail = 0
+    for point in [end_before, support, end_after]:
+      if point.isNone: continue
+      rail[count_rail] = point.get
+      inc count_rail
+
+    if now.isSome and count_rail >= 2:
+      if phase.isNone:
+        phase = some(phasePulse(now.get, lengthOfOutline(rail, count_rail, false)))
+      marker.addPulse(rail, count_rail, is_closed = false, phase.get)
   if marker.count_segment == 0: return
   some(marker)
 
@@ -681,7 +728,7 @@ func positionsMarkerLoop*(
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; phase_pulse: Option[float]
+  progress, clearance: float; now: Option[float]
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
@@ -697,7 +744,7 @@ func markerLoop(
   ##   units on the plane, which keeps every intermediate circle lying on that plane as
   ##   exactly as the finished one does -- growing it on screen instead would lift it off
   ##   the surface for the whole of the animation and only settle at the end.
-  ##   `phase_pulse` runs a pulse round the circle, **anticlockwise on screen exactly when
+  ##   `now` runs a pulse round the circle, **anticlockwise on screen exactly when
   ##   the plane's normal points at the eye**. Nothing here computes that sense: the points
   ##   are generated around the plane's own frame, and which way that order comes out on
   ##   screen is the projection's answer, so the pulse reverses of its own accord as the
@@ -741,8 +788,11 @@ func markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
-  if phase_pulse.isSome:
-    marker.addPulse(marker.points, marker.count_point, marker.is_closed, phase_pulse.get)
+  if now.isSome:
+    let around = lengthOfOutline(marker.points, marker.count_point, marker.is_closed)
+    marker.addPulse(
+      marker.points, marker.count_point, marker.is_closed, phasePulse(now.get, around)
+    )
   some(marker)
 
 
@@ -766,7 +816,7 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; phase_pulse: Option[float]
+  progress, clearance: float; now: Option[float]
 ): Option[Marker] =
   ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
   ## the great circle the line itself is drawn as.
@@ -778,7 +828,7 @@ func markerBands(
   ##   Cuts each band to whatever stays in front of the eye and reports the remainder as
   ##   an arc, exactly as `markerLoop` does -- half the sky is behind the camera at all
   ##   times, so this is the common case here rather than an edge one.
-  ##   `phase_pulse` runs a pulse round both bands, taking its sense from the great
+  ##   `now` runs a pulse round both bands, taking its sense from the great
   ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
   ##   laid out around that normal's frame, so the projection answers which way they read.
   ##   Both bands rather than one -- an outline drawn in pieces that pulses in only some of
@@ -825,10 +875,13 @@ func markerBands(
       if not are_in_front[i]: break
       marker.points_band[side][marker.counts_band[side]] = ring[i]
       inc marker.counts_band[side]
-    if phase_pulse.isSome:
+    if now.isSome:
+      let around = lengthOfOutline(
+        marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side]
+      )
       marker.addPulse(
         marker.points_band[side], marker.counts_band[side],
-        marker.are_closed_band[side], phase_pulse.get,
+        marker.are_closed_band[side], phasePulse(now.get, around),
       )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
   some(marker)
@@ -947,8 +1000,6 @@ func markerFor*(
   let
     is_horizon = geometry.isHorizon
     clearance = clearanceTouch(swell, is_touch)
-    phase_pulse =
-      if now.isSome: some(phasePulse(now.get)) else: none(float)
   case shape.get
   # A point at horizon is drawn as a fixed star, which `anchorFor` already places, so its
   #   ring needs no horizon branch of its own -- unlike the two below, which are drawn as
@@ -958,17 +1009,17 @@ func markerFor*(
   of Shape.Line:
     if is_horizon:
       markerBands(
-        geometry, scale, view_projection, width, height, progress, clearance, phase_pulse
+        geometry, scale, view_projection, width, height, progress, clearance, now
       )
     else:
       markerRails(
         geometry, scale, placement, view_projection, width, height, progress, clearance,
-        phase_pulse,
+        now,
       )
   of Shape.Plane:
     if is_horizon: markerFrame(width, height, progress, clearance)
     else:
       markerLoop(
         geometry, anchor_override, scale, placement, view_projection, width, height,
-        progress, clearance, phase_pulse,
+        progress, clearance, now,
       )

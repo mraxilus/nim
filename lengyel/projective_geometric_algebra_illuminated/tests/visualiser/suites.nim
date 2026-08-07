@@ -3124,9 +3124,9 @@ suite "Marker":
         let (a, b) = (middleAt(i - 1), middleAt(i))
         result += hypot(b.x - a.x, b.y - a.y)
 
-    # Half a lap in, so no run is one shortened by the end of an open arc.
+    # Partway along, so no run is one shortened by the end of an open arc.
     for geometry in [PLANE, LINE, LINE_HORIZON]:
-      let shaped = markerOf(geometry, now = some(0.5*SECONDS_MARKER_PULSE)).get
+      let shaped = markerOf(geometry, now = some(3.0)).get
       check shaped.count_run_pulse > 0
       for run in 0 ..< shaped.count_run_pulse:
         # A run laid along a curve is a chain of chords, so it falls a hair short of the
@@ -3135,24 +3135,63 @@ suite "Marker":
         check lengthOfRun(shaped, run) > 0.98*LENGTH_MARKER_COMET
 
 
-  test "a pulse travels, and laps rather than stopping":
-    # The head of the run at a few times through one lap and past the end of it.
-    proc headAt(now: float): ScreenPosition =
-      let marker = markerOf(PLANE, now = some(now)).get
-      marker.pulses[0][0]
+  proc headOfRun(marker: Marker; run: int): ScreenPosition =
+    ## Where a run's spine begins, recovered from the middle of the ribbon around it: its
+    ##   own edges ride wide of the spine on the outside of any bend.
+    let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
+    marker.pulses[run][0].towards(marker.pulses[run][2*spans - 1], 0.5)
 
+  test "a pulse travels at one speed, whatever shape it rides":
+    # The other half of measuring the run in pixels. Under a fixed lap the head crossed a
+    #   line's rail at 156 px/s and a plane's circle at 348, so the same signal read as a
+    #   drift on one shape and a scurry on another.
+    const SECONDS_STEP = 0.4
+    for geometry in [PLANE, LINE, LINE_HORIZON]:
+      proc headAt(now: float): ScreenPosition =
+        headOfRun(markerOf(geometry, now = some(now)).get, 0)
+      let crossed = hypot(
+        headAt(2.0 + SECONDS_STEP).x - headAt(2.0).x,
+        headAt(2.0 + SECONDS_STEP).y - headAt(2.0).y,
+      )
+      # A chord again, so a hair under the arc actually travelled.
+      check crossed <= SPEED_MARKER_PULSE*SECONDS_STEP + TOLERANCE_SINGLE
+      check crossed > 0.98*SPEED_MARKER_PULSE*SECONDS_STEP
+
+
+  test "a line wears one comet, not one for every piece it is drawn in":
+    # A rail is drawn as two halves either side of the line's support, and each used to
+    #   pulse on its own -- four comets at four unrelated places on one selected line.
+    let shaped = markerOf(LINE, now = some(2.0)).get
+    check shaped.count_segment == 4
+    check shaped.count_run_pulse == 2
+    # And the pair travels together rather than each rail keeping its own clock, so the
+    #   two read as one comet crossing the line rather than as two chasing each other.
+    let heads = [headOfRun(shaped, 0), headOfRun(shaped, 1)]
+    check hypot(heads[1].x - heads[0].x, heads[1].y - heads[0].y) < LENGTH_MARKER_COMET
+
+
+  test "a pulse laps rather than stopping":
+    proc headAt(now: float): ScreenPosition =
+      headOfRun(markerOf(PLANE, now = some(now)).get, 0)
+
+    # A lap is now the outline's own length at the shared speed, not a fixed time.
+    let settled = markerOf(PLANE).get
+    let seconds_lap =
+      lengthOfOutline(settled.points, settled.count_point, settled.is_closed)/
+        SPEED_MARKER_PULSE
     let start = headAt(0.0)
     var moved = 0
     for step in 1 .. 5:
-      let now = SECONDS_MARKER_PULSE*float(step)/6.0
+      let now = seconds_lap*float(step)/6.0
       if hypot(headAt(now).x - start.x, headAt(now).y - start.y) > 1.0: inc moved
     check moved == 5
     # One whole lap later it is back where it began, so the motion is circulation rather
     #   than a run that ends somewhere.
-    let lapped = headAt(SECONDS_MARKER_PULSE)
+    let lapped = headAt(seconds_lap)
     check hypot(lapped.x - start.x, lapped.y - start.y) < 1.0
     # And the phase itself wraps rather than growing without bound.
-    check phasePulse(0.25*SECONDS_MARKER_PULSE) =~ phasePulse(3.25*SECONDS_MARKER_PULSE)
+    const AROUND = 300.0
+    check phasePulse(1.0, AROUND) =~ phasePulse(1.0 + 3.0*AROUND/SPEED_MARKER_PULSE, AROUND)
 
 
   test "the drag band swells into its head, whichever way it runs":
