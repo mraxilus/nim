@@ -115,7 +115,7 @@ func titleOf*(path: HelpPath): string =
 
 func descriptionOf*(path: HelpPath): string =
   ## Say in one sentence what a tab is about, for the line above its rows.
-  ##   A row can only stand on its own so far. "the more… wedge" and "the apply section"
+  ##   A row can only stand on its own so far. "the … wedge" and "the apply section"
   ##   name things a reader meets *inside* one way of working, and the `menu` rows name
   ##   five buttons without ever saying which menu they are on or how one gets it -- all
   ##   answerable in a sentence, and unanswerable in a two-column row. So the context that
@@ -185,7 +185,7 @@ const lut_help_entries* = block:
     "open the wheel without needing a second button", is_touch = true,
   )
   add(
-    HelpPath.Drag, "the more… wedge",
+    HelpPath.Drag, "the … wedge",
     "hand both objects to the apply picker, which lists every operation",
   )
 

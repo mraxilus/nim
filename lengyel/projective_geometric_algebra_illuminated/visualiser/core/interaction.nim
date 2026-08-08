@@ -44,7 +44,7 @@ import ./[camera, format, mesh, objects, picking, scene]
 #   milliseconds, and while the durations here were named for those, the desktop passed
 #   seconds against them and its dwell menu quietly needed 450 seconds to open.
 
-const SECONDS_DWELL_MENU* = 0.45
+const SECONDS_DWELL_MENU* = 0.75
   ## Hold a drag **still** over its target this long and the choice menu opens, on a
   ## pointer armed `MenuArming.OnDwell` -- which now means touch alone.
   ##   Still, not merely present: the clock restarts whenever the cursor moves further than
@@ -55,6 +55,13 @@ const SECONDS_DWELL_MENU* = 0.45
   ##   Longer than a threshold triggered on its own would dare be, and deliberately so:
   ##   it only has to be slow enough never to fire on a hesitation. The usual failure of
   ##   a dwell menu is popping up at someone who was still moving.
+  ##   **Was 0.45, while a mouse could trip it too.** That number was a compromise: short
+  ##   enough not to feel like a wait for a reader who had no other way to reach the menu.
+  ##   A mouse now decides by which button went down and never waits at all, so the only
+  ##   requirement left is that a finger which paused mid-drag is not answered with a menu
+  ##   -- and a finger pauses far more readily than a mouse does. It also sat *under*
+  ##   `SECONDS_LONG_PRESS` (0.50), so the two thresholds a stationary finger races were in
+  ##   the wrong order; it now stands clear of it.
 
 const SECONDS_LONG_PRESS* = 0.50
   ## Hold a touch this long on an item to select it.
@@ -352,6 +359,14 @@ func toDrag*(choice: DragChoice): Option[DragOperation] =
   of DragChoice.More: none(DragOperation)
 
 
+func toOperation*(drag: DragOperation): Operation =
+  ## Translate drag's own vocabulary to library's operation catalogue.
+  case drag
+  of DragOperation.Join: Operation.Wedge
+  of DragOperation.Meet: Operation.WedgeAnti
+  of DragOperation.Project: Operation.ProjectOrthogonal
+
+
 func compassOf*(choice: DragChoice): Compass =
   ## Place a choice in the menu. Fixed for the life of the program; see `Compass`.
   ##   North is the default a plain release takes most often, so the commonest choice is
@@ -363,18 +378,39 @@ func compassOf*(choice: DragChoice): Compass =
   of DragChoice.More: Compass.West
 
 
-func labelOf*(choice: DragChoice): string =
-  ## Name a choice as its wedge says it, in the words the help table already uses.
-  ##   Words rather than the catalogue's symbols, which the pickers now offer: measured on
-  ##   the rendered menu, the projection's own notation (`𝐧 ∨ (𝐦 ∧ 𝐧☆)`) is nearly twice
-  ##   the width of "project", so symbols make this menu wider rather than slimmer. A
-  ##   picker is a list read at leisure and a wedge is a target read under a thumb; they
-  ##   want opposite things of the same operation, and this is the one that wants a word.
+proc labelOf*(choice: DragChoice): string =
+  ## Name a choice as its wedge says it, in the catalogue's own symbols.
+  ##   **The very text the apply picker offers**, through `scene.notationSymbolic`, because
+  ##   the wheel and that picker are the same control in two postures and a reader should
+  ##   not have to learn `join` on one and `𝐦 ∧ 𝐧` on the other. Whichever they meet first
+  ##   teaches the other. The words are still taught, once, in the drawer's own intro line,
+  ##   which now names each symbol beside its word.
+  ##   The projection's notation (`𝐧 ∨ (𝐦 ∧ 𝐧☆)`) is the wide one, near twice the width of
+  ##   the word it replaces -- affordable only because it sits at `Compass.South`, clear of
+  ##   the two wedges the width could have collided with. Moving a choice to a different
+  ##   compass point is therefore a decision about this label too; see `Compass`.
+  ##   `More` takes a bare ellipsis rather than "more…": beside three pieces of notation a
+  ##   word is the odd one out, and the ellipsis is the one mark that already means
+  ##   "and the rest" without being an operation.
+  ##   A `proc` rather than a `func` for the reason `scene.notationSymbolic` is one: the
+  ##   table it reads is a `let`, since a picker needs the address of its first entry.
+  case choice
+  of DragChoice.Join, DragChoice.Meet, DragChoice.Project:
+    notationSymbolic(toOperation(toDrag(choice).get))
+  of DragChoice.More: "…"
+
+
+func wordOf*(choice: DragChoice): string =
+  ## Name a choice in words, for the one place each is *taught* rather than offered.
+  ##   The wedge itself says `𝐦 ∧ 𝐧` -- see `labelOf` -- which is only readable by someone
+  ##   who has been told once that it is `join`. That telling is the drawer's own legend
+  ##   line and nowhere else, so this exists to keep the legend and the help table naming
+  ##   the three the same way.
   case choice
   of DragChoice.Join: "join"
   of DragChoice.Meet: "meet"
   of DragChoice.Project: "project"
-  of DragChoice.More: "more…"
+  of DragChoice.More: "more"
 
 
 func inkOf*(choice: DragChoice): Ink =
@@ -420,14 +456,6 @@ func choiceAt*(centre, cursor: ScreenPosition): Option[DragChoice] =
   for choice in DragChoice:
     if compassOf(choice) == compass: return some(choice)
   none(DragChoice)
-
-
-func toOperation*(drag: DragOperation): Operation =
-  ## Translate drag's own vocabulary to library's operation catalogue.
-  case drag
-  of DragOperation.Join: Operation.Wedge
-  of DragOperation.Meet: Operation.WedgeAnti
-  of DragOperation.Project: Operation.ProjectOrthogonal
 
 
 func resultOf*(choice: DragChoice; m, n: Multivector): Option[Multivector] =

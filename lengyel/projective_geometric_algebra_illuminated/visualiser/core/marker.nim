@@ -102,6 +102,28 @@ const
     ## Place each of a line's own rails this far from the line, in pixels, measured at
     ## the line's own support, to within a fraction of a pixel -- see `offsetMarkerRail`
     ## for what happens elsewhere along it, and `directionAcross` for the fraction.
+  OFFSET_MARKER_RAIL_MAX* = 2.0*OFFSET_MARKER_RAIL
+    ## Never let a rail read further from its line than this, in pixels, however near the
+    ## camera comes. See `markerRails` for how the ceiling is applied.
+    ##   A *world* offset holds its stated pixel gap only where it was measured, and
+    ## `worldPerPixelAt` clamps depth at the near plane -- so as a line's support
+    ## approaches the eye the offset stops shrinking while the projection keeps dividing by
+    ## a smaller depth. Measured, on the demo's own `a ∧ b` with the camera closing on it:
+    ##
+    ##   | camera distance | separation at support |
+    ##   |-----------------|-----------------------|
+    ##   | 24 | 14.7 px |
+    ##   | 12 | 15.3 px |
+    ##   | 6 | 18.1 px |
+    ##   | 3 | 33.1 px |
+    ##   | 1.5 | **264.7 px** |
+    ##
+    ##   Against an intended `2*OFFSET_MARKER_RAIL` of 13.5, the last row is twenty times
+    ## too wide and the pair stops reading as flanking anything.
+    ##   Twice the base, not four times: 27 pixels of white either side of a 1.5-pixel line
+    ## is already the loosest that still reads as one object, and the table shows nothing
+    ## out to a camera distance of 6 is touched -- so the ceiling only ever bites where the
+    ## gap had already stopped meaning what it says.
   CLEARANCE_MARKER_TOUCH* = 54.5
     ## Push every marker outward by up to this many pixels partway through a **touch**
     ## hold, settling back to its true size as the hold completes.
@@ -654,8 +676,31 @@ func markerRails(
     across = directionAcross(geometry, scale.eye)
   if anchor.isNone or axis.isNone or across.isNone: return
 
+  # What the world offset actually comes out as on screen, measured rather than assumed,
+  #   and pulled in where it exceeds `OFFSET_MARKER_RAIL_MAX`. Measuring is the whole
+  #   point: `offsetMarkerRail` states a pixel gap but delivers it only where
+  #   `worldPerPixelAt` was read, and that reading clamps depth at the near plane, so a
+  #   support close to the eye is sized as if it were further away and projects far wider
+  #   than asked. See that constant for the table.
+  #   **Capping at the support caps the whole rail.** A rail runs from its own offset
+  #   support to the line's own vanishing point, which both rails share -- so the world
+  #   offset falls linearly to zero along it while depth rises, and both ends sit ahead of
+  #   the near plane after clipping. The projected gap is then a ratio of two affine
+  #   functions on that interval: monotone, and largest at the support. One scale factor
+  #   for the whole marker therefore bounds it everywhere, and the rails stay straight,
+  #   stay parallel in world space, and still converge on the vanishing point.
   let
-    offset = offsetMarkerRail(anchor.get, scale, clearance)
+    offset_wanted = offsetMarkerRail(anchor.get, scale, clearance)
+    at_line = projectToScreen(view_projection, width, height, anchor.get)
+    at_rail = projectToScreen(
+      view_projection, width, height, anchor.get + offset_wanted*across.get
+    )
+    apart = hypot(at_rail.x - at_line.x, at_rail.y - at_line.y)
+    ceiling = OFFSET_MARKER_RAIL_MAX + clearance
+    offset =
+      if at_line.isInFront and at_rail.isInFront and apart > ceiling:
+        offset_wanted*ceiling/apart
+      else: offset_wanted
     frame_camera = placement.frame(scale.eye)
   var marker = Marker(kind: MarkerKind.Rails)
   for side in [offset, -offset]:

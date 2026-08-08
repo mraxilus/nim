@@ -1250,8 +1250,9 @@ const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
 const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE,
   WIDTH_MENU_WEDGE_BORDER, RADIUS_MENU_CENTRE,
   ALPHA_MENU_WEDGE, ALPHA_MENU_UNOFFERED] = nimMenuMetrics();
-// Floats per wedge in nimDragMenuLayout: x, y, offered, then red, green and blue.
-const FLOATS_MENU_WEDGE = 6;
+// Floats per wedge in nimDragMenuLayout: x, y, offered. The wedge's own colours come from
+// `.menu-wedge`, which is `.selection-menu button` -- see shell.html.
+const FLOATS_MENU_WEDGE = 3;
 
 function svgEl(tag, attrs) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -1457,20 +1458,15 @@ function appendChoiceMenu(w, h) {
     const at = i * FLOATS_MENU_WEDGE;
     const [x, y] = [layout[at], layout[at + 1]];
     const is_offered = layout[at + 2] > 0.5;
-    // The choice's own hue, which now colours the label rather than filling the wedge --
-    // the surface and border come from `.menu-wedge`, which is `.selection-menu button`.
-    const hue = 'rgb(' + Math.round(layout[at + 3] * 255) + ',' +
-      Math.round(layout[at + 4] * 255) + ',' + Math.round(layout[at + 5] * 255) + ')';
     // Label first, then a rect sized from what the browser actually laid it out as --
     // measured rather than estimated from a character count, which drifts the moment the
     // face loaded is not the one the estimate was tuned against.
     const text = svgEl('text', {
       x: x, y: y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-      fill: hue,
       // An unoffered wedge is dimmed rather than dropped: a gap where a wedge should be is
       // unreadable, and the point of a fixed compass is that a choice never moves.
       'fill-opacity': is_offered ? 1 : 0.6,
-      class: 'menu-wedge-label',
+      class: i === highlighted ? 'menu-wedge-label on' : 'menu-wedge-label',
     });
     text.textContent = labels[i];
     svg_overlay.appendChild(text);
@@ -1487,7 +1483,7 @@ function appendChoiceMenu(w, h) {
   svg_overlay.appendChild(svgEl('circle', {
     cx: centre[0], cy: centre[1],
     r: RADIUS_MENU_CENTRE,
-    fill: 'none', stroke: 'rgba(255,255,255,0.7)', 'stroke-width': WIDTH_OVERLAY_LINE,
+    fill: 'none', class: 'menu-centre', 'stroke-width': WIDTH_OVERLAY_LINE,
   }));
 }
 

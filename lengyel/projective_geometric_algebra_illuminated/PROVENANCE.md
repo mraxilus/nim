@@ -550,9 +550,24 @@ consults no neighbour.
 a line's rail against 348 px/s round a plane's circle seen close up, so the same signal read
 as a drift on one shape and a scurry on another. `SPEED_MARKER_PULSE` is 60 px/s, which is the
 speed the lap was chosen at: the specimens it was judged on were about 300 px around, and one
-lap of those in 4.8 s is 62 px/s. Driven after the change, the plane's own comet crosses the
-browser at 60.0 px/s. The phase is therefore a question about a particular outline rather than
-one answer shared by every marker, which is why `phasePulse` takes the length it laps.
+lap of those in 4.8 s is 62 px/s. Driven, the comet crosses the browser at **61.3 px/s on a
+line and 61.3 px/s on a plane** — the same signal on both, which was the point. The phase is
+therefore a question about a particular outline rather than one answer shared by every marker,
+which is why `phasePulse` takes the length it laps.
+
+**A selected line went a whole round with no comet at all, and the round's own verification
+missed it.** `nimSelectionPulse` returned *before* advancing the clock when no run came out,
+and every slot's phase starts at exactly 0 — at which `samplePulse` clamps rather than wraps
+on an **open** outline, so a line's rails produced nothing, so the clock was never advanced,
+so the phase stayed 0 for ever. A plane's loop is closed, wraps at 0, and never entered that
+deadlock; that asymmetry is the whole reason planes pulsed and lines did not. Two things let
+it ship: the number quoted above was taken on the **desktop**, whose `drawSelectionMarker`
+advances right after shaping and was never affected, and the suite shapes a marker directly
+and so never asked what a caller did with `around`. The advance now belongs to "this slot was
+drawn this frame". Measured against the shipped build: a selected line reports **0 runs, ever**
+before and **2 runs at 61.3 px/s** after. The suite case that would have caught it asserts a
+rails marker at phase 0 still reports a positive `around` — an empty run and an unmeasured
+outline are different things, and only the second is a fault.
 
 That taper is why each run is a **closed outline to fill rather than a path to stroke**: a
 stroke carries one width for its whole length. `ribbonAlong` wraps the sampled spine in both
@@ -627,6 +642,38 @@ another. A constant screen offset instead holds the pair open all the way to the
 where the line has long since narrowed to nothing; that was the first attempt and it was
 wrong on the geometry. This is why `picking.clipToEyeSide` is exported: a marker drawn past
 the eye plane wraps to the opposite side of the screen.
+
+**But a world offset holds its stated pixel gap only where it was measured**, and
+`worldPerPixelAt` clamps depth at the near plane — so as a line's support approaches the eye
+the offset stops shrinking while the projection keeps dividing by a smaller depth, and the
+pair flies apart. Measured on the demo's own `a ∧ b`, camera closing on it, as the widest
+perpendicular separation anywhere along the rails:
+
+| camera distance | before | after |
+|---|---|---|
+| 24 | 16.5 px | 16.5 px |
+| 12 | 16.8 px | 16.8 px |
+| 6 | 19.2 px | 19.2 px |
+| 3 | 33.1 px | 29.2 px |
+| **1.5** | **264.7 px** | **29.2 px** |
+
+Against an intended 13.5, the last row was twenty times too wide and the pair stopped reading
+as flanking anything. `OFFSET_MARKER_RAIL_MAX` (twice the base) is now a ceiling, applied as
+**one measurement and one scale, not a subdivided rail**: project the anchor and the anchor
+stepped once sideways, read how far apart they land, and where that exceeds the ceiling scale
+the world offset by the ratio. Capping at the support caps the whole rail, because a rail runs
+from its own offset support to the line's vanishing point — which both rails share, so the
+offset falls linearly to zero along it while depth rises, and with both ends ahead of the near
+plane the projected gap is a ratio of two affine functions: monotone, largest at the support.
+The rails stay straight, stay parallel in world space, and still converge on that point.
+The residual ~2 px over the nominal 27 is `directionAcross`'s own tilt, the same fraction the
+uncapped 14.7-for-13.5 base row carries.
+
+**Measure the gap, never the distance between the two rails' drawn endpoints.**
+`fractionLeavingView` cuts each rail at its own fraction, so those endpoints are not at the
+same place along the line; the first pass at this table read 35.6 px at a camera distance of
+12 from exactly that mistake, and the number means nothing. The suite's own `apartRails` takes
+the perpendicular distance from one rail's points to the *infinite line* through the other's.
 
 **A rail's growth is measured against the edge of the view, not against its own length**
 (`fractionLeavingView`). Each rail runs from the line's support to one of the line's two
@@ -754,7 +801,15 @@ the whole reason the flag became an enum instead of just being deleted.
 button numbers and `browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button`
 numbers (0/1/2, a different numbering for the same three buttons) into it, while
 `nimDragArmingOnDwell` names the one arming no button carries so `glue.js` writes no ordinal
-of its own. `SECONDS_DWELL_MENU` (0.45) is unchanged and now measures only a finger.
+of its own. `SECONDS_DWELL_MENU` is **0.75**, and now measures only a finger. It was 0.45
+while a mouse could trip it too, which made it a compromise — short enough not to feel like
+a wait for a reader who had no other way in. With the mouse deciding by button, the only
+requirement left is that a finger which paused mid-drag is not answered with a menu, and a
+finger pauses far more readily than a mouse. It also sat *under* `SECONDS_LONG_PRESS`
+(0.50), so the two thresholds a stationary finger races were in the wrong order. Timed end
+to end through real CDP touch on a Pixel 5 profile: **0.63 s → 0.93 s** from the last
+movement to the wheel appearing, the extra ~0.18 s in both being the 50 ms poll granularity
+and the frame loop's own latency under SwiftShader.
 **Middle is unbound**: `project` used to live there, which put a third of the vocabulary
 behind hardware most trackpads lack.
 A plain click selects instead of dragging; shift-click toggles into a multi-selection; a
@@ -829,14 +884,38 @@ floating selection menu's own button, moved**: same surface (`--surface-raised`)
 hairline `--border`, same 8-px radius, same 12-px semibold face, and the same `--accent`
 border on the one in force that `.btn.on` and `.help-tab.on` wear. The two are one control
 in two postures — one reached by dragging, one by picking — and they used to look like two
-things to learn. What survives from the old solid-slab-of-hue wedge is the hue, on the
-*label*, so join/meet/project still carry the colours the drawer's intro line gives them.
-Verified by reading both out of the live page: wedge fill `rgb(27,33,43)`, stroke
-`rgb(42,50,61)`, radius 8, font `600 12px "Noto Sans UI"` — identical to
-`.selection-menu button`'s computed style. On the browser the wedge takes those from the
-same CSS variables that menu does, so there is nothing to keep in step; the desktop copies
-the three tones into `visualiser.drawChoiceMenu` with the siblings named, exactly as
-`gui_shim.guiButtonToggle` already had to. **One release rule:
+things to learn. Verified by reading both out of the live page: wedge fill `rgb(27,33,43)`,
+stroke `rgb(42,50,61)`, radius 8, font `600 12px "Noto Sans UI"`, label `rgb(231,236,241)` —
+identical to `.selection-menu button`'s computed style in every one. On the browser the
+wedge takes those from the same CSS variables that menu does, so there is nothing to keep in
+step; the desktop copies the tones into `visualiser.drawChoiceMenu` with the siblings named,
+exactly as `gui_shim.guiButtonToggle` already had to.
+
+**A wedge says what the picker says.** `interaction.labelOf` returns
+`scene.notationSymbolic`, so the wheel offers `𝐦 ∧ 𝐧`, `𝐦 ∨ 𝐧` and `𝐧 ∨ (𝐦 ∧ 𝐧☆)` — the
+picker's own text, in `--ink`, with `--accent-ink` on the wedge in force. `More` takes a
+bare `…`: beside three pieces of notation a word is the odd one out, and no operation is
+written with an ellipsis. The words survive in exactly one place, the drawer's own legend,
+which prints each beside its symbol (`interaction.wordOf` and `labelOf` on the desktop, the
+`.drawer-intro` markup in the browser, each naming the other as its sibling) — a wedge
+reading `𝐦 ∧ 𝐧` is only legible to someone told once that it is `join`.
+
+The wheel kept words for one round on a measurement that turned out to be the wrong one:
+the projection's notation is indeed near twice the width of `project`, but it sits at
+`Compass.South`, clear of the two wedges the width could have collided with, while `more…`
+→ `…` takes 31 px off the *east–west* axis that actually sets the wheel's width. Measured on
+a 320 px phone, rendered:
+
+| wedge | words | notation |
+|---|---|---|
+| north | `join` 44.9 px | `𝐦 ∧ 𝐧` 53.6 px |
+| east | `meet` 52.6 px | `𝐦 ∨ 𝐧` 53.6 px |
+| south | `project` 63.3 px | `𝐧 ∨ (𝐦 ∧ 𝐧☆)` 92.0 px |
+| west | `more…` 62.9 px | `…` 32.0 px |
+| **whole wheel** | **209.8 × 182 px** | **194.7 × 182 px** |
+
+So the symbols made it **15 px narrower**, not wider. Moving a choice to a different compass
+point is therefore a decision about its label too. **One release rule:
 a release commits whatever is under the cursor.** `endDrag` resolves the wedge itself
 through `choiceAt`, rather than each render path resolving it, so the two cannot disagree
 about where a release landed; back at the centre (inside `PIXELS_MENU_DEADZONE`, 26 px)

@@ -117,15 +117,20 @@
     font-family: var(--sans);
     font-size: 12px;
     font-weight: 600;
+    fill: var(--ink);
   }
   .menu-wedge {
     fill: var(--surface-raised);
     stroke: var(--border);
   }
   /* The wedge the cursor stands in, in the same accent every other "this one is in force"
-     control on the page wears (`.btn.on`, `.help-tab.on`) -- so the highlight survives a
-     reader who cannot tell one label hue from another. */
+     control on the page wears (`.btn.on`, `.help-tab.on`), on both the border and the
+     label -- so the highlight survives a reader who cannot tell one hue from another. */
   .menu-wedge.on { stroke: var(--accent); }
+  .menu-wedge-label.on { fill: var(--accent-ink); }
+  /* The menu's own centre, where nothing is chosen. Its border rather than white, so the
+     wheel is drawn entirely out of the tones the selection menu uses. */
+  .menu-centre { stroke: var(--border); }
 
   .veil {
     position: fixed;
@@ -861,9 +866,13 @@
   <div class="drawer-scroll">
     <p class="drawer-intro">
       Drag one object onto another; the two of them choose what it makes:
-      <span class="op-join">join</span>,
-      <span class="op-meet">meet</span>,
-      <span class="op-project">project</span>.
+      <!-- Where the three symbols are taught: the wheel's own wedges carry the notation
+           alone (interaction.labelOf), which is the apply picker's text and unreadable to
+           anyone not told once that it is `join`. Sibling: panel.nim's own legend, which
+           says the same thing through interaction.wordOf and interaction.labelOf. -->
+      <span class="op-join">join 𝐦 ∧ 𝐧</span>,
+      <span class="op-meet">meet 𝐦 ∨ 𝐧</span>,
+      <span class="op-project">project 𝐧 ∨ (𝐦 ∧ 𝐧☆)</span>.
       Right-drag to pick instead; on a touchscreen, hold still over the target.
       Drag empty space to move the camera: left orbits, right pans, wheel dollies.
     </p>

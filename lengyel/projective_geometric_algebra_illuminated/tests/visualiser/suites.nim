@@ -1525,11 +1525,15 @@ suite "Selection":
     #   popover wider than a hand can reach.
     for operation in Operation:
       check not notationSymbolic(operation).contains("  ")
-    # The drag wedges keep their words: measured on the rendered menu, the projection's
-    #   own notation is nearly twice the width of "project", so symbols would widen the one
-    #   menu that is read under a thumb.
-    check labelOf(DragChoice.Join) == "join"
-    check labelOf(DragChoice.Project) == "project"
+    # The drag wedges carry that same picker text, so the wheel and the picker are one
+    #   vocabulary rather than two a reader has to map between. The words survive only
+    #   where the three are *taught*, in the drawer's own legend, which prints both.
+    check labelOf(DragChoice.Join) == notationSymbolic(Operation.Wedge)
+    check labelOf(DragChoice.Project) == notationSymbolic(Operation.ProjectOrthogonal)
+    check wordOf(DragChoice.Join) == "join"
+    # The way out to the rest of the catalogue is a bare ellipsis: beside three pieces of
+    #   notation a word is the odd one out, and no operation is written with one.
+    check labelOf(DragChoice.More) == "…"
 
   test "a picker opens on what was last applied at its own arity":
     var memory: OperationMemory
@@ -2818,13 +2822,35 @@ suite "Marker":
 
   proc markerOf(
     geometry: Multivector; anchor = none(Position); progress = 1.0;
-    phase = none(float)
+    phase = none(float); distance = 19.0
   ): Option[Marker] =
-    let (placement, view_projection, scale) = setUp()
+    let (placement, view_projection, scale) = setUp(distance)
     markerFor(
       geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
       progress, is_touch = false, phase = phase,
     )
+
+  func apartRails(marker: Marker): float =
+    ## Widest the two rails read apart anywhere along them, in screen pixels.
+    ##   The perpendicular distance from one rail's own points to the *infinite line*
+    ##   through the other's, sampled along both -- never the distance between the two
+    ##   rails' drawn endpoints, which `fractionLeavingView` cuts at its own fraction per
+    ##   rail, so those endpoints are not at the same place along the line and the distance
+    ##   between them measures nothing.
+    proc away(point, first, second: ScreenPosition): float =
+      let (dx, dy) = (second.x - first.x, second.y - first.y)
+      let length = hypot(dx, dy)
+      if length <= 0.0: return hypot(point.x - first.x, point.y - first.y)
+      abs((point.x - first.x)*dy - (point.y - first.y)*dx)/length
+    # Segments arrive side 0's two halves then side 1's; each side's halves share a support
+    #   and run opposite ways, so either half's own line carries the whole rail.
+    if marker.count_segment < 4: return 0.0
+    for (own, other) in [(0, 2), (1, 3), (2, 0), (3, 1)]:
+      for step in 0 .. 2:
+        let along = marker.segments[own][0].towards(
+          marker.segments[own][1], float(step)/2.0
+        )
+        result = max(result, away(along, marker.segments[other][0], marker.segments[other][1]))
 
   proc reachRails(marker: Marker): float =
     ## Total screen length of every rail piece, which is what a filling hold grows.
@@ -3311,6 +3337,25 @@ suite "Marker":
       check crossed > 0.98*STEP*shaped.around
 
 
+  test "a line's rails never read further apart than their own ceiling":
+    # A world offset delivers its stated pixel gap only where `worldPerPixelAt` was read,
+    #   and that reading clamps depth at the near plane -- so a support close to the eye is
+    #   sized as if it stood further off and projects far wider than asked. Driven on the
+    #   demo's own `a ∧ b`, the pair read **264.7 px** apart at a camera distance of 1.5,
+    #   against an intended 13.5.
+    #   Far off, the ceiling must not bite at all: the gap is what says a line is selected,
+    #   and a cap that quietly narrowed every rail would cost that.
+    let settled = markerOf(LINE, distance = 19.0).get
+    check apartRails(settled) > OFFSET_MARKER_RAIL
+    check apartRails(settled) <= 2.0*OFFSET_MARKER_RAIL_MAX
+    # Close in, it must: this is the case the ceiling exists for, and the same marker
+    #   without it came out several times over.
+    for distance in [3.0, 1.5, 0.8]:
+      let near = markerOf(LINE, distance = distance)
+      if near.isNone: continue # Eye on the line itself; no side to flank from.
+      check apartRails(near.get) <= 2.0*OFFSET_MARKER_RAIL_MAX
+
+
   test "a line wears one comet, not one for every piece it is drawn in":
     # A rail is drawn as two halves either side of the line's support, and each used to
     #   pulse on its own -- four comets at four unrelated places on one selected line.
@@ -3321,6 +3366,24 @@ suite "Marker":
     #   two read as one comet crossing the line rather than as two chasing each other.
     let heads = [headOfRun(shaped, 0), headOfRun(shaped, 1)]
     check hypot(heads[1].x - heads[0].x, heads[1].y - heads[0].y) < LENGTH_MARKER_COMET
+
+
+  test "a marker measures its own outline even where the pulse on it came out empty":
+    # The property a browser-side deadlock turned on. Every slot's phase starts at exactly
+    #   0, and `samplePulse` *clamps* rather than wraps on an open outline -- so a line's
+    #   rails at phase 0 legitimately produce no run at all. What must still be true is
+    #   that the marker reports the length it was laid along, because that is what the
+    #   clock is advanced against: a zero there freezes the phase at 0, which produces no
+    #   run, which is the deadlock. It cost a selected line its comet outright, on a build
+    #   whose suite was green -- the suite shaped the marker directly and never asked what
+    #   the caller did with `around`.
+    let stalled = markerOf(LINE, phase = some(0.0)).get
+    check stalled.count_run_pulse == 0 # An open outline has nothing behind its start.
+    check stalled.around > 0.0
+    check phaseAdvanced(0.0, stalled.around, 1.0) > 0.0
+    # And a closed outline never enters that state at all, which is exactly why a plane
+    #   pulsed while a line did not.
+    check markerOf(PLANE, phase = some(0.0)).get.count_run_pulse == 1
 
 
   test "a pulse laps rather than stopping":

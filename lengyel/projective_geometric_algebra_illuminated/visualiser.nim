@@ -531,6 +531,8 @@ const
   TONE_WEDGE_SURFACE = (red: 0.106'f32, green: 0.129'f32, blue: 0.169'f32)
   TONE_WEDGE_BORDER = (red: 0.165'f32, green: 0.196'f32, blue: 0.239'f32)
   TONE_WEDGE_CHOSEN = (red: 0.0'f32, green: 0.655'f32, blue: 0.647'f32)
+  TONE_WEDGE_LABEL = (red: 0.906'f32, green: 0.925'f32, blue: 0.945'f32)
+  TONE_WEDGE_LABEL_CHOSEN = (red: 0.741'f32, green: 0.953'f32, blue: 0.941'f32)
 
 
 proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
@@ -541,10 +543,12 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   ##   `interaction.choiceAt`'s answer, the same one the release will act on, so what is
   ##   highlighted is never a second opinion about where the cursor is.
   ##   **A wedge is the selection menu's own button, moved.** Surface fill, one hairline
-  ##   border, label in the choice's own hue -- rather than the solid slab of that hue it
-  ##   used to be, which made the two menus look like two different things a reader had to
-  ##   learn separately. The hue stays, on the text, so `join`/`meet`/`project` still carry
-  ##   the colour the drawer's own intro line gives them.
+  ##   border, `--ink` label, `--accent` border and `--accent-ink` label on the one in
+  ##   force -- rather than the solid slab of the choice's own hue it used to be, which made
+  ##   the two menus look like two different things a reader had to learn separately. The
+  ##   label itself is that menu's own text too, the catalogue notation `labelOf` reads out
+  ##   of `scene.notationSymbolic`. The hues are taught in the drawer's own legend, which
+  ##   names each symbol beside its word, and still tint the rubber-band.
   let
     centre = interaction.menu.get
     over = destinationOf(interaction)
@@ -585,7 +589,7 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
       TONE_WEDGE_SURFACE.red, TONE_WEDGE_SURFACE.green, TONE_WEDGE_SURFACE.blue, alpha,
       ROUNDING_MENU_WEDGE,
     )
-    let ink_label = inkOf(choice).colour
+    let ink_label = if is_chosen: TONE_WEDGE_LABEL_CHOSEN else: TONE_WEDGE_LABEL
     gui.overlayText(
       cfloat(at.x), cfloat(at.y), ink_label.red, ink_label.green, ink_label.blue,
       cfloat(if is_offered: 1.0 else: 0.6), cstring(label),

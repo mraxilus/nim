@@ -981,11 +981,16 @@ proc nimDragMenuLabels(): seq[cstring] {.exportc.} =
 
 
 proc nimDragMenuLayout(): seq[float32] {.exportc.} =
-  ## Lay the open menu out, six floats per wedge in `DragChoice` order: centre x and y in
-  ## canvas pixels, whether it is offered as 1 or 0, then its own red, green and blue.
+  ## Lay the open menu out, three floats per wedge in `DragChoice` order: centre x and y in
+  ## canvas pixels, then whether it is offered as 1 or 0.
   ##   Flat rather than a record per wedge, exactly as `nimSelectionMarker` is: an object
   ##   crossing this boundary is a second shape to keep in step, and the presentation
   ##   layer only ever walks these in order to place four elements.
+  ##   Carried each wedge's own red, green and blue too, while its label wore the choice's
+  ##   hue. The label now wears `--ink`, like every button on the floating selection menu
+  ##   this wheel is the other posture of, so the hue crossed this boundary for nobody.
+  ##   `interaction.inkOf` still answers for the rubber-band and for the drawer's own
+  ##   legend, which is where the hues are taught.
   ##   Empty where no menu is open, so the caller needs no second guard.
   if g_interaction.menu.isNone: return
   let
@@ -997,17 +1002,13 @@ proc nimDragMenuLayout(): seq[float32] {.exportc.} =
   for choice in DragChoice:
     let
       at = anchorOf(centre, choice)
-      tint = inkOf(choice).colour
       is_offered =
         choice == DragChoice.More or
         (is_pair_live and isOffered(
           choice, g_scene.geometryOf(g_interaction.index_source),
           g_scene.geometryOf(over.get),
         ))
-    result.add([
-      float32(at.x), float32(at.y), float32(ord(is_offered)),
-      tint.red, tint.green, tint.blue,
-    ])
+    result.add([float32(at.x), float32(at.y), float32(ord(is_offered))])
 
 
 proc nimDragMenuHighlighted(): cint {.exportc.} =
@@ -1200,6 +1201,14 @@ proc nimSelectionPulse(
   ## marker's pulse has to swell with it.
   ##   Empty for anything with no orientation to state: a point, a plane at horizon, a
   ## dead slot, or geometry with no shape. See `marker.markerFor`.
+  ##   **The clock is advanced whether or not a run came out**, which is a rule about this
+  ## slot having been drawn this frame rather than about what it drew. Returning early on
+  ## an empty run deadlocked a line outright: every phase starts at 0, and `samplePulse`
+  ## clamps rather than wraps on an *open* outline, so a rail at phase 0 yields nothing --
+  ## which then skipped the advance, which left the phase at 0, for ever. A plane's loop is
+  ## closed, wraps at 0, and so never entered the deadlock; that is the whole reason planes
+  ## pulsed and lines did not. Mirrors `visualiser.drawSelectionMarker`, which advances
+  ## right after shaping and was never affected.
   if not g_scene.isAlive(int(slot)): return
   let
     scale = g_camera.drawExtentFor(int(height))
@@ -1209,12 +1218,13 @@ proc nimSelectionPulse(
       g_camera, vp, int(width), int(height), float(progress), is_touch,
       phase = some(g_clock_pulse.phaseAt(int(slot))), swell = float(swell),
     )
-  if shaped.isNone or shaped.get.count_run_pulse == 0: return
+  if shaped.isNone: return
 
   let marker = shaped.get
   # Carried against the length this marker actually came out at, so orbiting changes how
   #   fast the comet travels and never where it is. See `selection.PulseClock`.
   g_clock_pulse.advance(int(slot), marker.around, g_seconds_step_pulse)
+  if marker.count_run_pulse == 0: return
   result = @[cfloat(marker.count_run_pulse)]
   for run in 0 ..< marker.count_run_pulse:
     result.add(cfloat(marker.counts_pulse[run]))

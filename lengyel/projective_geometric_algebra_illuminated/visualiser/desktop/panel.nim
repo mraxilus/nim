@@ -1330,19 +1330,22 @@ proc layoutPanel*(
   ##   control adds an item this frame, so it animates in from the moment it appears.
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA visualiser"):
-    # Coloured words match the rubber-band drawn while dragging and the wedges of the
-    #   choice menu, so a line on screen names its own outcome before it is released.
-    #   Which colour belongs to which is `interaction.inkOf`'s to say, so this legend
-    #   cannot come to disagree with what is actually drawn; the *names* come from
-    #   `interaction.labelOf`, for the same reason.
+    # Coloured words match the rubber-band drawn while dragging, so a line on screen names
+    #   its own outcome before it is released. Which colour belongs to which is
+    #   `interaction.inkOf`'s to say, so this legend cannot come to disagree with what is
+    #   actually drawn.
+    #   **This is where the three symbols are taught.** The wheel's own wedges say
+    #   `𝐦 ∧ 𝐧` (see `interaction.labelOf`), which is the picker's text and unreadable to
+    #   anyone who has not been told once that it is `join` -- so the word and the notation
+    #   appear here together, both read from `interaction`. Its sibling is the browser's
+    #   own `.drawer-intro` line in `shell.html`, which says the same thing in markup.
     gui.textWrapped("Drag one object onto another; the two of them choose what it makes:")
-    gui.text(" ")
     for choice in [DragChoice.Join, DragChoice.Meet, DragChoice.Project]:
       let tint = inkOf(choice).colour
-      gui.sameLine()
-      gui.textTinted(cstring(labelOf(choice)), tint.red, tint.green, tint.blue)
-    gui.sameLine()
-    gui.text("-- right-drag to pick.")
+      gui.textTinted(
+        cstring(wordOf(choice) & "  " & labelOf(choice)), tint.red, tint.green, tint.blue
+      )
+    gui.textWrapped("Right-drag to pick instead; on a touchscreen, hold still over the target.")
 
     # Scene-content edits only -- an orbit is not a step of its own, though each step
     #   restores the view it was made from; see `history.nim`. Each button greys out where
