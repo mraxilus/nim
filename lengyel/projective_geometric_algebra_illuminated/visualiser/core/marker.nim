@@ -124,6 +124,16 @@ const
     ##   A ceiling on the gap *at the support* was tried against that and is gone: it left
     ## the flare along a half untouched, and the table that justified it swept only camera
     ## distance at one orientation, which is the one axis the flare does not lie along.
+  PASSES_MARKER_RAIL* = 4
+    ## Times to settle a line's rails toward the gap they are allowed to read.
+    ##   Each pass narrows the offset by exactly the factor the last reading was over by,
+    ## which would land it in one were the drawn extent fixed -- but narrowing the pair
+    ## moves where each rail leaves the viewport, so the extent shifts under the answer.
+    ## Measured on the suite's own fixture over a 45-camera sweep: one pass leaves 15.2 px
+    ## against a ceiling of 14.5, and two settle every camera in it exactly. Four rather
+    ## than two because the loop stops the moment a reading is inside the ceiling, so the
+    ## two it does not need cost nothing and are there for the orientations the sweep does
+    ## not name.
   CLEARANCE_MARKER_TOUCH* = 54.5
     ## Push every marker outward by up to this many pixels partway through a **touch**
     ## hold, settling back to its true size as the hold completes.
@@ -582,75 +592,47 @@ func markerRing(
   ))
 
 
-type HalfLine = object
-  ## Hold one half of a line's own screen projection, and whether it ends at a real
-  ## vanishing point.
-  ##   A line is drawn as two halves running out from its support toward `eye ± R*axis`,
-  ## and **exactly one of those two points is behind the eye** unless the line is square
-  ## on to the camera, in which case both are. `is_toward_vanishing` is which, decided
-  ## from the head's own depth before any clipping, because after clipping both ends sit
-  ## ahead of the near plane and the difference is no longer visible.
-  tail, head: ScreenPosition
-  is_toward_vanishing: bool
+func offsetMarkerRail(anchor: Position; scale: DrawExtent; clearance: float = 0.0): float =
+  ## Size how far to each side of a line its rails stand, in world units.
+  ##   A *world* offset, so the two rails are lines genuinely parallel to the one they
+  ##   flank: they share its vanishing points, converge on them exactly as it does, and
+  ##   each is one straight line rather than something assembled per half. A screen offset
+  ##   was tried instead and bought a flat gap at the price of a bend where a rail's own
+  ##   halves met -- see `markerRails`.
+  ##   What it reads as in pixels is `OFFSET_MARKER_RAIL` at the support and less further
+  ##   off, and how much less is perspective's to say. Which is why the caller does not
+  ##   take this figure as final: see `apartWidest`.
+  ##   `clearance` widens the pair by that many further pixels, for a touch hold.
+  (OFFSET_MARKER_RAIL + clearance)*worldPerPixelAt(anchor, scale)
 
 
-func halfOfLine(
-  anchor: Position; reach: float; axis: Direction; scale: DrawExtent; placement: Camera;
-  forward: Direction; view_projection: Matrix4; width, height: int
-): Option[HalfLine] =
-  ## Project one half of a line, from its support out toward one of its vanishing points.
-  ##   The *line's* own half, carrying no rail offset: the rails are laid out against this
-  ##   in screen pixels afterwards. **That is the whole fix for the flare.** A rail built
-  ##   as a world line parallel to this one, offset at the support and running to the same
-  ##   `eye + reach*axis`, sheds its world separation linearly toward that point while
-  ##   depth varies affinely -- so the screen gap goes as `off*(1 - t)/(k*depth(t))`, and
-  ##   along the half whose head is *behind* the eye depth falls, the denominator shrinks
-  ##   faster than the numerator, and the pair flares. Measured on the demo's own `a ∧ b`
-  ##   at a camera of azimuth 2.4, elevation 0.4, distance 30: 14.5 px at the support to
-  ##   **45.6 px** over 333 px of rail, against an intended 13.5.
-  ##   None where the half is wholly behind the eye, or where either end projects behind
-  ##   it -- the same refusal the rails themselves make.
-  let clipped = clipToEyeSide(
-    anchor, scale.eye + reach*axis, scale.eye, forward, placement.distanceNear,
-  )
-  if clipped.isNone: return
-  let (position_tail, position_head) = clipped.get
-  let
-    tail = projectToScreen(view_projection, width, height, position_tail)
-    head = projectToScreen(view_projection, width, height, position_head)
-  if not (tail.isInFront and head.isInFront): return
-  # The head's own depth, before clipping: `eye + reach*axis` sits `reach*dot(axis,
-  #   forward)` along the sight axis, so this asks whether that point was ever in front.
-  some(HalfLine(
-    tail: tail, head: head,
-    is_toward_vanishing: reach*dot(axis, forward) >= placement.distanceNear,
-  ))
+func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
+  ## Resolve which way to step off a line so its rails land either side of it on screen.
+  ##   Joining the line with the eye gives the one plane containing both; that plane's
+  ##   own normal is perpendicular to the line and to every sight ray reaching it, which
+  ##   is exactly the direction that shows as sideways from where the camera stands.
+  ##   Perpendicular to the sight ray reaching the line rather than to the camera's own
+  ##   axis, so the rails straddle the very plane the line's screen projection is: the
+  ##   pair reads symmetric about it from any angle. The cost is that the step tilts a
+  ##   hair out of the plane perspective divides by, leaving the stated gap a fraction
+  ##   of a percent wide -- well under a pixel.
+  ##   None where the eye lies on the line itself, which has no such plane -- and no
+  ##   side to flank from, since the line is then edge-on to a viewer inside it.
+  directionNormal(geometry ∧ toMultivector(eye))
 
 
-const LENGTH_SCREEN_MIN = 1.0
-  ## Shortest projected segment whose own direction is worth reading, in pixels.
-  ##   **Not zero.** A line the eye stands on projects to a point in exact arithmetic and
-  ## to floating-point noise in practice: measured on a line through the eye, its two
-  ## halves came out 0.0077 px and 0.000057 px long, and a direction taken from either is
-  ## a direction taken from rounding error. A whole pixel sits far above that and far
-  ## below any half worth flanking, which run to hundreds.
-
-
-func normalOfScreen(tail, head: ScreenPosition): Option[ScreenPosition] =
-  ## Point sideways from a screen segment, as a unit vector in pixels.
-  ##   What a rail is offset along. None where the segment is shorter than
-  ## `LENGTH_SCREEN_MIN`, which for a line's own projection means it has collapsed to a
-  ## point -- the eye is standing on it, and a line seen end on has no side to be flanked
-  ## from.
-  let (dx, dy) = (head.x - tail.x, head.y - tail.y)
+func awayFromScreen*(point, first, second: ScreenPosition): float =
+  ## Perpendicular distance from a screen point to the infinite line through two others.
+  ##   The gap at that point, when the two others are the line's own projection: a
+  ##   straight world line projects to a straight screen line, so its distance is defined
+  ##   wherever the rail's endpoint happens to have been cut to. **Never the distance
+  ##   between the two rails' own drawn endpoints** -- `fractionLeavingView` cuts each at
+  ##   its own fraction, so those are not at the same place along the line and the
+  ##   distance between them measures nothing.
+  let (dx, dy) = (second.x - first.x, second.y - first.y)
   let length = hypot(dx, dy)
-  if length < LENGTH_SCREEN_MIN: return
-  some(ScreenPosition(x: dy/length, y: -dx/length))
-
-
-func shifted*(at: ScreenPosition; offset: float; normal: ScreenPosition): ScreenPosition =
-  ## Step a screen position `offset` pixels along `normal`.
-  ScreenPosition(x: at.x + offset*normal.x, y: at.y + offset*normal.y)
+  if length <= 0.0: return hypot(point.x - first.x, point.y - first.y)
+  abs((point.x - first.x)*dy - (point.y - first.y)*dx)/length
 
 
 func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float =
@@ -677,6 +659,69 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
   limit(-dy, tail.y)
   limit(dy, float(height) - tail.y)
   result = max(result, 0.0)
+
+
+func railsAt(
+  anchor: Position; axis, across: Direction; offset: float; scale: DrawExtent;
+  placement: Camera; forward: Direction; view_projection: Matrix4; width, height: int;
+  progress: float; marker: var Marker;
+  walks: var array[2, array[3, Option[ScreenPosition]]]
+) =
+  ## Lay both rails out at one world offset: the drawn screen segments, and the walk each
+  ## rail is read along for its own pulse.
+  ##   Its own routine because `markerRails` runs it twice -- once to find out how wide the
+  ##   pair actually comes out on screen, and once at the offset that answer asks for.
+  ##   Each rail is **one straight world line**: its two halves start from the same offset
+  ##   support and run to the two vanishing points the line shares with it, so they are two
+  ##   parts of one line and meet at no angle at all.
+  marker.count_segment = 0
+  walks = default(array[2, array[3, Option[ScreenPosition]]])
+  for index_side, side in [offset, -offset]:
+    for index_half, reach in [scale.radius_horizon, -scale.radius_horizon]:
+      let clipped = clipToEyeSide(
+        anchor + side*across, scale.eye + reach*axis, scale.eye, forward,
+        placement.distanceNear,
+      )
+      if clipped.isNone: continue
+      let (position_tail, position_head) = clipped.get
+      let
+        tail = projectToScreen(view_projection, width, height, position_tail)
+        head = projectToScreen(view_projection, width, height, position_head)
+      if not (tail.isInFront and head.isInFront): continue
+      let drawn =
+        [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
+      marker.segments[marker.count_segment] = drawn
+      inc marker.count_segment
+      # Ordered along the line: the `-axis` end, the support, then the `+axis` end.
+      walks[index_side][1] = some(drawn[0]) # The same point for either half.
+      walks[index_side][if index_half == 0: 2 else: 0] = some(drawn[1])
+
+
+func apartWidest(walks: array[2, array[3, Option[ScreenPosition]]]): float =
+  ## Report the widest the pair reads apart anywhere a reader can see it, in pixels.
+  ##   **One rail against the other**, which is the gap a reader actually sees, rather than
+  ##   either rail against the line between them: all three screen lines meet at the same
+  ##   vanishing point, so the foot of a perpendicular dropped from one rail lands further
+  ##   along the other and the two measures differ by a few percent where they converge
+  ##   hardest. Bounding the one that is looked at is the point.
+  ##   Each rail's own drawn points against the infinite line through the other's. Distance
+  ##   between two straight screen lines is linear along either, so its greatest value over
+  ##   a drawn stretch is at one of that stretch's own ends and the walk points settle it.
+  var
+    points: array[2, array[3, ScreenPosition]]
+    counts: array[2, int]
+  for side in 0 .. 1:
+    for at in walks[side]:
+      if at.isNone: continue
+      points[side][counts[side]] = at.get
+      inc counts[side]
+  if counts[0] < 2 or counts[1] < 2: return
+  for side in 0 .. 1:
+    let other = 1 - side
+    for i in 0 ..< counts[side]:
+      result = max(result, awayFromScreen(
+        points[side][i], points[other][0], points[other][counts[other] - 1],
+      ))
 
 
 func markerRails(
@@ -725,62 +770,73 @@ func markerRails(
   let
     anchor = positionAnchor(geometry)
     axis = direction(geometry)
-  if anchor.isNone or axis.isNone: return
+    across = directionAcross(geometry, scale.eye)
+  if anchor.isNone or axis.isNone or across.isNone: return
 
-  # **Each half of the line, projected once, before any rail is offset from it.** The two
-  #   rails are then laid out in screen pixels against these, rather than as world lines
-  #   parallel to this one -- see `halvesOfLine` for why a world offset flares.
-  var halves: array[2, Option[HalfLine]]
   let frame_camera = placement.frame(scale.eye)
-  for i, reach in [scale.radius_horizon, -scale.radius_horizon]:
-    halves[i] = halfOfLine(
-      anchor.get, reach, axis.get, scale, placement, frame_camera.forward,
-      view_projection, width, height,
-    )
-
-  # One normal for the whole marker, not one per half. The halves run opposite ways from
-  #   the support, so their own screen directions are opposite and a per-half normal would
-  #   put a single rail's two halves on opposite sides of the line.
-  #   Taken from the **longer** half, not the first available one: a half can project to
-  #   almost nothing while its partner is hundreds of pixels long, and the short one's
-  #   direction is then rounding error. See `LENGTH_SCREEN_MIN`.
   var
-    normal = none(ScreenPosition)
-    length_longest = 0.0
-  for half in halves:
-    if half.isNone: continue
-    let piece = half.get
-    let length = hypot(piece.head.x - piece.tail.x, piece.head.y - piece.tail.y)
-    if length <= length_longest: continue
-    let sideways = normalOfScreen(piece.tail, piece.head)
-    if sideways.isNone: continue
-    (normal, length_longest) = (sideways, length)
-  if normal.isNone: return
+    marker = Marker(kind: MarkerKind.Rails)
+    walks: array[2, array[3, Option[ScreenPosition]]]
+  let offset_stated = offsetMarkerRail(anchor.get, scale, clearance)
+  # **Settled against the finished rail, then drawn at the progress asked for.** How far
+  #   apart the pair stands is a fact about this line under this camera, not about how far
+  #   a hold has got growing it -- so the passes below run at full reach and the caller's
+  #   own `progress` is applied once, after. Settling against the partial rail instead made
+  #   the gap widen as the hold filled: the drawn extent is what the widest reading is taken
+  #   over, so a quarter-grown rail settled on a different offset from a whole one and the
+  #   pair breathed sideways while it grew. Caught by the case pinning that a growing rail
+  #   starts where the finished one does.
+  railsAt(
+    anchor.get, axis.get, across.get, offset_stated, scale, placement,
+    frame_camera.forward, view_projection, width, height, 1.0, marker, walks,
+  )
+  if marker.count_segment == 0: return
 
-  let offset = OFFSET_MARKER_RAIL + clearance
-  var marker = Marker(kind: MarkerKind.Rails)
-  for side in [offset, -offset]:
-    var
-      end_before = none(ScreenPosition) # Toward `-axis`.
-      support = none(ScreenPosition)
-      end_after = none(ScreenPosition) # Toward `+axis`.
-    for i, half in halves:
-      if half.isNone: continue
-      let piece = half.get
-      # The head sheds the offset only where it really is the line's own vanishing point;
-      #   where it is a near-plane cut the rail holds its offset and stays dead parallel,
-      #   because there is no vanishing point that way for a reader to see it close on.
-      let offset_head = if piece.is_toward_vanishing: 0.0 else: side
-      let
-        tail = piece.tail.shifted(side, normal.get)
-        head = piece.head.shifted(offset_head, normal.get)
-      let drawn =
-        [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
-      marker.segments[marker.count_segment] = drawn
-      inc marker.count_segment
-      support = some(drawn[0]) # Where both halves start, and the same point for each.
-      if i == 0: end_after = some(drawn[1]) else: end_before = some(drawn[1])
+  # **Sized by the widest the pair will actually read, not by the gap at its support.**
+  #   `offsetMarkerRail` states a figure at the support and leaves the rest to perspective,
+  #   which along a half whose far point lies behind the eye is not convergence but a
+  #   flare -- measured at 45.6 px against a stated 14.5. So the stated figure becomes the
+  #   ceiling on what a reader ever sees, and the offset is scaled until the widest reading
+  #   meets it. The rails stay world-parallel and straight; only how far apart they start
+  #   changes, so the more obliquely a line is viewed the closer to it they run, which is
+  #   exactly the distortion being spent down.
+  #   Only ever narrows: a pair already inside its ceiling is left alone, so a line viewed
+  #   square on is drawn precisely as it always was.
+  #   **No floor under the narrowing, and none needed.** A floor was tried, at four tenths,
+  #   on the worry that an extreme view would close the pair onto its own line and leave
+  #   nothing to see -- and it let a 437-pixel splay through at a camera eight units out
+  #   looking steeply along the line, which is the very thing being prevented. The worry was
+  #   unfounded: a ceiling on the *widest* reading is itself the guarantee of visibility,
+  #   since the pair is that many pixels apart somewhere by construction. What an extreme
+  #   view costs is the gap at the narrow end, which is the honest thing for perspective to
+  #   take.
+  #   **Settled rather than solved in one step.** Narrowing the pair moves where each rail
+  #   leaves the viewport, so `fractionLeavingView` hands back a different drawn extent and
+  #   the widest reading moves with it -- one scale lands about five per cent over. The gap
+  #   falls monotonically as the offset does, so repeating converges: measured, the second
+  #   pass settles every camera of a 45-strong sweep exactly. See `PASSES_MARKER_RAIL`.
+  let ceiling = 2.0*(OFFSET_MARKER_RAIL + clearance)
+  var offset = offset_stated
+  for _ in 0 ..< PASSES_MARKER_RAIL:
+    let widest = apartWidest(walks)
+    if widest <= ceiling: break
+    offset = offset*ceiling/widest
+    railsAt(
+      anchor.get, axis.get, across.get, offset, scale, placement,
+      frame_camera.forward, view_projection, width, height, 1.0, marker, walks,
+    )
+    if marker.count_segment == 0: return
 
+  if progress < 1.0:
+    railsAt(
+      anchor.get, axis.get, across.get, offset, scale, placement,
+      frame_camera.forward, view_projection, width, height, progress, marker, walks,
+    )
+    if marker.count_segment == 0: return
+
+  for index_side in 0 .. 1:
+    let (end_before, support, end_after) =
+      (walks[index_side][0], walks[index_side][1], walks[index_side][2])
     # The rail as one walk ordered along the line, from its `-axis` end through the
     #   support to its `+axis` end. Either end may be missing, clipped away by the eye.
     var
@@ -795,7 +851,6 @@ func markerRails(
       if marker.around <= 0.0:
         marker.around = lengthOfOutline(rail, count_rail, false)
       marker.addPulse(rail, count_rail, is_closed = false, phase.get)
-  if marker.count_segment == 0: return
   some(marker)
 
 

@@ -2848,11 +2848,6 @@ suite "Marker":
     ##   rails' drawn endpoints, which `fractionLeavingView` cuts at its own fraction per
     ##   rail, so those endpoints are not at the same place along the line and the distance
     ##   between them measures nothing.
-    proc away(point, first, second: ScreenPosition): float =
-      let (dx, dy) = (second.x - first.x, second.y - first.y)
-      let length = hypot(dx, dy)
-      if length <= 0.0: return hypot(point.x - first.x, point.y - first.y)
-      abs((point.x - first.x)*dy - (point.y - first.y)*dx)/length
     # Segments arrive side 0's two halves then side 1's; each side's halves share a support
     #   and run opposite ways, so either half's own line carries the whole rail.
     if marker.count_segment < 4: return 0.0
@@ -2861,7 +2856,10 @@ suite "Marker":
         let along = marker.segments[own][0].towards(
           marker.segments[own][1], float(step)/2.0
         )
-        result = max(result, away(along, marker.segments[other][0], marker.segments[other][1]))
+        result = max(
+          result,
+          awayFromScreen(along, marker.segments[other][0], marker.segments[other][1]),
+        )
 
   proc reachRails(marker: Marker): float =
     ## Total screen length of every rail piece, which is what a filling hold grows.
@@ -2903,6 +2901,9 @@ suite "Marker":
     check marker.radius =~ 0.5*float(SIZE_POINT) + GAP_MARKER
 
 
+  const TOLERANCE_PIXEL_TILT = 0.25
+    ## What `directionAcross`'s own tilt out of the projection plane is worth, in pixels.
+
   test "a line's rails hold their own gap, at every orientation":
     # The case the previous two rounds needed and did not have. A world offset hands the
     #   *rate* of convergence to perspective, and along the half of a line whose far point
@@ -2911,7 +2912,9 @@ suite "Marker":
     #   support only, and the table that justified it swept camera *distance* at one
     #   orientation, which is the one axis the flare does not lie along.
     #   So this sweeps orientation, and asserts the bound everywhere along the rails
-    #   rather than at one point on them.
+    #   rather than at one point on them. `OFFSET_MARKER_RAIL` is now the ceiling on what
+    #   a reader ever sees rather than the gap at the support, so this is the assertion
+    #   that constant is defined by rather than one it happens to satisfy.
     for azimuth in [0.2, 0.6, 1.6, 2.4, 4.0]:
       for elevation in [0.05, 0.4, 0.9]:
         for distance in [8.0, 19.0, 30.0]:
@@ -2921,45 +2924,68 @@ suite "Marker":
             HEIGHT_MARK, progress = 1.0, is_touch = false, phase = none(float),
           )
           if marker.isNone: continue
-          check apartRails(marker.get) <= 2.0*OFFSET_MARKER_RAIL + TOLERANCE_SINGLE
+          # Two-sided, which is the whole property: the pair reads its stated gap at its
+          #   widest -- never more, whatever perspective would have made of a fixed world
+          #   offset, and never so much less that the marker stops saying anything. Over
+          #   this sweep the widest reading spans 14.2 to 14.5 px against a stated 14.5.
+          #   A quarter pixel of slack above, not `TOLERANCE_SINGLE`: stepping
+          #   perpendicular to the sight ray tilts a hair out of the plane perspective
+          #   divides by -- see `marker.directionAcross`.
+          let apart = apartRails(marker.get)
+          check apart <= 2.0*OFFSET_MARKER_RAIL + TOLERANCE_PIXEL_TILT
+          check apart >= 0.95*2.0*OFFSET_MARKER_RAIL
 
 
-  test "a line's rails clear it by exactly the shared gap where its support stands":
-    # Exactly, with no tolerance for a tilt out of the projection plane: the offset is
-    #   applied in the pixels it is stated in, so there is no world step to tilt. It read
-    #   14.5 to 15.3 depending on where the camera stood while the step was a world one.
-    let marker = markerOf(LINE).get
-    # Segment 0 and segment 2 are the two sides' own halves toward `+axis`; both start at
-    #   the support, so the distance between those two starts is the pair's own gap.
-    let apart = hypot(
-      marker.segments[2][0].x - marker.segments[0][0].x,
-      marker.segments[2][0].y - marker.segments[0][0].y,
-    )
-    check apart =~ 2.0*OFFSET_MARKER_RAIL
+  test "a rail is one straight line, not two halves meeting at an angle":
+    # The case that would have caught a round that bought a flat gap by offsetting a rail's
+    #   two halves differently: measured on that build, one rail turned 2.66 degrees at its
+    #   support and the far end of one half strayed 7.3 px -- the whole gap -- from the
+    #   straight continuation of the other. It was invisible at the one camera the shots
+    #   were taken from and obvious at another, so this sweeps orientation too.
+    #   Straight is structural rather than lucky: a rail's two halves run from one offset
+    #   support to the two vanishing points the line shares with it, so they are two parts
+    #   of one world line.
+    for azimuth in [0.2, 0.6, 1.6, 2.4, 4.0]:
+      for elevation in [0.05, 0.4, 0.9]:
+        let (placement, view_projection, scale) = setUpAt(azimuth, elevation, 19.0)
+        let marker = markerFor(
+          LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
+          HEIGHT_MARK, progress = 1.0, is_touch = false, phase = none(float),
+        )
+        if marker.isNone or marker.get.count_segment < 4: continue
+        # Segments 0 and 1 are one side's own two halves, sharing a support at index 0.
+        for side in [0, 2]:
+          let (before, after) = (marker.get.segments[side], marker.get.segments[side + 1])
+          # The far end of one half, against the infinite line through the other.
+          check awayFromScreen(after[1], before[0], before[1]) < TOLERANCE_SINGLE
 
 
-  test "a rail closes on a vanishing point only where there is one to close on":
-    # A line's two halves run to `eye ± radius_horizon*axis`, and exactly one of those is
-    #   in front of the eye. The half that has one sheds its offset at the head; the half
-    #   whose head is only a near-plane cut keeps it and stays dead parallel, because
-    #   there is nothing that way for a reader to watch it converge on.
-    let marker = markerOf(LINE).get
-    proc apartAt(first, second, along: float): float =
-      ## Gap between the two sides' own halves `along` the way out from the support.
-      let (own, other) = (marker.segments[int(first)], marker.segments[int(second)])
-      let at = own[0].towards(own[1], along)
-      let (dx, dy) = (other[1].x - other[0].x, other[1].y - other[0].y)
-      let length = hypot(dx, dy)
-      if length <= 0.0: return 0.0
-      abs((at.x - other[0].x)*dy - (at.y - other[0].y)*dx)/length
-    # One half converges and the other does not; which is which is the camera's to say, so
-    #   the assertion is that exactly one of them closes.
-    let closes = [apartAt(0, 2, 1.0) < apartAt(0, 2, 0.0) - TOLERANCE_SINGLE,
-                  apartAt(1, 3, 1.0) < apartAt(1, 3, 0.0) - TOLERANCE_SINGLE]
-    check closes[0] != closes[1]
-    # And the half that does not close holds the gap exactly, rather than merely nearly.
-    let held = if closes[0]: apartAt(1, 3, 1.0) else: apartAt(0, 2, 1.0)
-    check held =~ 2.0*OFFSET_MARKER_RAIL
+  test "a line's rails spend their spread rather than their visibility":
+    # What a world offset costs is that perspective, not the reader, chooses how far apart
+    #   the pair ends up: at one camera it read 45.6 px against a stated 14.5. The offset
+    #   is now settled until the *widest* reading is the stated gap, so what an oblique
+    #   view takes is the gap at the narrow end -- the pair closing on its own line -- and
+    #   never the marker itself.
+    proc apartAtSupport(azimuth, elevation, distance: float): float =
+      let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
+      let marker = markerFor(
+        LINE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
+        progress = 1.0, is_touch = false, phase = none(float),
+      )
+      if marker.isNone or marker.get.count_segment < 4: return 0.0
+      hypot(
+        marker.get.segments[2][0].x - marker.get.segments[0][0].x,
+        marker.get.segments[2][0].y - marker.get.segments[0][0].y,
+      )
+    # The support is where a world offset states its gap, and it is exactly what an oblique
+    #   view now gives up: 4.5 px at the camera below against 13.1 at a squarer one.
+    check apartAtSupport(0.2, 0.05, 12.0) < apartAtSupport(1.6, 0.9, 19.0)
+    check apartAtSupport(0.2, 0.05, 12.0) < 2.0*OFFSET_MARKER_RAIL
+    # And the marker is still there to be seen, which the sweep above holds everywhere: it
+    #   is the *widest* reading that is pinned, so the pair is that far apart somewhere by
+    #   construction. No floor under the narrowing is needed, and one tried at four tenths
+    #   let a 437 px splay through at a camera this sweep does contain.
+    check apartRails(markerOf(LINE, distance = 12.0).get) > OFFSET_MARKER_RAIL
 
 
   test "a line's rails are drawn in the halves the line itself is drawn in":
@@ -2968,7 +2994,7 @@ suite "Marker":
 
 
   test "an eye standing on the line has no side to flank it from":
-    # It projects to a point, so there is no screen direction to step sideways from -- and
+    # Joining the line with the eye gives no plane to take a normal of -- and there is
     #   nothing a pair of rails either side of it could mean to a viewer inside it.
     let scale = setUp()[2]
     let through_eye = toMultivector(scale.eye) ∧
