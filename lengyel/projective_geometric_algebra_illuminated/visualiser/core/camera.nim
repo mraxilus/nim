@@ -53,6 +53,17 @@ const
     ## brings a line's own far end inside the frame, where it reads as stopping in
     ## mid-air. Worse, a plane fixed nearer than `DISTANCE_LIMIT_FAR` clips the target
     ## itself away once the eye orbits past it.
+  FRACTION_VIEW_CENTRED* = 2.0/3.0
+    ## Fraction of the frame, across and down alike, that counts as being looked at. The
+    ## box is centred, so it runs from a sixth of the way in to five sixths.
+    ##   Why a box at all rather than the whole frame: an object clinging to the very edge
+    ##   is on screen without being what the view is about, and the marker ringing it is
+    ##   half off-frame. Why not the exact middle: a selection is *framed* inside this box,
+    ##   spread across it, and demanding every object at the middle would mean demanding
+    ##   they coincide.
+    ##   Lives here rather than beside the pixel test in `picking` because the camera needs
+    ##   it too, to solve how far back an eye must stand for a whole selection to fit; that
+    ##   solution is `distanceFitting`, and `picking` imports this module already.
   FACTOR_CLIP_NEAR* = 1.0/400.0
     ## Set the near clip plane this fraction of the orbit distance out. Scaled alongside
     ## `FACTOR_CLIP_FAR` so the frustum stays the same shape at every distance, which
@@ -292,16 +303,42 @@ func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
 #[ Aiming And Easing ]#
 
 type
-  CameraAim* = object ## Name where a camera should look to bring one object into view.
-    ## Two cases, because a finite object and a horizon one are reached differently: a
-    ## finite object is somewhere, so the camera moves its target onto it; a horizon
-    ## object is only a direction, drawn fixed to the eye at any distance, so the camera
-    ## instead turns to face along it and its target is left alone.
-    case is_horizon*: bool
-    of true:
-      azimuth*, elevation*: float ## Orbit angles that look along the object's direction.
-    of false:
-      target*: Position ## Point the orbit should turn about.
+  SphereWorld* = object ## Bound a set of world points by centre and radius.
+    ## What "the selection" means to a camera framing it: everything finite it was asked to
+    ## show sits inside this, so a distance that fits the sphere fits every one of them.
+    centre*: Position ## Point the orbit should turn about.
+    radius*: float ## How far the furthest object stands from `centre`. Zero for one point.
+
+  CameraAim* = object ## Name what a camera has been asked to bring into view.
+    ## Not a placement: a **requirement**, derived from the geometry alone and from nothing
+    ## about where the camera happens to stand. That is what lets a caller re-offer the same
+    ## selection every frame and have it recognised as the same request -- see
+    ## `CameraTween.goal`, which rests on it entirely.
+    ##   The two halves are reached differently, which is why they are separate rather than
+    ## one case: a finite object is somewhere, so the camera moves its target onto it and,
+    ## where several are spread wide, pulls back until they fit; a horizon object is only a
+    ## direction, drawn fixed to the eye at any distance, so the camera instead turns to
+    ## face along it and its target and distance are left alone.
+    sphere*: Option[SphereWorld] ## Finite objects to frame, or none where there are none.
+    is_bound_by_points*: bool ## Whether `sphere` is over the picked *points* alone.
+      ## A point has to fit inside the centred box; a line and a plane have only to cross
+      ## it. So where anything has to fit, that alone is what the camera centres and sizes
+      ## itself on, and the rest are left to the test -- otherwise a line whose support
+      ## happens to stand a hundred units away would drag the view off the point beside it
+      ## and force a pull-back for nothing. Where nothing has to fit -- a selection of
+      ## lines and planes alone -- the sphere falls back to their own support points, so
+      ## the camera still has somewhere to look.
+    heading*: Option[Direction] ## Direction of the horizon objects to face, or none.
+      ## Merged where several were asked for: no single direction faces two stars on
+      ## opposite sides of the sky, and the sum of their unit directions is the nearest
+      ## thing to one that does.
+
+  CameraPlacement* = object ## Where a camera stands -- everything an ease moves.
+    ## The lens is not here: a field of view is the reader's own setting, and nothing that
+    ## aims a camera has any business rewriting it.
+    target*: Position ## Point the orbit turns about.
+    distance*: float ## Separation of eye from target.
+    azimuth*, elevation*: float ## Orbit angles, in radians.
 
   CameraTween* = object ## Carry a camera from where it was toward where it should look.
     ## Eased over `duration`, so a camera that jumps to a freshly built object is followed
@@ -311,56 +348,82 @@ type
     ##   of an open edit session, say -- read as one smooth chase instead of restarting.
     goal*: Option[CameraAim] ## What the camera is watching, or has already settled on.
       ## None only while nothing is aimed at all.
-      ##   A *name for the object*, not a placement: derived from the object's own geometry
-      ##   alone (`aimFor`), so a caller re-offering the same object every frame offers a
-      ##   goal that compares equal every frame. That is what the ignore rule in `aimAt`
-      ##   and the standing-offer rule in `abandon` both rest on, and it is why where the
-      ##   ease actually stops is kept separately below rather than folded in here.
-    destination*: CameraAim ## Where the ease actually ends. `goal` cut back to the least
-      ## movement that already brings the object into view -- see `picking.aimLeast`, which
-      ## is what computes it, and `picking.aimAtLeast`, which is what every caller uses.
-      ## Equal to `goal` where nothing shorter would do.
+      ##   A *requirement*, not a placement: derived from the selected geometry alone, so a
+      ##   caller re-offering the same selection every frame offers a goal that compares
+      ##   equal every frame. That is what the ignore rule in `aimAt` and the standing-offer
+      ##   rule in `abandon` both rest on, and it is why where the ease actually ends is
+      ##   kept separately below rather than folded in here.
+    destination*: CameraPlacement ## Where the ease ends: the goal resolved against the
+      ## camera as it stood when the goal was armed -- see `framing.placementFor`, which is
+      ## what computes it, and `framing.offerAim`, which is what every caller uses.
       ##   Meaningless while `goal` is none; set alongside it and never on its own.
     is_arrived*: bool ## Whether `destination` has been reached. Set once the ease runs
       ## out, and what stops `advance` writing to the camera from then on: a caller offering
-      ## the same goal every frame -- as one watching a selected object does -- must not go on
+      ## the same goal every frame -- as one watching a selection does -- must not go on
       ## holding the camera there, or the user's own orbit, pan and dolly are overridden
       ## the moment they let go. `goal` is deliberately kept rather than cleared, so that
       ## same offer is recognised as one already delivered instead of re-arming the ease.
     started*: float ## Clock reading `goal` was last set or retargeted at.
     duration*: float ## Seconds the ease takes, end to end.
-    azimuth_from*, elevation_from*: float ## Orbit angles the current ease began at.
-    target_from*: Position ## Target point the current ease began at.
+    placement_from*: CameraPlacement ## Where the current ease began.
+
+
+func `==`*(a, b: SphereWorld): bool =
+  ## Compare two bounds exactly; see `CameraAim`'s own `==` for why exactly.
+  a.centre.x == b.centre.x and a.centre.y == b.centre.y and a.centre.z == b.centre.z and
+    a.radius == b.radius
 
 
 func `==`*(a, b: CameraAim): bool =
-  ## Compare two aims. Written out rather than left to Nim, whose generated `==` walks a
-  ## case object's fields in parallel and refuses to compile for one.
-  ##   Exact comparison, not approximate: this answers "is this the same aim I was already
-  ##   given", so a caller offering the same goal every frame does not restart its ease.
-  ##   An aim that genuinely moved by a hair should restart it.
-  if a.is_horizon != b.is_horizon: return false
-  if a.is_horizon:
-    a.azimuth == b.azimuth and a.elevation == b.elevation
-  else:
-    a.target.x == b.target.x and a.target.y == b.target.y and a.target.z == b.target.z
+  ## Compare two aims. Written out rather than left to Nim so the comparison is stated
+  ## where the reason for it is.
+  ##   Exact comparison, not approximate: this answers "is this the same request I was
+  ##   already given", so a caller offering the same selection every frame does not restart
+  ##   its ease. A selection that genuinely moved by a hair should restart it.
+  if a.sphere.isSome != b.sphere.isSome: return false
+  if a.sphere.isSome and not (a.sphere.get == b.sphere.get): return false
+  if a.is_bound_by_points != b.is_bound_by_points: return false
+  if a.heading.isSome != b.heading.isSome: return false
+  if a.heading.isNone: return true
+  let (d, e) = (a.heading.get, b.heading.get)
+  d.x == e.x and d.y == e.y and d.z == e.z
 
 
-func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
-  ## Resolve where a camera would have to look to see `m` dead centre, or none where `m`
-  ## draws nothing.
-  ##   Dead centre is the *most* a camera ever moves for an object, not what it settles
-  ##   for: `picking.aimLeast` cuts this back to the least of it that already brings part
-  ##   of `m` into view. Kept whole here because this is also the goal identifying the
-  ##   object across frames, which must depend on `m` alone -- see `CameraTween.goal`.
-  ##   A point at horizon is a fixed star: the camera turns along its own direction.
-  ##   A line at horizon is a whole great circle, so no single direction faces it; the
-  ##   first axis spanning perpendicular to its normal is picked, which puts some of that
-  ##   circle in view. A plane at horizon fills the sky and needs no aiming at all.
-  ##   Everything finite is reached through `anchorFor`'s own representative point, so the
-  ##   camera targets exactly what the overlay already rings.
+func widened*(bound: SphereWorld; place: Position): SphereWorld =
+  ## Grow a bound just enough to contain one more point.
+  ##   Incremental rather than a fit over the whole set at once, so a caller folding a
+  ##   selection needs no array to fold over and allocates nothing. The result depends on
+  ##   the order points arrive in and can be a little wider than the tightest sphere over
+  ##   the same set; it is always a true bound, which is all the framing needs.
+  let
+    offset = place - bound.centre
+    away = norm(offset)
+  if away <= bound.radius: return bound
+  let radius = 0.5*(bound.radius + away)
+  # Slide the centre toward the new point by exactly what the far side gives up, so the
+  #   old sphere stays enclosed rather than being trimmed on the way.
+  SphereWorld(centre: bound.centre + ((radius - bound.radius)/away)*offset, radius: radius)
+
+
+func aimIncluding*(aim: Option[CameraAim]; m: Multivector; scale: DrawExtent): Option[CameraAim] =
+  ## Fold one more object into an aim, or start one where there was none.
+  ##   Unchanged by geometry that draws nothing, and by a plane at horizon, which fills the
+  ##   sky and is in view from every camera there is.
+  ##   A point at horizon is a fixed star, faced along its own direction. A line at horizon
+  ##   is a whole great circle, so no single direction faces it; the first axis spanning
+  ##   perpendicular to its normal is picked, which puts some of that circle in view.
+  ##   Everything finite widens the sphere by `anchorFor`'s own representative point, so
+  ##   the camera frames exactly what the overlay already rings -- except that the first
+  ##   *point* folded in throws away whatever lines and planes had contributed, and they
+  ##   contribute nothing thereafter; see `CameraAim.is_bound_by_points`. The outcome does
+  ##   not depend on the order they arrive in.
+  ##   Horizon objects deliberately widen nothing: `anchorFor` places a star at
+  ##   `scale.eye`, and a goal built from where the camera stands would stop comparing
+  ##   equal frame to frame.
   let shape_m = shape(m)
-  if shape_m.isNone: return
+  if shape_m.isNone: return aim
+  var grown = if aim.isSome: aim.get else: CameraAim()
+
   if isHorizon(m):
     var heading = none(Direction)
     case shape_m.get
@@ -368,62 +431,131 @@ func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
     of Shape.Line:
       let normal = directionNormalHorizon(m)
       if normal.isSome:
-        let axes = spanPerpendicular(Position(x: 0, y: 0, z: 0), normal.get)
+        let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
         if axes.isSome: heading = some(axes.get[0])
     of Shape.Plane: discard
-    if heading.isNone: return
-    let (azimuth, elevation) = azimuthElevationFor(heading.get)
-    return some(CameraAim(is_horizon: true, azimuth: azimuth, elevation: elevation))
+    if heading.isNone: return aim
+    let merged =
+      if grown.heading.isNone: heading
+      else: normalize(grown.heading.get + heading.get)
+    # Two headings that cancel outright leave the first standing: they face opposite ways
+    #   and neither turn shows both, so turning to the one already asked for beats turning
+    #   to whatever a zero-length sum happens to normalise into.
+    grown.heading = if merged.isSome: merged else: grown.heading
+    return some(grown)
+
   let anchor = anchorFor(m, scale)
-  if anchor.isNone: return
-  some(CameraAim(is_horizon: false, target: anchor.get))
+  if anchor.isNone: return aim
+  let is_point = shape_m.get == Shape.Point
+  if grown.is_bound_by_points and not is_point: return some(grown)
+  if is_point and not grown.is_bound_by_points:
+    return some(CameraAim(
+      sphere: some(SphereWorld(centre: anchor.get, radius: 0.0)),
+      is_bound_by_points: true, heading: grown.heading,
+    ))
+  grown.sphere =
+    if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: 0.0))
+    else: some(grown.sphere.get.widened(anchor.get))
+  some(grown)
+
+
+func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
+  ## Resolve what a camera has been asked to show for one object alone, or none where it
+  ## draws nothing. The one-object case of `aimIncluding`, for callers that have one.
+  aimIncluding(none(CameraAim), m, scale)
+
+
+func halfAngleCentred*(camera: Camera; width, height: int; inset: float): float =
+  ## Measure the half-angle, from the sight axis, that the centred box covers -- the
+  ## narrower of its two, so anything inside that cone is inside the box both ways.
+  ##   `inset` pulls the box in by that many pixels on every side, for a caller that needs
+  ## what it asks to fit to fit *with room to spare*: `framing` passes the room a point's
+  ## own drawn dot takes, so a distance solved from this really does satisfy the pixel test
+  ## in `picking`, which insets by the same amount.
+  ##   The box is a fraction of the frame *in the projection plane*, not in angle, so its
+  ## own half-angles come from scaling tangents rather than from scaling the field of view.
+  let
+    tangent_half = tan(0.5*degToRad(camera.degrees_field_of_view))
+    reach_down = max(FRACTION_VIEW_CENTRED - 2.0*inset/float(height), 1.0e-6)
+    reach_across = max(FRACTION_VIEW_CENTRED - 2.0*inset/float(width), 1.0e-6)
+    tangent_down = reach_down*tangent_half
+    tangent_across = reach_across*tangent_half*(float(width)/float(height))
+  arctan(min(tangent_down, tangent_across))
+
+
+func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: float): float =
+  ## Solve how far an eye must stand from the centre of a sphere of `radius` for the whole
+  ## of it to fall inside the centred box.
+  ##   The sphere's tangent condition, `sin`, not the flat one, `tan`: a point on the near
+  ##   side of the sphere stands as far off the sight axis as the far side does while being
+  ##   closer to the eye, so it subtends more.
+  ##   Clamped to the same bound the user's own dolly is clamped to, so a selection spread
+  ##   wider than the world may be viewed from pulls back as far as it may and no further.
+  let sine = sin(halfAngleCentred(camera, width, height, inset))
+  clamp(radius/max(sine, 1.0e-6), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
 
 
 func isGoalHeld*(tween: CameraTween; goal: CameraAim): bool =
   ## Report whether `goal` is one this tween already holds, and would therefore ignore.
   ##   For a caller whose own preparation is worth skipping when the answer is going to be
-  ##   discarded: `picking.aimAtLeast` projects the object onto the frame up to eighteen
-  ##   times to decide how far the camera really has to move, and re-offers the same goal
-  ##   every frame for as long as an object stays selected.
+  ##   discarded: `framing.offerAim` projects every selected object onto the frame several
+  ##   times over to decide how far the camera must pull back, and re-offers the same goal
+  ##   every frame for as long as a selection stands.
   tween.goal.isSome and tween.goal.get == goal
 
 
-func toward*(camera: Camera; goal: CameraAim; fraction: float): Camera =
-  ## Place a copy of `camera` `fraction` of the way from where it stands to `goal`.
-  ##   Exactly the path `advance` eases along, azimuth wrap included, so a caller asking
-  ##   what the view would look like partway there is answered about the motion that is
-  ##   actually going to happen rather than about some other route to the same place.
+func placementOf*(camera: Camera): CameraPlacement =
+  ## Read where `camera` already stands as a placement of its own.
+  CameraPlacement(
+    target: camera.target, distance: camera.distance,
+    azimuth: camera.azimuth, elevation: camera.elevation,
+  )
+
+
+func placed*(camera: Camera; placement: CameraPlacement): Camera =
+  ## Put a copy of `camera` at `placement`, lens untouched.
   result = camera
-  if goal.is_horizon:
-    # Turn the short way round, as `advance` does; see its own comment for why.
-    var delta = goal.azimuth - camera.azimuth
-    while delta > PI: delta -= 2.0*PI
-    while delta < -PI: delta += 2.0*PI
-    result.azimuth = camera.azimuth + fraction*delta
-    result.elevation = camera.elevation + fraction*(goal.elevation - camera.elevation)
-  else:
-    result.target = camera.target + fraction*(goal.target - camera.target)
+  result.target = placement.target
+  result.distance = placement.distance
+  result.azimuth = placement.azimuth
+  result.elevation = placement.elevation
 
 
-func aimOf*(camera: Camera; is_horizon: bool): CameraAim =
-  ## Name where `camera` already stands as an aim of its own.
-  ##   `is_horizon` picks which of the two forms to state it in, since only one of them is
-  ##   what a given ease carries: an aim built for a horizon object turns the orbit angles
-  ##   and leaves the target alone, and a finite one does the reverse.
-  if is_horizon:
-    CameraAim(is_horizon: true, azimuth: camera.azimuth, elevation: camera.elevation)
-  else:
-    CameraAim(is_horizon: false, target: camera.target)
+func toward*(from_placement, to_placement: CameraPlacement; progress: float): CameraPlacement =
+  ## Step `progress` of the way from one placement to another.
+  ##   Distance moves geometrically where everything else moves linearly, because distance
+  ##   is a multiplicative quantity: the wheel and `FACTOR_DOLLY_PRESS` both scale it, and
+  ##   a linear ease from 12 to 300 would cover most of the visible change in the first few
+  ##   frames and then crawl.
+  # Turn the short way round: azimuth is an angle, so a destination just past -pi is next
+  #   door to a camera just short of +pi, not most of a turn away.
+  var delta = to_placement.azimuth - from_placement.azimuth
+  while delta > PI: delta -= 2.0*PI
+  while delta < -PI: delta += 2.0*PI
+  let (near, far) = (max(from_placement.distance, 1.0e-6), max(to_placement.distance, 1.0e-6))
+  CameraPlacement(
+    target: from_placement.target + progress*(to_placement.target - from_placement.target),
+    distance: near*pow(far/near, progress),
+    azimuth: from_placement.azimuth + progress*delta,
+    elevation: from_placement.elevation +
+      progress*(to_placement.elevation - from_placement.elevation),
+  )
+
+
+func `==`*(a, b: CameraPlacement): bool =
+  ## Compare two placements exactly, for a caller asking whether a camera would move at all.
+  a.target.x == b.target.x and a.target.y == b.target.y and a.target.z == b.target.z and
+    a.distance == b.distance and a.azimuth == b.azimuth and a.elevation == b.elevation
 
 
 proc aimAt*(
-  tween: var CameraTween; camera: Camera; goal, destination: CameraAim; now, duration: float
+  tween: var CameraTween; camera: Camera; goal: CameraAim; destination: CameraPlacement;
+  now, duration: float
 ) =
   ## Set the camera watching `goal` and ease it to `destination`, from where it stands now.
-  ##   Two aims, not one: `goal` names the object being watched and `destination` is how
-  ##   far the camera actually goes for it. Callers pass `picking.aimLeast`'s own answer as
-  ##   the second, which stops as soon as part of the object is in view; passing `goal`
-  ##   twice is how a caller says to go the whole way regardless.
+  ##   A requirement and a placement, not one thing twice: `goal` says what has to be in
+  ##   view and is what a re-offer is recognised by, `destination` is where that puts the
+  ##   camera once resolved against wherever it stood when the goal arrived.
   ##   Reading the start off the live camera rather than off the previous goal is what
   ##   makes a moving goal smooth: the camera has already been eased partway there by
   ##   `advance` below, so starting the next ease from that reading continues the motion
@@ -437,16 +569,14 @@ proc aimAt*(
   if tween.isGoalHeld(goal): return
   tween.goal = some(goal)
   tween.destination = destination
-  # Nothing at all to carry where the camera already stands on its destination -- an
-  #   object that was in view when it was picked. Marked arrived outright rather than left
-  #   to ease through a whole duration's worth of frames writing the reading it already
-  #   holds, which would fight a user who starts orbiting inside that window.
-  tween.is_arrived = destination == camera.aimOf(destination.is_horizon)
+  # Nothing at all to carry where the camera already stands on its destination. Marked
+  #   arrived outright rather than left to ease through a whole duration's worth of frames
+  #   writing the reading it already holds, which would fight a user who starts orbiting
+  #   inside that window.
+  tween.is_arrived = destination == camera.placementOf
   tween.started = now
   tween.duration = duration
-  tween.azimuth_from = camera.azimuth
-  tween.elevation_from = camera.elevation
-  tween.target_from = camera.target
+  tween.placement_from = camera.placementOf
 
 
 proc advance*(
@@ -459,18 +589,7 @@ proc advance*(
   ##   the same curve and duration a freshly added object grows in with.
   if tween.goal.isNone or tween.is_arrived: return
   let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))
-  let destination = tween.destination
-  if destination.is_horizon:
-    # Turn the short way round: azimuth is an angle, so a destination just past -pi is next
-    #   door to a camera just short of +pi, not most of a turn away.
-    var delta = destination.azimuth - tween.azimuth_from
-    while delta > PI: delta -= 2.0*PI
-    while delta < -PI: delta += 2.0*PI
-    camera.azimuth = tween.azimuth_from + progress*delta
-    camera.elevation = tween.elevation_from +
-      progress*(destination.elevation - tween.elevation_from)
-  else:
-    camera.target = tween.target_from + progress*(destination.target - tween.target_from)
+  camera = camera.placed(tween.placement_from.toward(tween.destination, progress))
   if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
@@ -478,12 +597,7 @@ proc settle*(tween: var CameraTween; camera: var Camera) =
   ## Put the camera on its destination at once -- for a caller that must not show a
   ## half-finished pan, such as a storyboard frame about to be captured.
   if tween.goal.isNone or tween.is_arrived: return
-  let destination = tween.destination
-  if destination.is_horizon:
-    camera.azimuth = destination.azimuth
-    camera.elevation = destination.elevation
-  else:
-    camera.target = destination.target
+  camera = camera.placed(tween.destination)
   tween.is_arrived = true
 
 
@@ -504,8 +618,8 @@ proc abandon*(tween: var CameraTween) =
   ## or dolly half a second into an ease should win outright rather than fight the
   ## remainder of it.
   ##   Deliberately not `release`. The aim is a standing offer, re-made every frame for
-  ## as long as an object stays selected, so a goal cleared here is simply offered again
-  ## on the very next frame and the camera is taken straight back off the user -- which
-  ## is the whole bug. Keeping the goal and marking it done is what makes that standing
-  ## offer read as one already answered.
+  ## as long as a selection stands, so a goal cleared here is simply offered again on the
+  ## very next frame and the camera is taken straight back off the user -- which is the
+  ## whole bug. Keeping the goal and marking it done is what makes that standing offer read
+  ## as one already answered.
   if tween.goal.isSome: tween.is_arrived = true

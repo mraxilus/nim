@@ -105,8 +105,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  camera, format, help, history, interaction, marker, mesh, objects, picking, scene,
-  selection, storyboard,
+  camera, format, framing, help, history, interaction, marker, mesh, objects, picking,
+  scene, selection, storyboard,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
 import ./visualiser/desktop/opengl as gl
@@ -310,33 +310,22 @@ proc secondsNow(): float =
 
 
 proc offerCameraAim(
-  panel: var Panel; scene: Scene; camera: Camera; now: float; scale: DrawExtent;
-  width, height: int
+  panel: var Panel; scene: Scene; camera: Camera; now: float; width, height: int
 ) =
-  ## Offer the camera whatever is being worked on to look at, from one rule rather than
-  ## from each path that could change it: an open session's own staged multivector, or
-  ## else the object solely selected -- which is exactly what every construction path
-  ## leaves behind (`selectOnly`), so applying an operation, releasing a drag and stepping
-  ## the storyboard all aim without knowing anything about the camera.
-  ##   A standing offer, re-made every frame rather than at each event: `aimAt` ignores a
-  ##   goal it already holds, so an unchanged scene costs nothing while a moving one -- a
-  ##   coefficient being dragged -- reads as one continuous chase.
-  ##   Anything that draws nothing (a still-empty composing session) aims at nothing and
-  ##   releases, which is what lets picking the same object again aim at it afresh.
-  ##   Through `picking.aimAtLeast`, so the camera stops as soon as part of the object is
-  ##   in the frame's centred box rather than swinging it dead centre; the frame's own
-  ##   pixel dimensions are what that box is measured against.
-  let geometry =
-    if panel.session.isSome: some(panel.session.get.geometry)
-    elif panel.selection.len == 1 and scene.isAlive(panel.selection.at(0)):
-      some(scene[panel.selection.at(0)].geometry)
-    else: none(Multivector)
-  let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-  if aim.isSome:
-    panel.tween_camera.aimAtLeast(
-      camera, geometry.get, aim.get, width, height, now, ANIMATION_SECONDS
-    )
-  else: panel.tween_camera.release()
+  ## Offer the camera whatever is being worked on to frame, from one rule rather than from
+  ## each path that could change it.
+  ##   The rule itself is `framing.offerAim`, shared with the browser build so neither UI
+  ##   decides for itself when the camera should move; all this does is hand it the panel's
+  ##   own staged session and selection, and the frame's own pixel dimensions, which are
+  ##   what the centred box is measured against.
+  ##   Every construction path leaves its new object selected (`selectOnly`), so applying
+  ##   an operation, releasing a drag and stepping the storyboard all frame the result
+  ##   without knowing anything about the camera.
+  let staged =
+    if panel.session.isSome: some(panel.session.get.geometry) else: none(Multivector)
+  panel.tween_camera.offerAim(
+    camera, scene, panel.selection, staged, width, height, now, ANIMATION_SECONDS
+  )
 
 
 proc assembleMeshes(
@@ -734,7 +723,7 @@ proc renderFrame(
   panel.tween_camera.advance(camera, now, easeOutCubic)
 
   let scale = camera.drawExtentFor(int(height))
-  offerCameraAim(panel, scene, camera, now, scale, int(width), int(height))
+  offerCameraAim(panel, scene, camera, now, int(width), int(height))
   # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
   #   the transform they pick against needs only the camera, which has already advanced.
@@ -1520,18 +1509,13 @@ proc runStoryboard(
     camera.elevation = elevation_default
     # Turn to face a result standing at the horizon, which is nowhere the demo's own
     #   fixed angle already frames. Instant, not eased: a captured frame must never show
-    #   a half-finished pan. Same `aimAtLeast` the interactive path uses, so both agree on
-    #   where an object is worth looking from -- including on turning no further than it
-    #   takes to bring the result into frame, which keeps the demo's own fixed angle
-    #   wherever that angle already showed it.
+    #   a half-finished pan. Same `framing` rule the interactive path uses, so both agree
+    #   on where an object is worth looking from.
     if isHorizon(derived):
-      let scale_aim = camera.drawExtentFor(PIXELS_HEIGHT)
-      let aim = aimFor(derived, scale_aim)
-      if aim.isSome:
-        panel.tween_camera.aimAtLeast(
-          camera, derived, aim.get, PIXELS_WIDTH, PIXELS_HEIGHT, 0.0, 0.0
-        )
-        panel.tween_camera.settle(camera)
+      panel.tween_camera.offerAimAt(
+        camera, derived, PIXELS_WIDTH, PIXELS_HEIGHT, 0.0, 0.0
+      )
+      panel.tween_camera.settle(camera)
 
     toChars(&"{step.label} gave {shapeText(derived)}.", panel.message)
     panel.selection.selectOnly(count_seeds + index)

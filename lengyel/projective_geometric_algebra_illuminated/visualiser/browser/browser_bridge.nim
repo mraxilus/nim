@@ -44,8 +44,8 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  camera, format, help, history, interaction, marker, mesh, objects, picking, scene,
-  selection, storyboard,
+  camera, format, framing, help, history, interaction, marker, mesh, objects, picking,
+  scene, selection, storyboard,
 ]
 
 
@@ -1327,22 +1327,12 @@ proc nimBuildFrame(
   # The framebuffer's own height, not the window's: a ribbon's width is measured in the
   #   pixels actually drawn, and this build renders at a device-pixel-ratio multiple.
   let scale = g_camera.drawExtentFor(int(height_pixels))
-  block:
-    var geometry = none(Multivector)
-    if g_ghost.isSome: geometry = g_ghost
-    elif g_selection.len == 1 and g_scene.isAlive(g_selection.at(0)):
-      geometry = some(g_scene.geometryAt(g_selection.at(0)))
-    let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-    if aim.isSome:
-      # Through `aimAtLeast`, so the camera turns only as far as it takes to put part of
-      #   the object in the frame's centred box; mirrors `visualiser.offerCameraAim`. The
-      #   width that box is measured across comes back from the aspect, since this build is
-      #   handed that rather than the framebuffer's own two dimensions.
-      g_tween_camera.aimAtLeast(
-        g_camera, geometry.get, aim.get, int(float(aspect)*float(height_pixels)),
-        int(height_pixels), float(now), ANIMATION_SECONDS,
-      )
-    else: g_tween_camera.release()
+  # The width the centred box is measured across comes back from the aspect, since this
+  #   build is handed that rather than the framebuffer's own two dimensions.
+  g_tween_camera.offerAim(
+    g_camera, g_scene, g_selection, g_ghost, int(float(aspect)*float(height_pixels)),
+    int(height_pixels), float(now), ANIMATION_SECONDS,
+  )
 
   if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
   if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)

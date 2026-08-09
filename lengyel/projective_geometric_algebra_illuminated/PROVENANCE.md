@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 152 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 195 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -42,7 +42,7 @@ now the layout itself, so there is nothing to keep in step.
 | Directory | Reachable from | Holds |
 |-----------|----------------|-------|
 | `visualiser/core` | Both | `objects`, `mesh`, `camera`, `scene`, `selection`,
-  `picking`, `marker`, `interaction`, `storyboard`, `history`, `format` |
+  `picking`, `marker`, `framing`, `interaction`, `storyboard`, `history`, `format` |
 | `visualiser/desktop` | `visualiser.nim` | `panel`, `renderer`, `opengl`, `gui`,
   `gui_shim.cpp`, `sdl3`, `image`, `gif`, `arena` |
 | `visualiser/browser` | `browser_bridge.nim` | `browser_bridge.nim`, `shell.html`, `glue.js` |
@@ -1658,14 +1658,15 @@ rather than from load, so the two used to stack and the hint outstayed both numb
 
 Camera Aiming
 ---
-`camera.aimFor(geometry, scale)` answers where a camera should look to see one object *dead
-centre*: a point at horizon along its own direction, a line at horizon along the first axis
-spanning perpendicular to its normal (no single direction faces a whole great circle), a
-plane at horizon not at all (it fills the sky), and anything finite at `mesh.anchorFor`'s
-representative point — the same point the selection ring is drawn on.
+`camera.aimIncluding(aim, geometry, scale)` folds one object into what the camera has been
+asked to show: a point at horizon contributes its own direction, a line at horizon the first
+axis spanning perpendicular to its normal (no single direction faces a whole great circle),
+a plane at horizon nothing at all (it fills the sky), and anything finite widens a bounding
+sphere by `mesh.anchorFor`'s representative point — the same point the selection ring is
+drawn on. A fold rather than a function of one object, so a caller with a whole selection
+needs no array to fold over and allocates nothing.
 
-Dead centre is the **most** the camera ever moves, not what it settles for. See "The least
-that shows it" below, which is the rule actually in force.
+What that aim then asks of the camera is "Framing the whole selection" below.
 
 `camera.CameraTween` carries the camera there, eased. **Retargeting reads the start off the
 live camera**, not off the previous goal, which is what makes a goal that moves every frame
@@ -1673,12 +1674,15 @@ live camera**, not off the previous goal, which is what makes a goal that moves 
 a goal already held is ignored, so a caller may aim every frame without the ease restarting
 forever and never arriving.
 
-Both builds aim from **one rule**, applied once per frame rather than at each event: the
-open edit session's staged multivector if there is one, else the sole selected object.
-That second clause is what carries applying an operation, releasing a drag and stepping the
-storyboard, since each already leaves its new object solely selected — none of them needs
-to know the camera exists. `runStoryboard` aims through the same call but calls `settle`,
-which lands instantly: a captured frame must never show a half-finished pan.
+Both builds aim from **one rule**, `framing.offerAim`, applied once per frame rather than at
+each event: the open edit session's staged multivector if there is one, else every selected
+object together. That second clause is what carries applying an operation, releasing a drag
+and stepping the storyboard, since each already leaves its new object selected — none of
+them needs to know the camera exists. The rule used to be written out in each front-end,
+which is exactly the kind of duplication that drifts; it now lives in one module both call.
+`runStoryboard` goes through the same rule (`offerAimAt`, for a derived multivector that is
+not yet anything a selection could name) but calls `settle`, which lands instantly: a
+captured frame must never show a half-finished pan.
 
 That rule is a **standing offer**, re-made every frame for as long as the same thing stays
 selected, and every subtlety below comes from that shape:
@@ -1706,65 +1710,91 @@ an object selected, a grab mid-ease, and re-selecting after a deselect.
 `picking` would close a cycle, and `mesh` is where `DrawExtent` lives and where the doc
 comment already pointed ("matching exactly where `mesh.addPoint` draws it").
 
-### The least that shows it
+### Framing the whole selection
 
-Centring every newly built or newly picked object swung the whole view for objects the
-reader could already see perfectly well. The rule now is: **move by the least that puts
-part of the object inside the centred two thirds of the frame, and not at all when part of
-it is there already** (`picking.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from a sixth
-of the way in to five sixths).
+The rule (`framing.nim`): on a new creation or a new pick, the camera **centres on
+everything selected and pulls back until all of it is in view**, where in view means the
+centred two thirds of the frame (`camera.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from
+a sixth of the way in to five sixths).
 
 Two thirds rather than the whole frame because an object clinging to the very edge is
 visible without being what the view is about, and the marker ringing it is half off-frame.
 
-**Judged on the object as drawn, not on its anchor.** `picking.isShownCentrally` tests each
-shape against exactly what `mesh.addObject` puts on screen — a point's marker, a line's two
-halves out to its vanishing points (clipped to the eye side, as `pickNearest` clips them), a
-plane's rim *and* a sight-axis ray through the middle of the box, a horizon line's great
-circle, a horizon plane's whole sky. Segments are tested against the box by Liang–Barsky
-clipping rather than by sampling: a straight screen segment either crosses an axis-aligned
-box or it does not, and asking exactly is cheaper than sampling densely enough to be sure of
-a thin near-miss. The consequence is worth stating plainly: **a line or a plane usually
-reaches the middle of the frame already, so building one no longer moves the camera at all.**
+**Two criteria, not one.** `picking.isShownCentrally` asks a **point** to fit inside the
+box and a **line or plane** only to *cross* it. A line is drawn out to both its vanishing
+points and a plane as a wide disc; neither has an inside to fit, and demanding one would
+mean a camera pulled back until they were specks. Each shape is tested against exactly what
+`mesh.addObject` puts on screen — a line's two halves clipped to the eye side as
+`pickNearest` clips them, a plane's rim plus a sight-axis ray, a horizon line's great
+circle, a horizon plane's whole sky. Screen segments meet the box by Liang–Barsky clipping
+rather than by sampling: a straight segment either crosses an axis-aligned box or it does
+not, and asking exactly is cheaper than sampling densely enough to be sure of a thin
+near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half of `mesh.SIZE_POINT`, so its
+drawn dot fits rather than only its middle — deliberately *not* inset by the selection
+marker, which swells while a touch hold fills, and a box breathing with a gesture would
+re-frame the view mid-hold.
 
-**Searched along the path, not solved for.** `picking.aimLeast` scans `camera.toward(goal,
-fraction)` — the very path `advance` eases through — over `STEPS_AIM_LEAST = 12` even steps,
-then halves `ROUNDS_AIM_LEAST = 5` times into whichever step brackets the crossing, landing
-within 1/384 of a full aim (under a pixel of any pan here). Two reasons, the first decisive:
-the path is exact under any camera, whereas solving for a pan would have to assume the move
-runs perpendicular to the sight axis, which an arbitrary shift of the orbit target does not;
-and stopping short along the route the camera was going to take anyway reads as that same
-movement cut short, where sliding toward the nearest edge of the box instead reads as a
-different movement. Where no fraction shows the object, the aim stands whole — the old
-behaviour, kept as the fallback.
+**What the aim is.** `CameraAim` is a *requirement*, not a placement: a bounding
+`SphereWorld` over the finite objects, and a merged `heading` for the horizon ones. It is a
+pure function of the geometry, which is what lets the standing offer re-made every frame
+compare equal every frame — the thing every subtlety below rests on. Horizon objects
+contribute no sphere point on purpose: `anchorFor` places a star at `scale.eye`, and an aim
+built from where the camera stands would stop comparing equal.
 
-**`goal` and `destination` are now separate fields on the tween.** They have to be: `goal`
-names the object and must depend on the geometry alone, or the standing offer stops
-comparing equal frame to frame and every subtlety above unravels. `destination` is the cut-
-back placement, computed once when the goal is armed, from the camera as it stood then —
-"least movement from where the camera was when the object appeared". `picking.aimAtLeast` is
-the single entry point both front-ends and the storyboard call; its `isGoalHeld` guard is
-not an optimisation to taste but the thing that stops the search running its eighteen
-projections every frame for as long as an object stays selected. A destination equal to
-where the camera already stands sets `is_arrived` outright, so an in-view object never holds
-the camera still against a user who starts orbiting inside the animation window.
+**The sphere is over what has to fit.** The first point folded in throws away whatever
+lines and planes had contributed, and they contribute nothing after
+(`CameraAim.is_bound_by_points`; the outcome does not depend on fold order). Without this a
+line whose support happens to stand forty units away drags the view off the point picked
+beside it and forces a pull-back to drag that support into frame — measured at 73.8 against
+a distance of 12 before the rule was added. Where nothing has to fit — a selection of lines
+and planes alone — the sphere falls back to their own supports, so the camera still has
+somewhere to look.
+
+**Distance grows, never shrinks.** Panning alone cannot fit two points spread wider than
+the frame, so the eye has to pull back; but a tight selection is *not* zoomed into, because
+the reader chose that scale and re-scaling the world on every pick is disorienting in a way
+that panning is not. The least sufficient distance is found by **bisection on the test**
+(`ROUNDS_DISTANCE_FIT = 8`, 1/256 of the bracket), not by the closed form alone: the closed
+form `radius / sin θ` is used only as the upper bracket, since it would over-dolly whenever
+a line already crosses the frame. Sound because the test is monotone in distance —
+everything converges on the middle of the frame as the eye pulls back. Where even the
+bracket fails, at `DISTANCE_LIMIT_FAR` or with two stars facing opposite ways, the bracket
+stands rather than a wrong answer being reported as a right one.
+
+**Finite framing wins over facing a star.** The angles turn to the merged heading only when
+nothing finite was picked. A star behind the reader and a point in front have no placement
+showing both, so a star picked alongside a point may stay out of view; there is no
+placement that would have helped.
+
+**`goal` and `destination` are separate fields on the tween**, and have to be: `goal` is the
+requirement and must depend on the geometry alone, or the standing offer stops comparing
+equal frame to frame and re-arms the ease every frame — which is the "panning was dead
+while anything stayed selected" bug in a new costume. `destination` is a `CameraPlacement`
+(target, distance, azimuth, elevation) resolved once when the goal is armed, against the
+camera as it stood then. `advance` eases target and angles linearly and **distance
+geometrically**, because distance is multiplicative — the wheel and `FACTOR_DOLLY_PRESS`
+both scale it, and a linear ease from 12 to 300 spends most of the visible change in the
+first few frames and then crawls.
 
 **Measured on the real page**, not reasoned about. Driving the browser build through
-`nimSelectOnly` from nine starting orientations on each of four objects, and reading the
-camera back after the ease:
+`nimSelectOnly`/`nimSelectToggle`, seven selections × nine starting orientations, reading
+every picked object's screen position and the camera distance back after the ease:
 
-| object | before (every orientation) | after (range over nine) |
-|--------|---------------------------|-------------------------|
-| point `a` | 4.387 | 0.000 – 0.994 |
-| point `b` | 6.364 | 0.000 – 2.817 |
-| point `c` | 5.099 | 0.000 – 1.474 |
-| point `o` (at the target) | 0.000 | 0.000 |
+| | before (6d9eac6) | after |
+|---|---|---|
+| worst picked point outside the box | **323.9 px**, some off screen (y = −191) | **0.0 px** |
+| camera moved for two or more objects | not at all; the aim watched one | centred on them |
+| orbit distance | 12.0 throughout | 12.0 to 14.7, never below 12.0 |
 
-19.0 units of pan in total against 142.7 — 13% of the movement. In all 36 trials the
-object's anchor finished inside the centred box, most of them sitting on its edge (y = 134
-against a box top of 133), which is the rule doing exactly what it says. On the desktop the
-same selection driven through `--drive-select` shows the view swinging at frame 5 before and
-standing still after.
+63 trials, every picked point inside the box in all of them. On the desktop the same three
+picks driven through `--drive-select` (frames 5, 7 and 9) show the view recentring on the
+group as each object joins it. The storyboard's horizon captures go through the same rule
+and still turn to face their great circle.
+
+**This replaced a least-movement rule** that stopped the camera as soon as *part of one*
+object reached the box. That rule cut a lone object's pan from 4.4–6.4 world units to
+0.0–2.8, but it watched one object only and left the rest of a selection wherever they
+happened to fall — which is what the numbers above measure.
 
 
 Diagnostics Panel (desktop)
