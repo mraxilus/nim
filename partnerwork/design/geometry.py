@@ -32,6 +32,19 @@ def bearing(dx, dy):
 def wrap180(degrees):
     return (degrees + 180) % 360 - 180
 
+def continuous(angles):
+    """The same turning, said without a jump in it.
+
+    Each angle is taken the short way from the one before, so a sequence handed
+    to an animation is monotone through a half turn instead of stepping from
+    179 to -179 -- which anything interpolating between two frames reads as
+    most of a turn backwards, and draws as a body spinning the wrong way.
+    """
+    out = [wrap180(angles[0])]
+    for a in angles[1:]:
+        out.append(out[-1] + wrap180(a - out[-1]))
+    return out
+
 def turn(point, about, degrees):
     rad = math.radians(degrees)
     dx, dy = point[0] - about[0], point[1] - about[1]

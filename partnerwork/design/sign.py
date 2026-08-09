@@ -9,7 +9,7 @@ import math
 
 from .body import fill_of
 from .geometry import n
-from .style import INK
+from .style import DEEP, INK
 
 
 TAN = 0.25                                  # lean, as across per down
@@ -52,12 +52,16 @@ def pip(dancer, ax, ay, dxs, dys, arm, level, about=None):
     Given an `about` the pip carries axis-against-orbit itself, which needs the
     fill pulled in off the outline -- a low pip is filled in the arm's own ink,
     and a dashed stroke of that ink on top of it would be no stroke at all.
+
+    A pip takes the shade of the hand it stands for, the lead's deep and the
+    follow's plain, so a sign and a frame picture read the same way round.
     """
-    ink = INK[arm]
-    fill = fill_of(level, arm)
+    leads = dancer == "lead"
+    ink = DEEP[arm] if leads else INK[arm]
+    fill = fill_of(level, arm, leads)
     cx, cy = ax + PIP / 2 + dxs / 2, ay + dys / 2
     out = []
-    if dancer == "lead":
+    if leads:
         pts = [(ax, ay), (ax + PIP, ay), (ax + PIP + dxs, ay + dys),
                (ax + dxs, ay + dys)]
         edge, body = poly(pts), poly(scaled(pts, INSET))

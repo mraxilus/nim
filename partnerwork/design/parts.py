@@ -1,7 +1,9 @@
-"""Every figure on the page, built in the order the page tells them.
+"""Every figure the two pages place, keyed by the name each page uses.
 
-The inline assertions are part of the build: a page whose orientations collide
-or whose collapse figures differ is refused, not published.
+Split the way the pages are: the frame picture is one exploration and the turn
+sign another.  The inline assertions are part of the build -- a page whose
+orientations collide or whose collapse figures differ is refused, not
+published.
 """
 from .figure import animated, extent, frame
 from .geometry import n
@@ -15,12 +17,13 @@ ORIENTATIONS = [
     ("back to back", 180, 180),
 ]
 
+LOW = {"L": "low", "R": "low"}
+SPLIT = {"L": "low", "R": "high"}
+HOLD = {"L": "left"}
 
-def all_parts():
-    """Build every SVG the page places, keyed by the name the page uses."""
-    LOW = {"L": "low", "R": "low"}
-    SPLIT = {"L": "low", "R": "high"}
-    HOLD = {"L": "left"}
+
+def frame_parts():
+    """Every SVG the frame page places."""
     parts = {}
     parts["f_none"] = frame("f", HOLD)
     parts["f_low"] = frame("f", HOLD, {"L": "low"})
@@ -30,7 +33,7 @@ def all_parts():
                             {"L": "high", "R": "low"}, over="L")
 
     # the four orientations, twice: with nothing held, where only the colours
-    # and the points can say it, and holding, where the line is there as well
+    # and the chevrons can say it, and holding, where the line is there as well
     seen = {}
     for i, (name, lead_turn, follow_turn) in enumerate(ORIENTATIONS):
         parts[f"or_open_{i}"] = frame("f", {}, lead_turn=lead_turn,
@@ -54,15 +57,12 @@ def all_parts():
     parts["pair_lr"] = frame("f", {"L": "right"})
     parts["pair_lr_turned"] = frame("f", {"L": "right"}, follow_turn=180)
 
-    # part way round: the states in between, which is what circles buy
-    for k, deg in enumerate((0, 45, 90, 135, 180)):
-        parts[f"tween_{k}"] = frame("f", HOLD, follow_turn=deg, captions=False)
-
-    # an arm as a measure: how far round the rim the hand has been carried
+    # how far the hand has been carried round: the line does the saying
     for k, w in enumerate((0, 45, 90, 135)):
         parts[f"wind_{k}"] = frame("f", HOLD,
                                    wind={"lead": {"L": w, "R": 0.0}},
                                    captions=False)
+    assert parts["wind_0"] != parts["wind_3"], "winding says nothing"
 
     # an orbit in two stages: the follow travels, then the world comes home
     for tag, locked in (("locked", True), ("drift", False)):
@@ -109,7 +109,12 @@ def all_parts():
             'class="mv still"',
             f'class="mv still" style="width: {n(2 * half * PX)}px;'
             f' height: {n(2 * half * PX)}px"', 1)
+    return parts
 
+
+def sign_parts():
+    """Every SVG the turn-sign page places."""
+    parts = {}
     # quarters, packed up from the foot
     for k in range(1, 5):
         parts[f"q_lead_{k}"] = sign(["lead"] * k, arms=LOW)
@@ -126,6 +131,8 @@ def all_parts():
     parts["s_unsaid"] = sign(["lead"], arms={"L": None, "R": None})
     parts["s_lead_small"] = sign(["lead"] * 2, arms=LOW, scale=0.72)
     parts["s_foll_small"] = sign(["follow"] * 2, arms=LOW, scale=0.72)
+    # the shade says whose quarter it is as well as the shape does
+    assert parts["s_lead_small"] != parts["s_foll_small"], "dancers collide"
 
     # mixed, now that there is room for more than one split
     parts["m_11"] = sign(["follow", "lead"], arms=LOW)

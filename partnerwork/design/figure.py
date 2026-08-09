@@ -9,15 +9,25 @@ import math
 
 from .body import (BODY_R, CAPTION_R, R, border, caption, chevron, hand,
                    hands_of, other, ring_of, side_of)
-from .geometry import n, wrap180, xy
+from .geometry import continuous, n, xy
 from .pose import canonicalise, cycle, rest, spin_about
-from .route import cut_gap, reach_markup, routed
-from .style import INK, LINK_W, QUIET
+from .route import cut_gap, reach_markup, routed, split_at
+from .style import DEEP, INK, LINK_W, QUIET
 
 
 WIDE = 160                # the box a picture with captions needs
 
 SIZE = 116                # and the box it needs without them
+
+def two_tone(runs, mid, side):
+    """One reach in two shades of its arm's hue, meeting at its middle point.
+
+    The lead's end is deep and the follow's plain, so a line says which end is
+    whose along its own length -- and the pair of hands it joins is then read
+    from the line as well as from the marks.
+    """
+    near, far = split_at(runs, mid)
+    return [reach_markup(near, DEEP[side]), reach_markup(far, INK[side])]
 
 def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
              back_bias=None):
@@ -28,10 +38,7 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
     def foll(where):
         return p["follow"][side_of(where)]
 
-    engaged_lead = frozenset(holds)
-    engaged_follow = frozenset(side_of(w) for w in holds.values())
-    out = [ring_of(pose), border(pose, "lead", engaged_lead),
-           border(pose, "follow", engaged_follow)]
+    out = [ring_of(pose), border(pose, "lead"), border(pose, "follow")]
     for who in ("lead", "follow"):
         out.append(chevron(pose[who], pose[f"{who}_facing"]))
     routes = {}
@@ -45,10 +52,11 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
     order = ["L", "R"] if over != "L" else ["R", "L"]
     for side in order:
         if side in holds:
-            runs = [routes[side]]
+            pts = routes[side]
+            runs = [pts]
             if over == other(side):
-                runs = cut_gap(routes[side], routes[other(side)])
-            out.append(reach_markup(runs, INK[side]))
+                runs = cut_gap(pts, routes[other(side)])
+            out += two_tone(runs, pts[len(pts) // 2], side)
     for side in ("L", "R"):
         x, y = p["lead"][side]
         out.append(hand(x, y, True, side, side in holds, levels.get(side), free))
@@ -110,6 +118,13 @@ def paired(markup, inner):
     tag = markup[1:markup.index(" ")]
     return markup[:-2] + ">" + inner + f"</{tag}>"
 
+def facings(poses, who):
+    """A dancer's facing through a cycle, continuous so it turns the way it
+    turned.  Wrapped angles step from 179 to -179 at a half turn and are read
+    as most of a turn the other way -- which is a body spinning backwards while
+    its own hands, placed absolutely, travel the right way."""
+    return continuous([p[f"{who}_facing"] for p in poses])
+
 def animated(cls, holds, move, half=None, dur=9.6, samples=14):
     """The same picture, moving: stage one travels, stage two comes home."""
     poses = cycle(move, samples)
@@ -117,8 +132,6 @@ def animated(cls, holds, move, half=None, dur=9.6, samples=14):
         half = max(extent(p, captions=False) for p in poses)
     hands = [hands_of(p) for p in poses]
     side, site = next(iter(holds.items()))
-    engaged = {"lead": frozenset(holds),
-               "follow": frozenset(side_of(w) for w in holds.values())}
 
     def foll(h, where):
         return h["follow"][side_of(where)]
@@ -148,26 +161,31 @@ def animated(cls, holds, move, half=None, dur=9.6, samples=14):
             f' values="{series([f"{n(p[who][0])} {n(p[who][1])}" for p in poses])}"'
             f' dur="{dur}s" repeatCount="indefinite"/>'
             + f'<animateTransform attributeName="transform" type="rotate"'
-            f' additive="sum"'
-            f' values="{series([wrap180(p[f"{who}_facing"]) for p in poses])}"'
+            f' additive="sum" values="{series(facings(poses, who))}"'
             f' dur="{dur}s" repeatCount="indefinite"/>'
-            + border(still, who, engaged[who])
+            + border(still, who)
             + chevron(still[who], still[f"{who}_facing"]) + "</g>")
     # One reach per frame, every frame the same number of points, and the way
     # round a body carried over from the frame before -- so the line wraps and
-    # unwraps rather than flicking to the other side through the middle.
+    # unwraps rather than flicking to the other side through the middle.  The
+    # halves are split at a fixed index, which the even resampling makes the
+    # middle of the line, so both shades morph as one shape.
     combo = None
-    paths = []
+    routes = []
     for h, q in zip(hands, poses):
         pts, combo = routed(h["lead"][side], foll(h, site),
                             (q["lead"], q["lead_facing"]),
                             (q["follow"], q["follow_facing"]), prefer=combo)
-        paths.append("M" + " L".join(xy(pt) for pt in pts))
-    out.append(paired(
-        f'<path d="{paths[0]}" fill="none" stroke="{INK[side]}"'
-        f' stroke-width="{LINK_W}" stroke-linecap="round"'
-        ' stroke-linejoin="round"/>',
-        animate("d", paths, dur)))
+        routes.append(pts)
+    middle = len(routes[0]) // 2
+    for ink, cut in ((DEEP[side], slice(None, middle + 1)),
+                     (INK[side], slice(middle, None))):
+        paths = ["M" + " L".join(xy(pt) for pt in pts[cut]) for pts in routes]
+        out.append(paired(
+            f'<path d="{paths[0]}" fill="none" stroke="{ink}"'
+            f' stroke-width="{LINK_W}" stroke-linecap="round"'
+            ' stroke-linejoin="round"/>',
+            animate("d", paths, dur)))
     for sd in ("L", "R"):
         pts = [h["lead"][sd] for h in hands]
         out.append(paired(

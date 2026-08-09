@@ -141,6 +141,26 @@ def routed(a, b, A, B, prefer=None, back_bias=BACK_BIAS):
     pts = _trim_end(pts[::-1], b, reach)[::-1]
     return resample(pts, ROUTE_N), combo
 
+def split_at(runs, mid):
+    """Cut a reach in two at the point nearest `mid`, so it can be drawn in two
+    shades that meet there.
+
+    The two halves share that point, so the join is a join and not a gap; and
+    any break an over-and-under crossing has already cut stays cut, because the
+    runs are split rather than rebuilt.
+    """
+    best = None
+    for i, run in enumerate(runs):
+        for j, q in enumerate(run):
+            d = math.dist(q, mid)
+            if best is None or d < best[0]:
+                best = (d, i, j)
+    _, i, j = best
+    near = list(runs[:i]) + [runs[i][:j + 1]]
+    far = [runs[i][j:]] + list(runs[i + 1:])
+    return ([run for run in near if len(run) > 1],
+            [run for run in far if len(run) > 1])
+
 def reach_markup(runs, ink):
     d = " ".join("M" + " L".join(xy(q) for q in run)
                  for run in runs if len(run) > 1)

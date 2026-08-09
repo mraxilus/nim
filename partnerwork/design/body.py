@@ -1,22 +1,22 @@
 """One dancer: a circle, with a small chevron at its centre for the facing.
 
 The boundary is one polar function, `outline_r`, shared by the drawing, the
-arms and the routing -- so "on the border" is true by construction rather than
-by two pieces of code agreeing.  An arm is not a line laid on the rim: it *is*
-the rim, from the front round to its hand, and it is inked only while that
-hand is part of a connection.  Hands sit on the rim, each in its own side's
-colour, and the rim breaks around every hand mark the way the reach already
-stops at one -- nothing on the boundary runs through a mark.
+hands and the routing -- so "on the border" is true by construction rather than
+by two pieces of code agreeing.  It is drawn quiet and whole, broken only where
+a hand mark sits on it, because how far an arm has been carried round is said
+by the connection wrapping the body, not by a second arc filling up around it.
+Hands sit on the rim, each in its own side's colour, the lead's a shade deeper
+than the follow's.
 """
 import math
 
 from .geometry import n, polar, xy
-from .style import BLOCK, CAP, FAINT, INK, QUIET
+from .style import CAP, DEEP, FAINT, INK, QUIET
 
 
 BODY_R = 20               # a dancer, seen from above; their hands sit on it
 
-RIM_W = 2.2               # one width for the whole boundary, arms included
+RIM_W = 2.2               # one width for the whole boundary
 
 CHEV_OUT = 7              # how far the centred chevron reaches forward
 CHEV_BACK = 1             # and how little it reaches back
@@ -24,9 +24,7 @@ CHEV_HALF = 5             # half its width, well inside the rim
 
 RIM_STEP = 3              # degrees between samples when a route walks the rim
 
-ARM_REST = 90             # a hand at rest is a quarter of the rim from the point
-
-ARM_BLOCK = 180           # an arm past half the rim has nowhere left to go
+ARM_REST = 90             # a hand at rest is a quarter of the rim from the front
 
 R = 6                     # a hand
 
@@ -39,7 +37,7 @@ def hand_bearing(facing, side, wind=0.0):
 
 def hand_point(centre, facing, side, wind=0.0):
     """Where one hand is: round the rim from the front, by however far the arm
-    has gone."""
+    has carried it."""
     return polar(centre[0], centre[1], BODY_R,
                  hand_bearing(facing, side, wind))
 
@@ -51,17 +49,17 @@ HAND_GAP = math.degrees(math.asin((R + CAP) / BODY_R))
 def outline_r(delta):
     """How far the boundary is from the centre, at this bearing off the front.
 
-    One function, used by the drawing, by the arms and by anything that has to
-    stay outside a body -- so `on the border` is true by construction instead
-    of by two pieces of code agreeing.  A body is a plain circle now; the
-    function stays because the routing reads the boundary through it.
+    One function, used by the drawing and by anything that has to stay outside
+    a body -- so `on the border` is true by construction instead of by two
+    pieces of code agreeing.  A body is a plain circle now; the function stays
+    because the routing reads the boundary through it.
     """
     return BODY_R
 
 def outline_point(centre, facing, theta):
     return polar(centre[0], centre[1], outline_r(theta - facing), theta)
 
-def rim(centre, facing, a, b, ink, width=RIM_W):
+def rim(centre, facing, a, b, width=RIM_W):
     """One stretch of the boundary, drawn once and by one owner."""
     span = b - a
     start = outline_point(centre, facing, a)
@@ -69,16 +67,16 @@ def rim(centre, facing, a, b, ink, width=RIM_W):
     large = 1 if abs(span) > 180 else 0
     sweep = 1 if span > 0 else 0
     d = f"M{xy(start)} A{BODY_R} {BODY_R} 0 {large} {sweep} {xy(end)}"
-    return (f'<path d="{d}" fill="none" stroke="{ink}" stroke-width="{width}"'
+    return (f'<path d="{d}" fill="none" stroke="{QUIET}" stroke-width="{width}"'
             ' stroke-linecap="round" stroke-linejoin="round"/>')
 
 
 def chevron(centre, facing):
     """The facing, said small and at the centre of the body.
 
-    In the middle rather than on the rim, because the rim is spoken for: it is
-    the arms, and it breaks for the hands.  The centre is the one part of a
-    dancer nothing else uses.
+    In the middle rather than on the rim, because the rim breaks for the hands
+    and carries nothing else.  The centre is the one part of a dancer nothing
+    else uses.
     """
     rad = math.radians(facing)
     fwd = (math.sin(rad), -math.cos(rad))
@@ -93,50 +91,41 @@ def chevron(centre, facing):
             ' stroke-width="1.6" stroke-linecap="round"'
             ' stroke-linejoin="round"/>')
 
-def border(pose, who, engaged=frozenset()):
-    """A dancer's whole boundary, drawn once, each stretch in its owner's ink.
+def border(pose, who):
+    """A dancer's whole boundary: one quiet outline, broken at the hands.
 
-    The arms are not lines laid on the rim -- they *are* the rim, from the
-    front round to each hand.  Only an arm that is part of a connection is
-    inked: no connection, no line, so a free hand sits on a quiet border.
+    It says nothing but *here is a body*.  The rim used to fill up in an arm's
+    colour as that arm wound round, which was a second progress ring saying
+    what the connection already says by wrapping -- so the ring is gone and the
+    line keeps the job.
     """
     centre, facing = pose[who], pose[f"{who}_facing"]
     wind = pose[f"{who}_wind"]
 
-    def ink(side):
-        if side not in engaged:
-            return QUIET
-        return BLOCK if blocked(wind[side]) else INK[side]
-
-    # The arms meet at the front and run round to their hands; the rest of the
-    # rim is the quiet back.  Every stretch stops a hand-gap short of a hand,
-    # so the boundary never runs through a mark -- and a stretch that extreme
-    # winding has squeezed away is simply not drawn.
+    # Every stretch stops a hand-gap short of a hand, so the boundary never
+    # runs through a mark -- and a stretch that extreme winding has squeezed
+    # away is simply not drawn.
     right, left = ARM_REST + wind["R"], ARM_REST + wind["L"]
     stretches = [
-        (0, right - HAND_GAP, ink("R")),
-        (right + HAND_GAP, 360 - left - HAND_GAP, QUIET),     # the back
-        (360 - left + HAND_GAP, 360, ink("L")),
+        (right + HAND_GAP, 360 - left - HAND_GAP),        # behind
+        (360 - left + HAND_GAP, 360 + right - HAND_GAP),  # across the front
     ]
-    return "".join(rim(centre, facing, facing + a, facing + b, colour)
-                   for a, b, colour in stretches if b - a > 0.01)
+    return "".join(rim(centre, facing, facing + a, facing + b)
+                   for a, b in stretches if b - a > 0.01)
 
-def blocked(wind):
-    """An arm past half the rim has run out of body to go round."""
-    return ARM_REST + wind > ARM_BLOCK
-
-def fill_of(level, arm):
+def fill_of(level, arm, deep=False):
     """The one place a level becomes a fill, so hands and pips cannot drift."""
     if level == "low":
-        return INK[arm]
+        return DEEP[arm] if deep else INK[arm]
     if level == "above":
-        return f"url(#h{arm})"
+        return f"url(#h{arm}{'d' if deep else ''})"
     return "none"
 
 def hand(cx, cy, leads, side, held=True, level=None, free="fade"):
-    """One hand, in its own side's ink whoever it belongs to."""
-    stroke = INK[side] if (held or free == "fade") else QUIET
-    fill = fill_of(level, side) if held else "none"
+    """One hand, in its own side's ink: the lead's deep, the follow's plain."""
+    ink = DEEP[side] if leads else INK[side]
+    stroke = ink if (held or free == "fade") else QUIET
+    fill = fill_of(level, side, leads) if held else "none"
     faded = "" if held or free != "fade" else f' opacity="{FREE}"'
     dot = ""
     if level == "high":

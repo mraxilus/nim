@@ -1,10 +1,10 @@
-// Screenshot the marks page, light and dark, full length.
+// Screenshot one marks page, light and dark, full length.
 //
 // The animations only exist in a browser, so a still build passing says
 // nothing about them; this is the cheap half of checking they run (take two
 // shots a moment apart and diff them for the expensive half).
 //
-//   node design/shot.js design/marks.html /tmp/marks
+//   node design/shot.js design/frames.html /tmp/frames
 //
 // Chromium and playwright are pre-installed in the remote environment at the
 // paths below; elsewhere, point the two constants at your own.

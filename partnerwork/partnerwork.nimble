@@ -43,5 +43,5 @@ task review, "Write the review page and the frame pictures from the model":
 task audit, "Print the model and what it says about the workbook":
   exec "nim c -r --hints:off tools/audit.nim"
 
-task marks, "Check and rebuild design/marks.html, the rotation mark workbench":
+task marks, "Check and rebuild the rotation mark workbench's two pages":
   exec "python3 -m design"
