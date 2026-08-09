@@ -13,10 +13,9 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, strutils]
+import std/[math, options]
 
 import ./diagram
-import ./frame
 import ./map
 import ./motion
 import ./rotation
