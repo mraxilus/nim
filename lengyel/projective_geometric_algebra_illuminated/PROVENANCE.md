@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 195 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 196 assertions; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -1712,10 +1712,29 @@ comment already pointed ("matching exactly where `mesh.addPoint` draws it").
 
 ### Framing the whole selection
 
-The rule (`framing.nim`): on a new creation or a new pick, the camera **centres on
-everything selected and pulls back until all of it is in view**, where in view means the
-centred two thirds of the frame (`camera.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from
-a sixth of the way in to five sixths).
+The rule (`framing.nim`): on a new creation or a new pick, the camera moves by the **least
+of pan, zoom and orbit together** that puts every selected object in view — not at all when
+they all already are — where in view means the centred two thirds of the frame
+(`camera.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from a sixth of the way in to five
+sixths).
+
+**Pan and zoom are preferred over orbit by construction, not by weighing.** The full move
+the least is cut back from carries no turn for a finite selection (target and distance
+only), and *only* a turn for a horizon-only one — pan and zoom cannot bring a star into
+view. So a finite pick never changes azimuth or elevation, and a star is turned toward only
+as far as it takes.
+
+**The cut.** `placementFor` first asks whether everything is already in view *where the
+camera stands* — judging that at the centred placement instead was precisely the bug that
+swung the view on every pick of something plainly visible. Otherwise it builds the full
+placement (centred target, facing angles for horizon-only, bisected least distance) and
+searches the least fraction of `camera.toward` — the exact path the ease travels, geometric
+distance included — that satisfies `isShownAll`: `STEPS_PLACEMENT_LEAST = 12` even steps to
+bracket the crossing, `ROUNDS_PLACEMENT_LEAST = 5` halvings into it (within 1/384 of the
+move). Each candidate is verified with the full test at its own trial placement, so the
+interaction between a partial pan and a partial zoom — the fitted distance was solved at
+the *centred* target — cannot admit a fraction that fails; the step-then-halve
+first-crossing shape is what handles the path not being strictly monotone.
 
 Two thirds rather than the whole frame because an object clinging to the very edge is
 visible without being what the view is about, and the marker ringing it is half off-frame.
@@ -1778,23 +1797,31 @@ first few frames and then crawls.
 
 **Measured on the real page**, not reasoned about. Driving the browser build through
 `nimSelectOnly`/`nimSelectToggle`, seven selections × nine starting orientations, reading
-every picked object's screen position and the camera distance back after the ease:
+every picked object's screen position and the camera's target, angles and distance back
+after the ease. Three stages of this rule shipped; the sweep across them:
 
-| | before (6d9eac6) | after |
-|---|---|---|
-| worst picked point outside the box | **323.9 px**, some off screen (y = −191) | **0.0 px** |
-| camera moved for two or more objects | not at all; the aim watched one | centred on them |
-| orbit distance | 12.0 throughout | 12.0 to 14.7, never below 12.0 |
+| | watch one object | centre the selection | least move (current) |
+|---|---|---|---|
+| worst picked point outside the box | **323.9 px** | 0.0 px | 0.0 px |
+| total pan over the 63 trials | — | 277.9 | **97.2** |
+| trials moving an in-view selection | — | all of them | **none** |
+| orbit turned, finite selections | 0 | 0 | **0.000 in all 63** |
+| distance | 12.0 always | 12.0–14.7 | 12.0–13.6, never below |
 
-63 trials, every picked point inside the box in all of them. On the desktop the same three
-picks driven through `--drive-select` (frames 5, 7 and 9) show the view recentring on the
-group as each object joins it. The storyboard's horizon captures go through the same rule
-and still turn to face their great circle.
+On the desktop, `--drive-select` frame 5 (a visible point picked) no longer moves the view
+at all, and frame 9 (three points) shifts it only slightly to bring the one point at the
+box's edge fully inside. The storyboard's horizon captures go through the same rule; a
+derived great circle that already crosses the demo angle's box now keeps that angle rather
+than turning to face the circle dead on.
 
-**This replaced a least-movement rule** that stopped the camera as soon as *part of one*
-object reached the box. That rule cut a lone object's pan from 4.4–6.4 world units to
-0.0–2.8, but it watched one object only and left the rest of a selection wherever they
-happened to fall — which is what the numbers above measure.
+**History of the rule, kept because each step answered a real complaint.** Watching one
+object left the rest of a selection anywhere, including off screen — the first column.
+Centring the whole selection fixed that but swung the view for objects already plainly
+visible, because "already shown" was judged at the *centred* placement rather than where
+the camera stood — one terse trap: that check must read the live camera, or every pick
+moves the view. The least-move rule keeps the in-view guarantee of the second column at a
+third of its movement, and restores the horizon least-turn the intermediate rule had
+dropped.
 
 
 Diagnostics Panel (desktop)

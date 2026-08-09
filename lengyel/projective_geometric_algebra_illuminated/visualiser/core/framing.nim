@@ -32,13 +32,23 @@ import ./[camera, mesh, picking, scene, selection]
 
 #[ Framing Configuration ]#
 
-const ROUNDS_DISTANCE_FIT* = 8
-  ## Halvings run when searching for the least orbit distance that brings a whole selection
-  ## into view.
-  ##   Eight lands within 1/256 of the bracket, and the bracket is the distance at which
-  ##   the selection exactly fills the box, so the residue is a fraction of a percent of
-  ##   the spread being framed -- far finer than a reader could see, and each halving costs
-  ##   a projection of every selected object.
+const
+  ROUNDS_DISTANCE_FIT* = 8
+    ## Halvings run when searching for the least orbit distance that brings a whole
+    ## selection into view.
+    ##   Eight lands within 1/256 of the bracket, and the bracket is the distance at which
+    ##   the selection exactly fills the box, so the residue is a fraction of a percent of
+    ##   the spread being framed -- far finer than a reader could see, and each halving
+    ##   costs a projection of every selected object.
+  STEPS_PLACEMENT_LEAST* = 12
+    ## Fractions of the full framing move tried, evenly spaced, when cutting it back to
+    ## the least that already shows the selection. Coarse on purpose: they only have to
+    ## bracket the crossing, which the halvings below then close on, and each step costs a
+    ## projection of every selected object.
+  ROUNDS_PLACEMENT_LEAST* = 5
+    ## Halvings run inside the bracketed step. Five puts the answer within 1/384 of the
+    ## full move -- under a pixel of any pan or turn made here, so the selection lands on
+    ## the edge of the box rather than measurably inside it.
 
 
 
@@ -93,18 +103,25 @@ func placementFor*(
   camera: Camera; width, height: int
 ): CameraPlacement =
   ## Resolve `aim` against the camera as it stands into the placement an ease should end
-  ## at: centred on what was picked, and pulled back far enough to show all of it.
-  ##   **Target** is the middle of everything finite that was picked, or where the camera
-  ##   already looks where nothing finite was.
-  ##   **Angles** face the horizon objects, and only where nothing finite was picked.
-  ##   Finite framing wins outright because the two can disagree: a star behind the reader
-  ##   and a point in front of them have no placement showing both, and a selection with
-  ##   something finite in it is overwhelmingly the one a reader is working on. A star
-  ##   picked alongside a point may therefore stay out of view; there is no placement that
-  ##   would have helped.
-  ##   **Distance** never shrinks. A tight selection is not zoomed into -- the reader chose
-  ##   that scale, and re-scaling the world on every pick is disorienting in a way that
-  ##   panning is not.
+  ## at: the **least movement** -- pan, zoom and orbit taken together -- that puts every
+  ## picked object in view. Not at all where they all already are.
+  ##   The full move it is cut back from: **target** to the middle of everything finite
+  ##   that was picked, **angles** facing the horizon objects only where nothing finite
+  ##   was, **distance** pulled back only as far as fitting demands and never in. Orbit is
+  ##   preferred *against* by construction, not by weighing: a finite selection's full move
+  ##   carries no turn at all, so no fraction of it does either, and a horizon-only
+  ##   selection's move is a turn because pan and zoom cannot bring a star into view.
+  ##   Finite framing wins outright over facing a star because the two can disagree: a
+  ##   star behind the reader and a point in front of them have no placement showing both,
+  ##   and a selection with something finite in it is overwhelmingly the one a reader is
+  ##   working on. A star picked alongside a point may therefore stay out of view; there
+  ##   is no placement that would have helped.
+  # Everything already in view costs no movement at all. Judged where the camera *is*,
+  #   not at the centred placement -- judging there was precisely the bug that swung the
+  #   view on every pick of something already plainly visible.
+  if isShownAll(scene, picked, staged, camera, width, height):
+    return camera.placementOf
+
   let angles =
     if aim.sphere.isSome or aim.heading.isNone: (camera.azimuth, camera.elevation)
     else: azimuthElevationFor(aim.heading.get)
@@ -116,35 +133,62 @@ func placementFor*(
     #   would run along its sight axis and the frame it derives collapses.
     elevation: clamp(angles[1], -ELEVATION_LIMIT, ELEVATION_LIMIT),
   )
-  if aim.sphere.isNone: return settled
-  if isShownAll(scene, picked, staged, camera.placed(settled), width, height):
-    return settled
+  if aim.sphere.isSome and
+      not isShownAll(scene, picked, staged, camera.placed(settled), width, height):
+    # Bracket with the distance at which the whole sphere fits, then halve into it for the
+    #   least that will actually do. The closed form alone would over-dolly: a point at
+    #   the middle picked with a line whose support stands a hundred units away needs no
+    #   pulling back at all if that line already crosses the frame, and the closed form
+    #   would drag its support into the box regardless.
+    var
+      near = camera.distance
+      far = max(
+        camera.distance,
+        distanceFitting(aim.sphere.get.radius, camera, width, height, INSET_POINT_SHOWN),
+      )
+    settled.distance = far
+    # Sound because the test is monotone in distance: everything converges on the middle
+    #   of the frame as the eye pulls back, so a distance that shows the selection is not
+    #   undone by a greater one.
+    if isShownAll(scene, picked, staged, camera.placed(settled), width, height):
+      for _ in 1 .. ROUNDS_DISTANCE_FIT:
+        let middle = 0.5*(near + far)
+        settled.distance = middle
+        if isShownAll(scene, picked, staged, camera.placed(settled), width, height):
+          far = middle
+        else: near = middle
+      settled.distance = far
 
-  # Bracket with the distance at which the whole sphere fits, then halve into it for the
-  #   least that will actually do. The closed form alone would over-dolly: a point at the
-  #   middle picked with a line whose support stands a hundred units away needs no
-  #   pulling back at all if that line already crosses the frame, and the closed form would
-  #   drag its support into the box regardless.
-  var
-    near = camera.distance
-    far = max(
-      camera.distance,
-      distanceFitting(aim.sphere.get.radius, camera, width, height, INSET_POINT_SHOWN),
-    )
-  settled.distance = far
-  # Sound because the test is monotone in distance: everything converges on the middle of
-  #   the frame as the eye pulls back, so a distance that shows the selection is not undone
-  #   by a greater one. Where even the bracket fails -- a selection spread wider than the
-  #   world may be viewed from, or two stars facing opposite ways -- the bracket stands.
+  # Where even the full move shows nothing -- a selection spread wider than the world may
+  #   be viewed from, or two stars facing opposite ways -- it stands whole rather than a
+  #   wrong answer being reported as a right one.
   if not isShownAll(scene, picked, staged, camera.placed(settled), width, height):
     return settled
-  for _ in 1 .. ROUNDS_DISTANCE_FIT:
-    let middle = 0.5*(near + far)
-    settled.distance = middle
-    if isShownAll(scene, picked, staged, camera.placed(settled), width, height): far = middle
-    else: near = middle
-  settled.distance = far
-  settled
+
+  # Cut the whole move back to the least fraction of itself that already shows everything,
+  #   searched along the very path the ease travels (`toward`, geometric distance
+  #   included) so what remains reads as the same movement stopped early. Each candidate
+  #   is verified with the full test at its own trial placement, so the interaction
+  #   between a partial pan and a partial zoom -- the fitted distance was solved at the
+  #   *centred* target -- cannot admit a fraction that fails; the step-then-halve
+  #   first-crossing shape is what handles the path not being strictly monotone.
+  let start = camera.placementOf
+  var (lower, upper) = (0.0, 1.0)
+  for step in 1 .. STEPS_PLACEMENT_LEAST:
+    let fraction = float(step)/float(STEPS_PLACEMENT_LEAST)
+    if isShownAll(
+      scene, picked, staged, camera.placed(start.toward(settled, fraction)), width, height
+    ):
+      (lower, upper) = (float(step - 1)/float(STEPS_PLACEMENT_LEAST), fraction)
+      break
+  for _ in 1 .. ROUNDS_PLACEMENT_LEAST:
+    let middle = 0.5*(lower + upper)
+    if isShownAll(
+      scene, picked, staged, camera.placed(start.toward(settled, middle)), width, height
+    ):
+      upper = middle
+    else: lower = middle
+  start.toward(settled, upper)
 
 
 

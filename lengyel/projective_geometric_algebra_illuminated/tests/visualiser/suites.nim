@@ -1399,35 +1399,67 @@ suite "Camera Aim":
         check framed.distance > camera.distance # Panning alone could not have done it.
 
 
-  test "the selection's centre is what lands in the middle of the frame":
-    let places = [
-      Position(x: 4.0, y: 0.0, z: 0.0), Position(x: -4.0, y: 0.0, z: 0.0),
-      Position(x: 0.0, y: 4.0, z: 0.0),
-    ]
+  test "a selection already in view moves the camera not at all":
+    # What the least-movement rule rests on, judged where the camera *is*: judging it at
+    #   the centred placement instead was precisely the bug that swung the view on every
+    #   pick of something already plainly visible.
     let (scene, picked) = sceneOf(
-      toMultivector(places[0]), toMultivector(places[1]), toMultivector(places[2])
+      toMultivector(Position(x: 2.0, y: 0.0, z: 0.0)),
+      toMultivector(Position(x: -2.0, y: 0.0, z: 0.0)),
+      toMultivector(Position(x: 0.0, y: 2.0, z: 0.0)),
     )
-    let camera = placementAim(0.7, 0.2)
-    let framed = framedFor(scene, picked, camera)
-    # Every picked object inside the bound the target centres, which is what "centred on
-    #   the selection" means when there are several of them and no one point to sit on.
-    let aim = aimFor(scene, picked, none(Multivector), camera.drawExtentFor(HEIGHT_AIM))
-    check aim.get.sphere.isSome
-    let bound = aim.get.sphere.get
-    check framed.target =~ bound.centre
-    for place in places:
-      check norm(place - bound.centre) <= bound.radius + TOLERANCE_SINGLE
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        var camera = placementAim(azimuth, elevation)
+        check isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM)
+        check framedFor(scene, picked, camera) == camera.placementOf
+        # End to end: the tween arrives the moment the goal is armed, so no frame of the
+        #   animation window ever writes to the camera.
+        var tween: CameraTween
+        tween.offerAim(
+          camera, scene, picked, none(Multivector), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
+        )
+        check tween.is_arrived
 
 
-  test "a lone object is centred, wherever the camera was standing":
-    let point = toMultivector(Position(x: 3.0, y: -2.0, z: 1.5))
+  test "an object outside the box is carried to its edge and no further":
+    let point = toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))
     let (scene, picked) = sceneOf(point)
     for azimuth in AZIMUTHS_AIM:
-      let camera = placementAim(azimuth, 0.2)
-      let framed = framedFor(scene, picked, camera)
-      check framed.target =~ anchorFor(point, camera.drawExtentFor(HEIGHT_AIM)).get
-      # One point has no spread, so nothing forces a pull-back.
-      check framed.distance =~ camera.distance
+      for elevation in ELEVATIONS_AIM:
+        let camera = placementAim(azimuth, elevation)
+        let framed = framedFor(scene, picked, camera)
+        check isShownAll(
+          scene, picked, none(Multivector), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
+        )
+        if isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM):
+          continue
+        # No further than enough: a tenth of the way back along the very move fails. A
+        #   tenth rather than a hair because the search settles to within 1/384 of the
+        #   full move, so a hair is inside its own resolution and would prove nothing.
+        let short = camera.placementOf.toward(framed, 0.9)
+        check not isShownAll(
+          scene, picked, none(Multivector), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
+        )
+
+
+  test "a finite selection never turns the orbit":
+    # The preference for pan and zoom over orbit, stated as the property it is: a finite
+    #   selection's move carries no turn at all, so no fraction of it does either.
+    let scenes = [
+      sceneOf(toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))),
+      sceneOf(
+        toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
+        toMultivector(Position(x: -9.0, y: 12.0, z: -5.0)),
+      ),
+    ]
+    for (scene, picked) in scenes:
+      for azimuth in AZIMUTHS_AIM:
+        for elevation in ELEVATIONS_AIM:
+          let camera = placementAim(azimuth, elevation)
+          let framed = framedFor(scene, picked, camera)
+          check framed.azimuth == camera.azimuth
+          check framed.elevation == camera.elevation
 
 
   test "the camera pulls back only as far as it must, and never pulls in":
@@ -1438,12 +1470,13 @@ suite "Camera Aim":
     for azimuth in AZIMUTHS_AIM:
       for elevation in ELEVATIONS_AIM:
         let camera = placementAim(azimuth, elevation)
-        var framed = framedFor(scene, picked, camera)
+        let framed = framedFor(scene, picked, camera)
         check framed.distance >= camera.distance # Never pulls in ...
-        # ... and not a step further back than it takes: a hundredth nearer fails.
-        framed.distance = max(camera.distance, framed.distance*0.99)
+        # ... and not a step further than it takes, pan and zoom judged together: a tenth
+        #   of the way back along the very move fails.
+        let short = camera.placementOf.toward(framed, 0.9)
         check not isShownAll(
-          scene, picked, none(Multivector), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
+          scene, picked, none(Multivector), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
         )
 
 
@@ -1472,25 +1505,24 @@ suite "Camera Aim":
       toMultivector(support) ∧ toMultivector(Position(x: 1.0, y: 0.3, z: 40.0)),
     )
     let camera = placementAim(0.0, 0.0)
-    # The line alone would have the camera centre on that support and pull back to it.
-    let (scene_line, picked_line) = sceneOf(line)
-    let framed_line = framedFor(scene_line, picked_line, camera)
-    check framed_line.target =~ anchorFor(line, camera.drawExtentFor(HEIGHT_AIM)).get
-
-    # Picked beside a point, the point alone decides where to look and what it costs.
+    # Picked beside a point, the point alone decides where to look and what it costs: the
+    #   aim's sphere collapses onto it, so the move is a pan toward the point, cut short
+    #   the moment its dot fits -- no dolly toward that distant support, ever.
     let (scene, picked) = sceneOf(point, line)
     let aim = aimFor(scene, picked, none(Multivector), camera.drawExtentFor(HEIGHT_AIM))
     check aim.get.is_bound_by_points
     check aim.get.sphere.get.radius =~ 0.0
     let framed = framedFor(scene, picked, camera)
-    check framed.target =~ place
     check framed.distance == camera.distance
+    check framed.azimuth == camera.azimuth
     check isShownAll(
       scene, picked, none(Multivector), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
     )
 
 
-  test "a horizon object is faced, and only where nothing finite was picked":
+  test "a horizon object is turned toward only as far as it takes":
+    # A star is drawn fixed to the eye, so pan and zoom cannot bring it into view and the
+    #   move is a turn -- the one place orbit is allowed, cut short like every other move.
     let star = attitude(
       toMultivector(Position(x: 4.0, y: 4.0, z: 1.0)) ∧
         toMultivector(Position(x: 5.0, y: 4.5, z: 1.4))
@@ -1503,6 +1535,9 @@ suite "Camera Aim":
       check isShownCentrally(star, camera.placed(framed), WIDTH_AIM, HEIGHT_AIM)
       check framed.target =~ camera.target # The orbit turned; what it turns about did not.
       check framed.distance =~ camera.distance
+      if isShownCentrally(star, camera, WIDTH_AIM, HEIGHT_AIM): continue
+      let short = camera.placementOf.toward(framed, 0.9)
+      check not isShownCentrally(star, camera.placed(short), WIDTH_AIM, HEIGHT_AIM)
 
     # Beside anything finite, the finite framing wins outright and the angles stand: a star
     #   behind the reader and a point in front have no one placement showing both.
