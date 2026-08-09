@@ -5,7 +5,8 @@ elsewhere, so this module is free to be nothing but the argument's layout.
 """
 from .body import FREE, fill_of
 from .style import INK
-HEAD = """<title>The marks, so far</title>
+HEAD = """<meta charset="utf-8">
+<title>The marks, so far</title>
 <style>
 :root {
   color-scheme: light dark;
@@ -150,13 +151,14 @@ def render(P):
 <header class="top">
   <p class="kicker">Partner work · rotation · the marks</p>
   <h1>The marks, so far</h1>
-  <p class="standfirst">Each dancer is a circle with a point on the side they
-  face, and their arms run along the rim rather than across the body — which
-  makes an arm a measure of how far round the hand has been carried. A move
-  animates in two stages: travel, then turn the world until <b>the lead faces
-  up</b> again. That second stage collapses every pose that is the same
-  configuration onto one picture, and shows that an orbit lands where an axis
-  turn lands. Still open on the turn sign: how to say <em>any amount</em>.</p>
+  <p class="standfirst">Each dancer is a circle with a small chevron at its
+  centre for the facing, and their arms run along the rim rather than across
+  the body — which makes an arm a measure of how far round the hand has been
+  carried. A move animates in two stages: travel, then turn the world until
+  <b>the lead faces up</b> again. That second stage collapses every pose that
+  is the same configuration onto one picture, and shows that an orbit lands
+  where an axis turn lands. Still open: which way a wrap should go round, and
+  the turn sign's mark for <em>any amount</em>.</p>
 </header>
 
 <section>
@@ -190,26 +192,30 @@ def render(P):
 </section>
 
 <section>
-  <div class="head"><span class="n">One</span><h2>Bodies with a point, arms
-  along the rim</h2></div>
-  <p><b>The point grows out of the rim.</b> Each dancer is a circle whose
-  boundary swells gradually into a point on the side they face — the two curves
-  leave the rim along the rim's own tangent, so the only corner in the shape is
-  the tip. One path, which is why it turns smoothly.</p>
-  <p><b>An arm is that boundary, not a line on it.</b> The edge of a body is
-  drawn <em>once</em>, in stretches at one width: the point in quiet ink, each
-  arm in its own colour from where the point ends round to its hand, the back
-  quiet. And an arm is inked only while its hand is part of a connection —
-  <b>no connection, no line</b> — so an open couple is two quiet outlines with
-  four faded hands, and nothing else.</p>
-  <p><b>The reach wraps.</b> It starts on the edge of the hand's own mark, not
-  at its centre, and where the straight way to the partner would pass through a
-  body it runs <em>along the rim</em> instead — hugging it exactly, point and
-  all, to the first place it can leave on a tangent, then straight, then along
-  the other rim to the other hand. A string pulled tight around the bodies. In
-  the moving figures every frame is routed the same way and keeps the same way
-  round from the frame before, so the line wraps and unwraps rather than
-  sweeping through a body to the other side.</p>
+  <div class="head"><span class="n">One</span><h2>Circles, arms along the
+  rim</h2></div>
+  <p><b>The body is a plain circle, and the facing is a small chevron at its
+  centre</b> — the one part of a dancer nothing else uses, since the rim is the
+  arms and it breaks for the hands. The chevron turns with its dancer, for the
+  lead and the follow alike.</p>
+  <p><b>An arm is the boundary, not a line on it.</b> The edge of a body is
+  drawn <em>once</em>, in stretches at one width: each arm in its own colour
+  from the front — where the two arms meet, under the chevron's direction —
+  round to its hand, and the back quiet. Every stretch stops short of every
+  hand mark, the same clearance the reach keeps, so nothing on the boundary
+  runs through a mark. And an arm is inked only while its hand is part of a
+  connection — <b>no connection, no line</b> — so an open couple is two quiet
+  outlines with four faded hands, and nothing else.</p>
+  <p><b>The reach wraps, and it prefers the front.</b> It starts on the edge of
+  the hand's own mark, not at its centre, and where the straight way to the
+  partner would pass through a body it runs <em>along the rim</em> instead — to
+  the first place it can leave on a tangent, then straight, then along the
+  other rim to the other hand. A way that sets off round a dancer's back pays a
+  penalty against one that crosses their front, because a crossed hold crosses
+  the chest — but it is a bias, not a rule, and the choice is still open; the
+  comparison below draws both. In the moving figures every frame is routed the
+  same way and keeps the same way round from the frame before, so the line
+  wraps and unwraps rather than sweeping through a body to the other side.</p>
   <p><b>The lead always faces up.</b> That is what the second stage of a move
   now aims at — not standing the pair upright, but standing the <em>lead</em>
   upright. Everything is read from them, so they hold still and where the follow
@@ -249,6 +255,21 @@ def render(P):
       {fig(P['wind_1'], 'the Left arm<br>wound 45°')}
       {fig(P['wind_2'], 'wound 90°<br>— half the rim')}
       {fig(P['wind_3'], 'wound 135°<br>— past it')}
+    </div>
+  </div>
+
+  <div class="plate">
+    <h3>Which way round a wrap goes<span class="tag">open</span></h3>
+    <p>The follow a quarter turned, holding <em>Left to left</em>: the two
+    ways round their body are nearly the same length, and the shortest by a
+    whisker rounds their back. The routing now prefers the front — a penalty
+    on the back way, one constant (<code>BACK_BIAS</code>), not a rule — so a
+    near-tie crosses the chest, while a hold that genuinely belongs behind the
+    back (back to back, say) still goes there. Both readings are drawn because
+    the weighting is still yours to settle.</p>
+    <div class="row">
+      {fig(P['wrap_front'], 'preferring <b>the front</b><br>— the current bias')}
+      {fig(P['wrap_short'], 'the <b>shortest</b> way<br>— round the back')}
     </div>
   </div>
 

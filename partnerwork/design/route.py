@@ -8,13 +8,20 @@ is what lets an animation morph a reach instead of jumping it.
 import math
 
 from .body import BODY_R, R, RIM_STEP, outline_point, outline_r
-from .geometry import bearing, xy
+from .geometry import bearing, wrap180, xy
 from .style import CAP, LINK_W
 
 
 ROUTE_N = 33              # points in every emitted reach, so frames can morph
 
 HYSTERESIS = 9.0          # how much shorter a new route must be to displace one
+
+BACK_BIAS = 25.0          # what setting off round a dancer's back costs.  An arm
+                          # in a crossed hold crosses the front, so the front way
+                          # wins unless the back way is this much shorter -- a
+                          # preference rather than a rule, and the one number to
+                          # change if the choice lands the other way (it is still
+                          # an open question; the page draws both)
 
 BREAK = 11.0
 
@@ -93,18 +100,37 @@ def resample(pts, count):
         out.append((p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t))
     return out
 
-def routed(a, b, A, B, prefer=None):
+def front_of(hand, body):
+    """The way round the rim that heads for this dancer's front, from here.
+
+    Zero when the hand is dead ahead or dead behind, where neither way is
+    more frontward than the other.
+    """
+    (c, f) = body
+    off = wrap180(bearing(hand[0] - c[0], hand[1] - c[1]) - f)
+    if abs(off) < 1e-9 or abs(abs(off) - 180) < 1e-9:
+        return 0
+    return -1 if off > 0 else 1
+
+
+def routed(a, b, A, B, prefer=None, back_bias=BACK_BIAS):
     """One reach: hand border to hand border, wrapping wherever it must.
 
-    `prefer` keeps the previous frame's way round unless a new one is clearly
-    shorter, so a moving reach wraps and unwraps rather than flicking to the
-    other side of a body through the middle of it.
+    A way that sets off round a dancer's back pays `back_bias` against one that
+    crosses their front, and `prefer` keeps the previous frame's way round
+    unless a new one is clearly shorter -- so a moving reach wraps and unwraps
+    rather than flicking to the other side of a body through the middle of it.
     """
+    fa, fb = front_of(a, A), front_of(b, B)
     best = None
     for combo in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
         pts, length = taut(a, b, A, B, *combo)
         if pts is None:
             continue
+        if fa and combo[0] != fa:
+            length += back_bias
+        if fb and combo[1] != fb:
+            length += back_bias
         if prefer is not None and combo == prefer:
             length -= HYSTERESIS
         if best is None or length < best[1]:

@@ -7,9 +7,9 @@ ink, and the sign's geometry is even to the tenth of a unit.
 """
 import math
 
-from .body import (ARM_BLOCK, ARM_REST, BODY_R, NOSE_HALF, R, blocked, border,
-                   hands_of, outline_r, side_of)
-from .geometry import bearing
+from .body import (ARM_BLOCK, ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W,
+                   blocked, border, hands_of, outline_r, side_of)
+from .geometry import bearing, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
 from .route import ROUTE_N, routed
@@ -45,24 +45,48 @@ def check_frame():
     assert not blocked(ARM_BLOCK - ARM_REST - 1)
     assert blocked(ARM_BLOCK - ARM_REST + 1)
 
-    # the boundary is drawn once: the stretches run end to end and tile the
-    # whole way round, so no piece of rim carries two strokes
-    for wl, wr in ((0, 0), (45, 0), (0, 90), (135, 0)):
-        pose = rest({"lead": {"L": float(wl), "R": float(wr)}})
-        edges = [-NOSE_HALF, NOSE_HALF, ARM_REST + wr,
-                 360 - (ARM_REST + wl), 360 - NOSE_HALF]
+    # the boundary is a plain circle again, and its stretches tile it once:
+    # three stretches and the two hand gaps cover the rim exactly, and every
+    # stretch ends a hand-gap short of the hand it meets
+    assert all(abs(outline_r(d) - BODY_R) < 1e-9 for d in range(0, 360, 7))
+    for wl, wr in ((0, 0), (45, 0), (0, 90)):
+        right, left = ARM_REST + wr, ARM_REST + wl
+        edges = [0, right - HAND_GAP, right + HAND_GAP,
+                 360 - left - HAND_GAP, 360 - left + HAND_GAP, 360]
         assert all(b >= a for a, b in zip(edges, edges[1:])), (wl, wr, edges)
-        assert abs((edges[-1] - edges[0]) - 360) < 1e-9, edges
-        # and every arm stretch lies on the boundary, not beside it
-        for a, b in ((NOSE_HALF, ARM_REST + wr), (360 - (ARM_REST + wl),
-                                                  360 - NOSE_HALF)):
-            for i in range(21):
-                th = a + (b - a) * i / 20
-                assert abs(outline_r(th) - BODY_R) < 1e-9, (th, outline_r(th))
+        drawn = sum(b - a for a, b in zip(edges[::2], edges[1::2]))
+        assert abs(drawn + 4 * HAND_GAP - 360) < 1e-9, (wl, wr, drawn)
+    # extreme winding squeezes the back away entirely; the border skips the
+    # reversed stretch rather than drawing it backwards
+    squeezed = border(rest({"lead": {"L": 135.0, "R": 0.0}}), "lead",
+                      frozenset(("L",)))
+    assert squeezed.count("<path") == 2, squeezed.count("<path")
+
+    # the centred chevron stays well inside its own rim
+    assert CHEV_OUT + RIM_W < BODY_R, CHEV_OUT
 
     # no connection is drawn without a hold: a bare border carries no arm ink
     bare = border(rest(), "lead", frozenset())
     assert "var(--left" not in bare and "var(--right" not in bare, "free arm inked"
+
+    # where the two ways round are close, the bias sends the reach across the
+    # front -- the case the comparison figure draws, so it must really differ,
+    # and differ in the front direction
+    pose = canonicalise(spin_about(rest(), "follow", 270))
+    pts_all = hands_of(pose)
+    a, b = pts_all["lead"]["L"], pts_all["follow"]["L"]
+    bodies = ((pose["lead"], pose["lead_facing"]),
+              (pose["follow"], pose["follow_facing"]))
+    biased, _ = routed(a, b, *bodies)
+    short, _ = routed(a, b, *bodies, back_bias=0.0)
+    assert biased != short, "front bias changes nothing here"
+
+    def follow_offset(q):
+        return abs(wrap180(bearing(q[0] - pose["follow"][0],
+                                   q[1] - pose["follow"][1])
+                           - pose["follow_facing"]))
+
+    assert follow_offset(biased[-3]) < follow_offset(short[-3]), "bias backward"
 
     # and no reach ever crosses into a body: every hold, every quarter-turn
     # orientation, sampled along the route it would actually be drawn with

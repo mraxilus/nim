@@ -52,17 +52,23 @@ page and this list together.
 - A hand nobody holds **fades to half strength but keeps its hue**, because
   `open` is four free hands and greying them would erase orientation exactly
   where nothing else can say it.
-- A **body is a circle whose rim swells into a point** on the side it faces —
-  one path, one polar function (`outline_r`), the only corner at the tip.
-- An **arm is a stretch of that rim**, in its arm's ink, from where the point
-  ends round to its hand — and it is inked **only while its hand is part of a
-  connection**.  No connection, no line.  How far round the rim the hand has
-  been carried is therefore drawn, which is what a wrap or a lock is; past half
-  the rim the stretch turns `--block` red (threshold a guess, see open
-  questions).
+- A **body is a plain circle with a small chevron at its centre** for the
+  facing — the centre is the one part of a dancer nothing else uses.  The
+  boundary stays one polar function (`outline_r`) so the routing and the
+  drawing cannot disagree about it.
+- An **arm is a stretch of that rim**, in its arm's ink, from the front — where
+  the two arms meet, under the chevron — round to its hand, and it is inked
+  **only while its hand is part of a connection**.  No connection, no line.
+  The rim **breaks around every hand mark** (`HAND_GAP`, the reach's own
+  clearance turned into arc), so nothing on the boundary runs through a mark.
+  How far round the rim the hand has been carried is drawn, which is what a
+  wrap or a lock is; past half the rim the stretch turns `--block` red
+  (threshold a guess, see open questions).
 - A **reach is a taut string**: it starts on the border of the hand's own mark,
   hugs the rim exactly where the straight way would cross a body, and is
-  straight everywhere else.
+  straight everywhere else.  A way that sets off round a dancer's back pays
+  `BACK_BIAS` against one that crosses their front, so near-ties cross the
+  chest while a hold that belongs behind the back still goes there.
 - **The lead always faces up.**  Poses live in world coordinates and are drawn
   through `canonicalise`, which turns the world until the lead faces up — so
   every pose that is the same configuration is the same picture, and the whole
@@ -113,6 +119,9 @@ The user's side of the table, as of the last iteration:
 - The **wrap threshold**: the rim turns red past half a turn of winding, a
   guess standing in for `armCapacity`'s measured ceilings; and whether a
   crossed hold should count against it at all.
+- The **wrap side weighting**: `BACK_BIAS` in `route.py` decides how strongly
+  a reach prefers crossing the front over rounding the back; the page draws
+  both readings of a near-tie, and the number is explicitly unsettled.
 - The **bow** for contact with the body, the **staff** for sequences, what an
   orbit stores, and when an arm above the head blocks.
 

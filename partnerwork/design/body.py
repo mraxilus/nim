@@ -1,28 +1,28 @@
-"""One dancer: a circle whose rim swells into a point on the side they face.
+"""One dancer: a circle, with a small chevron at its centre for the facing.
 
 The boundary is one polar function, `outline_r`, shared by the drawing, the
 arms and the routing -- so "on the border" is true by construction rather than
 by two pieces of code agreeing.  An arm is not a line laid on the rim: it *is*
-the rim, over the stretch it covers, and it is inked only while its hand is
-part of a connection.  Hands sit on the rim, each in its own side's colour,
-so a body read across its facing is that dancer's orientation.
+the rim, from the front round to its hand, and it is inked only while that
+hand is part of a connection.  Hands sit on the rim, each in its own side's
+colour, and the rim breaks around every hand mark the way the reach already
+stops at one -- nothing on the boundary runs through a mark.
 """
 import math
 
-from .geometry import n, polar, wrap180, xy
-from .style import BLOCK, FAINT, INK, QUIET
+from .geometry import n, polar, xy
+from .style import BLOCK, CAP, FAINT, INK, QUIET
 
 
 BODY_R = 20               # a dancer, seen from above; their hands sit on it
 
-BULGE = 6                 # how far the point stands proud of the rim, short
-                          # enough that two facing points do not touch
-
-NOSE_HALF = 34            # how much rim the point grows out of, either side
-
 RIM_W = 2.2               # one width for the whole boundary, arms included
 
-RIM_STEP = 3              # degrees between samples where the boundary curves
+CHEV_OUT = 7              # how far the centred chevron reaches forward
+CHEV_BACK = 1             # and how little it reaches back
+CHEV_HALF = 5             # half its width, well inside the rim
+
+RIM_STEP = 3              # degrees between samples when a route walks the rim
 
 ARM_REST = 90             # a hand at rest is a quarter of the rim from the point
 
@@ -38,55 +38,66 @@ def hand_bearing(facing, side, wind=0.0):
     return facing + (-1 if side == "L" else 1) * (ARM_REST + wind)
 
 def hand_point(centre, facing, side, wind=0.0):
-    """Where one hand is: round the rim from the point, by however far the arm
+    """Where one hand is: round the rim from the front, by however far the arm
     has gone."""
     return polar(centre[0], centre[1], BODY_R,
                  hand_bearing(facing, side, wind))
+
+HAND_GAP = math.degrees(math.asin((R + CAP) / BODY_R))
+    # the rim's clearance around a hand mark: the same reach the connection
+    # keeps, turned into arc, so the boundary and the reach stop at one border
+
 
 def outline_r(delta):
     """How far the boundary is from the centre, at this bearing off the front.
 
     One function, used by the drawing, by the arms and by anything that has to
-    stay outside a body -- so `on the border` is true by construction instead of
-    by two pieces of code agreeing.  The swell reaches the rim with slope zero,
-    so the point grows out of it with no corner; the only corner is the tip.
+    stay outside a body -- so `on the border` is true by construction instead
+    of by two pieces of code agreeing.  A body is a plain circle now; the
+    function stays because the routing reads the boundary through it.
     """
-    off = abs(wrap180(delta))
-    if off >= NOSE_HALF:
-        return BODY_R
-    return BODY_R + BULGE * (1 - off / NOSE_HALF) ** 2
+    return BODY_R
 
 def outline_point(centre, facing, theta):
     return polar(centre[0], centre[1], outline_r(theta - facing), theta)
 
 def rim(centre, facing, a, b, ink, width=RIM_W):
-    """One stretch of the boundary, drawn once and by one owner.
-
-    Outside the point the boundary is exactly the circle, so a stretch there is
-    a circular arc; across the point it is sampled, finely enough that the
-    sagitta is under a hundredth of a unit.
-    """
+    """One stretch of the boundary, drawn once and by one owner."""
     span = b - a
-    plain = all(abs(wrap180(a + span * i / 12 - facing)) >= NOSE_HALF - 1e-9
-                for i in range(13))
-    if plain:
-        start, end = outline_point(centre, facing, a), outline_point(centre, facing, b)
-        large = 1 if abs(span) > 180 else 0
-        sweep = 1 if span > 0 else 0
-        d = f"M{xy(start)} A{BODY_R} {BODY_R} 0 {large} {sweep} {xy(end)}"
-    else:
-        steps = max(2, int(math.ceil(abs(span) / RIM_STEP)))
-        pts = [outline_point(centre, facing, a + span * i / steps)
-               for i in range(steps + 1)]
-        d = "M" + " L".join(xy(q) for q in pts)
+    start = outline_point(centre, facing, a)
+    end = outline_point(centre, facing, b)
+    large = 1 if abs(span) > 180 else 0
+    sweep = 1 if span > 0 else 0
+    d = f"M{xy(start)} A{BODY_R} {BODY_R} 0 {large} {sweep} {xy(end)}"
     return (f'<path d="{d}" fill="none" stroke="{ink}" stroke-width="{width}"'
             ' stroke-linecap="round" stroke-linejoin="round"/>')
+
+
+def chevron(centre, facing):
+    """The facing, said small and at the centre of the body.
+
+    In the middle rather than on the rim, because the rim is spoken for: it is
+    the arms, and it breaks for the hands.  The centre is the one part of a
+    dancer nothing else uses.
+    """
+    rad = math.radians(facing)
+    fwd = (math.sin(rad), -math.cos(rad))
+    across = (math.cos(rad), math.sin(rad))
+    apex = (centre[0] + fwd[0] * CHEV_OUT, centre[1] + fwd[1] * CHEV_OUT)
+    a = (centre[0] - fwd[0] * CHEV_BACK - across[0] * CHEV_HALF,
+         centre[1] - fwd[1] * CHEV_BACK - across[1] * CHEV_HALF)
+    b = (centre[0] - fwd[0] * CHEV_BACK + across[0] * CHEV_HALF,
+         centre[1] - fwd[1] * CHEV_BACK + across[1] * CHEV_HALF)
+    return (f'<polyline points="{n(a[0])},{n(a[1])} {n(apex[0])},{n(apex[1])}'
+            f' {n(b[0])},{n(b[1])}" fill="none" stroke="{QUIET}"'
+            ' stroke-width="1.6" stroke-linecap="round"'
+            ' stroke-linejoin="round"/>')
 
 def border(pose, who, engaged=frozenset()):
     """A dancer's whole boundary, drawn once, each stretch in its owner's ink.
 
-    The arms are not lines laid on the rim -- they *are* the rim, over the
-    stretch each one covers.  And only an arm that is part of a connection is
+    The arms are not lines laid on the rim -- they *are* the rim, from the
+    front round to each hand.  Only an arm that is part of a connection is
     inked: no connection, no line, so a free hand sits on a quiet border.
     """
     centre, facing = pose[who], pose[f"{who}_facing"]
@@ -97,15 +108,18 @@ def border(pose, who, engaged=frozenset()):
             return QUIET
         return BLOCK if blocked(wind[side]) else INK[side]
 
+    # The arms meet at the front and run round to their hands; the rest of the
+    # rim is the quiet back.  Every stretch stops a hand-gap short of a hand,
+    # so the boundary never runs through a mark -- and a stretch that extreme
+    # winding has squeezed away is simply not drawn.
     right, left = ARM_REST + wind["R"], ARM_REST + wind["L"]
     stretches = [
-        (-NOSE_HALF, NOSE_HALF, QUIET),                       # the point
-        (NOSE_HALF, right, ink("R")),
-        (right, 360 - left, QUIET),                           # the back
-        (360 - left, 360 - NOSE_HALF, ink("L")),
+        (0, right - HAND_GAP, ink("R")),
+        (right + HAND_GAP, 360 - left - HAND_GAP, QUIET),     # the back
+        (360 - left + HAND_GAP, 360, ink("L")),
     ]
     return "".join(rim(centre, facing, facing + a, facing + b, colour)
-                   for a, b, colour in stretches if abs(b - a) > 0.01)
+                   for a, b, colour in stretches if b - a > 0.01)
 
 def blocked(wind):
     """An arm past half the rim has run out of body to go round."""

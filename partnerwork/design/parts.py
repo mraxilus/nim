@@ -79,6 +79,14 @@ def all_parts():
             parts[f"walk_{tag}_{k}"] = frame("wide", HOLD, pose=q,
                                              captions=False, half=half)
 
+    # the open choice: which way a wrap goes when the ways are close.  The
+    # follow a quarter turned, holding Left to left: the shortest way rounds
+    # their back, the biased way crosses their front.
+    quarter = canonicalise(spin_about(rest(), "follow", 270))
+    parts["wrap_front"] = frame("f", HOLD, pose=quarter)
+    parts["wrap_short"] = frame("f", HOLD, pose=quarter, back_bias=0.0)
+    assert parts["wrap_front"] != parts["wrap_short"], "wrap comparison is moot"
+
     # the collapse: where the orbit lands, and where the axis turn lands
     landed = canonicalise(orbit(rest(), "follow", 90, locked=True))
     landed["ring"] = None                    # the move is over
