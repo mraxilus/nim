@@ -2811,14 +2811,25 @@ suite "Interaction":
 suite "Marker":
   const (WIDTH_MARK, HEIGHT_MARK) = (800, 600)
 
-  proc setUp(distance = 19.0): (Camera, Matrix4, DrawExtent) =
-    ## Build a camera looking at the origin, with the transform and extent a frame carries.
+  proc setUpAt(
+    azimuth, elevation, distance: float
+  ): (Camera, Matrix4, DrawExtent) =
+    ## Build a camera looking at the origin from one placement, with the transform and
+    ## extent a frame carries.
+    ##   Orientation is a parameter because a marker's own worst case can lie along it: a
+    ##   line's rails flared threefold at one azimuth while reading true at another, and
+    ##   the round that shipped that swept distance alone.
     let placement = initCamera(
-      target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = 0.9,
-      elevation = 0.4,
+      target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = azimuth,
+      elevation = elevation,
     )
     let scale = placement.drawExtentFor(HEIGHT_MARK)
     (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
+
+  proc setUp(distance = 19.0): (Camera, Matrix4, DrawExtent) =
+    ## The placement most of these cases read, at the one orientation they were written
+    ## against.
+    setUpAt(azimuth = 0.9, elevation = 0.4, distance = distance)
 
   proc markerOf(
     geometry: Multivector; anchor = none(Position); progress = 1.0;
@@ -2892,43 +2903,63 @@ suite "Marker":
     check marker.radius =~ 0.5*float(SIZE_POINT) + GAP_MARKER
 
 
-  test "a line's rails stand off it perpendicular to the line and to the sight ray":
-    let (placement, _, scale) = setUp()
-    let
-      across = directionAcross(LINE, scale.eye).get
-      support = positionAnchor(LINE).get
-    # Perpendicular to the line, so the rails stay parallel to it and share its
-    #   vanishing points; perpendicular to the sight ray, so they show as sideways
-    #   rather than as one in front of the other.
-    check dot(across, direction(LINE).get) =~ 0.0
-    check dot(across, support - scale.eye) =~ 0.0
-    check norm(across) =~ 1.0
+  test "a line's rails hold their own gap, at every orientation":
+    # The case the previous two rounds needed and did not have. A world offset hands the
+    #   *rate* of convergence to perspective, and along the half of a line whose far point
+    #   lies behind the eye that is not convergence but a flare -- measured at 45.6 px
+    #   against a stated 14.5. The ceiling that was tried against it capped the gap at the
+    #   support only, and the table that justified it swept camera *distance* at one
+    #   orientation, which is the one axis the flare does not lie along.
+    #   So this sweeps orientation, and asserts the bound everywhere along the rails
+    #   rather than at one point on them.
+    for azimuth in [0.2, 0.6, 1.6, 2.4, 4.0]:
+      for elevation in [0.05, 0.4, 0.9]:
+        for distance in [8.0, 19.0, 30.0]:
+          let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
+          let marker = markerFor(
+            LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
+            HEIGHT_MARK, progress = 1.0, is_touch = false, phase = none(float),
+          )
+          if marker.isNone: continue
+          check apartRails(marker.get) <= 2.0*OFFSET_MARKER_RAIL + TOLERANCE_SINGLE
 
 
-  test "a line's rails close on it with distance, as its own perspective does":
-    let (placement, view_projection, scale) = setUp()
-    let
-      support = positionAnchor(LINE).get
-      axis = direction(LINE).get
-      across = directionAcross(LINE, scale.eye).get
-      offset = offsetMarkerRail(support, scale)
-    proc gapAt(along: float): float =
-      ## Measure the pixel gap between line and rail at a point `along` the line.
-      let place = support + along*axis
-      let (on_line, beside) = (
-        projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, place),
-        projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, place + offset*across),
-      )
-      hypot(beside.x - on_line.x, beside.y - on_line.y)
-    # Strictly shrinking with distance is exactly what convergence means, and is the
-    #   whole difference from a constant screen offset, which holds the pair open even
-    #   where the line has narrowed to nothing.
-    var gap_previous = gapAt(0.0)
-    for along in [50.0, 200.0, 1000.0, 5000.0]:
-      let gap = gapAt(along)
-      check gap < gap_previous
-      gap_previous = gap
-    check gapAt(5000.0) < 0.1*gapAt(0.0)
+  test "a line's rails clear it by exactly the shared gap where its support stands":
+    # Exactly, with no tolerance for a tilt out of the projection plane: the offset is
+    #   applied in the pixels it is stated in, so there is no world step to tilt. It read
+    #   14.5 to 15.3 depending on where the camera stood while the step was a world one.
+    let marker = markerOf(LINE).get
+    # Segment 0 and segment 2 are the two sides' own halves toward `+axis`; both start at
+    #   the support, so the distance between those two starts is the pair's own gap.
+    let apart = hypot(
+      marker.segments[2][0].x - marker.segments[0][0].x,
+      marker.segments[2][0].y - marker.segments[0][0].y,
+    )
+    check apart =~ 2.0*OFFSET_MARKER_RAIL
+
+
+  test "a rail closes on a vanishing point only where there is one to close on":
+    # A line's two halves run to `eye ± radius_horizon*axis`, and exactly one of those is
+    #   in front of the eye. The half that has one sheds its offset at the head; the half
+    #   whose head is only a near-plane cut keeps it and stays dead parallel, because
+    #   there is nothing that way for a reader to watch it converge on.
+    let marker = markerOf(LINE).get
+    proc apartAt(first, second, along: float): float =
+      ## Gap between the two sides' own halves `along` the way out from the support.
+      let (own, other) = (marker.segments[int(first)], marker.segments[int(second)])
+      let at = own[0].towards(own[1], along)
+      let (dx, dy) = (other[1].x - other[0].x, other[1].y - other[0].y)
+      let length = hypot(dx, dy)
+      if length <= 0.0: return 0.0
+      abs((at.x - other[0].x)*dy - (at.y - other[0].y)*dx)/length
+    # One half converges and the other does not; which is which is the camera's to say, so
+    #   the assertion is that exactly one of them closes.
+    let closes = [apartAt(0, 2, 1.0) < apartAt(0, 2, 0.0) - TOLERANCE_SINGLE,
+                  apartAt(1, 3, 1.0) < apartAt(1, 3, 0.0) - TOLERANCE_SINGLE]
+    check closes[0] != closes[1]
+    # And the half that does not close holds the gap exactly, rather than merely nearly.
+    let held = if closes[0]: apartAt(1, 3, 1.0) else: apartAt(0, 2, 1.0)
+    check held =~ 2.0*OFFSET_MARKER_RAIL
 
 
   test "a line's rails are drawn in the halves the line itself is drawn in":
@@ -2936,33 +2967,12 @@ suite "Marker":
     check marker.count_segment == SEGMENTS_MARKER_RAILS
 
 
-  test "a line's rails clear it by the shared gap where its support stands":
-    let (placement, view_projection, scale) = setUp()
-    let
-      support = positionAnchor(LINE).get
-      across = directionAcross(LINE, scale.eye).get
-      offset = offsetMarkerRail(support, scale)
-      on_screen = projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, support)
-    # Measured at the support, where the offset is stated; the same world offset reads
-    #   as fewer pixels further off, which is the convergence the rails exist to show.
-    #   Held to a quarter pixel rather than exactly: stepping perpendicular to the sight
-    #   ray, which is what puts the rails either side on screen, tilts a hair out of the
-    #   plane perspective divides by, so the gap lands a fraction under a percent wide.
-    #   Sub-pixel, against a geometry worth keeping -- see `directionAcross`.
-    const TOLERANCE_PIXEL = 0.25
-    for side in [offset, -offset]:
-      let beside = projectToScreen(
-        view_projection, WIDTH_MARK, HEIGHT_MARK, support + side*across
-      )
-      let gap = hypot(beside.x - on_screen.x, beside.y - on_screen.y)
-      check abs(gap - OFFSET_MARKER_RAIL) < TOLERANCE_PIXEL
-
-
   test "an eye standing on the line has no side to flank it from":
+    # It projects to a point, so there is no screen direction to step sideways from -- and
+    #   nothing a pair of rails either side of it could mean to a viewer inside it.
     let scale = setUp()[2]
     let through_eye = toMultivector(scale.eye) ∧
       toMultivector(scale.eye + Direction(x: 1.0, y: 0.0, z: 0.0))
-    check directionAcross(through_eye, scale.eye).isNone
     check markerOf(through_eye).isNone
 
 
@@ -3335,25 +3345,6 @@ suite "Marker":
       # A chord, so a hair under the arc actually covered.
       check crossed <= STEP*shaped.around + TOLERANCE_SINGLE
       check crossed > 0.98*STEP*shaped.around
-
-
-  test "a line's rails never read further apart than their own ceiling":
-    # A world offset delivers its stated pixel gap only where `worldPerPixelAt` was read,
-    #   and that reading clamps depth at the near plane -- so a support close to the eye is
-    #   sized as if it stood further off and projects far wider than asked. Driven on the
-    #   demo's own `a ∧ b`, the pair read **264.7 px** apart at a camera distance of 1.5,
-    #   against an intended 13.5.
-    #   Far off, the ceiling must not bite at all: the gap is what says a line is selected,
-    #   and a cap that quietly narrowed every rail would cost that.
-    let settled = markerOf(LINE, distance = 19.0).get
-    check apartRails(settled) > OFFSET_MARKER_RAIL
-    check apartRails(settled) <= 2.0*OFFSET_MARKER_RAIL_MAX
-    # Close in, it must: this is the case the ceiling exists for, and the same marker
-    #   without it came out several times over.
-    for distance in [3.0, 1.5, 0.8]:
-      let near = markerOf(LINE, distance = distance)
-      if near.isNone: continue # Eye on the line itself; no side to flank from.
-      check apartRails(near.get) <= 2.0*OFFSET_MARKER_RAIL_MAX
 
 
   test "a line wears one comet, not one for every piece it is drawn in":

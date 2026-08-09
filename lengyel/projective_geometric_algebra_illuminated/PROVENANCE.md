@@ -634,46 +634,66 @@ object rather than as an annotation of the first — white at full strength is t
 thing this palette can produce, brighter than anything it surrounds, which inverts the
 emphasis it exists to give.
 
-**A line's rails are offset in world space, so they converge exactly as the line does.**
-Two lines parallel to it, one each side, drawn the same way `mesh.addLine` draws the line
-itself — own anchor out to each of the two vanishing points, which parallel lines share —
-so the three meet at the same two points on screen rather than merely running near one
-another. A constant screen offset instead holds the pair open all the way to the horizon,
-where the line has long since narrowed to nothing; that was the first attempt and it was
-wrong on the geometry. This is why `picking.clipToEyeSide` is exported: a marker drawn past
-the eye plane wraps to the opposite side of the screen.
+**A line's rails are offset in *screen pixels*, and close on a vanishing point only where
+there is one to close on.** The pair is a marker, not geometry: its job is to say "this line
+is selected", and it says that by flanking the line at a legible distance —
+`OFFSET_MARKER_RAIL`, 7.25 px a side, 14.5 px between them, at every orientation and every
+distance.
 
-**But a world offset holds its stated pixel gap only where it was measured**, and
-`worldPerPixelAt` clamps depth at the near plane — so as a line's support approaches the eye
-the offset stops shrinking while the projection keeps dividing by a smaller depth, and the
-pair flies apart. Measured on the demo's own `a ∧ b`, camera closing on it, as the widest
-perpendicular separation anywhere along the rails:
+A **world** offset was the first two designs, and the argument for it was good: parallel
+lines share a vanishing point, so rails offset in world space converge on the same one the
+line runs to, and the three read as one object seen in perspective. What it actually hands to
+perspective is the *rate* of that convergence, which is not perspective's to choose here —
+and along one of a line's two halves it is not convergence at all. Each half runs to
+`eye ± radius_horizon*axis`, and **exactly one of those points is behind the eye** (neither,
+if the line is square on to the camera), so `clipToEyeSide` cuts that half back to the near
+plane. The screen gap goes as `off*(1 - t)/(k*depth(t))`; along the clipped half depth
+*falls*, the denominator shrinks faster than the numerator, and the pair flares. Measured on
+the demo's own `a ∧ b`, gap sampled from the support out to each drawn end:
 
-| camera distance | before | after |
+| camera (azimuth, elevation, distance) | one half | the other |
 |---|---|---|
-| 24 | 16.5 px | 16.5 px |
-| 12 | 16.8 px | 16.8 px |
-| 6 | 19.2 px | 19.2 px |
-| 3 | 33.1 px | 29.2 px |
-| **1.5** | **264.7 px** | **29.2 px** |
+| 0.6, 0.2, 19 | 14.8 → 12.9 px | 14.8 → 16.5 px |
+| 1.6, 0.9, 19 | 14.7 → **23.7 px** | 14.7 → 7.9 px |
+| 0.2, 0.05, 12 | 15.3 → 11.3 px | 15.3 → 20.9 px |
+| 2.4, 0.4, 30 | 14.5 → **45.6 px** | 14.5 → 0 px |
 
-Against an intended 13.5, the last row was twenty times too wide and the pair stopped reading
-as flanking anything. `OFFSET_MARKER_RAIL_MAX` (twice the base) is now a ceiling, applied as
-**one measurement and one scale, not a subdivided rail**: project the anchor and the anchor
-stepped once sideways, read how far apart they land, and where that exceeds the ceiling scale
-the world offset by the ratio. Capping at the support caps the whole rail, because a rail runs
-from its own offset support to the line's vanishing point — which both rails share, so the
-offset falls linearly to zero along it while depth rises, and with both ends ahead of the near
-plane the projected gap is a ratio of two affine functions: monotone, largest at the support.
-The rails stay straight, stay parallel in world space, and still converge on that point.
-The residual ~2 px over the nominal 27 is `directionAcross`'s own tilt, the same fraction the
-uncapped 14.7-for-13.5 base row carries.
+Three times the stated gap over 333 px of rail, at the last row. Re-measured at those same
+cameras with the offset in screen space: **every flat half reads 14.5 px at every sample**,
+exactly — a screen offset carries none of the tilt the old world step out of the projection
+plane did, so the 0.25 px tolerance that used to guard the support gap is gone too — while
+the halves that have a visible vanishing point still close on it (7.8, and 0).
+
+`markerRails` therefore projects each half of the *line* first (`halfOfLine`), takes **one**
+screen normal for the whole marker from the longer of the two (`normalOfScreen`; one, not one
+per half, or a rail's two halves would sit on opposite sides), and offsets both endpoints
+along it — shedding the offset at the head only where `reach*dot(axis, forward)` says that
+head was in front of the eye to begin with. A line square on to the camera keeps its offset
+both ways, correctly: it has no visible vanishing point at all. The degenerate case moved
+with the construction — a line the eye stands on projects to a point, so there is no screen
+direction to step from. That refusal needs a **tolerance, not a zero test**: measured on such
+a line, its halves projected 0.0077 px and 0.000057 px long, and a direction taken from
+either is rounding error. `LENGTH_SCREEN_MIN` is one pixel, far above that noise and far
+below any half worth flanking.
+
+**A ceiling on the gap at the support was tried in between, and was the wrong fix.** It
+capped where the flare was not: the support reads true at nearly every orientation, and the
+flare lives *along* a half. Worse, the table that justified it swept camera **distance** at a
+single azimuth and elevation — the one axis the flare does not lie along — and the suite case
+it shipped with inherited that single camera and so passed against a threefold flare. The
+replacement case sweeps five azimuths, three elevations and three distances and asserts the
+bound everywhere along the rails; that is the shape a marker's tests need, not a tighter
+number.
 
 **Measure the gap, never the distance between the two rails' drawn endpoints.**
 `fractionLeavingView` cuts each rail at its own fraction, so those endpoints are not at the
-same place along the line; the first pass at this table read 35.6 px at a camera distance of
-12 from exactly that mistake, and the number means nothing. The suite's own `apartRails` takes
-the perpendicular distance from one rail's points to the *infinite line* through the other's.
+same place along the line; one pass at this table read 35.6 px at a camera distance of 12 from
+exactly that mistake, and the number means nothing. The suite's own `apartRails` takes the
+perpendicular distance from one rail's points to the *infinite line* through the other's.
+
+A touch hold widens the pair by `clearance` pixels a side, which is now exact rather than
+converted through a depth reading: driven, 14.5 px settled and 123.5 px at the peak, against
+`CLEARANCE_MARKER_TOUCH` of 54.5 doubled.
 
 **A rail's growth is measured against the edge of the view, not against its own length**
 (`fractionLeavingView`). Each rail runs from the line's support to one of the line's two
