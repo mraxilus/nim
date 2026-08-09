@@ -309,11 +309,21 @@ type
     ##   Retargeting captures wherever the tween had reached as its new start (see
     ##   `aimAt`), which is what lets a goal that moves every frame -- the staged geometry
     ##   of an open edit session, say -- read as one smooth chase instead of restarting.
-    goal*: Option[CameraAim] ## Where the camera is heading, or has already arrived at.
+    goal*: Option[CameraAim] ## What the camera is watching, or has already settled on.
       ## None only while nothing is aimed at all.
-    is_arrived*: bool ## Whether `goal` has been reached. Set once the ease runs out, and
-      ## what stops `advance` writing to the camera from then on: a caller offering the
-      ## same goal every frame -- as one watching a selected object does -- must not go on
+      ##   A *name for the object*, not a placement: derived from the object's own geometry
+      ##   alone (`aimFor`), so a caller re-offering the same object every frame offers a
+      ##   goal that compares equal every frame. That is what the ignore rule in `aimAt`
+      ##   and the standing-offer rule in `abandon` both rest on, and it is why where the
+      ##   ease actually stops is kept separately below rather than folded in here.
+    destination*: CameraAim ## Where the ease actually ends. `goal` cut back to the least
+      ## movement that already brings the object into view -- see `picking.aimLeast`, which
+      ## is what computes it, and `picking.aimAtLeast`, which is what every caller uses.
+      ## Equal to `goal` where nothing shorter would do.
+      ##   Meaningless while `goal` is none; set alongside it and never on its own.
+    is_arrived*: bool ## Whether `destination` has been reached. Set once the ease runs
+      ## out, and what stops `advance` writing to the camera from then on: a caller offering
+      ## the same goal every frame -- as one watching a selected object does -- must not go on
       ## holding the camera there, or the user's own orbit, pan and dolly are overridden
       ## the moment they let go. `goal` is deliberately kept rather than cleared, so that
       ## same offer is recognised as one already delivered instead of re-arming the ease.
@@ -337,7 +347,12 @@ func `==`*(a, b: CameraAim): bool =
 
 
 func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
-  ## Resolve where a camera should look to see `m`, or none where `m` draws nothing.
+  ## Resolve where a camera would have to look to see `m` dead centre, or none where `m`
+  ## draws nothing.
+  ##   Dead centre is the *most* a camera ever moves for an object, not what it settles
+  ##   for: `picking.aimLeast` cuts this back to the least of it that already brings part
+  ##   of `m` into view. Kept whole here because this is also the goal identifying the
+  ##   object across frames, which must depend on `m` alone -- see `CameraTween.goal`.
   ##   A point at horizon is a fixed star: the camera turns along its own direction.
   ##   A line at horizon is a whole great circle, so no single direction faces it; the
   ##   first axis spanning perpendicular to its normal is picked, which puts some of that
@@ -364,8 +379,51 @@ func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
   some(CameraAim(is_horizon: false, target: anchor.get))
 
 
-proc aimAt*(tween: var CameraTween; camera: Camera; goal: CameraAim; now, duration: float) =
-  ## Send the camera toward `goal`, easing from wherever it stands right now.
+func isGoalHeld*(tween: CameraTween; goal: CameraAim): bool =
+  ## Report whether `goal` is one this tween already holds, and would therefore ignore.
+  ##   For a caller whose own preparation is worth skipping when the answer is going to be
+  ##   discarded: `picking.aimAtLeast` projects the object onto the frame up to eighteen
+  ##   times to decide how far the camera really has to move, and re-offers the same goal
+  ##   every frame for as long as an object stays selected.
+  tween.goal.isSome and tween.goal.get == goal
+
+
+func toward*(camera: Camera; goal: CameraAim; fraction: float): Camera =
+  ## Place a copy of `camera` `fraction` of the way from where it stands to `goal`.
+  ##   Exactly the path `advance` eases along, azimuth wrap included, so a caller asking
+  ##   what the view would look like partway there is answered about the motion that is
+  ##   actually going to happen rather than about some other route to the same place.
+  result = camera
+  if goal.is_horizon:
+    # Turn the short way round, as `advance` does; see its own comment for why.
+    var delta = goal.azimuth - camera.azimuth
+    while delta > PI: delta -= 2.0*PI
+    while delta < -PI: delta += 2.0*PI
+    result.azimuth = camera.azimuth + fraction*delta
+    result.elevation = camera.elevation + fraction*(goal.elevation - camera.elevation)
+  else:
+    result.target = camera.target + fraction*(goal.target - camera.target)
+
+
+func aimOf*(camera: Camera; is_horizon: bool): CameraAim =
+  ## Name where `camera` already stands as an aim of its own.
+  ##   `is_horizon` picks which of the two forms to state it in, since only one of them is
+  ##   what a given ease carries: an aim built for a horizon object turns the orbit angles
+  ##   and leaves the target alone, and a finite one does the reverse.
+  if is_horizon:
+    CameraAim(is_horizon: true, azimuth: camera.azimuth, elevation: camera.elevation)
+  else:
+    CameraAim(is_horizon: false, target: camera.target)
+
+
+proc aimAt*(
+  tween: var CameraTween; camera: Camera; goal, destination: CameraAim; now, duration: float
+) =
+  ## Set the camera watching `goal` and ease it to `destination`, from where it stands now.
+  ##   Two aims, not one: `goal` names the object being watched and `destination` is how
+  ##   far the camera actually goes for it. Callers pass `picking.aimLeast`'s own answer as
+  ##   the second, which stops as soon as part of the object is in view; passing `goal`
+  ##   twice is how a caller says to go the whole way regardless.
   ##   Reading the start off the live camera rather than off the previous goal is what
   ##   makes a moving goal smooth: the camera has already been eased partway there by
   ##   `advance` below, so starting the next ease from that reading continues the motion
@@ -376,9 +434,14 @@ proc aimAt*(tween: var CameraTween; camera: Camera; goal: CameraAim; now, durati
   ##   keeps a standing offer from re-aiming the camera at something it already reached
   ##   and taking it back off the user each frame. `release` is how a caller says the
   ##   offer is withdrawn, and only then does the same goal aim the camera again.
-  if tween.goal.isSome and tween.goal.get == goal: return
+  if tween.isGoalHeld(goal): return
   tween.goal = some(goal)
-  tween.is_arrived = false
+  tween.destination = destination
+  # Nothing at all to carry where the camera already stands on its destination -- an
+  #   object that was in view when it was picked. Marked arrived outright rather than left
+  #   to ease through a whole duration's worth of frames writing the reading it already
+  #   holds, which would fight a user who starts orbiting inside that window.
+  tween.is_arrived = destination == camera.aimOf(destination.is_horizon)
   tween.started = now
   tween.duration = duration
   tween.azimuth_from = camera.azimuth
@@ -390,37 +453,37 @@ proc advance*(
   tween: var CameraTween; camera: var Camera; now: float;
   ease: proc(t: float): float {.noSideEffect.},
 ) =
-  ## Carry the camera one frame further toward its goal, and drop the goal on arrival.
+  ## Carry the camera one frame further toward its destination, and mark it arrived there.
   ##   `ease` is passed in rather than imported so this module stays independent of where
   ##   the project keeps its easing curve; callers hand it `mesh.easeOutCubic`, which is
   ##   the same curve and duration a freshly added object grows in with.
   if tween.goal.isNone or tween.is_arrived: return
   let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))
-  let goal = tween.goal.get
-  if goal.is_horizon:
-    # Turn the short way round: azimuth is an angle, so a goal just past -pi is next door
-    #   to a camera just short of +pi, not most of a turn away.
-    var delta = goal.azimuth - tween.azimuth_from
+  let destination = tween.destination
+  if destination.is_horizon:
+    # Turn the short way round: azimuth is an angle, so a destination just past -pi is next
+    #   door to a camera just short of +pi, not most of a turn away.
+    var delta = destination.azimuth - tween.azimuth_from
     while delta > PI: delta -= 2.0*PI
     while delta < -PI: delta += 2.0*PI
     camera.azimuth = tween.azimuth_from + progress*delta
     camera.elevation = tween.elevation_from +
-      progress*(goal.elevation - tween.elevation_from)
+      progress*(destination.elevation - tween.elevation_from)
   else:
-    camera.target = tween.target_from + progress*(goal.target - tween.target_from)
+    camera.target = tween.target_from + progress*(destination.target - tween.target_from)
   if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
 proc settle*(tween: var CameraTween; camera: var Camera) =
-  ## Put the camera on its goal at once -- for a caller that must not show a half-finished
-  ## pan, such as a storyboard frame about to be captured.
+  ## Put the camera on its destination at once -- for a caller that must not show a
+  ## half-finished pan, such as a storyboard frame about to be captured.
   if tween.goal.isNone or tween.is_arrived: return
-  let goal = tween.goal.get
-  if goal.is_horizon:
-    camera.azimuth = goal.azimuth
-    camera.elevation = goal.elevation
+  let destination = tween.destination
+  if destination.is_horizon:
+    camera.azimuth = destination.azimuth
+    camera.elevation = destination.elevation
   else:
-    camera.target = goal.target
+    camera.target = destination.target
   tween.is_arrived = true
 
 

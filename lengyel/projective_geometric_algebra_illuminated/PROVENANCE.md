@@ -1658,11 +1658,14 @@ rather than from load, so the two used to stack and the hint outstayed both numb
 
 Camera Aiming
 ---
-`camera.aimFor(geometry, scale)` answers where a camera should look to see one object: a
-point at horizon along its own direction, a line at horizon along the first axis spanning
-perpendicular to its normal (no single direction faces a whole great circle), a plane at
-horizon not at all (it fills the sky), and anything finite at `mesh.anchorFor`'s
+`camera.aimFor(geometry, scale)` answers where a camera should look to see one object *dead
+centre*: a point at horizon along its own direction, a line at horizon along the first axis
+spanning perpendicular to its normal (no single direction faces a whole great circle), a
+plane at horizon not at all (it fills the sky), and anything finite at `mesh.anchorFor`'s
 representative point — the same point the selection ring is drawn on.
+
+Dead centre is the **most** the camera ever moves, not what it settles for. See "The least
+that shows it" below, which is the rule actually in force.
 
 `camera.CameraTween` carries the camera there, eased. **Retargeting reads the start off the
 live camera**, not off the previous goal, which is what makes a goal that moves every frame
@@ -1702,6 +1705,66 @@ an object selected, a grab mid-ease, and re-selecting after a deselect.
 `anchorFor` moved from `picking` to `mesh` to make this possible — `camera` calling
 `picking` would close a cycle, and `mesh` is where `DrawExtent` lives and where the doc
 comment already pointed ("matching exactly where `mesh.addPoint` draws it").
+
+### The least that shows it
+
+Centring every newly built or newly picked object swung the whole view for objects the
+reader could already see perfectly well. The rule now is: **move by the least that puts
+part of the object inside the centred two thirds of the frame, and not at all when part of
+it is there already** (`picking.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from a sixth
+of the way in to five sixths).
+
+Two thirds rather than the whole frame because an object clinging to the very edge is
+visible without being what the view is about, and the marker ringing it is half off-frame.
+
+**Judged on the object as drawn, not on its anchor.** `picking.isShownCentrally` tests each
+shape against exactly what `mesh.addObject` puts on screen — a point's marker, a line's two
+halves out to its vanishing points (clipped to the eye side, as `pickNearest` clips them), a
+plane's rim *and* a sight-axis ray through the middle of the box, a horizon line's great
+circle, a horizon plane's whole sky. Segments are tested against the box by Liang–Barsky
+clipping rather than by sampling: a straight screen segment either crosses an axis-aligned
+box or it does not, and asking exactly is cheaper than sampling densely enough to be sure of
+a thin near-miss. The consequence is worth stating plainly: **a line or a plane usually
+reaches the middle of the frame already, so building one no longer moves the camera at all.**
+
+**Searched along the path, not solved for.** `picking.aimLeast` scans `camera.toward(goal,
+fraction)` — the very path `advance` eases through — over `STEPS_AIM_LEAST = 12` even steps,
+then halves `ROUNDS_AIM_LEAST = 5` times into whichever step brackets the crossing, landing
+within 1/384 of a full aim (under a pixel of any pan here). Two reasons, the first decisive:
+the path is exact under any camera, whereas solving for a pan would have to assume the move
+runs perpendicular to the sight axis, which an arbitrary shift of the orbit target does not;
+and stopping short along the route the camera was going to take anyway reads as that same
+movement cut short, where sliding toward the nearest edge of the box instead reads as a
+different movement. Where no fraction shows the object, the aim stands whole — the old
+behaviour, kept as the fallback.
+
+**`goal` and `destination` are now separate fields on the tween.** They have to be: `goal`
+names the object and must depend on the geometry alone, or the standing offer stops
+comparing equal frame to frame and every subtlety above unravels. `destination` is the cut-
+back placement, computed once when the goal is armed, from the camera as it stood then —
+"least movement from where the camera was when the object appeared". `picking.aimAtLeast` is
+the single entry point both front-ends and the storyboard call; its `isGoalHeld` guard is
+not an optimisation to taste but the thing that stops the search running its eighteen
+projections every frame for as long as an object stays selected. A destination equal to
+where the camera already stands sets `is_arrived` outright, so an in-view object never holds
+the camera still against a user who starts orbiting inside the animation window.
+
+**Measured on the real page**, not reasoned about. Driving the browser build through
+`nimSelectOnly` from nine starting orientations on each of four objects, and reading the
+camera back after the ease:
+
+| object | before (every orientation) | after (range over nine) |
+|--------|---------------------------|-------------------------|
+| point `a` | 4.387 | 0.000 – 0.994 |
+| point `b` | 6.364 | 0.000 – 2.817 |
+| point `c` | 5.099 | 0.000 – 1.474 |
+| point `o` (at the target) | 0.000 | 0.000 |
+
+19.0 units of pan in total against 142.7 — 13% of the movement. In all 36 trials the
+object's anchor finished inside the centred box, most of them sitting on its edge (y = 134
+against a box top of 133), which is the rule doing exactly what it says. On the desktop the
+same selection driven through `--drive-select` shows the view swinging at frame 5 before and
+standing still after.
 
 
 Diagnostics Panel (desktop)

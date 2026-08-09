@@ -1333,7 +1333,15 @@ proc nimBuildFrame(
     elif g_selection.len == 1 and g_scene.isAlive(g_selection.at(0)):
       geometry = some(g_scene.geometryAt(g_selection.at(0)))
     let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-    if aim.isSome: g_tween_camera.aimAt(g_camera, aim.get, float(now), ANIMATION_SECONDS)
+    if aim.isSome:
+      # Through `aimAtLeast`, so the camera turns only as far as it takes to put part of
+      #   the object in the frame's centred box; mirrors `visualiser.offerCameraAim`. The
+      #   width that box is measured across comes back from the aspect, since this build is
+      #   handed that rather than the framebuffer's own two dimensions.
+      g_tween_camera.aimAtLeast(
+        g_camera, geometry.get, aim.get, int(float(aspect)*float(height_pixels)),
+        int(height_pixels), float(now), ANIMATION_SECONDS,
+      )
     else: g_tween_camera.release()
 
   if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)

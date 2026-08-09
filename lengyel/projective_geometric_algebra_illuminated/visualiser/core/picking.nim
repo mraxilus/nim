@@ -59,6 +59,27 @@ const
     ## twice now (9 -> 14 -> 24).
 
 
+#[ Aim Configuration ]#
+
+const
+  FRACTION_VIEW_CENTRED* = 2.0/3.0
+    ## Fraction of the frame, across and down alike, that counts as being looked at. The
+    ## box is centred, so it runs from a sixth of the way in to five sixths.
+    ##   Why a box at all rather than the whole frame: an object clinging to the very edge
+    ##   is on screen without being what the view is about, and the marker ringing it is
+    ##   half off-frame. Why not the exact centre, which is what the camera used to move
+    ##   to: an object the reader can already see perfectly well does not justify swinging
+    ##   the whole view, and doing it anyway is the lurch this constant exists to stop.
+  STEPS_AIM_LEAST* = 12
+    ## Fractions of a full aim tried, evenly spaced, before the search gives up and lets
+    ## the aim stand whole. Coarse on purpose: it only has to bracket the crossing, which
+    ## the halvings below then close on, and each step costs a projection of the object.
+  ROUNDS_AIM_LEAST* = 5
+    ## Halvings run inside the bracketed step. Five puts the answer within 1/384 of a full
+    ## aim -- under a pixel of the pan any camera here makes, so the object lands on the
+    ## edge of the box rather than measurably inside it.
+
+
 
 #[ Type Definitions ]#
 
@@ -312,3 +333,200 @@ func pickNearest*(
       if hit.isSome: consider(3, hit.get)
 
   slot_best
+
+
+
+#[ Least Aim ]#
+
+func isWithinCentre(screen: ScreenPosition; width, height: int): bool =
+  ## Report whether a projected point falls inside the centred box, in front of the eye.
+  if not screen.isInFront: return false
+  let
+    margin_x = 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(width)
+    margin_y = 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(height)
+  screen.x >= margin_x and screen.x <= float(width) - margin_x and
+    screen.y >= margin_y and screen.y <= float(height) - margin_y
+
+
+func isCrossingCentre(tail, head: ScreenPosition; width, height: int): bool =
+  ## Report whether any part of screen segment `tail`-`head` falls inside the centred box.
+  ##   Both ends are taken as already in front of the eye, since a projected position
+  ##   behind it is not a screen position at all; callers clip first.
+  ##   Clipped rather than sampled: a straight screen segment either crosses an
+  ##   axis-aligned box or it does not, and asking that exactly costs less than asking it
+  ##   approximately at enough points to be sure of a thin near-miss.
+  let
+    margin_x = 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(width)
+    margin_y = 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(height)
+    (dx, dy) = (head.x - tail.x, head.y - tail.y)
+  var (enter, leave) = (0.0, 1.0)
+  # Liang-Barsky: each of the box's four edges cuts back the run of the segment that could
+  #   still be inside -- entering where the segment heads into that edge, leaving where it
+  #   heads back out. An edge the segment runs parallel to admits or rejects it outright.
+  for (rate, room) in [
+    (-dx, tail.x - margin_x), (dx, float(width) - margin_x - tail.x),
+    (-dy, tail.y - margin_y), (dy, float(height) - margin_y - tail.y),
+  ]:
+    if rate == 0.0:
+      if room < 0.0: return false
+      continue
+    let crossing = room/rate
+    if rate < 0.0:
+      if crossing > enter: enter = crossing
+    elif crossing < leave:
+      leave = crossing
+    if enter > leave: return false
+  true
+
+
+func isRingCrossingCentre(
+  centre: Position; axis_first, axis_second: Direction; radius: float;
+  view_projection: Matrix4; width, height: int
+): bool =
+  ## Report whether a world circle, sampled the way this project draws one, crosses the
+  ## centred box anywhere.
+  var previous = none(ScreenPosition)
+  for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
+    let turn =
+      (2.0*PI*float(i mod SEGMENTS_CIRCLE_HORIZON))/float(SEGMENTS_CIRCLE_HORIZON)
+    let here = projectToScreen(
+      view_projection, width, height,
+      centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
+    )
+    if here.isInFront and previous.isSome and
+        isCrossingCentre(previous.get, here, width, height):
+      return true
+    previous = if here.isInFront: some(here) else: none(ScreenPosition)
+  false
+
+
+func isLineShownCentrally(
+  m: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
+): bool =
+  ## Report whether a grade-2 object reaches the centred box, at horizon or finite.
+  if m.isHorizon:
+    let normal = directionNormalHorizon(m)
+    if normal.isNone: return false
+    let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
+    if axes.isNone: return false
+    return isRingCrossingCentre(
+      scale.eye, axes.get[0], axes.get[1], scale.radius_horizon,
+      view_projection, width, height,
+    )
+
+  # Both halves `mesh.addLine` draws, clipped to the eye side exactly as `pickNearest`
+  #   clips them: half a line can sit behind the eye while the other half fills the frame.
+  let (anchor, axis) = (positionAnchor(m), direction(m))
+  if anchor.isNone or axis.isNone: return false
+  for reach in [scale.radius_horizon, -scale.radius_horizon]:
+    let clipped = clipToEyeSide(
+      anchor.get, scale.eye + reach*axis.get, scale.eye, scale.forward, scale.depth_near
+    )
+    if clipped.isNone: continue
+    let
+      tail = projectToScreen(view_projection, width, height, clipped.get[0])
+      head = projectToScreen(view_projection, width, height, clipped.get[1])
+    if tail.isInFront and head.isInFront and isCrossingCentre(tail, head, width, height):
+      return true
+  false
+
+
+func isPlaneShownCentrally(
+  m: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
+): bool =
+  ## Report whether a grade-3 object reaches the centred box.
+  ##   A plane at horizon is the whole sky, drawn as a dome around the eye, so it is in
+  ##   view from every camera there is.
+  if m.isHorizon: return true
+  let (anchor, axes) = (positionAnchor(m), frame(m))
+  if anchor.isNone or axes.isNone: return false
+  if isRingCrossingCentre(
+    anchor.get, axes.get.axis_first, axes.get.axis_second, EXTENT_PLANE_F,
+    view_projection, width, height,
+  ):
+    return true
+  # A disc wide enough to cover the box outright keeps its rim well outside it, so the rim
+  #   alone would call a plane filling the whole frame out of view. Meet the sight axis --
+  #   the ray through the very middle of the box -- with the plane as well.
+  let ray = toMultivector(scale.eye) ∧ toMultivector(scale.forward)
+  rayPlaneHit(
+    ray, scale.eye, scale.forward, m, anchor.get, axes.get, EXTENT_PLANE_F
+  ).isSome
+
+
+func isShownCentrally*(m: Multivector; camera: Camera; width, height: int): bool =
+  ## Report whether any part of `m`, drawn as this project draws it, reaches the centred
+  ## box of a `width` x `height` frame seen from `camera`.
+  ##   Each shape is tested against exactly what `mesh.addObject` puts on screen for it,
+  ##   the rule `pickNearest` already follows and for the same reason: what counts as in
+  ##   view has to agree with what a reader can actually see.
+  ##   Only the *ratio* of `width` to `height` matters -- projection and box scale with
+  ##   them alike -- so a caller holding an aspect and one dimension may pass any pair in
+  ##   that ratio.
+  ##   False where `m` draws nothing at all.
+  let shape_m = shape(m)
+  if shape_m.isNone: return false
+  let
+    scale = camera.drawExtentFor(height)
+    view_projection = camera.initMatrixViewProjection(float(width)/float(height))
+  case shape_m.get
+  of Shape.Point:
+    let anchor = anchorFor(m, scale)
+    anchor.isSome and isWithinCentre(
+      projectToScreen(view_projection, width, height, anchor.get), width, height
+    )
+  of Shape.Line: isLineShownCentrally(m, scale, view_projection, width, height)
+  of Shape.Plane: isPlaneShownCentrally(m, scale, view_projection, width, height)
+
+
+func aimLeast*(
+  m: Multivector; camera: Camera; goal: CameraAim; width, height: int
+): CameraAim =
+  ## Cut `goal` back to the least of itself that already brings part of `m` into the
+  ## centred box, so the camera moves as little as the request allows -- not at all where
+  ## `m` is in view already.
+  ##   Searched along the very path `camera.advance` eases through, rather than solved for
+  ##   outright. Two reasons, the first decisive: the path is exact under any camera, while
+  ##   a solved-for pan would have to assume the move runs perpendicular to the sight axis,
+  ##   which an arbitrary shift of the orbit target does not; and stopping short along the
+  ##   route the camera was going to take anyway reads as that same movement cut short,
+  ##   where sliding off toward the nearest edge of the box instead reads as another
+  ##   movement entirely.
+  ##   `goal` unchanged where no partial move shows `m` at all: an object that stays
+  ##   outside the box the whole way is at least centred, which is what aiming did
+  ##   unconditionally before this rule existed.
+  if isShownCentrally(m, camera, width, height): return camera.aimOf(goal.is_horizon)
+  var
+    (lower, upper) = (0.0, 1.0)
+    is_bracketed = false
+  for step in 1 .. STEPS_AIM_LEAST:
+    let fraction = float(step)/float(STEPS_AIM_LEAST)
+    if isShownCentrally(m, camera.toward(goal, fraction), width, height):
+      (lower, upper) = (float(step - 1)/float(STEPS_AIM_LEAST), fraction)
+      is_bracketed = true
+      break
+  if not is_bracketed: return goal
+  # Halve into the bracket, keeping `upper` on the side that shows `m`, so whatever the
+  #   search settles on is a fraction that satisfies the rule rather than one just short.
+  for _ in 1 .. ROUNDS_AIM_LEAST:
+    let middle = 0.5*(lower + upper)
+    if isShownCentrally(m, camera.toward(goal, middle), width, height): upper = middle
+    else: lower = middle
+  camera.toward(goal, upper).aimOf(goal.is_horizon)
+
+
+proc aimAtLeast*(
+  tween: var CameraTween; camera: Camera; m: Multivector; goal: CameraAim;
+  width, height: int; now, duration: float
+) =
+  ## Send the camera toward `goal`, but only as far as it must go to put part of `m` in
+  ## view -- what every front-end's own standing aim calls.
+  ##   Lives here rather than in `camera.nim` because deciding how far is far enough means
+  ##   projecting the object onto the frame, which is this module's own job and not one the
+  ##   camera should have to know anything about.
+  ##   The `isGoalHeld` guard is not an optimisation to taste: that standing aim re-offers
+  ##   the same goal on every frame an object stays selected, and `aimAt` discards the
+  ##   answer, so without it the search below would run its eighteen projections a frame
+  ##   for ever and change nothing.
+  if tween.isGoalHeld(goal): return
+  tween.aimAt(camera, goal, aimLeast(m, camera, goal, width, height), now, duration)

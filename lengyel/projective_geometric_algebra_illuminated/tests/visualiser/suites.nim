@@ -1301,6 +1301,151 @@ suite "Camera Aim":
     extent_furniture: 100.0, eye: ORIGIN, radius_horizon: 90.0,
   ) ## No ribbon fields: nothing here tessellates anything, it only aims a camera.
 
+  const
+    (WIDTH_AIM, HEIGHT_AIM) = (1440, 900) ## Frame the centred box is measured in.
+    AZIMUTHS_AIM = [0.0, 0.7, 1.6, 2.4, 3.1]
+    ELEVATIONS_AIM = [-0.6, 0.2, 0.9]
+      ## Orientations the least-aim rule is swept over. Swept, not sampled at one camera:
+      ## twice now a rule about screen geometry here passed a single-orientation check and
+      ## was plainly wrong from a camera nobody had looked from.
+
+  proc placementAim(azimuth, elevation: float): Camera =
+    ## Build a camera orbiting the origin at the given angles, for the sweeps below.
+    initCamera(target = ORIGIN, distance = 12.0, azimuth = azimuth, elevation = elevation)
+
+  proc movedBy(placement: Camera; aim: CameraAim): float =
+    ## Measure how far `aim` carries `placement`, in whichever quantity that aim moves.
+    ##   Azimuth is unwrapped exactly as `camera.toward` unwraps it, so an aim reached the
+    ##   short way round is not reported as most of a turn.
+    if aim.is_horizon:
+      var delta = aim.azimuth - placement.azimuth
+      while delta > PI: delta -= 2.0*PI
+      while delta < -PI: delta += 2.0*PI
+      return abs(delta) + abs(aim.elevation - placement.elevation)
+    norm(aim.target - placement.target)
+
+
+  test "on screen is not in view: the box is two thirds of the frame, not all of it":
+    # What the whole rule rests on. An object clinging to the edge is visible without
+    #   being what the view is about, and this is the case that says so.
+    let point = toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))
+    let camera = placementAim(1.6, 0.2)
+    let at = projectToScreen(
+      camera.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM), WIDTH_AIM, HEIGHT_AIM,
+      anchorFor(point, camera.drawExtentFor(HEIGHT_AIM)).get,
+    )
+    check at.isInFront
+    check at.x >= 0.0 and at.x <= float(WIDTH_AIM) # On screen ...
+    check at.y >= 0.0 and at.y <= float(HEIGHT_AIM)
+    check at.y < 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(HEIGHT_AIM) # ... above the box.
+    check not isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM)
+
+
+  test "an object already in the centred box costs no camera movement at all":
+    let point = toMultivector(Position(x: 0.6, y: 0.4, z: 0.3))
+    var camera = placementAim(0.4, 0.4)
+    let goal = aimFor(point, camera.drawExtentFor(HEIGHT_AIM)).get
+    check isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM)
+    check aimLeast(point, camera, goal, WIDTH_AIM, HEIGHT_AIM) == camera.aimOf(false)
+    check camera.movedBy(goal) > 0.0 # The full aim would have moved it; the least does not.
+
+    # End to end, because the ease is where this could still go wrong: a tween that eases
+    #   to where the camera already stands writes that same reading for a whole duration's
+    #   worth of frames, and fights a user who starts orbiting inside that window.
+    var tween: CameraTween
+    let target_before = camera.target
+    tween.aimAtLeast(camera, point, goal, WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35)
+    check tween.is_arrived
+    for frame in 1 .. 20:
+      tween.advance(camera, 0.016*float(frame), easeOutCubic)
+    check camera.target =~ target_before
+
+
+  test "an object outside the box is carried to its edge and no further":
+    let point = toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        let camera = placementAim(azimuth, elevation)
+        let goal = aimFor(point, camera.drawExtentFor(HEIGHT_AIM)).get
+        let least = aimLeast(point, camera, goal, WIDTH_AIM, HEIGHT_AIM)
+        # Far enough, and never further than centring it outright would have gone.
+        check isShownCentrally(point, camera.toward(least, 1.0), WIDTH_AIM, HEIGHT_AIM)
+        check camera.movedBy(least) <= camera.movedBy(goal) + TOLERANCE_SINGLE
+        if isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM): continue
+        # No further than enough: a tenth of the way back leaves it outside the box again.
+        #   A tenth rather than a hair because the search settles to within 1/384 of the
+        #   full aim, so a hair is inside its own resolution and would prove nothing.
+        check not isShownCentrally(point, camera.toward(least, 0.9), WIDTH_AIM, HEIGHT_AIM)
+
+
+  test "a line or a plane crossing the middle of the frame moves the camera not at all":
+    # The consequence of judging the object rather than its anchor, stated outright: a
+    #   line is drawn out to both its vanishing points and a plane as a wide disc, so
+    #   either usually reaches the middle of the frame from wherever the camera stands,
+    #   and building one no longer swings the view onto its support point.
+    let
+      line = toMultivector(Position(x: 4.0, y: 4.0, z: 1.0)) ∧
+        toMultivector(Position(x: 5.0, y: 4.5, z: 1.4))
+      plane = toMultivector(Position(x: 3.0, y: 0.0, z: 0.0)) ∧
+        toMultivector(Position(x: 3.0, y: 1.0, z: 0.0)) ∧
+        toMultivector(Position(x: 3.0, y: 0.0, z: 1.0))
+    for azimuth in AZIMUTHS_AIM:
+      let camera = placementAim(azimuth, 0.3)
+      for m in [line, plane]:
+        let goal = aimFor(m, camera.drawExtentFor(HEIGHT_AIM)).get
+        check camera.movedBy(goal) > 0.0
+        check isShownCentrally(m, camera, WIDTH_AIM, HEIGHT_AIM)
+        check aimLeast(m, camera, goal, WIDTH_AIM, HEIGHT_AIM) == camera.aimOf(false)
+
+
+  test "an object at the horizon is turned toward only as far as it takes":
+    # A star is drawn fixed to the eye, so panning cannot bring it into view and the aim
+    #   turns the orbit instead -- a different quantity, cut back by the same rule.
+    let star = attitude(
+      toMultivector(Position(x: 4.0, y: 4.0, z: 1.0)) ∧
+        toMultivector(Position(x: 5.0, y: 4.5, z: 1.4))
+    )
+    check isHorizon(star)
+    for azimuth in AZIMUTHS_AIM:
+      let camera = placementAim(azimuth, 0.3)
+      let goal = aimFor(star, camera.drawExtentFor(HEIGHT_AIM)).get
+      check goal.is_horizon
+      let least = aimLeast(star, camera, goal, WIDTH_AIM, HEIGHT_AIM)
+      check least.is_horizon
+      check isShownCentrally(star, camera.toward(least, 1.0), WIDTH_AIM, HEIGHT_AIM)
+      check camera.movedBy(least) <= camera.movedBy(goal) + TOLERANCE_SINGLE
+      check camera.target =~ ORIGIN # The orbit turned; the target it turns about did not.
+      if isShownCentrally(star, camera, WIDTH_AIM, HEIGHT_AIM): continue
+      check not isShownCentrally(star, camera.toward(least, 0.9), WIDTH_AIM, HEIGHT_AIM)
+
+
+  test "an aim that never shows the object is left whole":
+    # The fallback. An object outside the box the whole way there is at least centred,
+    #   which is what aiming did unconditionally before this rule existed. Stated with a
+    #   goal that goes nowhere, so no fraction of it can bring anything into view.
+    let point = toMultivector(Position(x: 40.0, y: -40.0, z: 0.0))
+    let camera = placementAim(0.0, 0.0)
+    check not isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM)
+    let goal = camera.aimOf(false)
+    check aimLeast(point, camera, goal, WIDTH_AIM, HEIGHT_AIM) == goal
+
+
+  test "the fraction searched is a fraction of the move the ease will actually make":
+    # `toward` is what the search samples. Were it some other route to the same place, the
+    #   fraction it settles on would be the least of a movement that never happens -- and
+    #   the azimuth wrap is exactly where two routes to one place exist.
+    let camera_start = placementAim(3.0, 0.0)
+    let goal = CameraAim(is_horizon: true, azimuth: -3.0, elevation: 0.0)
+    check camera_start.toward(goal, 0.5).azimuth > 3.0 # Onward past +pi, not back to zero.
+
+    var camera = camera_start
+    var tween: CameraTween
+    tween.aimAt(camera, goal, goal, 0.0, 0.35)
+    tween.advance(camera, 0.35*0.5, easeOutCubic)
+    check camera.azimuth =~ camera_start.toward(goal, easeOutCubic(0.5)).azimuth
+    check camera.elevation =~ camera_start.toward(goal, easeOutCubic(0.5)).elevation
+
+
   test "a finite object is aimed at by target, a horizon one by orbit angle":
     let aim_point = aimFor(POINTS[0], SCALE_AIM)
     check aim_point.isSome
@@ -1324,7 +1469,7 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0.0, z: 0.0))
-    tween.aimAt(camera, goal, 0.0, DURATION)
+    tween.aimAt(camera, goal, goal, 0.0, DURATION)
 
     # Partway: strictly between start and goal, and monotonic toward it.
     var previous = 0.0
@@ -1347,15 +1492,15 @@ suite "Camera Aim":
     const DURATION = 0.35
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
-    tween.aimAt(camera, CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0, z: 0)),
-                0.0, DURATION)
+    let goal_first = CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0, z: 0))
+    tween.aimAt(camera, goal_first, goal_first, 0.0, DURATION)
     tween.advance(camera, DURATION*0.5, easeOutCubic)
     let reached = camera.target.x
     check reached > 0.0 and reached < 10.0
 
     # A goal that moves must not snap the camera back to where the last ease began.
-    tween.aimAt(camera, CameraAim(is_horizon: false, target: Position(x: 20.0, y: 0, z: 0)),
-                DURATION*0.5, DURATION)
+    let goal_second = CameraAim(is_horizon: false, target: Position(x: 20.0, y: 0, z: 0))
+    tween.aimAt(camera, goal_second, goal_second, DURATION*0.5, DURATION)
     check tween.target_from.x =~ reached
     tween.advance(camera, DURATION*0.5 + 0.001, easeOutCubic)
     check camera.target.x >= reached # Continues forward, never jumps backward.
@@ -1366,9 +1511,9 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: false, target: Position(x: 10.0, y: 0, z: 0))
-    tween.aimAt(camera, goal, 0.0, DURATION)
+    tween.aimAt(camera, goal, goal, 0.0, DURATION)
     tween.advance(camera, DURATION*0.5, easeOutCubic)
-    tween.aimAt(camera, goal, DURATION*0.5, DURATION) # Same goal, offered again.
+    tween.aimAt(camera, goal, goal, DURATION*0.5, DURATION) # Same goal, offered again.
     check tween.started == 0.0 # Clock untouched, so the ease still ends on time.
 
 
@@ -1377,8 +1522,8 @@ suite "Camera Aim":
     const DURATION = 0.35
     var camera = initCamera(ORIGIN, 12.0, 3.0, 0.0)
     var tween: CameraTween
-    tween.aimAt(camera, CameraAim(is_horizon: true, azimuth: -3.0, elevation: 0.0),
-                0.0, DURATION)
+    let goal = CameraAim(is_horizon: true, azimuth: -3.0, elevation: 0.0)
+    tween.aimAt(camera, goal, goal, 0.0, DURATION)
     tween.advance(camera, DURATION*0.5, easeOutCubic)
     check camera.azimuth > 3.0 # Onward past +pi, not back down through zero.
 
@@ -1387,7 +1532,7 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: true, azimuth: 1.0, elevation: 0.5)
-    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.aimAt(camera, goal, goal, 0.0, 0.35)
     tween.settle(camera)
     check camera.azimuth =~ 1.0
     check camera.elevation =~ 0.5
@@ -1402,7 +1547,7 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
-    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.aimAt(camera, goal, goal, 0.0, 0.35)
     tween.advance(camera, 0.35, easeOutCubic)
     check tween.is_arrived
     check camera.target =~ goal.target
@@ -1411,7 +1556,7 @@ suite "Camera Aim":
     camera.pan(3.0, 2.0)
     let target_panned = camera.target
     for frame in 1 .. 10:
-      tween.aimAt(camera, goal, 0.35 + 0.016*float(frame), 0.35)
+      tween.aimAt(camera, goal, goal, 0.35 + 0.016*float(frame), 0.35)
       tween.advance(camera, 0.35 + 0.016*float(frame), easeOutCubic)
     check camera.target =~ target_panned
 
@@ -1424,7 +1569,7 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
-    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.aimAt(camera, goal, goal, 0.0, 0.35)
     tween.advance(camera, 0.10, easeOutCubic) # Mid-flight, nowhere near arrival.
     check not tween.is_arrived
 
@@ -1433,7 +1578,7 @@ suite "Camera Aim":
     let target_panned = camera.target
     for frame in 1 .. 40:
       let now = 0.10 + 0.016*float(frame)
-      tween.aimAt(camera, goal, now, 0.35)
+      tween.aimAt(camera, goal, goal, now, 0.35)
       tween.advance(camera, now, easeOutCubic)
     check camera.target =~ target_panned
 
@@ -1444,14 +1589,14 @@ suite "Camera Aim":
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
     let goal = CameraAim(is_horizon: false, target: Position(x: 4, y: 1, z: 2))
-    tween.aimAt(camera, goal, 0.0, 0.35)
+    tween.aimAt(camera, goal, goal, 0.0, 0.35)
     tween.advance(camera, 0.35, easeOutCubic)
     camera.pan(3.0, 2.0)
     let target_panned = camera.target
 
     tween.release()
     check tween.goal.isNone
-    tween.aimAt(camera, goal, 1.0, 0.35)
+    tween.aimAt(camera, goal, goal, 1.0, 0.35)
     check tween.goal.isSome
     check not tween.is_arrived
     tween.advance(camera, 1.0 + 0.35, easeOutCubic)

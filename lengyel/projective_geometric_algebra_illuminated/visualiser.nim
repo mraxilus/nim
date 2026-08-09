@@ -310,7 +310,8 @@ proc secondsNow(): float =
 
 
 proc offerCameraAim(
-  panel: var Panel; scene: Scene; camera: Camera; now: float; scale: DrawExtent
+  panel: var Panel; scene: Scene; camera: Camera; now: float; scale: DrawExtent;
+  width, height: int
 ) =
   ## Offer the camera whatever is being worked on to look at, from one rule rather than
   ## from each path that could change it: an open session's own staged multivector, or
@@ -322,13 +323,19 @@ proc offerCameraAim(
   ##   coefficient being dragged -- reads as one continuous chase.
   ##   Anything that draws nothing (a still-empty composing session) aims at nothing and
   ##   releases, which is what lets picking the same object again aim at it afresh.
+  ##   Through `picking.aimAtLeast`, so the camera stops as soon as part of the object is
+  ##   in the frame's centred box rather than swinging it dead centre; the frame's own
+  ##   pixel dimensions are what that box is measured against.
   let geometry =
     if panel.session.isSome: some(panel.session.get.geometry)
     elif panel.selection.len == 1 and scene.isAlive(panel.selection.at(0)):
       some(scene[panel.selection.at(0)].geometry)
     else: none(Multivector)
   let aim = if geometry.isSome: aimFor(geometry.get, scale) else: none(CameraAim)
-  if aim.isSome: panel.tween_camera.aimAt(camera, aim.get, now, ANIMATION_SECONDS)
+  if aim.isSome:
+    panel.tween_camera.aimAtLeast(
+      camera, geometry.get, aim.get, width, height, now, ANIMATION_SECONDS
+    )
   else: panel.tween_camera.release()
 
 
@@ -727,7 +734,7 @@ proc renderFrame(
   panel.tween_camera.advance(camera, now, easeOutCubic)
 
   let scale = camera.drawExtentFor(int(height))
-  offerCameraAim(panel, scene, camera, now, scale)
+  offerCameraAim(panel, scene, camera, now, scale, int(width), int(height))
   # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
   #   the transform they pick against needs only the camera, which has already advanced.
@@ -1513,13 +1520,17 @@ proc runStoryboard(
     camera.elevation = elevation_default
     # Turn to face a result standing at the horizon, which is nowhere the demo's own
     #   fixed angle already frames. Instant, not eased: a captured frame must never show
-    #   a half-finished pan. Same `aimFor` the interactive path uses, so both agree on
-    #   where an object is worth looking from.
+    #   a half-finished pan. Same `aimAtLeast` the interactive path uses, so both agree on
+    #   where an object is worth looking from -- including on turning no further than it
+    #   takes to bring the result into frame, which keeps the demo's own fixed angle
+    #   wherever that angle already showed it.
     if isHorizon(derived):
       let scale_aim = camera.drawExtentFor(PIXELS_HEIGHT)
       let aim = aimFor(derived, scale_aim)
       if aim.isSome:
-        panel.tween_camera.aimAt(camera, aim.get, 0.0, 0.0)
+        panel.tween_camera.aimAtLeast(
+          camera, derived, aim.get, PIXELS_WIDTH, PIXELS_HEIGHT, 0.0, 0.0
+        )
         panel.tween_camera.settle(camera)
 
     toChars(&"{step.label} gave {shapeText(derived)}.", panel.message)
