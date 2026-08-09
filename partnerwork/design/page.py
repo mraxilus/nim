@@ -3,6 +3,8 @@
 Presentation only -- every claim a figure makes is generated and asserted
 elsewhere, so this module is free to be nothing but the argument's layout.
 """
+from .body import FREE, fill_of
+from .style import INK
 HEAD = """<title>The marks, so far</title>
 <style>
 :root {
@@ -110,14 +112,15 @@ code { font: 0.88em var(--mono); background: var(--wash); padding: 0.1em 0.35em;
 def sw(kind):
     """A swatch pair: the lead's square in its side, the follow's circle in its.
 
-    Each mark is in its own side's ink now, so a key drawn in one colour would
-    be showing something the picture never shows.
+    The fills and the fade come from the same code the hands themselves use.
+    A key that drew them its own way could drift from the figures it sits
+    beside -- and had: it faded at 0.4 against the hands' 0.5.
     """
-    faint = ' opacity="0.4"' if kind == "free" else ""
+    faint = f' opacity="{FREE}"' if kind == "free" else ""
     out = ['<svg viewBox="0 0 36 16" width="36" height="16" aria-hidden="true">']
-    for shape, ink, cx in (("rect", "var(--left)", 7), ("circle", "var(--right)", 28)):
-        fill = {"low": ink, "above": "url(#hL)" if cx == 7 else "url(#hR)"}.get(
-            kind, "none")
+    for shape, arm, cx in (("rect", "L", 7), ("circle", "R", 28)):
+        ink = INK[arm]
+        fill = fill_of(kind, arm)
         if shape == "rect":
             out.append(f'<rect x="1" y="2" width="12" height="12" rx="1.5"'
                        f' fill="{fill}" stroke="{ink}" stroke-width="1.5"{faint}/>')
