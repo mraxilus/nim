@@ -31,38 +31,45 @@ node design/shot.js design/frames.html out-prefix
 ```
 
 
-## Two rules that keep being broken
+## Rules as given
 
-Both of these have been got wrong more than once.  They are here first because
-a change that violates either is a bug, whatever else it does.
+Every rule stated for this drawing, in the words it arrived in, and the check
+that holds the drawing to it.  `checks.check_rules` runs on every build and
+prints one line per rule; a rule that is only implemented and not asserted is a
+rule that quietly stops being true, which has happened here more than once.
 
-**1. Only an `above` connection may cross a body — at every instant a moving
-picture draws, not merely at the frames it is sampled at.**  A browser draws
-the states between two sampled frames by blending them point by point, so two
-neighbouring frames that disagree about which side of a body a line goes round
-are drawn, in between, as a line sweeping straight *through* it.  That is how
-this got past two rounds of checks: the routes at each frame were all clean.
-The fix is `route.one_way_round`, which settles the way round once for a whole
-move before any of it is routed, so no two frames can disagree.  **Any check on
-a reach tests the blend between frames, not just the frames** — `checks.py`
-does, and it is the check labelled "the one that matters".
-
-**2. A settled hand is in one of four places.**  `{left, right} × {default,
-behind}`, measured off the dancer's **own facing** and never off the page —
-nothing is solved and nothing is asked for.  `behind` carries locks and wraps
-alike: what tells those apart is which *side* the hand is behind, and what
-tells high from low is the level's fill (`body.SETTLE`, `body.slot_of`).  A
-hold naming a level but not whether it locks or wraps leaves its hands where
-the arm hangs.  **Where a hand has moved, the place it left is drawn as a grey
-ghost** (`figure.ghosts`).  Hands still move smoothly between spots while a
-picture moves; it is the *settled* state that is discrete.
-
-**3. The hold says which way the line goes round** (`route.way_for`): a
-**wrap** round the **front** of each body, a **low lock** round the **back**.
-Only where a hold says nothing does the route take the short way, and only then
-does `one_way_round` have to pick one for a move.  A **high lock** is the case
-not settled -- see the open questions.
-
+1. **"the hands should only pass through the circle when the hand positions are
+   above."**  And at *every instant a moving picture draws*, not merely at the
+   frames it is sampled at: a browser blends two sampled frames point by point,
+   so two that disagree about which side of a body the line passes are drawn,
+   in between, as a line sweeping straight through it.  `one_way_round` settles
+   the way round once for a whole move so no two frames can disagree, and the
+   check samples the blend.  *This one got past two rounds of checks that looked
+   only at the frames.*
+2. **"the hands can only move from their positions at the side of the body only
+   if a level is specified"** — and a level alone is not enough: without knowing
+   whether the hold locks or wraps there is no knowing which side the hand went
+   to, so both must be named.
+3. **"the slots are relative to the front facing side of the lead/follow, not
+   from the diagram itself."**  Six spots, `{left, right} × {front, default,
+   back}`, every one a bearing off that dancer's own facing.  `SLOT_OFFSET` is
+   44°, and two marks need 34.9°, so none of them touch.
+4. **"high and low wraps go around to the front of the other hand."**
+5. **"low lock goes around the back to the back of the other hand."**
+6. **"in high lock the line goes around the back of the modified body"**, to the
+   back of the current hand.
+7. **"lock/wrap positions can only be used when the connecting line goes around
+   no less than just under 1/2 of the circumference.  it doesn't make sense to
+   have a wrap or a lock without the line actually going around the body."**
+   The arcs this geometry makes are quantised, so `WRAP_MIN` at 170° picks out
+   the full half and nothing else — and most states stop existing in most
+   orientations.  The build refuses to draw one that falls short; the frame page
+   draws the whole grid of which exist where.
+8. **"above has no locks/wraps and can only transition to upper wrap or back to
+   default (physical restrictions)."**  `FROM_ABOVE` records the two.  *Upper
+   wrap* is read as the high wrap — that reading is mine, not the rule's.
+9. **The connection is drawn in its two hands' own colours**, meeting at its
+   middle, the lead's end in the deep shade.
 
 ## What is settled
 
@@ -109,12 +116,14 @@ page and this list together.
   hugs the rim exactly where the straight way would cross a body, and is
   straight everywhere else.  With nothing said it takes the **short way** —
   there is no standing preference for a dancer's front.
-- A **hand stays at the side of its body unless the hold names a level**, and
-  a level alone is not enough: without knowing whether the hold locks or wraps
-  there is no knowing which side the hand went to.  See the four spots above.
-- `SLOT_OFFSET` is how far round the rim `behind` sits from a side -- a drawn
-  convention, wide enough that a mark never touches the grey ghost of the place
-  it left, which is asserted.
+- A settled hand is in **one of six spots** and the routing follows from the
+  hold; both are rules as given, so see the ledger above rather than here.
+- `SLOT_OFFSET` is how far round the rim `front` and `back` sit from a side --
+  a drawn convention, wide enough that a mark never touches the grey ghost of
+  the place it left, which is asserted.
+- **Where a hand has left its default, the place it left is drawn as a grey
+  outline** (`figure.ghosts`), so a picture says both where the hand is and
+  where it came from.
 - A move's **way round is settled once, for the whole move** (`one_way_round`),
   and every frame of it uses that one.  A stronger thing than the
   counter-rotation preference it replaced, and it is why `SIDE_BIAS`,
@@ -165,14 +174,11 @@ page and this list together.
 
 The user's side of the table, as of the last iteration:
 
-- **The high lock's routing.**  A wrap goes round the front and a low lock
-  round the back, both quoted; for a high lock what was said is that *the
-  opposite body's arm wraps around*, which is a rule about the far end rather
-  than the near one.  Rather than guess, a high lock keeps the plain short way,
-  and it is the only hold on the page whose routing is not the dance's.
-- **`SLOT_OFFSET`**, how far round the rim *behind* sits from a side.  A drawn
-  convention rather than anything the dance says, floored by a mark not being
-  allowed to touch its own ghost.
+- **Whether *upper wrap* means the high wrap** in rule 8, which is the one
+  reading in the ledger that is mine rather than given.
+- **`SLOT_OFFSET`**, how far round the rim *front* and *back* sit from a side.
+  A drawn convention rather than anything the dance says, floored by a mark not
+  being allowed to touch its own ghost.
 - The mark for **any amount** of turn: five candidates are drawn on the sign
   page (open-ended box — recommended; open with a spilling pip; ellipsis row;
   music's repeat colon; a loop arrow).  None chosen yet.

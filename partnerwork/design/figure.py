@@ -8,12 +8,12 @@ unless a new one is decisively shorter -- so everything stays in one piece.
 import math
 
 from .body import (BODY_R, CAPTION_R, R, border, caption, chevron, hand,
-                   hand_point, hands_of, other, ring_of, settled_wind,
-                   side_of, slot_of)
+                   hand_point, hands_of, other, ring_of, round_of,
+                   settled_wind, side_of, slot_of)
 from .geometry import continuous, n, xy
 from .pose import NO_WIND, canonicalise, cycle, rest, spin_about
 from .route import (cut_gap, one_way_round, reach_markup, routed, split_at,
-                    straight_reach, way_for)
+                    straight_reach, way_for, wraps_enough)
 from .style import DEEP, INK, LINK_W, QUIET
 
 
@@ -43,6 +43,28 @@ def ghosts(holds, levels, ways):
                 out.append((who, own))
     return out
 
+def danceable(pose, holds, levels=None, ways=None):
+    """Whether every lock and wrap in this hold really is one.
+
+    A lock or wrap position may only be used when the line goes round no less
+    than just under half the circumference -- it does not mean anything to have
+    a wrap without the line actually going round the body.  So whether a state
+    exists at all depends on the orientation, and this is what says so.
+    """
+    levels, ways = levels or {}, ways or {}
+    pose = settled(pose, holds, levels, ways)
+    p = hands_of(pose)
+    bodies = ((pose["lead"], pose["lead_facing"]),
+              (pose["follow"], pose["follow_facing"]))
+    for side, where in holds.items():
+        level, way = levels.get(side), ways.get(side)
+        if round_of(level, way) is None:
+            continue                      # nothing claimed, nothing to hold up
+        ends = (p["lead"][side], p["follow"][side_of(where)])
+        if not wraps_enough(ends, bodies, level, way):
+            return False
+    return True
+
 def settled(pose, holds, levels, ways):
     """The same pose with every hand put in the slot its hold settles it in.
 
@@ -64,6 +86,10 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
              ways=None):
     """Every element of one pose, in the order the picture is read from."""
     levels, ways = levels or {}, ways or {}
+    # A lock or wrap that does not go round the body is not one, and a state
+    # that cannot be danced is an edge that is not drawn -- so this refuses
+    # rather than drawing something the rules say does not exist.
+    assert danceable(pose, holds, levels, ways), (holds, levels, ways)
     # Every drawing path comes through here, so this is where the hands are
     # put: a pose handed in ready-made is settled exactly like one built below.
     pose = settled(pose, holds, levels, ways)

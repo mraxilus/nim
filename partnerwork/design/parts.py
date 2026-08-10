@@ -5,12 +5,13 @@ sign another.  The inline assertions are part of the build -- a page whose
 orientations collide or whose collapse figures differ is refused, not
 published.
 """
-from .body import (BODY_R, R, SLOTS, border, chevron, hand, slot_bearing,
-                   slot_of)
-from .figure import animated, extent, frame
+from .body import (BODY_R, R, SLOTS, border, chevron, hand, hands_of,
+                   side_of, slot_bearing, slot_of)
+from .figure import animated, danceable, extent, frame, settled
 from .geometry import n, polar
 from .pose import (MOVES, NO_WIND, canonicalise, cycle, orbit, relative, rest,
                    spin_about)
+from .route import way_for, wrap_arc
 from .sign import sign
 from .style import FAINT
 
@@ -26,20 +27,33 @@ SPLIT = {"L": "low", "R": "high"}
 HOLD = {"L": "left"}
 
 
+def said(value, side="L"):
+    """A one-key mapping, or nothing at all where nothing was said."""
+    return {} if value is None else {side: value}
+
+
+# Each settling drawn in an orientation that admits it, because most do not:
+# a lock or wrap only exists where the line really goes round the body.
 SETTLINGS = (
-    (None, None, "no way said<br>— it stays at its side"),
-    ("low", "lock", "<em>low</em> lock"),
-    ("high", "lock", "<em>high</em> lock"),
-    ("low", "wrap", "<em>low</em> wrap"),
-    ("high", "wrap", "<em>high</em> wrap"),
+    (None, None, 0, "no way said<br>— it stays at its side"),
+    ("low", "lock", 0, "<em>low</em> lock<br>face to face"),
+    ("high", "lock", 0, "<em>high</em> lock<br>face to face"),
+    ("low", "wrap", 180, "<em>low</em> wrap<br>the follow turned away"),
+    ("high", "wrap", 180, "<em>high</em> wrap<br>the follow turned away"),
 )
+
+# the grid the last rule implies: which states exist in which orientation
+GRID_STATES = (("high", "wrap"), ("low", "wrap"),
+               ("low", "lock"), ("high", "lock"))
+
+GRID_TURNS = (0, 90, 180, 270)
 
 CHART_FACING = 40         # the chart's body is turned off the vertical, so the
                           # spots visibly follow the chevron and not the page
 
 
 def slot_chart(side="L"):
-    """One body with all four spots on it, and this hand's three marked.
+    """One body with all six spots on it, and this hand's four marked.
 
     Drawn rather than tabulated because the table is the thing most likely to
     be wrong -- and drawn on a body turned off the vertical, because the spots
@@ -53,7 +67,7 @@ def slot_chart(side="L"):
             "lead_wind": dict(NO_WIND), "ring": None}
     out.append(border(pose, "lead"))
     out.append(chevron((0.0, 0.0), float(CHART_FACING)))
-    lands = {slot_of(side, level, way) for level, way, _ in SETTLINGS}
+    lands = {slot_of(side, level, way) for level, way, _, _ in SETTLINGS}
     for place in ("L", "R"):
         for slot in SLOTS:
             aim = CHART_FACING + slot_bearing(place, slot)
@@ -107,36 +121,70 @@ def frame_parts():
     parts["pair_lr"] = frame("f", {"L": "right"})
     parts["pair_lr_turned"] = frame("f", {"L": "right"}, follow_turn=180)
 
-    # the four spots, and the five settlings that reach three of them
+    # the six spots, and the five settlings that reach four of them
     parts["slot_chart"] = slot_chart("L")
     seen = {}
-    for k, (level, way, _) in enumerate(SETTLINGS):
-        levels = {} if level is None else {"L": level}
-        ways = {} if way is None else {"L": way}
-        parts[f"settle_{k}"] = frame("f", HOLD, levels, ways=ways,
-                                     captions=False)
+    for k, (level, way, turn, _) in enumerate(SETTLINGS):
+        parts[f"settle_{k}"] = frame("f", HOLD, said(level), ways=said(way),
+                                     follow_turn=turn, captions=False)
         seen.setdefault(slot_of("L", level, way), []).append(k)
-    # a Left hand reaches three of the four; the fourth belongs to the Right
-    assert sorted(seen) == [("L", "behind"), ("L", "default"),
-                            ("R", "behind")], sorted(seen)
-    # and the two that share a spot are told apart by their fill alone
-    assert parts["settle_1"] != parts["settle_2"], "high and low lock collide"
+    # a Left hand reaches four of the six; the other two belong to the Right
+    assert sorted(seen) == [("L", "back"), ("L", "default"),
+                            ("R", "back"), ("R", "front")], sorted(seen)
+    # the two wraps share a spot and are told apart by their fill alone
     assert parts["settle_3"] != parts["settle_4"], "high and low wrap collide"
 
-    # the routing the hold decides: a wrap round the front, a low lock round
-    # the back, of the body each end belongs to
+    # the routing each hold decides, on one orientation that admits all three
     for name, level, way in (("route_wrap", "low", "wrap"),
-                             ("route_lock", "low", "lock")):
+                             ("route_low", "low", "lock"),
+                             ("route_high", "high", "lock")):
+        turn = 180 if way == "wrap" else 0
         parts[name] = frame("f", HOLD, {"L": level}, ways={"L": way},
-                            captions=False)
-    assert parts["route_wrap"] != parts["route_lock"], "the rules agree"
+                            follow_turn=turn, captions=False)
+    assert len({parts["route_wrap"], parts["route_low"],
+                parts["route_high"]}) == 3, "the three routes are not three"
 
-    # a wrap really does put a body in the way, which is what makes `above`
-    # passing straight through worth having
-    for name, level in (("wrap_low", "low"), ("wrap_above", "above")):
-        parts[name] = frame("f", HOLD, {"L": level}, ways={"L": "wrap"},
-                            captions=False)
-    assert parts["wrap_low"] != parts["wrap_above"], "above went round"
+    # and the grid the wrap rule implies: most states do not exist most of the
+    # time, which is worth drawing rather than asserting on its own
+    for level, way in GRID_STATES:
+        for turn in GRID_TURNS:
+            key = f"grid_{level}_{way}_{turn}"
+            pose = canonicalise(spin_about(rest(), "follow", turn))
+            if danceable(pose, HOLD, {"L": level}, {"L": way}):
+                parts[key] = frame("tiny", HOLD, {"L": level},
+                                   ways={"L": way}, follow_turn=turn,
+                                   captions=False)
+            else:
+                parts[key] = ""            # an edge that is not drawn
+    drawn = sum(1 for level, way in GRID_STATES for turn in GRID_TURNS
+                if parts[f"grid_{level}_{way}_{turn}"])
+    assert 0 < drawn < len(GRID_STATES) * len(GRID_TURNS), drawn
+    # the arcs this geometry actually makes, so the page quotes the measurement
+    # rather than a number somebody typed
+    seen = set()
+    for level, way in GRID_STATES:
+        for lead_turn in (0, 90, 180, 270):
+            for turn in GRID_TURNS:
+                pose = canonicalise(spin_about(spin_about(
+                    rest(), "lead", lead_turn), "follow", turn))
+                q = settled(pose, HOLD, {"L": level}, {"L": way})
+                h = hands_of(q)
+                bodies = ((q["lead"], q["lead_facing"]),
+                          (q["follow"], q["follow_facing"]))
+                ends = (h["lead"]["L"], h["follow"][side_of("left")])
+                asked = way_for(ends, bodies, level, way)
+                if asked is None:
+                    continue
+                arcs = wrap_arc(*ends, *bodies, asked)
+                if arcs[0] is not None:
+                    seen.add(int(max(arcs)))
+    parts["arc_set"] = ", ".join(f"{v}°" for v in sorted(seen))
+
+    # `above` has no lock and no wrap, so it stays where the arm hangs
+    parts["above_plain"] = frame("f", HOLD, {"L": "above"}, captions=False)
+    parts["above_asked"] = frame("f", HOLD, {"L": "above"},
+                                 ways={"L": "wrap"}, captions=False)
+    assert parts["above_plain"] == parts["above_asked"], "above took a wrap"
 
     # an orbit in two stages: the follow travels, then the world comes home
     for tag, locked in (("locked", True), ("drift", False)):

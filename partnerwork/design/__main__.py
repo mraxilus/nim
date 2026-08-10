@@ -5,11 +5,17 @@ Run from the partnerwork directory:  python3 -m design  [output directory]
 import sys
 
 from . import frame_page, sign_page
-from .checks import check_frame, check_sign
+from .checks import check_frame, check_rules, check_sign
 from .parts import frame_parts, sign_parts
 
 
-PAGES = (("frames.html", frame_parts, frame_page, check_frame),
+def check_frame_and_rules():
+    check_frame()
+    check_rules()
+
+
+PAGES = (("frames.html", frame_parts, frame_page,
+          check_frame_and_rules),
          ("signs.html", sign_parts, sign_page, check_sign))
 
 

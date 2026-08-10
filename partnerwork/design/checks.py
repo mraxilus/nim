@@ -7,15 +7,17 @@ ink, and the sign's geometry is even to the tenth of a unit.
 """
 import math
 
-from .body import (ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W, SLOTS,
-                   border, hand_bearing, hands_of, other, outline_r,
-                   settled_wind, side_of, slot_bearing, slot_of)
-from .figure import facings, frame, ghosts, settled
+from .body import (ARM_REST, BODY_R, CHEV_OUT, FROM_ABOVE, HAND_GAP, R,
+                   RIM_W, SLOTS, border, hand_bearing, hands_of, other,
+                   outline_r, round_of, side_of, slot_bearing, slot_of)
+from .figure import danceable, facings, frame, settled
 from .geometry import bearing, continuous, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
-from .route import (ROUTE_N, front_of, one_way_round, polyline_len,
-                    routed, split_at, straight_reach, way_for)
+from .route import (ROUTE_N, WRAP_MIN, front_of, one_way_round,
+                    polyline_len, routed, split_at, way_for,
+                    wrap_arc)
+from .parts import said
 from .sign import BODY, COS, GAP_X, HEIGHT, OVER, PIP, QUARTERS, SIN, TAN
 from .style import CAP
 
@@ -94,107 +96,6 @@ def check_frame():
                 biggest = max(biggest, abs(b - a))
     assert biggest < 90, biggest
 
-    # a settled hand is in one of six places and no others: its own side or the
-    # other one, and on that side a little towards the front, a little towards
-    # the back, or where the arm hangs.  Nothing is solved -- the level and the
-    # way say which, and a hold that has not said both leaves the hand alone.
-    SLOT_TABLE = {
-        (None, None): ("own", "default"),
-        ("low", None): ("own", "default"),
-        (None, "wrap"): ("own", "default"),
-        ("low", "lock"): ("own", "behind"),
-        ("high", "lock"): ("own", "behind"),
-        ("above", "lock"): ("own", "behind"),
-        ("low", "wrap"): ("other", "behind"),
-        ("high", "wrap"): ("other", "behind"),
-        ("above", "wrap"): ("other", "behind"),
-    }
-    for side in ("L", "R"):
-        for (level, way), (where, slot) in SLOT_TABLE.items():
-            lands = side if where == "own" else other(side)
-            aim = slot_bearing(lands, slot)
-            got = hand_bearing(0.0, side, settled_wind(side, level, way))
-            assert abs(wrap180(got - aim)) < 1e-9, (side, level, way, got, aim)
-            assert slot_of(side, level, way) == (lands, slot), (side, level, way)
-
-    # the four are four, and a mark never touches the grey ghost of the place
-    # it left -- which is the whole reason `SLOT_OFFSET` is as wide as it is
-    places = {(side, slot): slot_bearing(side, slot)
-              for side in ("L", "R") for slot in SLOTS}
-    apart = min(abs(wrap180(a - b))
-                for i, a in enumerate(places.values())
-                for b in list(places.values())[i + 1:])
-    assert len(places) == 4 and apart > 2 * math.degrees(math.asin(R / BODY_R))
-
-    # a ghost is drawn exactly when a hand is not where its arm hangs
-    for level, way, displaced in ((None, None, 0), ("low", None, 0),
-                                  ("low", "lock", 2), ("high", "wrap", 2)):
-        moved = ghosts({"L": "left"},
-                       {} if level is None else {"L": level},
-                       {} if way is None else {"L": way})
-        assert len(moved) == displaced, (level, way, moved)
-
-    # and the hold decides which way round: a wrap comes round the front of
-    # each body, a low lock round the back.  Read off the drawn route rather
-    # than off the rule that made it.
-    for way, towards in (("wrap", 1), ("lock", -1)):
-        pose = settled(rest(), {"L": "left"}, {"L": "low"}, {"L": way})
-        ends = hands_of(pose)
-        a, b = ends["lead"]["L"], ends["follow"]["L"]
-        bodies = ((pose["lead"], pose["lead_facing"]),
-                  (pose["follow"], pose["follow_facing"]))
-        asked = way_for((a, b), bodies, "low", way)
-        assert asked is not None, way
-        for end, hand_at, body in ((0, a, bodies[0]), (1, b, bodies[1])):
-            assert asked[end] == towards * front_of(hand_at, body), (way, end)
-        pts, got = routed(a, b, *bodies, way=asked)
-        assert got == asked and pts is not None, (way, got)
-
-    # a reach is drawn in its two hands' own colours, not one hue twice
-    crossed = frame("f", {"L": "right"}, {"L": "low"})
-    assert "var(--left-deep)" in crossed and "var(--right)" in crossed, crossed[:80]
-
-    # THE ONE THAT MATTERS.  Only an `above` connection may pass through a
-    # body -- and a moving picture is not the frames it is sampled at, it is
-    # the blend between them, point by point.  Two neighbouring frames that
-    # disagree about which side of a body the line goes round are drawn, in
-    # between, as a line sweeping straight through that body.  So this checks
-    # what is *drawn*, not what is computed: every consecutive pair, part way
-    # between, with the bodies interpolated too because they are moving as
-    # well.  The version of this that looked only at the sampled frames let a
-    # line through the middle of a dancer, twice.
-    swept, at = 99.0, None
-    for name, move in MOVES.items():
-        poses = [settled(q, {"L": "left"}, {}, {}) for q in cycle(move)]
-        hands = [hands_of(q) for q in poses]
-        frames = [(h["lead"]["L"], h["follow"][side_of("left")],
-                   (q["lead"], q["lead_facing"]),
-                   (q["follow"], q["follow_facing"]))
-                  for h, q in zip(hands, poses)]
-        way = one_way_round(frames)
-        runs = [routed(*f, way=way)[0] for f in frames]
-        for k in range(len(runs) - 1):
-            qa, qb = poses[k], poses[k + 1]
-            for part in (0.25, 0.5, 0.75):
-                drawn = [(a[0] + (b[0] - a[0]) * part,
-                          a[1] + (b[1] - a[1]) * part)
-                         for a, b in zip(runs[k], runs[k + 1])]
-                for who in ("lead", "follow"):
-                    c = tuple(qa[who][i] + (qb[who][i] - qa[who][i]) * part
-                              for i in (0, 1))
-                    f = (qa[f"{who}_facing"] + part
-                         * (qb[f"{who}_facing"] - qa[f"{who}_facing"]))
-                    for p, q in zip(drawn, drawn[1:]):
-                        for i in range(9):
-                            t = i / 8
-                            pt = (p[0] + (q[0] - p[0]) * t,
-                                  p[1] + (q[1] - p[1]) * t)
-                            deep = math.dist(pt, c) - outline_r(
-                                bearing(pt[0] - c[0], pt[1] - c[1]) - f)
-                            if deep < swept:
-                                swept, at = deep, (name, k, who)
-    assert swept > -0.3, (swept, at)
-
     # and no reach ever crosses into a body: every hold, every quarter-turn
     # orientation, sampled along the route it would actually be drawn with
     worst = 99.0
@@ -226,9 +127,164 @@ def check_frame():
     print(f"  frame: hands at rest exact; orbit collapses onto axis at {walked};"
           f" every cycle closes; every rim is quiet and breaks at its hands;"
           f" a facing never steps more than {biggest:.1f} degrees a frame;"
-          f" every reach stays on or outside the bodies (margin {worst:.2f},"
-          f" and {swept:.2f} at every instant a moving one draws)"
+          f" every reach stays on or outside the bodies (margin {worst:.2f})"
           f" and starts {R + CAP} from its hand (off by {ends_off:.2f})")
+
+
+HOLD = {"L": "left"}
+
+def check_rules():
+    """Every rule as it was given, and the assertion that holds the drawing to
+    it.  The numbering matches the ledger in the README; the wording of each
+    heading is the wording the rule arrived in.  A rule that is only
+    implemented and not asserted is a rule that quietly stops being true.
+    """
+    told = []
+
+    # RULE 1.  "the hands should only pass through the circle when the hand
+    # positions are above" -- and a moving picture is not the frames it is
+    # sampled at, it is the blend between them, point by point.  Two
+    # neighbouring frames that disagree about which side of a body the line
+    # goes round are drawn, in between, as a line sweeping straight through
+    # that body.  So this checks what is *drawn*: every consecutive pair, part
+    # way between, with the bodies interpolated too because they move as well.
+    # The version of this that looked only at the sampled frames let a line
+    # through the middle of a dancer, twice.
+    swept, at = 99.0, None
+    for name, move in MOVES.items():
+        poses = [settled(q, HOLD, {}, {}) for q in cycle(move)]
+        hands = [hands_of(q) for q in poses]
+        frames = [(h["lead"]["L"], h["follow"][side_of("left")],
+                   (q["lead"], q["lead_facing"]),
+                   (q["follow"], q["follow_facing"]))
+                  for h, q in zip(hands, poses)]
+        way = one_way_round(frames)
+        runs = [routed(*f, way=way)[0] for f in frames]
+        for k in range(len(runs) - 1):
+            qa, qb = poses[k], poses[k + 1]
+            for part in (0.25, 0.5, 0.75):
+                drawn = [(a[0] + (b[0] - a[0]) * part,
+                          a[1] + (b[1] - a[1]) * part)
+                         for a, b in zip(runs[k], runs[k + 1])]
+                for who in ("lead", "follow"):
+                    c = tuple(qa[who][i] + (qb[who][i] - qa[who][i]) * part
+                              for i in (0, 1))
+                    f = (qa[f"{who}_facing"] + part
+                         * (qb[f"{who}_facing"] - qa[f"{who}_facing"]))
+                    for p, q in zip(drawn, drawn[1:]):
+                        for i in range(9):
+                            t = i / 8
+                            pt = (p[0] + (q[0] - p[0]) * t,
+                                  p[1] + (q[1] - p[1]) * t)
+                            deep = math.dist(pt, c) - outline_r(
+                                bearing(pt[0] - c[0], pt[1] - c[1]) - f)
+                            if deep < swept:
+                                swept, at = deep, (name, k, who)
+    assert swept > -0.3, (swept, at)
+    told.append(f"only `above` crosses a body, at every instant drawn"
+                f" (worst {swept:.2f})")
+
+    # RULE 2.  "the hands can only move from their positions at the side of the
+    # body only if a level is specified", and a level alone is not enough: the
+    # way has to be said too, or there is no knowing which side it went to.
+    for level, way, moves in ((None, None, False), ("low", None, False),
+                              (None, "wrap", False), ("low", "lock", True)):
+        put = hands_of(settled(rest(), HOLD, said(level), said(way)))["lead"]["L"]
+        assert (put != hands_of(rest())["lead"]["L"]) == moves, (level, way)
+    told.append("a hand moves only when a level *and* a way are named")
+
+    # RULE 3.  "4 spots, only default and behind" became six again: default,
+    # and one a little towards the front and one a little towards the back,
+    # measured off the dancer's own facing and never off the page.
+    places = {(side, slot): slot_bearing(side, slot)
+              for side in ("L", "R") for slot in SLOTS}
+    apart = min(abs(wrap180(a - b))
+                for i, a in enumerate(places.values())
+                for b in list(places.values())[i + 1:])
+    assert len(places) == 6, places
+    assert apart > 2 * math.degrees(math.asin(R / BODY_R)), apart
+    # and they turn with the dancer: settle a hold, turn the follow, and every
+    # hand is still exactly where its spot says relative to its own facing
+    for turn in (0, 90, 180, 270):
+        pose = settled(canonicalise(spin_about(rest(), "follow", turn)),
+                       HOLD, {"L": "low"}, {"L": "lock"})
+        for who, sd in (("lead", "L"), ("follow", "L")):
+            got = hand_bearing(0.0, sd, pose[f"{who}_wind"][sd])
+            assert abs(wrap180(got - slot_bearing(*slot_of(sd, "low", "lock")))
+                       ) < 1e-9, (turn, who)
+    told.append(f"six spots, {apart:.0f} degrees apart at the closest,"
+                " off each dancer's own facing")
+
+    # RULES 4, 5 and 6.  "high and low wraps go around to the front of the
+    # other hand, low lock goes around the back to the back of the other hand"
+    # and "in high lock the line goes around the back of the modified body",
+    # to the back of the current hand.
+    WHERE = {("high", "wrap"): ("other", "front", "front"),
+             ("low", "wrap"): ("other", "front", "front"),
+             ("low", "lock"): ("other", "back", "back"),
+             ("high", "lock"): ("own", "back", "back")}
+    for (level, way), (whose, spot, sends) in WHERE.items():
+        for side in ("L", "R"):
+            lands = side if whose == "own" else other(side)
+            assert slot_of(side, level, way) == (lands, spot), (side, level, way)
+        assert round_of(level, way) == sends, (level, way)
+        # and the drawn route really does set off that way, at both ends
+        turn = 180 if way == "wrap" else 0
+        pose = settled(canonicalise(spin_about(rest(), "follow", turn)),
+                       HOLD, {"L": level}, {"L": way})
+        p = hands_of(pose)
+        a, b = p["lead"]["L"], p["follow"][side_of("left")]
+        bodies = ((pose["lead"], pose["lead_facing"]),
+                  (pose["follow"], pose["follow_facing"]))
+        asked = way_for((a, b), bodies, level, way)
+        towards = 1 if sends == "front" else -1
+        assert asked == (towards * front_of(a, bodies[0]),
+                         towards * front_of(b, bodies[1])), (level, way)
+        assert routed(a, b, *bodies, way=asked)[1] == asked, (level, way)
+    told.append("both wraps land in front and go round the front; both locks"
+                " land behind and go round the back")
+
+    # RULE 7.  "lock/wrap positions can only be used when the connecting line
+    # goes around no less than just under 1/2 of the circumference.  it doesn't
+    # make sense to have a wrap or a lock without the line actually going
+    # around the body."
+    seen = set()
+    for level, way in WHERE:
+        for turn in (0, 90, 180, 270):
+            pose = canonicalise(spin_about(rest(), "follow", turn))
+            p = hands_of(settled(pose, HOLD, {"L": level}, {"L": way}))
+            bodies = ((pose["lead"], pose["lead_facing"]),
+                      (pose["follow"], pose["follow_facing"]))
+            ends = (p["lead"]["L"], p["follow"][side_of("left")])
+            asked = way_for(ends, bodies, level, way)
+            arcs = wrap_arc(*ends, *bodies, asked)
+            ok = danceable(pose, HOLD, {"L": level}, {"L": way})
+            assert ok == (arcs[0] is not None and max(arcs) >= WRAP_MIN)
+            if arcs[0] is not None:
+                seen.add(max(arcs))
+    # the arcs are quantised, and the threshold sits in the gap below a half
+    assert all(v <= 141 or v >= 180 for v in seen), sorted(seen)
+    assert 141 < WRAP_MIN < 180, WRAP_MIN
+    told.append(f"a lock or wrap needs {WRAP_MIN} degrees of wrap; the arcs"
+                f" this geometry makes are {sorted(int(v) for v in seen)}")
+
+    # RULE 8.  "above has no locks/wraps and can only transition to upper wrap
+    # or back to default (physical restrictions)."  `upper wrap` is read as the
+    # high wrap; that reading is mine and not the rule's.
+    for way in ("lock", "wrap", None):
+        assert slot_of("L", "above", way) == ("L", "default"), way
+        assert round_of("above", way) is None, way
+    assert FROM_ABOVE == ("high wrap", "default"), FROM_ABOVE
+    told.append("`above` takes no lock or wrap, and leads only to"
+                f" {' or '.join(FROM_ABOVE)}")
+
+    # RULE 9.  the connecting line's two halves are its two hands' own colours
+    crossed = frame("f", {"L": "right"}, {"L": "low"})
+    assert "var(--left-deep)" in crossed and "var(--right)" in crossed
+    told.append("a connection is drawn in its two hands' own colours")
+
+    for line in told:
+        print(f"  rule: {line}")
 
 def check_sign():
     """The numbers the eye cannot check: equal sides, margins, gaps, clearance."""

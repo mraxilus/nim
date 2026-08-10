@@ -7,7 +7,8 @@ is what lets an animation morph a reach instead of jumping it.
 """
 import math
 
-from .body import BODY_R, R, RIM_STEP, outline_point, outline_r
+from .body import (BODY_R, R, RIM_STEP, outline_point, outline_r,
+                   round_of)
 from .geometry import bearing, wrap180, xy
 from .style import CAP, LINK_W
 
@@ -111,26 +112,59 @@ def front_of(hand, body):
 def way_for(ends, bodies, level, way):
     """Which way round both bodies a hold says its line goes.
 
-    Not what is shortest -- what the dance says.  A **wrap** comes round the
-    **front** of the body it is wrapping; a **low lock** goes round the
-    **back**.  Anything else, including a hold that has named no level or no
-    way, has no opinion, and `routed` takes the short way.
-
-    A high lock is the case not settled here: it is meant to be the *opposite*
-    body's arm that wraps around, which is a rule about the far end rather than
-    this one, and the reading is still open -- so for now it takes the short
-    way too and the page says so.
+    Not what is shortest -- what the dance says.  Both wraps come round the
+    **front**; both locks go round the **back**.  A hold that has named no
+    level or no way has no opinion, and `routed` takes the short way.
     """
-    if level is None or way is None:
+    sends = round_of(level, way)
+    if sends is None:
         return None
     sides = tuple(front_of(e, b) for e, b in zip(ends, bodies))
     if not all(sides):
         return None                       # dead ahead or behind: neither way
-    if way == "wrap":
-        return sides
-    if way == "lock" and level == "low":
-        return tuple(-s for s in sides)
-    return None
+    return sides if sends == "front" else tuple(-s for s in sides)
+
+WRAP_MIN = 170            # how far round a body a line must go for a lock or a
+                          # wrap to be one at all.  "No less than just under
+                          # half the circumference": the arcs this geometry
+                          # produces are quantised at 0, 51, 90, 141 and 180
+                          # degrees, so anything in that last gap picks out the
+                          # same set, and 170 is squarely in it
+
+def wrap_arc(a, b, A, B, way):
+    """How far round each body the line actually hugs, in degrees.
+
+    `taut` walks these arcs already and throws the count away; this keeps it,
+    because a wrap that does not wrap is not a wrap and the only way to know is
+    to measure what was drawn.
+    """
+    (ca, fa), (cb, fb) = A, B
+    ta = bearing(a[0] - ca[0], a[1] - ca[1])
+    tb = bearing(b[0] - cb[0], b[1] - cb[1])
+    pa, pb, na, nb = a, b, 0, 0
+    for _ in range(240):
+        ha, hb = seg_hits(pa, pb, A), seg_hits(pa, pb, B)
+        if not ha and not hb:
+            return na * RIM_STEP, nb * RIM_STEP
+        if ha:
+            ta += way[0] * RIM_STEP
+            pa = outline_point(ca, fa, ta)
+            na += 1
+        if hb:
+            tb += way[1] * RIM_STEP
+            pb = outline_point(cb, fb, tb)
+            nb += 1
+    return None, None
+
+def wraps_enough(ends, bodies, level, way):
+    """Whether this hold's line really does go round a body far enough to be
+    the lock or wrap it claims to be."""
+    asked = way_for(ends, bodies, level, way)
+    if asked is None:
+        return False
+    arcs = wrap_arc(*ends, *bodies, asked)
+    return arcs[0] is not None and max(arcs) >= WRAP_MIN
+
 
 def straight_reach(a, b):
     """A reach that goes over everything instead of round it.
