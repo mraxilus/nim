@@ -1,13 +1,19 @@
 ## Write the review page and the frame pictures from the model.
 ##
-## The page used to carry its own copy of the frames and the transitions,
-## transcribed by hand from the audit.  Nothing kept that copy honest, which made
-## it the one part of the work that could quietly go wrong.  Now the prose lives
-## in `doc/review.template.html` with a marker wherever a number or a picture
-## belongs, and everything a marker stands for is derived here.
-##
-## `tests/treview.nim` regenerates the page and compares it with the committed
-## one, so a model change that has not been written up fails the suite.
+##   The page used to carry its own copy of the frames and the transitions,
+##     transcribed by hand from the audit.  Nothing kept that copy honest,
+##     which made it the one part of the work that could quietly go wrong.
+##   Now the prose lives in `doc/review.template.html` with a marker wherever a
+##     number or a picture belongs, and everything a marker stands for is
+##     derived here.
+##     Cost of a template with markers: a marker is text the compiler never
+##       sees, so a misspelt or unfilled one is caught by the generation-time
+##       quit in `renderReview` rather than by a compile error.
+##   `tests/treview.nim` regenerates the page and compares it with the
+##     committed one, so a model change that has not been written up fails the
+##     suite.
+##     Cost of committing the generated page: every model change must re-run
+##       `nimble review`, or the suite fails on the stale copy.
 
 import std/[options, os, strutils]
 

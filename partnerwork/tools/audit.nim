@@ -1,8 +1,15 @@
 ## Print the derived ontology and everything it has to say about the workbook.
 ##
-## This is the reading tool for the model: the frame list, the transition matrix
-## and the audit, in the terms the workbook uses, so the two can be compared by
-## eye as well as by test.
+##   The reading tool for the model: the frame list, the transition matrix and
+##     the audit, printed for a person rather than asserted for a machine.
+##   Everything is said in the terms the workbook uses, so the sheet and the
+##     model can be compared by eye as well as by test.
+##     Cost of speaking the workbook's language: the workbook cannot name
+##       everything the model derives, so a frame it has no row for and a move
+##       it has no cell for are carried under a `*` mark instead of a name.
+##     Cost of comparing by eye: nothing here fails when the two drift;
+##       agreement is enforced by `tests/tworkbook.nim`, and this only makes it
+##       readable.
 
 import std/[options, strutils]
 
