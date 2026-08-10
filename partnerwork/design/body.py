@@ -32,22 +32,64 @@ CAPTION_R = BODY_R + R + 2   # just past the hand it names
 
 FREE = 0.5                # how far a hand nobody holds fades, keeping its hue
 
-CARRY = 90                # how far round from its side a hand may be carried:
-                          # as far as the front, or as far as the back, and no
-                          # further.  Without it a hand flips to the far side
-                          # of its body the moment its partner passes the point
-                          # opposite, which is a jump, not a slide -- and a
-                          # hand that has crossed the whole body is no longer
-                          # recognisably the hand of that side
+SLOT_OFFSET = 36          # how far round the rim `above` and `below` sit from
+                          # a side.  A picture seen from overhead has no height
+                          # to spend, so the two are drawn as a small offset --
+                          # `above` towards the front, `below` towards the
+                          # back, the one body-relative axis there is.  Wide
+                          # enough that no two marks ever touch, narrow enough
+                          # that a slot still reads as belonging to its side
 
-MEET = 32                 # how close two joined hand marks may come.  Joined
-                          # hands are really in one place; this is a drawn
-                          # convention, and the only one in the sliding -- it
-                          # leaves MEET - 2 * (R + CAP) of connection showing,
-                          # which is what the two hues need to say anything
+SLOTS = ("default", "above", "below")
+
+def slot_bearing(side, slot):
+    """Where one of the six slots sits, as a bearing off the body's facing.
+
+    Two sides, and on each of them a place for a hand to hang, one a little
+    towards the front and one a little towards the back.  Those two are what
+    `above` and `below` become when a picture is seen from overhead and has no
+    height to spend -- so `above` is the same height on either side rather than
+    a mirror of it.
+    """
+    base = -ARM_REST if side == "L" else ARM_REST
+    if slot == "default":
+        return base
+    forward = SLOT_OFFSET if side == "L" else -SLOT_OFFSET
+    return base + (forward if slot == "above" else -forward)
+
+# Where a hand settles: its own side, and the level and way of the hold it is
+# part of, and nothing else.  A hold that names no level, or names one without
+# saying whether it locks or wraps, leaves the hand where the arm hangs --
+# without knowing which of the two it is, there is no knowing which side the
+# hand went to, so the picture does not guess.
+SETTLE = {
+    ("high", "lock"): ("own", "above"),
+    ("high", "wrap"): ("other", "above"),
+    ("low", "wrap"): ("other", "above"),
+    ("low", "lock"): ("other", "below"),
+    # `above` settles where `high` does: both are the arm going over, and the
+    # height only changes what the connection may cross on its way, not where
+    # the hand ends up.  An extension of the four rules, not one of them.
+    ("above", "lock"): ("own", "above"),
+    ("above", "wrap"): ("other", "above"),
+}
+
+def slot_of(side, level=None, way=None):
+    """The one of six slots this hand settles in: which side, and how high."""
+    where, slot = SETTLE.get((level, way), ("own", "default"))
+    return (side if where == "own" else other(side)), slot
 
 def hand_bearing(facing, side, wind=0.0):
     return facing + (-1 if side == "L" else 1) * (ARM_REST + wind)
+
+def settled_wind(side, level=None, way=None):
+    """The winding that puts this hand in its slot.
+
+    Winding is measured off the hand's own side and runs towards the back for
+    either hand, so this is the one place the two conventions are reconciled.
+    """
+    aim = slot_bearing(*slot_of(side, level, way))
+    return (-ARM_REST - aim) if side == "L" else (aim - ARM_REST)
 
 def hand_point(centre, facing, side, wind=0.0):
     """Where one hand is: round the rim from the front, by however far the arm

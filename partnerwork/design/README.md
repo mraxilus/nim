@@ -31,6 +31,31 @@ node design/shot.js design/frames.html out-prefix
 ```
 
 
+## Two rules that keep being broken
+
+Both of these have been got wrong more than once.  They are here first because
+a change that violates either is a bug, whatever else it does.
+
+**1. Only an `above` connection may cross a body — at every instant a moving
+picture draws, not merely at the frames it is sampled at.**  A browser draws
+the states between two sampled frames by blending them point by point, so two
+neighbouring frames that disagree about which side of a body a line goes round
+are drawn, in between, as a line sweeping straight *through* it.  That is how
+this got past two rounds of checks: the routes at each frame were all clean.
+The fix is `route.one_way_round`, which settles the way round once for a whole
+move before any of it is routed, so no two frames can disagree.  **Any check on
+a reach tests the blend between frames, not just the frames** — `checks.py`
+does, and it is the check labelled "the one that matters".
+
+**2. A settled hand is in one of six places.**  `{left, right} × {default,
+above, below}` — nothing is solved and nothing is asked for.  Which slot is
+decided by the hand's own side, the hold's level, and whether the hold is a
+**lock** or a **wrap** (`body.SETTLE`, `body.slot_of`).  A hold naming a level
+but not which of those it is leaves its hands where the arm hangs.  Hands still
+move smoothly between slots while a picture moves; it is the *settled* state
+that is discrete.
+
+
 ## What is settled
 
 Decisions the pages record, each with the reason it went that way.  These are
@@ -76,34 +101,19 @@ page and this list together.
   hugs the rim exactly where the straight way would cross a body, and is
   straight everywhere else.  With nothing said it takes the **short way** —
   there is no standing preference for a dancer's front.
-- A **hand stays at the side of its body unless the hold names a level**,
-  because a level is what lets an arm pass over or under and passing is what
-  carries a hand round.  No level, no wrap.
-- A **freed hand is not told where to go: it is solved** (`figure.settled`).
-  It slides along the rim to wherever the arm is shortest, so winding is no
-  longer an input and the picture is a function of its state.  Three things
-  stop it: `CARRY`, a quarter of the rim, past which a hand stops being the
-  hand of that side; a dancer's own two hands, which cannot pass through each
-  other, which is what keeps a crossed hold crossed; and `MEET`, how close two
-  joined marks may come — the one drawn convention in the whole business, since
-  joined hands are really in one place and something has to leave room for the
-  line to say whose ends it has.
-- Still pictures scan the whole rim for that place, which makes them a pure
-  function of the pose.  Moving ones step from the frame before, so a hand
-  travels round a body instead of being found on the far side of it a frame
-  later, and `figure.settle_cycle` runs a warm-up lap so the drawn lap begins
-  where it ends.
+- A **hand stays at the side of its body unless the hold names a level**, and
+  a level alone is not enough: without knowing whether the hold locks or wraps
+  there is no knowing which side the hand went to.  See the six slots above.
+- `SLOT_OFFSET` is how far round the rim `above` and `below` sit from a side --
+  a drawn convention, since a picture seen from overhead has no height to
+  spend.  It is wide enough that no two marks touch, which is asserted.
+- A move's **way round is settled once, for the whole move** (`one_way_round`),
+  and every frame of it uses that one.  A stronger thing than the
+  counter-rotation preference it replaced, and it is why `SIDE_BIAS`,
+  `HYSTERESIS`, `prefer` and `trailing` are all gone.
 - Only **`above` passes through a body**: it is over the head, so from overhead
   nothing is under it and it is drawn straight (`route.straight_reach`).  Every
   other level, and no level, goes round.
-- **While a dancer turns, their line trails** (`figure.trailing`): the wanted
-  way round is counter to that body's own turning, which keeps the place the
-  line leaves the rim still while the body turns under it.  So a line stays on
-  the same sides of both bodies through a rotation instead of flicking across.
-  A dancer who travels without turning has no preference, and `HYSTERESIS`
-  holds the previous frame's way round.  One mechanism carries every opinion:
-  `routed`'s `want`, a wanted pay-out direction per end, paid for at
-  `SIDE_BIAS`.
 - **The lead always faces up.**  Poses live in world coordinates and are drawn
   through `canonicalise`, which turns the world until the lead faces up — so
   every pose that is the same configuration is the same picture, and the whole
@@ -147,19 +157,16 @@ page and this list together.
 
 The user's side of the table, as of the last iteration:
 
-- **What stops a freed hand short of the easy place.**  The sliding answered
-  which way round a level sends the line — the hand goes to the short side and
-  the side it lands on follows — but it answered it by making the question
-  disappear: scanning every orientation and every hold, *no levelled connection
-  ever needs to go round a body at all*, because two hands that can both move
-  go to the two nearest places and nothing is between those.  So `above`
-  passing straight through is a real rule that never comes up, and a level
-  currently *un-wraps* a hold rather than enabling one.  Something has to hold
-  a freed hand back — contact with the body, an arm's length, or a wrap the
-  state names.  The frame page draws the pinned and freed cases side by side.
-- **`MEET`**, how close two joined marks may come.  A legibility floor, not
-  anything the dance says: it is what decides how much line a hold keeps, and
-  at 32 it leaves about 17 units.
+- **Whether the slot table is right.**  Four of its rows came straight from a
+  description and the rest are mirrored or extended: the Right hand's column is
+  the Left's mirrored side-for-side, keeping *above* and *below* as heights
+  rather than mirroring them, and `above` was extended to settle where `high`
+  does since both are the arm going over.  The frame page draws all six slots
+  and every settling beside its name, so a wrong row is visible rather than
+  buried.
+- **`SLOT_OFFSET`**, how far round the rim *above* and *below* sit from a side.
+  A drawn convention rather than anything the dance says, floored by two marks
+  not being allowed to touch.
 - The mark for **any amount** of turn: five candidates are drawn on the sign
   page (open-ended box — recommended; open with a spilling pip; ellipsis row;
   music's repeat colon; a loop arrow).  None chosen yet.

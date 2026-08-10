@@ -5,6 +5,7 @@ elsewhere, so this module is nothing but the argument's layout.  The turn sign
 is a separate exploration on a separate page; see `sign_page.py`.
 """
 from .page import document, fig, sw
+from .parts import SETTLINGS
 
 TITLE = "The frame, so far"
 
@@ -17,6 +18,9 @@ def render(P):
         b = P[f"mv_{who}_still"]
         return f'<figure>{a}{b}<figcaption>{cap}</figcaption></figure>'
 
+    settlings = "".join(fig(P[f"settle_{k}"], text)
+                        for k, (_, _, text) in enumerate(SETTLINGS))
+
     body = f"""
 <div class="sheet">
 
@@ -26,14 +30,16 @@ def render(P):
   <p class="standfirst">Each dancer is a plain circle with a small chevron at
   its centre for the facing. A connection runs hand to hand as a taut string
   that wraps a body rather than crossing it, drawn in <b>its two hands' own
-  colours</b>, meeting at the middle. A hand only leaves the side of its body
-  when the hold names a level. A move animates in two stages: travel, then turn
-  the world until <b>the lead faces up</b> again. That second stage collapses
-  every pose that is the same configuration onto one picture, and shows that an
-  orbit lands where an axis turn lands. <b>A level frees a hand</b>, and a freed
-  hand goes wherever the arm is shortest — so nothing about winding is asked
-  for any more. Which has a consequence worth arguing about, drawn below: a
-  freed hand is also an <em>un-wrapped</em> one.</p>
+  colours</b>, meeting at the middle. <b>A settled hand is in one of six
+  places</b> — its own side or the other one, and on that side a little
+  towards the front, a little towards the back, or where the arm hangs — and
+  which one is decided by the hold's level and by whether it locks or wraps.
+  A move animates in two stages: travel, then turn the world until <b>the lead
+  faces up</b> again. That second stage collapses every pose that is the same
+  configuration onto one picture, and shows that an orbit lands where an axis
+  turn lands. And <b>only an <em>above</em> connection may ever cross a
+  body</b> — at every instant a moving picture draws, not merely at the frames
+  it is sampled at.</p>
   <p class="sibling"><b>The turn sign is on its own page.</b> It answers a
   different question — how to label an <em>edge</em> — and only meets this one
   at the levels and the arm inks, which the two pages share.</p>
@@ -87,13 +93,11 @@ def render(P):
   along the other rim to the other hand. That hug <em>is</em> the wrap: the arm
   going round a body is the thing a lock is made of. Nothing prefers the front
   any more; with nothing said, the line simply takes the shorter way round.</p>
-  <p><b>While a dancer turns, the line trails.</b> The one standing preference
-  is counter to a body's own turning: turn clockwise and the line pays out
-  anticlockwise, which is what keeps the place it leaves the rim still while
-  the body turns underneath it. So a line stays on the same sides of both
-  bodies through a rotation instead of flicking across. A dancer who travels
-  without turning has no preference, and the previous frame's way round holds
-  it.</p>
+  <p><b>A whole move goes one way round.</b> Which side of each body the line
+  passes is settled once, before the first frame is drawn, and every frame of
+  that move uses it — the way that every frame can actually be routed, and the
+  shortest of those. Not a preference: a rule, and the note below says what it
+  is guarding against.</p>
   <p><b>The line is its two hands' own colours.</b> Each half is exactly the
   mark it ends on — the lead's in their arm's ink and the deep shade, the
   follow's in theirs and the plain one, the two meeting at the middle. So
@@ -128,40 +132,37 @@ def render(P):
   </div>
 
   <div class="plate">
-    <h3>A level frees the hand, and it finds its own place</h3>
-    <p><b>No level, no wrap.</b> A hand sits where the arm hangs, at the side of
-    its body, and the only thing that moves it is its body turning. It leaves
-    that place when — and only when — the hold it is part of names a level,
-    because a level is what lets an arm pass over or under, and passing is what
-    carries a hand round.</p>
-    <p><b>And then it is not told where to go: it goes where the arm is
-    shortest.</b> Nothing about winding is an input any more. The same hold,
-    without a level and with one:</p>
-    <div class="row">
-      {fig(P['slide_none'], 'no level<br>— the hands stay at their sides')}
-      {fig(P['slide_low'], '<em>low</em><br>— they come round to meet')}
+    <h3>A settled hand is in one of six places</h3>
+    <p><b>Nothing is solved and nothing is asked for.</b> A hand at rest sits
+    in one of six slots, and which one is decided by three things and no
+    others: the hand's own side, the level of the hold it is part of, and
+    whether that hold is a <b>lock</b> or a <b>wrap</b>. The six are the two
+    sides, and on each side a place a little towards the front, a little
+    towards the back, or where the arm hangs. A picture seen from overhead has
+    no height to spend, so <em>above</em> and <em>below</em> are drawn as that
+    small offset round the rim.</p>
+    <div class="row mid">
+      {fig(P['slot_chart'], 'the six, on one body<br>— the four a Left hand uses, in its ink')}
+      <figure><table class="slots">
+        <tr><th></th><th>Left hand</th><th>Right hand</th></tr>
+        <tr><td>no level, or no way said</td><td>left · side</td><td>right · side</td></tr>
+        <tr><td><em>high</em> lock</td><td>left · above</td><td>right · above</td></tr>
+        <tr><td><em>high</em> wrap</td><td>right · above</td><td>left · above</td></tr>
+        <tr><td><em>low</em> wrap</td><td>right · above</td><td>left · above</td></tr>
+        <tr><td><em>low</em> lock</td><td>right · below</td><td>left · below</td></tr>
+        <tr><td><em>above</em> — as <em>high</em></td><td>left / right · above</td><td>right / left · above</td></tr>
+      </table></figure>
     </div>
-    <p>Three things stop the slide. <code>CARRY</code>, a quarter of the rim,
-    so a hand is never carried so far round that it stops being the hand of
-    that side. A dancer's <b>own two hands, which cannot pass through each
-    other</b> — that is what keeps a crossed hold crossed, and in the last
-    picture below both of the lead's hands want the other's side and jam
-    against each other at the front instead. And <code>MEET</code>, how close
-    two joined marks may come: joined hands are really in one place, so
-    something has to hold them apart, and this is the one drawn convention in
-    the whole business — it is what leaves enough line for the two hues to say
-    whose ends they are.</p>
-    <div class="row">
-      {fig(P['slide_0'], 'face to face')}
-      {fig(P['slide_1'], 'the follow<br>faces away')}
-      {fig(P['slide_2'], 'the follow<br>a quarter turned')}
-      {fig(P['slide_3'], 'back to back')}
-      {fig(P['slide_crossed'], 'both hands held<br>— jammed, and crossed')}
-    </div>
-    <p>So where a hand sits is no longer something a figure was told; it is
-    what the state came to. Read the other way, the hand's place is now saying
-    something: how far the arm had to be carried for that hold, in that
-    orientation, to be held at all.</p>
+    <p><b>Lock or wrap is state the hold carries</b>, and it has to be: the six
+    slots cannot be chosen without it. A hold that names a level but not which
+    of the two it is leaves its hands where the arm hangs — knowing the height
+    does not tell you which side the hand went to, so the picture does not
+    guess. Here is that, and the four settlings a <em>Left to left</em> hold
+    can reach:</p>
+    <div class="row">{settlings}</div>
+    <p>Discrete at rest, but not discrete in between: a move that changes a
+    hold slides its hands from one slot to the next, so the six are where a
+    picture <em>settles</em>, not a set of places it jumps between.</p>
   </div>
 
   <div class="plate">
@@ -172,22 +173,32 @@ def render(P):
     there is nothing under it — no head, no torso — so it is drawn straight
     across whatever it crosses. It is the one level that names a height, and
     that is what the height buys.</p>
-    <p><b>It never comes up.</b> Once the sliding was in, no levelled hold in
-    any orientation needed to go round anything: a hand that can move goes to
-    the place nearest the hand it holds, and the line between two such places
-    has nothing in its way. So the rule is real but idle, and the thing it was
-    meant to distinguish <em>above</em> from does not happen to a freed hand at
-    all. Wrapping is now what a <b>pinned</b> hand forces — and a pinned hand
-    is one with no level, which can never be <em>above</em> either.</p>
+    <p>A <b>wrap</b> is what puts a body in the way: it carries the hand round
+    to the far side, so the line has to get there somehow. At <em>low</em> it
+    goes round. At <em>above</em> it goes over — same hold, same slot, and the
+    only difference is that one of them may cross.</p>
     <div class="row">
-      {fig(P['round_pinned'], 'no level — pinned,<br>and the line goes round')}
-      {fig(P['round_freed'], '<em>low</em> — freed,<br>and there is nothing to go round')}
+      {fig(P['wrap_low'], '<em>low</em> wrap<br>— round the body')}
+      {fig(P['wrap_above'], '<em>above</em> wrap<br>— straight over it')}
     </div>
-    <p>Which puts a question back on the table. If a hold is meant to be able to
-    wrap a body while its hands are free to move, something has to stop the
-    hand short of the easy place: contact with the body, an arm's length, or a
-    named wrap that the state carries. As it stands, freeing a hand is also
-    what un-wraps it.</p>
+  </div>
+
+  <div class="note">
+    <p><b>And in a moving picture, at every instant — not just at the frames.</b>
+    A browser draws the states between two sampled frames by blending them
+    point by point, so two neighbouring frames that disagree about which side
+    of a body the line goes round are drawn, in between, as a line sweeping
+    <em>through</em> that body. Which is what was happening: measured, the
+    worst of it reached <b>19.9</b> units into a body of radius <b>20</b> — the
+    line passed through the centre. The routes at each frame were all clean,
+    which is why a check that looked only at those said nothing was wrong.</p>
+    <p>The fix is to settle the way round <em>once for a whole move</em>,
+    before any of it is routed, so no two frames can disagree. That is
+    stronger than the counter-rotation preference it replaces, and the
+    preference, its bias constant and the frame-to-frame hysteresis all came
+    out with it. The check now samples the blend between every pair of frames,
+    with the bodies interpolated too, and the worst incursion anywhere is
+    <b>0.15</b> — under a fifth of a unit, well under a drawn pixel.</p>
   </div>
 
   <div class="plate">
@@ -309,12 +320,14 @@ def render(P):
   and go back when the marks are settled and the ontology is finished. The frame
   pictures are unchanged either way — the break stays, and the hand-to-hand half
   leaves its levels unsaid.</p>
-  <p>Yours to settle on this page: <b>what makes a freed hand stop short of the
-  easy place</b>, since as it stands a level un-wraps a hold rather than
-  enabling one; <code>MEET</code>, the one drawn convention left, which decides
-  how much line a hold keeps; whether an arm carried past some ceiling is
-  marked at all; the bow for contact with the body; what an orbit stores; and
-  when an arm above the head blocks.</p>
+  <p>Yours to settle on this page: <b>whether the slot table above is right</b>
+  — four of its rows came straight from you, the Right hand's column is those
+  mirrored side-for-side, and <em>above</em> was extended to settle where
+  <em>high</em> does, so the last two are mine and may be wrong;
+  <code>SLOT_OFFSET</code>, how far round the rim <em>above</em> and
+  <em>below</em> sit, which is a drawn convention and nothing the dance says;
+  the bow for contact with the body; what an orbit stores; and when an arm
+  above the head blocks.</p>
 </div>
 
 </div>

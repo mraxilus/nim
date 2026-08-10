@@ -5,10 +5,14 @@ sign another.  The inline assertions are part of the build -- a page whose
 orientations collide or whose collapse figures differ is refused, not
 published.
 """
+from .body import (BODY_R, R, SLOTS, border, chevron, hand, slot_bearing,
+                   slot_of)
 from .figure import animated, extent, frame
-from .geometry import n
-from .pose import MOVES, canonicalise, cycle, orbit, relative, rest, spin_about
+from .geometry import n, polar
+from .pose import (MOVES, NO_WIND, canonicalise, cycle, orbit, relative, rest,
+                   spin_about)
 from .sign import sign
+from .style import FAINT
 
 ORIENTATIONS = [
     ("face to face", 0, 0),
@@ -20,6 +24,46 @@ ORIENTATIONS = [
 LOW = {"L": "low", "R": "low"}
 SPLIT = {"L": "low", "R": "high"}
 HOLD = {"L": "left"}
+
+
+SETTLINGS = (
+    (None, None, "no level<br>— or none said"),
+    ("high", "lock", "<em>high</em> lock"),
+    ("high", "wrap", "<em>high</em> wrap"),
+    ("low", "wrap", "<em>low</em> wrap"),
+    ("low", "lock", "<em>low</em> lock"),
+)
+
+
+def slot_chart(side="L"):
+    """One body with all six slots on it, and this hand's four marked.
+
+    Drawn rather than tabulated because the table is the thing most likely to
+    be wrong: six places, and which of them a hand settles in is the whole of
+    what a level and a way decide.
+    """
+    out = ['<svg class="f" viewBox="-68 -50 136 100">']
+    pose = {"lead": (0.0, 0.0), "lead_facing": 0.0,
+            "lead_wind": dict(NO_WIND), "ring": None}
+    out.append(border(pose, "lead"))
+    out.append(chevron((0.0, 0.0), 0.0))
+    lands = {slot_of(side, level, way) for level, way, _ in SETTLINGS}
+    for place in ("L", "R"):
+        for slot in SLOTS:
+            aim = slot_bearing(place, slot)
+            x, y = polar(0.0, 0.0, BODY_R, aim)
+            # in this hand's own ink wherever it sits, because that is the
+            # point: a Left hand carried to the right side is still the Left
+            used = (place, slot) in lands
+            out.append(hand(x, y, True, side, used, None,
+                            free="fade" if used else "grey"))
+            lx, ly = polar(0.0, 0.0, BODY_R + R + 5, aim)
+            out.append(f'<text x="{n(lx)}" y="{n(ly + 3)}"'
+                       f' text-anchor="{"end" if lx < 0 else "start"}"'
+                       ' style="font: 8px ui-sans-serif, system-ui,'
+                       f' sans-serif; fill: {FAINT}">'
+                       f'{"side" if slot == "default" else slot}</text>')
+    return "".join(out) + "</svg>"
 
 
 def frame_parts():
@@ -57,33 +101,23 @@ def frame_parts():
     parts["pair_lr"] = frame("f", {"L": "right"})
     parts["pair_lr_turned"] = frame("f", {"L": "right"}, follow_turn=180)
 
-    # a level frees the hand, and it goes where the arm is shortest: the same
-    # hold with nothing said, and with `low` said
-    parts["slide_none"] = frame("f", HOLD, captions=False)
-    parts["slide_low"] = frame("f", HOLD, {"L": "low"}, captions=False)
-    assert parts["slide_none"] != parts["slide_low"], "the level freed nothing"
+    # the six slots, and the five settlings that reach four of them
+    parts["slot_chart"] = slot_chart("L")
+    seen = {}
+    for k, (level, way, _) in enumerate(SETTLINGS):
+        levels = {} if level is None else {"L": level}
+        ways = {} if way is None else {"L": way}
+        parts[f"settle_{k}"] = frame("f", HOLD, levels, ways=ways,
+                                     captions=False)
+        seen[slot_of("L", level, way)] = parts[f"settle_{k}"]
+    assert len(seen) == 4, sorted(seen)          # a Left hand reaches four
 
-    # and what the hand's place is then saying, across the orientations
-    for k, (lead_turn, follow_turn) in enumerate(
-            ((0, 0), (0, 180), (0, 270), (180, 180))):
-        parts[f"slide_{k}"] = frame("f", HOLD, {"L": "low"}, captions=False,
-                                    lead_turn=lead_turn,
-                                    follow_turn=follow_turn)
-
-    # both hands held and levelled: each wants the other side, neither may pass
-    # the other, so they jam at their clearance -- which is what crossed means
-    parts["slide_crossed"] = frame("f", {"L": "left", "R": "right"},
-                                   {"L": "high", "R": "low"}, over="L",
-                                   captions=False)
-
-    # what is left for the routing to do: a pinned hand can be left with a body
-    # in the way, and then the line goes round it.  A freed one slides until
-    # there is nothing in the way at all -- which is why `above` passing
-    # straight through never has anything to pass through.
-    for name, levels in (("pinned", {}), ("freed", {"L": "low"})):
-        parts[f"round_{name}"] = frame("f", HOLD, levels, captions=False,
-                                       lead_turn=90, follow_turn=270)
-    assert parts["round_pinned"] != parts["round_freed"], "the wrap is moot"
+    # a wrap really does put a body in the way, which is what makes `above`
+    # passing straight through worth having
+    for name, level in (("wrap_low", "low"), ("wrap_above", "above")):
+        parts[name] = frame("f", HOLD, {"L": level}, ways={"L": "wrap"},
+                            captions=False)
+    assert parts["wrap_low"] != parts["wrap_above"], "above went round"
 
     # an orbit in two stages: the follow travels, then the world comes home
     for tag, locked in (("locked", True), ("drift", False)):

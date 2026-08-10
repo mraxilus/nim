@@ -14,12 +14,10 @@ from .style import CAP, LINK_W
 
 ROUTE_N = 33              # points in every emitted reach, so frames can morph
 
-HYSTERESIS = 9.0          # how much shorter a new route must be to displace one
-
-SIDE_BIAS = 25.0          # what going the other way round a body costs, once
-                          # something has said which way it should go.  Nothing
-                          # says it by default: a reach with no opinion on
-                          # either end simply takes the short way
+WAYS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+    # the four ways a reach can set off: round one side of each body or the
+    # other.  Which one a whole move uses is settled once, before any of it is
+    # drawn -- see `one_way_round`
 
 BREAK = 11.0
 
@@ -113,35 +111,52 @@ def straight_reach(a, b):
     return resample(pts, ROUTE_N)
 
 
-def routed(a, b, A, B, prefer=None, want=(0, 0), bias=SIDE_BIAS):
+def routed(a, b, A, B, way=None):
     """One reach: hand border to hand border, wrapping wherever it must.
 
-    With nothing to say otherwise it takes the short way.  `want` is the
-    pay-out direction asked for at each end -- `+1` clockwise, `-1`
-    anticlockwise, `0` no opinion -- and a way that disagrees pays `bias`.  One
-    mechanism serves everything that has an opinion: a body turning wants its
-    line to trail, and a level will want its own side of the body.  `prefer`
-    keeps the previous frame's way round unless a new one is clearly shorter,
-    so a moving reach wraps and unwraps rather than flicking to the other side
-    of a body through the middle of it.
+    With nothing said it takes the short way round.  Hand `way` one of `WAYS`
+    and it takes that one instead, whatever the length -- which is how a whole
+    move keeps to one side of a body from its first frame to its last.
     """
     best = None
-    for combo in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+    for combo in (WAYS if way is None else (way,)):
         pts, length = taut(a, b, A, B, *combo)
-        if pts is None:
-            continue
-        for end in (0, 1):
-            if want[end] and combo[end] != want[end]:
-                length += bias
-        if prefer is not None and combo == prefer:
-            length -= HYSTERESIS
-        if best is None or length < best[1]:
+        if pts is not None and (best is None or length < best[1]):
             best = (pts, length, combo)
+    if best is None:
+        return None, None
     pts, _, combo = best
     reach = min(R + CAP, polyline_len(pts) / 3)
     pts = _trim_end(pts, a, reach)
     pts = _trim_end(pts[::-1], b, reach)[::-1]
     return resample(pts, ROUTE_N), combo
+
+def one_way_round(frames):
+    """The single way round a whole move is drawn with.
+
+    A moving reach is interpolated between the frames it is sampled at, so two
+    neighbouring frames that disagree about which side of a body the line
+    passes are drawn, in between, as a line sweeping straight through that
+    body.  Choosing one way for the whole move is what makes that impossible:
+    no two frames can disagree if there is only one answer.  It has to be a way
+    every frame can actually be routed, so the ones that fail anywhere are
+    dropped and the shortest of the rest wins.
+
+    Each frame is `(a, b, A, B)`, as `routed` takes them.
+    """
+    best = None
+    for combo in WAYS:
+        total = 0.0
+        for a, b, A, B in frames:
+            pts, _ = taut(a, b, A, B, *combo)
+            if pts is None:
+                break
+            total += polyline_len(pts)
+        else:
+            if best is None or total < best[1]:
+                best = (combo, total)
+    assert best is not None, "no way round serves every frame of this move"
+    return best[0]
 
 def split_at(runs, mid):
     """Cut a reach in two at the point nearest `mid`, so it can be drawn in two

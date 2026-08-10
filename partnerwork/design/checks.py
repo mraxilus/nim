@@ -7,13 +7,15 @@ ink, and the sign's geometry is even to the tenth of a unit.
 """
 import math
 
-from .body import (ARM_REST, BODY_R, CARRY, CHEV_OUT, HAND_GAP, MEET, R,
-                   RIM_W, border, hand_point, hands_of, outline_r, side_of)
-from .figure import facings, frame, settle_cycle, settled, trailing
+from .body import (ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W, SLOTS,
+                   border, hand_bearing, hands_of, other, outline_r,
+                   settled_wind, side_of, slot_bearing, slot_of)
+from .figure import facings, frame, settled
 from .geometry import bearing, continuous, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
-from .route import ROUTE_N, polyline_len, routed, split_at, straight_reach
+from .route import (ROUTE_N, one_way_round, polyline_len, routed,
+                    split_at, straight_reach)
 from .sign import BODY, COS, GAP_X, HEIGHT, OVER, PIP, QUARTERS, SIN, TAN
 from .style import CAP
 
@@ -92,74 +94,81 @@ def check_frame():
                 biggest = max(biggest, abs(b - a))
     assert biggest < 90, biggest
 
-    # a hand stays at the side of its body unless the hold names a level, and
-    # goes looking for the short arm once it does
-    HOLD = {"L": "left"}
-    for levels, moves in (({}, False), ({"L": "low"}, True)):
-        put = hands_of(settled(rest(), HOLD, levels))["lead"]["L"]
-        assert (put != hands_of(rest())["lead"]["L"]) == moves, (levels, put)
+    # a settled hand is in one of six places and no others: its own side or the
+    # other one, and on that side a little towards the front, a little towards
+    # the back, or where the arm hangs.  Nothing is solved -- the level and the
+    # way say which, and a hold that has not said both leaves the hand alone.
+    SLOT_TABLE = {
+        (None, None): ("own", "default"),
+        ("low", None): ("own", "default"),
+        ("high", "lock"): ("own", "above"),
+        ("high", "wrap"): ("other", "above"),
+        ("low", "wrap"): ("other", "above"),
+        ("low", "lock"): ("other", "below"),
+        ("above", "lock"): ("own", "above"),
+        ("above", "wrap"): ("other", "above"),
+    }
+    for side in ("L", "R"):
+        for (level, way), (where, slot) in SLOT_TABLE.items():
+            lands = side if where == "own" else other(side)
+            aim = slot_bearing(lands, slot)
+            got = hand_bearing(0.0, side, settled_wind(side, level, way))
+            assert abs(wrap180(got - aim)) < 1e-9, (side, level, way, got, aim)
+            assert slot_of(side, level, way) == (lands, slot), (side, level, way)
 
-    # a settled hand really is where the arm is shortest, within what the two
-    # things that stop it allow: nothing on its own rim is nearer its partner's
-    # hand and still legal.  And both of those stops hold everywhere.
-    slack, closest = 0.0, 99.0
-    for lead_turn in (0, 90, 180, 270):
-        for follow_turn in (0, 90, 180, 270):
-            start = canonicalise(spin_about(spin_about(
-                rest(), "lead", lead_turn), "follow", follow_turn))
-            pose = settled(start, HOLD, {"L": "low"})
-            was = hands_of(start)
-            floor = min(MEET, math.dist(was["lead"]["L"], was["follow"]["L"]))
-            p = hands_of(pose)
-            a, b = p["lead"]["L"], p["follow"]["L"]
-            # sliding never brings two joined marks closer than `MEET` -- and
-            # where an orientation had already put them nearer than that, it
-            # does not close the gap any further either
-            assert math.dist(a, b) >= floor - 0.01, (lead_turn, follow_turn)
-            closest = min(closest, math.dist(a, b))
-            for who in ("lead", "follow"):
-                apart = wrap180(pose[f"{who}_wind"]["R"]
-                                - pose[f"{who}_wind"]["L"] + 2 * ARM_REST)
-                assert abs(apart) >= 2 * HAND_GAP - 0.01, (who, apart)
-            # nowhere legal on the lead's rim is nearer the hand they hold
-            for w in range(-CARRY, CARRY + 1):
-                gap = wrap180(2 * ARM_REST + pose["lead_wind"]["R"] - w)
-                q = hand_point(pose["lead"], pose["lead_facing"], "L", w)
-                if abs(gap) < 2 * HAND_GAP or math.dist(q, b) < floor:
-                    continue
-                slack = max(slack, math.dist(a, b) - math.dist(q, b))
-    assert slack < 0.6, slack
-
-    # and the floor leaves enough line for the two hues to say anything
-    assert MEET - 2 * (R + CAP) > 15, MEET
-
-    # an `above` reach goes over rather than round, so it is a straight run
-    over = straight_reach((-20.0, 28.0), (20.0, -28.0))
-    assert all(abs((q[0] - over[0][0]) * (over[-1][1] - over[0][1])
-                   - (q[1] - over[0][1]) * (over[-1][0] - over[0][0])) < 0.01
-               for q in over), "above bends"
-
-    # a body turning carries its line with it: the way round it pays out is
-    # counter to the turn, so the place the line leaves stays put
-    turning = [spin_about(rest(), "lead", d) for d in (0, 8, 16)]
-    assert trailing(turning, "lead")[0] == -1, "clockwise did not trail"
-    assert trailing(turning[::-1], "lead")[0] == 1, "anticlockwise did not trail"
-    assert trailing([rest()] * 3, "lead") == [0, 0, 0], "a still body had a view"
-
-    # every hand comes home: a cycle settles back where it started, and no
-    # hand jumps between frames -- the solver runs from rest each time, so
-    # this is a claim about the answer being continuous in the pose
-    for name, move in MOVES.items():
-        walk = settle_cycle(cycle(move), {"L": "left"}, {"L": "low"})
-        for who, sd in (("lead", "L"), ("follow", "L")):
-            steps = [q[f"{who}_wind"][sd] for q in walk]
-            assert abs(steps[0] - steps[-1]) < 0.01, (name, who, steps[0])
-            worst = max(abs(b - a) for a, b in zip(steps, steps[1:]))
-            assert worst < 20, (name, who, worst)
+    # the six are six: no two of them land on top of each other, and no two
+    # marks in any of them can touch
+    places = {(side, slot): slot_bearing(side, slot)
+              for side in ("L", "R") for slot in SLOTS}
+    apart = min(abs(wrap180(a - b))
+                for i, a in enumerate(places.values())
+                for b in list(places.values())[i + 1:])
+    assert apart > 2 * math.degrees(math.asin(R / BODY_R)), apart
 
     # a reach is drawn in its two hands' own colours, not one hue twice
     crossed = frame("f", {"L": "right"}, {"L": "low"})
     assert "var(--left-deep)" in crossed and "var(--right)" in crossed, crossed[:80]
+
+    # THE ONE THAT MATTERS.  Only an `above` connection may pass through a
+    # body -- and a moving picture is not the frames it is sampled at, it is
+    # the blend between them, point by point.  Two neighbouring frames that
+    # disagree about which side of a body the line goes round are drawn, in
+    # between, as a line sweeping straight through that body.  So this checks
+    # what is *drawn*, not what is computed: every consecutive pair, part way
+    # between, with the bodies interpolated too because they are moving as
+    # well.  The version of this that looked only at the sampled frames let a
+    # line through the middle of a dancer, twice.
+    swept, at = 99.0, None
+    for name, move in MOVES.items():
+        poses = [settled(q, {"L": "left"}, {}, {}) for q in cycle(move)]
+        hands = [hands_of(q) for q in poses]
+        frames = [(h["lead"]["L"], h["follow"][side_of("left")],
+                   (q["lead"], q["lead_facing"]),
+                   (q["follow"], q["follow_facing"]))
+                  for h, q in zip(hands, poses)]
+        way = one_way_round(frames)
+        runs = [routed(*f, way=way)[0] for f in frames]
+        for k in range(len(runs) - 1):
+            qa, qb = poses[k], poses[k + 1]
+            for part in (0.25, 0.5, 0.75):
+                drawn = [(a[0] + (b[0] - a[0]) * part,
+                          a[1] + (b[1] - a[1]) * part)
+                         for a, b in zip(runs[k], runs[k + 1])]
+                for who in ("lead", "follow"):
+                    c = tuple(qa[who][i] + (qb[who][i] - qa[who][i]) * part
+                              for i in (0, 1))
+                    f = (qa[f"{who}_facing"] + part
+                         * (qb[f"{who}_facing"] - qa[f"{who}_facing"]))
+                    for p, q in zip(drawn, drawn[1:]):
+                        for i in range(9):
+                            t = i / 8
+                            pt = (p[0] + (q[0] - p[0]) * t,
+                                  p[1] + (q[1] - p[1]) * t)
+                            deep = math.dist(pt, c) - outline_r(
+                                bearing(pt[0] - c[0], pt[1] - c[1]) - f)
+                            if deep < swept:
+                                swept, at = deep, (name, k, who)
+    assert swept > -0.3, (swept, at)
 
     # and no reach ever crosses into a body: every hold, every quarter-turn
     # orientation, sampled along the route it would actually be drawn with
@@ -192,7 +201,8 @@ def check_frame():
     print(f"  frame: hands at rest exact; orbit collapses onto axis at {walked};"
           f" every cycle closes; every rim is quiet and breaks at its hands;"
           f" a facing never steps more than {biggest:.1f} degrees a frame;"
-          f" every reach stays on or outside the bodies (margin {worst:.2f})"
+          f" every reach stays on or outside the bodies (margin {worst:.2f},"
+          f" and {swept:.2f} at every instant a moving one draws)"
           f" and starts {R + CAP} from its hand (off by {ends_off:.2f})")
 
 def check_sign():

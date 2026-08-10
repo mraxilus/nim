@@ -64,6 +64,14 @@ svg.mv { display: block; }
 svg.still { display: none; }
 @media (prefers-reduced-motion: reduce) {
   svg.moving { display: none; } svg.still { display: block; } }
+table.slots { border-collapse: collapse; font-size: 0.82rem; text-align: left; }
+table.slots th, table.slots td { padding: 0.3rem 0.9rem 0.3rem 0;
+  border-bottom: 1px solid var(--rule); white-space: nowrap; }
+table.slots th { font: 600 0.64rem/1.4 var(--mono); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--faint); }
+table.slots td { color: var(--dim); }
+table.slots td:first-child { color: var(--ink); }
+
 .key { display: grid; gap: 0.5rem 1rem; margin: 1.1rem 0 0;
   grid-template-columns: auto 1fr; align-items: center; font-size: 0.87rem; }
 .key svg { display: block; }
