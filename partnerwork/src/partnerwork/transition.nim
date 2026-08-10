@@ -1,26 +1,38 @@
 ## Derive every change of frame from the primitive transition helpers.
 ##
-## The ontology names six helpers, and marks two of them with an asterisk:
-## `place*` is "collect then drop" and `cut*` is "drop then collect", each
-## keeping contact through a trace.  The asterisks are right, so neither is a
-## primitive here.  Of the remaining four, `flick` is a `drop` led with momentum
-## and changes no frame, and `trace` slides a hand along the partner's body,
-## which needs a place on the body to slide to and so waits for the rotation
-## axis.
+## The ontology names six helpers, and marks two of them with an asterisk.
+##   `place*` is "collect then drop" and `cut*` is "drop then collect", each
+##     keeping contact through a trace.  The asterisks are right, so neither is
+##     a primitive here.
+##   Of the remaining four, `flick` is a `drop` led with momentum and changes
+##     no frame, and `trace` slides a hand along the partner's body, which
+##     needs a place on the body to slide to and so waits for the rotation
+##     axis.
+##   That leaves two primitives, `collect` and `drop`, and one relation: two
+##     frames are one move apart exactly when one connection separates them.
 ##
-## That leaves two primitives, `collect` and `drop`, and one relation: two frames
-## are one move apart exactly when one connection separates them.  `place` and
-## `cut` are kept as *compounds*, because a lead thinks of each as one move even
-## though the arms do two, and because the workbook writes them in single cells.
+## `place` and `cut` are kept as *compounds*.
+##   Because a lead thinks of each as one move even though the arms do two, and
+##     because the workbook writes them in single cells.
+##   Cost of keeping compounds beside primitives: a compound is not a `Move`,
+##     so consumers carry a second reading -- `compoundWay`, `compoundName`,
+##     `compoundPhrase` beside `moves`, `label`, `phrase`.  Accepted --
+##     dropping either register would misname something the vocabulary or the
+##     arms insist on.
 ##
-## Nothing here is a table of moves.  A move exists between two frames exactly
-## when the difference between them is one primitive, so the transition relation
-## is *classified* rather than listed, and the matrix in the workbook becomes
-## something to check against rather than the source of truth.
+## Nothing here is a table of moves.
+##   A move exists between two frames exactly when the difference between them
+##     is one primitive, so the transition relation is *classified* rather than
+##     listed, and the matrix in the workbook becomes something to check
+##     against rather than the source of truth.
+##   Cost of classifying instead of listing: every "what moves exist" question
+##     is a scan over `FRAMES` rather than a lookup.  Accepted -- a written
+##     table could silently disagree with the physics it claims to record.
 ##
 ## Every primitive is reversible: `collect` undoes `drop`, and `pass` and `cut`
-## undo themselves.  The relation is therefore symmetric, which is the strongest
-## law the module offers for testing.
+## undo themselves.
+##   The relation is therefore symmetric, which is the strongest law the module
+##     offers for testing.
 
 {.experimental: "strictFuncs".}
 
@@ -144,17 +156,18 @@ func classify*(a, b: Frame): Option[Helper] =
 
 func compound*(a, b: Frame): Option[Compound] =
   ## Get the compound joining two frames, where the ontology names one.
-  ##
-  ## Both are two primitives with a name.  A `place` hands one connection to the
-  ## lead's other hand; a `cut` hands one arm over the other.
-  ##
-  ## A `place` is routed through the open frame, letting go and taking again,
-  ## rather than through a moment where both hands of the lead hold one hand of
-  ## the follow.  That moment is the same ambiguity the ontology already refuses
-  ## in `Left-to-all`, one hand joined to two things, so it is refused in this
-  ## direction too.  A lead who keeps contact through the hand-off is dancing the
-  ## quality the workbook means by "maintaining a connection via a trace"; the
-  ## frames either side of it are the same either way.
+  ##   Both are two primitives with a name.
+  ##     A `place` hands one connection to the lead's other hand; a `cut` hands
+  ##       one arm over the other.
+  ##   A `place` is routed through the open frame, letting go and taking again,
+  ##     rather than through a moment where both hands of the lead hold one
+  ##     hand of the follow.
+  ##     That moment is the same ambiguity the ontology already refuses in
+  ##       `Left-to-all`, one hand joined to two things, so it is refused in
+  ##       this direction too.
+  ##     A lead who keeps contact through the hand-off is dancing the quality
+  ##       the workbook means by "maintaining a connection via a trace"; the
+  ##       frames either side of it are the same either way.
   if a == b or not a.isValid or not b.isValid:
     return none(Compound)
   if a.hold == b.hold:
@@ -295,20 +308,19 @@ func compoundPhrase*(source, destination: Frame): string =
 
 func label*(source: Frame; move: Move): seq[string] =
   ## Name a move in the fewest words that still say what to do, a line at a time.
-  ##
-  ## A `collect` has to say which hand of the follow it takes, because the same
-  ## hand of the lead can reach either, and it has to say over or under where
-  ## both arms cross, because that is the whole difference between the two frames
-  ## it could arrive in.  A `drop` says neither: the hand that acts is already
-  ## holding one thing, so there is nothing left to choose.
-  ##
-  ## The hand named is the follow's, and is said to be by its case alone: `left`
-  ## is the follow's where `Left` would be the lead's, throughout the ontology.
-  ## Which hand of the *lead* acts is left to the ink the words are written in,
-  ## which is what a drawing has that a sentence does not.
-  ##
-  ## The lines are short so that the words fit where a drawing has room for them,
-  ## which is usually beside a line rather than along it.
+  ##   A `collect` has to say which hand of the follow it takes, because the
+  ##     same hand of the lead can reach either, and it has to say over or
+  ##     under where both arms cross, because that is the whole difference
+  ##     between the two frames it could arrive in.
+  ##   A `drop` says neither: the hand that acts is already holding one thing,
+  ##     so there is nothing left to choose.
+  ##   The hand named is the follow's, and is said to be by its case alone:
+  ##     `left` is the follow's where `Left` would be the lead's, throughout
+  ##     the ontology.
+  ##     Which hand of the *lead* acts is left to the ink the words are written
+  ##       in, which is what a drawing has that a sentence does not.
+  ##   The lines are short so that the words fit where a drawing has room for
+  ##     them, which is usually beside a line rather than along it.
   case move.helper
   of Helper.Collect:
     result = @["collect " & followName(move.to.hold[move.side].get)]

@@ -1,26 +1,38 @@
 ## Model the rotation axis of the ontology, which is not finished.
 ##
 ## The workbook has twelve turn sheets, one for each combination of who turns
-## (lead or follow), which way (left or right) and how far (half, one, or one and
-## a half turns), and all twelve are empty.  This module is what the hand-to-hand
-## model says about them before any of them is filled in, kept separate so that
-## nothing uncertain leaks into `frame.nim` or `transition.nim`.
+## (lead or follow), which way (left or right) and how far (half, one, or one
+## and a half turns), and all twelve are empty.
+##   This module is what the hand-to-hand model says about them before any of
+##     them is filled in.
+##   Kept separate so that nothing uncertain leaks into `frame.nim` or
+##     `transition.nim`.
+##     Cost of the separation: a turned couple is a `Posture`, not a `Frame`,
+##       so every consumer of turning joins the two models at the seam `rest`
+##       marks.  Accepted -- the certain half stays checkable against the
+##       workbook while this half is still being measured.
 ##
 ## The quantity a rotation adds is *twist*: how far the follow's body has turned
-## relative to the lead's.  It is one number for the couple rather than one per
-## arm, because both bodies are rigid, so both arms see the same relative
-## rotation.  Two consequences follow without any measurement:
+## relative to the lead's.
+##   It is one number for the couple rather than one per arm, because both
+##     bodies are rigid, so both arms see the same relative rotation.
+##     Cost of one number for the couple: the model cannot say which dancer's
+##       motion stored a twist, only how much is stored.  Accepted -- half the
+##       workbook's twelve sheets land where the other half do, so the sheets
+##       do not say either.
+##   Two consequences follow without any measurement:
+##     A rotation of the whole couple stores no twist, which is why a couple
+##       can travel round the floor all night without unwinding.
+##     The parity of the twist decides the geometry the hand-to-hand model
+##       rests on.  At half a turn the follow's back is to the lead, their left
+##       hand is now on the lead's left, and every connection that was crossed
+##       is parallel.
 ##
-## - a rotation of the whole couple stores no twist, which is why a couple can
-##   travel round the floor all night without unwinding;
-## - the parity of the twist decides the geometry the hand-to-hand model rests
-##   on.  At half a turn the follow's back is to the lead, their left hand is now
-##   on the lead's left, and every connection that was crossed is parallel.
-##
-## This is also where a hand on the partner's body belongs.  It does not add a
-## frame: it takes the turn away, because an arm already around a partner has no
-## twist left to give.  And it is what a wound arm ends up on, which is what the
-## vocabulary's `wrap` and `lock` name.
+## This is also where a hand on the partner's body belongs.
+##   It does not add a frame: it takes the turn away, because an arm already
+##     around a partner has no twist left to give.
+##   And it is what a wound arm ends up on, which is what the vocabulary's
+##     `wrap` and `lock` name.
 
 {.experimental: "strictFuncs".}
 
@@ -121,21 +133,21 @@ func parallelSite*(side: Side; twist: HalfTurns): Site =
 
 func armCapacity*(blocker: Option[Blocker]; level: Level): HalfTurns =
   ## Get how much twist the arm itself can carry, wherever it has ended up.
-  ##
-  ## Measured on `Left to left`, one hand: a low wrap holds half a turn and
-  ## everything else holds a full one.  The arm has to cross the torso to wrap
-  ## low, and it runs out of length before the hold does; carried behind the
-  ## back, or up at the shoulder or the neck, it has further to go.
-  ##
-  ## This is the second of two ceilings, and the reason there are two: the first
-  ## is a property of what joins the couple, this one of what the arm is doing.
-  ## Which of them binds is what makes a wrap a wrap and a lock a lock -- see
-  ## `blocker`.
-  ##
-  ## An arm above the head is on the axis the couple turns about, so it has
-  ## nothing to wind round and nothing to run out of.  There is a case in which
-  ## it blocks anyway and this does not know it yet, which is why `ABOVE_BLOCKS`
-  ## says so out loud rather than being quietly absent.
+  ##   Measured on `Left to left`, one hand: a low wrap holds half a turn and
+  ##     everything else holds a full one.
+  ##     The arm has to cross the torso to wrap low, and it runs out of length
+  ##       before the hold does; carried behind the back, or up at the shoulder
+  ##       or the neck, it has further to go.
+  ##   This is the second of two ceilings, and the reason there are two: the
+  ##     first is a property of what joins the couple, this one of what the arm
+  ##     is doing.
+  ##     Which of them binds is what makes a wrap a wrap and a lock a lock --
+  ##       see `blocker`.
+  ##   An arm above the head is on the axis the couple turns about, so it has
+  ##     nothing to wind round and nothing to run out of.
+  ##     There is a case in which it blocks anyway and this does not know it
+  ##       yet, which is why `ABOVE_BLOCKS` says so out loud rather than being
+  ##       quietly absent.
   if level == Level.Above:
     return high(HalfTurns)
   if blocker == some(Blocker.Wrap) and level == Level.Low:
@@ -164,22 +176,21 @@ func capacity*(posture: Posture): HalfTurns =
 
 func blocker*(twist: HalfTurns): Option[Blocker] =
   ## Get what the arms are doing at a given twist.
-  ##
-  ## Size decides, not direction: half a turn wraps and a full turn locks,
-  ## whichever way it is danced.
-  ##
-  ## This was fitted to two cells of the `rotations` sheet and is now a
-  ## consequence of a measured one.  A low wrap holds half a turn and no more
-  ## (`armCapacity`), so an arm carried low that is asked for a full turn cannot
-  ## still be wrapped -- it has to have gone behind the back, which is a lock.
-  ## The size of the turn decides because the arm runs out at a size.
-  ##
-  ## Rejected: the two cells were equally well fitted by a rule where the
-  ## direction decides -- one way carrying the arm across the front and so
-  ## wrapping, the other behind the back and so locking, at either size.  That
-  ## rule has nothing to say about why a low wrap should bind tighter than a low
-  ## lock, and it makes a wrap and a lock two different motions rather than two
-  ## depths of one.  The measurement is what chose between them.
+  ##   Size decides, not direction: half a turn wraps and a full turn locks,
+  ##     whichever way it is danced.
+  ##   This was fitted to two cells of the `rotations` sheet and is now a
+  ##     consequence of a measured one.
+  ##     A low wrap holds half a turn and no more (`armCapacity`), so an arm
+  ##       carried low that is asked for a full turn cannot still be wrapped --
+  ##       it has to have gone behind the back, which is a lock.
+  ##     The size of the turn decides because the arm runs out at a size.
+  ##   Rejected: a rule where the direction decides -- one way carrying the arm
+  ##     across the front and so wrapping, the other behind the back and so
+  ##     locking, at either size.
+  ##     The two cells were equally well fitted by it, but it has nothing to
+  ##       say about why a low wrap should bind tighter than a low lock, and it
+  ##       makes a wrap and a lock two different motions rather than two depths
+  ##       of one.  The measurement is what chose between them.
   case abs(twist)
   of 0: none(Blocker)
   of 1: some(Blocker.Wrap)
@@ -197,14 +208,13 @@ func blockerOf*(twist: HalfTurns; level: Level): Option[Blocker] =
 
 func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
   ## Get how much twist the arms of a posture carry between them.
-  ##
-  ## The tightest arm binds.  A couple is held together by all of its
-  ## connections at once, so the first arm to run out is the one that stops the
-  ## turn -- and only the arms that are holding count, because a free arm is
-  ## carrying nothing and has nothing to run out of.
-  ##
-  ## With no arm holding at all there is nothing to run out: two people who are
-  ## not touching can each face wherever they like.
+  ##   The tightest arm binds.
+  ##     A couple is held together by all of its connections at once, so the
+  ##       first arm to run out is the one that stops the turn -- and only the
+  ##       arms that are holding count, because a free arm is carrying nothing
+  ##       and has nothing to run out of.
+  ##   With no arm holding at all there is nothing to run out: two people who
+  ##     are not touching can each face wherever they like.
   if posture.frame.countHolds == 0:
     return high(HalfTurns)
   result = high(HalfTurns)
@@ -216,16 +226,14 @@ func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
 
 func around*(blocker: Blocker; level: Level): Option[BodySite] =
   ## Get the place on the body a wound arm is carried around.
-  ##
-  ## The workbook asks whether an upper and a lower wrap are separate modifiers.
-  ## They are not: the level the arm is already carried at decides where it
-  ## lands, so the body site is derived rather than named.  Reading the
-  ## vocabulary's own definitions, a low lock is behind the back and a high lock
-  ## is at the shoulder of the same arm; a low wrap crosses the torso and a high
-  ## wrap goes round the neck.
-  ##
-  ## Nothing, for an arm over the head: it is on the axis rather than around
-  ## anything, which is why it carries no blocker to begin with.
+  ##   The workbook asks whether an upper and a lower wrap are separate
+  ##     modifiers.  They are not: the level the arm is already carried at
+  ##     decides where it lands, so the body site is derived rather than named.
+  ##     Reading the vocabulary's own definitions, a low lock is behind the
+  ##       back and a high lock is at the shoulder of the same arm; a low wrap
+  ##       crosses the torso and a high wrap goes round the neck.
+  ##   Nothing, for an arm over the head: it is on the axis rather than around
+  ##     anything, which is why it carries no blocker to begin with.
   if level == Level.Above:
     return none(BodySite)
   case blocker
@@ -282,15 +290,14 @@ func stored*(posture: Posture; motion: Turn): HalfTurns =
 
 func holds*(posture: Posture; twist: HalfTurns): bool =
   ## Test whether a posture can stand at a given twist.
-  ##
-  ## Two ceilings, and a posture has to be under both: what joins the couple can
-  ## only give away so much turn, and the arm can only carry so much wherever it
-  ## has wound up.  One definition, so that everything that refuses a turn
-  ## refuses it for the same reason.
-  ##
-  ## On the hold that has been measured neither ceiling is slack: the arm's is
-  ## what makes a full turn a lock rather than a wrap, and the hold's is what
-  ## refuses one and a half.
+  ##   Two ceilings, and a posture has to be under both: what joins the couple
+  ##     can only give away so much turn, and the arm can only carry so much
+  ##     wherever it has wound up.
+  ##     One definition, so that everything that refuses a turn refuses it for
+  ##       the same reason.
+  ##   On the hold that has been measured neither ceiling is slack: the arm's
+  ##     is what makes a full turn a lock rather than a wrap, and the hold's is
+  ##     what refuses one and a half.
   abs(twist) <= posture.capacity and abs(twist) <= posture.armsCapacity(twist)
 
 
@@ -382,21 +389,20 @@ func refusal*(posture: Posture; twist: HalfTurns): Option[Refusal] =
 
 func turnsOf*(posture: Posture): seq[Offer] =
   ## Get every turn out of a posture, the refused ones included.
-  ##
-  ## Every turn the workbook has a sheet for: either dancer, either way, by a
-  ## half, a whole or one and a half.  Twelve of them, which is twelve sheets --
-  ## and half of them land where the other half do, because a turn is stored as
-  ## one number for the couple and it does not care which of them moved.
-  ##
-  ## The refused ones are carried rather than dropped.  A page that listed only
-  ## what can be danced would be a menu; what makes it a validator is that it
-  ## can say what cannot be danced, and why.
-  ##
-  ## On axis only.  A dancer can also turn about the couple's centre of mass
-  ## rather than their own -- `About.Orbit` -- and how much twist that stores is
-  ## not something this model has been told.  Offering an orbit before knowing
-  ## that would be the page inventing a move, which is the one thing it is for
-  ## not doing.
+  ##   Every turn the workbook has a sheet for: either dancer, either way, by a
+  ##     half, a whole or one and a half.
+  ##     Twelve of them, which is twelve sheets -- and half of them land where
+  ##       the other half do, because a turn is stored as one number for the
+  ##       couple and it does not care which of them moved.
+  ##   The refused ones are carried rather than dropped.
+  ##     A page that listed only what can be danced would be a menu; what makes
+  ##       it a validator is that it can say what cannot be danced, and why.
+  ##   On axis only.
+  ##     A dancer can also turn about the couple's centre of mass rather than
+  ##       their own -- `About.Orbit` -- and how much twist that stores is not
+  ##       something this model has been told.
+  ##     Offering an orbit before knowing that would be the page inventing a
+  ##       move, which is the one thing it is for not doing.
   for who in Dancer:
     for way in TURN_WAYS:
       for size in 1 .. MOST_TURN:

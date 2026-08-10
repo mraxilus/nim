@@ -2,25 +2,33 @@
 ##
 ## A *frame* is everything the two bodies hold at one instant: which hand of the
 ## lead holds which hand of the follow, and how the arms lie where they overlap.
-## It is the state of the ontology.  Every non-rotating move is a change of
-## frame, and every change is derived from three physical facts:
+##   It is the state of the ontology.
+##   Every non-rotating move is a change of frame, and every change is derived
+##     from three physical facts:
+##     A hand holds at most one hand, and a hand of the follow is held by at
+##       most one hand of the lead.
+##     The partners face each other, so a lead hand reaches the *opposite* hand
+##       of the follow without crossing the midline between the bodies, and the
+##       *same-named* hand only by crossing it.
+##     When both connections cross, the forearms overlap, so one arm lies over
+##       the other and which one is part of the state, not decoration.
+##       The third fact is why `Left-to-left and Right-to-right` has an
+##         over/under distinction and `Left-to-right and Right-to-left` does
+##         not: only the first pair crosses.
+##       Cost of recording arm order in the state: the two crossing orders are
+##         two frames one `cut` apart, so a reader asking for the *position*
+##         must strip the order -- see `position`.  Accepted -- merging them
+##         would offer a move the arms forbid.
 ##
-## - a hand holds at most one hand, and a hand of the follow is held by at most
-##   one hand of the lead;
-## - the partners face each other, so a lead hand reaches the *opposite* hand of
-##   the follow without crossing the midline between the bodies, and the
-##   *same-named* hand only by crossing it;
-## - when both connections cross, the forearms overlap, so one arm lies over the
-##   other and which one is part of the state, not decoration.
-##
-## The third fact is why `Left-to-left and Right-to-right` has an over/under
-## distinction and `Left-to-right and Right-to-left` does not: only the first
-## pair crosses.
-##
-## Only hands connect here.  A hand resting on a partner's body is real and is
-## deliberately absent: nothing in the hand-to-hand ontology depends on it, and
-## where it does matter is in stopping a turn, so it belongs with the rotation
-## axis in `rotation.nim`.
+## Only hands connect here.
+##   A hand resting on a partner's body is real and is deliberately absent:
+##     nothing in the hand-to-hand ontology depends on it, and where it does
+##     matter is in stopping a turn, so it belongs with the rotation axis in
+##     `rotation.nim`.
+##   Cost of leaving body contact out: the workbook's `closed` and
+##     `half-closed` states have no frame here, so `workbook.nim` defers them
+##     unchecked.  Accepted -- the audit reports the deferral rather than
+##     hiding it.
 
 {.experimental: "strictFuncs".}
 
@@ -118,15 +126,16 @@ func isHeld*(frame: Frame; site: Site): bool = frame.holder(site).isSome
 
 func isValid*(frame: Frame): bool =
   ## Test the two laws every frame obeys.
-  ##
-  ## No hand is shared.  One hand of the follow cannot be held by both hands of
-  ## the lead, and the ontology leaves out `Left-to-all` for the mirrored reason:
-  ## a hand joined to two things is an ambiguous lead, and it is what makes the
-  ## state space finite.  The law is what sends a hand-off through the open frame
-  ## rather than through a moment where two hands hold one.
-  ##
-  ## An arm order is recorded exactly where the forearms overlap, so two frames
-  ## that a dancer cannot tell apart cannot be different values.
+  ##   No hand is shared.
+  ##     One hand of the follow cannot be held by both hands of the lead, and
+  ##       the ontology leaves out `Left-to-all` for the mirrored reason: a
+  ##       hand joined to two things is an ambiguous lead.
+  ##     It is what makes the state space finite.
+  ##     The law is what sends a hand-off through the open frame rather than
+  ##       through a moment where two hands hold one.
+  ##   An arm order is recorded exactly where the forearms overlap.
+  ##     So two frames that a dancer cannot tell apart cannot be different
+  ##       values.
   if frame.hold[Side.Left].isSome and frame.hold[Side.Left] == frame.hold[Side.Right]:
     return false
   frame.over.isSome == frame.hasOverlap
@@ -232,16 +241,14 @@ func briefName*(site: Site): string = followName(site)[0 .. 0]
 
 func brief*(frame: Frame): string =
   ## Name a frame in as few letters as still say which frame it is.
-  ##
-  ## `Left-to-left over Right-to-right` is the name, and where the name will not
-  ## fit -- down the side of the matrix, across the top of it -- the choice is
-  ## between abbreviating it and wrapping it over three lines.  Wrapped, the
-  ## reader has to parse a paragraph per axis; abbreviated, `L-to-l over R-to-r`
-  ## is read at a glance.
-  ##
-  ## Nothing is lost, because a hand's case is the whole of what says whose it
-  ## is and a letter has a case: `L` is the lead's where `l` is the follow's,
-  ## exactly as the words are.  See `leadName`.
+  ##   `Left-to-left over Right-to-right` is the name, and where the name will
+  ##     not fit -- down the side of the matrix, across the top of it -- the
+  ##     choice is between abbreviating it and wrapping it over three lines.
+  ##     Wrapped, the reader has to parse a paragraph per axis; abbreviated,
+  ##       `L-to-l over R-to-r` is read at a glance.
+  ##   Nothing is lost, because a hand's case is the whole of what says whose
+  ##     it is and a letter has a case: `L` is the lead's where `l` is the
+  ##     follow's, exactly as the words are.  See `leadName`.
   case frame.countHolds
   of 0:
     "open"

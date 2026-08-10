@@ -1,15 +1,17 @@
 ## Draw the rotation axis as what it is: one line, with the couple on it.
 ##
-## The hand-to-hand half is a graph, so it is drawn as a graph.  Rotation is not
-## -- it is a single quantity, twist, and every posture of one frame held at one
-## height is somewhere along it.  So it is drawn as an axle: the postures laid
-## out in the order they are turned into, the couple standing on one, and every
-## turn out of it as an arc from where they are to where it would put them.
-##
-## The turns that cannot be taken are drawn too, dashed and dimmed, for the same
-## reason the map draws the frames you cannot reach: a drawing that showed only
-## what is allowed would be a menu, and what makes this a validator is that it
-## can show a turn and refuse it in the same breath.
+##   The hand-to-hand half is a graph, so it is drawn as a graph.  Rotation
+##     is not -- it is a single quantity, twist, and every posture of one
+##     frame held at one height is somewhere along it.  So it is drawn as an
+##     axle: the postures laid out in the order they are turned into, the
+##     couple standing on one, and every turn out of it as an arc from where
+##     they are to where it would put them.
+##   The turns that cannot be taken are drawn too, dashed and dimmed, for
+##     the same reason the map draws the frames you cannot reach.
+##     Cost of drawing the refused: ink and room spent on turns the couple
+##       cannot take.  Accepted -- a drawing that showed only what is
+##       allowed would be a menu, and what makes this a validator is that
+##       it can show a turn and refuse it in the same breath.
 
 {.experimental: "strictFuncs".}
 
@@ -41,10 +43,9 @@ func axleWidth*(stood: Posture): int =
 
 func centreOf*(stood: Posture; twist: HalfTurns): (int, int) =
   ## Get where a twist sits along the axle.
-  ##
-  ## Placed by the twist itself rather than by an index, so the distance between
-  ## two postures on the drawing is the size of the turn between them.  A half
-  ## turn is one step wherever it is taken.
+  ##   Placed by the twist itself rather than by an index, so the distance
+  ##     between two postures on the drawing is the size of the turn between
+  ##     them.  A half turn is one step wherever it is taken.
   (axleWidth(stood) div 2 + twist * STEP, AXLE_Y)
 
 
@@ -59,13 +60,14 @@ func standing*(stood: Posture): seq[HalfTurns] =
 #[ The Drawing ]#
 
 func arc(stood: Posture; twist: HalfTurns; refused: bool): string =
-  ## Draw one landing as an arc from where the couple are to where it puts them.
-  ##
-  ## One arc per place a turn lands, not one per turn.  Twelve turns land in six
-  ## places, because a turn is stored as one number for the couple and that
-  ## number does not care which of them moved -- so twelve arcs would be six
-  ## drawn twice, on top of each other, saying the same thing.  Which dancer
-  ## takes it is in the list beside the drawing, where there is room to say it.
+  ## Draw one landing as an arc from where the couple are to where it puts
+  ## them.
+  ##   One arc per place a turn lands, not one per turn.  Twelve turns land
+  ##     in six places, because a turn is stored as one number for the
+  ##     couple and that number does not care which of them moved -- so
+  ##     twelve arcs would be six drawn twice, on top of each other, saying
+  ##     the same thing.  Which dancer takes it is in the list beside the
+  ##     drawing, where there is room to say it.
   let
     (ax, ay) = centreOf(stood, stood.twist)
     (bx, by) = centreOf(stood, twist)
@@ -107,6 +109,7 @@ func renderAxle*(stood: Posture; motion = Motion.Still;
       $(centreOf(stood, ends[0])[0]) & "\" y1=\"" & $AXLE_Y & "\" x2=\"" &
       $(centreOf(stood, ends[^1])[0]) & "\" y2=\"" & $AXLE_Y & "\"/>"
 
+  # The arcs: one per place a turn can land, refused ones included.
   var drawn: seq[HalfTurns] = @[]
   for offer in turnsOf(stood):
     if offer.to.twist == stood.twist or offer.to.twist in drawn:
@@ -114,6 +117,7 @@ func renderAxle*(stood: Posture; motion = Motion.Still;
     drawn.add offer.to.twist
     result.add arc(stood, offer.to.twist, offer.refused.isSome)
 
+  # The postures standing on the axle, each named for its turn and its arms.
   for twist in ends:
     var landing = stood
     landing.twist = twist

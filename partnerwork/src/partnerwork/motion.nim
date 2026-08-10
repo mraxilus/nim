@@ -1,28 +1,37 @@
 ## Say when a drawing moves, so the picture and the page agree about it.
 ##
-## A move is not an instant.  It is something the drawing does, and every drawing
-## says it the same way at heart: the mark that says *you are here* leaves the
-## frame being held and arrives at the frame chosen.  That much is shared, and is
-## what makes two drawings of one ontology read as two views of one movement.
-##
-## How much else a drawing has to do around that is its own business, and differs
-## by how much it is showing.  A drawing of one frame and its ways out has to
-## clear the ways not taken before the mark can move and grow the new ones after
-## it has, and needs time to do it.  A drawing of the whole ontology has every
-## frame already in place and nothing to build: the mark moves, what is within
-## reach changes, and that is the whole of it.  Giving both the same schedule
-## makes the second wait out clauses it has nothing to say.
-##
-## So a `Tempo` is what a drawing tells the page: when the mark moves, and when
-## the drawing has finished saying what it has to say.  The page needs that to
-## know when the state may move, and the stylesheet needs the same numbers to run
-## the animation, so they are written onto the drawing as custom properties and
-## neither can drift from the other.
-##
-## The whole of a move is told in one drawing.  The page replaces the drawing
-## exactly once, at the end, at the one instant when what is on the screen and
-## what would replace it are the same picture.  A swap made there cannot be seen,
-## which is why it is made there and nowhere else.
+##   A move is not an instant.  It is something the drawing does, and every
+##     drawing says it the same way at heart: the mark that says *you are
+##     here* leaves the frame being held and arrives at the frame chosen.
+##     That much is shared, and is what makes two drawings of one ontology
+##     read as two views of one movement.
+##   How much else a drawing has to do around that is its own business, and
+##     differs by how much it is showing.  A drawing of one frame and its
+##     ways out has to clear the ways not taken before the mark can move and
+##     grow the new ones after it has, and needs time to do it; a drawing of
+##     the whole ontology has every frame already in place and nothing to
+##     build -- the mark moves, what is within reach changes, and that is
+##     the whole of it.  So each drawing carries its own `Tempo` rather than
+##     sharing one schedule.
+##     Cost of a tempo per drawing: the page can assume nothing about
+##       timing -- it must read each drawing's own numbers.  Accepted -- one
+##       shared schedule makes the whole-ontology drawing wait out clauses
+##       it has nothing to say.
+##   A `Tempo` is what a drawing tells the page: when the mark moves, and
+##     when the drawing has finished saying what it has to say.  The page
+##     needs that to know when the state may move, and the stylesheet needs
+##     the same numbers to run the animation.
+##     Cost of writing the times onto the drawing as custom properties: the
+##       stylesheet cannot be read alone -- its numbers arrive with the
+##       markup.  Accepted -- written once onto the drawing, page and
+##       stylesheet cannot drift from each other.
+##   The whole of a move is told in one drawing.  The page replaces the
+##     drawing exactly once, at the end, at the one instant when what is on
+##     the screen and what would replace it are the same picture.
+##     Cost of swapping only at the seam: the page holds the old drawing
+##       through the whole telling, however long that takes.  Accepted -- a
+##       swap made there cannot be seen, which is why it is made there and
+##       nowhere else.
 
 {.experimental: "strictFuncs".}
 
@@ -64,11 +73,10 @@ func moveTime*(tempo: Tempo): int = tempo.leaveTime + tempo.grown
 
 func leadOnTime*(tempo: Tempo): int = tempo.moveTime
   ## Get when the second move of a compound may start.
-  ##
-  ## Not before the first has finished being told.  A lead thinks of the two as
-  ## one thing, but the ontology knows the frame between them is real, and a
-  ## drawing that began unsaying it before it had finished saying it would be
-  ## claiming the couple were never there.
+  ##   Not before the first has finished being told.  A lead thinks of the
+  ##     two as one thing, but the ontology knows the frame between them is
+  ##     real, and a drawing that began unsaying it before it had finished
+  ##     saying it would be claiming the couple were never there.
 
 
 func passStyle*(tempo: Tempo): string =
@@ -79,9 +87,8 @@ func passStyle*(tempo: Tempo): string =
 const SEAM_MARGIN* = 60
   ## Room every drawing leaves between its last movement ending and the page
   ## replacing it.
-  ##
-  ## An animation's clock starts when the browser first draws the element, a
-  ## frame or two after the page asked for the phase, so anything timed to end
-  ## exactly when the drawing is replaced is in fact still running then, and is
-  ## cut off wherever it had got to.  Nothing is moving during the margin, so it
-  ## costs the reader nothing.
+  ##   An animation's clock starts when the browser first draws the element,
+  ##     a frame or two after the page asked for the phase, so anything
+  ##     timed to end exactly when the drawing is replaced is in fact still
+  ##     running then, and is cut off wherever it had got to.
+  ##   Nothing is moving during the margin, so it costs the reader nothing.

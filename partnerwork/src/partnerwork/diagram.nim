@@ -1,29 +1,30 @@
 ## Draw a frame, once, for every place that shows one.
 ##
-## The picture is the couple seen from above, with the lead at the bottom facing
-## up the page.  Seen from there the lead's Left hand and the follow's right hand
-## are in the same column, because the partners are in mirror, so a connection
-## between them runs straight up the picture and one that crosses the midline
-## runs across it.
-##
-## The dashed line down the middle is that midline: not the divide between the
-## two people, which every connection crosses, but the plane between the left
-## and the right of the couple, which only a crossed connection crosses.  Whether
-## a link crosses it is the whole of what `crossed` means, so the picture makes
-## the distinction visible rather than asking to be read.
-##
-## The lead's hands are squares and the follow's are circles, so a picture drawn
-## too small for its captions still says which row is whose.
-##
-## Where both links cross they overlap, and the one underneath is drawn with a
-## break in it.  A break rather than a masking stroke, because a mask has to know
-## the colour of the ground it sits on and these pictures are also written out as
-## standalone files, to be shown on grounds this module cannot see.
-##
-## Colours come through custom properties with fallbacks, for the same reason:
-## inside a page that defines `--left` and `--right` the picture follows the
-## page, including its light and dark themes, and on its own it falls back to
-## ink that reads on either.
+##   The picture is the couple seen from above, with the lead at the bottom
+##     facing up the page.  Seen from there the lead's Left hand and the
+##     follow's right hand are in the same column, because the partners are
+##     in mirror, so a connection between them runs straight up the picture
+##     and one that crosses the midline runs across it.
+##   The dashed line down the middle is that midline: not the divide between
+##     the two people, which every connection crosses, but the plane between
+##     the left and the right of the couple, which only a crossed connection
+##     crosses.  Whether a link crosses it is the whole of what `crossed`
+##     means, so the picture makes the distinction visible rather than
+##     asking to be read.
+##   The lead's hands are squares and the follow's are circles, so a picture
+##     drawn too small for its captions still says which row is whose.
+##   Where both links cross they overlap, and the one underneath is drawn
+##     with a break in it.
+##     Cost of a break: the under link really is cut -- a stretch of its ink
+##       is missing.  Accepted -- a masking stroke has to know the colour of
+##       the ground it sits on, and these pictures are also written out as
+##       standalone files, to be shown on grounds this module cannot see.
+##   Colours come through custom properties with fallbacks, for the same
+##     reason: inside a page that defines `--left` and `--right` the picture
+##     follows the page, including its light and dark themes.
+##     Cost of fallback ink: on its own the picture is tuned to neither
+##       ground, only readable on either.  Accepted -- a standalone file
+##       cannot know the ground it will be shown on.
 
 {.experimental: "strictFuncs".}
 
@@ -70,14 +71,14 @@ func leadPoint(side: Side): (int, int) =
 
 func followPoint(site: Site; facing = true): (int, int) =
   ## Get where a hand of the follow is drawn.
-  ##
-  ## The follow faces the other way, so their right hand shares a column with the
-  ## lead's Left: that shared column is what makes a parallel connection parallel.
-  ##
-  ## Turned back to front, the columns swap.  This is the picture's half of
-  ## `crossedSite`: at half a turn the hand that was across the midline is the
-  ## near one, and a drawing that kept the follow's hands where they were would
-  ## be contradicting the one place the hand-to-hand model reads rotation.
+  ##   The follow faces the other way, so their right hand shares a column
+  ##     with the lead's Left: that shared column is what makes a parallel
+  ##     connection parallel.
+  ##   Turned back to front, the columns swap.  This is the picture's half
+  ##     of `crossedSite`: at half a turn the hand that was across the
+  ##     midline is the near one, and a drawing that kept the follow's hands
+  ##     where they were would be contradicting the one place the
+  ##     hand-to-hand model reads rotation.
   let shown = if facing: site else: (
     case site
     of Site.RightHand: Site.LeftHand
@@ -131,13 +132,16 @@ func link(side: Side; site: Site; is_under: bool; facing = true): string =
 
 func hand(point: (int, int); held: Option[Side]; leads: bool): string =
   ## Draw one hand: filled in the colour of the arm holding it, or left open.
-  ##
-  ## The lead's hands are squares and the follow's are circles.  Which row is
-  ## whose was said only by the captions under and over the picture, and those
-  ## are the first thing to go when a frame is drawn small -- down the side of
-  ## the matrix, or as a node on the map, they are a smudge.  Shape survives any
-  ## size, so the picture says it the way the vocabulary does: whose hand it is,
-  ## carried by the mark itself rather than by a word beside it.
+  ##   The lead's hands are squares and the follow's are circles.  Which row
+  ##     is whose was said only by the captions under and over the picture,
+  ##     and those are the first thing to go when a frame is drawn small --
+  ##     down the side of the matrix, or as a node on the map, they are a
+  ##     smudge.  Shape survives any size, so the picture says it the way
+  ##     the vocabulary does: whose hand it is, carried by the mark itself
+  ##     rather than by a word beside it.
+  ##     Cost of shape-coding: a square of a circle's measurement reads
+  ##       larger than the circle, so the square is drawn to the circle's
+  ##       width instead.
   let style =
     if held.isSome:
       "fill: " & colour(held.get) & "; stroke: " & colour(held.get)
@@ -155,12 +159,12 @@ func hand(point: (int, int); held: Option[Side]; leads: bool): string =
 
 
 func facingMark(facing: bool): string =
-  ## Draw which way the follow is facing, out at the edge where nothing else is.
-  ##
-  ## Only when they have turned.  Every frame in the hand-to-hand half is held
-  ## facing, so a mark saying so on all of them says nothing on any of them --
-  ## it is furniture in eight pictures to be information in none.  A drawing
-  ## carries a mark for what varies.
+  ## Draw which way the follow is facing, out at the edge where nothing else
+  ## is.
+  ##   Only when they have turned.  Every frame in the hand-to-hand half is
+  ##     held facing, so a mark saying so on all of them says nothing on any
+  ##     of them -- it is furniture in eight pictures to be information in
+  ##     none.  A drawing carries a mark for what varies.
   if facing:
     return ""
   let reach = -5
@@ -182,15 +186,15 @@ func caption(x, y: int; text: string): string =
 
 func frameBody(target: Frame; twist: HalfTurns): string =
   ## Draw the contents of a frame picture, without the frame around them.
-  ##
-  ## The under-arm is drawn first so that the reading order of the markup is the
-  ## reading order of the picture, from the ground up.
+  ##   The under-arm is drawn first so that the reading order of the markup
+  ##     is the reading order of the picture, from the ground up.
   let facing = isFacing(twist)
   result = "<title>" & target.describe & "</title>"
   result.add line(MIDLINE_X.float, MIDLINE_TOP.float, MIDLINE_X.float,
     MIDLINE_BOTTOM.float,
     "stroke: " & COLOUR_QUIET & "; stroke-width: 1; stroke-dasharray: 3 4")
 
+  # The links, under-arm first, so the ink stacks from the ground up.
   var order = @[Side.Left, Side.Right]
   if target.over == some(Side.Left):
     order = @[Side.Right, Side.Left]
@@ -199,6 +203,7 @@ func frameBody(target: Frame; twist: HalfTurns): string =
       result.add link(side, target.hold[side].get,
         target.over == some(other(side)), facing)
 
+  # The hands go over the links they anchor.
   for side in Side:
     result.add hand(leadPoint(side),
       (if target.hold[side].isSome: some(side) else: none(Side)), leads = true)
@@ -221,9 +226,8 @@ func frameHeight*(width: int): int =
 
 func renderFrame*(target: Frame; twist: HalfTurns = 0): string =
   ## Draw a frame as a picture that stands on its own.
-  ##
-  ## Given a twist it draws the posture instead: the same frame, seen with the
-  ## follow turned as far as that twist has turned them.
+  ##   Given a twist it draws the posture instead: the same frame, seen with
+  ##     the follow turned as far as that twist has turned them.
   "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " & $WIDTH & " " &
     $HEIGHT & "\" class=\"frame\" role=\"img\">" & frameBody(target, twist) & "</svg>"
 
@@ -231,9 +235,9 @@ func renderFrame*(target: Frame; twist: HalfTurns = 0): string =
 func renderFramePlaced*(target: Frame; x, y, width: int;
     twist: HalfTurns = 0): string =
   ## Draw a frame picture at a place inside a larger drawing.
-  ##
-  ## The same body, given its own viewport: a nested picture keeps its own
-  ## coordinates, so the drawing around it never has to know how a frame is made.
+  ##   The same body, given its own viewport: a nested picture keeps its own
+  ##     coordinates, so the drawing around it never has to know how a frame
+  ##     is made.
   "<svg x=\"" & $x & "\" y=\"" & $y & "\" width=\"" & $width & "\" height=\"" &
     $frameHeight(width) & "\" viewBox=\"0 0 " & $WIDTH & " " & $HEIGHT &
     "\" class=\"frame\">" & frameBody(target, twist) & "</svg>"

@@ -1,21 +1,31 @@
 ## Draw the whole ontology as one picture: the frames as places, the moves as
 ## the ways between them.
 ##
-## The graph is laid out in rows by how many connections a frame carries, which
-## makes the direction of a move readable from the drawing alone: every step up
-## the page adds a connection and is a `collect`, every step down releases one
-## and is a `drop`.  So an edge needs to say only which arm acts, and the row it
-## moves between says the rest.
-##
-## `open` is at the bottom and the two-handed frames are at the top, because a
-## collect builds the frame up and a drop lets it fall.  The rows are a tower
-## rather than a list, and the whole page keeps that sense: the close drawing
-## points its ways out the same way, and the matrix orders its axes down it.
-##
-## Each edge stands for the pair of moves that cross it, because every move
-## reverses.  Twenty moves are ten lines.  The compounds are drawn too, dashed
-## and curved, because they join frames that no single move joins: they are the
-## shape of the graph rather than an edge of it.
+##   The graph is laid out in rows by how many connections a frame carries,
+##     which makes the direction of a move readable from the drawing alone:
+##     every step up the page adds a connection and is a `collect`, every
+##     step down releases one and is a `drop`.  So an edge needs to say only
+##     which arm acts, and the row it moves between says the rest.
+##     Cost of rows by count: where a frame sits is fixed by what it holds,
+##       so only the order within a row (`NODE_ORDER`) is free to keep lines
+##       from crossing.  Accepted -- the rows say collect or drop for every
+##       edge at once.
+##   `open` is at the bottom and the two-handed frames are at the top,
+##     because a collect builds the frame up and a drop lets it fall.  The
+##     rows are a tower rather than a list, and the whole page keeps that
+##     sense: the close drawing points its ways out the same way, and the
+##     matrix orders its axes down it.
+##   Each edge stands for the pair of moves that cross it, because every
+##     move reverses.  Twenty moves are ten lines.
+##     Cost of one line for two moves: a line cannot name both, so which
+##       move it is named for has to be settled per reader (see `edge`).
+##       Accepted -- twenty moves are ten lines.
+##   The compounds are drawn too, dashed and curved, because they join
+##     frames that no single move joins: they are the shape of the graph
+##     rather than an edge of it.
+##     Cost of drawing the compounds: the curves hang below their rows, and
+##       the drawing carries the height they need (`ARC_DIP`, `MAP_HEIGHT`).
+##       Accepted -- a map missing them would be missing the graph's shape.
 
 {.experimental: "strictFuncs".}
 
@@ -33,16 +43,16 @@ import ./transition
 const
   MAP_WIDTH* = 780
   MAP_HEIGHT* = 570
-    ## Measured, not chosen: the tallest the drawing gets in any of the states
-    ## it can be read in.  The compounds hang below their own row, and the row
-    ## that has none of them is now the bottom one, so turning the tower up the
-    ## right way left the old height carrying eighty pixels of nothing.
+    ## Measured, not chosen: the tallest the drawing gets in any of the
+    ## states it can be read in.
+    ##   The compounds hang below their own row, and the row that has none
+    ##     of them is now the bottom one, so turning the tower up the right
+    ##     way left the old height carrying eighty pixels of nothing.
   MARGIN = 44
   ROW_Y = [510, 265, 70]
     ## Row for each number of connections a frame can carry.
-    ##
-    ## Descending, because the tower is built upwards: hold nothing and you are
-    ## at the bottom, hold both hands and you are at the top.
+    ##   Descending, because the tower is built upwards: hold nothing and
+    ##     you are at the bottom, hold both hands and you are at the top.
   NODE_WIDTH* = 74
   NAME_RISE = 12 ## Distance from the top of a picture up to its name.
   ARC_DIP = 100  ## How far a compound curve hangs below the row it joins.
@@ -50,11 +60,11 @@ const
 
 const NODE_ORDER* = ["--.", "-r.", "l-.", "-l.", "r-.", "lrL", "lrR", "rl."]
   ## Order the frames along their rows, left to right.
-  ##
-  ## This is a drawing decision rather than a fact about dancing: the order is
-  ## the one that leaves the fewest lines crossing.  `tests/tmap.nim` holds it to
-  ## naming every frame exactly once, so a frame cannot be added to the ontology
-  ## and quietly left out of the picture.
+  ##   A drawing decision rather than a fact about dancing: the order is the
+  ##     one that leaves the fewest lines crossing.
+  ##   `tests/tmap.nim` holds it to naming every frame exactly once, so a
+  ##     frame cannot be added to the ontology and quietly left out of the
+  ##     picture.
 
 
 func rowOf(target: Frame): int = target.countHolds
@@ -63,12 +73,12 @@ func rowOf(target: Frame): int = target.countHolds
 
 func towerOrder*(): seq[Frame] =
   ## Get every frame in the order the tower stacks them, top row first.
-  ##
-  ## Here rather than where it is read, because where a frame goes is what this
-  ## module already decides, for `NODE_ORDER` and `rowOf` alike.  Anything else
-  ## that puts the frames in order -- the matrix orders both its axes down the
-  ## tower, so that reading it and reading the map are the same reading -- takes
-  ## the order from here and cannot drift from the drawing.
+  ##   Here rather than where it is read, because where a frame goes is what
+  ##     this module already decides, for `NODE_ORDER` and `rowOf` alike.
+  ##   Anything else that puts the frames in order -- the matrix orders both
+  ##     its axes down the tower, so that reading it and reading the map are
+  ##     the same reading -- takes the order from here and cannot drift from
+  ##     the drawing.
   for row in countdown(ROW_Y.high, 0):
     for key in NODE_ORDER:
       let candidate = fromKey(key)
@@ -140,9 +150,9 @@ func widest(lines: seq[string]): int =
 
 func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
   ## Draw a label of several short lines, centred on a point, over a plate.
-  ##
-  ## Stacking is what lets a label sit beside a line without reaching across the
-  ## drawing: three short words are a third of the width of one long phrase.
+  ##   Stacking is what lets a label sit beside a line without reaching
+  ##     across the drawing: three short words are a third of the width of
+  ##     one long phrase.
   let
     height = lines.len * LINE_HEIGHT + 4
     width = widest(lines) * 6 + 14
@@ -156,11 +166,11 @@ func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
 
 func waking(now, was, moving: bool): string =
   ## Say how something's standing is changing while the mark is on its way.
-  ##
-  ## The map is drawn as the frame being reached will have it, and whatever that
-  ## changes is faded from how the frame being left had it.  What is left when
-  ## the mark lands is then already the drawing for where it landed, so the page
-  ## can replace one with the other and nothing moves.
+  ##   The map is drawn as the frame being reached will have it, and whatever
+  ##     that changes is faded from how the frame being left had it.  What is
+  ##     left when the mark lands is then already the drawing for where it
+  ##     landed, so the page can replace one with the other and nothing
+  ##     moves.
   if not moving or now == was: ""
   elif now: " waking"
   else: " dozing"
@@ -184,9 +194,9 @@ func labelBox(x, y: int; lines: seq[string]): Box =
 
 func nameBox*(target: Frame; cx, cy, width: int): Box =
   ## Get the room a frame's name takes up, above the frame it names.
-  ##
-  ## One answer, used both to draw the plate that keeps lines off the words and
-  ## to keep other names away from them, so the two cannot drift apart.
+  ##   One answer, used both to draw the plate that keeps lines off the
+  ##     words and to keep other names away from them, so the two cannot
+  ##     drift apart.
   let
     height = frameHeight(width)
     named = target.describe.len * 6 + 10
@@ -195,11 +205,11 @@ func nameBox*(target: Frame; cx, cy, width: int): Box =
 
 func frameBoxes*(): seq[Box] =
   ## Get the room every frame on the map takes up: its picture, and its name.
-  ##
-  ## Two boxes rather than one around both, because a frame's name is often much
-  ## wider than the frame and sits only above it.  One box around the pair would
-  ## claim the space either side of the picture that nothing is in, and there is
-  ## little enough room on this drawing as it is.
+  ##   Two boxes rather than one around both, because a frame's name is
+  ##     often much wider than the frame and sits only above it.  One box
+  ##     around the pair would claim the space either side of the picture
+  ##     that nothing is in, and there is little enough room on this drawing
+  ##     as it is.
   for target in FRAMES:
     let
       (cx, cy) = centreOf(target)
@@ -214,13 +224,14 @@ const
     ## Places along a line a name will sit, in hundredths, in order of preference.
   LABEL_ASIDES = [0, -26, 26, -48, 48, -72, 72, -96, 96]
     ## Distances a name may be nudged off its line, if nowhere on it is clear.
-    ##
-    ## Naming every line rather than only the ones underfoot means ten names in a
-    ## drawing that used to hold three, and at one fixed place along they land on
-    ## top of each other where the lines converge.  A name takes the first place
-    ## that is clear of everything already drawn, so the drawing spreads them out
-    ## itself rather than being hand-placed and going stale the next time a frame
-    ## or a word changes.
+    ##   Naming every line rather than only the ones underfoot means ten
+    ##     names in a drawing that used to hold three, and at one fixed
+    ##     place along they land on top of each other where the lines
+    ##     converge.
+    ##   A name takes the first place that is clear of everything already
+    ##     drawn, so the drawing spreads them out itself rather than being
+    ##     hand-placed and going stale the next time a frame or a word
+    ##     changes.
 
 
 func isClear(box: Box; used: seq[Box]): bool =
@@ -270,22 +281,20 @@ func placeLabel(ax, ay, bx, by: int; lines: seq[string];
 func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
     used: var seq[Box]): (string, string) =
   ## Draw the pair of moves that join two frames, and name them.
-  ##
-  ## The ink and the name come back apart so that the drawing can put every line
-  ## down before it writes a single word.  Together, a line drawn later crossed
-  ## the plate of a name written earlier and struck it through -- a plate can
-  ## only hide what is already under it.
-  ##
-  ## A line is two moves, one each way, and it is named for the one the reader
-  ## could make: the move *away* from where they stand, when they stand on an end
-  ## of it.  Named for the collect either way, a line leaving the frame held
-  ## upwards would be labelled with the move that comes back down it -- the one
-  ## thing the reader cannot do from there.
-  ##
-  ## A line nobody stands on has no away, so it keeps the reading that needs no
-  ## reader: the move that adds a connection, which is the one that runs up the
-  ## page.  Naming those too is what lets the map be read as a map rather than
-  ## only from where you happen to be.
+  ##   The ink and the name come back apart so that the drawing can put
+  ##     every line down before it writes a single word.  Together, a line
+  ##     drawn later crossed the plate of a name written earlier and struck
+  ##     it through -- a plate can only hide what is already under it.
+  ##   A line is two moves, one each way, and it is named for the one the
+  ##     reader could make: the move *away* from where they stand, when they
+  ##     stand on an end of it.  Named for the collect either way, a line
+  ##     leaving the frame held upwards would be labelled with the move that
+  ##     comes back down it -- the one thing the reader cannot do from
+  ##     there.
+  ##   A line nobody stands on has no away, so it keeps the reading that
+  ##     needs no reader: the move that adds a connection, which is the one
+  ##     that runs up the page.  Naming those too is what lets the map be
+  ##     read as a map rather than only from where you happen to be.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
@@ -332,17 +341,16 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
 
 
 func arcName(a, b: Frame; standing: Option[Frame]): string =
-  ## Name the compound a curve stands for, and the hand it moves where it can.
-  ##
-  ## Stood on one end, a curve has a direction like any other line, so it can be
-  ## named for the move away from the reader -- hand and all.
-  ##
-  ## Stood on neither, it is one drawing of a move that can be led either way.  A
-  ## `place` carries the same hand of the follow whichever way it is led, so it
-  ## can still be named for that hand.  A `cut` carries whichever hand ends up on
-  ## top, which is the other one going the other way, so a curve that named one
-  ## of them would be wrong half the times it was read.  There it says only what
-  ## it is.
+  ## Name the compound a curve stands for, and the hand it moves where it
+  ## can.
+  ##   Stood on one end, a curve has a direction like any other line, so it
+  ##     can be named for the move away from the reader -- hand and all.
+  ##   Stood on neither, it is one drawing of a move that can be led either
+  ##     way.  A `place` carries the same hand of the follow whichever way
+  ##     it is led, so it can still be named for that hand.  A `cut` carries
+  ##     whichever hand ends up on top, which is the other one going the
+  ##     other way, so a curve that named one of them would be wrong half
+  ##     the times it was read.  There it says only what it is.
   let named = compound(a, b)
   if named.isNone:
     return ""
@@ -357,8 +365,7 @@ func arcName(a, b: Frame; standing: Option[Frame]): string =
 func arc(a, b: Frame; name: string; standing, was: Option[Frame];
     used: var seq[Box]): (string, string) =
   ## Draw a compound as a curve, since no single move joins the two frames.
-  ##
-  ## Ink and name apart, for the reason `edge` parts them.
+  ##   Ink and name apart, for the reason `edge` parts them.
   let
     (ax, ay) = centreOf(a)
     (bx, by) = centreOf(b)
@@ -398,10 +405,9 @@ func arc(a, b: Frame; name: string; standing, was: Option[Frame];
 func nodeAt*(target: Frame; cx, cy, width: int; classes: string;
     extra = ""): string =
   ## Draw one frame at a place, with its name above it.
-  ##
-  ## Both drawings put frames somewhere; only they know where.  Keeping the
-  ## drawing of a node here means the two agree on what a frame looks like even
-  ## though they disagree about everything else.
+  ##   Both drawings put frames somewhere; only they know where.  Keeping
+  ##     the drawing of a node here means the two agree on what a frame
+  ##     looks like even though they disagree about everything else.
   let height = frameHeight(width)
   result = "<g class=\"node " & classes & "\" data-frame=\"" & target.key &
     "\"" & extra & ">"
@@ -431,15 +437,14 @@ func standingOf(target: Frame; where: Option[Frame]): (bool, bool, bool) =
 
 func markAt*(cx, cy, width: int; extra = ""): string =
   ## Draw the mark that says which frame is being held.
-  ##
-  ## Its own element rather than a heavier line on the frame's own plate, because
-  ## it has to be able to leave one frame and arrive at another: taking a move is
-  ## the mark passing along the way taken, and a mark that were part of a frame
-  ## could only blink from one to the other.
-  ##
-  ## Drawn to the shape of a frame's plate, from the same numbers, so that both
-  ## drawings say *here* with the same ring in the same place.  A drawing that
-  ## also thickened the plate underneath would be saying it twice.
+  ##   Its own element rather than a heavier line on the frame's own plate,
+  ##     because it has to be able to leave one frame and arrive at another:
+  ##     taking a move is the mark passing along the way taken, and a mark
+  ##     that were part of a frame could only blink from one to the other.
+  ##   Drawn to the shape of a frame's plate, from the same numbers, so that
+  ##     both drawings say *here* with the same ring in the same place.  A
+  ##     drawing that also thickened the plate underneath would be saying it
+  ##     twice.
   let height = frameHeight(width)
   "<rect class=\"mark\" x=\"" & $(cx - width div 2 - 8) & "\" y=\"" &
     $(cy - height div 2 - 6) & "\" width=\"" & $(width + 16) & "\" height=\"" &
@@ -464,11 +469,11 @@ func node(target: Frame; standing, was: Option[Frame]): string =
 
 const WIDE_TEMPO* = Tempo(
   ## Hold how long this drawing takes to say a move.
-  ##
-  ## Every frame is already drawn and in its place, so there is nothing to clear
-  ## before the mark can move and nothing to build after it: the mark goes, what
-  ## is within reach of it changes as it goes, and the drawing has finished.
-  ## Made to wait out the close drawing's clauses it would only look stuck.
+  ##   Every frame is already drawn and in its place, so there is nothing to
+  ##     clear before the mark can move and nothing to build after it: the
+  ##     mark goes, what is within reach of it changes as it goes, and the
+  ##     drawing has finished.  Made to wait out the close drawing's clauses
+  ##     it would only look stuck.
   pass_at: 0,
   pass: 260,
   settle: SEAM_MARGIN,
@@ -478,13 +483,14 @@ const WIDE_TEMPO* = Tempo(
 
 func renderMap*(here: Option[Frame]; motion = Motion.Still;
     taken = none(Frame)): string =
-  ## Draw the graph, with the couple standing on one frame if they are dancing.
-  ##
-  ## While a move is being made this is drawn as the frame being *reached* will
-  ## have it, with whatever that changes fading from how the frame being left had
-  ## it.  The mark is the exception: it starts where the couple are and carries
-  ## the distance to where they are going, which is the move itself.  So what the
-  ## drawing settles into is already the drawing for where the mark lands.
+  ## Draw the graph, with the couple standing on one frame if they are
+  ## dancing.
+  ##   While a move is being made this is drawn as the frame being *reached*
+  ##     will have it, with whatever that changes fading from how the frame
+  ##     being left had it.  The mark is the exception: it starts where the
+  ##     couple are and carries the distance to where they are going, which
+  ##     is the move itself.  So what the drawing settles into is already
+  ##     the drawing for where the mark lands.
   let
     leaving = motion == Motion.Leaving and taken.isSome
     standing = if leaving: taken else: here
@@ -522,6 +528,7 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       curveInk.add drawing
       curveNames.add naming
 
+  # The straight lines, their names taking whatever room the curves' left.
   drawn = @[]
   for source in FRAMES:
     for move in moves(source):
@@ -535,6 +542,7 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       names.add naming
   result.add ink & curveInk & names & curveNames
 
+  # The frames go over the lines, their plates hiding what runs beneath.
   for target in FRAMES:
     result.add node(target, standing, was)
 

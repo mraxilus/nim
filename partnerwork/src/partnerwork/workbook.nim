@@ -2,18 +2,40 @@
 ## derived model.
 ##
 ## The workbook is the source the ontology grew from, so it is treated as
-## evidence rather than as truth: every cell is checked against the primitive
-## that the physics gives for the same pair of frames, and every disagreement is
-## reported with its kind.  Keeping the sheet here as data means the audit is a
-## test, not a memory of one afternoon's reading.
+## evidence rather than as truth.
+##   Every cell is checked against the primitive that the physics gives for the
+##     same pair of frames, and every disagreement is reported with its kind.
+##   Cost of transcribing the sheet here as data: twenty-seven cells copied and
+##     kept by hand, to re-copy if the workbook is ever re-read.  Accepted --
+##     keeping the sheet here as data means the audit is a test, not a memory
+##     of one afternoon's reading.
 ##
-## The transcription is of the `base` sheet only.  The `rotations` sheet and the
-## twelve turn sheets carry headers and no cells, apart from three entries in
-## `rotations`, which `rotation.nim` records instead.
+##   |-------------------|-------------------------------------------------|
+##   | Code              | The Workbook's Own Words                        |
+##   |-------------------|-------------------------------------------------|
+##   | `Cell`            | one filled cell of the `base` sheet             |
+##   | `WORKBOOK_STATES` | the sheet's row/column headings, in sheet order |
+##   | `Helper.Collect`  | "collect"                                       |
+##   | `Helper.Drop`     | "drop"; "flick" when led with momentum          |
+##   | `Compound.Place`  | "pass"; "place"                                 |
+##   | `Compound.Cut`    | "cut"                                           |
+##   | `DEFERRED_STATES` | "closed", "half-closed"                         |
+##   |-------------------|-------------------------------------------------|
+##
+## The transcription is of the `base` sheet only.
+##   The `rotations` sheet and the twelve turn sheets carry headers and no
+##     cells, apart from three entries in `rotations`, which `rotation.nim`
+##     records instead.
 ##
 ## Two of the sheet's nine states, `closed` and `half-closed`, rest a lead hand
-## on the follow's body rather than on a hand, so they are outside the
-## hand-to-hand model and are reported as deferred rather than checked.
+## on the follow's body rather than on a hand.
+##   So they are outside the hand-to-hand model and are reported as deferred
+##     rather than checked.
+##   Cost of deferring rather than forcing them into frames: every cell that
+##     touches them goes unaudited until the rotation axis arrives -- see
+##     `countDeferredCells`.  Accepted -- reading them as hand-to-hand
+##     duplicates rows the sheet already has and contradicts six of its cells;
+##     see `DEFERRED_STATES`.
 
 {.experimental: "strictFuncs".}
 
