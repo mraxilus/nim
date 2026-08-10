@@ -48,13 +48,13 @@ page and this list together.
 - **Shape says whose hand it is**: the lead's are squares, the follow's
   circles.  This is the vocabulary's own convention, carried by the mark
   itself so it survives any size.
-- A **connection keeps the lead's arm ink**, because move names depend on which
-  of the lead's arms acts.  So the colour pair at its two ends names which
-  hands are joined (`Left to left` is blue-to-blue whoever faces where), while
-  its geometry says whether the hold is crossed *now*.
-- A connection is **two shades of that one hue, meeting at its middle**: deep
-  from the lead's hand, plain from the follow's.  So the line says which end is
-  whose at the scale where the hand marks have gone too small to read.
+- A connection is drawn in **its two hands' own colours, meeting at its
+  middle**: the lead's half in their arm's ink and the deep shade, the follow's
+  in theirs and the plain one.  So the line *draws* which named hands are
+  joined — `Left to right` runs blue into orange along its whole length —
+  instead of leaving it to two marks that vanish at node size, and the deep
+  half still says which end is the lead's when both hands share a hue.  Its
+  geometry says whether the hold is crossed *now*.
 - **Level is a fill** on both ends of a connection: hollow = unsaid, solid =
   low (under the other arm), centre dot = high (over it), hatched = above (over
   the head — the only level that names a height).  The under-arm's drawn break
@@ -74,9 +74,21 @@ page and this list together.
   questions.
 - A **reach is a taut string**: it starts on the border of the hand's own mark,
   hugs the rim exactly where the straight way would cross a body, and is
-  straight everywhere else.  A way that sets off round a dancer's back pays
-  `BACK_BIAS` against one that crosses their front, so near-ties cross the
-  chest while a hold that belongs behind the back still goes there.
+  straight everywhere else.  With nothing said it takes the **short way** —
+  there is no standing preference for a dancer's front.
+- A **hand stays at the side of its body unless the hold names a level**
+  (`figure.pinned`), because a level is what lets an arm pass over or under and
+  passing is what carries a hand round.  No level, no wrap.  So where a hand
+  sits *is* how far it has been carried, and that — not how far the line hugs —
+  is the monotone quantity a ceiling would read.
+- **While a dancer turns, their line trails** (`figure.trailing`): the wanted
+  way round is counter to that body's own turning, which keeps the place the
+  line leaves the rim still while the body turns under it.  So a line stays on
+  the same sides of both bodies through a rotation instead of flicking across.
+  A dancer who travels without turning has no preference, and `HYSTERESIS`
+  holds the previous frame's way round.  One mechanism carries every opinion:
+  `routed`'s `want`, a wanted pay-out direction per end, paid for at
+  `SIDE_BIAS`.
 - **The lead always faces up.**  Poses live in world coordinates and are drawn
   through `canonicalise`, which turns the world until the lead faces up — so
   every pose that is the same configuration is the same picture, and the whole
@@ -120,11 +132,16 @@ page and this list together.
 
 The user's side of the table, as of the last iteration:
 
-- **Where an amount of winding lives.**  The rim's progress ring is gone and
-  the connection's hug replaces it, but a hug is not a measure: it grows while
-  the hand rounds the far side and falls away once the hand comes out past the
-  back.  A ceiling like `armCapacity` would need something monotone — a mark at
-  the hand, or a number on the edge.  The `wind` plate draws the failure.
+- **Which way round a body a level sends the line.**  The wrap side is state,
+  not history: the hand's own side and the connection's level are meant to
+  settle it between them, and a hand's side turns *front* or *back* into a rim
+  direction by itself (`route.front_of`), so a rule need only say front or
+  back.  What it should say is undecided, and the frame page draws the choice
+  on three poses — including one where the two ways are exactly the same
+  length, so only the meaning can pick.  A second plate prices insisting: the
+  worst case anywhere is the long way being **1.4×** the short one, asserted
+  under 1.5, so a rule can be a rule rather than a bias.  Until it is settled a
+  levelled hold routes exactly like an unlevelled one.
 - The mark for **any amount** of turn: five candidates are drawn on the sign
   page (open-ended box — recommended; open with a spilling pip; ellipsis row;
   music's repeat colon; a loop arrow).  None chosen yet.
@@ -134,9 +151,8 @@ The user's side of the table, as of the last iteration:
   two bits and `twist` carries only their parity, so `isFacing` cannot tell
   face-to-face from back-to-back.  The two relative facings the canonical
   picture is built on are exactly the pair the model would need.
-- The **wrap side weighting**: `BACK_BIAS` in `route.py` decides how strongly
-  a reach prefers crossing the front over rounding the back; the page draws
-  both readings of a near-tie, and the number is explicitly unsettled.
+- Whether an arm **carried past some ceiling** is marked at all, now that
+  nothing on the rim counts and the quantity lives in where the hand sits.
 - The **bow** for contact with the body, the **staff** for sequences, what an
   orbit stores, and when an arm above the head blocks.
 

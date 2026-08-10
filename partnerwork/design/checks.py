@@ -9,11 +9,12 @@ import math
 
 from .body import (ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W, border,
                    hands_of, outline_r, side_of)
-from .figure import facings
+from .figure import facings, frame, pinned, trailing
 from .geometry import bearing, continuous, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
-from .route import ROUTE_N, polyline_len, routed, split_at
+from .route import (ROUTE_N, across_front, polyline_len, round_back, routed,
+                    split_at)
 from .sign import BODY, COS, GAP_X, HEIGHT, OVER, PIP, QUARTERS, SIN, TAN
 from .style import CAP
 
@@ -92,24 +93,45 @@ def check_frame():
                 biggest = max(biggest, abs(b - a))
     assert biggest < 90, biggest
 
-    # where the two ways round are close, the bias sends the reach across the
-    # front -- the case the comparison figure draws, so it must really differ,
-    # and differ in the front direction
+    # a hand stays at the side of its body unless the hold names a level: the
+    # same winding asked for twice, obeyed once
+    for levels, moves in (({}, False), ({"L": "low"}, True)):
+        wound = pinned({"lead": {"L": 90.0, "R": 0.0}}, {"L": "left"}, levels)
+        put = hands_of(rest(wound))["lead"]["L"]
+        assert (put != hands_of(rest())["lead"]["L"]) == moves, (levels, put)
+
+    # a body turning carries its line with it: the way round it pays out is
+    # counter to the turn, so the place the line leaves stays put
+    turning = [spin_about(rest(), "lead", d) for d in (0, 8, 16)]
+    assert trailing(turning, "lead")[0] == -1, "clockwise did not trail"
+    assert trailing(turning[::-1], "lead")[0] == 1, "anticlockwise did not trail"
+    assert trailing([rest()] * 3, "lead") == [0, 0, 0], "a still body had a view"
+
+    # and with nothing turning and no level, nothing has a view at all: the two
+    # readings of a near-tie really are two routes, so the plate has something
+    # to show and the default picks neither
     pose = canonicalise(spin_about(rest(), "follow", 270))
     pts_all = hands_of(pose)
     a, b = pts_all["lead"]["L"], pts_all["follow"]["L"]
     bodies = ((pose["lead"], pose["lead_facing"]),
               (pose["follow"], pose["follow_facing"]))
-    biased, _ = routed(a, b, *bodies)
-    short, _ = routed(a, b, *bodies, back_bias=0.0)
-    assert biased != short, "front bias changes nothing here"
+    ends = (a, b)
+    front, _ = routed(a, b, *bodies, want=across_front(ends, bodies))
+    back, _ = routed(a, b, *bodies, want=round_back(ends, bodies))
+    assert front != back, "the two ways round are one way round"
 
     def follow_offset(q):
         return abs(wrap180(bearing(q[0] - pose["follow"][0],
                                    q[1] - pose["follow"][1])
                            - pose["follow_facing"]))
 
-    assert follow_offset(biased[-3]) < follow_offset(short[-3]), "bias backward"
+    assert follow_offset(front[-3]) < follow_offset(back[-3]), "front is behind"
+    plain, _ = routed(a, b, *bodies)
+    assert polyline_len(plain) <= polyline_len(front) + 0.01, "no opinion, long way"
+
+    # a reach is drawn in its two hands' own colours, not one hue twice
+    crossed = frame("f", {"L": "right"}, {"L": "low"})
+    assert "var(--left-deep)" in crossed and "var(--right)" in crossed, crossed[:80]
 
     # and no reach ever crosses into a body: every hold, every quarter-turn
     # orientation, sampled along the route it would actually be drawn with

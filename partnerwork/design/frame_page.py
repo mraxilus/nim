@@ -25,13 +25,14 @@ def render(P):
   <h1>The frame, so far</h1>
   <p class="standfirst">Each dancer is a plain circle with a small chevron at
   its centre for the facing. A connection runs hand to hand as a taut string
-  that wraps a body rather than crossing it, drawn in two shades of one hue —
-  <b>the lead's end deep, the follow's plain</b> — so the line says which end
-  is whose. A move animates in two stages: travel, then turn the world until
-  <b>the lead faces up</b> again. That second stage collapses every pose that
-  is the same configuration onto one picture, and shows that an orbit lands
-  where an axis turn lands. Still open: which way a wrap should go round, and
-  where an amount of winding lives now that the rim no longer counts it.</p>
+  that wraps a body rather than crossing it, drawn in <b>its two hands' own
+  colours</b>, meeting at the middle. A hand only leaves the side of its body
+  when the hold names a level. A move animates in two stages: travel, then turn
+  the world until <b>the lead faces up</b> again. That second stage collapses
+  every pose that is the same configuration onto one picture, and shows that an
+  orbit lands where an axis turn lands. <b>One thing to decide</b>, and it is
+  drawn below rather than argued: which way round a body a level should send
+  the line.</p>
   <p class="sibling"><b>The turn sign is on its own page.</b> It answers a
   different question — how to label an <em>edge</em> — and only meets this one
   at the levels and the arm inks, which the two pages share.</p>
@@ -78,22 +79,26 @@ def render(P):
   arm wound round — a progress ring going the long way round the outside — and
   that is gone. <b>The wrap on the connection is the indicator</b>, and one
   indicator is enough.</p>
-  <p><b>The reach wraps, and it prefers the front.</b> It starts on the edge of
-  the hand's own mark, not at its centre, and where the straight way to the
-  partner would pass through a body it runs <em>along the rim</em> instead — to
-  the first place it can leave on a tangent, then straight, then along the
-  other rim to the other hand. That hug <em>is</em> the wrap — the arm going
-  round a body is the thing a lock is made of — though it turns out not to be a
-  measure of one, which the plate below draws. A way that sets off round a
-  dancer's back pays a penalty against one that crosses their front, because a
-  crossed hold crosses the chest — but it is a bias, not a rule, and the choice
-  is still open; the comparison below draws both.</p>
-  <p><b>The line is two shades of one hue.</b> It keeps the acting arm's colour
-  end to end, because move names depend on which of the lead's arms works — and
-  within that colour it runs deep from the lead's hand and plain from the
-  follow's, the two meeting at its middle. So the line carries the same thing
-  the hand marks do, at the scale where the marks have gone too small to read,
-  and a picture at node size still says which way round the hold is.</p>
+  <p><b>The reach wraps, and by default it takes the short way.</b> It starts
+  on the edge of the hand's own mark, not at its centre, and where the straight
+  way to the partner would pass through a body it runs <em>along the rim</em>
+  instead — to the first place it can leave on a tangent, then straight, then
+  along the other rim to the other hand. That hug <em>is</em> the wrap: the arm
+  going round a body is the thing a lock is made of. Nothing prefers the front
+  any more; with nothing said, the line simply takes the shorter way round.</p>
+  <p><b>While a dancer turns, the line trails.</b> The one standing preference
+  is counter to a body's own turning: turn clockwise and the line pays out
+  anticlockwise, which is what keeps the place it leaves the rim still while
+  the body turns underneath it. So a line stays on the same sides of both
+  bodies through a rotation instead of flicking across. A dancer who travels
+  without turning has no preference, and the previous frame's way round holds
+  it.</p>
+  <p><b>The line is its two hands' own colours.</b> Each half is exactly the
+  mark it ends on — the lead's in their arm's ink and the deep shade, the
+  follow's in theirs and the plain one, the two meeting at the middle. So
+  <em>Left to right</em> is drawn blue-to-orange along its whole length rather
+  than only at two marks that vanish at node size, and the shade still says
+  which end is the lead's when both hands share a hue.</p>
   <p><b>The lead always faces up.</b> That is what the second stage of a move
   aims at — not standing the pair upright, but standing the <em>lead</em>
   upright. Everything is read from them, so they hold still and where the follow
@@ -122,40 +127,78 @@ def render(P):
   </div>
 
   <div class="plate">
-    <h3>How far the hand has been carried<span class="tag">a cost</span></h3>
-    <p>Wind an arm and the hand travels round the rim, and where the straight
-    way to it would cut through the body the connection hugs the body instead.
-    So the wrap is on the line, where the hold is, and nothing fills up around
-    the circle to say it a second time.</p>
-    <p><b>What that gives up, plainly.</b> The hug is not a measure. It grows
-    while the hand is going round the far side and then <em>falls away again</em>
-    once the hand comes out past the back, where the short way is straight once
-    more — the fourth picture is wound half as far again as the third and its
-    line hugs less. The ring did measure, monotonically, which is what a ceiling
-    like <code>armCapacity</code> would want to read. If the amount of winding
-    has to be legible rather than merely present, it needs somewhere to live
-    that is not the rim: a mark at the hand, or a number on the edge.</p>
+    <h3>A hand moves only if a level says it may</h3>
+    <p><b>No level, no wrap.</b> A hand sits where the arm hangs, at the side of
+    its body, and the only thing that ever moves it is its body turning. It
+    leaves that place when — and only when — the hold it is part of names a
+    level, because a level is what lets an arm pass over or under, and passing
+    is what carries a hand round. Ask for winding without a level and the
+    picture declines: the two below are the same request, one with
+    <em>low</em> named and one with nothing.</p>
+    <div class="row">
+      {fig(P['wind_2'], '<b>90°</b> asked for, <em>low</em> named<br>— the hand goes round')}
+      {fig(P['wind_pin'], 'the same <b>90°</b> asked for,<br>no level — it does not move')}
+    </div>
+    <p>Once a level has freed it, where the hand sits is how far it has been
+    carried, and the line hugs the body on its way there:</p>
     <div class="row">
       {fig(P['wind_0'], 'at rest<br>the hand a quarter round')}
       {fig(P['wind_1'], 'carried <b>45°</b> further')}
       {fig(P['wind_2'], '<b>90°</b> — round the back,<br>and the line must follow')}
       {fig(P['wind_3'], '<b>135°</b> — out the far side,<br>and straight again')}
     </div>
+    <p><b>The hug is not a measure, though.</b> It grows while the hand is going
+    round the far side and then <em>falls away again</em> once the hand comes
+    out past the back, where the short way is straight once more — the fourth
+    picture is wound half as far again as the third and its line hugs less. So
+    the amount is in where the hand sits, and the wrap in how the line gets
+    there, and only the first of those is monotone. A ceiling like
+    <code>armCapacity</code> would read the hand's place, not the line's.</p>
+  </div>
+
+  <div class="plate pick">
+    <h3>Which way should a level send the line?<span class="tag">yours</span></h3>
+    <p>Here are the two things a level could mean, drawn rather than argued.
+    Each pair is one pose routed both ways: <b>across the front</b> of each
+    body, and <b>round the back</b> of each. The hand's own side turns that
+    into a direction by itself — a Left hand's front is one way round the rim,
+    a Right hand's the other — so a rule needs only to say front or back, and
+    the side does the rest.</p>
+    <div class="row">
+      {fig(P['side_front_tie'], 'the follow quarter turned<br><b>across the front</b>')}
+      {fig(P['side_back_tie'], 'the same pose<br><b>round the back</b>')}
+      {fig(P['side_front_wound'], 'a hand carried 45° round<br><b>across the front</b>')}
+      {fig(P['side_back_wound'], 'the same<br><b>round the back</b>')}
+    </div>
+    <p>And the cleanest case, where the two ways are <em>exactly</em> the same
+    length, so nothing but the meaning can choose between them:</p>
+    <div class="row">
+      {fig(P['side_front_even'], 'both turned<br><b>across the front</b>')}
+      {fig(P['side_back_even'], 'the same pose<br><b>round the back</b>')}
+    </div>
+    <p><b>What to decide.</b> Which of those is <em>low</em> and which is
+    <em>high</em> — a low arm going round the waist and a high one crossing
+    the chest is one reading, and the reverse is the other. And whether
+    <em>above</em>, which clears the head altogether, should name a side at all
+    or simply take whichever way is shorter. Until that is settled a picture
+    with a level routes exactly like one without: the short way.</p>
   </div>
 
   <div class="plate">
-    <h3>Which way round a wrap goes<span class="tag">open</span></h3>
-    <p>The follow a quarter turned, holding <em>Left to left</em>: the two
-    ways round their body are nearly the same length, and the shortest by a
-    whisker rounds their back. The routing now prefers the front — a penalty
-    on the back way, one constant (<code>BACK_BIAS</code>), not a rule — so a
-    near-tie crosses the chest, while a hold that genuinely belongs behind the
-    back (back to back, say) still goes there. Both readings are drawn because
-    the weighting is still yours to settle.</p>
+    <h3>What insisting would cost</h3>
+    <p>If a level <em>rules</em> rather than leans, the picture has to be
+    willing to draw the long way round whenever the rule points there. This is
+    the worst of it — the pose, found by scanning every orientation and every
+    winding, where the two ways round differ most in length. The longer is
+    <b>{P['cost_ratio']}×</b> the shorter, and no worse anywhere.</p>
     <div class="row">
-      {fig(P['wrap_front'], 'preferring <b>the front</b><br>— the current bias')}
-      {fig(P['wrap_short'], 'the <b>shortest</b> way<br>— round the back')}
+      {fig(P['cost_front'], '<b>across the front</b>')}
+      {fig(P['cost_back'], '<b>round the back</b>')}
     </div>
+    <p>Never even half again as long, anywhere — which is cheap. A rule can be
+    a rule without ever drawing something absurd, so there is no need to hedge
+    it into a bias that a long way round could overrule. That is an argument
+    for the level settling the side outright.</p>
   </div>
 
   <div class="plate">
@@ -225,12 +268,13 @@ def render(P):
 
   <div class="plate">
     <h3>What the pair of colours at the two ends says</h3>
-    <p>The line keeps the lead's arm ink — that is what says which arm does the
-    work. So the pair of colours at its two ends says <b>which named hands are
-    joined</b>: <em>Left to left</em> is blue-to-blue whoever faces where, and
-    whether it runs across says whether it is crossed now. The deep-to-plain
-    run along the line says which end is the lead's, so the reading survives
-    the hold being turned round.</p>
+    <p>The line is now the pair itself: it starts in the lead's hand's ink and
+    ends in the follow's, so it <em>draws</em> <b>which named hands are
+    joined</b> rather than leaving it to two marks. <em>Left to left</em> is
+    blue all the way, <em>Left to right</em> runs blue into orange, whoever
+    faces where — and whether it crosses says whether the hold is crossed now.
+    The deep half is always the lead's, so the reading survives a hold turned
+    round, and survives both hands sharing a hue.</p>
     <div class="row">
       {fig(P['pair_ll'], '<b>Left to left</b><br>blue to blue · crossed')}
       {fig(P['pair_ll_turned'], 'follow turned<br>still blue to blue · not crossed')}
@@ -276,10 +320,10 @@ def render(P):
   and go back when the marks are settled and the ontology is finished. The frame
   pictures are unchanged either way — the break stays, and the hand-to-hand half
   leaves its levels unsaid.</p>
-  <p>Yours to settle on this page: which way a wrap goes round; where an amount
-  of winding lives, and whether an arm past some ceiling is marked at all now
-  that the rim does not count; the bow for contact with the body; what an orbit
-  stores; and when an arm above the head blocks.</p>
+  <p>Yours to settle on this page: <b>which way round a level sends the line</b>
+  — the plate above draws both, and the one after it prices insisting; whether
+  an arm carried past some ceiling is marked at all; the bow for contact with
+  the body; what an orbit stores; and when an arm above the head blocks.</p>
 </div>
 
 </div>

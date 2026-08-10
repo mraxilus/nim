@@ -5,9 +5,11 @@ sign another.  The inline assertions are part of the build -- a page whose
 orientations collide or whose collapse figures differ is refused, not
 published.
 """
+from .body import hands_of, side_of
 from .figure import animated, extent, frame
 from .geometry import n
 from .pose import MOVES, canonicalise, cycle, orbit, relative, rest, spin_about
+from .route import across_front, polyline_len, round_back, routed
 from .sign import sign
 
 ORIENTATIONS = [
@@ -20,6 +22,42 @@ ORIENTATIONS = [
 LOW = {"L": "low", "R": "low"}
 SPLIT = {"L": "low", "R": "high"}
 HOLD = {"L": "left"}
+
+
+def both_ways(pose, hold=HOLD):
+    """The two ways round, as drawn: their point lists, or None where the two
+    readings come out at the same route and there is nothing to choose."""
+    side, where = next(iter(hold.items()))
+    ends_of = hands_of(pose)
+    ends = (ends_of["lead"][side], ends_of["follow"][side_of(where)])
+    bodies = ((pose["lead"], pose["lead_facing"]),
+              (pose["follow"], pose["follow_facing"]))
+    runs = [routed(*ends, *bodies, want=way(ends, bodies))[0]
+            for way in (across_front, round_back)]
+    return None if runs[0] == runs[1] else runs
+
+def priciest(hold=HOLD):
+    """The pose where insisting on a side costs the most, and by how much.
+
+    Found by scanning rather than picked to flatter either reading: the largest
+    ratio between the two ways round is what a rule would have to be willing to
+    draw, and it is worth knowing before choosing between a rule and a bias.
+    """
+    worst = (None, 1.0)
+    for wound in (0.0, 45.0, 90.0, 135.0):
+        for lead_turn in (0, 90, 180, 270):
+            for follow_turn in (0, 90, 180, 270):
+                pose = canonicalise(spin_about(spin_about(
+                    rest({"lead": {"L": wound, "R": 0.0}}),
+                    "lead", lead_turn), "follow", follow_turn))
+                runs = both_ways(pose, hold)
+                if runs is None:
+                    continue
+                short, long = sorted(polyline_len(r) for r in runs)
+                if short > 0 and long / short > worst[1]:
+                    worst = (pose, long / short)
+    assert worst[0] is not None, "the two ways round never differ"
+    return worst
 
 
 def frame_parts():
@@ -57,12 +95,43 @@ def frame_parts():
     parts["pair_lr"] = frame("f", {"L": "right"})
     parts["pair_lr_turned"] = frame("f", {"L": "right"}, follow_turn=180)
 
-    # how far the hand has been carried round: the line does the saying
+    # how far the hand has been carried round: the line does the saying, and a
+    # hand only leaves the side of its body when the hold names a level
     for k, w in enumerate((0, 45, 90, 135)):
-        parts[f"wind_{k}"] = frame("f", HOLD,
+        parts[f"wind_{k}"] = frame("f", HOLD, {"L": "low"},
                                    wind={"lead": {"L": w, "R": 0.0}},
                                    captions=False)
     assert parts["wind_0"] != parts["wind_3"], "winding says nothing"
+    # the same winding asked for with no level named, which cannot be obeyed
+    parts["wind_pin"] = frame("f", HOLD, wind={"lead": {"L": 90.0, "R": 0.0}},
+                              captions=False)
+    parts["wind_rest"] = frame("f", HOLD, captions=False)
+    assert parts["wind_pin"] == parts["wind_rest"], "an unlevelled hand moved"
+
+    # the open question, drawn: which way round a body should a level send the
+    # line?  Both readings, on three poses where the two ways really differ.
+    SIDES = {
+        "tie": dict(pose=canonicalise(spin_about(rest(), "follow", 270))),
+        "wound": dict(wind={"lead": {"L": 45.0, "R": 0.0}}),
+        "even": dict(lead_turn=270, follow_turn=270),
+    }
+    for tag, where in SIDES.items():
+        for name, way in (("front", across_front), ("back", round_back)):
+            parts[f"side_{name}_{tag}"] = frame("f", HOLD, {"L": "low"},
+                                                want=way, captions=False,
+                                                **where)
+        assert parts[f"side_front_{tag}"] != parts[f"side_back_{tag}"], tag
+
+    # and what insisting would cost: the pose where the two ways round differ
+    # most in length, found by scanning rather than picked to flatter the rule
+    pose, ratio = priciest()
+    for name, way in (("front", across_front), ("back", round_back)):
+        parts[f"cost_{name}"] = frame("f", HOLD, {"L": "low"}, pose=pose,
+                                      want=way, captions=False)
+    parts["cost_ratio"] = f"{ratio:.1f}"
+    # the page says the worst case is under half again as long; if a change to
+    # the routing makes that false the sentence has to change with it
+    assert ratio < 1.5, ratio
 
     # an orbit in two stages: the follow travels, then the world comes home
     for tag, locked in (("locked", True), ("drift", False)):
@@ -78,14 +147,6 @@ def frame_parts():
         for k, q in enumerate(walk):
             parts[f"walk_{tag}_{k}"] = frame("wide", HOLD, pose=q,
                                              captions=False, half=half)
-
-    # the open choice: which way a wrap goes when the ways are close.  The
-    # follow a quarter turned, holding Left to left: the shortest way rounds
-    # their back, the biased way crosses their front.
-    quarter = canonicalise(spin_about(rest(), "follow", 270))
-    parts["wrap_front"] = frame("f", HOLD, pose=quarter)
-    parts["wrap_short"] = frame("f", HOLD, pose=quarter, back_bias=0.0)
-    assert parts["wrap_front"] != parts["wrap_short"], "wrap comparison is moot"
 
     # the collapse: where the orbit lands, and where the axis turn lands
     landed = canonicalise(orbit(rest(), "follow", 90, locked=True))

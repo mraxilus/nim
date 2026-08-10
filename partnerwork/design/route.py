@@ -16,12 +16,10 @@ ROUTE_N = 33              # points in every emitted reach, so frames can morph
 
 HYSTERESIS = 9.0          # how much shorter a new route must be to displace one
 
-BACK_BIAS = 25.0          # what setting off round a dancer's back costs.  An arm
-                          # in a crossed hold crosses the front, so the front way
-                          # wins unless the back way is this much shorter -- a
-                          # preference rather than a rule, and the one number to
-                          # change if the choice lands the other way (it is still
-                          # an open question; the page draws both)
+SIDE_BIAS = 25.0          # what going the other way round a body costs, once
+                          # something has said which way it should go.  Nothing
+                          # says it by default: a reach with no opinion on
+                          # either end simply takes the short way
 
 BREAK = 11.0
 
@@ -103,8 +101,11 @@ def resample(pts, count):
 def front_of(hand, body):
     """The way round the rim that heads for this dancer's front, from here.
 
-    Zero when the hand is dead ahead or dead behind, where neither way is
-    more frontward than the other.
+    A hand's own side turns "front" or "back" into a pay-out direction by
+    itself: a Left hand's front is clockwise and a Right hand's anticlockwise.
+    So this is the whole of what a rule saying *which side of the body* has to
+    compute, and its negation is the back.  Zero when the hand is dead ahead or
+    dead behind, where neither way is more frontward than the other.
     """
     (c, f) = body
     off = wrap180(bearing(hand[0] - c[0], hand[1] - c[1]) - f)
@@ -113,24 +114,36 @@ def front_of(hand, body):
     return -1 if off > 0 else 1
 
 
-def routed(a, b, A, B, prefer=None, back_bias=BACK_BIAS):
+def across_front(ends, bodies):
+    """Send both ends of a reach the way that heads for their own dancer's
+    front -- one of the two things a level could mean."""
+    return tuple(front_of(e, b) for e, b in zip(ends, bodies))
+
+def round_back(ends, bodies):
+    """And the other: both ends set off the way that heads for the back."""
+    return tuple(-front_of(e, b) for e, b in zip(ends, bodies))
+
+
+def routed(a, b, A, B, prefer=None, want=(0, 0), bias=SIDE_BIAS):
     """One reach: hand border to hand border, wrapping wherever it must.
 
-    A way that sets off round a dancer's back pays `back_bias` against one that
-    crosses their front, and `prefer` keeps the previous frame's way round
-    unless a new one is clearly shorter -- so a moving reach wraps and unwraps
-    rather than flicking to the other side of a body through the middle of it.
+    With nothing to say otherwise it takes the short way.  `want` is the
+    pay-out direction asked for at each end -- `+1` clockwise, `-1`
+    anticlockwise, `0` no opinion -- and a way that disagrees pays `bias`.  One
+    mechanism serves everything that has an opinion: a body turning wants its
+    line to trail, and a level will want its own side of the body.  `prefer`
+    keeps the previous frame's way round unless a new one is clearly shorter,
+    so a moving reach wraps and unwraps rather than flicking to the other side
+    of a body through the middle of it.
     """
-    fa, fb = front_of(a, A), front_of(b, B)
     best = None
     for combo in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
         pts, length = taut(a, b, A, B, *combo)
         if pts is None:
             continue
-        if fa and combo[0] != fa:
-            length += back_bias
-        if fb and combo[1] != fb:
-            length += back_bias
+        for end in (0, 1):
+            if want[end] and combo[end] != want[end]:
+                length += bias
         if prefer is not None and combo == prefer:
             length -= HYSTERESIS
         if best is None or length < best[1]:

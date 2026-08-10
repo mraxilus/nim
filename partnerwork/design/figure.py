@@ -10,7 +10,7 @@ import math
 from .body import (BODY_R, CAPTION_R, R, border, caption, chevron, hand,
                    hands_of, other, ring_of, side_of)
 from .geometry import continuous, n, xy
-from .pose import canonicalise, cycle, rest, spin_about
+from .pose import NO_WIND, canonicalise, cycle, rest, spin_about
 from .route import cut_gap, reach_markup, routed, split_at
 from .style import DEEP, INK, LINK_W, QUIET
 
@@ -19,18 +19,38 @@ WIDE = 160                # the box a picture with captions needs
 
 SIZE = 116                # and the box it needs without them
 
-def two_tone(runs, mid, side):
-    """One reach in two shades of its arm's hue, meeting at its middle point.
+def two_tone(runs, mid, lead_side, foll_side):
+    """One reach in its two hands' own colours, meeting at its middle point.
 
-    The lead's end is deep and the follow's plain, so a line says which end is
-    whose along its own length -- and the pair of hands it joins is then read
-    from the line as well as from the marks.
+    Each half is exactly the mark it ends on: the lead's in their arm's ink and
+    the deep shade, the follow's in theirs and the plain one.  So a line draws
+    the pair of colours that names which hands are joined, instead of leaving
+    it to two marks that go too small to read; and the shade still says which
+    end is whose when both hands share a hue.
     """
     near, far = split_at(runs, mid)
-    return [reach_markup(near, DEEP[side]), reach_markup(far, INK[side])]
+    return [reach_markup(near, DEEP[lead_side]), reach_markup(far, INK[foll_side])]
+
+def pinned(wind, holds, levels):
+    """Wind only the hands a level has freed.
+
+    A hand leaves the side of its body only when the hold it is part of names a
+    level: a level is what lets an arm pass over or under, and passing is what
+    carries a hand round.  No level, no wrap -- so the hand stays where the arm
+    hangs, and only its body turning ever moves it.
+    """
+    freed = {who: dict(NO_WIND) for who in ("lead", "follow")}
+    for side, where in holds.items():
+        if levels.get(side) is None:
+            continue
+        asked = wind or {}
+        freed["lead"][side] = asked.get("lead", {}).get(side, 0.0)
+        own = side_of(where)
+        freed["follow"][own] = asked.get("follow", {}).get(own, 0.0)
+    return freed
 
 def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
-             back_bias=None):
+             want=None):
     """Every element of one pose, in the order the picture is read from."""
     levels = levels or {}
     p = hands_of(pose)
@@ -41,14 +61,16 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
     out = [ring_of(pose), border(pose, "lead"), border(pose, "follow")]
     for who in ("lead", "follow"):
         out.append(chevron(pose[who], pose[f"{who}_facing"]))
+    bodies = ((pose["lead"], pose["lead_facing"]),
+              (pose["follow"], pose["follow_facing"]))
     routes = {}
     for side in holds:
         where = holds[side]
-        extra = {} if back_bias is None else {"back_bias": back_bias}
-        routes[side], _ = routed(
-            p["lead"][side], foll(where),
-            (pose["lead"], pose["lead_facing"]),
-            (pose["follow"], pose["follow_facing"]), **extra)
+        ends = (p["lead"][side], foll(where))
+        # Nothing has an opinion about a still picture, so it takes the short
+        # way; `want` is here for the plates that ask which way it should go.
+        asked = want(ends, bodies) if callable(want) else (want or (0, 0))
+        routes[side], _ = routed(*ends, *bodies, want=asked)
     order = ["L", "R"] if over != "L" else ["R", "L"]
     for side in order:
         if side in holds:
@@ -56,7 +78,8 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
             runs = [pts]
             if over == other(side):
                 runs = cut_gap(pts, routes[other(side)])
-            out += two_tone(runs, pts[len(pts) // 2], side)
+            out += two_tone(runs, pts[len(pts) // 2], side,
+                            side_of(holds[side]))
     for side in ("L", "R"):
         x, y = p["lead"][side]
         out.append(hand(x, y, True, side, side in holds, levels.get(side), free))
@@ -93,15 +116,15 @@ def view(half):
 
 def frame(cls, holds, levels=None, over=None, lead_turn=0.0, follow_turn=0.0,
           free="fade", captions=True, pose=None, half=None, wind=None,
-          back_bias=None):
+          want=None):
     """One picture, canonical unless a pose is handed in already turned."""
     if pose is None:
-        pose = canonicalise(spin_about(spin_about(rest(wind), "lead",
-                                                  lead_turn),
-                                       "follow", follow_turn))
+        pose = canonicalise(spin_about(spin_about(
+            rest(pinned(wind, holds, levels or {})), "lead", lead_turn),
+            "follow", follow_turn))
     if half is None:
         half = (WIDE if captions else SIZE) / 2
-    bits = parts_of(pose, holds, levels, over, free, captions, back_bias)
+    bits = parts_of(pose, holds, levels, over, free, captions, want)
     return (f'<svg class="{cls}" {view(half)}>\n        '
             + "\n        ".join(bits) + "\n      </svg>")
 
@@ -124,6 +147,24 @@ def facings(poses, who):
     as most of a turn the other way -- which is a body spinning backwards while
     its own hands, placed absolutely, travel the right way."""
     return continuous([p[f"{who}_facing"] for p in poses])
+
+def trailing(poses, who, still=0.5):
+    """The way round this dancer their line should pay out, frame by frame.
+
+    Counter to their own turning: a body turning clockwise carries its hand
+    clockwise with it, so the way back towards where the line left last frame
+    is anticlockwise.  Paying out that way keeps the departure point still
+    while the body turns under it, which is what keeps a line on the same side
+    of a body through a rotation instead of flicking to the other.  A dancer
+    who is not turning has no opinion, and the previous frame's way round is
+    left to hold it.
+    """
+    steps = facings(poses, who)
+    out = []
+    for k in range(len(steps)):
+        turn = steps[(k + 1) % len(steps)] - steps[k]
+        out.append(0 if abs(turn) < still else (-1 if turn > 0 else 1))
+    return out
 
 def animated(cls, holds, move, half=None, dur=9.6, samples=14):
     """The same picture, moving: stage one travels, stage two comes home."""
@@ -172,14 +213,16 @@ def animated(cls, holds, move, half=None, dur=9.6, samples=14):
     # middle of the line, so both shades morph as one shape.
     combo = None
     routes = []
-    for h, q in zip(hands, poses):
+    trail = list(zip(trailing(poses, "lead"), trailing(poses, "follow")))
+    for h, q, want in zip(hands, poses, trail):
         pts, combo = routed(h["lead"][side], foll(h, site),
                             (q["lead"], q["lead_facing"]),
-                            (q["follow"], q["follow_facing"]), prefer=combo)
+                            (q["follow"], q["follow_facing"]),
+                            prefer=combo, want=want)
         routes.append(pts)
     middle = len(routes[0]) // 2
     for ink, cut in ((DEEP[side], slice(None, middle + 1)),
-                     (INK[side], slice(middle, None))):
+                     (INK[side_of(site)], slice(middle, None))):
         paths = ["M" + " L".join(xy(pt) for pt in pts[cut]) for pts in routes]
         out.append(paired(
             f'<path d="{paths[0]}" fill="none" stroke="{ink}"'
