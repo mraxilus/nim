@@ -13,12 +13,13 @@ how a move changes it) and `signs.html` is the turn sign (how to label an
 the two arm inks, which live in `page.py` and `body.py` so they cannot drift.
 
 ```
-python3 -m design        # from partnerwork/: checks everything, writes both pages
-nimble marks             # the same, as a task
+nimble marks                            # checks everything, writes both pages
+nim c -r --hints:off design/marks.nim   # the same, by hand from partnerwork/
 ```
 
-The build refuses to write a page whose claims fail: the checks in `checks.py`
-run first, and several figures are asserted during their own construction.
+The build refuses to write a page whose claims fail: the checks in
+`checks.nim` run between building a page's parts and writing it, and several
+figures are asserted during their own construction.
 Both pages are committed like `doc/review.html` is, so their git history is the
 history of what the marks have been claimed to be.  Each is published as a
 Claude artifact at a fixed URL; republishing the rebuilt files to those URLs is
@@ -27,6 +28,7 @@ the whole release step.
 To screenshot them (the animations need a browser):
 
 ```
+nimble shot                                     # builds design/shot.js
 node design/shot.js design/frames.html out-prefix
 ```
 
@@ -34,9 +36,11 @@ node design/shot.js design/frames.html out-prefix
 ## Rules as given
 
 Every rule stated for this drawing, in the words it arrived in, and the check
-that holds the drawing to it.  `checks.check_rules` runs on every build and
-prints one line per rule; a rule that is only implemented and not asserted is a
-rule that quietly stops being true, which has happened here more than once.
+that holds the drawing to it.  The wordings live as data in `rules.nim`, so
+this list, the checks and the pages quote one source; `checks.checkRules`
+runs on every build and prints one line per rule.  A rule that is only
+implemented and not asserted is a rule that quietly stops being true, which
+has happened here more than once.
 
 1. **"the hands should only pass through the circle when the hand positions are
    above."**  And at *every instant a moving picture draws*, not merely at the
@@ -196,19 +200,23 @@ The user's side of the table, as of the last iteration:
 
 ## Layout
 
+All Nim, like the ontology it serves; `marks.nim` is the build and the rest
+are modules it reads in this order:
+
 ```
-geometry.py    scalars and vectors, in the drawing's conventions
-style.py       the palette, two shades a side, and the connection stroke
-pose.py        the couple in world coordinates, and every rotation
-body.py        one dancer: outline, hands, captions
-route.py       the taut string a connection is routed as
-figure.py      whole pictures, still and moving
-sign.py        the quarter-turn sign
-parts.py       every figure both pages place, keyed as they use them
-checks.py      every claim the pages make, asserted
-page.py        the chrome the two pages share: style sheet, key, wrapper
-frame_page.py  the frame page's prose and layout
-sign_page.py   the turn-sign page's prose and layout
-__main__.py    build: parts, checks, pages, files
-shot.js        screenshot helper (light and dark, full page)
+geometry.nim    scalars and vectors, in the drawing's conventions
+rules.nim       the ledger above as data, and the vocabulary it speaks in
+style.nim       the palette, two shades a side, and the connection stroke
+pose.nim        the couple in world coordinates, and every rotation
+body.nim        one dancer: outline, spots, hands, captions
+route.nim       the taut string a connection is routed as
+sign.nim        the quarter-turn sign
+figure.nim      whole pictures, still and moving
+parts.nim       every figure both pages place, keyed as they use them
+checks.nim      every claim the pages make, asserted and spoken
+page.nim        the chrome the two pages share: style sheet, key, wrapper
+frame_page.nim  the frame page's prose and layout
+sign_page.nim   the turn-sign page's prose and layout
+marks.nim       build: parts, checks, pages, files
+shot.nim        screenshot helper (light and dark, full page), nim js
 ```
