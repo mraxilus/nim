@@ -103,6 +103,15 @@ const WRAP_MIN* = 170 ## Least degrees a line must hug a body for a lock or a
   ##     set; 170 sits squarely in it, and `checks` asserts the gap holds.
 
 
+type
+  Holds* = array[Arm, Option[Arm]]
+    ## What each lead hand holds: the follow's own side, where one is held.
+  Levels* = array[Arm, Option[Level]]
+    ## The level of each held connection, where one has been said.
+  Ways* = array[Arm, Option[Way]]
+    ## Whether each connection locks or wraps, where that has been said.
+
+
 func other*(arm: Arm): Arm =
   ## Get the opposite side.
   if arm == Arm.L: Arm.R else: Arm.L
@@ -127,3 +136,9 @@ func word*(slot: Slot): string =
   of Slot.Front: "front"
   of Slot.Default: "default"
   of Slot.Back: "back"
+
+func handName*(arm: Arm): string =
+  ## Write the follow's hand the way a hold names it.
+  ##   Lower case, because case carries meaning across the whole project: the
+  ##     lead's hands are `Left` and `Right`, the follow's `left` and `right`.
+  if arm == Arm.L: "left" else: "right"

@@ -34,7 +34,7 @@ const
 
 const SETTLINGS* = [
   (level: none Level, way: none Way, follow_turn: 0.0,
-   caption: "no way said<br>&mdash; it stays at its side"),
+   caption: "no way said<br>— it stays at its side"),
   (level: some Level.Low, way: some Way.Lock, follow_turn: 0.0,
    caption: "<em>low</em> lock<br>face to face"),
   (level: some Level.High, way: some Way.Lock, follow_turn: 0.0,
@@ -67,7 +67,7 @@ func said*(way: Option[Way]; arm = Arm.L): Ways =
   result[arm] = way
 
 
-func replaceFirst(s, sub, by: string): string =
+func replaceFirst*(s, sub, by: string): string =
   ## Replace only the first occurrence, as the figure post-passes need.
   let at = s.find(sub)
   if at < 0: s
