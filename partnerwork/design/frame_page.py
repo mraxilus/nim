@@ -30,10 +30,12 @@ def render(P):
   <p class="standfirst">Each dancer is a plain circle with a small chevron at
   its centre for the facing. A connection runs hand to hand as a taut string
   that wraps a body rather than crossing it, drawn in <b>its two hands' own
-  colours</b>, meeting at the middle. <b>A settled hand is in one of six
-  places</b> — its own side or the other one, and on that side a little
-  towards the front, a little towards the back, or where the arm hangs — and
-  which one is decided by the hold's level and by whether it locks or wraps.
+  colours</b>, meeting at the middle. <b>A settled hand is in one of four
+  places</b> — its own side or the other one, and on each of those where the
+  arm hangs or a little further round behind — decided by whether the hold
+  locks or wraps, with the place it left drawn as a grey ghost. <b>The hold
+  says which way the line goes round</b> too: a wrap round the front, a low
+  lock round the back.
   A move animates in two stages: travel, then turn the world until <b>the lead
   faces up</b> again. That second stage collapses every pose that is the same
   configuration onto one picture, and shows that an orbit lands where an axis
@@ -132,37 +134,54 @@ def render(P):
   </div>
 
   <div class="plate">
-    <h3>A settled hand is in one of six places</h3>
-    <p><b>Nothing is solved and nothing is asked for.</b> A hand at rest sits
-    in one of six slots, and which one is decided by three things and no
-    others: the hand's own side, the level of the hold it is part of, and
-    whether that hold is a <b>lock</b> or a <b>wrap</b>. The six are the two
-    sides, and on each side a place a little towards the front, a little
-    towards the back, or where the arm hangs. A picture seen from overhead has
-    no height to spend, so <em>above</em> and <em>below</em> are drawn as that
-    small offset round the rim.</p>
+    <h3>A settled hand is in one of four places</h3>
+    <p><b>Nothing is solved and nothing is asked for.</b> A hand at rest is
+    either where the arm hangs or <b>behind</b> — two sides, two places on
+    each, four in all. <em>Behind</em> carries locks and wraps alike; what
+    tells those apart is <b>which side</b> the hand is behind, and what tells
+    <em>high</em> from <em>low</em> is the fill the level already draws.
+    Nothing is invented to distinguish them.</p>
+    <p>The four are measured off the dancer's <b>own facing</b>, not off the
+    page — so the chart below is drawn on a body turned off the vertical, where
+    that is visible rather than merely true.</p>
     <div class="row mid">
-      {fig(P['slot_chart'], 'the six, on one body<br>— the four a Left hand uses, in its ink')}
+      {fig(P['slot_chart'], 'the four, on a turned body<br>— the three a Left hand uses, in its ink')}
       <figure><table class="slots">
         <tr><th></th><th>Left hand</th><th>Right hand</th></tr>
         <tr><td>no level, or no way said</td><td>left · side</td><td>right · side</td></tr>
-        <tr><td><em>high</em> lock</td><td>left · above</td><td>right · above</td></tr>
-        <tr><td><em>high</em> wrap</td><td>right · above</td><td>left · above</td></tr>
-        <tr><td><em>low</em> wrap</td><td>right · above</td><td>left · above</td></tr>
-        <tr><td><em>low</em> lock</td><td>right · below</td><td>left · below</td></tr>
-        <tr><td><em>above</em> — as <em>high</em></td><td>left / right · above</td><td>right / left · above</td></tr>
+        <tr><td>any level, <b>lock</b></td><td>left · behind</td><td>right · behind</td></tr>
+        <tr><td>any level, <b>wrap</b></td><td>right · behind</td><td>left · behind</td></tr>
       </table></figure>
     </div>
-    <p><b>Lock or wrap is state the hold carries</b>, and it has to be: the six
-    slots cannot be chosen without it. A hold that names a level but not which
-    of the two it is leaves its hands where the arm hangs — knowing the height
-    does not tell you which side the hand went to, so the picture does not
-    guess. Here is that, and the four settlings a <em>Left to left</em> hold
-    can reach:</p>
+    <p><b>Lock or wrap is state the hold carries</b>, and it has to be: the
+    place cannot be chosen without it. A hold that names a level but not which
+    of the two it is leaves its hands where the arm hangs — the height does not
+    tell you which side the hand went to, so the picture does not guess.</p>
+    <p><b>And where a hand has gone, the place it left is drawn as a grey
+    outline.</b> A displaced hand no longer says by its position how it got
+    there — the two locks share a spot, and so do the two wraps — so the ghost
+    says where it came from and the fill says at what height.</p>
     <div class="row">{settlings}</div>
     <p>Discrete at rest, but not discrete in between: a move that changes a
-    hold slides its hands from one slot to the next, so the six are where a
+    hold slides its hands from one spot to the next, so the four are where a
     picture <em>settles</em>, not a set of places it jumps between.</p>
+  </div>
+
+  <div class="plate">
+    <h3>And the hold says which way round<span class="tag">a rule</span></h3>
+    <p>The line no longer takes whichever way is shorter when the hold has
+    something to say about it. <b>A wrap comes round the front</b> of the body
+    it wraps; <b>a low lock goes round the back</b>. Same two bodies, same two
+    hands one spot apart, and the routes are opposite:</p>
+    <div class="row">
+      {fig(P['route_wrap'], '<em>low</em> wrap<br>— round the front')}
+      {fig(P['route_lock'], '<em>low</em> lock<br>— round the back')}
+    </div>
+    <p><b>The high lock is the one still open.</b> What you said was that for a
+    high lock <em>the opposite body's arm wraps around</em> — which is a rule
+    about the far end rather than the near one, and I would be guessing at
+    which. So a high lock keeps the plain short way until you say, and it is
+    the only hold on this page whose routing is not the dance's.</p>
   </div>
 
   <div class="plate">
@@ -320,14 +339,11 @@ def render(P):
   and go back when the marks are settled and the ontology is finished. The frame
   pictures are unchanged either way — the break stays, and the hand-to-hand half
   leaves its levels unsaid.</p>
-  <p>Yours to settle on this page: <b>whether the slot table above is right</b>
-  — four of its rows came straight from you, the Right hand's column is those
-  mirrored side-for-side, and <em>above</em> was extended to settle where
-  <em>high</em> does, so the last two are mine and may be wrong;
-  <code>SLOT_OFFSET</code>, how far round the rim <em>above</em> and
-  <em>below</em> sit, which is a drawn convention and nothing the dance says;
-  the bow for contact with the body; what an orbit stores; and when an arm
-  above the head blocks.</p>
+  <p>Yours to settle on this page: <b>the high lock's routing</b>, the one
+  hold whose way round is still the plain short way rather than the dance's;
+  <code>SLOT_OFFSET</code>, how far round the rim <em>behind</em> sits, which
+  is a drawn convention and nothing the dance says; the bow for contact with
+  the body; what an orbit stores; and when an arm above the head blocks.</p>
 </div>
 
 </div>

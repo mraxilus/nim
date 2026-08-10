@@ -47,13 +47,21 @@ move before any of it is routed, so no two frames can disagree.  **Any check on
 a reach tests the blend between frames, not just the frames** — `checks.py`
 does, and it is the check labelled "the one that matters".
 
-**2. A settled hand is in one of six places.**  `{left, right} × {default,
-above, below}` — nothing is solved and nothing is asked for.  Which slot is
-decided by the hand's own side, the hold's level, and whether the hold is a
-**lock** or a **wrap** (`body.SETTLE`, `body.slot_of`).  A hold naming a level
-but not which of those it is leaves its hands where the arm hangs.  Hands still
-move smoothly between slots while a picture moves; it is the *settled* state
-that is discrete.
+**2. A settled hand is in one of four places.**  `{left, right} × {default,
+behind}`, measured off the dancer's **own facing** and never off the page —
+nothing is solved and nothing is asked for.  `behind` carries locks and wraps
+alike: what tells those apart is which *side* the hand is behind, and what
+tells high from low is the level's fill (`body.SETTLE`, `body.slot_of`).  A
+hold naming a level but not whether it locks or wraps leaves its hands where
+the arm hangs.  **Where a hand has moved, the place it left is drawn as a grey
+ghost** (`figure.ghosts`).  Hands still move smoothly between spots while a
+picture moves; it is the *settled* state that is discrete.
+
+**3. The hold says which way the line goes round** (`route.way_for`): a
+**wrap** round the **front** of each body, a **low lock** round the **back**.
+Only where a hold says nothing does the route take the short way, and only then
+does `one_way_round` have to pick one for a move.  A **high lock** is the case
+not settled -- see the open questions.
 
 
 ## What is settled
@@ -103,10 +111,10 @@ page and this list together.
   there is no standing preference for a dancer's front.
 - A **hand stays at the side of its body unless the hold names a level**, and
   a level alone is not enough: without knowing whether the hold locks or wraps
-  there is no knowing which side the hand went to.  See the six slots above.
-- `SLOT_OFFSET` is how far round the rim `above` and `below` sit from a side --
-  a drawn convention, since a picture seen from overhead has no height to
-  spend.  It is wide enough that no two marks touch, which is asserted.
+  there is no knowing which side the hand went to.  See the four spots above.
+- `SLOT_OFFSET` is how far round the rim `behind` sits from a side -- a drawn
+  convention, wide enough that a mark never touches the grey ghost of the place
+  it left, which is asserted.
 - A move's **way round is settled once, for the whole move** (`one_way_round`),
   and every frame of it uses that one.  A stronger thing than the
   counter-rotation preference it replaced, and it is why `SIDE_BIAS`,
@@ -157,16 +165,14 @@ page and this list together.
 
 The user's side of the table, as of the last iteration:
 
-- **Whether the slot table is right.**  Four of its rows came straight from a
-  description and the rest are mirrored or extended: the Right hand's column is
-  the Left's mirrored side-for-side, keeping *above* and *below* as heights
-  rather than mirroring them, and `above` was extended to settle where `high`
-  does since both are the arm going over.  The frame page draws all six slots
-  and every settling beside its name, so a wrong row is visible rather than
-  buried.
-- **`SLOT_OFFSET`**, how far round the rim *above* and *below* sit from a side.
-  A drawn convention rather than anything the dance says, floored by two marks
-  not being allowed to touch.
+- **The high lock's routing.**  A wrap goes round the front and a low lock
+  round the back, both quoted; for a high lock what was said is that *the
+  opposite body's arm wraps around*, which is a rule about the far end rather
+  than the near one.  Rather than guess, a high lock keeps the plain short way,
+  and it is the only hold on the page whose routing is not the dance's.
+- **`SLOT_OFFSET`**, how far round the rim *behind* sits from a side.  A drawn
+  convention rather than anything the dance says, floored by a mark not being
+  allowed to touch its own ghost.
 - The mark for **any amount** of turn: five candidates are drawn on the sign
   page (open-ended box — recommended; open with a spilling pip; ellipsis row;
   music's repeat colon; a loop arrow).  None chosen yet.

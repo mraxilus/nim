@@ -10,12 +10,12 @@ import math
 from .body import (ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W, SLOTS,
                    border, hand_bearing, hands_of, other, outline_r,
                    settled_wind, side_of, slot_bearing, slot_of)
-from .figure import facings, frame, settled
+from .figure import facings, frame, ghosts, settled
 from .geometry import bearing, continuous, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
-from .route import (ROUTE_N, one_way_round, polyline_len, routed,
-                    split_at, straight_reach)
+from .route import (ROUTE_N, front_of, one_way_round, polyline_len,
+                    routed, split_at, straight_reach, way_for)
 from .sign import BODY, COS, GAP_X, HEIGHT, OVER, PIP, QUARTERS, SIN, TAN
 from .style import CAP
 
@@ -101,12 +101,13 @@ def check_frame():
     SLOT_TABLE = {
         (None, None): ("own", "default"),
         ("low", None): ("own", "default"),
-        ("high", "lock"): ("own", "above"),
-        ("high", "wrap"): ("other", "above"),
-        ("low", "wrap"): ("other", "above"),
-        ("low", "lock"): ("other", "below"),
-        ("above", "lock"): ("own", "above"),
-        ("above", "wrap"): ("other", "above"),
+        (None, "wrap"): ("own", "default"),
+        ("low", "lock"): ("own", "behind"),
+        ("high", "lock"): ("own", "behind"),
+        ("above", "lock"): ("own", "behind"),
+        ("low", "wrap"): ("other", "behind"),
+        ("high", "wrap"): ("other", "behind"),
+        ("above", "wrap"): ("other", "behind"),
     }
     for side in ("L", "R"):
         for (level, way), (where, slot) in SLOT_TABLE.items():
@@ -116,14 +117,38 @@ def check_frame():
             assert abs(wrap180(got - aim)) < 1e-9, (side, level, way, got, aim)
             assert slot_of(side, level, way) == (lands, slot), (side, level, way)
 
-    # the six are six: no two of them land on top of each other, and no two
-    # marks in any of them can touch
+    # the four are four, and a mark never touches the grey ghost of the place
+    # it left -- which is the whole reason `SLOT_OFFSET` is as wide as it is
     places = {(side, slot): slot_bearing(side, slot)
               for side in ("L", "R") for slot in SLOTS}
     apart = min(abs(wrap180(a - b))
                 for i, a in enumerate(places.values())
                 for b in list(places.values())[i + 1:])
-    assert apart > 2 * math.degrees(math.asin(R / BODY_R)), apart
+    assert len(places) == 4 and apart > 2 * math.degrees(math.asin(R / BODY_R))
+
+    # a ghost is drawn exactly when a hand is not where its arm hangs
+    for level, way, displaced in ((None, None, 0), ("low", None, 0),
+                                  ("low", "lock", 2), ("high", "wrap", 2)):
+        moved = ghosts({"L": "left"},
+                       {} if level is None else {"L": level},
+                       {} if way is None else {"L": way})
+        assert len(moved) == displaced, (level, way, moved)
+
+    # and the hold decides which way round: a wrap comes round the front of
+    # each body, a low lock round the back.  Read off the drawn route rather
+    # than off the rule that made it.
+    for way, towards in (("wrap", 1), ("lock", -1)):
+        pose = settled(rest(), {"L": "left"}, {"L": "low"}, {"L": way})
+        ends = hands_of(pose)
+        a, b = ends["lead"]["L"], ends["follow"]["L"]
+        bodies = ((pose["lead"], pose["lead_facing"]),
+                  (pose["follow"], pose["follow_facing"]))
+        asked = way_for((a, b), bodies, "low", way)
+        assert asked is not None, way
+        for end, hand_at, body in ((0, a, bodies[0]), (1, b, bodies[1])):
+            assert asked[end] == towards * front_of(hand_at, body), (way, end)
+        pts, got = routed(a, b, *bodies, way=asked)
+        assert got == asked and pts is not None, (way, got)
 
     # a reach is drawn in its two hands' own colours, not one hue twice
     crossed = frame("f", {"L": "right"}, {"L": "low"})

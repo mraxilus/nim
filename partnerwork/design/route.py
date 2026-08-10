@@ -8,7 +8,7 @@ is what lets an animation morph a reach instead of jumping it.
 import math
 
 from .body import BODY_R, R, RIM_STEP, outline_point, outline_r
-from .geometry import bearing, xy
+from .geometry import bearing, wrap180, xy
 from .style import CAP, LINK_W
 
 
@@ -95,6 +95,42 @@ def resample(pts, count):
         p, q = pts[j], pts[j + 1]
         out.append((p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t))
     return out
+
+def front_of(hand, body):
+    """The way round the rim, from this hand, that heads for its own dancer's
+    front.  A hand's own side turns "front" or "back" into a direction by
+    itself, so this is the whole of what a rule naming one has to work out.
+    Zero where the hand is dead ahead or dead behind and neither way is more
+    frontward than the other."""
+    (c, f) = body
+    off = wrap180(bearing(hand[0] - c[0], hand[1] - c[1]) - f)
+    if abs(off) < 1e-9 or abs(abs(off) - 180) < 1e-9:
+        return 0
+    return -1 if off > 0 else 1
+
+def way_for(ends, bodies, level, way):
+    """Which way round both bodies a hold says its line goes.
+
+    Not what is shortest -- what the dance says.  A **wrap** comes round the
+    **front** of the body it is wrapping; a **low lock** goes round the
+    **back**.  Anything else, including a hold that has named no level or no
+    way, has no opinion, and `routed` takes the short way.
+
+    A high lock is the case not settled here: it is meant to be the *opposite*
+    body's arm that wraps around, which is a rule about the far end rather than
+    this one, and the reading is still open -- so for now it takes the short
+    way too and the page says so.
+    """
+    if level is None or way is None:
+        return None
+    sides = tuple(front_of(e, b) for e, b in zip(ends, bodies))
+    if not all(sides):
+        return None                       # dead ahead or behind: neither way
+    if way == "wrap":
+        return sides
+    if way == "lock" and level == "low":
+        return tuple(-s for s in sides)
+    return None
 
 def straight_reach(a, b):
     """A reach that goes over everything instead of round it.

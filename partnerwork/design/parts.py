@@ -27,37 +27,43 @@ HOLD = {"L": "left"}
 
 
 SETTLINGS = (
-    (None, None, "no level<br>— or none said"),
-    ("high", "lock", "<em>high</em> lock"),
-    ("high", "wrap", "<em>high</em> wrap"),
-    ("low", "wrap", "<em>low</em> wrap"),
+    (None, None, "no way said<br>— it stays at its side"),
     ("low", "lock", "<em>low</em> lock"),
+    ("high", "lock", "<em>high</em> lock"),
+    ("low", "wrap", "<em>low</em> wrap"),
+    ("high", "wrap", "<em>high</em> wrap"),
 )
+
+CHART_FACING = 40         # the chart's body is turned off the vertical, so the
+                          # spots visibly follow the chevron and not the page
 
 
 def slot_chart(side="L"):
-    """One body with all six slots on it, and this hand's four marked.
+    """One body with all four spots on it, and this hand's three marked.
 
     Drawn rather than tabulated because the table is the thing most likely to
-    be wrong: six places, and which of them a hand settles in is the whole of
-    what a level and a way decide.
+    be wrong -- and drawn on a body turned off the vertical, because the spots
+    are measured off the dancer's facing rather than off the page, and a body
+    facing up hides the difference.
     """
-    out = ['<svg class="f" viewBox="-68 -50 136 100">']
-    pose = {"lead": (0.0, 0.0), "lead_facing": 0.0,
+    # its own box rather than the square every other figure uses: the labels
+    # are wide and the body is small, so a square would draw it tiny
+    out = ['<svg viewBox="-80 -46 160 92" width="248" height="143">']
+    pose = {"lead": (0.0, 0.0), "lead_facing": float(CHART_FACING),
             "lead_wind": dict(NO_WIND), "ring": None}
     out.append(border(pose, "lead"))
-    out.append(chevron((0.0, 0.0), 0.0))
+    out.append(chevron((0.0, 0.0), float(CHART_FACING)))
     lands = {slot_of(side, level, way) for level, way, _ in SETTLINGS}
     for place in ("L", "R"):
         for slot in SLOTS:
-            aim = slot_bearing(place, slot)
+            aim = CHART_FACING + slot_bearing(place, slot)
             x, y = polar(0.0, 0.0, BODY_R, aim)
             # in this hand's own ink wherever it sits, because that is the
             # point: a Left hand carried to the right side is still the Left
             used = (place, slot) in lands
             out.append(hand(x, y, True, side, used, None,
                             free="fade" if used else "grey"))
-            lx, ly = polar(0.0, 0.0, BODY_R + R + 5, aim)
+            lx, ly = polar(0.0, 0.0, BODY_R + R + 13, aim)
             out.append(f'<text x="{n(lx)}" y="{n(ly + 3)}"'
                        f' text-anchor="{"end" if lx < 0 else "start"}"'
                        ' style="font: 8px ui-sans-serif, system-ui,'
@@ -101,7 +107,7 @@ def frame_parts():
     parts["pair_lr"] = frame("f", {"L": "right"})
     parts["pair_lr_turned"] = frame("f", {"L": "right"}, follow_turn=180)
 
-    # the six slots, and the five settlings that reach four of them
+    # the four spots, and the five settlings that reach three of them
     parts["slot_chart"] = slot_chart("L")
     seen = {}
     for k, (level, way, _) in enumerate(SETTLINGS):
@@ -109,8 +115,21 @@ def frame_parts():
         ways = {} if way is None else {"L": way}
         parts[f"settle_{k}"] = frame("f", HOLD, levels, ways=ways,
                                      captions=False)
-        seen[slot_of("L", level, way)] = parts[f"settle_{k}"]
-    assert len(seen) == 4, sorted(seen)          # a Left hand reaches four
+        seen.setdefault(slot_of("L", level, way), []).append(k)
+    # a Left hand reaches three of the four; the fourth belongs to the Right
+    assert sorted(seen) == [("L", "behind"), ("L", "default"),
+                            ("R", "behind")], sorted(seen)
+    # and the two that share a spot are told apart by their fill alone
+    assert parts["settle_1"] != parts["settle_2"], "high and low lock collide"
+    assert parts["settle_3"] != parts["settle_4"], "high and low wrap collide"
+
+    # the routing the hold decides: a wrap round the front, a low lock round
+    # the back, of the body each end belongs to
+    for name, level, way in (("route_wrap", "low", "wrap"),
+                             ("route_lock", "low", "lock")):
+        parts[name] = frame("f", HOLD, {"L": level}, ways={"L": way},
+                            captions=False)
+    assert parts["route_wrap"] != parts["route_lock"], "the rules agree"
 
     # a wrap really does put a body in the way, which is what makes `above`
     # passing straight through worth having

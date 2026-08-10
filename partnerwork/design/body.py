@@ -32,51 +32,39 @@ CAPTION_R = BODY_R + R + 2   # just past the hand it names
 
 FREE = 0.5                # how far a hand nobody holds fades, keeping its hue
 
-SLOT_OFFSET = 36          # how far round the rim `above` and `below` sit from
-                          # a side.  A picture seen from overhead has no height
-                          # to spend, so the two are drawn as a small offset --
-                          # `above` towards the front, `below` towards the
-                          # back, the one body-relative axis there is.  Wide
-                          # enough that no two marks ever touch, narrow enough
-                          # that a slot still reads as belonging to its side
+SLOT_OFFSET = 44          # how far round the rim `behind` sits from a side.
+                          # Wide enough that a mark and the grey ghost of the
+                          # place it left never touch, narrow enough that the
+                          # spot still reads as belonging to its own side
 
-SLOTS = ("default", "above", "below")
+SLOTS = ("default", "behind")
 
 def slot_bearing(side, slot):
-    """Where one of the six slots sits, as a bearing off the body's facing.
+    """Where one of the four spots sits, as a bearing off the body's facing.
 
-    Two sides, and on each of them a place for a hand to hang, one a little
-    towards the front and one a little towards the back.  Those two are what
-    `above` and `below` become when a picture is seen from overhead and has no
-    height to spend -- so `above` is the same height on either side rather than
-    a mirror of it.
+    Two sides, and on each of them the place where the arm hangs and one a
+    little further round towards the back.  Off the *facing*, not off the page:
+    turn a dancer and their spots turn with them.
     """
     base = -ARM_REST if side == "L" else ARM_REST
-    if slot == "default":
-        return base
-    forward = SLOT_OFFSET if side == "L" else -SLOT_OFFSET
-    return base + (forward if slot == "above" else -forward)
+    back = -SLOT_OFFSET if side == "L" else SLOT_OFFSET
+    return base + (back if slot == "behind" else 0.0)
 
-# Where a hand settles: its own side, and the level and way of the hold it is
-# part of, and nothing else.  A hold that names no level, or names one without
-# saying whether it locks or wraps, leaves the hand where the arm hangs --
-# without knowing which of the two it is, there is no knowing which side the
-# hand went to, so the picture does not guess.
+# Where a hand settles.  `behind` carries both locks and wraps -- what tells
+# them apart is which *side* the hand is behind, and what tells high from low
+# is the fill the level already draws.  Nothing is invented to distinguish
+# them.  A hold that names no level, or names one without saying whether it
+# locks or wraps, leaves the hand where the arm hangs: there is no knowing.
 SETTLE = {
-    ("high", "lock"): ("own", "above"),
-    ("high", "wrap"): ("other", "above"),
-    ("low", "wrap"): ("other", "above"),
-    ("low", "lock"): ("other", "below"),
-    # `above` settles where `high` does: both are the arm going over, and the
-    # height only changes what the connection may cross on its way, not where
-    # the hand ends up.  An extension of the four rules, not one of them.
-    ("above", "lock"): ("own", "above"),
-    ("above", "wrap"): ("other", "above"),
+    "lock": ("own", "behind"),
+    "wrap": ("other", "behind"),
 }
 
 def slot_of(side, level=None, way=None):
-    """The one of six slots this hand settles in: which side, and how high."""
-    where, slot = SETTLE.get((level, way), ("own", "default"))
+    """The one of four spots this hand settles in: whose side, and how far
+    round.  The level is not consulted -- it is a fill, not a place."""
+    where, slot = (SETTLE[way] if level is not None and way in SETTLE
+                   else ("own", "default"))
     return (side if where == "own" else other(side)), slot
 
 def hand_bearing(facing, side, wind=0.0):

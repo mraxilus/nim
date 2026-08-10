@@ -8,11 +8,12 @@ unless a new one is decisively shorter -- so everything stays in one piece.
 import math
 
 from .body import (BODY_R, CAPTION_R, R, border, caption, chevron, hand,
-                   hands_of, other, ring_of, settled_wind, side_of)
+                   hand_point, hands_of, other, ring_of, settled_wind,
+                   side_of, slot_of)
 from .geometry import continuous, n, xy
 from .pose import NO_WIND, canonicalise, cycle, rest, spin_about
 from .route import (cut_gap, one_way_round, reach_markup, routed, split_at,
-                    straight_reach)
+                    straight_reach, way_for)
 from .style import DEEP, INK, LINK_W, QUIET
 
 
@@ -31,6 +32,16 @@ def two_tone(runs, mid, lead_side, foll_side):
     """
     near, far = split_at(runs, mid)
     return [reach_markup(near, DEEP[lead_side]), reach_markup(far, INK[foll_side])]
+
+def ghosts(holds, levels, ways):
+    """Every hand that is not where its arm hangs, as `(who, side)`."""
+    out = []
+    for side, where in holds.items():
+        level, way = levels.get(side), ways.get(side)
+        for who, own in (("lead", side), ("follow", side_of(where))):
+            if slot_of(own, level, way) != (own, "default"):
+                out.append((who, own))
+    return out
 
 def settled(pose, holds, levels, ways):
     """The same pose with every hand put in the slot its hold settles it in.
@@ -64,6 +75,13 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
     out = [ring_of(pose), border(pose, "lead"), border(pose, "follow")]
     for who in ("lead", "follow"):
         out.append(chevron(pose[who], pose[f"{who}_facing"]))
+    # Where each displaced hand came from, as a grey outline of its own mark.
+    # `behind` carries locks and wraps alike, so a hand no longer says by where
+    # it sits how far it has been taken -- the ghost of the place it left says
+    # it instead, and a hand still at home has no ghost to confuse it with.
+    for who, side in ghosts(holds, levels, ways):
+        x, y = hand_point(pose[who], pose[f"{who}_facing"], side)
+        out.append(hand(x, y, who == "lead", side, held=False, free="grey"))
     bodies = ((pose["lead"], pose["lead_facing"]),
               (pose["follow"], pose["follow_facing"]))
     routes = {}
@@ -73,7 +91,9 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
         if levels.get(side) == "above":
             routes[side] = straight_reach(*ends)     # over the head, over all
         else:
-            routes[side], _ = routed(*ends, *bodies)   # and the short way round
+            # what the hold says, if it says anything; the short way if not
+            routes[side], _ = routed(*ends, *bodies, way=way_for(
+                ends, bodies, levels.get(side), ways.get(side)))
     order = ["L", "R"] if over != "L" else ["R", "L"]
     for side in order:
         if side in holds:
@@ -207,7 +227,12 @@ def animated(cls, holds, move, half=None, levels=None, ways=None, dur=9.6,
     if levels.get(side) == "above":
         routes = [straight_reach(a, b) for a, b, _, _ in frames]
     else:
-        way = one_way_round(frames)
+        # A hold that says which way round says it for every frame at once: a
+        # slot is fixed relative to its facing, so the direction is too.  Where
+        # it says nothing, one way is picked for the whole move instead.
+        said = way_for(frames[0][:2], frames[0][2:],
+                       levels.get(side), ways.get(side))
+        way = said or one_way_round(frames)
         routes = [routed(*f, way=way)[0] for f in frames]
     middle = len(routes[0]) // 2
     for ink, cut in ((DEEP[side], slice(None, middle + 1)),
