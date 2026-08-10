@@ -5,6 +5,8 @@
 ## picture says has to survive being shrunk, because a reader who cannot read it
 ## cannot read anything else on the page.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils, unittest]
 
 import ../src/partnerwork

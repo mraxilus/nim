@@ -4,6 +4,8 @@
 ## Rebuilding it here and comparing with the committed copy makes a model change
 ## that has not been written up fail the suite rather than ship quietly.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, os, strutils, unittest]
 
 import ../src/partnerwork

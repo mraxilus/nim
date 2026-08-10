@@ -4,6 +4,8 @@
 ## sentences they came from; the geometry and the bookkeeping are checked as
 ## laws, because they follow from the bodies being rigid.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, unittest]
 
 import ../src/partnerwork/frame

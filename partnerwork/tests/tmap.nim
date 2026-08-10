@@ -4,6 +4,8 @@
 ## that it is a drawing of *this* model, with every frame in it once, every move
 ## on it once, and nothing on it that the model does not derive.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils, unittest]
 
 import ../src/partnerwork

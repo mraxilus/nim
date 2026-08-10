@@ -1,5 +1,7 @@
 ## Test the laws of the frame: validity, naming, keys and reflection.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils, unittest]
 
 import ../src/partnerwork/frame

@@ -11,6 +11,8 @@
 ##       agreement is enforced by `tests/tworkbook.nim`, and this only makes it
 ##       readable.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils]
 
 import ../src/partnerwork

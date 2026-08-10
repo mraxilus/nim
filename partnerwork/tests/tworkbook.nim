@@ -6,6 +6,8 @@
 ## same pair, and the cells that wait for a place on the body are pinned here so
 ## that the size of what is deferred stays visible.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, unittest]
 
 import ../src/partnerwork

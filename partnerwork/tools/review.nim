@@ -15,6 +15,8 @@
 ##     Cost of committing the generated page: every model change must re-run
 ##       `nimble review`, or the suite fails on the stale copy.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, os, strutils]
 
 import ../src/partnerwork

@@ -22,6 +22,8 @@
 ##     lives in `doc/review.html`, which is written from the same model, and in
 ##     `nimble audit`.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils]
 import std/dom except Frame ## Exclude the browser's own `Frame`, which is a window.
 

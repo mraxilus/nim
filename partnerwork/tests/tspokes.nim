@@ -4,6 +4,8 @@
 ## useful.  This drawing cannot: it is the answer to "what can I do now", so a
 ## frame on it that is not reachable would be a claim the ontology does not make.
 
+{.experimental: "strictFuncs".}
+
 import std/[math, options, strutils, unittest]
 
 import ../src/partnerwork

@@ -3,6 +3,8 @@
 ## The state space is small enough to check exhaustively, so nothing here is a
 ## sample: each law is asserted for all 64 ordered pairs.
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strutils, unittest]
 
 import ../src/partnerwork/frame
