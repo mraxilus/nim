@@ -225,7 +225,7 @@ suite "the drawing":
     let picture = renderMap(none(Frame))
     for a in FRAMES:
       for b in FRAMES:
-        if compound(a, b).isNone or frameIndex(a) > frameIndex(b):
+        if compound(a, b).isNone or frameIndex(a).get > frameIndex(b).get:
           continue
         let
           near = compoundSide(b, a)

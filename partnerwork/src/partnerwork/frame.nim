@@ -178,12 +178,14 @@ const FRAMES* = constructFrames()
   ## Hold every frame two facing humanoid bodies can take hand to hand.
 
 
-func frameIndex*(frame: Frame): int =
-  ## Get the position of a frame in `FRAMES`, or -1 when it is not valid.
+func frameIndex*(frame: Frame): Option[int] =
+  ## Get the position of a frame in `FRAMES`, where the frame is valid.
+  ##   Absence is typed rather than in-range: an invalid frame has no
+  ##     position, not a position of -1 a reader must know to test for.
   for index, candidate in FRAMES:
     if candidate == frame:
-      return index
-  -1
+      return some index
+  none(int)
 
 
 

@@ -338,20 +338,24 @@ func route*(source, destination: Frame): seq[Move] =
   ##
   ## The workbook records compound cells such as `place, collect`; a route of
   ## length greater than one is the same thing, derived instead of written down.
-  if source == destination or source.frameIndex < 0 or destination.frameIndex < 0:
+  if source == destination or source.frameIndex.isNone or
+      destination.frameIndex.isNone:
     return @[]
+  let home = source.frameIndex.get
   var
     reached = newSeq[bool](FRAMES.len)
     arrival = newSeq[Move](FRAMES.len)
     origin = newSeq[int](FRAMES.len)
-    queue = @[source.frameIndex]
-  reached[source.frameIndex] = true
+    queue = @[home]
+  reached[home] = true
   var head = 0
   while head < queue.len:
     let current = queue[head]
     inc head
     for move in moves(FRAMES[current]):
-      let next = move.to.frameIndex
+      # A move's destination is always a valid frame, so absence here is an
+      # internal impossibility and the unwrap is the assertion.
+      let next = move.to.frameIndex.get
       if reached[next]:
         continue
       reached[next] = true
@@ -359,7 +363,7 @@ func route*(source, destination: Frame): seq[Move] =
       origin[next] = current
       if move.to == destination:
         var step = next
-        while step != source.frameIndex:
+        while step != home:
           result.insert(arrival[step], 0)
           step = origin[step]
         return result

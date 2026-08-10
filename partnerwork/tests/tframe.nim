@@ -11,7 +11,7 @@ suite "frames":
     for target in FRAMES:
       check target.isValid
     for index, target in FRAMES:
-      check target.frameIndex == index
+      check target.frameIndex == some(index)
 
   test "an arm order is recorded exactly where the forearms overlap":
     var overlapping = 0
@@ -49,7 +49,7 @@ suite "frames":
     for target in FRAMES:
       check target.reflect.isValid
       check target.reflect.reflect == target
-      check target.reflect.frameIndex >= 0
+      check target.reflect.frameIndex.isSome
     var seen: seq[Frame] = @[]
     for target in FRAMES:
       check target.reflect notin seen
