@@ -44,4 +44,5 @@ task audit, "Print the model and what it says about the workbook":
   exec "nim c -r --hints:off tools/audit.nim"
 
 task marks, "Check and rebuild the rotation mark workbench's two pages":
-  exec "python3 -m design"
+  # A debug build on purpose: the workbench's doAssert gates are the build.
+  exec "nim c -r --hints:off design/marks.nim"
