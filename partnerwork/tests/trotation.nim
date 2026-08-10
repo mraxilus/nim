@@ -71,10 +71,10 @@ suite "what the arm can carry":
   test "the measured table is reproduced, cell by cell":
     # `Left to left`, one hand, danced.  A low wrap holds half a turn; a low
     # lock, a high wrap and a high lock each hold a full one.
-    check armCapacity(some(Blocker.Wrap), Level.Low) == 1
-    check armCapacity(some(Blocker.Lock), Level.Low) == 2
-    check armCapacity(some(Blocker.Wrap), Level.High) == 2
-    check armCapacity(some(Blocker.Lock), Level.High) == 2
+    check armCapacity(some(Blocker.Wrap), Level.Low) == 1  # rotations: low wrap, half a turn
+    check armCapacity(some(Blocker.Lock), Level.Low) == 2  # rotations: low lock, a full turn
+    check armCapacity(some(Blocker.Wrap), Level.High) == 2  # assumed, see `CAPACITY_ARM`
+    check armCapacity(some(Blocker.Lock), Level.High) == 2  # assumed, see `CAPACITY_ARM`
 
   test "a low wrap is the one thing that binds tighter than its hold":
     # Which is the whole finding: the limit is not a property of what joins the
@@ -142,8 +142,8 @@ suite "modifiers":
   test "the two filled cells of the rotations sheet are reproduced":
     # `Left to left` held low: half a turn left wraps, a full turn right locks.
     check blocker(0).isNone
-    check blocker(-1) == some(Blocker.Wrap)
-    check blocker(2) == some(Blocker.Lock)
+    check blocker(-1) == some(Blocker.Wrap)  # rotations: half a turn left wraps
+    check blocker(2) == some(Blocker.Lock)  # rotations: a full turn right locks
 
   test "a wrap is reachable from a pair and a lock is not":
     check blocker(fromKey("rl.").get.rest.capacity) == some(Blocker.Wrap)

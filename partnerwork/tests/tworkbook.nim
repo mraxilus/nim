@@ -11,8 +11,8 @@ import std/[options, unittest]
 import ../src/partnerwork
 
 
-suite "the transcription":
-  test "every hand-to-hand state reads as one distinct valid frame":
+suite "the base sheet":
+  test "seven of the sheet's nine states read as distinct valid frames":
     var seen: seq[Frame] = @[]
     for name in WORKBOOK_STATES:
       if name.isDeferred:
@@ -24,16 +24,16 @@ suite "the transcription":
       check target.get notin seen
       check workbookName(target.get) == some(name)
       seen.add target.get
-    check seen.len == 7
+    check seen.len == 7  # base: nine states, two of them deferred
     check workbookFrame("shine").isNone
 
   test "the two deferred states are the ones that rest on the body":
-    check DEFERRED_STATES == ["closed", "half-closed"]
-    check countDeferredCells() == 9
-    check CELLS.len - countDeferredCells() == 18
+    check DEFERRED_STATES == ["closed", "half-closed"]  # base: its first two rows
+    check countDeferredCells() == 9  # base: nine cells touch "closed" or "half-closed"
+    check CELLS.len - countDeferredCells() == 18  # base: the hand-to-hand remainder
 
-  test "every cell names a known pair of states, once":
-    check CELLS.len == 27
+  test "each of the 27 filled cells names a known pair of states, once":
+    check CELLS.len == 27  # base: 27 filled cells, read row by row
     for index, cell in CELLS:
       check cell.source in WORKBOOK_STATES
       check cell.destination in WORKBOOK_STATES
@@ -48,21 +48,21 @@ suite "the transcription":
     for cell in CELLS:
       if "slide" notin readCell(cell.text):
         continue
-      check cell.source.isDeferred or cell.destination.isDeferred
+      check cell.source.isDeferred or cell.destination.isDeferred  # base: three "slide" cells
 
   test "the helper words of the ontology are read, including its synonyms":
     check readHelper("collect") == some(Helper.Collect)
-    check readHelper("drop") == readHelper("flick")
+    check readHelper("drop") == readHelper("flick")  # vocabulary: "flick", a drop with momentum
     check readHelper("pass").isNone
     check readHelper("slide").isNone
     check readHelper("dip").isNone
     check readCompound(" cut ") == some(Compound.Cut)
-    check readCompound("pass") == readCompound("place")
+    check readCompound("pass") == readCompound("place")  # base: writes both words
     check readCompound("collect").isNone
-    check readCell("place, drop, collect").len == 3
+    check readCell("place, drop, collect").len == 3  # base: its longest cell, into "half-closed"
 
 
-suite "the audit":
+suite "the audit of the base sheet":
   test "every checkable cell is exactly the move the model derives":
     var primitives, compounds = 0
     for cell in CELLS:
@@ -80,8 +80,8 @@ suite "the audit":
       inc primitives
       check classify(source, destination) == readHelper(cell.text)
       check readHelper(cell.text).isSome
-    check primitives == 12
-    check compounds == 6
+    check primitives == 12  # base: six "collect" and six "drop" cells
+    check compounds == 6  # base: four "pass" cells and two "cut" cells
     check primitives + compounds == 18
 
   test "the checkable cells are every move between the states they name":
@@ -95,7 +95,7 @@ suite "the audit":
           b = workbookFrame(destination).get
         if classify(a, b).isSome or compound(a, b).isSome:
           inc derived
-    check derived == 18
+    check derived == 18  # base: matches its 18 hand-to-hand cells, none over
 
   test "nothing in the hand-to-hand part of the sheet disagrees":
     for finding in audit():
@@ -111,12 +111,12 @@ suite "the audit":
     var counted: array[FindingKind, int]
     for finding in audit():
       inc counted[finding.kind]
-    check counted[FindingKind.StateDeferred] == 2
-    check counted[FindingKind.FrameAbsent] == 1
+    check counted[FindingKind.StateDeferred] == 2  # base: "closed" and "half-closed"
+    check counted[FindingKind.FrameAbsent] == 1  # base: no row for the open frame
     check audit().len == 3
 
   test "the missing frame is the one where nobody is holding on":
     for finding in audit():
       if finding.kind != FindingKind.FrameAbsent:
         continue
-      check finding.subject == "open"
+      check finding.subject == "open"  # base: the sheet has no such row

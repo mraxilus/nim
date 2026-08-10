@@ -19,7 +19,7 @@ suite "the relation":
       for destination in FRAMES:
         let forward = classify(source, destination)
         let backward = classify(destination, source)
-        check forward.isSome == backward.isSome
+        check forward.isSome == backward.isSome  # the law `transition.nim`'s header states
         if forward.isSome:
           check backward.get == forward.get.inverse
 
@@ -290,6 +290,6 @@ suite "the vocabulary":
 
   test "a primitive with another word says so, and one without does not":
     check HELPER_SYNONYMS[Helper.Drop].len > 0
-    check Helper.Drop.manner.contains("flick")
+    check Helper.Drop.manner.contains("flick")  # vocabulary: a drop led with momentum
     check HELPER_SYNONYMS[Helper.Collect].len == 0
     check Helper.Collect.manner == "collect"

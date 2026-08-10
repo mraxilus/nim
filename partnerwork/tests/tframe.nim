@@ -108,7 +108,7 @@ suite "naming":
     check fromKey("--.").get.describe == "open"
 
   test "the workbook's names come out of the structure":
-    check fromKey("l-.").get.describe == "Left to left"
+    check fromKey("l-.").get.describe == "Left to left"  # base: five of its nine rows follow
     check fromKey("r-.").get.describe == "Left to right"
     check fromKey("rl.").get.describe == "Left-to-right and Right-to-left"
     check fromKey("lrL").get.describe == "Left-to-left over Right-to-right"
