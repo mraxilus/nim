@@ -46,3 +46,6 @@ task audit, "Print the model and what it says about the workbook":
 task marks, "Check and rebuild the rotation mark workbench's two pages":
   # A debug build on purpose: the workbench's doAssert gates are the build.
   exec "nim c -r --hints:off design/marks.nim"
+
+task shot, "Build the workbench's screenshot helper for node":
+  exec "nim js --hints:off -d:nodejs -o:design/shot.js design/shot.nim"
