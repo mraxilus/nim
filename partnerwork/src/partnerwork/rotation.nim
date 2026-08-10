@@ -91,6 +91,14 @@ type
 
 
 const
+  UNBOUNDED_TURNS* = high(HalfTurns)
+    ## Say a capacity that limits nothing, as a value on the capacity axis.
+    ##   A named saturation rather than an `Option`: capacity is compared
+    ##     with `<=` everywhere, and plus infinity is the honest answer for
+    ##     "nothing joins the bodies", not an absence.
+    ##     Cost of a saturation constant: a reader must learn that one value
+    ##       of the axis means never.  Accepted -- the alternative wraps
+    ##       every comparison in an unwrap for no prevented mistake.
   CAPACITY_SINGLE* = 2 ## Hold one full turn on one hand-to-hand connection.
   CAPACITY_PAIR* = 1   ## Hold half a turn on two hand-to-hand connections.
   CAPACITY_CONTACT* = 0 ## Hold nothing while a hand rests on the partner's body.
@@ -149,7 +157,7 @@ func armCapacity*(blocker: Option[Blocker]; level: Level): HalfTurns =
   ##       yet, which is why `ABOVE_BLOCKS` says so out loud rather than being
   ##       quietly absent.
   if level == Level.Above:
-    return high(HalfTurns)
+    return UNBOUNDED_TURNS
   if blocker == some(Blocker.Wrap) and level == Level.Low:
     CAPACITY_WRAP_LOW
   else:
@@ -169,7 +177,7 @@ func capacity*(posture: Posture): HalfTurns =
   if posture.contact.isSome:
     return CAPACITY_CONTACT
   case posture.frame.countHolds
-  of 0: high(HalfTurns) # Nothing joins the bodies, so nothing limits the turn.
+  of 0: UNBOUNDED_TURNS # Nothing joins the bodies, so nothing limits the turn.
   of 1: CAPACITY_SINGLE
   else: CAPACITY_PAIR
 
@@ -216,8 +224,8 @@ func armsCapacity*(posture: Posture; twist: HalfTurns): HalfTurns =
   ##   With no arm holding at all there is nothing to run out: two people who
   ##     are not touching can each face wherever they like.
   if posture.frame.countHolds == 0:
-    return high(HalfTurns)
-  result = high(HalfTurns)
+    return UNBOUNDED_TURNS
+  result = UNBOUNDED_TURNS
   for side in Side:
     if posture.frame.hold[side].isSome:
       result = min(result, armCapacity(blockerOf(twist, posture.level[side]),

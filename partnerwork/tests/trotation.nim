@@ -167,7 +167,7 @@ suite "modifiers":
     for twist in -6 .. 6:
       check blockerOf(twist, Level.Above).isNone
       check armCapacity(blockerOf(twist, Level.Above), Level.Above) ==
-        high(HalfTurns)
+        UNBOUNDED_TURNS
     check not ABOVE_BLOCKS
 
 
