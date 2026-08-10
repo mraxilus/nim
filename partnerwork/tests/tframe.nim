@@ -125,12 +125,12 @@ suite "naming":
     # It is used where the long name will not fit, so it has to name the frame
     # on its own: two frames sharing a short name would be two rows of the
     # matrix a reader could not tell apart.
-    var brieflyNamed: seq[string] = @[]
+    var briefly_named: seq[string] = @[]
     for target in FRAMES:
       check target.brief.len > 0
       check target.brief.len <= target.describe.len
-      check target.brief notin brieflyNamed
-      brieflyNamed.add target.brief
+      check target.brief notin briefly_named
+      briefly_named.add target.brief
 
   test "a short name keeps the case that says whose hand it is":
     # The case is the whole of how the two dancers are told apart, and a letter

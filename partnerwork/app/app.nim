@@ -67,7 +67,7 @@ var
   current = startFrame()
   view = View.Atlas
   vis = Vis.Dynamic
-  visChosen = false        ## Whether the reader has picked a drawing themselves.
+  vis_chosen = false        ## Whether the reader has picked a drawing themselves.
   filter = Filter()
   history: seq[Step] = @[]
   motion = Motion.Still     ## What the drawings are doing at this instant.
@@ -185,7 +185,7 @@ proc suitVis() =
   ##   So the page follows the screen -- and stops the moment the reader picks
   ##     a drawing, because a choice made is worth more than a default, and a
   ##     window dragged narrower should not take it back.
-  if not visChosen:
+  if not vis_chosen:
     vis = if roomForMap(): Vis.Overview else: Vis.Dynamic
 
 
@@ -835,7 +835,7 @@ proc handle(event: Event) =
     for candidate in Vis:
       if $candidate == value:
         vis = candidate
-        visChosen = true
+        vis_chosen = true
   of "holds":
     filter.holds = none(int)
     for count in 0 .. 2:

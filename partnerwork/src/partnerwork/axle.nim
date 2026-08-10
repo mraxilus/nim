@@ -15,7 +15,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options]
+import std/options
 
 import ./diagram
 import ./map

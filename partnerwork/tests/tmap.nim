@@ -99,13 +99,13 @@ suite "the drawing":
     # drawing rather than an ugly one: the reader is told the wrong move.
     for standing in FRAMES:
       let picture = renderMap(some(standing))
-      var lastInk = 0
+      var last_ink = 0
       for mark in ["<line class=\"edge", "<path class=\"arc"]:
-        lastInk = max(lastInk, picture.rfind(mark))
-      var firstName = picture.len
+        last_ink = max(last_ink, picture.rfind(mark))
+      var first_name = picture.len
       for mark in ["<g class=\"way naming", "<g class=\"join naming"]:
-        firstName = min(firstName, picture.find(mark))
-      check lastInk < firstName
+        first_name = min(first_name, picture.find(mark))
+      check last_ink < first_name
 
   test "every frame is drawn, with its name":
     let picture = renderMap(none(Frame))

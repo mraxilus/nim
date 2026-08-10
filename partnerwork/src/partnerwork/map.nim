@@ -512,7 +512,7 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
   # keep clear of the ones already put down.
   var used = frameBoxes()
   var ink, names = ""
-  var curveInk, curveNames = ""
+  var curve_ink, curve_names = ""
   var drawn: seq[string] = @[]
   for source in FRAMES:
     for target in FRAMES:
@@ -525,8 +525,8 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
       drawn.add pair
       let (drawing, naming) = arc(source, target,
         arcName(source, target, standing), standing, was, used)
-      curveInk.add drawing
-      curveNames.add naming
+      curve_ink.add drawing
+      curve_names.add naming
 
   # The straight lines, their names taking whatever room the curves' left.
   drawn = @[]
@@ -540,7 +540,7 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
         taken, used)
       ink.add drawing
       names.add naming
-  result.add ink & curveInk & names & curveNames
+  result.add ink & curve_ink & names & curve_names
 
   # The frames go over the lines, their plates hiding what runs beneath.
   for target in FRAMES:

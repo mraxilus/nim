@@ -232,11 +232,11 @@ suite "what there is":
     # The finding, read back out of the offers: from `Left to left` held low a
     # turn is never refused by the hold before the arm has already had its say.
     let low = fromKey("l-.").get.rest
-    var armFirst = 0
+    var arm_first = 0
     for offer in turnsOf(low):
       if offer.refused == some(Refusal.Arm):
-        inc armFirst
-    check armFirst == 0
+        inc arm_first
+    check arm_first == 0
     # Because the arm's ceiling is not a refusal here -- it is what makes a full
     # turn a lock.  What refuses is the hold, at one and a half.
     for offer in turnsOf(low):

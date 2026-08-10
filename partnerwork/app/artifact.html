@@ -4426,8 +4426,8 @@ function renderMap__OOZsrcZpartnerworkZmap_u1214(here_p0, motion_p1, taken_p2) {
     var used_1157629160 = [frameBoxes__OOZsrcZpartnerworkZmap_u392()];
     var ink_1157629161 = [];
     var names_1157629162 = [];
-    var curveInk_1157629163 = [];
-    var curveNames_1157629164 = [];
+    var curve_ink_1157629163 = [];
+    var curve_names_1157629164 = [];
     var drawn_1157629169 = [];
     Label5: {
       var source_1157629173 = ({hold: [({val: 0, has: false}), ({val: 0, has: false})], over: ({val: 0, has: false})});
@@ -4461,8 +4461,8 @@ function renderMap__OOZsrcZpartnerworkZmap_u1214(here_p0, motion_p1, taken_p2) {
                       var tmpTuple_1157629405 = arc__OOZsrcZpartnerworkZmap_u944(source_1157629173, target_1157629177, arcName__OOZsrcZpartnerworkZmap_u889(source_1157629173, target_1157629177, standing_1157629144), standing_1157629144, was_1157629152, used_1157629160, 0);
                       var drawing_1157629406 = nimCopy(null, tmpTuple_1157629405["Field0"], NTI33554449);
                       var naming_1157629407 = nimCopy(null, tmpTuple_1157629405["Field1"], NTI33554449);
-                      curveInk_1157629163.push.apply(curveInk_1157629163, drawing_1157629406);;
-                      curveNames_1157629164.push.apply(curveNames_1157629164, naming_1157629407);;
+                      curve_ink_1157629163.push.apply(curve_ink_1157629163, drawing_1157629406);;
+                      curve_names_1157629164.push.apply(curve_names_1157629164, naming_1157629407);;
                     };
                     i_553649793 += 1;
                     if (!((8 == L_553649794))) {
@@ -4529,7 +4529,7 @@ function renderMap__OOZsrcZpartnerworkZmap_u1214(here_p0, motion_p1, taken_p2) {
           }
       };
     };
-    result_1157629130.push.apply(result_1157629130, (ink_1157629161).concat(curveInk_1157629163,names_1157629162,curveNames_1157629164));;
+    result_1157629130.push.apply(result_1157629130, (ink_1157629161).concat(curve_ink_1157629163,names_1157629162,curve_names_1157629164));;
     Label21: {
       var target_1157629444 = ({hold: [({val: 0, has: false}), ({val: 0, has: false})], over: ({val: 0, has: false})});
       var i_553649810 = 0;
@@ -5148,34 +5148,34 @@ function renderDance__app_u454(current_p0, vis_p1, motion_p2, taken_p3, danced_p
 
 }
 
-function isSome__OOZsrcZpartnerworkZaxle_u98(self_p0) {
-  var result_1224736869 = false;
+function isSome__OOZsrcZpartnerworkZaxle_u95(self_p0) {
+  var result_1224736866 = false;
 
-    result_1224736869 = self_p0.has;
+    result_1224736866 = self_p0.has;
 
-  return result_1224736869;
-
-}
-
-function isNone__OOZsrcZpartnerworkZaxle_u124(self_p0) {
-  var result_1224736895 = false;
-
-    result_1224736895 = !(self_p0.has);
-
-  return result_1224736895;
+  return result_1224736866;
 
 }
 
-function get__OOZsrcZpartnerworkZaxle_u116(self_p0) {
-  var result_1224736887 = 0;
+function isNone__OOZsrcZpartnerworkZaxle_u121(self_p0) {
+  var result_1224736892 = false;
 
-    if (isNone__OOZsrcZpartnerworkZaxle_u124(self_p0)) {
+    result_1224736892 = !(self_p0.has);
+
+  return result_1224736892;
+
+}
+
+function get__OOZsrcZpartnerworkZaxle_u113(self_p0) {
+  var result_1224736884 = 0;
+
+    if (isNone__OOZsrcZpartnerworkZaxle_u121(self_p0)) {
     raiseException({message: [67,97,110,39,116,32,111,98,116,97,105,110,32,97,32,118,97,108,117,101,32,102,114,111,109,32,97,32,96,110,111,110,101,96], parent: null, m_type: NTI687865879, name: null, trace: [], up: null}, "UnpackDefect");
     }
     
-    result_1224736887 = self_p0["val"];
+    result_1224736884 = self_p0["val"];
 
-  return result_1224736887;
+  return result_1224736884;
 
 }
 
@@ -5201,7 +5201,7 @@ function admits__app_u462(narrowing_p0, target_p1) {
   var result_553648593 = false;
 
   BeforeRet: {
-    if ((isSome__OOZsrcZpartnerworkZaxle_u98(narrowing_p0.holds) && !((countHolds__OOZsrcZpartnerworkZframe_u214(target_p1) == get__OOZsrcZpartnerworkZaxle_u116(narrowing_p0.holds))))) {
+    if ((isSome__OOZsrcZpartnerworkZaxle_u95(narrowing_p0.holds) && !((countHolds__OOZsrcZpartnerworkZframe_u214(target_p1) == get__OOZsrcZpartnerworkZaxle_u113(narrowing_p0.holds))))) {
     result_553648593 = false;
     break BeforeRet;
     }
@@ -5253,7 +5253,7 @@ function chip__app_u532(action_p0, value_p1, label_p2, chosen_p3) {
 function HEX3DHEX3D__app_u564(a_p0, b_p1) {
   var result_553648696 = false;
 
-    result_553648696 = (((isSome__OOZsrcZpartnerworkZaxle_u98(a_p0) && isSome__OOZsrcZpartnerworkZaxle_u98(b_p1)) && (a_p0.val == b_p1.val)) || (isNone__OOZsrcZpartnerworkZaxle_u124(a_p0) && isNone__OOZsrcZpartnerworkZaxle_u124(b_p1)));
+    result_553648696 = (((isSome__OOZsrcZpartnerworkZaxle_u95(a_p0) && isSome__OOZsrcZpartnerworkZaxle_u95(b_p1)) && (a_p0.val == b_p1.val)) || (isNone__OOZsrcZpartnerworkZaxle_u121(a_p0) && isNone__OOZsrcZpartnerworkZaxle_u121(b_p1)));
 
   return result_553648696;
 
@@ -5273,7 +5273,7 @@ function renderFilters__app_u538(narrowing_p0) {
 
   var result_553648668 = [];
 
-    var holds_553648676 = chip__app_u532([104,111,108,100,115], [97,110,121], [97,110,121], isNone__OOZsrcZpartnerworkZaxle_u124(narrowing_p0.holds));
+    var holds_553648676 = chip__app_u532([104,111,108,100,115], [97,110,121], [97,110,121], isNone__OOZsrcZpartnerworkZaxle_u121(narrowing_p0.holds));
     Label1: {
       var count_553648681 = 0;
       var res_553649944 = 0;
@@ -6188,12 +6188,12 @@ function start__app_u1279(key_p0) {
   
 }
 
-function none__OOZsrcZpartnerworkZaxle_u60() {
-  var result_1224736835 = ({val: 0, has: false});
+function none__OOZsrcZpartnerworkZaxle_u57() {
+  var result_1224736832 = ({val: 0, has: false});
 
-    result_1224736835 = nimCopy(result_1224736835, {val: 0, has: false}, NTI1224736827);
+    result_1224736832 = nimCopy(result_1224736832, {val: 0, has: false}, NTI1224736827);
 
-  return result_1224736835;
+  return result_1224736832;
 
 }
 
@@ -6278,7 +6278,7 @@ function handle__app_u1324(event_p0) {
                 candidate_553649483 = v_553649667;
                 if (eqStrings(reprEnum(candidate_553649483, NTI553648132), value_553649470)) {
                 vis_553648176[0] = candidate_553649483;
-                visChosen_553648177[0] = true;
+                vis_chosen_553648177[0] = true;
                 }
                 
                 res_553649668 = addInt(res_553649668, 1);
@@ -6288,7 +6288,7 @@ function handle__app_u1324(event_p0) {
       };
       break;
     case "holds":
-      filter_553648178[0].holds = nimCopy(filter_553648178[0].holds, none__OOZsrcZpartnerworkZaxle_u60(), NTI1224736827);
+      filter_553648178[0].holds = nimCopy(filter_553648178[0].holds, none__OOZsrcZpartnerworkZaxle_u57(), NTI1224736827);
       Label9: {
         var count_553649498 = 0;
         var res_553649671 = 0;
@@ -6420,7 +6420,7 @@ function roomForMap__app_u154() {
 function suitVis__app_u189() {
     var Temporary1;
 
-    if (!(visChosen_553648177[0])) {
+    if (!(vis_chosen_553648177[0])) {
     if (roomForMap__app_u154()) {
     Temporary1 = 1;
     }
@@ -6452,7 +6452,7 @@ var origin_553648173 = [startFrame__app_u28()];
 var current_553648174 = [startFrame__app_u28()];
 var view_553648175 = [0];
 var vis_553648176 = [0];
-var visChosen_553648177 = [false];
+var vis_chosen_553648177 = [false];
 var filter_553648178 = [{holds: ({val: 0, has: false}), lead: ({val: 0, has: false}), follow: ({val: 0, has: false})}];
 var history_553648183 = [[]];
 var motion_553648184 = [0];
