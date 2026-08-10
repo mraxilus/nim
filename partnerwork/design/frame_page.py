@@ -30,9 +30,10 @@ def render(P):
   when the hold names a level. A move animates in two stages: travel, then turn
   the world until <b>the lead faces up</b> again. That second stage collapses
   every pose that is the same configuration onto one picture, and shows that an
-  orbit lands where an axis turn lands. <b>One thing to decide</b>, and it is
-  drawn below rather than argued: which way round a body a level should send
-  the line.</p>
+  orbit lands where an axis turn lands. <b>A level frees a hand</b>, and a freed
+  hand goes wherever the arm is shortest — so nothing about winding is asked
+  for any more. Which has a consequence worth arguing about, drawn below: a
+  freed hand is also an <em>un-wrapped</em> one.</p>
   <p class="sibling"><b>The turn sign is on its own page.</b> It answers a
   different question — how to label an <em>edge</em> — and only meets this one
   at the levels and the arm inks, which the two pages share.</p>
@@ -127,78 +128,66 @@ def render(P):
   </div>
 
   <div class="plate">
-    <h3>A hand moves only if a level says it may</h3>
+    <h3>A level frees the hand, and it finds its own place</h3>
     <p><b>No level, no wrap.</b> A hand sits where the arm hangs, at the side of
-    its body, and the only thing that ever moves it is its body turning. It
-    leaves that place when — and only when — the hold it is part of names a
-    level, because a level is what lets an arm pass over or under, and passing
-    is what carries a hand round. Ask for winding without a level and the
-    picture declines: the two below are the same request, one with
-    <em>low</em> named and one with nothing.</p>
+    its body, and the only thing that moves it is its body turning. It leaves
+    that place when — and only when — the hold it is part of names a level,
+    because a level is what lets an arm pass over or under, and passing is what
+    carries a hand round.</p>
+    <p><b>And then it is not told where to go: it goes where the arm is
+    shortest.</b> Nothing about winding is an input any more. The same hold,
+    without a level and with one:</p>
     <div class="row">
-      {fig(P['wind_2'], '<b>90°</b> asked for, <em>low</em> named<br>— the hand goes round')}
-      {fig(P['wind_pin'], 'the same <b>90°</b> asked for,<br>no level — it does not move')}
+      {fig(P['slide_none'], 'no level<br>— the hands stay at their sides')}
+      {fig(P['slide_low'], '<em>low</em><br>— they come round to meet')}
     </div>
-    <p>Once a level has freed it, where the hand sits is how far it has been
-    carried, and the line hugs the body on its way there:</p>
+    <p>Three things stop the slide. <code>CARRY</code>, a quarter of the rim,
+    so a hand is never carried so far round that it stops being the hand of
+    that side. A dancer's <b>own two hands, which cannot pass through each
+    other</b> — that is what keeps a crossed hold crossed, and in the last
+    picture below both of the lead's hands want the other's side and jam
+    against each other at the front instead. And <code>MEET</code>, how close
+    two joined marks may come: joined hands are really in one place, so
+    something has to hold them apart, and this is the one drawn convention in
+    the whole business — it is what leaves enough line for the two hues to say
+    whose ends they are.</p>
     <div class="row">
-      {fig(P['wind_0'], 'at rest<br>the hand a quarter round')}
-      {fig(P['wind_1'], 'carried <b>45°</b> further')}
-      {fig(P['wind_2'], '<b>90°</b> — round the back,<br>and the line must follow')}
-      {fig(P['wind_3'], '<b>135°</b> — out the far side,<br>and straight again')}
+      {fig(P['slide_0'], 'face to face')}
+      {fig(P['slide_1'], 'the follow<br>faces away')}
+      {fig(P['slide_2'], 'the follow<br>a quarter turned')}
+      {fig(P['slide_3'], 'back to back')}
+      {fig(P['slide_crossed'], 'both hands held<br>— jammed, and crossed')}
     </div>
-    <p><b>The hug is not a measure, though.</b> It grows while the hand is going
-    round the far side and then <em>falls away again</em> once the hand comes
-    out past the back, where the short way is straight once more — the fourth
-    picture is wound half as far again as the third and its line hugs less. So
-    the amount is in where the hand sits, and the wrap in how the line gets
-    there, and only the first of those is monotone. A ceiling like
-    <code>armCapacity</code> would read the hand's place, not the line's.</p>
-  </div>
-
-  <div class="plate pick">
-    <h3>Which way should a level send the line?<span class="tag">yours</span></h3>
-    <p>Here are the two things a level could mean, drawn rather than argued.
-    Each pair is one pose routed both ways: <b>across the front</b> of each
-    body, and <b>round the back</b> of each. The hand's own side turns that
-    into a direction by itself — a Left hand's front is one way round the rim,
-    a Right hand's the other — so a rule needs only to say front or back, and
-    the side does the rest.</p>
-    <div class="row">
-      {fig(P['side_front_tie'], 'the follow quarter turned<br><b>across the front</b>')}
-      {fig(P['side_back_tie'], 'the same pose<br><b>round the back</b>')}
-      {fig(P['side_front_wound'], 'a hand carried 45° round<br><b>across the front</b>')}
-      {fig(P['side_back_wound'], 'the same<br><b>round the back</b>')}
-    </div>
-    <p>And the cleanest case, where the two ways are <em>exactly</em> the same
-    length, so nothing but the meaning can choose between them:</p>
-    <div class="row">
-      {fig(P['side_front_even'], 'both turned<br><b>across the front</b>')}
-      {fig(P['side_back_even'], 'the same pose<br><b>round the back</b>')}
-    </div>
-    <p><b>What to decide.</b> Which of those is <em>low</em> and which is
-    <em>high</em> — a low arm going round the waist and a high one crossing
-    the chest is one reading, and the reverse is the other. And whether
-    <em>above</em>, which clears the head altogether, should name a side at all
-    or simply take whichever way is shorter. Until that is settled a picture
-    with a level routes exactly like one without: the short way.</p>
+    <p>So where a hand sits is no longer something a figure was told; it is
+    what the state came to. Read the other way, the hand's place is now saying
+    something: how far the arm had to be carried for that hold, in that
+    orientation, to be held at all.</p>
   </div>
 
   <div class="plate">
-    <h3>What insisting would cost</h3>
-    <p>If a level <em>rules</em> rather than leans, the picture has to be
-    willing to draw the long way round whenever the rule points there. This is
-    the worst of it — the pose, found by scanning every orientation and every
-    winding, where the two ways round differ most in length. The longer is
-    <b>{P['cost_ratio']}×</b> the shorter, and no worse anywhere.</p>
+    <h3>Only <em>above</em> passes through — and what that turned out to
+    mean<span class="tag">a finding</span></h3>
+    <p>A connection has to go round a body, because a body is in the way. The
+    exception is <b><em>above</em>, which is over the head</b>: from overhead
+    there is nothing under it — no head, no torso — so it is drawn straight
+    across whatever it crosses. It is the one level that names a height, and
+    that is what the height buys.</p>
+    <p><b>It never comes up.</b> Once the sliding was in, no levelled hold in
+    any orientation needed to go round anything: a hand that can move goes to
+    the place nearest the hand it holds, and the line between two such places
+    has nothing in its way. So the rule is real but idle, and the thing it was
+    meant to distinguish <em>above</em> from does not happen to a freed hand at
+    all. Wrapping is now what a <b>pinned</b> hand forces — and a pinned hand
+    is one with no level, which can never be <em>above</em> either.</p>
     <div class="row">
-      {fig(P['cost_front'], '<b>across the front</b>')}
-      {fig(P['cost_back'], '<b>round the back</b>')}
+      {fig(P['round_pinned'], 'no level — pinned,<br>and the line goes round')}
+      {fig(P['round_freed'], '<em>low</em> — freed,<br>and there is nothing to go round')}
     </div>
-    <p>Never even half again as long, anywhere — which is cheap. A rule can be
-    a rule without ever drawing something absurd, so there is no need to hedge
-    it into a bias that a long way round could overrule. That is an argument
-    for the level settling the side outright.</p>
+    <p>Which puts a question back on the table. If a hold is meant to be able to
+    wrap a body while its hands are free to move, something has to stop the
+    hand short of the easy place: contact with the body, an arm's length, or a
+    named wrap that the state carries. As it stands, freeing a hand is also
+    what un-wraps it.</p>
   </div>
 
   <div class="plate">
@@ -320,10 +309,12 @@ def render(P):
   and go back when the marks are settled and the ontology is finished. The frame
   pictures are unchanged either way — the break stays, and the hand-to-hand half
   leaves its levels unsaid.</p>
-  <p>Yours to settle on this page: <b>which way round a level sends the line</b>
-  — the plate above draws both, and the one after it prices insisting; whether
-  an arm carried past some ceiling is marked at all; the bow for contact with
-  the body; what an orbit stores; and when an arm above the head blocks.</p>
+  <p>Yours to settle on this page: <b>what makes a freed hand stop short of the
+  easy place</b>, since as it stands a level un-wraps a hold rather than
+  enabling one; <code>MEET</code>, the one drawn convention left, which decides
+  how much line a hold keeps; whether an arm carried past some ceiling is
+  marked at all; the bow for contact with the body; what an orbit stores; and
+  when an arm above the head blocks.</p>
 </div>
 
 </div>

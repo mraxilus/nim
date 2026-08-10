@@ -7,14 +7,13 @@ ink, and the sign's geometry is even to the tenth of a unit.
 """
 import math
 
-from .body import (ARM_REST, BODY_R, CHEV_OUT, HAND_GAP, R, RIM_W, border,
-                   hands_of, outline_r, side_of)
-from .figure import facings, frame, pinned, trailing
+from .body import (ARM_REST, BODY_R, CARRY, CHEV_OUT, HAND_GAP, MEET, R,
+                   RIM_W, border, hand_point, hands_of, outline_r, side_of)
+from .figure import facings, frame, settle_cycle, settled, trailing
 from .geometry import bearing, continuous, wrap180
 from .pose import (MOVES, canonicalise, couple, cycle, orbit, relative, rest,
                    spin_about)
-from .route import (ROUTE_N, across_front, polyline_len, round_back, routed,
-                    split_at)
+from .route import ROUTE_N, polyline_len, routed, split_at, straight_reach
 from .sign import BODY, COS, GAP_X, HEIGHT, OVER, PIP, QUARTERS, SIN, TAN
 from .style import CAP
 
@@ -93,12 +92,52 @@ def check_frame():
                 biggest = max(biggest, abs(b - a))
     assert biggest < 90, biggest
 
-    # a hand stays at the side of its body unless the hold names a level: the
-    # same winding asked for twice, obeyed once
+    # a hand stays at the side of its body unless the hold names a level, and
+    # goes looking for the short arm once it does
+    HOLD = {"L": "left"}
     for levels, moves in (({}, False), ({"L": "low"}, True)):
-        wound = pinned({"lead": {"L": 90.0, "R": 0.0}}, {"L": "left"}, levels)
-        put = hands_of(rest(wound))["lead"]["L"]
+        put = hands_of(settled(rest(), HOLD, levels))["lead"]["L"]
         assert (put != hands_of(rest())["lead"]["L"]) == moves, (levels, put)
+
+    # a settled hand really is where the arm is shortest, within what the two
+    # things that stop it allow: nothing on its own rim is nearer its partner's
+    # hand and still legal.  And both of those stops hold everywhere.
+    slack, closest = 0.0, 99.0
+    for lead_turn in (0, 90, 180, 270):
+        for follow_turn in (0, 90, 180, 270):
+            start = canonicalise(spin_about(spin_about(
+                rest(), "lead", lead_turn), "follow", follow_turn))
+            pose = settled(start, HOLD, {"L": "low"})
+            was = hands_of(start)
+            floor = min(MEET, math.dist(was["lead"]["L"], was["follow"]["L"]))
+            p = hands_of(pose)
+            a, b = p["lead"]["L"], p["follow"]["L"]
+            # sliding never brings two joined marks closer than `MEET` -- and
+            # where an orientation had already put them nearer than that, it
+            # does not close the gap any further either
+            assert math.dist(a, b) >= floor - 0.01, (lead_turn, follow_turn)
+            closest = min(closest, math.dist(a, b))
+            for who in ("lead", "follow"):
+                apart = wrap180(pose[f"{who}_wind"]["R"]
+                                - pose[f"{who}_wind"]["L"] + 2 * ARM_REST)
+                assert abs(apart) >= 2 * HAND_GAP - 0.01, (who, apart)
+            # nowhere legal on the lead's rim is nearer the hand they hold
+            for w in range(-CARRY, CARRY + 1):
+                gap = wrap180(2 * ARM_REST + pose["lead_wind"]["R"] - w)
+                q = hand_point(pose["lead"], pose["lead_facing"], "L", w)
+                if abs(gap) < 2 * HAND_GAP or math.dist(q, b) < floor:
+                    continue
+                slack = max(slack, math.dist(a, b) - math.dist(q, b))
+    assert slack < 0.6, slack
+
+    # and the floor leaves enough line for the two hues to say anything
+    assert MEET - 2 * (R + CAP) > 15, MEET
+
+    # an `above` reach goes over rather than round, so it is a straight run
+    over = straight_reach((-20.0, 28.0), (20.0, -28.0))
+    assert all(abs((q[0] - over[0][0]) * (over[-1][1] - over[0][1])
+                   - (q[1] - over[0][1]) * (over[-1][0] - over[0][0])) < 0.01
+               for q in over), "above bends"
 
     # a body turning carries its line with it: the way round it pays out is
     # counter to the turn, so the place the line leaves stays put
@@ -107,27 +146,16 @@ def check_frame():
     assert trailing(turning[::-1], "lead")[0] == 1, "anticlockwise did not trail"
     assert trailing([rest()] * 3, "lead") == [0, 0, 0], "a still body had a view"
 
-    # and with nothing turning and no level, nothing has a view at all: the two
-    # readings of a near-tie really are two routes, so the plate has something
-    # to show and the default picks neither
-    pose = canonicalise(spin_about(rest(), "follow", 270))
-    pts_all = hands_of(pose)
-    a, b = pts_all["lead"]["L"], pts_all["follow"]["L"]
-    bodies = ((pose["lead"], pose["lead_facing"]),
-              (pose["follow"], pose["follow_facing"]))
-    ends = (a, b)
-    front, _ = routed(a, b, *bodies, want=across_front(ends, bodies))
-    back, _ = routed(a, b, *bodies, want=round_back(ends, bodies))
-    assert front != back, "the two ways round are one way round"
-
-    def follow_offset(q):
-        return abs(wrap180(bearing(q[0] - pose["follow"][0],
-                                   q[1] - pose["follow"][1])
-                           - pose["follow_facing"]))
-
-    assert follow_offset(front[-3]) < follow_offset(back[-3]), "front is behind"
-    plain, _ = routed(a, b, *bodies)
-    assert polyline_len(plain) <= polyline_len(front) + 0.01, "no opinion, long way"
+    # every hand comes home: a cycle settles back where it started, and no
+    # hand jumps between frames -- the solver runs from rest each time, so
+    # this is a claim about the answer being continuous in the pose
+    for name, move in MOVES.items():
+        walk = settle_cycle(cycle(move), {"L": "left"}, {"L": "low"})
+        for who, sd in (("lead", "L"), ("follow", "L")):
+            steps = [q[f"{who}_wind"][sd] for q in walk]
+            assert abs(steps[0] - steps[-1]) < 0.01, (name, who, steps[0])
+            worst = max(abs(b - a) for a, b in zip(steps, steps[1:]))
+            assert worst < 20, (name, who, worst)
 
     # a reach is drawn in its two hands' own colours, not one hue twice
     crossed = frame("f", {"L": "right"}, {"L": "low"})

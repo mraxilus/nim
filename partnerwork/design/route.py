@@ -8,7 +8,7 @@ is what lets an animation morph a reach instead of jumping it.
 import math
 
 from .body import BODY_R, R, RIM_STEP, outline_point, outline_r
-from .geometry import bearing, wrap180, xy
+from .geometry import bearing, xy
 from .style import CAP, LINK_W
 
 
@@ -98,30 +98,19 @@ def resample(pts, count):
         out.append((p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t))
     return out
 
-def front_of(hand, body):
-    """The way round the rim that heads for this dancer's front, from here.
+def straight_reach(a, b):
+    """A reach that goes over everything instead of round it.
 
-    A hand's own side turns "front" or "back" into a pay-out direction by
-    itself: a Left hand's front is clockwise and a Right hand's anticlockwise.
-    So this is the whole of what a rule saying *which side of the body* has to
-    compute, and its negation is the back.  Zero when the hand is dead ahead or
-    dead behind, where neither way is more frontward than the other.
+    An `above` connection passes over the head, so from overhead there is
+    nothing in its way -- no head, no torso -- and it is drawn straight across
+    whatever it crosses.  Trimmed and resampled like any other reach, so it has
+    the same shape and an animation can morph between it and a wrapping one.
     """
-    (c, f) = body
-    off = wrap180(bearing(hand[0] - c[0], hand[1] - c[1]) - f)
-    if abs(off) < 1e-9 or abs(abs(off) - 180) < 1e-9:
-        return 0
-    return -1 if off > 0 else 1
-
-
-def across_front(ends, bodies):
-    """Send both ends of a reach the way that heads for their own dancer's
-    front -- one of the two things a level could mean."""
-    return tuple(front_of(e, b) for e, b in zip(ends, bodies))
-
-def round_back(ends, bodies):
-    """And the other: both ends set off the way that heads for the back."""
-    return tuple(-front_of(e, b) for e, b in zip(ends, bodies))
+    pts = [a, b]
+    reach = min(R + CAP, math.dist(a, b) / 3)
+    pts = _trim_end(pts, a, reach)
+    pts = _trim_end(pts[::-1], b, reach)[::-1]
+    return resample(pts, ROUTE_N)
 
 
 def routed(a, b, A, B, prefer=None, want=(0, 0), bias=SIDE_BIAS):

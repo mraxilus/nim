@@ -7,11 +7,12 @@ unless a new one is decisively shorter -- so everything stays in one piece.
 """
 import math
 
-from .body import (BODY_R, CAPTION_R, R, border, caption, chevron, hand,
+from .body import (BODY_R, CAPTION_R, CARRY, HAND_GAP, MEET, R, border,
+                   caption, chevron, hand, hand_bearing, hand_point,
                    hands_of, other, ring_of, side_of)
-from .geometry import continuous, n, xy
+from .geometry import continuous, n, wrap180, xy
 from .pose import NO_WIND, canonicalise, cycle, rest, spin_about
-from .route import cut_gap, reach_markup, routed, split_at
+from .route import cut_gap, reach_markup, routed, split_at, straight_reach
 from .style import DEEP, INK, LINK_W, QUIET
 
 
@@ -31,28 +32,140 @@ def two_tone(runs, mid, lead_side, foll_side):
     near, far = split_at(runs, mid)
     return [reach_markup(near, DEEP[lead_side]), reach_markup(far, INK[foll_side])]
 
-def pinned(wind, holds, levels):
-    """Wind only the hands a level has freed.
+STEP = 1.0                # how far a sliding hand moves before looking again
+
+ROUNDS = 400              # steps before the hands are taken as settled
+
+def freed_by(holds, levels):
+    """Which hands a level has let go of.
 
     A hand leaves the side of its body only when the hold it is part of names a
     level: a level is what lets an arm pass over or under, and passing is what
-    carries a hand round.  No level, no wrap -- so the hand stays where the arm
-    hangs, and only its body turning ever moves it.
+    carries a hand round.  No level, no wrap -- so a free hand, and a held hand
+    at no level, stay where the arm hangs.
     """
-    freed = {who: dict(NO_WIND) for who in ("lead", "follow")}
+    out = []
     for side, where in holds.items():
-        if levels.get(side) is None:
-            continue
-        asked = wind or {}
-        freed["lead"][side] = asked.get("lead", {}).get(side, 0.0)
-        own = side_of(where)
-        freed["follow"][own] = asked.get("follow", {}).get(own, 0.0)
-    return freed
+        if levels.get(side) is not None:
+            out.append((side, side_of(where)))
+    return out
+
+def settled(pose, holds, levels, seed=None):
+    """The same pose with every hand's winding solved rather than asked for.
+
+    A freed hand slides along the rim in whichever direction shortens its
+    connection, and goes as far as it can.  Three things stop it: `CARRY`, the
+    furthest a hand is carried from its own side; a dancer's own two hands,
+    which may not pass through each other, which is what keeps a crossed hold
+    crossed; and `MEET`, the closest two joined marks may come, so the line
+    between them still has room to say whose ends it has.
+
+    All three hold where it starts, so there is always an answer and it only
+    ever improves on one.  A still picture starts from rest and *scans* the rim,
+    which makes it a function of its pose alone.  A moving one starts from the
+    frame before (`seed`) and *steps*, so a hand travels round a body rather
+    than being found on the far side of it a frame later.
+    """
+    wind = {who: dict(seed[who] if seed else NO_WIND)
+            for who in ("lead", "follow")}
+    pairs = freed_by(holds, levels)
+
+    def at(who, side, w=None):
+        return hand_point(pose[who], pose[f"{who}_facing"], side,
+                          wind[who][side] if w is None else w)
+
+    def allowed(who, side, w, joined):
+        """Whether this hand may sit here: clear of its own partner hand on the
+        same body, and no nearer than `MEET` to the hand it is joined to."""
+        apart = wrap180(hand_bearing(0, side, w)
+                        - hand_bearing(0, other(side), wind[who][other(side)]))
+        return (abs(w) <= CARRY + 1e-9
+                and abs(apart) >= 2 * HAND_GAP - 1e-9
+                and math.dist(at(who, side, w), joined) >= MEET - 1e-9)
+
+    def place(who, side, joined):
+        """The best legal place on this rim, holding everything else still.
+
+        Scanned rather than walked: a hand near the point *opposite* its
+        partner sits on a ridge, and a walker can set off down the steeper side
+        rather than the shorter way round -- then chase a partner that is
+        moving too, and settle half a body away from the best place there was.
+        Looking at the whole rim cannot do that.
+        """
+        best, near = wind[who][side], math.dist(at(who, side), joined)
+        w = -CARRY
+        while w <= CARRY:
+            if allowed(who, side, w, joined):
+                far = math.dist(at(who, side, w), joined)
+                if far < near - 1e-9:
+                    best, near = w, far
+            w += STEP
+        moved = best != wind[who][side]
+        wind[who][side] = best
+        return moved
+
+    def nudge(who, side, joined):
+        """One step towards the hand this one is joined to, if there is a step
+        that shortens the arm and nothing forbids it.
+
+        What a moving picture uses instead of `place`: from the frame before,
+        one step at a time, so a hand travels round a body rather than being
+        found on the other side of it a frame later.
+        """
+        near = math.dist(at(who, side), joined)
+        for way in (STEP, -STEP):
+            w = wind[who][side] + way
+            if (math.dist(at(who, side, w), joined) < near
+                    and allowed(who, side, w, joined)):
+                wind[who][side] = w
+                return True
+        return False
+
+    settle = nudge if seed else place
+
+    # One step each per round, rather than one hand walking as far as it can
+    # and then the next: the arm is shortened by both its ends at once, so two
+    # hands meet in the middle instead of whichever moved first spending all
+    # the room there was and pinning the other where it stood.  Within a round
+    # the second hand still sees where the first has just got to, or both could
+    # step to a place that is legal apart and illegal together.
+    for _ in range(ROUNDS):
+        moved = False
+        for lead_side, own in pairs:
+            ends = (("lead", lead_side), ("follow", own))
+            for mine, theirs in (ends, ends[::-1]):
+                moved |= settle(*mine, at(*theirs))
+        if not moved:
+            break
+    return dict(pose, lead_wind=wind["lead"], follow_wind=wind["follow"])
+
+def settle_cycle(poses, holds, levels, laps=2):
+    """Settle a whole cycle so that it closes on itself.
+
+    Each frame is solved from the one before, so a hand tracks its partner
+    round instead of jumping -- but that makes the first frame, which has no
+    frame before it, start from rest and land somewhere the last frame does
+    not.  An orbit that winds an arm out never unwinds it, so the loop would
+    snap.  Running the cycle once as a warm-up and keeping the second lap fixes
+    that: the walk is periodic from the first lap on, so the lap that is drawn
+    begins where it ends.
+    """
+    seed, out = None, []
+    for lap in range(laps):
+        out = []
+        for pose in poses:
+            pose = settled(pose, holds, levels, seed)
+            seed = {who: pose[f"{who}_wind"] for who in ("lead", "follow")}
+            out.append(pose)
+    return out
 
 def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
              want=None):
     """Every element of one pose, in the order the picture is read from."""
     levels = levels or {}
+    # Every drawing path comes through here, so this is where the hands are
+    # put: a pose handed in ready-made is settled exactly like one built below.
+    pose = settled(pose, holds, levels)
     p = hands_of(pose)
 
     def foll(where):
@@ -67,10 +180,12 @@ def parts_of(pose, holds, levels=None, over=None, free="fade", captions=True,
     for side in holds:
         where = holds[side]
         ends = (p["lead"][side], foll(where))
-        # Nothing has an opinion about a still picture, so it takes the short
-        # way; `want` is here for the plates that ask which way it should go.
-        asked = want(ends, bodies) if callable(want) else (want or (0, 0))
-        routes[side], _ = routed(*ends, *bodies, want=asked)
+        if levels.get(side) == "above":
+            routes[side] = straight_reach(*ends)     # over the head, over all
+        else:
+            # Nothing has an opinion about a still picture, so it takes the
+            # short way round; `want` is what a turning body says.
+            routes[side], _ = routed(*ends, *bodies, want=want or (0, 0))
     order = ["L", "R"] if over != "L" else ["R", "L"]
     for side in order:
         if side in holds:
@@ -115,13 +230,11 @@ def view(half):
     return f'viewBox="{n(-half)} {n(-half)} {n(2 * half)} {n(2 * half)}"'
 
 def frame(cls, holds, levels=None, over=None, lead_turn=0.0, follow_turn=0.0,
-          free="fade", captions=True, pose=None, half=None, wind=None,
-          want=None):
+          free="fade", captions=True, pose=None, half=None, want=None):
     """One picture, canonical unless a pose is handed in already turned."""
     if pose is None:
-        pose = canonicalise(spin_about(spin_about(
-            rest(pinned(wind, holds, levels or {})), "lead", lead_turn),
-            "follow", follow_turn))
+        pose = canonicalise(spin_about(spin_about(rest(), "lead", lead_turn),
+                                       "follow", follow_turn))
     if half is None:
         half = (WIDE if captions else SIZE) / 2
     bits = parts_of(pose, holds, levels, over, free, captions, want)
@@ -166,9 +279,10 @@ def trailing(poses, who, still=0.5):
         out.append(0 if abs(turn) < still else (-1 if turn > 0 else 1))
     return out
 
-def animated(cls, holds, move, half=None, dur=9.6, samples=14):
+def animated(cls, holds, move, half=None, levels=None, dur=9.6, samples=14):
     """The same picture, moving: stage one travels, stage two comes home."""
-    poses = cycle(move, samples)
+    levels = levels or {}
+    poses = settle_cycle(cycle(move, samples), holds, levels)
     if half is None:
         half = max(extent(p, captions=False) for p in poses)
     hands = [hands_of(p) for p in poses]
@@ -215,8 +329,11 @@ def animated(cls, holds, move, half=None, dur=9.6, samples=14):
     routes = []
     trail = list(zip(trailing(poses, "lead"), trailing(poses, "follow")))
     for h, q, want in zip(hands, poses, trail):
-        pts, combo = routed(h["lead"][side], foll(h, site),
-                            (q["lead"], q["lead_facing"]),
+        ends = (h["lead"][side], foll(h, site))
+        if levels.get(side) == "above":
+            routes.append(straight_reach(*ends))
+            continue
+        pts, combo = routed(*ends, (q["lead"], q["lead_facing"]),
                             (q["follow"], q["follow_facing"]),
                             prefer=combo, want=want)
         routes.append(pts)

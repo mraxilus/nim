@@ -76,11 +76,26 @@ page and this list together.
   hugs the rim exactly where the straight way would cross a body, and is
   straight everywhere else.  With nothing said it takes the **short way** —
   there is no standing preference for a dancer's front.
-- A **hand stays at the side of its body unless the hold names a level**
-  (`figure.pinned`), because a level is what lets an arm pass over or under and
-  passing is what carries a hand round.  No level, no wrap.  So where a hand
-  sits *is* how far it has been carried, and that — not how far the line hugs —
-  is the monotone quantity a ceiling would read.
+- A **hand stays at the side of its body unless the hold names a level**,
+  because a level is what lets an arm pass over or under and passing is what
+  carries a hand round.  No level, no wrap.
+- A **freed hand is not told where to go: it is solved** (`figure.settled`).
+  It slides along the rim to wherever the arm is shortest, so winding is no
+  longer an input and the picture is a function of its state.  Three things
+  stop it: `CARRY`, a quarter of the rim, past which a hand stops being the
+  hand of that side; a dancer's own two hands, which cannot pass through each
+  other, which is what keeps a crossed hold crossed; and `MEET`, how close two
+  joined marks may come — the one drawn convention in the whole business, since
+  joined hands are really in one place and something has to leave room for the
+  line to say whose ends it has.
+- Still pictures scan the whole rim for that place, which makes them a pure
+  function of the pose.  Moving ones step from the frame before, so a hand
+  travels round a body instead of being found on the far side of it a frame
+  later, and `figure.settle_cycle` runs a warm-up lap so the drawn lap begins
+  where it ends.
+- Only **`above` passes through a body**: it is over the head, so from overhead
+  nothing is under it and it is drawn straight (`route.straight_reach`).  Every
+  other level, and no level, goes round.
 - **While a dancer turns, their line trails** (`figure.trailing`): the wanted
   way round is counter to that body's own turning, which keeps the place the
   line leaves the rim still while the body turns under it.  So a line stays on
@@ -132,16 +147,19 @@ page and this list together.
 
 The user's side of the table, as of the last iteration:
 
-- **Which way round a body a level sends the line.**  The wrap side is state,
-  not history: the hand's own side and the connection's level are meant to
-  settle it between them, and a hand's side turns *front* or *back* into a rim
-  direction by itself (`route.front_of`), so a rule need only say front or
-  back.  What it should say is undecided, and the frame page draws the choice
-  on three poses — including one where the two ways are exactly the same
-  length, so only the meaning can pick.  A second plate prices insisting: the
-  worst case anywhere is the long way being **1.4×** the short one, asserted
-  under 1.5, so a rule can be a rule rather than a bias.  Until it is settled a
-  levelled hold routes exactly like an unlevelled one.
+- **What stops a freed hand short of the easy place.**  The sliding answered
+  which way round a level sends the line — the hand goes to the short side and
+  the side it lands on follows — but it answered it by making the question
+  disappear: scanning every orientation and every hold, *no levelled connection
+  ever needs to go round a body at all*, because two hands that can both move
+  go to the two nearest places and nothing is between those.  So `above`
+  passing straight through is a real rule that never comes up, and a level
+  currently *un-wraps* a hold rather than enabling one.  Something has to hold
+  a freed hand back — contact with the body, an arm's length, or a wrap the
+  state names.  The frame page draws the pinned and freed cases side by side.
+- **`MEET`**, how close two joined marks may come.  A legibility floor, not
+  anything the dance says: it is what decides how much line a hold keeps, and
+  at 32 it leaves about 17 units.
 - The mark for **any amount** of turn: five candidates are drawn on the sign
   page (open-ended box — recommended; open with a spilling pip; ellipsis row;
   music's repeat colon; a loop arrow).  None chosen yet.

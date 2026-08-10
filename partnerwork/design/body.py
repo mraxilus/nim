@@ -32,6 +32,20 @@ CAPTION_R = BODY_R + R + 2   # just past the hand it names
 
 FREE = 0.5                # how far a hand nobody holds fades, keeping its hue
 
+CARRY = 90                # how far round from its side a hand may be carried:
+                          # as far as the front, or as far as the back, and no
+                          # further.  Without it a hand flips to the far side
+                          # of its body the moment its partner passes the point
+                          # opposite, which is a jump, not a slide -- and a
+                          # hand that has crossed the whole body is no longer
+                          # recognisably the hand of that side
+
+MEET = 32                 # how close two joined hand marks may come.  Joined
+                          # hands are really in one place; this is a drawn
+                          # convention, and the only one in the sliding -- it
+                          # leaves MEET - 2 * (R + CAP) of connection showing,
+                          # which is what the two hues need to say anything
+
 def hand_bearing(facing, side, wind=0.0):
     return facing + (-1 if side == "L" else 1) * (ARM_REST + wind)
 
