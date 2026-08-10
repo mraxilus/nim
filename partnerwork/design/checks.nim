@@ -15,7 +15,8 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[algorithm, math, options, sequtils, sets, strformat, strutils]
+import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
+            tables]
 
 import ./[body, figure, geometry, parts, pose, route, rules, sign, style]
 
@@ -372,6 +373,133 @@ proc checkRules*() =
   doAssert "var(--left-deep)" in crossed and "var(--right)" in crossed,
     "A crossed connection lost one of its two hands' colours."
   told.add "a connection is drawn in its two hands' own colours"
+
+  for line in told:
+    echo &"  rule: {line}"
+
+
+proc checkRotation*() =
+  ## Verify the rotation page's rules as they were given, one line each.
+  ##   The numbering continues the ledger: rules 10 to 13.
+  var told: seq[string]
+
+  # RULE 10.  "using only the rotations that allow us to change between just
+  # those (i.e. assumed all rotations are high so no wraps/locks)."  Every
+  # held connection is high and nothing else: with no way ever named, no
+  # hand can settle off its side (rule 2 already holds a hand needs both),
+  # and no figure carries a wrap, a lock, or an above hatch.
+  let built = rotationParts()
+  var dots = 0
+  for key, figure in built:
+    if not key.startsWith("rot_"):
+      continue
+    doAssert "url(#h" notin figure,
+      &"An above fill appears on the rotation page; got `{key}`."
+    dots += figure.count("r=\"2.7\"")
+  doAssert dots > 0, "No high dot drawn anywhere; the assumption is unsaid."
+  for arm in Arm:
+    doAssert settledWind(arm, some Level.High, none(Way)) == 0.0,
+      &"A high hold with no way settled away from home; got `{arm}`."
+  told.add "every connection is high and nothing wraps or locks; a hand " &
+    "never leaves its side"
+
+  # RULE 11.  "no additional frame positions, just the addition of rotations
+  # that let us travel between them."  Every hold the page draws is one of
+  # the app's eight frames' holds.
+  const APP_HOLDS: array[7, Holds] = [
+    [none Arm, none Arm],                # open
+    [some Arm.L, none Arm],              # Left to left
+    [some Arm.R, none Arm],              # Left to right, read from the lead
+    [none Arm, some Arm.L],              # Right to left
+    [none Arm, some Arm.R],              # Right to right
+    [some Arm.L, some Arm.R],            # the crossed pair, either over
+    [some Arm.R, some Arm.L],            # hand to hand
+  ]
+  for holds in [HOLD, HAND_TO_HAND, CROSSED]:
+    doAssert holds in APP_HOLDS,
+      &"A hold outside the eight frames appears; got `{holds}`."
+  told.add "every position is one of the app's eight frames, wound; " &
+    "nothing new is drawn"
+
+  # RULE 12.  "hand to hand should have 3 positions allowed by rotation."
+  var hand_positions, single_positions, cross_positions = 0
+  for key in built.keys:
+    if key.startsWith("rot_hand_"): inc hand_positions
+    if key.startsWith("rot_single_"): inc single_positions
+    if key.startsWith("rot_cross_"): inc cross_positions
+  doAssert hand_positions == 3,
+    &"Hand to hand should have 3 positions; got `{hand_positions}`."
+  doAssert single_positions == 5,
+    &"A single hold should have 5 positions; got `{single_positions}`."
+  told.add "hand to hand has 3 positions; a single hold has 5, a full " &
+    "turn each way"
+
+  # RULE 13.  "left to left and right to right should technically have 4
+  # (left over right, right over left, and the two sides with an extra arm
+  # twist, in either direction)."  The twisted states are the ends: the
+  # middle edge is the full turn that swaps which arm is over, and that
+  # chain shape is the implementer's reading, flagged on the page.
+  doAssert cross_positions == 4,
+    &"The crossed pair should have 4 positions; got `{cross_positions}`."
+  doAssert built["rot_cross_over_l"] != built["rot_cross_over_r"],
+    "The two over-orders draw alike."
+  doAssert built["rot_cross_end_l"] notin
+      [built["rot_cross_over_l"], built["rot_cross_over_r"]] and
+    built["rot_cross_end_r"] notin
+      [built["rot_cross_over_l"], built["rot_cross_over_r"]],
+    "A twisted end draws like an over-order; the extra twist says nothing."
+  told.add "the crossed pair has 4: both over-orders, and the two sides " &
+    "with an extra twist as the ends"
+
+  # And the moving figure obeys rule 1 at every drawn instant: the blend
+  # between every pair of its sampled frames, bodies interpolated too --
+  # with the trailing-side ways and the finer sampling the figure itself
+  # uses, because what is checked must be what is drawn.
+  var swept = 99.0
+  let
+    holds: Holds = [some Arm.R, some Arm.L]
+    trailing: array[Arm, route.WayRound] = [(1.0, -1.0), (-1.0, -1.0)]
+    poses = cycle(
+      proc (pose: Pose; scalar: float): Pose {.nimcall, noSideEffect.} =
+        spinAbout(pose, Dancer.Follow, 180 * scalar), samples = 20)
+      .mapIt(settled(it, holds, default(Levels), default(Ways)))
+    hands = poses.mapIt(handsOf(it))
+  for arm in Arm:
+    var frames: seq[route.Ends]
+    for i, hnd in hands:
+      frames.add (hnd[Dancer.Lead][arm], hnd[Dancer.Follow][holds[arm].get],
+                  (poses[i].place[Dancer.Lead],
+                   poses[i].facing[Dancer.Lead]),
+                  (poses[i].place[Dancer.Follow],
+                   poses[i].facing[Dancer.Follow]))
+    let runs = frames.mapIt(routed(it, some trailing[arm]).get.pts)
+    for k in 0 ..< runs.high:
+      for part in [0.25, 0.5, 0.75]:
+        var drawn: seq[Point]
+        for i, a in runs[k]:
+          let b = runs[k + 1][i]
+          drawn.add (a.x + (b.x - a.x) * part, a.y + (b.y - a.y) * part)
+        for who in Dancer:
+          let
+            qa = poses[k]
+            qb = poses[k + 1]
+            c: Point = (
+              qa.place[who].x + (qb.place[who].x - qa.place[who].x) * part,
+              qa.place[who].y + (qb.place[who].y - qa.place[who].y) * part)
+            f = qa.facing[who] + part * (qb.facing[who] - qa.facing[who])
+          for i in 0 ..< drawn.high:
+            for j in 0 .. 8:
+              let
+                t = j / 8
+                pt: Point = (
+                  drawn[i].x + (drawn[i + 1].x - drawn[i].x) * t,
+                  drawn[i].y + (drawn[i + 1].y - drawn[i].y) * t)
+              swept = min(swept, dist(pt, c) - outlineR(
+                bearing(pt.x - c.x, pt.y - c.y) - f))
+  doAssert swept > -0.3,
+    &"The rocking figure sweeps a line through a body; got `{fmt(swept, 2)}`."
+  told.add &"the moving figure keeps rule 1 at every drawn instant " &
+    &"(worst {fmt(swept, 2)})"
 
   for line in told:
     echo &"  rule: {line}"

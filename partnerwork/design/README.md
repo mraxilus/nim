@@ -6,11 +6,13 @@ deliberately excludes rotation until these marks are settled and the ontology
 is finished — see `../src/partnerwork/rotation.nim` for what the model already
 knows, and the repository README for why the views came out.
 
-Two pages, because they are two explorations that happen to be related:
+Three pages, because they are three explorations that happen to be related:
 `frames.html` is the frame picture (what a held pair of hands looks like, and
-how a move changes it) and `signs.html` is the turn sign (how to label an
-*edge* with an amount of turning).  They share the palette, the level fills and
-the two arm inks, which live in `page.py` and `body.py` so they cannot drift.
+how a move changes it), `signs.html` is the turn sign (how to label an *edge*
+with an amount of turning), and `rotations.html` is travelling (the positions
+rotation admits between the app's eight frames, everything held high).  They
+share the palette, the level fills and the two arm inks, which live in
+`page.nim` and `body.nim` so they cannot drift.
 
 ```
 nimble marks                            # checks everything, writes both pages
@@ -74,6 +76,23 @@ has happened here more than once.
    wrap* is read as the high wrap — that reading is mine, not the rule's.
 9. **The connection is drawn in its two hands' own colours**, meeting at its
    middle, the lead's end in the deep shade.
+10. **"using only the rotations that allow us to change between just those
+    (i.e. assumed all rotations are high so no wraps/locks)."**  The rotation
+    page's standing assumption: every held connection carries the high dot,
+    no way is ever named, and nothing settles off its side.
+11. **"no additional frame positions, just the addition of rotations that
+    let us travel between them."**  Every position the rotation page draws is
+    one of the app's eight frames, wound.
+12. **"hand to hand should have 3 positions allowed by rotation."**  Half a
+    turn each way and no further -- two connections halve the ceiling.  A
+    single hold gets five, a full turn each way, the model's own measured
+    capacity.
+13. **"left to left and right to right should technically have 4 (left over
+    right, right over left, and the two sides with an extra arm twist, in
+    either direction)."**  The twisted states are the ends: the middle edge
+    is the full turn that swaps which arm is over.  *That chain shape is the
+    implementer's reading of the words, flagged on the page as the thing to
+    check.*
 
 ## What is settled
 
@@ -217,6 +236,7 @@ checks.nim      every claim the pages make, asserted and spoken
 page.nim        the chrome the two pages share: style sheet, key, wrapper
 frame_page.nim  the frame page's prose and layout
 sign_page.nim   the turn-sign page's prose and layout
+rotation_page.nim  the rotation page's prose and layout
 marks.nim       build: parts, checks, pages, files
 shot.nim        screenshot helper (light and dark, full page), nim js
 ```

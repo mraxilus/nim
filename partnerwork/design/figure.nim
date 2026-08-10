@@ -247,24 +247,16 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
   continuous(poses.mapIt(it.facing[who]))
 
 
-func firstHold(holds: Holds): tuple[arm, site: Arm] =
-  ## Get the one hold an animation moves: the first named.
-  for arm in Arm:
-    if holds[arm].isSome:
-      return (arm, holds[arm].get)
-  doAssert false, "An animated figure needs at least one hold; got none."
-
-
 func animated*(cls: string; holds: Holds; move: MoveApply;
     half = none(float); levels: Levels = default(Levels);
-    ways: Ways = default(Ways); dur = 9.6; samples = 14): string =
+    ways: Ways = default(Ways); dur = 9.6; samples = 14;
+    way_round: WaysRound = default(WaysRound)): string =
   ## Draw the same picture, moving: stage one travels, stage two comes home.
   let
     poses = cycle(move, samples).mapIt(settled(it, holds, levels, ways))
     box = if half.isSome: half.get
           else: poses.mapIt(extent(it, captions = false)).max
     hands = poses.mapIt(handsOf(it))
-    (arm, site) = firstHold(holds)
 
   var bits: seq[string]
   var ring_cx, ring_cy, ring_r: seq[float]
@@ -308,35 +300,43 @@ func animated*(cls: string; holds: Holds; move: MoveApply;
   # makes the disagreement impossible rather than unlikely.  The halves are
   # split at a fixed index, which the even resampling makes the middle of the
   # line, so both shades morph as one shape.
-  var frames: seq[route.Ends]
-  for i, h in hands:
-    frames.add (h[Dancer.Lead][arm], h[Dancer.Follow][site],
-                (poses[i].place[Dancer.Lead], poses[i].facing[Dancer.Lead]),
-                (poses[i].place[Dancer.Follow],
-                 poses[i].facing[Dancer.Follow]))
-  var routes: seq[seq[Point]]
-  if levels[arm] == some(Level.Above):
-    routes = frames.mapIt(straightReach(it.a, it.b))
-  else:
-    # A hold that says which way round says it for every frame at once: a
-    # slot is fixed relative to its facing, so the direction is too.  Where
-    # it says nothing, one way is picked for the whole move instead.
-    let
-      said = wayFor(frames[0], levels[arm], ways[arm])
-      way = if said.isSome: said.get else: oneWayRound(frames)
-    routes = frames.mapIt(routed(it, some(way)).get.pts)
-  let middle = routes[0].len div 2
-  for (ink, lo, hi) in [(DEEP[arm], 0, middle), (INK[site], middle,
-                        routes[0].high)]:
-    var paths: seq[string]
-    for pts in routes:
-      paths.add "M" & pts[lo .. hi].mapIt(xy(it)).join(" L")
-    bits.add paired(
-      &"""<path d="{paths[0]}" fill="none" stroke="{ink}"""" &
-        &""" stroke-width="{LINK_W}" stroke-linecap="round"""" &
-        """ stroke-linejoin="round"/>""",
-      &"""<animate attributeName="d" values="{series(paths)}"""" &
-        &""" dur="{dur}s" repeatCount="indefinite"/>""")
+  for arm in Arm:
+    if holds[arm].isNone:
+      continue
+    let site = holds[arm].get
+    var frames: seq[route.Ends]
+    for i, h in hands:
+      frames.add (h[Dancer.Lead][arm], h[Dancer.Follow][site],
+                  (poses[i].place[Dancer.Lead],
+                   poses[i].facing[Dancer.Lead]),
+                  (poses[i].place[Dancer.Follow],
+                   poses[i].facing[Dancer.Follow]))
+    var routes: seq[seq[Point]]
+    if levels[arm] == some(Level.Above):
+      routes = frames.mapIt(straightReach(it.a, it.b))
+    else:
+      # A hold that says which way round says it for every frame at once: a
+      # slot is fixed relative to its facing, so the direction is too.
+      # Else what the figure says outright -- a turn's trailing side, which
+      # no shortest-total rule can find.  Else one way for the whole move.
+      let
+        said = wayFor(frames[0], levels[arm], ways[arm])
+        way = if said.isSome: said.get
+              elif way_round[arm].isSome: way_round[arm].get
+              else: oneWayRound(frames)
+      routes = frames.mapIt(routed(it, some(way)).get.pts)
+    let middle = routes[0].len div 2
+    for (ink, lo, hi) in [(DEEP[arm], 0, middle), (INK[site], middle,
+                          routes[0].high)]:
+      var paths: seq[string]
+      for pts in routes:
+        paths.add "M" & pts[lo .. hi].mapIt(xy(it)).join(" L")
+      bits.add paired(
+        &"""<path d="{paths[0]}" fill="none" stroke="{ink}"""" &
+          &""" stroke-width="{LINK_W}" stroke-linecap="round"""" &
+          """ stroke-linejoin="round"/>""",
+        &"""<animate attributeName="d" values="{series(paths)}"""" &
+          &""" dur="{dur}s" repeatCount="indefinite"/>""")
 
   for sd in Arm:
     let pts = hands.mapIt(it[Dancer.Lead][sd])
@@ -345,9 +345,11 @@ func animated*(cls: string; holds: Holds; move: MoveApply;
       animate("x", pts.mapIt(it.x - R), dur) &
         animate("y", pts.mapIt(it.y - R), dur))
   for own in [Arm.R, Arm.L]:
-    let pts = hands.mapIt(it[Dancer.Follow][own])
+    let
+      pts = hands.mapIt(it[Dancer.Follow][own])
+      held = holds[Arm.L] == some(own) or holds[Arm.R] == some(own)
     bits.add paired(
-      hand(pts[0].x, pts[0].y, false, own, holds[arm] == some(own)),
+      hand(pts[0].x, pts[0].y, false, own, held),
       animate("cx", pts.mapIt(it.x), dur) &
         animate("cy", pts.mapIt(it.y), dur))
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &

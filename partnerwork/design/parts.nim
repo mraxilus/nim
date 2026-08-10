@@ -279,6 +279,147 @@ func frameParts*(): Parts =
           &""" height: {n(2 * half * PX)}px"""")
 
 
+#[ The Rotation Page ]#
+
+const
+  HAND_TO_HAND*: Holds = [some Arm.R, some Arm.L]
+    ## The parallel double hold, Left-to-right and Right-to-left -- the
+    ## workbook's "hand to hand".
+  CROSSED*: Holds = [some Arm.L, some Arm.R]
+    ## The crossed double hold; which arm is over is the frame's own `over`.
+
+const
+  HIGH_ONE: Levels = [some Level.High, none Level]
+  HIGH_BOTH: Levels = [some Level.High, some Level.High]
+    ## Rule 10's assumption made visible: every held connection carries the
+    ## high dot, and with no way ever named nothing settles off its side.
+
+const
+  ROUND_LEFT: route.WayRound = (-1.0, -1.0)
+  ROUND_RIGHT: route.WayRound = (1.0, 1.0)
+  WOUND_ONE: route.WayRound = (1.0, -1.0)
+  WOUND_OTHER: route.WayRound = (-1.0, 1.0)
+    ## The forced ways the twisted positions draw with: turned away, the
+    ## wind direction is which side the line passes; facing with a full
+    ## wind, it is the long way round, one mirror image per direction.
+
+
+func rockFollowHalf(pose: Pose; scalar: float): Pose =
+  spinAbout(pose, Dancer.Follow, 180 * scalar)
+
+
+func edgeGlyph(label: string): string =
+  ## Draw one rotation edge: a two-headed arrow, since every turn reverses.
+  "<svg viewBox=\"0 0 44 34\" width=\"44\" height=\"34\"" &
+    " aria-hidden=\"true\">" &
+    &"""<text x="22" y="10" text-anchor="middle" style="font: 8px""" &
+    &""" ui-sans-serif, system-ui, sans-serif; fill: {FAINT}">{label}""" &
+    "</text>" &
+    &"""<path d="M7 22 L37 22 M12 17 L7 22 L12 27 M32 17 L37 22 L32 27"""" &
+    &""" fill="none" stroke="{QUIET}" stroke-width="1.6"""" &
+    """ stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+
+
+func refusedGlyph(): string =
+  ## Draw a turn that cannot be taken: dashed, as refusal is drawn
+  ## everywhere in this project.
+  "<svg viewBox=\"0 0 34 34\" width=\"34\" height=\"34\"" &
+    " aria-hidden=\"true\">" &
+    &"""<text x="17" y="10" text-anchor="middle" style="font: 8px""" &
+    &""" ui-sans-serif, system-ui, sans-serif; fill: {FAINT}">refused""" &
+    "</text>" &
+    &"""<path d="M5 22 L29 22 M24 17 L29 22 L24 27" fill="none"""" &
+    &""" stroke="{QUIET}" stroke-width="1.6" stroke-dasharray="3 3"""" &
+    """ stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+
+
+func rotationParts*(): Parts =
+  ## Build every SVG the rotation page places.
+  ##   A position is one of the app's eight frames plus how far the arms
+  ##     have wound (rules 11 to 13); the drawing carries the wind as which
+  ##     way the line goes round, said outright since no lock or wrap is
+  ##     ever named here (rule 10).
+  # The single hold: five positions, a full turn each way in half-turn
+  # steps, the ends drawn as the long way round -- a full wind.
+  result["rot_single_m2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
+    way_round = [some WOUND_OTHER, none route.WayRound])
+  result["rot_single_m1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
+    follow_turn = 180, way_round = [some ROUND_LEFT, none route.WayRound])
+  result["rot_single_z"] = frame("tiny", HOLD, HIGH_ONE, captions = false)
+  result["rot_single_p1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
+    follow_turn = 180, way_round = [some ROUND_RIGHT, none route.WayRound])
+  result["rot_single_p2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
+    way_round = [some WOUND_ONE, none route.WayRound])
+
+  # Hand to hand: three positions, half a turn each way (rule 12).  The
+  # turned positions' ways are the trailing sides the moving figure lands
+  # on, so the strip and the animation settle into one picture per state.
+  result["rot_hand_m1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
+    captions = false, follow_turn = 180,
+    way_round = [some WOUND_OTHER, some ROUND_RIGHT])
+  result["rot_hand_z"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
+    captions = false)
+  result["rot_hand_p1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
+    captions = false, follow_turn = 180,
+    way_round = [some WOUND_ONE, some ROUND_LEFT])
+
+  # The crossed pair: four positions, the twisted states as the ends (rule
+  # 13).  The middle edge is the full turn that swaps which arm is over;
+  # each end is its own side wound one further turn.
+  result["rot_cross_end_l"] = frame("wide", CROSSED, HIGH_BOTH,
+    over = some Arm.L, captions = false,
+    way_round = [some WOUND_OTHER, some WOUND_OTHER])
+  result["rot_cross_over_l"] = frame("wide", CROSSED, HIGH_BOTH,
+    over = some Arm.L, captions = false)
+  result["rot_cross_over_r"] = frame("wide", CROSSED, HIGH_BOTH,
+    over = some Arm.R, captions = false)
+  result["rot_cross_end_r"] = frame("wide", CROSSED, HIGH_BOTH,
+    over = some Arm.R, captions = false,
+    way_round = [some WOUND_ONE, some WOUND_ONE])
+
+  # The edges the strips are strung on.
+  result["g_half"] = edgeGlyph("½ turn")
+  result["g_full"] = edgeGlyph("1 turn")
+  result["g_refused"] = refusedGlyph()
+
+  # And one of them moving: hand to hand rocking through its three
+  # positions, through the same machinery as every other moving figure, so
+  # rule 1's one-way-round and blend discipline hold here too.
+  const PX = 1.3
+  let half = cycle(rockFollowHalf).mapIt(extent(it, captions = false)).max
+  # The trailing sides, one per arm: the hug that grows behind the turning
+  # hand is the winding itself, and no shortest-total rule can choose it.
+  # Sampled finer than the quarter-turn moves because the blend between
+  # frames is what rule 1 measures, and this hand travels further.
+  result["rot_moving"] = animated("mv", HAND_TO_HAND, rockFollowHalf,
+      some half, HIGH_BOTH, samples = 20,
+      way_round = [some WOUND_ONE, some ROUND_LEFT])
+    .replaceFirst("class=\"mv\"",
+      &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
+        &""" height: {n(2 * half * PX)}px"""")
+  result["rot_moving_still"] = frame("mv still", HAND_TO_HAND, HIGH_BOTH,
+      captions = false, half = some half)
+    .replaceFirst("class=\"mv still\"",
+      &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
+        &""" height: {n(2 * half * PX)}px"""")
+
+  # A twisted pair that drew alike would say the wind direction is nothing
+  # -- with one measured exception the page owns up to: a single hold's two
+  # half-turn positions ARE one picture.  The line runs down the side and
+  # touches neither body, so it has nothing to hug and the wind has nothing
+  # to show on; hands stay at their sides by rule 2, so they cannot say it
+  # either.  The wind lives on the edge taken, as axis-against-orbit does.
+  doAssert result["rot_single_m1"] == result["rot_single_p1"],
+    "The single hold's half-turn mirror stopped coinciding; the page's " &
+      "claim about the wind living on the edge no longer holds."
+  for (a, b) in [("rot_single_m2", "rot_single_p2"),
+                 ("rot_hand_m1", "rot_hand_p1"),
+                 ("rot_cross_end_l", "rot_cross_end_r"),
+                 ("rot_cross_over_l", "rot_cross_over_r")]:
+    doAssert result[a] != result[b],
+      &"Two positions draw alike; got `{a}` equal to `{b}`."
+
+
 func signParts*(): Parts =
   ## Build every SVG the turn-sign page places.
   let
