@@ -59,7 +59,21 @@ const RULES* = [
     "to default (physical restrictions)",
   "the connection is drawn in its two hands' own colours, meeting at its " &
     "middle, the lead's end in the deep shade",
+  "using only the rotations that allow us to change between just those " &
+    "(i.e. assumed all rotations are high so no wraps/locks)",
+  "no additional frame positions, just the addition of rotations that let " &
+    "us travel between them",
+  "hand to hand should have 3 positions allowed by rotation",
+  "left to left and right to right should technically have 4 (left over " &
+    "right, right over left, and the two sides with an extra arm twist, " &
+    "in either direction)",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
+  ##   Rules 10 to 13 govern the rotation page: rotation as edges over the
+  ##     app's eight frames, everything held high.
+  ##   In rule 13 the twisted states are the ends of a chain, not a cycle --
+  ##     the middle edge is the full turn that swaps which arm is over.
+  ##     That chain shape is the implementer's reading of the words, flagged
+  ##       on the page as the thing to check.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
