@@ -121,6 +121,25 @@ has happened here more than once.
     state: a hold that turns for ever has no wound-out end, so how far it
     has wound cannot be part of what it is, and only the orientation is
     left.  That retires rule 14's pigtail for single hands.
+17. **"all turns should be in the "above" position, not the high. high/low
+    causes wraps/locks, so we're currently making the assumption to avoid
+    those."**  The turns pages hold every arm above -- over the head, on
+    the axis the couple turns about -- which is the one level rule 8 gives
+    no lock and no wrap, and the one that draws its connection straight
+    over everything.
+18. **"the leads' transitions should still be in the 2 stage form, stage 1
+    is the lead turns with the original perspective stage 2 is reorienting
+    the perspective."**  A lead's turn is animated as the dance has it: the
+    room holds still while they turn, and only then does the picture come
+    back to facing them up.  A follow's turn leaves the lead facing up
+    already, so it needs only the one stage -- measured, not assumed.
+19. **"you should also include orbit turns not just the axis turns."**
+    Four ways: each dancer's own axis turn and each dancer's orbit of the
+    other, the orbits marked by the dashed ring while they happen.
+    Measured: an orbit reaches no position an axis turn does not -- a
+    follow orbiting the lead walks the lead's own round backwards, and a
+    lead orbiting the follow walks the follow's.  Four ways of turning,
+    two rounds of positions.
 
 ## What is settled
 

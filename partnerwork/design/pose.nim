@@ -134,20 +134,52 @@ func cycle*(move: MoveApply; samples = 14): seq[Pose] =
       result.add home
 
 
-func rockPoses*(base: Pose; who: Dancer; degrees: float;
-    samples = 14): seq[Pose] =
-  ## Sample one turn and its return: `base`, round to the turn's end, back.
-  ##   One edge of a state graph, drawn so both directions read from the one
-  ##     figure -- the going and the coming are the same edge.
-  ##   The lead is held facing up throughout, so a lead's own turn is seen
-  ##     as the follow coming round them, which is what the canonical
-  ##     picture means by a turn on the spot.
-  for leg in 0 .. 1:
+type About* {.pure.} = enum ## What a dancer's turn goes round.
+  Axis,                     ## Their own centre: they turn on the spot.
+  Orbit                     ## Their partner: they walk the ring round them.
+
+
+func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
+  ## Turn one dancer, on their own axis or round their partner.
+  case about
+  of About.Axis: spinAbout(base, who, degrees)
+  of About.Orbit: orbit(base, who, degrees, locked = true)
+
+
+func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
+    samples = 12): seq[Pose] =
+  ## Sample one turn and its return, in the stages the dance has.
+  ##   Stage one is the turn itself, **with the world held still**: the
+  ##     dancer turns where they are and the picture does not follow them.
+  ##   Stage two reorients the picture, turning it until the lead faces up
+  ##     again (rule 18).  It is only there when the lead moved -- a
+  ##     follow's own turn leaves the lead facing up already, so there is
+  ##     nothing to bring back and the walk is one stage.
+  ##   Then the same again in reverse, so the going and the coming read
+  ##     from the one figure.
+  func legs(from_pose: Pose; by: float): seq[Pose] =
+    let landed = turned(from_pose, who, about, by)
+    if relative(from_pose) == relative(landed):
+      return @[from_pose]
+    # Stage one: the turn, as the room sees it.
     for i in 0 .. samples:
-      let
-        t = ease(i / samples)
-        part = if leg == 0: t else: 1 - t
-      result.add canonicalise(spinAbout(base, who, degrees * part))
+      result.add turned(from_pose, who, about, by * ease(i / samples))
+    if who == Dancer.Lead:
+      # Stage two: the picture comes back to facing the lead up.  Nothing
+      # travels in it, so the orbit's ring goes out with it.
+      for i in 1 .. samples:
+        var home = canonicalise(landed, ease(i / samples))
+        home.ring = none(Ring)
+        result.add home
+    else:
+      var home = canonicalise(landed)
+      home.ring = none(Ring)
+      result.add home
+
+  let there = legs(base, degrees)
+  result = there
+  for p in legs(there[^1], -degrees):
+    result.add p
 
 
 func moveLeadAxis(pose: Pose; scalar: float): Pose =

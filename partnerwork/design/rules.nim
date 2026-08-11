@@ -75,6 +75,13 @@ const RULES* = [
   "if held high, they can turn infinitely in either direction, so all we " &
     "add is the additional quarter turn orientations for each of the 4 " &
     "single hand connections",
+  "all turns should be in the \"above\" position, not the high. high/low " &
+    "causes wraps/locks, so we're currently making the assumption to avoid " &
+    "those",
+  "the leads' transitions should still be in the 2 stage form, stage 1 is " &
+    "the lead turns with the original perspective stage 2 is reorienting " &
+    "the perspective",
+  "you should also include orbit turns not just the axis turns",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -96,6 +103,20 @@ const RULES* = [
   ##       tell one wind from its mirror, and with no ceiling there is
   ##       nothing left for it to tell apart.  The crossing convention
   ##       stands for pairs, where the geometry makes the crossing itself.
+  ##   Rule 17 moves the assumption from `high` to `above`, and says why:
+  ##     high and low are the levels a wrap or a lock is made at, so a turn
+  ##     drawn at either invites the very states this work is holding out
+  ##     of scope.  Above is over the head, on the axis the couple turns
+  ##     about, and has no lock and no wrap by rule 8.
+  ##   Rule 18 keeps the two stages the frame page dances a lead's move in:
+  ##     the lead turns while the world holds still, and only then does the
+  ##     picture turn back to face them up.
+  ##   Rule 19 adds the orbit turns beside the axis turns.
+  ##     Measured, an orbit reaches no position an axis turn does not: a
+  ##       follow orbiting the lead walks the same states a lead's own turn
+  ##       reaches, backwards, and a lead orbiting the follow walks the
+  ##       follow's own.  Four ways of turning, two families of positions --
+  ##       which is the collapse the frame page argues, met again.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

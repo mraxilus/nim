@@ -10,7 +10,8 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[algorithm, options, sequtils, sets, strformat, strutils, tables]
+import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
+            tables]
 
 import ./[body, figure, geometry, pose, route, rules, sign, style]
 
@@ -289,41 +290,85 @@ const SINGLES*: array[4, tuple[holds: Holds, name: string]] = [
 ] ## The app's four single-hand frames, named as the workbook names them.
 
 const
-  HIGH_ONE*: Levels = [some Level.High, none Level]
-  HIGH_OTHER*: Levels = [none Level, some Level.High]
-    ## Rule 10's assumption made visible: the held connection carries the
-    ## high dot, and with no way ever named nothing settles off its side.
-
-const
-  OVER_PLAIN*: Twist = (over_all: true, loops: 0, braid: 0)
-    ## Held high: straight over, nothing to say.
-  OVER_BOTH*: Twists = [OVER_PLAIN, OVER_PLAIN]
+  ABOVE_ONE*: Levels = [some Level.Above, none Level]
+  ABOVE_OTHER*: Levels = [none Level, some Level.Above]
+    ## Rule 17's assumption made visible: the held arm is carried over the
+    ## head, which is the one level with no lock and no wrap in it (rule 8),
+    ## and the one that draws its connection straight over everything.
 
 const
   QUARTERS_ROUND* = 4        ## Quarter turns in the round, and so positions.
   QUARTER* = 90.0            ## Degrees in one of them.
 
-type TurnBy* {.pure.} = enum ## Which dancer's own turn makes the quarters.
-  FollowTurns,               ## Their chevron comes round; both stay put.
-  LeadTurns                  ## Drawn canonically, the follow swings round.
+type
+  Family* {.pure.} = enum ## Which set of positions a way of turning reaches.
+    FollowFacing,         ## The follow comes round where they stand.
+    PairSwung             ## The pair's axis comes round as well.
+  TurnWay* {.pure.} = enum ## The four ways a couple can turn a quarter.
+    FollowAxis, LeadAxis, FollowOrbit, LeadOrbit
 
-const TURN_SETS*: array[TurnBy, tuple[tag: string, who: Dancer]] = [
-  ("foll", Dancer.Follow),
-  ("lead", Dancer.Lead),
+const WAYS_OF_TURNING*: array[TurnWay, tuple[
+    tag, title, blurb: string; who: Dancer; about: About; family: Family]] = [
+  (tag: "fa", title: "The follow turns on the spot",
+   blurb: "The follow turns on their own axis and nobody travels. What " &
+     "comes round is their <b>chevron</b>, and with it which of their " &
+     "hands is nearer. The lead stands still, facing up, so there is " &
+     "nothing to reorient afterwards: one stage, and it is over.",
+   who: Dancer.Follow, about: About.Axis, family: Family.FollowFacing),
+  (tag: "la", title: "The lead turns on the spot",
+   blurb: "The lead turns on their own axis, and this is where the two " &
+     "stages matter. <b>Stage one</b>: the lead turns and the room holds " &
+     "still, so the picture leans off upright. <b>Stage two</b>: the " &
+     "picture turns back until the lead faces up, which swings the follow " &
+     "round them. Same turn, told in the order it is danced.",
+   who: Dancer.Lead, about: About.Axis, family: Family.PairSwung),
+  (tag: "fo", title: "The follow orbits the lead",
+   blurb: "The follow walks the ring round the lead, who stands still — " &
+     "the dashed ring says so, and says who is standing. Nobody's facing " &
+     "needs bringing back, so this too is one stage. It reaches the same " &
+     "positions the lead's own turn reaches, which is the whole point of " &
+     "drawing it beside them.",
+   who: Dancer.Follow, about: About.Orbit, family: Family.PairSwung),
+  (tag: "lo", title: "The lead orbits the follow",
+   blurb: "The lead walks the ring round the follow. The lead moves, so " &
+     "the two stages are back: travel first, then the picture comes back " &
+     "to facing them up. It lands where the <em>follow's</em> own turn " &
+     "lands — the collapse again, the other way about.",
+   who: Dancer.Lead, about: About.Orbit, family: Family.PairSwung),
 ]
 
+const FAMILY_OF*: array[TurnWay, Family] = [
+  Family.FollowFacing, Family.PairSwung, Family.PairSwung,
+  Family.FollowFacing,
+] ## Which family each way reaches, measured and asserted below: an orbit
+  ## by one dancer walks the states the other's own turn walks.
 
-func levelsFor(holds: Holds): Levels =
-  ## Say high on whichever single arm is holding.
-  if holds[Arm.L].isSome: HIGH_ONE else: HIGH_OTHER
+
+func levelsFor*(holds: Holds): Levels =
+  ## Say above on whichever single arm is holding.
+  if holds[Arm.L].isSome: ABOVE_ONE else: ABOVE_OTHER
 
 
-func quarterPose*(who: Dancer; quarter: int): Pose =
-  ## Get the pose one dancer's own quarter turns reach, drawn canonically.
-  ##   The lead is always brought back to facing up, so their own turn is
-  ##     seen as the follow coming round them -- which is the collapse the
-  ##     frame page draws, and why the two sets differ at all.
-  canonicalise(spinAbout(rest(), who, QUARTER * float(quarter)))
+func quarterPose*(way: TurnWay; quarter: int): Pose =
+  ## Get the pose this way of turning reaches after so many quarters.
+  ##   Drawn canonically, with the lead facing up: that is what a position
+  ##     is, whatever stages the turning took to arrive at it.
+  ##   And without a ring: the dashed ring says *somebody is going round
+  ##     somebody*, which is true of a transition and not of a place to
+  ##     stand.  It is why the orbit rounds draw as their axis partners do.
+  let w = WAYS_OF_TURNING[way]
+  result = canonicalise(turned(rest(), w.who, w.about,
+                               QUARTER * float(quarter)))
+  result.ring = none(Ring)
+
+
+func placeOf*(pose: Pose): tuple[axis, facing: float] =
+  ## Get a position as a pair of numbers that compare cleanly.
+  ##   `relative` can hand back 360 where another hands back 0, and a
+  ##     negative zero where another hands back a positive one, so both are
+  ##     brought into the round before anything is compared.
+  let r = relative(pose)
+  (floorMod(r.axis, 360.0), floorMod(r.facing, 360.0))
 
 
 func turnGlyph*(label: string): string =
@@ -340,58 +385,68 @@ func turnGlyph*(label: string): string =
 
 func singleTurnParts*(): Parts =
   ## Build every SVG the single-hand turns page places.
-  ##   Rule 16: a high single hand turns for ever, so no position is ever
-  ##     refused and how far it has wound is not part of its state.  What is
-  ##     left is the four quarter-turn orientations, per connection, per
-  ##     dancer who can do the turning.
-  ##   Rule 15: every one of those positions is drawn, and every edge
-  ##     between them is animated.
+  ##   Rule 16: a single hand held above turns for ever, so no position is
+  ##     ever refused and how far it has wound is not part of its state.
+  ##     What is left is four quarter-turn orientations per connection.
+  ##   Rule 19: four ways of turning reach them -- each dancer's own axis
+  ##     turn and each dancer's orbit of the other.
+  ##   Rule 15: every position drawn, every edge animated.
   const PX = 1.0
-  for kind in TurnBy:
-    let set = TURN_SETS[kind]
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
     for c, single in SINGLES:
       let levels = levelsFor(single.holds)
 
-      # Every derived position: the four quarters of this cycle.
+      # Every derived position of this way.
       for quarter in 0 ..< QUARTERS_ROUND:
-        result[&"st_{set.tag}_{c}_{quarter}"] = frame("tiny", single.holds,
-          levels, captions = false, pose = some quarterPose(set.who, quarter),
-          twist = OVER_BOTH)
+        result[&"st_{w.tag}_{c}_{quarter}"] = frame("tiny", single.holds,
+          levels, captions = false,
+          pose = some quarterPose(way, quarter))
 
-      # And every edge: each quarter turn on to the next, rocked so the
-      # going and the coming read from the one figure.  The cycle closes --
-      # the last edge is three quarters round back to none, and nothing
-      # refuses (rule 16).
+      # And every edge, walked in the stages rule 18 asks for.
       for quarter in 0 ..< QUARTERS_ROUND:
         let
-          walk = rockPoses(quarterPose(set.who, quarter), set.who, QUARTER)
+          walk = turnWalk(quarterPose(way, quarter), w.who, w.about, QUARTER)
           half = walk.mapIt(extent(it, captions = false)).max
           style = &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
             &""" height: {n(2 * half * PX)}px""""
           to = (quarter + 1) mod QUARTERS_ROUND
-        result[&"tr_{set.tag}_{c}_{quarter}_{to}"] = animatedPoses("mv",
-          single.holds, walk, some half, levels, dur = 4.8,
-          over_all = true).replaceFirst("class=\"mv\"", style)
-        result[&"tr_{set.tag}_{c}_{quarter}_{to}_still"] = frame("mv still",
+        result[&"tr_{w.tag}_{c}_{quarter}_{to}"] = animatedPoses("mv",
+          single.holds, walk, some half, levels,
+          dur = 5.4).replaceFirst("class=\"mv\"", style)
+        result[&"tr_{w.tag}_{c}_{quarter}_{to}_still"] = frame("mv still",
           single.holds, levels, captions = false,
-          pose = some quarterPose(set.who, quarter), half = some half,
-          twist = OVER_BOTH).replaceFirst("class=\"mv still\"",
+          pose = some quarterPose(way, quarter),
+          half = some half).replaceFirst("class=\"mv still\"",
             &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
               &""" height: {n(2 * half * PX)}px"""")
 
   result["g_quarter"] = turnGlyph("&#188; turn")
 
-  # Every position of a cycle draws differently, or a position it is not.
-  for kind in TurnBy:
+  # Every position of a round draws differently, or a position it is not.
+  for way in TurnWay:
     for c in 0 ..< SINGLES.len:
       var seen: seq[string]
       for quarter in 0 ..< QUARTERS_ROUND:
-        let figure = result[&"st_{TURN_SETS[kind].tag}_{c}_{quarter}"]
+        let figure = result[&"st_{WAYS_OF_TURNING[way].tag}_{c}_{quarter}"]
         doAssert figure notin seen,
-          &"Two quarters draw alike; got `{quarter}` of {kind} on {c}."
+          &"Two quarters draw alike; got `{quarter}` of {way} on {c}."
         seen.add figure
 
-  # And nothing on this page hugs a rim: a reach is the connection's own
+  # An orbit reaches no position an axis turn does not (rule 19): the two
+  # ways of a family walk one set of places, in opposite order.
+  for way in TurnWay:
+    var walked, family: seq[tuple[axis, facing: float]]
+    for quarter in 0 ..< QUARTERS_ROUND:
+      walked.add placeOf(quarterPose(way, quarter))
+      family.add placeOf(quarterPose(
+        (if FAMILY_OF[way] == Family.FollowFacing: TurnWay.FollowAxis
+         else: TurnWay.LeadAxis), quarter))
+    for place in walked:
+      doAssert place in family,
+        &"A way left its family; got `{place}` from {way}."
+
+  # And nothing on this page wraps a body: a reach is the connection's own
   # stroke width, and one drawn with an arc has walked round a body.
   for key, figure in result:
     if not (key.startsWith("st_") or key.startsWith("tr_")):

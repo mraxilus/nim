@@ -15,7 +15,11 @@
 
 import std/[math, options, strformat, strutils]
 
-import ./[body, geometry, rules, style]
+import ./[body, geometry, pose, rules, style]
+
+# What a turn goes round is one idea, and it lives with the turning in
+# `pose`; the sign borrows it rather than keeping a second copy.
+export About
 
 
 const
@@ -43,8 +47,6 @@ type
     Repeat             ## Likewise, said as music's repeat colon.
   Lean* {.pure.} = enum ## Which way the sign leans: the way the turn goes.
     Cw, Acw
-  About* {.pure.} = enum ## What the turn goes round.
-    Axis, Orbit
   Ending* {.pure.} = enum ## How a sign for an unfixed amount ends.
     Open, Spill, EllipsisEnd, RepeatEnd, Loop
   SignArm* = tuple ## One column of the sign: whether drawn, and its level.

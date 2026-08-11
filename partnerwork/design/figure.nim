@@ -293,17 +293,22 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     hands = poses.mapIt(handsOf(it))
 
   var bits: seq[string]
-  var ring_cx, ring_cy, ring_r: seq[float]
-  for p in poses:
-    let ring = p.ring.get((centre: (0.0, 0.0), radius: 0.0))
-    ring_cx.add ring.centre.x
-    ring_cy.add ring.centre.y
-    ring_r.add ring.radius
-  bits.add paired(
-    &"""<circle cx="0" cy="0" r="0" fill="none" stroke="{QUIET}"""" &
-      """ stroke-width="1" stroke-dasharray="3 4"/>""",
-    animate("cx", ring_cx, dur) & animate("cy", ring_cy, dur) &
-      animate("r", ring_r, dur))
+  # The ring is drawn only where one is happening.  A move nobody orbits in
+  # has no ring at all, rather than a ring of no radius: the mark says
+  # *somebody is going round somebody*, and a mark that is always there,
+  # invisible, says it of every move.
+  if poses.anyIt(it.ring.isSome):
+    var ring_cx, ring_cy, ring_r: seq[float]
+    for p in poses:
+      let ring = p.ring.get((centre: (0.0, 0.0), radius: 0.0))
+      ring_cx.add ring.centre.x
+      ring_cy.add ring.centre.y
+      ring_r.add ring.radius
+    bits.add paired(
+      &"""<circle cx="0" cy="0" r="0" fill="none" stroke="{QUIET}"""" &
+        """ stroke-width="1" stroke-dasharray="3 4"/>""",
+      animate("cx", ring_cx, dur) & animate("cy", ring_cy, dur) &
+        animate("r", ring_r, dur))
 
   # A body is rigid: only where it is and which way it faces ever change.  So
   # it is drawn once, at the origin facing up, and carried about by a pair of

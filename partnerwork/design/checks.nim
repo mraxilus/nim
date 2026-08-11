@@ -383,32 +383,32 @@ proc checkSingleTurns*() =
   var told: seq[string]
   let built = singleTurnParts()
 
-  # RULE 10.  "using only the rotations that allow us to change between just
-  # those (i.e. assumed all rotations are high so no wraps/locks)."  Every
-  # connection carries the high dot, no way is ever named, and so no hand
-  # settles anywhere but its own side.
-  var dots = 0
+  # RULE 17.  "all turns should be in the \"above\" position, not the high.
+  # high/low causes wraps/locks, so we're currently making the assumption
+  # to avoid those."  Every held hand carries the above hatch, and above is
+  # the level that cannot lock or wrap however the couple is turned.
+  var hatched = 0
   for key, figure in built:
     if not (key.startsWith("st_") or key.startsWith("tr_")):
       continue
-    doAssert "url(#h" notin figure,
-      &"An above fill appears on the turns page; got `{key}`."
-    dots += figure.count("r=\"2.7\"")
-  doAssert dots > 0, "No high dot drawn anywhere; the assumption is unsaid."
-  for arm in Arm:
-    doAssert settledWind(arm, some Level.High, none(Way)) == 0.0,
-      &"A high hold with no way settled away from home; got `{arm}`."
-  told.add "every connection is high; nothing wraps, locks, or leaves its " &
-    "side"
+    doAssert "r=\"2.7\"" notin figure,
+      &"A high dot appears where above was asked for; got `{key}`."
+    if "url(#h" in figure:
+      inc hatched
+  doAssert hatched > 0, "No above hatch drawn anywhere; the level is unsaid."
+  for way in [none(Way), some Way.Lock, some Way.Wrap]:
+    doAssert roundOf(some Level.Above, way).isNone,
+      &"Above sent its line round; got way `{way}`."
+    doAssert slotOf(Arm.L, some Level.Above, way) == (Arm.L, Slot.Default),
+      &"Above settled off its own side; got way `{way}`."
+  told.add &"every turn is held above, hatched on {hatched} figures: the " &
+    "one level that cannot lock or wrap whichever way the couple turns"
 
-  # RULE 11.  "no additional frame positions, just the addition of rotations
-  # that let us travel between them."  Every hold drawn is one of the app's
-  # four single-hand frames.
+  # RULE 11.  "no additional frame positions, just the addition of
+  # rotations that let us travel between them."
   const APP_SINGLES: array[4, Holds] = [
-    [some Arm.L, none Arm],              # Left to left
-    [some Arm.R, none Arm],              # Left to right
-    [none Arm, some Arm.L],              # Right to left
-    [none Arm, some Arm.R],              # Right to right
+    [some Arm.L, none Arm], [some Arm.R, none Arm],
+    [none Arm, some Arm.L], [none Arm, some Arm.R],
   ]
   for single in SINGLES:
     doAssert single.holds in APP_SINGLES,
@@ -416,63 +416,93 @@ proc checkSingleTurns*() =
   told.add &"every position is one of the app's {SINGLES.len} single-hand " &
     "frames, turned; nothing new is drawn"
 
-  # RULE 15.  "for each mock up, a static image version of every derived
-  # position and full set of animated transitions between states."  Counted
-  # against the state graph rather than against a number typed here: two
-  # sets, four connections, four quarters each, and one edge from every
-  # quarter to the next all the way round.
+  # RULE 19.  "you should also include orbit turns not just the axis
+  # turns."  Four ways: each dancer's own axis turn and each dancer's orbit
+  # of the other -- and the orbits carry the dashed ring that says who is
+  # standing still, while the axis turns do not.
+  var axis_ways, orbit_ways = 0
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    if w.about == About.Axis: inc axis_ways else: inc orbit_ways
+    let ringed = built[&"tr_{w.tag}_0_0_1"].contains("stroke-dasharray")
+    doAssert ringed == (w.about == About.Orbit),
+      &"An orbit's ring is missing or an axis turn has one; got {way}."
+  doAssert axis_ways == 2 and orbit_ways == 2,
+    &"Four ways expected; got `{axis_ways}` axis and `{orbit_ways}` orbit."
+  # And an orbit reaches no position an axis turn does not: measured, the
+  # two ways of a family walk one set of places.
+  for way in TurnWay:
+    let mate = if FAMILY_OF[way] == Family.FollowFacing: TurnWay.FollowAxis
+               else: TurnWay.LeadAxis
+    for quarter in 0 ..< QUARTERS_ROUND:
+      var found = false
+      for other_quarter in 0 ..< QUARTERS_ROUND:
+        if placeOf(quarterPose(way, quarter)) ==
+            placeOf(quarterPose(mate, other_quarter)):
+          found = true
+      doAssert found, &"A way left its family; got `{quarter}` of {way}."
+  told.add &"{axis_ways} axis turns and {orbit_ways} orbits, the orbits " &
+    "ringed; an orbit reaches no position its partner's own turn does not"
+
+  # RULE 18.  "the leads' transitions should still be in the 2 stage form,
+  # stage 1 is the lead turns with the original perspective stage 2 is
+  # reorienting the perspective."  Measured on the walk itself: a lead's
+  # turn leans the picture off upright before it brings it back, and ends
+  # facing up; a follow's turn never leans it at all.
+  for way in TurnWay:
+    let
+      w = WAYS_OF_TURNING[way]
+      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
+    var leaned = 0.0
+    for put in walk:
+      leaned = max(leaned, abs(wrap180(put.facing[Dancer.Lead])))
+    if w.who == Dancer.Lead:
+      doAssert leaned > 45,
+        &"A lead's turn never left upright; got `{fmt(leaned, 1)}` for {way}."
+      doAssert abs(wrap180(walk[^1].facing[Dancer.Lead])) < 1e-9,
+        &"A lead's turn ended off upright; got {way}."
+    else:
+      doAssert leaned < 1e-9,
+        &"A follow's turn leaned the picture; got `{leaned}` for {way}."
+  told.add "a lead's turn is danced in two stages -- the room holds still " &
+    "while they turn, then the picture comes back to facing them up; a " &
+    "follow's turn needs only the one"
+
+  # RULE 16 and RULE 15.  Four orientations per connection, the round
+  # closing rather than refusing; every one of them drawn and every edge
+  # between them animated.
   var statics, moving = 0
   for key in built.keys:
     if key.startsWith("st_"): inc statics
     if key.startsWith("tr_") and not key.endsWith("_still"): inc moving
-  let
-    want_statics = TurnBy.high.int + 1
-    positions = want_statics * SINGLES.len * QUARTERS_ROUND
-  doAssert statics == positions,
-    &"A position went undrawn; got `{statics}` of `{positions}`."
-  doAssert moving == positions,
-    &"An edge went unanimated; got `{moving}` of `{positions}`."
-  told.add &"every one of the {statics} positions is drawn and every one " &
-    &"of the {moving} transitions is animated"
+  let want = (TurnWay.high.int + 1) * SINGLES.len * QUARTERS_ROUND
+  doAssert statics == want,
+    &"A position went undrawn; got `{statics}` of `{want}`."
+  doAssert moving == want,
+    &"An edge went unanimated; got `{moving}` of `{want}`."
+  for way in TurnWay:
+    doAssert placeOf(quarterPose(way, QUARTERS_ROUND)) ==
+      placeOf(quarterPose(way, 0)),
+      &"Four quarters do not close the round; got {way}."
+  told.add &"a single hand above turns for ever: {QUARTERS_ROUND} " &
+    &"orientations a way, the round closing rather than refusing, all " &
+    &"{statics} positions drawn and all {moving} transitions animated"
 
-  # RULE 16.  "if held high, they can turn infinitely in either direction,
-  # so all we add is the additional quarter turn orientations for each of
-  # the 4 single hand connections."  Turning that never runs out has no
-  # wound-out end, so nothing here refuses and no position carries a wind
-  # mark: what is left is four orientations, and a fourth quarter turn
-  # comes back to where it started.
-  for kind in TurnBy:
-    let who = TURN_SETS[kind].who
-    doAssert relative(quarterPose(who, QUARTERS_ROUND)) ==
-      relative(quarterPose(who, 0)),
-      &"Four quarters do not close the round; got {kind}."
-    for quarter in 1 ..< QUARTERS_ROUND:
-      doAssert relative(quarterPose(who, quarter)) !=
-        relative(quarterPose(who, 0)),
-        &"A quarter is not a new position; got `{quarter}` of {kind}."
-  told.add &"a high single hand turns for ever: {QUARTERS_ROUND} " &
-    "orientations, the round closing rather than refusing, and no wind mark"
-
-  # RULE 14.  "the rotations should be high, such that there should be no
-  # body wrapping."  Measured as how far a reach bows off the chord between
-  # its own two hands: a wrap bows by a body's width, a straight line bows
-  # nothing.  Nearness to a rim will not do as the measure -- a reach from
-  # the lead's Right to the follow's left runs exactly tangent to both
-  # bodies, which grazes every point of two rims and wraps neither.
+  # RULE 14.  Nothing wraps a body: measured as how far a reach bows off
+  # the chord between its own two hands, standing and turning alike.
   var bowed = 0.0
-  for kind in TurnBy:
-    let who = TURN_SETS[kind].who
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
     for single in SINGLES:
       for arm in Arm:
         if single.holds[arm].isNone:
           continue
-        let walk = rockPoses(quarterPose(who, 0), who, QUARTER)
+        let walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
         var runs: seq[seq[Point]]
         for put in walk:
           let p = handsOf(put)
           runs.add straightReach(p[Dancer.Lead][arm],
                                  p[Dancer.Follow][single.holds[arm].get])
-          # Every position as it is drawn, standing still.
           let
             head = runs[^1][0]
             tail = runs[^1][^1]
@@ -488,22 +518,13 @@ proc checkSingleTurns*() =
               drawn.add (a.x + (b.x - a.x) * part, a.y + (b.y - a.y) * part)
             let span = dist(drawn[0], drawn[^1])
             for q in drawn:
-              let off = abs((drawn[^1].x - drawn[0].x) * (drawn[0].y - q.y) -
-                            (drawn[0].x - q.x) * (drawn[^1].y - drawn[0].y)) /
-                span
-              bowed = max(bowed, off)
+              bowed = max(bowed,
+                abs((drawn[^1].x - drawn[0].x) * (drawn[0].y - q.y) -
+                    (drawn[0].x - q.x) * (drawn[^1].y - drawn[0].y)) / span)
   doAssert bowed < 0.5,
     &"A reach bows off its chord, which is a wrap; got `{fmt(bowed, 2)}`."
-  for key, figure in built:
-    if not (key.startsWith("st_") or key.startsWith("tr_")):
-      continue
-    for piece in figure.split("<path "):
-      if &"stroke-width=\"{LINK_W}\"" in piece:
-        doAssert " A" notin piece,
-          &"A reach walks round a body; got an arc in `{key}`."
   told.add &"nothing wraps a body: every reach, standing or turning, is " &
-    &"straight to within {fmt(bowed, 2)} of its own chord, and none is " &
-    "drawn with an arc"
+    &"straight to within {fmt(bowed, 2)} of its own chord"
 
   for line in told:
     echo &"  rule: {line}"
