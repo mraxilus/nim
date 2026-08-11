@@ -93,6 +93,16 @@ has happened here more than once.
     is the full turn that swaps which arm is over.  *That chain shape is the
     implementer's reading of the words, flagged on the page as the thing to
     check.*
+14. **"the rotations should be high, such that there should be no body
+    wrapping, also make sure any twists are visually clear just like the
+    crossover."**  At high the arms are up, so every connection on the
+    rotation page runs straight and passes *over* what it meets; no route
+    hugs a rim, and the check measures it.  A twist is said as a crossing
+    with the crossover's own over-under break -- free from the geometry for
+    a pair, since half a turn swaps parallel for crossed; drawn as a rope
+    of three crossings where a pair is wound a whole turn; and as a pigtail
+    where a lone connection has no partner to cross.  *The pigtail is the
+    implementer's invention and is flagged on the page.*
 
 ## What is settled
 

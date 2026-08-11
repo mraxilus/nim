@@ -39,6 +39,13 @@ const WAYS*: array[4, WayRound] = [
 
 const BREAK* = 11.0   ## Length of the gap cut in an under reach at a crossing.
 
+const
+  LOOP_R* = 7.0       ## The radius a wound single reach's pigtail is drawn at.
+  LOOP_STEPS* = 24    ## Points per pigtail loop, enough to read as a circle.
+  BRAID_R* = 9.0      ## How far a braided pair swings off its straight line.
+  BRAID_STEPS* = 96   ## Points along a braided reach, before resampling.
+  CROSS_NEAR* = 2.0   ## How close two reaches pass to count as crossing.
+
 
 func segHits*(p, q: Point; body: Body): bool =
   ## Test whether this straight stretch passes inside a body's outline.
@@ -222,6 +229,120 @@ func straightReach*(a, b: Point): seq[Point] =
   var pts = trimEnd(@[a, b], a, reach)
   pts = reversed(trimEnd(reversed(pts), b, reach))
   resample(pts, ROUTE_N)
+
+
+func pigtailed*(a, b: Point; loops: int): seq[Point] =
+  ## Route a lone reach that has been wound, as a straight line with a
+  ## pigtail at its middle: one loop per half turn, the sense from the sign.
+  ##   A pair of connections says a twist by crossing each other (rule 14);
+  ##     one connection has nothing to cross but itself, so it does.
+  ##   Cost of an invented mark: nothing in the dance draws a pigtail, so
+  ##     this is the page's own convention and is flagged as such.
+  if loops == 0:
+    return straightReach(a, b)
+  let
+    reach = min(R + CAP, dist(a, b) / 3)
+    span = dist(a, b)
+    turns = abs(loops)
+    sense = float(sgn(loops))
+    # Along the line, and square to it: a loop is drawn in the reach's own
+    # frame so it leans with the reach rather than with the page.
+    along = ((b.x - a.x) / span, (b.y - a.y) / span)
+    across = (-along[1], along[0])
+    radius = min(LOOP_R, span / float(4 * turns + 4))
+    middle = span / 2 - float(turns - 1) * radius
+  var pts = @[a]
+  for k in 0 ..< turns:
+    # One loop: a full circle walked beside the line, offset a diameter on
+    # so several loops read as a row rather than as one thicker circle.
+    let centre_at = middle + float(k) * 2 * radius
+    for step in 0 .. LOOP_STEPS:
+      let
+        turn_by = -PI / 2 + sense * 2 * PI * float(step) / float(LOOP_STEPS)
+        out_x = radius * cos(turn_by)
+        out_y = radius * sin(turn_by) * sense
+      pts.add (a.x + along[0] * (centre_at + out_x) + across[0] * (radius + out_y),
+               a.y + along[1] * (centre_at + out_x) + across[1] * (radius + out_y))
+  pts.add b
+  var trimmed = trimEnd(pts, a, reach)
+  trimmed = reversed(trimEnd(reversed(trimmed), b, reach))
+  resample(trimmed, ROUTE_N)
+
+
+func braided*(a, b: Point; crossings: int; phase: float): seq[Point] =
+  ## Route one member of a braided pair: the straight line pushed sideways
+  ## so the two members swap sides `crossings` times over the middle.
+  ##   Two arms wound round each other is a rope, and a rope is drawn as the
+  ##     crossings it has -- the crossover's own reading, said as often as
+  ##     the wind says it (rule 14).
+  if crossings == 0:
+    return straightReach(a, b)
+  let
+    reach = min(R + CAP, dist(a, b) / 3)
+    span = dist(a, b)
+    along = ((b.x - a.x) / span, (b.y - a.y) / span)
+    across = (-along[1], along[0])
+    swing = min(BRAID_R, span / 6)
+  var pts: seq[Point]
+  for step in 0 .. BRAID_STEPS:
+    let
+      t = float(step) / float(BRAID_STEPS)
+      # Held straight at the ends and braided in the middle third, so the
+      # crossings sit clear of both hands.
+      shape = (if t < 0.2 or t > 0.8: 0.0
+               else: sin(PI * (t - 0.2) / 0.6))
+      wave = sin(PI * float(crossings) * (t - 0.2) / 0.6 + phase)
+      off = swing * shape * wave
+    pts.add (a.x + (b.x - a.x) * t + across[0] * off,
+             a.y + (b.y - a.y) * t + across[1] * off)
+  var trimmed = trimEnd(pts, a, reach)
+  trimmed = reversed(trimEnd(reversed(trimmed), b, reach))
+  resample(trimmed, ROUTE_N)
+
+
+func crossingsOf*(one, other: seq[Point]): seq[Point] =
+  ## Find where two drawn reaches cross, so each crossing can be broken.
+  for i in 0 ..< one.high:
+    var nearest = (d: Inf, at: one[i])
+    for j in 0 ..< other.high:
+      let d = dist(one[i], other[j])
+      if d < nearest.d:
+        nearest = (d, other[j])
+    if nearest.d < CROSS_NEAR:
+      # One point per crossing: keep the first of each run of near points.
+      if result.len == 0 or dist(result[^1], one[i]) > BREAK:
+        result.add one[i]
+
+
+func cutGapsAt*(pts: seq[Point]; centres: seq[Point]): seq[Run] =
+  ## Break a reach at every place it runs under another, not only the first.
+  if centres.len == 0:
+    return @[pts]
+  var cum = @[0.0]
+  for i in 0 ..< pts.high:
+    cum.add cum[^1] + dist(pts[i], pts[i + 1])
+  var breaks: seq[float]
+  for centre in centres:
+    var nearest = (d: Inf, at: 0.0)
+    for i, p in pts:
+      let d = dist(p, centre)
+      if d < nearest.d:
+        nearest = (d, cum[i])
+    breaks.add nearest.at
+  var run: Run
+  for i, q in pts:
+    var covered = false
+    for at in breaks:
+      if abs(cum[i] - at) <= BREAK / 2:
+        covered = true
+    if covered:
+      if run.len > 1:
+        result.add run
+      run = @[]
+    else:
+      run.add q
+  if run.len > 1:
+    result.add run
 
 
 func routed*(ends: Ends; way = none(WayRound)):

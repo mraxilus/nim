@@ -67,13 +67,21 @@ const RULES* = [
   "left to left and right to right should technically have 4 (left over " &
     "right, right over left, and the two sides with an extra arm twist, " &
     "in either direction)",
+  "the rotations should be high, such that there should be no body " &
+    "wrapping, also make sure any twists are visually clear just like the " &
+    "crossover",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
-  ##   Rules 10 to 13 govern the rotation page: rotation as edges over the
+  ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
   ##   In rule 13 the twisted states are the ends of a chain, not a cycle --
   ##     the middle edge is the full turn that swaps which arm is over.
   ##     That chain shape is the implementer's reading of the words, flagged
   ##       on the page as the thing to check.
+  ##   Rule 14 rules out the drawing the first draft reached for: at high
+  ##     the arms are up, so a connection passes *over* a turning body and
+  ##     never routes round one.  A twist is said the way the crossover is
+  ##     said -- lines crossing, with the over-under break naming which is
+  ##     on top -- and never by which side of a body a line hugs.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

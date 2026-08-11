@@ -295,13 +295,18 @@ const
     ## high dot, and with no way ever named nothing settles off its side.
 
 const
-  ROUND_LEFT: route.WayRound = (-1.0, -1.0)
-  ROUND_RIGHT: route.WayRound = (1.0, 1.0)
-  WOUND_ONE: route.WayRound = (1.0, -1.0)
-  WOUND_OTHER: route.WayRound = (-1.0, 1.0)
-    ## The forced ways the twisted positions draw with: turned away, the
-    ## wind direction is which side the line passes; facing with a full
-    ## wind, it is the long way round, one mirror image per direction.
+  OVER_PLAIN: Twist = (over_all: true, loops: 0, braid: 0)
+    ## Held high and unwound: straight over, nothing to say.
+  OVER_LOOP_ONE: Twist = (over_all: true, loops: 1, braid: 0)
+  OVER_LOOP_OTHER: Twist = (over_all: true, loops: -1, braid: 0)
+  OVER_LOOP_TWO: Twist = (over_all: true, loops: 2, braid: 0)
+  OVER_LOOP_TWO_OTHER: Twist = (over_all: true, loops: -2, braid: 0)
+    ## A lone reach's wind, one pigtail per half turn, sense by sign.
+  OVER_BRAID: Twists = [(true, 0, 2), (true, 0, 2)]
+  OVER_BRAID_OTHER: Twists = [(true, 0, -2), (true, 0, -2)]
+    ## A pair's extra full turn: two more crossings, sense by sign.
+  OVER_BOTH: Twists = [OVER_PLAIN, OVER_PLAIN]
+    ## A pair held high and unwound past what the frame already says.
 
 
 func rockFollowHalf(pose: Pose; scalar: float): Pose =
@@ -340,42 +345,45 @@ func rotationParts*(): Parts =
   ##     way the line goes round, said outright since no lock or wrap is
   ##     ever named here (rule 10).
   # The single hold: five positions, a full turn each way in half-turn
-  # steps, the ends drawn as the long way round -- a full wind.
+  # steps.  A half turn moves the follow's hand, so the line itself changes
+  # -- but +half and -half move it to the same place, so the wind is said by
+  # the pigtail: one loop per half turn, mirrored by direction (rule 14).
   result["rot_single_m2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    way_round = [some WOUND_OTHER, none route.WayRound])
+    twist = [OVER_LOOP_TWO_OTHER, OVER_PLAIN])
   result["rot_single_m1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    follow_turn = 180, way_round = [some ROUND_LEFT, none route.WayRound])
-  result["rot_single_z"] = frame("tiny", HOLD, HIGH_ONE, captions = false)
+    follow_turn = 180, twist = [OVER_LOOP_OTHER, OVER_PLAIN])
+  result["rot_single_z"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
+    twist = [OVER_PLAIN, OVER_PLAIN])
   result["rot_single_p1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    follow_turn = 180, way_round = [some ROUND_RIGHT, none route.WayRound])
+    follow_turn = 180, twist = [OVER_LOOP_ONE, OVER_PLAIN])
   result["rot_single_p2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    way_round = [some WOUND_ONE, none route.WayRound])
+    twist = [OVER_LOOP_TWO, OVER_PLAIN])
 
-  # Hand to hand: three positions, half a turn each way (rule 12).  The
-  # turned positions' ways are the trailing sides the moving figure lands
-  # on, so the strip and the animation settle into one picture per state.
+  # Hand to hand: three positions, half a turn each way (rule 12).  Here the
+  # geometry says it by itself -- a half turn swaps the follow's hands, so
+  # the parallel pair becomes a crossed one -- and which arm is broken at
+  # the crossing says which way it wound.  Nothing is added.
   result["rot_hand_m1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    captions = false, follow_turn = 180,
-    way_round = [some WOUND_OTHER, some ROUND_RIGHT])
+    over = some Arm.R, captions = false, follow_turn = 180,
+    twist = OVER_BOTH)
   result["rot_hand_z"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    captions = false)
+    captions = false, twist = OVER_BOTH)
   result["rot_hand_p1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    captions = false, follow_turn = 180,
-    way_round = [some WOUND_ONE, some ROUND_LEFT])
+    over = some Arm.L, captions = false, follow_turn = 180,
+    twist = OVER_BOTH)
 
   # The crossed pair: four positions, the twisted states as the ends (rule
-  # 13).  The middle edge is the full turn that swaps which arm is over;
-  # each end is its own side wound one further turn.
+  # 13).  The middles already cross once, which is the hold itself; an end
+  # is a full turn further, and a full turn returns the hands to where they
+  # were -- so the two arms braid, crossing twice more, sense by direction.
   result["rot_cross_end_l"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.L, captions = false,
-    way_round = [some WOUND_OTHER, some WOUND_OTHER])
+    over = some Arm.L, captions = false, twist = OVER_BRAID_OTHER)
   result["rot_cross_over_l"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.L, captions = false)
+    over = some Arm.L, captions = false, twist = OVER_BOTH)
   result["rot_cross_over_r"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.R, captions = false)
+    over = some Arm.R, captions = false, twist = OVER_BOTH)
   result["rot_cross_end_r"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.R, captions = false,
-    way_round = [some WOUND_ONE, some WOUND_ONE])
+    over = some Arm.R, captions = false, twist = OVER_BRAID)
 
   # The edges the strips are strung on.
   result["g_half"] = edgeGlyph("½ turn")
@@ -387,37 +395,41 @@ func rotationParts*(): Parts =
   # rule 1's one-way-round and blend discipline hold here too.
   const PX = 1.3
   let half = cycle(rockFollowHalf).mapIt(extent(it, captions = false)).max
-  # The trailing sides, one per arm: the hug that grows behind the turning
-  # hand is the winding itself, and no shortest-total rule can choose it.
-  # Sampled finer than the quarter-turn moves because the blend between
-  # frames is what rule 1 measures, and this hand travels further.
+  # Straight over, every frame: the follow turns *under* raised arms, so the
+  # lines sweep across them and nothing hugs a rim (rule 14).  The pair goes
+  # parallel to crossed and back as they turn, which is the twist appearing.
   result["rot_moving"] = animated("mv", HAND_TO_HAND, rockFollowHalf,
-      some half, HIGH_BOTH, samples = 20,
-      way_round = [some WOUND_ONE, some ROUND_LEFT])
+      some half, HIGH_BOTH, over_all = true)
     .replaceFirst("class=\"mv\"",
       &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
         &""" height: {n(2 * half * PX)}px"""")
   result["rot_moving_still"] = frame("mv still", HAND_TO_HAND, HIGH_BOTH,
-      captions = false, half = some half)
+      captions = false, half = some half, twist = OVER_BOTH)
     .replaceFirst("class=\"mv still\"",
       &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
         &""" height: {n(2 * half * PX)}px"""")
 
-  # A twisted pair that drew alike would say the wind direction is nothing
-  # -- with one measured exception the page owns up to: a single hold's two
-  # half-turn positions ARE one picture.  The line runs down the side and
-  # touches neither body, so it has nothing to hug and the wind has nothing
-  # to show on; hands stay at their sides by rule 2, so they cannot say it
-  # either.  The wind lives on the edge taken, as axis-against-orbit does.
-  doAssert result["rot_single_m1"] == result["rot_single_p1"],
-    "The single hold's half-turn mirror stopped coinciding; the page's " &
-      "claim about the wind living on the edge no longer holds."
-  for (a, b) in [("rot_single_m2", "rot_single_p2"),
-                 ("rot_hand_m1", "rot_hand_p1"),
-                 ("rot_cross_end_l", "rot_cross_end_r"),
-                 ("rot_cross_over_l", "rot_cross_over_r")]:
-    doAssert result[a] != result[b],
-      &"Two positions draw alike; got `{a}` equal to `{b}`."
+  # Every position of a class draws differently from every other: a twist
+  # nobody can see is not a twist (rule 14).
+  for class in ["rot_single_", "rot_hand_", "rot_cross_"]:
+    var drawn: seq[tuple[key, figure: string]]
+    for key, figure in result:
+      if key.startsWith(class):
+        for seen in drawn:
+          doAssert seen.figure != figure,
+            &"Two positions draw alike; got `{key}` equal to `{seen.key}`."
+        drawn.add (key, figure)
+
+  # And nothing on this page hugs a rim.  A rim is drawn with arcs and may
+  # be; a *reach* drawn with one has walked round a body, and there is to be
+  # none of that (rule 14).  A reach is the connection's own stroke width.
+  for key, figure in result:
+    if not key.startsWith("rot_"):
+      continue
+    for piece in figure.split("<path "):
+      if &"stroke-width=\"{LINK_W}\"" in piece:
+        doAssert " A" notin piece,
+          &"A reach walks round a body; got an arc in `{key}`."
 
 
 func signParts*(): Parts =

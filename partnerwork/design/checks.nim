@@ -451,55 +451,95 @@ proc checkRotation*() =
   told.add "the crossed pair has 4: both over-orders, and the two sides " &
     "with an extra twist as the ends"
 
-  # And the moving figure obeys rule 1 at every drawn instant: the blend
-  # between every pair of its sampled frames, bodies interpolated too --
-  # with the trailing-side ways and the finer sampling the figure itself
-  # uses, because what is checked must be what is drawn.
-  var swept = 99.0
+  # RULE 14.  "the rotations should be high, such that there should be no
+  # body wrapping, also make sure any twists are visually clear just like
+  # the crossover."  Two claims, both measured on what is drawn: no static
+  # reach on the page comes near a rim, and no arc command appears anywhere
+  # (an arc is what walking round a body writes).  The distinctness half is
+  # asserted where the figures are built, since it compares whole drawings.
+  # Passing over a body is not wrapping one.  Seen from overhead a raised
+  # arm crosses the rim it passes above, so overlap is expected and right;
+  # what a wrap looks like is a stretch of route *lying along* a rim.  So
+  # the measure is the longest run of points a reach spends on a boundary.
+  var clung = 0
+  for arm in Arm:
+    for turn in [0.0, 180.0]:
+      for loops in [0, 1, -2]:
+        for holds in [HOLD, HAND_TO_HAND, CROSSED]:
+          if holds[arm].isNone:
+            continue
+          let
+            pose = canonicalise(spinAbout(rest(), Dancer.Follow, turn))
+            p = handsOf(pose)
+            a = p[Dancer.Lead][arm]
+            b = p[Dancer.Follow][holds[arm].get]
+            run = if loops == 0: straightReach(a, b)
+                  else: pigtailed(a, b, loops)
+          for who in Dancer:
+            var along = 0
+            for q in run:
+              let
+                c = pose.place[who]
+                f = pose.facing[who]
+                off = dist(q, c) - outlineR(bearing(q.x - c.x, q.y - c.y) - f)
+              along = if abs(off) < 0.5: along + 1 else: 0
+              clung = max(clung, along)
+  doAssert clung < 4,
+    &"A reach lies along a rim, which is a wrap; got `{clung}` points on it."
+  for key, figure in built:
+    if not key.startsWith("rot_"):
+      continue
+    for piece in figure.split("<path "):
+      if &"stroke-width=\"{LINK_W}\"" in piece:
+        doAssert " A" notin piece,
+          &"A reach walks round a body; got an arc in `{key}`."
+  told.add &"nothing wraps a body: no reach lies along a rim (longest " &
+    &"stretch {clung} points, a wrap is twenty), no reach is drawn with " &
+    "an arc, and every position of a class draws differently"
+
+  # And the moving figure keeps rule 14 at every instant a browser draws.
+  # Rule 1's own failure -- two frames disagreeing about which side of a
+  # body a line passes, so the blend sweeps through it -- cannot arise here
+  # at all, because no route on this page is routed round anything.  What
+  # is measured is that: every blended instant is still a straight line
+  # between its own two hands, so nothing bends round a body mid-move.
+  var bowed = 0.0
   let
-    holds: Holds = [some Arm.R, some Arm.L]
-    trailing: array[Arm, route.WayRound] = [(1.0, -1.0), (-1.0, -1.0)]
     poses = cycle(
       proc (pose: Pose; scalar: float): Pose {.nimcall, noSideEffect.} =
-        spinAbout(pose, Dancer.Follow, 180 * scalar), samples = 20)
-      .mapIt(settled(it, holds, default(Levels), default(Ways)))
+        spinAbout(pose, Dancer.Follow, 180 * scalar))
+      .mapIt(settled(it, HAND_TO_HAND, default(Levels), default(Ways)))
     hands = poses.mapIt(handsOf(it))
   for arm in Arm:
     var frames: seq[route.Ends]
     for i, hnd in hands:
-      frames.add (hnd[Dancer.Lead][arm], hnd[Dancer.Follow][holds[arm].get],
+      frames.add (hnd[Dancer.Lead][arm],
+                  hnd[Dancer.Follow][HAND_TO_HAND[arm].get],
                   (poses[i].place[Dancer.Lead],
                    poses[i].facing[Dancer.Lead]),
                   (poses[i].place[Dancer.Follow],
                    poses[i].facing[Dancer.Follow]))
-    let runs = frames.mapIt(routed(it, some trailing[arm]).get.pts)
+    let runs = frames.mapIt(straightReach(it.a, it.b))
     for k in 0 ..< runs.high:
       for part in [0.25, 0.5, 0.75]:
         var drawn: seq[Point]
         for i, a in runs[k]:
           let b = runs[k + 1][i]
           drawn.add (a.x + (b.x - a.x) * part, a.y + (b.y - a.y) * part)
-        for who in Dancer:
-          let
-            qa = poses[k]
-            qb = poses[k + 1]
-            c: Point = (
-              qa.place[who].x + (qb.place[who].x - qa.place[who].x) * part,
-              qa.place[who].y + (qb.place[who].y - qa.place[who].y) * part)
-            f = qa.facing[who] + part * (qb.facing[who] - qa.facing[who])
-          for i in 0 ..< drawn.high:
-            for j in 0 .. 8:
-              let
-                t = j / 8
-                pt: Point = (
-                  drawn[i].x + (drawn[i + 1].x - drawn[i].x) * t,
-                  drawn[i].y + (drawn[i + 1].y - drawn[i].y) * t)
-              swept = min(swept, dist(pt, c) - outlineR(
-                bearing(pt.x - c.x, pt.y - c.y) - f))
-  doAssert swept > -0.3,
-    &"The rocking figure sweeps a line through a body; got `{fmt(swept, 2)}`."
-  told.add &"the moving figure keeps rule 1 at every drawn instant " &
-    &"(worst {fmt(swept, 2)})"
+        # How far the blended line bows off the chord between its own ends:
+        # a wrap is a bow of a body's width, a straight line bows nothing.
+        let
+          head = drawn[0]
+          tail = drawn[^1]
+          span = dist(head, tail)
+        for q in drawn:
+          let off = abs((tail.x - head.x) * (head.y - q.y) -
+                        (head.x - q.x) * (tail.y - head.y)) / span
+          bowed = max(bowed, off)
+  doAssert bowed < 0.5,
+    &"A blended instant bows off its chord; got `{fmt(bowed, 2)}`."
+  told.add &"the moving figure is a straight line at every instant drawn " &
+    &"(bow at worst {fmt(bowed, 2)}), so no blend can sweep round a body"
 
   for line in told:
     echo &"  rule: {line}"

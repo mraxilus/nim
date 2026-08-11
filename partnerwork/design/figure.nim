@@ -22,16 +22,24 @@ const
   WIDE* = 160.0    ## The box a picture with captions needs.
   SIZE* = 116.0    ## And the box it needs without them.
 
-type WaysRound* = array[Arm, Option[WayRound]]
-  ## An explicit way round the bodies per connection, where a figure has to
-  ## say one.
-  ##   The rotation page's twisted positions differ only in which way the
-  ##     arms wound, which is which side the line passes -- with no lock or
-  ##     wrap named there is no `wayFor` to derive it from, so the figure
-  ##     says it outright.
-  ##   Cost of a second way channel: two places can now send a line round.
-  ##     Accepted -- an explicit way and a derived way never coexist on one
-  ##     figure, and the derived one still wins where both are given.
+type
+  Twist* = tuple ## How a connection is drawn when the arms have wound.
+    over_all: bool ## Drawn straight, passing over whatever it meets.
+    loops: int     ## Pigtails at its middle: one per half turn, signed.
+    braid: int     ## Crossings with its partner: one per half turn.
+  Twists* = array[Arm, Twist]
+    ## Per connection, how far its arms have wound past what the frame's own
+    ## geometry already says.
+    ##   At high the arms are up, so a wound reach never routes round a body
+    ##     (rule 14): it goes straight over, and says the wind by crossing --
+    ##     its partner where there is one, itself where there is not.
+    ##   Cost of a second drawing channel: a figure can now be asked for a
+    ##     twist its pose does not have.  Accepted -- the rotation page owns
+    ##     both, and `checks` measures what was drawn rather than trusting
+    ##     what was asked.
+
+const NO_TWIST*: Twists = [(false, 0, 0), (false, 0, 0)]
+  ## Nothing wound and nothing said: every figure but the rotation page's.
 
 
 func twoTone*(runs: seq[Run]; mid: Point; lead_side, foll_side: Arm):
@@ -112,8 +120,7 @@ func danceable*(pose: Pose; holds: Holds;
 
 func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     over = none(Arm); free = Free.Fade; captions = true;
-    ways: Ways = default(Ways);
-    way_round: WaysRound = default(WaysRound)): seq[string] =
+    ways: Ways = default(Ways); twist: Twists = NO_TWIST): seq[string] =
   ## Draw every element of one pose, in the order the picture is read from.
   # A lock or wrap that does not go round the body is not one, and a state
   # that cannot be danced is an edge that is not drawn -- so this refuses
@@ -146,21 +153,49 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     let ends: route.Ends = (p[Dancer.Lead][arm],
                             p[Dancer.Follow][holds[arm].get],
                             lead_body, follow_body)
-    if levels[arm] == some(Level.Above):
-      routes[arm] = straightReach(ends.a, ends.b)  # over the head, over all
+    if levels[arm] == some(Level.Above) or twist[arm].over_all:
+      # Over the head, or over a turning body: either way nothing is in the
+      # way from above, and the wind is said by crossing rather than by
+      # hugging (rules 1 and 14).
+      routes[arm] =
+        if twist[arm].loops != 0:
+          pigtailed(ends.a, ends.b, twist[arm].loops)
+        elif twist[arm].braid != 0:
+          # The two members of a pair weave in opposition -- same wave, half
+          # a period apart -- so where one swings out the other swings in
+          # and they cross.  The sign turns the whole weave over, which is
+          # what tells one direction of wind from the other.
+          braided(ends.a, ends.b, abs(twist[arm].braid),
+                  (if arm == Arm.L: 0.0 else: PI) +
+                    (if twist[arm].braid > 0: 0.0 else: PI))
+        else:
+          straightReach(ends.a, ends.b)
     else:
-      # What the hold says, if it says anything; else what the figure says
-      # outright; the short way if neither has an opinion.
-      let said = wayFor(ends, levels[arm], ways[arm])
-      routes[arm] = routed(ends,
-        (if said.isSome: said else: way_round[arm])).get.pts
+      # What the hold says, if it says anything; the short way if not.
+      routes[arm] = routed(ends, wayFor(ends, levels[arm], ways[arm])).get.pts
+  # A braided pair meets more than once, and a rope alternates: each strand
+  # dives under at every second crossing.  So the crossings are found once,
+  # in order along the line, and shared out between the two arms.
+  let braiding = holds[Arm.L].isSome and holds[Arm.R].isSome and
+    twist[Arm.L].braid != 0
+  var dives: array[Arm, seq[Point]]
+  if braiding:
+    let meetings = crossingsOf(routes[Arm.L], routes[Arm.R])
+    for i, meeting in meetings:
+      # The arm named `over` stays on top at the first meeting, so it is
+      # the other one that dives there, and they swap at each one after.
+      let under = if (i mod 2 == 0) == (over == some(Arm.L)): Arm.R else: Arm.L
+      dives[under].add meeting
+
   let order = if over == some(Arm.L): [Arm.R, Arm.L] else: [Arm.L, Arm.R]
   for arm in order:
     if holds[arm].isSome:
       let
         pts = routes[arm]
-        runs = if over == some(other(arm)): cutGap(pts, routes[other(arm)])
-               else: @[pts]
+        runs =
+          if braiding: cutGapsAt(pts, dives[arm])
+          elif over == some(other(arm)): cutGap(pts, routes[other(arm)])
+          else: @[pts]
       bits.add twoTone(runs, pts[pts.len div 2], arm, holds[arm].get)
   for arm in Arm:
     let q = p[Dancer.Lead][arm]
@@ -201,8 +236,7 @@ func view*(half: float): string =
 func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
     over = none(Arm); lead_turn = 0.0; follow_turn = 0.0; free = Free.Fade;
     captions = true; pose = none(Pose); half = none(float);
-    ways: Ways = default(Ways);
-    way_round: WaysRound = default(WaysRound)): string =
+    ways: Ways = default(Ways); twist: Twists = NO_TWIST): string =
   ## Draw one picture, canonical unless a pose is handed in already turned.
   let
     drawn = if pose.isSome: pose.get
@@ -211,8 +245,7 @@ func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
               Dancer.Follow, follow_turn))
     box = if half.isSome: half.get
           else: (if captions: WIDE else: SIZE) / 2
-    bits = partsOf(drawn, holds, levels, over, free, captions, ways,
-                   way_round)
+    bits = partsOf(drawn, holds, levels, over, free, captions, ways, twist)
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
 
@@ -250,7 +283,7 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
 func animated*(cls: string; holds: Holds; move: MoveApply;
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6; samples = 14;
-    way_round: WaysRound = default(WaysRound)): string =
+    over_all = false): string =
   ## Draw the same picture, moving: stage one travels, stage two comes home.
   let
     poses = cycle(move, samples).mapIt(settled(it, holds, levels, ways))
@@ -312,18 +345,17 @@ func animated*(cls: string; holds: Holds; move: MoveApply;
                   (poses[i].place[Dancer.Follow],
                    poses[i].facing[Dancer.Follow]))
     var routes: seq[seq[Point]]
-    if levels[arm] == some(Level.Above):
+    if levels[arm] == some(Level.Above) or over_all:
+      # Over the head, or over a body that is turning under raised arms:
+      # from above nothing is in the way, and nothing hugs (rules 1, 14).
       routes = frames.mapIt(straightReach(it.a, it.b))
     else:
       # A hold that says which way round says it for every frame at once: a
       # slot is fixed relative to its facing, so the direction is too.
-      # Else what the figure says outright -- a turn's trailing side, which
-      # no shortest-total rule can find.  Else one way for the whole move.
+      # Where it says nothing, one way is picked for the whole move instead.
       let
         said = wayFor(frames[0], levels[arm], ways[arm])
-        way = if said.isSome: said.get
-              elif way_round[arm].isSome: way_round[arm].get
-              else: oneWayRound(frames)
+        way = if said.isSome: said.get else: oneWayRound(frames)
       routes = frames.mapIt(routed(it, some(way)).get.pts)
     let middle = routes[0].len div 2
     for (ink, lo, hi) in [(DEEP[arm], 0, middle), (INK[site], middle,
