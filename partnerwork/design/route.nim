@@ -13,7 +13,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, strformat, strutils]
+import std/[math, options, sequtils, strformat, strutils]
 
 import ./[body, geometry, rules, style]
 
@@ -65,12 +65,23 @@ const
     ##   band that is this close is as clear as the picture can show.
 
 const
+  BOW_SWELL* = 2.0      ## Where a bezier's control point starts, in apexes.
+    ## Twice the apex is what puts a bezier's own middle on it, so this is
+    ##   the least swelling that could clear what the hull touched.
+  BOW_MORE* = 0.35      ## And how much further out each try reaches.
+  BOW_TRIES* = 12       ## Tries before the hull is kept after all.
+
+const
   BEND_MIN* = 12.0      ## Degrees a turn must add up to before it is a bend.
     ## Under this is the wander of a curve drawn as `ROUTE_N` straight bits,
     ##   which nobody reads as a change of direction.
   BEND_COST* = 14.0     ## Line a second bend must save to be worth making.
     ## About the width of a hand mark: a turn a reader has to follow should
     ##   buy at least as much as the thing it is going round.
+  SHARP_MAX* = 15.0     ## Degrees at one corner past which a bend is a break.
+    ## A curve sampled at `ROUTE_N` turns a few degrees a corner however far
+    ##   round it goes, so anything this sharp is a change of direction made
+    ##   at a point -- which is what rule 24 rules out.
 
 
 func segHits*(p, q: Point; body: Body): bool =
@@ -322,6 +333,21 @@ func bendsIn*(pts: seq[Point]): int =
   result
 
 
+func sharpestIn*(pts: seq[Point]): float =
+  ## Measure the worst break in a drawn line: the most it turns at any one
+  ## of its corners (rule 24).
+  ##   A curve drawn as `ROUTE_N` straight bits turns a little at every one
+  ##     of them; a corner turns a lot at one.  So the sharpest corner, and
+  ##     not the total turning, is what tells a break from a bend.
+  for i in 1 ..< pts.high:
+    let
+      into = (x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y)
+      away = (x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y)
+      cross = into.x * away.y - into.y * away.x
+      dot = into.x * away.x + into.y * away.y
+    result = max(result, abs(radToDeg(arctan2(cross, dot))))
+
+
 func readingCost*(pts: seq[Point]): float =
   ## Measure what a drawn reach asks of a reader: its length, and its turns.
   ##   A turn is worth `BEND_COST` of line: taking one has to save at least
@@ -378,15 +404,22 @@ func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
     (a.x + along[0] * x + across[0] * y, a.y + along[1] * x + across[1] * y)
 
   func bowedPast(asked: seq[Mark]; side: float): seq[Point] =
-    ## The one-bend way past everything: the taut string pinned at the two
-    ## hands and held to one side of the chord (rule 23).
-    ##   A string on one side goes over the *outermost* marks and touches
-    ##     nothing else, which is what the upper hull of them is.  A hull
-    ##     turns one way only, so this is a single bend by construction --
-    ##     and, being a hull, it is the shortest line that is.
-    ##   The marks are read as a sky-line first: how far out the string
-    ##     would have to be at each step to clear everything reaching that
-    ##     far.  The hull is then taken over that.
+    ## The one-bend way past everything: a single curve pinned at the two
+    ## hands and held to one side of the chord (rules 23 and 24).
+    ##   The marks are read as a sky-line first: how far out a string would
+    ##     have to be at each step to clear everything reaching that far.
+    ##     Its upper hull is the taut string on that side -- the shortest
+    ##     line that turns one way only -- and its apex says where the bulge
+    ##     belongs and how far out it has to go.
+    ##   The line drawn is not that hull, though.  A hull is a polyline and
+    ##     its apex is a corner; rule 24 asks for a curve.  So the hull is
+    ##     read as a guide and the reach is **one quadratic bezier** over
+    ##     the same apex, swelled until it clears every mark -- which turns
+    ##     one way only, as a bezier does, and has no break in it.
+    ##     Cost of the curve over the hull: a shade more line, since a
+    ##       bezier passes short of its control point and has to reach
+    ##       further out to clear what the hull touched exactly.  Accepted
+    ##       -- it is the difference between a bend and a break.
     var sky = @[0.0]                   # pinned at the hand it starts from
     for step in 1 ..< BAND_STEPS:
       let x = span * float(step) / float(BAND_STEPS)
@@ -415,8 +448,40 @@ func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
           break
         discard hull.pop()
       hull.add i
+    result = @[]
     for i in hull:
       result.add placed(span * float(i) / float(BAND_STEPS), side * sky[i])
+    # Where the hull stands furthest off the chord is where the curve wants
+    # its control point.  A flat hull is a straight reach and wants none.
+    var apex = 0
+    for i in hull:
+      if sky[i] > sky[apex]:
+        apex = i
+    if sky[apex] < 1e-9:
+      return
+    let at = span * float(apex) / float(BAND_STEPS)
+
+    func curveWith(swell: float): seq[Point] =
+      ## The bezier from hand to hand over a control point this far out.
+      let hold = placed(at, side * swell * sky[apex])
+      for step in 0 .. BAND_STEPS:
+        let
+          t = float(step) / float(BAND_STEPS)
+          k = (1 - t) * (1 - t)
+          m = 2 * (1 - t) * t
+          n = t * t
+        result.add (k * a.x + m * hold.x + n * b.x,
+                    k * a.y + m * hold.y + n * b.y)
+
+    # A bezier sags inside its control point, so it is swelled until it
+    # really is clear of everything, and the hull is kept for the case --
+    # a mark sitting almost on a hand -- where no swelling does it.
+    for try_no in 0 .. BOW_TRIES:
+      let
+        curve = curveWith(BOW_SWELL + BOW_MORE * float(try_no))
+        clear = asked.allIt(nearestOn(curve, it.centre) >= it.clear)
+      if clear:
+        return curve
 
   func drawnOver(asked: seq[Mark]): seq[Point] =
     ## The shortest way past the marks: a band let go from the straight line
@@ -503,10 +568,12 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
   ##     turns together** (`readingCost`): a turn has to save more than
   ##     `BEND_COST` of line to be worth making a reader follow it.  In most
   ##     of these figures one bend does the whole job for a few units more.
-  ##   A reach that already turns once or not at all is as plain as a line
-  ##     gets, so nothing else is tried for it.
+  ##   A reach that already turns once or not at all, and turns smoothly, is
+  ##     as plain as a line gets, so nothing else is tried for it.  A break
+  ##     is not plain however few of them there are (rule 24), so a reach
+  ##     with one in is weighed against the curves all the same.
   result = letGo(a, b, marks, SIDES[0])
-  if bendsIn(result) <= 1:
+  if bendsIn(result) <= 1 and sharpestIn(result) < SHARP_MAX:
     return
   var least = readingCost(result)
   for side in SIDES[1 .. ^1]:

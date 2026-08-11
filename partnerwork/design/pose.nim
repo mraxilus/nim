@@ -58,17 +58,33 @@ func movedPose*(pose: Pose; mid: Point; spin, amount: float): Pose =
     result.ring = some (moved(pose.ring.get.centre), pose.ring.get.radius)
 
 
-func canonicalise*(pose: Pose; amount = 1.0): Pose =
+type Anchor* {.pure.} = enum ## Say what a picture is framed on.
+  Pair,                      ## The couple's midpoint: they sit in the middle.
+  Lead                       ## The lead's own place: they are the still point.
+
+
+func canonicalise*(pose: Pose; amount = 1.0; on = Anchor.Pair): Pose =
   ## Turn the world until the lead faces up the page.
   ##   Not until the pair stands upright -- until the *lead* does.
   ##     Everything is read from them, so they are the thing that holds
   ##     still, and where the follow has got to is then part of what the
   ##     picture says rather than something the framing has thrown away.
+  ##   `on` says what the turning goes round and what is brought to the
+  ##     middle afterwards.  On the pair, the couple is centred and any move
+  ##     that shifts their midpoint carries the lead across the box with it.
+  ##     On the lead, the lead never moves at all: a follow's orbit leaves
+  ##     the framing exactly as it found it and needs no second stage, and a
+  ##     lead's axis turn swings only the follow (rule 25).
   ##   At `amount` 0 it leaves the pose alone and at 1 it finishes the job,
   ##     so the second stage of a move is animated rather than snapped.
-  let mid = ((pose.place[Dancer.Lead].x + pose.place[Dancer.Follow].x) / 2,
-             (pose.place[Dancer.Lead].y + pose.place[Dancer.Follow].y) / 2)
-  movedPose(pose, mid, -amount * wrap180(pose.facing[Dancer.Lead]), amount)
+  let hub =
+    case on
+    of Anchor.Pair:
+      ((pose.place[Dancer.Lead].x + pose.place[Dancer.Follow].x) / 2,
+       (pose.place[Dancer.Lead].y + pose.place[Dancer.Follow].y) / 2)
+    of Anchor.Lead:
+      pose.place[Dancer.Lead]
+  movedPose(pose, hub, -amount * wrap180(pose.facing[Dancer.Lead]), amount)
 
 
 func spinAbout*(pose: Pose; who: Dancer; degrees: float): Pose =
@@ -153,14 +169,14 @@ func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
 
 
 func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
-    samples = 12): seq[Pose] =
+    samples = 12; on = Anchor.Pair): seq[Pose] =
   ## Sample one turn and its return, in the stages the dance has.
   ##   Stage one is the turn itself, **with the world held still**: the
   ##     dancer turns where they are and the picture does not follow them.
   ##   Stage two reorients the picture, turning it until the lead faces up
-  ##     again (rule 18).  It is only there when the lead moved -- a
-  ##     follow's own turn leaves the lead facing up already, so there is
-  ##     nothing to bring back and the walk is one stage.
+  ##     again (rule 18).  It is only there when there is something to
+  ##     bring back -- a turn that leaves the framing as it found it is
+  ##     drawn in one stage, and what counts as the framing is `on`.
   ##   Then the same again in reverse, so the going and the coming read
   ##     from the one figure.
   func legs(from_pose: Pose; by: float): seq[Pose] =
@@ -171,17 +187,17 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
     for i in 0 .. samples:
       result.add turned(from_pose, who, about, by * ease(i / samples))
     # Stage two: the picture is re-framed until the lead faces up and the
-    # pair is centred again.  Nothing travels in it, so the orbit's ring
-    # goes out with it.  It is skipped only where it would draw nothing --
-    # a follow's own turn leaves the framing exactly as it found it.
-    var settled_home = canonicalise(landed)
+    # anchor is back in the middle.  Nothing travels in it, so the orbit's
+    # ring goes out with it.  It is skipped where it would draw nothing --
+    # framed on the lead, that is every turn but the lead's own (rule 25).
+    var settled_home = canonicalise(landed, on = on)
     settled_home.ring = none(Ring)
     if settled_home.place == landed.place and
         settled_home.facing == landed.facing:
       result[^1] = settled_home
       return result
     for i in 1 .. samples:
-      var home = canonicalise(landed, ease(i / samples))
+      var home = canonicalise(landed, ease(i / samples), on)
       home.ring = none(Ring)
       result.add home
 

@@ -103,12 +103,20 @@ const BODY = """
   round. Keeping the face to the partner is <em>two</em> turns danced at
   once — an orbit and an axis turn — and is not what these sections
   draw.</p>
-  <p><b>A turn that moves the framing is danced in two stages, and animated
-  that way.</b> <b>Stage one</b> is the turn itself, seen from where the
-  room stands: the picture leans off upright, or slides off centre, with
-  the dancers. <b>Stage two</b> brings the picture back — the lead facing
-  up, the pair centred. Only a follow's own axis turn needs no second
-  stage, because it leaves the framing exactly as it found it.</p>
+  <p><b>The lead is the still point.</b> Every picture here is framed on
+  them: they stand on the same spot in every cell of a row, facing up, and
+  what you watch is the follow going round them. That is not only tidier —
+  it takes the second stage out of three of the four ways of turning. A
+  follow's orbit moves the lead not at all, so there is nothing to bring
+  back and the animation is simply the walk.</p>
+  <p><b>Where a second stage remains, it is danced in two.</b> <b>Stage
+  one</b> is the turn itself, seen from where the room stands: the picture
+  leans off upright, or slides off centre, with the dancers. <b>Stage
+  two</b> brings it back — the lead facing up and on their own spot. A
+  lead's axis turn swings the follow around them; a lead's orbit, the one
+  move that carries the lead off their spot, comes home as a straight
+  slide, because an orbit that keeps its bearing has no turning left to
+  undo.</p>
   <p><b>A settled reach bends round what it does not hold.</b> A line laid
   across a hand cell says that hand is in the hold, and a line laid across a
   chevron hides which way its dancer is facing — so a still figure's
@@ -121,7 +129,10 @@ const BODY = """
   right, and every change of direction is a turn a reader has to follow. So
   a bend is priced in line, and the way round that bends once is taken
   wherever it does not cost more than that — which here is every bending
-  reach on the page, and usually the shorter line as well.
+  reach on the page, and usually the shorter line as well. <b>And it bends
+  rather than breaks</b>: that single bend is one gentle curve from hand to
+  hand, not a corner turned at a point, so nothing on the page changes
+  direction by more than a few degrees anywhere along it.
   <b>A moving connection is exempt</b>, and stays straight: passing smoothly
   across a mark is what a turn does, and a bend that appeared and vanished
   mid-turn would be a mark of its own.</p>

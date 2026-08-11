@@ -94,6 +94,14 @@ const RULES* = [
     "but we also need to balance simplicity. prefer paths that have fewers " &
     "bends (ideally 1) as well as length. in many cases I see, 1 bend can " &
     "be used with minimal change to the overall line",
+  "prefer smooth long curves instead of sharp breaks as well. some of " &
+    "these can be accomplished with a singular bezier with a more gentle " &
+    "curvature just as well as the current sharp direction changes",
+  "reposition the lead such that when the follow orbits or the lead turns " &
+    "on axis, the 2nd animation stage doesn't have to move the result " &
+    "around, i.e. lead position should remain fixed as much as possible " &
+    "(obviously this can't really be the case when the lead orbits, a " &
+    "reposition/re entering) will still be necessary I think",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -149,6 +157,19 @@ const RULES* = [
   ##       `route.BEND_COST` of line, and a route is chosen on the two
   ##       together; the rule's own reading of "ideally 1" is that a route
   ##       is left alone once it turns no more than once.
+  ##   Rule 24 asks the one bend to be a curve rather than a corner.  Rule
+  ##     23's one-bend route was the hull of the marks, and a hull is a
+  ##     polyline: its apex is a break.  A quadratic bezier over the same
+  ##     apex says the same thing, turns one way only, and has no corner in
+  ##     it anywhere.
+  ##   Rule 25 frames a picture on the lead rather than on the pair.
+  ##     `canonicalise` turned the world about the couple's midpoint, so a
+  ##       move that shifts that midpoint carried the lead across the box
+  ##       in the second stage, and the reader had to find them again.
+  ##     Turning about the lead's own place instead: a follow's orbit needs
+  ##       no second stage at all, a lead's axis turn swings only the
+  ##       follow, and the lead's own orbit -- the one case the rule allows
+  ##       -- comes home as a straight slide.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

@@ -457,36 +457,38 @@ proc checkSingleTurns*() =
   # reorienting the perspective."  Measured on the walk: stage one leaves
   # the picture off canonical -- leaning, or off centre, or both -- and
   # stage two brings it back.  A turn that leaves the framing exactly as
-  # it found it has no second stage to draw, and only a follow's own axis
-  # turn is such a turn.
+  # it found it has no second stage to draw, and framed on the lead
+  # (rule 25) that is every turn but the lead's own.
   for way in TurnWay:
     let
       w = WAYS_OF_TURNING[way]
-      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
+      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
+                      on = Anchor.Lead)
     var
       leaned = 0.0
       strayed = 0.0
     for put in walk:
       leaned = max(leaned, abs(wrap180(put.facing[Dancer.Lead])))
       for dancer in Dancer:
-        let settled_place = canonicalise(put).place[dancer]
+        let settled_place = canonicalise(put, on = Anchor.Lead).place[dancer]
         strayed = max(strayed, dist(put.place[dancer], settled_place))
-    let re_framed = w.who == Dancer.Lead or w.about == About.Orbit
+    let re_framed = w.who == Dancer.Lead
     if re_framed:
       doAssert leaned > 45 or strayed > 1,
         &"A turn never left the canonical framing; got {way}."
       doAssert abs(wrap180(walk[^1].facing[Dancer.Lead])) < 1e-9,
         &"A turn ended off upright; got {way}."
       doAssert dist(walk[^1].place[Dancer.Lead],
-                    canonicalise(walk[^1]).place[Dancer.Lead]) < 1e-9,
+                    canonicalise(walk[^1], on = Anchor.Lead)
+                      .place[Dancer.Lead]) < 1e-9,
         &"A turn ended off centre; got {way}."
     else:
       doAssert leaned < 1e-9 and strayed < 1e-9,
         &"A turn moved the framing with nothing to re-frame; got {way}."
   told.add "a turn that moves the framing is danced in two stages -- the " &
     "room holds still while it happens, then the picture is brought back " &
-    "to the lead facing up and the pair centred; a follow's own turn " &
-    "moves nothing and needs only the one"
+    "to the lead facing up and back on their own spot; framed on the lead, " &
+    "only a lead's own move has anything to bring back"
 
   # RULE 16 and RULE 15.  Four orientations per connection, the round
   # closing rather than refusing; every one of them drawn and every edge
@@ -517,7 +519,8 @@ proc checkSingleTurns*() =
   for way in TurnWay:
     let
       w = WAYS_OF_TURNING[way]
-      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
+      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
+                      on = Anchor.Lead)
     var carried = 0.0
     for put in walk:
       carried = max(carried,
@@ -561,7 +564,8 @@ proc checkSingleTurns*() =
       for arm in Arm:
         if single.holds[arm].isNone:
           continue
-        let walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
+        let walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
+                            on = Anchor.Lead)
         var runs: seq[seq[Point]]
         for put in walk:
           let p = handsOf(put)
@@ -602,9 +606,14 @@ proc checkSingleTurns*() =
   # asks a reader to follow, and -- wherever one asks for more than a
   # single turn -- that no other way past the same marks would have asked
   # less, length and turns weighed together.
+  # RULE 24.  "prefer smooth long curves instead of sharp breaks."  A curve
+  # drawn as straight bits turns a few degrees at each of them; a break
+  # turns a lot at one.  So the sharpest single corner on the page is what
+  # is measured, over every settled reach.
   var
     turns: array[4, int]
     bought = 0.0
+    sharpest = 0.0
   var
     daylight = Inf
     fouled = 0.0
@@ -624,6 +633,7 @@ proc checkSingleTurns*() =
             marks = clearingMarks(put, a, b)
           let settled_reach = clearedReach(a, b, marks)
           turns[min(bendsIn(settled_reach), turns.high)] += 1
+          sharpest = max(sharpest, sharpestIn(settled_reach))
           if bendsIn(settled_reach) > 1:
             # It kept a second turn, so every plainer way past these marks
             # must have cost more line than the turn is worth.
@@ -666,6 +676,44 @@ proc checkSingleTurns*() =
     &"passed over -- a second turn is kept only where going round in one " &
     &"would have cost more than {fmt(BEND_COST, 0)} of line" &
     (if bought > 0: &", which here reaches {fmt(bought, 1)}" else: "")
+
+  doAssert sharpest < SHARP_MAX,
+    &"A reach turns at a point rather than over a run; got " &
+      &"`{fmt(sharpest, 1)}` degrees at one corner."
+  told.add &"and it bends rather than breaks: the sharpest corner anywhere " &
+    &"on the page turns {fmt(sharpest, 1)} degrees, so what turns, turns " &
+    "over a run of the line and not at a point in it"
+
+  # RULE 25.  "lead position should remain fixed as much as possible ...
+  # obviously this can't really be the case when the lead orbits."
+  # Measured through every walk: how far the lead's own place travels from
+  # first frame to last, and across the four positions of every round.
+  var re_entered: seq[string]
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    var moved = 0.0
+    for quarter in 0 ..< QUARTERS_ROUND:
+      let start = quarterPose(way, quarter)
+      doAssert dist(start.place[Dancer.Lead],
+                    quarterPose(way, 0).place[Dancer.Lead]) < 1e-9,
+        &"The lead stands somewhere else in this position; got {way}."
+      for put in turnWalk(start, w.who, w.about, QUARTER, on = Anchor.Lead):
+        moved = max(moved, dist(put.place[Dancer.Lead],
+                                start.place[Dancer.Lead]))
+    # Only the lead's own orbit may move them, and it must: walking round
+    # somebody and staying put are not the same act.
+    let walks_off = w.who == Dancer.Lead and w.about == About.Orbit
+    doAssert (moved > 1) == walks_off,
+      &"The lead moved where they should not, or held where they " &
+        &"cannot; got `{fmt(moved, 1)}` for {way}."
+    if walks_off:
+      re_entered.add w.title.toLowerAscii
+  let ways = TurnWay.toSeq.len
+  told.add &"the lead is the still point: they stand on the same spot in " &
+    &"every position of every round, and never move through " &
+    &"{ways - re_entered.len} of the {ways} ways of turning -- only " &
+    &"""{re_entered.join(" and ")} takes them off it, and there the """ &
+    "picture has to bring them back"
 
   for line in told:
     echo &"  rule: {line}"

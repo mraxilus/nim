@@ -176,6 +176,37 @@ has happened here more than once.
     *leave alone anything already turning once or not at all*.  Measured:
     every one of the sixteen reaches that bends now bends exactly once, and
     the one-bend way is usually the **shorter** line as well.
+24. **"prefer smooth long curves instead of sharp breaks as well. some of
+    these can be accomplished with a singular bezier with a more gentle
+    curvature just as well as the current sharp direction changes."**  Rule
+    23's one-bend route was the hull of the marks, and a hull is a
+    polyline: its apex is a *break*.  The hull is now read as a guide --
+    where the bulge belongs and how far out it has to reach -- and the line
+    drawn is a **single quadratic bezier** over that apex, swelled until it
+    clears every mark.  A bezier turns one way only, so the route is still
+    one bend, and it has no corner in it.  A route that already runs plain
+    is only left alone if it is *also* smooth, so a break is never kept for
+    being short.  Measured: the sharpest corner anywhere on the page turns
+    6.5 degrees, where `ROUTE_N` straight bits across a curve turn a few
+    degrees each by construction.
+25. **"reposition the lead such that when the follow orbits or the lead
+    turns on axis, the 2nd animation stage doesn't have to move the result
+    around, i.e. lead position should remain fixed as much as possible
+    (obviously this can't really be the case when the lead orbits, a
+    reposition/re entering) will still be necessary I think."**
+    `canonicalise` turned the world about the couple's **midpoint**, so any
+    move that shifted that midpoint carried the lead across the box in the
+    second stage.  It now takes an `Anchor`, and the turns pages frame on
+    `Anchor.Lead`: the turning goes round the lead's own place and that
+    place is what comes back to the middle.  A follow's orbit then needs
+    **no second stage at all**, a lead's axis turn swings only the follow,
+    and a lead's orbit -- the case the rule allows -- comes home as a
+    straight slide, since an orbit that keeps its bearing has no rotation
+    left to undo.  Measured: the lead holds one spot through three of the
+    four ways of turning and across every position of every round.
+    *The frame page keeps the midpoint anchor for now, which is what holds
+    `frames.html` still; carrying it over is the same piece of work as
+    rule 22's.*
 
 ## What is settled
 

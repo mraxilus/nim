@@ -348,8 +348,8 @@ const WAYS_OF_TURNING*: array[TurnWay, tuple[
      "the dashed ring says so, and says who is standing. <b>They keep " &
      "their own bearing</b>: walking round somebody is not the same act " &
      "as turning to keep facing them, so their chevron points the way it " &
-     "started the whole way round. Stage two only re-centres the picture " &
-     "on the pair, since nobody's facing needs bringing back.",
+     "started the whole way round. The lead never moves and never turns, " &
+     "so there is no second stage at all: what you see is the walk.",
    who: Dancer.Follow, about: About.Orbit, family: Family.AxisWalked),
   (tag: "lo", title: "The lead orbits the follow",
    blurb: "The lead walks the ring round the follow, keeping their own " &
@@ -381,9 +381,11 @@ func quarterPose*(way: TurnWay; quarter: int): Pose =
   ##   And without a ring: the dashed ring says *somebody is going round
   ##     somebody*, which is true of a transition and not of a place to
   ##     stand.  It is why the orbit rounds draw as their axis partners do.
+  ##   Framed on the lead (rule 25), so they stand in the same spot in
+  ##     every cell of a row and it is the follow who is seen to move.
   let w = WAYS_OF_TURNING[way]
   result = canonicalise(turned(rest(), w.who, w.about,
-                               QUARTER * float(quarter)))
+                               QUARTER * float(quarter)), on = Anchor.Lead)
   result.ring = none(Ring)
 
 
@@ -416,7 +418,40 @@ func singleTurnParts*(): Parts =
   ##   Rule 19: four ways of turning reach them -- each dancer's own axis
   ##     turn and each dancer's orbit of the other.
   ##   Rule 15: every position drawn, every edge animated.
-  const PX = 1.0
+  ##   Rule 25: framed on the lead, who therefore falls on the same spot in
+  ##     every cell -- which only reads if the cells beside each other hold
+  ##     the same box.
+  ##     A row of positions takes one box for the whole page, since every
+  ##       position stands the same distance apart.  A row of transitions
+  ##       takes one box per way of turning, because a lead who walks the
+  ##       ring needs room a lead who stands still does not, and spending
+  ##       that room on every cell of every row would shrink the lot.
+  ##     Each cell is then given what its box needs at the scale its own row
+  ##       draws at, so the marks stay the size they were and it is the
+  ##       cells that grow.
+  const
+    PX = 1.0        ## Pixels a unit takes in a moving cell.
+    STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
+  var
+    walks: array[TurnWay, array[QUARTERS_ROUND, seq[Pose]]]
+    still_half = 0.0
+    walk_half: array[TurnWay, float]
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    for quarter in 0 ..< QUARTERS_ROUND:
+      still_half = max(still_half,
+                       extent(quarterPose(way, quarter), captions = false))
+      walks[way][quarter] = turnWalk(quarterPose(way, quarter), w.who,
+                                     w.about, QUARTER, on = Anchor.Lead)
+      for put in walks[way][quarter]:
+        walk_half[way] = max(walk_half[way], extent(put, captions = false))
+
+  func sized(svg, cls: string; half, px: float): string =
+    ## Give a cell the room its row's box needs at its row's own scale.
+    svg.replaceFirst(&"class=\"{cls}\"",
+      &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
+        &""" height: {n(2 * half * px)}px"""")
+
   for way in TurnWay:
     let w = WAYS_OF_TURNING[way]
     for c, single in SINGLES:
@@ -424,31 +459,25 @@ func singleTurnParts*(): Parts =
 
       # Every derived position of this way.
       for quarter in 0 ..< QUARTERS_ROUND:
-        result[&"st_{w.tag}_{c}_{quarter}"] = frame("tiny", single.holds,
-          levels, captions = false,
-          pose = some quarterPose(way, quarter), clear_marks = true)
+        result[&"st_{w.tag}_{c}_{quarter}"] = sized(frame("tiny",
+          single.holds, levels, captions = false,
+          pose = some quarterPose(way, quarter), half = some still_half,
+          clear_marks = true), "tiny", still_half, STILL_PX)
 
       # And every edge, walked in the stages rule 18 asks for.
       for quarter in 0 ..< QUARTERS_ROUND:
-        let
-          walk = turnWalk(quarterPose(way, quarter), w.who, w.about, QUARTER)
-          half = walk.mapIt(extent(it, captions = false)).max
-          style = &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
-            &""" height: {n(2 * half * PX)}px""""
-          to = (quarter + 1) mod QUARTERS_ROUND
-        result[&"tr_{w.tag}_{c}_{quarter}_{to}"] = animatedPoses("mv",
-          single.holds, walk, some half, levels,
-          dur = 5.4).replaceFirst("class=\"mv\"", style)
+        let to = (quarter + 1) mod QUARTERS_ROUND
+        result[&"tr_{w.tag}_{c}_{quarter}_{to}"] = sized(animatedPoses("mv",
+          single.holds, walks[way][quarter], some walk_half[way], levels,
+          dur = 5.4), "mv", walk_half[way], PX)
         # The still stands in where motion is turned off, so it is a settled
         # picture and bends by rule 22; the moving figure it replaces is the
         # rule's own exemption and stays straight.
-        result[&"tr_{w.tag}_{c}_{quarter}_{to}_still"] = frame("mv still",
-          single.holds, levels, captions = false,
-          pose = some quarterPose(way, quarter),
-          half = some half,
-          clear_marks = true).replaceFirst("class=\"mv still\"",
-            &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
-              &""" height: {n(2 * half * PX)}px"""")
+        result[&"tr_{w.tag}_{c}_{quarter}_{to}_still"] = sized(
+          frame("mv still", single.holds, levels, captions = false,
+                pose = some quarterPose(way, quarter),
+                half = some walk_half[way], clear_marks = true),
+          "mv still", walk_half[way], PX)
 
   result["g_quarter"] = turnGlyph("&#188; turn")
 
