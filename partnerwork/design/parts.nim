@@ -398,16 +398,23 @@ func placeOf*(pose: Pose): tuple[axis, facing: float] =
   (floorMod(r.axis, 360.0), floorMod(r.facing, 360.0))
 
 
-func turnGlyph*(label: string): string =
+func turnGlyph*(label: string; width = 44.0): string =
   ## Draw one edge of the cycle: a two-headed arrow, since a turn reverses.
-  "<svg viewBox=\"0 0 44 30\" width=\"44\" height=\"30\"" &
+  ##   The arrow keeps its length whatever the box; `width` is room for the
+  ##     label above it, which a longer name needs more of.
+  let
+    mid = width / 2
+    (tail, head) = (mid - 15, mid + 15)
+  &"""<svg viewBox="0 0 {n(width)} 30" width="{n(width)}" height="30"""" &
     " aria-hidden=\"true\">" &
-    &"""<text x="22" y="9" text-anchor="middle" style="font: 8px""" &
+    &"""<text x="{n(mid)}" y="9" text-anchor="middle" style="font: 8px""" &
     &""" ui-sans-serif, system-ui, sans-serif; fill: {FAINT}">{label}""" &
     "</text>" &
-    &"""<path d="M7 20 L37 20 M12 15 L7 20 L12 25 M32 15 L37 20 L32 25"""" &
-    &""" fill="none" stroke="{QUIET}" stroke-width="1.6"""" &
-    """ stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+    &"""<path d="M{n(tail)} 20 L{n(head)} 20 M{n(tail + 5)} 15""" &
+    &""" L{n(tail)} 20 L{n(tail + 5)} 25 M{n(head - 5)} 15 L{n(head)} 20""" &
+    &""" L{n(head - 5)} 25" fill="none" stroke="{QUIET}"""" &
+    """ stroke-width="1.6" stroke-linecap="round"""" &
+    """ stroke-linejoin="round"/></svg>"""
 
 
 func singleTurnParts*(): Parts =
@@ -515,6 +522,100 @@ func singleTurnParts*(): Parts =
       if &"stroke-width=\"{LINK_W}\"" in piece:
         doAssert " A" notin piece,
           &"A reach walks round a body; got an arc in `{key}`."
+
+
+#[ The Hand-to-Hand Turns Page ]#
+
+const
+  HAND_TO_HAND*: Holds = [some Arm.R, some Arm.L]
+    ## The app's own two-hand frame: the lead's Left in the follow's right
+    ## and the lead's Right in the follow's left, uncrossed.
+  ABOVE_BOTH*: Levels = [some Level.Above, some Level.Above]
+    ## Both arms over the head, this scope's one level (rules 17, 21).
+  WHOLE* = 360.0 ## The turn between one position and the next (rule 27).
+
+const CHAIN*: array[3, tuple[wind: int, name: string, note: string]] = [
+  (-1, "Right over Left box", "wound a whole turn one way"),
+  (0, "Left-to-right and Right-to-left", "the app's frame, nothing wound"),
+  (1, "Left over Right box", "wound a whole turn the other way"),
+] ## The three positions rule 12 counts, in chain order.
+  ##   The middle is the app's own frame and the ends are the boxes, named
+  ##     as the rule names them: whichever of the lead's arms passes over
+  ##     the other at the lead's own crossover.
+  ##   The names are the rule's own and are flagged on the page as
+  ##     preliminary.
+
+
+func boxTwist*(wind: int): Twists =
+  ## Say a whole turn's wind as the drawing channel takes it (rule 27).
+  [(false, 0, 0, wind), (false, 0, 0, wind)]
+
+
+func handPose*(): Pose =
+  ## Get the one pose every position on that page is drawn in.
+  ##   A whole turn puts every place and every facing back where it was, so
+  ##     all three positions stand exactly here and differ only in the wind
+  ##     -- which is the whole of what the page has to say.
+  canonicalise(rest(), on = Anchor.Lead)
+
+
+func handTurnParts*(): Parts =
+  ## Build every SVG the hand-to-hand turns page places.
+  ##   Rule 12: three positions, and rule 27's reading of them -- a whole
+  ##     turn between neighbours, the ends drawn as boxes.
+  ##   Rule 15: every position drawn, every edge animated, by every one of
+  ##     rule 19's four ways of turning.
+  const
+    PX = 1.0        ## Pixels a unit takes in a moving cell.
+    STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
+  var
+    walks: array[TurnWay, array[2, Walk]]
+    still_half = extent(handPose(), captions = false)
+    walk_half: array[TurnWay, float]
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    for i, winding in [1.0, -1.0]:
+      walks[way][i] = turnWalk(handPose(), w.who, w.about, WHOLE * winding,
+                               on = Anchor.Lead, winds = winding)
+      for put in walks[way][i].poses:
+        walk_half[way] = max(walk_half[way], extent(put, captions = false))
+
+  func sized(svg, cls: string; half, px: float): string =
+    ## Give a cell the room its row's box needs at its row's own scale.
+    svg.replaceFirst(&"class=\"{cls}\"",
+      &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
+        &""" height: {n(2 * half * px)}px"""")
+
+  # The chain of three, drawn once: every way of turning reaches these same
+  # three, so drawing them per way would be the same picture four times.
+  for i, position in CHAIN:
+    result[&"hh_{i}"] = sized(frame("tiny", HAND_TO_HAND, ABOVE_BOTH,
+      captions = false, pose = some handPose(), half = some still_half,
+      twist = boxTwist(position.wind), clear_marks = true),
+      "tiny", still_half, STILL_PX)
+
+  # And every way of reaching them, wound on and wound off again.
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    for i, winding in [1, -1]:
+      result[&"hw_{w.tag}_{i}"] = sized(animatedPoses("mv", HAND_TO_HAND,
+        walks[way][i].poses, some walk_half[way], ABOVE_BOTH, dur = 6.4,
+        times = walks[way][i].times, winds = walks[way][i].winds),
+        "mv", walk_half[way], PX)
+      # The still stands in where motion is turned off, so it is the
+      # settled picture the move arrives at (rule 22's exemption again).
+      result[&"hw_{w.tag}_{i}_still"] = sized(frame("mv still",
+        HAND_TO_HAND, ABOVE_BOTH, captions = false, pose = some handPose(),
+        half = some walk_half[way], twist = boxTwist(winding),
+        clear_marks = true), "mv still", walk_half[way], PX)
+
+  result["g_whole"] = turnGlyph("a whole turn", 76.0)
+
+  # The three positions draw differently, or they are not three positions.
+  for i in 0 ..< CHAIN.len:
+    for j in 0 ..< i:
+      doAssert result[&"hh_{i}"] != result[&"hh_{j}"],
+        &"Two positions draw alike; got `{i}` and `{j}`."
 
 
 func signParts*(): Parts =

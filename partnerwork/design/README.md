@@ -6,18 +6,24 @@ deliberately excludes rotation until these marks are settled and the ontology
 is finished — see `../src/partnerwork/rotation.nim` for what the model already
 knows, and the repository README for why the views came out.
 
-Three pages, because they are three explorations that happen to be related:
+Four pages, because they are four explorations that happen to be related:
 `frames.html` is the frame picture (what a held pair of hands looks like, and
 how a move changes it), `signs.html` is the turn sign (how to label an *edge*
-with an amount of turning), and `turns-single.html` is the first of the turn
-mock-ups (every position a high single-hand hold turns through, and every
-transition between them).  They share the palette, the level fills and the
-two arm inks, which live in `page.nim` and `body.nim` so they cannot drift.
+with an amount of turning), and `turns-single.html` and `turns-hands.html`
+are the turn mock-ups so far -- every position a hold turns through and every
+transition between them, for one hand and for two.  They share the palette,
+the level fills and the two arm inks, which live in `page.nim` and `body.nim`
+so they cannot drift.
 
 The turn mock-ups are being drawn one kind at a time and combined only once
 each is right: single hands first, then hand to hand, then the crossed
 pair.  An earlier `rotations.html` tried all three at once and is retired --
 it was built on a ceiling rule 16 has since removed.
+
+The first two turn pages are duals, which is the shape of the whole scope: a
+single hand above turns for ever, so its wind is not part of its state and its
+orientation is all of it; hold both hands and a whole turn returns every
+orientation, so the wind is all of it instead.
 
 ```
 nimble marks                            # checks everything, writes both pages
@@ -223,6 +229,30 @@ has happened here more than once.
     check measures it on the emitted clock, not on the constants: an
     interval where the pair's own configuration changes is the turn, one
     where the whole picture moves rigidly is the re-framing.
+27. **"the two twisted ends in reality the arms make an overlapping box
+    shape. on one side of the twist the lead left is over the right
+    (reversed for other end of twist). the arms should reflect that visual
+    on both ends of the twist. there should be two crossovers one on the
+    leads side of the arms, one on the follows. for both sides of the twist
+    chain. there should be a visible box/diamond between the crossovers
+    (hence the preliminary names, Left over Right box, Right over Left
+    box)."**  Two answers fix how it is read: *"three positions, full turn
+    required between them"*, so a step on the hand-to-hand page is a **whole
+    turn** -- which is what makes rule 12's three a chain, since a whole
+    turn puts every place and every facing back where it was and leaves only
+    the wind; and *"they alternate"*, so whichever connection is over at the
+    lead's crossover is under at the follow's, because that is what being
+    wound together means.
+    Each reach runs its own side clear of the body it leaves, swings the
+    whole way over to its partner's side and swings back, the two at their
+    widest in the middle -- a **diamond** coming to a point at each
+    crossover, not a four-square box, which is the shape asked for on
+    seeing it drawn both ways.  Starting the swing at the hand instead
+    would cross the pair over the body it left, where the chevron is, and
+    no swing wide enough to make the shape could clear it.
+    *This is the first mark on these pages the geometry does not make by
+    itself: two straight reaches between these four hands never cross,
+    whatever the pair has wound.  It is drawn, and the page says so.*
 
 ## What is settled
 

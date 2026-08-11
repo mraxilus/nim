@@ -757,6 +757,152 @@ proc checkSingleTurns*() =
     echo &"  rule: {line}"
 
 
+proc checkHandTurns*() =
+  ## Verify the hand-to-hand turns page's rules as given, one line each.
+  var told: seq[string]
+  let
+    built = handTurnParts()
+    put = settled(handPose(), HAND_TO_HAND, ABOVE_BOTH, default(Ways))
+    p = handsOf(put)
+
+  func reachesOf(wind: int): array[Arm, seq[Point]] =
+    ## The pair as this position draws it, both reaches at once.
+    for arm in Arm:
+      let
+        (a, b) = (p[Dancer.Lead][arm], p[Dancer.Follow][HAND_TO_HAND[arm].get])
+        marks = clearingMarks(put, a, b)
+      result[arm] =
+        if wind == 0: clearedReach(a, b, marks)
+        else: boxed(a, b, boxWay(put, arm), BOX_SWELL, marks)
+
+  # RULE 12.  "hand to hand should have 3 positions allowed by rotation."
+  # Read with rule 27's answer -- a whole turn between neighbours -- so the
+  # three are the frame and the two ends it winds into.
+  doAssert CHAIN.len == 3, &"Three positions expected; got `{CHAIN.len}`."
+  var drawn: seq[string]
+  for i in 0 ..< CHAIN.len:
+    doAssert built[&"hh_{i}"] notin drawn,
+      &"Two positions draw alike; got `{i}`."
+    drawn.add built[&"hh_{i}"]
+  # A whole turn is what lies between them: it leaves every place and every
+  # facing exactly as it found them, which is why the wind is all that is
+  # left to tell one position from another.
+  for way in TurnWay:
+    let
+      w = WAYS_OF_TURNING[way]
+      landed = turned(handPose(), w.who, w.about, WHOLE)
+    # `placeOf` rather than `relative`: a whole turn comes back to a bearing
+    # that is 360 by one route and 0 by another, and they are one place.
+    doAssert placeOf(landed) == placeOf(handPose()),
+      &"A whole turn moved the picture; got {way}."
+    doAssert dist(landed.place[Dancer.Lead],
+                  handPose().place[Dancer.Lead]) < 1e-6 and
+             dist(landed.place[Dancer.Follow],
+                  handPose().place[Dancer.Follow]) < 1e-6,
+      &"A whole turn left somebody somewhere else; got {way}."
+  told.add &"{CHAIN.len} positions, a whole turn apart: a whole turn puts " &
+    "every place and every facing back where it was, so the wind is the " &
+    "only thing left to tell them apart"
+
+  # RULE 27.  "the two twisted ends in reality the arms make an overlapping
+  # box shape ... two crossovers one on the leads side of the arms, one on
+  # the follows ... a visible box/diamond between the crossovers."  All
+  # measured on the drawn line: the crossings are found, then which dancer
+  # each belongs to, then what the two reaches enclose between them.
+  var
+    smallest = Inf
+    apart = Inf
+  for i, position in CHAIN:
+    let
+      pair = reachesOf(position.wind)
+      meetings = crossingsOf(pair[Arm.L], pair[Arm.R])
+    if position.wind == 0:
+      doAssert meetings.len == 0,
+        &"The frame's pair crosses; got `{meetings.len}` crossings."
+      continue
+    doAssert meetings.len == 2,
+      &"A box wants two crossovers; got `{meetings.len}` in `{position.name}`."
+    # One by each dancer: the nearer crossing to the lead is not the nearer
+    # one to the follow, which is what "one on each side" means.
+    let
+      by_lead = dist(meetings[0], put.place[Dancer.Lead]) <
+                dist(meetings[1], put.place[Dancer.Lead])
+      by_follow = dist(meetings[0], put.place[Dancer.Follow]) <
+                  dist(meetings[1], put.place[Dancer.Follow])
+    doAssert by_lead != by_follow,
+      &"Both crossovers fell on one dancer; got `{position.name}`."
+    apart = min(apart, dist(meetings[0], meetings[1]))
+    # And what they enclose: the two reaches between the crossings, walked
+    # out along one and back along the other, is a closed shape with room
+    # in it -- the box.  A box that pinched shut would measure nothing.
+    var ring: seq[Point]
+    for q in pair[Arm.L]:
+      if dist(q, meetings[0]) + dist(q, meetings[1]) <
+          dist(meetings[0], meetings[1]) + BOX_ROOM:
+        ring.add q
+    for q in reversed(pair[Arm.R]):
+      if dist(q, meetings[0]) + dist(q, meetings[1]) <
+          dist(meetings[0], meetings[1]) + BOX_ROOM:
+        ring.add q
+    var twice = 0.0
+    for k in 0 ..< ring.high:
+      twice += ring[k].x * ring[k + 1].y - ring[k + 1].x * ring[k].y
+    twice += ring[^1].x * ring[0].y - ring[0].x * ring[^1].y
+    smallest = min(smallest, abs(twice) / 2)
+  doAssert smallest > 2 * BOX_ROOM,
+    &"The diamond pinched shut; got `{fmt(smallest, 0)}` of room in it."
+
+  # And the two crossings say opposite things, which is what makes a box a
+  # twist: the connection broken at one is the one left whole at the other.
+  for i, position in CHAIN:
+    if position.wind == 0:
+      continue
+    let figure = built[&"hh_{i}"]
+    for arm in Arm:
+      # A connection is drawn in two shades, so two pieces where it runs
+      # whole and one more for every break in it.  One break each is the
+      # alternation: the same connection diving twice would count three.
+      var pieces = 0
+      for ink in [DEEP[arm], INK[HAND_TO_HAND[arm].get]]:
+        for part in figure.split("<path "):
+          if &"stroke=\"{ink}\"" in part:
+            pieces += part.count("M")
+      doAssert pieces == 3,
+        &"A box's breaks do not alternate; got `{pieces}` pieces of {arm} " &
+          &"in `{position.name}`."
+  told.add &"a wound pair crosses twice, once by each dancer, and holds a " &
+    &"diamond of {fmt(smallest, 0)} square units between them, its two " &
+    &"points {fmt(apart, 0)} apart; the frame's pair crosses not at all"
+
+  # RULE 17 and RULE 21.  Above on every hand, still and moving alike.
+  var hatched = 0
+  for key, figure in built:
+    if not (key.startsWith("hh_") or key.startsWith("hw_")):
+      continue
+    doAssert "r=\"2.7\"" notin figure,
+      &"A high dot appears where above was asked for; got `{key}`."
+    doAssert "url(#h" in figure,
+      &"A hand lost its level; got no hatch in `{key}`."
+    inc hatched
+  told.add &"every hand on all {hatched} figures carries the above hatch, " &
+    "moving and still alike"
+
+  # RULE 19.  All four ways of turning wind the pair, and all four reach the
+  # same three positions -- so a position cannot say which was danced.
+  var edges = 0
+  for way in TurnWay:
+    for i in 0 .. 1:
+      doAssert built.hasKey(&"hw_{WAYS_OF_TURNING[way].tag}_{i}"),
+        &"An edge went unanimated; got {way}."
+      inc edges
+  told.add &"all {TurnWay.toSeq.len} ways of turning wind the pair, and " &
+    &"all {edges} edges are animated; every one of them reaches the same " &
+    "three positions, so only the path says which was danced"
+
+  for line in told:
+    echo &"  rule: {line}"
+
+
 proc checkSign*() =
   ## Check the numbers the eye cannot: equal sides, margins, gaps,
   ## clearance.

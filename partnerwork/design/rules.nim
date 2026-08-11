@@ -105,6 +105,14 @@ const RULES* = [
   "make the second animation stage quicker or something so it has less " &
     "emphasis. or whatever the recommended UX is to make it less " &
     "noticeable than the actual rotation itself",
+  "the two twisted ends in reality the arms make an overlapping box " &
+    "shape. on one side of the twist the lead left is over the right " &
+    "(reversed for other end of twist). the arms should reflect that " &
+    "visual on both ends of the twist. there should be two crossovers one " &
+    "on the leads side of the arms, one on the follows. for both sides of " &
+    "the twist chain. there should be a visible box/diamond between the " &
+    "crossovers (hence the preliminary names, Left over Right box, Right " &
+    "over Left box)",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -187,6 +195,22 @@ const RULES* = [
   ##     How long each stage lasts is now the drawing's business rather
   ##       than a side effect of how finely it was sampled: a walk carries
   ##       when each of its frames is due, and the markup says so.
+  ##   Rule 27 says what the twisted ends of a two-hand chain look like.
+  ##     A parallel pair does not cross; a pair wound a whole turn crosses
+  ##       twice, once by each dancer, and what the two crossings enclose
+  ##       is the box the rule names.
+  ##     Two answers settle how it is read.  *"three positions, full turn
+  ##       required between them"*: a step on that page is a whole turn,
+  ##       which is what makes rule 12's three a chain -- a whole turn puts
+  ##       every place and every facing back where it was, and what it
+  ##       leaves behind is the wind.  And *"they alternate"*: whichever
+  ##       connection is over at the lead's crossover is under at the
+  ##       follow's, because that is what being wound together means.  Two
+  ##       crossings the same way round would be one arm lying on another.
+  ##     So the two pages are duals.  A single hand turns for ever, so its
+  ##       wind is not part of its state and its orientation is all of it
+  ##       (rule 16); hold both hands and a whole turn returns every
+  ##       orientation, so the wind is all of it instead.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

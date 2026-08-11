@@ -27,6 +27,8 @@ type
     over_all: bool ## Drawn straight, passing over whatever it meets.
     loops: int     ## Pigtails at its middle: one per half turn, signed.
     braid: int     ## Crossings with its partner: one per half turn.
+    box: int       ## Thrown across its partner to make a box, signed by
+                   ## which way the pair wound (rule 27).
   Twists* = array[Arm, Twist]
     ## Per connection, how far its arms have wound past what the frame's own
     ## geometry already says.
@@ -38,7 +40,7 @@ type
     ##     both, and `checks` measures what was drawn rather than trusting
     ##     what was asked.
 
-const NO_TWIST*: Twists = [(false, 0, 0), (false, 0, 0)]
+const NO_TWIST*: Twists = [(false, 0, 0, 0), (false, 0, 0, 0)]
   ## Nothing wound and nothing said: every figure but the rotation page's.
 
 
@@ -145,6 +147,30 @@ func clearingMarks*(put: Pose; a, b: Point): seq[Mark] =
         result.add (q, (if who == Dancer.Lead: LEAD_CLEAR else: FOLLOW_CLEAR))
 
 
+func boxWay*(put: Pose; arm: Arm): Point =
+  ## Get which way one reach of a wound pair is thrown to make its half of
+  ## the box (rule 27).
+  ##   Square to the pair's own axis, and away from the side this arm's own
+  ##     lead hand sits on -- so the reach ends up running down its
+  ##     partner's side, which is what puts a crossing at each end.
+  ##   Read off the lead's hands rather than off the reaches, so it holds
+  ##     still through a whole turn instead of flipping at the half way,
+  ##     where the two reaches lie on top of each other.
+  let
+    lead = put.place[Dancer.Lead]
+    span = dist(lead, put.place[Dancer.Follow])
+  if span < 1e-9:
+    return (0.0, 0.0)
+  let
+    axis = ((put.place[Dancer.Follow].x - lead.x) / span,
+            (put.place[Dancer.Follow].y - lead.y) / span)
+    hand = handPoint(lead, put.facing[Dancer.Lead], arm,
+                     put.wind[Dancer.Lead][arm])
+    off = (hand.x - lead.x, hand.y - lead.y)
+    side = float(sgn(axis[0] * off[1] - axis[1] * off[0]))
+  (side * axis[1], -side * axis[0])
+
+
 func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     over = none(Arm); free = Free.Fade; captions = true;
     ways: Ways = default(Ways); twist: Twists = NO_TWIST;
@@ -179,6 +205,15 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     let q = handPoint(put.place[who], put.facing[who], arm)
     bits.add hand(q.x, q.y, who == Dancer.Lead, arm, held = false,
                   free = Free.Grey)
+  # A pair wound a whole turn crosses twice and holds a box between
+  # (rule 27).
+  let boxing = holds[Arm.L].isSome and holds[Arm.R].isSome and
+    twist[Arm.L].box != 0
+  # And a box says which way it wound by which arm it keeps on top, so the
+  # wind names the over-arm rather than the caller saying it twice.
+  let on_top = if not boxing: over
+               elif twist[Arm.L].box > 0: some(Arm.L)
+               else: some(Arm.R)
   var routes: array[Arm, seq[Point]]
   for arm in Arm:
     if holds[arm].isNone:
@@ -201,6 +236,9 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
           braided(ends.a, ends.b, abs(twist[arm].braid),
                   (if arm == Arm.L: 0.0 else: PI) +
                     (if twist[arm].braid > 0: 0.0 else: PI))
+        elif boxing:
+          boxed(ends.a, ends.b, boxWay(put, arm), BOX_SWELL,
+                (if clear_marks: clearingMarks(put, ends.a, ends.b) else: @[]))
         elif clear_marks:
           clearedReach(ends.a, ends.b, clearingMarks(put, ends.a, ends.b))
         else:
@@ -211,25 +249,29 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
   # A braided pair meets more than once, and a rope alternates: each strand
   # dives under at every second crossing.  So the crossings are found once,
   # in order along the line, and shared out between the two arms.
-  let braiding = holds[Arm.L].isSome and holds[Arm.R].isSome and
-    twist[Arm.L].braid != 0
+  let
+    braiding = holds[Arm.L].isSome and holds[Arm.R].isSome and
+      twist[Arm.L].braid != 0
+    weaving = braiding or boxing
   var dives: array[Arm, seq[Point]]
-  if braiding:
+  if weaving:
     let meetings = crossingsOf(routes[Arm.L], routes[Arm.R])
     for i, meeting in meetings:
       # The arm named `over` stays on top at the first meeting, so it is
-      # the other one that dives there, and they swap at each one after.
-      let under = if (i mod 2 == 0) == (over == some(Arm.L)): Arm.R else: Arm.L
+      # the other one that dives there, and they swap at each one after --
+      # which is what makes a box a twist and not an overlap (rule 27).
+      let under = if (i mod 2 == 0) == (on_top == some(Arm.L)): Arm.R
+                  else: Arm.L
       dives[under].add meeting
 
-  let order = if over == some(Arm.L): [Arm.R, Arm.L] else: [Arm.L, Arm.R]
+  let order = if on_top == some(Arm.L): [Arm.R, Arm.L] else: [Arm.L, Arm.R]
   for arm in order:
     if holds[arm].isSome:
       let
         pts = routes[arm]
         runs =
-          if braiding: cutGapsAt(pts, dives[arm])
-          elif over == some(other(arm)): cutGap(pts, routes[other(arm)])
+          if weaving: cutGapsAt(pts, dives[arm])
+          elif on_top == some(other(arm)): cutGap(pts, routes[other(arm)])
           else: @[pts]
       bits.add twoTone(runs, pts[pts.len div 2], arm, holds[arm].get)
   for arm in Arm:
@@ -348,13 +390,16 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
 func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6; over_all = false;
-    times: seq[float] = @[]): string =
+    times: seq[float] = @[]; winds: seq[float] = @[]): string =
   ## Draw one picture moving through a walk of poses handed in.
   ##   Every moving figure comes through here, whether its walk is a whole
   ##     move's cycle or one edge of a state graph rocked back and forth.
   ##   `times` says when each frame is due, for a move that ranks its own
   ##     stages (rule 26); without it the frames are evenly spread, which
   ##     is what a browser does anyway.
+  ##   `winds` says how far the pair has wound at each frame, and the box
+  ##     swells with it (rule 27), so a turn grows its box rather than
+  ##     arriving at one.
   let
     poses = walk.mapIt(settled(it, holds, levels, ways))
     box = if half.isSome: half.get
@@ -424,7 +469,14 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     if levels[arm] == some(Level.Above) or over_all:
       # Over the head, or over a body that is turning under raised arms:
       # from above nothing is in the way, and nothing hugs (rules 1, 14).
-      routes = frames.mapIt(straightReach(it.a, it.b))
+      # A pair that is winding grows its box as it goes (rule 27): at no
+      # wind `boxed` is the straight reach, so the two are one drawing.
+      if winds.len == poses.len and holds[other(arm)].isSome:
+        for i, f in frames:
+          routes.add boxed(f.a, f.b, boxWay(poses[i], arm),
+                           BOX_SWELL * abs(winds[i]))
+      else:
+        routes = frames.mapIt(straightReach(it.a, it.b))
     else:
       # A hold that says which way round says it for every frame at once: a
       # slot is fixed relative to its facing, so the direction is too.
