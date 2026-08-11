@@ -597,6 +597,14 @@ proc checkSingleTurns*() =
   # smoothly past it."  Both halves are measured on the line as drawn: a
   # settled reach keeps daylight from every mark it does not join, and a
   # moving one still runs straight through.
+  # RULE 23.  "prefer paths that have fewers bends (ideally 1) as well as
+  # length."  Counted on the drawn line: how many turns each settled reach
+  # asks a reader to follow, and -- wherever one asks for more than a
+  # single turn -- that no other way past the same marks would have asked
+  # less, length and turns weighed together.
+  var
+    turns: array[4, int]
+    bought = 0.0
   var
     daylight = Inf
     fouled = 0.0
@@ -614,7 +622,19 @@ proc checkSingleTurns*() =
             p = handsOf(put)
             (a, b) = (p[Dancer.Lead][arm], p[Dancer.Follow][single.holds[arm].get])
             marks = clearingMarks(put, a, b)
-          for (drawn, moving) in [(clearedReach(a, b, marks), false),
+          let settled_reach = clearedReach(a, b, marks)
+          turns[min(bendsIn(settled_reach), turns.high)] += 1
+          if bendsIn(settled_reach) > 1:
+            # It kept a second turn, so every plainer way past these marks
+            # must have cost more line than the turn is worth.
+            for side in SIDES:
+              let other = letGo(a, b, marks, side)
+              doAssert readingCost(settled_reach) <= readingCost(other) + 1e-6,
+                &"A plainer reach went untaken; got {way} on {single.name}."
+              if bendsIn(other) < bendsIn(settled_reach):
+                bought = max(bought,
+                             polylineLen(other) - polylineLen(settled_reach))
+          for (drawn, moving) in [(settled_reach, false),
                                   (straightReach(a, b), true)]:
             for mark in marks:
               # Measured as plain daylight: what is left between the drawn
@@ -637,6 +657,15 @@ proc checkSingleTurns*() =
     &"of daylight, where the straight line it replaces buries itself " &
     &"{fmt(fouled, 1)} into a mark; a turning reach stays straight and " &
     "passes smoothly across, as the rule allows"
+
+  doAssert turns[3] == 0,
+    &"A reach turned three times or more; got `{turns[3]}` of them."
+  told.add &"a settled reach is the plainest way past those marks, not " &
+    &"merely the shortest: {turns[0]} run straight, {turns[1]} turn once " &
+    &"and {turns[2]} twice, and no plainer way past the same marks was " &
+    &"passed over -- a second turn is kept only where going round in one " &
+    &"would have cost more than {fmt(BEND_COST, 0)} of line" &
+    (if bought > 0: &", which here reaches {fmt(bought, 1)}" else: "")
 
   for line in told:
     echo &"  rule: {line}"

@@ -64,6 +64,14 @@ const
     ## A hundredth of a unit is a fiftieth of the thinnest thing drawn, so a
     ##   band that is this close is as clear as the picture can show.
 
+const
+  BEND_MIN* = 12.0      ## Degrees a turn must add up to before it is a bend.
+    ## Under this is the wander of a curve drawn as `ROUTE_N` straight bits,
+    ##   which nobody reads as a change of direction.
+  BEND_COST* = 14.0     ## Line a second bend must save to be worth making.
+    ## About the width of a hand mark: a turn a reader has to follow should
+    ##   buy at least as much as the thing it is going round.
+
 
 func segHits*(p, q: Point; body: Body): bool =
   ## Test whether this straight stretch passes inside a body's outline.
@@ -271,13 +279,63 @@ func nearestOn*(pts: seq[Point]; q: Point): float =
     result = min(result, dist(near, q))
 
 
-func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
+func bendsIn*(pts: seq[Point]): int =
+  ## Count the separate turns a drawn line makes -- what it asks a reader to
+  ## follow, rather than how many corners it happens to be drawn from.
+  ##   A bend is a sustained turn one way round: it counts once its corners
+  ##     have added up to `BEND_MIN`, however many of them there were, so a
+  ##     long smooth arc is one bend and not thirty.
+  ##   Turning back only starts a new bend once *that* has added up to
+  ##     `BEND_MIN` too.  Without that, the hair of opposite wander in a
+  ##     curve drawn as straight bits would end the arc it is inside and the
+  ##     same arc would be counted again and again.
+  var
+    way = 0.0
+    turned = 0.0
+    against = 0.0
+    counted = false
+  for i in 1 ..< pts.high:
+    let
+      into = (x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y)
+      away = (x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y)
+      cross = into.x * away.y - into.y * away.x
+      dot = into.x * away.x + into.y * away.y
+      corner = radToDeg(arctan2(cross, dot))
+    if corner == 0:
+      continue
+    if way == 0:
+      way = sgn(corner).float
+    if sgn(corner).float == way:
+      turned += abs(corner)
+      against = 0.0
+    else:
+      against += abs(corner)
+      if against < BEND_MIN:
+        continue
+      way = -way
+      turned = against
+      against = 0.0
+      counted = false
+    if not counted and turned >= BEND_MIN:
+      inc result
+      counted = true
+  result
+
+
+func readingCost*(pts: seq[Point]): float =
+  ## Measure what a drawn reach asks of a reader: its length, and its turns.
+  ##   A turn is worth `BEND_COST` of line: taking one has to save at least
+  ##     that much to be worth following (rule 23).
+  polylineLen(pts) + BEND_COST * float(bendsIn(pts))
+
+
+func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
   ## Route a settled reach as a string pulled taut past the marks in its
   ## way, and straight everywhere else (rule 22).
   ##   A line through a hand cell it does not end on says that hand is
   ##     held; a line through a chevron hides a facing.  So the line is a
   ##     band, pinned at the two hands, that no mark may be inside.
-  ##   It is found the way a band finds its own shape: start it straight,
+  ##   It is found the way a band finds its own shape: start it somewhere,
   ##     then take turns pulling it tight -- each point drawn towards the
   ##     midpoint of its neighbours -- and pushing whatever has ended up
   ##     inside a mark back out to that mark's edge.  Where nothing is in
@@ -287,9 +345,12 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
   ##     Cost of relaxing rather than solving: the shape is the settled
   ##       state of a hundred small steps, not a closed form, and a mark
   ##       sitting exactly on the straight line is turned either way by an
-  ##       arithmetic hair.  Accepted -- it is what a real band does, it
-  ##       bends locally instead of taking one side for the whole reach, and
+  ##       arithmetic hair.  Accepted -- it is what a real band does, and
   ##       the result is measured rather than trusted.
+  ##   `side` is where the band is let go from, which is what decides which
+  ##     way round each mark it settles: `0` starts it on the straight line,
+  ##     `1` and `-1` start it bowed clear over everything on one side or
+  ##     the other.  `clearedReach` is what chooses between them.
   ##   A reach is drawn as `ROUTE_N` points joined by straight segments, and
   ##     a segment is a chord across whatever the band is bending round --
   ##     which falls inside the curve it stands on.  So each mark is asked
@@ -298,13 +359,71 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
   let span = dist(a, b)
   if marks.len == 0 or span < 1e-9:
     return straightReach(a, b)
+  let
+    along = ((b.x - a.x) / span, (b.y - a.y) / span)
+    across = (-along[1], along[0])
+
+  func asDrawn(pts: seq[Point]): seq[Point] =
+    ## One way past the marks, cut back to the hands' own edges and sampled
+    ## the way every reach is, so any two of them can be compared -- and so
+    ## an animation can morph between one and a wrapping reach.
+    let reach = min(R + CAP, span / 3)
+    var cut = trimEnd(pts, a, reach)
+    cut = reversed(trimEnd(reversed(cut), b, reach))
+    resample(cut, ROUTE_N)
+
+  func placed(x, y: float): Point =
+    ## Put a point back where it belongs: so far along the chord, so far off
+    ## it.
+    (a.x + along[0] * x + across[0] * y, a.y + along[1] * x + across[1] * y)
+
+  func bowedPast(asked: seq[Mark]; side: float): seq[Point] =
+    ## The one-bend way past everything: the taut string pinned at the two
+    ## hands and held to one side of the chord (rule 23).
+    ##   A string on one side goes over the *outermost* marks and touches
+    ##     nothing else, which is what the upper hull of them is.  A hull
+    ##     turns one way only, so this is a single bend by construction --
+    ##     and, being a hull, it is the shortest line that is.
+    ##   The marks are read as a sky-line first: how far out the string
+    ##     would have to be at each step to clear everything reaching that
+    ##     far.  The hull is then taken over that.
+    var sky = @[0.0]                   # pinned at the hand it starts from
+    for step in 1 ..< BAND_STEPS:
+      let x = span * float(step) / float(BAND_STEPS)
+      var pushed = 0.0
+      for mark in asked:
+        let
+          to_mark = (mark.centre.x - a.x, mark.centre.y - a.y)
+          xc = to_mark[0] * along[0] + to_mark[1] * along[1]
+          yc = side * (to_mark[0] * across[0] + to_mark[1] * across[1])
+          reach = mark.clear * mark.clear - (x - xc) * (x - xc)
+        if reach > 0:
+          pushed = max(pushed, yc + sqrt(reach))
+      sky.add pushed
+    sky.add 0.0                        # and at the hand it ends on
+    # The upper hull of the sky-line, walked left to right: a point stays
+    # only while the line to it still turns the same way as the one before.
+    var hull: seq[int]
+    for i in 0 .. sky.high:
+      let x = span * float(i) / float(BAND_STEPS)
+      while hull.len >= 2:
+        let
+          (p, q) = (hull[^2], hull[^1])
+          (px, qx) = (span * float(p) / float(BAND_STEPS),
+                      span * float(q) / float(BAND_STEPS))
+        if (qx - px) * (sky[i] - sky[p]) - (sky[q] - sky[p]) * (x - px) <= 0:
+          break
+        discard hull.pop()
+      hull.add i
+    for i in hull:
+      result.add placed(span * float(i) / float(BAND_STEPS), side * sky[i])
 
   func drawnOver(asked: seq[Mark]): seq[Point] =
-    ## The whole reach for one set of askings, trimmed and sampled as drawn.
+    ## The shortest way past the marks: a band let go from the straight line
+    ## and left to settle.
     var band: seq[Point]
     for step in 0 .. BAND_STEPS:
-      let part = float(step) / float(BAND_STEPS)
-      band.add (a.x + (b.x - a.x) * part, a.y + (b.y - a.y) * part)
+      band.add placed(span * float(step) / float(BAND_STEPS), 0.0)
     for pass_no in 1 .. BAND_PASSES:
       for i in 1 ..< band.high:
         let
@@ -340,10 +459,7 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
           let length = hypot(away.x, away.y)
           band[i] = (mark.centre.x + away.x / length * mark.clear,
                      mark.centre.y + away.y / length * mark.clear)
-    let reach = min(R + CAP, span / 3)
-    var pts = trimEnd(band, a, reach)
-    pts = reversed(trimEnd(reversed(pts), b, reach))
-    resample(pts, ROUTE_N)
+    band
 
   func sagged(asked: seq[Mark]; length: float): seq[Mark] =
     ## The same marks, each grown by how deep the drawn chord across it cuts.
@@ -351,11 +467,15 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
     for mark in asked:
       result.add (mark.centre, mark.clear + step * step / (8 * mark.clear))
 
+  # Widened until the line as drawn, and not merely the band behind it,
+  # really does clear every mark.
   var
     asked = marks
     length = span
   for pass_no in 0 .. CLEAR_PASSES:
-    result = drawnOver(sagged(asked, length))
+    let grown = sagged(asked, length)
+    result = asDrawn(
+      if side == 0: drawnOver(grown) else: bowedPast(grown, side))
     length = polylineLen(result)
     var lost = 0.0
     for i, mark in marks:
@@ -365,6 +485,35 @@ func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
         lost = max(lost, short)
     if lost < CLEAR_ENOUGH:
       break
+
+
+const SIDES* = [0.0, 1.0, -1.0]
+  ## Where a settled reach may be let go from, shortest first (rule 23).
+
+
+func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
+  ## Route a settled reach the plainest way past the marks it does not join
+  ## (rules 22 and 23).
+  ##   A band let go from the straight line finds the *shortest* way past
+  ##     the marks -- which can be a weave, one mark passed on the left and
+  ##     the next on the right, and a reader has to follow every one of
+  ##     those turns.  Length is not the only thing a picture costs.
+  ##   So the band is also let go from a bow right over one side, and from
+  ##     one right over the other, and the three are judged on **length and
+  ##     turns together** (`readingCost`): a turn has to save more than
+  ##     `BEND_COST` of line to be worth making a reader follow it.  In most
+  ##     of these figures one bend does the whole job for a few units more.
+  ##   A reach that already turns once or not at all is as plain as a line
+  ##     gets, so nothing else is tried for it.
+  result = letGo(a, b, marks, SIDES[0])
+  if bendsIn(result) <= 1:
+    return
+  var least = readingCost(result)
+  for side in SIDES[1 .. ^1]:
+    let tried = letGo(a, b, marks, side)
+    if readingCost(tried) < least:
+      least = readingCost(tried)
+      result = tried
 
 
 func pigtailed*(a, b: Point; loops: int): seq[Point] =

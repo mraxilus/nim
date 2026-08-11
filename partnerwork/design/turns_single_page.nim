@@ -116,6 +116,12 @@ const BODY = """
   bending locally round each and running straight everywhere else. The
   clearance is measured from what is actually drawn — a square's corner, a
   circle's edge, a chevron's two strokes — and asserted on every build.
+  <b>It takes the plainest way past them, not merely the shortest</b>: the
+  shortest way weaves, one mark passed on the left and the next on the
+  right, and every change of direction is a turn a reader has to follow. So
+  a bend is priced in line, and the way round that bends once is taken
+  wherever it does not cost more than that — which here is every bending
+  reach on the page, and usually the shorter line as well.
   <b>A moving connection is exempt</b>, and stays straight: passing smoothly
   across a mark is what a turn does, and a bend that appeared and vanished
   mid-turn would be a mark of its own.</p>

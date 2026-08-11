@@ -90,6 +90,10 @@ const RULES* = [
     "should bend around all hand cells and chevrons as to not imply " &
     "connection and not obscure direction. it is however fine to animate " &
     "smoothly past it as it would do now for a full turn for example",
+  "the current line finding does a good job of finding the shortest line, " &
+    "but we also need to balance simplicity. prefer paths that have fewers " &
+    "bends (ideally 1) as well as length. in many cases I see, 1 bend can " &
+    "be used with minimal change to the overall line",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -138,6 +142,13 @@ const RULES* = [
   ##     The exemption for a moving reach is the rule's own: passing
   ##       smoothly across a mark is what a turn does, and a bend that
   ##       appeared and vanished mid-move would be a mark of its own.
+  ##   Rule 23 says the shortest way past those marks is not the plainest:
+  ##     a line that weaves -- one mark on the left, the next on the right --
+  ##     costs a reader a turn to follow at every change of direction.
+  ##     So length is not the only price a route pays.  A bend is worth
+  ##       `route.BEND_COST` of line, and a route is chosen on the two
+  ##       together; the rule's own reading of "ideally 1" is that a route
+  ##       is left alone once it turns no more than once.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

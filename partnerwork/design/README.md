@@ -162,6 +162,20 @@ has happened here more than once.
     straight.  *Carried on the turns pages first; the frame page's straight
     and wrapping reaches are the next piece, and `partsOf`'s `clear_marks`
     is the switch that will do it.*
+23. **"the current line finding does a good job of finding the shortest
+    line, but we also need to balance simplicity. prefer paths that have
+    fewers bends (ideally 1) as well as length. in many cases I see, 1 bend
+    can be used with minimal change to the overall line."**  The shortest
+    way past the marks is not the plainest: it weaves, one mark passed on
+    the left and the next on the right, and a reader has to follow every
+    change of direction.  So a reach is judged on **length and turns
+    together** -- a turn is worth `BEND_COST` of line -- and beside the
+    shortest way two more are worked out: the taut string held to one side
+    of the chord, which is the upper hull of the marks on that side and so
+    is a single bend by construction.  The rule's "ideally 1" is read as
+    *leave alone anything already turning once or not at all*.  Measured:
+    every one of the sixteen reaches that bends now bends exactly once, and
+    the one-bend way is usually the **shorter** line as well.
 
 ## What is settled
 
