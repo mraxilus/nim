@@ -366,6 +366,21 @@ still once the tweens settle: with two crossing planes selected, **15,668 pixels
 against a **0**-pixel noise floor between two identical shots — and **0** on the build before
 this change, where selecting altered nothing the canvas drew.
 
+**On the desktop, a mark on an object draws beneath the panels, not over them.** Dear ImGui
+offers two overlay layers: a background list beneath every window and a foreground list above
+them all, both above the 3D scene OpenGL has already rasterised. Every overlay call used the
+foreground one, so a selection ring, a hover ring, a line's rails, a plane's loop and the
+drag band all floated over the panel — including when the panel was covering the very object
+being marked. Reported by the user, and visible in the committed storyboard, where the
+selected plane's marker circle crossed the objects list. They are on the background list now;
+`gui_shim.overlayList` is the one place that choice is made. **The drag menu alone stays
+above**, since it is a control being steered rather than a mark on anything, and a wedge the
+reader is reaching for should not slide under chrome. `guiOverlayCircle` takes the layer as a
+parameter because it is the only call serving both — a marker's full ring through
+`guiOverlayArc`, and the menu's own centre dot. Measured on storyboard frame 02: marker
+pixels drawn inside the panel's rectangle fell from **3,453 to 3,059**, and frames whose
+marks never crossed the panel are pixel-identical.
+
 Selection is deliberately **not** part of `Scene`: never saved, never recorded on the undo
 timeline, and cleared outright by a successful undo or redo, since a restored snapshot's
 slot numbers need not match what was picked against the live scene. `pruneDead` runs after

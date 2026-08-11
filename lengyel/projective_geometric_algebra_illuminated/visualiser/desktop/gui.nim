@@ -183,8 +183,12 @@ proc poolBar*(colours: ptr cfloat; count: cint; cell_size: cfloat)
   ## what any slot's colour means.
 proc overlayLine*(x1, y1, x2, y2, red, green, blue, alpha, thickness: cfloat)
   {.importc: "guiOverlayLine".}
-proc overlayCircle*(cx, cy, radius, red, green, blue, alpha, thickness: cfloat)
-  {.importc: "guiOverlayCircle".}
+proc overlayCircle*(
+  cx, cy, radius, red, green, blue, alpha, thickness: cfloat; is_over_windows: cint
+) {.importc: "guiOverlayCircle".}
+  ## Stroke a whole circle. `is_over_windows` picks the layer: zero for a mark on an object,
+  ## which the panels cover as they cover the object itself, and one for the drag menu's own
+  ## centre dot, which is part of a control being steered. See the shim's `overlayList`.
 proc overlayArc*(
   cx, cy, radius, fraction, red, green, blue, alpha, thickness: cfloat
 ) {.importc: "guiOverlayArc".}

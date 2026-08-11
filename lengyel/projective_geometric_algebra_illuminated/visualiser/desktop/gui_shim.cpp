@@ -449,19 +449,38 @@ void guiPoolBar(const float* colours, int count, float cell_size) {
   ImGui::Dummy(ImVec2(avail, rows * (cell_size + spacing)));
 }
 
-// Draw directly onto the foreground layer, above every window, for cursor feedback that
-// belongs to the 3D view rather than to any panel: a rubber-band line while dragging, a
-// ring around whatever the cursor is over. Screen space only; caller does the projection.
+// Which layer an overlay draw lands on. Two, and the difference matters: Dear ImGui draws
+//   the background list beneath every window and the foreground list above them all, and
+//   both sit above the 3D scene, which OpenGL has already rasterised by the time any of
+//   this runs.
+//   **A mark on an object goes beneath the windows.** It annotates scene geometry that the
+//   panel itself occludes, so drawing it above the panel puts a selection ring over a
+//   panel that is covering the very object it rings -- which is what this did until it was
+//   reported. Only the drag menu draws above: it is a control being steered, not a mark on
+//   anything, and a wedge the reader is reaching for should not slide under chrome.
+static ImDrawList *overlayList(bool is_over_windows) {
+  return is_over_windows ? ImGui::GetForegroundDrawList()
+                         : ImGui::GetBackgroundDrawList();
+}
+
+// Draw onto the overlay layer for cursor and selection feedback that belongs to the 3D
+// view rather than to any panel: a rubber-band line while dragging, a ring around whatever
+// the cursor is over. Screen space only; caller does the projection.
 void guiOverlayLine(float x1, float y1, float x2, float y2, float red, float green,
                      float blue, float alpha, float thickness) {
-  ImGui::GetForegroundDrawList()->AddLine(
+  overlayList(false)->AddLine(
       ImVec2(x1, y1), ImVec2(x2, y2),
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), thickness);
 }
 
+// `is_over_windows` because this one serves both layers: a marker's full ring (through
+//   `guiOverlayArc` below, which is beneath the panels with every other mark) and the drag
+//   menu's own centre dot (above them, with the rest of that menu). The only overlay call
+//   with a foot in both, so the choice is a parameter here and settled by what each of the
+//   others draws everywhere else.
 void guiOverlayCircle(float cx, float cy, float radius, float red, float green, float blue,
-                       float alpha, float thickness) {
-  ImGui::GetForegroundDrawList()->AddCircle(
+                       float alpha, float thickness, int is_over_windows) {
+  overlayList(is_over_windows != 0)->AddCircle(
       ImVec2(cx, cy), radius,
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), 0, thickness);
 }
@@ -477,12 +496,12 @@ void guiOverlayArc(float cx, float cy, float radius, float fraction, float red, 
                    float blue, float alpha, float thickness) {
   if (fraction <= 0.0f) return;
   if (fraction >= 1.0f) {
-    guiOverlayCircle(cx, cy, radius, red, green, blue, alpha, thickness);
+    guiOverlayCircle(cx, cy, radius, red, green, blue, alpha, thickness, 0);
     return;
   }
   const float TURN = 6.28318530717958647692f;
   const float START = -TURN * 0.25f; // Twelve o'clock, with y downward.
-  ImDrawList *list = ImGui::GetForegroundDrawList();
+  ImDrawList *list = overlayList(false);
   list->PathArcTo(ImVec2(cx, cy), radius, START, START - TURN * fraction, 0);
   list->PathStroke(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)),
                    ImDrawFlags_None, thickness);
@@ -495,7 +514,7 @@ void guiOverlayArc(float cx, float cy, float radius, float fraction, float red, 
 void guiOverlayPolyline(const float *points, int count, float red, float green, float blue,
                         float alpha, float thickness, int is_closed) {
   if (count < 2) return;
-  ImDrawList *list = ImGui::GetForegroundDrawList();
+  ImDrawList *list = overlayList(false);
   for (int i = 0; i < count; ++i) {
     list->PathLineTo(ImVec2(points[2 * i], points[2 * i + 1]));
   }
@@ -524,7 +543,7 @@ void guiOverlayRibbon(const float *points, int count, float red, float green, fl
   for (int i = 0, j = count - 1; i < count; j = i++) {
     twice_area += points[2 * j] * points[2 * i + 1] - points[2 * i] * points[2 * j + 1];
   }
-  ImDrawList *list = ImGui::GetForegroundDrawList();
+  ImDrawList *list = overlayList(false);
   for (int n = 0; n < count; ++n) {
     const int i = twice_area >= 0.0f ? n : count - 1 - n;
     list->PathLineTo(ImVec2(points[2 * i], points[2 * i + 1]));
@@ -532,26 +551,28 @@ void guiOverlayRibbon(const float *points, int count, float red, float green, fl
   list->PathFillConcave(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)));
 }
 
-// Fill a rounded rectangle centred on `cx`/`cy` straight onto the foreground layer, for
-//   one wedge of the drag menu. Centred rather than placed from a corner because every
-//   caller of it knows where the wedge's middle goes and nothing else about its size --
-//   which comes from the label it has to hold.
+// Fill a rounded rectangle centred on `cx`/`cy` onto the layer above every window, for
+//   one wedge of the drag menu -- see `overlayList` for why the menu alone draws there.
+//   Centred rather than placed from a corner because every caller of it knows where the
+//   wedge's middle goes and nothing else about its size -- which comes from the label it
+//   has to hold.
 void guiOverlayChip(float cx, float cy, float width, float height, float red, float green,
                     float blue, float alpha, float rounding) {
-  ImGui::GetForegroundDrawList()->AddRectFilled(
+  overlayList(true)->AddRectFilled(
       ImVec2(cx - 0.5f * width, cy - 0.5f * height),
       ImVec2(cx + 0.5f * width, cy + 0.5f * height),
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), rounding);
 }
 
-// Write text centred on `cx`/`cy` onto the foreground layer, in the font already loaded.
+// Write text centred on `cx`/`cy` onto the drag menu's own layer, above every window, in
+//   the font already loaded.
 //   Centred here rather than by the caller so the measurement and the placement use the
 //   same font metrics; a caller offsetting by its own guess drifts as soon as the face
 //   loaded is not the one it guessed against.
 void guiOverlayText(float cx, float cy, float red, float green, float blue, float alpha,
                     const char *text) {
   const ImVec2 size = ImGui::CalcTextSize(text);
-  ImGui::GetForegroundDrawList()->AddText(
+  overlayList(true)->AddText(
       ImVec2(cx - 0.5f * size.x, cy - 0.5f * size.y),
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), text);
 }

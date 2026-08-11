@@ -556,7 +556,7 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   let dot = Ink.Outline.colour
   gui.overlayCircle(
     cfloat(centre.x), cfloat(centre.y), RADIUS_MENU_CENTRE,
-    dot.red, dot.green, dot.blue, 0.7, WIDTH_MARKER,
+    dot.red, dot.green, dot.blue, 0.7, WIDTH_MARKER, is_over_windows = 1,
   )
   for choice in DragChoice:
     let
