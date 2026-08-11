@@ -139,7 +139,7 @@ function now() { return performance.now() / 1000; }
 /* construction path already writes the selection itself, so there is no   */
 /* two-way sync to keep -- only a read.                                    */
 /*                                                                          */
-/* `selectionSlots` below is a render snapshot of that answer, not a copy   */
+/* `slots_selection` below is a render snapshot of that answer, not a copy  */
 /* with rules of its own: the frame loop's overlay reads it dozens of       */
 /* times a second and must not cross the JS/Nim boundary to do it.          */
 /* ---------------------------------------------------------------------- */
@@ -804,7 +804,7 @@ function refreshAddButton() {
 
 function buildItemRow(slot) {
   // `slot === null` builds the composing row: same layout, but nothing backs it in the
-  //   scene, so everything it displays comes from `editSession` and the buttons that act
+  //   scene, so everything it displays comes from `session_edit` and the buttons that act
   //   on a real object (hide, remove) are left out entirely.
   const is_pending = slot === null;
   const is_open = is_pending || isEditing(slot);
@@ -824,7 +824,7 @@ function buildItemRow(slot) {
   const inkOf = () => (is_open ? session_edit.ink : nimItemInk(slot));
   const labelOf = () => (is_open ? session_edit.label : nimItemLabel(slot));
 
-  // Selection checkbox: mirrors/toggles membership in `selectionSlots`, exactly the
+  // Selection checkbox: mirrors/toggles membership in `slots_selection`, exactly the
   // same helper long-press/click-to-select already drives -- not visibility any more.
   const check_select = document.createElement('input');
   check_select.type = 'checkbox';

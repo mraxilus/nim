@@ -396,21 +396,48 @@ far-to-near ratio) stays constant instead of decaying as the camera pulls back.
 **Camera aiming.** The camera moves itself to show what the user is working on. One rule,
 shared by both front-ends and applied **once per frame** rather than at each event:
 
-> Aim at the open edit session's staged multivector if there is one, else at the sole
-> selected object.
+> Aim at the open edit session's staged multivector if there is one, else at **everything
+> currently selected**.
 
 That second clause is what carries applying an operation, releasing a drag and stepping the
-demo, since each already leaves its new object solely selected — none of them needs to know
-the camera exists. Where to aim, by case: a horizon point along its own direction; a horizon
-line along the first axis spanning perpendicular to its normal (no single direction faces a
-whole great circle); a horizon plane not at all, since it fills the sky; anything finite at
-the same representative point the selection ring is drawn on.
+demo, since each already leaves its new object selected — none of them needs to know the
+camera exists.
 
-The move is **eased** over the standard animation duration and curve (§22). Retargeting reads
-its start off the **live camera**, not off the previous goal, so a goal that moves every frame
-— a coefficient being dragged — is one continuous chase rather than a restarting jerk.
-Offering a goal already held is ignored, so a caller may aim every frame without the ease
-restarting forever and never arriving.
+**What "shown" means is a requirement, not a matter of taste: every selected object must
+reach the centred two thirds of the window.** A point has to fit inside that box, inset by
+its own drawn radius so it is whole rather than clipped at the edge. A line or a plane need
+only *cross* it — their drawn representation runs off the frame in any usable view, so
+demanding containment would push the camera back until they were unreadably small.
+
+**The move is the least one that achieves that, across zoom, pan and orbit together.** Three
+requirements follow, and each was a complaint about a shipped build:
+
+- If everything selected is already shown **from where the camera stands**, it does not move
+  at all. Judging "already shown" at the destination instead of at the current placement is
+  what makes every pick swing the view — the destination always satisfies the test, so the
+  check never fires.
+- Otherwise, move by the smallest fraction of the full centring move that satisfies the test,
+  found by searching along the same path the ease travels. Not the whole way: centring what
+  is already visible is movement the user did not ask for.
+- **Prefer pan and zoom over orbit.** A selection with anything finite in it never changes
+  azimuth or elevation; only a selection made entirely of horizon objects turns the orbit,
+  since no pan or zoom can bring a star into view, and it turns only until the star crosses
+  into the box.
+
+Distance **never shrinks** to frame something: pulling in on a selection that is already
+visible is a zoom nobody asked for. Where to aim, by case: a horizon point along its own
+direction; a horizon line along the first axis spanning perpendicular to its normal (no
+single direction faces a whole great circle); a horizon plane not at all, since it fills the
+sky; anything finite at the same representative point the selection ring is drawn on.
+
+The move is **eased** over the standard animation duration and curve (§22), with distance
+eased *geometrically* — doubling then doubling again, rather than by equal steps, so a long
+pull back does not lurch. Retargeting reads its start off the **live camera**, not off the
+previous goal, so a goal that moves every frame — a coefficient being dragged — is one
+continuous chase rather than a restarting jerk. Offering a goal already held is ignored, so a
+caller may aim every frame without the ease restarting forever and never arriving; that
+requires the goal to be a value comparable for equality, which the multivector itself is not
+(§3), so it is a derived summary: the bounding sphere of the selection plus a merged heading.
 
 **This standing-offer shape has three subtleties, and getting any of them wrong breaks the
 camera.** They are stated as requirements because each was a real bug:
@@ -493,6 +520,14 @@ told the viewport in those units rather than converting per point. Mixing them m
 length silently scale with device pixel ratio, which is a bug in both directions at once: it
 shrank a nominal 34-pixel point target to ~13.6 on a phone, and made "make the marker bigger"
 mean nothing stable.
+
+**A mark on an object is occluded by the panels, exactly as that object is.** A selection ring,
+a hover ring, a line's rails, a plane's loop and the drag band all annotate scene geometry
+that the panels cover, so drawing them above the panels puts a ring over chrome that is
+covering the very object it rings. Where the GUI toolkit offers a layer above its windows and
+one below, marks take the one below and only a **control being steered** — the drag menu,
+whose wedge the reader is reaching for — takes the one above. Make that choice in one place;
+it is not a per-call-site judgement, and it was one, which is how every mark ended up on top.
 
 **Picking priority is strict: point beats line beats plane**, regardless of pixel distance,
 once a shape's own radius is met. That priority is what makes generous radii safe — a wide
@@ -773,17 +808,39 @@ able to open the other's files. A label is bytes, not characters, and the count 
 count: a language whose string length counts UTF-16 units will otherwise write a length that
 disagrees with the bytes it then emits, and every later field parses from the wrong offset.
 
-Only live items are written, in slot order. **Deliberately omitted**: slot numbers, which are
-meaningless once reloaded since a fresh scene assigns its own free-list order; birth time,
-meaningless across runs — a loaded item is born at the dawn of time, never partway through an
-animation that never happened; the anchor override, a rendering hint; and fixed-width label
-padding, since length-prefixing keeps the format independent of the writing build's label cap.
+Only live items are written, and **in the order they were created**, which the sequence alone
+carries — no ordinal is stored beside each item, since it would equal its own position every
+time. Creation order must be recorded explicitly by the scene rather than inferred: slot order
+stops being creation order the moment anything is removed, because the freed slot goes to the
+next arrival, and birth time cannot stand in for it either — two objects added in one frame
+share a reading, a replayed item's is stamped into the future, and a reused slot's is stale
+until overwritten. **Deliberately omitted**: slot numbers, which are meaningless once reloaded
+since a fresh scene assigns its own free-list order; birth time, meaningless across runs; the
+anchor override, a rendering hint; and fixed-width label padding, since length-prefixing keeps
+the format independent of the writing build's label cap.
+
+**A loaded scene replays its own construction rather than arriving whole**: each item is
+stamped to appear a beat after the last, and geometry whose birth the clock has not reached
+draws at no size, so the objects grow in one at a time in the order they were built. The beat
+is shorter than the appear animation, so each object is still growing as the next lands, and
+the whole arrival is capped — a full scene shortens the beat rather than making the reader
+wait. One rule, shared by both loaders and by every other arrival the reader did not build
+themselves (§16).
 
 **Loading parses into a staging scene and replaces the caller's only on complete success**, so
 a bad path, a foreign file, a wrong dimension, or too many items leaves the existing scene
 untouched. Bump the version whenever the meaning of any stored field changes — including a
-change to how colours or basis names are derived — and refuse older versions rather than
-mis-reading them.
+change to how colours or basis names are derived, or to what the item *sequence* promises.
+
+**Every version ever written stays readable.** A scene file is a reader's own work, and a
+build that refuses it has destroyed it as surely as deleting it would; a version floor that
+rises is a build throwing that work away. Read an old file by **upgrading it to the current
+shape**, one version boundary at a time, each boundary a single function — never by branching
+on the version at each field, which spreads every past decision across the whole reader and
+breaks the versions nobody has a file of to notice with. Where an old value has no current
+equivalent, map it to one the reader could have chosen rather than refusing: a wrong colour is
+recoverable, a refused scene is not. Refuse only a version *later* than this build writes,
+which may mean anything at all by these bytes.
 
 The browser reaches the **identical** format. Expose raw per-item fields across the boundary
 and let the platform's own binary view do the float encoding; reinventing IEEE-754 in the core
@@ -797,6 +854,13 @@ Five seeds, then eleven derived steps. Both front-ends **open on the seeds alone
 window and the script agree on where a construction starts. The eleven steps are reachable as
 a **one-click preset** that populates the scene with ordinary, fully editable items — not a
 separate scripted-playback mode.
+
+**Both arrive as a replay**, on the same beat a loaded file does (§15): the opening scene and
+the preset are constructions the reader did not build, and watching one assemble says what a
+static arrangement cannot — that these were placed one at a time and everything else is
+derived from them. The storyboard capture is the exception and must stay one: it sweeps each
+step's animation on a clock of its own, so the shared seed constructor must not stagger, and
+the two startup paths restamp after calling it instead.
 
 Seeds: three points `a` (3, −2, 2.5), `b` (−2.5, 2, 5.5), `c` (1, 4, 3), each off the ground
 plane; `o` at the world origin; and `ground`, joined from three points at z = 0 and centred on

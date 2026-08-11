@@ -86,9 +86,9 @@ what the object *is*.
 
 `Item` is a handle (pointer into `Scene` + slot number), not an assembled copy;
 `.geometry`/`.label` resolve via `lent`. Do not hold one across a mutation of its own slot.
-By-slot accessors (`geometryAt`/`labelAt`/`isVisibleAt`/`inkAt`/`anchorOverrideAt`, plus
-non-`var` `isVisible`/`setVisible`) exist beside it and are what the browser's per-frame
-loop uses — see Browser Pipeline for why constructing an `Item` there is expensive.
+By-slot accessors (`geometryOf`/`geometryAt`/`labelAt`/`inkAt`/`bornAt`/`orderOf`/
+`anchorOverrideAt`, plus `isVisible`/`setVisible`) exist beside it and are what the browser's
+per-frame loop uses — see Browser Pipeline for why constructing an `Item` there is expensive.
 
 
 Memory And Allocation
@@ -568,7 +568,7 @@ speed the lap was chosen at: the specimens it was judged on were about 300 px ar
 lap of those in 4.8 s is 62 px/s. Driven, the comet crosses the browser at **61.3 px/s on a
 line and 61.3 px/s on a plane** — the same signal on both, which was the point. The phase is
 therefore a question about a particular outline rather than one answer shared by every marker,
-which is why `phasePulse` takes the length it laps.
+which is why `phaseAdvanced` takes the length it laps.
 
 **A selected line went a whole round with no comet at all, and the round's own verification
 missed it.** `nimSelectionPulse` returned *before* advancing the clock when no run came out,
@@ -750,7 +750,7 @@ near the middle of the frame, which is a visible fraction of a gap this tight.
 spanning frame about the same anchor `mesh.addPlane` centres its disc on — the stored
 creation anchor where there is one, so the marker is concentric with the drawn disc rather
 than with a support the disc is not even drawn around. Its clearance therefore has to be a
-world distance, and `radiusMarkerLoop` sizes it through `worldPerPixel` so the gap reads
+world distance, and `radiusMarkerLoop` sizes it through `worldPerPixelAt` so the gap reads
 as `GAP_MARKER` pixels *at the disc's own depth*, the depth a reader judges it at.
 Everywhere else around the ellipse the gap foreshortens exactly as the disc does — that
 is the point; a constant-pixel ring would sit off the plane and read as floating above
@@ -1031,7 +1031,7 @@ still, since a dwell any tremor could restart is a dwell nobody reaches.
 `g_selection` (Nim) is the sole source of truth in both builds, reached from the browser
 through `nimSelectionSlots`/`nimSelectionCount`/`nimSelectionArity` and
 `nimSelectOnly`/`nimSelectToggle`/`nimSelectClear`. `glue.js` keeps only a render snapshot
-(`selectionSlots`), refreshed whenever the selection changes, so the per-frame overlay loop
+(`slots_selection`), refreshed whenever the selection changes, so the per-frame overlay loop
 does not cross the boundary — a cache of Nim's answer, carrying no rule of its own. An
 earlier design kept the ordered list in JavaScript because Nim held a single scalar; that
 put pick order, the thing that names operands, in the wrong language.
@@ -1414,12 +1414,13 @@ own legend now read.
    survive the call that took it, unlike the C++ backend). Constructing one therefore copies
    the entire scene. The per-frame loop must walk slots with the by-slot `*At` accessors —
    going through the `pairs` iterator measured ~150 ms/frame at 64 items.
-2. `isVisibleAt` returns `var bool` over an `array[N, bool]`, which `panel.nim`'s ImGui
-   checkbox binds by address. That exact combination miscompiles under `nim js` whenever the
-   result is consumed as a *value*: the generated code indexes a primitive boolean with a
-   stray compound key, yielding `undefined` — falsy everywhere. Hence the ordinary non-`var`
-   `isVisible`/`setVisible` pair, used only by the browser; `isVisibleAt` is untouched and
-   still correct on the C++ backend it was written for.
+2. A `var bool` accessor over an `array[N, bool]`, which an ImGui checkbox binds by address,
+   miscompiles under `nim js` whenever the result is consumed as a *value*: the generated
+   code indexes a primitive boolean with a stray compound key, yielding `undefined` — falsy
+   everywhere. `isVisible`/`setVisible` are the ordinary non-`var` pair that replaced the
+   `var`-returning reader this was found on, and both front-ends use them now; the accessor
+   itself is gone, so what survives is the rule. `geometryAt`/`labelAt` still return `var`
+   and are still correct — they are read by the desktop alone, and neither is a `bool`.
 3. `MeshSet`s must live at module scope and be cleared, never re-declared per frame. A
    `MeshSet` reserves `VERTICES_MAX` (16384) vertices per primitive, and `nim js` has no
    stack allocation for a fixed-size array inside a proc — re-declaring measured
@@ -1990,9 +1991,11 @@ The codebase was brought into compliance across two audits. Notable outcomes sti
 - `browser_bridge.nim.cfg` pins the same two `pga` defines the browser build previously got
   from undocumented manual flags — verified by breaking one define and confirming the build
   fails at the compile-time assertion naming the correct flags.
-- The `when defined(js)` seams in `scene.nim` and the `shapeDescription`/`labelString`
-  duplicates in `browser_bridge.nim` are documented backend-compatibility necessities, not
-  shortcuts. Leave them.
+- The `when defined(js)` seams in `scene.nim` are documented backend-compatibility
+  necessities, not shortcuts. Leave them. What used to sit beside that note — a pair of
+  shape/label formatters duplicated in `browser_bridge.nim` — is gone: `nimItemShapeWord`
+  and `nimItemLabel` now delegate to `scene.shapeText` and `scene.labelAt`, so there is one
+  implementation and the browser reads the words the desktop status line uses.
 - `EditSession` owns `geometry`/`stage`, the two directions its staged coefficients and a
   `Multivector` convert between. Both were written out by hand at four sites across two
   files before the audit found them.

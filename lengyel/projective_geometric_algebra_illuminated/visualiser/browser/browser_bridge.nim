@@ -898,8 +898,9 @@ proc nimIsClick(now: cfloat): bool {.exportc.} =
 proc nimBeginDrag(arming_ordinal: cint; now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`; see its own doc comment.
   ##   Takes the arming as an ordinal rather than as a flag, since there are now three of
-  ##   them and only two of the three are reachable from a mouse button. `nimDragArming`
-  ##   names the one touch uses, so no caller writes a number of its own.
+  ##   them and only two of the three are reachable from a mouse button.
+  ##   `nimDragArmingOnDwell` names the one touch uses, so no caller writes a number of
+  ##   its own.
   let arming = MenuArming(clamp(int(arming_ordinal), ord(low(MenuArming)), ord(high(MenuArming))))
   interaction.beginDrag(g_interaction, arming, float(now))
 
