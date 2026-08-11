@@ -11,7 +11,9 @@ Four pages, because they are four explorations that happen to be related:
 how a move changes it), `signs.html` is the turn sign (how to label an *edge*
 with an amount of turning), and `turns-single.html` and `turns-hands.html`
 are the turn mock-ups so far -- every position a hold turns through and every
-transition between them, for one hand and for two.  They share the palette,
+transition between them, for one hand and for two.  The second is where a
+pair's winding is worked out, and the drawing of it is measured off the pose
+rather than told (rule 28).  They share the palette,
 the level fills and the two arm inks, which live in `page.nim` and `body.nim`
 so they cannot drift.
 
@@ -250,9 +252,33 @@ has happened here more than once.
     seeing it drawn both ways.  Starting the swing at the hand instead
     would cross the pair over the body it left, where the chevron is, and
     no swing wide enough to make the shape could clear it.
-    *This is the first mark on these pages the geometry does not make by
-    itself: two straight reaches between these four hands never cross,
-    whatever the pair has wound.  It is drawn, and the page says so.*
+    *Rule 28 has since replaced the drawn version of this with a measured
+    one -- see below.*
+28. **"the animations are very jankey and tied to the final visual
+    representations of the box/diamond state, add the half turns which
+    should actually form an X overhead when partners are facing the same
+    direction (similar to the existing L-over-R etc. when facing one
+    another) as states in-between the outside 2."**  Two things, and the
+    second explains the first.
+    **Five positions**, a half turn apart: box, X, the frame, X, box.  At a
+    half turn the partners face the same way and the pair crosses once --
+    the plain X the app already uses for a crossed pair -- and at a whole
+    turn it crosses twice with rule 27's diamond between.
+    **And the wind is now measured, not handed over.**  Each held hand sits
+    on its own body's rim and both bodies stand on the pair's axis, so the
+    angle a hand makes with that axis is what going round means; the
+    difference between the two ends is the wind.  A reach is then the
+    shadow of a wound arm from above: its offset from the axis swings as
+    far round as the pair has wound, nipping in between the hands the way
+    wound strands do.  Straight at none, an X at a half, a diamond at a
+    whole, every frame between following from the same measure -- which is
+    what stops a turn snapping into a shape it was told to end in.  Only
+    the whole turns already in a hold have to be said, since a whole turn
+    puts every hand back where it was.
+    *And it corrected the page: an orbit that keeps its bearing turns
+    nobody, so it winds nothing.  The two axis turns walk this chain; the
+    two orbits carry the pair around it.  The first draft claimed all four
+    wound, which was only true because all four had been told to.*
 
 ## What is settled
 

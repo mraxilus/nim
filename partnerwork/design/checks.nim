@@ -760,71 +760,69 @@ proc checkSingleTurns*() =
 proc checkHandTurns*() =
   ## Verify the hand-to-hand turns page's rules as given, one line each.
   var told: seq[string]
-  let
-    built = handTurnParts()
-    put = settled(handPose(), HAND_TO_HAND, ABOVE_BOTH, default(Ways))
-    p = handsOf(put)
+  let built = handTurnParts()
 
-  func reachesOf(wind: int): array[Arm, seq[Point]] =
+  func pairOf(wind: float): array[Arm, seq[Point]] =
     ## The pair as this position draws it, both reaches at once.
-    for arm in Arm:
-      let
-        (a, b) = (p[Dancer.Lead][arm], p[Dancer.Follow][HAND_TO_HAND[arm].get])
-        marks = clearingMarks(put, a, b)
-      result[arm] =
-        if wind == 0: clearedReach(a, b, marks)
-        else: boxed(a, b, boxWay(put, arm), BOX_SWELL, marks)
-
-  # RULE 12.  "hand to hand should have 3 positions allowed by rotation."
-  # Read with rule 27's answer -- a whole turn between neighbours -- so the
-  # three are the frame and the two ends it winds into.
-  doAssert CHAIN.len == 3, &"Three positions expected; got `{CHAIN.len}`."
-  var drawn: seq[string]
-  for i in 0 ..< CHAIN.len:
-    doAssert built[&"hh_{i}"] notin drawn,
-      &"Two positions draw alike; got `{i}`."
-    drawn.add built[&"hh_{i}"]
-  # A whole turn is what lies between them: it leaves every place and every
-  # facing exactly as it found them, which is why the wind is all that is
-  # left to tell one position from another.
-  for way in TurnWay:
     let
-      w = WAYS_OF_TURNING[way]
-      landed = turned(handPose(), w.who, w.about, WHOLE)
-    # `placeOf` rather than `relative`: a whole turn comes back to a bearing
-    # that is 360 by one route and 0 by another, and they are one place.
-    doAssert placeOf(landed) == placeOf(handPose()),
-      &"A whole turn moved the picture; got {way}."
-    doAssert dist(landed.place[Dancer.Lead],
-                  handPose().place[Dancer.Lead]) < 1e-6 and
-             dist(landed.place[Dancer.Follow],
-                  handPose().place[Dancer.Follow]) < 1e-6,
-      &"A whole turn left somebody somewhere else; got {way}."
-  told.add &"{CHAIN.len} positions, a whole turn apart: a whole turn puts " &
-    "every place and every facing back where it was, so the wind is the " &
-    "only thing left to tell them apart"
+      put = settled(handPose(wind), HAND_TO_HAND, ABOVE_BOTH, default(Ways))
+      p = handsOf(put)
+    for arm in Arm:
+      let (a, b) = (p[Dancer.Lead][arm],
+                    p[Dancer.Follow][HAND_TO_HAND[arm].get])
+      result[arm] = wound(a, b, axisOf(put).across,
+                          degToRad(windOf(put, HAND_TO_HAND, arm).phi),
+                          2 * PI * wind)
 
-  # RULE 27.  "the two twisted ends in reality the arms make an overlapping
-  # box shape ... two crossovers one on the leads side of the arms, one on
-  # the follows ... a visible box/diamond between the crossovers."  All
-  # measured on the drawn line: the crossings are found, then which dancer
-  # each belongs to, then what the two reaches enclose between them.
+  # RULE 28.  "add the half turns which should actually form an X overhead
+  # when partners are facing the same direction ... as states in-between
+  # the outside 2."  Five positions, a half turn apart, and the wind is
+  # measured off the drawing rather than taken on trust.
+  doAssert CHAIN.len == 5, &"Five positions expected; got `{CHAIN.len}`."
+  var drawn: seq[string]
+  for i, position in CHAIN:
+    doAssert built[&"hh_{i}"] notin drawn,
+      &"Two positions draw alike; got `{position.name}`."
+    drawn.add built[&"hh_{i}"]
+    # The pose a position stands in really is wound that far: measured as
+    # the angle each held hand makes with the pair's own axis.
+    let put = settled(handPose(position.wind), HAND_TO_HAND, ABOVE_BOTH,
+                      default(Ways))
+    for arm in Arm:
+      let turned_by = windOf(put, HAND_TO_HAND, arm).spread / 360
+      doAssert abs(wrap180(360 * (turned_by - position.wind))) < 1e-6,
+        &"A position is not wound what it says; got " &
+          &"`{fmt(turned_by, 2)}` for `{position.name}`."
+    # And the partners face the same way at a half turn, which is what
+    # makes it an X, and face each other at a whole one.
+    let facing_apart = abs(wrap180(
+      put.facing[Dancer.Follow] - put.facing[Dancer.Lead]))
+    doAssert abs(facing_apart - (if abs(position.wind) == 0.5: 0.0
+                                 else: 180.0)) < 1e-6,
+      &"A position faces the wrong way about; got `{position.name}`."
+  told.add &"{CHAIN.len} positions, a half turn apart, each wound exactly " &
+    "what it claims -- measured as the angle each held hand makes with the " &
+    "pair's own axis, not taken on trust"
+
+  # RULE 27 and RULE 28.  The crossings are what the wind makes: none at
+  # the frame, one at a half turn -- the X -- and two at a whole one, one
+  # by each dancer, with the diamond between.
   var
     smallest = Inf
     apart = Inf
-  for i, position in CHAIN:
+  for position in CHAIN:
     let
-      pair = reachesOf(position.wind)
+      pair = pairOf(position.wind)
       meetings = crossingsOf(pair[Arm.L], pair[Arm.R])
-    if position.wind == 0:
-      doAssert meetings.len == 0,
-        &"The frame's pair crosses; got `{meetings.len}` crossings."
+      want = int(abs(position.wind) * 2)
+    doAssert meetings.len == want,
+      &"A position crosses the wrong number of times; got " &
+        &"`{meetings.len}` of `{want}` in `{position.name}`."
+    if meetings.len < 2:
       continue
-    doAssert meetings.len == 2,
-      &"A box wants two crossovers; got `{meetings.len}` in `{position.name}`."
-    # One by each dancer: the nearer crossing to the lead is not the nearer
-    # one to the follow, which is what "one on each side" means.
     let
+      put = settled(handPose(position.wind), HAND_TO_HAND, ABOVE_BOTH,
+                    default(Ways))
       by_lead = dist(meetings[0], put.place[Dancer.Lead]) <
                 dist(meetings[1], put.place[Dancer.Lead])
       by_follow = dist(meetings[0], put.place[Dancer.Follow]) <
@@ -832,18 +830,13 @@ proc checkHandTurns*() =
     doAssert by_lead != by_follow,
       &"Both crossovers fell on one dancer; got `{position.name}`."
     apart = min(apart, dist(meetings[0], meetings[1]))
-    # And what they enclose: the two reaches between the crossings, walked
-    # out along one and back along the other, is a closed shape with room
-    # in it -- the box.  A box that pinched shut would measure nothing.
+    # What the two reaches enclose between the crossings: the diamond.
     var ring: seq[Point]
-    for q in pair[Arm.L]:
-      if dist(q, meetings[0]) + dist(q, meetings[1]) <
-          dist(meetings[0], meetings[1]) + BOX_ROOM:
-        ring.add q
-    for q in reversed(pair[Arm.R]):
-      if dist(q, meetings[0]) + dist(q, meetings[1]) <
-          dist(meetings[0], meetings[1]) + BOX_ROOM:
-        ring.add q
+    for run in [pair[Arm.L], reversed(pair[Arm.R])]:
+      for q in run:
+        if dist(q, meetings[0]) + dist(q, meetings[1]) <
+            dist(meetings[0], meetings[1]) + BOX_ROOM:
+          ring.add q
     var twice = 0.0
     for k in 0 ..< ring.high:
       twice += ring[k].x * ring[k + 1].y - ring[k + 1].x * ring[k].y
@@ -852,27 +845,72 @@ proc checkHandTurns*() =
   doAssert smallest > 2 * BOX_ROOM,
     &"The diamond pinched shut; got `{fmt(smallest, 0)}` of room in it."
 
-  # And the two crossings say opposite things, which is what makes a box a
-  # twist: the connection broken at one is the one left whole at the other.
+  # And a crossing is drawn as a crossing: each connection broken once per
+  # crossing it dives at, which is what makes the two say opposite things.
   for i, position in CHAIN:
-    if position.wind == 0:
-      continue
-    let figure = built[&"hh_{i}"]
+    let
+      figure = built[&"hh_{i}"]
+      crossings = int(abs(position.wind) * 2)
     for arm in Arm:
-      # A connection is drawn in two shades, so two pieces where it runs
-      # whole and one more for every break in it.  One break each is the
-      # alternation: the same connection diving twice would count three.
       var pieces = 0
       for ink in [DEEP[arm], INK[HAND_TO_HAND[arm].get]]:
         for part in figure.split("<path "):
           if &"stroke=\"{ink}\"" in part:
             pieces += part.count("M")
-      doAssert pieces == 3,
-        &"A box's breaks do not alternate; got `{pieces}` pieces of {arm} " &
+      doAssert pieces == 2 + crossings div 2,
+        &"A crossing is not drawn as one; got `{pieces}` pieces of {arm} " &
           &"in `{position.name}`."
-  told.add &"a wound pair crosses twice, once by each dancer, and holds a " &
-    &"diamond of {fmt(smallest, 0)} square units between them, its two " &
-    &"points {fmt(apart, 0)} apart; the frame's pair crosses not at all"
+  told.add &"the wind makes the crossings: none at the frame, one at a " &
+    &"half turn -- the X the partners make facing the same way -- and two " &
+    &"at a whole one, one by each dancer, holding a diamond of " &
+    &"{fmt(smallest, 0)} square units with its points {fmt(apart, 0)} apart"
+
+  # RULE 28 again.  "the animations are very jankey and tied to the final
+  # visual representations."  Nothing is told how far it has wound now, so
+  # the test is that the drawing moves smoothly: no frame of any walk
+  # shifts a reach further than a step of the turn itself would.
+  var jump = 0.0
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    for i in 0 ..< CHAIN.len - 1:
+      let walk = turnWalk(handPose(CHAIN[i].wind), w.who, w.about, HALF,
+                          on = Anchor.Lead)
+      for arm in Arm:
+        let spun = continuous(walk.poses.mapIt(
+          windOf(settled(it, HAND_TO_HAND, ABOVE_BOTH, default(Ways)),
+                 HAND_TO_HAND, arm).spread))
+        for k in 0 ..< spun.high:
+          jump = max(jump, abs(spun[k + 1] - spun[k]))
+  doAssert jump < HALF / 4,
+    &"A walk's wind jumps between frames; got `{fmt(jump, 0)}` degrees."
+  told.add &"and the wind is read off the drawing rather than handed to " &
+    &"it: through every frame of every walk it never moves more than " &
+    &"{fmt(jump, 0)} degrees at a step, so nothing snaps"
+
+  # RULE 19 and RULE 28.  Which ways of turning actually walk the chain:
+  # an orbit that keeps its bearing turns nobody, so it winds nothing.
+  var winders, carriers: seq[string]
+  for way in TurnWay:
+    let
+      w = WAYS_OF_TURNING[way]
+      landed = canonicalise(turned(handPose(), w.who, w.about, HALF),
+                            on = Anchor.Lead)
+      put = settled(landed, HAND_TO_HAND, ABOVE_BOTH, default(Ways))
+      spun = windOf(put, HAND_TO_HAND, Arm.L).spread
+    if abs(spun) > 1e-6:
+      doAssert w.about == About.Axis,
+        &"An orbit wound the pair; got {way}."
+      winders.add w.title.toLowerAscii
+    else:
+      doAssert w.about == About.Orbit,
+        &"An axis turn wound nothing; got {way}."
+      carriers.add w.title.toLowerAscii
+  doAssert winders.len == 2 and carriers.len == 2,
+    &"Two of each expected; got `{winders.len}` and `{carriers.len}`."
+  told.add &"{winders.len} of the {TurnWay.toSeq.len} ways wind the pair " &
+    "and walk the chain -- both axis turns -- while the two orbits carry " &
+    "it around without winding it at all, because a walker who keeps their " &
+    "bearing never turns relative to their partner"
 
   # RULE 17 and RULE 21.  Above on every hand, still and moving alike.
   var hatched = 0
@@ -886,18 +924,6 @@ proc checkHandTurns*() =
     inc hatched
   told.add &"every hand on all {hatched} figures carries the above hatch, " &
     "moving and still alike"
-
-  # RULE 19.  All four ways of turning wind the pair, and all four reach the
-  # same three positions -- so a position cannot say which was danced.
-  var edges = 0
-  for way in TurnWay:
-    for i in 0 .. 1:
-      doAssert built.hasKey(&"hw_{WAYS_OF_TURNING[way].tag}_{i}"),
-        &"An edge went unanimated; got {way}."
-      inc edges
-  told.add &"all {TurnWay.toSeq.len} ways of turning wind the pair, and " &
-    &"all {edges} edges are animated; every one of them reaches the same " &
-    "three positions, so only the path says which was danced"
 
   for line in told:
     echo &"  rule: {line}"

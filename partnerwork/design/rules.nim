@@ -113,6 +113,11 @@ const RULES* = [
     "the twist chain. there should be a visible box/diamond between the " &
     "crossovers (hence the preliminary names, Left over Right box, Right " &
     "over Left box)",
+  "the animations are very jankey and tied to the final visual " &
+    "representations of the box/diamond state, add the half turns which " &
+    "should actually form an X overhead when partners are facing the same " &
+    "direction (similar to the existing L-over-R etc. when facing one " &
+    "another) as states in-between the outside 2",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -211,6 +216,27 @@ const RULES* = [
   ##       wind is not part of its state and its orientation is all of it
   ##       (rule 16); hold both hands and a whole turn returns every
   ##       orientation, so the wind is all of it instead.
+  ##   Rule 28 adds the half turns, and in doing so says where rule 27's
+  ##     first drawing went wrong.
+  ##     At a half turn the partners face the same way and the pair makes
+  ##       an **X**, which is the crossing the geometry itself gives -- the
+  ##       same mark the app already uses for a crossed pair.  So the chain
+  ##       is five: box, X, the frame, X, box, a half turn apart.
+  ##     "tied to the final visual representations" is the fault named: the
+  ##       wind was a number handed to the drawing, and the box was swelled
+  ##       by it on top of geometry that was not winding at all.  It is now
+  ##       **measured** instead -- the angle each held hand makes with the
+  ##       pair's own axis, and the difference between the two ends is the
+  ##       wind.  A reach is then the shadow of a wound arm: its offset
+  ##       from the axis swings as far round as the pair has wound, which
+  ##       is straight at none, an X at a half, and a diamond at a whole,
+  ##       with nothing imposed and nothing to jump.
+  ##     Measured that way, **an orbit does not wind the pair at all**: a
+  ##       walker who keeps their bearing never turns relative to their
+  ##       partner, so the two axis turns walk this chain and the two
+  ##       orbits carry the pair around it without moving along it.  The
+  ##       first drawing claimed all four wound, which was only true
+  ##       because all four were told to.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

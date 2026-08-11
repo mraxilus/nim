@@ -27,8 +27,9 @@ type
     over_all: bool ## Drawn straight, passing over whatever it meets.
     loops: int     ## Pigtails at its middle: one per half turn, signed.
     braid: int     ## Crossings with its partner: one per half turn.
-    box: int       ## Thrown across its partner to make a box, signed by
-                   ## which way the pair wound (rule 27).
+    turns: float   ## How far the pair has wound, in turns: what the reach
+                   ## swings through (rules 27, 28).  Zero draws straight,
+                   ## a half draws the X, a whole draws the diamond.
   Twists* = array[Arm, Twist]
     ## Per connection, how far its arms have wound past what the frame's own
     ## geometry already says.
@@ -40,7 +41,7 @@ type
     ##     both, and `checks` measures what was drawn rather than trusting
     ##     what was asked.
 
-const NO_TWIST*: Twists = [(false, 0, 0, 0), (false, 0, 0, 0)]
+const NO_TWIST*: Twists = [(false, 0, 0, 0.0), (false, 0, 0, 0.0)]
   ## Nothing wound and nothing said: every figure but the rotation page's.
 
 
@@ -147,28 +148,36 @@ func clearingMarks*(put: Pose; a, b: Point): seq[Mark] =
         result.add (q, (if who == Dancer.Lead: LEAD_CLEAR else: FOLLOW_CLEAR))
 
 
-func boxWay*(put: Pose; arm: Arm): Point =
-  ## Get which way one reach of a wound pair is thrown to make its half of
-  ## the box (rule 27).
-  ##   Square to the pair's own axis, and away from the side this arm's own
-  ##     lead hand sits on -- so the reach ends up running down its
-  ##     partner's side, which is what puts a crossing at each end.
-  ##   Read off the lead's hands rather than off the reaches, so it holds
-  ##     still through a whole turn instead of flipping at the half way,
-  ##     where the two reaches lie on top of each other.
+func axisOf*(put: Pose): tuple[along, across: Point, bearing: float] =
+  ## Get the pair's own axis: the way from the lead to the follow, the way
+  ## square to it, and the bearing of the first.
   let
     lead = put.place[Dancer.Lead]
-    span = dist(lead, put.place[Dancer.Follow])
-  if span < 1e-9:
-    return (0.0, 0.0)
+    follow = put.place[Dancer.Follow]
+    span = max(dist(lead, follow), 1e-9)
+    along: Point = ((follow.x - lead.x) / span, (follow.y - lead.y) / span)
+  (along, (-along.y, along.x), bearing(follow.x - lead.x, follow.y - lead.y))
+
+
+func windOf*(put: Pose; holds: Holds; arm: Arm): tuple[phi, spread: float] =
+  ## Measure how far one connection has wound, in degrees (rules 27, 28).
+  ##   Each held hand sits on its own body's rim, and both bodies stand on
+  ##     the pair's axis, so the angle a hand makes with that axis is what
+  ##     going round means here.  Where the two ends make the same angle
+  ##     the pair is unwound; the difference between them is the wind.
+  ##   Measured, never handed in: a drawing told how far it has wound can
+  ##     be told wrong, and was -- an orbit that keeps its bearing turns
+  ##     nobody, and so winds nothing (rule 28).
   let
-    axis = ((put.place[Dancer.Follow].x - lead.x) / span,
-            (put.place[Dancer.Follow].y - lead.y) / span)
-    hand = handPoint(lead, put.facing[Dancer.Lead], arm,
-                     put.wind[Dancer.Lead][arm])
-    off = (hand.x - lead.x, hand.y - lead.y)
-    side = float(sgn(axis[0] * off[1] - axis[1] * off[0]))
-  (side * axis[1], -side * axis[0])
+    axis = axisOf(put)
+    p = handsOf(put)
+    a = p[Dancer.Lead][arm]
+    b = p[Dancer.Follow][holds[arm].get]
+    phi_a = bearing(a.x - put.place[Dancer.Lead].x,
+                    a.y - put.place[Dancer.Lead].y) - axis.bearing
+    phi_b = bearing(b.x - put.place[Dancer.Follow].x,
+                    b.y - put.place[Dancer.Follow].y) - axis.bearing
+  (phi_a, wrap180(phi_b - phi_a))
 
 
 func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
@@ -205,14 +214,14 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     let q = handPoint(put.place[who], put.facing[who], arm)
     bits.add hand(q.x, q.y, who == Dancer.Lead, arm, held = false,
                   free = Free.Grey)
-  # A pair wound a whole turn crosses twice and holds a box between
-  # (rule 27).
-  let boxing = holds[Arm.L].isSome and holds[Arm.R].isSome and
-    twist[Arm.L].box != 0
-  # And a box says which way it wound by which arm it keeps on top, so the
-  # wind names the over-arm rather than the caller saying it twice.
-  let on_top = if not boxing: over
-               elif twist[Arm.L].box > 0: some(Arm.L)
+  # A wound pair crosses: once by a half turn, twice by a whole one, with
+  # the X or the diamond that makes (rules 27, 28).
+  let winding = holds[Arm.L].isSome and holds[Arm.R].isSome and
+    abs(twist[Arm.L].turns) > 1e-9
+  # And a wound pair says which way it wound by which arm it keeps on top,
+  # so the wind names the over-arm rather than the caller saying it twice.
+  let on_top = if not winding: over
+               elif twist[Arm.L].turns > 0: some(Arm.L)
                else: some(Arm.R)
   var routes: array[Arm, seq[Point]]
   for arm in Arm:
@@ -236,9 +245,14 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
           braided(ends.a, ends.b, abs(twist[arm].braid),
                   (if arm == Arm.L: 0.0 else: PI) +
                     (if twist[arm].braid > 0: 0.0 else: PI))
-        elif boxing:
-          boxed(ends.a, ends.b, boxWay(put, arm), BOX_SWELL,
-                (if clear_marks: clearingMarks(put, ends.a, ends.b) else: @[]))
+        elif winding:
+          # The pose says where the hands are and which way the arm went
+          # round; the wind says how far.  A half turn's sweep is the pose's
+          # own -- the hands really have swapped sides -- and a whole turn's
+          # is a full round on top of it.
+          wound(ends.a, ends.b, axisOf(put).across,
+                degToRad(windOf(put, holds, arm).phi),
+                2 * PI * twist[arm].turns)
         elif clear_marks:
           clearedReach(ends.a, ends.b, clearingMarks(put, ends.a, ends.b))
         else:
@@ -252,7 +266,7 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
   let
     braiding = holds[Arm.L].isSome and holds[Arm.R].isSome and
       twist[Arm.L].braid != 0
-    weaving = braiding or boxing
+    weaving = braiding or winding
   var dives: array[Arm, seq[Point]]
   if weaving:
     let meetings = crossingsOf(routes[Arm.L], routes[Arm.R])
@@ -390,16 +404,18 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
 func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6; over_all = false;
-    times: seq[float] = @[]; winds: seq[float] = @[]): string =
+    times: seq[float] = @[]; wound = 0.0): string =
   ## Draw one picture moving through a walk of poses handed in.
   ##   Every moving figure comes through here, whether its walk is a whole
   ##     move's cycle or one edge of a state graph rocked back and forth.
   ##   `times` says when each frame is due, for a move that ranks its own
   ##     stages (rule 26); without it the frames are evenly spread, which
   ##     is what a browser does anyway.
-  ##   `winds` says how far the pair has wound at each frame, and the box
-  ##     swells with it (rule 27), so a turn grows its box rather than
-  ##     arriving at one.
+  ##   `wound` says how far the pair was already wound at the first frame.
+  ##     What the drawing can measure for itself is how far the wind
+  ##     *changes*, since a whole turn puts every hand back where it was --
+  ##     so the whole turns already in the hold are the one thing a walk has
+  ##     to be told (rule 28).
   let
     poses = walk.mapIt(settled(it, holds, levels, ways))
     box = if half.isSome: half.get
@@ -469,12 +485,21 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     if levels[arm] == some(Level.Above) or over_all:
       # Over the head, or over a body that is turning under raised arms:
       # from above nothing is in the way, and nothing hugs (rules 1, 14).
-      # A pair that is winding grows its box as it goes (rule 27): at no
-      # wind `boxed` is the straight reach, so the two are one drawing.
-      if winds.len == poses.len and holds[other(arm)].isSome:
+      # A pair winds as it turns, and the drawing follows rather than being
+      # told (rule 28).  How far it has wound is measured on every frame
+      # and read as one continuous turning, so a reach that has gone right
+      # round is not mistaken for one that has not moved -- and so nothing
+      # jumps between two frames.
+      if holds[other(arm)].isSome:
+        let
+          seen = continuous(poses.mapIt(windOf(it, holds, arm).spread))
+          # Measured from where it started, and started from where the
+          # hold says: the two together are the whole of the winding.
+          spun = seen.mapIt(it + 360 * wound - seen[0])
         for i, f in frames:
-          routes.add boxed(f.a, f.b, boxWay(poses[i], arm),
-                           BOX_SWELL * abs(winds[i]))
+          routes.add wound(f.a, f.b, axisOf(poses[i]).across,
+                           degToRad(windOf(poses[i], holds, arm).phi),
+                           degToRad(spun[i]))
       else:
         routes = frames.mapIt(straightReach(it.a, it.b))
     else:

@@ -141,9 +141,6 @@ type Walk* = tuple ## A move sampled for animation, and its own timing.
   times: seq[float] ## How far through the move each pose is due, 0 to 1.
     ## Frames are not evenly spread: what a move spends its time on is part
     ##   of what it says (rule 26).
-  winds: seq[float] ## How far the pair has wound at each pose, in turns.
-    ## A whole turn puts every place and every facing back where it was, so
-    ##   for a pair this is the only thing left that moved (rule 27).
 
 
 const
@@ -201,7 +198,7 @@ func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
 
 
 func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
-    samples = 12; on = Anchor.Pair; winds = 0.0; wound = 0.0): Walk =
+    samples = 12; on = Anchor.Pair): Walk =
   ## Sample one turn and its return, in the stages the dance has.
   ##   Stage one is the turn itself, **with the world held still**: the
   ##     dancer turns where they are and the picture does not follow them.
@@ -214,22 +211,18 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
   ##   The stages do not share the clock evenly.  The turn is what the
   ##     figure is of; the re-framing is the picture catching up with it,
   ##     and is paced to read that way (rule 26).
-  ##   `winds` is how far the pair winds over the turn, in turns, and
-  ##     `wound` how far it was wound already.  A whole turn leaves every
-  ##     place and every facing where it found them, so for a pair the wind
-  ##     is the only thing that moved -- and the walk has to be drawn for
-  ##     it even though nothing else changed (rule 27).
-  func legs(from_pose: Pose; by, from_wind, adds: float): Walk =
+  ##   A turn that leaves the picture as it found it is still drawn: a pair
+  ##     can come back to the same places and facings with its arms wound,
+  ##     and the wind is what the drawing measures for itself (rule 28).
+  ##     Only a turn of nothing at all is skipped.
+  func legs(from_pose: Pose; by: float): Walk =
     let landed = turned(from_pose, who, about, by)
-    if relative(from_pose) == relative(landed) and abs(adds) < 1e-9:
-      return (@[from_pose], @[0.0], @[from_wind])
+    if abs(by) < 1e-9:
+      return (@[from_pose], @[0.0])
     # Stage one: the turn, as the room sees it, over a whole beat of clock.
-    # The wind comes on with it, on the same easing, so the box a pair
-    # holds grows as the turn happens rather than after it.
     for i in 0 .. samples:
       result.poses.add turned(from_pose, who, about, by * ease(i / samples))
       result.times.add (if i == 0: 0.0 else: 1.0 / float(samples))
-      result.winds.add from_wind + adds * ease(i / samples)
     # Stage two: the picture is re-framed until the lead faces up and the
     # anchor is back in the middle.  Nothing travels in it, so the orbit's
     # ring goes out with it.  It is skipped where it would draw nothing --
@@ -243,23 +236,20 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
     # A beat on the landing first: the same pose twice, which is a still.
     result.poses.add result.poses[^1]
     result.times.add ARRIVAL_HOLD
-    result.winds.add result.winds[^1]
     for i in 1 .. samples:
       var home = canonicalise(landed, ease(i / samples), on)
       home.ring = none(Ring)
       result.poses.add home
       result.times.add RE_FRAME_PACE / float(samples)
-      result.winds.add from_wind + adds
 
   let
-    there = legs(base, degrees, wound, winds)
-    back = legs(there.poses[^1], -degrees, wound + winds, -winds)
+    there = legs(base, degrees)
+    back = legs(there.poses[^1], -degrees)
   result = there
   for i, p in back.poses:
     result.poses.add p
     # The two legs meet on one pose, so the join is a beat like the others.
     result.times.add (if i == 0: ARRIVAL_HOLD else: back.times[i])
-    result.winds.add back.winds[i]
   result.times = timed(result.times)
 
 

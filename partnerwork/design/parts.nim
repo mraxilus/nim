@@ -532,51 +532,67 @@ const
     ## and the lead's Right in the follow's left, uncrossed.
   ABOVE_BOTH*: Levels = [some Level.Above, some Level.Above]
     ## Both arms over the head, this scope's one level (rules 17, 21).
-  WHOLE* = 360.0 ## The turn between one position and the next (rule 27).
+  HALF* = 180.0 ## The turn between one position and the next (rule 28).
 
-const CHAIN*: array[3, tuple[wind: int, name: string, note: string]] = [
-  (-1, "Right over Left box", "wound a whole turn one way"),
-  (0, "Left-to-right and Right-to-left", "the app's frame, nothing wound"),
-  (1, "Left over Right box", "wound a whole turn the other way"),
-] ## The three positions rule 12 counts, in chain order.
-  ##   The middle is the app's own frame and the ends are the boxes, named
-  ##     as the rule names them: whichever of the lead's arms passes over
-  ##     the other at the lead's own crossover.
-  ##   The names are the rule's own and are flagged on the page as
-  ##     preliminary.
+const CHAIN*: array[5, tuple[wind: float, name: string, note: string]] = [
+  (-1.0, "Right over Left box", "a whole turn, wound one way"),
+  (-0.5, "Right over Left X", "a half turn: the same way, facing"),
+  (0.0, "Left-to-right and Right-to-left", "the app's frame, nothing wound"),
+  (0.5, "Left over Right X", "a half turn: the other way, facing"),
+  (1.0, "Left over Right box", "a whole turn, wound the other way"),
+] ## The five positions this page holds, in chain order.
+  ##   The middle is the app's own frame, the ends are rule 27's boxes, and
+  ##     between them are rule 28's half turns -- where the partners face
+  ##     the same way and the pair makes a plain X.
+  ##   Named for whichever of the lead's arms passes over the other at the
+  ##     lead's own crossover, which is the rule's own naming and is
+  ##     flagged on the page as preliminary.
 
 
-func boxTwist*(wind: int): Twists =
-  ## Say a whole turn's wind as the drawing channel takes it (rule 27).
+func windTwist*(wind: float): Twists =
+  ## Say how far a pair has wound, as the drawing channel takes it.
   [(false, 0, 0, wind), (false, 0, 0, wind)]
 
 
-func handPose*(): Pose =
-  ## Get the one pose every position on that page is drawn in.
-  ##   A whole turn puts every place and every facing back where it was, so
-  ##     all three positions stand exactly here and differ only in the wind
-  ##     -- which is the whole of what the page has to say.
-  canonicalise(rest(), on = Anchor.Lead)
+func handPose*(wind = 0.0): Pose =
+  ## Get the pose one position of the chain stands in.
+  ##   The follow's own axis turn is what the poses are built from, so a
+  ##     half turn faces them away where they stand and a whole turn brings
+  ##     everything back.  Which dancer did the turning is not something a
+  ##     position can say; the page animates all of them.
+  result = canonicalise(turned(rest(), Dancer.Follow, About.Axis,
+                               2 * HALF * wind), on = Anchor.Lead)
+  result.ring = none(Ring)
 
 
 func handTurnParts*(): Parts =
   ## Build every SVG the hand-to-hand turns page places.
-  ##   Rule 12: three positions, and rule 27's reading of them -- a whole
-  ##     turn between neighbours, the ends drawn as boxes.
-  ##   Rule 15: every position drawn, every edge animated, by every one of
-  ##     rule 19's four ways of turning.
+  ##   Rule 28: five positions, a half turn apart -- the frame, an X either
+  ##     side of it, and a box beyond each X.
+  ##   Rule 15: every position drawn, every edge animated, by each way of
+  ##     turning that can walk the chain at all.
+  ##   Rule 28 again: an orbit that keeps its bearing turns nobody, so it
+  ##     winds nothing.  The two axis turns walk the chain; the two orbits
+  ##     carry the pair around without moving along it, which is drawn once
+  ##     rather than claimed.
   const
     PX = 1.0        ## Pixels a unit takes in a moving cell.
     STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
   var
-    walks: array[TurnWay, array[2, Walk]]
-    still_half = extent(handPose(), captions = false)
+    walks: array[TurnWay, array[CHAIN.len - 1, Walk]]
+    still_half = 0.0
     walk_half: array[TurnWay, float]
+  for i, position in CHAIN:
+    still_half = max(still_half, extent(handPose(position.wind),
+                                        captions = false))
   for way in TurnWay:
     let w = WAYS_OF_TURNING[way]
-    for i, winding in [1.0, -1.0]:
-      walks[way][i] = turnWalk(handPose(), w.who, w.about, WHOLE * winding,
-                               on = Anchor.Lead, winds = winding)
+    for i in 0 ..< CHAIN.len - 1:
+      # Each edge starts where it starts and turns a half, so a way that
+      # winds walks one step along the chain and a way that does not
+      # simply carries the pair out and back.
+      walks[way][i] = turnWalk(handPose(CHAIN[i].wind), w.who, w.about,
+                               HALF, on = Anchor.Lead)
       for put in walks[way][i].poses:
         walk_half[way] = max(walk_half[way], extent(put, captions = false))
 
@@ -586,32 +602,33 @@ func handTurnParts*(): Parts =
       &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
         &""" height: {n(2 * half * px)}px"""")
 
-  # The chain of three, drawn once: every way of turning reaches these same
-  # three, so drawing them per way would be the same picture four times.
+  # The chain, drawn once: every way that winds reaches these same five, so
+  # drawing them per way would be the same picture over again.
   for i, position in CHAIN:
     result[&"hh_{i}"] = sized(frame("tiny", HAND_TO_HAND, ABOVE_BOTH,
-      captions = false, pose = some handPose(), half = some still_half,
-      twist = boxTwist(position.wind), clear_marks = true),
-      "tiny", still_half, STILL_PX)
+      captions = false, pose = some handPose(position.wind),
+      half = some still_half, twist = windTwist(position.wind),
+      clear_marks = true), "tiny", still_half, STILL_PX)
 
-  # And every way of reaching them, wound on and wound off again.
+  # And every edge of it, walked by every way of turning.
   for way in TurnWay:
     let w = WAYS_OF_TURNING[way]
-    for i, winding in [1, -1]:
+    for i in 0 ..< CHAIN.len - 1:
       result[&"hw_{w.tag}_{i}"] = sized(animatedPoses("mv", HAND_TO_HAND,
-        walks[way][i].poses, some walk_half[way], ABOVE_BOTH, dur = 6.4,
-        times = walks[way][i].times, winds = walks[way][i].winds),
+        walks[way][i].poses, some walk_half[way], ABOVE_BOTH, dur = 5.4,
+        times = walks[way][i].times, wound = CHAIN[i].wind),
         "mv", walk_half[way], PX)
       # The still stands in where motion is turned off, so it is the
-      # settled picture the move arrives at (rule 22's exemption again).
+      # picture the move sets off from (rule 22's exemption again).
       result[&"hw_{w.tag}_{i}_still"] = sized(frame("mv still",
-        HAND_TO_HAND, ABOVE_BOTH, captions = false, pose = some handPose(),
-        half = some walk_half[way], twist = boxTwist(winding),
-        clear_marks = true), "mv still", walk_half[way], PX)
+        HAND_TO_HAND, ABOVE_BOTH, captions = false,
+        pose = some handPose(CHAIN[i].wind), half = some walk_half[way],
+        twist = windTwist(CHAIN[i].wind), clear_marks = true),
+        "mv still", walk_half[way], PX)
 
-  result["g_whole"] = turnGlyph("a whole turn", 76.0)
+  result["g_half"] = turnGlyph("a half turn", 68.0)
 
-  # The three positions draw differently, or they are not three positions.
+  # The five positions draw differently, or they are not five positions.
   for i in 0 ..< CHAIN.len:
     for j in 0 ..< i:
       doAssert result[&"hh_{i}"] != result[&"hh_{j}"],

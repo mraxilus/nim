@@ -45,6 +45,12 @@ const
   BRAID_R* = 9.0      ## How far a braided pair swings off its straight line.
   BOX_ROOM* = 24.0    ## How wide the diamond a wound pair holds opens at
                       ## its middle.
+  WIND_NIP* = 0.4     ## How far a wound pair draws together between its
+                      ## hands.
+    ## Two strands wound round each other pull in where they are wound and
+    ##   are held apart only at their ends, so a pair nips in at its middle
+    ##   -- which is also what turns a wide flat lens into a diamond.  At no
+    ##   wind there is nothing to pull, so it comes on with the winding.
   BRAID_STEPS* = 96   ## Points along a braided reach, before resampling.
   BAND_STEPS* = 120   ## Points along a reach relaxed past marks, before it.
   CROSS_NEAR* = 2.0   ## How close two reaches pass to count as crossing.
@@ -558,76 +564,47 @@ const SIDES* = [0.0, 1.0, -1.0]
   ## Where a settled reach may be let go from, shortest first (rule 23).
 
 
-const
-  BOX_SWELL* = BODY_R + BOX_ROOM / 2
-    ## How far across a wound reach swings to make its half of the box.
-    ##   The two reaches of a pair run a body's width apart, so each has to
-    ##     cross half of that -- `BODY_R` -- before they meet at all, and
-    ##     half the room the box opens beyond it.
-  BOX_LEAVE* = 0.12  ## How far along a reach runs its own side before
-                     ## swinging over.
-  BOX_ACROSS* = 0.5  ## And where it is fully across, which is its middle.
-    ## A reach that started crossing at its hand would cross its partner
-    ##   over the body it left, where the chevron is, and no swing wide
-    ##   enough to make a box could clear it.  Holding its own side clear of
-    ##   the body first puts the crossing where the arms really cross: just
-    ##   in front of the dancer.
-    ## Fully across exactly at the middle, so the two reaches meet their
-    ##   widest at one point and what they enclose comes to a point at each
-    ##   end: a diamond, which is what the arms make, rather than a
-    ##   four-square box (rule 27).
-
-
-func edged(t, lo, hi: float): float =
-  ## Ramp smoothly from nothing at `lo` to all of it at `hi`.
-  ##   Smooth at both ends, so a reach shaped by it has no corner where the
-  ##     swinging starts or stops (rule 24).
-  if t <= lo:
-    return 0.0
-  if t >= hi:
-    return 1.0
-  let u = (t - lo) / (hi - lo)
-  u * u * (3 - 2 * u)
-
-
-func boxed*(a, b: Point; across: Point; swell: float;
-    marks: seq[Mark] = @[]): seq[Point] =
-  ## Route one reach of a wound pair: swung out across the pair's axis and
-  ## brought back, so the two of them cross twice and enclose a box
-  ## (rule 27).
-  ##   A parallel pair does not cross at all.  Wound a whole turn it crosses
-  ##     once by each dancer, and what lies between those two crossings is
-  ##     the box the rule names -- so each reach swings the whole way over
-  ##     to its partner's side and back, and the pair makes the box between
-  ##     them.
-  ##   `across` is the way over, a unit vector square to the pair's axis;
-  ##     `swell` is how far, and at zero this is the straight reach, which
-  ##     is what lets a turn grow a box rather than jump to one.
-  ##   Grown until it clears the marks it does not join (rule 22), exactly
-  ##     as a settled reach is.
-  if abs(swell) < 1e-9:
-    return straightReach(a, b)
-
-  func curveWith(reach: float): seq[Point] =
-    for step in 0 .. BAND_STEPS:
-      let
-        t = float(step) / float(BAND_STEPS)
-        off = reach * edged(t, BOX_LEAVE, BOX_ACROSS) *
-                      edged(1 - t, BOX_LEAVE, BOX_ACROSS)
-      result.add (a.x + (b.x - a.x) * t + across.x * off,
-                  a.y + (b.y - a.y) * t + across.y * off)
-
-  func drawn(pts: seq[Point]): seq[Point] =
-    let reach = min(R + CAP, dist(a, b) / 3)
-    var cut = trimEnd(pts, a, reach)
-    cut = reversed(trimEnd(reversed(cut), b, reach))
-    resample(cut, ROUTE_N)
-
-  for try_no in 0 .. BOW_TRIES:
-    let thrown = drawn(curveWith(swell * (1 + BOW_MORE * float(try_no))))
-    if marks.allIt(nearestOn(thrown, it.centre) >= it.clear):
-      return thrown
-    result = thrown
+func wound*(a, b: Point; across: Point; phi_a, sweep: float;
+    radius = BODY_R): seq[Point] =
+  ## Route one reach of a wound pair: the shadow a wound arm casts from
+  ## above (rules 27 and 28).
+  ##   Two held hands sit on their own bodies' rims, a body's radius off the
+  ##     pair's axis, and winding the pair carries them round that axis.
+  ##     From above all that is left of going round is how far off the axis
+  ##     the arm is, which swings with the angle -- so a reach's offset is
+  ##     `radius * sin` of an angle that runs from what one hand makes with
+  ##     the axis to what the other does, the long way round if the pair has
+  ##     wound further.
+  ##   That is the whole of the drawing.  At no wind the angle holds still
+  ##     and the reach is straight.  At a half turn it sweeps half way round
+  ##     and the offset crosses the axis once: the pair makes an **X**.  At
+  ##     a whole turn it sweeps the whole way and crosses twice, once by
+  ##     each dancer, with a **diamond** between: rule 27's shape, arrived
+  ##     at rather than imposed.
+  ##   Nothing else moves off the chord, so the ends stay exactly on their
+  ##     hands and a turn's frames blend into one another without a jump --
+  ##     which is what rule 28 asks for.
+  var pts: seq[Point]
+  let
+    off_a = radius * sin(phi_a)
+    off_b = radius * sin(phi_a + sweep)
+    # Wound strands pull in on each other where they are wound, and are
+    # held apart only where they are held: at the hands.
+    nip = WIND_NIP * min(abs(sweep) / (2 * PI), 1.0)
+  for step in 0 .. BAND_STEPS:
+    let
+      t = float(step) / float(BAND_STEPS)
+      drawn_in = radius * (1 - nip * sin(PI * t))
+      # The chord's own offset taken out and the swung one put in, so the
+      # two ends are the hands however far the middle has gone round.
+      swung = drawn_in * sin(phi_a + sweep * t) -
+              (off_a + (off_b - off_a) * t)
+    pts.add (a.x + (b.x - a.x) * t + across.x * swung,
+             a.y + (b.y - a.y) * t + across.y * swung)
+  let reach = min(R + CAP, dist(a, b) / 3)
+  var cut = trimEnd(pts, a, reach)
+  cut = reversed(trimEnd(reversed(cut), b, reach))
+  resample(cut, ROUTE_N)
 
 
 func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
