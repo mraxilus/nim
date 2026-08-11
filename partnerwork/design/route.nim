@@ -44,7 +44,25 @@ const
   LOOP_STEPS* = 24    ## Points per pigtail loop, enough to read as a circle.
   BRAID_R* = 9.0      ## How far a braided pair swings off its straight line.
   BRAID_STEPS* = 96   ## Points along a braided reach, before resampling.
+  BAND_STEPS* = 120   ## Points along a reach relaxed past marks, before it.
   CROSS_NEAR* = 2.0   ## How close two reaches pass to count as crossing.
+
+const
+  BAND_PASSES* = 240    ## Turns of pulling tight and pushing clear.
+    ## Enough for a band round the marks a figure holds to stop moving: the
+    ##   pull travels one point a pass, so a band of `BAND_STEPS` needs
+    ##   several times its own length to settle end to end.
+  SHOVES* = 8           ## Shoves a point gets per pass to leave every mark.
+  BAND_PULL* = 0.5      ## How far a point goes towards its neighbours' middle.
+    ## Half way is the most that stays steady; further and the band shivers
+    ##   instead of settling.
+  CLEAR_PASSES* = 12    ## Times a band may be widened to what it left clear.
+    ## Widening a mark moves the band, which can hand the shortfall to the
+    ##   mark next door, so the settling takes a few goes; `checks` measures
+    ##   the line that comes out rather than trusting that it did.
+  CLEAR_ENOUGH* = 0.01  ## Shortfall small enough to stop widening at.
+    ## A hundredth of a unit is a fiftieth of the thinnest thing drawn, so a
+    ##   band that is this close is as clear as the picture can show.
 
 
 func segHits*(p, q: Point; body: Body): bool =
@@ -229,6 +247,124 @@ func straightReach*(a, b: Point): seq[Point] =
   var pts = trimEnd(@[a, b], a, reach)
   pts = reversed(trimEnd(reversed(pts), b, reach))
   resample(pts, ROUTE_N)
+
+
+type Mark* = tuple ## Something a settled reach must not run through.
+  centre: Point
+  clear: float
+
+
+func nearestOn*(pts: seq[Point]; q: Point): float =
+  ## Measure how close a drawn line comes to a point, segments and all.
+  ##   Sampled points alone would miss the sag between them, which is the
+  ##     very place a line that looks clear stops being clear.
+  result = Inf
+  for i in 0 ..< pts.high:
+    let
+      (a, b) = (pts[i], pts[i + 1])
+      run = (x: b.x - a.x, y: b.y - a.y)
+      square = run.x * run.x + run.y * run.y
+      along = if square < 1e-12: 0.0
+              else: clamp(((q.x - a.x) * run.x + (q.y - a.y) * run.y) / square,
+                          0.0, 1.0)
+      near: Point = (a.x + run.x * along, a.y + run.y * along)
+    result = min(result, dist(near, q))
+
+
+func clearedReach*(a, b: Point; marks: seq[Mark]): seq[Point] =
+  ## Route a settled reach as a string pulled taut past the marks in its
+  ## way, and straight everywhere else (rule 22).
+  ##   A line through a hand cell it does not end on says that hand is
+  ##     held; a line through a chevron hides a facing.  So the line is a
+  ##     band, pinned at the two hands, that no mark may be inside.
+  ##   It is found the way a band finds its own shape: start it straight,
+  ##     then take turns pulling it tight -- each point drawn towards the
+  ##     midpoint of its neighbours -- and pushing whatever has ended up
+  ##     inside a mark back out to that mark's edge.  Where nothing is in
+  ##     the way the pulling wins outright and the band is straight; where
+  ##     something is, the band lies along its edge and leaves on the side
+  ##     it was already passing.
+  ##     Cost of relaxing rather than solving: the shape is the settled
+  ##       state of a hundred small steps, not a closed form, and a mark
+  ##       sitting exactly on the straight line is turned either way by an
+  ##       arithmetic hair.  Accepted -- it is what a real band does, it
+  ##       bends locally instead of taking one side for the whole reach, and
+  ##       the result is measured rather than trusted.
+  ##   A reach is drawn as `ROUTE_N` points joined by straight segments, and
+  ##     a segment is a chord across whatever the band is bending round --
+  ##     which falls inside the curve it stands on.  So each mark is asked
+  ##     for a little more than it needs, by exactly that depth, and the
+  ##     drawn line is then measured against what the marks really are.
+  let span = dist(a, b)
+  if marks.len == 0 or span < 1e-9:
+    return straightReach(a, b)
+
+  func drawnOver(asked: seq[Mark]): seq[Point] =
+    ## The whole reach for one set of askings, trimmed and sampled as drawn.
+    var band: seq[Point]
+    for step in 0 .. BAND_STEPS:
+      let part = float(step) / float(BAND_STEPS)
+      band.add (a.x + (b.x - a.x) * part, a.y + (b.y - a.y) * part)
+    for pass_no in 1 .. BAND_PASSES:
+      for i in 1 ..< band.high:
+        let
+          pull: Point = ((band[i - 1].x + band[i + 1].x) / 2,
+                         (band[i - 1].y + band[i + 1].y) / 2)
+        band[i] = (band[i].x + (pull.x - band[i].x) * BAND_PULL,
+                   band[i].y + (pull.y - band[i].y) * BAND_PULL)
+        # Pushed out of the mark it is deepest inside, and then out of
+        # whatever that put it into, and so on.  Marks overlap -- a chevron
+        # is a row of them along its own legs -- so a point shoved clear of
+        # each in turn ends up inside the one before; the deepest first is
+        # what actually leaves the whole huddle.
+        for shove in 1 .. SHOVES:
+          var
+            deepest = -1
+            depth = 0.0
+          for k, mark in asked:
+            let into = mark.clear - dist(band[i], mark.centre)
+            if into > depth:
+              depth = into
+              deepest = k
+          if deepest < 0:
+            break
+          let mark = asked[deepest]
+          # Out to the edge, the way it already lay; a point exactly on a
+          # mark's centre has no way of its own, so it takes the band's.
+          var away = (x: band[i].x - mark.centre.x,
+                      y: band[i].y - mark.centre.y)
+          if hypot(away.x, away.y) < 1e-9:
+            let run = (x: band[i + 1].x - band[i - 1].x,
+                       y: band[i + 1].y - band[i - 1].y)
+            away = (x: -run.y, y: run.x)
+          let length = hypot(away.x, away.y)
+          band[i] = (mark.centre.x + away.x / length * mark.clear,
+                     mark.centre.y + away.y / length * mark.clear)
+    let reach = min(R + CAP, span / 3)
+    var pts = trimEnd(band, a, reach)
+    pts = reversed(trimEnd(reversed(pts), b, reach))
+    resample(pts, ROUTE_N)
+
+  func sagged(asked: seq[Mark]; length: float): seq[Mark] =
+    ## The same marks, each grown by how deep the drawn chord across it cuts.
+    let step = length / float(ROUTE_N - 1)
+    for mark in asked:
+      result.add (mark.centre, mark.clear + step * step / (8 * mark.clear))
+
+  var
+    asked = marks
+    length = span
+  for pass_no in 0 .. CLEAR_PASSES:
+    result = drawnOver(sagged(asked, length))
+    length = polylineLen(result)
+    var lost = 0.0
+    for i, mark in marks:
+      let short = mark.clear - nearestOn(result, mark.centre)
+      if short > 0:
+        asked[i].clear += short
+        lost = max(lost, short)
+    if lost < CLEAR_ENOUGH:
+      break
 
 
 func pigtailed*(a, b: Point; loops: int): seq[Point] =

@@ -118,10 +118,43 @@ func danceable*(pose: Pose; holds: Holds;
   true
 
 
+func clearingMarks*(put: Pose; a, b: Point): seq[Mark] =
+  ## List what a settled reach between these two hands has to keep out of
+  ## (rule 22).
+  ##   Every hand mark but the two it joins -- a line through one says that
+  ##     hand is held -- and both chevrons, which a line through hides.
+  ##   Each clearance is what that mark actually reaches, so the daylight is
+  ##     seen and not guessed; and this is the one list, read by the drawing
+  ##     and by the check that measures it.
+  ##   A hand is one disc, because a hand's mark is compact.  A chevron is a
+  ##     thin V, so it is a string of small discs walked along its own two
+  ##     legs -- a single disc over the whole of it would cover the middle
+  ##     of the body and push every reach outside it.
+  let p = handsOf(put)
+  for who in Dancer:
+    let drawn = chevronPoints(put.place[who], put.facing[who])
+    for leg in 0 .. 1:
+      for step in 0 .. CHEVRON_STEPS:
+        let part = float(step) / float(CHEVRON_STEPS)
+        result.add ((drawn[leg].x + (drawn[leg + 1].x - drawn[leg].x) * part,
+                     drawn[leg].y + (drawn[leg + 1].y - drawn[leg].y) * part),
+                    CHEVRON_CLEAR)
+    for side in Arm:
+      let q = p[who][side]
+      if min(dist(q, a), dist(q, b)) > 0.01:
+        result.add (q, (if who == Dancer.Lead: LEAD_CLEAR else: FOLLOW_CLEAR))
+
+
 func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     over = none(Arm); free = Free.Fade; captions = true;
-    ways: Ways = default(Ways); twist: Twists = NO_TWIST): seq[string] =
+    ways: Ways = default(Ways); twist: Twists = NO_TWIST;
+    clear_marks = false): seq[string] =
   ## Draw every element of one pose, in the order the picture is read from.
+  ##   `clear_marks` asks a straight reach to bend round the marks it does
+  ##     not join (rule 22).  It is off by default so that only the pages
+  ##     that have been looked at under the rule take it: the frame page's
+  ##     straight and wrapping reaches are the next piece of that work, and
+  ##     this flag is where it will be turned on for them.
   # A lock or wrap that does not go round the body is not one, and a state
   # that cannot be danced is an edge that is not drawn -- so this refuses
   # rather than drawing something the rules say does not exist.
@@ -168,6 +201,8 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
           braided(ends.a, ends.b, abs(twist[arm].braid),
                   (if arm == Arm.L: 0.0 else: PI) +
                     (if twist[arm].braid > 0: 0.0 else: PI))
+        elif clear_marks:
+          clearedReach(ends.a, ends.b, clearingMarks(put, ends.a, ends.b))
         else:
           straightReach(ends.a, ends.b)
     else:
@@ -236,7 +271,8 @@ func view*(half: float): string =
 func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
     over = none(Arm); lead_turn = 0.0; follow_turn = 0.0; free = Free.Fade;
     captions = true; pose = none(Pose); half = none(float);
-    ways: Ways = default(Ways); twist: Twists = NO_TWIST): string =
+    ways: Ways = default(Ways); twist: Twists = NO_TWIST;
+    clear_marks = false): string =
   ## Draw one picture, canonical unless a pose is handed in already turned.
   let
     drawn = if pose.isSome: pose.get
@@ -245,7 +281,8 @@ func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
               Dancer.Follow, follow_turn))
     box = if half.isSome: half.get
           else: (if captions: WIDE else: SIZE) / 2
-    bits = partsOf(drawn, holds, levels, over, free, captions, ways, twist)
+    bits = partsOf(drawn, holds, levels, over, free, captions, ways, twist,
+                   clear_marks)
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
 

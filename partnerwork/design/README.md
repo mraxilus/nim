@@ -148,6 +148,20 @@ has happened here more than once.
     only valid one for the current scope."**  A moving hand wears its
     level as a still one does; every transition on the turns page carries
     the above hatch, counted on each build.
+22. **"an arm shouldn't settle in a hand cell it's not connected to. it
+    should bend around all hand cells and chevrons as to not imply
+    connection and not obscure direction. it is however fine to animate
+    smoothly past it as it would do now for a full turn for example."**  A
+    settled reach is a band pulled taut *past* every mark it does not join
+    -- both chevrons and every hand but its own two -- bending locally round
+    each and running straight where nothing is in the way.  The clearance is
+    taken from what is actually drawn: a square's corner, a circle's edge, a
+    chevron's own two strokes, each plus the connection's half width and a
+    seen gap.  The exemption for a moving reach is the rule's own, and the
+    check asserts *both* halves -- statics clear every mark, animations stay
+    straight.  *Carried on the turns pages first; the frame page's straight
+    and wrapping reaches are the next piece, and `partsOf`'s `clear_marks`
+    is the switch that will do it.*
 
 ## What is settled
 

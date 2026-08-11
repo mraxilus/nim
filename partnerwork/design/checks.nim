@@ -587,8 +587,56 @@ proc checkSingleTurns*() =
                     (drawn[0].x - q.x) * (drawn[^1].y - drawn[0].y)) / span)
   doAssert bowed < 0.5,
     &"A reach bows off its chord, which is a wrap; got `{fmt(bowed, 2)}`."
-  told.add &"nothing wraps a body: every reach, standing or turning, is " &
-    &"straight to within {fmt(bowed, 2)} of its own chord"
+  told.add &"nothing wraps a body: every turning reach, and every instant " &
+    &"drawn between its frames, is straight to within {fmt(bowed, 2)} of " &
+    "its own chord"
+
+  # RULE 22.  "an arm shouldn't settle in a hand cell it's not connected to
+  # ... it should bend around all hand cells and chevrons as to not imply
+  # connection and not obscure direction. it is however fine to animate
+  # smoothly past it."  Both halves are measured on the line as drawn: a
+  # settled reach keeps daylight from every mark it does not join, and a
+  # moving one still runs straight through.
+  var
+    daylight = Inf
+    fouled = 0.0
+    kept = 0
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    for single in SINGLES:
+      for arm in Arm:
+        if single.holds[arm].isNone:
+          continue
+        for quarter in 0 ..< QUARTERS_ROUND:
+          let
+            put = settled(quarterPose(way, quarter), single.holds,
+                          levelsFor(single.holds), default(Ways))
+            p = handsOf(put)
+            (a, b) = (p[Dancer.Lead][arm], p[Dancer.Follow][single.holds[arm].get])
+            marks = clearingMarks(put, a, b)
+          for (drawn, moving) in [(clearedReach(a, b, marks), false),
+                                  (straightReach(a, b), true)]:
+            for mark in marks:
+              # Measured as plain daylight: what is left between the drawn
+              # stroke and the drawn mark once both their widths are taken
+              # off, which is what a reader actually sees.
+              let gap = nearestOn(drawn, mark.centre) - mark.clear + SEEN_GAP
+              if moving:
+                fouled = max(fouled, -gap)
+              else:
+                daylight = min(daylight, gap)
+                inc kept
+  doAssert daylight > 0,
+    &"A settled reach ran through a mark; got `{fmt(daylight, 2)}`."
+  # And the exemption is worth having: the straight line these bends replace
+  # really does foul something, so this is not a bend drawn for nothing.
+  doAssert fouled > SEEN_GAP,
+    &"Nothing was ever in a reach's way; got `{fmt(fouled, 2)}`."
+  told.add &"a settled reach bends round every mark it does not join: " &
+    &"{kept} clearances measured, the tightest leaving {fmt(daylight, 2)} " &
+    &"of daylight, where the straight line it replaces buries itself " &
+    &"{fmt(fouled, 1)} into a mark; a turning reach stays straight and " &
+    "passes smoothly across, as the rule allows"
 
   for line in told:
     echo &"  rule: {line}"

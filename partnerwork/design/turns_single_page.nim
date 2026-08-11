@@ -109,6 +109,16 @@ const BODY = """
   the dancers. <b>Stage two</b> brings the picture back — the lead facing
   up, the pair centred. Only a follow's own axis turn needs no second
   stage, because it leaves the framing exactly as it found it.</p>
+  <p><b>A settled reach bends round what it does not hold.</b> A line laid
+  across a hand cell says that hand is in the hold, and a line laid across a
+  chevron hides which way its dancer is facing — so a still figure's
+  connection is a band pulled taut <em>past</em> every mark it does not join,
+  bending locally round each and running straight everywhere else. The
+  clearance is measured from what is actually drawn — a square's corner, a
+  circle's edge, a chevron's two strokes — and asserted on every build.
+  <b>A moving connection is exempt</b>, and stays straight: passing smoothly
+  across a mark is what a turn does, and a bend that appeared and vanished
+  mid-turn would be a mark of its own.</p>
   <p><b>Three rounds, not four.</b> Measured, and asserted on every build:
   the two axis turns each walk a round of their own, and <b>the two orbits
   walk one round between them</b> — a follow orbiting the lead and a lead

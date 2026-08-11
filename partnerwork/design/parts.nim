@@ -426,7 +426,7 @@ func singleTurnParts*(): Parts =
       for quarter in 0 ..< QUARTERS_ROUND:
         result[&"st_{w.tag}_{c}_{quarter}"] = frame("tiny", single.holds,
           levels, captions = false,
-          pose = some quarterPose(way, quarter))
+          pose = some quarterPose(way, quarter), clear_marks = true)
 
       # And every edge, walked in the stages rule 18 asks for.
       for quarter in 0 ..< QUARTERS_ROUND:
@@ -439,10 +439,14 @@ func singleTurnParts*(): Parts =
         result[&"tr_{w.tag}_{c}_{quarter}_{to}"] = animatedPoses("mv",
           single.holds, walk, some half, levels,
           dur = 5.4).replaceFirst("class=\"mv\"", style)
+        # The still stands in where motion is turned off, so it is a settled
+        # picture and bends by rule 22; the moving figure it replaces is the
+        # rule's own exemption and stays straight.
         result[&"tr_{w.tag}_{c}_{quarter}_{to}_still"] = frame("mv still",
           single.holds, levels, captions = false,
           pose = some quarterPose(way, quarter),
-          half = some half).replaceFirst("class=\"mv still\"",
+          half = some half,
+          clear_marks = true).replaceFirst("class=\"mv still\"",
             &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
               &""" height: {n(2 * half * PX)}px"""")
 

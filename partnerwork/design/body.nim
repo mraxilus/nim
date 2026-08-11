@@ -30,6 +30,7 @@ const
   CHEV_OUT* = 7.0    ## How far the centred chevron reaches forward.
   CHEV_BACK* = 1.0   ## And how little it reaches back.
   CHEV_HALF* = 5.0   ## Half its width, well inside the rim.
+  CHEV_W* = 1.6      ## The width its two legs are drawn at.
 
 const
   RIM_STEP* = 3.0    ## Degrees between samples when a route walks the rim.
@@ -48,6 +49,26 @@ const SLOT_OFFSET* = 44.0
 const HAND_GAP* = radToDeg(arcsin((R + CAP) / BODY_R))
   ## The rim's clearance around a hand mark: the same reach the connection
   ## keeps, turned into arc, so boundary and reach stop at one border.
+
+const
+  MARK_STROKE* = 1.5   ## The width a hand mark is outlined at.
+  SEEN_GAP* = 1.2      ## Plain daylight between a reach and what it clears.
+  CHEVRON_STEPS* = 6   ## Discs along one leg of a chevron, so the V is kept
+                       ## clear as the shape it is.
+
+const
+  LEAD_CLEAR* = R * sqrt(2.0) + MARK_STROKE / 2 + CAP + SEEN_GAP
+    ## How far a settled reach stays off a lead's hand: their mark is a
+    ## square, so its corner is the far part of it (rule 22).
+  FOLLOW_CLEAR* = R + MARK_STROKE / 2 + CAP + SEEN_GAP
+    ## And off a follow's, whose mark is a circle.
+  CHEVRON_CLEAR* = CHEV_W / 2 + CAP + SEEN_GAP
+    ## And off a chevron's stroke.
+    ##   The chevron is kept clear along its own two legs rather than as one
+    ##     disc over the whole of it: it is a thin V pointing forward, and a
+    ##     disc that covered its apex would swallow the middle of a body and
+    ##     send every reach right round the outside -- which is the wrap
+    ##     rule 14 forbids.  So the shape is cleared as it is drawn.
 
 
 type Free* {.pure.} = enum ## Say how a hand nobody holds is drawn.
@@ -149,23 +170,33 @@ func rim*(centre: Point; facing, a, b: float; width = RIM_W): string =
     " stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
 
 
+func chevronPoints*(centre: Point; facing: float): array[3, Point] =
+  ## Get the three points a chevron is drawn through: a wing, the apex, the
+  ## other wing.
+  ##   One source for the shape, so the drawing and anything that has to
+  ##     keep off it read the same V (rule 22).
+  let
+    rad = degToRad(facing)
+    fwd = (x: sin(rad), y: -cos(rad))
+    across = (x: cos(rad), y: sin(rad))
+  [(centre.x - fwd.x * CHEV_BACK - across.x * CHEV_HALF,
+    centre.y - fwd.y * CHEV_BACK - across.y * CHEV_HALF),
+   (centre.x + fwd.x * CHEV_OUT, centre.y + fwd.y * CHEV_OUT),
+   (centre.x - fwd.x * CHEV_BACK + across.x * CHEV_HALF,
+    centre.y - fwd.y * CHEV_BACK + across.y * CHEV_HALF)]
+
+
 func chevron*(centre: Point; facing: float): string =
   ## Say the facing, small and at the centre of the body.
   ##   In the middle rather than on the rim, because the rim breaks for the
   ##     hands and carries nothing else.  The centre is the one part of a
   ##     dancer nothing else uses.
   let
-    rad = degToRad(facing)
-    fwd = (x: sin(rad), y: -cos(rad))
-    across = (x: cos(rad), y: sin(rad))
-    apex: Point = (centre.x + fwd.x * CHEV_OUT, centre.y + fwd.y * CHEV_OUT)
-    a: Point = (centre.x - fwd.x * CHEV_BACK - across.x * CHEV_HALF,
-                centre.y - fwd.y * CHEV_BACK - across.y * CHEV_HALF)
-    b: Point = (centre.x - fwd.x * CHEV_BACK + across.x * CHEV_HALF,
-                centre.y - fwd.y * CHEV_BACK + across.y * CHEV_HALF)
+    drawn = chevronPoints(centre, facing)
+    (a, apex, b) = (drawn[0], drawn[1], drawn[2])
   &"""<polyline points="{n(a.x)},{n(a.y)} {n(apex.x)},{n(apex.y)}""" &
     &""" {n(b.x)},{n(b.y)}" fill="none" stroke="{QUIET}"""" &
-    " stroke-width=\"1.6\" stroke-linecap=\"round\"" &
+    &" stroke-width=\"{n(CHEV_W)}\" stroke-linecap=\"round\"" &
     " stroke-linejoin=\"round\"/>"
 
 

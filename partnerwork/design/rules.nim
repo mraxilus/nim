@@ -86,6 +86,10 @@ const RULES* = [
     "orbit and axis turns to keep the partner facing the other",
   "also, the animations should also have the above level as that's the " &
     "only valid one for the current scope",
+  "an arm shouldn't settle in a hand cell it's not connected to. it " &
+    "should bend around all hand cells and chevrons as to not imply " &
+    "connection and not obscure direction. it is however fine to animate " &
+    "smoothly past it as it would do now for a full turn for example",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -127,6 +131,13 @@ const RULES* = [
   ##       three rounds of positions.
   ##   Rule 21 puts the level on a moving hand as well as a still one; on
   ##     the turns pages that is above, the only level in scope.
+  ##   Rule 22 keeps a settled reach out of the marks it does not join.
+  ##     A line through a hand cell says the hand is held, and a line
+  ##       through a chevron hides which way its dancer faces; a settled
+  ##       picture must say neither.
+  ##     The exemption for a moving reach is the rule's own: passing
+  ##       smoothly across a mark is what a turn does, and a bend that
+  ##       appeared and vanished mid-move would be a mark of its own.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
