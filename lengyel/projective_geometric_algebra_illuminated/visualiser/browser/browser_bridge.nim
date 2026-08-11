@@ -1232,14 +1232,14 @@ proc nimSelectionPulse(
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
       g_camera, vp, int(width), int(height), float(progress), is_touch,
-      phase = some(g_clock_pulse.phaseAt(int(slot))), swell = float(swell),
+      travel = some(g_clock_pulse.travelAt(int(slot))), swell = float(swell),
     )
   if shaped.isNone: return
 
   let marker = shaped.get
   # Carried against the length this marker actually came out at, so orbiting changes how
   #   fast the comet travels and never where it is. See `selection.PulseClock`.
-  g_clock_pulse.advance(int(slot), marker.around, g_seconds_step_pulse)
+  g_clock_pulse.advance(int(slot), marker.lap, g_seconds_step_pulse)
   if marker.count_run_pulse == 0: return
   result = @[cfloat(marker.count_run_pulse)]
   for run in 0 ..< marker.count_run_pulse:

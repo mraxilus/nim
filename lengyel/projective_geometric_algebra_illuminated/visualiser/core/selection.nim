@@ -126,14 +126,31 @@ const SECONDS_STEP_PULSE_MAX* = 0.1
 
 
 type PulseClock* = object ## Carry each selected object's orientation pulse between frames.
-  ## **A phase per slot, integrated, not a position computed from the clock.** Reading the
-  ## phase straight off the time would mean `frac(now·speed ÷ around)`, and the outline's
-  ## length changes whenever the camera moves: after a few laps that quotient is tens of
-  ## laps, so a one-percent change in the length throws the answer most of a lap and the
-  ## comet teleports. Measured on the build that did it -- 11.15 px a frame against the 1.0
-  ## it should be, on all ninety sampled frames of an orbit. Carrying the phase instead
-  ## leaves a camera change altering the *rate*, which is the only way a fixed screen speed
-  ## and a smooth pulse are compatible at all.
+  ## **A travel in screen pixels per slot, integrated and reduced, not a position computed
+  ## from the clock.** Two faults have been fixed here and the second is the reason the
+  ## units are pixels rather than a fraction:
+  ##
+  ## 1. Reading a *phase* straight off the time meant `frac(now·speed ÷ around)`, and the
+  ##    outline's length changes whenever the camera moves: after a few laps that quotient
+  ##    is tens of laps, so a one-percent change in the length throws the answer most of a
+  ##    lap and the comet teleports. Measured -- 11.15 px a frame against the 1.0 it should
+  ##    be, on all ninety sampled frames of an orbit.
+  ## 2. Carrying a phase across frames fixed that, but a phase is a *fraction of an outline
+  ##    measured this frame*, and `samplePulse` turned it back into a position by
+  ##    multiplying by that outline's current length from that outline's current first
+  ##    point. For a line both of those are viewport-clip artefacts, so the head still slid
+  ##    under the camera. What is carried now is the distance travelled from the outline's
+  ##    own anchor, in pixels, advanced by `speed·seconds` with **no camera quantity in the
+  ##    advance at all** -- so a fixed screen pace is true by construction rather than by
+  ##    argument.
+  ##
+  ## **The travel is reduced into the current lap every frame, and that is load-bearing.**
+  ## An unbounded travel read back as `travelled mod lap` would amplify a one-percent change
+  ## in the lap by however many laps had accumulated -- fault 1 again, in new units. Reduced
+  ## each frame the travel is always below one lap, the amplification is exactly one, and
+  ## the only camera-caused discontinuity left is a lap arriving up to one frame's shrink
+  ## early, which is reachable only when the head is already that close to the end of its
+  ## run.
   ##
   ## A plain fixed array, like `Scene` and `MeshSet` beside it, not an arena allocation:
   ## one float per slot with a compile-time bound and a lifetime as long as the program's
@@ -145,7 +162,8 @@ type PulseClock* = object ## Carry each selected object's orientation pulse betw
   ## Kept here rather than in `marker.nim` because it is indexed by *slot* and the pulse
   ## runs on exactly the selected set, which is the view of the scene this module already
   ## is. A plain value type with no refs, like `Selection` above.
-  phases: array[ITEMS_MAX, float] ## Each slot's own phase, in 0 .. 1.
+  travels: array[ITEMS_MAX, float] ## Each slot's own travel along its marker's outline, in
+    ## screen pixels from that outline's own anchor, always reduced below one lap.
   seconds_last: Option[float] ## Clock reading `tick` last saw, for the step between frames.
 
 
@@ -170,17 +188,21 @@ func secondsStep*(clock: PulseClock; now: float): float =
   min(SECONDS_STEP_PULSE_MAX, max(0.0, now - clock.seconds_last.get))
 
 
-proc advance*(clock: var PulseClock; slot: int; around, seconds: float) =
-  ## Carry one slot's pulse forward along an outline `around` pixels long.
-  ##   `around` is what the marker just shaped actually measured (`Marker.around`), so the
-  ##   rate follows the outline as the camera moves it while the phase never jumps.
+proc advance*(clock: var PulseClock; slot: int; lap, seconds: float) =
+  ## Carry one slot's pulse forward by the pixels `seconds` is worth, reduced into a lap
+  ## `lap` pixels long.
+  ##   `lap` is what the marker just shaped actually measured (`Marker.lap`) and enters only
+  ##   the reduction, never the step: the step is `SPEED_MARKER_PULSE*seconds` whatever the
+  ##   camera is doing, which is what makes the comet's screen pace a fact rather than an
+  ##   aspiration. Reducing here rather than at the point of use is what keeps the carried
+  ##   travel below one lap; see this type's own doc comment for why that is not tidiness.
   if slot < 0 or slot >= ITEMS_MAX: return
-  clock.phases[slot] = phaseAdvanced(clock.phases[slot], around, seconds)
+  clock.travels[slot] = travelAdvanced(clock.travels[slot], lap, seconds)
 
 
-func phaseAt*(clock: PulseClock; slot: int): float =
-  ## Read one slot's own pulse phase, in 0 .. 1.
-  if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.phases[slot]
+func travelAt*(clock: PulseClock; slot: int): float =
+  ## Read one slot's own pulse travel, in screen pixels from its outline's anchor.
+  if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.travels[slot]
 
 
 proc forget*(clock: var PulseClock; slot: int) =
@@ -188,4 +210,4 @@ proc forget*(clock: var PulseClock; slot: int) =
   ##   Call where a slot is handed to a fresh object, so a new selection begins its comet
   ##   at the head rather than inheriting wherever a since-removed object had got to.
   if slot < 0 or slot >= ITEMS_MAX: return
-  clock.phases[slot] = 0.0
+  clock.travels[slot] = 0.0

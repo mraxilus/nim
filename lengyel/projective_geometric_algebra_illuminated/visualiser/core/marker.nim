@@ -276,10 +276,20 @@ type
       ## a circle while it expands, the viewport's own rectangle once it arrives.
 
   Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
-    around*: float ## Length of the outline the runs below were laid along, in pixels; 0
-      ## where nothing pulses. Reported back because it is what a caller advances the
-      ## pulse against -- see `selection.PulseClock`, which needs the length this marker
-      ## actually came out at and cannot know it before the marker is shaped.
+    anchors_pulse*: array[RUNS_MARKER_PULSE, ScreenPosition] ## Where each run below
+      ## measured its travel from, in screen space.
+      ##   Reported for the same reason `lap` is: it is a fact about the marker that only
+      ## the shaping knew, and the one that decides whether the comet holds still under
+      ## a moving camera. Without it that property cannot be asserted from outside this
+      ## module, and it going unasserted is precisely how a sliding comet shipped twice.
+    lap*: float ## Distance a pulse on this marker travels before it is back where it
+      ## began, in screen pixels; 0 where nothing pulses.
+      ##   Not "the length of the outline": a rail's drawn length is a viewport-clip
+      ## artefact, and a line's two rails are clipped to lengths that have been measured
+      ## hundreds to one apart. What this reports is the stretch both of them lap against,
+      ## which is the shorter -- and reporting it is what lets `selection.PulseClock` reduce
+      ## a travel it cannot measure for itself, since only the shaping knows what this
+      ## marker actually came out as.
     count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
     counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Outline points used of each run.
     pulses*: array[
@@ -340,10 +350,11 @@ func lengthOfOutline*(
   points: openArray[ScreenPosition]; count: int; is_closed: bool
 ): float =
   ## Measure an outline right round, in screen pixels.
-  ##   What a caller needs to turn `SPEED_MARKER_PULSE` into a phase for the outline in
-  ##   front of it. `samplePulse` walks the same points again for its own table of where
-  ##   each segment starts, which is the price of the phase being the caller's to say --
-  ##   and it has to be, or a line's two rails would each keep their own clock.
+  ##   The primitive `trackAlong` below is built from, and what a caller needs to know how
+  ##   far a pulse may run before it laps. `samplePulse` walks the same points again for its
+  ##   own table of where each segment starts, which is the price of the lap being the
+  ##   caller's to say -- and it has to be, or a line's two rails would each keep their own
+  ##   clock and drift apart.
   if count < 2: return
   let last = if is_closed: count else: count - 1
   for i in 0 ..< last:
@@ -351,23 +362,90 @@ func lengthOfOutline*(
     result += hypot(after.x - points[i].x, after.y - points[i].y)
 
 
-func phaseAdvanced*(phase, around, seconds: float): float =
-  ## Carry a pulse's phase forward by `seconds` along an outline `around` pixels long,
-  ## wrapping into 0 .. 1.
-  ##   **An advance, not a position.** A phase read straight off the clock would have to be
-  ##   `frac(now·speed ÷ around)`, and `around` changes whenever the camera moves: after a
-  ##   few laps `now·speed` is tens of thousands of pixels, so a one-percent change in the
-  ##   outline's length throws the wrapped answer most of a lap and the comet teleports.
-  ##   Measured on the build that did it: with the camera orbiting, the head moved a median
-  ##   of **11.15 px a frame against the 1.0 it should**, and every one of ninety sampled
-  ##   frames was more than twice the honest step.
-  ##   Integrating instead leaves a camera change altering the *rate* and never the
-  ##   position, which is what makes a fixed screen speed and a smooth pulse compatible at
-  ##   all. `selection.PulseClock` owns the phase this returns; nothing else may.
+type PulseTrack* = object ## Say where a pulse's travel is measured from along one outline,
+  ## and how far it may run either way before it laps.
+  ##   The whole point of the type is that `origin` names a **view-independent** feature of
+  ## the object -- a line's own support, a circle's own angle zero -- rather than whichever
+  ## point of the outline happened to be emitted first. An outline's first point is a cut:
+  ## a rail's is where it crosses the edge of the window, and a cut ring's is wherever the
+  ## eye plane sliced it. Measuring travel from a cut means the camera decides where the
+  ## comet is, which is the fault this type exists to remove.
+  origin*: int ## Index of the point travel is measured from.
+  behind*: float ## Outline available before that point, in pixels.
+  ahead*: float ## Outline available after it, in pixels.
+
+
+func lap*(track: PulseTrack): float = track.behind + track.ahead
+  ## Report the distance after which a pulse on this track is back where it started.
+
+
+func trackAlong*(
+  points: openArray[ScreenPosition]; count: int; is_closed: bool; origin: int = 0
+): PulseTrack =
+  ## Measure an outline either side of the point travel is anchored at, in screen pixels.
+  ##   A closed outline laps on itself, so all of it lies `ahead` and the origin decides
+  ##   only where lap zero begins; an open one is a cut arc with a genuine before and after.
+  if count < 2 or origin < 0 or origin >= count: return
+  result.origin = origin
+  if is_closed:
+    result.ahead = lengthOfOutline(points, count, true)
+    return
+  for i in 0 ..< count - 1:
+    let step = hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y)
+    if i < origin: result.behind += step else: result.ahead += step
+
+
+func originAfterCut*(count_ring, start, count_emitted: int): int =
+  ## Say where a ring's own angle-zero point sits in the arc that survived an eye cut.
+  ##   A cut ring is emitted from `start`, the first point whose predecessor was cut, so
+  ##   emitted index zero is wherever the eye happened to slice it -- a camera's answer, and
+  ##   the same fault a rail's clipped end carries. Angle zero is generated from the
+  ##   object's own frame and is the anchor the pulse must measure from, so this walks it
+  ##   back to where it landed in the emitted run.
+  ##   Falls back to the arc's own start where angle zero is itself behind the eye, which is
+  ##   the one case with no view-independent point left on screen to measure from. The comet
+  ##   is then anchored to the cut for as long as that lasts; there is nothing better, and
+  ##   the alternative is refusing to draw a pulse at all on a plane seen edge on.
+  if count_ring <= 0 or count_emitted <= 0: return
+  result = (count_ring - start) mod count_ring
+  if result >= count_emitted: result = 0
+
+
+func shared*(track: PulseTrack; behind, ahead: float): PulseTrack =
+  ## Put a track on extents shared with another piece of the same marker.
+  ##   A line is drawn as two rails, each clipped to the window on its own, so their lengths
+  ##   can differ by hundreds to one. Lapping each against its own would put the two heads
+  ##   at different places along one line, so both take one reach either way.
+  ##   **The shorter of the two**, so neither rail is ever asked for outline it does not
+  ##   have and both always draw their run. Taking the longer instead was tried, on the
+  ##   theory that a rail near the edge of view shrinks the shared lap and makes the comet
+  ##   wrap too often; measured over four orbit rates it changed nothing at all, so the
+  ##   theory was wrong and the simpler rule stands.
+  PulseTrack(
+    origin: track.origin, behind: min(track.behind, behind), ahead: min(track.ahead, ahead)
+  )
+
+
+func travelAdvanced*(travelled, lap, seconds: float): float =
+  ## Carry a pulse's travel forward by `seconds`, reduced into a lap `lap` pixels long.
+  ##   **An advance, not a position, and a step in pixels rather than in laps.** Two faults
+  ##   were fixed here in turn and the second is why this counts pixels:
+  ##   a position read straight off the clock is `frac(now·speed ÷ around)`, whose answer a
+  ##   one-percent change in the outline's length throws most of a lap -- measured at a
+  ##   median **11.15 px a frame against the 1.0 it should be** while orbiting; and a
+  ##   carried *fraction* still had to be multiplied back by a view-dependent length to
+  ##   become a place, which slid the head under the camera for a second time.
+  ##   `seconds*SPEED_MARKER_PULSE` mentions no camera quantity at all, so the screen pace
+  ##   is exact by construction. `lap` enters only the reduction.
+  ##   **Reducing every step, rather than letting the travel accumulate**, is what keeps
+  ##   this from being the first fault again: an unbounded travel taken modulo the lap
+  ##   amplifies a change in that lap by however many laps have gone by, where a travel
+  ##   already below one lap amplifies it by exactly one.
   ##   Unchanged for an outline of no length, which has nowhere to travel.
-  if around <= 0.0: return phase
-  let carried = phase + seconds*SPEED_MARKER_PULSE/around
-  carried - floor(carried)
+  ##   `selection.PulseClock` owns the travel this returns; nothing else may.
+  if lap <= 0.0: return travelled
+  let carried = travelled + seconds*SPEED_MARKER_PULSE
+  carried - floor(carried/lap)*lap
 
 
 func ribbonAlong(
@@ -440,11 +518,11 @@ func ribbonAlong(
 
 
 func samplePulse(
-  points: openArray[ScreenPosition]; count: int; is_closed: bool; phase: float;
-  run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+  points: openArray[ScreenPosition]; count: int; is_closed: bool; track: PulseTrack;
+  travelled: float; run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
 ): int =
-  ## Lay a pulse along `count` points of an outline at `phase`, filling `run` and
-  ## reporting how many of it were used.
+  ## Lay a pulse along `count` points of an outline, `travelled` pixels from `track`'s own
+  ## anchor, filling `run` and reporting how many of it were used.
   ##   Walks the stored order, which is the whole mechanism: a plane's loop is generated
   ##   around its own frame, so *the projection decides* whether that order comes out
   ##   clockwise or anticlockwise on screen, and the pulse reverses of its own accord as
@@ -452,9 +530,18 @@ func samplePulse(
   ##   The run trails *behind* the leading point, so the outline it has just covered is
   ##   what is lit -- a head with a tail reads as travel, where an even band reads as a
   ##   gap in the outline.
-  ##   An open arc clamps rather than wraps: its two ends are a cut the eye made, and a
-  ##   pulse crossing that cut would run straight across the view. It simply shortens
-  ##   there, and reports 0 where too little of it survives to draw.
+  ##   **Measured from `track.origin`, not from the outline's first point.** The first point
+  ##   is wherever this outline happened to be cut -- the edge of the window for a rail, the
+  ##   eye plane for a sliced ring -- so measuring from it hands the camera the comet's
+  ##   position. The anchor is a feature of the object instead, and this is the whole of the
+  ##   fix; see `PulseTrack`.
+  ##   **The head wraps and the tail clamps.** Wrapping the tail too would put spine points
+  ##   at both ends of an open arc, and `ribbonAlong` joins consecutive points, so the mark
+  ##   would draw a chord straight across the view -- the very thing an arc's own cut-start
+  ##   rule exists to prevent. Clamping shortens the run to nothing as the head crosses the
+  ##   wrap and grows it back over the next `LENGTH_MARKER_COMET`, which reads as a comet
+  ##   leaving one edge and re-entering at the other.
+  ##   Reports 0 where too little of it survives to draw.
   ##   Walked **by pixels along the outline, not by index into it**. Stepping by index
   ##   would make the run's length a share of the outline -- so a plane's circle seen close
   ##   up would wear a long gradient where a line's rail wore a compact comet -- and would
@@ -471,13 +558,21 @@ func samplePulse(
   let total = starts[last]
   if total <= 0.0: return
 
+  # The stretch actually available to travel on, which is the track's rather than the whole
+  #   outline's: a ring the eye has cut carries a near-plane segment of enormous projected
+  #   length, and sizing the run against that would light almost none of what is on screen.
+  let window = track.lap
+  if window <= 0.0 or track.origin < 0 or track.origin >= count: return
   let
-    reach = min(LENGTH_MARKER_COMET, FRACTION_MARKER_PULSE*total)
-    head = phase*total
+    reach = min(LENGTH_MARKER_COMET, FRACTION_MARKER_PULSE*window)
+    begin = starts[track.origin] - track.behind
+    carried = travelled + track.behind
+    head = begin + (carried - floor(carried/window)*window)
   for i in 0 ..< SEGMENTS_MARKER_PULSE:
     var along = head - reach*(float(i)/float(SEGMENTS_MARKER_PULSE - 1))
     if is_closed: along = along - floor(along/total)*total
-    elif along < 0.0 or along > total: continue
+    # `along` only decreases, so nothing behind a sample off the run can be back on it.
+    elif along < begin or along > total: break
     var segment = last - 1
     for j in 0 ..< last:
       if along < starts[j + 1]:
@@ -493,7 +588,7 @@ func samplePulse(
 
 func addPulse(
   marker: var Marker; points: openArray[ScreenPosition]; count: int; is_closed: bool;
-  phase: float
+  track: PulseTrack; travelled: float
 ) =
   ## Add one run of the pulse to `marker`, taken along `count` points of one outline.
   ##   Silently adds nothing where the run came out too short to draw or where the marker
@@ -501,13 +596,14 @@ func addPulse(
   ##   not failures a caller could act on.
   if marker.count_run_pulse >= RUNS_MARKER_PULSE: return
   var spine: array[SEGMENTS_MARKER_PULSE, ScreenPosition]
-  let sampled = samplePulse(points, count, is_closed, phase, spine)
+  let sampled = samplePulse(points, count, is_closed, track, travelled, spine)
   if sampled == 0: return
   let used = ribbonAlong(
     spine, sampled, float(WIDTH_MARKER_COMET), float(WIDTH_MARKER),
     marker.pulses[marker.count_run_pulse],
   )
   if used == 0: return
+  marker.anchors_pulse[marker.count_run_pulse] = points[track.origin]
   marker.counts_pulse[marker.count_run_pulse] = used
   inc marker.count_run_pulse
 
@@ -727,7 +823,7 @@ func apartWidest(walks: array[2, array[3, Option[ScreenPosition]]]): float =
 func markerRails(
   geometry: Multivector; scale: DrawExtent; placement: Camera;
   view_projection: Matrix4; width, height: int; progress, clearance: float;
-  phase: Option[float]
+  travel: Option[float]
 ): Option[Marker] =
   ## Build a line's own pair of rails: two straight screen lines flanking it, one to each
   ## side, holding `OFFSET_MARKER_RAIL` pixels of clear space and closing only on a
@@ -755,14 +851,19 @@ func markerRails(
   ##   axis, so scaling that reach walks the head back to the camera rather than in toward
   ##   the support. Interpolating on screen still keeps every partial rail exactly on the
   ##   rail it will become -- both endpoints lie on it and a straight segment is straight.
-  ##   `phase` places **one** pulse along each rail, **in the line's own direction**, which is
-  ##   what a line has instead of a face to be on. Each rail is *drawn* as two halves,
+  ##   `travel` places **one** pulse along each rail, **in the line's own direction**, which
+  ##   is what a line has instead of a face to be on. Each rail is *drawn* as two halves,
   ##   outward from the support toward either horizon, but it is *walked* as one path from
   ##   the far horizon through the support to the near one -- so a selected line wears one
   ##   comet travelling its length rather than four at four unrelated places, and the
   ##   direction falls out of the walk instead of needing the `-axis` half mirrored back.
-  ##   Both rails take the one phase they are handed, so the pair cannot drift apart; the
-  ##   length reported back is the first rail's, which is what the caller advances against.
+  ##   **Measured from the support, and lapped against the shorter of the two rails.** The
+  ##   travel is a distance from a point on the line itself, so the camera can restretch the
+  ##   rails without moving the comet along them; measuring from a rail's end instead would
+  ##   measure from wherever the window cut it, which is the camera's answer and not the
+  ##   line's. Both rails take the one travel they are handed and one shared lap, so the
+  ##   pair cannot drift apart even though the window clips them to wildly different
+  ##   lengths.
   ##   None leaves the rails still.
   ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
   ##   where the line collapses to a point on screen, which is the eye standing on it: a
@@ -777,6 +878,10 @@ func markerRails(
   var
     marker = Marker(kind: MarkerKind.Rails)
     walks: array[2, array[3, Option[ScreenPosition]]]
+    rails: array[2, array[3, ScreenPosition]] ## Each side compacted to what survived.
+    counts: array[2, int] ## How many of each side's three points that was.
+    origins: array[2, int] ## Where the support landed in each, for the pulse to measure on.
+    tracks: array[2, PulseTrack] ## Each side's own reach either way from that support.
   let offset_stated = offsetMarkerRail(anchor.get, scale, clearance)
   # **Settled against the finished rail, then drawn at the progress asked for.** How far
   #   apart the pair stands is a fact about this line under this camera, not about how far
@@ -839,18 +944,37 @@ func markerRails(
       (walks[index_side][0], walks[index_side][1], walks[index_side][2])
     # The rail as one walk ordered along the line, from its `-axis` end through the
     #   support to its `+axis` end. Either end may be missing, clipped away by the eye.
-    var
-      rail: array[3, ScreenPosition]
-      count_rail = 0
-    for point in [end_before, support, end_after]:
+    #   The support's own position in that walk is recorded as it goes in -- by its place in
+    #   the source triple, never by comparing points, since two of them can coincide -- and
+    #   that is where the pulse measures from: the support is the line's own point, where
+    #   both ends are wherever the window happened to cut the rail.
+    for index_source, point in [end_before, support, end_after]:
       if point.isNone: continue
-      rail[count_rail] = point.get
-      inc count_rail
+      if index_source == 1: origins[index_side] = counts[index_side]
+      rails[index_side][counts[index_side]] = point.get
+      inc counts[index_side]
+    if counts[index_side] >= 2:
+      tracks[index_side] = trackAlong(
+        rails[index_side], counts[index_side], is_closed = false, origins[index_side]
+      )
 
-    if phase.isSome and count_rail >= 2:
-      if marker.around <= 0.0:
-        marker.around = lengthOfOutline(rail, count_rail, false)
-      marker.addPulse(rail, count_rail, is_closed = false, phase.get)
+  if travel.isSome:
+    # Both rails lap against one shared reach either way, so a line's pair travels as one
+    #   mark rather than each rail keeping its own clock; see `shared` for which reach and
+    #   for the measurement that settled it.
+    var (behind, ahead) = (Inf, Inf)
+    for index_side in 0 .. 1:
+      if counts[index_side] < 2: continue
+      behind = min(behind, tracks[index_side].behind)
+      ahead = min(ahead, tracks[index_side].ahead)
+    if behind < Inf and ahead < Inf:
+      marker.lap = behind + ahead
+      for index_side in 0 .. 1:
+        if counts[index_side] < 2: continue
+        marker.addPulse(
+          rails[index_side], counts[index_side], is_closed = false,
+          tracks[index_side].shared(behind, ahead), travel.get,
+        )
   some(marker)
 
 
@@ -889,7 +1013,7 @@ func positionsMarkerLoop*(
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; phase: Option[float]
+  progress, clearance: float; travel: Option[float]
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
@@ -905,7 +1029,7 @@ func markerLoop(
   ##   units on the plane, which keeps every intermediate circle lying on that plane as
   ##   exactly as the finished one does -- growing it on screen instead would lift it off
   ##   the surface for the whole of the animation and only settle at the end.
-  ##   `phase` places a pulse round the circle, **anticlockwise on screen exactly when
+  ##   `travel` places a pulse round the circle, **anticlockwise on screen exactly when
   ##   the plane's normal points at the eye**. Nothing here computes that sense: the points
   ##   are generated around the plane's own frame, and which way that order comes out on
   ##   screen is the projection's answer, so the pulse reverses of its own accord as the
@@ -949,9 +1073,17 @@ func markerLoop(
     if not are_in_front[i]: break
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
-  if phase.isSome:
-    marker.around = lengthOfOutline(marker.points, marker.count_point, marker.is_closed)
-    marker.addPulse(marker.points, marker.count_point, marker.is_closed, phase.get)
+  if travel.isSome:
+    # Anchored at the circle's own angle zero, walked back through the cut; see
+    #   `originAfterCut` for why the emitted run's first point will not do.
+    let track = trackAlong(
+      marker.points, marker.count_point, marker.is_closed,
+      originAfterCut(SEGMENTS_MARKER_LOOP, start, marker.count_point),
+    )
+    marker.lap = track.lap
+    marker.addPulse(
+      marker.points, marker.count_point, marker.is_closed, track, travel.get
+    )
   some(marker)
 
 
@@ -975,7 +1107,7 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; phase: Option[float]
+  progress, clearance: float; travel: Option[float]
 ): Option[Marker] =
   ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
   ## the great circle the line itself is drawn as.
@@ -987,7 +1119,7 @@ func markerBands(
   ##   Cuts each band to whatever stays in front of the eye and reports the remainder as
   ##   an arc, exactly as `markerLoop` does -- half the sky is behind the camera at all
   ##   times, so this is the common case here rather than an edge one.
-  ##   `phase` places a pulse round both bands, taking its sense from the great
+  ##   `travel` places a pulse round both bands, taking its sense from the great
   ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
   ##   laid out around that normal's frame, so the projection answers which way they read.
   ##   Both bands rather than one -- an outline drawn in pieces that pulses in only some of
@@ -1034,14 +1166,18 @@ func markerBands(
       if not are_in_front[i]: break
       marker.points_band[side][marker.counts_band[side]] = ring[i]
       inc marker.counts_band[side]
-    if phase.isSome:
-      if marker.around <= 0.0:
-        marker.around = lengthOfOutline(
-          marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side]
-        )
+    if travel.isSome:
+      # Each band is anchored at its own angle zero, which `spanPerpendicular` fixes from
+      #   the geometry alone, so the two bands stay in step through a cut. Lapped against
+      #   the first band that produced one, for the reason a line's rails share theirs.
+      let track = trackAlong(
+        marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side],
+        originAfterCut(SEGMENTS_MARKER_BANDS, start, marker.counts_band[side]),
+      )
+      if marker.lap <= 0.0: marker.lap = track.lap
       marker.addPulse(
         marker.points_band[side], marker.counts_band[side],
-        marker.are_closed_band[side], phase.get,
+        marker.are_closed_band[side], track, travel.get,
       )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
   some(marker)
@@ -1129,7 +1265,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0;
-  is_touch: bool = false; phase: Option[float] = none(float); swell: float = 0.0
+  is_touch: bool = false; travel: Option[float] = none(float); swell: float = 0.0
 ): Option[Marker] =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
@@ -1146,11 +1282,13 @@ func markerFor*(
   ##   the four phases that number comes from. One flag rather than a per-shape rule,
   ##   because what it compensates for -- a fingertip over the thing being marked -- does
   ##   not vary by what is under it.
-  ##   `phase` places the orientation pulse round the outline, and **is what a caller
+  ##   `travel` places the orientation pulse round the outline, and **is what a caller
   ##   passes to say this object is selected**: hover and keyboard focus wear the same
   ##   marker and pass none, so motion means "selected" rather than "went past". It is a
-  ##   *phase*, not a time, and it comes from `selection.PulseClock` -- see there for why
-  ##   a comet's place cannot be a pure function of the clock and the camera together. Its
+  ##   *distance in screen pixels from the outline's own anchor*, not a time and not a
+  ##   fraction, and it comes from `selection.PulseClock` -- see there for why a comet's
+  ##   place cannot be a pure function of the clock and the camera together, and why a
+  ##   fraction of the outline was not far enough from one either. Its
   ##   direction carries the orientation a plane's normal shaft used to -- see
   ##   `markerLoop` for why the projection, not this module, decides which way that reads.
   ##   None where an object has no orientation to state: a point either way, and a plane
@@ -1171,17 +1309,17 @@ func markerFor*(
   of Shape.Line:
     if is_horizon:
       markerBands(
-        geometry, scale, view_projection, width, height, progress, clearance, phase
+        geometry, scale, view_projection, width, height, progress, clearance, travel
       )
     else:
       markerRails(
         geometry, scale, placement, view_projection, width, height, progress, clearance,
-        phase,
+        travel,
       )
   of Shape.Plane:
     if is_horizon: markerFrame(width, height, progress, clearance)
     else:
       markerLoop(
         geometry, anchor_override, scale, placement, view_projection, width, height,
-        progress, clearance, phase,
+        progress, clearance, travel,
       )

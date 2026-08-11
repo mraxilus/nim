@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 209 cases; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 210 cases; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -273,6 +273,32 @@ interpolation stays smooth) from full alpha at
 0.12, tuned by direct visual comparison. The ground plane skips the two lines that would
 coincide with the X/Y axes, avoiding depth-fighting. Axes use standard convention (x red,
 y green, z blue).
+
+**The world axes are reference, not geometry, and they are drawn that way.** Readers kept
+taking them for drawn lines. Measured against the source rather than judged: an axis was the
+only piece of furniture with *no* distance fade, running to 0.95 of the far clip at full
+alpha, while the ground grid faded out at 0.12 — so an axis was the longest and brightest
+mark in any frame. Width already separated them (1.5 px against a line's 2.5, compile-time
+asserted) and clearly was not enough on its own.
+
+Two changes. The axes now fade and cut off on **the grid's own schedule**, so all the
+furniture ends at one horizon and reference reads as a neighbourhood around the origin —
+this deliberately reverses an earlier decision to let them reach indefinitely, which bought
+orientation at any zoom and cost the confusion above. And the three hues are **dimmed and
+desaturated**, through `axisTinted` at compile time from `MUTE_AXIS_TOWARD_GREY` (0.22 →
+0.45) and a new `SCALE_AXIS_LUMINANCE` (0.50). Those constants were previously
+documentation only — the blend was hand-applied into the literals and nothing read the
+constant, so the number and the colours it described could drift apart. They are the source
+now.
+
+**The dimming was settled by the palette gate, not by eye.** A first attempt at 0.62
+luminance read well and *failed* `tools/check_palette`: dimming had walked the green and
+blue axes onto `Rose`'s own luminance and the pairs collapsed under red-green deficiency at
+3.5 and 3.3 ΔE against a floor of 4.0. Going further down clears it, the axes landing below
+every categorical hue rather than among them — the rare case where the accessible answer and
+the quieter one coincide. `check_palette` also gained the floor nobody had: furniture against
+`Backdrop`, since dimming has an obvious other end and nothing was watching it (axes now
+15.7–25.3 ΔE against a floor of 8.0).
 
 **Muting.** `mesh.muted()` blends a colour toward its own luminance
 (`MUTE_DESATURATION` = 0.6) rather than replacing it with `Ink.Grid.colour`, which made a
@@ -532,6 +558,47 @@ same fault, since perspective bunches a tilted circle's points on its far side. 
 now measure 64 px, and so does the drag band's head; `FRACTION_MARKER_PULSE` survives only as
 a cap, for a marker smaller than the run itself, where a fixed length would light most of the
 outline and leave nothing plain to read the lit part against.
+
+**What the comet carries is a distance in pixels from the object's own anchor, and that
+is the second fix here.** The first (below) stopped the phase being recomputed from the
+clock; it did not stop the phase being turned back into a *place* by multiplying by a
+view-dependent length. `samplePulse` did `head = phase*total`, where `total` was the
+outline's screen arc length that frame and the ruler's zero was the outline's first point
+— and for a line's rails that first point is **where the rail crosses the edge of the
+window**, from `fractionLeavingView`. Both ends of the ruler were the camera's answer, so
+holding the phase constant could not hold the head still. A reader reported it, having been
+told in this file that the residual was motion the marker was entitled to; they were right
+and that claim was wrong.
+
+`PulseClock` now carries `travels`, advanced by `SPEED_MARKER_PULSE*seconds` with **no
+camera quantity in the advance at all**, and `PulseTrack` names a view-independent point to
+measure from: a line's own support, a ring's own angle zero. `originAfterCut` walks that
+angle-zero point back through an eye cut, because `markerLoop` and `markerBands` re-pick
+their first emitted point when the near plane slices them — the same fault as a rail's
+clipped end, checked rather than assumed.
+
+**The travel is reduced into the current lap every frame, and that is load-bearing rather
+than tidy.** An unbounded travel read back as `travelled mod lap` amplifies a one-percent
+change in the lap by however many laps have accumulated, which is the original teleport in
+new units. Reduced each frame the amplification is exactly one.
+
+**Measured on the shipped browser build**, orbiting at four rates from still to 0.05 rad a
+frame, sampling the head every frame: the comet's advance *from its own anchor* is **62.4,
+61.7, 62.5 and 63.3 px/s** against the 60 it is asked for — flat across every rate, which
+is the property the reader asked for. Absolute screen motion of course rises with the orbit
+(73, 83 px/s medians) because the line itself is sweeping and a mark on a moving object
+moves with it; the anchor-relative figure is what separates the two.
+**The residual, stated plainly:** at the two faster orbit rates a tenth of frames still show
+a large step (p90 236 and 388 px/s anchor-relative). Those are laps and clip transitions,
+not drift, and they are not yet explained to the standard the medians are. A theory that the
+shared rail window was making the lap too short was tried and **measured to change nothing**,
+so it was reverted rather than kept as a plausible-sounding fix.
+
+A suite case now shapes one marker at 45 placements and asserts the head sits exactly the
+carried travel from its anchor, to within a pixel. **No such case existed**, which is why a
+sliding comet shipped twice: `markerOf` pins one camera, so every pulse case was blind to
+the only thing that was wrong. `Marker.anchors_pulse` exists so that invariant can be
+asserted from outside the module at all.
 
 **The phase is carried between frames, not computed from the clock.** A phase read off the
 time has to be `frac(now·speed ÷ around)`, and `around` changes whenever the camera moves:

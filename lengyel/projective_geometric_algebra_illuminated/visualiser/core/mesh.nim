@@ -190,12 +190,21 @@ const
     ## Blend a muted object's own colour this far toward its own grayscale equivalent,
     ## short of replacing it outright -- keeps a dulled hint of its own hue rather than
     ## converging every muted object to one indistinguishable grey.
-  MUTE_AXIS_TOWARD_GREY* = 0.22'f32
-    ## Blend a world axis's own colour this far toward its own grayscale equivalent --
-    ## much less than `MUTE_DESATURATION`'s 0.6, and with no alpha change (unlike
-    ## `muted()`, a permanent palette entry, not a per-frame "not in focus" dim): enough
-    ## to soften the axes so a bright red/green/blue trio doesn't compete with
-    ## categorical object colours, not so much they stop reading as axes at a glance.
+  MUTE_AXIS_TOWARD_GREY* = 0.45'f32
+    ## Blend a world axis's own colour this far toward its own grayscale equivalent, with
+    ## no alpha change -- unlike `muted()`, this is a permanent palette entry rather than a
+    ## per-frame "not in focus" dim. Enough that a red/green/blue trio stops competing with
+    ## the categorical object colours, not so much that the axes stop reading as axes.
+    ##   Raised from 0.22 on a report that axes were still being taken for drawn lines.
+    ##   **Read by `axisTinted`, which builds the three palette entries from it.** It used
+    ##   to be documentation only, with its blend hand-applied into the literals -- so the
+    ##   number and the colours it described could drift apart with nothing to catch it.
+  SCALE_AXIS_LUMINANCE* = 0.50'f32
+    ## Scale a world axis's blended colour down by this, after the grey blend.
+    ##   Desaturating alone leaves three mid-grey lines as conspicuous as the objects they
+    ##   sit behind; furniture wants to be *dimmer*, not merely less colourful. Together
+    ##   these two put the axes between the ground grid and a drawn object in weight, which
+    ##   is where reference belongs.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -209,6 +218,8 @@ static:
     &"Mute desaturation must fall between 0 and 1; got `{MUTE_DESATURATION}`."
   doAssert MUTE_AXIS_TOWARD_GREY > 0 and MUTE_AXIS_TOWARD_GREY <= 1.0,
     &"Axis mute fraction must fall between 0 and 1; got `{MUTE_AXIS_TOWARD_GREY}`."
+  doAssert SCALE_AXIS_LUMINANCE > 0 and SCALE_AXIS_LUMINANCE <= 1.0,
+    &"Axis luminance scale must fall between 0 and 1; got `{SCALE_AXIS_LUMINANCE}`."
 
 
 
@@ -368,15 +379,31 @@ func extentFurnitureFor*(distance_far: float): float =
 
 #[ Palette ]#
 
+func axisTinted(base: Rgba): Rgba =
+  ## Soften one full-strength axis hue into the reference mark it should read as.
+  ##   Blends toward the colour's own luminance-grey by `MUTE_AXIS_TOWARD_GREY`, using the
+  ##   same 0.299/0.587/0.114 weights `muted()` uses, then scales the result down by
+  ##   `SCALE_AXIS_LUMINANCE`. Alpha is untouched -- deliberately not `muted()`, whose
+  ##   alpha cut belongs to a per-frame dim rather than to a permanent palette entry.
+  ##   Evaluated at compile time into the table below, so the axes *are* what these two
+  ##   constants say and cannot drift from them.
+  let grey = 0.299*base.red + 0.587*base.green + 0.114*base.blue
+  func softened(channel: float32): float32 =
+    SCALE_AXIS_LUMINANCE*((1.0'f32 - MUTE_AXIS_TOWARD_GREY)*channel +
+      MUTE_AXIS_TOWARD_GREY*grey)
+  Rgba(
+    red: softened(base.red), green: softened(base.green), blue: softened(base.blue),
+    alpha: base.alpha,
+  )
+
+
 const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Backdrop: Rgba(red: 0.063, green: 0.075, blue: 0.102, alpha: 1.0),
-  # Each blended toward its own luminance-grey by `MUTE_AXIS_TOWARD_GREY`, using the
-  #   same 0.299/0.587/0.114 luminance weights `muted()` uses below -- this table is a
-  #   plain compile-time literal, not a runtime call, so the blend is baked in rather
-  #   than computed through `muted()` itself (whose alpha cut this must not inherit).
-  Ink.AxisX: Rgba(red: 0.757, green: 0.279, blue: 0.279, alpha: 1.0),
-  Ink.AxisY: Rgba(red: 0.360, green: 0.736, blue: 0.360, alpha: 1.0),
-  Ink.AxisZ: Rgba(red: 0.338, green: 0.481, blue: 0.830, alpha: 1.0),
+  # The standard convention at full strength, softened by `axisTinted` -- the hue says
+  #   which axis it is, and the softening keeps it from saying "drawn object".
+  Ink.AxisX: axisTinted(Rgba(red: 0.85, green: 0.22, blue: 0.22, alpha: 1.0)),
+  Ink.AxisY: axisTinted(Rgba(red: 0.26, green: 0.80, blue: 0.26, alpha: 1.0)),
+  Ink.AxisZ: axisTinted(Rgba(red: 0.24, green: 0.42, blue: 0.90, alpha: 1.0)),
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
@@ -750,27 +777,55 @@ proc addDome(
 
 #[ World Furniture ]#
 
-proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
-  ## Append world axes through origin, each in the standard convention: x red, y green,
-  ## z blue, so orientation reads at a glance regardless of where the camera stands.
-  const AXES_WORLD = [
-    (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
-    (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
-    (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
-  ]
-  for (axis, ink) in AXES_WORLD:
-    meshes.addSegment(
-      ORIGIN_WORLD - extent*axis, ORIGIN_WORLD + extent*axis, ink.colour,
-      WIDTH_LINE_FURNITURE, scale,
-    )
-
-
 func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   ## Fall from full alpha at `radius_fade_start` to none at `radius_end` -- past the
   ## fade start, a grid line's own cells crowd into fewer and fewer screen pixels
   ## under perspective, reading as aliasing noise rather than as a reference; fading
   ## them out trades that noise for a clean horizon instead of fighting it.
+  ##   Shared with `addAxes`, which fades on the same schedule so that all the world
+  ##   furniture ends at one horizon rather than the grid stopping while the axes run on.
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
+
+
+proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
+  ## Append world axes through origin, each in the standard convention: x red, y green,
+  ## z blue, so orientation reads at a glance regardless of where the camera stands.
+  ##   **Faded out and cut off on the ground grid's own schedule**, rather than running the
+  ##   full furniture extent at flat alpha as they used to. An axis reaching the horizon at
+  ##   full strength is the longest, brightest mark in the frame, and readers were taking
+  ##   them for drawn lines -- width alone (`WIDTH_LINE_FURNITURE` against
+  ##   `WIDTH_LINE_OBJECT`) was never going to carry that on its own. Sharing the grid's
+  ##   fractions rather than taking constants of their own puts all the furniture inside one
+  ##   horizon, so reference reads as a neighbourhood around the origin and anything outside
+  ##   it is content.
+  ##   This reverses an earlier decision to let the axes reach indefinitely. What that
+  ##   bought was orientation at any zoom; what it cost was the confusion above, which a
+  ##   reader hit repeatedly. The grid was already cut off at the same radius and no one
+  ##   reported losing their bearings from it.
+  const AXES_WORLD = [
+    (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
+    (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
+    (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
+  ]
+  let
+    radius_fade_end = FRACTION_GRID_FADE_END * extent
+    radius_fade_start = FRACTION_GRID_FADE_START * extent
+  for (axis, ink) in AXES_WORLD:
+    let tint = ink.colour
+    func tintAt(reach: float): Rgba =
+      tint.fade(
+        tint.alpha * alphaGridFade(abs(reach), radius_fade_start, radius_fade_end)
+      )
+    # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
+    #   distance from the origin, so the cutoff never reads as a hard edge.
+    for j in 0 ..< 2*SEGMENTS_GRID_FADE:
+      let
+        a = radius_fade_end * (float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
+        b = radius_fade_end * (float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
+      meshes.addSegment(
+        ORIGIN_WORLD + a*axis, ORIGIN_WORLD + b*axis, tintAt(a), tintAt(b),
+        WIDTH_LINE_FURNITURE, scale,
+      )
 
 
 proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =

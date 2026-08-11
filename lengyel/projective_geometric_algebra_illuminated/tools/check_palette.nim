@@ -38,6 +38,14 @@ const
     ## deficiency -- higher than the assignable-to-assignable floor because magenta means
     ## *wrong*, and reading an ordinary object as an invalid one is a worse error than
     ## confusing two ordinary objects.
+  SEPARATION_FURNITURE_BACKDROP = 8.0
+    ## Floor every piece of world furniture clears against the backdrop it is drawn on,
+    ## under typical vision.
+    ##   Nothing checked this until the axes were deliberately dimmed to stop them being
+    ## mistaken for drawn lines, and dimming has an obvious other end: furniture nobody can
+    ## see is not subtle, it is missing. Typical vision rather than a deficient simulation,
+    ## because this is a legibility floor rather than a discrimination one -- the question
+    ## is whether the mark is there at all, not whether two marks can be told apart.
   SEPARATION_AXIS_CVD = 4.0
     ## Floor every assignable hue clears against each world axis under red-green
     ## deficiency. Deliberately looser than the object-to-object floors: an axis is a thin
@@ -125,6 +133,12 @@ proc main() =
         SEPARATION_ASSIGNABLE_CVD)
       record(&"{pair}, tritanopia",
         separationDeficient(a, b, Deficiency.Tritanopia), SEPARATION_ASSIGNABLE_TRITAN)
+
+  # Furniture has to stay visible on its own ground, which is the price of dimming it.
+  for ink in [Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid]:
+    record(&"{ink} / Backdrop, typical vision",
+      separation(ink.linearOf.toOklab, Ink.Backdrop.linearOf.toOklab),
+      SEPARATION_FURNITURE_BACKDROP)
 
   for ink in ASSIGNABLE:
     record(&"{ink} / Invalid, red-green deficiency",

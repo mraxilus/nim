@@ -2137,11 +2137,10 @@ suite "Selection":
 
 
   test "a pulse covers the same ground however many frames it is cut into":
-    # Frame-rate independence, which is the whole reason the phase advances by elapsed
+    # Frame-rate independence, which is the whole reason the travel advances by elapsed
     #   seconds rather than by a step a frame. Driven on the browser too: 3 s of clock
     #   moved the head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180.
-    const AROUND = 900.0
-    proc phaseAfter(seconds_total: float; frames: int): float =
+    proc travelAfter(seconds_total: float; frames: int; lap: float): float =
       var clock: PulseClock
       var seconds = 0.0
       clock.tick(seconds)
@@ -2149,13 +2148,19 @@ suite "Selection":
         seconds += seconds_total/float(frames)
         let step = clock.secondsStep(seconds)
         clock.tick(seconds)
-        clock.advance(0, AROUND, step)
-      clock.phaseAt(0)
+        clock.advance(0, lap, step)
+      clock.travelAt(0)
 
-    # One second at the shared speed is `SPEED_MARKER_PULSE` pixels of a 900-px outline.
-    let expected = SPEED_MARKER_PULSE/AROUND
+    # One second at the shared speed is `SPEED_MARKER_PULSE` pixels, whatever it laps on.
     for frames in [12, 60, 144, 600]:
-      check phaseAfter(1.0, frames) =~ expected
+      check travelAfter(1.0, frames, 900.0) =~ SPEED_MARKER_PULSE
+
+    # **And the same pixels on a short outline as on a long one.** This is what the units
+    #   buy and what a phase could not: a phase advanced by `speed/around`, so one second
+    #   bought three times the share of a 300-px outline that it bought of a 900-px one,
+    #   and the head's screen pace was whatever the camera had most recently made the
+    #   outline. The comet is supposed to travel at a speed, not at a lap time.
+    check travelAfter(1.0, 60, 300.0) =~ travelAfter(1.0, 60, 900.0)
 
   test "a pulse ignores an absence, rather than travelling all of it at once":
     # A backgrounded tab stops its animation callbacks; the gap it comes back with is not
@@ -2175,13 +2180,24 @@ suite "Selection":
     let step = clock.secondsStep(1.0)
     clock.tick(1.0)
     clock.advance(3, 600.0, step)
-    check clock.phaseAt(3) > 0.0
-    check clock.phaseAt(4) == 0.0 # Untouched, so still at the head of its own lap.
+    check clock.travelAt(3) > 0.0
+    check clock.travelAt(4) == 0.0 # Untouched, so still at the head of its own lap.
     clock.forget(3)
-    check clock.phaseAt(3) == 0.0
+    check clock.travelAt(3) == 0.0
     # Out of range is a question with no answer, not a crash.
-    check clock.phaseAt(-1) == 0.0
-    check clock.phaseAt(ITEMS_MAX) == 0.0
+    check clock.travelAt(-1) == 0.0
+    check clock.travelAt(ITEMS_MAX) == 0.0
+    # And the carried travel is kept below one lap rather than accumulating, which is what
+    #   stops a change in the lap being multiplied by however many laps have gone by --
+    #   the original teleport, which an unreduced pixel offset would have reproduced.
+    var carried: PulseClock
+    carried.tick(0.0)
+    for frame in 1 .. 600:
+      let seconds = float(frame)/60.0
+      let step = carried.secondsStep(seconds)
+      carried.tick(seconds)
+      carried.advance(0, 120.0, step)
+      check carried.travelAt(0) < 120.0
 
 
   test "every operator reads in the library's own symbols, not an ASCII stand-in":
@@ -3502,12 +3518,12 @@ suite "Marker":
 
   proc markerOf(
     geometry: Multivector; anchor = none(Position); progress = 1.0;
-    phase = none(float); distance = 19.0
+    travel = none(float); distance = 19.0
   ): Option[Marker] =
     let (placement, view_projection, scale) = setUp(distance)
     markerFor(
       geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
-      progress, is_touch = false, phase = phase,
+      progress, is_touch = false, travel = travel,
     )
 
   func apartRails(marker: Marker): float =
@@ -3590,7 +3606,7 @@ suite "Marker":
           let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
           let marker = markerFor(
             LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
-            HEIGHT_MARK, progress = 1.0, is_touch = false, phase = none(float),
+            HEIGHT_MARK, progress = 1.0, is_touch = false, travel = none(float),
           )
           if marker.isNone: continue
           # Two-sided, which is the whole property: the pair reads its stated gap at its
@@ -3619,7 +3635,7 @@ suite "Marker":
         let (placement, view_projection, scale) = setUpAt(azimuth, elevation, 19.0)
         let marker = markerFor(
           LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
-          HEIGHT_MARK, progress = 1.0, is_touch = false, phase = none(float),
+          HEIGHT_MARK, progress = 1.0, is_touch = false, travel = none(float),
         )
         if marker.isNone or marker.get.count_segment < 4: continue
         # Segments 0 and 1 are one side's own two halves, sharing a support at index 0.
@@ -3639,7 +3655,7 @@ suite "Marker":
       let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
       let marker = markerFor(
         LINE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
-        progress = 1.0, is_touch = false, phase = none(float),
+        progress = 1.0, is_touch = false, travel = none(float),
       )
       if marker.isNone or marker.get.count_segment < 4: return 0.0
       hypot(
@@ -3944,8 +3960,8 @@ suite "Marker":
 
 
   test "a pulse rides its own outline, and only where there is an orientation to state":
-    proc pulsed(geometry: Multivector; phase: float): Marker =
-      markerOf(geometry, phase = some(phase)).get
+    proc pulsed(geometry: Multivector; travel: float): Marker =
+      markerOf(geometry, travel = some(travel)).get
 
     # A plane's circle and a line's rails both carry one; a point has no orientation and
     #   a plane at horizon carries no normal at all, so neither says anything.
@@ -4010,7 +4026,8 @@ suite "Marker":
 
     # Partway along, so no run is one shortened by the end of an open arc.
     for geometry in [PLANE, LINE, LINE_HORIZON]:
-      let shaped = markerOf(geometry, phase = some(0.4)).get
+      let lap = markerOf(geometry, travel = some(0.0)).get.lap
+      let shaped = markerOf(geometry, travel = some(0.4*lap)).get
       check shaped.count_run_pulse > 0
       for run in 0 ..< shaped.count_run_pulse:
         # A run laid along a curve is a chain of chords, so it falls a hair short of the
@@ -4025,27 +4042,69 @@ suite "Marker":
     let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
     marker.pulses[run][0].towards(marker.pulses[run][2*spans - 1], 0.5)
 
-  test "one step of phase carries the head one step of the outline, on every shape":
-    # The marker's half of a constant speed: a phase is a fraction of the outline, so the
-    #   same fraction has to buy the same share of every shape. How many seconds that
-    #   fraction takes is `selection.PulseClock`'s half, tested there.
+  test "one step of travel carries the head that many pixels, on every shape":
+    # The marker's half of a constant screen speed, and the whole point of the units: a
+    #   step of travel buys the same *pixels* on every shape, where a step of phase bought
+    #   a share of whatever the outline currently measured -- which is why the same step
+    #   moved the head further on a long rail than a short one, and further still once the
+    #   camera had stretched it. How many seconds a step takes is `PulseClock`'s half.
     for geometry in [PLANE, LINE, LINE_HORIZON]:
-      let shaped = markerOf(geometry, phase = some(0.4)).get
-      proc headAt(phase: float): ScreenPosition =
-        headOfRun(markerOf(geometry, phase = some(phase)).get, 0)
-      const STEP = 0.01
-      let crossed = hypot(
-        headAt(0.4 + STEP).x - headAt(0.4).x, headAt(0.4 + STEP).y - headAt(0.4).y
-      )
-      # A chord, so a hair under the arc actually covered.
-      check crossed <= STEP*shaped.around + TOLERANCE_SINGLE
-      check crossed > 0.98*STEP*shaped.around
+      let lap = markerOf(geometry, travel = some(0.0)).get.lap
+      proc headAt(travelled: float): ScreenPosition =
+        headOfRun(markerOf(geometry, travel = some(travelled)).get, 0)
+      const STEP = 4.0
+      let
+        start = 0.4*lap
+        crossed = hypot(
+          headAt(start + STEP).x - headAt(start).x, headAt(start + STEP).y - headAt(start).y
+        )
+      # A chord, so a hair under the arc actually covered -- and no `lap` on either side of
+      #   the comparison, which is the assertion this case exists to make.
+      check crossed <= STEP + TOLERANCE_SINGLE
+      check crossed > 0.98*STEP
+
+
+  test "a camera move slides a line's comet with the line, never along it":
+    # **The case whose absence let this ship twice.** Every other pulse case pins one
+    #   camera, so a head measured as a fraction of a viewport-clipped outline looked
+    #   perfect standing still and slid the moment the view moved -- measured at the time
+    #   as a median 3.76 px a frame while orbiting, recorded as motion the marker was
+    #   "entitled to", and reported by a reader who disagreed.
+    #   A rail is straight on screen, so the distance from its anchor to the head *is* the
+    #   travel, exactly, with no chord error to allow for. That makes a line the shape this
+    #   states most sharply -- and a line is what was reported. A curved outline's chord is
+    #   not its arc and its curvature moves with the camera, so the same assertion on a
+    #   plane would be measuring the circle, not the comet.
+    const TRAVEL_CASE = 37.0
+    var count_checked = 0
+    for azimuth in [0.2, 0.9, 1.7, 2.6, 3.4]:
+      for elevation in [-0.5, 0.4, 1.0]:
+        for distance in [9.0, 19.0, 34.0]:
+          let (placement, view_projection, scale) =
+            setUpAt(azimuth = azimuth, elevation = elevation, distance = distance)
+          let shaped = markerFor(
+            LINE, none(Position), scale, placement, view_projection,
+            WIDTH_MARK, HEIGHT_MARK, 1.0, is_touch = false, travel = some(TRAVEL_CASE),
+          )
+          if shaped.isNone or shaped.get.count_run_pulse == 0: continue
+          # Skip a placement with too little rail left to hold the travel, which laps it.
+          if shaped.get.lap <= TRAVEL_CASE: continue
+          for run in 0 ..< shaped.get.count_run_pulse:
+            let
+              head = headOfRun(shaped.get, run)
+              anchor = shaped.get.anchors_pulse[run]
+              reached = hypot(head.x - anchor.x, head.y - anchor.y)
+            check abs(reached - TRAVEL_CASE) < 1.0
+            inc count_checked
+    # The sweep has to actually have exercised something, or the checks above are vacuous.
+    check count_checked >= 30
 
 
   test "a line wears one comet, not one for every piece it is drawn in":
     # A rail is drawn as two halves either side of the line's support, and each used to
     #   pulse on its own -- four comets at four unrelated places on one selected line.
-    let shaped = markerOf(LINE, phase = some(0.4)).get
+    let lap = markerOf(LINE, travel = some(0.0)).get.lap
+    let shaped = markerOf(LINE, travel = some(0.4*lap)).get
     check shaped.count_segment == 4
     check shaped.count_run_pulse == 2
     # And the pair travels together rather than each rail keeping its own clock, so the
@@ -4054,42 +4113,44 @@ suite "Marker":
     check hypot(heads[1].x - heads[0].x, heads[1].y - heads[0].y) < LENGTH_MARKER_COMET
 
 
-  test "a marker measures its own outline even where the pulse on it came out empty":
-    # The property a browser-side deadlock turned on. Every slot's phase starts at exactly
-    #   0, and `samplePulse` *clamps* rather than wraps on an open outline -- so a line's
-    #   rails at phase 0 legitimately produce no run at all. What must still be true is
-    #   that the marker reports the length it was laid along, because that is what the
-    #   clock is advanced against: a zero there freezes the phase at 0, which produces no
-    #   run, which is the deadlock. It cost a selected line its comet outright, on a build
-    #   whose suite was green -- the suite shaped the marker directly and never asked what
-    #   the caller did with `around`.
-    let stalled = markerOf(LINE, phase = some(0.0)).get
-    check stalled.count_run_pulse == 0 # An open outline has nothing behind its start.
-    check stalled.around > 0.0
-    check phaseAdvanced(0.0, stalled.around, 1.0) > 0.0
-    # And a closed outline never enters that state at all, which is exactly why a plane
-    #   pulsed while a line did not.
-    check markerOf(PLANE, phase = some(0.0)).get.count_run_pulse == 1
+  test "a line's rails pulse from their very first frame, and report a lap to reduce on":
+    # The property a browser-side deadlock turned on, kept and inverted. Every slot starts
+    #   at travel 0, and while travel was a *fraction* that put a line's head at the very
+    #   start of an open outline with nothing behind it to light -- no run, and a marker
+    #   that also reported no length left the clock unable to advance, so it never left 0.
+    #   It cost a selected line its comet outright on a build whose suite was green.
+    #   Measuring from the support instead puts travel 0 in the *middle* of the rail, so a
+    #   run exists immediately and the deadlock has no state to occupy at all. The lap must
+    #   still be reported, because that is what the clock reduces against.
+    let stalled = markerOf(LINE, travel = some(0.0)).get
+    check stalled.count_run_pulse == 2 # One per rail, from the first frame.
+    check stalled.lap > 0.0
+    check travelAdvanced(0.0, stalled.lap, 1.0) > 0.0
+    # A closed outline never entered that state and still does not.
+    check markerOf(PLANE, travel = some(0.0)).get.count_run_pulse == 1
 
 
   test "a pulse laps rather than stopping":
-    proc headAt(phase: float): ScreenPosition =
-      headOfRun(markerOf(PLANE, phase = some(phase)).get, 0)
+    let lap = markerOf(PLANE, travel = some(0.0)).get.lap
+    proc headAt(travelled: float): ScreenPosition =
+      headOfRun(markerOf(PLANE, travel = some(travelled)).get, 0)
 
     let start = headAt(0.0)
     var moved = 0
     for step in 1 .. 5:
-      if hypot(headAt(float(step)/6.0).x - start.x,
-        headAt(float(step)/6.0).y - start.y) > 1.0: inc moved
+      if hypot(headAt(float(step)*lap/6.0).x - start.x,
+        headAt(float(step)*lap/6.0).y - start.y) > 1.0: inc moved
     check moved == 5
     # A whole lap on is where it began, so the motion is circulation rather than a run
     #   that ends somewhere.
-    let lapped = headAt(1.0)
+    let lapped = headAt(lap)
     check hypot(lapped.x - start.x, lapped.y - start.y) < 1.0
-    # And the advance itself wraps rather than growing without bound: three laps' worth of
-    #   seconds lands exactly where one moment of it did.
-    const AROUND = 300.0
-    check phaseAdvanced(0.25, AROUND, 3.0*AROUND/SPEED_MARKER_PULSE) =~ 0.25
+    # And the advance itself reduces rather than growing without bound: three laps' worth
+    #   of seconds lands exactly where one moment of it did. Reducing every step, rather
+    #   than at the point of use, is what stops a change in the lap being amplified by
+    #   however many laps have gone by -- see `travelAdvanced`.
+    const LAP = 300.0
+    check travelAdvanced(0.25*LAP, LAP, 3.0*LAP/SPEED_MARKER_PULSE) =~ 0.25*LAP
 
 
   test "the drag band swells into its head, whichever way it runs":

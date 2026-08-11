@@ -507,12 +507,12 @@ proc drawSelectionMarker(
     #   selected rather than merely under the cursor.
     let marker = markerFor(
       item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
-      phase = some(clock.phaseAt(slot)),
+      travel = some(clock.travelAt(slot)),
     )
     if marker.isNone: continue
-    # Carried forward against the length this marker actually came out at, so orbiting
-    #   changes how fast the comet travels and never where it is. See `PulseClock`.
-    clock.advance(slot, marker.get.around, seconds_step)
+    # Reduced against the lap this marker actually came out with, so orbiting changes only
+    #   where the comet wraps and never how fast it travels. See `PulseClock`.
+    clock.advance(slot, marker.get.lap, seconds_step)
     drawMarker(marker.get, tint, ALPHA_MARKER_SELECTED)
     result.inc
 

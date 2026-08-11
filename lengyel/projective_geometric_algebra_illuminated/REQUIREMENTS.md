@@ -521,6 +521,28 @@ length silently scale with device pixel ratio, which is a bug in both directions
 shrank a nominal 34-pixel point target to ~13.6 on a phone, and made "make the marker bigger"
 mean nothing stable.
 
+**The comet's own travel is a function of time alone.** A short lit run travels along a
+selected object's outline and its direction states the object's orientation. Carry that
+travel as a **distance in screen pixels from a view-independent point on the object** — a
+line's support, a ring's angle zero — advanced by speed times elapsed seconds with no camera
+quantity in the advance. Never as a fraction of the outline: an outline's length and its
+first point are both artefacts of clipping to the window, so a fraction turned back into a
+position slides under the camera even when the fraction itself is held perfectly still. Keep
+the carried distance reduced into the current lap every frame, or a change in that lap is
+multiplied by however many laps have accumulated.
+
+**Test it at more than one camera.** The invariant is that the head sits its carried travel
+from its anchor whatever the placement; a suite that pins one camera cannot see the only
+thing that goes wrong here, and one that did let this ship twice.
+
+**World furniture must not read as geometry.** Axes and grid are reference. Fade them out and
+cut them off well short of the far clip, all on one schedule, so furniture is a neighbourhood
+around the origin and anything crossing the whole view is content. Keep them thinner than a
+drawn object, and keep their hues dim and desaturated — the standard red/green/blue
+convention identifies them, it does not have to shout. Gate the dimming from both ends: dim
+enough to clear the categorical hues under colour-deficient vision, bright enough to clear
+the backdrop under typical vision.
+
 **A mark on an object is occluded by the panels, exactly as that object is.** A selection ring,
 a hover ring, a line's rails, a plane's loop and the drag band all annotate scene geometry
 that the panels cover, so drawing them above the panels puts a ring over chrome that is
