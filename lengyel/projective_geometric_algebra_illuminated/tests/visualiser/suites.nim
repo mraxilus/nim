@@ -1033,27 +1033,82 @@ suite "Scene":
     check empty.slotsCreated(slots) == 0
 
 
-  test "inkOfSaved reads each version's ordinals under the palette it was written with":
-    # Version 2 onward store today's ordinals; version 1 stored a palette with no
-    #   `Invalid` and three more hues. Every ordinal either version could hold is walked,
-    #   so the mapping is pinned across its whole domain rather than at the two ends.
-    for ordinal in ord(Ink.low) .. ord(Ink.high):
-      for version in [2'u8, VERSION_SCENE]:
-        check inkOfSaved(version, ordinal) == some(Ink(ordinal))
-    check inkOfSaved(2'u8, ord(Ink.high) + 1).isNone
-    check inkOfSaved(2'u8, -1).isNone
+  proc savedWith(ordinal: int): ItemSaved =
+    ## An item that differs from its neighbours only in the palette slot it names, which
+    ## is the only field any version boundary has ever changed.
+    ItemSaved(ink_ordinal: ordinal, is_visible: true, label: "x", geometry: POINTS[0])
 
-    # Version 1's structural slots are unmoved to this day.
+
+  test "an item already at this version is carried up unchanged":
+    # The chain has to be a no-op on a file this build wrote, or every save/load round
+    #   trip quietly rewrites something.
+    for ordinal in ord(Ink.low) .. ord(Ink.high):
+      let carried = itemUpgraded(savedWith(ordinal), VERSION_SCENE)
+      check carried.isSome
+      check carried.get.ink_ordinal == ordinal
+      check carried.get.is_visible
+      check carried.get.label == "x"
+      check carried.get.geometry =~ POINTS[0]
+    # And an ordinal no palette answers to is refused rather than clamped into one.
+    check itemUpgraded(savedWith(ord(Ink.high) + 1), VERSION_SCENE).isNone
+    check itemUpgraded(savedWith(-1), VERSION_SCENE).isNone
+
+
+  test "a version-2 item needs nothing doing to it but is walked all the same":
+    # Version 2 and 3 differ only in what the item *sequence* promises, so an item's own
+    #   fields come through untouched -- and must not be folded by the version-1 step.
+    #   Compared field by field rather than through `==`, which `Multivector` makes a
+    #   compile error on purpose; the geometry is checked with the approximate operator.
+    for ordinal in ord(Ink.low) .. ord(Ink.high):
+      let
+        from_two = itemUpgraded(savedWith(ordinal), 2'u8)
+        from_three = itemUpgraded(savedWith(ordinal), VERSION_SCENE)
+      check from_two.isSome
+      check from_three.isSome
+      check from_two.get.ink_ordinal == ordinal
+      check from_two.get.ink_ordinal == from_three.get.ink_ordinal
+      check from_two.get.is_visible == from_three.get.is_visible
+      check from_two.get.label == from_three.get.label
+      check from_two.get.geometry =~ from_three.get.geometry
+
+
+  test "a version-1 item is carried onto today's palette, hue by hue":
+    # Version 1 had no `Invalid` and three more hues, so every ordinal it could hold is
+    #   walked here rather than only the two ends.
     for ordinal in 0 ..< ORDINAL_INK_CATEGORICAL_V1:
-      check inkOfSaved(1'u8, ordinal) == some(Ink(ordinal))
-    check inkOfSaved(1'u8, ORDINAL_INK_CATEGORICAL_V1) == some(Ink.Rose)
-    # Its eight hues all land on a hue -- never on `Invalid`, never off the end.
+      # The structural slots are unmoved to this day.
+      let carried = itemUpgraded(savedWith(ordinal), 1'u8)
+      check carried.isSome
+      check carried.get.ink_ordinal == ordinal
     for step in 0 ..< 8:
-      let folded = inkOfSaved(1'u8, ORDINAL_INK_CATEGORICAL_V1 + step)
-      check folded == some(inkCycled(step))
-      check folded.get != Ink.Invalid
-      check folded.get in inkCategorical(0) .. inkCategorical(COUNT_INK_CATEGORICAL - 1)
-    check inkOfSaved(1'u8, -1).isNone
+      # Its eight hues all land on a hue -- never on `Invalid`, never off the end.
+      let carried = itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1 + step), 1'u8)
+      check carried.isSome
+      let ink = Ink(carried.get.ink_ordinal)
+      check ink == inkCycled(step)
+      check ink != Ink.Invalid
+      check ink in inkCategorical(0) .. inkCategorical(COUNT_INK_CATEGORICAL - 1)
+    # The five hues version 1 shares with today shift by exactly one, no more.
+    for step in 0 ..< COUNT_INK_CATEGORICAL:
+      let carried = itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1 + step), 1'u8)
+      check carried.get.ink_ordinal == ORDINAL_INK_CATEGORICAL_V1 + step + 1
+    # Ordinals version 1 could never have written are a corrupt file, not another hue.
+    check itemUpgraded(savedWith(ORDINAL_INK_HIGH_V1 + 1), 1'u8).isNone
+    check itemUpgraded(savedWith(-1), 1'u8).isNone
+    # Everything that is not the palette rides through the whole chain untouched.
+    let carried = itemUpgraded(savedWith(ORDINAL_INK_HIGH_V1), 1'u8)
+    check carried.get.label == "x"
+    check carried.get.geometry =~ POINTS[0]
+
+
+  test "a version outside what this build reads is refused by the chain itself":
+    # The guard lives with the walk rather than only at each call site, so a caller that
+    #   forgets to check `readsSceneVersion` still cannot get a half-upgraded item.
+    check itemUpgraded(savedWith(ord(Ink.Rose)), 0'u8).isNone
+    check itemUpgraded(savedWith(ord(Ink.Rose)), VERSION_SCENE + 1'u8).isNone
+    for version in VERSION_SCENE_LEAST .. VERSION_SCENE:
+      check readsSceneVersion(version)
+      check itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1), version).isSome
 
 
   test "bornReplaying staggers an arrival in order and never runs past the cap":
@@ -1075,6 +1130,58 @@ suite "Scene":
       check previous - CLOCK <= SECONDS_REPLAY_WHOLE + TOLERANCE_TEST
     # And the beat only ever shortens to make that fit, never lengthens.
     check bornReplaying(1, ITEMS_MAX, CLOCK) - CLOCK < SECONDS_REPLAY_STEP
+
+
+  test "replayFrom restamps a whole scene into an arrival, in creation order":
+    # What the opening scene and the demo preset both go through: built all at once, then
+    #   handed to a reader as the construction it is. Slot order is scrambled first, so
+    #   this pins that the restamp follows creation order rather than the arena's layout.
+    var scene = initScene()
+    for i in 0 ..< 5:
+      discard scene.addItem(POINTS[i], "p" & $i, inkCycled(i), 99.0)
+    scene.removeItem(1)
+    let slot_late = scene.addItem(POINTS[5], "late", Ink.Rose, 99.0)
+    check slot_late == 1
+
+    const CLOCK = 7.5
+    scene.replayFrom(CLOCK)
+    var slots: array[ITEMS_MAX, int]
+    let count = scene.slotsCreated(slots)
+    check count == 5
+    check scene.bornAt(slots[0]) =~ CLOCK
+    for position in 1 ..< count:
+      check scene.bornAt(slots[position]) > scene.bornAt(slots[position - 1])
+    check toText(scene.labelAt(slots[count - 1])) == "late"
+    check scene.bornAt(slots[count - 1]) - CLOCK <= SECONDS_REPLAY_WHOLE + TOLERANCE_TEST
+    # The same beat a file of this size would arrive on -- one rule, not two.
+    for position in 0 ..< count:
+      check scene.bornAt(slots[position]) =~ bornReplaying(position, count, CLOCK)
+
+    # An empty scene has nothing to restamp and must not fall over reaching for slot zero.
+    var empty = initScene()
+    empty.replayFrom(CLOCK)
+    check empty.len == 0
+
+
+  test "the opening scene arrives as a replay rather than all at once":
+    # The startup seeds are a construction somebody else made, exactly as a loaded file
+    #   is, so both front-ends stagger them. `constructSeeds` itself deliberately does
+    #   not: `runStoryboard` calls it too and sweeps each step on a clock of its own.
+    const CLOCK = 4.0
+    var placed = initScene()
+    constructSeeds(placed, CLOCK)
+    for slot in 0 ..< placed.len:
+      check placed.bornAt(slot) == CLOCK # Untouched by the constructor itself.
+
+    var opened = initScene()
+    constructSeeds(opened, CLOCK)
+    opened.replayFrom(CLOCK)
+    check opened.len >= 2
+    for slot in 1 ..< opened.len:
+      check opened.bornAt(slot) > opened.bornAt(slot - 1)
+    # Still on screen quickly: an opening scene a reader waits through is a worse opening
+    #   scene than one that simply appeared.
+    check opened.bornAt(opened.len - 1) - CLOCK <= SECONDS_REPLAY_WHOLE + TOLERANCE_TEST
 
 
   test "a replay stamp in the future draws its object at no size yet":

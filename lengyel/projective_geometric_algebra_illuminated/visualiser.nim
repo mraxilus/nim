@@ -1627,7 +1627,12 @@ proc main() =
   if len(options.path_load_scene) > 0:
     echo loadScene(scene, options.path_load_scene, now_startup)
   else:
+    # Replayed rather than placed whole, the same as a loaded scene and as the browser
+    #   build's own opening: these five were placed one at a time, and the app says so.
+    #   Not inside `constructSeeds`, because `runStoryboard` calls that too and sweeps
+    #   each step's animation on a clock of its own that a stagger would fight.
     constructSeeds(scene, now_startup)
+    scene.replayFrom(now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
   HISTORY = initHistory(scene, camera)
 

@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 204 cases; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 209 cases; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -1269,6 +1269,22 @@ a reader who just wanted their scene back would be watching a progress bar made 
 One rule, both loaders (`loadScene` and `browser_bridge.nimSceneAddRaw`), for the reason this
 format has already been burned by: a beat computed twice is a beat that drifts.
 
+**Every arrival a reader did not build themselves replays** — a loaded file, the demo preset,
+and the opening scene both builds start on. They are the same thing to a reader: a
+construction handed over whole, and watching it build says what a static arrangement of five
+objects does not, that these were placed one at a time and everything else is derived from
+them. The two loaders stamp as they add, since they are building the scene anyway and know
+each item's position as they go; `scene.replayFrom` is the same rule applied after the fact,
+for the two callers that assemble a scene first and only then hand it over. That also
+simplified the demo, which had been counting seed and step indices out by hand to reach the
+same beat.
+
+**`constructSeeds` deliberately does not stagger**, and the startup paths call `replayFrom`
+after it instead. `runStoryboard` calls `constructSeeds` too and sweeps each step's
+animation on a clock of its own, which a stagger inside the constructor would fight.
+Verified rather than assumed: the whole storyboard — twelve PNGs and the GIF — regenerates
+byte-identical to the build before this change.
+
 **Every version ever written is still readable, and that is a promise rather than a
 convenience.** A scene file is a reader's own work; a build that refuses it has destroyed it
 as surely as deleting it would. `VERSION_SCENE_LEAST` is 1 and should stay 1 — reading an old
@@ -1276,10 +1292,33 @@ version costs a mapping func and a suite case, refusing one costs somebody their
 each older version costs: **version 2**, nothing but the sequence guarantee (a version-2 file
 of an untouched scene is byte-identical to a version-3 one but for the version); **version
 1**, colours only. `Ink` has since gained a reserved `Invalid` and lost three categorical
-hues, so version 1's ordinals name a palette that no longer exists; `scene.inkOfSaved` maps
-them under the palette their own file version was written with — the structural slots are
-unmoved, the five surviving hues map exactly, and `Violet`/`Magenta`/`Cerise` fold onto hues
-that exist by the same cycle `inkCycled` walks.
+hues, so version 1's ordinals name a palette that no longer exists — the structural slots are
+unmoved, the five surviving hues shift by exactly one, and `Violet`/`Magenta`/`Cerise` fold
+onto hues that exist by the same cycle `inkCycled` walks.
+
+**An old file is upgraded to today's shape, never read in an old build's dialect.** Reading
+is written once, against `VERSION_SCENE` alone; everything a past version did differently
+lives in one `scene.upgradedFrom<n>` per version boundary, and `scene.itemUpgraded` walks an
+item up the chain one step at a time before anything else sees it. `ItemSaved` is the shape
+that walk operates on — an item as a file holds it, distinct from the live `Item` handle.
+Both loaders go through it, so neither build has a reading of an old version the other lacks.
+
+The rejected alternative is what this replaced: one reader that branched on the version at
+each field it touched. It spreads every past decision across the whole reader, so supporting
+an old version is paid for again by everyone who edits reading, and the version that breaks
+is the one nobody has a file of to notice with. Under the chain, adding a version means
+adding one func and leaving the rest alone. The cost is a per-item copy through `ItemSaved`
+on the load path, which is not a hot path — a file is read once.
+
+`upgradedFrom2` is an explicit step that does nothing, kept rather than omitted: version 3
+changed what the item *sequence* promises, and an item alone carries no sequence. A
+version-2 file's order is taken as its creation order, being the closest thing surviving in
+the bytes. It is written down so a reader asking what version 2 meant differently finds an
+answer rather than a gap. Adding the chain also closed a real hole: version 1's fold had no
+upper bound, so any byte at all became some hue. `ORDINAL_INK_HIGH_V1 = 14` now bounds it,
+and an ordinal version 1 could never have written is refused as the corrupt file it is —
+verified through the shipped browser parser, which reads ordinal 15 in a version-1 file as a
+refusal where it previously produced a colour.
 
 The one file this reads wrong is the browser's own: it stamped version 1 onto version-2
 content for a while (defect 1 above), and nothing in the bytes distinguishes such a file from
@@ -1315,8 +1354,16 @@ past the load, and the objects were observed reaching full size one at a time. T
 was then handed that same browser-written file through `--load-scene` and screenshotted at
 frames 2/8/16/24/45: nothing drawn at frame 2, three points at 16 with the first largest, all
 six at 45. Hand-built version-1 and version-2 files were fed to both parsers — version 1's
-ordinals 4/7/13 came back as `Grid`/`Rose`/`Copper`, version 2's 4/8 as `Grid`/`Rose` — and a
-file one version *ahead* of this build was refused by both, leaving the open scene untouched.
+ordinals 4/7/11/13 came back as `Grid`/`Rose`/`Cobalt`/`Copper`, version 2's 4/8/12 as
+`Grid`/`Rose`/`Cobalt` — and a file one version *ahead* of this build was refused by both,
+leaving the open scene untouched.
+
+The opening replay was measured the same way. In the browser the five seeds come up spread
+over **0.480 s** — four beats of `SECONDS_REPLAY_STEP` — and were watched reaching full size
+one at a time from the page's first frames; the demo's sixteen objects arrive over **1.84 s**,
+under the cap, with the beat shortened to fit. On the desktop, opening frames 2/10/20/30/45
+show the scene building: three points part-grown at frame 20 with `o` and `ground` not yet
+arrived, all five settled by 45.
 
 
 Browser Pipeline

@@ -600,6 +600,14 @@ func inkAt*(scene: Scene; slot: int): Ink =
   scene.inks[slot]
 
 
+func bornAt*(scene: Scene; slot: int): float =
+  ## Read the moment item arrived, by slot rather than through an `Item` handle -- see
+  ## `inkAt`'s own doc comment for why a by-slot reader beside the `Item`-based one earns
+  ## its keep.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.borns[slot]
+
+
 func orderOf*(scene: Scene; slot: int): uint32 =
   ## Read where item stands in the order this scene's items were created, by slot.
   ##   Comparable only within one scene: it counts additions to *this* arena, and says
@@ -756,11 +764,20 @@ proc removeItem*(scene: var Scene; slot: int) =
 ##   |         |   that is no longer the one it was built in. Nothing else differs:|
 ##   |         |   a version-2 file and a version-3 file of an untouched scene are |
 ##   |         |   byte-identical but for the version itself.                      |
-##   | 1       | Geometry, label and visibility exactly; colours through           |
-##   |         |   `inkOfSaved`, since `Ink` has since gained `Invalid` and lost   |
-##   |         |   three categorical hues. See that func for what the three fold   |
-##   |         |   onto, and for the one file this reading gets wrong.             |
+##   | 1       | Geometry, label and visibility exactly; colours one hue along     |
+##   |         |   for the three that were retired -- see `upgradedFrom1`.        |
 ##   |---------|-------------------------------------------------------------------|
+##
+## **An old file is upgraded to today's shape, never read in an old build's dialect.**
+## Reading is written once, against `VERSION_SCENE` alone; everything a past version did
+## differently lives in one small `upgradedFrom<n>` per version boundary, and
+## `itemUpgraded` walks a file's items up the chain one step at a time. The alternative --
+## a reader that branches on the version at each field it touches -- was rejected: it
+## spreads every past decision across the whole reader, so the cost of supporting an old
+## version is paid again by everyone who ever edits reading, and the version that gets
+## broken is the one nobody has a file of to notice with. Here, adding a version means
+## adding one func and leaving the rest alone, and deleting one would be the only way to
+## drop support (which this project does not do).
 
 const
   MAGIC_SCENE* = "RGAS"
@@ -785,13 +802,19 @@ func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICA
   ## the same run a colour picker offers, so nothing cycles to a colour the user could
   ## not have chosen.
 
-const ORDINAL_INK_CATEGORICAL_V1* = 7
-  ## Where the categorical hues began in the `Ink` a version-1 file was written under.
-  ##   That palette ran `Backdrop, AxisX, AxisY, AxisZ, Grid, Guide, Outline` and then
-  ##   eight hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`. The
-  ##   structural prefix is unchanged to this day; `Invalid` was inserted after it, which
-  ##   is what moved every hue along by one. Recorded as a number rather than looked up,
-  ##   because the enum it indexes no longer exists to look it up in.
+const
+  ORDINAL_INK_CATEGORICAL_V1* = 7
+    ## Where the categorical hues began in the `Ink` a version-1 file was written under.
+    ##   That palette ran `Backdrop, AxisX, AxisY, AxisZ, Grid, Guide, Outline` and then
+    ##   eight hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`. The
+    ##   structural prefix is unchanged to this day; `Invalid` was inserted after it, which
+    ##   is what moved every hue along by one. Recorded as a number rather than looked up,
+    ##   because the enum it indexes no longer exists to look it up in.
+  ORDINAL_INK_HIGH_V1* = 14
+    ## Last palette slot a version-1 file could name, being `Cerise`'s.
+    ##   Bounded rather than left open because the fold below would otherwise turn any
+    ##   number at all into some hue, and quietly colouring a corrupt byte is exactly the
+    ##   guessing this format refuses everywhere else.
 
 
 func readsSceneVersion*(version: uint8): bool =
@@ -799,28 +822,73 @@ func readsSceneVersion*(version: uint8): bool =
   version >= VERSION_SCENE_LEAST and version <= VERSION_SCENE
 
 
-func inkOfSaved*(version: uint8; ordinal: int): Option[Ink] =
-  ## Resolve the palette slot a saved item's stored ordinal names, under the palette the
-  ## file's own version was written with. None where no slot answers to it.
-  ##   Version 2 and 3 store today's ordinals, so they are read straight and an ordinal
-  ##   outside the palette is a corrupt or foreign file rather than something to guess at.
-  ##   Version 1 stored the older palette's, where the hues began one slot earlier and ran
-  ##   three longer. The five that survive map exactly; `Violet`, `Magenta` and `Cerise`
-  ##   have no slot to map to and fold onto the first three hues by the same cycle
-  ##   `inkCycled` walks -- a colour a reader could have chosen, rather than a refusal.
-  ##   **The one file this reads wrong**: the browser build stamped version 1 onto
+type ItemSaved* = object
+  ## One item exactly as a scene file holds it, at whatever version wrote that file.
+  ##   The shape reading works in, and the thing `upgradedFrom<n>` carries from one
+  ##   version's meaning to the next. Distinct from `Item` on purpose: an `Item` is a live
+  ##   handle into a scene that already exists, whereas this is a value read off bytes that
+  ##   may not describe anything this build can make yet.
+  ink_ordinal*: int ## Palette slot, as the writing version's own `Ink` numbered it.
+  is_visible*: bool ## Whether the item was hidden when saved.
+  label*: string ## Display label, already decoded from the file's UTF-8 bytes.
+  geometry*: Multivector ## The object itself, one coefficient per basis term.
+
+
+func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
+  ## Carry one item from what version 1 meant to what version 2 means. None where version
+  ## 1 could not have written it.
+  ##   Only the palette moved. Version 1's hues began one slot earlier and ran three
+  ##   longer; `Invalid` was then reserved after the structural slots, pushing every hue
+  ##   along by one, and `Violet`, `Magenta` and `Cerise` were retired. The structural
+  ##   slots are untouched, the five surviving hues shift by exactly one, and the three
+  ##   retired ones fold onto hues that exist by the same cycle `inkCycled` walks -- a
+  ##   colour the reader could have chosen for themselves, rather than a refusal.
+  ##   **The one file this gets wrong** is the browser's own: it stamped version 1 onto
   ##   version-2 content for a while (see `MAGIC_SCENE`'s own note), and nothing in the
-  ##   bytes tells such a file apart from a genuine version-1 one. Read here as version 1,
-  ##   its colours come back one hue along; geometry, labels and visibility are exact, and
-  ##   saving it again restamps it. Reading version 1 as today's ordinals instead would
-  ##   fix that file and *refuse* a genuine version-1 one outright, whose `Magenta` and
-  ##   `Cerise` fall past the end of today's palette -- a wrong hue is recoverable, a
-  ##   refused scene is not.
-  if version >= 2'u8:
-    return if ordinal in ord(Ink.low) .. ord(Ink.high): some(Ink(ordinal)) else: none(Ink)
-  if ordinal < 0: return none(Ink)
-  if ordinal < ORDINAL_INK_CATEGORICAL_V1: return some(Ink(ordinal))
-  some(inkCycled(ordinal - ORDINAL_INK_CATEGORICAL_V1))
+  ##   bytes tells such a file apart from a genuine version-1 one. Its colours come back
+  ##   one hue along; geometry, labels and visibility are exact, and saving it again
+  ##   restamps it. Treating version 1 as though it were already version 2 would fix that
+  ##   file and *refuse* a genuine version-1 one outright, whose `Magenta` and `Cerise`
+  ##   fall past the end of today's palette -- a wrong hue is recoverable, a refused scene
+  ##   is not.
+  if item.ink_ordinal < 0 or item.ink_ordinal > ORDINAL_INK_HIGH_V1: return none(ItemSaved)
+  var carried = item
+  if carried.ink_ordinal >= ORDINAL_INK_CATEGORICAL_V1:
+    carried.ink_ordinal = ord(inkCycled(carried.ink_ordinal - ORDINAL_INK_CATEGORICAL_V1))
+  some(carried)
+
+
+func upgradedFrom2(item: ItemSaved): Option[ItemSaved] = some(item)
+  ## Carry one item from what version 2 meant to what version 3 means, which is nothing.
+  ##   Version 3 changed only what the *sequence* of items promises -- creation order
+  ##   rather than slot order -- and an item on its own carries no sequence. A version-2
+  ##   file's order is taken as its creation order, which is the closest thing it has:
+  ##   for a scene nothing was ever removed from the two are the same order, and for one
+  ##   that was, no better answer survives in the bytes.
+  ##   Kept as an explicit step that does nothing rather than left out, so the chain has
+  ##   one entry per version boundary and a reader asking "what did version 2 mean
+  ##   differently?" finds the answer written down instead of finding nothing.
+
+
+func itemUpgraded*(item: ItemSaved; version: uint8): Option[ItemSaved] =
+  ## Carry an item read from a file of `version` up to the shape this build works in, one
+  ## version boundary at a time. None where no version could have written it.
+  ##   On success every field is at `VERSION_SCENE`'s own meaning, so a caller may take
+  ##   `Ink(ink_ordinal)` without a further check -- that is what the last guard here buys,
+  ##   and it is checked once at the end rather than by each step, since a step is only
+  ##   responsible for the one boundary it names.
+  if not readsSceneVersion(version): return none(ItemSaved)
+  var carried = item
+  for boundary in version ..< VERSION_SCENE:
+    let stepped =
+      case boundary
+      of 1'u8: carried.upgradedFrom1
+      of 2'u8: carried.upgradedFrom2
+      else: none(ItemSaved) # Unreachable: `readsSceneVersion` bounds the walk above.
+    if stepped.isNone: return none(ItemSaved)
+    carried = stepped.get
+  if carried.ink_ordinal notin ord(Ink.low) .. ord(Ink.high): return none(ItemSaved)
+  some(carried)
 
 
 const
@@ -850,6 +918,22 @@ func bornReplaying*(index, count: int; now: float): float =
     if count <= 1: SECONDS_REPLAY_STEP
     else: min(SECONDS_REPLAY_STEP, SECONDS_REPLAY_WHOLE/float(count - 1))
   now + float(index)*step
+
+
+proc replayFrom*(scene: var Scene; now: float) =
+  ## Restamp every live item to arrive one after another from `now`, oldest creation first,
+  ## so a scene assembled all at once plays back as the construction it is.
+  ##   For the arrivals a reader did not build themselves and is about to be shown whole --
+  ##   the opening scene and the demo preset. A scene built by hand never wants this: each
+  ##   of its items was already stamped at the moment it actually arrived, and restamping
+  ##   would replay a construction the reader just watched.
+  ##   `loadScene` and `nimSceneAddRaw` stamp as they add instead, since they are building
+  ##   the scene anyway and know each item's position as they go; this is the same rule
+  ##   applied after the fact, for callers that are not.
+  var slots: array[ITEMS_MAX, int]
+  let count = scene.slotsCreated(slots)
+  for position in 0 ..< count:
+    scene.borns[slots[position]] = bornReplaying(position, count, now)
 
 
 ## The constants above sit **outside** the desktop-only guard below, and are exported,
@@ -979,16 +1063,8 @@ when not defined(js):
       if file.readChars(ink_byte) != 1 or file.readChars(visible_byte) != 1 or
           file.readChars(length_byte) != 1:
         return &"`{path}` is truncated partway through object {index}."
-      # Through the file's own version, since an older one stored its ordinals under an
-      #   older palette; see `inkOfSaved`.
-      let ink_read = inkOfSaved(version, int(uint8(ink_byte[0])))
-      if ink_read.isNone:
-        return &"`{path}` names an unknown palette slot for object {index}."
 
-      let
-        ink = ink_read.get
-        is_visible = uint8(visible_byte[0]) != 0
-        length = int(uint8(length_byte[0]))
+      let length = int(uint8(length_byte[0]))
       var label = newString(length)
       if length > 0 and file.readChars(label) != length:
         return &"`{path}` is truncated partway through object {index}'s label."
@@ -1000,12 +1076,27 @@ when not defined(js):
           return &"`{path}` is truncated partway through object {index}'s geometry."
         geometry[b] = coefficient
 
+      # Read at the file's own version, then carried up to this build's; every field below
+      #   this line means what `VERSION_SCENE` says it means, whatever wrote the file.
+      let carried = itemUpgraded(
+        ItemSaved(
+          ink_ordinal: int(uint8(ink_byte[0])),
+          is_visible: uint8(visible_byte[0]) != 0,
+          label: label,
+          geometry: geometry,
+        ),
+        version,
+      )
+      if carried.isNone:
+        return &"`{path}` names an unknown palette slot for object {index}."
+
       # Added in file order, so the staging scene's own creation ordinals come out as the
       #   file's sequence -- which is what makes saving it again round-trip the order.
       let slot = staging.addItem(
-        geometry, label, ink, bornReplaying(index, int(count), now)
+        carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal),
+        bornReplaying(index, int(count), now),
       )
-      staging.setVisible(slot, is_visible)
+      staging.setVisible(slot, carried.get.is_visible)
 
     scene = staging
     &"Loaded {count} object(s) from `{path}`."
