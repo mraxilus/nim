@@ -134,6 +134,22 @@ func cycle*(move: MoveApply; samples = 14): seq[Pose] =
       result.add home
 
 
+func rockPoses*(base: Pose; who: Dancer; degrees: float;
+    samples = 14): seq[Pose] =
+  ## Sample one turn and its return: `base`, round to the turn's end, back.
+  ##   One edge of a state graph, drawn so both directions read from the one
+  ##     figure -- the going and the coming are the same edge.
+  ##   The lead is held facing up throughout, so a lead's own turn is seen
+  ##     as the follow coming round them, which is what the canonical
+  ##     picture means by a turn on the spot.
+  for leg in 0 .. 1:
+    for i in 0 .. samples:
+      let
+        t = ease(i / samples)
+        part = if leg == 0: t else: 1 - t
+      result.add canonicalise(spinAbout(base, who, degrees * part))
+
+
 func moveLeadAxis(pose: Pose; scalar: float): Pose =
   spinAbout(pose, Dancer.Lead, 90 * scalar)
 

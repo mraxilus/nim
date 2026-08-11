@@ -280,13 +280,14 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
   continuous(poses.mapIt(it.facing[who]))
 
 
-func animated*(cls: string; holds: Holds; move: MoveApply;
+func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
-    ways: Ways = default(Ways); dur = 9.6; samples = 14;
-    over_all = false): string =
-  ## Draw the same picture, moving: stage one travels, stage two comes home.
+    ways: Ways = default(Ways); dur = 9.6; over_all = false): string =
+  ## Draw one picture moving through a walk of poses handed in.
+  ##   Every moving figure comes through here, whether its walk is a whole
+  ##     move's cycle or one edge of a state graph rocked back and forth.
   let
-    poses = cycle(move, samples).mapIt(settled(it, holds, levels, ways))
+    poses = walk.mapIt(settled(it, holds, levels, ways))
     box = if half.isSome: half.get
           else: poses.mapIt(extent(it, captions = false)).max
     hands = poses.mapIt(handsOf(it))
@@ -370,19 +371,41 @@ func animated*(cls: string; holds: Holds; move: MoveApply;
         &"""<animate attributeName="d" values="{series(paths)}"""" &
           &""" dur="{dur}s" repeatCount="indefinite"/>""")
 
+  # A hand's own mark animates its place; a level's dot rides along as its
+  # own mark rather than inside it, because `paired` reopens one element
+  # and a hand carrying a dot is two.
+  func dotOf(pts: seq[Point]; ink: string): string =
+    &"""<circle cx="0" cy="0" r="2.7" fill="{ink}">""" &
+      animate("cx", pts.mapIt(it.x), dur) &
+      animate("cy", pts.mapIt(it.y), dur) & "</circle>"
+
   for sd in Arm:
     let pts = hands.mapIt(it[Dancer.Lead][sd])
     bits.add paired(
       hand(pts[0].x, pts[0].y, true, sd, holds[sd].isSome),
       animate("x", pts.mapIt(it.x - R), dur) &
         animate("y", pts.mapIt(it.y - R), dur))
+    if holds[sd].isSome and levels[sd] == some(Level.High):
+      bits.add dotOf(pts, DEEP[sd])
   for own in [Arm.R, Arm.L]:
     let
       pts = hands.mapIt(it[Dancer.Follow][own])
-      held = holds[Arm.L] == some(own) or holds[Arm.R] == some(own)
+      by = Arm.toSeq.filterIt(holds[it] == some(own))
+      held = by.len > 0
     bits.add paired(
       hand(pts[0].x, pts[0].y, false, own, held),
       animate("cx", pts.mapIt(it.x), dur) &
         animate("cy", pts.mapIt(it.y), dur))
+    if held and levels[by[0]] == some(Level.High):
+      bits.add dotOf(pts, INK[own])
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
+
+
+func animated*(cls: string; holds: Holds; move: MoveApply;
+    half = none(float); levels: Levels = default(Levels);
+    ways: Ways = default(Ways); dur = 9.6; samples = 14;
+    over_all = false): string =
+  ## Draw the same picture, moving: stage one travels, stage two comes home.
+  animatedPoses(cls, holds, cycle(move, samples), half, levels, ways, dur,
+                over_all)

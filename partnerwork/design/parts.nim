@@ -279,152 +279,122 @@ func frameParts*(): Parts =
           &""" height: {n(2 * half * PX)}px"""")
 
 
-#[ The Rotation Page ]#
+#[ The Single-Hand Turns Page ]#
+
+const SINGLES*: array[4, tuple[holds: Holds, name: string]] = [
+  ([some Arm.L, none Arm], "Left to left"),
+  ([some Arm.R, none Arm], "Left to right"),
+  ([none Arm, some Arm.L], "Right to left"),
+  ([none Arm, some Arm.R], "Right to right"),
+] ## The app's four single-hand frames, named as the workbook names them.
 
 const
-  HAND_TO_HAND*: Holds = [some Arm.R, some Arm.L]
-    ## The parallel double hold, Left-to-right and Right-to-left -- the
-    ## workbook's "hand to hand".
-  CROSSED*: Holds = [some Arm.L, some Arm.R]
-    ## The crossed double hold; which arm is over is the frame's own `over`.
-
-const
-  HIGH_ONE: Levels = [some Level.High, none Level]
-  HIGH_BOTH: Levels = [some Level.High, some Level.High]
-    ## Rule 10's assumption made visible: every held connection carries the
+  HIGH_ONE*: Levels = [some Level.High, none Level]
+  HIGH_OTHER*: Levels = [none Level, some Level.High]
+    ## Rule 10's assumption made visible: the held connection carries the
     ## high dot, and with no way ever named nothing settles off its side.
 
 const
-  OVER_PLAIN: Twist = (over_all: true, loops: 0, braid: 0)
-    ## Held high and unwound: straight over, nothing to say.
-  OVER_LOOP_ONE: Twist = (over_all: true, loops: 1, braid: 0)
-  OVER_LOOP_OTHER: Twist = (over_all: true, loops: -1, braid: 0)
-  OVER_LOOP_TWO: Twist = (over_all: true, loops: 2, braid: 0)
-  OVER_LOOP_TWO_OTHER: Twist = (over_all: true, loops: -2, braid: 0)
-    ## A lone reach's wind, one pigtail per half turn, sense by sign.
-  OVER_BRAID: Twists = [(true, 0, 2), (true, 0, 2)]
-  OVER_BRAID_OTHER: Twists = [(true, 0, -2), (true, 0, -2)]
-    ## A pair's extra full turn: two more crossings, sense by sign.
-  OVER_BOTH: Twists = [OVER_PLAIN, OVER_PLAIN]
-    ## A pair held high and unwound past what the frame already says.
+  OVER_PLAIN*: Twist = (over_all: true, loops: 0, braid: 0)
+    ## Held high: straight over, nothing to say.
+  OVER_BOTH*: Twists = [OVER_PLAIN, OVER_PLAIN]
+
+const
+  QUARTERS_ROUND* = 4        ## Quarter turns in the round, and so positions.
+  QUARTER* = 90.0            ## Degrees in one of them.
+
+type TurnBy* {.pure.} = enum ## Which dancer's own turn makes the quarters.
+  FollowTurns,               ## Their chevron comes round; both stay put.
+  LeadTurns                  ## Drawn canonically, the follow swings round.
+
+const TURN_SETS*: array[TurnBy, tuple[tag: string, who: Dancer]] = [
+  ("foll", Dancer.Follow),
+  ("lead", Dancer.Lead),
+]
 
 
-func rockFollowHalf(pose: Pose; scalar: float): Pose =
-  spinAbout(pose, Dancer.Follow, 180 * scalar)
+func levelsFor(holds: Holds): Levels =
+  ## Say high on whichever single arm is holding.
+  if holds[Arm.L].isSome: HIGH_ONE else: HIGH_OTHER
 
 
-func edgeGlyph(label: string): string =
-  ## Draw one rotation edge: a two-headed arrow, since every turn reverses.
-  "<svg viewBox=\"0 0 44 34\" width=\"44\" height=\"34\"" &
+func quarterPose*(who: Dancer; quarter: int): Pose =
+  ## Get the pose one dancer's own quarter turns reach, drawn canonically.
+  ##   The lead is always brought back to facing up, so their own turn is
+  ##     seen as the follow coming round them -- which is the collapse the
+  ##     frame page draws, and why the two sets differ at all.
+  canonicalise(spinAbout(rest(), who, QUARTER * float(quarter)))
+
+
+func turnGlyph*(label: string): string =
+  ## Draw one edge of the cycle: a two-headed arrow, since a turn reverses.
+  "<svg viewBox=\"0 0 44 30\" width=\"44\" height=\"30\"" &
     " aria-hidden=\"true\">" &
-    &"""<text x="22" y="10" text-anchor="middle" style="font: 8px""" &
+    &"""<text x="22" y="9" text-anchor="middle" style="font: 8px""" &
     &""" ui-sans-serif, system-ui, sans-serif; fill: {FAINT}">{label}""" &
     "</text>" &
-    &"""<path d="M7 22 L37 22 M12 17 L7 22 L12 27 M32 17 L37 22 L32 27"""" &
+    &"""<path d="M7 20 L37 20 M12 15 L7 20 L12 25 M32 15 L37 20 L32 25"""" &
     &""" fill="none" stroke="{QUIET}" stroke-width="1.6"""" &
     """ stroke-linecap="round" stroke-linejoin="round"/></svg>"""
 
 
-func refusedGlyph(): string =
-  ## Draw a turn that cannot be taken: dashed, as refusal is drawn
-  ## everywhere in this project.
-  "<svg viewBox=\"0 0 34 34\" width=\"34\" height=\"34\"" &
-    " aria-hidden=\"true\">" &
-    &"""<text x="17" y="10" text-anchor="middle" style="font: 8px""" &
-    &""" ui-sans-serif, system-ui, sans-serif; fill: {FAINT}">refused""" &
-    "</text>" &
-    &"""<path d="M5 22 L29 22 M24 17 L29 22 L24 27" fill="none"""" &
-    &""" stroke="{QUIET}" stroke-width="1.6" stroke-dasharray="3 3"""" &
-    """ stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+func singleTurnParts*(): Parts =
+  ## Build every SVG the single-hand turns page places.
+  ##   Rule 16: a high single hand turns for ever, so no position is ever
+  ##     refused and how far it has wound is not part of its state.  What is
+  ##     left is the four quarter-turn orientations, per connection, per
+  ##     dancer who can do the turning.
+  ##   Rule 15: every one of those positions is drawn, and every edge
+  ##     between them is animated.
+  const PX = 1.0
+  for kind in TurnBy:
+    let set = TURN_SETS[kind]
+    for c, single in SINGLES:
+      let levels = levelsFor(single.holds)
 
+      # Every derived position: the four quarters of this cycle.
+      for quarter in 0 ..< QUARTERS_ROUND:
+        result[&"st_{set.tag}_{c}_{quarter}"] = frame("tiny", single.holds,
+          levels, captions = false, pose = some quarterPose(set.who, quarter),
+          twist = OVER_BOTH)
 
-func rotationParts*(): Parts =
-  ## Build every SVG the rotation page places.
-  ##   A position is one of the app's eight frames plus how far the arms
-  ##     have wound (rules 11 to 13); the drawing carries the wind as which
-  ##     way the line goes round, said outright since no lock or wrap is
-  ##     ever named here (rule 10).
-  # The single hold: five positions, a full turn each way in half-turn
-  # steps.  A half turn moves the follow's hand, so the line itself changes
-  # -- but +half and -half move it to the same place, so the wind is said by
-  # the pigtail: one loop per half turn, mirrored by direction (rule 14).
-  result["rot_single_m2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    twist = [OVER_LOOP_TWO_OTHER, OVER_PLAIN])
-  result["rot_single_m1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    follow_turn = 180, twist = [OVER_LOOP_OTHER, OVER_PLAIN])
-  result["rot_single_z"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    twist = [OVER_PLAIN, OVER_PLAIN])
-  result["rot_single_p1"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    follow_turn = 180, twist = [OVER_LOOP_ONE, OVER_PLAIN])
-  result["rot_single_p2"] = frame("tiny", HOLD, HIGH_ONE, captions = false,
-    twist = [OVER_LOOP_TWO, OVER_PLAIN])
+      # And every edge: each quarter turn on to the next, rocked so the
+      # going and the coming read from the one figure.  The cycle closes --
+      # the last edge is three quarters round back to none, and nothing
+      # refuses (rule 16).
+      for quarter in 0 ..< QUARTERS_ROUND:
+        let
+          walk = rockPoses(quarterPose(set.who, quarter), set.who, QUARTER)
+          half = walk.mapIt(extent(it, captions = false)).max
+          style = &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
+            &""" height: {n(2 * half * PX)}px""""
+          to = (quarter + 1) mod QUARTERS_ROUND
+        result[&"tr_{set.tag}_{c}_{quarter}_{to}"] = animatedPoses("mv",
+          single.holds, walk, some half, levels, dur = 4.8,
+          over_all = true).replaceFirst("class=\"mv\"", style)
+        result[&"tr_{set.tag}_{c}_{quarter}_{to}_still"] = frame("mv still",
+          single.holds, levels, captions = false,
+          pose = some quarterPose(set.who, quarter), half = some half,
+          twist = OVER_BOTH).replaceFirst("class=\"mv still\"",
+            &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
+              &""" height: {n(2 * half * PX)}px"""")
 
-  # Hand to hand: three positions, half a turn each way (rule 12).  Here the
-  # geometry says it by itself -- a half turn swaps the follow's hands, so
-  # the parallel pair becomes a crossed one -- and which arm is broken at
-  # the crossing says which way it wound.  Nothing is added.
-  result["rot_hand_m1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    over = some Arm.R, captions = false, follow_turn = 180,
-    twist = OVER_BOTH)
-  result["rot_hand_z"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    captions = false, twist = OVER_BOTH)
-  result["rot_hand_p1"] = frame("wide", HAND_TO_HAND, HIGH_BOTH,
-    over = some Arm.L, captions = false, follow_turn = 180,
-    twist = OVER_BOTH)
+  result["g_quarter"] = turnGlyph("&#188; turn")
 
-  # The crossed pair: four positions, the twisted states as the ends (rule
-  # 13).  The middles already cross once, which is the hold itself; an end
-  # is a full turn further, and a full turn returns the hands to where they
-  # were -- so the two arms braid, crossing twice more, sense by direction.
-  result["rot_cross_end_l"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.L, captions = false, twist = OVER_BRAID_OTHER)
-  result["rot_cross_over_l"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.L, captions = false, twist = OVER_BOTH)
-  result["rot_cross_over_r"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.R, captions = false, twist = OVER_BOTH)
-  result["rot_cross_end_r"] = frame("wide", CROSSED, HIGH_BOTH,
-    over = some Arm.R, captions = false, twist = OVER_BRAID)
+  # Every position of a cycle draws differently, or a position it is not.
+  for kind in TurnBy:
+    for c in 0 ..< SINGLES.len:
+      var seen: seq[string]
+      for quarter in 0 ..< QUARTERS_ROUND:
+        let figure = result[&"st_{TURN_SETS[kind].tag}_{c}_{quarter}"]
+        doAssert figure notin seen,
+          &"Two quarters draw alike; got `{quarter}` of {kind} on {c}."
+        seen.add figure
 
-  # The edges the strips are strung on.
-  result["g_half"] = edgeGlyph("½ turn")
-  result["g_full"] = edgeGlyph("1 turn")
-  result["g_refused"] = refusedGlyph()
-
-  # And one of them moving: hand to hand rocking through its three
-  # positions, through the same machinery as every other moving figure, so
-  # rule 1's one-way-round and blend discipline hold here too.
-  const PX = 1.3
-  let half = cycle(rockFollowHalf).mapIt(extent(it, captions = false)).max
-  # Straight over, every frame: the follow turns *under* raised arms, so the
-  # lines sweep across them and nothing hugs a rim (rule 14).  The pair goes
-  # parallel to crossed and back as they turn, which is the twist appearing.
-  result["rot_moving"] = animated("mv", HAND_TO_HAND, rockFollowHalf,
-      some half, HIGH_BOTH, over_all = true)
-    .replaceFirst("class=\"mv\"",
-      &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
-        &""" height: {n(2 * half * PX)}px"""")
-  result["rot_moving_still"] = frame("mv still", HAND_TO_HAND, HIGH_BOTH,
-      captions = false, half = some half, twist = OVER_BOTH)
-    .replaceFirst("class=\"mv still\"",
-      &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
-        &""" height: {n(2 * half * PX)}px"""")
-
-  # Every position of a class draws differently from every other: a twist
-  # nobody can see is not a twist (rule 14).
-  for class in ["rot_single_", "rot_hand_", "rot_cross_"]:
-    var drawn: seq[tuple[key, figure: string]]
-    for key, figure in result:
-      if key.startsWith(class):
-        for seen in drawn:
-          doAssert seen.figure != figure,
-            &"Two positions draw alike; got `{key}` equal to `{seen.key}`."
-        drawn.add (key, figure)
-
-  # And nothing on this page hugs a rim.  A rim is drawn with arcs and may
-  # be; a *reach* drawn with one has walked round a body, and there is to be
-  # none of that (rule 14).  A reach is the connection's own stroke width.
+  # And nothing on this page hugs a rim: a reach is the connection's own
+  # stroke width, and one drawn with an arc has walked round a body.
   for key, figure in result:
-    if not key.startsWith("rot_"):
+    if not (key.startsWith("st_") or key.startsWith("tr_")):
       continue
     for piece in figure.split("<path "):
       if &"stroke-width=\"{LINK_W}\"" in piece:

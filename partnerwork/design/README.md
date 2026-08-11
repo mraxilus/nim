@@ -9,10 +9,15 @@ knows, and the repository README for why the views came out.
 Three pages, because they are three explorations that happen to be related:
 `frames.html` is the frame picture (what a held pair of hands looks like, and
 how a move changes it), `signs.html` is the turn sign (how to label an *edge*
-with an amount of turning), and `rotations.html` is travelling (the positions
-rotation admits between the app's eight frames, everything held high).  They
-share the palette, the level fills and the two arm inks, which live in
-`page.nim` and `body.nim` so they cannot drift.
+with an amount of turning), and `turns-single.html` is the first of the turn
+mock-ups (every position a high single-hand hold turns through, and every
+transition between them).  They share the palette, the level fills and the
+two arm inks, which live in `page.nim` and `body.nim` so they cannot drift.
+
+The turn mock-ups are being drawn one kind at a time and combined only once
+each is right: single hands first, then hand to hand, then the crossed
+pair.  An earlier `rotations.html` tried all three at once and is retired --
+it was built on a ceiling rule 16 has since removed.
 
 ```
 nimble marks                            # checks everything, writes both pages
@@ -102,7 +107,20 @@ has happened here more than once.
     a pair, since half a turn swaps parallel for crossed; drawn as a rope
     of three crossings where a pair is wound a whole turn; and as a pigtail
     where a lone connection has no partner to cross.  *The pigtail is the
-    implementer's invention and is flagged on the page.*
+    implementer's invention and is flagged on the page.*  Rule 16 has since
+    retired the pigtail for single hands -- see below.
+15. **"for each mock up, a static image version of every derived position
+    and full set of animated transitions between states."**  One mock-up
+    per kind of turn, each holding every position it derives and an
+    animation of every edge between them.  The counts are checked against
+    the state graph rather than against a number typed in.
+16. **"if held high, they can turn infinitely in either direction, so all
+    we add is the additional quarter turn orientations for each of the 4
+    single hand connections."**  Nothing on the single-hand page is ever
+    refused, and the round closes.  It also takes the wind out of the
+    state: a hold that turns for ever has no wound-out end, so how far it
+    has wound cannot be part of what it is, and only the orientation is
+    left.  That retires rule 14's pigtail for single hands.
 
 ## What is settled
 
@@ -246,7 +264,7 @@ checks.nim      every claim the pages make, asserted and spoken
 page.nim        the chrome the two pages share: style sheet, key, wrapper
 frame_page.nim  the frame page's prose and layout
 sign_page.nim   the turn-sign page's prose and layout
-rotation_page.nim  the rotation page's prose and layout
+turns_single_page.nim  the single-hand turns page, generated as a table
 marks.nim       build: parts, checks, pages, files
 shot.nim        screenshot helper (light and dark, full page), nim js
 ```

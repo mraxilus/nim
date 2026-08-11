@@ -70,6 +70,11 @@ const RULES* = [
   "the rotations should be high, such that there should be no body " &
     "wrapping, also make sure any twists are visually clear just like the " &
     "crossover",
+  "for each mock up, a static image version of every derived position and " &
+    "full set of animated transitions between states",
+  "if held high, they can turn infinitely in either direction, so all we " &
+    "add is the additional quarter turn orientations for each of the 4 " &
+    "single hand connections",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -82,6 +87,15 @@ const RULES* = [
   ##     never routes round one.  A twist is said the way the crossover is
   ##     said -- lines crossing, with the over-under break naming which is
   ##     on top -- and never by which side of a body a line hugs.
+  ##   Rules 15 and 16 turn the work into one mock-up per kind of turn, and
+  ##     rule 16 takes the ceiling off a high single hand.
+  ##     A hold that turns for ever has no wound-out end, so how far it has
+  ##       wound is not part of its state; only the orientation is, which is
+  ##       why a single hand has exactly four positions and no more.
+  ##     That retires rule 14's pigtail for single hands: it was invented to
+  ##       tell one wind from its mirror, and with no ceiling there is
+  ##       nothing left for it to tell apart.  The crossing convention
+  ##       stands for pairs, where the geometry makes the crossing itself.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
