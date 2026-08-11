@@ -588,7 +588,7 @@ proc layoutObjects*(
 
 #[ Construct Panel ]#
 
-proc layoutTopBar*(panel: var Panel; scene: var Scene) =
+proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
   ## Lay out the controls reached for constantly, above every collapsing section: start a
   ## new object, toggle world furniture, and save or load the scene.
   ##   These sit outside the sections for the same reason the browser's own chip row and
@@ -620,7 +620,9 @@ proc layoutTopBar*(panel: var Panel; scene: var Scene) =
     toChars(saveScene(scene, toText(panel.path_scene)), panel.message)
   gui.sameLine()
   if gui.button("load scene"):
-    toChars(loadScene(scene, toText(panel.path_scene)), panel.message)
+    # This frame's own clock, so the file arrives as a replay of its construction rather
+    #   than whole; see `scene.bornReplaying`.
+    toChars(loadScene(scene, toText(panel.path_scene), now), panel.message)
     # A loaded scene's slots are not the ones any open session was opened against.
     panel.session = none(EditSession)
 
@@ -1365,7 +1367,7 @@ proc layoutPanel*(
     gui.disabledPop()
     gui.tooltip("Step forward again; a fresh edit discards whatever was ahead.")
     gui.separator()
-    layoutTopBar(panel, scene)
+    layoutTopBar(panel, scene, now)
     gui.separator()
 
     # Sections in alphabetical order, matching the browser's own drawer, with `objects`

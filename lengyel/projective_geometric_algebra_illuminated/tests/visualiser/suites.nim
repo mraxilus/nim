@@ -24,7 +24,10 @@ import ../../visualiser/core/[
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
+#   `std/endians` joins them because only the desktop cases build scene-file bytes by
+#   hand, and they write the format's own byte order rather than the host's.
 when not defined(js):
+  import std/endians
   import ../../visualiser/desktop/[arena, gif, image]
 # `{.all.}` so the suite can check `marker`'s own private helpers directly rather than
 #   only through the markers they end up shaping -- `directionAcross` is the whole of why
@@ -999,6 +1002,93 @@ suite "Scene":
     check shapeText(1.0 + POINTS[0]) == "mixed grade, nothing to draw"
 
 
+  test "slotsCreated walks creation order, whatever order the slots fell in":
+    # The arena reuses the most recently freed slot, so slot order stops being creation
+    #   order the moment anything is removed. This is what the save path walks, and what a
+    #   `born`-sorted list could not answer: two items added in one frame share a reading,
+    #   and a replayed item's own born is stamped into the future.
+    var scene = initScene()
+    for i in 0 ..< 6:
+      discard scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
+    scene.removeItem(4)
+    scene.removeItem(1)
+    let slot_first = scene.addItem(POINTS[6], "seventh", Ink.Rose)  # lands in slot 1
+    let slot_second = scene.addItem(POINTS[7], "eighth", Ink.Rose)  # lands in slot 4
+    check slot_first == 1
+    check slot_second == 4
+
+    var slots: array[ITEMS_MAX, int]
+    let count = scene.slotsCreated(slots)
+    check count == scene.len
+    var labels: seq[string]
+    for position in 0 ..< count:
+      labels.add(toText(scene.labelAt(slots[position])))
+    check labels == @["p0", "p2", "p3", "p5", "seventh", "eighth"]
+    # Which is the ordinals in order, and every one of them distinct.
+    for position in 1 ..< count:
+      check scene.orderOf(slots[position]) > scene.orderOf(slots[position - 1])
+
+    # An empty scene fills nothing rather than reporting a slot that is not there.
+    let empty = initScene()
+    check empty.slotsCreated(slots) == 0
+
+
+  test "inkOfSaved reads each version's ordinals under the palette it was written with":
+    # Version 2 onward store today's ordinals; version 1 stored a palette with no
+    #   `Invalid` and three more hues. Every ordinal either version could hold is walked,
+    #   so the mapping is pinned across its whole domain rather than at the two ends.
+    for ordinal in ord(Ink.low) .. ord(Ink.high):
+      for version in [2'u8, VERSION_SCENE]:
+        check inkOfSaved(version, ordinal) == some(Ink(ordinal))
+    check inkOfSaved(2'u8, ord(Ink.high) + 1).isNone
+    check inkOfSaved(2'u8, -1).isNone
+
+    # Version 1's structural slots are unmoved to this day.
+    for ordinal in 0 ..< ORDINAL_INK_CATEGORICAL_V1:
+      check inkOfSaved(1'u8, ordinal) == some(Ink(ordinal))
+    check inkOfSaved(1'u8, ORDINAL_INK_CATEGORICAL_V1) == some(Ink.Rose)
+    # Its eight hues all land on a hue -- never on `Invalid`, never off the end.
+    for step in 0 ..< 8:
+      let folded = inkOfSaved(1'u8, ORDINAL_INK_CATEGORICAL_V1 + step)
+      check folded == some(inkCycled(step))
+      check folded.get != Ink.Invalid
+      check folded.get in inkCategorical(0) .. inkCategorical(COUNT_INK_CATEGORICAL - 1)
+    check inkOfSaved(1'u8, -1).isNone
+
+
+  test "bornReplaying staggers an arrival in order and never runs past the cap":
+    const CLOCK = 12.5
+    # A handful of objects get the full beat: legible, and short enough to still overlap.
+    check bornReplaying(0, 4, CLOCK) =~ CLOCK
+    for index in 1 ..< 4:
+      check bornReplaying(index, 4, CLOCK) =~ CLOCK + float(index)*SECONDS_REPLAY_STEP
+    # A single object arriving alone has nothing to stagger against.
+    check bornReplaying(0, 1, CLOCK) =~ CLOCK
+    # However many arrive, the last of them lands within the cap -- and in order.
+    for count in 1 .. ITEMS_MAX:
+      var previous = low(float)
+      for index in 0 ..< count:
+        let born = bornReplaying(index, count, CLOCK)
+        check born > previous
+        check born >= CLOCK
+        previous = born
+      check previous - CLOCK <= SECONDS_REPLAY_WHOLE + TOLERANCE_TEST
+    # And the beat only ever shortens to make that fit, never lengthens.
+    check bornReplaying(1, ITEMS_MAX, CLOCK) - CLOCK < SECONDS_REPLAY_STEP
+
+
+  test "a replay stamp in the future draws its object at no size yet":
+    # What makes the stagger visible rather than merely recorded: `mesh.animationProgress`
+    #   reads a born the clock has not reached as zero progress, so an object waiting its
+    #   turn is drawn at nothing and grows in when its beat arrives.
+    const CLOCK = 3.0
+    let born_second = bornReplaying(1, 4, CLOCK)
+    check animationProgress(CLOCK, born_second) == 0.0
+    check animationProgress(born_second, born_second) == 0.0
+    check animationProgress(born_second + ANIMATION_SECONDS, born_second) == 1.0
+    check animationProgress(CLOCK, bornReplaying(0, 4, CLOCK)) == 0.0
+
+
   # Saving and loading name a filesystem, which a browser has none of: `scene.nim`
   #   declares that pair for the desktop backend alone, so their tests are guarded to
   #   match. Every other invariant in this suite holds on both backends and is checked
@@ -1105,18 +1195,152 @@ suite "Scene":
       check scene.len == 1
 
 
-    test "a scene file from before the palette changed is refused, not misread":
+    proc sceneFileOf(version: uint8; items: seq[(int, bool, string, Multivector)]): string =
+      ## Build the bytes of a scene file by hand, at whatever version is asked for.
+      ##   Hand-built rather than saved by this build, because the point of the cases
+      ##   below is to read a version this build can no longer *write*: asking `saveScene`
+      ##   for one would only ever produce today's, and the reading it exercised would be
+      ##   its own writing spelled backwards. Ink is taken as a raw ordinal for the same
+      ##   reason -- an old file's ordinals name an enum that is gone.
+      result = MAGIC_SCENE & char(version) & char(ord(Basis.high) + 1)
+      var count = uint32(len(items))
+      var count_bytes = newString(4)
+      littleEndian32(addr count_bytes[0], addr count)
+      result &= count_bytes
+      for (ordinal, is_visible, label, geometry) in items:
+        result &= char(ordinal) & char(ord(is_visible)) & char(len(label)) & label
+        for b in Basis:
+          var
+            coefficient = geometry[b]
+            bytes = newString(8)
+          littleEndian64(addr bytes[0], addr coefficient)
+          result &= bytes
+
+
+    test "a scene file from before the palette changed is read, not refused":
       # An item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered
-      #   that enum -- a version 1 file's bytes name different colours now. Refusing it is
-      #   the honest outcome; reading it back in the wrong colours silently is not.
+      #   that enum -- a version-1 file's bytes name different colours now. Reading it
+      #   through the palette it was written under is what keeps somebody's scene; the
+      #   three hues that no longer exist fold onto ones that do, which is a recoverable
+      #   wrong colour rather than an unrecoverable refusal.
+      var scene = initScene()
+      discard scene.addItem(POINTS[9], "replaced", Ink.Rose)
+      let path = getTempDir() / "visualiser_suite_scene_v1.rgascene"
+      writeFile(path, sceneFileOf(1'u8, @[
+        (4, true, "grid-hued", POINTS[0]),  # Structural slot, unmoved between palettes.
+        (7, true, "was rose", POINTS[1]),   # First categorical hue of the old palette.
+        (11, false, "was cobalt", POINTS[2]),
+        (13, true, "was magenta", POINTS[3]), # Retired; folds onto a hue that survives.
+      ]))
+      defer: removeFile(path)
+
+      check loadScene(scene, path).contains("Loaded 4")
+      check scene.len == 4
+      check scene[0].ink == Ink.Grid
+      check scene[1].ink == Ink.Rose
+      check scene[2].ink == Ink.Cobalt
+      check scene[3].ink == inkCycled(13 - ORDINAL_INK_CATEGORICAL_V1)
+      # Everything but the colour of a retired hue comes back exactly.
+      for slot in 0 ..< 4:
+        check scene[slot].geometry =~ POINTS[slot]
+      check toText(scene[1].label) == "was rose"
+      check scene[1].isVisible
+      check not scene[2].isVisible
+
+
+    test "a version-2 file is read under today's palette, unshifted":
+      # Version 2 and 3 differ only in what the item *sequence* promises, so a version-2
+      #   file's ordinals are today's and must not be folded through the version-1 rule.
+      var scene = initScene()
+      let path = getTempDir() / "visualiser_suite_scene_v2.rgascene"
+      writeFile(path, sceneFileOf(2'u8, @[
+        (ord(Ink.Grid), true, "structural", POINTS[0]),
+        (ord(Ink.Rose), true, "first hue", POINTS[1]),
+        (ord(Ink.Cobalt), false, "last hue", POINTS[2]),
+      ]))
+      defer: removeFile(path)
+
+      check loadScene(scene, path).contains("Loaded 3")
+      check scene[0].ink == Ink.Grid
+      check scene[1].ink == Ink.Rose
+      check scene[2].ink == Ink.Cobalt
+      check not scene[2].isVisible
+
+
+    test "a file from a version this build predates is refused rather than guessed at":
+      # The floor never rises, so only the ceiling can refuse: a later format may mean
+      #   anything at all by these bytes, and there is nothing honest to do but say so.
       var scene = initScene()
       discard scene.addItem(POINTS[0], "keep", Ink.Rose)
-      let path = getTempDir() / "visualiser_suite_scene_v1.rgascene"
-      writeFile(path, "RGAS" & char(1) & char(ord(Basis.high) + 1))
+      let path = getTempDir() / "visualiser_suite_scene_ahead.rgascene"
+      writeFile(path, sceneFileOf(VERSION_SCENE + 1'u8, @[
+        (ord(Ink.Rose), true, "future", POINTS[1]),
+      ]))
       defer: removeFile(path)
 
       check loadScene(scene, path).contains("version this build cannot read")
       check scene.len == 1
+      check toText(scene[0].label) == "keep"
+      check not readsSceneVersion(0'u8) # A version byte of zero was never written either.
+
+
+    test "a saved scene keeps creation order however its slots were reused":
+      # What version 3 is for. Removing and re-adding drops the new item into the freed
+      #   slot, so slot order and creation order disagree -- and it is creation order the
+      #   replay has to walk, or a file plays back a construction that never happened.
+      var original = initScene()
+      for i in 0 ..< 4:
+        discard original.addItem(POINTS[i], "p" & $i, inkCycled(i))
+      original.removeItem(1)
+      discard original.addItem(POINTS[4], "late", Ink.Rose) # reuses slot 1
+      check original.len == 4
+
+      let path = getTempDir() / "visualiser_suite_scene_order.rgascene"
+      check saveScene(original, path).contains("Saved 4")
+      defer: removeFile(path)
+
+      var loaded = initScene()
+      check loadScene(loaded, path).contains("Loaded 4")
+      check toText(loaded[0].label) == "p0"
+      check toText(loaded[1].label) == "p2"
+      check toText(loaded[2].label) == "p3"
+      check toText(loaded[3].label) == "late"
+      # And the order survives a second trip, since loading rebuilds ordinals from the
+      #   file's own sequence rather than from wherever the slots landed.
+      check saveScene(loaded, path).contains("Saved 4")
+      var again = initScene()
+      check loadScene(again, path).contains("Loaded 4")
+      for slot in 0 ..< 4:
+        check toText(again[slot].label) == toText(loaded[slot].label)
+
+
+    test "a loaded scene arrives one object at a time, replaying its construction":
+      # A load stamps borns from the caller's clock forward, which is what makes each
+      #   object still be growing in when the next arrives (`mesh.animationProgress` reads
+      #   a born in the future as zero size). Checked against the file, not against the
+      #   scene it came from: the whole point is that the replay is reconstructed from the
+      #   sequence rather than from a clock reading nobody saved.
+      var original = initScene()
+      for i in 0 ..< 5:
+        discard original.addItem(POINTS[i], "p" & $i, inkCycled(i))
+      let path = getTempDir() / "visualiser_suite_scene_replay.rgascene"
+      check saveScene(original, path).contains("Saved 5")
+      defer: removeFile(path)
+
+      const CLOCK = 40.0
+      var loaded = initScene()
+      check loadScene(loaded, path, CLOCK).contains("Loaded 5")
+      check loaded[0].born =~ CLOCK
+      for slot in 1 ..< 5:
+        check loaded[slot].born > loaded[slot - 1].born
+        # Still growing in as the next one lands, rather than a queue of separate pop-ins.
+        check loaded[slot].born - loaded[slot - 1].born < ANIMATION_SECONDS
+      check loaded[4].born - loaded[0].born <= SECONDS_REPLAY_WHOLE
+
+      # No clock, no replay: a caller with nothing to animate for gets a grown scene.
+      var batched = initScene()
+      check loadScene(batched, path).contains("Loaded 5")
+      check batched[0].born == 0.0
 
 
     test "loading a missing path reports cleanly and leaves scene untouched":

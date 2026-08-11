@@ -86,7 +86,20 @@ type
     are_visible: array[ITEMS_MAX, bool] ## Per-slot visibility.
     are_alive: array[ITEMS_MAX, bool] ## Per-slot occupancy; false where slot is free.
     borns: array[ITEMS_MAX, float] ## Per-slot moment item was added, for its appear
-      ## animation; not saved or loaded, same as `anchor_overrides` below.
+      ## animation. Not written to a scene file -- a clock reading means nothing across
+      ## runs -- but a *loaded* item is stamped all the same, so a file replays its own
+      ## construction rather than arriving all at once; see `bornReplaying`.
+    orders: array[ITEMS_MAX, uint32] ## Per-slot creation ordinal: how many items this
+      ## scene had ever been given when this one arrived.
+      ##   Separate from `borns` because a clock reading cannot answer this. Two items
+      ## added in the same frame share a reading, a loaded scene's readings are stamped
+      ## for the replay rather than for when anything was really made, and a slot freed
+      ## and refilled keeps whatever its old occupant's reading was until overwritten.
+      ## An ordinal is none of those things: it only ever increases, is never reused, and
+      ## survives a save and load because the file's own item sequence *is* this order.
+      ##   What it buys: `saveScene` writes items in the order they were built, so
+      ## reloading replays that construction step by step even after removals have
+      ## scrambled slot order. See this module's own format table.
     anchor_overrides: array[ITEMS_MAX, Option[Position]] ## Where a plane's own circle
       ## should centre, for an item whose construction fixes that more specifically than
       ## its own closest-to-origin support does; see `creationAnchor`. None for anything
@@ -96,6 +109,9 @@ type
     next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
     slot_free_first: Option[int] ## Head of free list; none where scene is full.
     count_live: int ## Number of occupied slots, so `len` need not rescan `are_alive`.
+    count_created: uint32 ## Ordinals handed out so far, and the next one to hand out.
+      ## Counts additions over the scene's whole life, never removals, so it is not
+      ## `count_live` and cannot be derived from it.
 
   Arity* {.pure.} = enum ## Count operands operation consumes.
     One, Two
@@ -584,6 +600,34 @@ func inkAt*(scene: Scene; slot: int): Ink =
   scene.inks[slot]
 
 
+func orderOf*(scene: Scene; slot: int): uint32 =
+  ## Read where item stands in the order this scene's items were created, by slot.
+  ##   Comparable only within one scene: it counts additions to *this* arena, and says
+  ##   nothing about wall-clock time or about another scene's ordinals.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.orders[slot]
+
+
+func slotsCreated*(scene: Scene; slots: var array[ITEMS_MAX, int]): int =
+  ## Fill `slots` with every live slot, oldest creation first; report how many were filled.
+  ##   A caller's own array rather than a `seq`, so walking a scene in creation order
+  ##   costs no allocation on either backend -- the same reason `Selection` holds one.
+  ##   Insertion sort, as `panel.layoutObjects` sorts its own list: at `ITEMS_MAX` items
+  ##   this is a handful of comparisons on a path that runs once per save, and a sort
+  ##   written out here is one nobody has to go and find.
+  ##   Walks slots directly rather than through `pairs`, for the reason `inkAt` gives:
+  ##   that iterator builds an `Item` per live slot, which under the JS backend copies the
+  ##   whole scene to hand back a slot number this already has.
+  for slot in 0 ..< ITEMS_MAX:
+    if not scene.are_alive[slot]: continue
+    var position = result
+    while position > 0 and scene.orders[slots[position - 1]] > scene.orders[slot]:
+      slots[position] = slots[position - 1]
+      dec position
+    slots[position] = slot
+    inc result
+
+
 func anchorOverrideAt*(scene: Scene; slot: int): Option[Position] =
   ## Read where item's own circle should centre, by slot rather than through an `Item`
   ## handle -- see `inkAt`'s own doc comment for why a by-slot reader beside the
@@ -642,6 +686,11 @@ proc addItem*(
   scene.are_alive[result] = true
   scene.borns[result] = now
   scene.anchor_overrides[result] = anchor_override
+  # Stamp when it arrived relative to everything else, which the slot cannot say: a slot
+  #   freed and refilled sits wherever the free list put it, not where its occupant
+  #   belongs in the order things were built.
+  scene.orders[result] = scene.count_created
+  inc scene.count_created
   inc scene.count_live
 
 
@@ -681,29 +730,131 @@ proc removeItem*(scene: var Scene; slot: int) =
 ##   |          |   bytes, then one little-endian `float` per basis term.      |
 ##   |----------|--------------------------------------------------------------|
 ##
-## Only live items are written, in slot order, never a dead or free slot; slot numbers
-## themselves are not preserved, since they mean nothing once reloaded into a scene
-## that assigns its own free-list order. `born` is not written either: it is a clock
-## reading meaningless across runs (see `Item.born`'s own doc comment), so a freshly
-## loaded item is born at the dawn of time like any other freshly constructed one,
-## never partway through an appear-in animation that never happened this run. A label
-## is written as exactly as many bytes as it holds rather than padded to `LABEL_MAX`,
-## so the format costs nothing for the padding no reader ever wants back and does not
-## depend on the `LABEL_MAX` the writing build happened to use.
+## Only live items are written, never a dead or free slot, and **in the order they were
+## created** -- which is the whole of what version 3 added. Slot numbers themselves are not
+## preserved, since they mean nothing once reloaded into a scene that assigns its own
+## free-list order; the sequence is what carries the ordering, so no ordinal is written
+## beside each item (it would be exactly its own position, every time).
+##   `born` is not written: it is a clock reading meaningless across runs (see
+## `Item.born`'s own doc comment). A loaded item is stamped by `bornReplaying` instead, so
+## the file plays back its own construction one object at a time rather than appearing
+## whole. A label is written as exactly as many bytes as it holds rather than padded to
+## `LABEL_MAX`, so the format costs nothing for the padding no reader ever wants back and
+## does not depend on the `LABEL_MAX` the writing build happened to use.
+##
+## **Every version ever written is still readable, and that is a promise this project
+## keeps rather than a convenience it noticed.** A scene file is a reader's own work; a
+## build that refuses it has destroyed it as surely as deleting it would. What each older
+## version costs to read:
+##
+##   |---------|-------------------------------------------------------------------|
+##   | Version | Read as                                                           |
+##   |---------|-------------------------------------------------------------------|
+##   | 3       | Exactly. Items replay in the order they were built.               |
+##   | 2       | Exactly, except that the item sequence is slot order, so a scene  |
+##   |         |   whose objects were removed and re-added replays in an order     |
+##   |         |   that is no longer the one it was built in. Nothing else differs:|
+##   |         |   a version-2 file and a version-3 file of an untouched scene are |
+##   |         |   byte-identical but for the version itself.                      |
+##   | 1       | Geometry, label and visibility exactly; colours through           |
+##   |         |   `inkOfSaved`, since `Ink` has since gained `Invalid` and lost   |
+##   |         |   three categorical hues. See that func for what the three fold   |
+##   |         |   onto, and for the one file this reading gets wrong.             |
+##   |---------|-------------------------------------------------------------------|
 
 const
   MAGIC_SCENE* = "RGAS"
     ## First four bytes of a `.rgascene` file, the format table above documents.
-  VERSION_SCENE* = 2'u8
-    ## Format version this build writes and the only one it reads back.
+  VERSION_SCENE* = 3'u8
+    ## Format version this build writes. Every version down to `VERSION_SCENE_LEAST` is
+    ## still read; see the table above for what each older one costs.
     ##   Bumped from 1 when `Ink` gained a reserved `Invalid` slot and lost three
-    ##   categorical ones: an item's ink is stored as that enum's own ordinal, so a
-    ##   version 1 file's bytes name different colours here. Refusing it outright is
-    ##   the honest outcome -- silently reading `Cerise` as `Rose` would be worse.
+    ##   categorical ones, which moved every categorical ordinal an item's colour is
+    ##   stored as. Bumped from 2 when items began to be written in creation order rather
+    ##   than slot order: the bytes are shaped identically, so this number is the only
+    ##   thing that says whether the sequence a reader is replaying is the order the
+    ##   scene was actually built in or merely the order its slots happened to fall in.
+  VERSION_SCENE_LEAST* = 1'u8
+    ## Oldest format version this build still reads.
+    ##   One, and it should stay one: a scene file is a reader's own work, and a version
+    ##   floor that rises is a build that throws that work away. Reading an old version
+    ##   costs a mapping func and a suite case; refusing it costs somebody their scene.
 
-## Both constants sit **outside** the desktop-only guard below, and are exported, because
-## they describe the *format* rather than the file handling: the browser build writes and
-## reads the same bytes through `DataView`, and it gets them from here via
+func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICAL)
+  ## Choose palette slot for item at given position, cycling through categorical slots --
+  ## the same run a colour picker offers, so nothing cycles to a colour the user could
+  ## not have chosen.
+
+const ORDINAL_INK_CATEGORICAL_V1* = 7
+  ## Where the categorical hues began in the `Ink` a version-1 file was written under.
+  ##   That palette ran `Backdrop, AxisX, AxisY, AxisZ, Grid, Guide, Outline` and then
+  ##   eight hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`. The
+  ##   structural prefix is unchanged to this day; `Invalid` was inserted after it, which
+  ##   is what moved every hue along by one. Recorded as a number rather than looked up,
+  ##   because the enum it indexes no longer exists to look it up in.
+
+
+func readsSceneVersion*(version: uint8): bool =
+  ## Report whether this build can read a scene file stamped with this version.
+  version >= VERSION_SCENE_LEAST and version <= VERSION_SCENE
+
+
+func inkOfSaved*(version: uint8; ordinal: int): Option[Ink] =
+  ## Resolve the palette slot a saved item's stored ordinal names, under the palette the
+  ## file's own version was written with. None where no slot answers to it.
+  ##   Version 2 and 3 store today's ordinals, so they are read straight and an ordinal
+  ##   outside the palette is a corrupt or foreign file rather than something to guess at.
+  ##   Version 1 stored the older palette's, where the hues began one slot earlier and ran
+  ##   three longer. The five that survive map exactly; `Violet`, `Magenta` and `Cerise`
+  ##   have no slot to map to and fold onto the first three hues by the same cycle
+  ##   `inkCycled` walks -- a colour a reader could have chosen, rather than a refusal.
+  ##   **The one file this reads wrong**: the browser build stamped version 1 onto
+  ##   version-2 content for a while (see `MAGIC_SCENE`'s own note), and nothing in the
+  ##   bytes tells such a file apart from a genuine version-1 one. Read here as version 1,
+  ##   its colours come back one hue along; geometry, labels and visibility are exact, and
+  ##   saving it again restamps it. Reading version 1 as today's ordinals instead would
+  ##   fix that file and *refuse* a genuine version-1 one outright, whose `Magenta` and
+  ##   `Cerise` fall past the end of today's palette -- a wrong hue is recoverable, a
+  ##   refused scene is not.
+  if version >= 2'u8:
+    return if ordinal in ord(Ink.low) .. ord(Ink.high): some(Ink(ordinal)) else: none(Ink)
+  if ordinal < 0: return none(Ink)
+  if ordinal < ORDINAL_INK_CATEGORICAL_V1: return some(Ink(ordinal))
+  some(inkCycled(ordinal - ORDINAL_INK_CATEGORICAL_V1))
+
+
+const
+  SECONDS_REPLAY_STEP* = 0.12
+    ## Beat between one loaded object appearing and the next.
+    ##   Shorter than `mesh.ANIMATION_SECONDS`, so each object is still growing in as the
+    ##   next arrives: the replay reads as one construction unfolding rather than as a
+    ##   queue of separate pop-ins.
+  SECONDS_REPLAY_WHOLE* = 2.5
+    ## Longest the whole replay may take, however many objects arrive.
+    ##   Without it a full `ITEMS_MAX` scene would take nearly eight seconds to finish
+    ##   appearing, and a reader who just wanted their scene back would be watching a
+    ##   progress bar made of geometry. The beat shortens instead, which keeps the order
+    ##   legible while bounding the wait.
+
+
+func bornReplaying*(index, count: int; now: float): float =
+  ## Stamp the `index`-th of `count` objects arriving together, so they appear one after
+  ## another from `now` rather than all at once.
+  ##   The one rule both loaders use -- the desktop's `loadScene` and the browser's
+  ##   `browser_bridge.nimSceneAddRaw` -- because a beat computed twice is a beat that
+  ##   drifts, which is exactly what happened to this format's own version number.
+  ##   `count` is the whole arrival, so the beat can be shortened to fit the cap; a caller
+  ##   that does not know the whole may pass its own index plus one and get the unbounded
+  ##   beat, which is what a single object arriving alone wants anyway.
+  let step =
+    if count <= 1: SECONDS_REPLAY_STEP
+    else: min(SECONDS_REPLAY_STEP, SECONDS_REPLAY_WHOLE/float(count - 1))
+  now + float(index)*step
+
+
+## The constants above sit **outside** the desktop-only guard below, and are exported,
+## because they describe the *format* rather than the file handling: the browser build
+## writes and reads the same bytes through `DataView`, and it gets them from here via
 ## `browser_bridge.nimSceneMagic`/`nimSceneVersion` rather than from literals of its own.
 ##   That is not decoration. This version was hand-copied into `glue.js` as a `1`, and when
 ## the bump to 2 landed here nothing updated it -- so the browser stamped every file it
@@ -758,7 +909,13 @@ when not defined(js):
     file.write(char(ord(Basis.high) + 1))
     file.writeLittle(uint32(scene.len))
 
-    for item in scene:
+    # In creation order, which is the whole of what this file's own sequence means from
+    #   version 3 on: loading walks it back in the same order, so the file replays the
+    #   construction rather than however the free list happened to lay the slots out.
+    var slots: array[ITEMS_MAX, int]
+    let count = scene.slotsCreated(slots)
+    for position in 0 ..< count:
+      let item = scene[slots[position]]
       file.write(char(ord(item.ink)))
       file.write(char(ord(item.isVisible)))
       let
@@ -771,12 +928,18 @@ when not defined(js):
     &"Saved {scene.len} object(s) to `{path}`."
 
 
-  proc loadScene*(scene: var Scene; path: string): string =
+  proc loadScene*(scene: var Scene; path: string; now: float = 0.0): string =
     ## Replace scene's contents with what `path` holds; report outcome for display.
     ##   Parses into a scene of its own and only replaces the caller's on complete
     ##   success, so a bad path or a corrupt or foreign file leaves whatever scene
     ##   already held untouched rather than half-overwritten by however far parsing
     ##   got before failing.
+    ##   `now` is the clock the arrival is staggered from (see `bornReplaying`), so the
+    ##   scene plays its own construction back rather than appearing whole. Left at its
+    ##   default by a caller with no clock -- a test, or a batch path with nothing to
+    ##   animate for -- which lands every object long in the past, fully grown.
+    ##   Reads every version down to `VERSION_SCENE_LEAST`; see the format table above
+    ##   for what an older one costs.
     ##   Exceeds the working 60-line default: the format is a strict sequence of
     ##   fixed-size fields, each needing its own guard clause against a truncated or
     ##   foreign file before the next field can be trusted -- splitting the guards
@@ -792,9 +955,10 @@ when not defined(js):
     if file.readChars(magic) != len(MAGIC_SCENE) or magic != MAGIC_SCENE:
       return &"`{path}` is not a scene file."
 
-    var version: array[1, char]
-    if file.readChars(version) != 1 or uint8(version[0]) != VERSION_SCENE:
+    var version_byte: array[1, char]
+    if file.readChars(version_byte) != 1 or not readsSceneVersion(uint8(version_byte[0])):
       return &"`{path}` is a scene file of a version this build cannot read."
+    let version = uint8(version_byte[0])
 
     let basis_count_here = ord(Basis.high) + 1
     var basis_count: array[1, char]
@@ -815,11 +979,14 @@ when not defined(js):
       if file.readChars(ink_byte) != 1 or file.readChars(visible_byte) != 1 or
           file.readChars(length_byte) != 1:
         return &"`{path}` is truncated partway through object {index}."
-      if int(uint8(ink_byte[0])) notin ord(Ink.low) .. ord(Ink.high):
+      # Through the file's own version, since an older one stored its ordinals under an
+      #   older palette; see `inkOfSaved`.
+      let ink_read = inkOfSaved(version, int(uint8(ink_byte[0])))
+      if ink_read.isNone:
         return &"`{path}` names an unknown palette slot for object {index}."
 
       let
-        ink = Ink(uint8(ink_byte[0]))
+        ink = ink_read.get
         is_visible = uint8(visible_byte[0]) != 0
         length = int(uint8(length_byte[0]))
       var label = newString(length)
@@ -833,7 +1000,11 @@ when not defined(js):
           return &"`{path}` is truncated partway through object {index}'s geometry."
         geometry[b] = coefficient
 
-      let slot = staging.addItem(geometry, label, ink)
+      # Added in file order, so the staging scene's own creation ordinals come out as the
+      #   file's sequence -- which is what makes saving it again round-trip the order.
+      let slot = staging.addItem(
+        geometry, label, ink, bornReplaying(index, int(count), now)
+      )
       staging.setVisible(slot, is_visible)
 
     scene = staging
@@ -882,8 +1053,3 @@ func remember*(memory: var OperationMemory; operation: Operation) =
   if lut_operation_to_arity[operation] == Arity.One: memory.unary = operation
   else: memory.binary = operation
 
-
-func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICAL)
-  ## Choose palette slot for item at given position, cycling through categorical slots --
-  ## the same run a colour picker offers, so nothing cycles to a colour the user could
-  ## not have chosen.

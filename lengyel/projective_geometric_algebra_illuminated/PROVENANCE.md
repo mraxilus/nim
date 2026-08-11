@@ -22,7 +22,7 @@ a change must not break. Superseded experiments and fixed bugs are not narrated;
 rejected alternative is a live trap, it appears as a terse "not X — Y" note.
 
 **Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 196 assertions; `renderer`/`gui`/
+property-test suite rerun (`tests/visualiser/suites.nim`, 204 cases; `renderer`/`gui`/
 `panel` are excluded — they need a live GL context). The storyboard is regenerated headless
 under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
 recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
@@ -1211,7 +1211,7 @@ big-endian one.
 | Bytes    | Field |
 |----------|-------|
 | 4        | Magic `RGAS` |
-| 1        | Format version (currently 2) |
+| 1        | Format version (currently 3) |
 | 1        | Basis count (16 under this build's 4D rigid metric); must match, or the
              file was saved under a different PGA dimension or metric |
 | 4        | Item count, little-endian `uint32` |
@@ -1237,11 +1237,57 @@ moved out of the desktop-only guard, are exported, and reach `glue.js` through
 `TextEncoder`/`TextDecoder`. Found by driving, not by reading: the round-trip suite passed
 throughout, because it only ever asked one build to read what that same build wrote.
 
-Only live items are written, in slot order. Deliberately omitted: slot numbers (meaningless
-once reloaded — a fresh scene assigns its own free-list order); `born` (meaningless across
-runs — a loaded item is born at the dawn of time, never partway through an animation that
-never happened); fixed-width label padding (length-prefixed, so the format does not depend
-on the writing build's `LABEL_MAX`).
+Only live items are written, **in the order they were created** — which is the whole of what
+version 3 added, and the reason it is a version rather than a quiet change: the bytes are
+shaped identically to version 2, so nothing but the version number says whether the sequence
+a reader walks is the order the scene was built in or merely the order its slots fell in.
+Deliberately omitted: slot numbers (meaningless once reloaded — a fresh scene assigns its own
+free-list order); a per-item ordinal (it would equal its own position, every time, since the
+sequence already carries the ordering); fixed-width label padding (length-prefixed, so the
+format does not depend on the writing build's `LABEL_MAX`).
+
+**Creation order is recorded explicitly** (`Scene.orders`, `Scene.count_created`,
+`scene.slotsCreated`), not inferred. Slot order stops being creation order the moment
+anything is removed: the arena's free list hands the most recently freed slot to the next
+arrival, so a removed-then-re-added object sits *before* objects that predate it. Sorting by
+`born` was rejected as the ordering key on three counts, each of which happens in practice —
+two objects added in one frame share a clock reading; a replayed item's `born` is stamped
+into the *future* (below); and a reused slot's `born` is a stale reading until overwritten.
+An ordinal counts additions to one arena and answers all three. Cost: two more parallel
+arrays, `4 + 4` bytes per slot, on a structure already sized by its multivectors.
+
+**A loaded scene replays its own construction rather than arriving whole.** `born` is still
+not written — it is a clock reading meaningless across runs — but a loaded item is no longer
+stamped at the dawn of time either. `scene.bornReplaying(index, count, now)` stamps the
+`index`-th of `count` arrivals a beat after the last, and `mesh.animationProgress` reads a
+`born` the clock has not reached as zero progress, so each object is drawn at nothing until
+its turn and then grows in. `SECONDS_REPLAY_STEP = 0.12` is shorter than
+`mesh.ANIMATION_SECONDS`, so an object is still growing as the next lands — one construction
+unfolding, not a queue of pop-ins. `SECONDS_REPLAY_WHOLE = 2.5` caps the whole arrival by
+shortening the beat: without it a full `ITEMS_MAX` scene would take nearly eight seconds and
+a reader who just wanted their scene back would be watching a progress bar made of geometry.
+One rule, both loaders (`loadScene` and `browser_bridge.nimSceneAddRaw`), for the reason this
+format has already been burned by: a beat computed twice is a beat that drifts.
+
+**Every version ever written is still readable, and that is a promise rather than a
+convenience.** A scene file is a reader's own work; a build that refuses it has destroyed it
+as surely as deleting it would. `VERSION_SCENE_LEAST` is 1 and should stay 1 — reading an old
+version costs a mapping func and a suite case, refusing one costs somebody their scene. What
+each older version costs: **version 2**, nothing but the sequence guarantee (a version-2 file
+of an untouched scene is byte-identical to a version-3 one but for the version); **version
+1**, colours only. `Ink` has since gained a reserved `Invalid` and lost three categorical
+hues, so version 1's ordinals name a palette that no longer exists; `scene.inkOfSaved` maps
+them under the palette their own file version was written with — the structural slots are
+unmoved, the five surviving hues map exactly, and `Violet`/`Magenta`/`Cerise` fold onto hues
+that exist by the same cycle `inkCycled` walks.
+
+The one file this reads wrong is the browser's own: it stamped version 1 onto version-2
+content for a while (defect 1 above), and nothing in the bytes distinguishes such a file from
+a genuine version-1 one. Read as version 1, its colours come back one hue along; geometry,
+labels and visibility are exact, and saving it again restamps it. Reading version 1 as
+today's ordinals instead would fix that file and *refuse* a genuine version-1 one outright,
+whose `Magenta` and `Cerise` fall past the end of today's palette. **A wrong hue is
+recoverable; a refused scene is not** — which is the whole basis of the choice.
 
 `loadScene` parses into a staging scene and replaces the caller's only on complete success,
 so a bad path, a foreign file, a wrong dimension, or too many items leaves the existing
@@ -1257,6 +1303,20 @@ Checked by cross-reading rather than by round-tripping: a scene the desktop save
 saves through its own button is loaded by `--load-scene` and looked at. A round trip within
 one build passes under any byte order and any label encoding, which is exactly why it missed
 all three defects. A suite case now pins the on-disk bytes of a known float as well.
+
+Version 3 was checked the same way, and the same shape of drift was waiting: the browser
+wrote `nimSceneSlots()` — slot order — while stamping the version that promises creation
+order. `nimSceneSlotsCreated` was added beside it and `saveScene` moved onto it;
+`nimSceneSlots` keeps slot order, since its other callers are combo boxes indexed by dense
+position. **Measured on the shipped builds**: a browser scene built as `p0 p1 p2 p3`, with
+`p1` removed and `late` added, sits in slots as `p0 late p2 p3` and was written to file as
+`p0 p2 p3 late`; loading it back gave `p0 p2 p3 late` with borns 0.000/0.120/0.240/0.360 s
+past the load, and the objects were observed reaching full size one at a time. The desktop
+was then handed that same browser-written file through `--load-scene` and screenshotted at
+frames 2/8/16/24/45: nothing drawn at frame 2, three points at 16 with the first largest, all
+six at 45. Hand-built version-1 and version-2 files were fed to both parsers — version 1's
+ordinals 4/7/13 came back as `Grid`/`Rose`/`Copper`, version 2's 4/8 as `Grid`/`Rose` — and a
+file one version *ahead* of this build was refused by both, leaving the open scene untouched.
 
 
 Browser Pipeline

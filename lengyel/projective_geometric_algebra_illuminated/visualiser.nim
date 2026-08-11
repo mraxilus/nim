@@ -1625,7 +1625,7 @@ proc main() =
   #   the demo entirely.
   let now_startup = secondsNow()
   if len(options.path_load_scene) > 0:
-    echo loadScene(scene, options.path_load_scene)
+    echo loadScene(scene, options.path_load_scene, now_startup)
   else:
     constructSeeds(scene, now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)

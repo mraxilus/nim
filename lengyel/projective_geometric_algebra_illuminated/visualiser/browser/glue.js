@@ -1026,7 +1026,11 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 /* ---------------------------------------------------------------------- */
 
 function saveScene() {
-  const slots = nimSceneSlots();
+  // Creation order, not slot order: a version-3 file promises its sequence is the order
+  //   the scene was built in, and a removed-then-re-added object sits in a reused slot
+  //   well before objects that predate it. Loading walks the sequence back one object at
+  //   a time, so writing slot order here would replay a construction that never happened.
+  const slots = nimSceneSlotsCreated();
   const count_basis = nimBasisCount();
   // Labels go out as UTF-8 bytes, which is what the format holds and what `scene.nim`
   //   writes: a derived label carries operator notation (`a ∧ b`, `a ∨ b`, `a ⊖ b`), and a
@@ -1108,8 +1112,11 @@ function parseAndLoadScene(buffer) {
   for (let i = 0; i < magic_wanted.length; i++) magic += String.fromCharCode(view.getUint8(i));
   offset = magic_wanted.length;
   if (magic !== magic_wanted) throw new Error('File is not a scene file.');
+  // A *range* through the bridge, not this build's own writing version: every version
+  //   ever written stays readable, and which those are is `scene.readsSceneVersion`'s
+  //   answer rather than a pair of literals here to fall out of step with it.
   const version = view.getUint8(offset); offset += 1;
-  if (version !== nimSceneVersion()) {
+  if (!nimSceneReadsVersion(version)) {
     throw new Error('File is a scene file of a version this build cannot read.');
   }
   const count_basis_file = view.getUint8(offset); offset += 1;
@@ -1159,7 +1166,20 @@ function parseAndLoadScene(buffer) {
   }
 
   nimSceneClear();
-  for (const item of parsed) nimSceneAddRaw(item.ink, item.visible, item.label, item.coefficients);
+  // In file order, which from version 3 on is the order the objects were built: each is
+  //   stamped to appear a beat after the last, so the scene replays its own construction.
+  //   The version rides along because an older file's palette ordinals mean something
+  //   else; the mapping is Nim's, not this parser's.
+  //   One clock reading for the whole arrival, taken before the loop: read per item it
+  //   would creep forward by however long parsing took, which is a stagger nobody chose.
+  const arrived = now();
+  for (const item of parsed) {
+    const slot = nimSceneAddRaw(
+      version, item.ink, item.visible, item.label, item.coefficients,
+      count_item, arrived,
+    );
+    if (slot < 0) throw new Error('File names an unknown palette slot for an object.');
+  }
   return 'Loaded ' + count_item + ' object(s) from scene file.';
 }
 

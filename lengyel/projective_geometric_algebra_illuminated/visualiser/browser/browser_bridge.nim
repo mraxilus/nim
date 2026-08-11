@@ -163,21 +163,24 @@ proc nimLoadDemo(now: cfloat) {.exportc.} =
   ## ordinary live items -- a one-click preset rather than a scripted playback mode: once
   ## loaded, every one of its objects is exactly as editable, removable and pickable as
   ## anything built by hand.
-  ##   Stamps `g_borns` one second apart per step (five seeds at `now`, then each of the
-  ##   eleven steps one second later than the last), mirroring
-  ##   `visualiser.runStoryboard`'s own synthetic clock -- unlike `placeSeeds`'s own
-  ##   plain startup scene, this one has derived steps to rank by recency, so the
-  ##   staggering still earns its keep here even where the startup scene no longer needs
-  ##   it.
+  ##   Arrives as a replay: `g_borns` is stamped through `scene.bornReplaying`, so the
+  ##   seeds appear one after another and then each derived step in turn, exactly as a
+  ##   loaded `.rgascene` file does. The same rule for both because they are the same
+  ##   thing to a reader -- a construction handed over whole, played back in the order it
+  ##   was made -- and one beat kept in one place cannot drift from the other.
+  ##   The staggering also ranks the objects list by recency, which a demo full of derived
+  ##   steps needs and `placeSeeds`'s own plain startup scene does not.
   g_scene = initScene()
-  var clock = float(now)
+  let clock = float(now)
   constructSeeds(g_scene, clock)
   let count_seeds = g_scene.len
-  for slot in 0 ..< count_seeds: g_borns[slot] = clock
+  let count_whole = count_seeds + len(STEPS)
+  for slot in 0 ..< count_seeds:
+    g_borns[slot] = bornReplaying(slot, count_whole, clock)
   for index, step in STEPS:
-    clock += 1.0
-    applyStep(g_scene, step, clock)
-    g_borns[count_seeds + index] = clock
+    let born = bornReplaying(count_seeds + index, count_whole, clock)
+    applyStep(g_scene, step, born)
+    g_borns[count_seeds + index] = born
   g_selection.clear()
   g_history = initHistory(g_scene, g_camera)
 
@@ -202,6 +205,18 @@ proc nimSceneSlots(): seq[cint] {.exportc.} =
   ##   (see `Item`'s own doc comment) -- wasted for a caller that only wants the number.
   for slot in 0 ..< ITEMS_MAX:
     if g_scene.isAlive(slot): result.add(cint(slot))
+
+
+proc nimSceneSlotsCreated(): seq[cint] {.exportc.} =
+  ## Report every live slot, oldest creation first, for `glue.js`'s own scene writer.
+  ##   Slot order and creation order part company the moment anything is removed, since
+  ##   the arena hands the freed slot to the next arrival; a version-3 file promises the
+  ##   latter, and this build writes that version. Kept as its own export rather than
+  ##   reordering `nimSceneSlots`, whose callers want the dense positions their combo
+  ##   boxes are indexed by.
+  var slots: array[ITEMS_MAX, int]
+  let count = g_scene.slotsCreated(slots)
+  for position in 0 ..< count: result.add(cint(slots[position]))
 
 
 proc nimIsAlive(slot: cint): bool {.exportc.} = g_scene.isAlive(int(slot))
@@ -1240,13 +1255,21 @@ proc nimSceneMagic(): cstring {.exportc.} = cstring(MAGIC_SCENE)
 
 
 proc nimSceneVersion(): cint {.exportc.} = cint(VERSION_SCENE)
-  ## Report the format version this build writes and reads, for that same packer.
+  ## Report the format version this build writes, for that same packer.
   ##   Exported rather than written out again in JavaScript because it *was* written out
   ##   again in JavaScript: the literal `1` there survived this constant's bump to 2, so
   ##   the browser stamped version 1 onto version 2 content and rejected every file the
   ##   desktop wrote. See `scene.MAGIC_SCENE`'s own note. The rule this restores is the
   ##   project's own -- when one language compiles to another, a derived value belongs
   ##   behind an export, not in a literal the other language keeps its own copy of.
+
+
+proc nimSceneReadsVersion(version: cint): bool {.exportc.} =
+  ## Report whether this build can read a scene file stamped with this version.
+  ##   A rule rather than a number, for the same reason the number above is an export:
+  ##   what a build reads is now a *range*, and a range written out in JavaScript is two
+  ##   literals to drift instead of one.
+  version >= 0 and version <= int(high(uint8)) and readsSceneVersion(uint8(version))
 
 
 proc nimSceneClear() {.exportc.} =
@@ -1257,21 +1280,32 @@ proc nimSceneClear() {.exportc.} =
 
 
 proc nimSceneAddRaw(
-  ink_ordinal: cint; is_visible: bool; label: cstring; coefficients: seq[float]
+  version: cint; ink_ordinal: cint; is_visible: bool; label: cstring;
+  coefficients: seq[float]; count_total: cint; now: cfloat
 ): cint {.exportc.} =
   ## Add one item straight from parsed `.rgascene` fields, for the load path: the hand-
   ## written presentation layer parses the uploaded file's bytes into exactly these
   ## fields (see this module's own doc comment for why packing/parsing itself lives in
   ## JS, not here) and calls this once per item, in file order.
+  ##   `version` is the file's own, because an older one stored its palette ordinals under
+  ## an older `Ink`; the mapping is `scene.inkOfSaved`'s and is not repeated here.
+  ## `SLOT_NONE` where that mapping has no slot to offer, which is a corrupt or foreign
+  ## file and the caller's cue to say so.
+  ##   `count_total` is the file's whole item count and `now` this frame's clock, so the
+  ## arrival is staggered by `scene.bornReplaying` -- the same rule the desktop's own
+  ## `loadScene` stamps with, so a scene replays its construction identically on both.
+  let ink = inkOfSaved(uint8(version), int(ink_ordinal))
+  if ink.isNone: return SLOT_NONE
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
-  let slot = g_scene.addItem(geometry, $label, Ink(ink_ordinal))
+  # The scene was cleared before the first of these, so how many it already holds is this
+  #   item's own position in the file -- no index to pass in and none to get out of step.
+  let born = bornReplaying(g_scene.len, int(count_total), float(now))
+  let slot = g_scene.addItem(geometry, $label, ink.get, born)
   g_scene.setVisible(slot, is_visible)
-  # Matches Item.born's own "dawn of time" default for a loaded item (never partway
-  #   through an appear-in animation that never happened this run): without this, the
-  #   slot could otherwise still hold a stale g_borns reading from whatever occupied it
-  #   earlier this session, misranking a just-loaded item as more recent than it is.
-  g_borns[slot] = 0.0
+  # Stamped rather than left alone: the slot could otherwise still hold a stale reading
+  #   from whatever occupied it earlier this session, misranking a just-loaded item.
+  g_borns[slot] = born
   cint(slot)
 
 
