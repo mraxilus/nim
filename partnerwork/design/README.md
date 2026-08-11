@@ -207,6 +207,22 @@ has happened here more than once.
     *The frame page keeps the midpoint anchor for now, which is what holds
     `frames.html` still; carrying it over is the same piece of work as
     rule 22's.*
+26. **"make the second animation stage quicker or something so it has less
+    emphasis. or whatever the recommended UX is to make it less noticeable
+    than the actual rotation itself."**  The two stages had a sample each
+    way and so a share of the clock each way, which read as one long motion
+    in two halves.  A `Walk` now carries **when each of its frames is due**
+    as well as where it is, and the markup says so in `keyTimes`, so how
+    long a stage lasts is the drawing's decision rather than a side effect
+    of how finely it was sampled.  Three things rank the stages, which is
+    what motion design does with any secondary or camera move: the
+    re-framing takes 40% of the time the turn takes (`RE_FRAME_PACE`), a
+    beat is held on the turn's landing so the two do not blur together
+    (`ARRIVAL_HOLD`), and it still starts and ends softly, because an
+    abrupt start is the one thing that would pull an eye back to it.  The
+    check measures it on the emitted clock, not on the constants: an
+    interval where the pair's own configuration changes is the turn, one
+    where the whole picture moves rigidly is the re-framing.
 
 ## What is settled
 

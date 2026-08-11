@@ -136,6 +136,35 @@ type MoveApply* = proc (pose: Pose; scalar: float): Pose {.nimcall, noSideEffect
   ## One animated move, as the pose it reaches at `scalar` of its full turn.
 
 
+type Walk* = tuple ## A move sampled for animation, and its own timing.
+  poses: seq[Pose]
+  times: seq[float] ## How far through the move each pose is due, 0 to 1.
+    ## Frames are not evenly spread: what a move spends its time on is part
+    ##   of what it says (rule 26).
+
+
+const
+  RE_FRAME_PACE* = 0.4 ## The clock the second stage gets beside the first.
+    ## The turn is the subject and the re-framing is the picture catching
+    ##   up with it, so the re-framing runs at well under half the pace --
+    ##   quick enough to read as a settle rather than as a second move.
+  ARRIVAL_HOLD* = 0.25 ## A beat held on a turn's landing before it follows.
+    ## Without it the two stages run together as one long motion; with it
+    ##   the turn is seen to finish, and what happens next is plainly the
+    ##   frame and not the dance.
+
+
+func timed(paces: seq[float]): seq[float] =
+  ## Turn how long each step takes into when each frame is due.
+  var total = 0.0
+  for pace in paces:
+    total += pace
+  var run = 0.0
+  for pace in paces:
+    run += pace
+    result.add (if total > 0: run / total else: 0.0)
+
+
 func cycle*(move: MoveApply; samples = 14): seq[Pose] =
   ## Sample move, come home, move back, come home -- returning to the start.
   for sign in [1.0, -1.0]:
@@ -169,7 +198,7 @@ func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
 
 
 func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
-    samples = 12; on = Anchor.Pair): seq[Pose] =
+    samples = 12; on = Anchor.Pair): Walk =
   ## Sample one turn and its return, in the stages the dance has.
   ##   Stage one is the turn itself, **with the world held still**: the
   ##     dancer turns where they are and the picture does not follow them.
@@ -179,13 +208,17 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
   ##     drawn in one stage, and what counts as the framing is `on`.
   ##   Then the same again in reverse, so the going and the coming read
   ##     from the one figure.
-  func legs(from_pose: Pose; by: float): seq[Pose] =
+  ##   The stages do not share the clock evenly.  The turn is what the
+  ##     figure is of; the re-framing is the picture catching up with it,
+  ##     and is paced to read that way (rule 26).
+  func legs(from_pose: Pose; by: float): Walk =
     let landed = turned(from_pose, who, about, by)
     if relative(from_pose) == relative(landed):
-      return @[from_pose]
-    # Stage one: the turn, as the room sees it.
+      return (@[from_pose], @[0.0])
+    # Stage one: the turn, as the room sees it, over a whole beat of clock.
     for i in 0 .. samples:
-      result.add turned(from_pose, who, about, by * ease(i / samples))
+      result.poses.add turned(from_pose, who, about, by * ease(i / samples))
+      result.times.add (if i == 0: 0.0 else: 1.0 / float(samples))
     # Stage two: the picture is re-framed until the lead faces up and the
     # anchor is back in the middle.  Nothing travels in it, so the orbit's
     # ring goes out with it.  It is skipped where it would draw nothing --
@@ -194,17 +227,26 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
     settled_home.ring = none(Ring)
     if settled_home.place == landed.place and
         settled_home.facing == landed.facing:
-      result[^1] = settled_home
+      result.poses[^1] = settled_home
       return result
+    # A beat on the landing first: the same pose twice, which is a still.
+    result.poses.add result.poses[^1]
+    result.times.add ARRIVAL_HOLD
     for i in 1 .. samples:
       var home = canonicalise(landed, ease(i / samples), on)
       home.ring = none(Ring)
-      result.add home
+      result.poses.add home
+      result.times.add RE_FRAME_PACE / float(samples)
 
-  let there = legs(base, degrees)
+  let
+    there = legs(base, degrees)
+    back = legs(there.poses[^1], -degrees)
   result = there
-  for p in legs(there[^1], -degrees):
-    result.add p
+  for i, p in back.poses:
+    result.poses.add p
+    # The two legs meet on one pose, so the join is a beat like the others.
+    result.times.add (if i == 0: ARRIVAL_HOLD else: back.times[i])
+  result.times = timed(result.times)
 
 
 func moveLeadAxis(pose: Pose; scalar: float): Pose =

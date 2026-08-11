@@ -467,7 +467,7 @@ proc checkSingleTurns*() =
     var
       leaned = 0.0
       strayed = 0.0
-    for put in walk:
+    for put in walk.poses:
       leaned = max(leaned, abs(wrap180(put.facing[Dancer.Lead])))
       for dancer in Dancer:
         let settled_place = canonicalise(put, on = Anchor.Lead).place[dancer]
@@ -476,10 +476,10 @@ proc checkSingleTurns*() =
     if re_framed:
       doAssert leaned > 45 or strayed > 1,
         &"A turn never left the canonical framing; got {way}."
-      doAssert abs(wrap180(walk[^1].facing[Dancer.Lead])) < 1e-9,
+      doAssert abs(wrap180(walk.poses[^1].facing[Dancer.Lead])) < 1e-9,
         &"A turn ended off upright; got {way}."
-      doAssert dist(walk[^1].place[Dancer.Lead],
-                    canonicalise(walk[^1], on = Anchor.Lead)
+      doAssert dist(walk.poses[^1].place[Dancer.Lead],
+                    canonicalise(walk.poses[^1], on = Anchor.Lead)
                       .place[Dancer.Lead]) < 1e-9,
         &"A turn ended off centre; got {way}."
     else:
@@ -522,9 +522,9 @@ proc checkSingleTurns*() =
       walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
                       on = Anchor.Lead)
     var carried = 0.0
-    for put in walk:
+    for put in walk.poses:
       carried = max(carried,
-        abs(wrap180(put.facing[w.who] - walk[0].facing[w.who])))
+        abs(wrap180(put.facing[w.who] - walk.poses[0].facing[w.who])))
     if w.about == About.Orbit:
       doAssert carried < 1e-9,
         &"An orbit turned its walker; got `{fmt(carried, 1)}` for {way}."
@@ -567,7 +567,7 @@ proc checkSingleTurns*() =
         let walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
                             on = Anchor.Lead)
         var runs: seq[seq[Point]]
-        for put in walk:
+        for put in walk.poses:
           let p = handsOf(put)
           runs.add straightReach(p[Dancer.Lead][arm],
                                  p[Dancer.Follow][single.holds[arm].get])
@@ -697,7 +697,8 @@ proc checkSingleTurns*() =
       doAssert dist(start.place[Dancer.Lead],
                     quarterPose(way, 0).place[Dancer.Lead]) < 1e-9,
         &"The lead stands somewhere else in this position; got {way}."
-      for put in turnWalk(start, w.who, w.about, QUARTER, on = Anchor.Lead):
+      for put in turnWalk(start, w.who, w.about, QUARTER,
+                          on = Anchor.Lead).poses:
         moved = max(moved, dist(put.place[Dancer.Lead],
                                 start.place[Dancer.Lead]))
     # Only the lead's own orbit may move them, and it must: walking round
@@ -708,6 +709,43 @@ proc checkSingleTurns*() =
         &"cannot; got `{fmt(moved, 1)}` for {way}."
     if walks_off:
       re_entered.add w.title.toLowerAscii
+  # RULE 26.  "make the second animation stage quicker ... so it has less
+  # emphasis."  Measured on the clock the markup actually carries: an
+  # interval where the pair's own configuration changes is the turn, one
+  # where the whole picture moves rigidly is the re-framing, and one where
+  # nothing moves at all is a held beat.
+  var slowest = 0.0
+  for way in TurnWay:
+    let
+      w = WAYS_OF_TURNING[way]
+      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
+                      on = Anchor.Lead)
+    var turning, framing, beats = 0.0
+    for i in 0 ..< walk.poses.high:
+      let
+        gap = walk.times[i + 1] - walk.times[i]
+        (before, after) = (walk.poses[i], walk.poses[i + 1])
+      if relative(before) != relative(after):
+        turning += gap
+      elif before.place == after.place and before.facing == after.facing:
+        beats += gap
+      else:
+        framing += gap
+    doAssert abs(turning + framing + beats - 1.0) < 1e-9,
+      &"A move's clock does not add up; got `{turning + framing + beats}`."
+    doAssert (framing > 0) == (w.who == Dancer.Lead),
+      &"A move re-framed when it had nothing to re-frame; got {way}."
+    if framing > 0:
+      doAssert framing < turning / 2,
+        &"The re-framing takes as long as the turn; got " &
+          &"`{fmt(framing, 2)}` against `{fmt(turning, 2)}` for {way}."
+      slowest = max(slowest, framing / turning)
+  told.add &"and the turn is what a transition is of: where the picture " &
+    &"has to be brought back afterwards it takes {fmt(100 * slowest, 0)} " &
+    "per cent of the time the turn itself takes, after a held beat on the " &
+    "landing, so it reads as the frame catching up rather than as a second " &
+    "move"
+
   let ways = TurnWay.toSeq.len
   told.add &"the lead is the still point: they stand on the same spot in " &
     &"every position of every round, and never move through " &

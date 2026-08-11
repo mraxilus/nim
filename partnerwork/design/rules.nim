@@ -102,6 +102,9 @@ const RULES* = [
     "around, i.e. lead position should remain fixed as much as possible " &
     "(obviously this can't really be the case when the lead orbits, a " &
     "reposition/re entering) will still be necessary I think",
+  "make the second animation stage quicker or something so it has less " &
+    "emphasis. or whatever the recommended UX is to make it less " &
+    "noticeable than the actual rotation itself",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -170,6 +173,20 @@ const RULES* = [
   ##       no second stage at all, a lead's axis turn swings only the
   ##       follow, and the lead's own orbit -- the one case the rule allows
   ##       -- comes home as a straight slide.
+  ##   Rule 26 makes the second stage subordinate to the first.
+  ##     The two stages had a sample each way and so a share of the clock
+  ##       each way, which read as one long motion in two halves rather
+  ##       than a turn and the picture following it.
+  ##     Three things carry the ranking, and they are what motion design
+  ##       does with any secondary or camera move: the re-framing takes far
+  ##       less of the clock than the turn (`RE_FRAME_PACE`), a beat is
+  ##       held on the turn's landing so the two do not blur into one
+  ##       (`ARRIVAL_HOLD`), and it still starts and ends softly, because
+  ##       an abrupt start is the one thing that would pull an eye back to
+  ##       it.
+  ##     How long each stage lasts is now the drawing's business rather
+  ##       than a side effect of how finely it was sampled: a walk carries
+  ##       when each of its frames is due, and the markup says so.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

@@ -117,6 +117,12 @@ const BODY = """
   move that carries the lead off their spot, comes home as a straight
   slide, because an orbit that keeps its bearing has no turning left to
   undo.</p>
+  <p><b>The two stages do not share the clock.</b> The turn is what the
+  figure is <em>of</em>; the re-framing is the picture catching up with it,
+  and is ranked below it three ways: it runs in well under half the time
+  the turn takes, a beat is held on the turn's landing so the two never
+  blur into one long motion, and it still starts and stops softly, since an
+  abrupt start is the one thing that would pull your eye back to it.</p>
   <p><b>A settled reach bends round what it does not hold.</b> A line laid
   across a hand cell says that hand is in the hold, and a line laid across a
   chevron hides which way its dancer is facing — so a still figure's

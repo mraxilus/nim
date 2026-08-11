@@ -433,7 +433,7 @@ func singleTurnParts*(): Parts =
     PX = 1.0        ## Pixels a unit takes in a moving cell.
     STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
   var
-    walks: array[TurnWay, array[QUARTERS_ROUND, seq[Pose]]]
+    walks: array[TurnWay, array[QUARTERS_ROUND, Walk]]
     still_half = 0.0
     walk_half: array[TurnWay, float]
   for way in TurnWay:
@@ -443,7 +443,7 @@ func singleTurnParts*(): Parts =
                        extent(quarterPose(way, quarter), captions = false))
       walks[way][quarter] = turnWalk(quarterPose(way, quarter), w.who,
                                      w.about, QUARTER, on = Anchor.Lead)
-      for put in walks[way][quarter]:
+      for put in walks[way][quarter].poses:
         walk_half[way] = max(walk_half[way], extent(put, captions = false))
 
   func sized(svg, cls: string; half, px: float): string =
@@ -468,8 +468,9 @@ func singleTurnParts*(): Parts =
       for quarter in 0 ..< QUARTERS_ROUND:
         let to = (quarter + 1) mod QUARTERS_ROUND
         result[&"tr_{w.tag}_{c}_{quarter}_{to}"] = sized(animatedPoses("mv",
-          single.holds, walks[way][quarter], some walk_half[way], levels,
-          dur = 5.4), "mv", walk_half[way], PX)
+          single.holds, walks[way][quarter].poses, some walk_half[way],
+          levels, dur = 5.4, times = walks[way][quarter].times),
+          "mv", walk_half[way], PX)
         # The still stands in where motion is turned off, so it is a settled
         # picture and bends by rule 22; the moving figure it replaces is the
         # rule's own exemption and stays straight.

@@ -296,9 +296,37 @@ func series*(steps: seq[string]): string =
   steps.join(";")
 
 
-func animate*(attr: string; steps: seq[float]; dur: float): string =
+func beat*(t: float): string =
+  ## Write one moment of an animation's clock, finely enough to keep the
+  ## frames in order.
+  ##   Not `n`, which writes a tenth: a whole move is one unit long here, so
+  ##     a tenth would collapse whole stages of it into the same instant.
+  let written = formatFloat(t, ffDecimal, 4)
+  result = written.strip(leading = false, chars = {'0'})
+                  .strip(leading = false, chars = {'.'})
+  if result.len == 0:
+    result = "0"
+
+
+func keyed*(times: seq[float]; count: int): string =
+  ## Say when each frame of an animation is due, where they are not evenly
+  ## spread (rule 26).
+  ##   Evenly spread is what a browser assumes, so nothing is written for
+  ##     it: a move that spends its clock evenly says so by saying nothing,
+  ##     and only a move that ranks its stages carries the extra attribute.
+  if times.len != count or count < 2:
+    return ""
+  for i, t in times:
+    if abs(t - float(i) / float(count - 1)) > 1e-9:
+      return &""" keyTimes="{times.mapIt(beat(it)).join(";")}""""
+  ""
+
+
+func animate*(attr: string; steps: seq[float]; dur: float;
+    times: seq[float] = @[]): string =
   ## Animate one attribute over the cycle.
   &"""<animate attributeName="{attr}" values="{series(steps)}"""" &
+    keyed(times, steps.len) &
     &""" dur="{dur}s" repeatCount="indefinite"/>"""
 
 
@@ -319,10 +347,14 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
 
 func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
-    ways: Ways = default(Ways); dur = 9.6; over_all = false): string =
+    ways: Ways = default(Ways); dur = 9.6; over_all = false;
+    times: seq[float] = @[]): string =
   ## Draw one picture moving through a walk of poses handed in.
   ##   Every moving figure comes through here, whether its walk is a whole
   ##     move's cycle or one edge of a state graph rocked back and forth.
+  ##   `times` says when each frame is due, for a move that ranks its own
+  ##     stages (rule 26); without it the frames are evenly spread, which
+  ##     is what a browser does anyway.
   let
     poses = walk.mapIt(settled(it, holds, levels, ways))
     box = if half.isSome: half.get
@@ -344,8 +376,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     bits.add paired(
       &"""<circle cx="0" cy="0" r="0" fill="none" stroke="{QUIET}"""" &
         """ stroke-width="1" stroke-dasharray="3 4"/>""",
-      animate("cx", ring_cx, dur) & animate("cy", ring_cy, dur) &
-        animate("r", ring_r, dur))
+      animate("cx", ring_cx, dur, times) & animate("cy", ring_cy, dur, times) &
+        animate("r", ring_r, dur, times))
 
   # A body is rigid: only where it is and which way it faces ever change.  So
   # it is drawn once, at the origin facing up, and carried about by a pair of
@@ -358,10 +390,11 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     let places = poses.mapIt(&"{n(it.place[who].x)} {n(it.place[who].y)}")
     bits.add "<g>" &
       """<animateTransform attributeName="transform" type="translate"""" &
-      &""" values="{series(places)}" dur="{dur}s"""" &
-      """ repeatCount="indefinite"/>""" &
+      &""" values="{series(places)}"""" & keyed(times, poses.len) &
+      &""" dur="{dur}s" repeatCount="indefinite"/>""" &
       """<animateTransform attributeName="transform" type="rotate"""" &
       &""" additive="sum" values="{series(facings(poses, who))}"""" &
+      keyed(times, poses.len) &
       &""" dur="{dur}s" repeatCount="indefinite"/>""" &
       border(still, who) & chevron(still.place[who], still.facing[who]) &
       "</g>"
@@ -411,6 +444,7 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
           &""" stroke-width="{LINK_W}" stroke-linecap="round"""" &
           """ stroke-linejoin="round"/>""",
         &"""<animate attributeName="d" values="{series(paths)}"""" &
+          keyed(times, poses.len) &
           &""" dur="{dur}s" repeatCount="indefinite"/>""")
 
   # A hand's own mark animates its place; a level's dot rides along as its
@@ -418,8 +452,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
   # and a hand carrying a dot is two.
   func dotOf(pts: seq[Point]; ink: string): string =
     &"""<circle cx="0" cy="0" r="2.7" fill="{ink}">""" &
-      animate("cx", pts.mapIt(it.x), dur) &
-      animate("cy", pts.mapIt(it.y), dur) & "</circle>"
+      animate("cx", pts.mapIt(it.x), dur, times) &
+      animate("cy", pts.mapIt(it.y), dur, times) & "</circle>"
 
   # A moving hand says its level, as a still one does (rule 21): the fill
   # rides on the hand's own mark, so `paired` still has one element to
@@ -429,8 +463,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     bits.add paired(
       hand(pts[0].x, pts[0].y, true, sd, holds[sd].isSome,
            (if levels[sd] == some(Level.High): none(Level) else: levels[sd])),
-      animate("x", pts.mapIt(it.x - R), dur) &
-        animate("y", pts.mapIt(it.y - R), dur))
+      animate("x", pts.mapIt(it.x - R), dur, times) &
+        animate("y", pts.mapIt(it.y - R), dur, times))
     if holds[sd].isSome and levels[sd] == some(Level.High):
       bits.add dotOf(pts, DEEP[sd])
   for own in [Arm.R, Arm.L]:
@@ -442,8 +476,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     bits.add paired(
       hand(pts[0].x, pts[0].y, false, own, held,
            (if level == some(Level.High): none(Level) else: level)),
-      animate("cx", pts.mapIt(it.x), dur) &
-        animate("cy", pts.mapIt(it.y), dur))
+      animate("cx", pts.mapIt(it.x), dur, times) &
+        animate("cy", pts.mapIt(it.y), dur, times))
     if held and level == some(Level.High):
       bits.add dotOf(pts, INK[own])
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
