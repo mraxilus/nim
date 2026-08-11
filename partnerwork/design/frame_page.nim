@@ -38,10 +38,11 @@ const BODY = """
   out to rule most of them out most of the time.
   A move animates in two stages: travel, then turn the world until <b>the lead
   faces up</b> again. That second stage collapses every pose that is the same
-  configuration onto one picture, and shows that an orbit lands where an axis
-  turn lands. And <b>only an <em>above</em> connection may ever cross a
-  body</b> — at every instant a moving picture draws, not merely at the frames
-  it is sampled at.</p>
+  configuration onto one picture, and shows that <b>an orbit by either dancer
+  lands in the same place</b> — while an orbit and a turn danced together
+  land where an axis turn lands. And <b>only an <em>above</em> connection may
+  ever cross a body</b> — at every instant a moving picture draws, not merely
+  at the frames it is sampled at.</p>
   <p class="sibling"><b>The turn sign is on its own page.</b> It answers a
   different question — how to label an <em>edge</em> — and only meets this one
   at the levels and the arm inks, which the two pages share.</p>
@@ -241,48 +242,69 @@ const BODY = """
     <h3>An orbit, in two stages</h3>
     <p><b>Stage one</b>: the follow walks the ring round the lead, who stands
     still — so the pair's axis tilts away from upright, which the old picture
-    could not show at all. <b>Stage two</b>: the whole drawing turns until the
-    <em>lead faces up</em> again. The follow does not have to come back overhead;
-    where they have got to is part of what the picture says.</p>
-    <p>Here the follow keeps their face to the lead all the way round:</p>
+    could not show at all. <b>Stage two</b>: the whole drawing is brought back
+    until the <em>lead faces up</em> again. The follow does not have to come
+    back overhead; where they have got to is part of what the picture says.</p>
+    <p><b>An orbit keeps its bearing.</b> Walking round somebody is not the
+    same act as turning to keep facing them, so the follow arrives facing the
+    way they set off — watch their chevron hold its direction:</p>
     <div class="row mid">
-      <figure>{walk_locked_0}<figcaption>rest</figcaption></figure>
-      <figure>{walk_locked_1}<figcaption>stage one —<br>walking round</figcaption></figure>
-      <figure>{walk_locked_2}<figcaption>a quarter round</figcaption></figure>
-      <figure>{walk_locked_3}<figcaption>stage two —<br>the world turns</figcaption></figure>
-      <figure>{walk_locked_4}<figcaption>home</figcaption></figure>
+      <figure>{walk_orbit_0}<figcaption>rest</figcaption></figure>
+      <figure>{walk_orbit_1}<figcaption>stage one —<br>walking round</figcaption></figure>
+      <figure>{walk_orbit_2}<figcaption>a quarter round</figcaption></figure>
+      <figure>{walk_orbit_3}<figcaption>stage two —<br>the world comes back</figcaption></figure>
+      <figure>{walk_orbit_4}<figcaption>home</figcaption></figure>
     </div>
-    <p>And here they keep their own bearing instead, arriving facing the way
-    they set off. Same path, different move, different place to land:</p>
+    <p>And here the follow keeps their face to the lead all the way round
+    instead. That is <b>two turns danced at once</b> — an orbit and an axis
+    turn together — and it is worth naming as the compound it is, because it
+    lands somewhere else entirely:</p>
     <div class="row mid">
-      <figure>{walk_drift_0}<figcaption>rest</figcaption></figure>
-      <figure>{walk_drift_1}<figcaption>stage one</figcaption></figure>
-      <figure>{walk_drift_2}<figcaption>a quarter round</figcaption></figure>
-      <figure>{walk_drift_3}<figcaption>stage two</figcaption></figure>
-      <figure>{walk_drift_4}<figcaption>home</figcaption></figure>
+      <figure>{walk_compound_0}<figcaption>rest</figcaption></figure>
+      <figure>{walk_compound_1}<figcaption>stage one</figcaption></figure>
+      <figure>{walk_compound_2}<figcaption>a quarter round</figcaption></figure>
+      <figure>{walk_compound_3}<figcaption>stage two</figcaption></figure>
+      <figure>{walk_compound_4}<figcaption>home</figcaption></figure>
     </div>
   </div>
 
   <div class="plate pick">
     <h3>What that shows<span class="tag">the point</span></h3>
     <p>Once stage two has run, the picture holds two numbers and nothing else,
-    both measured against the lead: <em>where</em> the follow is round from them,
-    and <em>how</em> the follow faces. Every rotation moves those two — and
-    <b>an orbit lands where an axis turn lands</b>. A follow who walks a quarter
-    round the lead keeping their face to them arrives at exactly the state the
-    lead reaches by turning a quarter on the spot. Not similar: the same, which
-    is why both pictures below have the follow off to one side.</p>
+    both measured against the lead: <em>where</em> the follow is round from
+    them, and <em>how</em> the follow faces. Every rotation moves those two —
+    and two different things collapse onto one picture, which is worth keeping
+    apart.</p>
+    <p><b>An orbit by either dancer lands in the same place.</b> The follow
+    walking a quarter round the lead, and the lead walking a quarter round the
+    follow, arrive at exactly the same picture: only the pair's axis has
+    swung, and both bearings are where they started. So <b>the drawing cannot
+    say who walked</b> — only the path can.</p>
     <div class="row">
-      <figure>{collapse_orbit}<figcaption>the follow walked<br>a quarter round</figcaption></figure>
+      <figure>{collapse_follow_walked}<figcaption>the follow walked<br>a quarter round</figcaption></figure>
+      <figure>{collapse_lead_walked}<figcaption>the lead walked<br>a quarter round</figcaption></figure>
+    </div>
+    <p><b>And the compound lands where an axis turn lands.</b> A follow who
+    walks a quarter round the lead <em>while turning to keep their face to
+    them</em> arrives at exactly the state the lead reaches by turning a
+    quarter on the spot. Not similar: the same drawing, mark for mark.</p>
+    <div class="row">
+      <figure>{collapse_compound}<figcaption>the follow walked and turned<br>a quarter round</figcaption></figure>
       <figure>{collapse_axis}<figcaption>the lead turned<br>a quarter on the spot</figcaption></figure>
     </div>
-    <p>Checked rather than claimed — the generator asserts the two are the same
-    drawing, mark for mark, and refuses to build if they are not.</p>
-    <p><b>So axis against orbit is a property of the move, not of the state.</b>
-    The node never needs to know; only the edge does. Which is why the two
-    stages are worth animating: the difference is a path, and only a path can
-    show it. It also settles the turn sign's dash on the other page — the dash
-    is describing an edge, and the sign labels edges, so it survives.</p>
+    <p>Checked rather than claimed — the generator asserts each pair is one
+    drawing, mark for mark, and refuses to build if it is not. It also asserts
+    that a <em>plain</em> orbit does <b>not</b> land on the axis turn, because
+    that is the correction: an earlier version of this page called the
+    compound an orbit and claimed more than was true.</p>
+    <p><b>So what is a property of the move rather than the state is
+    narrower than it looked.</b> A state can tell a plain orbit from an axis
+    turn — they land in different places. What a state cannot tell is
+    <em>who</em> did the walking, or which two turns a compound was made of.
+    The node never needs to know those; only the edge does. Which is why the
+    two stages are worth animating: the difference is a path, and only a path
+    can show it. It also settles the turn sign's dash on the other page — the
+    dash is describing an edge, and the sign labels edges, so it survives.</p>
   </div>
 
   <div class="plate">
@@ -408,11 +430,12 @@ func render*(P: Parts): string =
               "or_held_0", "or_tiny_1", "slot_chart",
               "route_wrap", "route_low", "route_high",
               "above_plain", "above_asked",
-              "walk_locked_0", "walk_locked_1", "walk_locked_2",
-              "walk_locked_3", "walk_locked_4",
-              "walk_drift_0", "walk_drift_1", "walk_drift_2",
-              "walk_drift_3", "walk_drift_4",
-              "collapse_orbit", "collapse_axis",
+              "walk_orbit_0", "walk_orbit_1", "walk_orbit_2",
+              "walk_orbit_3", "walk_orbit_4",
+              "walk_compound_0", "walk_compound_1", "walk_compound_2",
+              "walk_compound_3", "walk_compound_4",
+              "collapse_follow_walked", "collapse_lead_walked",
+              "collapse_compound", "collapse_axis",
               "pair_ll", "pair_ll_turned", "pair_lr", "pair_lr_turned",
               "free_fade", "free_grey", "free_fade_tiny", "free_grey_tiny"]:
     fills.add (key, P[key])

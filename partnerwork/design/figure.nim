@@ -384,10 +384,14 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
       animate("cx", pts.mapIt(it.x), dur) &
       animate("cy", pts.mapIt(it.y), dur) & "</circle>"
 
+  # A moving hand says its level, as a still one does (rule 21): the fill
+  # rides on the hand's own mark, so `paired` still has one element to
+  # reopen, and only high's dot needs a mark of its own.
   for sd in Arm:
     let pts = hands.mapIt(it[Dancer.Lead][sd])
     bits.add paired(
-      hand(pts[0].x, pts[0].y, true, sd, holds[sd].isSome),
+      hand(pts[0].x, pts[0].y, true, sd, holds[sd].isSome,
+           (if levels[sd] == some(Level.High): none(Level) else: levels[sd])),
       animate("x", pts.mapIt(it.x - R), dur) &
         animate("y", pts.mapIt(it.y - R), dur))
     if holds[sd].isSome and levels[sd] == some(Level.High):
@@ -397,11 +401,13 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
       pts = hands.mapIt(it[Dancer.Follow][own])
       by = Arm.toSeq.filterIt(holds[it] == some(own))
       held = by.len > 0
+      level = if held: levels[by[0]] else: none(Level)
     bits.add paired(
-      hand(pts[0].x, pts[0].y, false, own, held),
+      hand(pts[0].x, pts[0].y, false, own, held,
+           (if level == some(Level.High): none(Level) else: level)),
       animate("cx", pts.mapIt(it.x), dur) &
         animate("cy", pts.mapIt(it.y), dur))
-    if held and levels[by[0]] == some(Level.High):
+    if held and level == some(Level.High):
       bits.add dotOf(pts, INK[own])
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"

@@ -141,9 +141,15 @@ type About* {.pure.} = enum ## What a dancer's turn goes round.
 
 func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
   ## Turn one dancer, on their own axis or round their partner.
+  ##   An orbit **keeps its bearing** (rule 20): the walker arrives facing
+  ##     the way they set off, because walking round somebody is not the
+  ##     same act as turning to keep facing them.
+  ##     Keeping the face to the partner all the way round is an orbit and
+  ##       an axis turn danced together, and is named as the compound it is
+  ##       wherever it is still wanted.
   case about
   of About.Axis: spinAbout(base, who, degrees)
-  of About.Orbit: orbit(base, who, degrees, locked = true)
+  of About.Orbit: orbit(base, who, degrees, locked = false)
 
 
 func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
@@ -164,15 +170,18 @@ func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
     # Stage one: the turn, as the room sees it.
     for i in 0 .. samples:
       result.add turned(from_pose, who, about, by * ease(i / samples))
-    if who == Dancer.Lead:
-      # Stage two: the picture comes back to facing the lead up.  Nothing
-      # travels in it, so the orbit's ring goes out with it.
-      for i in 1 .. samples:
-        var home = canonicalise(landed, ease(i / samples))
-        home.ring = none(Ring)
-        result.add home
-    else:
-      var home = canonicalise(landed)
+    # Stage two: the picture is re-framed until the lead faces up and the
+    # pair is centred again.  Nothing travels in it, so the orbit's ring
+    # goes out with it.  It is skipped only where it would draw nothing --
+    # a follow's own turn leaves the framing exactly as it found it.
+    var settled_home = canonicalise(landed)
+    settled_home.ring = none(Ring)
+    if settled_home.place == landed.place and
+        settled_home.facing == landed.facing:
+      result[^1] = settled_home
+      return result
+    for i in 1 .. samples:
+      var home = canonicalise(landed, ease(i / samples))
       home.ring = none(Ring)
       result.add home
 
@@ -186,10 +195,10 @@ func moveLeadAxis(pose: Pose; scalar: float): Pose =
   spinAbout(pose, Dancer.Lead, 90 * scalar)
 
 func moveFollowOrbits(pose: Pose; scalar: float): Pose =
-  orbit(pose, Dancer.Follow, 90 * scalar)
+  orbit(pose, Dancer.Follow, 90 * scalar, locked = false)
 
 func moveLeadOrbits(pose: Pose; scalar: float): Pose =
-  orbit(pose, Dancer.Lead, 90 * scalar)
+  orbit(pose, Dancer.Lead, 90 * scalar, locked = false)
 
 func moveCouple(pose: Pose; scalar: float): Pose =
   couple(pose, 90 * scalar)

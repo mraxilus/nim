@@ -418,8 +418,9 @@ proc checkSingleTurns*() =
 
   # RULE 19.  "you should also include orbit turns not just the axis
   # turns."  Four ways: each dancer's own axis turn and each dancer's orbit
-  # of the other -- and the orbits carry the dashed ring that says who is
-  # standing still, while the axis turns do not.
+  # of the other -- the orbits ringed, since the ring says who is standing
+  # still.  Which ways share a round of positions is measured here rather
+  # than taken from the table, and the table is held to the measurement.
   var axis_ways, orbit_ways = 0
   for way in TurnWay:
     let w = WAYS_OF_TURNING[way]
@@ -429,44 +430,63 @@ proc checkSingleTurns*() =
       &"An orbit's ring is missing or an axis turn has one; got {way}."
   doAssert axis_ways == 2 and orbit_ways == 2,
     &"Four ways expected; got `{axis_ways}` axis and `{orbit_ways}` orbit."
-  # And an orbit reaches no position an axis turn does not: measured, the
-  # two ways of a family walk one set of places.
-  for way in TurnWay:
-    let mate = if FAMILY_OF[way] == Family.FollowFacing: TurnWay.FollowAxis
-               else: TurnWay.LeadAxis
+
+  func roundOfWay(way: TurnWay): HashSet[tuple[axis, facing: float]] =
     for quarter in 0 ..< QUARTERS_ROUND:
-      var found = false
-      for other_quarter in 0 ..< QUARTERS_ROUND:
-        if placeOf(quarterPose(way, quarter)) ==
-            placeOf(quarterPose(mate, other_quarter)):
-          found = true
-      doAssert found, &"A way left its family; got `{quarter}` of {way}."
+      result.incl placeOf(quarterPose(way, quarter))
+
+  var rounds: seq[HashSet[tuple[axis, facing: float]]]
+  for way in TurnWay:
+    let walked = roundOfWay(way)
+    # The table's claim about this way holds: it shares its round with
+    # every way of its family, and with no other.
+    for mate in TurnWay:
+      let shares = roundOfWay(mate) == walked
+      doAssert shares == (FAMILY_OF[mate] == FAMILY_OF[way]),
+        &"A way left its family; got {way} against {mate}."
+    if walked notin rounds:
+      rounds.add walked
+  doAssert rounds.len == 3,
+    &"Three rounds expected of four ways; got `{rounds.len}`."
   told.add &"{axis_ways} axis turns and {orbit_ways} orbits, the orbits " &
-    "ringed; an orbit reaches no position its partner's own turn does not"
+    &"ringed; the four ways walk {rounds.len} rounds, the two orbits " &
+    "sharing one that neither axis turn reaches"
 
   # RULE 18.  "the leads' transitions should still be in the 2 stage form,
   # stage 1 is the lead turns with the original perspective stage 2 is
-  # reorienting the perspective."  Measured on the walk itself: a lead's
-  # turn leans the picture off upright before it brings it back, and ends
-  # facing up; a follow's turn never leans it at all.
+  # reorienting the perspective."  Measured on the walk: stage one leaves
+  # the picture off canonical -- leaning, or off centre, or both -- and
+  # stage two brings it back.  A turn that leaves the framing exactly as
+  # it found it has no second stage to draw, and only a follow's own axis
+  # turn is such a turn.
   for way in TurnWay:
     let
       w = WAYS_OF_TURNING[way]
       walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
-    var leaned = 0.0
+    var
+      leaned = 0.0
+      strayed = 0.0
     for put in walk:
       leaned = max(leaned, abs(wrap180(put.facing[Dancer.Lead])))
-    if w.who == Dancer.Lead:
-      doAssert leaned > 45,
-        &"A lead's turn never left upright; got `{fmt(leaned, 1)}` for {way}."
+      for dancer in Dancer:
+        let settled_place = canonicalise(put).place[dancer]
+        strayed = max(strayed, dist(put.place[dancer], settled_place))
+    let re_framed = w.who == Dancer.Lead or w.about == About.Orbit
+    if re_framed:
+      doAssert leaned > 45 or strayed > 1,
+        &"A turn never left the canonical framing; got {way}."
       doAssert abs(wrap180(walk[^1].facing[Dancer.Lead])) < 1e-9,
-        &"A lead's turn ended off upright; got {way}."
+        &"A turn ended off upright; got {way}."
+      doAssert dist(walk[^1].place[Dancer.Lead],
+                    canonicalise(walk[^1]).place[Dancer.Lead]) < 1e-9,
+        &"A turn ended off centre; got {way}."
     else:
-      doAssert leaned < 1e-9,
-        &"A follow's turn leaned the picture; got `{leaned}` for {way}."
-  told.add "a lead's turn is danced in two stages -- the room holds still " &
-    "while they turn, then the picture comes back to facing them up; a " &
-    "follow's turn needs only the one"
+      doAssert leaned < 1e-9 and strayed < 1e-9,
+        &"A turn moved the framing with nothing to re-frame; got {way}."
+  told.add "a turn that moves the framing is danced in two stages -- the " &
+    "room holds still while it happens, then the picture is brought back " &
+    "to the lead facing up and the pair centred; a follow's own turn " &
+    "moves nothing and needs only the one"
 
   # RULE 16 and RULE 15.  Four orientations per connection, the round
   # closing rather than refusing; every one of them drawn and every edge
@@ -487,6 +507,50 @@ proc checkSingleTurns*() =
   told.add &"a single hand above turns for ever: {QUARTERS_ROUND} " &
     &"orientations a way, the round closing rather than refusing, all " &
     &"{statics} positions drawn and all {moving} transitions animated"
+
+  # RULE 20.  "make sure orbit turns keep their bearing, youre currently
+  # combining orbit and axis turns to keep the partner facing the other."
+  # Measured through every orbit walk: the walker's own facing never moves,
+  # and the pair's axis does -- which is what tells an orbit from the
+  # compound of an orbit and an axis turn.
+  var swung = 0.0
+  for way in TurnWay:
+    let
+      w = WAYS_OF_TURNING[way]
+      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER)
+    var carried = 0.0
+    for put in walk:
+      carried = max(carried,
+        abs(wrap180(put.facing[w.who] - walk[0].facing[w.who])))
+    if w.about == About.Orbit:
+      doAssert carried < 1e-9,
+        &"An orbit turned its walker; got `{fmt(carried, 1)}` for {way}."
+      swung = max(swung, abs(wrap180(
+        placeOf(quarterPose(way, 1)).axis - placeOf(quarterPose(way, 0)).axis)))
+    else:
+      doAssert carried > 45,
+        &"An axis turn never turned its dancer; got {way}."
+  doAssert abs(swung - QUARTER) < 1e-9,
+    &"An orbit swung the axis by the wrong amount; got `{fmt(swung, 1)}`."
+  told.add &"an orbit keeps its bearing: the walker's facing never moves " &
+    &"and the pair's axis swings the whole {fmt(swung, 0)} degrees, so " &
+    "an orbit is never an axis turn in disguise"
+
+  # RULE 21.  "also, the animations should also have the above level as
+  # that's the only valid one for the current scope."  A moving hand says
+  # its level as a still one does: every held hand of every transition
+  # carries the above hatch.
+  var moving_hatched = 0
+  for key, figure in built:
+    if not key.startsWith("tr_") or key.endsWith("_still"):
+      continue
+    doAssert "url(#h" in figure,
+      &"A moving hand lost its level; got no hatch in `{key}`."
+    inc moving_hatched
+  doAssert moving_hatched == want,
+    &"A transition went unhatched; got `{moving_hatched}` of `{want}`."
+  told.add &"all {moving_hatched} animations carry the above hatch on " &
+    "their held hands, as the still figures beside them do"
 
   # RULE 14.  Nothing wraps a body: measured as how far a reach bows off
   # the chord between its own two hands, standing and turning alike.

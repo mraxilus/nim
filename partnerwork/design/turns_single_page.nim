@@ -97,18 +97,25 @@ const BODY = """
   <b>A dashed ring says an orbit</b>, centred on whoever is standing still;
   it is the same dash the frame picture uses, and nothing else on this page
   is dashed.</p>
-  <p><b>A lead's turn is danced in two stages, and animated that way.</b>
-  <b>Stage one</b> is the turn itself, seen from where the room stands: the
-  lead turns and the picture leans off upright with them. <b>Stage two</b>
-  reorients the picture until the lead faces up again, which is what swings
-  the follow round. A follow's turn needs no second stage — the lead never
-  moved, so there is nothing to bring back.</p>
-  <p><b>And the orbits reach no new places.</b> Measured, and asserted on
-  every build: a follow orbiting the lead walks the very states the lead's
-  own turn reaches, and a lead orbiting the follow walks the follow's own —
-  each backwards. So there are four ways of turning and only <b>two sets of
-  positions</b>, which is the collapse the frame page argues, met again
-  here as a fact about the drawings rather than an argument about them.</p>
+  <p><b>An orbit keeps its bearing.</b> Walking round somebody is not the
+  same act as turning to keep facing them: the walker arrives facing the
+  way they set off, and their chevron holds its direction the whole way
+  round. Keeping the face to the partner is <em>two</em> turns danced at
+  once — an orbit and an axis turn — and is not what these sections
+  draw.</p>
+  <p><b>A turn that moves the framing is danced in two stages, and animated
+  that way.</b> <b>Stage one</b> is the turn itself, seen from where the
+  room stands: the picture leans off upright, or slides off centre, with
+  the dancers. <b>Stage two</b> brings the picture back — the lead facing
+  up, the pair centred. Only a follow's own axis turn needs no second
+  stage, because it leaves the framing exactly as it found it.</p>
+  <p><b>Three rounds, not four.</b> Measured, and asserted on every build:
+  the two axis turns each walk a round of their own, and <b>the two orbits
+  walk one round between them</b> — a follow orbiting the lead and a lead
+  orbiting the follow arrive at the same pictures, because only the pair's
+  axis has swung and both bearings are where they started. So the drawing
+  cannot say <em>who</em> walked; only the path can. The orbit round is not
+  either axis round: it meets them only at rest.</p>
 </section>
 
 <section>
@@ -136,13 +143,18 @@ const BODY = """
 </section>
 
 <div class="note">
-  <p><b>What the collapse costs, and what it buys.</b> If two ways reach
-  one set of positions, then a position cannot say which way it was reached
-  by — only the edge can. That is the frame page's conclusion arriving
-  here with teeth: the four sections above are four ways of leading, and
-  the state graph underneath them has two rounds in it, not four. Whether
-  the page should be reorganised to say that first — two rounds, four ways
-  of walking them — is yours to call.</p>
+  <p><b>What the collapse costs, and what it buys.</b> Where two ways reach
+  one round, a position cannot say which of them was danced — only the edge
+  can. That holds for the two orbits, so the state graph underneath these
+  four sections has <b>three rounds</b> in it, not four. Whether the page
+  should be reorganised to say that first — three rounds, four ways of
+  walking them — is yours to call.</p>
+  <p><b>And it is narrower than the frame page used to claim.</b> That page
+  said axis against orbit was a property of the move rather than the state.
+  It is not: an orbit that keeps its bearing lands somewhere no axis turn
+  reaches, so a <em>position</em> tells them apart. What a position cannot
+  tell is who walked, or which two turns a compound was made of. The frame
+  page has been corrected to say so.</p>
   <p><b>What is not drawn:</b> anything that runs out. No refusal appears
   on this page because above has no ceiling; the moment a level that locks
   or wraps comes back into scope, ceilings and refusals come with it.</p>

@@ -82,6 +82,10 @@ const RULES* = [
     "the lead turns with the original perspective stage 2 is reorienting " &
     "the perspective",
   "you should also include orbit turns not just the axis turns",
+  "make sure orbit turns keep their bearing, youre currently combining " &
+    "orbit and axis turns to keep the partner facing the other",
+  "also, the animations should also have the above level as that's the " &
+    "only valid one for the current scope",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -112,11 +116,17 @@ const RULES* = [
   ##     the lead turns while the world holds still, and only then does the
   ##     picture turn back to face them up.
   ##   Rule 19 adds the orbit turns beside the axis turns.
-  ##     Measured, an orbit reaches no position an axis turn does not: a
-  ##       follow orbiting the lead walks the same states a lead's own turn
-  ##       reaches, backwards, and a lead orbiting the follow walks the
-  ##       follow's own.  Four ways of turning, two families of positions --
-  ##       which is the collapse the frame page argues, met again.
+  ##   Rule 20 says what an orbit is: the orbiter walks the ring and keeps
+  ##     their own bearing, arriving facing the way they set off.
+  ##     `pose.orbit` has always had this as `locked = false`; the locked
+  ##       form keeps the orbiter's face to their partner, which is an
+  ##       orbit and an axis turn danced together, not an orbit.
+  ##     Measured with the bearing kept: the two orbits reach one round of
+  ##       positions -- the drawing cannot say which dancer walked -- and
+  ##       that round is not either axis round.  Four ways of turning,
+  ##       three rounds of positions.
+  ##   Rule 21 puts the level on a moving hand as well as a still one; on
+  ##     the turns pages that is above, the only level in scope.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

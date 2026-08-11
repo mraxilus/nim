@@ -136,10 +136,18 @@ has happened here more than once.
 19. **"you should also include orbit turns not just the axis turns."**
     Four ways: each dancer's own axis turn and each dancer's orbit of the
     other, the orbits marked by the dashed ring while they happen.
-    Measured: an orbit reaches no position an axis turn does not -- a
-    follow orbiting the lead walks the lead's own round backwards, and a
-    lead orbiting the follow walks the follow's.  Four ways of turning,
-    two rounds of positions.
+20. **"make sure orbit turns keep their bearing, youre currently combining
+    orbit and axis turns to keep the partner facing the other."**  The
+    walker arrives facing the way they set off; `pose.orbit`'s `locked`
+    form, which keeps their face to their partner, is an orbit *and* an
+    axis turn danced together and is named as the compound it is.
+    Measured with the bearing kept: the two orbits walk **one** round
+    between them -- the drawing cannot say who walked -- and that round is
+    neither axis round.  Four ways of turning, three rounds of positions.
+21. **"also, the animations should also have the above level as that's the
+    only valid one for the current scope."**  A moving hand wears its
+    level as a still one does; every transition on the turns page carries
+    the above hatch, counted on each build.
 
 ## What is settled
 
@@ -216,11 +224,17 @@ page and this list together.
   unless a new route is decisively shorter.
 - An **orbit goes round the other dancer**; a dashed ring appears only while
   one is happening, centred on whoever stands still.  Nothing else is dashed.
-- **The collapse** (checked, not argued): a locked quarter-orbit lands on the
-  byte-identical picture of the matching quarter axis turn.  So axis-against-
-  orbit is a property of the *move*, not the *state* — an edge label, never a
-  node's concern.  Likewise both dancers going round each other is a picture
-  no-op, which matches the model: a couple rotation stores no twist.
+- **What collapses** (checked, not argued), and it is narrower than this list
+  once claimed.  A quarter-orbit by *either* dancer lands on the
+  byte-identical picture, so the drawing cannot say **who walked** — that is
+  an edge label, never a node's concern.  And the *compound* of an orbit and
+  an axis turn lands on the matching quarter axis turn's picture, so which
+  two turns a compound was made of is an edge label too.  What does **not**
+  collapse: a plain orbit against an axis turn.  They land in different
+  places, so a state does tell them apart, and the old claim that
+  axis-against-orbit was purely a property of the move was the locked orbit
+  speaking.  Likewise both dancers going round each other is a picture no-op,
+  which matches the model: a couple rotation stores no twist.
 
 **The turn sign.**
 
