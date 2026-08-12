@@ -411,6 +411,29 @@ has happened here more than once.
     page is back where it began: it said axis against orbit was a property
     of the move and not of the state, rule 20 made that false, and rule 32
     makes it true again.*
+33. **"the swan zig zag is a bit to large, make it tighter so it looks more
+    readable. also, the above level hatching appears to be a background that
+    moves around a lot as the squares/circles move, it should stay visually
+    consistent during animation."**  Two things, and the second was a real
+    fault rather than a matter of taste.
+    **The swan.**  Its snake had been taking the whole of the straight
+    connection's swing on top of its own, which opened loops wider than the
+    pair they belong to.  `route.SWAN_SWING` says how much it ends up
+    carrying instead — enough to read as going *round* the straight one, not
+    so much that the zig-zag leaves the figure.  The check bounds it both
+    ways: wider than half a `BOX_ROOM`, narrower than half the distance
+    between the two bodies.
+    **The hatch.**  An `above` fill is an SVG `<pattern>` with
+    `patternUnits="userSpaceOnUse"`, so it is anchored to the drawing rather
+    than to the shape.  A moving hand animated its own `x`/`y` or `cx`/`cy`,
+    which slid the mark across a hatch that was standing still — so the fill
+    swam about inside its own outline.  A moving hand is now drawn once at
+    the origin and carried by a transform, exactly as a body is: the
+    transform establishes the user space the pattern is read in, so the
+    hatch travels with the mark.  *It also let the high dot go back inside
+    `hand()` — a group can hold two elements where `paired` reopens one.*
+    The check is that a hatched mark is childless: an element that animates
+    nothing of its own has no coordinates to slide.
 
 ## What is settled
 

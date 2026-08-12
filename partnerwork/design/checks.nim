@@ -563,17 +563,37 @@ proc checkSingleTurns*() =
   # that's the only valid one for the current scope."  A moving hand says
   # its level as a still one does: every held hand of every transition
   # carries the above hatch.
-  var moving_hatched = 0
+  # RULE 33 goes with it: "the above level hatching appears to be a
+  # background that moves around a lot as the squares/circles move, it
+  # should stay visually consistent during animation."  A hatch is a
+  # pattern anchored to user space, so a mark that animates its own
+  # coordinates slides across a hatch standing still.  Carried by a
+  # transform instead, the hatch travels with it -- which is measured here
+  # as the mark animating nothing of its own: a hatched element with no
+  # children has no coordinates to animate.
+  var
+    moving_hatched = 0
+    held_still = 0
   for key, figure in built:
     if not key.startsWith("tr_") or key.endsWith("_still"):
       continue
     doAssert "url(#h" in figure,
       &"A moving hand lost its level; got no hatch in `{key}`."
+    for part in figure.split('<'):
+      if "url(#h" notin part:
+        continue
+      doAssert "/>" in part,
+        &"A hatched mark animates its own place, so its hatch will swim; " &
+          &"got `{key}`."
+      inc held_still
     inc moving_hatched
   doAssert moving_hatched == want,
     &"A transition went unhatched; got `{moving_hatched}` of `{want}`."
   told.add &"all {moving_hatched} animations carry the above hatch on " &
-    "their held hands, as the still figures beside them do"
+    &"their held hands, as the still figures beside them do -- and all " &
+    &"{held_still} of those marks are carried by a transform rather than " &
+    "animating their own place, so the hatch travels with the mark instead " &
+    "of the mark sliding across it"
 
   # RULE 14.  Nothing wraps a body: measured as how far a reach bows off
   # the chord between its own two hands, standing and turning alike.
@@ -917,9 +937,20 @@ proc checkHandTurns*() =
     doAssert bowed[straight] < MARK_STROKE,
       &"A swan's straight connection is not straight; got " &
         &"`{fmt(bowed[straight], 1)}` of bow in `{position.name}`."
+    # Wide enough to be going round the straight one, and no wider than
+    # half the pair it belongs to: a zig-zag that leaves its own figure is
+    # read twice before it is read once (rule 33).
+    let
+      put = settled(posedAt(position.wind, HAND_PHASE), HAND_TO_HAND,
+                    ABOVE_BOTH, default(Ways))
+      apart = dist(put.place[Dancer.Lead], put.place[Dancer.Follow])
     doAssert bowed[snake] > BOX_ROOM / 2,
       &"A swan's snake does not go round anything; got " &
         &"`{fmt(bowed[snake], 1)}` of bow in `{position.name}`."
+    doAssert bowed[snake] < apart / 2,
+      &"A swan's snake bows wider than the pair holds; got " &
+        &"`{fmt(bowed[snake], 1)}` against `{fmt(apart / 2, 1)}` in " &
+        &"`{position.name}`."
     flattest = min(flattest, bowed[straight])
     snakiest = min(snakiest, bowed[snake])
     inc swans
@@ -1218,8 +1249,12 @@ proc checkHandTurns*() =
     &"each way, where one connection runs straight to within " &
     &"{fmt(flattest, 2)} and the other snakes {fmt(snakiest, 0)} round it"
 
-  # RULE 17 and RULE 21.  Above on every hand, still and moving alike.
-  var hatched = 0
+  # RULE 17, RULE 21 and RULE 33.  Above on every hand, still and moving
+  # alike -- and a moving hand's hatch stays where it is in the mark, which
+  # it does by the mark being carried rather than animating its own place.
+  var
+    hatched = 0
+    hatch_still = 0
   for key, figure in built:
     if not (key.startsWith("hh_") or key.startsWith("hw_")):
       continue
@@ -1227,9 +1262,17 @@ proc checkHandTurns*() =
       &"A high dot appears where above was asked for; got `{key}`."
     doAssert "url(#h" in figure,
       &"A hand lost its level; got no hatch in `{key}`."
+    for part in figure.split('<'):
+      if "url(#h" notin part:
+        continue
+      doAssert "/>" in part,
+        &"A hatched mark animates its own place, so its hatch will swim; " &
+          &"got `{key}`."
+      inc hatch_still
     inc hatched
   told.add &"every hand on all {hatched} figures carries the above hatch, " &
-    "moving and still alike"
+    &"moving and still alike, and every one of the {hatch_still} marks " &
+    "holds its hatch still inside its own outline while it travels"
 
   for line in told:
     echo &"  rule: {line}"

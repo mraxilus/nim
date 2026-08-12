@@ -657,39 +657,35 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
              &""" values="{offsets.join(";")}"""" & keyed(times, poses.len) &
              &""" dur="{dur}s" repeatCount="indefinite"/>"""))
 
-  # A hand's own mark animates its place; a level's dot rides along as its
-  # own mark rather than inside it, because `paired` reopens one element
-  # and a hand carrying a dot is two.
-  func dotOf(pts: seq[Point]; ink: string): string =
-    &"""<circle cx="0" cy="0" r="2.7" fill="{ink}">""" &
-      animate("cx", pts.mapIt(it.x), dur, times) &
-      animate("cy", pts.mapIt(it.y), dur, times) & "</circle>"
+  # A moving hand says its level, as a still one does (rule 21) -- and it
+  # has to say it the same way all the way through.
+  #   So a hand is drawn once at the origin and *carried* by a transform,
+  #     exactly as a body is, rather than animating its own coordinates.
+  #     The `above` hatch is a pattern anchored to user space, so a mark
+  #     that slides through user space slides across a hatch that stands
+  #     still, and the fill swims about inside its own outline.  Carried by
+  #     a transform, the hatch is carried with it and holds its place.
+  #   It also lets the mark keep its own dot rather than having one
+  #     animated alongside it: a group can hold two elements where
+  #     `paired` reopens one.
+  func carried(mark: string; pts: seq[Point]): string =
+    let places = pts.mapIt(xy(it))
+    "<g>" &
+      """<animateTransform attributeName="transform" type="translate"""" &
+      &""" values="{series(places)}"""" & keyed(times, pts.len) &
+      &""" dur="{dur}s" repeatCount="indefinite"/>""" & mark & "</g>"
 
-  # A moving hand says its level, as a still one does (rule 21): the fill
-  # rides on the hand's own mark, so `paired` still has one element to
-  # reopen, and only high's dot needs a mark of its own.
   for sd in Arm:
-    let pts = hands.mapIt(it[Dancer.Lead][sd])
-    bits.add paired(
-      hand(pts[0].x, pts[0].y, true, sd, holds[sd].isSome,
-           (if levels[sd] == some(Level.High): none(Level) else: levels[sd])),
-      animate("x", pts.mapIt(it.x - R), dur, times) &
-        animate("y", pts.mapIt(it.y - R), dur, times))
-    if holds[sd].isSome and levels[sd] == some(Level.High):
-      bits.add dotOf(pts, DEEP[sd])
+    bits.add carried(hand(0, 0, true, sd, holds[sd].isSome, levels[sd]),
+                     hands.mapIt(it[Dancer.Lead][sd]))
   for own in [Arm.R, Arm.L]:
     let
-      pts = hands.mapIt(it[Dancer.Follow][own])
       by = Arm.toSeq.filterIt(holds[it] == some(own))
       held = by.len > 0
-      level = if held: levels[by[0]] else: none(Level)
-    bits.add paired(
-      hand(pts[0].x, pts[0].y, false, own, held,
-           (if level == some(Level.High): none(Level) else: level)),
-      animate("cx", pts.mapIt(it.x), dur, times) &
-        animate("cy", pts.mapIt(it.y), dur, times))
-    if held and level == some(Level.High):
-      bits.add dotOf(pts, INK[own])
+    bits.add carried(
+      hand(0, 0, false, own, held,
+           (if held: levels[by[0]] else: none(Level))),
+      hands.mapIt(it[Dancer.Follow][own]))
   &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
 

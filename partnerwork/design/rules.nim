@@ -135,6 +135,10 @@ const RULES* = [
     "facing the same way",
   "orbit should not maintain bearing, but instead keep whatever side faces " &
     "the center, facing the center otherwise we can't equate the 1/2 turns",
+  "the swan zig zag is a bit to large, make it tighter so it looks more " &
+    "readable. also, the above level hatching appears to be a background " &
+    "that moves around a lot as the squares/circles move, it should stay " &
+    "visually consistent during animation",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -354,6 +358,19 @@ const RULES* = [
   ##       bearing-keeping compound that lands somewhere of its own -- the
   ##       one picture either dancer's compound reaches, since only the
   ##       pair's axis has swung.
+  ##   Rule 33 tightens the swan and fixes a mark that would not hold still.
+  ##     The swan's snake took the whole of the straight connection's swing
+  ##       as well as its own, which opened loops wider than the pair they
+  ##       belong to.  `route.SWAN_SWING` says how much it ends up carrying
+  ##       instead: enough to read as going *round* the straight one, not so
+  ##       much that the zig-zag leaves the figure.
+  ##     The hatch is the other half, and it was a real fault rather than a
+  ##       matter of taste.  An `above` fill is an SVG pattern anchored to
+  ##       **user space**, so a mark that animates its own coordinates
+  ##       slides across a hatch that is standing still, and the fill swims
+  ##       about inside its own outline.  A moving hand is drawn once at the
+  ##       origin and carried by a transform now, exactly as a body is: the
+  ##       hatch is carried with it and holds its place (rule 21).
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
