@@ -141,14 +141,14 @@ const BODY = """
 {plates}
 
 <div class="note">
-  <p><b>A moving reach carries no break.</b> The over-and-under is in the
-  still pictures and not in the animations: a reach is morphed point by
-  point between frames, and cutting a gap in it mid-move would change how
-  many pieces it is drawn in from one frame to the next, which is the one
-  thing the morph cannot do. So a transition shows the arms winding and the
-  box forming, and the still it lands on says which arm ended up on top.
-  Same shape of exemption as a settled reach bending round the marks while a
-  moving one passes straight across.</p>
+  <p><b>A moving crossing says which arm is on top, the same as a still
+  one.</b> It cannot say it the same way: a still reach is cut into pieces
+  at the break, and how many pieces that makes changes with the number of
+  crossings — which is the one thing a morph cannot follow. So a moving
+  reach keeps its single piece and wears the break as a <em>dash</em>
+  instead, travelling with the crossing and closing to nothing where there
+  is no crossing to mark. Watch a whole turn wind on and you can see the
+  break appear at a hand and slide inward as the crossing does.</p>
   <p><b>What is not drawn:</b> anything past a whole turn. The chain runs
   out where this scope does, not where the dance does — a pair can keep
   winding, and what a second turn should look like is yours to settle.</p>

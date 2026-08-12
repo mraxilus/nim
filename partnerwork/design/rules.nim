@@ -118,6 +118,10 @@ const RULES* = [
     "should actually form an X overhead when partners are facing the same " &
     "direction (similar to the existing L-over-R etc. when facing one " &
     "another) as states in-between the outside 2",
+  "the animations don't have the proper breaks that the static images do, " &
+    "they seem to not be tracking which arms are over/under because of " &
+    "this and they are instances where they end up on the wrong z order, " &
+    "fix",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -237,6 +241,25 @@ const RULES* = [
   ##       orbits carry the pair around it without moving along it.  The
   ##       first drawing claimed all four wound, which was only true
   ##       because all four were told to.
+  ##   Rule 29 gives a moving crossing the break a still one has.
+  ##     A still reach is cut into runs at every crossing it dives under,
+  ##       and how many runs that makes depends on how many crossings there
+  ##       are -- which is why a moving reach was left whole: a path whose
+  ##       number of pieces changes cannot be morphed between frames.  With
+  ##       nothing broken, which strand is on top was decided by the order
+  ##       the two were written in, so one of them was over at *both*
+  ##       crossings.  That is not a twist, and it disagreed with the still
+  ##       the move landed on.
+  ##     A gap in a stroke is not the same thing as a gap in a path,
+  ##       though.  A moving reach keeps its one piece and carries the
+  ##       break as a dash instead, which travels with the crossing and
+  ##       closes to nothing where there is no crossing to mark -- so the
+  ##       markup never changes shape and there is nothing to jump.
+  ##     Which arm dives is not a new decision: the crossings are found as
+  ##       the stills find them, the diving arm alternates from the first
+  ##       as the stills alternate it, and the first is named by the sign
+  ##       of the measured wind -- so a moving figure and the still it
+  ##       lands on cannot disagree.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

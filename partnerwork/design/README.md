@@ -279,6 +279,35 @@ has happened here more than once.
     nobody, so it winds nothing.  The two axis turns walk this chain; the
     two orbits carry the pair around it.  The first draft claimed all four
     wound, which was only true because all four had been told to.*
+29. **"the animations don't have the proper breaks that the static images
+    do, they seem to not be tracking which arms are over/under because of
+    this and they are instances where they end up on the wrong z order,
+    fix."**  A still reach is *cut* into runs where it dives under its
+    partner, and how many runs that makes changes with the number of
+    crossings -- which a morph cannot follow, so a moving reach had been
+    left whole.  With nothing broken, which strand is on top was decided by
+    the order the two were written in, so one of them was over at *both*
+    crossings: not a twist at all, and a contradiction of the still it
+    landed on.
+    A gap in a stroke is not a gap in a path, though.  A moving reach keeps
+    its one piece and wears the break as an animated `stroke-dasharray`,
+    which travels with its crossing and closes to nothing where there is no
+    crossing -- so the markup never changes shape.  *The pattern is written
+    a gap longer than it needs and started a gap in, because a zero-length
+    dash under a round cap is drawn as a dot.*
+    Which arm dives is not a new decision: the crossings are found as the
+    stills find them, the diving arm alternates from the first as the
+    stills alternate it, and the first is named by the sign of the measured
+    wind -- and the check measures that a moving figure and the still it
+    lands on break the same arm.
+    *Two real faults fell out of writing that check.  `crossingsOf` was
+    finding crossings by how near two reaches' sampled points came, and two
+    lines crossing steeply pass between one another's points without any
+    pair being near -- so an X was drawn with no break at all.  It tests
+    segment against segment now.  And counting the pieces a reach is drawn
+    in cannot see a break that falls where its two shades meet, since that
+    makes one piece of each rather than two of one; the checks measure
+    drawn length instead, which sees a break wherever it lands.*
 
 ## What is settled
 

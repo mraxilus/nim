@@ -53,7 +53,6 @@ const
     ##   wind there is nothing to pull, so it comes on with the winding.
   BRAID_STEPS* = 96   ## Points along a braided reach, before resampling.
   BAND_STEPS* = 120   ## Points along a reach relaxed past marks, before it.
-  CROSS_NEAR* = 2.0   ## How close two reaches pass to count as crossing.
 
 const
   BAND_PASSES* = 240    ## Turns of pulling tight and pushing clear.
@@ -705,16 +704,33 @@ func braided*(a, b: Point; crossings: int; phase: float): seq[Point] =
 
 func crossingsOf*(one, other: seq[Point]): seq[Point] =
   ## Find where two drawn reaches cross, so each crossing can be broken.
+  ##   Segment against segment, and where they really cross rather than
+  ##     where their sampled points come close.  Two lines crossing steeply
+  ##     pass between one another's points without any pair of them being
+  ##     near at all, which is how an X went unbroken.
+  ##   In order along `one`, so the arm that dives can be alternated from
+  ##     the first crossing to the last (rules 14, 27, 29).
   for i in 0 ..< one.high:
-    var nearest = (d: Inf, at: one[i])
     for j in 0 ..< other.high:
-      let d = dist(one[i], other[j])
-      if d < nearest.d:
-        nearest = (d, other[j])
-    if nearest.d < CROSS_NEAR:
-      # One point per crossing: keep the first of each run of near points.
-      if result.len == 0 or dist(result[^1], one[i]) > BREAK:
-        result.add one[i]
+      let
+        p = one[i]
+        q = other[j]
+        r = (x: one[i + 1].x - p.x, y: one[i + 1].y - p.y)
+        s = (x: other[j + 1].x - q.x, y: other[j + 1].y - q.y)
+        turn_of = r.x * s.y - r.y * s.x
+      if abs(turn_of) < 1e-12:
+        continue                     # running parallel, never meeting
+      let
+        gap = (x: q.x - p.x, y: q.y - p.y)
+        along = (gap.x * s.y - gap.y * s.x) / turn_of
+        across = (gap.x * r.y - gap.y * r.x) / turn_of
+      if along < 0 or along > 1 or across < 0 or across > 1:
+        continue                     # the lines meet, the drawn bits do not
+      let at: Point = (p.x + r.x * along, p.y + r.y * along)
+      # One point per crossing: two segments of one reach can both meet the
+      # same segment of the other where they turn across it.
+      if result.len == 0 or dist(result[^1], at) > BREAK:
+        result.add at
 
 
 func cutGapsAt*(pts: seq[Point]; centres: seq[Point]): seq[Run] =

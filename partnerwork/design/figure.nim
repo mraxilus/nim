@@ -392,6 +392,48 @@ func paired*(markup, inner: string): string =
   markup[0 .. ^3] & ">" & inner & "</" & tag & ">"
 
 
+const LONG_ENOUGH = 999.0
+  ## A dash long enough to be the rest of any reach on any page.
+
+
+func dashedAt*(pts: seq[Point]; dive: Option[Point]):
+    tuple[pattern, offset: string] =
+  ## Say a moving reach's break as a dash pattern: how far it runs, how long
+  ## the break is, and then the rest of it (rule 29).
+  ##   A still reach is cut into runs where it dives under its partner, but
+  ##     the number of runs changes with the number of crossings and a path
+  ##     that changes shape cannot be morphed between frames.  A dash puts
+  ##     the same break in the same place and leaves the path one piece.
+  ##   Where this half of the reach has no crossing in it the break is zero
+  ##     long, which draws as no break at all -- so every frame says three
+  ##     numbers whether it is broken or not, and nothing jumps.
+  ##   A crossing that sits on the join between the two halves breaks both
+  ##     of them, each by as much of the gap as falls inside it, so the
+  ##     break slides across the middle instead of hopping.
+  ##   The pattern is written a gap longer than it needs and started a gap
+  ##     in, which comes to the same line and keeps the first dash off
+  ##     zero: a zero-length dash under a round cap is drawn as a dot, and
+  ##     a break that begins at a half's own start would leave one.
+  var runs = @[0.0]
+  for i in 0 ..< pts.high:
+    runs.add runs[^1] + dist(pts[i], pts[i + 1])
+  var nearest = (d: Inf, at: 0.0)
+  if dive.isSome:
+    for i, q in pts:
+      let d = dist(q, dive.get)
+      if d < nearest.d:
+        nearest = (d, runs[i])
+  # The gap is centred on the crossing and clipped to this half's own ends,
+  # which is what lets it cross the middle without flickering.
+  let
+    opens = clamp(nearest.at - BREAK / 2, 0.0, runs[^1])
+    shuts = clamp(nearest.at + BREAK / 2, 0.0, runs[^1])
+    # A crossing nowhere near this half leaves nothing to break.
+    gap = if dive.isNone or nearest.d > BREAK: 0.0 else: shuts - opens
+    before = if gap > 0: opens else: runs[^1]
+  (&"{n(before + gap)} {n(gap)} {n(LONG_ENOUGH)}", n(gap))
+
+
 func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
   ## Get a dancer's facing through a cycle, continuous so it turns the way
   ## it turned.
@@ -470,6 +512,13 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
   # makes the disagreement impossible rather than unlikely.  The halves are
   # split at a fixed index, which the even resampling makes the middle of the
   # line, so both shades morph as one shape.
+  #
+  # Both arms are routed before either is drawn, because a crossing is a
+  # fact about the two of them together and each has to know where it dives
+  # under the other (rule 29).
+  var
+    routes: array[Arm, seq[seq[Point]]]
+    winds: array[Arm, seq[float]]
   for arm in Arm:
     if holds[arm].isNone:
       continue
@@ -481,7 +530,6 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
                    poses[i].facing[Dancer.Lead]),
                   (poses[i].place[Dancer.Follow],
                    poses[i].facing[Dancer.Follow]))
-    var routes: seq[seq[Point]]
     if levels[arm] == some(Level.Above) or over_all:
       # Over the head, or over a body that is turning under raised arms:
       # from above nothing is in the way, and nothing hugs (rules 1, 14).
@@ -491,17 +539,16 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
       # round is not mistaken for one that has not moved -- and so nothing
       # jumps between two frames.
       if holds[other(arm)].isSome:
-        let
-          seen = continuous(poses.mapIt(windOf(it, holds, arm).spread))
-          # Measured from where it started, and started from where the
-          # hold says: the two together are the whole of the winding.
-          spun = seen.mapIt(it + 360 * wound - seen[0])
+        let seen = continuous(poses.mapIt(windOf(it, holds, arm).spread))
+        # Measured from where it started, and started from where the
+        # hold says: the two together are the whole of the winding.
+        winds[arm] = seen.mapIt(it + 360 * wound - seen[0])
         for i, f in frames:
-          routes.add wound(f.a, f.b, axisOf(poses[i]).across,
-                           degToRad(windOf(poses[i], holds, arm).phi),
-                           degToRad(spun[i]))
+          routes[arm].add wound(f.a, f.b, axisOf(poses[i]).across,
+                                degToRad(windOf(poses[i], holds, arm).phi),
+                                degToRad(winds[arm][i]))
       else:
-        routes = frames.mapIt(straightReach(it.a, it.b))
+        routes[arm] = frames.mapIt(straightReach(it.a, it.b))
     else:
       # A hold that says which way round says it for every frame at once: a
       # slot is fixed relative to its facing, so the direction is too.
@@ -509,20 +556,63 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
       let
         said = wayFor(frames[0], levels[arm], ways[arm])
         way = if said.isSome: said.get else: oneWayRound(frames)
-      routes = frames.mapIt(routed(it, some(way)).get.pts)
-    let middle = routes[0].len div 2
+      routes[arm] = frames.mapIt(routed(it, some(way)).get.pts)
+
+  # Where the pair crosses, one of them dives, and it is the same one the
+  # still figure breaks: the crossings in order along the reach, the diving
+  # arm alternating from the first, and the first named by the sign of the
+  # wind (rule 29).  A moving reach cannot be cut into runs -- the number of
+  # them would change from frame to frame and a path that changes shape
+  # cannot morph -- so it keeps its one piece and wears the break as a dash.
+  var dives: array[Arm, seq[Option[Point]]]
+  if holds[Arm.L].isSome and holds[Arm.R].isSome:
+    for i in 0 ..< poses.len:
+      var mine: array[Arm, Option[Point]]
+      let
+        turned_by = if winds[Arm.L].len == poses.len: winds[Arm.L][i] else: 0.0
+        on_top = if turned_by >= 0: Arm.L else: Arm.R
+      for k, meeting in crossingsOf(routes[Arm.L][i], routes[Arm.R][i]):
+        let under = if (k mod 2 == 0) == (on_top == Arm.L): Arm.R else: Arm.L
+        if mine[under].isNone:
+          mine[under] = some meeting
+      for arm in Arm:
+        dives[arm].add mine[arm]
+
+  for arm in Arm:
+    if holds[arm].isNone:
+      continue
+    let
+      site = holds[arm].get
+      middle = routes[arm][0].len div 2
     for (ink, lo, hi) in [(DEEP[arm], 0, middle), (INK[site], middle,
-                          routes[0].high)]:
-      var paths: seq[string]
-      for pts in routes:
-        paths.add "M" & pts[lo .. hi].mapIt(xy(it)).join(" L")
+                          routes[arm][0].high)]:
+      var
+        paths: seq[string]
+        dashes, offsets: seq[string]
+      for i, pts in routes[arm]:
+        let part = pts[lo .. hi]
+        paths.add "M" & part.mapIt(xy(it)).join(" L")
+        if dives[arm].len == poses.len:
+          let dashed = dashedAt(part, dives[arm][i])
+          dashes.add dashed.pattern
+          offsets.add dashed.offset
       bits.add paired(
         &"""<path d="{paths[0]}" fill="none" stroke="{ink}"""" &
+          (if dashes.len == 0: ""
+           else: &""" stroke-dasharray="{dashes[0]}"""" &
+             &""" stroke-dashoffset="{offsets[0]}"""") &
           &""" stroke-width="{LINK_W}" stroke-linecap="round"""" &
           """ stroke-linejoin="round"/>""",
         &"""<animate attributeName="d" values="{series(paths)}"""" &
           keyed(times, poses.len) &
-          &""" dur="{dur}s" repeatCount="indefinite"/>""")
+          &""" dur="{dur}s" repeatCount="indefinite"/>""" &
+          (if dashes.len == 0: ""
+           else: &"""<animate attributeName="stroke-dasharray"""" &
+             &""" values="{dashes.join(";")}"""" & keyed(times, poses.len) &
+             &""" dur="{dur}s" repeatCount="indefinite"/>""" &
+             &"""<animate attributeName="stroke-dashoffset"""" &
+             &""" values="{offsets.join(";")}"""" & keyed(times, poses.len) &
+             &""" dur="{dur}s" repeatCount="indefinite"/>"""))
 
   # A hand's own mark animates its place; a level's dot rides along as its
   # own mark rather than inside it, because `paired` reopens one element
