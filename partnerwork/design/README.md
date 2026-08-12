@@ -38,7 +38,19 @@ figures are asserted during their own construction.
 Both pages are committed like `doc/review.html` is, so their git history is the
 history of what the marks have been claimed to be.  Each is published as a
 Claude artifact at a fixed URL; republishing the rebuilt files to those URLs is
-the whole release step.
+the whole release step.  The URLs, so they are not hunted for:
+
+| page | artifact |
+| --- | --- |
+| `frames.html` | https://claude.ai/code/artifact/8420edce-fff2-4cd9-b56c-3dcf5029922b |
+| `signs.html` | https://claude.ai/code/artifact/153dee12-0829-4c04-ad01-72fe96f7607e |
+| `turns-single.html` | https://claude.ai/code/artifact/a2dce7eb-7a87-4575-a1c8-ce8d488a6530 |
+| `turns-hands.html` | https://claude.ai/code/artifact/9c4d89c1-8b72-4574-8051-c41e130148f1 |
+| the app itself | https://claude.ai/code/artifact/a447cf22-a71a-4416-a905-ae4999d7284c |
+
+The retired `rotations.html` still has one at
+https://claude.ai/code/artifact/526c8907-fac4-49f2-8103-26ea0a1fc5bc, kept
+only as the record of what it claimed before rule 16 removed its ceiling.
 
 To screenshot them (the animations need a browser):
 
