@@ -1737,9 +1737,18 @@ and reverted: with no benefit left it only costs a blocked main thread for the w
 most of a second on a phone-sized canvas. `renderFrame` itself was kept — splitting the draw
 out of `frame()` mirrors `visualiser.renderFrame` on the desktop and costs nothing.
 
-Still not verified, and needing the device: why the Claude app's WebView refused the share
-sheet — absent API, refused file, or a frame without `web-share` — which is exactly what the
-report now names.
+**The Android report came back, and it names all three refusals.** In the Claude app the
+frame reports `origin: own` -- so it is same-origin, and blob URLs and storage are ordinary --
+but `web-share: false` with `share: files no`, `download: no signal`, and `new tab: blocked`.
+The frame withholds `allow-downloads`, `allow-popups` and the `web-share` permission policy
+together, so **no route from inside it can produce a file**, and no further work on this page
+will change that. `canShare` returning false is reported now rather than ending the attempt --
+that gate had cost a route twice -- and the toast says the actionable thing: open the page in
+its own browser tab, where it downloads normally.
+
+What remains unbuilt, and is the open decision: a route that needs no file at all -- the scene
+as text on the clipboard, with a paste box on the load side -- which is the only thing that
+would let a scene made on a phone leave the app it was made in.
 
 Nothing in this is Nim's to do. The bytes were already correct and tested on both backends;
 what failed was delivery, which is `glue.js`'s side of the line by

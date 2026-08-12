@@ -234,6 +234,15 @@ function toastWithLink(message, url, filename, label, url_image) {
     hint.className = 'toast-hint';
     hint.textContent = 'or press and hold the image to save it';
   }
+  // Something to do about it, in words, above the evidence. Measured on an Android phone in
+  //   the Claude app: that frame withholds `allow-downloads`, `allow-popups` and the
+  //   `web-share` policy all three, so no route from inside it can produce a file and no
+  //   amount of further work here will change that. Saying so is more use than a link that
+  //   cannot fire, and the same page opened as its own tab downloads normally.
+  const advice = document.createElement('div');
+  advice.className = 'toast-hint';
+  advice.textContent = 'If nothing arrives, this frame is blocking it — '
+    + 'open this page in its own browser tab and save from there.';
   // What was tried and what came back, beside the thing it was tried on. Every round of
   //   this fault so far ended with a reader who could only report "nothing happened"; this
   //   is what turns the next report into a diagnosis.
@@ -249,7 +258,7 @@ function toastWithLink(message, url, filename, label, url_image) {
   });
   element_toast.append(line, link);
   if (url_image !== undefined) element_toast.append(preview, hint);
-  element_toast.append(detail, dismiss);
+  element_toast.append(advice, detail, dismiss);
   element_toast.classList.add('show', 'actionable');
   clearTimeout(timer_toast); // No expiry: see above.
 }
@@ -291,17 +300,18 @@ function describeEnvironment() {
 }
 
 async function shareFile(file, filename) {
-  // `canShare` is a preference, never a precondition. Gating the whole route on it -- as
-  //   this did -- skips `share` outright on any platform that ships one without the other,
-  //   and the reader gets the download fallback with no sign a share sheet was ever an
-  //   option. Ask `canShare` only to order the attempt.
+  // `canShare` is a preference, never a precondition, and this is the second time that
+  //   distinction has cost a route: gating on it skipped `share` outright, first on any
+  //   platform shipping one without the other, then -- once that was fixed but the `false`
+  //   still returned early -- on a frame where `canShare` says no for a reason that is not
+  //   the platform's to give. So a `false` is *reported* and the attempt made anyway; only
+  //   a missing `share` is grounds not to try.
   if (navigator.share === undefined) {
     report_delivery.push('share: no api');
     return false;
   }
   if (navigator.canShare !== undefined && !navigator.canShare({ files: [file] })) {
     report_delivery.push('share: files no');
-    return false;
   }
   try {
     await navigator.share({ files: [file], title: filename });
