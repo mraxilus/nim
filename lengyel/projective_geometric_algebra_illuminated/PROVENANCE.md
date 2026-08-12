@@ -1440,6 +1440,21 @@ ordinals 4/7/11/13 came back as `Grid`/`Rose`/`Cobalt`/`Copper`, version 2's 4/8
 `Grid`/`Rose`/`Cobalt` — and a file one version *ahead* of this build was refused by both,
 leaving the open scene untouched.
 
+**Fidelity, checked field by field rather than by eye.** The round trip above compared
+labels, which would pass with every coefficient wrong. The whole sixteen-object demo -- eleven
+derived objects, labels carrying `∧`/`☆`, five distinct inks, one item hidden -- was
+saved, reloaded and compared item for item in creation order: label, ink, visibility and all
+sixteen coefficients, **304 scalar comparisons, exactly equal**, no tolerance. Exact is the
+right test here and a tolerance would be the wrong one: these are the same doubles written and
+read back, not a recomputation, so anything but equality means the format lost something.
+
+That is still one build agreeing with itself. Across builds: the desktop read the
+browser-written file to the same 16 items and the same 304 values, and re-saving it produced a
+file **byte-identical** to the browser's, all 2245 bytes -- so the two writers agree on the
+bytes and not merely on the meaning. A hand-built version-1 file, written from the format
+table rather than by either build so that neither reader is checked against its own writer,
+came back identical from both, retired hue folded the same way.
+
 The opening replay was measured the same way. In the browser the five seeds come up spread
 over **0.480 s** — four beats of `SECONDS_REPLAY_STEP` — and were watched reaching full size
 one at a time from the page's first frames; the demo's sixteen objects arrive over **1.84 s**,
