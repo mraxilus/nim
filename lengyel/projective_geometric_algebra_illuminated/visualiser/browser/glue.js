@@ -234,6 +234,12 @@ function toastWithLink(message, url, filename, label, url_image) {
     hint.className = 'toast-hint';
     hint.textContent = 'or press and hold the image to save it';
   }
+  // What was tried and what came back, beside the thing it was tried on. Every round of
+  //   this fault so far ended with a reader who could only report "nothing happened"; this
+  //   is what turns the next report into a diagnosis.
+  const detail = document.createElement('div');
+  detail.className = 'toast-detail';
+  detail.textContent = report_delivery.join(' · ');
   const dismiss = document.createElement('button');
   dismiss.className = 'toast-dismiss';
   dismiss.type = 'button';
@@ -243,7 +249,7 @@ function toastWithLink(message, url, filename, label, url_image) {
   });
   element_toast.append(line, link);
   if (url_image !== undefined) element_toast.append(preview, hint);
-  element_toast.append(dismiss);
+  element_toast.append(detail, dismiss);
   element_toast.classList.add('show', 'actionable');
   clearTimeout(timer_toast); // No expiry: see above.
 }
@@ -262,27 +268,77 @@ function toastWithLink(message, url, filename, label, url_image) {
 /* platform is to honour them, and nothing claims a file was written.     */
 /* ---------------------------------------------------------------------- */
 
+// What the last delivery attempt tried and what came back, kept for the reader to read.
+//   Three rounds of this fault were spent guessing because every refusal was silent: the
+//   share sheet failed with its reason swallowed, and a download a frame refuses raises no
+//   event at all. A page that cannot say what happened cannot be debugged from a phone
+//   nobody here can reach, so the outcomes are recorded rather than inferred.
+let report_delivery = [];
+
+function describeEnvironment() {
+  // Read at delivery time, not at load: transient activation is the whole question for the
+  //   share route and is only meaningful during the gesture that asked.
+  const share_allowed = document.featurePolicy === undefined ? 'unknown'
+    : String(document.featurePolicy.allowsFeature('web-share'));
+  return [
+    'framed: ' + (window.self !== window.top),
+    'origin: ' + (window.origin === 'null' ? 'opaque' : 'own'),
+    'share api: ' + (navigator.share === undefined ? 'absent' : 'present'),
+    'web-share: ' + share_allowed,
+    'activation: ' + (navigator.userActivation === undefined ? 'unknown'
+      : String(navigator.userActivation.isActive)),
+  ];
+}
+
+async function shareFile(file, filename) {
+  // `canShare` is a preference, never a precondition. Gating the whole route on it -- as
+  //   this did -- skips `share` outright on any platform that ships one without the other,
+  //   and the reader gets the download fallback with no sign a share sheet was ever an
+  //   option. Ask `canShare` only to order the attempt.
+  if (navigator.share === undefined) {
+    report_delivery.push('share: no api');
+    return false;
+  }
+  if (navigator.canShare !== undefined && !navigator.canShare({ files: [file] })) {
+    report_delivery.push('share: files no');
+    return false;
+  }
+  try {
+    await navigator.share({ files: [file], title: filename });
+    report_delivery.push('share: opened');
+    return true;
+  } catch (err) {
+    // Cancelling the sheet is a decision, not a failure -- report it and stop trying.
+    if (err !== undefined && err !== null && err.name === 'AbortError') {
+      report_delivery.push('share: cancelled');
+      return true;
+    }
+    report_delivery.push('share: ' + (err === null || err === undefined ? 'failed' : err.name));
+    return false;
+  }
+}
+
 async function deliverFile(blob, filename, mime, described) {
+  report_delivery = describeEnvironment();
   const file = new File([blob], filename, { type: mime });
 
   // 1. The share sheet, where the platform has one. The route that actually works on a
   //    phone, and the only one that does not care whether this frame may download. Both
-  //    callers run inside a click, so the transient activation it needs is present.
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: filename });
+  //    callers run inside a click, so the transient activation it needs is present -- see
+  //    `captureFrameIfAsked` on what it cost to make that true of the image too.
+  if (await shareFile(file, filename)) {
+    refreshDeliveryReport();
+    if (report_delivery[report_delivery.length - 1] === 'share: opened') {
       toast('Shared `' + filename + '`.');
-      return;
-    } catch (err) {
-      // Cancelling the sheet is a decision, not a failure -- say nothing and stop.
-      if (err && err.name === 'AbortError') return;
-      // Anything else falls through to the routes below.
     }
+    return;
   }
 
   const url = URL.createObjectURL(blob);
   // 2. A real anchor, **in the document**. Appending is the whole of the original fix; a
   //    click on an element that is not in the page is what browsers were discarding.
+  //    Measured in a frame granted `allow-downloads`: this fires a real download, and so
+  //    does a reader's own tap on route 4. Neither does in a frame without it, in silence.
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -290,13 +346,25 @@ async function deliverFile(blob, filename, mime, described) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+  report_delivery.push('download: no signal');
 
-  // 3. A link to tap, always. There is no event for "the download was refused" -- a framed
+  // 3. A tab of its own, which a frame that refuses a download may still permit. Expected to
+  //    fail from a sandbox, since a `blob:` URL minted in an opaque origin resolves nowhere
+  //    else -- but a `null` return says "blocked" out loud, which is one more thing the
+  //    reader's report can rule out rather than leave open.
+  if (window.self !== window.top) {
+    const opened = window.open(url, '_blank');
+    report_delivery.push('new tab: ' + (opened === null ? 'blocked' : 'opened'));
+  }
+
+  // 4. A link to tap, always. There is no event for "the download was refused" -- a framed
   //    page whose host withholds `allow-downloads` gets silence -- so rather than guess
   //    which happened, leave the reader a route they drive themselves. Framed is the case
   //    that needs it and the case this page ships in; unframed it is a harmless second way.
   //    An image goes on screen with it, which a refused frame cannot take away.
   if (window.self !== window.top) {
+    report_delivery.push('link: offered');
+    refreshDeliveryReport();
     toastWithLink(
       described + ' is ready.', url, filename, 'save ' + filename,
       mime.startsWith('image/') ? url : undefined,
@@ -641,18 +709,31 @@ function refreshCameraFields() {
   fields_camera.tz.value = nimFormatNumber(t[2]);
 }
 
-// **Asked for here, taken inside the frame that draws it.** `toBlob` from a click handler
-//   reads the canvas from a task of its own, and the WebGL context is created without
-//   `preserveDrawingBuffer` (see its own note), so by then the drawing buffer has been
-//   composited and thrown away -- the read comes back blank or fails outright, which is the
-//   image button doing nothing at all. `preserveDrawingBuffer: true` would fix it by making
-//   every frame keep a copy forever, on phones, to serve a button pressed once in a session;
-//   capturing between the last draw call and the yield costs nothing and is the same
-//   capture-then-yield shape the desktop's own `runStoryboard` uses.
+// **Asked for here, taken inside the frame that draws it.** The context is created without
+//   `preserveDrawingBuffer` (see its own note), so a canvas read from a task of its own finds
+//   the drawing buffer already composited and thrown away -- the read comes back blank or
+//   fails outright, which is the image button doing nothing at all. `preserveDrawingBuffer:
+//   true` would fix it by making every frame keep a copy forever, on phones, to serve a
+//   button pressed once in a session; capturing between the last draw call and the yield
+//   costs nothing and is the same capture-then-yield shape `runStoryboard` uses.
+//
+//   Two theories for moving this into the handler instead -- `renderFrame` then a synchronous
+//   `toDataURL` -- were tried and **both are false**, recorded so they are not re-derived:
+//
+//   - *It would keep the transient activation `navigator.share` needs.* It is not lost:
+//     the window is around five seconds and spans the task boundary. Measured against a stub
+//     that refuses without `navigator.userActivation.isActive` -- this build passes it.
+//   - *It would stop a backgrounded tab stranding the capture,* since `requestAnimationFrame`
+//     stops there. Did not reproduce: tapping and backgrounding the page immediately still
+//     delivered the file.
+//
+//   With no measured benefit left, the asynchronous read wins on cost: `toDataURL` blocks the
+//   main thread for the whole encode, which on a phone-sized canvas is most of a second of
+//   frozen UI.
 let is_capture_wanted = false;
 document.getElementById('btn-export-png').addEventListener('click', () => {
   is_capture_wanted = true;
-  toast('Capturing the next frame…');
+  toast('Capturing the next frame\u2026');
 });
 
 function captureFrameIfAsked() {
@@ -1328,7 +1409,16 @@ const diagnostic_frame_time = document.getElementById('diag-frametime');
 const diagnostic_heap = document.getElementById('diag-heap');
 const diagnostic_pool = document.getElementById('diag-pool');
 const strip_pool = document.getElementById('pool-strip');
+const diagnostic_delivery = document.getElementById('diag-delivery');
 let is_strip_pool_built = false;
+
+function refreshDeliveryReport() {
+  // Where a save went, in the reader's own words -- because on a phone in a frame this page
+  //   does not control, that is otherwise unknowable to anyone. The toast carries it too,
+  //   but a toast is transient and this is the copy somebody can screenshot at leisure.
+  diagnostic_delivery.textContent = report_delivery.length === 0
+    ? 'nothing saved yet' : report_delivery.join('\n');
+}
 
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
@@ -1362,6 +1452,8 @@ function refreshDiagnostics() {
       (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + ' / ' +
       (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB';
   }
+
+  refreshDeliveryReport();
 
   const count = nimSceneCount(), capacity = nimSceneCapacity();
   diagnostic_pool.textContent = count + ' / ' + capacity;
@@ -2152,39 +2244,13 @@ window.addEventListener('resize', resize);
 
 let count_refresh_ui = 0;
 
-function frame() {
+// Draw one frame, and nothing else. Split out of `frame()` so the PNG button can draw and
+//   read back **inside its own click**, without also re-running the per-tick simulation that
+//   frame() does around it. Mirrors `visualiser.renderFrame`, which is split the same way and
+//   for the same reason: the desktop's storyboard capture drives it directly too.
+function renderFrame(now_seconds) {
   resize();
-  const now_seconds = now();
   const aspect = canvas.width / canvas.height;
-
-  const now_milliseconds = performance.now();
-  recordFrameTime(now_milliseconds - time_frame_last);
-  time_frame_last = now_milliseconds;
-
-  // A press that has now lasted long enough selects its item. Checked here rather than by
-  //   a timer that fires on its own, so that the moment the marker finishes filling is the
-  //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
-  //   progress the marker was just drawn at, so the two cannot disagree by a frame.
-  // One question, not two. Asking "is it mature" beside a flag kept here for "have I
-  // already acted on that" needs the two to agree, and they stopped agreeing once a hold
-  // outlived its own release: this handler clears its flag on the lift while the hold is
-  // still settling and still mature, so the next frame selected the item again and toggled
-  // it straight back off. `nimTakeMaturedHold` answers once and never again.
-  const slot_matured = nimTakeMaturedHold(now_seconds);
-  if (slot_matured >= 0) {
-    // Selected, but the hold is **kept**: its marker stays swollen clear of the finger for
-    // as long as that finger is down, and settles only once `nimReleaseHold` says it may.
-    has_long_press_fired = true; // Still needed, to stop the release also reading as a tap.
-    toggleSelection(slot_matured, position_touch_down);
-  }
-  // And retire it once that settle is spent, so a finished hold stops being drawn at all.
-  if (nimIsHoldSpent(now_seconds)) nimCancelHold();
-
-  // Recompute what the drag in progress would build, and whether its dwell has come due,
-  // before the frame that ghosts the answer is assembled. Runs every frame rather than on
-  // pointermove alone: a dwell is time passing over a cursor that is deliberately still,
-  // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
-  if (nimDragActive()) nimUpdateDrag(now_seconds);
 
   const data = nimBuildFrame(
     aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown,
@@ -2225,6 +2291,41 @@ function frame() {
     drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
     gl.enable(gl.DEPTH_TEST);
   }
+}
+
+function frame() {
+  const now_seconds = now();
+
+  const now_milliseconds = performance.now();
+  recordFrameTime(now_milliseconds - time_frame_last);
+  time_frame_last = now_milliseconds;
+
+  // A press that has now lasted long enough selects its item. Checked here rather than by
+  //   a timer that fires on its own, so that the moment the marker finishes filling is the
+  //   moment the selection lands -- `interaction.isHoldMature` is stated against the same
+  //   progress the marker was just drawn at, so the two cannot disagree by a frame.
+  // One question, not two. Asking "is it mature" beside a flag kept here for "have I
+  // already acted on that" needs the two to agree, and they stopped agreeing once a hold
+  // outlived its own release: this handler clears its flag on the lift while the hold is
+  // still settling and still mature, so the next frame selected the item again and toggled
+  // it straight back off. `nimTakeMaturedHold` answers once and never again.
+  const slot_matured = nimTakeMaturedHold(now_seconds);
+  if (slot_matured >= 0) {
+    // Selected, but the hold is **kept**: its marker stays swollen clear of the finger for
+    // as long as that finger is down, and settles only once `nimReleaseHold` says it may.
+    has_long_press_fired = true; // Still needed, to stop the release also reading as a tap.
+    toggleSelection(slot_matured, position_touch_down);
+  }
+  // And retire it once that settle is spent, so a finished hold stops being drawn at all.
+  if (nimIsHoldSpent(now_seconds)) nimCancelHold();
+
+  // Recompute what the drag in progress would build, and whether its dwell has come due,
+  // before the frame that ghosts the answer is assembled. Runs every frame rather than on
+  // pointermove alone: a dwell is time passing over a cursor that is deliberately still,
+  // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
+  if (nimDragActive()) nimUpdateDrag(now_seconds);
+
+  renderFrame(now_seconds);
 
   // Immediately after the last draw call and before this callback yields, which is the only
   //   moment the drawing buffer is still there to read; see `captureFrameIfAsked`.

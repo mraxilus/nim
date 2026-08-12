@@ -1704,9 +1704,42 @@ Verified by driving, not by reasoning — every claim below is a measurement:
   route that survives that sandbox; the scene file has no equivalent and cannot be
   delivered there at all.
 
-Not verified: which sandbox flags the artifact host actually sets, and whether a real iOS
-or Android browser takes the share route as the stub predicts. Both need the device, and
-the report that opened this came from one.
+**The artifact frame refuses downloads, and that is now measured rather than suspected.** An
+Android phone in the Claude app reached the framed fallback, meaning the share route had
+already failed, and then a real tap on the fallback link did nothing either. Re-running the
+framed probe with `sandbox="allow-scripts allow-downloads"` settles who is at fault: in that
+frame the automatic anchor fires a real download **and** the reader's own tap fires a second
+one. Same page, same code, same tap — only the flag differs. So the anchor mechanics are
+sound, nothing of ours swallows the gesture, and **no download route can work in the frame
+this page ships in.** For an image the press-and-hold picture remains; for a scene file there
+is no route left there at all.
+
+**Every route now reports itself**, in the toast and in the drawer's Diagnostics section:
+`framed`, `origin` (opaque or own), `share api`, `web-share` policy, `activation` at the
+moment of the attempt, then one line per route. This exists because three rounds were spent
+guessing: a download a frame refuses raises no event, and the share sheet's rejection was
+being swallowed, so a reader on a phone could only ever report "nothing happened". The
+`canShare` gate is part of that fix — it used to be a *precondition*, so a platform with
+`share` but no `canShare` skipped the share route entirely and silently.
+
+Two theories about the image path were tested and are **false**; they are recorded so they
+are not re-derived from how plausible they sound:
+
+- *An asynchronous `toBlob` spends the transient activation `navigator.share` needs.* It does
+  not — the window is about five seconds and spans the task boundary. Measured against a stub
+  that refuses unless `navigator.userActivation.isActive`: the existing build passes it.
+- *A backgrounded tab strands the capture, since `requestAnimationFrame` stops there.* Did not
+  reproduce; tapping and immediately backgrounding the page still delivered the file.
+
+So the capture stays asynchronous and inside the frame loop. A synchronous
+`renderFrame` + `toDataURL` in the click handler was written, measured against both theories,
+and reverted: with no benefit left it only costs a blocked main thread for the whole encode,
+most of a second on a phone-sized canvas. `renderFrame` itself was kept — splitting the draw
+out of `frame()` mirrors `visualiser.renderFrame` on the desktop and costs nothing.
+
+Still not verified, and needing the device: why the Claude app's WebView refused the share
+sheet — absent API, refused file, or a frame without `web-share` — which is exactly what the
+report now names.
 
 Nothing in this is Nim's to do. The bytes were already correct and tested on both backends;
 what failed was delivery, which is `glue.js`'s side of the line by

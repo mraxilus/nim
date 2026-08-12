@@ -882,6 +882,13 @@ paid for:
   host refused. Where the page cannot know, it says what it did — offered, handed over, ready
   to tap — never that a file was saved. A path that reports failure zero ways beside a path
   that reports it twice is the asymmetry to look for.
+- **Where the page cannot know, let it say what it tried.** Silence cost three rounds here:
+  a refused download raises no event, and a share sheet's rejection was being swallowed, so
+  the only report a reader on a phone could give was "nothing happened". Record each route's
+  outcome and the environment it ran in — framed, origin, the share API's presence, the
+  permission policy, transient activation — and show it beside the failure. A capability test
+  is a *preference*, never a precondition: gating the share route on `canShare` skipped it
+  outright on a platform that ships `share` without it.
 - **Assume the page is framed and the frame is hostile to downloads**, because the browser
   target ships as an embedded artifact. Try the platform's share sheet first, put the anchor
   in the document before clicking it, and leave a route the *reader* drives — a persistent

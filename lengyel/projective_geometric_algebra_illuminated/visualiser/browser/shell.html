@@ -461,6 +461,15 @@
     font-size: 11px;
     color: var(--ink-dim);
   }
+  /* What each delivery route answered. Recessive and monospaced: it is evidence to read
+     when something did not work, never the message itself. */
+  .toast-detail {
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 15px;
+    color: var(--ink-dim);
+    word-break: break-word;
+  }
   .toast-dismiss {
     font-family: var(--sans);
     font-size: 11px;
@@ -712,6 +721,17 @@
   }
   .diag-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .sparkline { width: 100%; height: 40px; display: block; }
+  /* Route-by-route evidence, wrapped rather than clipped: a line the reader cannot finish
+     reading is no better than the silence it replaced. */
+  .diag-report {
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 15px;
+    color: var(--ink-dim);
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
   .pool-strip {
     display: flex;
     gap: 1px;
@@ -976,6 +996,13 @@
         <hr class="rule">
         <div class="diag-line"><span>object pool</span><b id="diag-pool">0 / 64</b></div>
         <div class="pool-strip" id="pool-strip"></div>
+        <hr class="rule">
+        <!-- Saving is the one thing this page cannot verify for itself: a frame that
+             refuses a download raises no event, and a share sheet that is not permitted
+             fails with its reason swallowed. So the routes report themselves here, where a
+             reader whose save did nothing can read back what was actually tried. -->
+        <div class="diag-line"><span>last save</span></div>
+        <pre class="diag-report" id="diag-delivery">nothing saved yet</pre>
       </div>
     </div>
 
