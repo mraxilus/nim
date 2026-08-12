@@ -1746,9 +1746,11 @@ will change that. `canShare` returning false is reported now rather than ending 
 that gate had cost a route twice -- and the toast says the actionable thing: open the page in
 its own browser tab, where it downloads normally.
 
-What remains unbuilt, and is the open decision: a route that needs no file at all -- the scene
-as text on the clipboard, with a paste box on the load side -- which is the only thing that
-would let a scene made on a phone leave the app it was made in.
+**Deliberately not built**: a route needing no file at all -- the scene as text on the
+clipboard, with a paste box on the load side -- which is the only thing that could carry a
+scene out of that frame. Rejected because the embedded frame is not where this is meant to be
+used; it costs a second serialisation of the format and a load affordance that exists solely
+to undo one host's sandbox.
 
 Nothing in this is Nim's to do. The bytes were already correct and tested on both backends;
 what failed was delivery, which is `glue.js`'s side of the line by
