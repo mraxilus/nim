@@ -633,7 +633,7 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
         dashes, offsets: seq[string]
       for i, pts in routes[arm]:
         let part = pts[lo .. hi]
-        paths.add "M" & part.mapIt(xy(it)).join(" L")
+        paths.add smoothed(part)
         if dives[arm].len == poses.len:
           let dashed = dashedAt(part, dives[arm][i],
                                 starts = polylineLen(pts[0 .. lo]))

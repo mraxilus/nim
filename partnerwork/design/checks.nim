@@ -803,6 +803,11 @@ func inkOf(figure, ink: string): float =
   ##     where the two shades meet -- it makes one piece of each rather than
   ##     two of one.  Length can see it wherever it falls: a broken reach
   ##     draws a `BREAK` less than a whole one.
+  ##   A reach is drawn as quadratics through the midpoints between its
+  ##     sampled points (rule 35), and every one of those points is a
+  ##     control point of the curve -- so reading the `M`, each `Q`'s
+  ##     control and the closing `L` gives back the very polyline the
+  ##     routing produced, and the measure is what it always was.
   for part in figure.split("<path "):
     if &"stroke=\"{ink}\"" notin part:
       continue
@@ -814,12 +819,17 @@ func inkOf(figure, ink: string): float =
     for subpath in drawn.split('M'):
       if subpath.len == 0:
         continue
-      var last = none(Point)
-      for step in subpath.split('L'):
+      var
+        last = none(Point)
+        anchors: seq[Point]
+      for step in subpath.split({'Q', 'L'}):
         let says: seq[string] = step.strip.split(' ')
         if says.len < 2:
           continue
-        let here: Point = (parseFloat(says[0]), parseFloat(says[1]))
+        # A `Q` carries its control point first and the place the curve
+        # passes through second; the control is the routed point.
+        anchors.add (parseFloat(says[0]), parseFloat(says[1]))
+      for here in anchors:
         if last.isSome:
           result += dist(last.get, here)
         last = some here
@@ -939,8 +949,9 @@ proc checkHandTurns*() =
         &"`{fmt(bowed[straight], 1)}` of bow in `{position.name}`."
     # Wide enough to be going round the straight one, and not so wide that
     # it has left the figure altogether.  How wide within that is a matter
-    # of looks and was settled by eye: a tighter swan was tried and looked
-    # worse (rule 34), so the bound is only a backstop.
+    # of looks and was settled by looking (rules 33 to 35), so the bounds
+    # are only backstops -- what was actually wrong with the swan was that
+    # it was drawn with straight bits, which is checked below.
     let
       put = settled(posedAt(position.wind, HAND_PHASE), HAND_TO_HAND,
                     ABOVE_BOTH, default(Ways))
@@ -956,6 +967,31 @@ proc checkHandTurns*() =
     snakiest = min(snakiest, bowed[snake])
     inc swans
   doAssert swans == 2, &"Two swans expected; got `{swans}`."
+
+  # RULE 35.  "make it smoother (a simpler curved, right now it looks
+  # jagged/sharp)."  A reach is held as points so it can morph, and drawn
+  # as curves through them so it does not read as the polygon it is stored
+  # as -- everywhere, still and moving alike, since a corner is a corner
+  # wherever it falls.
+  var curved = 0
+  for key, figure in built:
+    for part in figure.split("<path "):
+      if &"stroke-width=\"{LINK_W}\"" notin part:
+        continue
+      const opens = "d=\""
+      let at = part.find(opens)
+      if at < 0:
+        continue
+      let drawn = part[at + opens.len ..< part.find('"', at + opens.len)]
+      # One straight tail closes each run, and nothing else may be one.
+      doAssert drawn.count(" Q") > drawn.count(" L"),
+        &"A reach is drawn as straight bits rather than curves; got " &
+          &"`{key}`."
+      inc curved
+  told.add &"and every one of the {curved} reaches on the page is drawn as " &
+    "curves through its own sampled points rather than as the polygon it " &
+    "is stored as, so what turns hard reads as turning rather than as a " &
+    "run of corners"
 
   # And a crossing is drawn as a crossing: the reach that dives loses a
   # `BREAK` of its own length, and a reach that dives twice loses two --

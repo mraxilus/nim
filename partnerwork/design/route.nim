@@ -59,16 +59,19 @@ const
                       ## swing evenly between the two connections.
   SWAN_EASE* = 0.45   ## How quickly it hands over, as a power of the way
                       ## through.
-  SWAN_SWING* = 2.0   ## How much swing the snake ends up carrying, as a
-                      ## multiple of what one connection carries on its own.
-    ## Two: the whole of what the straight connection gives up, so the pair
-    ##   swings as much as it ever did and the loops open wide.
-    ## A tighter swan was tried at rule 33's asking and looked worse, so the
-    ##   knob stays named and stays where it was (rule 34).
     ## Under one, so the hand-over is quick at the start: the third crossing
     ##   arrives as soon as the pair is past a whole turn, and until one
     ##   connection is visibly the straighter of the two, three crossings
     ##   read as a second diamond -- which is the thing rule 30 refused.
+  SWAN_SWING* = 1.3   ## How much swing the snake ends up carrying, as a
+                      ## multiple of what one connection carries on its own.
+    ## Over one, so the snake plainly goes *round* the straight connection
+    ##   rather than wobbling beside it -- but not far over, so it keeps in
+    ##   close (rule 35).  Taking the whole of what the straight one gives
+    ##   up threw loops wider than the pair itself.
+    ## How wide is a matter of looks and was settled by looking; what the
+    ##   check holds is only that the snake goes round something and stays
+    ##   inside its own figure.
 
 
 func overArm*(turns: float): Arm =
@@ -908,15 +911,35 @@ func splitAt*(runs: seq[Run]; mid: Point): tuple[near, far: seq[Run]] =
       result.far.add run
 
 
+func smoothed*(run: Run): string =
+  ## Say a run of points as one smooth curve instead of a chain of straight
+  ## bits (rule 35).
+  ##   A reach is stored as `ROUTE_N` points because that is what lets it
+  ##     morph, and drawn between them it is a polygon.  Where it hardly
+  ##     turns nobody can tell; where it turns hard -- a swan's lobes, which
+  ##     double back inside a handful of points -- the polygon is exactly
+  ##     what is seen, and it reads as jagged.
+  ##   So the points become the *control* points of quadratics and the
+  ##     midpoints between them the places the curve passes through.  Every
+  ##     corner is rounded by half its own segments, the ends stay exactly
+  ##     on their hands, and a line that turns a couple of degrees a corner
+  ##     moves by a fraction of its own width.
+  ##   The command count follows the point count, which is fixed, so a
+  ##     smoothed reach morphs exactly as a straight-sided one did.
+  result = "M" & xy(run[0])
+  for i in 1 ..< run.high:
+    let mid: Point = ((run[i].x + run[i + 1].x) / 2,
+                      (run[i].y + run[i + 1].y) / 2)
+    result.add " Q" & xy(run[i]) & " " & xy(mid)
+  result.add " L" & xy(run[^1])
+
+
 func reachMarkup*(runs: seq[Run]; ink: string): string =
   ## Draw one shade's worth of reach as a single path.
   var pieces: seq[string]
   for run in runs:
     if run.len > 1:
-      var d = "M" & xy(run[0])
-      for q in run[1 .. ^1]:
-        d.add " L" & xy(q)
-      pieces.add d
+      pieces.add smoothed(run)
   let d = pieces.join(" ")
   &"""<path d="{d}" fill="none" stroke="{ink}"""" &
     &""" stroke-width="{LINK_W}" stroke-linecap="round"""" &

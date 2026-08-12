@@ -440,6 +440,28 @@ has happened here more than once.
     the swan was a matter of looks, and looks are settled by looking.
     Naming the knob was worth doing either way — what it is set to is the
     author's call and not the checker's, and the check should say so.*
+35. **"they both have the same issue, go back to the tighter version try to
+    make the swan arm, even tighter to the straighter arm, but make it
+    smoother (a simpler curved, right now it looks jagged/sharp)."**  Which
+    finds what was actually wrong with both swans, and it was never the
+    width.
+    A reach is held as `ROUTE_N` points because that is what lets it morph,
+    and it was **drawn** between them with straight bits.  Everywhere else on
+    every page that is invisible — rule 24 keeps a settled reach turning a
+    few degrees a corner — but a swan's lobes double back inside a handful of
+    points, so the polygon it is stored as was exactly what was on the
+    screen.  Widening or narrowing it only changed how big the facets were.
+    So `route.smoothed` draws a reach as quadratics: the sampled points
+    become the *control* points and the midpoints between them the places the
+    curve passes through.  Corners round off by half their own segments, the
+    ends stay exactly on their hands, a line that hardly turns moves by a
+    fraction of its own width — and the command count still follows the point
+    count, so a smoothed reach morphs exactly as a straight-sided one did.
+    *`inkOf` reads the anchors back out of the curve — a `Q`'s control point
+    is the routed point — so every length the checks measure is the length
+    they always measured.*  `SWAN_SWING` comes down to sit between the two
+    widths that were tried, and the check on it is only a backstop: that the
+    snake goes round something and stays inside its own figure.
 
 ## What is settled
 

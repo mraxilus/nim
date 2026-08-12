@@ -140,6 +140,9 @@ const RULES* = [
     "that moves around a lot as the squares/circles move, it should stay " &
     "visually consistent during animation",
   "the hatching is good, but revert the swan change, it looks worse",
+  "they both have the same issue, go back to the tighter version try to " &
+    "make the swan arm, even tighter to the straighter arm, but make it " &
+    "smoother (a simpler curved, right now it looks jagged/sharp)",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -383,6 +386,24 @@ const RULES* = [
   ##       be held to; the other was a matter of looks, and looks are
   ##       settled by looking.  Naming the knob was worth doing anyway --
   ##       what it is set to is the author's call, not the checker's.
+  ##   Rule 35 finds what was actually wrong with both swans, and it was
+  ##     never the width: *"they both have the same issue ... it looks
+  ##     jagged/sharp."*
+  ##     A reach is held as `ROUTE_N` points because that is what lets it
+  ##       morph, and it was **drawn** between them with straight bits.
+  ##       Everywhere else on every page that is invisible -- rule 24 keeps
+  ##       a settled reach turning a few degrees a corner -- but a swan's
+  ##       lobes double back inside a handful of points, so the polygon it
+  ##       is stored as was exactly what was on the screen.  Widening or
+  ##       narrowing it only changed how big the facets were.
+  ##     So a reach is drawn as quadratics now (`route.smoothed`): the
+  ##       sampled points become control points and the midpoints between
+  ##       them the places the curve passes through.  Corners round off,
+  ##       the ends stay on their hands, a line that hardly turns moves by a
+  ##       fraction of its own width -- and the command count still follows
+  ##       the point count, so it morphs as before.
+  ##     The width comes down as well, to sit between the two that were
+  ##       tried, and the snake keeps closer in to the straight connection.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
