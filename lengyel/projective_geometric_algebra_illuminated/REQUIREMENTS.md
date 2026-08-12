@@ -868,6 +868,31 @@ The browser reaches the **identical** format. Expose raw per-item fields across 
 and let the platform's own binary view do the float encoding; reinventing IEEE-754 in the core
 language would only duplicate what the platform does natively.
 
+**Getting the bytes right is not the same as getting them to the reader, and only the second
+one is what they asked for.** Correct bytes were written and tested on both backends while
+saving from a phone did nothing at all, because delivery was never driven — and because the
+save path reported success unconditionally, it could not say so. Three rules follow, each
+paid for:
+
+- **Drive delivery, not just encoding.** A test that a file *arrives* is separate from a test
+  that its contents are right, and both are needed: a captured image can arrive blank, and
+  correct bytes can arrive nowhere. Where an image is exported, check it decodes and is not
+  one flat colour.
+- **Never report an outcome the code cannot observe.** There is no event for a download the
+  host refused. Where the page cannot know, it says what it did — offered, handed over, ready
+  to tap — never that a file was saved. A path that reports failure zero ways beside a path
+  that reports it twice is the asymmetry to look for.
+- **Assume the page is framed and the frame is hostile to downloads**, because the browser
+  target ships as an embedded artifact. Try the platform's share sheet first, put the anchor
+  in the document before clicking it, and leave a route the *reader* drives — a persistent
+  link, and for an image the image itself, since drawing a blob is not a navigation and
+  survives a sandbox that discards one.
+
+Capture an exported frame **inside the frame that drew it**, between the last draw call and
+the yield. A canvas read from a later task reads a drawing buffer that has already been
+composited away; keeping every frame's buffer alive to make that work taxes every frame, on
+the smallest device, for a button pressed once.
+
 
 16. Demo Construction
 ---

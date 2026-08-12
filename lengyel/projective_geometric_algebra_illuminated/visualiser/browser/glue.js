@@ -15,6 +15,10 @@
 /* ---------------------------------------------------------------------- */
 
 const canvas = document.getElementById('gl');
+// No `preserveDrawingBuffer`, deliberately: it makes every frame keep a copy of the drawing
+//   buffer for the whole session, on a phone, so that a button pressed once can read it
+//   afterwards. `captureFrameIfAsked` reads the buffer from inside the frame that drew it
+//   instead, which costs nothing and is what the image export uses.
 const gl = canvas.getContext('webgl', { antialias: true, alpha: false })
   || canvas.getContext('experimental-webgl', { antialias: true, alpha: false });
 
@@ -194,9 +198,117 @@ const element_toast = document.getElementById('toast');
 let timer_toast = null;
 function toast(message) {
   element_toast.textContent = message;
+  element_toast.classList.remove('actionable');
   element_toast.classList.add('show');
   clearTimeout(timer_toast);
   timer_toast = setTimeout(() => element_toast.classList.remove('show'), 3200);
+}
+
+function toastWithLink(message, url, filename, label, url_image) {
+  // A toast the reader can act on, held until dismissed. For the one case a page cannot
+  //   resolve on its own: a file is ready and every automatic route to it may have been
+  //   refused, silently, by a frame this page does not control. A tap the *reader* makes on
+  //   a real anchor is the most permitted route there is, so offer that rather than assert
+  //   a download happened.
+  element_toast.textContent = '';
+  const line = document.createElement('div');
+  line.textContent = message;
+  const link = document.createElement('a');
+  link.className = 'toast-action';
+  link.href = url;
+  link.download = filename;
+  link.textContent = label;
+  link.rel = 'noopener';
+  // `url_image` set means the file is one the reader can save straight off the screen, and
+  //   showing it is worth the space: drawing a blob into an `<img>` is not a navigation, so
+  //   it is the only route measured to survive a frame sandboxed without `allow-downloads`
+  //   -- where a press on the anchor above is refused in silence, as is every automatic
+  //   route. Offered beside the link, never instead of it, since where downloads *are*
+  //   permitted the link is one tap and this is a press-and-hold.
+  const preview = document.createElement('img');
+  const hint = document.createElement('div');
+  if (url_image !== undefined) {
+    preview.className = 'toast-preview';
+    preview.src = url_image;
+    preview.alt = filename;
+    hint.className = 'toast-hint';
+    hint.textContent = 'or press and hold the image to save it';
+  }
+  const dismiss = document.createElement('button');
+  dismiss.className = 'toast-dismiss';
+  dismiss.type = 'button';
+  dismiss.textContent = 'dismiss';
+  dismiss.addEventListener('click', () => {
+    element_toast.classList.remove('show', 'actionable');
+  });
+  element_toast.append(line, link);
+  if (url_image !== undefined) element_toast.append(preview, hint);
+  element_toast.append(dismiss);
+  element_toast.classList.add('show', 'actionable');
+  clearTimeout(timer_toast); // No expiry: see above.
+}
+
+
+/* ---------------------------------------------------------------------- */
+/* Handing a file to the reader.                                          */
+/*                                                                        */
+/* One route for the scene file and the image alike. It used to be five   */
+/* statements written out twice -- build a Blob, make an `<a download>`,  */
+/* click it -- with the anchor never put in the document. A detached      */
+/* anchor's synthetic click is ignored by Safari outright and is          */
+/* unreliable elsewhere, so saving anything from a phone did nothing at   */
+/* all, while the caller toasted "Saved" regardless. Both halves of that  */
+/* are fixed here: the routes below are tried in order of how likely the  */
+/* platform is to honour them, and nothing claims a file was written.     */
+/* ---------------------------------------------------------------------- */
+
+async function deliverFile(blob, filename, mime, described) {
+  const file = new File([blob], filename, { type: mime });
+
+  // 1. The share sheet, where the platform has one. The route that actually works on a
+  //    phone, and the only one that does not care whether this frame may download. Both
+  //    callers run inside a click, so the transient activation it needs is present.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename });
+      toast('Shared `' + filename + '`.');
+      return;
+    } catch (err) {
+      // Cancelling the sheet is a decision, not a failure -- say nothing and stop.
+      if (err && err.name === 'AbortError') return;
+      // Anything else falls through to the routes below.
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  // 2. A real anchor, **in the document**. Appending is the whole of the original fix; a
+  //    click on an element that is not in the page is what browsers were discarding.
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  // 3. A link to tap, always. There is no event for "the download was refused" -- a framed
+  //    page whose host withholds `allow-downloads` gets silence -- so rather than guess
+  //    which happened, leave the reader a route they drive themselves. Framed is the case
+  //    that needs it and the case this page ships in; unframed it is a harmless second way.
+  //    An image goes on screen with it, which a refused frame cannot take away.
+  if (window.self !== window.top) {
+    toastWithLink(
+      described + ' is ready.', url, filename, 'save ' + filename,
+      mime.startsWith('image/') ? url : undefined,
+    );
+  } else {
+    toast('Handed `' + filename + '` to the browser to download.');
+    // Long enough for the navigation to have started, and for a tap on the link above.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return;
+  }
+  // Held far longer than the old four seconds, since the link is the reader's to use.
+  setTimeout(() => URL.revokeObjectURL(url), 600000);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -529,17 +641,37 @@ function refreshCameraFields() {
   fields_camera.tz.value = nimFormatNumber(t[2]);
 }
 
+// **Asked for here, taken inside the frame that draws it.** `toBlob` from a click handler
+//   reads the canvas from a task of its own, and the WebGL context is created without
+//   `preserveDrawingBuffer` (see its own note), so by then the drawing buffer has been
+//   composited and thrown away -- the read comes back blank or fails outright, which is the
+//   image button doing nothing at all. `preserveDrawingBuffer: true` would fix it by making
+//   every frame keep a copy forever, on phones, to serve a button pressed once in a session;
+//   capturing between the last draw call and the yield costs nothing and is the same
+//   capture-then-yield shape the desktop's own `runStoryboard` uses.
+let is_capture_wanted = false;
 document.getElementById('btn-export-png').addEventListener('click', () => {
-  canvas.toBlob((blob) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'rga_visualiser.png';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    toast('Wrote ' + canvas.width + 'x' + canvas.height + ' frame to `rga_visualiser.png`.');
-  }, 'image/png');
+  is_capture_wanted = true;
+  toast('Capturing the next frame…');
 });
+
+function captureFrameIfAsked() {
+  if (!is_capture_wanted) return;
+  is_capture_wanted = false;
+  const [width, height] = [canvas.width, canvas.height];
+  canvas.toBlob((blob) => {
+    // `toBlob` hands back null where encoding failed. Unchecked, the next line threw into
+    //   an async callback nobody watches -- silence on top of silence.
+    if (blob === null) {
+      toast('The browser could not encode this frame as a PNG.');
+      return;
+    }
+    deliverFile(
+      blob, 'rga_visualiser.png', 'image/png',
+      'A ' + width + '\u00d7' + height + ' image of this view',
+    );
+  }, 'image/png');
+}
 
 document.getElementById('btn-load-demo').addEventListener('click', () => {
   nimLoadDemo(now());
@@ -1076,14 +1208,11 @@ function saveScene() {
     }
   }
 
-  const blob = new Blob([buffer], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'scene.rgascene';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-  toast('Saved ' + items.length + ' object(s) to `scene.rgascene`.');
+  deliverFile(
+    new Blob([buffer], { type: 'application/octet-stream' }), 'scene.rgascene',
+    'application/octet-stream',
+    'A scene file holding ' + items.length + ' object(s)',
+  );
 }
 
 function loadSceneFile(file) {
@@ -2096,6 +2225,10 @@ function frame() {
     drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
     gl.enable(gl.DEPTH_TEST);
   }
+
+  // Immediately after the last draw call and before this callback yields, which is the only
+  //   moment the drawing buffer is still there to read; see `captureFrameIfAsked`.
+  captureFrameIfAsked();
 
   refreshOverlay(cursor_last);
   updateSelectionMenuPosition();

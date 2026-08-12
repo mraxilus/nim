@@ -1648,6 +1648,70 @@ Verified by reading the rendered cells back — every live cell matches its own 
 every free cell shares one colour used by no live cell, and adding one object recolours
 exactly one cell.
 
+**Handing a file to the reader** — one route, `deliverFile`, for the scene file and the
+image alike. It was reported that neither `save → scene` nor `save → image` did anything on
+a phone, and that was **two faults presenting as one**, plus a third that hid both:
+
+1. Each path built its own `<a download>` and clicked it **without appending it to the
+   document**. A detached anchor's synthetic click is ignored by Safari outright and is
+   unreliable elsewhere — which is a phone. The two paths were the same five statements
+   written twice, so neither was ever fixed in one place.
+2. The PNG was read by `canvas.toBlob` **from the click handler**, a task of its own. The
+   context is created without `preserveDrawingBuffer`, so by then the drawing buffer has
+   been composited and discarded; `toBlob` then hands back `null`, and the unchecked
+   `URL.createObjectURL(null)` threw inside an async callback nobody watched.
+3. Neither path had a `try`/`catch` and both toasts were success-worded and unconditional,
+   so the page said "Saved 5 object(s)" while delivering nothing. The **load** path, by
+   contrast, reported failure two ways. That asymmetry is why the fault survived: the code
+   could not tell you it had failed.
+
+The image is now captured **inside the frame that drew it** — a one-shot flag set by the
+button, read in `frame()` between the last draw call and the yield, the same
+capture-then-yield shape `runStoryboard` uses on the desktop. `preserveDrawingBuffer: true`
+was rejected: it makes every frame keep a copy forever, on the device least able to afford
+it, to serve a button pressed once in a session.
+
+Delivery then tries three routes in order, and **never asserts a file was written**:
+
+1. **`navigator.share` with the `File`**, where the platform offers one — a phone. It needs
+   transient activation, which both callers have, being inside a click. Cancelling the sheet
+   is a decision rather than a failure: it says nothing and stops.
+2. **An `<a download>` appended to the document**, clicked, removed. The appending is the
+   whole of the fix to fault 1.
+3. **A link to tap, plus — for an image — the picture itself**, left in a toast that stays
+   until dismissed, whenever the page is framed.
+
+Verified by driving, not by reasoning — every claim below is a measurement:
+
+- **Desktop Chromium, unframed.** Both buttons fire a real `download` event. The scene file
+  arrives as 675 bytes opening `RGAS`, version 3, 16 basis terms, 5 items; the PNG as
+  185,135 bytes opening with the PNG signature. Saved and re-read through the page's own
+  load input, the five objects come back in the same creation order (`a`, `b`, `c`, `o`,
+  `ground`) — the whole route end to end.
+- **The PNG holds the view, not an empty buffer.** A pixel census of the delivered file:
+  1000×760, **656 distinct colours**, backdrop 55.6%, plane wash 33.3%, with the axes,
+  grid, disc and all five points present. A "did a file arrive" check alone would have
+  passed on the blank image fault 2 produced, which is why this one exists.
+- **Phone profile (Pixel 7) with `navigator.share`/`canShare` stubbed.** Both buttons take
+  the share route and hand it a real `File` — `scene.rgascene`/`application/octet-stream`
+  and `rga_visualiser.png`/`image/png` — and no download fires, correctly, since share
+  short-circuits.
+- **Framed in a sandbox without `allow-downloads`**, which is the artifact's own situation.
+  No download fires and none can: measured, **even a genuine user click on a real anchor is
+  refused there, in silence**. What the reader gets instead is a toast that says only "A
+  900×760 image of this view is ready.", the link, and — for an image — the picture itself
+  to press and hold. Drawing a blob into an `<img>` is not a navigation, so it is the one
+  route that survives that sandbox; the scene file has no equivalent and cannot be
+  delivered there at all.
+
+Not verified: which sandbox flags the artifact host actually sets, and whether a real iOS
+or Android browser takes the share route as the stub predicts. Both need the device, and
+the report that opened this came from one.
+
+Nothing in this is Nim's to do. The bytes were already correct and tested on both backends;
+what failed was delivery, which is `glue.js`'s side of the line by
+`REQUIREMENTS.md`'s own split.
+
 
 Edit Sessions
 ---
