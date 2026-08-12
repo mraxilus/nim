@@ -565,6 +565,29 @@ func handPose*(wind = 0.0): Pose =
   result.ring = none(Ring)
 
 
+func windSense*(way: TurnWay): float =
+  ## Say which way along the chain a positive turn by this way winds.
+  ##   Measured, not tabulated (rule 30, and rule 28's habit): turn a
+  ##     quarter from the frame and read the wind off the farthest pose it
+  ##     passes through.
+  ##   The farthest, not the last: a walk rocks out to its turn and back
+  ##     again, so it ends where it began and the end says nothing.
+  ##   A quarter, because a half turn's wind sits exactly on `wrap180`'s
+  ##     seam and so carries no sign to read.
+  ##   A way that winds nothing -- either orbit -- takes the forward sense:
+  ##     it still has a half turn of travelling to do, and no end to walk
+  ##     off the side of.
+  let w = WAYS_OF_TURNING[way]
+  var turned_by = 0.0
+  for put in turnWalk(handPose(), w.who, w.about, HALF / 2,
+                      on = Anchor.Lead).poses:
+    let spread = windOf(settled(put, HAND_TO_HAND, ABOVE_BOTH, default(Ways)),
+                        HAND_TO_HAND, Arm.L).spread
+    if abs(spread) > abs(turned_by):
+      turned_by = spread
+  if turned_by < -1e-9: -1.0 else: 1.0
+
+
 func handTurnParts*(): Parts =
   ## Build every SVG the hand-to-hand turns page places.
   ##   Rule 28: five positions, a half turn apart -- the frame, an X either
@@ -586,13 +609,20 @@ func handTurnParts*(): Parts =
     still_half = max(still_half, extent(handPose(position.wind),
                                         captions = false))
   for way in TurnWay:
-    let w = WAYS_OF_TURNING[way]
+    let
+      w = WAYS_OF_TURNING[way]
+      sense = windSense(way)
     for i in 0 ..< CHAIN.len - 1:
       # Each edge starts where it starts and turns a half, so a way that
       # winds walks one step along the chain and a way that does not
       # simply carries the pair out and back.
+      #   Which way it turns is the way that walks the chain *inward*,
+      #     because the ends of the chain are ends (rule 30): a positive
+      #     turn by the lead unwinds what a positive turn by the follow
+      #     winds, so turning both the same way sent the lead's edges off
+      #     the end into a second diamond.
       walks[way][i] = turnWalk(handPose(CHAIN[i].wind), w.who, w.about,
-                               HALF, on = Anchor.Lead)
+                               HALF * sense, on = Anchor.Lead)
       for put in walks[way][i].poses:
         walk_half[way] = max(walk_half[way], extent(put, captions = false))
 

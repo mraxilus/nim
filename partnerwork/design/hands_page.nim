@@ -28,11 +28,13 @@ const WINDING: array[TurnWay, string] = [
     "half a turn with them. Nobody travels and nothing needs bringing back " &
     "afterwards, so this is the plainest of the four: one stage, and the " &
     "arms wind as it goes.",
-  "The lead turns half a circle on the spot, winding the pair the other " &
-    "way. <b>Stage one</b> is the turn with the room held still; <b>stage " &
-    "two</b> brings the picture back to the lead facing up, which swings " &
-    "the follow round them and leaves the wind exactly where the turn put " &
-    "it.",
+  "The lead turns half a circle on the spot. A lead's turn winds the pair " &
+    "the opposite way to a follow's, so to take the <em>same</em> step of " &
+    "the chain they turn the other way round — turning both the same " &
+    "way sent this row off the end of the chain and drew a second diamond. " &
+    "<b>Stage one</b> is the turn with the room held still; <b>stage two</b> " &
+    "brings the picture back to the lead facing up, which swings the follow " &
+    "round them and leaves the wind exactly where the turn put it.",
   "The follow walks half a circle round the lead, keeping their own " &
     "bearing \u2014 the dashed ring says who is standing still. <b>It winds " &
     "nothing.</b> A walker who keeps their bearing never turns relative to " &
@@ -149,9 +151,13 @@ const BODY = """
   instead, travelling with the crossing and closing to nothing where there
   is no crossing to mark. Watch a whole turn wind on and you can see the
   break appear at a hand and slide inward as the crossing does.</p>
-  <p><b>What is not drawn:</b> anything past a whole turn. The chain runs
-  out where this scope does, not where the dance does — a pair can keep
-  winding, and what a second turn should look like is yours to settle.</p>
+  <p><b>What is not drawn:</b> anything past a whole turn. The diamonds are
+  the ends of the chain and they hold — no frame of any animation is wound
+  further than one, so a second diamond never appears. Which way a turn goes
+  is chosen for it: whichever way walks the chain <em>inward</em>, measured
+  per way rather than assumed. The chain runs out where this scope does, not
+  where the dance does — a pair can keep winding, and what a second turn
+  should look like is yours to settle.</p>
 </div>
 
 <div class="foot">

@@ -986,8 +986,8 @@ proc checkHandTurns*() =
     for edge in 0 ..< CHAIN.len - 1:
       let
         figure = built[&"hw_{w.tag}_{edge}"]
-        walk = turnWalk(handPose(CHAIN[edge].wind), w.who, w.about, HALF,
-                        on = Anchor.Lead)
+        walk = turnWalk(handPose(CHAIN[edge].wind), w.who, w.about,
+                        HALF * windSense(way), on = Anchor.Lead)
         put = walk.poses.mapIt(settled(it, HAND_TO_HAND, ABOVE_BOTH,
                                        default(Ways)))
       var broken: array[Arm, seq[float]]
@@ -1037,6 +1037,61 @@ proc checkHandTurns*() =
     "them drawn across the page, one at every crossing on every frame, on " &
     "the same arm the still breaks -- worn as a dash, since a reach cut " &
     "into pieces could not be morphed at all"
+
+  # RULE 30.  "the boxes/diamonds are the ends of the turn chain this
+  # highlighted is not allowed ... that double box is not allowed."  A whole
+  # turn either way is as far as this scope winds, so no frame of any
+  # animation may be found beyond one -- and every edge has to walk the
+  # chain rather than off the side of it.
+  var
+    winding = 0
+    reach = 0.0
+  for way in TurnWay:
+    let w = WAYS_OF_TURNING[way]
+    var winds_at_all = false
+    for edge in 0 ..< CHAIN.len - 1:
+      let
+        walk = turnWalk(handPose(CHAIN[edge].wind), w.who, w.about,
+                        HALF * windSense(way), on = Anchor.Lead)
+        put = walk.poses.mapIt(settled(it, HAND_TO_HAND, ABOVE_BOTH,
+                                       default(Ways)))
+      for arm in Arm:
+        let
+          seen = continuous(put.mapIt(windOf(it, HAND_TO_HAND, arm).spread))
+          spun = seen.mapIt(it + 360 * CHAIN[edge].wind - seen[0])
+        # The rule itself: nowhere past the end of the chain, on any frame.
+        for i, turned_by in spun:
+          doAssert abs(turned_by) < 360 + 1e-6,
+            &"An animation winds past the end of the chain; got " &
+              &"`{fmt(turned_by / 360, 2)}` turns at frame `{i}` of " &
+              &"{way} edge {edge}."
+        # And it starts and turns where the chain says, so the edges are a
+        # chain: out to the next position along, and back the way it came.
+        doAssert abs(spun[0] - 360 * CHAIN[edge].wind) < 1e-6 and
+            abs(spun[^1] - 360 * CHAIN[edge].wind) < 1e-6,
+          &"An edge does not start and end on its own position; got " &
+            &"`{fmt(spun[0] / 360, 2)}` to `{fmt(spun[^1] / 360, 2)}` in " &
+            &"{way} edge {edge}."
+        let far = spun[spun.mapIt(abs(it)).maxIndex]
+        if abs(abs(far) - abs(360 * CHAIN[edge].wind)) > 1e-6:
+          winds_at_all = true
+          doAssert abs(far - 360 * CHAIN[edge + 1].wind) < 1e-6,
+            &"An edge turns away from the next position instead of " &
+              &"towards it; got `{fmt(far / 360, 2)}` for " &
+              &"`{CHAIN[edge + 1].name}` in {way} edge {edge}."
+        reach = max(reach, abs(far))
+      # A way that winds nothing still has to travel, or the sense that
+      # was measured for it has quietly frozen it in place.
+      doAssert walk.poses.anyIt(
+          it.place[Dancer.Follow] != walk.poses[0].place[Dancer.Follow] or
+          it.facing[Dancer.Follow] != walk.poses[0].facing[Dancer.Follow]),
+        &"A transition does not move at all; got {way} edge {edge}."
+    if winds_at_all:
+      inc winding
+  told.add &"the chain has ends and they hold: {winding} of " &
+    &"{TurnWay.toSeq.len} ways wind, every edge rocks out to the next " &
+    &"position along and back, and nothing anywhere is drawn past " &
+    &"{fmt(reach / 360, 2)} of a turn -- so there is no second diamond"
 
   # RULE 17 and RULE 21.  Above on every hand, still and moving alike.
   var hatched = 0

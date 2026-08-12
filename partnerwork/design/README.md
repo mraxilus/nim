@@ -308,6 +308,29 @@ has happened here more than once.
     in cannot see a break that falls where its two shades meet, since that
     makes one piece of each rather than two of one; the checks measure
     drawn length instead, which sees a break wherever it lands.*
+30. **"the boxes/diamonds are the ends of the turn chain this highlighted is
+    not allowed. all I'm referring to is that double box is not allowed."**
+    The chain is a chain and not a cycle: a whole turn each way is as far as
+    this scope winds, so nothing may be drawn wound a turn and a half.
+    The fault was in the turning, not the drawing.  Every edge of every way
+    was built with the same *positive* half turn, but the two axis turns
+    wind opposite ways -- a positive turn by the lead unwinds what a
+    positive turn by the follow winds.  The chain's winds run the follow's
+    way round, so the lead's row was walking backwards off the end: from the
+    diamond at a whole turn out to a turn and a half, which drew a third
+    crossing and a second diamond.
+    So each way's winding sense is **measured**, as rule 28 measures the
+    wind itself: turn a quarter from the frame and read the wind off the
+    farthest pose the walk passes through.  *The farthest, not the last,
+    because a walk rocks out to its turn and back again and so ends where it
+    began; and a quarter, not a half, because a half turn's wind sits
+    exactly on `wrap180`'s seam and carries no sign.*  A way that winds
+    nothing -- either orbit -- takes the forward sense: it has a real half
+    turn to travel and no end to walk off.
+    The check reads the wind on every frame of every edge of every way: none
+    beyond a whole turn, each edge starting and ending on its own position,
+    and each winding edge reaching the position the chain says comes next --
+    which is also what the caption under it had been promising.
 
 ## What is settled
 

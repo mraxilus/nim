@@ -122,6 +122,8 @@ const RULES* = [
     "they seem to not be tracking which arms are over/under because of " &
     "this and they are instances where they end up on the wrong z order, " &
     "fix",
+  "the boxes/diamonds are the ends of the turn chain this highlighted is " &
+    "not allowed. all I'm referring to is that double box is not allowed",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -260,6 +262,22 @@ const RULES* = [
   ##       as the stills alternate it, and the first is named by the sign
   ##       of the measured wind -- so a moving figure and the still it
   ##       lands on cannot disagree.
+  ##   Rule 30 says the chain is a chain and not a cycle, and that its ends
+  ##     hold: a whole turn either way is as far as this scope winds, so
+  ##     nothing may be drawn wound a turn and a half.
+  ##     The fault was in the turning, not the drawing.  Every edge was
+  ##       built with the same positive half turn, but the two axis turns
+  ##       wind opposite ways -- a positive turn by the lead unwinds what a
+  ##       positive turn by the follow winds.  The chain's winds are the
+  ##       follow's way round, so the lead's edges were walking backwards
+  ##       off the end: from the box at a whole turn out to a turn and a
+  ##       half, which drew a third crossing and a second diamond.
+  ##     So each way's sense is **measured**, as rule 28 measures the wind
+  ##       itself: turn a quarter from the frame and see which way the pair
+  ##       wound.  A quarter and not a half, because a half turn's wind is
+  ##       exactly the wrap point of `wrap180` and carries no sign.  A way
+  ##       that winds nothing -- either orbit -- takes the positive sense,
+  ##       since it has a real half turn to travel and no end to walk off.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
