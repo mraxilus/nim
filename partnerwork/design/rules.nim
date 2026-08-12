@@ -133,6 +133,8 @@ const RULES* = [
     "both patterns follow the same logic, just one starts with the " &
     "partners facing each other, and the other starts with both partners " &
     "facing the same way",
+  "orbit should not maintain bearing, but instead keep whatever side faces " &
+    "the center, facing the center otherwise we can't equate the 1/2 turns",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -163,8 +165,10 @@ const RULES* = [
   ##     the lead turns while the world holds still, and only then does the
   ##     picture turn back to face them up.
   ##   Rule 19 adds the orbit turns beside the axis turns.
-  ##   Rule 20 says what an orbit is: the orbiter walks the ring and keeps
+  ##   Rule 20 said what an orbit is: the orbiter walks the ring and keeps
   ##     their own bearing, arriving facing the way they set off.
+  ##     **Rule 32 has since reversed this**, and the paragraphs below are
+  ##       kept for what they measured rather than for what they concluded.
   ##     `pose.orbit` has always had this as `locked = false`; the locked
   ##       form keeps the orbiter's face to their partner, which is an
   ##       orbit and an axis turn danced together, not an orbit.
@@ -246,12 +250,14 @@ const RULES* = [
   ##       from the axis swings as far round as the pair has wound, which
   ##       is straight at none, an X at a half, and a diamond at a whole,
   ##       with nothing imposed and nothing to jump.
-  ##     Measured that way, **an orbit does not wind the pair at all**: a
-  ##       walker who keeps their bearing never turns relative to their
-  ##       partner, so the two axis turns walk this chain and the two
-  ##       orbits carry the pair around it without moving along it.  The
-  ##       first drawing claimed all four wound, which was only true
-  ##       because all four were told to.
+  ##     Measured that way, an orbit that keeps its bearing does not wind
+  ##       the pair at all: such a walker never turns relative to their
+  ##       partner.  The first drawing claimed all four ways wound, which
+  ##       was only true because all four were told to.
+  ##     **Rule 32 has since made that finding moot** by changing what an
+  ##       orbit is.  A walker who keeps their side to the centre does turn
+  ##       relative to their partner, so all four ways wind after all --
+  ##       and this time it is measured rather than claimed.
   ##   Rule 29 gives a moving crossing the break a still one has.
   ##     A still reach is cut into runs at every crossing it dives under,
   ##       and how many runs that makes depends on how many crossings there
@@ -321,6 +327,33 @@ const RULES* = [
   ##     And the straight one is the one on top at the first crossing, which
   ##       by the alternation dives only once: broken twice, there would be
   ##       no straight line left in the middle for anything to surround.
+  ##   Rule 32 corrects rule 20, and says what an orbit is for good: the
+  ##     walker keeps **whatever side of them faced the centre facing it**,
+  ##     so they turn as far as they travel.
+  ##     The reason given is the one that matters, and is about the whole
+  ##       scheme rather than about orbits: *"otherwise we can't equate the
+  ##       1/2 turns"*.  Rule 20's orbit turned the walker not at all
+  ##       relative to their partner, so -- measured, under rule 28 -- it
+  ##       wound the pair by nothing.  Half a turn of it was half a turn of
+  ##       no quantity, and two of the four ways of turning did not walk the
+  ##       chain at all.  Facing the centre, an orbit winds exactly as far
+  ##       as it carries, and every way steps one position per half turn.
+  ##     `pose.orbit` has always had this as `locked = true`; rule 20 turned
+  ##       it off and rule 32 turns it back on.  What rule 20 objected to --
+  ##       *"combining orbit and axis turns"* -- is the same arithmetic seen
+  ##       from the other side, and it is the bearing-keeping walk that is
+  ##       the compound now: an orbit with a counter-turn danced into it.
+  ##     The consequence runs through everything.  An orbit lands where the
+  ##       *other* dancer's axis turn lands, so the four ways walk **two**
+  ##       rounds of positions rather than three, each round reached by one
+  ##       axis turn and by the other dancer's orbit.  All four are still
+  ##       drawn: which dancer walked is a fact about the path, and only the
+  ##       path can say it.
+  ##     And on the frame page the two collapse figures swap over.  It is
+  ##       the orbit that now lands on the matching axis turn, and the
+  ##       bearing-keeping compound that lands somewhere of its own -- the
+  ##       one picture either dancer's compound reaches, since only the
+  ##       pair's axis has swung.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

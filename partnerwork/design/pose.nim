@@ -96,9 +96,14 @@ func spinAbout*(pose: Pose; who: Dancer; degrees: float): Pose =
 
 func orbit*(pose: Pose; who: Dancer; degrees: float; locked = true): Pose =
   ## Walk one dancer round the other, who stands still.
-  ##   `locked` keeps their face to their partner all the way round; without
-  ##     it they keep their own bearing and arrive facing the way they set
-  ##     off.  Those are two different moves, landing in two different places.
+  ##   `locked` is what an orbit is (rule 32): **whatever side of the walker
+  ##     faced the centre goes on facing it**, so their facing swings with
+  ##     the radius and they turn as far as they travel.  Where they set off
+  ##     facing their partner they keep facing them; where they set off
+  ##     facing away they stay facing away.
+  ##   Without it they keep their own bearing and arrive facing the way they
+  ##     set off, which is an orbit and a counter-turn danced together --
+  ##     the compound, and a different move landing in a different place.
   let pivot = pose.place[if who == Dancer.Lead: Dancer.Follow else: Dancer.Lead]
   result = pose
   result.place[who] = turn(pose.place[who], pivot, degrees)
@@ -186,15 +191,20 @@ type About* {.pure.} = enum ## What a dancer's turn goes round.
 
 func turned*(base: Pose; who: Dancer; about: About; degrees: float): Pose =
   ## Turn one dancer, on their own axis or round their partner.
-  ##   An orbit **keeps its bearing** (rule 20): the walker arrives facing
-  ##     the way they set off, because walking round somebody is not the
-  ##     same act as turning to keep facing them.
-  ##     Keeping the face to the partner all the way round is an orbit and
-  ##       an axis turn danced together, and is named as the compound it is
+  ##   An orbit **faces the centre** (rule 32): whatever side of the walker
+  ##     faced their partner goes on facing them, so the walker turns as far
+  ##     as they travel.
+  ##     Which is what lets a half turn mean one thing however it is danced.
+  ##       A walker who kept their own bearing would never turn relative to
+  ##         their partner and so would wind the pair not at all, and half a
+  ##         turn of orbit would not be half a turn of anything -- which is
+  ##         the correction rule 32 makes to rule 20.
+  ##     Keeping the bearing is still a move; it is an orbit and a
+  ##       counter-turn danced together, and is named as the compound it is
   ##       wherever it is still wanted.
   case about
   of About.Axis: spinAbout(base, who, degrees)
-  of About.Orbit: orbit(base, who, degrees, locked = false)
+  of About.Orbit: orbit(base, who, degrees, locked = true)
 
 
 func turnWalk*(base: Pose; who: Dancer; about: About; degrees: float;
@@ -257,10 +267,10 @@ func moveLeadAxis(pose: Pose; scalar: float): Pose =
   spinAbout(pose, Dancer.Lead, 90 * scalar)
 
 func moveFollowOrbits(pose: Pose; scalar: float): Pose =
-  orbit(pose, Dancer.Follow, 90 * scalar, locked = false)
+  orbit(pose, Dancer.Follow, 90 * scalar, locked = true)
 
 func moveLeadOrbits(pose: Pose; scalar: float): Pose =
-  orbit(pose, Dancer.Lead, 90 * scalar, locked = false)
+  orbit(pose, Dancer.Lead, 90 * scalar, locked = true)
 
 func moveCouple(pose: Pose; scalar: float): Pose =
   couple(pose, 90 * scalar)

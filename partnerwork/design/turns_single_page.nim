@@ -97,12 +97,17 @@ const BODY = """
   <b>A dashed ring says an orbit</b>, centred on whoever is standing still;
   it is the same dash the frame picture uses, and nothing else on this page
   is dashed.</p>
-  <p><b>An orbit keeps its bearing.</b> Walking round somebody is not the
-  same act as turning to keep facing them: the walker arrives facing the
-  way they set off, and their chevron holds its direction the whole way
-  round. Keeping the face to the partner is <em>two</em> turns danced at
-  once — an orbit and an axis turn — and is not what these sections
-  draw.</p>
+  <p><b>An orbit faces the centre.</b> Whatever side of the walker faced
+  their partner goes on facing them the whole way round, so the walker
+  turns as far as they travel and their chevron comes round with the ring.
+  A walker who kept their own bearing instead would be dancing an orbit and
+  a counter-turn at once — the <em>compound</em>, which is a different move
+  and is not what these sections draw.</p>
+  <p><b>Which is what makes the ways comparable.</b> A bearing-keeping
+  walker never turns relative to their partner, so a half turn of that
+  orbit would not be half a turn of anything. Facing the centre, an orbit
+  turns the pair exactly as far as an axis turn does — and lands on the
+  very pictures the <em>other</em> dancer's axis turn reaches.</p>
   <p><b>The lead is the still point.</b> Every picture here is framed on
   them: they stand on the same spot in every cell of a row, facing up, and
   what you watch is the follow going round them. That is not only tidier —
@@ -114,9 +119,8 @@ const BODY = """
   leans off upright, or slides off centre, with the dancers. <b>Stage
   two</b> brings it back — the lead facing up and on their own spot. A
   lead's axis turn swings the follow around them; a lead's orbit, the one
-  move that carries the lead off their spot, comes home as a straight
-  slide, because an orbit that keeps its bearing has no turning left to
-  undo.</p>
+  move that carries the lead off their spot, has both to undo: the
+  travelling and the turning that came with it.</p>
   <p><b>The two stages do not share the clock.</b> The turn is what the
   figure is <em>of</em>; the re-framing is the picture catching up with it,
   and is ranked below it three ways: it runs in well under half the time
@@ -142,13 +146,14 @@ const BODY = """
   <b>A moving connection is exempt</b>, and stays straight: passing smoothly
   across a mark is what a turn does, and a bend that appeared and vanished
   mid-turn would be a mark of its own.</p>
-  <p><b>Three rounds, not four.</b> Measured, and asserted on every build:
-  the two axis turns each walk a round of their own, and <b>the two orbits
-  walk one round between them</b> — a follow orbiting the lead and a lead
-  orbiting the follow arrive at the same pictures, because only the pair's
-  axis has swung and both bearings are where they started. So the drawing
-  cannot say <em>who</em> walked; only the path can. The orbit round is not
-  either axis round: it meets them only at rest.</p>
+  <p><b>Two rounds, not four.</b> Measured, and asserted on every build:
+  <b>each round is reached by one axis turn and by the other dancer's
+  orbit</b> — the follow orbiting the lead arrives at the pictures the
+  lead's own axis turn reaches, and the lead orbiting the follow at the
+  follow's. That is rule 32's doing: an orbit that faces the centre turns
+  the pair as far as it carries the walker, so the two acts come to the
+  same place by different routes. The drawing cannot say <em>which</em> was
+  danced; only the path can, which is why all four are here.</p>
 </section>
 
 <section>
@@ -178,16 +183,18 @@ const BODY = """
 <div class="note">
   <p><b>What the collapse costs, and what it buys.</b> Where two ways reach
   one round, a position cannot say which of them was danced — only the edge
-  can. That holds for the two orbits, so the state graph underneath these
-  four sections has <b>three rounds</b> in it, not four. Whether the page
-  should be reorganised to say that first — three rounds, four ways of
-  walking them — is yours to call.</p>
-  <p><b>And it is narrower than the frame page used to claim.</b> That page
-  said axis against orbit was a property of the move rather than the state.
-  It is not: an orbit that keeps its bearing lands somewhere no axis turn
-  reaches, so a <em>position</em> tells them apart. What a position cannot
-  tell is who walked, or which two turns a compound was made of. The frame
-  page has been corrected to say so.</p>
+  can. That now holds for every way in pairs, so the state graph underneath
+  these four sections has <b>two rounds</b> in it, not four. Whether the
+  page should be reorganised to say that first — two rounds, four ways of
+  walking them — is yours to call, and the case for it is stronger than it
+  was.</p>
+  <p><b>What it costs is the distinction the frame page once drew.</b> That
+  page said axis against orbit was a property of the move rather than the
+  state, and for a while this page said the opposite. Under rule 32 the
+  frame page was right after all: an orbit lands exactly where the other
+  dancer's axis turn lands, so no <em>position</em> tells them apart. What
+  does land somewhere of its own is the compound — an orbit walked while
+  turning the other way — and both pages now say so.</p>
   <p><b>What is not drawn:</b> anything that runs out. No refusal appears
   on this page because above has no ceiling; the moment a level that locks
   or wraps comes back into scope, ceilings and refusals come with it.</p>

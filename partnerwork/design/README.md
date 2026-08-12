@@ -385,6 +385,32 @@ has happened here more than once.
     alongAt`).  And a moving reach had room for exactly one break; a swan
     puts two on one connection, so the dash pattern carries `GAPS_DRAWN` of
     them, written every frame and mostly zero long.*
+32. **"orbit should not maintain bearing, but instead keep whatever side
+    faces the center, facing the center otherwise we can't equate the 1/2
+    turns."**  This **reverses rule 20**, and the reason given is the one
+    that matters: it is about the whole scheme, not about orbits.  Rule 20's
+    orbiter never turned relative to their partner, so -- measured, under
+    rule 28 -- that orbit wound the pair by *nothing*.  Half a turn of it was
+    half a turn of no quantity, and two of the four ways of turning did not
+    walk the chain at all.  An orbiter who keeps their side to the centre
+    turns as far as they travel, so an orbit winds exactly as far as it
+    carries, and every way steps one position per half turn.
+    `pose.orbit` has always had this as `locked = true`; rule 20 turned it
+    off and rule 32 turns it back on.  What rule 20 objected to -- *"combining
+    orbit and axis turns"* -- is the same arithmetic seen from the other
+    side, and it is the bearing-keeping walk that is the compound now: an
+    orbit with a counter-turn danced into it.
+    **The consequence runs through everything.**  An orbit lands where the
+    *other* dancer's axis turn lands, so the four ways walk **two** rounds of
+    positions rather than three, each reached by one axis turn and by the
+    other dancer's orbit.  All four stay drawn: which dancer walked is a fact
+    about the path, and only the path can say it.  On the frame page the two
+    collapse figures swap over -- the orbit is what lands on the matching
+    axis turn now, and the compound is what lands somewhere of its own,
+    reached by either dancer since only the pair's axis has swung.  *That
+    page is back where it began: it said axis against orbit was a property
+    of the move and not of the state, rule 20 made that false, and rule 32
+    makes it true again.*
 
 ## What is settled
 

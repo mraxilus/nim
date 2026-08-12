@@ -446,11 +446,12 @@ proc checkSingleTurns*() =
         &"A way left its family; got {way} against {mate}."
     if walked notin rounds:
       rounds.add walked
-  doAssert rounds.len == 3,
-    &"Three rounds expected of four ways; got `{rounds.len}`."
+  doAssert rounds.len == 2,
+    &"Two rounds expected of four ways; got `{rounds.len}`."
   told.add &"{axis_ways} axis turns and {orbit_ways} orbits, the orbits " &
-    &"ringed; the four ways walk {rounds.len} rounds, the two orbits " &
-    "sharing one that neither axis turn reaches"
+    &"ringed; the four ways walk {rounds.len} rounds, each reached by one " &
+    "axis turn and by the other dancer's orbit -- which is rule 32's own " &
+    "consequence, and what lets the ways be equated"
 
   # RULE 18.  "the leads' transitions should still be in the 2 stage form,
   # stage 1 is the lead turns with the original perspective stage 2 is
@@ -510,34 +511,53 @@ proc checkSingleTurns*() =
     &"orientations a way, the round closing rather than refusing, all " &
     &"{statics} positions drawn and all {moving} transitions animated"
 
-  # RULE 20.  "make sure orbit turns keep their bearing, youre currently
-  # combining orbit and axis turns to keep the partner facing the other."
-  # Measured through every orbit walk: the walker's own facing never moves,
-  # and the pair's axis does -- which is what tells an orbit from the
-  # compound of an orbit and an axis turn.
-  var swung = 0.0
+  # RULE 32.  "orbit should not maintain bearing, but instead keep whatever
+  # side faces the center, facing the center."  Measured through every orbit
+  # walk: the walker turns as far as they travel, so the angle their facing
+  # makes with the line to the centre never moves.  Which is what makes half
+  # a turn of orbit half a turn of anything at all.
+  var
+    swung = 0.0
+    held = 0.0
   for way in TurnWay:
     let
       w = WAYS_OF_TURNING[way]
-      walk = turnWalk(quarterPose(way, 0), w.who, w.about, QUARTER,
-                      on = Anchor.Lead)
+      start = quarterPose(way, 0)
+      walk = turnWalk(start, w.who, w.about, QUARTER, on = Anchor.Lead)
+      other_one = if w.who == Dancer.Lead: Dancer.Follow else: Dancer.Lead
     var carried = 0.0
     for put in walk.poses:
       carried = max(carried,
         abs(wrap180(put.facing[w.who] - walk.poses[0].facing[w.who])))
     if w.about == About.Orbit:
-      doAssert carried < 1e-9,
-        &"An orbit turned its walker; got `{fmt(carried, 1)}` for {way}."
+      # The side of them that faces the centre: the angle between the way
+      # they face and the way their partner lies from them.
+      var facing_in = 0.0
+      for put in walk.poses:
+        let toward = bearing(put.place[other_one].x - put.place[w.who].x,
+                             put.place[other_one].y - put.place[w.who].y)
+        facing_in = max(facing_in, abs(wrap180(
+          (toward - put.facing[w.who]) -
+          (bearing(start.place[other_one].x - start.place[w.who].x,
+                   start.place[other_one].y - start.place[w.who].y) -
+           start.facing[w.who]))))
+      doAssert facing_in < 1e-9,
+        &"An orbit turned the walker off the centre; got " &
+          &"`{fmt(facing_in, 1)}` for {way}."
+      held = max(held, carried)
       swung = max(swung, abs(wrap180(
         placeOf(quarterPose(way, 1)).axis - placeOf(quarterPose(way, 0)).axis)))
-    else:
-      doAssert carried > 45,
-        &"An axis turn never turned its dancer; got {way}."
+    doAssert carried > 45,
+      &"A way of turning never turned its dancer; got {way}."
   doAssert abs(swung - QUARTER) < 1e-9,
     &"An orbit swung the axis by the wrong amount; got `{fmt(swung, 1)}`."
-  told.add &"an orbit keeps its bearing: the walker's facing never moves " &
-    &"and the pair's axis swings the whole {fmt(swung, 0)} degrees, so " &
-    "an orbit is never an axis turn in disguise"
+  doAssert abs(held - QUARTER) < 1e-9,
+    &"An orbit turned its walker by the wrong amount; got `{fmt(held, 1)}`."
+  told.add &"an orbit faces the centre: the walker turns the same " &
+    &"{fmt(held, 0)} degrees they travel, so whatever side of them faced " &
+    &"their partner still does, and the pair's axis swings the whole " &
+    &"{fmt(swung, 0)} -- which is what makes half a turn mean one thing " &
+    "however it is danced"
 
   # RULE 21.  "also, the animations should also have the above level as
   # that's the only valid one for the current scope."  A moving hand says
@@ -962,9 +982,11 @@ proc checkHandTurns*() =
     &"it: through every frame of every walk it never moves more than " &
     &"{fmt(jump, 0)} degrees at a step, so nothing snaps"
 
-  # RULE 19 and RULE 28.  Which ways of turning actually walk the chain:
-  # an orbit that keeps its bearing turns nobody, so it winds nothing.
-  var winders, carriers: seq[string]
+  # RULE 19, RULE 28 and RULE 32.  Which ways of turning walk the chain:
+  # all of them, now that an orbit faces the centre and so turns the walker
+  # relative to their partner.  Half a turn is half a turn however danced,
+  # which is the whole of rule 32's reason.
+  var winders: seq[string]
   for way in TurnWay:
     let
       w = WAYS_OF_TURNING[way]
@@ -972,20 +994,17 @@ proc checkHandTurns*() =
                             on = Anchor.Lead)
       put = settled(landed, HAND_TO_HAND, ABOVE_BOTH, default(Ways))
       spun = windOf(put, HAND_TO_HAND, Arm.L).spread
-    if abs(spun) > 1e-6:
-      doAssert w.about == About.Axis,
-        &"An orbit wound the pair; got {way}."
-      winders.add w.title.toLowerAscii
-    else:
-      doAssert w.about == About.Orbit,
-        &"An axis turn wound nothing; got {way}."
-      carriers.add w.title.toLowerAscii
-  doAssert winders.len == 2 and carriers.len == 2,
-    &"Two of each expected; got `{winders.len}` and `{carriers.len}`."
-  told.add &"{winders.len} of the {TurnWay.toSeq.len} ways wind the pair " &
-    "and walk the chain -- both axis turns -- while the two orbits carry " &
-    "it around without winding it at all, because a walker who keeps their " &
-    "bearing never turns relative to their partner"
+    # A half turn of wind, whichever way round it went.
+    doAssert abs(abs(wrap180(spun)) - HALF) < 1e-6,
+      &"A way of turning did not wind a half turn; got " &
+        &"`{fmt(spun, 1)}` for {way}."
+    winders.add w.title.toLowerAscii
+  doAssert winders.len == TurnWay.toSeq.len,
+    &"Every way should wind; got `{winders.len}`."
+  told.add &"all {winders.len} ways wind the pair a half turn and so walk " &
+    "the chain, orbits as much as axis turns -- because an orbit that keeps " &
+    "its side to the centre turns the walker relative to their partner, " &
+    "which is what lets the ways be equated at all"
 
   # RULE 29.  "the animations don't have the proper breaks that the static
   # images do ... they end up on the wrong z order."  A moving reach cannot
@@ -1180,8 +1199,8 @@ proc checkHandTurns*() =
               &"towards it; got `{fmt(far / 360, 2)}` for " &
               &"`{CHAIN[edge + 1].name}` in {way} edge {edge}."
         reach = max(reach, abs(far))
-      # A way that winds nothing still has to travel, or the sense that
-      # was measured for it has quietly frozen it in place.
+      # And it really travels, or the sense that was measured for it has
+      # quietly frozen it in place.
       doAssert walk.poses.anyIt(
           it.place[Dancer.Follow] != walk.poses[0].place[Dancer.Follow] or
           it.facing[Dancer.Follow] != walk.poses[0].facing[Dancer.Follow]),

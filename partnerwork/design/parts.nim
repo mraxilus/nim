@@ -236,10 +236,10 @@ func frameParts*(): Parts =
     "Above took a wrap; the two drawings differ."
 
   # An orbit in two stages: the follow travels, then the world comes home.
-  # Drawn twice -- the orbit itself, which keeps the walker's bearing
-  # (rule 20), and the compound of an orbit and an axis turn, which is what
-  # keeping the face to the partner all the way round really is.
-  for (tag, locked) in [("orbit", false), ("compound", true)]:
+  # Drawn twice -- the orbit itself, where the walker keeps their side to
+  # the centre (rule 32), and the compound, which is that orbit with a
+  # counter-turn danced into it so the walker keeps their own bearing.
+  for (tag, locked) in [("orbit", true), ("compound", false)]:
     var stage_one = [0.0, 0.5, 1.0].mapIt(
       orbit(rest(), Dancer.Follow, 90 * it, locked = locked))
     stage_one[0].ring = none(Ring)     # nothing is travelling yet
@@ -254,8 +254,10 @@ func frameParts*(): Parts =
       result[&"walk_{tag}_{k}"] = frame("wide", HOLD, pose = some q,
                                         captions = false, half = some half)
 
-  # What collapses, and what does not.  An orbit by either dancer lands in
-  # one picture: the drawing cannot say who walked.
+  # What collapses, and what does not.  The compound -- an orbit walked
+  # while turning the other way, so the walker keeps their own bearing --
+  # lands in one picture whichever dancer walks it: only the pair's axis has
+  # swung, and the drawing cannot say who did the walking.
   var walked_by: array[Dancer, Pose]
   for who in Dancer:
     walked_by[who] = canonicalise(orbit(rest(), who, 90, locked = false))
@@ -265,23 +267,23 @@ func frameParts*(): Parts =
   result["collapse_lead_walked"] = frame("f", HOLD,
                                          pose = some walked_by[Dancer.Lead])
   doAssert result["collapse_follow_walked"] == result["collapse_lead_walked"],
-    "Two orbits draw two pictures; the drawing can say who walked."
+    "Two compounds draw two pictures; the drawing can say who walked."
 
-  # And the compound -- an orbit and an axis turn together -- lands where
-  # the lead's own axis turn lands.  A plain orbit does not, which is why
-  # the page had to be corrected.
-  var compounded = canonicalise(orbit(rest(), Dancer.Follow, 90, locked = true))
-  compounded.ring = none(Ring)
-  result["collapse_compound"] = frame("f", HOLD, pose = some compounded)
+  # And an orbit -- the walker keeping their side to the centre (rule 32) --
+  # lands where their partner's own axis turn lands.  The compound does not,
+  # which is what the pair of figures is here to show.
+  var orbited = canonicalise(orbit(rest(), Dancer.Follow, 90, locked = true))
+  orbited.ring = none(Ring)
+  result["collapse_compound"] = frame("f", HOLD, pose = some orbited)
   result["collapse_axis"] = frame("f", HOLD, lead_turn = -90)
-  doAssert relative(compounded) == relative(
+  doAssert relative(orbited) == relative(
     spinAbout(rest(), Dancer.Lead, -90)),
-    "The compound does not land on the axis turn's state."
+    "The orbit does not land on the axis turn's state."
   # Not merely equal numbers: the two are the same drawing, mark for mark.
   doAssert result["collapse_compound"] == result["collapse_axis"],
-    "The collapse differs: compound and axis draw two pictures."
+    "The collapse differs: orbit and axis draw two pictures."
   doAssert result["collapse_follow_walked"] != result["collapse_axis"],
-    "A plain orbit now lands on the axis turn, which would be rule 20 lost."
+    "The compound lands on the axis turn, so the two are not two moves."
 
   # And the same four moves, running.
   const PX = 1.3
@@ -323,8 +325,7 @@ const
 type
   Family* {.pure.} = enum ## Which round of positions a way of turning walks.
     FollowFacing,         ## The follow comes round where they stand.
-    PairSwung,            ## The axis swings and the follow's facing with it.
-    AxisWalked            ## The axis swings and both bearings hold.
+    PairSwung             ## The axis swings and the follow's facing with it.
   TurnWay* {.pure.} = enum ## The four ways a couple can turn a quarter.
     FollowAxis, LeadAxis, FollowOrbit, LeadOrbit
 
@@ -345,28 +346,33 @@ const WAYS_OF_TURNING*: array[TurnWay, tuple[
    who: Dancer.Lead, about: About.Axis, family: Family.PairSwung),
   (tag: "fo", title: "The follow orbits the lead",
    blurb: "The follow walks the ring round the lead, who stands still — " &
-     "the dashed ring says so, and says who is standing. <b>They keep " &
-     "their own bearing</b>: walking round somebody is not the same act " &
-     "as turning to keep facing them, so their chevron points the way it " &
-     "started the whole way round. The lead never moves and never turns, " &
-     "so there is no second stage at all: what you see is the walk.",
-   who: Dancer.Follow, about: About.Orbit, family: Family.AxisWalked),
+     "the dashed ring says so, and says who is standing. <b>Whatever side " &
+     "of them faced the lead goes on facing them</b>, so they turn as far " &
+     "as they travel (rule 32). The lead never moves and never turns, so " &
+     "there is no second stage at all: what you see is the walk — and it " &
+     "lands on the very pictures the <em>lead's own axis turn</em> lands " &
+     "on, measured and asserted on every build.",
+   who: Dancer.Follow, about: About.Orbit, family: Family.PairSwung),
   (tag: "lo", title: "The lead orbits the follow",
-   blurb: "The lead walks the ring round the follow, keeping their own " &
-     "bearing too. It lands on the very pictures the <em>follow's</em> " &
-     "orbit lands on — measured, and asserted on every build. Which " &
+   blurb: "The lead walks the ring round the follow, facing the centre the " &
+     "same way. It is the one way of the four that takes the lead off " &
+     "their spot, so it is the one whose second stage has anything to do. " &
+     "It lands where the <em>follow's own axis turn</em> lands. Which " &
      "dancer walked is not something the drawing can say; only the path " &
-     "can, which is why both are animated.",
-   who: Dancer.Lead, about: About.Orbit, family: Family.AxisWalked),
+     "can, which is why all four are animated.",
+   who: Dancer.Lead, about: About.Orbit, family: Family.FollowFacing),
 ]
 
 const FAMILY_OF*: array[TurnWay, Family] = [
-  Family.FollowFacing, Family.PairSwung, Family.AxisWalked,
-  Family.AxisWalked,
+  Family.FollowFacing, Family.PairSwung, Family.PairSwung,
+  Family.FollowFacing,
 ] ## Which round each way walks, measured and asserted below.
-  ##   An axis turn moves a facing; an orbit that keeps its bearing moves
-  ##     the pair's axis instead, so the orbits walk a round of their own
-  ##     and the two of them walk the same one.
+  ##   An orbit that faces the centre turns the walker as far as it carries
+  ##     them (rule 32), so it comes to the same thing as their partner's
+  ##     axis turn the other way: two rounds between the four ways, each
+  ##     reached by one axis turn and one orbit.
+  ##   Which is the point of the correction.  A half turn is then a half
+  ##     turn however it is danced, and the ways can be equated.
 
 
 func levelsFor*(holds: Holds): Levels =
@@ -647,9 +653,10 @@ func windSense*(way: TurnWay): float =
   ##     again, so it ends where it began and the end says nothing.
   ##   A quarter, because a half turn's wind sits exactly on `wrap180`'s
   ##     seam and so carries no sign to read.
-  ##   A way that winds nothing -- either orbit -- takes the forward sense:
-  ##     it still has a half turn of travelling to do, and no end to walk
-  ##     off the side of.
+  ##   A way that winds nothing at all would take the forward sense, having
+  ##     no end to walk off the side of.  Since rule 32 there is no such
+  ##     way -- every one of the four winds -- and the fallback stands only
+  ##     so a way that stopped winding could not silently freeze.
   let w = WAYS_OF_TURNING[way]
   var turned_by = 0.0
   for put in turnWalk(handPose(), w.who, w.about, HALF / 2,
@@ -663,14 +670,15 @@ func windSense*(way: TurnWay): float =
 
 func handTurnParts*(): Parts =
   ## Build every SVG the hand-to-hand turns page places.
-  ##   Rule 28: five positions, a half turn apart -- the frame, an X either
-  ##     side of it, and a box beyond each X.
-  ##   Rule 15: every position drawn, every edge animated, by each way of
-  ##     turning that can walk the chain at all.
-  ##   Rule 28 again: an orbit that keeps its bearing turns nobody, so it
-  ##     winds nothing.  The two axis turns walk the chain; the two orbits
-  ##     carry the pair around without moving along it, which is drawn once
-  ##     rather than claimed.
+  ##   Rules 28 and 31: seven positions, a half turn apart -- the frame, an
+  ##     X either side of it, a diamond beyond each X, and a swan beyond
+  ##     each diamond.
+  ##   Rule 15: every position drawn, every edge animated, by every way of
+  ##     turning.
+  ##   Rule 32: all four of them walk the chain, since an orbit that keeps
+  ##     its side to the centre winds the pair as far as it carries the
+  ##     walker.  Which is measured rather than claimed, as it was when the
+  ##     answer was the other one.
   const
     PX = 1.0        ## Pixels a unit takes in a moving cell.
     STILL_PX = 0.72 ## And in a still one, where the figures are smaller.

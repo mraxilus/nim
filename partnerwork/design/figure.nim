@@ -166,8 +166,10 @@ func windOf*(put: Pose; holds: Holds; arm: Arm): tuple[phi, spread: float] =
   ##     going round means here.  Where the two ends make the same angle
   ##     the pair is unwound; the difference between them is the wind.
   ##   Measured, never handed in: a drawing told how far it has wound can
-  ##     be told wrong, and was -- an orbit that keeps its bearing turns
-  ##     nobody, and so winds nothing (rule 28).
+  ##     be told wrong, and has been twice: an orbit that keeps its bearing
+  ##     turns nobody and so winds nothing (rule 28), and an orbit that
+  ##     keeps its side to the centre winds as far as it carries (rule 32).
+  ##     Measuring survived both answers without being touched.
   let
     axis = axisOf(put)
     p = handsOf(put)

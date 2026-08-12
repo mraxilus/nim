@@ -37,15 +37,16 @@ const WINDING: array[TurnWay, string] = [
     "<b>Stage one</b> is the turn with the room held still; <b>stage two</b> " &
     "brings the picture back to the lead facing up, which swings the follow " &
     "round them and leaves the wind exactly where the turn put it.",
-  "The follow walks half a circle round the lead, keeping their own " &
-    "bearing \u2014 the dashed ring says who is standing still. <b>It winds " &
-    "nothing.</b> A walker who keeps their bearing never turns relative to " &
-    "their partner, so the pair arrives on the far side in exactly the " &
-    "state it set off in.",
-  "The lead walks the half circle instead, and it winds nothing either. " &
-    "It is the one way of the four that takes the lead off their spot, so " &
-    "it is the one whose second stage has anything to do: a straight slide " &
-    "home, since an orbit that keeps its bearing has no turning to undo.",
+  "The follow walks half a circle round the lead \u2014 the dashed ring says " &
+    "who is standing still \u2014 <b>keeping whatever side of them faced the " &
+    "lead facing them</b>, so they turn as far as they travel (rule 32). " &
+    "That winds the pair a half turn, the same half turn an axis turn " &
+    "winds: it walks the chain, and it lands on the very position the " &
+    "<em>lead's</em> axis turn lands on.",
+  "The lead walks the half circle instead, facing the centre the same way, " &
+    "and it winds the pair a half turn too. It is the one way of the four " &
+    "that takes the lead off their spot, so it is the one whose second " &
+    "stage has both the travelling and the turning to bring back.",
 ] ## What each way of turning does to a pair, in this page's terms.
   ##   Not `WAYS_OF_TURNING`'s own blurbs: those speak of a single hand
   ##     coming round, and here the orientation is exactly what returns.
@@ -65,10 +66,10 @@ func plates(P: Parts): string =
         moving = P[&"hw_{w.tag}_{i}"].replaceFirst(
           "class=\"mv\"", "class=\"mv moving\"")
         still = P[&"hw_{w.tag}_{i}_still"]
-        landed = if w.about == About.Axis: &"<b>{CHAIN[i + 1].name}</b>"
-                 else: "carried, not wound"
+      # Every way walks the chain now, orbits included (rule 32), so every
+      # cell says the position it lands on.
       result.add &"<figure>{moving}{still}<figcaption>{CHAIN[i].name}" &
-        &"<br>&rarr; {landed}</figcaption></figure>"
+        &"<br>&rarr; <b>{CHAIN[i + 1].name}</b></figcaption></figure>"
     result.add "</div></div>"
 
 
@@ -129,13 +130,18 @@ const BODY = """
   none, an X at a half, a diamond at a whole, and every frame in between
   following from the same measure, which is what stops a turn snapping into
   its final shape.</p>
-  <p><b>Only two of the four ways of turning wind anything.</b> An orbit
-  that keeps its bearing turns nobody: the walker never turns relative to
-  their partner, so a half orbit arrives on the other side of the lead in
-  exactly the state it set off in. <b>The axis turns walk this chain; the
-  orbits carry the pair around it.</b> An earlier draft of this page claimed
-  all four wound the pair, which was only true because all four had been
-  told to.</p>
+  <p><b>All four ways of turning wind, and by the same half turn.</b> That
+  is rule 32's doing and its whole reason: an orbiter keeps whatever side of
+  them faced the centre facing it, so they turn as far as they travel and
+  the pair winds with them. A half turn is then a half turn however it is
+  danced, and the four ways can be equated. <b>An orbit even lands on the
+  same position the other dancer's axis turn lands on</b> — measured, and
+  asserted on every build.</p>
+  <p><b>It was not always so.</b> An earlier rule had an orbiter keep their
+  own bearing, and a walker who does that never turns relative to their
+  partner: measured, that orbit wound nothing at all, and only two of the
+  four ways walked this chain. Keeping the bearing is still a move — it is
+  the orbit with a counter-turn danced into it — but it is not the orbit.</p>
   <p><b>The names are preliminary and yours.</b> <em>Left over Right</em> is
   the position where the lead's Left connection passes over the Right at the
   lead's own crossover; <em>Right over Left</em> is its mirror. The X, the

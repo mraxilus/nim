@@ -38,9 +38,9 @@ const BODY = """
   out to rule most of them out most of the time.
   A move animates in two stages: travel, then turn the world until <b>the lead
   faces up</b> again. That second stage collapses every pose that is the same
-  configuration onto one picture, and shows that <b>an orbit by either dancer
-  lands in the same place</b> — while an orbit and a turn danced together
-  land where an axis turn lands. And <b>only an <em>above</em> connection may
+  configuration onto one picture, and shows that <b>an orbit lands where the
+  other dancer's axis turn lands</b> — while an orbit walked keeping one's own
+  bearing lands somewhere of its own. And <b>only an <em>above</em> connection may
   ever cross a body</b> — at every instant a moving picture draws, not merely
   at the frames it is sampled at.</p>
   <p class="sibling"><b>The turn sign is on its own page.</b> It answers a
@@ -245,9 +245,9 @@ const BODY = """
     could not show at all. <b>Stage two</b>: the whole drawing is brought back
     until the <em>lead faces up</em> again. The follow does not have to come
     back overhead; where they have got to is part of what the picture says.</p>
-    <p><b>An orbit keeps its bearing.</b> Walking round somebody is not the
-    same act as turning to keep facing them, so the follow arrives facing the
-    way they set off — watch their chevron hold its direction:</p>
+    <p><b>An orbit faces the centre.</b> Whatever side of the walker faced
+    their partner goes on facing them, so the follow turns as far as they
+    travel — watch their chevron come round with the ring:</p>
     <div class="row mid">
       <figure>{walk_orbit_0}<figcaption>rest</figcaption></figure>
       <figure>{walk_orbit_1}<figcaption>stage one —<br>walking round</figcaption></figure>
@@ -255,10 +255,11 @@ const BODY = """
       <figure>{walk_orbit_3}<figcaption>stage two —<br>the world comes back</figcaption></figure>
       <figure>{walk_orbit_4}<figcaption>home</figcaption></figure>
     </div>
-    <p>And here the follow keeps their face to the lead all the way round
-    instead. That is <b>two turns danced at once</b> — an orbit and an axis
-    turn together — and it is worth naming as the compound it is, because it
-    lands somewhere else entirely:</p>
+    <p>And here the follow keeps their own bearing all the way round
+    instead, arriving facing the way they set off. That is <b>two turns
+    danced at once</b> — the orbit with a counter-turn in it — and it is
+    worth naming as the compound it is, because it lands somewhere else
+    entirely:</p>
     <div class="row mid">
       <figure>{walk_compound_0}<figcaption>rest</figcaption></figure>
       <figure>{walk_compound_1}<figcaption>stage one</figcaption></figure>
@@ -275,36 +276,42 @@ const BODY = """
     them, and <em>how</em> the follow faces. Every rotation moves those two —
     and two different things collapse onto one picture, which is worth keeping
     apart.</p>
-    <p><b>An orbit by either dancer lands in the same place.</b> The follow
-    walking a quarter round the lead, and the lead walking a quarter round the
-    follow, arrive at exactly the same picture: only the pair's axis has
-    swung, and both bearings are where they started. So <b>the drawing cannot
-    say who walked</b> — only the path can.</p>
+    <p><b>The compound by either dancer lands in the same place.</b> The
+    follow walking a quarter round the lead keeping their own bearing, and the
+    lead walking a quarter round the follow keeping theirs, arrive at exactly
+    the same picture: only the pair's axis has swung, and both bearings are
+    where they started. So <b>the drawing cannot say who walked</b> — only the
+    path can.</p>
     <div class="row">
-      <figure>{collapse_follow_walked}<figcaption>the follow walked<br>a quarter round</figcaption></figure>
-      <figure>{collapse_lead_walked}<figcaption>the lead walked<br>a quarter round</figcaption></figure>
+      <figure>{collapse_follow_walked}<figcaption>the follow walked<br>keeping their bearing</figcaption></figure>
+      <figure>{collapse_lead_walked}<figcaption>the lead walked<br>keeping their bearing</figcaption></figure>
     </div>
-    <p><b>And the compound lands where an axis turn lands.</b> A follow who
-    walks a quarter round the lead <em>while turning to keep their face to
-    them</em> arrives at exactly the state the lead reaches by turning a
-    quarter on the spot. Not similar: the same drawing, mark for mark.</p>
+    <p><b>And an orbit lands where an axis turn lands.</b> A follow who walks
+    a quarter round the lead <em>keeping their side to the centre</em> arrives
+    at exactly the state the lead reaches by turning a quarter on the spot.
+    Not similar: the same drawing, mark for mark.</p>
     <div class="row">
-      <figure>{collapse_compound}<figcaption>the follow walked and turned<br>a quarter round</figcaption></figure>
+      <figure>{collapse_compound}<figcaption>the follow orbited<br>a quarter round</figcaption></figure>
       <figure>{collapse_axis}<figcaption>the lead turned<br>a quarter on the spot</figcaption></figure>
     </div>
     <p>Checked rather than claimed — the generator asserts each pair is one
     drawing, mark for mark, and refuses to build if it is not. It also asserts
-    that a <em>plain</em> orbit does <b>not</b> land on the axis turn, because
-    that is the correction: an earlier version of this page called the
-    compound an orbit and claimed more than was true.</p>
-    <p><b>So what is a property of the move rather than the state is
-    narrower than it looked.</b> A state can tell a plain orbit from an axis
-    turn — they land in different places. What a state cannot tell is
-    <em>who</em> did the walking, or which two turns a compound was made of.
-    The node never needs to know those; only the edge does. Which is why the
-    two stages are worth animating: the difference is a path, and only a path
-    can show it. It also settles the turn sign's dash on the other page — the
-    dash is describing an edge, and the sign labels edges, so it survives.</p>
+    that the <em>compound</em> does <b>not</b> land on the axis turn, so the
+    two really are two moves.</p>
+    <p><b>So axis against orbit is a property of the move and not of the
+    state</b>, exactly as this page first said. A position cannot tell an
+    orbit from the other dancer's axis turn — they land in the same place —
+    and it cannot tell who did the walking either. The node never needs to
+    know; only the edge does. Which is why the two stages are worth animating:
+    the difference is a path, and only a path can show it. It also settles the
+    turn sign's dash on the other page — the dash is describing an edge, and
+    the sign labels edges, so it survives.</p>
+    <p><b>This page has been corrected twice, and is back where it began.</b>
+    Rule 20 once made an orbit keep its bearing, which put the collapse on the
+    compound instead; rule 32 reverses it, because an orbiter who keeps their
+    bearing never turns relative to their partner and so half a turn of it
+    winds nothing — and then the halves cannot be equated across the ways of
+    turning.</p>
   </div>
 
   <div class="plate">
