@@ -416,13 +416,9 @@ has happened here more than once.
     moves around a lot as the squares/circles move, it should stay visually
     consistent during animation."**  Two things, and the second was a real
     fault rather than a matter of taste.
-    **The swan.**  Its snake had been taking the whole of the straight
-    connection's swing on top of its own, which opened loops wider than the
-    pair they belong to.  `route.SWAN_SWING` says how much it ends up
-    carrying instead — enough to read as going *round* the straight one, not
-    so much that the zig-zag leaves the figure.  The check bounds it both
-    ways: wider than half a `BOX_ROOM`, narrower than half the distance
-    between the two bodies.
+    **The swan.**  Tried, and **taken back by rule 34** — see below.  What
+    survives is that how much swing the snake carries is now a named knob,
+    `route.SWAN_SWING`, rather than an expression.
     **The hatch.**  An `above` fill is an SVG `<pattern>` with
     `patternUnits="userSpaceOnUse"`, so it is anchored to the drawing rather
     than to the shape.  A moving hand animated its own `x`/`y` or `cx`/`cy`,
@@ -434,6 +430,16 @@ has happened here more than once.
     `hand()` — a group can hold two elements where `paired` reopens one.*
     The check is that a hatched mark is childless: an element that animates
     nothing of its own has no coordinates to slide.
+34. **"the hatching is good, but revert the swan change, it looks worse."**
+    So `SWAN_SWING` is two again — the whole of what the straight connection
+    gives up — and the check's upper bound on the bow drops back to a
+    backstop: far enough out to catch a snake that has left the figure, and
+    no opinion within that.
+    *Rule 33 was one instruction and turned out to be two different kinds of
+    thing.  The hatch was a fault the drawing could be held to; the width of
+    the swan was a matter of looks, and looks are settled by looking.
+    Naming the knob was worth doing either way — what it is set to is the
+    author's call and not the checker's, and the check should say so.*
 
 ## What is settled
 

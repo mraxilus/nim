@@ -59,13 +59,12 @@ const
                       ## swing evenly between the two connections.
   SWAN_EASE* = 0.45   ## How quickly it hands over, as a power of the way
                       ## through.
-  SWAN_SWING* = 1.4   ## How much swing the snake ends up carrying, as a
+  SWAN_SWING* = 2.0   ## How much swing the snake ends up carrying, as a
                       ## multiple of what one connection carries on its own.
-    ## More than one, so the loops open enough to read as going round the
-    ##   straight connection rather than as a wobble beside it.  Well under
-    ##   two, because the whole of the other connection's swing makes a
-    ##   zig-zag wider than the pair it belongs to, and a mark that leaves
-    ##   its own figure is a mark that is read twice before it is read once.
+    ## Two: the whole of what the straight connection gives up, so the pair
+    ##   swings as much as it ever did and the loops open wide.
+    ## A tighter swan was tried at rule 33's asking and looked worse, so the
+    ##   knob stays named and stays where it was (rule 34).
     ## Under one, so the hand-over is quick at the start: the third crossing
     ##   arrives as soon as the pair is past a whole turn, and until one
     ##   connection is visibly the straighter of the two, three crossings
@@ -102,10 +101,9 @@ func windShare*(turns: float; arm: Arm): float =
   ##     symmetrically -- wind two strands far enough and one pulls taut
   ##     through the middle while the other wraps it -- so the share runs
   ##     off one of them and onto the other.
-  ##   Onto, not away: some of what the straight one gives up the snake
-  ##     takes, so its loops open wide enough to be a thing going *round*
-  ##     rather than a wobble beside it -- but not all of it, or the
-  ##     zig-zag grows wider than the pair it belongs to.
+  ##   Onto, not away: what the straight one gives up the snake takes, so
+  ##     the pair swings as much as it ever did and the snake's loops open
+  ##     wide enough to be a thing going *round* rather than a wobble.
   if arm == straightArm(turns): 1 - swanning(turns)
   else: 1 + (SWAN_SWING - 1) * swanning(turns)
 

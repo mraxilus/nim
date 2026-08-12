@@ -937,9 +937,10 @@ proc checkHandTurns*() =
     doAssert bowed[straight] < MARK_STROKE,
       &"A swan's straight connection is not straight; got " &
         &"`{fmt(bowed[straight], 1)}` of bow in `{position.name}`."
-    # Wide enough to be going round the straight one, and no wider than
-    # half the pair it belongs to: a zig-zag that leaves its own figure is
-    # read twice before it is read once (rule 33).
+    # Wide enough to be going round the straight one, and not so wide that
+    # it has left the figure altogether.  How wide within that is a matter
+    # of looks and was settled by eye: a tighter swan was tried and looked
+    # worse (rule 34), so the bound is only a backstop.
     let
       put = settled(posedAt(position.wind, HAND_PHASE), HAND_TO_HAND,
                     ABOVE_BOTH, default(Ways))
@@ -947,9 +948,9 @@ proc checkHandTurns*() =
     doAssert bowed[snake] > BOX_ROOM / 2,
       &"A swan's snake does not go round anything; got " &
         &"`{fmt(bowed[snake], 1)}` of bow in `{position.name}`."
-    doAssert bowed[snake] < apart / 2,
-      &"A swan's snake bows wider than the pair holds; got " &
-        &"`{fmt(bowed[snake], 1)}` against `{fmt(apart / 2, 1)}` in " &
+    doAssert bowed[snake] < apart,
+      &"A swan's snake bows clean out of the figure; got " &
+        &"`{fmt(bowed[snake], 1)}` against `{fmt(apart, 1)}` in " &
         &"`{position.name}`."
     flattest = min(flattest, bowed[straight])
     snakiest = min(snakiest, bowed[snake])

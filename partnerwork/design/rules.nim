@@ -139,6 +139,7 @@ const RULES* = [
     "readable. also, the above level hatching appears to be a background " &
     "that moves around a lot as the squares/circles move, it should stay " &
     "visually consistent during animation",
+  "the hatching is good, but revert the swan change, it looks worse",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -371,6 +372,17 @@ const RULES* = [
   ##       about inside its own outline.  A moving hand is drawn once at the
   ##       origin and carried by a transform now, exactly as a body is: the
   ##       hatch is carried with it and holds its place (rule 21).
+  ##   Rule 34 keeps the hatch and takes the tightening back: *"the hatching
+  ##     is good, but revert the swan change, it looks worse."*
+  ##     So `SWAN_SWING` is two again, which is the whole of what the
+  ##       straight connection gives up, and the check's upper bound on the
+  ##       bow drops back to a backstop -- far enough out to catch a snake
+  ##       that has left the figure, and no opinion within that.
+  ##     The two halves of rule 33 were one instruction and turned out to be
+  ##       two different kinds of thing.  One was a fault the drawing could
+  ##       be held to; the other was a matter of looks, and looks are
+  ##       settled by looking.  Naming the knob was worth doing anyway --
+  ##       what it is set to is the author's call, not the checker's.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =
