@@ -124,6 +124,15 @@ const RULES* = [
     "fix",
   "the boxes/diamonds are the ends of the turn chain this highlighted is " &
     "not allowed. all I'm referring to is that double box is not allowed",
+  "both hand to hand and the overs are essentially the same thing but with " &
+    "one half turn of offset. the neutral (non crossed) state in hand to " &
+    "hand is when partners are facing, and the same state in the other set " &
+    "is when a partner is facing away (in between Left over and Right " &
+    "over). hand to hand actually has an extra half turn on both ends " &
+    "(which I previously thought only the other pattern had). this means " &
+    "both patterns follow the same logic, just one starts with the " &
+    "partners facing each other, and the other starts with both partners " &
+    "facing the same way",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -278,6 +287,40 @@ const RULES* = [
   ##       exactly the wrap point of `wrap180` and carries no sign.  A way
   ##       that winds nothing -- either orbit -- takes the positive sense,
   ##       since it has a real half turn to travel and no end to walk off.
+  ##     Rule 31 has since moved those ends: they are the swans, at a turn
+  ##       and a half.  The rule was that the chain *has* ends and they
+  ##       hold, never that they sat at a whole turn -- and what it refused,
+  ##       the double box, is refused still, by the swan being drawn as a
+  ##       swan rather than as two diamonds stacked.
+  ##   Rule 31 makes the two two-hand patterns one chain, and hands this
+  ##     page the two positions it was missing.
+  ##     Rule 13 had already said the crossed pair has "the two sides with
+  ##       an extra arm twist, in either direction", and that extra twist
+  ##       was read as belonging to that pattern alone.  It does not: hand
+  ##       to hand has one at each end too, so the chain is seven -- swan,
+  ##       diamond, X, the frame, X, diamond, swan.
+  ##     What differs between the two holds is only *where the chain sits*.
+  ##       A hold is unwound where its two connections run parallel, and
+  ##       that falls at a different facing for each: hand to hand face to
+  ##       face, the crossed pair with one partner facing away.  So the
+  ##       phase is measured -- turn the follow to each candidate and see
+  ##       which leaves the hold unwound -- and the crossed page becomes
+  ##       this page's code with a different hold rather than a rewrite.
+  ##     What a turn and a half looks like is the rule's own answer: *"don't
+  ##       draw it as a double box, draw it as one connection being straight
+  ##       and the other snaking around it (as that's how it looks in
+  ##       reality when I tried it). I'm giving it the preliminary name of
+  ##       swan, as it looks like the necks of two mating swans surrounding
+  ##       a center straight connection."*
+  ##     Which the geometry now does rather than fakes: past a whole turn
+  ##       the pair stops sharing its swing evenly and hands it over, so at
+  ##       a turn and a half one reach is the plain chord between its own
+  ##       hands and the other carries the lot.  Handed *over* and not
+  ##       merely given up, or the loops would be too shallow to read as a
+  ##       thing going round.
+  ##     And the straight one is the one on top at the first crossing, which
+  ##       by the alternation dives only once: broken twice, there would be
+  ##       no straight line left in the middle for anything to surround.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

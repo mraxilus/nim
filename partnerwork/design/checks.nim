@@ -792,21 +792,14 @@ proc checkHandTurns*() =
 
   func pairOf(wind: float): array[Arm, seq[Point]] =
     ## The pair as this position draws it, both reaches at once.
-    let
-      put = settled(handPose(wind), HAND_TO_HAND, ABOVE_BOTH, default(Ways))
-      p = handsOf(put)
-    for arm in Arm:
-      let (a, b) = (p[Dancer.Lead][arm],
-                    p[Dancer.Follow][HAND_TO_HAND[arm].get])
-      result[arm] = wound(a, b, axisOf(put).across,
-                          degToRad(windOf(put, HAND_TO_HAND, arm).phi),
-                          2 * PI * wind)
+    pairAt(HAND_TO_HAND, wind, HAND_PHASE)
 
-  # RULE 28.  "add the half turns which should actually form an X overhead
-  # when partners are facing the same direction ... as states in-between
-  # the outside 2."  Five positions, a half turn apart, and the wind is
-  # measured off the drawing rather than taken on trust.
-  doAssert CHAIN.len == 5, &"Five positions expected; got `{CHAIN.len}`."
+  # RULE 28 and RULE 31.  "add the half turns which should actually form an
+  # X overhead ... as states in-between the outside 2", and "hand to hand
+  # actually has an extra half turn on both ends".  Seven positions, a half
+  # turn apart, and the wind is measured off the drawing rather than taken
+  # on trust.
+  doAssert CHAIN.len == 7, &"Seven positions expected; got `{CHAIN.len}`."
   var drawn: seq[string]
   for i, position in CHAIN:
     doAssert built[&"hh_{i}"] notin drawn,
@@ -821,12 +814,14 @@ proc checkHandTurns*() =
       doAssert abs(wrap180(360 * (turned_by - position.wind))) < 1e-6,
         &"A position is not wound what it says; got " &
           &"`{fmt(turned_by, 2)}` for `{position.name}`."
-    # And the partners face the same way at a half turn, which is what
-    # makes it an X, and face each other at a whole one.
+    # And the facing alternates down the chain: the partners face one
+    # another where the wind is a whole number of turns and the same way
+    # where it is half of one, which is what makes an X an X and is the
+    # half turn of offset the other pattern is read at (rule 31).
     let facing_apart = abs(wrap180(
       put.facing[Dancer.Follow] - put.facing[Dancer.Lead]))
-    doAssert abs(facing_apart - (if abs(position.wind) == 0.5: 0.0
-                                 else: 180.0)) < 1e-6,
+    doAssert abs(facing_apart - (if int(abs(position.wind) * 2) mod 2 == 1:
+                                   0.0 else: 180.0)) < 1e-6,
       &"A position faces the wrong way about; got `{position.name}`."
   told.add &"{CHAIN.len} positions, a half turn apart, each wound exactly " &
     "what it claims -- measured as the angle each held hand makes with the " &
@@ -846,7 +841,7 @@ proc checkHandTurns*() =
     doAssert meetings.len == want,
       &"A position crosses the wrong number of times; got " &
         &"`{meetings.len}` of `{want}` in `{position.name}`."
-    if meetings.len < 2:
+    if meetings.len != 2:
       continue
     let
       put = settled(handPose(position.wind), HAND_TO_HAND, ABOVE_BOTH,
@@ -873,33 +868,73 @@ proc checkHandTurns*() =
   doAssert smallest > 2 * BOX_ROOM,
     &"The diamond pinched shut; got `{fmt(smallest, 0)}` of room in it."
 
+  # RULE 31.  "don't draw it as a double box, draw it as one connection
+  # being straight and the other snaking around it."  At a turn and a half
+  # the pair stops sharing its swing: one reach is the plain chord between
+  # its hands and the other carries the lot, which is three crossings held
+  # round a straight line rather than two diamonds stacked.
+  var
+    swans = 0
+    flattest = Inf
+    snakiest = Inf
+  for position in CHAIN:
+    let pair = pairOf(position.wind)
+    var bowed: array[Arm, float]
+    for arm in Arm:
+      # How far this reach leaves the straight line between its own hands.
+      let chord = @[pair[arm][0], pair[arm][^1]]
+      for q in pair[arm]:
+        bowed[arm] = max(bowed[arm], nearestOn(chord, q))
+    if int(abs(position.wind) * 2) != 3:
+      # Everything short of a swan shares evenly, so neither reach is the
+      # straight one and the pair stays symmetric.
+      doAssert abs(bowed[Arm.L] - bowed[Arm.R]) < 1e-6,
+        &"A pair short of a swan drew lopsided; got `{position.name}`."
+      continue
+    let
+      straight = straightArm(position.wind)
+      snake = other(straight)
+    doAssert bowed[straight] < MARK_STROKE,
+      &"A swan's straight connection is not straight; got " &
+        &"`{fmt(bowed[straight], 1)}` of bow in `{position.name}`."
+    doAssert bowed[snake] > BOX_ROOM / 2,
+      &"A swan's snake does not go round anything; got " &
+        &"`{fmt(bowed[snake], 1)}` of bow in `{position.name}`."
+    flattest = min(flattest, bowed[straight])
+    snakiest = min(snakiest, bowed[snake])
+    inc swans
+  doAssert swans == 2, &"Two swans expected; got `{swans}`."
+
   # And a crossing is drawn as a crossing: the reach that dives loses a
-  # `BREAK` of its own length, and with two crossings both of them do --
+  # `BREAK` of its own length, and a reach that dives twice loses two --
   # which is the alternation, measured rather than assumed.
   for i, position in CHAIN:
     let
       figure = built[&"hh_{i}"]
       pair = pairOf(position.wind)
-      crossings = int(abs(position.wind) * 2)
-    var short = 0
+      on_top = overArm(position.wind)
+    # The alternation the drawing uses, worked out rather than trusted:
+    # with three crossings it is two dives on one arm and one on the other.
+    var cuts: array[Arm, seq[Point]]
+    for k, meeting in crossingsOf(pair[Arm.L], pair[Arm.R]):
+      cuts[if (k mod 2 == 0) == (on_top == Arm.L): Arm.R
+           else: Arm.L].add meeting
     for arm in Arm:
       var ink = 0.0
       for shade in [DEEP[arm], INK[HAND_TO_HAND[arm].get]]:
         ink += inkOf(figure, shade)
       let
-        # A cut drops whole sampled points, so it takes out a break and up
-        # to one step of the line either side of it.
-        step = polylineLen(pair[arm]) / float(ROUTE_N - 1)
-        lost = polylineLen(pair[arm]) - ink
-      doAssert lost < step or
-          (lost > BREAK - 0.01 and lost < BREAK + 2 * step),
-        &"A reach is drawn neither whole nor once broken; got " &
-          &"`{fmt(lost, 1)}` missing from {arm} in `{position.name}`."
-      if lost > step:
-        inc short
-    doAssert short == crossings,
-      &"A crossing went unbroken, or a break drawn without one; got " &
-        &"`{short}` broken for `{crossings}` crossings in `{position.name}`."
+        whole = polylineLen(pair[arm])
+        lost = whole - ink
+        # What breaking this reach where it dives takes out of it: a cut
+        # drops whole sampled points, and one against the end of a reach
+        # drops fewer, so the length is worked out rather than counted.
+        want_lost = whole - cutGapsAt(pair[arm], cuts[arm])
+          .mapIt(polylineLen(it)).foldl(a + b, 0.0)
+      doAssert abs(lost - want_lost) < 0.5,
+        &"A reach is not drawn broken where it dives; got `{fmt(lost, 1)}` " &
+          &"missing from {arm} for `{fmt(want_lost, 1)}` of breaking at " &
+          &"`{cuts[arm].len}` dives in `{position.name}`."
   told.add &"the wind makes the crossings: none at the frame, one at a " &
     &"half turn -- the X the partners make facing the same way -- and two " &
     &"at a whole one, one by each dancer, holding a diamond of " &
@@ -957,12 +992,14 @@ proc checkHandTurns*() =
   # be cut into runs, so it wears its break as a dash -- and what is
   # measured here is that the dash is really there, on the right arm, at
   # the right place, on every frame.
-  func gapsIn(figure: string; arm: Arm): seq[float] =
-    ## The break drawn in one connection, frame by frame: whichever of its
-    ## two shades carries it.
+  func gapsIn(figure, shade: string): seq[seq[tuple[opens, shuts: float]]] =
+    ## Where the breaks fall along one shade of one connection, frame by
+    ## frame, read back off the dash pattern the drawing wrote.
+    ##   Read as places rather than counted, because a break that lands on
+    ##     the join between the two shades is drawn as a piece of each and
+    ##     is one break, not two.
     for part in figure.split("<path "):
-      if &"stroke=\"{DEEP[arm]}\"" notin part and
-          &"stroke=\"{INK[HAND_TO_HAND[arm].get]}\"" notin part:
+      if &"stroke=\"{shade}\"" notin part:
         continue
       const opens = "attributeName=\"stroke-dasharray\" values=\""
       let at = part.find(opens)
@@ -971,14 +1008,22 @@ proc checkHandTurns*() =
       let
         listed = part[at + opens.len ..< part.find('"', at + opens.len)]
         frames: seq[string] = listed.split(';')
-      for i, frame in frames:
-        let
-          says: seq[string] = frame.split(' ')
-          gap = parseFloat(says[1])
-        if i < result.len:
-          result[i] = max(result[i], gap)
-        else:
-          result.add gap
+      for frame in frames:
+        # Run, gap, run, gap, rest -- with the first run written a gap
+        # longer and the whole pattern started a gap in, so the first run
+        # is the difference of the two.
+        let says: seq[string] = frame.split(' ')
+        var
+          lens = @[parseFloat(says[0]) - parseFloat(says[1])]
+          here: seq[tuple[opens, shuts: float]]
+          along = 0.0
+        for k in 1 ..< says.high:
+          lens.add parseFloat(says[k])
+        for k, run in lens:
+          if k mod 2 == 1 and run > 0:
+            here.add (along, along + run)
+          along += run
+        result.add here
 
   var gaps = 0
   for way in TurnWay:
@@ -990,59 +1035,114 @@ proc checkHandTurns*() =
                         HALF * windSense(way), on = Anchor.Lead)
         put = walk.poses.mapIt(settled(it, HAND_TO_HAND, ABOVE_BOTH,
                                        default(Ways)))
-      var broken: array[Arm, seq[float]]
+      var shades: array[Arm, array[2, seq[seq[tuple[opens, shuts: float]]]]]
       for arm in Arm:
-        broken[arm] = gapsIn(figure, arm)
-        doAssert broken[arm].len == walk.poses.len,
-          &"A break does not run the whole move; got " &
-            &"`{broken[arm].len}` of `{walk.poses.len}` in {way}."
-      # As many reaches broken as there are crossings, frame by frame: one
-      # arm dives at each, so a crossing with none or two is a picture that
-      # does not say which is on top.
+        for k, shade in [DEEP[arm], INK[HAND_TO_HAND[arm].get]]:
+          shades[arm][k] = gapsIn(figure, shade)
+          doAssert shades[arm][k].len == walk.poses.len,
+            &"A break does not run the whole move; got " &
+              &"`{shades[arm][k].len}` of `{walk.poses.len}` in {way}."
+      # Every crossing broken exactly once, frame by frame, and broken on
+      # the arm the alternation names: a crossing with none or with two is
+      # a picture that does not say which connection is on top.
+      var first_cuts: array[Arm, seq[Point]]
       for i in 0 ..< put.len:
-        var routes: array[Arm, seq[Point]]
+        var
+          routes: array[Arm, seq[Point]]
+          spun: array[Arm, float]
         for arm in Arm:
           let
             seen = continuous(put.mapIt(windOf(it, HAND_TO_HAND, arm).spread))
-            spun = seen[i] + 360 * CHAIN[edge].wind - seen[0]
             hands = handsOf(put[i])
+          spun[arm] = seen[i] + 360 * CHAIN[edge].wind - seen[0]
           routes[arm] = wound(hands[Dancer.Lead][arm],
                               hands[Dancer.Follow][HAND_TO_HAND[arm].get],
                               axisOf(put[i]).across,
                               degToRad(windOf(put[i], HAND_TO_HAND, arm).phi),
-                              degToRad(spun))
+                              degToRad(spun[arm]),
+                              share = windShare(spun[arm] / 360, arm))
         let
           meetings = crossingsOf(routes[Arm.L], routes[Arm.R])
-          cut = Arm.toSeq.countIt(broken[it][i] > 0)
-        doAssert cut == min(meetings.len, 2),
-          &"A crossing is drawn without a break, or a break without a " &
-            &"crossing; got `{cut}` breaks for `{meetings.len}` crossings " &
-            &"in {way} edge {edge}."
-        gaps += cut
-      # And the arm it breaks is the arm the still breaks, which is the
-      # disagreement this rule was given for.  Measured as length lost, so
-      # a break that lands where the two shades meet is still seen.
+          # The drawing reads the wind off the Left connection to name
+          # which is on top, so the check has to read it off the same one.
+          on_top = overArm(spun[Arm.L])
+        for arm in Arm:
+          let
+            middle = routes[arm].len div 2
+            deep = polylineLen(routes[arm][0 .. middle])
+          # Every break the drawing wrote, put into one measure along the
+          # whole reach: the light shade's own distances run on from where
+          # the deep one leaves off.
+          var marks: seq[tuple[opens, shuts: float]]
+          for k in 0 .. 1:
+            for mark in shades[arm][k][i]:
+              let along = if k == 1: deep else: 0.0
+              marks.add (mark.opens + along, mark.shuts + along)
+          # And where this reach dives, in the same measure: the crossings
+          # in order, the diving arm alternating from the first.
+          var dips: seq[float]
+          for k, meeting in meetings:
+            let under = if (k mod 2 == 0) == (on_top == Arm.L): Arm.R
+                        else: Arm.L
+            if under == arm:
+              dips.add alongAt(routes[arm], meeting)
+          # Each dive wears a break, and no break is worn anywhere else --
+          # which together are what a crossing being drawn as a crossing
+          # means, however the break happened to fall across the two
+          # shades (rules 29, 31).
+          for at in dips:
+            doAssert marks.anyIt(at >= it.opens - 1 and at <= it.shuts + 1),
+              &"A crossing is drawn without a break; got a dive at " &
+                &"`{fmt(at, 1)}` on {arm} outside every break in {way} " &
+                &"edge {edge} frame {i}."
+          for mark in marks:
+            doAssert dips.anyIt(it >= mark.opens - BREAK and
+                                it <= mark.shuts + BREAK),
+              &"A break is drawn without a crossing; got one at " &
+                &"`{fmt(mark.opens, 1)}` on {arm} in {way} edge {edge} " &
+                &"frame {i}."
+          gaps += dips.len
+          if i == 0:
+            for k, meeting in meetings:
+              let under = if (k mod 2 == 0) == (on_top == Arm.L): Arm.R
+                          else: Arm.L
+              if under == arm:
+                first_cuts[arm].add meeting
+      # And the arm it breaks is the arm the still breaks, and as many
+      # times -- which is the disagreement this rule was given for.
+      # Measured as length lost, so a break that lands where the two
+      # shades meet is still seen.
       let still = built[&"hw_{w.tag}_{edge}_still"]
       for arm in Arm:
         var ink = 0.0
         for shade in [DEEP[arm], INK[HAND_TO_HAND[arm].get]]:
           ink += inkOf(still, shade)
         let
-          whole = polylineLen(pairOf(CHAIN[edge].wind)[arm])
-          cut = whole - ink > whole / float(ROUTE_N - 1)
-        doAssert cut == (broken[arm][0] > 0),
-          &"The moving figure breaks a different arm from its still; got " &
-            &"{arm} in {way} edge {edge}."
+          settled_pair = pairOf(CHAIN[edge].wind)[arm]
+          whole = polylineLen(settled_pair)
+          # What the still would lose if it were cut where the move's own
+          # first frame dives: the same arm, the same places, the same
+          # length gone.
+          want_lost = whole - cutGapsAt(settled_pair, first_cuts[arm])
+            .mapIt(polylineLen(it)).foldl(a + b, 0.0)
+        doAssert abs(whole - ink - want_lost) < 0.5,
+          &"The moving figure breaks a different arm from its still, or in " &
+            &"different places; got `{fmt(whole - ink, 1)}` missing from " &
+            &"the still for `{fmt(want_lost, 1)}` of the move's " &
+            &"`{first_cuts[arm].len}` dives on {arm} in {way} edge {edge}."
   told.add &"a moving reach carries the break a still one does: {gaps} of " &
     "them drawn across the page, one at every crossing on every frame, on " &
     "the same arm the still breaks -- worn as a dash, since a reach cut " &
     "into pieces could not be morphed at all"
 
-  # RULE 30.  "the boxes/diamonds are the ends of the turn chain this
-  # highlighted is not allowed ... that double box is not allowed."  A whole
-  # turn either way is as far as this scope winds, so no frame of any
-  # animation may be found beyond one -- and every edge has to walk the
-  # chain rather than off the side of it.
+  # RULE 30 and RULE 31.  "the boxes/diamonds are the ends of the turn chain
+  # ... that double box is not allowed", and then "hand to hand actually has
+  # an extra half turn on both ends".  The rule was that the chain has ends
+  # and they hold, never that the ends sit at a whole turn: they are the
+  # swans now, so no frame of any animation may be found past a turn and a
+  # half -- and every edge has to walk the chain rather than off the side of
+  # it.  What rule 30 refused, the double box, is refused by the swan being
+  # drawn as a swan, which is asserted above.
   var
     winding = 0
     reach = 0.0
@@ -1061,7 +1161,7 @@ proc checkHandTurns*() =
           spun = seen.mapIt(it + 360 * CHAIN[edge].wind - seen[0])
         # The rule itself: nowhere past the end of the chain, on any frame.
         for i, turned_by in spun:
-          doAssert abs(turned_by) < 360 + 1e-6,
+          doAssert abs(turned_by) < 360 * abs(STEPS[^1]) + 1e-6,
             &"An animation winds past the end of the chain; got " &
               &"`{fmt(turned_by / 360, 2)}` turns at frame `{i}` of " &
               &"{way} edge {edge}."
@@ -1091,7 +1191,13 @@ proc checkHandTurns*() =
   told.add &"the chain has ends and they hold: {winding} of " &
     &"{TurnWay.toSeq.len} ways wind, every edge rocks out to the next " &
     &"position along and back, and nothing anywhere is drawn past " &
-    &"{fmt(reach / 360, 2)} of a turn -- so there is no second diamond"
+    &"{fmt(reach / 360, 2)} of a turn -- the swans, which are the ends"
+  told.add &"and the two patterns are one chain read half a turn apart: " &
+    &"hand to hand runs parallel with the partners facing one another, " &
+    &"measured at a phase of {fmt(HAND_PHASE, 2)} of a turn, and its " &
+    &"{CHAIN.len} positions step by halves from there to a turn and a half " &
+    &"each way, where one connection runs straight to within " &
+    &"{fmt(flattest, 2)} and the other snakes {fmt(snakiest, 0)} round it"
 
   # RULE 17 and RULE 21.  Above on every hand, still and moving alike.
   var hatched = 0

@@ -1,11 +1,13 @@
-## Lay out the hand-to-hand turns page: three positions, and the box.
+## Lay out the hand-to-hand turns page: seven positions, a half turn apart.
 ##
 ##   The second of one mock-up per kind of turn (rule 15), and the dual of
 ##     the first.  A single hand turns for ever, so its wind is not part of
 ##     its state and its orientation is all of it (rule 16); hold both hands
 ##     and a whole turn puts every orientation back where it was, so the
-##     wind is all of it instead -- one turn each way, and rule 12's three
-##     positions.
+##     wind is all of it instead -- a turn and a half each way, by halves.
+##   And the same chain the crossed pair walks, read half a turn along: a
+##     hold is unwound where its two connections run parallel, and that
+##     falls at a different facing for each of the two (rule 31).
 ##   What a wound pair looks like is rule 27's: two crossovers, one by each
 ##     dancer, with a box between them.
 ##     Cost of a drawn convention: nothing in the geometry makes those two
@@ -84,19 +86,24 @@ const BODY = """
   ever, so how far it has wound is not part of its state and where the pair
   is pointing is all of it. Hold both and it is the other way about: a whole
   turn puts every facing and every place back exactly where it was, so the
-  pointing says nothing and <b>the wind is the state</b>. Half a turn each
-  way and a whole turn each way: five positions.</p>
-  <p class="sibling"><b>The crossed pair comes next</b>, on its own page,
-  and all three go together once each is right.</p>
+  pointing says nothing and <b>the wind is the state</b>. A turn and a half
+  each way, by halves: seven positions.</p>
+  <p class="sibling"><b>The crossed pair comes next</b>, on its own page —
+  and it is <em>this</em> chain, read half a turn along, so what is left is
+  to draw it.</p>
 </header>
 
 <section>
-  <div class="head"><span class="n">What is here</span><h2>Five positions,
+  <div class="head"><span class="n">What is here</span><h2>Seven positions,
   a half turn apart</h2></div>
   <p><b>The middle one is the app's own frame</b>, drawn exactly as the app
   draws it: two connections running side by side, crossing nothing. Each
   half turn from there winds the pair one step further, and the chain runs
-  out at a whole turn each way.</p>
+  out at a turn and a half each way.</p>
+  <p><b>Which way the partners face follows from the wind</b>, so the
+  captions leave it out and it is said once here: <b>face to face</b> at a
+  whole number of turns — the frame and the diamonds — and <b>both facing
+  one way</b> at a half — the X's and the swans.</p>
   <p><b>A half turn makes an X.</b> The partners end up facing the same way,
   and the two connections cross once overhead — the plain crossing the app
   already uses for a crossed pair, with the over-and-under break saying
@@ -105,6 +112,14 @@ const BODY = """
   crossings enclose is the shape rule 27 named. <b>The two crossings say
   opposite things</b> — whichever connection is over at the lead's end is
   under at the follow's, because that is what being wound together means.</p>
+  <p><b>A turn and a half makes a swan</b>, and it is where the pair stops
+  being symmetric. Wound that far the two arms cannot both keep swinging:
+  one pulls taut and runs straight through the middle while the other wraps
+  it, over and under and over, in two long loops — the necks of two mating
+  swans round a straight neck between them, which is the picture and the
+  name. It crosses three times, and it is emphatically <em>not</em> two
+  diamonds stacked; that drawing was refused (rule 30) and this is what
+  replaced it.</p>
   <p><b>Nothing here is imposed.</b> How far a pair has wound is
   <em>measured</em>: each held hand sits on its own body's rim and both
   bodies stand on the pair's axis, so the angle a hand makes with that axis
@@ -123,15 +138,37 @@ const BODY = """
   told to.</p>
   <p><b>The names are preliminary and yours.</b> <em>Left over Right</em> is
   the position where the lead's Left connection passes over the Right at the
-  lead's own crossover; <em>Right over Left</em> is its mirror. The X and
-  the diamond a step apart share a name because they are the same winding,
-  carried further.</p>
+  lead's own crossover; <em>Right over Left</em> is its mirror. The X, the
+  diamond and the swan a step apart share a name because they are the same
+  winding, carried further.</p>
+</section>
+
+<section>
+  <div class="head"><span class="n">One chain</span><h2>Both patterns, half
+  a turn apart</h2></div>
+  <p><b>Hand to hand and the crossed pair are the same chain.</b> A hold has
+  one position where its two connections run parallel and cross nothing —
+  and that position sits at a different <em>facing</em> for each of them.
+  Hand to hand is parallel with the partners <b>face to face</b>; hold left
+  to left and right to right instead and it is parallel with one of them
+  <b>facing away</b>, which on this page's chain is half a turn along. Every
+  step after that is the same step: X, diamond, swan, out to a turn and a
+  half each way.</p>
+  <p><b>So the phase is measured, not written down.</b> The build turns the
+  follow to each candidate and asks which one leaves the hold unwound, using
+  the same measure everything else here uses. This page comes out at nothing;
+  the crossed pair will come out at a half turn, and it will be this code
+  with a different hold rather than a second drawing of the same idea.</p>
+  <p><b>What this settles</b> is rule 13's <em>"the two sides with an extra
+  arm twist, in either direction"</em>. That extra twist was thought to
+  belong to the crossed pair alone. It does not: it is the swan, and hand to
+  hand has one at each end too.</p>
 </section>
 
 <section>
   <div class="head"><span class="n">The chain</span><h2>The three, in
   order</h2></div>
-  <p>Both ways of winding reach these same five, so they are drawn once
+  <p>Both ways of winding reach these same seven, so they are drawn once
   rather than twice over. Which dancer turned is not something a position
   can say — only the path can, which is why every way is animated below,
   including the two that turn out to wind nothing.</p>
@@ -151,13 +188,13 @@ const BODY = """
   instead, travelling with the crossing and closing to nothing where there
   is no crossing to mark. Watch a whole turn wind on and you can see the
   break appear at a hand and slide inward as the crossing does.</p>
-  <p><b>What is not drawn:</b> anything past a whole turn. The diamonds are
-  the ends of the chain and they hold — no frame of any animation is wound
-  further than one, so a second diamond never appears. Which way a turn goes
-  is chosen for it: whichever way walks the chain <em>inward</em>, measured
-  per way rather than assumed. The chain runs out where this scope does, not
-  where the dance does — a pair can keep winding, and what a second turn
-  should look like is yours to settle.</p>
+  <p><b>What is not drawn:</b> anything past a turn and a half. The swans
+  are the ends of the chain and they hold — no frame of any animation is
+  wound further, and no position anywhere draws two diamonds stacked. Which
+  way a turn goes is chosen for it: whichever way walks the chain
+  <em>inward</em>, measured per way rather than assumed. The chain runs out
+  where this scope does, not where the dance does — a pair can keep
+  winding, and what lies past the swan is yours to settle.</p>
 </div>
 
 <div class="foot">

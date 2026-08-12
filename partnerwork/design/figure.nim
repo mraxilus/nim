@@ -13,7 +13,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, sequtils, strformat, strutils]
+import std/[algorithm, math, options, sequtils, strformat, strutils]
 
 import ./[body, geometry, pose, route, rules, style]
 
@@ -252,7 +252,8 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
           # is a full round on top of it.
           wound(ends.a, ends.b, axisOf(put).across,
                 degToRad(windOf(put, holds, arm).phi),
-                2 * PI * twist[arm].turns)
+                2 * PI * twist[arm].turns,
+                share = windShare(twist[arm].turns, arm))
         elif clear_marks:
           clearedReach(ends.a, ends.b, clearingMarks(put, ends.a, ends.b))
         else:
@@ -395,8 +396,14 @@ func paired*(markup, inner: string): string =
 const LONG_ENOUGH = 999.0
   ## A dash long enough to be the rest of any reach on any page.
 
+const GAPS_DRAWN = 2
+  ## Breaks a moving reach has room for, whether it uses them or not.
+  ##   Two, because a swan crosses three times and the alternation puts two
+  ##     of those on one connection (rule 31).  Every frame writes the same
+  ##     number of them, which is what lets the pattern be animated at all.
 
-func dashedAt*(pts: seq[Point]; dive: Option[Point]):
+
+func dashedAt*(pts: seq[Point]; dives: seq[float]; starts = 0.0):
     tuple[pattern, offset: string] =
   ## Say a moving reach's break as a dash pattern: how far it runs, how long
   ## the break is, and then the rest of it (rule 29).
@@ -410,28 +417,57 @@ func dashedAt*(pts: seq[Point]; dive: Option[Point]):
   ##   A crossing that sits on the join between the two halves breaks both
   ##     of them, each by as much of the gap as falls inside it, so the
   ##     break slides across the middle instead of hopping.
+  ##   Which is why a dive is given as how far along the *whole* reach it
+  ##     lies, with `starts` saying where this half begins: how near a
+  ##     crossing is in the plane says nothing about where on the line it
+  ##     falls once the line snakes back past itself (rule 31), and taking
+  ##     nearness for position drew breaks where there was no crossing.
   ##   The pattern is written a gap longer than it needs and started a gap
   ##     in, which comes to the same line and keeps the first dash off
   ##     zero: a zero-length dash under a round cap is drawn as a dot, and
   ##     a break that begins at a half's own start would leave one.
+  ##   Room for `GAPS_DRAWN` of them, always written and mostly zero long:
+  ##     a swan crosses three times and the alternation puts two of those on
+  ##     one connection (rule 31), while a frame has none at all, and the
+  ##     markup has to say the same number of things either way.
   var runs = @[0.0]
   for i in 0 ..< pts.high:
     runs.add runs[^1] + dist(pts[i], pts[i + 1])
-  var nearest = (d: Inf, at: 0.0)
-  if dive.isSome:
-    for i, q in pts:
-      let d = dist(q, dive.get)
-      if d < nearest.d:
-        nearest = (d, runs[i])
-  # The gap is centred on the crossing and clipped to this half's own ends,
-  # which is what lets it cross the middle without flickering.
-  let
-    opens = clamp(nearest.at - BREAK / 2, 0.0, runs[^1])
-    shuts = clamp(nearest.at + BREAK / 2, 0.0, runs[^1])
-    # A crossing nowhere near this half leaves nothing to break.
-    gap = if dive.isNone or nearest.d > BREAK: 0.0 else: shuts - opens
-    before = if gap > 0: opens else: runs[^1]
-  (&"{n(before + gap)} {n(gap)} {n(LONG_ENOUGH)}", n(gap))
+  # Where along this half each break falls, in order, so a pattern reads
+  # from one end to the other.  The gap is centred on the crossing and
+  # clipped to this half's own ends, which is what lets it cross the join
+  # without flickering; a crossing outside this half leaves nothing.
+  var breaks: seq[tuple[opens, shuts: float]]
+  for dive in dives:
+    let
+      opens = clamp(dive - starts - BREAK / 2, 0.0, runs[^1])
+      shuts = clamp(dive - starts + BREAK / 2, 0.0, runs[^1])
+    if shuts > opens:
+      breaks.add (opens, shuts)
+  breaks = breaks.sortedByIt(it.opens)
+  # Run, gap, run, gap: one pair per break the pattern has room for.
+  var
+    lens: seq[float]
+    at = 0.0
+  for k in 0 ..< GAPS_DRAWN:
+    let
+      gap = if k < breaks.len: max(breaks[k].shuts - breaks[k].opens, 0.0)
+            else: 0.0
+      # A break there is none of is parked a whole line past the end, so
+      # the run before it is long rather than nothing: a zero-length dash
+      # under a round cap is drawn as a dot, and an unused gap must leave
+      # no mark at all.
+      opens = if gap > 0: max(breaks[k].opens, at) else: at + LONG_ENOUGH
+    lens.add opens - at
+    lens.add gap
+    at = opens + gap
+  # The pattern is written a gap longer at the front and started a gap in,
+  # which comes to the same line and keeps the first dash off zero.
+  var says = @[n(lens[0] + lens[1])]
+  for k in 1 ..< lens.len:
+    says.add n(lens[k])
+  says.add n(LONG_ENOUGH)
+  (says.join(" "), n(lens[1]))
 
 
 func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
@@ -546,7 +582,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
         for i, f in frames:
           routes[arm].add wound(f.a, f.b, axisOf(poses[i]).across,
                                 degToRad(windOf(poses[i], holds, arm).phi),
-                                degToRad(winds[arm][i]))
+                                degToRad(winds[arm][i]),
+                                share = windShare(winds[arm][i] / 360, arm))
       else:
         routes[arm] = frames.mapIt(straightReach(it.a, it.b))
     else:
@@ -564,17 +601,20 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
   # wind (rule 29).  A moving reach cannot be cut into runs -- the number of
   # them would change from frame to frame and a path that changes shape
   # cannot morph -- so it keeps its one piece and wears the break as a dash.
-  var dives: array[Arm, seq[Option[Point]]]
+  # A swan crosses three times, so an arm can dive more than once and every
+  # crossing is kept rather than only the first (rule 31).
+  # Kept as how far along its own reach each dive lies, not as where it is
+  # on the page: a snake passes near its own line again further along.
+  var dives: array[Arm, seq[seq[float]]]
   if holds[Arm.L].isSome and holds[Arm.R].isSome:
     for i in 0 ..< poses.len:
-      var mine: array[Arm, Option[Point]]
+      var mine: array[Arm, seq[float]]
       let
         turned_by = if winds[Arm.L].len == poses.len: winds[Arm.L][i] else: 0.0
-        on_top = if turned_by >= 0: Arm.L else: Arm.R
+        on_top = overArm(turned_by)
       for k, meeting in crossingsOf(routes[Arm.L][i], routes[Arm.R][i]):
         let under = if (k mod 2 == 0) == (on_top == Arm.L): Arm.R else: Arm.L
-        if mine[under].isNone:
-          mine[under] = some meeting
+        mine[under].add alongAt(routes[under][i], meeting)
       for arm in Arm:
         dives[arm].add mine[arm]
 
@@ -593,7 +633,8 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
         let part = pts[lo .. hi]
         paths.add "M" & part.mapIt(xy(it)).join(" L")
         if dives[arm].len == poses.len:
-          let dashed = dashedAt(part, dives[arm][i])
+          let dashed = dashedAt(part, dives[arm][i],
+                                starts = polylineLen(pts[0 .. lo]))
           dashes.add dashed.pattern
           offsets.add dashed.offset
       bits.add paired(

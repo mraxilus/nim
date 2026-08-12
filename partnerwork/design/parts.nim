@@ -534,19 +534,18 @@ const
     ## Both arms over the head, this scope's one level (rules 17, 21).
   HALF* = 180.0 ## The turn between one position and the next (rule 28).
 
-const CHAIN*: array[5, tuple[wind: float, name: string, note: string]] = [
-  (-1.0, "Right over Left box", "a whole turn, wound one way"),
-  (-0.5, "Right over Left X", "a half turn: the same way, facing"),
-  (0.0, "Left-to-right and Right-to-left", "the app's frame, nothing wound"),
-  (0.5, "Left over Right X", "a half turn: the other way, facing"),
-  (1.0, "Left over Right box", "a whole turn, wound the other way"),
-] ## The five positions this page holds, in chain order.
-  ##   The middle is the app's own frame, the ends are rule 27's boxes, and
-  ##     between them are rule 28's half turns -- where the partners face
-  ##     the same way and the pair makes a plain X.
-  ##   Named for whichever of the lead's arms passes over the other at the
-  ##     lead's own crossover, which is the rule's own naming and is
-  ##     flagged on the page as preliminary.
+const STEPS* = [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5]
+  ## One chain, in turns of wind from a hold's own parallel state (rule 31).
+  ##   Seven positions a half turn apart: the hold's own frame in the middle,
+  ##     rule 28's X either side of it, rule 27's diamond beyond each of
+  ##     those, and rule 13's extra arm twist -- the **swan** -- at each end.
+  ##   The steps are the whole of the chain; what differs between one hold
+  ##     and another is only which facing sits at nothing wound, which is
+  ##     the half turn of offset rule 31 names, and that is measured rather
+  ##     than written down here.
+
+type Position* = tuple[wind: float, name, note: string]
+  ## One place on the chain: how far it is wound, and how the page says so.
 
 
 func windTwist*(wind: float): Twists =
@@ -554,15 +553,89 @@ func windTwist*(wind: float): Twists =
   [(false, 0, 0, wind), (false, 0, 0, wind)]
 
 
-func handPose*(wind = 0.0): Pose =
-  ## Get the pose one position of the chain stands in.
+func posedAt*(wind, phase: float): Pose =
+  ## Get the pose a hold stands in when it is wound this far from its own
+  ## parallel state, that state being `phase` turns off face to face.
   ##   The follow's own axis turn is what the poses are built from, so a
   ##     half turn faces them away where they stand and a whole turn brings
   ##     everything back.  Which dancer did the turning is not something a
   ##     position can say; the page animates all of them.
   result = canonicalise(turned(rest(), Dancer.Follow, About.Axis,
-                               2 * HALF * wind), on = Anchor.Lead)
+                               2 * HALF * (wind + phase)), on = Anchor.Lead)
   result.ring = none(Ring)
+
+
+func phaseOf*(holds: Holds): float =
+  ## Say how far off face to face this hold's two connections run parallel:
+  ## the phase of the chain it sits on (rule 31).
+  ##   Measured, in rule 28's habit: the hold is parallel where the angle
+  ##     its two ends make with the pair's axis agree, and `windOf` is
+  ##     already the thing that measures that.
+  ##   Two candidates and no more, because the chain steps by half turns:
+  ##     hand to hand runs parallel with the partners facing one another,
+  ##     the crossed pair with one of them facing away, and those are the
+  ##     same chain read half a turn apart.
+  for phase in [0.0, 0.5]:
+    let put = settled(posedAt(0.0, phase), holds, ABOVE_BOTH, default(Ways))
+    if abs(windOf(put, holds, Arm.L).spread) < 1e-6:
+      return phase
+  raise newException(Defect, "A hold runs parallel at neither phase.")
+
+
+func chainFor*(holds: Holds): seq[Position] =
+  ## Lay out the chain one hold walks: every step of it, named and noted.
+  ##   The names are preliminary and the user's: a position is called for
+  ##     whichever of the lead's arms passes over the other at the lead's
+  ##     own crossover, and for the shape the pair makes there.
+  let phase = phaseOf(holds)
+  for wind in STEPS:
+    let
+      shape = case int(abs(wind) * 2)
+              of 0: &"Left-to-{handName(holds[Arm.L].get)} and " &
+                    &"Right-to-{handName(holds[Arm.R].get)}"
+              of 1: "X"
+              of 2: "box"
+              else: "swan"
+      far = case int(abs(wind) * 2)
+            of 0: "the app's frame"
+            of 1: "a half turn"
+            of 2: "a whole turn"
+            else: "a turn and a half"
+    # Which way the partners face is the pose's business and follows from
+    # the wind, so the page says the rule of it once in prose rather than
+    # every caption saying it over: face to face at a whole number of
+    # turns, both one way at a half.  It is also the whole of the offset
+    # between this hold and its dual (rule 31).
+    result.add (wind,
+      if abs(wind) < 1e-9: shape
+      elif wind > 0: &"Left over Right {shape}"
+      else: &"Right over Left {shape}",
+      far)
+
+
+const
+  HAND_PHASE* = phaseOf(HAND_TO_HAND)
+    ## Hand to hand runs parallel with the partners facing one another, so
+    ## its chain sits at nothing -- measured on every build, not assumed.
+  CHAIN* = chainFor(HAND_TO_HAND)
+    ## The seven positions this page holds, in chain order.
+
+
+func handPose*(wind = 0.0): Pose =
+  ## Get the pose one position of this page's chain stands in.
+  posedAt(wind, HAND_PHASE)
+
+
+func pairAt*(holds: Holds; wind, phase: float): array[Arm, seq[Point]] =
+  ## The two reaches a position draws, made the way the drawing makes them.
+  let
+    put = settled(posedAt(wind, phase), holds, ABOVE_BOTH, default(Ways))
+    p = handsOf(put)
+  for arm in Arm:
+    result[arm] = wound(p[Dancer.Lead][arm], p[Dancer.Follow][holds[arm].get],
+                        axisOf(put).across,
+                        degToRad(windOf(put, holds, arm).phi),
+                        2 * PI * wind, share = windShare(wind, arm))
 
 
 func windSense*(way: TurnWay): float =
@@ -656,7 +729,9 @@ func handTurnParts*(): Parts =
         twist = windTwist(CHAIN[i].wind), clear_marks = true),
         "mv still", walk_half[way], PX)
 
-  result["g_half"] = turnGlyph("a half turn", 68.0)
+  # Narrow, because the chain is seven long now and the glyph stands
+  # between every pair of them (rule 31).
+  result["g_half"] = turnGlyph("a half turn", 52.0)
 
   # The five positions draw differently, or they are not five positions.
   for i in 0 ..< CHAIN.len:

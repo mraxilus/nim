@@ -342,6 +342,49 @@ has happened here more than once.
     beyond a whole turn, each edge starting and ending on its own position,
     and each winding edge reaching the position the chain says comes next --
     which is also what the caption under it had been promising.
+    *Rule 31 has since moved those ends out to a turn and a half.  The rule
+    was that the chain has ends and they hold, not that they sat at a whole
+    turn; what it refused -- the double box -- is refused still, by the swan
+    being drawn as a swan.*
+31. **"both hand to hand and the overs are essentially the same thing but
+    with one half turn of offset ... hand to hand actually has an extra half
+    turn on both ends (which I previously thought only the other pattern
+    had). this means both patterns follow the same logic, just one starts
+    with the partners facing each other, and the other starts with both
+    partners facing the same way."**  Checked physically, and it settles
+    rule 13's *"two sides with an extra arm twist, in either direction"*:
+    that extra twist is not the crossed pair's alone.  Hand to hand has one
+    at each end too, so the chain is **seven** -- swan, diamond, X, the
+    frame, X, diamond, swan.
+    What differs between the two holds is only *where the chain sits*.  A
+    hold is unwound where its two connections run parallel, and that falls
+    at a different facing for each of them: hand to hand face to face, the
+    crossed pair with one partner facing away.  So `parts.phaseOf` measures
+    it -- turn the follow to each candidate and see which leaves the hold
+    unwound -- `parts.chainFor` lays the seven steps out from there, and the
+    crossed-pair page becomes this page's code with a different hold.
+    **The swan.**  Asked what a turn and a half looks like: *"don't draw it
+    as a double box, draw it as one connection being straight and the other
+    snaking around it (as that's how it looks in reality when I tried it).
+    I'm giving it the preliminary name of swan, as it looks like the necks
+    of two mating swans surrounding a center straight connection."*
+    So past a whole turn the pair stops sharing its swing evenly: `route.
+    windShare` hands it over, and at a turn and a half one reach is the
+    plain chord between its own hands while the other carries the lot.
+    Handed *over* rather than merely given up -- the straight one's share
+    goes to the snake -- because a snake that only kept its own swing made
+    loops too shallow to read as going round anything.  And the straight one
+    is the one on top at the first crossing, which by the alternation dives
+    only once: broken twice, there is no straight line left in the middle
+    for anything to surround.
+    *Two latent faults fell out of drawing it.  `dashedAt` decided which
+    half of a reach a break belonged to by how near the crossing was in the
+    plane -- fine for a line that only ever goes one way, wrong for one that
+    snakes back past itself, and it drew breaks where there was no crossing.
+    It takes the dive as a distance **along** the reach now (`route.
+    alongAt`).  And a moving reach had room for exactly one break; a swan
+    puts two on one connection, so the dash pattern carries `GAPS_DRAWN` of
+    them, written every frame and mostly zero long.*
 
 ## What is settled
 

@@ -55,6 +55,53 @@ const
   BAND_STEPS* = 120   ## Points along a reach relaxed past marks, before it.
 
 const
+  SWAN_FROM* = 1.0    ## Turns of wind past which a pair stops sharing its
+                      ## swing evenly between the two connections.
+  SWAN_EASE* = 0.45   ## How quickly it hands over, as a power of the way
+                      ## through.
+    ## Under one, so the hand-over is quick at the start: the third crossing
+    ##   arrives as soon as the pair is past a whole turn, and until one
+    ##   connection is visibly the straighter of the two, three crossings
+    ##   read as a second diamond -- which is the thing rule 30 refused.
+
+
+func overArm*(turns: float): Arm =
+  ## Which of the lead's arms a wound pair keeps on top at the first
+  ## crossing, from the sign of the wind (rules 27, 29).
+  if turns >= 0: Arm.L else: Arm.R
+
+
+func straightArm*(turns: float): Arm =
+  ## Which connection runs straight through the middle of a swan while the
+  ## other snakes round it (rule 31).
+  ##   The one on top at the first crossing, which by the alternation is
+  ##     the one that dives only once -- so it is still visibly a straight
+  ##     line, and the snake is the thing that goes behind it and out
+  ##     again.  The other way round breaks the straight one twice and
+  ##     there is no centre left to be surrounded by anything.
+  overArm(turns)
+
+
+func swanning*(turns: float): float =
+  ## How far a pair is through the hand-over to a swan: none up to a whole
+  ## turn, all of it at a turn and a half (rule 31).
+  pow(clamp((abs(turns) - SWAN_FROM) / 0.5, 0.0, 1.0), SWAN_EASE)
+
+
+func windShare*(turns: float; arm: Arm): float =
+  ## How much of a wound pair's swing this connection carries (rule 31).
+  ##   Evenly to a whole turn, so the frame, the X and the diamond are drawn
+  ##     exactly as they were.  Past that the pair cannot keep swinging
+  ##     symmetrically -- wind two strands far enough and one pulls taut
+  ##     through the middle while the other wraps it -- so the share runs
+  ##     off one of them and onto the other.
+  ##   Onto, not away: what the straight one gives up the snake takes, so
+  ##     the pair swings as much as it ever did and the snake's loops open
+  ##     wide enough to be a thing going *round* rather than a wobble.
+  if arm == straightArm(turns): 1 - swanning(turns)
+  else: 1 + swanning(turns)
+
+const
   BAND_PASSES* = 240    ## Turns of pulling tight and pushing clear.
     ## Enough for a band round the marks a figure holds to stop moving: the
     ##   pull travels one point a pass, so a band of `BAND_STEPS` needs
@@ -278,6 +325,24 @@ func straightReach*(a, b: Point): seq[Point] =
 type Mark* = tuple ## Something a settled reach must not run through.
   centre: Point
   clear: float
+
+
+func alongAt*(pts: seq[Point]; q: Point): float =
+  ## How far along a line the point nearest `q` lies.
+  ##   Distance along, not distance away: a line that comes back on itself
+  ##     passes near the same place twice, so nearness alone cannot say
+  ##     where on the line something is -- which is exactly what a snaking
+  ##     reach does (rule 31).
+  var
+    along = 0.0
+    nearest = (d: Inf, at: 0.0)
+  for i, p in pts:
+    let d = dist(p, q)
+    if d < nearest.d:
+      nearest = (d, along)
+    if i < pts.high:
+      along += dist(p, pts[i + 1])
+  nearest.at
 
 
 func nearestOn*(pts: seq[Point]; q: Point): float =
@@ -564,7 +629,7 @@ const SIDES* = [0.0, 1.0, -1.0]
 
 
 func wound*(a, b: Point; across: Point; phi_a, sweep: float;
-    radius = BODY_R): seq[Point] =
+    radius = BODY_R; share = 1.0): seq[Point] =
   ## Route one reach of a wound pair: the shadow a wound arm casts from
   ## above (rules 27 and 28).
   ##   Two held hands sit on their own bodies' rims, a body's radius off the
@@ -583,17 +648,22 @@ func wound*(a, b: Point; across: Point; phi_a, sweep: float;
   ##   Nothing else moves off the chord, so the ends stay exactly on their
   ##     hands and a turn's frames blend into one another without a jump --
   ##     which is what rule 28 asks for.
+  ##   `share` is how much of the pair's swing this reach carries, which is
+  ##     all of it until the pair is wound past a whole turn (rule 31).  At
+  ##     none it is the plain chord between its two hands, which is the
+  ##     straight connection a swan is built round.
   var pts: seq[Point]
   let
-    off_a = radius * sin(phi_a)
-    off_b = radius * sin(phi_a + sweep)
+    swing = radius * share
+    off_a = swing * sin(phi_a)
+    off_b = swing * sin(phi_a + sweep)
     # Wound strands pull in on each other where they are wound, and are
     # held apart only where they are held: at the hands.
     nip = WIND_NIP * min(abs(sweep) / (2 * PI), 1.0)
   for step in 0 .. BAND_STEPS:
     let
       t = float(step) / float(BAND_STEPS)
-      drawn_in = radius * (1 - nip * sin(PI * t))
+      drawn_in = swing * (1 - nip * sin(PI * t))
       # The chord's own offset taken out and the swung one put in, so the
       # two ends are the hands however far the middle has gone round.
       swung = drawn_in * sin(phi_a + sweep * t) -
