@@ -48,9 +48,8 @@ the whole release step.  The URLs, so they are not hunted for:
 | `turns-hands.html` | https://claude.ai/code/artifact/9c4d89c1-8b72-4574-8051-c41e130148f1 |
 | the app itself | https://claude.ai/code/artifact/a447cf22-a71a-4416-a905-ae4999d7284c |
 
-The retired `rotations.html` still has one at
-https://claude.ai/code/artifact/526c8907-fac4-49f2-8103-26ea0a1fc5bc, kept
-only as the record of what it claimed before rule 16 removed its ceiling.
+Live pages only.  Retired ones keep whatever URL they were last published at,
+and are not listed: the git history is the record of what they claimed.
 
 To screenshot them (the animations need a browser):
 
