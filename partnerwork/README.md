@@ -118,12 +118,25 @@ ends at exactly that frame's scale, which is what keeps the swap invisible at
 every size. Measured at 390, 600 and 1200 pixels: the mark and the frame reached
 land in the same place either side of it.
 
-In a picture of a frame the lead's hands are squares and the follow's are
-circles. Which row is whose used to be said only by the captions over and under
-the picture, and those are the first thing to go when a frame is drawn small —
-as a node on the map, or down the side of the matrix. A shape survives any size,
-so the picture says whose hand it is the way the vocabulary does: by the mark
-itself rather than by a word beside it.
+A picture of a frame is the couple seen from above: two plain circles, each
+with a small chevron at its centre for the way that dancer faces, the lead at
+the bottom facing up. The lead's hands are squares and the follow's are
+circles, sitting on their own bodies' rims. Which hand is whose used to be said
+only by captions over and under the picture, and those are the first thing to go
+when a frame is drawn small — as a node on the map, or down the side of the
+matrix. A shape survives any size, so the picture says whose hand it is the way
+the vocabulary does: by the mark itself rather than by a word beside it. Colour
+says the rest — every hand is in its own side's hue, deep for the lead and plain
+for the follow, and a connection carries both, meeting at its middle, so the
+line itself draws which named hands are joined.
+
+A connection goes **round** a body rather than through one, so a hold that
+crosses is drawn crossing and nothing has to be read off a convention. This
+picture was worked out as published mock-ups before it went in
+(`design/README.md`), and the drawing it is made of lives in
+`src/partnerwork/draw/`, which the mock-up workbench and the app both read so
+the two cannot drift. Every frame's picture is built at compile time, so what
+the browser ships is the finished markup and none of the routing.
 
 A line's ink is the arm that acts as you travel along it. For a primitive that
 is one arm whichever way you read it, so the line has one ink; a compound hands

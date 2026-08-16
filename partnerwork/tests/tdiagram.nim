@@ -7,33 +7,36 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strutils, unittest]
+import std/[options, sequtils, strutils, unittest]
 
 import ../src/partnerwork
 
 
 suite "the picture":
   test "the lead's hands are squares and the follow's are circles":
-    # Which row is whose was said only by the captions over and under the
-    # picture, and those are the first thing to go when it is drawn small.  A
-    # shape survives any size, so the picture says whose hand it is the way the
-    # vocabulary does -- by the mark itself, not by a word beside it.
+    # Which hand is whose was said only by the captions over and under the
+    # picture, and those are the first thing to go when it is drawn small --
+    # they are gone from this drawing entirely.  A shape survives any size, so
+    # the picture says whose hand it is the way the vocabulary does: by the
+    # mark itself, not by a word beside it.  Nothing else in the drawing may
+    # be a rect or a circle, which is why the count is exact -- the bodies are
+    # arcs and the chevrons are polylines.
     for target in FRAMES:
       let picture = renderFrame(target)
       check picture.count("<rect") == 2
       check picture.count("<circle") == 2
 
-  test "a hand being held is filled and a free one is not":
+  test "a free hand fades and a held one does not":
+    # A fill cannot say this any more, and should not: a fill says the *level*
+    # a hand is held at -- solid low, dotted high, hatched above -- and a frame
+    # knows no level, so every hand here is the hollow outline that means none
+    # was said.  Claiming a level to mean "held" would be drawing something the
+    # model does not know.  Half strength says it instead, and the connection
+    # running out of the hand says it a second time.
     for target in FRAMES:
-      var open = 0
-      # The hands, and not everything in the drawing that happens to be unfilled:
-      # a picture carries marks that are outlines by nature.
-      for element in renderFrame(target).split('<'):
-        if (element.startsWith("rect") or element.startsWith("circle")) and
-            element.contains("fill: none"):
-          inc open
       # Two hands to a connection, one of the lead's and one of the follow's.
-      check open == 4 - 2 * target.countHolds
+      check renderFrame(target).count("opacity=\"0.5\"") ==
+        4 - 2 * target.countHolds
 
   test "every frame is drawn in the one space, whatever it holds":
     # A coordinate has to mean the same place in every frame, because the views
@@ -52,11 +55,12 @@ suite "the picture":
     for target in FRAMES:
       check renderFrame(target).contains("<title>" & target.describe & "</title>")
 
-  test "turned back to front, the follow's hands change columns":
+  test "turned back to front, the follow's hands change sides":
     # The picture's half of `crossedSite`.  At half a turn the hand that was
-    # across the midline is the near one, and a drawing that left the follow's
-    # hands where they were would contradict the one place the hand-to-hand
-    # model reads rotation.
+    # across the couple's midline is the near one, and a drawing that left the
+    # follow's hands where they were would contradict the one place the
+    # hand-to-hand model reads rotation.  The follow's whole body turns now,
+    # and their hands ride round on it.
     for target in FRAMES:
       if target.countHolds == 0:
         continue
@@ -66,20 +70,44 @@ suite "the picture":
       check renderFrame(target, 1) != facing
       check renderFrame(target, 1) == renderFrame(target, -1)
 
-  test "the captions travel with the hands they name":
-    # Otherwise the picture is right and its labels are wrong, which is worse
-    # than either being wrong on its own.
-    for twist in [0, 1]:
-      let picture = renderFrame(FRAMES[0], twist)
-      check picture.count(">right<") == 1
-      check picture.count(">left<") == 1
-
-  test "a picture says the follow has turned, and is quiet when they have not":
-    # A mark on every picture is furniture; a mark on the ones that differ is
-    # information.  Every frame in the hand-to-hand half is held facing, so the
-    # eight of them carry no chevron at all.
+  test "a connection is drawn in its two hands' own colours":
+    # So the line itself says which named hands are joined -- `Left to right`
+    # runs blue into orange along its whole length -- instead of leaving it to
+    # two marks that vanish at node size.  The deep half is the lead's, which
+    # is what still says whose end is whose when both hands share a hue, as
+    # they do in `Left to left`.
     for target in FRAMES:
-      for twist in [-2, 0, 2]:
-        check renderFrame(target, twist).count("<polyline") == 0
-      for twist in [-3, -1, 1, 3]:
-        check renderFrame(target, twist).count("<polyline") == 1
+      var inks: seq[string] = @[]
+      for piece in renderFrame(target).split("<path "):
+        # A connection is the one thing drawn at the connection's own width;
+        # the rims that make up a body are thinner.
+        if not piece.contains("stroke-width=\"3.4\""):
+          continue
+        let at = piece.find("stroke=\"") + 8
+        inks.add piece[at ..< piece.find('"', at)]
+      # Two halves to every connection, and no half of any other colour.
+      check inks.len == 2 * target.countHolds
+      check inks.countIt(it.contains("-deep")) == target.countHolds
+      for side in Side:
+        if target.hold[side].isNone:
+          continue
+        let
+          near = if side == Side.Left: "--left-deep" else: "--right-deep"
+          far = if target.hold[side].get == Site.LeftHand: "--left,"
+                else: "--right,"
+        check inks.anyIt(it.contains(near))
+        check inks.anyIt(it.contains(far))
+
+  test "both dancers say which way they face, in every picture":
+    # This used to be a mark that appeared only when the follow had turned, on
+    # the reasoning that a mark on every picture is furniture.  There are
+    # bodies in the picture now, and a body always faces somewhere -- so the
+    # chevron is not furniture, it is the one part of a dancer that carries
+    # their orientation, and what varies is where it points rather than
+    # whether it is there.  Both dancers get one, always.
+    for target in FRAMES:
+      for twist in [-3, -2, -1, 0, 1, 2, 3]:
+        check renderFrame(target, twist).count("<polyline") == 2
+      # And the turning shows, in every frame -- including `open`, which the
+      # old drawing could not tell apart from itself turned.
+      check renderFrame(target, 1) != renderFrame(target, 0)

@@ -338,17 +338,19 @@ func renderArms(): string =
 
 func renderKey(): string =
   ## Say what the picture of a frame is a picture of.
-  ##   Every view is built on it, and until now nothing anywhere said that it
-  ##     is the couple seen from above, which row is whose, or what the dashed
-  ##     line down the middle is.
+  ##   Every view is built on it, and nothing else anywhere says that it is
+  ##     the couple seen from above, which body is whose, or how to read a
+  ##     hand.
   ##   A reader who has not been told cannot read the frames, the names, the
   ##     matrix or the map -- so it is said once, next to the first drawing
   ##     they meet, in the fewest words that will do it.
   tag("p", "class=\"key\"",
-    "Seen from above: the lead along the bottom in squares, the follow along " &
-    "the top in circles, and the dashed line between them is the couple's " &
-    "midline. A filled hand is one being held; a line with a gap in it passes " &
-    "under the other.")
+    "Seen from above: two bodies, the lead at the bottom in squares and the " &
+    "follow at the top in circles, each with a small chevron for the way " &
+    "they face. A connection runs hand to hand, in its two hands' own " &
+    "colours meeting at the middle, and goes round a body rather than " &
+    "through one &mdash; so a crossed hold is drawn crossing. A hand nobody " &
+    "holds is faded; a line with a gap in it passes under the other.")
 
 
 func renderSpokesView(current: Frame; motion: Motion;
