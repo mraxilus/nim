@@ -1,7 +1,7 @@
-## Build every figure the two pages place, keyed by the name each page uses.
+## Build every figure the four pages place, keyed by the name each page uses.
 ##
-##   Split the way the pages are: the frame picture is one exploration and
-##     the turn sign another.
+##   Split the way the pages are: the frame picture is one exploration, the
+##     turn sign another, and the two turn mock-ups one each.
 ##   The inline assertions are part of the build -- a page whose orientations
 ##     collide or whose collapse figures differ is refused, not published.
 ##     Cost of asserting in the builder: a broken figure stops the whole
@@ -271,13 +271,13 @@ func frameParts*(): Parts =
   # which is what the pair of figures is here to show.
   var orbited = canonicalise(orbit(rest(), Dancer.Follow, 90, locked = true))
   orbited.ring = none(Ring)
-  result["collapse_compound"] = frame("f", HOLD, pose = some orbited)
+  result["collapse_orbit"] = frame("f", HOLD, pose = some orbited)
   result["collapse_axis"] = frame("f", HOLD, lead_turn = -90)
   doAssert relative(orbited) == relative(
     spinAbout(rest(), Dancer.Lead, -90)),
     "The orbit does not land on the axis turn's state."
   # Not merely equal numbers: the two are the same drawing, mark for mark.
-  doAssert result["collapse_compound"] == result["collapse_axis"],
+  doAssert result["collapse_orbit"] == result["collapse_axis"],
     "The collapse differs: orbit and axis draw two pictures."
   doAssert result["collapse_follow_walked"] != result["collapse_axis"],
     "The compound lands on the axis turn, so the two are not two moves."
@@ -683,7 +683,7 @@ func handTurnParts*(): Parts =
     walks: array[TurnWay, array[CHAIN.len - 1, Walk]]
     still_half = 0.0
     walk_half: array[TurnWay, float]
-  for i, position in CHAIN:
+  for position in CHAIN:
     still_half = max(still_half, extent(handPose(position.wind),
                                         captions = false))
   for way in TurnWay:
@@ -710,7 +710,7 @@ func handTurnParts*(): Parts =
       &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
         &""" height: {n(2 * half * px)}px"""")
 
-  # The chain, drawn once: every way that winds reaches these same five, so
+  # The chain, drawn once: all four ways reach these same seven (rule 32), so
   # drawing them per way would be the same picture over again.
   for i, position in CHAIN:
     result[&"hh_{i}"] = sized(frame("tiny", HAND_TO_HAND, ABOVE_BOTH,
@@ -738,7 +738,7 @@ func handTurnParts*(): Parts =
   # between every pair of them (rule 31).
   result["g_half"] = turnGlyph("a half turn", 52.0)
 
-  # The five positions draw differently, or they are not five positions.
+  # Every position draws differently, or they are not seven positions.
   for i in 0 ..< CHAIN.len:
     for j in 0 ..< i:
       doAssert result[&"hh_{i}"] != result[&"hh_{j}"],

@@ -5,13 +5,14 @@
 ##     for mark, every cycle closes, no reach enters a body, a bare border
 ##     carries no arm ink, and the sign's geometry is even to the tenth of a
 ##     unit.
-##   `checkRules` is the ledger made executable: one block per rule, each
-##     opening with the rule in the words it was given, each printing one
-##     line on every build.  A rule that is only implemented and not asserted
-##     is a rule that quietly stops being true, which has happened here more
-##     than once.
-##     Cost of a spoken ledger: nine lines of build noise on every run.
-##       Accepted -- the noise is the receipt.
+##   Each page's checker is the ledger made executable: one block per rule,
+##     each opening with the rule in the words it was given, each printing
+##     one line on every build.  A rule that is only implemented and not
+##     asserted is a rule that quietly stops being true, which has happened
+##     here more than once.
+##     Cost of a spoken ledger: a line of build noise per rule per page, and
+##       there are twenty-nine of them now.  Accepted -- the noise is the
+##       receipt.
 
 {.experimental: "strictFuncs".}
 

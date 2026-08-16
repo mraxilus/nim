@@ -30,14 +30,14 @@ orientation is all of it; hold both hands and a whole turn returns every
 orientation, so the wind is all of it instead.
 
 ```
-nimble marks                            # checks everything, writes both pages
+nimble marks                            # checks everything, writes all four pages
 nim c -r --hints:off design/marks.nim   # the same, by hand from partnerwork/
 ```
 
 The build refuses to write a page whose claims fail: the checks in
 `checks.nim` run between building a page's parts and writing it, and several
 figures are asserted during their own construction.
-Both pages are committed like `doc/review.html` is, so their git history is the
+Every page is committed like `doc/review.html` is, so its git history is the
 history of what the marks have been claimed to be.  Each is published as a
 Claude artifact at a fixed URL; republishing the rebuilt files to those URLs is
 the whole release step.  The URLs, so they are not hunted for:
@@ -74,7 +74,7 @@ has happened here more than once.
    above."**  And at *every instant a moving picture draws*, not merely at the
    frames it is sampled at: a browser blends two sampled frames point by point,
    so two that disagree about which side of a body the line passes are drawn,
-   in between, as a line sweeping straight through it.  `one_way_round` settles
+   in between, as a line sweeping straight through it.  `oneWayRound` settles
    the way round once for a whole move so no two frames can disagree, and the
    check samples the blend.  *This one got past two rounds of checks that looked
    only at the frames.*
@@ -113,6 +113,10 @@ has happened here more than once.
     turn each way and no further -- two connections halve the ceiling.  A
     single hold gets five, a full turn each way, the model's own measured
     capacity.
+    *The count has grown twice since, on the rules' own instruction: rule 28
+    put an X between each pair, making five, and rule 31 a swan beyond each
+    end, making seven.  What held is the shape -- a chain with ends, not a
+    cycle.*
 13. **"left to left and right to right should technically have 4 (left over
     right, right over left, and the two sides with an extra arm twist, in
     either direction)."**  The twisted states are the ends: the middle edge
@@ -170,6 +174,9 @@ has happened here more than once.
     Measured with the bearing kept: the two orbits walk **one** round
     between them -- the drawing cannot say who walked -- and that round is
     neither axis round.  Four ways of turning, three rounds of positions.
+    ***Reversed by rule 32***, which is what the code does now: the
+    bearing-keeping walk is the compound and the locked form is the orbit.
+    This entry is kept for what it measured, not for what it concluded.
 21. **"also, the animations should also have the above level as that's the
     only valid one for the current scope."**  A moving hand wears its
     level as a still one does; every transition on the turns page carries
@@ -199,9 +206,10 @@ has happened here more than once.
     shortest way two more are worked out: the taut string held to one side
     of the chord, which is the upper hull of the marks on that side and so
     is a single bend by construction.  The rule's "ideally 1" is read as
-    *leave alone anything already turning once or not at all*.  Measured:
-    every one of the sixteen reaches that bends now bends exactly once, and
-    the one-bend way is usually the **shorter** line as well.
+    *leave alone anything already turning once or not at all*.  Measured on
+    the build: of the sixty-four settled reaches the single-hand page draws,
+    fifty-six run straight, eight bend exactly once and none bends twice —
+    and the one-bend way is usually the **shorter** line as well.
 24. **"prefer smooth long curves instead of sharp breaks as well. some of
     these can be accomplished with a singular bezier with a more gentle
     curvature just as well as the current sharp direction changes."**  Rule
@@ -226,10 +234,12 @@ has happened here more than once.
     `Anchor.Lead`: the turning goes round the lead's own place and that
     place is what comes back to the middle.  A follow's orbit then needs
     **no second stage at all**, a lead's axis turn swings only the follow,
-    and a lead's orbit -- the case the rule allows -- comes home as a
-    straight slide, since an orbit that keeps its bearing has no rotation
-    left to undo.  Measured: the lead holds one spot through three of the
-    four ways of turning and across every position of every round.
+    and a lead's orbit -- the case the rule allows -- is the one move with
+    anything to bring back.  *It brings back both halves now: under rule 32
+    an orbiter turns as far as they travel, so the lead comes home with a
+    quarter of rotation to undo as well as the slide.  Under rule 20 it was
+    the slide alone.*  Measured: the lead holds one spot through three of
+    the four ways of turning and across every position of every round.
     *The frame page keeps the midpoint anchor for now, which is what holds
     `frames.html` still; carrying it over is the same piece of work as
     rule 22's.*
@@ -242,8 +252,9 @@ has happened here more than once.
     long a stage lasts is the drawing's decision rather than a side effect
     of how finely it was sampled.  Three things rank the stages, which is
     what motion design does with any secondary or camera move: the
-    re-framing takes 40% of the time the turn takes (`RE_FRAME_PACE`), a
-    beat is held on the turn's landing so the two do not blur together
+    re-framing is paced at a fraction of the turn (`RE_FRAME_PACE` is 0.4,
+    and the clock the markup actually carries comes out at 35%), a beat is
+    held on the turn's landing so the two do not blur together
     (`ARRIVAL_HOLD`), and it still starts and ends softly, because an
     abrupt start is the one thing that would pull an eye back to it.  The
     check measures it on the emitted clock, not on the constants: an
@@ -278,7 +289,8 @@ has happened here more than once.
     direction (similar to the existing L-over-R etc. when facing one
     another) as states in-between the outside 2."**  Two things, and the
     second explains the first.
-    **Five positions**, a half turn apart: box, X, the frame, X, box.  At a
+    **Five positions**, a half turn apart: box, X, the frame, X, box.
+    *Rule 31 has since added a swan beyond each box, making it seven.*  At a
     half turn the partners face the same way and the pair crosses once --
     the plain X the app already uses for a crossed pair -- and at a whole
     turn it crosses twice with rule 27's diamond between.
@@ -297,6 +309,11 @@ has happened here more than once.
     nobody, so it winds nothing.  The two axis turns walk this chain; the
     two orbits carry the pair around it.  The first draft claimed all four
     wound, which was only true because all four had been told to.*
+    ***Rule 32 has since made that finding moot*** by changing what an orbit
+    is.  A walker who keeps their side to the centre does turn relative to
+    their partner, so all four ways wind after all — and this time it is
+    measured rather than claimed.  What survived the reversal untouched is
+    the measuring itself.
 29. **"the animations don't have the proper breaks that the static images
     do, they seem to not be tracking which arms are over/under because of
     this and they are instances where they end up on the wrong z order,
@@ -343,8 +360,10 @@ has happened here more than once.
     because a walk rocks out to its turn and back again and so ends where it
     began; and a quarter, not a half, because a half turn's wind sits
     exactly on `wrap180`'s seam and carries no sign.*  A way that winds
-    nothing -- either orbit -- takes the forward sense: it has a real half
-    turn to travel and no end to walk off.
+    nothing -- either orbit, as orbits then were -- takes the forward sense:
+    it has a real half turn to travel and no end to walk off.  *Rule 32 has
+    since left no such way; that fallback is unreachable now and stands only
+    so a way that stopped winding could not silently freeze.*
     The check reads the wind on every frame of every edge of every way: none
     beyond a whole turn, each edge starting and ending on its own position,
     and each winding edge reaching the position the chain says comes next --
@@ -438,10 +457,11 @@ has happened here more than once.
     The check is that a hatched mark is childless: an element that animates
     nothing of its own has no coordinates to slide.
 34. **"the hatching is good, but revert the swan change, it looks worse."**
-    So `SWAN_SWING` is two again — the whole of what the straight connection
-    gives up — and the check's upper bound on the bow drops back to a
-    backstop: far enough out to catch a snake that has left the figure, and
-    no opinion within that.
+    So `SWAN_SWING` went back to two — the whole of what the straight
+    connection gives up — and the check's upper bound on the bow dropped
+    back to a backstop: far enough out to catch a snake that has left the
+    figure, and no opinion within that.  *Rule 35 sets the width again; the
+    backstop is what stayed.*
     *Rule 33 was one instruction and turned out to be two different kinds of
     thing.  The hatch was a fault the drawing could be held to; the width of
     the swan was a matter of looks, and looks are settled by looking.
@@ -466,9 +486,12 @@ has happened here more than once.
     count, so a smoothed reach morphs exactly as a straight-sided one did.
     *`inkOf` reads the anchors back out of the curve — a `Q`'s control point
     is the routed point — so every length the checks measure is the length
-    they always measured.*  `SWAN_SWING` comes down to sit between the two
-    widths that were tried, and the check on it is only a backstop: that the
-    snake goes round something and stays inside its own figure.
+    they always measured.*  The width comes down as well: the rule asks for
+    tighter than either version tried, so `SWAN_SWING` goes below both of
+    them and the snake keeps in closer to the straight connection than it
+    ever has.  The check on it stays a backstop — that the snake goes round
+    something and stays inside its own figure — because what it is set to is
+    the author's call and not the checker's.
 
 ## What is settled
 
@@ -503,7 +526,7 @@ page and this list together.
   where nothing else can say it.
 - A **body is a plain circle with a small chevron at its centre** for the
   facing — the centre is the one part of a dancer nothing else uses.  The
-  boundary stays one polar function (`outline_r`) so the routing and the
+  boundary stays one polar function (`outlineR`) so the routing and the
   drawing cannot disagree about it.
 - The **rim says nothing but *here is a body***: one quiet stroke, drawn once,
   breaking around every hand mark (`HAND_GAP`, the reach's own clearance turned
@@ -523,12 +546,12 @@ page and this list together.
 - **Where a hand has left its default, the place it left is drawn as a grey
   outline** (`figure.ghosts`), so a picture says both where the hand is and
   where it came from.
-- A move's **way round is settled once, for the whole move** (`one_way_round`),
+- A move's **way round is settled once, for the whole move** (`oneWayRound`),
   and every frame of it uses that one.  A stronger thing than the
   counter-rotation preference it replaced, and it is why `SIDE_BIAS`,
   `HYSTERESIS`, `prefer` and `trailing` are all gone.
 - Only **`above` passes through a body**: it is over the head, so from overhead
-  nothing is under it and it is drawn straight (`route.straight_reach`).  Every
+  nothing is under it and it is drawn straight (`route.straightReach`).  Every
   other level, and no level, goes round.
 - **The lead always faces up.**  Poses live in world coordinates and are drawn
   through `canonicalise`, which turns the world until the lead faces up — so
@@ -541,21 +564,24 @@ page and this list together.
   sequence (`geometry.continuous`): a wrapped one steps from 179 to −179 at a
   half turn and is interpolated as most of a turn backwards, which is a body
   spinning the wrong way while its own hands travel the right way.  Only the
-  reach re-routes per frame, keeping the previous frame's way round a body
-  unless a new route is decisively shorter.
+  reach re-routes per frame, and it re-routes with the one way round the move
+  settled before any of it was drawn — see the bullet above.
 - An **orbit goes round the other dancer**; a dashed ring appears only while
   one is happening, centred on whoever stands still.  Nothing else is dashed.
-- **What collapses** (checked, not argued), and it is narrower than this list
-  once claimed.  A quarter-orbit by *either* dancer lands on the
-  byte-identical picture, so the drawing cannot say **who walked** — that is
-  an edge label, never a node's concern.  And the *compound* of an orbit and
-  an axis turn lands on the matching quarter axis turn's picture, so which
-  two turns a compound was made of is an edge label too.  What does **not**
-  collapse: a plain orbit against an axis turn.  They land in different
-  places, so a state does tell them apart, and the old claim that
-  axis-against-orbit was purely a property of the move was the locked orbit
-  speaking.  Likewise both dancers going round each other is a picture no-op,
-  which matches the model: a couple rotation stores no twist.
+- **What collapses** (checked, not argued).  A quarter **orbit** — the walker
+  keeping their side to the centre, which is what an orbit is under rule 32 —
+  lands on the byte-identical picture the *other* dancer's quarter axis turn
+  lands on.  So a position cannot tell an orbit from an axis turn: which was
+  danced is an edge label, never a node's concern.  And the **compound** — an
+  orbit walked while counter-turning, so the walker keeps their own bearing —
+  lands on one picture whichever dancer walks it, since only the pair's axis
+  has swung, so the drawing cannot say **who walked** either.  What does
+  **not** collapse: the compound against an axis turn.  They land in different
+  places, so the two really are two moves.  *This bullet has been round the
+  houses: rule 20 put the collapse on the compound and rule 32 put it back on
+  the orbit, which is where the page first had it.*  Likewise both dancers
+  going round each other is a picture no-op, which matches the model: a couple
+  rotation stores no twist.
 
 **The turn sign.**
 
@@ -613,12 +639,13 @@ body.nim        one dancer: outline, spots, hands, captions
 route.nim       the taut string a connection is routed as
 sign.nim        the quarter-turn sign
 figure.nim      whole pictures, still and moving
-parts.nim       every figure both pages place, keyed as they use them
+parts.nim       every figure the four pages place, keyed as they use them
 checks.nim      every claim the pages make, asserted and spoken
-page.nim        the chrome the two pages share: style sheet, key, wrapper
+page.nim        the chrome the four pages share: style sheet, key, wrapper
 frame_page.nim  the frame page's prose and layout
 sign_page.nim   the turn-sign page's prose and layout
 turns_single_page.nim  the single-hand turns page, generated as a table
+hands_page.nim  the hand-to-hand turns page, the chain and its four walkers
 marks.nim       build: parts, checks, pages, files
 shot.nim        screenshot helper (light and dark, full page), nim js
 ```

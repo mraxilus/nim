@@ -3,8 +3,8 @@
 ##   The build refuses to write a page whose claims fail: the checks run
 ##     between building a page's parts and writing it, and several figures
 ##     are asserted during their own construction.
-##   Both pages are committed like `doc/review.html` is, so their git
-##     history is the history of what the marks have been claimed to be.
+##   Every page is committed like `doc/review.html` is, so its git history
+##     is the history of what the marks have been claimed to be.
 ##     Each is published as a Claude artifact at a fixed URL; republishing
 ##     the rebuilt files to those URLs is the whole release step.
 
@@ -43,7 +43,7 @@ const PAGES = [
 
 
 proc main() =
-  ## Check and rebuild the two pages, into `design/` or a given directory.
+  ## Check and rebuild every page, into `design/` or a given directory.
   let out_dir = if paramCount() > 0: paramStr(1) else: "design"
   for page in PAGES:
     let built = page.partsOf()

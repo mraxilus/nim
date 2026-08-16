@@ -9,17 +9,17 @@
 ##     hold is unwound where its two connections run parallel, and that
 ##     falls at a different facing for each of the two (rule 31).
 ##   What a wound pair looks like is rule 27's: two crossovers, one by each
-##     dancer, with a box between them.
-##     Cost of a drawn convention: nothing in the geometry makes those two
-##       crossings -- two straight reaches between these hands do not cross
-##       at all.  Accepted, and flagged on the page as the rule's own
-##       reading rather than something the drawing derived.
+##     dancer, with a diamond between them -- and rule 28 turned that from a
+##     drawn convention into a measurement.  A reach is the shadow a wound
+##     arm casts from above, so the crossings are what the wind makes rather
+##     than something the page arranges: none at the frame, one at a half
+##     turn, two at a whole one, three at the swan.
 
 {.experimental: "strictFuncs".}
 
 import std/[strformat, tables]
 
-import ./[page, parts, pose]
+import ./[page, parts]
 
 
 const TITLE* = "Hand-to-hand turns, so far"
@@ -172,12 +172,11 @@ const BODY = """
 </section>
 
 <section>
-  <div class="head"><span class="n">The chain</span><h2>The three, in
+  <div class="head"><span class="n">The chain</span><h2>The seven, in
   order</h2></div>
-  <p>Both ways of winding reach these same seven, so they are drawn once
-  rather than twice over. Which dancer turned is not something a position
-  can say — only the path can, which is why every way is animated below,
-  including the two that turn out to wind nothing.</p>
+  <p>All four ways of turning reach these same seven, so they are drawn once
+  rather than four times over. Which dancer turned is not something a position
+  can say — only the path can, which is why every way is animated below.</p>
   <div class="row mid">
     {chain}
   </div>

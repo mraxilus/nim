@@ -665,7 +665,6 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
 
 func animated*(cls: string; holds: Holds; move: MoveApply;
     half = none(float); levels: Levels = default(Levels);
-    ways: Ways = default(Ways); dur = 9.6; samples = 14;
-    ): string =
+    ways: Ways = default(Ways); dur = 9.6; samples = 14): string =
   ## Draw the same picture, moving: stage one travels, stage two comes home.
   animatedPoses(cls, holds, cycle(move, samples), half, levels, ways, dur)

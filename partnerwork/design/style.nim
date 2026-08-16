@@ -5,7 +5,7 @@
 ##     included.
 ##     Cost of custom properties: the bare SVG, opened alone, falls back to
 ##       nothing and draws in the browser's defaults.  Accepted -- these
-##       pictures live on the two pages, nowhere else.
+##       pictures live on the workbench's own pages, nowhere else.
 ##   Each side has two shades of the one hue -- plain for the follow, deep
 ##     for the lead -- so a connection says whose end is whose along its own
 ##     length without a second mark (rule 9).

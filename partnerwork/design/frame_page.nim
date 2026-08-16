@@ -291,7 +291,7 @@ const BODY = """
     at exactly the state the lead reaches by turning a quarter on the spot.
     Not similar: the same drawing, mark for mark.</p>
     <div class="row">
-      <figure>{collapse_compound}<figcaption>the follow orbited<br>a quarter round</figcaption></figure>
+      <figure>{collapse_orbit}<figcaption>the follow orbited<br>a quarter round</figcaption></figure>
       <figure>{collapse_axis}<figcaption>the lead turned<br>a quarter on the spot</figcaption></figure>
     </div>
     <p>Checked rather than claimed — the generator asserts each pair is one
@@ -442,7 +442,7 @@ func render*(P: Parts): string =
               "walk_compound_0", "walk_compound_1", "walk_compound_2",
               "walk_compound_3", "walk_compound_4",
               "collapse_follow_walked", "collapse_lead_walked",
-              "collapse_compound", "collapse_axis",
+              "collapse_orbit", "collapse_axis",
               "pair_ll", "pair_ll_turned", "pair_lr", "pair_lr_turned",
               "free_fade", "free_grey", "free_fade_tiny", "free_grey_tiny"]:
     fills.add (key, P[key])

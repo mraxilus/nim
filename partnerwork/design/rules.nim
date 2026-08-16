@@ -299,8 +299,11 @@ const RULES* = [
   ##       itself: turn a quarter from the frame and see which way the pair
   ##       wound.  A quarter and not a half, because a half turn's wind is
   ##       exactly the wrap point of `wrap180` and carries no sign.  A way
-  ##       that winds nothing -- either orbit -- takes the positive sense,
-  ##       since it has a real half turn to travel and no end to walk off.
+  ##       that winds nothing -- either orbit, as orbits then were -- takes
+  ##       the positive sense, since it has a real half turn to travel and no
+  ##       end to walk off.  **Rule 32 has since left no such way**: every one
+  ##       of the four winds, so that fallback is unreachable and stands only
+  ##       so a way that stopped winding could not silently freeze.
   ##     Rule 31 has since moved those ends: they are the swans, at a turn
   ##       and a half.  The rule was that the chain *has* ends and they
   ##       hold, never that they sat at a whole turn -- and what it refused,
@@ -377,10 +380,11 @@ const RULES* = [
   ##       hatch is carried with it and holds its place (rule 21).
   ##   Rule 34 keeps the hatch and takes the tightening back: *"the hatching
   ##     is good, but revert the swan change, it looks worse."*
-  ##     So `SWAN_SWING` is two again, which is the whole of what the
+  ##     So `SWAN_SWING` went back to two, which is the whole of what the
   ##       straight connection gives up, and the check's upper bound on the
-  ##       bow drops back to a backstop -- far enough out to catch a snake
-  ##       that has left the figure, and no opinion within that.
+  ##       bow dropped back to a backstop -- far enough out to catch a snake
+  ##       that has left the figure, and no opinion within that.  **Rule 35
+  ##       has since set the width again**; the backstop is what stayed.
   ##     The two halves of rule 33 were one instruction and turned out to be
   ##       two different kinds of thing.  One was a fault the drawing could
   ##       be held to; the other was a matter of looks, and looks are
@@ -402,8 +406,11 @@ const RULES* = [
   ##       the ends stay on their hands, a line that hardly turns moves by a
   ##       fraction of its own width -- and the command count still follows
   ##       the point count, so it morphs as before.
-  ##     The width comes down as well, to sit between the two that were
-  ##       tried, and the snake keeps closer in to the straight connection.
+  ##     The width comes down as well, and the rule asks for tighter than
+  ##       either width that was tried -- so `SWAN_SWING` goes below both,
+  ##       and the snake keeps in closer to the straight connection than any
+  ##       version before it.  What it is set to remains the author's call
+  ##       and not the checker's (rule 34); the check is only the backstop.
 
 
 func settleOf*(level: Option[Level]; way: Option[Way]): Option[Settle] =

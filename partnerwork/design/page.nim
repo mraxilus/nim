@@ -1,9 +1,10 @@
-## Share the chrome both mark pages use: the style sheet, the key, the
+## Share the chrome every mark page uses: the style sheet, the key, the
 ## wrapper.
 ##
-##   Two explorations live on two pages -- the frame picture and the turn
-##     sign -- because they are separate questions that happen to be related,
-##     and a page that holds both makes each of them harder to read.
+##   Four explorations live on four pages -- the frame picture, the turn
+##     sign, and one turn mock-up per kind of hold -- because they are
+##     separate questions that happen to be related, and a page that holds
+##     more than one of them makes each harder to read.
 ##   What they do share is the palette and the furniture, which is here so it
 ##     cannot drift between them.
 ##   A page body is a template with `{marker}` holes and `filled` closes
