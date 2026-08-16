@@ -19,11 +19,18 @@ else — the names, the routes, the audit of the source workbook, the browser ap
                           ^                              ^
                         pass                            cut
                           │                              │
-open ── collect ──> Left to left ── collect ──> Left-to-left over Right-to-right
+free ── collect ──> Left to left ── collect ──> Left-to-left over Right-to-right
 ```
 
-The drawings stack this as a tower: `open` at the foot, both hands held at the
+The drawings stack this as a tower: `free` at the foot, both hands held at the
 head, so a collect climbs and a drop falls.
+
+`free` is the frame with nothing held — four free hands, which is where the
+name comes from. It is deliberately **not** called `open`: dancers use "open
+position" for the hand-to-hand frame, which this ontology calls
+`Left-to-right and Right-to-left`, so naming the empty frame `open` would put
+the two of them under one word. Nothing else here is named for what a dance
+calls it; a frame is named for the hands it holds.
 
 
 ## The app
@@ -72,13 +79,13 @@ It is a finding about a document rather than a fact about two bodies, it does no
 change as you dance, and it wants reading rather than clicking through: it lives
 in `doc/review.html` and in `nimble audit`.
 
-The Dance view starts at `open`, which is where a couple starts and the one
+The Dance view starts at `free`, which is where a couple starts and the one
 frame nothing has to lead up to: from there every way out is a collect, which is
 the ladder seen from the bottom of it.
 
 A frame further off is named a step at a time, in the words the panel above uses
 for the same move. `collect, then collect` is the shape of an answer rather than
-an answer, and from `open` it was what all three frames two moves away said —
+an answer, and from `free` it was what all three frames two moves away said —
 the same seven words for three different places, while four collects sat
 unlabelled above, two of which lead away from any one of those places rather
 than towards it. The route always knew which two. Each step is named against the
@@ -101,7 +108,7 @@ stylesheet, as `--wide`: which widths are wide is a question about the layout,
 so the script asks the layout rather than keeping a second copy of the number.
 
 The close drawing is cut to the frame, and the widest frame wants more room than
-a phone has — `open` fans four ways out over 728 pixels. So it shrinks to the
+a phone has — `free` fans four ways out over 728 pixels. So it shrinks to the
 room there is, and stops shrinking when its names reach 8 pixels, because the
 whole drawing shrinks together and a drawing of your options whose options
 cannot be read is not worth fitting. Below that it keeps its size and scrolls,
@@ -255,7 +262,7 @@ eighteen of its twenty-seven cells hold between those seven. All eighteen name
 the same primitive the model derives independently, and they are every move that
 exists between those seven states: nothing missing, nothing spare.
 
-Three things are outstanding, set out in `doc/review.html`: `open` has no row,
+Three things are outstanding, set out in `doc/review.html`: `free` has no row,
 `closed` and `half-closed` need a vocabulary for places on the body, and two
 words have drifted between the `base` and `vocabulary` sheets.
 

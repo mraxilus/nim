@@ -131,7 +131,7 @@ func isValid*(frame: Frame): bool =
   ##       the ontology leaves out `Left-to-all` for the mirrored reason: a
   ##       hand joined to two things is an ambiguous lead.
   ##     It is what makes the state space finite.
-  ##     The law is what sends a hand-off through the open frame rather than
+  ##     The law is what sends a hand-off through the free frame rather than
   ##       through a moment where two hands hold one.
   ##   An arm order is recorded exactly where the forearms overlap.
   ##     So two frames that a dancer cannot tell apart cannot be different
@@ -220,9 +220,17 @@ func describeConnection*(side: Side; site: Site; joiner = "-to-"): string =
 
 func describe*(frame: Frame): string =
   ## Name a frame in the vocabulary of the ontology.
+  ##
+  ## The frame that holds nothing is `free`, and it was `open` until that name
+  ## proved to be taken: dancers call the hand-to-hand frame -- the one named
+  ## here `Left-to-right and Right-to-left` -- the open position.  A reader who
+  ## knows the dance would meet `open` on the picture with no connection in it
+  ## at all and read it as the one with two.  `free` is what the frame already
+  ## is, and says so in the word this vocabulary already uses for a hand
+  ## nobody holds: it is the frame where all four of them are.
   case frame.countHolds
   of 0:
-    "open"
+    "free"
   of 1:
     let side = if frame.hold[Side.Left].isSome: Side.Left else: Side.Right
     describeConnection(side, frame.hold[side].get, " to ")
@@ -251,9 +259,14 @@ func brief*(frame: Frame): string =
   ##   Nothing is lost, because a hand's case is the whole of what says whose
   ##     it is and a letter has a case: `L` is the lead's where `l` is the
   ##     follow's, exactly as the words are.  See `leadName`.
+  ##   The frame that holds nothing is not abbreviated: `free` is already as
+  ##     short as the shortest of these, so there is nothing to take out of
+  ##     it.  It must still be repeated here rather than deferred to
+  ##     `describe`, which is the trap in this pair -- the two names are only
+  ##     the same by agreeing, and nothing but this note says they must.
   case frame.countHolds
   of 0:
-    "open"
+    "free"
   of 1:
     let side = if frame.hold[Side.Left].isSome: Side.Left else: Side.Right
     briefName(side) & " to " & briefName(frame.hold[side].get)

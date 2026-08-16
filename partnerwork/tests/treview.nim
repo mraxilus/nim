@@ -25,6 +25,23 @@ suite "the review page":
       check fileExists(path)
       check readFile(path) == renderFrame(target)
 
+  test "and there are no pictures of anything else":
+    # `writeReview` writes one file per frame and never clears the directory,
+    # so a frame that is renamed leaves its old picture behind under the old
+    # name -- still committed, still looking authoritative, and naming a frame
+    # the model no longer has.  Which is exactly what renaming `open` to
+    # `free` did.  Nothing else walks this directory, so nothing else can
+    # notice; this is the only thing standing between a rename and litter.
+    var want: seq[string] = @[]
+    for target in FRAMES:
+      want.add target.slug & ".svg"
+    var found: seq[string] = @[]
+    for path in walkFiles(FRAME_DIRECTORY / "*.svg"):
+      found.add extractFilename(path)
+    for name in found:
+      check name in want
+    check found.len == want.len
+
   test "the page shows every frame and every move":
     let page = readFile(PAGE_PATH)
     var cells = 0
@@ -47,7 +64,7 @@ suite "the review page":
       check picture.count('#') > 0
 
   test "a frame's file name survives its description":
-    check fromKey("--.").get.slug == "open"
+    check fromKey("--.").get.slug == "free"
     check fromKey("l-.").get.slug == "left-to-left"
     check fromKey("lrL").get.slug == "left-to-left-over-right-to-right"
     var slugs: seq[string] = @[]

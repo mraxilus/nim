@@ -55,7 +55,7 @@ suite "the layout":
         let rising = move.helper == Helper.Collect
         check (centreOf(move.to)[1] < centreOf(source)[1]) == rising
 
-  test "open is at the foot of the tower and the fullest frames at its head":
+  test "free is at the foot of the tower and the fullest frames at its head":
     for target in FRAMES:
       for other in FRAMES:
         if target.countHolds < other.countHolds:

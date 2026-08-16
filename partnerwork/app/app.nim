@@ -54,7 +54,7 @@ type
 
 
 func startFrame(): Frame =
-  ## Get the frame the dance opens in: nothing held.
+  ## Get the frame a dance begins in: `free`, nothing held.
   ##   Where a couple starts, and the one frame nothing has to lead up to.
   ##   A reader who opens the Dance view without first picking a frame in the
   ##     atlas used to be put down in a one-hand hold, in the middle of the
@@ -162,7 +162,7 @@ proc setScrollLeft(e: Node; value: int) {.importcpp: "#.scrollLeft = #", nodecl.
 proc centreOnHeld() =
   ## Slide the close drawing so the frame being held is the part you can see.
   ##   The drawing is cut to the frame, and the widest frame is wider than a
-  ##     phone: `open` fans four ways out and wants 728 pixels.
+  ##     phone: `free` fans four ways out and wants 728 pixels.
   ##   Left where the browser puts a scrolling box, a narrow screen shows the
   ##     left edge of that fan and not the frame the whole view is about.
   ##   Nothing is unreachable either way -- every way out is a button in the
@@ -262,7 +262,7 @@ func renderElsewhere(source: Frame): string =
   ##   Named a step at a time, in the words the moves panel uses for the same
   ##     move.
   ##     `collect, then collect` is the shape of an answer rather than an
-  ##       answer: from `open` it was what all three frames two moves away
+  ##       answer: from `free` it was what all three frames two moves away
   ##       said, so the panel gave the same seven words for three different
   ##       places, while four collects sat unlabelled above it -- two of which,
   ##       for any one of those places, lead away from it rather than towards

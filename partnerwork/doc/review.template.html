@@ -352,7 +352,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   <p>Each row holds one more connection than the row below, so the direction of
   a move is readable from the drawing: a step up the page is a
   <code>collect</code> and a step down is a <code>drop</code>. The tower is
-  built upwards &mdash; <code>open</code> at its foot, both hands held at its
+  built upwards &mdash; <code>free</code> at its foot, both hands held at its
   head &mdash; because a collect builds the frame up and a drop lets it fall.
   That leaves each line with only one thing left to say, which is the arm that
   acts, and it says it in ink.</p>
@@ -363,7 +363,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   <p>One line stands for two moves, because every move reverses; twenty moves
   are ten lines. The dashed curves are the compounds, drawn apart from the lines
   because they are not moves &mdash; a <code>place</code> is the two ways in and
-  out of <em class="term">open</em> taken together, and a <code>cut</code> is the
+  out of <em class="term">free</em> taken together, and a <code>cut</code> is the
   two ways in and out of a single hold.</p>
   <p>The picture also shows the ontology has no dead ends and no islands: from
   any frame you can reach any other, and the longest way round is
@@ -387,7 +387,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   <p class="dim" style="font-size: .85rem">Rows are the frame danced from,
   columns the frame danced to. {{legend}}.
   Outlined cells are moves the model derives that your sheet has no row for
-  &mdash; every one of them touches <em class="term">open</em>. Faded cells are
+  &mdash; every one of them touches <em class="term">free</em>. Faded cells are
   the compounds.</p>
 
   <h3>{{primitive_count}} primitives, not six</h3>
@@ -423,10 +423,17 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
 
     <div class="finding add">
       <div class="head">
-        <h3>1. There is no <em class="term">open</em> &mdash; and it is
-        {{open_moves}} of the {{moves}} moves</h3>
+        <h3>1. There is no <em class="term">free</em> &mdash; and it is
+        {{free_moves}} of the {{moves}} moves</h3>
         <span class="chip">add a row</span>
       </div>
+      <p><em class="term">free</em> is the frame with nothing held: four free
+      hands, which is where the name comes from. It is deliberately
+      <em>not</em> called <em class="term">open</em>, because you and every
+      other dancer already use &ldquo;open position&rdquo; for something else
+      &mdash; the hand-to-hand frame, which this ontology calls
+      <em class="term">Left-to-right and Right-to-left</em>. Naming the empty
+      frame <em class="term">open</em> would have put the two under one word.</p>
       <p>Every single-hold state in your sheet has a <code>drop</code> that leads
       nowhere, because a frame with no connection is not in the sheet. Without it
       the matrix is not closed under <code>drop</code>, which means the sheet
@@ -434,7 +441,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
       <p>It matters more now that <code>place</code> is two moves rather than
       one: every hand-off in your sheet &mdash; all four <em
       class="term">pass</em> cells &mdash; is a drop and a collect, and the frame
-      in between the two is precisely <em class="term">open</em>. The sheet
+      in between the two is precisely <em class="term">free</em>. The sheet
       names four routes through a state it does not have.</p>
       <p class="do"><b>Do:</b> add one row and one column. Four collects out,
       four drops in, and the graph closes.</p>
@@ -547,7 +554,7 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
       follow.</p>
       <p>That second case is not hypothetical &mdash; it is the moment a
       <code>place</code> passes through if the couple never lets go. So the model
-      routes a hand-off through <em class="term">open</em> instead: let go, take
+      routes a hand-off through <em class="term">free</em> instead: let go, take
       again. Keeping contact through it is a quality of the leading, which is
       exactly what your note means by &ldquo;maintaining a connection via a
       trace&rdquo;. The frames either side are the same either way.</p>

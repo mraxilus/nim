@@ -120,8 +120,8 @@ suite "the compounds":
     let between = route(over_left, over_right)[0].to
     check between.countHolds == 1
 
-  test "a hand-off passes through the open frame":
-    # Which is why the missing `open` row costs the workbook four cells.
+  test "a hand-off passes through the free frame":
+    # Which is why the missing `free` row costs the workbook four cells.
     for source in FRAMES:
       for destination in FRAMES:
         if compound(source, destination) != some(Compound.Place):
@@ -142,11 +142,11 @@ suite "moves":
         if classify(source, destination).isSome:
           check destination in offered
 
-  test "the open frame is where every dance starts and ends":
-    let open = fromKey("--.").get
-    check open.countHolds == 0
-    check moves(open).len == 4
-    for move in moves(open):
+  test "the free frame is where every dance starts and ends":
+    let free = fromKey("--.").get
+    check free.countHolds == 0
+    check moves(free).len == 4
+    for move in moves(free):
       check move.helper == Helper.Collect
 
 

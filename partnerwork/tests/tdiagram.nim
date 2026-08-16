@@ -108,6 +108,6 @@ suite "the picture":
     for target in FRAMES:
       for twist in [-3, -2, -1, 0, 1, 2, 3]:
         check renderFrame(target, twist).count("<polyline") == 2
-      # And the turning shows, in every frame -- including `open`, which the
+      # And the turning shows, in every frame -- including `free`, which the
       # old drawing could not tell apart from itself turned.
       check renderFrame(target, 1) != renderFrame(target, 0)

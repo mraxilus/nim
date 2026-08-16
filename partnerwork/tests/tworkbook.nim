@@ -114,11 +114,11 @@ suite "the audit of the base sheet":
     for finding in audit():
       inc counted[finding.kind]
     check counted[FindingKind.StateDeferred] == 2  # base: "closed" and "half-closed"
-    check counted[FindingKind.FrameAbsent] == 1  # base: no row for the open frame
+    check counted[FindingKind.FrameAbsent] == 1  # base: no row for the free frame
     check audit().len == 3
 
   test "the missing frame is the one where nobody is holding on":
     for finding in audit():
       if finding.kind != FindingKind.FrameAbsent:
         continue
-      check finding.subject == "open"  # base: the sheet has no such row
+      check finding.subject == "free"  # base: the sheet has no such row

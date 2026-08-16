@@ -72,7 +72,7 @@ const
 
 
 type Free* {.pure.} = enum ## Say how a hand nobody holds is drawn.
-  Fade,                    ## Half strength, keeping its hue: an open hand.
+  Fade,                    ## Half strength, keeping its hue: a free hand.
   Grey                     ## Quiet outline: the ghost of a place a hand left.
 
 

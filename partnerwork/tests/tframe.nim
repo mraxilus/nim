@@ -92,11 +92,11 @@ suite "hands":
     let both = fromKey("lrL").get
     check both.holder(Site.LeftHand) == some(Side.Left)
     check both.holder(Site.RightHand) == some(Side.Right)
-    let open_frame = fromKey("--.").get
+    let free_frame = fromKey("--.").get
     for site in Site:
-      check open_frame.holder(site).isNone
+      check free_frame.holder(site).isNone
     for side in Side:
-      check not open_frame.usesHand(side)
+      check not free_frame.usesHand(side)
 
 
 suite "naming":
@@ -107,7 +107,7 @@ suite "naming":
       check target.position.len > 0
       check target.describe notin names
       names.add target.describe
-    check fromKey("--.").get.describe == "open"
+    check fromKey("--.").get.describe == "free"
 
   test "the workbook's names come out of the structure":
     check fromKey("l-.").get.describe == "Left to left"  # base: five of its nine rows follow

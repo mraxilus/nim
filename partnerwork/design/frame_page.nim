@@ -123,10 +123,10 @@ const BODY = """
     a row read across is that dancer's orientation and the four facings are
     distinct without a new mark.</p>
     <div class="row">
-      <figure>{or_open_0}<figcaption>face to face</figcaption></figure>
-      <figure>{or_open_1}<figcaption>the follow<br>faces away</figcaption></figure>
-      <figure>{or_open_2}<figcaption>the lead<br>faces away</figcaption></figure>
-      <figure>{or_open_3}<figcaption>back to back</figcaption></figure>
+      <figure>{or_free_0}<figcaption>face to face</figcaption></figure>
+      <figure>{or_free_1}<figcaption>the follow<br>faces away</figcaption></figure>
+      <figure>{or_free_2}<figcaption>the lead<br>faces away</figcaption></figure>
+      <figure>{or_free_3}<figcaption>back to back</figcaption></figure>
     </div>
     <div class="row">
       <figure>{or_held_0}<figcaption>holding <em>Left to left</em></figcaption></figure>
@@ -350,9 +350,10 @@ const BODY = """
 
   <div class="plate">
     <h3>A free hand keeps its hue</h3>
-    <p>Grey said <em>not held</em>, but colour carries orientation and
-    <code>open</code> is four free hands. So a free hand fades rather than
-    greying, and there is no line to cover the case grey would have broken.</p>
+    <p>Grey said <em>not held</em>, but colour carries orientation and the
+    <code>free</code> frame is four free hands — which is where its name comes
+    from. So a free hand fades rather than greying, and there is no line to
+    cover the case grey would have broken.</p>
     <div class="row">
       <figure>{free_fade}<figcaption>faded</figcaption></figure>
       <figure>{free_grey}<figcaption>grey</figcaption></figure>
@@ -433,7 +434,7 @@ func render*(P: Parts): string =
       "class=\"mv\"", "class=\"mv moving\""))
     fills.add (&"mv_{m}_still", P[&"mv_{m}_still"])
   for key in ["f_none", "f_low", "f_high", "f_above", "f_over",
-              "or_open_0", "or_open_1", "or_open_2", "or_open_3",
+              "or_free_0", "or_free_1", "or_free_2", "or_free_3",
               "or_held_0", "or_tiny_1", "slot_chart",
               "route_wrap", "route_low", "route_high",
               "above_plain", "above_asked",

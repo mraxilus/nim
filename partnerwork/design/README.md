@@ -525,9 +525,9 @@ page and this list together.
   low (under the other arm), centre dot = high (over it), hatched = above (over
   the head — the only level that names a height).  The under-arm's drawn break
   stays: it reinforces the fill and survives node size.
-- A hand nobody holds **fades to half strength but keeps its hue**, because
-  `open` is four free hands and greying them would erase orientation exactly
-  where nothing else can say it.
+- A hand nobody holds **fades to half strength but keeps its hue**, because the
+  `free` frame is four free hands — which is where its name comes from — and
+  greying them would erase orientation exactly where nothing else can say it.
 - A **body is a plain circle with a small chevron at its centre** for the
   facing — the centre is the one part of a dancer nothing else uses.  The
   boundary stays one polar function (`outlineR`) so the routing and the

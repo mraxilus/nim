@@ -10,7 +10,7 @@
 ##       so only the order within a row (`NODE_ORDER`) is free to keep lines
 ##       from crossing.  Accepted -- the rows say collect or drop for every
 ##       edge at once.
-##   `open` is at the bottom and the two-handed frames are at the top,
+##   `free` is at the bottom and the two-handed frames are at the top,
 ##     because a collect builds the frame up and a drop lets it fall.  The
 ##     rows are a tower rather than a list, and the whole page keeps that
 ##     sense: the close drawing points its ways out the same way, and the

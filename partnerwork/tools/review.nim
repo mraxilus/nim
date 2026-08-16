@@ -222,7 +222,7 @@ func renderAudit(): string =
 
 proc renderReview*(): string =
   ## Fill the prose of the review with what the model says.
-  let open_frame = fromKey("--.").get
+  let free_frame = fromKey("--.").get
   var page = readFile(TEMPLATE_PATH)
   let fills = {
     "stats": renderStats(),
@@ -243,7 +243,7 @@ proc renderReview*(): string =
     "checkable": $(CELLS.len - countDeferredCells()),
     "deferred": $countDeferredCells(),
     "named": $countNamedStates(),
-    "open_moves": $(2 * moves(open_frame).len),
+    "free_moves": $(2 * moves(free_frame).len),
     "primitive_count": $(ord(high(Helper)) + 1),
     "laws": $countLaws(),
     "pairs": $(FRAMES.len * FRAMES.len),

@@ -127,7 +127,7 @@ func frameParts*(): Parts =
   # and the chevrons can say it, and holding, where the line is there too.
   var seen: HashSet[string]
   for i, o in ORIENTATIONS:
-    result[&"or_open_{i}"] = frame("f", default(Holds),
+    result[&"or_free_{i}"] = frame("f", default(Holds),
                                    lead_turn = o.lead_turn,
                                    follow_turn = o.follow_turn)
     result[&"or_held_{i}"] = frame("f", HOLD, lead_turn = o.lead_turn,
@@ -135,7 +135,7 @@ func frameParts*(): Parts =
     result[&"or_tiny_{i}"] = frame("tiny", HOLD, lead_turn = o.lead_turn,
                                    follow_turn = o.follow_turn,
                                    captions = false)
-    seen.incl result[&"or_open_{i}"]
+    seen.incl result[&"or_free_{i}"]
   doAssert seen.len == ORIENTATIONS.len,
     &"Orientations collide; got `{seen.len}` distinct of `{ORIENTATIONS.len}`."
 
