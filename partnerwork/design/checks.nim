@@ -370,9 +370,11 @@ proc checkRules*() =
     "or default"
 
   # RULE 9.  The connecting line's two halves are its two hands' own
-  # colours.
+  # colours.  The shades are asked of the palette rather than spelled out
+  # here, so this measures the drawing and not the way a colour is written:
+  # spelled out, it broke when the palette took its fallbacks.
   let crossed = frame("f", [some Arm.R, none Arm], said(some Level.Low))
-  doAssert "var(--left-deep)" in crossed and "var(--right)" in crossed,
+  doAssert DEEP[Arm.L] in crossed and INK[Arm.R] in crossed,
     "A crossed connection lost one of its two hands' colours."
   told.add "a connection is drawn in its two hands' own colours"
 

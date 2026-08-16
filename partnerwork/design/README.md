@@ -503,7 +503,11 @@ page and this list together.
 
 - Every hand is drawn in **its own side's colour** — `--left` blue, `--right`
   orange — for both dancers, and in **its owner's shade** of it: the lead's
-  deep, the follow's plain.  Which column a hand occupies is decided by which
+  deep, the follow's plain.  Each of the four is named as a custom property
+  **with a fallback**, `var(--left, #3d7fd0)`, so a picture follows the page it
+  is on and still draws in chosen ink when it is opened on its own — which the
+  app's `doc/frames/*.svg` are, and `tests/treview` holds every colour to it.
+  Which column a hand occupies is decided by which
   way its owner faces, so a row read across is that dancer's orientation, and
   the four facings (face to face, either turned, back to back) are distinct
   without a new mark.
@@ -627,18 +631,29 @@ The user's side of the table, as of the last iteration:
 
 ## Layout
 
-All Nim, like the ontology it serves; `marks.nim` is the build and the rest
-are modules it reads in this order:
+All Nim, like the ontology it serves.  **The drawing itself is no longer
+here.**  It was settled in this workbench and has moved to
+`../src/partnerwork/draw/`, because the app draws these marks now and the two
+must not drift; the workbench imports it from there.  What is left in
+`design/` is the argument — the rules, the checks and the four pages.
 
 ```
-geometry.nim    scalars and vectors, in the drawing's conventions
-rules.nim       the ledger above as data, and the vocabulary it speaks in
-style.nim       the palette, two shades a side, and the connection stroke
-pose.nim        the couple in world coordinates, and every rotation
-body.nim        one dancer: outline, spots, hands, captions
-route.nim       the taut string a connection is routed as
+../src/partnerwork/draw/
+  terms.nim     the vocabulary the rules speak in: sides, levels, holds
+  geometry.nim  scalars and vectors, in the drawing's conventions
+  style.nim     the palette, two shades a side, and the connection stroke
+  pose.nim      the couple in world coordinates, and every rotation
+  body.nim      one dancer: outline, spots, hands, captions
+  route.nim     the taut string a connection is routed as
+  figure.nim    whole pictures, still and moving
+  scene.nim     the app's own frames, drawn through all of the above
+```
+
+and `marks.nim` is the build, over the rest of these in this order:
+
+```
+rules.nim       the ledger above as data; re-exports draw/terms
 sign.nim        the quarter-turn sign
-figure.nim      whole pictures, still and moving
 parts.nim       every figure the four pages place, keyed as they use them
 checks.nim      every claim the pages make, asserted and spoken
 page.nim        the chrome the four pages share: style sheet, key, wrapper

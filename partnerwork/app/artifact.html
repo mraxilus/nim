@@ -12,8 +12,15 @@
   /* The band that lights the row and column under the pointer, standing in for
      the ruled lines a gridless chart does without. */
   --cross: #efece7;
-  --left: #1f5fb4;
-  --right: #b4541f;
+  /* The two arm hues, each in two shades: plain is the follow's end of a
+     connection, deep is the lead's, so a line says whose end is whose along
+     its own length.  These are the values the mock-up workbench settled on
+     and `src/partnerwork/draw/style.nim` falls back to, so the app and the
+     published pages are the same picture. */
+  --left: #3d7fd0;
+  --right: #d0763d;
+  --left-deep: #133a72;
+  --right-deep: #723a13;
   --ease: cubic-bezier(.32, .72, 0, 1);
   --ease-in: cubic-bezier(.55, 0, 1, .45);
   --ease-out: cubic-bezier(0, .6, .3, 1);
@@ -37,8 +44,10 @@
     --faint: #857f8e;
     --panel: #1e1d24;
     --cross: #2a2833;
-    --left: #6ba4ea;
-    --right: #e8813f;
+    --left: #8fbdf2;
+    --right: #f0a273;
+    --left-deep: #2f6ab5;
+    --right-deep: #b25f26;
   }
 }
 * { box-sizing: border-box; }
