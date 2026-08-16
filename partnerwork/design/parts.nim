@@ -27,11 +27,8 @@ const ORIENTATIONS* = [
   (name: "back to back", lead_turn: 180.0, follow_turn: 180.0),
 ] ## The four ways the couple can face, as the pages walk them.
 
-const
-  LOW*: Levels = [some Level.Low, some Level.Low]
-  SPLIT*: Levels = [some Level.Low, some Level.High]
-  HOLD*: Holds = [some Arm.L, none Arm]
-    ## The workhorse hold: the lead's Left to the follow's left.
+const HOLD*: Holds = [some Arm.L, none Arm]
+  ## The workhorse hold: the lead's Left to the follow's left.
 
 const SETTLINGS* = [
   (level: none Level, way: none Way, follow_turn: 0.0,
@@ -556,7 +553,7 @@ type Position* = tuple[wind: float, name, note: string]
 
 func windTwist*(wind: float): Twists =
   ## Say how far a pair has wound, as the drawing channel takes it.
-  [(false, 0, 0, wind), (false, 0, 0, wind)]
+  [wind, wind]
 
 
 func posedAt*(wind, phase: float): Pose =

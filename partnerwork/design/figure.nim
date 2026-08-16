@@ -22,27 +22,18 @@ const
   WIDE* = 160.0    ## The box a picture with captions needs.
   SIZE* = 116.0    ## And the box it needs without them.
 
-type
-  Twist* = tuple ## How a connection is drawn when the arms have wound.
-    over_all: bool ## Drawn straight, passing over whatever it meets.
-    loops: int     ## Pigtails at its middle: one per half turn, signed.
-    braid: int     ## Crossings with its partner: one per half turn.
-    turns: float   ## How far the pair has wound, in turns: what the reach
-                   ## swings through (rules 27, 28).  Zero draws straight,
-                   ## a half draws the X, a whole draws the diamond.
-  Twists* = array[Arm, Twist]
-    ## Per connection, how far its arms have wound past what the frame's own
-    ## geometry already says.
-    ##   At high the arms are up, so a wound reach never routes round a body
-    ##     (rule 14): it goes straight over, and says the wind by crossing --
-    ##     its partner where there is one, itself where there is not.
-    ##   Cost of a second drawing channel: a figure can now be asked for a
-    ##     twist its pose does not have.  Accepted -- the rotation page owns
-    ##     both, and `checks` measures what was drawn rather than trusting
-    ##     what was asked.
+type Twists* = array[Arm, float]
+  ## How far each connection has wound, in turns: what the reach swings
+  ## through (rules 27, 28).  Zero draws straight, a half draws the X, a
+  ## whole draws the diamond, a turn and a half the swan.
+  ##   It once carried two more channels -- a pigtail at a lone reach's
+  ##     middle and a braid across a pair -- which the retired rotation page
+  ##     owned.  Rule 16 took the pigtail away, having no ceiling left for
+  ##     it to mark, and rule 28's measured winding replaced the braid with
+  ##     geometry.  Neither has had a caller since.
 
-const NO_TWIST*: Twists = [(false, 0, 0, 0.0), (false, 0, 0, 0.0)]
-  ## Nothing wound and nothing said: every figure but the rotation page's.
+const NO_TWIST*: Twists = [0.0, 0.0]
+  ## Nothing wound: every figure but the turn pages'.
 
 
 func twoTone*(runs: seq[Run]; mid: Point; lead_side, foll_side: Arm):
@@ -219,12 +210,10 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
   # A wound pair crosses: once by a half turn, twice by a whole one, with
   # the X or the diamond that makes (rules 27, 28).
   let winding = holds[Arm.L].isSome and holds[Arm.R].isSome and
-    abs(twist[Arm.L].turns) > 1e-9
+    abs(twist[Arm.L]) > 1e-9
   # And a wound pair says which way it wound by which arm it keeps on top,
   # so the wind names the over-arm rather than the caller saying it twice.
-  let on_top = if not winding: over
-               elif twist[Arm.L].turns > 0: some(Arm.L)
-               else: some(Arm.R)
+  let on_top = if not winding: over else: some(overArm(twist[Arm.L]))
   var routes: array[Arm, seq[Point]]
   for arm in Arm:
     if holds[arm].isNone:
@@ -232,30 +221,18 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     let ends: route.Ends = (p[Dancer.Lead][arm],
                             p[Dancer.Follow][holds[arm].get],
                             lead_body, follow_body)
-    if levels[arm] == some(Level.Above) or twist[arm].over_all:
-      # Over the head, or over a turning body: either way nothing is in the
-      # way from above, and the wind is said by crossing rather than by
-      # hugging (rules 1 and 14).
+    if levels[arm] == some(Level.Above):
+      # Over the head: nothing is in the way from above, and the wind is
+      # said by crossing rather than by hugging (rules 1 and 14).
       routes[arm] =
-        if twist[arm].loops != 0:
-          pigtailed(ends.a, ends.b, twist[arm].loops)
-        elif twist[arm].braid != 0:
-          # The two members of a pair weave in opposition -- same wave, half
-          # a period apart -- so where one swings out the other swings in
-          # and they cross.  The sign turns the whole weave over, which is
-          # what tells one direction of wind from the other.
-          braided(ends.a, ends.b, abs(twist[arm].braid),
-                  (if arm == Arm.L: 0.0 else: PI) +
-                    (if twist[arm].braid > 0: 0.0 else: PI))
-        elif winding:
+        if winding:
           # The pose says where the hands are and which way the arm went
           # round; the wind says how far.  A half turn's sweep is the pose's
           # own -- the hands really have swapped sides -- and a whole turn's
           # is a full round on top of it.
           wound(ends.a, ends.b, axisOf(put).across,
                 degToRad(windOf(put, holds, arm).phi),
-                2 * PI * twist[arm].turns,
-                share = windShare(twist[arm].turns, arm))
+                2 * PI * twist[arm], share = windShare(twist[arm], arm))
         elif clear_marks:
           clearedReach(ends.a, ends.b, clearingMarks(put, ends.a, ends.b))
         else:
@@ -263,15 +240,11 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     else:
       # What the hold says, if it says anything; the short way if not.
       routes[arm] = routed(ends, wayFor(ends, levels[arm], ways[arm])).get.pts
-  # A braided pair meets more than once, and a rope alternates: each strand
+  # A wound pair meets more than once, and a rope alternates: each strand
   # dives under at every second crossing.  So the crossings are found once,
   # in order along the line, and shared out between the two arms.
-  let
-    braiding = holds[Arm.L].isSome and holds[Arm.R].isSome and
-      twist[Arm.L].braid != 0
-    weaving = braiding or winding
   var dives: array[Arm, seq[Point]]
-  if weaving:
+  if winding:
     let meetings = crossingsOf(routes[Arm.L], routes[Arm.R])
     for i, meeting in meetings:
       # The arm named `over` stays on top at the first meeting, so it is
@@ -287,7 +260,7 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
       let
         pts = routes[arm]
         runs =
-          if weaving: cutGapsAt(pts, dives[arm])
+          if winding: cutGapsAt(pts, dives[arm])
           elif on_top == some(other(arm)): cutGap(pts, routes[other(arm)])
           else: @[pts]
       bits.add twoTone(runs, pts[pts.len div 2], arm, holds[arm].get)
@@ -483,7 +456,7 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
 
 func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
-    ways: Ways = default(Ways); dur = 9.6; over_all = false;
+    ways: Ways = default(Ways); dur = 9.6;
     times: seq[float] = @[]; wound = 0.0): string =
   ## Draw one picture moving through a walk of poses handed in.
   ##   Every moving figure comes through here, whether its walk is a whole
@@ -568,9 +541,9 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
                    poses[i].facing[Dancer.Lead]),
                   (poses[i].place[Dancer.Follow],
                    poses[i].facing[Dancer.Follow]))
-    if levels[arm] == some(Level.Above) or over_all:
-      # Over the head, or over a body that is turning under raised arms:
-      # from above nothing is in the way, and nothing hugs (rules 1, 14).
+    if levels[arm] == some(Level.Above):
+      # Over the head: from above nothing is in the way, and nothing hugs
+      # (rules 1, 14).
       # A pair winds as it turns, and the drawing follows rather than being
       # told (rule 28).  How far it has wound is measured on every frame
       # and read as one continuous turning, so a reach that has gone right
@@ -693,7 +666,6 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
 func animated*(cls: string; holds: Holds; move: MoveApply;
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6; samples = 14;
-    over_all = false): string =
+    ): string =
   ## Draw the same picture, moving: stage one travels, stage two comes home.
-  animatedPoses(cls, holds, cycle(move, samples), half, levels, ways, dur,
-                over_all)
+  animatedPoses(cls, holds, cycle(move, samples), half, levels, ways, dur)

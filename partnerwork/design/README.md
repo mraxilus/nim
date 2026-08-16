@@ -20,7 +20,9 @@ so they cannot drift.
 The turn mock-ups are being drawn one kind at a time and combined only once
 each is right: single hands first, then hand to hand, then the crossed
 pair.  An earlier `rotations.html` tried all three at once and is retired --
-it was built on a ceiling rule 16 has since removed.
+it was built on a ceiling rule 16 has since removed.  Its page module went
+with it, and so has the drawing machinery only it used; what is published
+under its old name is left where it is, as the record of what was claimed.
 
 The first two turn pages are duals, which is the shape of the whole scope: a
 single hand above turns for ever, so its wind is not part of its state and its
@@ -128,6 +130,11 @@ has happened here more than once.
     where a lone connection has no partner to cross.  *The pigtail is the
     implementer's invention and is flagged on the page.*  Rule 16 has since
     retired the pigtail for single hands -- see below.
+    *Neither the pigtail nor the rope-of-three is in the code any more.  Rule
+    16 took the ceiling the pigtail marked, and rule 28 replaced the drawn
+    braid with a wind that is measured off the pose, so both drawing channels
+    lost their last caller and have been removed along with the page that
+    owned them.*
 15. **"for each mock up, a static image version of every derived position
     and full set of animated transitions between states."**  One mock-up
     per kind of turn, each holding every position it derives and an
