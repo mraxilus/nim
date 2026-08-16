@@ -12,7 +12,7 @@
 
 {.experimental: "strictFuncs".}
 
-import ./rules
+import ./terms
 
 
 const

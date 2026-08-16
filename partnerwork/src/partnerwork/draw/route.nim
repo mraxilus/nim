@@ -15,7 +15,7 @@
 
 import std/[math, options, sequtils, strformat, strutils]
 
-import ./[body, geometry, rules, style]
+import ./[body, geometry, style, terms]
 
 
 const ROUTE_N* = 33   ## Points in every emitted reach, so frames can morph.

@@ -19,7 +19,8 @@
 import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
             tables]
 
-import ./[body, figure, geometry, parts, pose, route, rules, sign, style]
+import ./[parts, rules, sign]
+import ../src/partnerwork/draw/[body, figure, geometry, pose, route, style]
 
 
 func fmt(x: float; places: int): string =

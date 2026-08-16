@@ -18,7 +18,8 @@
 
 import std/[options, strformat, strutils]
 
-import ./[body, geometry, rules, style]
+import ./rules
+import ../src/partnerwork/draw/[body, geometry, style]
 
 
 const STYLE* = """<style>

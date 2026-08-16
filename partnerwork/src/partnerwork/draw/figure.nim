@@ -15,7 +15,7 @@
 
 import std/[algorithm, math, options, sequtils, strformat, strutils]
 
-import ./[body, geometry, pose, route, rules, style]
+import ./[body, geometry, pose, route, style, terms]
 
 
 const

@@ -15,7 +15,8 @@
 
 import std/[math, options, strformat, strutils]
 
-import ./[body, geometry, pose, rules, style]
+import ./rules
+import ../src/partnerwork/draw/[body, geometry, pose, style]
 
 # What a turn goes round is one idea, and it lives with the turning in
 # `pose`; the sign borrows it rather than keeping a second copy.

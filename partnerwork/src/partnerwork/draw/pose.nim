@@ -16,7 +16,7 @@
 
 import std/[math, options]
 
-import ./[geometry, rules]
+import ./[geometry, terms]
 
 
 const SEPARATION* = 56.0     ## Between the two dancers' centres.

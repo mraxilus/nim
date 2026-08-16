@@ -13,7 +13,8 @@
 import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
             tables]
 
-import ./[body, figure, geometry, pose, route, rules, sign, style]
+import ./[rules, sign]
+import ../src/partnerwork/draw/[body, figure, geometry, pose, route, style]
 
 
 type Parts* = OrderedTable[string, string]

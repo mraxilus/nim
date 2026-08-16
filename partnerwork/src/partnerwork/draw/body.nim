@@ -19,7 +19,7 @@
 
 import std/[math, options, strformat]
 
-import ./[geometry, pose, rules, style]
+import ./[geometry, pose, style, terms]
 
 
 const
