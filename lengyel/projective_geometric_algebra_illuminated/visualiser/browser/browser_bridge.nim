@@ -288,7 +288,7 @@ proc nimDefaultLabel(): cstring {.exportc.} = cstring(&"m{g_scene.len}")
   ## pre-fill an edit session with and let the user change before committing.
 
 
-proc nimDefaultInk(): cint {.exportc.} = cint(inkCycled(g_scene.len))
+proc nimDefaultInk(): cint {.exportc.} = cint(g_scene.inkNext)
   ## Report the palette slot a freshly composed object starts out carrying, cycled the
   ## same way every construction path already cycles it.
 
@@ -349,7 +349,7 @@ proc nimApplyOperation(
     name_second = toText(g_scene.labelAt(int(slot_second)))
     label = notationSubstituted(operation, name_first, name_second)
     slot_created =
-      g_scene.addItem(derived, label, inkCycled(g_scene.len), float(now), anchor)
+      g_scene.addItem(derived, label, g_scene.takeInk(), float(now), anchor)
   g_operations.remember(operation)
   g_clock_pulse.forget(slot_created) # A fresh object starts its comet at the head.
   g_borns[slot_created] = float(now)
@@ -756,6 +756,25 @@ proc nimDragKindForButton(dom_button: cint): cint {.exportc.} =
   if arming.isNone: SLOT_NONE else: cint(ord(arming.get))
 
 
+proc nimRevealsMenuOnButton(dom_button: cint): bool {.exportc.} =
+  ## Say whether a click of this pointer button brings the selection menu up with it.
+  ##   Same translation and the same reason as `nimDragKindForButton` above: only the DOM's
+  ## numbering is this build's own, and what a button *means* is `interaction`'s to say.
+  case dom_button
+  of 0: revealsMenuOn(PointerButton.Left)
+  of 1: revealsMenuOn(PointerButton.Middle)
+  of 2: revealsMenuOn(PointerButton.Right)
+  else: false
+
+
+proc nimRevealsWithoutPicking(has_selection, is_menu_shown: bool): bool {.exportc.} =
+  ## Say whether a menu-revealing click should only reveal, leaving the selection alone.
+  ##   Forwards to `interaction.revealsWithoutPicking`; see its own doc comment. Exported
+  ## rather than written out in `glue.js` because the desktop asks the identical question
+  ## and the two answering differently is exactly the drift this boundary exists to stop.
+  revealsWithoutPicking(has_selection, is_menu_shown)
+
+
 proc nimHelpEntries(): seq[cstring] {.exportc.} =
   ## Report every help entry flat, four strings each: the tab it belongs under, action,
   ## outcome, and `"touch"` or `""` for whether it is the touch way of doing it.
@@ -941,7 +960,7 @@ proc nimDragTint(): seq[float32] {.exportc.} =
   ##   Answered by `interaction.inkOfDrag` rather than from a table here: this file used
   ##   to keep its own copy of the operation-to-ink mapping, with a comment telling the
   ##   next reader to check the desktop's. Both now read the one in `core`.
-  toRgbSeq(inkOfDrag(g_interaction).colour)
+  toRgbSeq(inkOfDrag(g_interaction, g_scene.inkNext).colour)
 
 
 proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =

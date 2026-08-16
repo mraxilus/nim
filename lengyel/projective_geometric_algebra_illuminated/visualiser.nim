@@ -621,7 +621,7 @@ proc drawInteractionOverlay(
       if screen.isInFront:
         # Tinted by what releasing would do rather than by which button started the drag,
         #   which is the same rule the browser's rubber-band answers from.
-        let tint = interaction.inkOfDrag.colour
+        let tint = interaction.inkOfDrag(scene.inkNext).colour
         gui.overlayLine(
           cfloat(screen.x), cfloat(screen.y),
           cfloat(interaction.cursor.x), cfloat(interaction.cursor.y),
@@ -814,15 +814,28 @@ func keyFor(scancode: uint32): Option[Key] =
   else: none(Key)
 
 
+func pointerButtonOf(button: uint8): Option[PointerButton] =
+  ## Name an SDL mouse button in the shared vocabulary.
+  ##   **Only the numbering is this build's own**, and it is the one thing the browser
+  ##   cannot share: SDL counts 1/2/3 left/middle/right, the DOM 0/1/2. Everything a button
+  ##   *means* is `interaction`'s to say, so both render paths and the help panel answer
+  ##   from one rule and this translates.
+  if button == uint8(MouseButton.Left): some(PointerButton.Left)
+  elif button == uint8(MouseButton.Right): some(PointerButton.Right)
+  elif button == uint8(MouseButton.Middle): some(PointerButton.Middle)
+  else: none(PointerButton)
+
+
 func armingFor(button: uint8): Option[MenuArming] =
   ## Say whether a mouse button starts a construction drag, and how it reaches its menu.
-  ##   Only the numbering is this build's own -- SDL's, which the browser does not share.
-  ##   What each button means is `interaction.armingOf`'s to say, so both render paths and
-  ##   the help panel answer from one rule.
-  if button == uint8(MouseButton.Left): armingOf(PointerButton.Left)
-  elif button == uint8(MouseButton.Right): armingOf(PointerButton.Right)
-  elif button == uint8(MouseButton.Middle): armingOf(PointerButton.Middle)
-  else: none(MenuArming)
+  let named = pointerButtonOf(button)
+  if named.isNone: none(MenuArming) else: armingOf(named.get)
+
+
+func revealsMenuFor(button: uint8): bool =
+  ## Say whether a click of this mouse button brings the selection menu up with it.
+  let named = pointerButtonOf(button)
+  named.isSome and revealsMenuOn(named.get)
 
 
 proc handleEvent(
@@ -913,11 +926,20 @@ proc handleEvent(
       let outcome = interaction.endDrag(scene, now)
       if len(outcome.message) > 0: toChars(outcome.message, panel.message)
       if outcome.index_clicked.isSome:
-        # A press that never became a drag. Shift adds, exactly as shift+enter does from
-        #   the keyboard, and either way the selection menu follows what was picked.
-        if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
-        else: panel.selection.selectOnly(outcome.index_clicked.get)
-        panel.showSelectionMenu()
+        # A press that never became a drag. **The button decides whether the menu comes with
+        #   it**; shift decides whether the click adds to the selection or replaces it, and
+        #   the two are independent. See `interaction.revealsMenuOn`.
+        #   Unshifted, on a selection already standing with its menu dismissed, the click
+        #   only brings that menu back and leaves the selection alone -- see
+        #   `revealsWithoutPicking`, and note shift is deliberately not offered that path.
+        if revealsMenuFor(event.button.button) and not is_shifted and
+            revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
+          panel.showSelectionMenu()
+        else:
+          if is_shifted: panel.selection.toggle(outcome.index_clicked.get)
+          else: panel.selection.selectOnly(outcome.index_clicked.get)
+          if revealsMenuFor(event.button.button): panel.showSelectionMenu()
+          else: panel.hideSelectionMenu()
       elif outcome.index_created.isSome:
         panel.selection.selectOnly(outcome.index_created.get)
         panel.hideSelectionMenu()
@@ -930,17 +952,24 @@ proc handleEvent(
         panel.selection.toggle(outcome.operands.get.destination)
         panel.openSelectionMenuPicker()
       button_dragging = none(uint8)
-    elif event.button.button == uint8(MouseButton.Left) and interaction.isClick(now):
-      # A plain left click that began no drag to end -- so it landed on empty space, or on
-      #   the one thing that *is* empty space: a plane at horizon, which `beginDrag`
-      #   refuses so that this press could still have become an orbit. Clicking it selects
-      #   it, which is the only way a pointer can, since it can never be dragged from.
+    elif pointerButtonOf(event.button.button).isSome and interaction.isClick(now):
+      # A plain click that began no drag to end -- so it landed on empty space, or on the
+      #   one thing that *is* empty space: a plane at horizon, which `beginDrag` refuses so
+      #   that this press could still have become an orbit or a pan. Clicking it selects it,
+      #   which is the only way a pointer can, since it can never be dragged from.
+      #   **Both buttons**, on the same rule as the branch above: a right click on the sky
+      #   behaving unlike a right click on anything else would be a rule with a hole in it.
       if interaction.is_hover_backdrop and interaction.index_hover.isSome:
         let slot = interaction.index_hover.get
-        if is_shifted: panel.selection.toggle(slot)
-        else: panel.selection.selectOnly(slot)
-        panel.showSelectionMenu()
-      elif not is_shifted:
+        if revealsMenuFor(event.button.button) and not is_shifted and
+            revealsWithoutPicking(panel.selection.len > 0, panel.is_menu_selection_shown):
+          panel.showSelectionMenu()
+        else:
+          if is_shifted: panel.selection.toggle(slot)
+          else: panel.selection.selectOnly(slot)
+          if revealsMenuFor(event.button.button): panel.showSelectionMenu()
+          else: panel.hideSelectionMenu()
+      elif event.button.button == uint8(MouseButton.Left) and not is_shifted:
         # Clears, mirroring the browser's own rule; shift is left alone, since shift means
         #   "keep what I have".
         panel.selection.clear()
@@ -1096,6 +1125,10 @@ proc driveSelect(
   ## Script a click, then two shift-clicks, on the first three scene items, and finally a
   ## construction drag off the object the menu is sitting over, so a headless run can show
   ## the floating selection menu at each size and prove it does not swallow the next drag.
+  ##   **Clicks with the button that reveals the menu**, read from `revealsMenuOn` rather
+  ## than named here: the menu moved to the right button, and a script that kept clicking
+  ## left would screenshot an empty screen while claiming to show the menu at three sizes.
+  ## The drag at the end keeps that button too, which is the one that opens the wheel.
   ##   For `--drive-select`, and reached from nowhere else. Which state is captured is
   ##   `--frames`' to choose: the menu over one object by frame 5, two by 7, three by 9,
   ##   the drag off the object it follows resolved by 13. One frame later than each step,
@@ -1141,13 +1174,15 @@ proc driveSelect(
         uint32(EventKind.MouseButtonDown)
       else: uint32(EventKind.MouseButtonUp)
   )
-  event.button.button = uint8(MouseButton.Left)
+  event.button.button =
+    if revealsMenuOn(PointerButton.Right): uint8(MouseButton.Right)
+    else: uint8(MouseButton.Left)
   sdl3.pushEvent(addr event)
   # A click is a press and a release in one drain; the drag's own two halves are frames
   #   apart, so that the cursor really travels between them.
   if step < STEPS_CLICK:
     var release = Event(kind: uint32(EventKind.MouseButtonUp))
-    release.button.button = uint8(MouseButton.Left)
+    release.button.button = event.button.button # The button that pressed is the one that lifts.
     sdl3.pushEvent(addr release)
 
 

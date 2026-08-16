@@ -892,6 +892,63 @@ next frame after a delete. Three guards exist and must stay:
 
 Interaction Model
 ---
+**Which button does what, stated once.** `interaction.revealsMenuOn` says whether a click
+brings the floating selection menu with it — right yes, left and middle no — and both render
+paths plus `help.nim` read it, exactly as they read `armingOf` for the drag. The left button
+used to do both jobs at once, so a reader who only wanted to pick something was answered with
+a menu they then had to dismiss, and the menu lived behind the same button that builds.
+
+| Gesture | Does |
+|---|---|
+| left click | select just that one, dropping the rest |
+| right click | the same, and open the menu |
+| shift with either | add it, or drop it again if already picked |
+| right click, selection standing, menu down | reveal the menu, selection untouched |
+
+That last row is `revealsWithoutPicking(has_selection, is_menu_shown)`, and shift never
+reaches it — shift always means "change the selection". With the menu already up the same
+click falls through and retargets, which is the way out of having revealed the wrong thing.
+
+**A click has no time limit, and the one it had was a bug.** `isClick` demanded
+`now - started < 0.35 s` beside the distance bound. Measured on the shipped page: shift-
+clicking three objects with each press held 600 ms picked **none** of them, every release
+answering "Released on its own source; nothing done", while the same three at 80 ms picked
+all three and a fourth click dropped one back out. The deadline was meant to separate a click
+from a press held to open the dwell menu, but the dwell is touch-only and a mouse's wheel
+opens on *arriving over another object*, never on time — so it separated nothing and lost
+clicks. Distance alone decides now.
+
+**A right press that never moved is a click.** It could not be one before: any drag armed
+`Always` was refused a click outright, on the reasoning that it had asked for the wheel. But
+the wheel only opens over a target *other* than the source, so such a press never opened one
+and there was no offer to withdraw. The test is now on the menu rather than the arming.
+
+**An open wheel lets go when the cursor leaves it.** Past `PIXELS_MENU_DISENGAGE` (150 px)
+the menu closes, the drag stops being latched to that destination, and travelling on to
+another object opens it there for the original source with the new target — re-aiming, never
+chaining. A target just let go of is held at arm's length until hover leaves it, or
+`MenuArming.Always` would re-open the menu on it the very next frame and disengaging would
+only ever move the menu.
+  The radius is sited off a measurement, not off `PIXELS_MENU_REACH`: the furthest wedge
+corner sits **103.9 px** from the centre, read off the drawn rects in the browser over six
+different pairs, leaving 46 px of clear air. **This bounds `choiceAt`'s overshoot, which was
+deliberately unbounded** ("overshooting a wedge still picks it, which is what makes a fast
+confident throw work"). Both cannot hold; being able to re-aim was chosen, with the user.
+
+**The drag wears the colour it will build.** `inkOfDrag` keeps its three states — neutral
+over empty space, the reserved magenta over a pair that makes nothing, and now the *scene's
+next hue* over one that works, rather than the operation's own. The operation is already
+named on the wedge and in the label; the colour was the only place the answer could be shown
+and it was spent saying something already said.
+  `Scene.index_ink` carries how far the cycle has been walked, with `inkNext`/`takeInk`/
+`skipInk`, because `inkCycled(scene.len)` cannot move for an object that was never added —
+and **every released construction steps it**, built or not, so a colour the reader watched
+for a whole drag is not offered again. A click does not step it (selecting is not
+constructing) and neither does `More` (the construction is still in flight, and the apply
+picker takes the hue the wheel previewed). Undo restores it with the rest of the scene, so
+undoing a build re-offers that hue; loading a scene sets it to the item count. The file
+format is untouched.
+
 **Desktop / mouse and pen.** Drag from an object onto another to derive a third. **The
 press target chooses the scheme; the button chooses whether you are asked.** Press an object
 and you are constructing; press empty space and you are moving the camera (left orbits,

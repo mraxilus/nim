@@ -343,7 +343,7 @@ proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
     session.index_ink = cint(scene.inkAt(slot.get))
   else:
     toChars(&"m{scene.len}", session.label)
-    session.index_ink = cint(inkCycled(scene.len))
+    session.index_ink = cint(scene.inkNext)
   panel.session = some(session)
 
 
@@ -723,7 +723,7 @@ proc applyPickedOperation(
     label = notationSubstituted(operation, name_first, name_second)
   panel.operations.remember(operation)
   panel.selection.selectOnly(
-    scene.addItem(derived, label, inkCycled(scene.len), now, anchor)
+    scene.addItem(derived, label, scene.takeInk(), now, anchor)
   )
   history.record(scene, camera)
 

@@ -112,6 +112,13 @@ type
     count_created: uint32 ## Ordinals handed out so far, and the next one to hand out.
       ## Counts additions over the scene's whole life, never removals, so it is not
       ## `count_live` and cannot be derived from it.
+    index_ink: int ## How far the categorical cycle has been walked; the next hue to hand out.
+      ## Its own counter rather than `len`, because a **drag that built nothing still steps
+      ## the palette** -- the reader watched a colour on the band and it should not be
+      ## offered again -- and `len` cannot move for an object that was never added. Undo
+      ## restores it with the rest of the scene, so undoing a build re-offers that hue; that
+      ## is the consistent answer rather than a lapse. Not written to file: `loadScene` sets
+      ## it from the item count so a loaded scene carries on rather than repeating.
 
   Arity* {.pure.} = enum ## Count operands operation consumes.
     One, Two
@@ -802,6 +809,29 @@ func inkCycled*(index: int): Ink = inkCategorical(index mod COUNT_INK_CATEGORICA
   ## the same run a colour picker offers, so nothing cycles to a colour the user could
   ## not have chosen.
 
+
+func inkNext*(scene: Scene): Ink = inkCycled(scene.index_ink)
+  ## Read the hue the next object built will wear, without taking it.
+  ##   What a drag in flight is drawn in, so the band, its comet and the ghost all show the
+  ## colour the thing being built will actually be rather than the operation's own -- see
+  ## `interaction.inkOfDrag`. Peeking and taking are separate calls because previewing
+  ## happens every frame and must not walk the cycle.
+
+
+proc takeInk*(scene: var Scene): Ink =
+  ## Read the hue for an object being built, and step the cycle past it.
+  result = scene.inkNext
+  inc scene.index_ink
+
+
+proc skipInk*(scene: var Scene) =
+  ## Step the cycle without building anything.
+  ##   For a construction gesture that ended in no object: a pair that makes nothing, a
+  ## release over empty space, a release back on its own source. The reader was shown a
+  ## colour for the whole drag, so offering that same colour again to the next attempt reads
+  ## as the gesture having not registered. Stepping costs nothing -- the cycle is endless.
+  inc scene.index_ink
+
 const
   ORDINAL_INK_CATEGORICAL_V1* = 7
     ## Where the categorical hues began in the `Ink` a version-1 file was written under.
@@ -1098,6 +1128,11 @@ when not defined(js):
       )
       staging.setVisible(slot, carried.get.is_visible)
 
+    # Carry the palette on past what was loaded, rather than restarting it: the next object
+    #   built on a reopened scene should not repeat the hue its first object already wears.
+    #   Not stored in the file -- the count is enough to place the cycle, and a field nobody
+    #   could edit by hand is not worth a format version.
+    staging.index_ink = int(count)
     scene = staging
     &"Loaded {count} object(s) from `{path}`."
 

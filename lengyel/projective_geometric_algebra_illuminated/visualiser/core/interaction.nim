@@ -112,11 +112,10 @@ const PIXELS_CLICK_SLOP* = 6.0
   ##   disambiguate; deciding whether a press was a click is a rule about the gesture, and
   ##   the desktop needs the same answer.
 
-const SECONDS_CLICK* = 0.35
-  ## Release a pointer press within this of its landing and it is still a click.
-  ##   A press held longer over an object was being held there, which is what opens the
-  ##   dwell menu at `SECONDS_DWELL_MENU` -- comfortably past this, so no press can
-  ##   ever be both. Was `MOUSE_CLICK_MAX_MS` in `glue.js`, for the same reason as above.
+# **There is deliberately no time bound on a click.** One stood here at 0.35 s, to separate
+#   a click from a press held to open the dwell menu; the dwell became touch-only and the
+#   bound became a way to lose clicks. See `isClick` for what it cost and how that was
+#   measured.
 
 const PIXELS_MENU_REACH* = 76.0
   ## Distance from the menu's centre to the centre of each of its four wedges.
@@ -130,6 +129,28 @@ const PIXELS_MENU_DEADZONE* = 26.0
   ##   The way out of an opened menu without committing anything, and the reason a dwell
   ##   menu is safe to open unasked: it opens *centred on the cursor*, so the reader who
   ##   did not want it is already in the deadzone and releasing costs them nothing.
+
+const PIXELS_MENU_CORNER_FURTHEST* = 103.9
+  ## Furthest any wedge's own outer corner sits from the menu centre, **measured**.
+  ##   Not derivable here: a wedge is as wide as the label it carries, and only a render path
+  ##   knows what its own face laid that out as. Read off the drawn rects in the browser
+  ##   build over six different pairs, which all gave the same number -- the four labels are
+  ##   fixed, so the widest is too.
+  ##   Kept beside the constant it justifies so the next reader can check the slack rather
+  ##   than trust it, and so a wider label or a longer reach surfaces here as a number that
+  ##   no longer clears `PIXELS_MENU_DISENGAGE` rather than as a menu closing on a wedge.
+
+const PIXELS_MENU_DISENGAGE* = 150.0
+  ## Past this distance from its centre, an open menu lets go of the drag entirely.
+  ##   What makes a wheel opened on the wrong object recoverable: it closes, the drag stops
+  ##   being latched to that destination, and travelling on to another object opens it there
+  ##   for the new pair. The source is never touched, so the pair re-aims rather than chains.
+  ##   **This bounds `choiceAt`'s overshoot, which was unbounded on purpose** -- "overshooting
+  ##   a wedge still picks it, which is what makes a fast confident throw work". Both cannot
+  ##   hold at once, and being able to re-aim was chosen over an unbounded throw.
+  ##   Sited off `PIXELS_MENU_CORNER_FURTHEST` rather than off the reach, leaving **46 px** of
+  ##   clear air past the furthest point a throw could be aiming at: far enough that no
+  ##   ordinary overshoot lets go, near enough that re-aiming is one short movement.
 
 const
   HEIGHT_MENU_WEDGE* = 30.0
@@ -279,6 +300,11 @@ type
     settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
       ## what movement is measured against to decide the dwell has been interrupted.
     menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
+    index_disengaged*: Option[int] ## Target a menu was let go of, while the cursor is still
+      ## over it. Without this the wheel would re-open on that same object the very next
+      ## frame -- `MenuArming.Always` is due on every frame over a target -- and disengaging
+      ## would do nothing but move the menu. Cleared the moment hover reports anything else,
+      ## including nothing, so coming back to that object later opens it again.
 
 
 
@@ -348,6 +374,31 @@ func armingOf*(button: PointerButton): Option[MenuArming] =
   of PointerButton.Left: some(MenuArming.Never)
   of PointerButton.Right: some(MenuArming.Always)
   of PointerButton.Middle: none(MenuArming)
+
+
+func revealsMenuOn*(button: PointerButton): bool =
+  ## Say whether a click of this button brings up the selection menu on what it picked.
+  ##   **The left button selects and nothing more.** It used to do both jobs at once --
+  ##   select *and* open the menu -- which left a reader who only wanted to pick something
+  ##   dismissing a menu they never asked for, and put the menu behind the same button that
+  ##   builds. The right button carries it instead, matching where every other tool a reader
+  ##   has met keeps a context menu.
+  ##   Stated here for the same reason `armingOf` is: both render paths and the help panel
+  ##   answer from one rule, so rebinding it rewrites the help with it.
+  button == PointerButton.Right
+
+
+func revealsWithoutPicking*(has_selection, is_menu_shown: bool): bool =
+  ## Say whether a menu-revealing click should only reveal, leaving the selection alone.
+  ##   A selection already standing with its menu dismissed is a reader who wants that menu
+  ##   back, not one who wants to throw the selection away and start again -- so the click
+  ##   reveals and picks nothing. With the menu already up there is nothing to reveal, so the
+  ##   same click means what it plainly says and picks what it landed on. That pair is also
+  ##   the way out: right-click once to get the menu, again to retarget it.
+  ##   **Shift never comes here.** Shift means "change the selection", so a shifted click
+  ##   always adds or drops and only then reveals; the caller applies that, since only it
+  ##   knows the modifier.
+  has_selection and not is_menu_shown
 
 
 func toDrag*(choice: DragChoice): Option[DragOperation] =
@@ -497,17 +548,22 @@ func proposalFor*(m, n: Multivector): Option[DragChoice] =
   none(DragChoice)
 
 
-func inkOfDrag*(interaction: Interaction): Ink =
+func inkOfDrag*(interaction: Interaction; ink_next: Ink): Ink =
   ## Tint the rubber-band of the drag in progress by what releasing it would do.
-  ##   Three states, and the middle one is the reason this is not just `inkOf(proposal)`:
-  ##   crossing empty space is neutral, standing over a pair that makes nothing wears the
-  ##   reserved `Ink.Invalid` magenta, and standing over one that makes something wears
-  ##   that operation's own colour. The warning arrives *before* the release rather than
-  ##   as a message after it, which is the whole point of previewing at all -- and it is
-  ##   never colour alone, since the ghost simultaneously fails to appear.
+  ##   Three states, and the middle one is the reason this is not just `ink_next`: crossing
+  ##   empty space is neutral, standing over a pair that makes nothing wears the reserved
+  ##   `Ink.Invalid` magenta, and standing over one that makes something wears **the hue the
+  ##   new object will actually be**. The warning arrives *before* the release rather than as
+  ##   a message after it, which is the whole point of previewing at all -- and it is never
+  ##   colour alone, since the ghost simultaneously fails to appear.
+  ##   `ink_next` is `scene.inkNext`, passed in because this has no scene to ask. It used to
+  ##   be the *operation's* own colour, which told a reader which of join/meet/project they
+  ##   were about to get but nothing about the object they were about to have -- and the
+  ##   operation is already named on the wedge and in the label, while the colour is the only
+  ##   place the answer could have been shown.
   if not interaction.is_over_target: Ink.Guide
   elif interaction.proposal.isNone: Ink.Invalid
-  else: inkOf(interaction.proposal.get)
+  else: ink_next
 
 
 
@@ -738,11 +794,21 @@ proc beginPress*(interaction: var Interaction; now: float) =
 
 func isClick*(interaction: Interaction; now: float): bool =
   ## Report whether the press in progress is still a click rather than a drag.
-  ##   Both bounds have to hold: it has not left `PIXELS_CLICK_SLOP` of where it landed,
-  ##   and it has not lasted `SECONDS_CLICK`. Asked at the release, by whichever path
-  ##   is resolving the press -- `endDrag` for one that started over an object, the render
-  ##   path itself for one that started over empty space, which begins no drag to end.
-  interaction.is_press_still and now - interaction.started < SECONDS_CLICK
+  ##   **Distance alone decides**: a press that has not left `PIXELS_CLICK_SLOP` of where it
+  ##   landed is a click however long it was held. Asked at the release, by whichever path is
+  ##   resolving the press -- `endDrag` for one that started over an object, the render path
+  ##   itself for one that started over empty space, which begins no drag to end.
+  ##   **There was a 0.35 s deadline here and it was a bug.** It was meant to separate a
+  ##   click from a press held to open the dwell menu, but the dwell belongs to touch alone
+  ##   (`MenuArming.OnDwell`, reachable from no button) and a mouse's wheel opens on arriving
+  ##   over *another* object, never on time -- so nothing was left for it to separate, and
+  ##   what it actually did was drop any click a hand lingered on. Measured on the shipped
+  ##   build: shift-clicking three objects with each press held 600 ms picked **none** of
+  ##   them, every release answering "Released on its own source; nothing done", while the
+  ##   same three at 80 ms picked all three and a fourth click dropped one back out. `now` is
+  ##   still taken, since a caller should not have to know that the answer stopped needing it.
+  discard now
+  interaction.is_press_still
 
 
 proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): bool =
@@ -767,6 +833,7 @@ proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): b
   interaction.entered = now
   interaction.settled = interaction.cursor
   interaction.menu = none(ScreenPosition)
+  interaction.index_disengaged = none(int) # A fresh drag holds nothing at arm's length.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Multivector)
@@ -777,6 +844,7 @@ proc cancelDrag*(interaction: var Interaction) =
   ## Abandon drag in progress without applying anything.
   interaction.is_dragging = false
   interaction.menu = none(ScreenPosition)
+  interaction.index_disengaged = none(int) # Or the next drag opens no menu over that object.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Multivector)
@@ -798,9 +866,30 @@ proc updateDrag*(
     interaction.menu = none(ScreenPosition)
     return
 
+  # Let go of a menu the cursor has left, so a wheel opened on the wrong object costs a
+  #   movement rather than the whole gesture. Everything after this reads `menu` again, so
+  #   clearing it here is the whole of the re-aiming: the latch below starts following hover,
+  #   `index_source` is never touched, and the pair becomes the original source with whatever
+  #   the drag travels to next. See `PIXELS_MENU_DISENGAGE` on what this costs a throw.
+  if interaction.menu.isSome:
+    let
+      dx_menu = interaction.cursor.x - interaction.menu.get.x
+      dy_menu = interaction.cursor.y - interaction.menu.get.y
+    if dx_menu*dx_menu + dy_menu*dy_menu >
+        PIXELS_MENU_DISENGAGE*PIXELS_MENU_DISENGAGE:
+      interaction.menu = none(ScreenPosition)
+      interaction.index_disengaged = interaction.index_destination
+      interaction.entered = now
+      interaction.settled = interaction.cursor
+
   # Latch what the drag points at while no menu is open, so the one that opens is the one
   #   whose destination the wedges will act on.
   if interaction.menu.isNone: interaction.index_destination = interaction.index_hover
+
+  # ...and stop holding a target at arm's length once the drag has actually left it.
+  if interaction.index_disengaged.isSome and
+      interaction.index_hover != interaction.index_disengaged:
+    interaction.index_disengaged = none(int)
 
   let over = destinationOf(interaction)
   interaction.is_over_target =
@@ -837,7 +926,7 @@ proc updateDrag*(
     of MenuArming.Never: false
     of MenuArming.OnDwell: now - interaction.entered >= SECONDS_DWELL_MENU
     of MenuArming.Always: true
-  if interaction.menu.isNone and is_menu_due:
+  if interaction.menu.isNone and is_menu_due and interaction.index_disengaged.isNone:
     interaction.menu = some(interaction.cursor)
 
 
@@ -901,7 +990,7 @@ proc commitChoice*(
   let
     anchor = creationAnchor(operation, m, n, derived.get)
     index_created =
-      scene.addItem(derived.get, label, inkCycled(scene.len), now, anchor)
+      scene.addItem(derived.get, label, scene.takeInk(), now, anchor)
   DragOutcome(
     message: &"{label} gave {shapeText(derived.get)}.",
     index_created: some(index_created), choice: some(choice), operands: operands,
@@ -921,16 +1010,31 @@ proc endDrag*(
   ##   and the menu's centre are both already known, so neither path gets a chance to
   ##   disagree about which wedge a release landed in.
   ##   Always clears drag state; the message names the outcome even where nothing was done.
-  defer: interaction.cancelDrag()
+  let was_dragging = interaction.is_dragging
+  defer:
+    # **A construction gesture steps the palette whether or not it built anything.** The
+    #   reader watched a colour on the band for the whole drag; offering that same colour
+    #   again to the next attempt reads as the gesture having never registered. A release
+    #   that *did* build already took its hue through `takeInk`, and a click is excluded --
+    #   selecting is not constructing. `More` is excluded too: the construction is still in
+    #   flight, and the apply picker it opens will take the hue the wheel just previewed.
+    if was_dragging and result.index_clicked.isNone and result.index_created.isNone and
+        result.choice != some(DragChoice.More):
+      scene.skipInk()
+    interaction.cancelDrag()
   if not interaction.is_dragging: return DragOutcome()
 
   # A press that never moved is a click, not a drag, and a click selects what it came down
   #   on. Answered here rather than in each render path because the drag it abandons was
   #   begun here: the press target chooses the scheme, so the press over an object has to
   #   start a drag eagerly, and *whether it was one* is only knowable at the release.
-  #   A drag armed `Always` is excluded: it asked for the menu, and offering it and then
-  #   quietly selecting instead would make the right button unreliable.
-  if interaction.arming != MenuArming.Always and interaction.isClick(now):
+  #   **The open menu is what excludes a click, not the arming.** A right press once could
+  #   never be a click at all, on the reasoning that it had asked for the wheel and being
+  #   quietly answered with a selection would make the button unreliable. But the wheel only
+  #   opens over a target *other* than the source, so a right press that never left its own
+  #   object never opened one and there is no offer to withdraw -- and refusing it left the
+  #   right button doing nothing whatsoever on a plain click.
+  if interaction.menu.isNone and interaction.isClick(now):
     return
       if scene.isAlive(interaction.index_source):
         DragOutcome(index_clicked: some(interaction.index_source))

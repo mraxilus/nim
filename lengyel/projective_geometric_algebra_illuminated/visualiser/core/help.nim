@@ -55,14 +55,24 @@ const ENTRIES_MAX_PATH* = 8
   ##
   ##   | Path | Rows | Rows box | Overflow |
   ##   |------|------|----------|----------|
-  ##   | `drag` | 5 | 301 px | 0 |
-  ##   | `select` | 5 | 269 px | 0 |
+  ##   | `drag` | 5 | 320 px | 4 px |
+  ##   | `select` | 7 | 320 px | **48 px** |
   ##   | `menu` | 5 | 219 px | 0 |
   ##   | `panel` | 5 | 328 px | 0 |
   ##   | `camera` | 6 | 314 px | 0 |
   ##   | `keys` | 8 | 320 px | **129 px** |
   ##
-  ##   **`keys` is the one tab that scrolls on that screen, and it is left scrolling.** Its
+  ##   **`select` now scrolls too, by one row, and that is the trade taken.** Moving the
+  ##   menu onto the right button gave it two more rows to carry -- which button reveals,
+  ##   and what a right click does with a selection already standing -- and each teaches a
+  ##   binding a reader cannot discover any other way. Shortening was tried first: spelling
+  ##   shift out per button cost 125 px, folding it into one row recovered 77 of that, and
+  ##   trimming the three longest outcomes recovered nothing further, none of them having
+  ##   crossed a wrap boundary. What is left is one row of height against one row of
+  ##   teaching, on the tightest phone alone.
+  ##   `drag`'s 4 px is new since these numbers were first taken while its rows are
+  ##   untouched, so it is drift in the measuring environment rather than a change here.
+  ##   **`keys` is the other tab that scrolls there, and it is left scrolling.** Its
   ##   eight rows come to 449 px against a 320 px box. Fitting them means every outcome
   ##   under about 39 characters, which costs real bindings -- `enter`'s "hold shift to add
   ##   it" and `escape`'s "one step at a time" are exactly the things a reader cannot
@@ -153,7 +163,7 @@ const lut_help_entries* = block:
   ##   Entries of one path are written together, and the assertion below insists they stay
   ## that way: both front-ends walk this once in order, so a path split across two runs
   ## would render as two tabs of the same name.
-  var lut: array[34, HelpEntry]
+  var lut: array[36, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -189,14 +199,30 @@ const lut_help_entries* = block:
     "hand both objects to the apply picker, which lists every operation",
   )
 
-  add(HelpPath.Select, "click an object", "select just that one, dropping anything else")
+  # Which button brings the menu with it is `interaction.revealsMenuOn`'s to say, exactly as
+  #   the drag rows above read `armingOf`, so moving the menu to another button rewrites
+  #   these lines rather than leaving them quietly wrong.
+  #   **Shift gets one row, not one per button.** Spelling out all four combinations was
+  #   measured at 125 px over the box a 320-pixel phone gives this tab -- and shift means
+  #   the same thing whichever button it is held with, so four rows were saying one rule
+  #   twice. See `ENTRIES_MAX_PATH` on why the answer is fewer rows, not a bigger cap.
+  for button in [PointerButton.Left, PointerButton.Right]:
+    add(
+      HelpPath.Select, nameOf(button) & "-click an object",
+      if revealsMenuOn(button): "the same, and open its menu of actions"
+      else: "select just that one, dropping anything else",
+    )
   add(
-    HelpPath.Select, "shift-click an object",
-    "add it to the selection rather than replacing it",
+    HelpPath.Select, "hold shift as you click",
+    "add it, or drop it again if it is already picked",
+  )
+  add(
+    HelpPath.Select, nameOf(PointerButton.Right) & "-click with objects selected",
+    "bring their menu back, changing nothing",
   )
   add(
     HelpPath.Select, "click empty space",
-    "clear the selection, or select the sky if the scene has one",
+    "clear the selection, or pick the sky if there is one",
   )
   add(
     HelpPath.Select, "press and hold an object",

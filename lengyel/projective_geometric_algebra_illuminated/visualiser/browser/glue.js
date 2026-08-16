@@ -179,6 +179,33 @@ function clearSelection() {
   onSelectionChanged(null);
 }
 
+// What a click on an object does, given which button made it and whether shift was held.
+//   **Two independent questions**, and keeping them independent is the whole design: the
+//   button says whether the selection menu comes up (`nimRevealsMenuOnButton`), shift says
+//   whether the click adds to the selection or replaces it. Left picks silently, right picks
+//   and shows the menu, and either of them with shift adds or drops instead.
+//   **A null position does not mean "no menu"** -- `refreshSelectionMenu(null)` still shows
+//   the menu, positioned from the selection rather than from the cursor, which is what the
+//   keyboard path wants. So a non-revealing click hides it afterwards rather than hoping the
+//   argument covered it. That misreading shipped once here and the left button kept popping
+//   a menu it was supposed to have given up.
+//   Both branches live here rather than at the two call sites, which used to hold a copy
+//   each of the shift test.
+function pickOnClick(slot, button, is_shifted) {
+  const reveals = nimRevealsMenuOnButton(button);
+  // A selection already standing with its menu dismissed is a reader who wants that menu
+  //   back, not one who wants to throw the selection away -- so reveal it and pick nothing.
+  //   The rule is Nim's, asked rather than restated, since the desktop asks the same one.
+  if (reveals && !is_shifted &&
+      nimRevealsWithoutPicking(nimSelectionCount() > 0, isSelectionMenuShown())) {
+    refreshSelectionMenu(cursor_last);
+    return;
+  }
+  if (is_shifted) toggleSelection(slot, reveals ? cursor_last : null);
+  else selectOnly(slot, reveals ? cursor_last : null);
+  if (!reveals) hideSelectionMenu();
+}
+
 function adoptConstructionSelection() {
   // Every construction path already picked its own new object (see nimAddItem/
   //   nimApplyOperation/nimEndDrag's own doc comments), or cleared the selection
@@ -1945,24 +1972,25 @@ function endMouseDrag(e) {
     //   this build and the desktop cannot come to disagree about where the line is.
     const result = nimEndDrag(now());
     if (result.clicked_slot >= 0) {
-      if (e.shiftKey) toggleSelection(result.clicked_slot, cursor_last);
-      else selectOnly(result.clicked_slot, cursor_last);
+      pickOnClick(result.clicked_slot, button_mouse_drag, e.shiftKey);
     } else {
       toast(result.message);
       if (result.created_slot >= 0) adoptConstructionSelection();
       else if (result.is_more) openApplyPickerOnOperands(cursor_last);
     }
-  } else if (button_mouse_down === 0 && nimIsClick(now())) {
-    // A plain left click that began no drag to end -- so it landed on empty space, or on
-    //   the one thing that *is* empty space: a plane at horizon, which nimBeginDrag
-    //   refuses so this press could still have become an orbit. Clicking it selects it,
-    //   which is the only way a pointer can, since it can never be dragged from.
+  } else if (button_mouse_down !== null && nimIsClick(now())) {
+    // A plain click that began no drag to end -- so it landed on empty space, or on the one
+    //   thing that *is* empty space: a plane at horizon, which nimBeginDrag refuses so this
+    //   press could still have become an orbit or a pan. Clicking it selects it, which is
+    //   the only way a pointer can, since it can never be dragged from. **Either button**,
+    //   on the same rule as above: a right click on the sky behaving unlike a right click on
+    //   anything else would be a rule with a hole in it.
     if (nimIsHoverBackdrop() && nimHoverSlot() >= 0) {
-      if (e.shiftKey) toggleSelection(nimHoverSlot(), cursor_last);
-      else selectOnly(nimHoverSlot(), cursor_last);
-    } else if (!e.shiftKey) {
+      pickOnClick(nimHoverSlot(), button_mouse_down, e.shiftKey);
+    } else if (button_mouse_down === 0 && !e.shiftKey) {
       // Mirrors touch's own "tapping empty space always cancels" rule. A shift+click over
-      //   empty space is left a no-op, not a clear -- shift means "preserve what I have".
+      //   empty space is left a no-op, not a clear -- shift means "preserve what I have" --
+      //   and so is a right click, whose job on empty space is to pan.
       clearSelection();
     }
   }
@@ -2125,6 +2153,12 @@ function refreshSelectionMenu(position_local) {
   closeSelectionMenuOp(); // Any fresh selection change resets the picker closed.
   if (position_local) positionSelectionMenuAt(position_local); else updateSelectionMenuPosition();
   menu_selection.classList.add('show');
+}
+
+// Whether the floating selection menu is currently up. Its own reader because it is now a
+//   question the click rule asks (see `pickOnClick`), not just a class this file toggles.
+function isSelectionMenuShown() {
+  return menu_selection.classList.contains('show');
 }
 
 function hideSelectionMenu() {

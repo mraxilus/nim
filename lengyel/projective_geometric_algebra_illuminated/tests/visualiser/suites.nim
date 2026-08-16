@@ -2772,7 +2772,7 @@ suite "Interaction":
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
     check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
-    let outcome = interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK)
+    let outcome = interaction.endDrag(scene, 10.5)
     check outcome.index_clicked == some(0)
     check outcome.index_created.isNone
     check scene.len == 2 # Nothing built; a click picks, it does not construct.
@@ -2792,12 +2792,17 @@ suite "Interaction":
     #   returned is still a drag rather than a click that happened to end where it began.
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(1)
-    let outcome = interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK)
+    let outcome = interaction.endDrag(scene, 10.5)
     check outcome.index_clicked.isNone
     check outcome.index_created == some(2)
 
 
-  test "a press held past the click window is a drag even if it never moved":
+  test "a press that never moved stays a click however long it is held":
+    # **The regression case for a shipped fault.** A 0.35 s deadline stood in `isClick`
+    #   beside the distance bound, so shift-clicking with a press held even slightly long
+    #   selected nothing at all and answered "Released on its own source; nothing done" --
+    #   measured on the built page at 600 ms holds, three objects, none of them picked.
+    #   Nothing separates a click from a hold on a mouse: the dwell is touch-only.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
     scene.addItem(POINTS[1], "b", Ink.Rose)
@@ -2805,16 +2810,19 @@ suite "Interaction":
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
-    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
-    interaction.index_hover = some(1)
-    let outcome = interaction.endDrag(scene, 10.0 + 2.0*SECONDS_CLICK)
-    check outcome.index_clicked.isNone
-    check outcome.index_created == some(2)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 10.0)
+    for held in [0.05, 0.35, 0.6, 5.0, 60.0]:
+      check interaction.isClick(10.0 + held)
+    let outcome = interaction.endDrag(scene, 10.0 + 60.0)
+    check outcome.index_clicked == some(0)
+    check scene.len == 2 # Still a selection, not a construction.
 
 
-  test "the button that forces the menu never reports a click instead":
-    # It asked for the menu; offering one and then quietly selecting would make the right
-    #   button mean two things depending on how fast the reader let go.
+  test "a right press that never opened a wheel reports a click":
+    # It could not once: any drag armed `Always` was refused a click outright, on the
+    #   reasoning that it had asked for the menu. But the wheel only opens over a target
+    #   *other* than the source, so a press that never left its own object never asked for
+    #   anything -- and refusing it left the right button doing nothing on a plain click.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
     var interaction = Interaction(is_enabled: true)
@@ -2822,8 +2830,153 @@ suite "Interaction":
     interaction.index_hover = some(0)
     interaction.beginPress(now = 10.0)
     check interaction.beginDrag(arming = MenuArming.Always, now = 10.0)
-    check interaction.isClick(10.0 + 0.5*SECONDS_CLICK)
-    check interaction.endDrag(scene, 10.0 + 0.5*SECONDS_CLICK).index_clicked.isNone
+    check interaction.isClick(10.5)
+    check interaction.endDrag(scene, 10.5).index_clicked == some(0)
+
+
+  test "a release with the wheel open commits the wheel, never a click":
+    # The other half of that rule: once a menu *is* open the reader was offered a choice,
+    #   and answering with a quiet selection instead would make the button unreliable.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 10.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 10.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 10.0)
+    check interaction.menu.isSome # Armed `Always`, and now over another object.
+    check interaction.endDrag(scene, 10.5).index_clicked.isNone
+
+
+  test "the button that reveals the menu is the right one, and only it":
+    # Both render paths and the help panel read this; a fourth copy anywhere is drift.
+    check not revealsMenuOn(PointerButton.Left)
+    check revealsMenuOn(PointerButton.Right)
+    check not revealsMenuOn(PointerButton.Middle)
+
+
+  test "a revealing click only reveals while a selection stands with its menu down":
+    # Total over both booleans, so neither caller has an unhandled case.
+    check revealsWithoutPicking(has_selection = true, is_menu_shown = false)
+    check not revealsWithoutPicking(has_selection = true, is_menu_shown = true)
+    check not revealsWithoutPicking(has_selection = false, is_menu_shown = false)
+    check not revealsWithoutPicking(has_selection = false, is_menu_shown = true)
+
+
+  test "a wheel the cursor walks away from lets go, and re-aims onto the next object":
+    # What makes a wheel opened over the wrong object recoverable. Before this it latched
+    #   its destination for the rest of the drag, so the only way out was to release.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    scene.addItem(POINTS[2], "c", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isSome
+    let centre = interaction.menu.get
+
+    # Still inside the radius: an ordinary overshoot past a wedge keeps its menu.
+    interaction.updateCursor(centre.x + 0.5*PIXELS_MENU_DISENGAGE, centre.y)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isSome
+
+    # Past it: the menu goes, and does not come back while the cursor is still over that
+    #   same object -- otherwise disengaging would do nothing but move the menu.
+    interaction.updateCursor(centre.x + 2.0*PIXELS_MENU_DISENGAGE, centre.y)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isNone
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isNone
+
+    # On to a third object: open again, for the **original source** with the new
+    #   destination. The pair re-aims; it never chains off the object just left.
+    interaction.index_hover = some(2)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isSome
+    check interaction.index_source == 0
+    check destinationOf(interaction) == some(2)
+
+
+  test "a wheel opens again on the object it was let go of, once the drag has left it":
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    let centre = interaction.menu.get
+    interaction.updateCursor(centre.x + 2.0*PIXELS_MENU_DISENGAGE, centre.y)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isNone
+    # Off it entirely, then back: the hold at arm's length is released by leaving.
+    interaction.index_hover = none(int)
+    interaction.updateDrag(scene, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isSome
+
+
+  test "the palette steps on every released construction, built or not":
+    # The reader watched a colour on the band for the whole drag; offering it again to the
+    #   next attempt reads as the gesture having never registered.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    let ink_first = scene.inkNext
+    check scene.inkNext == ink_first # Peeking never walks the cycle.
+
+    # A release back on its own source builds nothing, and still steps.
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 0.0)
+    interaction.updateCursor(200.0 + 2.0*PIXELS_CLICK_SLOP, 200.0)
+    let refused = interaction.endDrag(scene, 0.0)
+    check refused.index_created.isNone
+    check scene.inkNext != ink_first
+    check scene.len == 2
+
+    # A click is not a construction, so it leaves the cycle alone.
+    let ink_after_refusal = scene.inkNext
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 1.0)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 1.0)
+    check interaction.endDrag(scene, 1.0).index_clicked == some(0)
+    check scene.inkNext == ink_after_refusal
+
+
+  test "a built object wears exactly the hue its drag was drawn in":
+    # The band, the comet and the ghost all read `inkOfDrag`, so what a reader watched is
+    #   what they get. It used to be the operation's own colour, which said nothing about
+    #   the object about to exist.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    let promised = interaction.inkOfDrag(scene.inkNext)
+    check promised == scene.inkNext
+    let outcome = interaction.endDrag(scene, 0.0)
+    check outcome.index_created.isSome
+    check scene[outcome.index_created.get].ink == promised
 
 
   test "a drag driven without a press is never mistaken for a click":
@@ -3343,12 +3496,12 @@ suite "Interaction":
     # Crossing empty space says nothing either way.
     interaction.index_hover = none(int)
     interaction.updateDrag(scene, 0.0)
-    check interaction.inkOfDrag == Ink.Guide
+    check interaction.inkOfDrag(scene.inkNext) == Ink.Guide
     # Standing over a pair that makes nothing wears the reserved magenta, and shows no
     #   ghost -- two signals, so the warning is never colour alone.
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
-    check interaction.inkOfDrag == Ink.Invalid
+    check interaction.inkOfDrag(scene.inkNext) == Ink.Invalid
     check interaction.preview.isNone
 
 
