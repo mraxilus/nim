@@ -138,9 +138,19 @@ code { font: 0.88em var(--mono); background: var(--wash); padding: 0.1em 0.35em;
     ## custom properties, this defines them.
 
 
+const WORK* = "Ontology Partnerwork"
+  ## What this body of work is called where the pages are published.
+  ##   Every page carries it in front of its own name, so a gallery holding
+  ##     work from several places sorts them together and one of these can
+  ##     be told from somebody else's at a glance.
+
+
 func document*(title, page_body: string): string =
   ## Wrap one page: the shared style sheet, then whatever the page is about.
-  &"<meta charset=\"utf-8\">\n<title>{title}</title>\n{STYLE}{page_body}"
+  ##   The title is what a browser tab and a published gallery both show, so
+  ##     it carries the name of the work as well as the name of the page.
+  &"<meta charset=\"utf-8\">\n<title>{WORK} — {title}</title>\n" &
+    &"{STYLE}{page_body}"
 
 
 func filled*(template_body: string;

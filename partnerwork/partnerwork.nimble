@@ -14,10 +14,16 @@ proc bundleApp() =
   ##
   ## The bundle drops the document wrapper as well: it is written to be embedded
   ## in a page that supplies its own, which is what publishing it expects.
-  const script_tag = "<script src=\"app.js\"></script>"
+  ## The published page is titled for the body of work as well as for
+  ## itself, so a gallery holding several sorts them together; the page
+  ## served locally keeps its own plain name.
+  const
+    script_tag = "<script src=\"app.js\"></script>"
+    work = "Ontology Partnerwork"
   let markup = readFile("app/index.html")
   let script = readFile("app/app.js")
-  let head = markup[markup.find("<title>") .. markup.find("</style>") + 7]
+  var head = markup[markup.find("<title>") .. markup.find("</style>") + 7]
+  head = head.replace("<title>", "<title>" & work & " — ")
   var body = markup[markup.find("<body>") + 6 ..< markup.find("</body>")]
   if not body.contains(script_tag):
     quit "app/index.html no longer loads app.js the way the bundle expects"
