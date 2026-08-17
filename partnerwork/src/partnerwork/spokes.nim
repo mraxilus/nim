@@ -244,7 +244,8 @@ func naming(x, y: int; lines: seq[string]; colour: string): string =
   for index, line in lines:
     result.add "<text class=\"map-label\" x=\"" & $x & "\" y=\"" &
       $(top + LINE_HEIGHT * (index + 1) - 1) & "\" text-anchor=\"middle\"" &
-      " style=\"" & LABEL_FONT & "; fill: " & colour & "\">" & line & "</text>"
+      " style=\"" & LABEL_FONT & "; fill: " & colour & "\">" & labelled(line) &
+      "</text>"
 
 
 

@@ -138,6 +138,37 @@ func armColour*(side: Side): string =
   DEEP[if side == Side.Left: Arm.L else: Arm.R]
 
 
+func followColour*(site: Site): string =
+  ## Get the ink one hand of the follow is drawn in.
+  ##   The plain shade, which is theirs wherever the two dancers are told
+  ##     apart -- the same ink that hand's own mark carries in every frame
+  ##     picture on the page.
+  INK[if site == Site.LeftHand: Arm.L else: Arm.R]
+
+
+func labelled*(line: string): string =
+  ## Say one line of a name as markup, each hand in its own dancer's ink.
+  ##   A name says which hands a move joins, and until now said it in one
+  ##     voice: `collect right` was all of it the acting arm's deep ink, while
+  ##     `right` there is the *follow's* hand and is drawn in their plain
+  ##     shade everywhere else on the page.  Inked apart, the words draw the
+  ##     connection they name -- deep running into plain, hand to hand, the
+  ##     way the picture beside them does (rule 9).
+  ##   Only a stretch that names a hand is wrapped, so a line with no hand in
+  ##     it -- `over`, `cut`, `two moves` -- stays the one plain text node it
+  ##     always was, and the space before a hand stays outside the wrapping so
+  ##     the words are still words.
+  ##   The line's own width is measured before this, on the plain text, since
+  ##     what a plate has to cover is the letters and not the markup.
+  for run in named(line):
+    if run.lead.isNone and run.follow.isNone:
+      result.add run.text
+      continue
+    let ink = if run.lead.isSome: armColour(run.lead.get)
+              else: followColour(run.follow.get)
+    result.add "<tspan style=\"fill: " & ink & "\">" & run.text & "</tspan>"
+
+
 
 #[ Elements ]#
 
@@ -166,7 +197,8 @@ func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
     "\" y=\"" & $top & "\" width=\"" & $width & "\" height=\"" & $height &
     "\" rx=\"3\"/>"
   for index, line in lines:
-    result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, line, style)
+    result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, labelled(line),
+      style)
 
 
 func waking(now, was, moving: bool): string =
@@ -417,15 +449,15 @@ func arcName(a, b: Frame; standing: Option[Frame]): string =
   ##     whichever hand ends up on top, which is the other one going the
   ##     other way, so a curve that named one of them would be wrong half
   ##     the times it was read.  There it says only what it is.
-  let named = compound(a, b)
-  if named.isNone:
+  let helper = compound(a, b)
+  if helper.isNone:
     return ""
   if standing == some(a):
     return compoundName(a, b)
   if standing == some(b):
     return compoundName(b, a)
   let there = compoundName(a, b)
-  if there == compoundName(b, a): there else: ($named.get).toLowerAscii
+  if there == compoundName(b, a): there else: ($helper.get).toLowerAscii
 
 
 func arc(a, b: Frame; name: string; standing, was: Option[Frame];
@@ -582,8 +614,8 @@ func renderMap*(here: Option[Frame]; motion = Motion.Still;
   var drawn: seq[string] = @[]
   for source in FRAMES:
     for target in FRAMES:
-      let named = compound(source, target)
-      if named.isNone:
+      let helper = compound(source, target)
+      if helper.isNone:
         continue
       let pair = sorted(@[source.key, target.key]).join("-")
       if pair in drawn:

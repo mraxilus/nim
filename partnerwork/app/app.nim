@@ -205,6 +205,29 @@ func tag(name, attributes, body: string): string =
     "</" & name & ">"
 
 
+func inked(said: string): string =
+  ## Say a phrase with each hand it names drawn in that dancer's own ink.
+  ##   `collect Left to left` joins two hands, and the sentence already says
+  ##     which two -- `Left` is the lead's and `left` the follow's, by case
+  ##     alone.  Inking them apart draws the connection the words describe,
+  ##     deep running into plain, the same way the picture beside them does.
+  ##   The same reading the graph's labels get, so a move called one thing in
+  ##     the drawing is called it in the same colours in the list.
+  ##   Escaped a stretch at a time: the markup goes *between* the stretches,
+  ##     so escaping the whole afterwards would escape the markup too.
+  ##   Only where markup can go.  A matrix cell says its phrase in a `title`
+  ##     attribute and `say` speaks it aloud, and neither can carry a colour --
+  ##     which is why `phrase` still hands back plain words and this is a
+  ##     second reading of them rather than a change to what they are.
+  for run in named(said):
+    if run.lead.isNone and run.follow.isNone:
+      result.add esc(run.text)
+      continue
+    let ink = if run.lead.isSome: armColour(run.lead.get)
+              else: followColour(run.follow.get)
+    result.add tag("span", "style=\"color: " & ink & "\"", esc(run.text))
+
+
 func button(action, value, classes, body: string): string =
   ## Form a button carrying the action the page should take when it is clicked.
   tag("button", "class=\"" & classes & "\" data-action=\"" & action &
@@ -231,12 +254,12 @@ func renderMoves(source: Frame): string =
         esc(manner(move.helper)))
       previous = helper
     rows.add button("move", move.to.key, "move",
-      tag("span", "class=\"phrase\"", esc(phrase(source, move))) &
+      tag("span", "class=\"phrase\"", inked(phrase(source, move))) &
       tag("span", "class=\"target\"", esc(move.to.describe)))
   var shortcuts = ""
   for target in FRAMES:
-    let named = compound(source, target)
-    if named.isNone:
+    let helper = compound(source, target)
+    if helper.isNone:
       continue
     let steps = route(source, target)
     var spelled = ""
@@ -245,7 +268,7 @@ func renderMoves(source: Frame): string =
         spelled.add " &rarr; "
       spelled.add esc(step.helper.name)
     shortcuts.add button("compound", target.key, "move two",
-      tag("span", "class=\"phrase\"", esc(compoundPhrase(source, target))) &
+      tag("span", "class=\"phrase\"", inked(compoundPhrase(source, target))) &
       tag("span", "class=\"target\"", esc(target.describe) & " &middot; " &
         spelled))
   if shortcuts.len > 0:
@@ -286,7 +309,7 @@ func renderElsewhere(source: Frame): string =
     var standing = source
     for step in route(source, target):
       detail.add tag("span", "class=\"step\"",
-        esc(phrase(standing, step)) & tag("i", "", esc(step.to.describe)))
+        inked(phrase(standing, step)) & tag("i", "", esc(step.to.describe)))
       standing = step.to
     rows.add tag("div", "class=\"far\"",
       tag("span", "class=\"phrase\"", esc(target.describe)) &
@@ -300,7 +323,7 @@ func renderHistory(danced: seq[Step]): string =
   ## Show the sequence danced so far, with the ways back out of it.
   var rows = ""
   for index in countdown(danced.high, 0):
-    rows.add tag("li", "", esc(danced[index].phrase) & " &rarr; " &
+    rows.add tag("li", "", inked(danced[index].phrase) & " &rarr; " &
       esc(danced[index].to.describe))
   tag("section", "class=\"panel\"",
     tag("h3", "", "danced &middot; " & $danced.len) &
@@ -362,7 +385,9 @@ func renderSpokesView(current: Frame; motion: Motion;
       "Every spoke is a way out of it and nothing else is drawn. A collect " &
       "takes a hand so it points up, a drop releases one so it points down, " &
       "and a compound is two moves so it goes out to the side, inked in both " &
-      "the arms it hands a hand between. Take a spoke and it becomes the " &
+      "the arms it hands a hand between. Each name says the hand of the follow " &
+      "it takes or lets go of, in that hand's own colour, and the rest of it is " &
+      "the lead's arm in the deeper shade. Take a spoke and it becomes the " &
       "middle."))
 
 
@@ -375,7 +400,9 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
       "A line you are standing on is named for the move away from you, which is " &
       "the one you could make; a line you are not is named for the move that " &
       "runs up it. Every name says the hand of the follow it takes or lets go " &
-      "of, and the ink says which of the lead's arms does it. Where a name " &
+      "of, written in that hand's own colour, and the rest of the name is the " &
+      "arm of the lead that does it, in the deeper shade &mdash; so a name " &
+      "runs deep into plain exactly as the connection it makes does. Where a name " &
       "lies across its own line the line is cut for it, with a round end " &
       "either side, so the break reads as a name put there rather than as a " &
       "line stopping. A dashed curve is a compound, and is inked in both " &

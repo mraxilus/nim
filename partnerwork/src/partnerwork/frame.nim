@@ -218,6 +218,66 @@ func describeConnection*(side: Side; site: Site; joiner = "-to-"): string =
   leadName(side) & joiner & followName(site)
 
 
+# At most one of the two hands is ever filled, and which one is the whole of
+# what a drawing needs to know to ink the word: the model's own two types are
+# what keep the dancers' hands apart, so they are what this hands back rather
+# than one side and a flag beside it.
+type Named* = tuple ## One stretch of a name, and the hand it names.
+  text: string         ## The letters, as they were written.
+  lead: Option[Side]   ## The lead's hand, where this stretch names one.
+  follow: Option[Site] ## The follow's hand, where this stretch names one.
+
+
+func named*(said: string): seq[Named] =
+  ## Break a name into stretches, marking each word that names a hand.
+  ##
+  ## The case is the whole of what says whose hand a word means -- `Left` is
+  ## the lead's where `left` is the follow's, throughout the ontology -- so a
+  ## name can be *read* for its hands rather than carrying them alongside as a
+  ## second thing to keep in step.  `collect Left to left` says which two hands
+  ## it joins in the letters it is already made of.
+  ##   Which is why this takes a finished name rather than being folded into
+  ##     the naming: `phrase`, `label` and `compoundName` all spell hands the
+  ##     one way, and a reader of any of them can be told apart the same way.
+  ##   Words are stretches of letters; everything else -- spaces, commas, the
+  ##     hyphens in `Left-to-left` -- rides along with the words it sits
+  ##     between, so a name comes back in the order it was written and joins
+  ##     back into itself exactly.
+  var
+    plain = ""
+    word = ""
+
+  func hand(word: string): Named =
+    ## Read one word as a hand, where it is one.
+    for side in Side:
+      if word == leadName(side):
+        return ("", some side, none(Site))
+    for site in Site:
+      if word == followName(site):
+        return ("", none(Side), some site)
+    ("", none(Side), none(Site))
+
+  func flush(text: string): seq[Named] =
+    if text.len > 0: @[(text, none(Side), none(Site))] else: @[]
+
+  for character in said & " ":
+    if character in {'a'..'z', 'A'..'Z'}:
+      word.add character
+      continue
+    let read = hand(word)
+    if read.lead.isSome or read.follow.isSome:
+      result.add flush(plain)
+      result.add (word, read.lead, read.follow)
+      plain = ""
+    else:
+      plain.add word
+    plain.add character
+    word = ""
+  # The trailing space this walked one character past is not part of the name.
+  plain.setLen(plain.len - 1)
+  result.add flush(plain)
+
+
 func describe*(frame: Frame): string =
   ## Name a frame in the vocabulary of the ontology.
   ##

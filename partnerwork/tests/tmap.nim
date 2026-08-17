@@ -11,6 +11,21 @@ import std/[options, strutils, unittest]
 import ../src/partnerwork
 
 
+func spoken(picture: string): string =
+  ## Take the ink back out of a drawing, leaving only the words it says.
+  ##   A name is drawn in the hands it names, so `drop left` is three elements
+  ##     and not one, and a test that asks what a label *says* would otherwise
+  ##     be asking how it is coloured as well.
+  ##   How it is coloured is its own test, below.
+  result = picture
+  while true:
+    let at = result.find("<tspan")
+    if at < 0:
+      break
+    result = result[0 ..< at] & result[result.find('>', at) + 1 .. ^1]
+  result = result.replace("</tspan>", "")
+
+
 func attr(chunk, name: string): int =
   ## Read one number out of a drawn element, for measuring what was drawn.
   let key = name & "=\""
@@ -198,7 +213,7 @@ suite "the drawing":
         let naming = label(here, Move(helper: move.helper, side: move.side,
           to: move.to))
         for line in naming:
-          check picture.contains(">" & line & "<")
+          check picture.spoken.contains(">" & line & "<")
       # And a drop names the hand it lets go of, as a collect names the hand it
       # takes.  It used to read a bare `drop`, which left the reader to work out
       # what was being released from the ink the word was written in.
@@ -207,7 +222,7 @@ suite "the drawing":
         if move.helper != Helper.Drop:
           continue
         inc drops
-        check picture.contains(
+        check picture.spoken.contains(
           ">drop " & followName(here.hold[move.side].get) & "<")
       check not picture.contains(">drop<")
       if here.countHolds > 0:
@@ -224,7 +239,7 @@ suite "the drawing":
         if compound(here, target).isNone:
           continue
         let picture = renderMap(some(here))
-        check picture.contains(">" & compoundName(here, target) & "<")
+        check picture.spoken.contains(">" & compoundName(here, target) & "<")
 
   test "a compound is inked in both the arms it hands a hand between":
     # An ordinary line has one ink because the same arm acts whichever way it is
@@ -281,3 +296,27 @@ suite "the drawing":
     for source in FRAMES:
       moved += moves(source).len
     check lines == moved div 2
+
+  test "a name says the follow's hand in the follow's own ink":
+    # A label is the lead acting, so the whole of it used to be the lead's deep
+    # shade -- including the word for the hand being taken, which is the
+    # *follow's*.  The picture beside it draws that connection deep running into
+    # plain, and the words now say it the same way.
+    #   The word alone is wrapped, and the space before it left outside, so the
+    #   line still reads as one sentence rather than as a row of chips.
+    var named_hands = 0
+    for here in FRAMES:
+      let picture = renderMap(some(here))
+      for move in moves(here):
+        let hand = case move.helper
+                   of Helper.Collect: move.to.hold[move.side]
+                   of Helper.Drop: here.hold[move.side]
+        if hand.isNone:
+          continue
+        inc named_hands
+        check picture.contains("<tspan style=\"fill: " &
+          followColour(hand.get) & "\">" & followName(hand.get) & "</tspan>")
+        # The follow's plain shade, never the lead's deep one.
+        check not picture.contains("<tspan style=\"fill: " &
+          armColour(move.side) & "\">" & followName(hand.get) & "</tspan>")
+    check named_hands > 0
