@@ -404,15 +404,22 @@ demo, since each already leaves its new object selected — none of them needs t
 camera exists.
 
 **What "shown" means is a requirement, not a matter of taste: every selected object must
-reach the centred two thirds of the window.** Which of two criteria applies is decided by
-what the object is *drawn at*, not by its grade. A point and a plane are drawn at fixed
-sizes the camera does not set, so each has to fit inside that box whole — a point inset by
-its own drawn radius, a plane by the whole circle a reader can see, judged where that circle
-is actually centred rather than where the plane's support happens to lie. A line is drawn out
-to the horizon, which moves with the camera, so it has no size to fit and need only *cross*
-the box; demanding containment there would push the camera back until it was unreadably
-small. **A plane whose disc covers the frame is not shown** — that is the case a reader
-complains about, seeing no edge of the circle anywhere and the camera refusing to move.
+reach the centred two thirds of the window.** Which criterion applies is decided by what the
+object is *drawn at*, not by its grade. A **point** is drawn at a fixed size the camera does
+not set, so it has to fit inside that box whole, inset by its own drawn radius. A **line** is
+drawn out to the horizon, which moves with the camera, so it has no size to fit and need only
+*cross* the box; demanding containment there would push the camera back until it was
+unreadably small.
+
+**A plane splits the question in two, because its disc is wide enough that the two halves
+want different bounds.** Its centre says whether the plane is what the view is about, so it
+answers to the centred box like any other position — and it is judged where the circle is
+actually centred, not where the plane's support happens to lie. Its rim says only whether the
+whole circle can be seen, so it answers to the **frame**: an outer edge resting near the edge
+of the screen is a plane a reader can read, and making it clear the centred box as well costs
+half again as much camera movement for nothing. **A plane whose disc covers the frame is
+still not shown** — that is the case a reader complains about, seeing no edge of the circle
+anywhere and the camera refusing to move.
 
 **That box must reach no further across than it reaches down.** Two thirds of a *width* is
 two thirds of an aspect ratio's worth of world, since the field of view is vertical, so a

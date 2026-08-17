@@ -1658,6 +1658,14 @@ suite "Camera Aim":
       ## twice now a rule about screen geometry here passed a single-orientation check and
       ## was plainly wrong from a camera nobody had looked from.
 
+  proc marginsCentred(): (float, float) =
+    ## Measure how far in the centred box begins, across and down, in this suite's frame.
+    ##   Read out of `camera.reachCentred` rather than written again here, so a case
+    ##   checking something *against* the box cannot come to disagree with the box.
+    let (reach_across, reach_down) = reachCentred(WIDTH_AIM, HEIGHT_AIM, 0.0)
+    (0.5*(float(WIDTH_AIM) - reach_across), 0.5*(float(HEIGHT_AIM) - reach_down))
+
+
   proc placementAim(azimuth, elevation: float): Camera =
     ## Build a camera orbiting the origin at the given angles, for the sweeps below.
     initCamera(target = ORIGIN, distance = 12.0, azimuth = azimuth, elevation = elevation)
@@ -1862,6 +1870,74 @@ suite "Camera Aim":
     )
 
 
+  test "a plane is centred by its middle and bounded by its rim, against two bounds":
+    # The two questions a disc's own size forces apart. Its centre says whether the plane is
+    #   what the view is about, so it answers to the centred box like any other position;
+    #   its rim says only whether the whole circle can be seen, so it answers to the frame.
+    #   Holding the rim to the box as well is what made picking the demo's ground plane
+    #   throw the camera from 19 out to 29.9 where 19 already showed the whole circle.
+    let ground = toMultivector(ORIGIN) ∧ toMultivector(Position(x: 1.0, y: 0.0, z: 0.0)) ∧
+      toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
+    let (margin_x, margin_y) = marginsCentred()
+
+    proc rimAt(place: Camera; centre: Position): tuple[past_box, off_frame: bool] =
+      ## Walk the drawn rim, reporting whether it reaches past the centred box and whether
+      ## any of it leaves the frame -- the two bounds this rule now tells apart.
+      let
+        axes = frame(ground).get
+        view_projection = place.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
+      for step in 0 ..< 96:
+        let turn = (2.0*PI*float(step))/96.0
+        let at = projectToScreen(
+          view_projection, WIDTH_AIM, HEIGHT_AIM,
+          centre + EXTENT_PLANE_F*(cos(turn)*axes.axis_first + sin(turn)*axes.axis_second),
+        )
+        if at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
+            at.y < margin_y or at.y > float(HEIGHT_AIM) - margin_y:
+          result.past_box = true
+        if at.x < 0.0 or at.x > float(WIDTH_AIM) or
+            at.y < 0.0 or at.y > float(HEIGHT_AIM):
+          result.off_frame = true
+
+    # Standing where the rim reaches past the centred box and stays on screen: in view, and
+    #   *because* the rim is only held to the frame. Both halves asserted, neither assumed.
+    var camera = placementAim(0.0, 0.42)
+    camera.distance = 19.0
+    let spread = rimAt(camera, positionAnchor(ground).get)
+    check spread.past_box
+    check not spread.off_frame
+    check isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
+
+    # Now far enough back that the whole disc fits well inside the frame, and walk where it
+    #   is drawn out sideways until its own centre leaves the centred box. The rim is still
+    #   wholly on screen there, so what refuses it is the centre alone -- the half a
+    #   rim-only test would miss.
+    var afar = camera
+    afar.distance = 40.0
+    let projection_afar = afar.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
+    # Sideways along the camera's own right, which at any elevation lies flat in the plane
+    #   the disc is drawn in -- so this walks where the circle is centred without lifting it
+    #   off its own plane, and moves it across the screen rather than into the distance.
+    let across = afar.frame(afar.eye).axis_right
+    var found_off_centre = false
+    for step in 1 .. 60:
+      let drawn = ORIGIN + float(step)*across
+      let at = projectToScreen(projection_afar, WIDTH_AIM, HEIGHT_AIM, drawn)
+      let is_centre_out = at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
+        at.y < margin_y or at.y > float(HEIGHT_AIM) - margin_y
+      if not (is_centre_out and not rimAt(afar, drawn).off_frame): continue
+      found_off_centre = true
+      check not isShownCentrally(ground, afar, WIDTH_AIM, HEIGHT_AIM, some(drawn))
+      break
+    check found_off_centre # The walk really did straddle it, so the check above ran.
+
+    # And close in, where the rim leaves the frame, it is out of view however centred it is.
+    var near = camera
+    near.distance = 6.0
+    check rimAt(near, positionAnchor(ground).get).off_frame
+    check not isShownCentrally(ground, near, WIDTH_AIM, HEIGHT_AIM)
+
+
   test "a plane filling the frame is not in view; framing pulls its whole disc in":
     # The complaint this rule was rewritten for: a disc wide enough to cover the box was
     #   read as in view -- the sight axis struck it, so picking it moved the camera not at
@@ -1882,6 +1958,8 @@ suite "Camera Aim":
         let axes = frame(ground).get
         let view_projection =
           framed.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
+        let (margin_x, margin_y) = marginsCentred()
+        var is_past_box = false
         for step in 0 ..< 96:
           let turn = (2.0*PI*float(step))/96.0
           let at = projectToScreen(
@@ -1893,6 +1971,16 @@ suite "Camera Aim":
           check at.isInFront
           check at.x >= 0.0 and at.x <= float(WIDTH_AIM)
           check at.y >= 0.0 and at.y <= float(HEIGHT_AIM)
+          # ... and the rim is allowed to reach past the *centred box* on the way, which is
+          #   the whole of what this rule loosened. Without this the case would pass just as
+          #   well under the stricter one and say nothing about which is in force.
+          if at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
+              at.y < margin_y or at.y > float(HEIGHT_AIM) - margin_y:
+            is_past_box = true
+        check is_past_box
+        # And it costs strictly less than making the disc fit that box would have.
+        check framed.distance <
+          distanceFitting(EXTENT_PLANE_F, camera, WIDTH_AIM, HEIGHT_AIM, 0.0)
 
 
   test "a plane is judged by the disc drawn, not by the one its support would carry":

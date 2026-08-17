@@ -2214,22 +2214,52 @@ first-crossing shape is what handles the path not being strictly monotone.
 Two thirds rather than the whole frame because an object clinging to the very edge is
 visible without being what the view is about, and the marker ringing it is half off-frame.
 
-**Two criteria, not one, and the split follows what each shape is *drawn at*.**
-`picking.isShownCentrally` asks a **point** and a **finite plane** to fit inside the box,
-and a **line** only to *cross* it. A point's dot and a plane's disc are both drawn at a size
-the camera does not set (`mesh.SIZE_POINT`, `mesh.EXTENT_PLANE = 8` world units), so each is
-a bounded thing a frame can hold whole; a line is drawn out to `radius_horizon`, which moves
-with the camera, so it has no size to fit and demanding one would mean a camera pulled back
-until it was a speck. Each shape is tested against exactly what `mesh.addObject` puts on
-screen — a line's two halves clipped to the eye side as `pickNearest` clips them, a plane's
-whole rim, a horizon line's great circle, a horizon plane's whole sky. Screen segments meet
-the box by Liang–Barsky clipping rather than by sampling: a straight segment either crosses
-an axis-aligned box or it does not, and asking exactly is cheaper than sampling densely
-enough to be sure of a thin near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half
-of `mesh.SIZE_POINT`, so its drawn dot fits rather than only its middle — deliberately *not*
+**Three readings, not one, and the split follows what each shape is *drawn at*.**
+
+| Shape | In view when |
+|---|---|
+| Point | Its dot fits inside the centred box. |
+| Line | It merely crosses the centred box. |
+| Plane | Its disc is centred in the centred box, and its rim is on screen. |
+
+A point's dot and a plane's disc are both drawn at a size the camera does not set
+(`mesh.SIZE_POINT`, `mesh.EXTENT_PLANE = 8` world units), so each is a bounded thing a frame
+can hold whole; a line is drawn out to `radius_horizon`, which moves with the camera, so it
+has no size to fit and demanding one would mean a camera pulled back until it was a speck.
+Each shape is tested against exactly what `mesh.addObject` puts on screen — a line's two
+halves clipped to the eye side as `pickNearest` clips them, a plane's whole rim, a horizon
+line's great circle, a horizon plane's whole sky. Screen segments meet the box by
+Liang–Barsky clipping rather than by sampling: a straight segment either crosses an
+axis-aligned box or it does not, and asking exactly is cheaper than sampling densely enough
+to be sure of a thin near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half of
+`mesh.SIZE_POINT`, so its drawn dot fits rather than only its middle — deliberately *not*
 inset by the selection marker, which swells while a touch hold fills, and a box breathing
-with a gesture would re-frame the view mid-hold. A plane needs no inset: what is being
-tested already *is* the drawn extent.
+with a gesture would re-frame the view mid-hold.
+
+**A plane is the one shape whose test splits in two**, because its disc is wide enough that
+"fits" and "is what the view is about" want different bounds. Its **centre** answers the
+second, against the same centred box every other position answers to. Its **rim** answers
+only the first, against the **frame** — inset by `INSET_RIM_SHOWN`, half the width
+`mesh.addPlaneRing` strokes it at, so an edge resting on the boundary keeps its whole stroke.
+Holding the rim to the box as well was the first attempt and overshot: it threw the camera
+from 19 out to 29.9 on the demo's own ground plane where 19 already showed the whole circle,
+which was reported as the plane moving too far. Measured across the change, picking that
+plane:
+
+| | rim in the centred box | rim on screen |
+|---|---|---|
+| 1440×900, from the home camera | 19 → 29.90 | 19 → **19** (no movement) |
+| 1440×900, dollied in to 8 | 8 → 29.95 | 8 → **15.24** |
+| 390×844, from the home camera | 19 → 63.26 | 19 → **42.76** |
+
+The rim lands where it is meant to: at 390×844 it spans x [2, 388] of a 390-wide frame. The
+looser rule is **strictly weaker** than the stricter one — a disc inside the box is inside
+the frame with its centre centred — so it can never cost more movement than before.
+
+The frame it must fit is the whole canvas, not the canvas minus an open panel. On the desktop
+that means a large disc's left edge can pass behind the panel; the centred box avoided that
+only by coincidence, its left edge falling near where that panel ends, and teaching the core
+where a front-end's chrome sits to preserve the coincidence buys less than it costs.
 
 **Why a plane had to change from crossing to fitting.** Reported as planes not recentring the
 way points do — "when clicking on the origin point there's a lot more movement than when
@@ -2238,10 +2268,8 @@ view and cost nothing, but dollied in to distance 8 the ground plane's rim spann
 [−1367, 2808] and y [288, 4562] of a 1440×900 frame and was still called in view, because
 the crossing rule was backed by a sight-axis ray meeting the disc — a disc covering the frame
 outright keeps its rim well outside the box, so without that ray a plane filling the view
-read as *out* of view. Both halves of that test are gone. After the change the same pick from
-either camera settles at distance 29.9 with the rim inside the box to the pixel, and a
-390×844 phone settles at 63.3 — a narrow frame really does have to stand that far back to
-hold a circle 16 units across.
+read as *out* of view. Both halves of that test are gone; what replaced them is the two-bound
+rule above, whose rim half is what keeps a covering disc out of view.
 
 **A plane is judged where its disc is drawn, not where its support is.** `mesh.addPlane`
 centres the disc on the item's stored creation anchor where it has one (`scene.creationAnchor`

@@ -544,6 +544,10 @@ func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: 
   ##   closer to the eye, so it subtends more.
   ##   Clamped to the same bound the user's own dolly is clamped to, so a selection spread
   ##   wider than the world may be viewed from pulls back as far as it may and no further.
+  ##   Solves the **centred box**, which is what a point is held to and stricter than what a
+  ##   plane's rim is (`picking.isPlaneShownCentrally` holds that to the frame). That keeps
+  ##   this a valid *upper bracket* for `framing.placementFor`'s bisection, which is all it
+  ##   is used as -- never as the answer.
   let sine = sin(halfAngleCentred(camera, width, height, inset))
   clamp(radius/max(sine, 1.0e-6), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
 
