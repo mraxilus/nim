@@ -966,8 +966,9 @@ proc nimDragTint(): seq[float32] {.exportc.} =
 proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
   ## Report the drag band's own head flat, `[x0, y0, x1, y1, ...]`, as one closed outline
   ## for the overlay to fill over the band.
-  ##   Shaped by `marker.cometFor`, and aimed from the drag source's anchor at **this
-  ##   module's own cursor** rather than at the one the presentation layer is holding.
+  ##   Shaped by `marker.cometFor`, and aimed from where the drag source is *drawn* -- a
+  ##   plane's own creation anchor included -- at **this module's own cursor** rather than
+  ##   at the one the presentation layer is holding.
   ##   Both are updated from the same pointer events, but only one of them can be the
   ##   answer, and the geometry belongs on the side that owns the gesture.
   ##   Empty where no drag is in flight, where the source's anchor is behind the eye, or
@@ -975,7 +976,8 @@ proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
   if not g_interaction.is_dragging: return
   let
     scale = g_camera.drawExtentFor(int(height))
-    anchor = anchorFor(g_scene.geometryAt(g_interaction.index_source), scale)
+    source = g_scene[g_interaction.index_source]
+    anchor = anchorFor(source.geometry, source.anchorOverride, scale)
   if anchor.isNone: return
   let screen = projectToScreen(
     g_camera.initMatrixViewProjection(float(width) / float(height)),
@@ -1049,10 +1051,10 @@ proc nimDragMenuLayout(): seq[float32] {.exportc.} =
 proc nimDragMenuHighlighted(): cint {.exportc.} =
   ## Report which wedge the cursor stands in as a `DragChoice` ordinal, or `SLOT_NONE`
   ## where it is back at the centre and nothing is chosen.
-  ##   Asked of `interaction.choiceAt`, the same call the release itself resolves through,
-  ##   so what is highlighted is never a second opinion about where the cursor is.
-  if g_interaction.menu.isNone: return SLOT_NONE
-  let choice = choiceAt(g_interaction.menu.get, g_interaction.cursor)
+  ##   Asked of `interaction.choosing`, the same call the release itself resolves through
+  ##   and the same one the ghost is shaped from, so what is highlighted is never a second
+  ##   opinion about where the cursor is.
+  let choice = g_interaction.choosing
   if choice.isNone: SLOT_NONE else: cint(ord(choice.get))
 
 
@@ -1107,10 +1109,13 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
 
 
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
-  ## Project the same representative point `picking.anchorFor` and
+  ## Project the same representative point `mesh.anchorFor` and
   ## `visualiser.drawInteractionOverlay` use for this item onto screen pixels, so the
   ## browser's own hover ring and drag rubber-band can be drawn as plain 2D overlay,
   ## exactly matching where the desktop build draws them.
+  ##   The item's own **drawn** centre, through the anchor-aware `anchorFor`: a plane's disc
+  ## is centred on its stored creation anchor, so a band or a menu answering from the
+  ## support would meet the plane at a point nowhere on the circle.
   ##   Reports `[x, y, is_in_front]`, the last 0 or 1: caller should draw nothing where
   ##   it is 0, matching `picking.isInFront`'s own gate -- also 0 where slot no longer
   ##   holds a live item, the same "nothing to draw" response a caller already handles,
@@ -1129,7 +1134,8 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
     return @[0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32]
   let
     scale = g_camera.drawExtentFor(int(height))
-    anchor = anchorFor(g_scene.geometryAt(int(slot)), scale)
+    item = g_scene[int(slot)]
+    anchor = anchorFor(item.geometry, item.anchorOverride, scale)
   if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   let screen = projectToScreen(vp, int(width), int(height), anchor.get)
@@ -1443,8 +1449,13 @@ proc nimBuildFrame(
   # What the drag in progress would build, in that same ghost ink, so a reader learns one
   #   "this is not committed yet" appearance rather than two. Mirrors
   #   `visualiser.assembleMeshes`.
+  # Centred on the anchor the commit itself will store, so a ghosted plane stays where it
+  #   was ghosted instead of jumping the instant the release lands.
   if g_interaction.preview.isSome:
-    discard g_meshes.addObject(g_interaction.preview.get, INK_GHOST.colour.muted(), scale)
+    discard g_meshes.addObject(
+      g_interaction.preview.get, INK_GHOST.colour.muted(), scale,
+      anchor_override = g_interaction.preview_anchor,
+    )
 
   # Everything selected, held back to here and drawn with the depth test off, so a picked
   #   object is never buried by whatever stands between it and the camera. Mirrors

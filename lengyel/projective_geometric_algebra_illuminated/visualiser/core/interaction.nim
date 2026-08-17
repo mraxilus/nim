@@ -13,6 +13,12 @@
 ## instead — `proposalFor` reads the two grades — and the drag *shows* its answer as a ghost
 ## before committing it, which is the self-revelation the gesture had none of.
 ##
+## What is ghosted is always **what letting go right now would commit**: the wedge the cursor
+## stands in once the right button's wheel is open, and `proposalFor`'s own answer where it
+## is not. `Interaction.proposal` holds that one answer, `endDrag` obeys it, and
+## `ReleaseEffect` names the three things it can amount to — nothing, a refusal, an object —
+## which is what the rubber-band is tinted from.
+##
 ## Hover is tracked independently of dragging, every frame, purely so the item a drag would
 ## start from can be shown before any button is pressed.
 ##
@@ -287,11 +293,23 @@ type
       ## own source. Distinct from `proposal` being none, which it also is over a pair
       ## that makes nothing -- and those two want opposite feedback, one neutral and one
       ## a warning, so the rubber-band's own tint needs to tell them apart.
-    proposal*: Option[DragChoice] ## What a plain release would commit right now.
+    proposal*: Option[DragChoice] ## What a release **right now** would commit.
+      ## The wedge the cursor stands in while a menu is open, and `proposalFor`'s own answer
+      ## where none is -- resolved in the very order `endDrag` resolves it, so what is
+      ## previewed and what is committed cannot come apart. None where a release would
+      ## commit nothing at all: over no target, or back at an open menu's own centre.
     preview*: Option[Multivector] ## What that proposal would make, for each render path to
-      ## ghost. None where the drag is over nothing, over its own source, or over a pair
-      ## that makes nothing -- and *that* is the case worth drawing nothing for, since it
-      ## is the only warning before a refused release.
+      ## ghost. None where the drag is over nothing, over its own source, over a pair that
+      ## makes nothing -- and *that* is the case worth drawing nothing for, since it is the
+      ## only warning before a refused release -- and over `More`, which builds nothing
+      ## itself and hands the pair to the apply picker instead.
+    preview_anchor*: Option[Position] ## Where `preview`'s own disc should be centred, for a
+      ## plane; none for every other shape and wherever `preview` is none.
+      ## Carried beside the preview rather than left to each render path, and computed
+      ## through the same `scene.creationAnchor` the commit itself uses: without it a
+      ## ghosted plane is drawn about its own support and then *jumps* to its creation
+      ## anchor the instant the release lands, which is the one moment a reader is watching
+      ## it most closely.
     arming*: MenuArming ## How this drag may come to open its menu, as its own pointer
       ## chose at the press. Set at `beginDrag` and read every frame after.
     entered*: float ## When the cursor last settled over a target, for the dwell to run
@@ -548,22 +566,62 @@ func proposalFor*(m, n: Multivector): Option[DragChoice] =
   none(DragChoice)
 
 
+func choosing*(interaction: Interaction): Option[DragChoice] =
+  ## Say which wedge of the open menu the cursor stands in, or none where no menu is open
+  ## at all and none where the cursor has come back to an open one's centre.
+  ##   **The one statement of which wedge**, so the highlight each front-end draws, the
+  ##   ghost `updateDrag` shapes and the object `endDrag` commits are never three opinions
+  ##   about where the cursor is. Each of those asked `choiceAt` separately before.
+  if interaction.menu.isNone: return none(DragChoice)
+  choiceAt(interaction.menu.get, interaction.cursor)
+
+
+type ReleaseEffect* {.pure.} = enum ## Name what letting go right now would do.
+  ## Three outcomes and not two, because a release that quietly does nothing and one that
+  ## refuses want opposite feedback -- and once a menu is open both are reachable over the
+  ## very same pair, depending only on where in the wheel the cursor is resting.
+  Nothing, ## End the gesture and build nothing, with nothing to warn about: over empty
+    ## space, over the drag's own source, or back at an open menu's own centre.
+  Refused, ## Reach a pair that makes nothing drawable, and say so.
+  Builds, ## Add an object -- or, for `More`, hand the pair to the apply picker, which
+    ## takes the very hue the wheel has been showing.
+
+
+func effectOf*(interaction: Interaction): ReleaseEffect =
+  ## Resolve what letting go right now would do, from the drag's own state.
+  ##   Reads `proposal` and `preview`, which `updateDrag` has already resolved in `endDrag`'s
+  ##   own order, rather than re-deriving either: this is the one place the three outcomes
+  ##   are told apart, and a second derivation is a second answer waiting to disagree.
+  if not interaction.is_over_target: return ReleaseEffect.Nothing
+  if interaction.proposal.isNone:
+    # Two ways to have no answer, and they are not the same event. With a menu open the
+    #   cursor is simply back at its centre and the gesture is being called off; with none
+    #   open `proposalFor` found nothing this pair makes, which is a refusal to warn about.
+    return
+      if interaction.menu.isSome: ReleaseEffect.Nothing else: ReleaseEffect.Refused
+  if interaction.proposal.get == DragChoice.More: return ReleaseEffect.Builds
+  if interaction.preview.isSome: ReleaseEffect.Builds else: ReleaseEffect.Refused
+
+
 func inkOfDrag*(interaction: Interaction; ink_next: Ink): Ink =
   ## Tint the rubber-band of the drag in progress by what releasing it would do.
-  ##   Three states, and the middle one is the reason this is not just `ink_next`: crossing
-  ##   empty space is neutral, standing over a pair that makes nothing wears the reserved
-  ##   `Ink.Invalid` magenta, and standing over one that makes something wears **the hue the
-  ##   new object will actually be**. The warning arrives *before* the release rather than as
-  ##   a message after it, which is the whole point of previewing at all -- and it is never
-  ##   colour alone, since the ghost simultaneously fails to appear.
+  ##   Three states, one per `ReleaseEffect`, and the middle one is the reason this is not
+  ##   just `ink_next`: a release that builds nothing and warns about nothing is neutral, one
+  ##   that would be refused wears the reserved `Ink.Invalid` magenta, and one that builds
+  ##   wears **the hue the new object will actually be**. The warning arrives *before* the
+  ##   release rather than as a message after it, which is the whole point of previewing at
+  ##   all -- and it is never colour alone, since the ghost simultaneously fails to appear.
+  ##   With the wheel open all three are reachable without leaving the target: the centre is
+  ##   neutral, a greyed wedge is magenta, an offered one is the new object's hue.
   ##   `ink_next` is `scene.inkNext`, passed in because this has no scene to ask. It used to
   ##   be the *operation's* own colour, which told a reader which of join/meet/project they
   ##   were about to get but nothing about the object they were about to have -- and the
   ##   operation is already named on the wedge and in the label, while the colour is the only
   ##   place the answer could have been shown.
-  if not interaction.is_over_target: Ink.Guide
-  elif interaction.proposal.isNone: Ink.Invalid
-  else: ink_next
+  case interaction.effectOf
+  of ReleaseEffect.Nothing: Ink.Guide
+  of ReleaseEffect.Refused: Ink.Invalid
+  of ReleaseEffect.Builds: ink_next
 
 
 
@@ -837,6 +895,7 @@ proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): b
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Multivector)
+  interaction.preview_anchor = none(Position)
   true
 
 
@@ -848,6 +907,7 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Multivector)
+  interaction.preview_anchor = none(Position)
 
 
 proc updateDrag*(
@@ -856,13 +916,16 @@ proc updateDrag*(
   ## Recompute, for the frame just about to draw, what the drag in progress would make and
   ## whether its menu should be open.
   ##   Called after `updateHover`, which is what decides where the drag currently points.
-  ##   The preview is `proposalFor`'s own answer applied, so what is ghosted is exactly
-  ##   what a plain release commits -- one rule, drawn and then obeyed, rather than a
-  ##   preview computed one way and a commit another.
+  ##   The preview is whatever a release would commit, applied -- the wedge the cursor
+  ##   stands in while a menu is open, and `proposalFor`'s own answer where none is. One
+  ##   rule, drawn and then obeyed, rather than a preview computed one way and a commit
+  ##   another; ghosting the plain-release answer under an open wheel was exactly that
+  ##   split, and a reader aiming at `meet` watched a ghost of `join`.
   if not interaction.is_dragging:
     interaction.is_over_target = false
     interaction.proposal = none(DragChoice)
     interaction.preview = none(Multivector)
+    interaction.preview_anchor = none(Position)
     interaction.menu = none(ScreenPosition)
     return
 
@@ -900,6 +963,7 @@ proc updateDrag*(
     #   on the way across never counts toward opening a menu somewhere else.
     interaction.proposal = none(DragChoice)
     interaction.preview = none(Multivector)
+    interaction.preview_anchor = none(Position)
     interaction.entered = now
     interaction.settled = interaction.cursor
     return
@@ -915,19 +979,34 @@ proc updateDrag*(
     interaction.entered = now
     interaction.settled = interaction.cursor
 
-  let
-    m = scene.geometryOf(interaction.index_source)
-    n = scene.geometryOf(over.get)
-  interaction.proposal = proposalFor(m, n)
-  interaction.preview =
-    if interaction.proposal.isSome: resultOf(interaction.proposal.get, m, n)
-    else: none(Multivector)
+  # Open the menu **before** resolving what a release would do, since with one open that
+  #   answer is the wedge the cursor stands in. Resolved after instead, the frame a wheel
+  #   opens on would ghost the plain-release answer while the wheel already stood over the
+  #   cursor's own centre, which chooses nothing.
   let is_menu_due = case interaction.arming
     of MenuArming.Never: false
     of MenuArming.OnDwell: now - interaction.entered >= SECONDS_DWELL_MENU
     of MenuArming.Always: true
   if interaction.menu.isNone and is_menu_due and interaction.index_disengaged.isNone:
     interaction.menu = some(interaction.cursor)
+
+  let
+    m = scene.geometryOf(interaction.index_source)
+    n = scene.geometryOf(over.get)
+  # `endDrag`'s own order: the wheel answers where one is open, `proposalFor` where none is.
+  interaction.proposal =
+    if interaction.menu.isSome: interaction.choosing else: proposalFor(m, n)
+  interaction.preview =
+    if interaction.proposal.isSome: resultOf(interaction.proposal.get, m, n)
+    else: none(Multivector)
+  # Where the ghost's own disc goes, through the very call `commitChoice` will make of the
+  #   same pair, so the object appears exactly where it was ghosted.
+  interaction.preview_anchor =
+    if interaction.preview.isSome:
+      creationAnchor(
+        toDrag(interaction.proposal.get).get.toOperation, m, n, interaction.preview.get
+      )
+    else: none(Position)
 
 
 type DragOutcome* = object ## Report everything a released drag did, for the caller to act on.
@@ -1003,9 +1082,10 @@ proc endDrag*(
   ## End the drag in progress, applying whatever the release resolved to.
   ##   **One release rule: a release commits whatever is under the cursor.** With a menu
   ##   open that is the wedge the cursor stands in, and nothing where it went back to the
-  ##   centre. With no menu it is `proposalFor`'s own answer, which is exactly what the
-  ##   preview has been ghosting all along -- one rule, drawn and then obeyed, rather than
-  ##   a preview computed one way and a commit another.
+  ##   centre. With no menu it is `proposalFor`'s own answer. Either way it is exactly what
+  ##   `interaction.proposal` holds and what the preview has been ghosting all along -- one
+  ##   rule, drawn and then obeyed, rather than a preview computed one way and a commit
+  ##   another. `updateDrag` resolves it in this same order, off `choosing`.
   ##   Resolving the wedge here rather than in each render path is deliberate: the cursor
   ##   and the menu's centre are both already known, so neither path gets a chance to
   ##   disagree about which wedge a release landed in.
@@ -1042,7 +1122,7 @@ proc endDrag*(
         DragOutcome() # Removed under the press; nothing to select and nothing to say.
 
   if interaction.menu.isSome:
-    let choice = choiceAt(interaction.menu.get, interaction.cursor)
+    let choice = interaction.choosing
     if choice.isNone: return DragOutcome(message: "Released without choosing; nothing done.")
     return commitChoice(interaction, scene, choice.get, now)
 

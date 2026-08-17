@@ -667,11 +667,22 @@ from the fixture, not the algebra, and proves nothing.
 Some pairs make nothing at all. Such a drag must **refuse**: add no object, and say what was
 degenerate. A scene must never gain a slot holding geometry with no shape.
 
-**While dragging, show the answer.** Ghost what a plain release would build, in the same
-appearance an uncommitted edit already wears. Tint the rubber-band by that answer, and use
-the reserved invalid colour over a pair that makes nothing — the warning belongs before the
-release, not in a message after it. That colour is never the only signal; the ghost is
-absent at the same time.
+**While dragging, show the answer — the answer to what letting go right now would do.**
+Ghost it in the same appearance an uncommitted edit already wears, **centred where the
+committed object will be drawn**, so nothing jumps on release. With the choice menu open
+that answer is the choice being aimed at, not the one a plain release would have taken:
+reaching for one operation while watching a ghost of another teaches the gesture wrong.
+
+Tint the rubber-band by the same answer, and let it say all three things a release can
+amount to: neutral where letting go would quietly do nothing, the reserved invalid colour
+where it would be refused, the new object's own hue where it would build. The warning
+belongs before the release, not in a message after it, and that colour is never the only
+signal — the ghost is absent at the same time.
+
+**Anything that meets an object on screen must meet it where that object is drawn.** The
+rubber-band leaving it, the pointer riding that band, the menu hanging off it. A plane's
+disc is centred on the point its construction fixed, not on its closest approach to the
+origin, and those are units apart; one shared reader answers for all of them.
 
 **The choice menu** opens on the right button at once, or on holding still over the target.
 Its choices sit at **fixed positions** that never move from pair to pair, with unoffered

@@ -380,8 +380,13 @@ proc assembleMeshes(
   #   same ghost ink, so a reader learns one "this is not committed yet" appearance rather
   #   than two. This is the whole answer to the drag having had no self-revelation: the
   #   gesture stops being a guess about a button and becomes a thing you watch happen.
+  #   Centred on the anchor the commit itself will store, so a ghosted plane stays where it
+  #   was ghosted instead of jumping the instant the release lands.
   if interaction.preview.isSome:
-    discard MESHES.addObject(interaction.preview.get, muted(INK_GHOST.colour), scale)
+    discard MESHES.addObject(
+      interaction.preview.get, muted(INK_GHOST.colour), scale,
+      anchor_override = interaction.preview_anchor,
+    )
 
   # Everything selected, held back to here and drawn with the depth test off, so a picked
   #   object is never buried by whatever happens to stand between it and the camera. It is
@@ -536,8 +541,9 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   ##   Every wedge is drawn at every opening, at its own fixed compass point, whether or
   ##   not it is offered -- so the position of `meet` is something a reader learns once
   ##   rather than something they read off each time. Which one the cursor stands in is
-  ##   `interaction.choiceAt`'s answer, the same one the release will act on, so what is
-  ##   highlighted is never a second opinion about where the cursor is.
+  ##   `interaction.choosing`'s answer, the same one the release will act on and the same
+  ##   one the ghost is shaped from, so what is highlighted is never a second opinion about
+  ##   where the cursor is.
   ##   **A wedge is the selection menu's own button, moved.** Surface fill, one hairline
   ##   border, `--ink` label, `--accent` border and `--accent-ink` label on the one in
   ##   force -- rather than the solid slab of the choice's own hue it used to be, which made
@@ -548,7 +554,7 @@ proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
   let
     centre = interaction.menu.get
     over = destinationOf(interaction)
-    highlighted = choiceAt(centre, interaction.cursor)
+    highlighted = interaction.choosing
     is_pair_live =
       over.isSome and over.get != interaction.index_source and
       scene.isAlive(over.get) and scene.isAlive(interaction.index_source)
@@ -615,7 +621,11 @@ proc drawInteractionOverlay(
       drawMarker(marker.get, Ink.Outline.colour, ALPHA_MARKER_HOVER)
 
   if interaction.is_dragging:
-    let anchor = anchorFor(scene[interaction.index_source].geometry, scale)
+    let source = scene[interaction.index_source]
+    # From where the source is *drawn*, not from where its support is: a plane's disc is
+    #   centred on its own creation anchor, and a band leaving the support leaves from a
+    #   point nowhere on the circle.
+    let anchor = anchorFor(source.geometry, source.anchorOverride, scale)
     if anchor.isSome:
       let screen = projectToScreen(view_projection, width, height, anchor.get)
       if screen.isInFront:
@@ -650,9 +660,10 @@ proc anchorOfSelection(
   ## Say where the most recently picked object sits on screen, for the floating selection
   ## menu to follow.
   ##   The *most recent* rather than the middle of them all: an average would jump about
-  ##   as membership changes, for nothing. Projected through the same `anchorFor` the
-  ##   rubber-band and the browser's own `nimAnchorScreen` use, so the menu, the marker and
-  ##   the drag line all agree on where an object is.
+  ##   as membership changes, for nothing. Projected through the same anchor-aware
+  ##   `mesh.anchorFor` the rubber-band and the browser's own `nimAnchorScreen` use -- the
+  ##   item's own drawn centre, a plane's stored creation anchor included -- so the menu,
+  ##   the marker and the drag line all agree on where an object is.
   ##   None where there is nothing picked, where the object has no representative point,
   ##   or where it stands behind the camera -- see `layoutSelectionMenu` for what the menu
   ##   does with that.
@@ -667,7 +678,7 @@ proc anchorOfSelection(
   if not scene.isAlive(slot): return none(tuple[x, y: cfloat])
   if scene[slot].geometry.isHorizonPlane:
     return some((x: cfloat(0.5*float(width)), y: cfloat(0.5*float(height))))
-  let anchor = anchorFor(scene[slot].geometry, scale)
+  let anchor = anchorFor(scene[slot].geometry, scene[slot].anchorOverride, scale)
   if anchor.isNone: return none(tuple[x, y: cfloat])
   let screen = projectToScreen(view_projection, width, height, anchor.get)
   if not screen.isInFront: return none(tuple[x, y: cfloat])
@@ -1065,7 +1076,7 @@ proc driveDrag(
   if count_drawn notin [FRAME_REACH_SOURCE, FRAME_PRESS, FRAME_REACH_TARGET]: return
   let slot = if count_drawn == FRAME_REACH_TARGET: 1 else: 0
   if not scene.isAlive(slot): return
-  let anchor = anchorFor(scene[slot].geometry, scale)
+  let anchor = anchorFor(scene[slot].geometry, scene[slot].anchorOverride, scale)
   if anchor.isNone: return
   let screen = projectToScreen(
     camera.initMatrixViewProjection(width/height), width, height, anchor.get
@@ -1153,7 +1164,7 @@ proc driveSelect(
     slot = lut_step_to_slot[step]
     is_acting = (step mod 2) == 1
   if not scene.isAlive(slot): return
-  let anchor = anchorFor(scene[slot].geometry, scale)
+  let anchor = anchorFor(scene[slot].geometry, scene[slot].anchorOverride, scale)
   if anchor.isNone: return
   let screen = projectToScreen(
     camera.initMatrixViewProjection(width/height), width, height, anchor.get
@@ -1221,7 +1232,7 @@ proc driveUndo(
   if step < STEPS_DRAG:
     let slot = lut_step_to_slot[step]
     if not scene.isAlive(slot): return
-    let anchor = anchorFor(scene[slot].geometry, scale)
+    let anchor = anchorFor(scene[slot].geometry, scene[slot].anchorOverride, scale)
     if anchor.isNone: return
     let screen = projectToScreen(
       camera.initMatrixViewProjection(width/height), width, height, anchor.get

@@ -536,6 +536,23 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
     positionAnchor(m)
 
 
+func anchorFor*(
+  m: Multivector; anchor_override: Option[Position]; scale: DrawExtent
+): Option[Position] =
+  ## Resolve one point standing for `m` **as it is actually drawn**, for anything that has
+  ## to meet an object on screen: a rubber-band leaving it, a comet aimed from it, a menu
+  ## hanging off it.
+  ##   Reads `anchor_override` exactly as `addPlane` and `marker.markerFor` read it, so a
+  ##   plane's disc has one centre and not two. It matters: on this project's own demo scene
+  ##   the stored creation anchor stands 0.5, 2.7 and 3.7 units from the support, against a
+  ##   disc of radius 8, so a band drawn from the support leaves from a point nowhere on the
+  ##   circle a reader can see.
+  ##   Ignored for every other shape, as `addObject` ignores it: a point and a line are
+  ##   drawn about their own places whatever an item happens to carry.
+  if anchor_override.isSome and shape(m) == some(Shape.Plane): return anchor_override
+  anchorFor(m, scale)
+
+
 
 #[ Appear Animation ]#
 

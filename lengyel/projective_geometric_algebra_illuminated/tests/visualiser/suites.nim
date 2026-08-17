@@ -328,6 +328,24 @@ suite "Mesh":
     ##   other geometry test in this suite uses, not for the additional rounding a much
     ##   larger radius would carry through unrelated to anything this suite tests here.
 
+  test "an item's drawn centre is its own anchor, and only a plane's disc moves":
+    # The one reader everything that has to meet an object on screen goes through: the
+    #   rubber-band leaving it, the comet aimed from it, the menu hanging off it. A plane's
+    #   disc is centred on its creation anchor and every other shape ignores one, which is
+    #   exactly what `mesh.addObject` does with the same argument.
+    let elsewhere = Position(x: -4.0, y: 6.0, z: 2.0)
+    let
+      point = GENERAL_POINTS[0]
+      line = GENERAL_POINTS[1] ∧ GENERAL_POINTS[2]
+      plane = GENERAL_POINTS[3] ∧ GENERAL_POINTS[4] ∧ GENERAL_POINTS[5]
+    check anchorFor(plane, some(elsewhere), SCALE_TEST).get =~ elsewhere
+    for m in [point, line]:
+      check anchorFor(m, some(elsewhere), SCALE_TEST).get =~ anchorFor(m, SCALE_TEST).get
+    # And with nothing stored, every shape falls back to where it always stood.
+    for m in [point, line, plane]:
+      check anchorFor(m, none(Position), SCALE_TEST).get =~ anchorFor(m, SCALE_TEST).get
+
+
   proc ribbonEnds(mesh: Mesh; index: int): (Position, Position) =
     ## Recover the segment the `index`-th ribbon was built around.
     ##   Each end's own two corners sit an equal step either side of it, so their midpoint
@@ -3327,18 +3345,149 @@ suite "Interaction":
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     check interaction.menu.isSome
-    check interaction.proposal == some(DragChoice.Join)
-    check interaction.preview.isSome
+    # The wheel opened under the cursor, so nothing is chosen yet and nothing is ghosted.
+    check interaction.proposal.isNone
+    check interaction.preview.isNone
     # Reaching for a wedge takes the cursor off the item; the destination must survive it.
     interaction.index_hover = none(int)
     let south = anchorOf(interaction.menu.get, DragChoice.Project)
     interaction.updateCursor(south.x, south.y)
     interaction.updateDrag(scene, 0.0)
     check destinationOf(interaction) == some(1)
+    check interaction.proposal == some(DragChoice.Project)
     let outcome = interaction.endDrag(scene)
     check outcome.choice == some(DragChoice.Project)
     check outcome.index_created == some(2)
     check scene[2].geometry =~ projectOrthogonal(GENERAL_FIRST[0], GENERAL_SECOND[0])
+
+
+  test "the ghost is the wedge being aimed at, not what a plain release would make":
+    # The complaint this answers: with the wheel open, the ghost was `proposalFor`'s own
+    #   answer whatever wedge the cursor was in, so a reader reaching for `project` watched
+    #   a ghost of `join` and only found out what they had asked for after letting go.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    let centre = interaction.menu.get
+    # Two points: `join` and `project` both make something, and they make different things,
+    #   which is what lets the ghost be told apart from the plain-release answer at all.
+    check proposalFor(GENERAL_FIRST[0], GENERAL_SECOND[0]) == some(DragChoice.Join)
+    check isOffered(DragChoice.Project, GENERAL_FIRST[0], GENERAL_SECOND[0])
+
+    proc aimAt(interaction: var Interaction; scene: Scene; choice: DragChoice) =
+      let at = anchorOf(centre, choice)
+      interaction.updateCursor(at.x, at.y)
+      interaction.updateDrag(scene, 0.0)
+
+    interaction.aimAt(scene, DragChoice.Project)
+    check interaction.choosing == some(DragChoice.Project)
+    check interaction.preview.get =~
+      projectOrthogonal(GENERAL_FIRST[0], GENERAL_SECOND[0])
+    interaction.aimAt(scene, DragChoice.Join)
+    check interaction.preview.get =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
+    # And each of those is exactly what letting go there commits: one rule, drawn and then
+    #   obeyed, checked by actually releasing rather than by re-deriving the answer.
+    for choice in [DragChoice.Join, DragChoice.Project]:
+      var trial = interaction
+      var scene_trial = scene
+      trial.aimAt(scene_trial, choice)
+      let ghosted = trial.preview.get
+      let outcome = trial.endDrag(scene_trial)
+      check outcome.index_created.isSome
+      check scene_trial[outcome.index_created.get].geometry =~ ghosted
+
+
+  test "what a release would do has three answers, and the band's tint has three":
+    # A wheel open over one pair reaches all three without the cursor leaving the target,
+    #   which is why `inkOfDrag`'s old two-way test could not carry it: the centre and a
+    #   greyed wedge both had no answer, and they want opposite feedback.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    let centre = interaction.menu.get
+
+    # Back at the wheel's own centre: releasing calls the gesture off, so the band goes
+    #   neutral rather than warning about a refusal that is not going to happen.
+    check interaction.effectOf == ReleaseEffect.Nothing
+    check interaction.inkOfDrag(scene.inkNext) == Ink.Guide
+    check interaction.preview.isNone
+
+    for (choice, effect) in [
+      (DragChoice.Join, ReleaseEffect.Builds),
+      (DragChoice.Meet, ReleaseEffect.Refused), # Two points meet in nothing drawable.
+      (DragChoice.Project, ReleaseEffect.Builds),
+      (DragChoice.More, ReleaseEffect.Builds), # Builds nothing itself; the picker will.
+    ]:
+      let at = anchorOf(centre, choice)
+      interaction.updateCursor(at.x, at.y)
+      interaction.updateDrag(scene, 0.0)
+      check isOffered(choice, GENERAL_FIRST[0], GENERAL_SECOND[0]) ==
+        (effect == ReleaseEffect.Builds)
+      check interaction.effectOf == effect
+      check interaction.inkOfDrag(scene.inkNext) ==
+        (case effect
+         of ReleaseEffect.Nothing: Ink.Guide
+         of ReleaseEffect.Refused: Ink.Invalid
+         of ReleaseEffect.Builds: scene.inkNext)
+      # `More` builds nothing itself, so it ghosts nothing while still promising its hue.
+      check interaction.preview.isSome ==
+        (effect == ReleaseEffect.Builds and choice != DragChoice.More)
+
+
+  test "with no wheel open the ghost is still the plain-release answer":
+    # The left button's own path, unchanged: it never opens a wheel, so what it ghosts is
+    #   `proposalFor`'s answer exactly as before.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
+    scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    check interaction.menu.isNone
+    check interaction.proposal == some(DragChoice.Join)
+    check interaction.preview.get =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
+    check interaction.effectOf == ReleaseEffect.Builds
+
+
+  test "a ghosted plane is centred where the committed one will be":
+    # `mesh.addPlane` centres a disc on the item's own creation anchor, so a ghost drawn
+    #   without one sits somewhere the object is about to leave -- measured at 2.1 units
+    #   here, against a disc of radius 8, and the jump lands at the moment a reader is
+    #   watching hardest.
+    var scene = initScene()
+    scene.addItem(GENERAL_FIRST[1], "L", Ink.Rose) # A line ...
+    scene.addItem(GENERAL_SECOND[0], "p", Ink.Rose) # ... joined with a point gives a plane.
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(400.0, 300.0)
+    interaction.index_hover = some(0)
+    check interaction.beginDrag(arming = MenuArming.Never, now = 0.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, 0.0)
+    check interaction.proposal == some(DragChoice.Join)
+    check shape(interaction.preview.get) == some(Shape.Plane)
+    check interaction.preview_anchor.isSome
+    # Read before releasing: `endDrag` clears the drag's whole state on its way out.
+    let ghosted = interaction.preview_anchor.get
+    # Not the support, or there would have been nothing to fix.
+    check not (ghosted =~ positionAnchor(interaction.preview.get).get)
+    let outcome = interaction.endDrag(scene)
+    check outcome.index_created.isSome
+    check scene[outcome.index_created.get].anchorOverride.get =~ ghosted
 
 
   test "a menu release back at the centre commits nothing":

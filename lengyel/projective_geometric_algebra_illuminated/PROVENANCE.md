@@ -1038,12 +1038,57 @@ built out of neighbouring `POINTS` and is therefore incident with them.
 reason: it showed nothing. The panel lists every operation and the selection menu shows
 what applies, but a drag's whole vocabulary lived in a button mapping the reader had to have
 been told. So the drag now *shows its answer before committing it*: `interaction.preview`
-holds what a plain release would build, drawn as a ghost in `INK_GHOST` through the same
-`addObject` dispatch an open edit session's ghost uses — one "not committed yet" appearance,
-not two. The rubber-band is tinted by `inkOfDrag`: the operation's own colour over a pair
-that makes something, `Ink.Invalid` magenta over one that makes nothing, neutral crossing
-empty space. That magenta is what the palette reserved a slot for and had no use for until
-now; it is never leaned on alone, since the ghost simultaneously fails to appear.
+holds what a release **right now** would build, drawn as a ghost in `INK_GHOST` through the
+same `addObject` dispatch an open edit session's ghost uses — one "not committed yet"
+appearance, not two.
+
+**The ghost answers for the wedge being aimed at.** `preview` was `proposalFor`'s own answer
+whatever the wheel was doing, so a reader reaching for `project` watched a ghost of `join`
+and only learned what they had asked for after letting go — the module claimed "one rule,
+drawn and then obeyed" while `endDrag` resolved through `choiceAt` and the preview did not.
+`updateDrag` now resolves `proposal` in `endDrag`'s own order — `choosing()` where a wheel is
+open, `proposalFor` where none is — and `choosing` is the single statement of which wedge the
+cursor is in, read by the preview, by the release and by both front-ends' highlights, which
+each asked `choiceAt` separately before. The wheel is opened *before* that resolution rather
+than after, or the frame it opens on would ghost the plain-release answer while the wheel
+already stood over the cursor's own centre, which chooses nothing.
+
+**Three things a release can do, so three tints.** `ReleaseEffect` names them —
+`Nothing`, `Refused`, `Builds` — and `inkOfDrag` is a case over it: neutral `Ink.Guide`,
+`Ink.Invalid` magenta, the new object's own hue. The two-way test it replaced could not
+carry the wheel: with one open, the centre and a greyed wedge both have no answer and want
+*opposite* feedback, since one calls the gesture off and the other would be refused. Driven
+on the built page over one wheel, at 1440×900, reading `nimDragTint` at each stop:
+
+| cursor | wedge | band |
+|---|---|---|
+| the wheel's own centre | none | `(0.286, 0.322, 0.400)` neutral, no ghost |
+| `𝐦 ∧ 𝐧`, offered | join | next object's hue, ghost is the line |
+| `𝐦 ∨ 𝐧`, greyed | meet | `(0.612, 0, 0.722)` magenta, no ghost |
+| `𝐧 ∨ (𝐦 ∧ 𝐧☆)`, offered | project | next object's hue, ghost is the point |
+| `…` | more | next object's hue, no ghost — the picker takes that hue |
+
+That magenta is what the palette reserved a slot for and had no use for until now; it is
+never leaned on alone, since the ghost simultaneously fails to appear.
+
+**Everything that meets an object on screen meets it where it is drawn.** `mesh.anchorFor`
+takes an item's stored anchor beside its geometry and reads it exactly as `addPlane` and
+`marker.markerFor` do — a plane's disc is centred on its creation anchor, every other shape
+ignores one. The rubber-band's start, its comet's aim, and the floating selection menu's own
+follow all go through it, on both front-ends. Before, all three answered from the plane's
+closest-to-origin *support*: on this project's own demo scene those stand 0.5, 2.7 and 3.7
+world units apart from the drawn centre against a disc of radius 8, which is **13.7 px** for
+`ground` at the home camera — a band leaving from a point that is nowhere on the circle.
+Confirmed on the built page: `nimAnchorScreen` for `ground` now returns (712.9, 512.8), the
+projected creation anchor, where the support projects to (720.0, 501.1). `pickNearest` still
+meets the ray against the support's disc; that divergence predates this and is left alone.
+
+**The ghost lands where the object will.** `Interaction.preview_anchor` is set beside
+`preview` from the same `scene.creationAnchor` call the commit itself makes, and both render
+paths hand it to `addObject`. Without it a ghosted plane was drawn about its support and
+then *jumped* to its creation anchor the instant the release landed — the one moment a
+reader is watching it hardest. The suite holds the property directly, checking the ghost's
+anchor against the anchor the created item ends up carrying rather than re-deriving either.
 
 **The choice menu.** Four wedges at fixed compass points — join north, meet east, project
 south, `more…` west — with unoffered ones drawn greyed rather than packed out, because a
@@ -1167,7 +1212,7 @@ second selected object.
 
 **Selection menu** (both builds, one row, following its anchor object every frame — the
 browser through `nimAnchorScreen`, the desktop through `visualiser.anchorOfSelection`, both
-projecting the same `picking.anchorFor` the rubber-band uses): `apply` sits leftmost and
+projecting the same `mesh.anchorFor` the rubber-band uses): `apply` sits leftmost and
 never moves. Pressing it opens an operation
 picker to its right via a `max-width` transition on `.selection-menu-reveal`
 (`width: auto` cannot animate, which is why a max-width bound is animated instead); pressing
