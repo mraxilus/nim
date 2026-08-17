@@ -651,6 +651,59 @@ func anchorOverrideAt*(scene: Scene; slot: int): Option[Position] =
   scene.anchor_overrides[slot]
 
 
+
+#[ Previewing A Construction ]#
+
+type Preview* = object ## What applying an operation would build, ready to draw and to frame.
+  ## The one statement of a construction not yet committed, shared by every path that
+  ## offers one: the drag's own rubber-band answer and both apply pickers. Written twice,
+  ## the two would agree today and drift the first time either grew a field.
+  geometry*: Multivector ## What the operation makes of its operands.
+  anchor*: Option[Position] ## Where a plane's disc should centre, from `creationAnchor`;
+    ## none for every other shape, and none where the construction fixes no such point.
+    ## Carried rather than left to each render path, so a ghosted plane is drawn exactly
+    ## where the commit will put it instead of jumping the moment it lands.
+  operands*: Option[(int, int)] ## Slots this was derived from, for a camera framing the
+    ## preview to keep in view beside it -- a result judged without the objects it came
+    ## from is half a picture.
+    ##   None where there are none to name: a staged *edit* replaces the very object it
+    ## would be framed against, which is the one case that has to stand alone.
+
+
+func previewApplying*(
+  scene: Scene; operation: Operation; first, second: int
+): Option[Preview] =
+  ## Resolve what applying `operation` to these two slots would build, or none where it
+  ## would build nothing worth showing.
+  ##   None where either slot is dead -- a picker left open across a delete is an ordinary
+  ##   thing rather than an error -- and none where the result has no drawable shape. That
+  ##   one test covers both ways a construction comes to nothing: a pair of the wrong
+  ##   grades, and a pair already lying on each other, whose result is zero.
+  ##   Takes slots rather than bare multivectors so the operands travel with the answer;
+  ##   every caller has them already.
+  ##   A unary operation ignores `second`; pass the first slot again, exactly as every
+  ##   commit path does.
+  if not (scene.isAlive(first) and scene.isAlive(second)): return
+  let
+    m = scene.geometryOf(first)
+    n = scene.geometryOf(second)
+    derived = applyOperation(operation, m, n)
+  if shape(derived).isNone: return
+  some(Preview(
+    geometry: derived,
+    anchor: creationAnchor(operation, m, n, derived),
+    operands: some((first, second)),
+  ))
+
+
+func previewStaging*(geometry: Multivector): Preview =
+  ## Hold an open edit session's own staged geometry as a preview.
+  ##   No anchor and no operands: neither front-end draws that ghost about a stored point,
+  ##   and the object it would be framed against is the one it replaces. See `Preview`.
+  Preview(geometry: geometry, anchor: none(Position), operands: none((int, int)))
+
+
+
 proc setInk*(scene: var Scene; slot: int; ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."

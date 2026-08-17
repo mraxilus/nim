@@ -446,7 +446,14 @@ button_menu.addEventListener('click', () => {
 });
 
 document.querySelectorAll('.section-header').forEach((header) => {
-  header.addEventListener('click', () => header.parentElement.classList.toggle('open'));
+  header.addEventListener('click', () => {
+    header.parentElement.classList.toggle('open');
+    // The apply section's own preview lives exactly as long as the section is on screen,
+    // so opening one starts it and collapsing one ends it. Asked of every section rather
+    // than only that one: the check reads the section's own class either way, and a
+    // handler that knew which section it was would be a second place to keep in step.
+    ghostDrawerOperation();
+  });
 });
 document.getElementById('toggle-axes').addEventListener('click', (e) => {
   is_axes_shown = !is_axes_shown; e.target.classList.toggle('on', is_axes_shown);
@@ -845,17 +852,35 @@ picker_arity.querySelectorAll('button[data-arity]').forEach((button) => {
 });
 
 function ghostDrawerOperation() {
+  // Preview what `apply` would build, live while this section is open -- following the
+  // operation AND both operands, since a preview that ignored half its own inputs would
+  // be showing something the button beside it would not build. Nim decides what a
+  // preview is worth showing; this only says which three readings to try.
   // The drawer names its own operands, so it reads them rather than the selection.
-  const first = parseInt(picker_operand_first.value, 10);
-  const second = arity_current === 0 ? first : parseInt(picker_operand_second.value, 10);
-  if (!Number.isInteger(first) || !Number.isInteger(second)) return;
+  if (!isDrawerApplyOpen()) { nimClearPreview(); return; }
+  const slots = nimSceneSlots();
+  const first = slots[parseInt(picker_operand_first.value, 10)];
+  const second = arity_current === 0
+    ? first
+    : slots[parseInt(picker_operand_second.value, 10)];
+  if (!Number.isInteger(first) || !Number.isInteger(second)) { nimClearPreview(); return; }
   nimGhostOperation(parseInt(picker_operation.value, 10), first, second);
+}
+
+function isDrawerApplyOpen() {
+  // A collapsed section previews nothing: the ghost belongs to a control on screen, and
+  // one left standing after its section closed names nothing a reader can see.
+  const section = document.querySelector('.section[data-section="apply"]');
+  return section !== null && section.classList.contains('open');
 }
 
 picker_operation.addEventListener('change', () => {
   updateOperandEnablement();
   ghostDrawerOperation();
 });
+for (const operand of [picker_operand_first, picker_operand_second]) {
+  operand.addEventListener('change', ghostDrawerOperation);
+}
 function updateOperandEnablement() {
   const arity = nimOperationArity(parseInt(picker_operation.value, 10) || 0);
   field_operand_second.style.display = arity === 0 ? 'none' : '';
@@ -2134,7 +2159,11 @@ function ghostSelectionMenuOperation() {
 }
 
 function closeSelectionMenuOp() {
-  nimClearGhost(); // Nothing is being chosen any more, so nothing is being previewed.
+  // Nothing is being chosen any more, so nothing is being previewed. The drawer's own
+  // section may still be open behind this menu, so ask it to speak up again rather than
+  // leaving the view blank while a control that has something to say is on screen.
+  nimClearPreview();
+  ghostDrawerOperation();
   menu_selection_reveal.classList.remove('open');
   menu_selection_edit.style.display = slots_selection.length === 1 ? '' : 'none';
   menu_selection_hide.style.display = '';

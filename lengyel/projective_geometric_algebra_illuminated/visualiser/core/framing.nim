@@ -4,7 +4,9 @@
 ## that changes the scene has to know the camera exists. What it watches, in order:
 ##
 ##   |----------------------|-----------------------------------------------------------|
-##   | Staged multivector   | An open edit session's own geometry, whatever is selected.|
+##   | Staged preview       | The thing being made, whatever is selected -- an open     |
+##   |                      |   edit session's geometry alone, or an apply picker's own |
+##   |                      |   answer together with the operands it names.             |
 ##   | Selection            | Every picked object, together.                            |
 ##   | Neither              | Nothing; the standing offer is withdrawn (`release`).     |
 ##   |----------------------|-----------------------------------------------------------|
@@ -55,19 +57,31 @@ const
 #[ What Is Being Watched ]#
 
 iterator watched*(
-  scene: Scene; picked: Selection; staged: Option[Multivector]
+  scene: Scene; picked: Selection; staged: Option[Preview]
 ): (Multivector, Option[Position]) =
   ## Walk whatever the camera is being asked to show, in the order stated in this module's
   ## own doc comment, each alongside the anchor its own disc is drawn about where it has
   ## one -- a plane's stored creation anchor; see `scene.creationAnchor`.
-  ##   An open session's staged geometry stands alone: it is the thing being made, and the
-  ##   object it will replace is usually selected beside it, which would frame the edit
-  ##   against its own former self. It carries no anchor because neither front-end draws
-  ##   the ghost with one; both hand `mesh.addObject` the geometry alone.
+  ##   Something staged takes the whole offer: it is the thing being made, and the
+  ##   selection standing beside it is not what the reader is looking at.
+  ##   **What goes with it depends on where it came from**, which is what `Preview.operands`
+  ##   is for. A preview named its operands, so they are framed *with* it: an operation's
+  ##   result judged without the objects it was applied to is half a picture. An open edit
+  ##   session names none, and must not -- its staged geometry *replaces* the object
+  ##   selected beside it, and framing both would frame the edit against its own former
+  ##   self.
   ##   Skips slots gone dead since the selection was made -- a selection outlives the
-  ##   removal of what it names, and every reader here has to survive that.
+  ##   removal of what it names, and every reader here has to survive that. An operand can
+  ##   go the same way, with a picker left open across a delete.
   if staged.isSome:
-    yield (staged.get, none(Position))
+    yield (staged.get.geometry, staged.get.anchor)
+    if staged.get.operands.isSome:
+      let (first, second) = staged.get.operands.get
+      for slot in [first, second]:
+        # A unary operation names its own operand twice; yielding it twice frames the same
+        #   thing twice, which costs a projection and changes no answer.
+        if scene.isAlive(slot):
+          yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
   else:
     for position in 0 ..< picked.len:
       let slot = picked.at(position)
@@ -76,7 +90,7 @@ iterator watched*(
 
 
 func aimFor*(
-  scene: Scene; picked: Selection; staged: Option[Multivector]; scale: DrawExtent
+  scene: Scene; picked: Selection; staged: Option[Preview]; scale: DrawExtent
 ): Option[CameraAim] =
   ## Resolve what the camera is being asked to bring into view, or none where nothing is.
   ##   A pure function of the geometry: see `CameraAim`, whose whole worth is that a caller
@@ -87,7 +101,7 @@ func aimFor*(
 
 
 func isShownAll*(
-  scene: Scene; picked: Selection; staged: Option[Multivector];
+  scene: Scene; picked: Selection; staged: Option[Preview];
   placement: Camera; width, height: int
 ): bool =
   ## Report whether every watched object is in view at once, each by its own criterion.
@@ -102,7 +116,7 @@ func isShownAll*(
 #[ Where That Puts The Camera ]#
 
 func placementFor*(
-  aim: CameraAim; scene: Scene; picked: Selection; staged: Option[Multivector];
+  aim: CameraAim; scene: Scene; picked: Selection; staged: Option[Preview];
   camera: Camera; width, height: int
 ): CameraPlacement =
   ## Resolve `aim` against the camera as it stands into the placement an ease should end
@@ -201,7 +215,7 @@ func placementFor*(
 
 proc offerAim*(
   tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
-  staged: Option[Multivector]; width, height: int; now, duration: float
+  staged: Option[Preview]; width, height: int; now, duration: float
 ) =
   ## Offer the camera whatever is being worked on to look at -- the one call both front-ends
   ## and the storyboard make, once a frame.
@@ -233,8 +247,12 @@ proc offerAimAt*(
   ## aim at a step's own derived multivector before it is anything a selection could name.
   ##   Goes through the very same rule, so a captured frame and an interactive one agree
   ##   on where an object is worth looking from.
-  ##   The empty scene and selection below are never read -- a staged multivector stands
-  ##   alone, so `watched` returns before it reaches either -- and they cost one zeroed
-  ##   `Scene` per capture, which is a storyboard's own cost and not a frame loop's.
+  ##   The empty scene and selection below are never read -- `previewStaging` names no
+  ##   operands, so `watched` yields the one object and stops before reaching either -- and
+  ##   they cost one zeroed `Scene` per capture, which is a storyboard's own cost and not a
+  ##   frame loop's.
   var alone: Scene
-  offerAim(tween, camera, alone, Selection(), some(m), width, height, now, duration)
+  offerAim(
+    tween, camera, alone, Selection(), some(previewStaging(m)),
+    width, height, now, duration,
+  )

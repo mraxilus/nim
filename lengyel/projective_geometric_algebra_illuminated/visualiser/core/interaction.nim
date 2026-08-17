@@ -298,18 +298,13 @@ type
       ## where none is -- resolved in the very order `endDrag` resolves it, so what is
       ## previewed and what is committed cannot come apart. None where a release would
       ## commit nothing at all: over no target, or back at an open menu's own centre.
-    preview*: Option[Multivector] ## What that proposal would make, for each render path to
-      ## ghost. None where the drag is over nothing, over its own source, over a pair that
+    preview*: Option[Preview] ## What that proposal would make, for each render path to
+      ## ghost -- `scene.Preview`, the same construction both apply pickers offer, rather
+      ## than a second one written out here.
+      ## None where the drag is over nothing, over its own source, over a pair that
       ## makes nothing -- and *that* is the case worth drawing nothing for, since it is the
       ## only warning before a refused release -- and over `More`, which builds nothing
       ## itself and hands the pair to the apply picker instead.
-    preview_anchor*: Option[Position] ## Where `preview`'s own disc should be centred, for a
-      ## plane; none for every other shape and wherever `preview` is none.
-      ## Carried beside the preview rather than left to each render path, and computed
-      ## through the same `scene.creationAnchor` the commit itself uses: without it a
-      ## ghosted plane is drawn about its own support and then *jumps* to its creation
-      ## anchor the instant the release lands, which is the one moment a reader is watching
-      ## it most closely.
     arming*: MenuArming ## How this drag may come to open its menu, as its own pointer
       ## chose at the press. Set at `beginDrag` and read every frame after.
     entered*: float ## When the cursor last settled over a target, for the dwell to run
@@ -894,8 +889,7 @@ proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): b
   interaction.index_disengaged = none(int) # A fresh drag holds nothing at arm's length.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
-  interaction.preview = none(Multivector)
-  interaction.preview_anchor = none(Position)
+  interaction.preview = none(Preview)
   true
 
 
@@ -906,8 +900,7 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.index_disengaged = none(int) # Or the next drag opens no menu over that object.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
-  interaction.preview = none(Multivector)
-  interaction.preview_anchor = none(Position)
+  interaction.preview = none(Preview)
 
 
 proc updateDrag*(
@@ -924,8 +917,7 @@ proc updateDrag*(
   if not interaction.is_dragging:
     interaction.is_over_target = false
     interaction.proposal = none(DragChoice)
-    interaction.preview = none(Multivector)
-    interaction.preview_anchor = none(Position)
+    interaction.preview = none(Preview)
     interaction.menu = none(ScreenPosition)
     return
 
@@ -962,8 +954,7 @@ proc updateDrag*(
     # Left the target: the dwell starts again from wherever it next arrives, so pausing
     #   on the way across never counts toward opening a menu somewhere else.
     interaction.proposal = none(DragChoice)
-    interaction.preview = none(Multivector)
-    interaction.preview_anchor = none(Position)
+    interaction.preview = none(Preview)
     interaction.entered = now
     interaction.settled = interaction.cursor
     return
@@ -996,17 +987,19 @@ proc updateDrag*(
   # `endDrag`'s own order: the wheel answers where one is open, `proposalFor` where none is.
   interaction.proposal =
     if interaction.menu.isSome: interaction.choosing else: proposalFor(m, n)
+  # Through `scene.previewApplying`, the same call both apply pickers offer their own answer
+  #   from -- so the ghost this gesture draws and the ghost a picker draws are one thing,
+  #   anchor included, rather than two constructions that happen to agree.
+  #   `More` names no operation and so previews nothing, which is right: it builds nothing
+  #   itself and hands the pair on.
+  let drag = if interaction.proposal.isSome: toDrag(interaction.proposal.get)
+    else: none(DragOperation)
   interaction.preview =
-    if interaction.proposal.isSome: resultOf(interaction.proposal.get, m, n)
-    else: none(Multivector)
-  # Where the ghost's own disc goes, through the very call `commitChoice` will make of the
-  #   same pair, so the object appears exactly where it was ghosted.
-  interaction.preview_anchor =
-    if interaction.preview.isSome:
-      creationAnchor(
-        toDrag(interaction.proposal.get).get.toOperation, m, n, interaction.preview.get
+    if drag.isSome:
+      scene.previewApplying(
+        drag.get.toOperation, interaction.index_source, over.get
       )
-    else: none(Position)
+    else: none(Preview)
 
 
 type DragOutcome* = object ## Report everything a released drag did, for the caller to act on.

@@ -145,6 +145,17 @@ type
     session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
       ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
       ## later in the same frame this panel writes it, so there is no lag.
+    preview*: Option[Preview] ## What an open **apply** control would build, ghosted while
+      ## the reader is still choosing it rather than only once `apply` is pressed -- the
+      ## rule the drag's own rubber-band already follows.
+      ##   Written by whichever apply control is on screen, `layoutApply`'s section or the
+      ## selection menu's own picker, and cleared once at the top of every frame by
+      ## `layoutPanel`: a section that is closed simply never writes, which is the whole of
+      ## "shown while choosing" and needs no second flag to say so.
+      ##   Distinct from `session`, and **loses to it** where both stand: an edit session is
+      ## being typed into, while this is a passive reading of two pickers. Its own
+      ## `Preview.operands` is what has the camera frame the result beside the objects it
+      ## came from; see `framing.watched`.
     selection*: Selection ## Items picked right now, in pick order, each drawn ringed by
       ## `visualiser.drawSelectionRing`. Picked through an item row's own checkbox (which
       ## toggles) or its name (which picks that one alone), and replaced outright by every
@@ -253,6 +264,17 @@ proc stage*(session: var EditSession; geometry: Multivector) =
   ## Load a multivector into the session, as the values its widgets edit.
   ##   Inverse of `geometry` above, and the only other place the two representations meet.
   for b in Basis: session.coefficients[b] = cfloat(geometry[b])
+func staged*(panel: Panel): Option[Preview] =
+  ## Resolve what this panel is offering as not-yet-committed: an open edit session's own
+  ## geometry, else whatever an apply control is previewing, else nothing.
+  ##   **The session wins**, and the order is stated here once rather than at the mesh and
+  ##   the camera separately: a session is being typed into, while a preview is a passive
+  ##   reading of two pickers, and the one the reader's hands are on is the one to show.
+  ##   Its sibling is `browser_bridge.staged`, which answers the same question for the same
+  ##   two sources on the other front-end; fix both or neither.
+  if panel.session.isSome: return some(previewStaging(panel.session.get.geometry))
+  panel.preview
+
 
 
 
@@ -811,14 +833,21 @@ proc layoutApply*(
     gui.tooltip("Second operand -- `n` above -- this operation combines with `m`.")
   gui.widthPop()
 
+  let
+    first = slots[clamp(int(panel.index_operand_first), 0, count - 1)]
+    second =
+      if is_binary: slots[clamp(int(panel.index_operand_second), 0, count - 1)]
+      else: first # A unary operation ignores its second operand; naming the first
+        # keeps a stale picker reading from ever reaching `applyOperation`.
+  # Ghost what `apply` would build, from the very three readings the button below passes
+  #   to `applyPickedOperation` -- so the preview cannot name a different construction
+  #   from the commit. Resolved here rather than inside the button so it follows the
+  #   pickers as they are worked, which is the whole point of previewing at all; this
+  #   section returns early while its header is closed, so a closed one previews nothing.
+  panel.preview = scene.previewApplying(operation, first, second)
+
   gui.disabledPush(scene.isFull)
   if gui.buttonWide("apply", gui.contentWidth()):
-    let
-      first = slots[clamp(int(panel.index_operand_first), 0, count - 1)]
-      second =
-        if is_binary: slots[clamp(int(panel.index_operand_second), 0, count - 1)]
-        else: first # A unary operation ignores its second operand; naming the first
-          # keeps a stale picker reading from ever reaching `applyOperation`.
     applyPickedOperation(panel, scene, camera, history, operation, first, second, now)
     panel.hideSelectionMenu() # Built something; see `showSelectionMenu`.
   gui.disabledPop()
@@ -1127,6 +1156,20 @@ proc layoutSelectionMenuApply(
   )
   if not panel.is_menu_selection_picking: return
 
+  # Ghost whatever the picker is showing, from the same two slots and the same index the
+  #   button above commits with. Only while the picker is revealed: `apply` closed is a
+  #   button that has offered nothing yet, and previewing behind it would put an object on
+  #   screen that nothing on screen names.
+  #   Written after `visualiser.offerCameraAim` has run this frame, so the camera takes it
+  #   up on the next one; the offer is re-made every frame, so that costs a frame and
+  #   nothing else.
+  block:
+    let
+      index = clamp(int(panel.index_operation_menu), 0, count_offered - 1)
+      first = panel.selection.at(0)
+      second = if count >= 2: panel.selection.at(1) else: first
+    panel.preview = scene.previewApplying(operations[index], first, second)
+
   var width_picker = 0.0'f32
   for index in 0 ..< count_offered:
     width_picker = max(width_picker, gui.textWidth(notations[index]))
@@ -1330,6 +1373,11 @@ proc layoutPanel*(
   ## Lay out every panel inside one window.
   ##   `now` is this frame's own clock reading, passed through to whichever construct
   ##   control adds an item this frame, so it animates in from the moment it appears.
+  # Drop last frame's apply preview here, so only a control actually on screen this frame
+  #   can put one back. A closed section simply never writes, which is the whole of "shown
+  #   while choosing" -- no flag says whether a section is open, because the section's own
+  #   early return already does.
+  panel.preview = none(Preview)
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA visualiser"):
     # Coloured words match the rubber-band drawn while dragging, so a line on screen names

@@ -1673,9 +1673,9 @@ suite "Camera Aim":
     scene: Scene; picked: Selection; camera: Camera
   ): CameraPlacement =
     ## Resolve where the framing rule puts a camera for a whole selection.
-    let aim = aimFor(scene, picked, none(Multivector), camera.drawExtentFor(HEIGHT_AIM))
+    let aim = aimFor(scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM))
     check aim.isSome
-    placementFor(aim.get, scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM)
+    placementFor(aim.get, scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
 
 
   test "on screen is not in view: the box is two thirds of the frame, not all of it":
@@ -1780,6 +1780,88 @@ suite "Camera Aim":
     check not isShownCentrally(plane, camera, WIDTH_AIM, HEIGHT_AIM)
 
 
+  test "a previewed construction carries where it is drawn and what it came from":
+    # The one statement of a construction not yet committed, shared by the drag's own
+    #   rubber-band answer and both apply pickers. A line joined with a point is the case
+    #   that exercises every field at once: it makes a plane, and that plane's disc is
+    #   centred on the construction's own point rather than on its closest approach to the
+    #   origin.
+    var (scene, picked) = (initScene(), Selection())
+    let
+      line = GENERAL_FIRST[1]
+      point = GENERAL_SECOND[0]
+      slot_line = scene.addItem(line, "L", Ink.Rose)
+      slot_point = scene.addItem(point, "p", Ink.Rose)
+    let previewed = scene.previewApplying(Operation.Wedge, slot_line, slot_point)
+    check previewed.get.geometry =~ applyOperation(Operation.Wedge, line, point)
+    check previewed.get.operands == some((slot_line, slot_point))
+    check previewed.get.anchor.get =~
+      creationAnchor(Operation.Wedge, line, point, previewed.get.geometry).get
+    check not (previewed.get.anchor.get =~ positionAnchor(previewed.get.geometry).get)
+
+    # Nothing drawable, nothing previewed -- the one test that covers a pair of the wrong
+    #   grades and a pair already lying on each other alike.
+    check scene.previewApplying(Operation.WedgeAnti, slot_point, slot_point).isNone
+    # And nothing at all where a picker is left open across a delete.
+    scene.removeItem(slot_point)
+    check scene.previewApplying(Operation.Wedge, slot_line, slot_point).isNone
+
+    # An edit session's own staged geometry is the same type with neither field, which is
+    #   what keeps it out of the framing rule below.
+    check previewStaging(line).anchor.isNone
+    check previewStaging(line).operands.isNone
+    discard picked
+
+
+  test "a staged preview is framed with the operands it names; an edit stands alone":
+    # What a reader is judging when a picker previews an operation is the *result beside
+    #   its inputs*: a plane that fits the frame while the two points that made it sit off
+    #   the edge answers nothing. An edit session is the opposite case and must stay that
+    #   way -- its staged geometry replaces the very object it would be framed against.
+    var scene = initScene()
+    let
+      slot_first = scene.addItem(
+        toMultivector(Position(x: 16.0, y: -13.0, z: 4.0)), "m", Ink.Rose
+      )
+      slot_second = scene.addItem(
+        toMultivector(Position(x: -12.0, y: 14.0, z: -6.0)), "n", Ink.Rose
+      )
+    let staged = scene.previewApplying(Operation.Wedge, slot_first, slot_second)
+    check staged.isSome
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        let camera = placementAim(azimuth, elevation)
+        let aim = aimFor(scene, Selection(), staged, camera.drawExtentFor(HEIGHT_AIM))
+        let framed = camera.placed(placementFor(
+          aim.get, scene, Selection(), staged, camera, WIDTH_AIM, HEIGHT_AIM
+        ))
+        check isShownAll(
+          scene, Selection(), staged, framed, WIDTH_AIM, HEIGHT_AIM
+        )
+        # Each operand by name, not merely "everything watched" -- that is the property.
+        for slot in [slot_first, slot_second]:
+          check isShownCentrally(
+            scene.geometryOf(slot), framed, WIDTH_AIM, HEIGHT_AIM,
+            scene.anchorOverrideAt(slot),
+          )
+        # Two points that far apart cannot both be framed by panning alone.
+        check framed.distance > camera.distance
+
+    # The edit-session case, over the same pair: staging one of those points names no
+    #   operands, so the other is left out and no pull-back is owed.
+    let alone = some(previewStaging(scene.geometryOf(slot_first)))
+    let camera = placementAim(0.7, 0.2)
+    let aim = aimFor(scene, Selection(), alone, camera.drawExtentFor(HEIGHT_AIM))
+    let framed = camera.placed(placementFor(
+      aim.get, scene, Selection(), alone, camera, WIDTH_AIM, HEIGHT_AIM
+    ))
+    check isShownAll(scene, Selection(), alone, framed, WIDTH_AIM, HEIGHT_AIM)
+    check framed.distance == camera.distance
+    check not isShownCentrally(
+      scene.geometryOf(slot_second), framed, WIDTH_AIM, HEIGHT_AIM
+    )
+
+
   test "a plane filling the frame is not in view; framing pulls its whole disc in":
     # The complaint this rule was rewritten for: a disc wide enough to cover the box was
     #   read as in view -- the sight axis struck it, so picking it moved the camera not at
@@ -1840,7 +1922,7 @@ suite "Camera Aim":
     check not (framed == camera.placementOf)
     check framed.target.x > camera.target.x # Panned toward the circle actually drawn.
     check isShownAll(
-      scene_drawn, picked_drawn, none(Multivector), camera.placed(framed),
+      scene_drawn, picked_drawn, none(Preview), camera.placed(framed),
       WIDTH_AIM, HEIGHT_AIM,
     )
 
@@ -1894,7 +1976,7 @@ suite "Camera Aim":
       for elevation in ELEVATIONS_AIM:
         let camera = placementAim(azimuth, elevation)
         let framed = camera.placed(framedFor(scene, picked, camera))
-        check isShownAll(scene, picked, none(Multivector), framed, WIDTH_AIM, HEIGHT_AIM)
+        check isShownAll(scene, picked, none(Preview), framed, WIDTH_AIM, HEIGHT_AIM)
         check framed.distance > camera.distance # Panning alone could not have done it.
 
 
@@ -1910,13 +1992,13 @@ suite "Camera Aim":
     for azimuth in AZIMUTHS_AIM:
       for elevation in ELEVATIONS_AIM:
         var camera = placementAim(azimuth, elevation)
-        check isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM)
+        check isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
         check framedFor(scene, picked, camera) == camera.placementOf
         # End to end: the tween arrives the moment the goal is armed, so no frame of the
         #   animation window ever writes to the camera.
         var tween: CameraTween
         tween.offerAim(
-          camera, scene, picked, none(Multivector), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
+          camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
         )
         check tween.is_arrived
 
@@ -1929,16 +2011,16 @@ suite "Camera Aim":
         let camera = placementAim(azimuth, elevation)
         let framed = framedFor(scene, picked, camera)
         check isShownAll(
-          scene, picked, none(Multivector), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
+          scene, picked, none(Preview), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
         )
-        if isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM):
+        if isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM):
           continue
         # No further than enough: a tenth of the way back along the very move fails. A
         #   tenth rather than a hair because the search settles to within 1/384 of the
         #   full move, so a hair is inside its own resolution and would prove nothing.
         let short = camera.placementOf.toward(framed, 0.9)
         check not isShownAll(
-          scene, picked, none(Multivector), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
+          scene, picked, none(Preview), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
         )
 
 
@@ -1975,7 +2057,7 @@ suite "Camera Aim":
         #   of the way back along the very move fails.
         let short = camera.placementOf.toward(framed, 0.9)
         check not isShownAll(
-          scene, picked, none(Multivector), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
+          scene, picked, none(Preview), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
         )
 
 
@@ -2008,14 +2090,14 @@ suite "Camera Aim":
     #   aim's sphere collapses onto it, so the move is a pan toward the point, cut short
     #   the moment its dot fits -- no dolly toward that distant support, ever.
     let (scene, picked) = sceneOf(point, line)
-    let aim = aimFor(scene, picked, none(Multivector), camera.drawExtentFor(HEIGHT_AIM))
+    let aim = aimFor(scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM))
     check aim.get.is_bound_by_fitted
     check aim.get.sphere.get.radius =~ 0.0
     let framed = framedFor(scene, picked, camera)
     check framed.distance == camera.distance
     check framed.azimuth == camera.azimuth
     check isShownAll(
-      scene, picked, none(Multivector), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
+      scene, picked, none(Preview), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
     )
 
 
@@ -2053,18 +2135,19 @@ suite "Camera Aim":
     var tween: CameraTween
     let (scene, picked) = sceneOf(toMultivector(Position(x: 3.0, y: -2.0, z: 1.5)))
     tween.offerAim(
-      camera, scene, picked, none(Multivector), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
+      camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
     )
     check tween.goal.isSome
 
     tween.offerAim(
-      camera, scene, Selection(), none(Multivector), WIDTH_AIM, HEIGHT_AIM, 0.1, 0.35
+      camera, scene, Selection(), none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.1, 0.35
     )
     check tween.goal.isNone
 
     var empty: Multivector
     tween.offerAim(
-      camera, scene, Selection(), some(empty), WIDTH_AIM, HEIGHT_AIM, 0.2, 0.35
+      camera, scene, Selection(), some(previewStaging(empty)),
+      WIDTH_AIM, HEIGHT_AIM, 0.2, 0.35,
     )
     check tween.goal.isNone
 
@@ -2079,19 +2162,19 @@ suite "Camera Aim":
       toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
       toMultivector(Position(x: -9.0, y: 12.0, z: -5.0)),
     )
-    check not isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM)
+    check not isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
 
     tween.offerAim(
-      camera, scene, picked, none(Multivector), WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION
+      camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION
     )
     for frame in 1 .. 30:
       let now = DURATION*float(frame)/20.0
       tween.offerAim( # Re-offered every frame, exactly as a front-end re-offers it.
-        camera, scene, picked, none(Multivector), WIDTH_AIM, HEIGHT_AIM, now, DURATION
+        camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, now, DURATION
       )
       tween.advance(camera, now, easeOutCubic)
     check tween.is_arrived
-    check isShownAll(scene, picked, none(Multivector), camera, WIDTH_AIM, HEIGHT_AIM)
+    check isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
 
 
   test "an aim widens by exactly the objects folded into it":
@@ -3387,17 +3470,17 @@ suite "Interaction":
 
     interaction.aimAt(scene, DragChoice.Project)
     check interaction.choosing == some(DragChoice.Project)
-    check interaction.preview.get =~
+    check interaction.preview.get.geometry =~
       projectOrthogonal(GENERAL_FIRST[0], GENERAL_SECOND[0])
     interaction.aimAt(scene, DragChoice.Join)
-    check interaction.preview.get =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
+    check interaction.preview.get.geometry =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
     # And each of those is exactly what letting go there commits: one rule, drawn and then
     #   obeyed, checked by actually releasing rather than by re-deriving the answer.
     for choice in [DragChoice.Join, DragChoice.Project]:
       var trial = interaction
       var scene_trial = scene
       trial.aimAt(scene_trial, choice)
-      let ghosted = trial.preview.get
+      let ghosted = trial.preview.get.geometry
       let outcome = trial.endDrag(scene_trial)
       check outcome.index_created.isSome
       check scene_trial[outcome.index_created.get].geometry =~ ghosted
@@ -3460,7 +3543,7 @@ suite "Interaction":
     interaction.updateDrag(scene, 0.0)
     check interaction.menu.isNone
     check interaction.proposal == some(DragChoice.Join)
-    check interaction.preview.get =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
+    check interaction.preview.get.geometry =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
     check interaction.effectOf == ReleaseEffect.Builds
 
 
@@ -3479,12 +3562,12 @@ suite "Interaction":
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     check interaction.proposal == some(DragChoice.Join)
-    check shape(interaction.preview.get) == some(Shape.Plane)
-    check interaction.preview_anchor.isSome
+    check shape(interaction.preview.get.geometry) == some(Shape.Plane)
+    check interaction.preview.get.anchor.isSome
     # Read before releasing: `endDrag` clears the drag's whole state on its way out.
-    let ghosted = interaction.preview_anchor.get
+    let ghosted = interaction.preview.get.anchor.get
     # Not the support, or there would have been nothing to fix.
-    check not (ghosted =~ positionAnchor(interaction.preview.get).get)
+    check not (ghosted =~ positionAnchor(interaction.preview.get.geometry).get)
     let outcome = interaction.endDrag(scene)
     check outcome.index_created.isSome
     check scene[outcome.index_created.get].anchorOverride.get =~ ghosted

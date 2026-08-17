@@ -104,6 +104,12 @@ var
     ## existing one, where the ghost shows where it would land while the object itself
     ## stays put. None where no session is open, or the last one committed
     ## (`nimAddItem`/`nimCommitItem`) or was abandoned (`nimClearGhost`).
+  g_preview = none(Preview) ## What an open **apply** control would build, ghosted while the
+    ## reader is still choosing it rather than only once apply is pressed -- the rule the
+    ## drag's own rubber-band already follows.
+    ##   Its own slot rather than `g_ghost`'s, so which of the two shows is decided in Nim
+    ## by `staged` below and not by whichever presentation-layer handler happened to fire
+    ## last. Written by `nimGhostOperation` and dropped by `nimClearPreview`.
 
 const INK_GHOST = Ink.Guide
   ## Palette slot the ghost draws in, muted -- reuses Ink.Guide's own existing
@@ -371,20 +377,40 @@ proc nimOperationRemembered(arity: cint): cint {.exportc.} =
 
 proc nimGhostOperation(operation_ordinal, slot_first, slot_second: cint): bool
   {.exportc.} =
-  ## Stage what applying an operation to these operands *would* build, as the same ghost
-  ## an open edit session draws, without touching the scene or the undo timeline.
+  ## Stage what applying an operation to these operands *would* build, in the same ghost
+  ## appearance an open edit session wears, without touching the scene or the undo timeline.
   ##   So a picker previews its own answer the moment one is chosen rather than only once
-  ##   apply is pressed -- the rule the edit session already follows on a keystroke.
-  ##   False, and no ghost, where either operand is gone; a picker left open across a
-  ##   delete is an ordinary thing rather than an error.
-  if not (g_scene.isAlive(int(slot_first)) and g_scene.isAlive(int(slot_second))):
-    g_ghost = none(Multivector)
-    return false
-  g_ghost = some(applyOperation(
-    Operation(operation_ordinal),
-    g_scene.geometryAt(int(slot_first)), g_scene.geometryAt(int(slot_second)),
-  ))
-  true
+  ##   apply is pressed -- the rule the edit session already follows on a keystroke, and
+  ##   the drag's own rubber-band beside it.
+  ##   Through `scene.previewApplying`, so this ghost carries the anchor its disc will be
+  ##   drawn about and the operands the camera should keep in view beside it -- the same
+  ##   construction the drag offers, rather than a second one written out here.
+  ##   False, and no preview, where either operand is gone or the pair makes nothing
+  ##   drawable; a picker left open across a delete is an ordinary thing rather than an
+  ##   error, and a pair that makes nothing is worth showing nothing for.
+  g_preview = g_scene.previewApplying(
+    Operation(operation_ordinal), int(slot_first), int(slot_second)
+  )
+  g_preview.isSome
+
+
+proc nimClearPreview() {.exportc.} =
+  ## Drop whatever an apply control was previewing, for one that has gone off screen.
+  ##   Its own call rather than a flag read here: the presentation layer is what knows a
+  ##   section has collapsed or a picker has been closed.
+  g_preview = none(Preview)
+
+
+proc staged(): Option[Preview] =
+  ## Resolve what this build is offering as not-yet-committed: an open edit session's own
+  ## geometry, else whatever an apply control is previewing, else nothing.
+  ##   **The session wins**, and the order is stated here once rather than at the mesh and
+  ##   the camera separately: a session is being typed into, while a preview is a passive
+  ##   reading of two pickers, and the one the reader's hands are on is the one to show.
+  ##   Its sibling is `panel.staged`, which answers the same question for the same two
+  ##   sources on the other front-end; fix both or neither.
+  if g_ghost.isSome: return some(previewStaging(g_ghost.get))
+  g_preview
 
 
 proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
@@ -1399,7 +1425,7 @@ proc nimBuildFrame(
   # The width the centred box is measured across comes back from the aspect, since this
   #   build is handed that rather than the framebuffer's own two dimensions.
   g_tween_camera.offerAim(
-    g_camera, g_scene, g_selection, g_ghost, int(float(aspect)*float(height_pixels)),
+    g_camera, g_scene, g_selection, staged(), int(float(aspect)*float(height_pixels)),
     int(height_pixels), float(now), ANIMATION_SECONDS,
   )
 
@@ -1443,8 +1469,16 @@ proc nimBuildFrame(
           geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
         )
 
-  if g_ghost.isSome:
-    discard g_meshes.addObject(g_ghost.get, INK_GHOST.colour.muted(), scale)
+  # An open session's staged geometry, or an apply control's own preview where none is --
+  #   one ghost for both, since they are the same "not committed yet" claim about one
+  #   object; `staged` is where that order is decided. Centred on the anchor the commit
+  #   will store, so a previewed plane stays where it was ghosted.
+  let ghost = staged()
+  if ghost.isSome:
+    discard g_meshes.addObject(
+      ghost.get.geometry, INK_GHOST.colour.muted(), scale,
+      anchor_override = ghost.get.anchor,
+    )
 
   # What the drag in progress would build, in that same ghost ink, so a reader learns one
   #   "this is not committed yet" appearance rather than two. Mirrors
@@ -1453,8 +1487,8 @@ proc nimBuildFrame(
   #   was ghosted instead of jumping the instant the release lands.
   if g_interaction.preview.isSome:
     discard g_meshes.addObject(
-      g_interaction.preview.get, INK_GHOST.colour.muted(), scale,
-      anchor_override = g_interaction.preview_anchor,
+      g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
+      anchor_override = g_interaction.preview.get.anchor,
     )
 
   # Everything selected, held back to here and drawn with the depth test off, so a picked

@@ -508,10 +508,41 @@ defaulting to attitude for one operand and wedge for two. Per arity because the 
 disjoint — a unary choice cannot carry across to a binary picker, and falling back to the head
 of the list there would undo the memory for the arity that did not change.
 
-**The picker ghosts its own answer as soon as one is chosen** (`nimGhostOperation`), rather
-than waiting for apply — the rule the edit session already follows on a keystroke. It writes
-the same `g_ghost` an open edit session draws and touches neither the scene nor the undo
-timeline. Driven: 6,076 vertices without it, 6,160 with, before apply is pressed.
+**Every apply control ghosts its own answer while the reader is still choosing it**, rather
+than waiting for apply — the rule the edit session already follows on a keystroke and the
+drag's rubber-band beside it. `scene.Preview` is the one statement of a construction not yet
+committed: the geometry, the anchor its disc will be drawn about, and the operand slots it
+came from. `previewApplying` builds it from a scene and two slots, and the drag's own
+`Interaction.preview` is the same type built by the same call, so those two cannot drift.
+
+Reaching all four paths took three fixes, not one:
+
+- **The desktop had no preview at all**, in either its drawer's apply section or the
+  selection menu's picker. `Panel.preview` is cleared once a frame by `layoutPanel` and
+  written by whichever apply control is on screen; a closed section simply never writes,
+  which is the whole of "shown while choosing" without a flag saying so.
+- **The browser drawer's preview ignored its operands and never cleared**, so choosing an
+  operation left a ghost standing after the section collapsed. It also passed each operand
+  picker's *position* where a scene *slot* was wanted — the apply button beside it had
+  always translated through `nimSceneSlots`, and the preview had not, so the two named
+  different objects whenever the two orders differed.
+- **A previewed plane sat at its support**, and jumped to its creation anchor when apply
+  landed. Fixed by the anchor `Preview` now carries, the same way the drag's ghost was.
+
+`staged` (`panel.staged`, `browser_bridge.staged`) decides which of the two claims shows
+where both stand: **the session wins**, since it is being typed into while a preview is a
+passive reading of two pickers. Stated once per front-end rather than at the mesh and the
+camera separately. Driven: 6,076 vertices without a preview, 6,160 with, before apply is
+pressed.
+
+**The preview is framed together with the operands it names.** A result judged without the
+objects it was applied to is half a picture, so `Preview.operands` travels with the geometry
+and `framing.watched` yields those slots beside it. An open edit session names none, and
+must not: its staged geometry *replaces* the object selected beside it, and framing both
+would frame the edit against its own former self. Measured on the built page — the camera
+pushed to distance 9 with both operands far off screen (a at x = 8417, b at x = 17831),
+then the apply section opened: the view pulls back to 13.39 and both land inside the centred
+box, at (464, 542) and (1015, 344). The selection menu's own picker does the same.
 
 **Every seed point takes its own hue.** The startup scene gave `a`, `b`, `c` and `o` one rose
 between them, which says they are one kind of thing — the opposite of what a categorical

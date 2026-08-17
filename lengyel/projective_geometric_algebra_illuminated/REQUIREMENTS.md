@@ -667,6 +667,15 @@ from the fixture, not the algebra, and proves nothing.
 Some pairs make nothing at all. Such a drag must **refuse**: add no object, and say what was
 degenerate. A scene must never gain a slot holding geometry with no shape.
 
+**Every path that builds shows its answer before committing it**, not the drag alone: an
+apply control that has an operation and its operands chosen already knows what pressing it
+would make, and a reader choosing among twenty-seven operations is exactly the reader who
+needs to see it. Ghost it for as long as that control is on screen with something to say,
+and take it away when the control goes. **Frame the result together with the operands it
+came from** — a result judged without the objects it was applied to is half a picture. An
+edit session is the one staged thing framed alone: it replaces the object it would otherwise
+be framed against.
+
 **While dragging, show the answer — the answer to what letting go right now would do.**
 Ghost it in the same appearance an uncommitted edit already wears, **centred where the
 committed object will be drawn**, so nothing jumps on release. With the choice menu open

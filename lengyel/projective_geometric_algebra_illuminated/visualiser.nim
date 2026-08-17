@@ -321,10 +321,8 @@ proc offerCameraAim(
   ##   Every construction path leaves its new object selected (`selectOnly`), so applying
   ##   an operation, releasing a drag and stepping the storyboard all frame the result
   ##   without knowing anything about the camera.
-  let staged =
-    if panel.session.isSome: some(panel.session.get.geometry) else: none(Multivector)
   panel.tween_camera.offerAim(
-    camera, scene, panel.selection, staged, width, height, now, ANIMATION_SECONDS
+    camera, scene, panel.selection, panel.staged, width, height, now, ANIMATION_SECONDS
   )
 
 
@@ -373,8 +371,15 @@ proc assembleMeshes(
   #   all-zero staging degrades to "nothing to draw" through `addObject`'s own
   #   empty-shape branch. While editing an existing object, this draws beside it: the
   #   object holds its committed position and the ghost shows where it would land.
-  if panel.session.isSome:
-    discard MESHES.addObject(panel.session.get.geometry, muted(INK_GHOST.colour), scale)
+  #   Or, where no session is open, whatever an apply control is previewing -- one ghost
+  #   for both, since they are the same "not committed yet" claim about one object;
+  #   `panel.staged` is where that order is decided.
+  let staged = panel.staged
+  if staged.isSome:
+    discard MESHES.addObject(
+      staged.get.geometry, muted(INK_GHOST.colour), scale,
+      anchor_override = staged.get.anchor,
+    )
 
   # What the drag in progress would build, drawn through that same dispatch and in that
   #   same ghost ink, so a reader learns one "this is not committed yet" appearance rather
@@ -384,8 +389,8 @@ proc assembleMeshes(
   #   was ghosted instead of jumping the instant the release lands.
   if interaction.preview.isSome:
     discard MESHES.addObject(
-      interaction.preview.get, muted(INK_GHOST.colour), scale,
-      anchor_override = interaction.preview_anchor,
+      interaction.preview.get.geometry, muted(INK_GHOST.colour), scale,
+      anchor_override = interaction.preview.get.anchor,
     )
 
   # Everything selected, held back to here and drawn with the depth test off, so a picked
