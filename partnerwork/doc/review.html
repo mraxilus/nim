@@ -212,13 +212,12 @@ table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 .map .edge.lit { opacity: 1; }
 .map .arc { fill: none; stroke-width: 1.5;
   stroke-dasharray: 5 4; }
-/* A name lies on the drawing as a chip, bordered like a frame's own plate, so
-   that where it interrupts a line the interruption reads as a thing put there
-   rather than as the line stopping.  The line is cut for it as well -- see
-   `map.gapAt` -- and the two together are what make the break deliberate. */
-.map .arc-plate, .map .edge-plate { fill: var(--ground);
-  stroke: var(--rule); stroke-width: 1; }
-.map .name-plate { fill: var(--ground); }
+/* A name's plate keeps the drawing out from under the words and nothing more:
+   no border, because the line already says where the name is.  It stops short
+   with a round end either side (`map.gapAt`), which is the same break a
+   connection wears where it passes underneath, so the interruption reads as
+   deliberate without the plate having to be seen at all. */
+.map .arc-plate, .map .edge-plate, .map .name-plate { fill: var(--ground); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node-name { fill: var(--ink); }
 .swatch i.arm-left { background: var(--left-deep); }

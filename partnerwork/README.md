@@ -165,10 +165,11 @@ first, because a curve has only the one place it can be named.
 The plate used to be the whole of it, and that became a second wrong drawing once
 the frame pictures learned to break a connection: an opaque box over a line
 leaves a hole with square ends, and a hole in a line now *means* something — it
-says the connection passes underneath. So a name is a bordered chip, visibly a
-thing laid on the drawing, and the line is **cut** for it as well: the same dash
-the frame pictures wear, with a round cap either side and a little air before the
-chip begins. What was an accident now reads as a decision.
+says the connection passes underneath. So the line is **cut** for the name
+instead of painted over, wearing the same dash the frame pictures wear, with a
+round cap either side and a little air before the words begin. What was an
+accident now reads as a decision — and the plate goes back to doing only what it
+was for, since the rounded ends already say where the break came from.
 
 Both drawings say a move the same way — the mark passes along the line to the
 frame chosen — and each takes its own time over it. The close drawing has to clear the
