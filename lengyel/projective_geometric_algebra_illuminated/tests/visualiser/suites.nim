@@ -1742,10 +1742,11 @@ suite "Camera Aim":
     check abs(edge_found - edge_by_width) > 100.0
 
 
-  test "a point has to fit inside the box; a line and a plane only to cross it":
-    # The two criteria, stated apart. A line and a plane are drawn far past anything the
-    #   frame can show, so demanding they fit would demand a camera pulled back until they
-    #   were specks.
+  test "a point and a plane have to fit inside the box; a line only to cross it":
+    # The two criteria, stated apart, and the split follows what each shape is *drawn* at.
+    #   A line runs out to the horizon, which moves with the camera, so demanding it fit
+    #   would demand a camera pulled back until it was a speck. A plane's disc is a fixed
+    #   `EXTENT_PLANE_F` across whatever the camera does, so it is a thing a frame can hold.
     let camera = placementAim(0.0, 0.2)
     let
       far_away = Position(x: 26.0, y: 0.0, z: 0.0)
@@ -1755,10 +1756,93 @@ suite "Camera Aim":
       line = toMultivector(far_away) ∧ toMultivector(near_middle)
       plane = toMultivector(far_away) ∧ toMultivector(near_middle) ∧
         toMultivector(Position(x: 0.0, y: 1.0, z: 0.4))
-    # All three reach that same far point; only the point has to be there to be in view.
+    # All three reach that same far point; the line alone is in view for merely doing so.
     check not isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM)
     check isShownCentrally(line, camera, WIDTH_AIM, HEIGHT_AIM)
-    check isShownCentrally(plane, camera, WIDTH_AIM, HEIGHT_AIM)
+    check not isShownCentrally(plane, camera, WIDTH_AIM, HEIGHT_AIM)
+
+
+  test "a plane filling the frame is not in view; framing pulls its whole disc in":
+    # The complaint this rule was rewritten for: a disc wide enough to cover the box was
+    #   read as in view -- the sight axis struck it, so picking it moved the camera not at
+    #   all -- while the reader could see no edge of the circle anywhere.
+    let ground = toMultivector(ORIGIN) ∧ toMultivector(Position(x: 1.0, y: 0.0, z: 0.0)) ∧
+      toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
+    let (scene, picked) = sceneOf(ground)
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        # Close in, where a disc of radius `EXTENT_PLANE_F` cannot fit at all.
+        var camera = placementAim(azimuth, elevation)
+        camera.distance = 6.0
+        check not isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
+        let framed = camera.placed(framedFor(scene, picked, camera))
+        check isShownCentrally(ground, framed, WIDTH_AIM, HEIGHT_AIM)
+        check framed.distance > camera.distance # Only a pull-back could have done it.
+        # Every point of the rim, not just the two the box's own axes happen to catch.
+        let axes = frame(ground).get
+        let view_projection =
+          framed.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
+        for step in 0 ..< 96:
+          let turn = (2.0*PI*float(step))/96.0
+          let at = projectToScreen(
+            view_projection, WIDTH_AIM, HEIGHT_AIM,
+            positionAnchor(ground).get + EXTENT_PLANE_F*(
+              cos(turn)*axes.axis_first + sin(turn)*axes.axis_second
+            ),
+          )
+          check at.isInFront
+          check at.x >= 0.0 and at.x <= float(WIDTH_AIM)
+          check at.y >= 0.0 and at.y <= float(HEIGHT_AIM)
+
+
+  test "a plane is judged by the disc drawn, not by the one its support would carry":
+    # `mesh.addPlane` centres a disc on the item's own creation anchor where it has one,
+    #   and on the demo scene's own planes the two stand as far as 3.7 units apart against
+    #   a radius of 8 -- so a test ringing the support would frame a circle nobody sees.
+    let ground = toMultivector(ORIGIN) ∧ toMultivector(Position(x: 1.0, y: 0.0, z: 0.0)) ∧
+      toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
+    var camera = placementAim(0.0, 0.9)
+    camera.distance = 32.0
+    # Fits about its own support at this distance, and does not once the disc is drawn a
+    #   long way off along the plane instead.
+    check isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
+    check not isShownCentrally(
+      ground, camera, WIDTH_AIM, HEIGHT_AIM, some(Position(x: 14.0, y: 0.0, z: 0.0))
+    )
+    # And the framing rule follows the same anchor, item by item: the same plane in the
+    #   same scene at the same camera costs nothing without one and moves the view with it.
+    let (scene_support, picked_support) = sceneOf(ground)
+    check framedFor(scene_support, picked_support, camera) == camera.placementOf
+
+    var (scene_drawn, picked_drawn) = (initScene(), Selection())
+    picked_drawn.toggle(scene_drawn.addItem(
+      ground, "ground", Ink.Rose, 0.0, some(Position(x: 14.0, y: 0.0, z: 0.0))
+    ))
+    let framed = framedFor(scene_drawn, picked_drawn, camera)
+    check not (framed == camera.placementOf)
+    check framed.target.x > camera.target.x # Panned toward the circle actually drawn.
+    check isShownAll(
+      scene_drawn, picked_drawn, none(Multivector), camera.placed(framed),
+      WIDTH_AIM, HEIGHT_AIM,
+    )
+
+
+  test "a bound grows to hold a whole disc, and a disc swallowing it takes over":
+    # `widened` over balls rather than points, which is what lets the distance search
+    #   bracket a plane at all: bounding a plane by its anchor alone leaves the search
+    #   starting from a sphere of radius nothing and never reaching far enough.
+    let bound = SphereWorld(centre: ORIGIN, radius: 1.0)
+    let held = bound.widened(Position(x: 5.0, y: 0.0, z: 0.0), 2.0)
+    check held.radius =~ 4.0 # From -1 to +7 across, so eight wide.
+    check held.centre =~ Position(x: 3.0, y: 0.0, z: 0.0)
+    # A point is the reach-nothing case, unchanged.
+    check bound.widened(Position(x: 5.0, y: 0.0, z: 0.0), 0.0).radius =~ 3.0
+    # Contained outright, either way round, including concentric -- where there is no
+    #   direction to slide the centre along at all.
+    check bound.widened(Position(x: 0.5, y: 0.0, z: 0.0), 0.25) == bound
+    let swallowed = bound.widened(ORIGIN, 9.0)
+    check swallowed.radius =~ 9.0
+    check swallowed.centre =~ ORIGIN
 
 
   test "a point fits with its drawn dot inside the box, not only its middle":
@@ -1907,7 +1991,7 @@ suite "Camera Aim":
     #   the moment its dot fits -- no dolly toward that distant support, ever.
     let (scene, picked) = sceneOf(point, line)
     let aim = aimFor(scene, picked, none(Multivector), camera.drawExtentFor(HEIGHT_AIM))
-    check aim.get.is_bound_by_points
+    check aim.get.is_bound_by_fitted
     check aim.get.sphere.get.radius =~ 0.0
     let framed = framedFor(scene, picked, camera)
     check framed.distance == camera.distance

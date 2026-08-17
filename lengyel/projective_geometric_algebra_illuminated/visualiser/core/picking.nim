@@ -401,6 +401,29 @@ func isRingCrossingCentre(
   false
 
 
+func isRingWithinCentre(
+  centre: Position; axis_first, axis_second: Direction; radius: float;
+  view_projection: Matrix4; width, height: int
+): bool =
+  ## Report whether every point of a world circle, sampled the way this project draws one,
+  ## falls inside the centred box.
+  ##   The rim alone answers for the disc it bounds: the disc is flat and the box is
+  ##   convex, so a rim wholly inside carries its own interior in with it.
+  ##   False the moment any sample falls behind the eye. A disc reaching past the eye has
+  ##   no screen extent to fit, and no distance the camera could stand at would give it
+  ##   one without first turning to face the thing.
+  # No inset: what has to fit here is the drawn disc itself, whose whole extent is already
+  #   being tested, rather than a bare position standing in for something with a size.
+  for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+    let turn = (2.0*PI*float(i))/float(SEGMENTS_CIRCLE_HORIZON)
+    let here = projectToScreen(
+      view_projection, width, height,
+      centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
+    )
+    if not isWithinCentre(here, width, height, 0.0): return false
+  true
+
+
 func isLineShownCentrally(
   m: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
 ): bool =
@@ -433,39 +456,44 @@ func isLineShownCentrally(
 
 
 func isPlaneShownCentrally(
-  m: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
+  m: Multivector; anchor_override: Option[Position];
+  view_projection: Matrix4; width, height: int
 ): bool =
-  ## Report whether a grade-3 object reaches the centred box.
+  ## Report whether the whole of a grade-3 object's drawn disc falls inside the centred box.
   ##   A plane at horizon is the whole sky, drawn as a dome around the eye, so it is in
   ##   view from every camera there is.
+  ##   `anchor_override` centres the disc there instead of on the plane's own support, read
+  ##   exactly as `mesh.addPlane` reads it, so what is judged is the circle a reader can
+  ##   actually see: the two stand as far as 3.7 units apart on the demo scene's own planes,
+  ##   against a disc of radius 8.
   if m.isHorizon: return true
-  let (anchor, axes) = (positionAnchor(m), frame(m))
+  let
+    anchor = if anchor_override.isSome: anchor_override else: positionAnchor(m)
+    axes = frame(m)
   if anchor.isNone or axes.isNone: return false
-  if isRingCrossingCentre(
+  isRingWithinCentre(
     anchor.get, axes.get.axis_first, axes.get.axis_second, EXTENT_PLANE_F,
     view_projection, width, height,
-  ):
-    return true
-  # A disc wide enough to cover the box outright keeps its rim well outside it, so the rim
-  #   alone would call a plane filling the whole frame out of view. Meet the sight axis --
-  #   the ray through the very middle of the box -- with the plane as well.
-  let ray = toMultivector(scale.eye) ∧ toMultivector(scale.forward)
-  rayPlaneHit(
-    ray, scale.eye, scale.forward, m, anchor.get, axes.get, EXTENT_PLANE_F
-  ).isSome
+  )
 
 
-func isShownCentrally*(m: Multivector; camera: Camera; width, height: int): bool =
+func isShownCentrally*(
+  m: Multivector; camera: Camera; width, height: int;
+  anchor_override: Option[Position] = none(Position)
+): bool =
   ## Report whether `m` is in view, in the sense a camera framing a selection has to
-  ## satisfy: a **point fits inside** the centred box of a `width` x `height` frame seen
-  ## from `camera`, and a **line or a plane merely crosses** it.
-  ##   Two criteria and not one, because a line and a plane have no inside to fit: each is
-  ##   drawn far past whatever the frame can show, so demanding they fit would demand a
-  ##   camera pulled back until they were specks. Crossing the middle of the frame is what
-  ##   "you can see it" means for them.
+  ## satisfy: a **point and a finite plane fit inside** the centred box of a `width` x
+  ## `height` frame seen from `camera`, and a **line merely crosses** it.
+  ##   Two criteria and not one, and the split follows what each shape is drawn at rather
+  ##   than its grade. A point's dot and a plane's disc are both drawn at a fixed size the
+  ##   camera does not set, so each is a bounded thing a frame can hold, and holding it
+  ##   whole is what "you can see it" means. A line is drawn out to the horizon, which
+  ##   moves with the camera, so it has no size to fit: demanding it fit would demand a
+  ##   camera pulled back until it was a speck, and crossing the middle of the frame is
+  ##   what seeing it means instead.
   ##   Each shape is tested against exactly what `mesh.addObject` puts on screen for it,
-  ##   the rule `pickNearest` already follows and for the same reason: what counts as in
-  ##   view has to agree with what a reader can actually see.
+  ##   `anchor_override` included, the rule `pickNearest` already follows and for the same
+  ##   reason: what counts as in view has to agree with what a reader can actually see.
   ##   Only the *ratio* of `width` to `height` matters -- projection and box scale with
   ##   them alike -- so a caller holding an aspect and one dimension may pass any pair in
   ##   that ratio.
@@ -483,4 +511,5 @@ func isShownCentrally*(m: Multivector; camera: Camera; width, height: int): bool
       width, height, INSET_POINT_SHOWN,
     )
   of Shape.Line: isLineShownCentrally(m, scale, view_projection, width, height)
-  of Shape.Plane: isPlaneShownCentrally(m, scale, view_projection, width, height)
+  of Shape.Plane:
+    isPlaneShownCentrally(m, anchor_override, view_projection, width, height)

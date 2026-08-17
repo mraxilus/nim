@@ -2138,19 +2138,45 @@ first-crossing shape is what handles the path not being strictly monotone.
 Two thirds rather than the whole frame because an object clinging to the very edge is
 visible without being what the view is about, and the marker ringing it is half off-frame.
 
-**Two criteria, not one.** `picking.isShownCentrally` asks a **point** to fit inside the
-box and a **line or plane** only to *cross* it. A line is drawn out to both its vanishing
-points and a plane as a wide disc; neither has an inside to fit, and demanding one would
-mean a camera pulled back until they were specks. Each shape is tested against exactly what
-`mesh.addObject` puts on screen — a line's two halves clipped to the eye side as
-`pickNearest` clips them, a plane's rim plus a sight-axis ray, a horizon line's great
-circle, a horizon plane's whole sky. Screen segments meet the box by Liang–Barsky clipping
-rather than by sampling: a straight segment either crosses an axis-aligned box or it does
-not, and asking exactly is cheaper than sampling densely enough to be sure of a thin
-near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half of `mesh.SIZE_POINT`, so its
-drawn dot fits rather than only its middle — deliberately *not* inset by the selection
-marker, which swells while a touch hold fills, and a box breathing with a gesture would
-re-frame the view mid-hold.
+**Two criteria, not one, and the split follows what each shape is *drawn at*.**
+`picking.isShownCentrally` asks a **point** and a **finite plane** to fit inside the box,
+and a **line** only to *cross* it. A point's dot and a plane's disc are both drawn at a size
+the camera does not set (`mesh.SIZE_POINT`, `mesh.EXTENT_PLANE = 8` world units), so each is
+a bounded thing a frame can hold whole; a line is drawn out to `radius_horizon`, which moves
+with the camera, so it has no size to fit and demanding one would mean a camera pulled back
+until it was a speck. Each shape is tested against exactly what `mesh.addObject` puts on
+screen — a line's two halves clipped to the eye side as `pickNearest` clips them, a plane's
+whole rim, a horizon line's great circle, a horizon plane's whole sky. Screen segments meet
+the box by Liang–Barsky clipping rather than by sampling: a straight segment either crosses
+an axis-aligned box or it does not, and asking exactly is cheaper than sampling densely
+enough to be sure of a thin near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half
+of `mesh.SIZE_POINT`, so its drawn dot fits rather than only its middle — deliberately *not*
+inset by the selection marker, which swells while a touch hold fills, and a box breathing
+with a gesture would re-frame the view mid-hold. A plane needs no inset: what is being
+tested already *is* the drawn extent.
+
+**Why a plane had to change from crossing to fitting.** Reported as planes not recentring the
+way points do — "when clicking on the origin point there's a lot more movement than when
+clicking on the ground plane". Measured: at the home camera every seed object was already in
+view and cost nothing, but dollied in to distance 8 the ground plane's rim spanned x
+[−1367, 2808] and y [288, 4562] of a 1440×900 frame and was still called in view, because
+the crossing rule was backed by a sight-axis ray meeting the disc — a disc covering the frame
+outright keeps its rim well outside the box, so without that ray a plane filling the view
+read as *out* of view. Both halves of that test are gone. After the change the same pick from
+either camera settles at distance 29.9 with the rim inside the box to the pixel, and a
+390×844 phone settles at 63.3 — a narrow frame really does have to stand that far back to
+hold a circle 16 units across.
+
+**A plane is judged where its disc is drawn, not where its support is.** `mesh.addPlane`
+centres the disc on the item's stored creation anchor where it has one (`scene.creationAnchor`
+— the construction's own point, not the plane's closest approach to the origin). Measured on
+the demo scene, the two stand 0.5, 2.7 and 3.7 units apart on `ground`, `G = L ∧ c` and
+`a ∧ L☆`, against a disc radius of 8: judging the support's circle would frame one nobody
+sees. So `framing.watched` now yields each object *with* the anchor it is drawn about, and
+both `isShownCentrally` and `aimIncluding` take it. Staged geometry yields none, and that is
+correct rather than an omission — neither front-end passes an anchor when drawing the ghost.
+`pickNearest` still meets the ray against the support's disc; that divergence predates this
+and is left alone.
 
 **What the aim is.** `CameraAim` is a *requirement*, not a placement: a bounding
 `SphereWorld` over the finite objects, and a merged `heading` for the horizon ones. It is a
@@ -2159,14 +2185,22 @@ compare equal every frame — the thing every subtlety below rests on. Horizon o
 contribute no sphere point on purpose: `anchorFor` places a star at `scale.eye`, and an aim
 built from where the camera stands would stop comparing equal.
 
-**The sphere is over what has to fit.** The first point folded in throws away whatever
-lines and planes had contributed, and they contribute nothing after
-(`CameraAim.is_bound_by_points`; the outcome does not depend on fold order). Without this a
-line whose support happens to stand forty units away drags the view off the point picked
-beside it and forces a pull-back to drag that support into frame — measured at 73.8 against
-a distance of 12 before the rule was added. Where nothing has to fit — a selection of lines
-and planes alone — the sphere falls back to their own supports, so the camera still has
-somewhere to look.
+**The sphere is over what has to fit.** The first point *or finite plane* folded in throws
+away whatever lines had contributed, and they contribute nothing after
+(`CameraAim.is_bound_by_fitted`; which objects contribute does not depend on fold order).
+Without this a line whose support happens to stand forty units away drags the view off the
+point picked beside it and forces a pull-back to drag that support into frame — measured at
+73.8 against a distance of 12 before the rule was added. Where nothing has to fit — a
+selection of lines alone — the sphere falls back to their own supports, so the camera still
+has somewhere to look.
+
+A plane widens the sphere by its **whole disc**, not by its anchor: `widened` merges balls
+rather than points, since a plane bounded by its centre alone leaves the distance search
+bracketing from a radius of nothing and never reaching far enough to fit anything. The
+swallowing case is written out separately — the sliding arithmetic would push the centre past
+the new ball, and two concentric balls give it no direction to slide along at all. The
+bracket is loose for a plane on purpose: the sphere holds the disc from every side while the
+disc is flat, so a plane seen at an angle needs far less room, and the bisection finds it.
 
 **Distance grows, never shrinks.** Panning alone cannot fit two points spread wider than
 the frame, so the eye has to pull back; but a tight selection is *not* zoomed into, because

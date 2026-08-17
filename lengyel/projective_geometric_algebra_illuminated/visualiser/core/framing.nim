@@ -9,10 +9,10 @@
 ##   | Neither              | Nothing; the standing offer is withdrawn (`release`).     |
 ##   |----------------------|-----------------------------------------------------------|
 ##
-## **In view** is `picking.isShownCentrally`: a point inside the centred two thirds of the
-## frame, a line or a plane merely crossing it. **Framed** means the camera's target moves
-## to the middle of everything finite that was picked, and its orbit distance grows -- only
-## if it must, and never shrinks -- until every one of them satisfies that test.
+## **In view** is `picking.isShownCentrally`: a point's dot and a finite plane's whole disc
+## inside the centred box, a line merely crossing it. **Framed** means the camera's target
+## moves to the middle of everything finite that was picked, and its orbit distance grows --
+## only if it must, and never shrinks -- until every one of them satisfies that test.
 ##
 ## Lives above `picking` rather than inside it because folding a selection needs `Selection`
 ## and `picking` cannot import it: `selection` imports `marker`, which imports `picking`.
@@ -26,7 +26,7 @@
 import std/options
 
 import ../../pga
-import ./[camera, mesh, picking, scene, selection]
+import ./[camera, mesh, objects, picking, scene, selection]
 
 
 
@@ -56,20 +56,23 @@ const
 
 iterator watched*(
   scene: Scene; picked: Selection; staged: Option[Multivector]
-): Multivector =
+): (Multivector, Option[Position]) =
   ## Walk whatever the camera is being asked to show, in the order stated in this module's
-  ## own doc comment.
+  ## own doc comment, each alongside the anchor its own disc is drawn about where it has
+  ## one -- a plane's stored creation anchor; see `scene.creationAnchor`.
   ##   An open session's staged geometry stands alone: it is the thing being made, and the
   ##   object it will replace is usually selected beside it, which would frame the edit
-  ##   against its own former self.
+  ##   against its own former self. It carries no anchor because neither front-end draws
+  ##   the ghost with one; both hand `mesh.addObject` the geometry alone.
   ##   Skips slots gone dead since the selection was made -- a selection outlives the
   ##   removal of what it names, and every reader here has to survive that.
   if staged.isSome:
-    yield staged.get
+    yield (staged.get, none(Position))
   else:
     for position in 0 ..< picked.len:
       let slot = picked.at(position)
-      if scene.isAlive(slot): yield scene.geometryOf(slot)
+      if scene.isAlive(slot):
+        yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
 
 
 func aimFor*(
@@ -79,8 +82,8 @@ func aimFor*(
   ##   A pure function of the geometry: see `CameraAim`, whose whole worth is that a caller
   ##   re-offering the same selection every frame offers something that compares equal.
   result = none(CameraAim)
-  for m in watched(scene, picked, staged):
-    result = result.aimIncluding(m, scale)
+  for (m, anchor) in watched(scene, picked, staged):
+    result = result.aimIncluding(m, scale, anchor)
 
 
 func isShownAll*(
@@ -90,8 +93,8 @@ func isShownAll*(
   ## Report whether every watched object is in view at once, each by its own criterion.
   ##   True of nothing at all: a camera asked to show no objects is showing all of them,
   ##   and the callers below never reach here without an aim anyway.
-  for m in watched(scene, picked, staged):
-    if not isShownCentrally(m, placement, width, height): return false
+  for (m, anchor) in watched(scene, picked, staged):
+    if not isShownCentrally(m, placement, width, height, anchor): return false
   true
 
 
@@ -139,7 +142,9 @@ func placementFor*(
     #   least that will actually do. The closed form alone would over-dolly: a point at
     #   the middle picked with a line whose support stands a hundred units away needs no
     #   pulling back at all if that line already crosses the frame, and the closed form
-    #   would drag its support into the box regardless.
+    #   would drag its support into the box regardless. It over-dollies for a plane too,
+    #   and by a lot: the sphere it solves holds the disc from every side, while the disc
+    #   itself is flat and, seen at an angle, needs far less room than that.
     var
       near = camera.distance
       far = max(

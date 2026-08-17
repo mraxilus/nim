@@ -404,10 +404,15 @@ demo, since each already leaves its new object selected — none of them needs t
 camera exists.
 
 **What "shown" means is a requirement, not a matter of taste: every selected object must
-reach the centred two thirds of the window.** A point has to fit inside that box, inset by
-its own drawn radius so it is whole rather than clipped at the edge. A line or a plane need
-only *cross* it — their drawn representation runs off the frame in any usable view, so
-demanding containment would push the camera back until they were unreadably small.
+reach the centred two thirds of the window.** Which of two criteria applies is decided by
+what the object is *drawn at*, not by its grade. A point and a plane are drawn at fixed
+sizes the camera does not set, so each has to fit inside that box whole — a point inset by
+its own drawn radius, a plane by the whole circle a reader can see, judged where that circle
+is actually centred rather than where the plane's support happens to lie. A line is drawn out
+to the horizon, which moves with the camera, so it has no size to fit and need only *cross*
+the box; demanding containment there would push the camera back until it was unreadably
+small. **A plane whose disc covers the frame is not shown** — that is the case a reader
+complains about, seeing no edge of the circle anywhere and the camera refusing to move.
 
 **That box must reach no further across than it reaches down.** Two thirds of a *width* is
 two thirds of an aspect ratio's worth of world, since the field of view is vertical, so a

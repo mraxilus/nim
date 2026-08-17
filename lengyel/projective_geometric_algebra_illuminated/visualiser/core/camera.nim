@@ -321,14 +321,16 @@ type
     ## direction, drawn fixed to the eye at any distance, so the camera instead turns to
     ## face along it and its target and distance are left alone.
     sphere*: Option[SphereWorld] ## Finite objects to frame, or none where there are none.
-    is_bound_by_points*: bool ## Whether `sphere` is over the picked *points* alone.
-      ## A point has to fit inside the centred box; a line and a plane have only to cross
-      ## it. So where anything has to fit, that alone is what the camera centres and sizes
-      ## itself on, and the rest are left to the test -- otherwise a line whose support
+    is_bound_by_fitted*: bool ## Whether `sphere` is over the picked objects that have to
+      ## **fit** alone -- points and finite planes.
+      ## A point and a finite plane are both drawn at a size the camera does not set, so
+      ## each has to fit inside the centred box; a line is drawn out to the horizon and has
+      ## only to cross it. So whatever has to fit is what the camera centres and sizes
+      ## itself on, and the rest is left to the test -- otherwise a line whose support
       ## happens to stand a hundred units away would drag the view off the point beside it
       ## and force a pull-back for nothing. Where nothing has to fit -- a selection of
-      ## lines and planes alone -- the sphere falls back to their own support points, so
-      ## the camera still has somewhere to look.
+      ## lines alone -- the sphere falls back to their own support points, so the camera
+      ## still has somewhere to look.
     heading*: Option[Direction] ## Direction of the horizon objects to face, or none.
       ## Merged where several were asked for: no single direction faces two stars on
       ## opposite sides of the sky, and the sum of their unit directions is the nearest
@@ -383,41 +385,53 @@ func `==`*(a, b: CameraAim): bool =
   ##   its ease. A selection that genuinely moved by a hair should restart it.
   if a.sphere.isSome != b.sphere.isSome: return false
   if a.sphere.isSome and not (a.sphere.get == b.sphere.get): return false
-  if a.is_bound_by_points != b.is_bound_by_points: return false
+  if a.is_bound_by_fitted != b.is_bound_by_fitted: return false
   if a.heading.isSome != b.heading.isSome: return false
   if a.heading.isNone: return true
   let (d, e) = (a.heading.get, b.heading.get)
   d.x == e.x and d.y == e.y and d.z == e.z
 
 
-func widened*(bound: SphereWorld; place: Position): SphereWorld =
-  ## Grow a bound just enough to contain one more point.
+func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
+  ## Grow a bound just enough to contain one more ball -- a point where `reach` is zero, a
+  ## plane's whole drawn disc where it is `mesh.EXTENT_PLANE_F`.
   ##   Incremental rather than a fit over the whole set at once, so a caller folding a
   ##   selection needs no array to fold over and allocates nothing. The result depends on
-  ##   the order points arrive in and can be a little wider than the tightest sphere over
+  ##   the order objects arrive in and can be a little wider than the tightest sphere over
   ##   the same set; it is always a true bound, which is all the framing needs.
   let
     offset = place - bound.centre
     away = norm(offset)
-  if away <= bound.radius: return bound
-  let radius = 0.5*(bound.radius + away)
-  # Slide the centre toward the new point by exactly what the far side gives up, so the
+  if away + reach <= bound.radius: return bound
+  # The new ball swallowing the old one is its own case: the arithmetic below would slide
+  #   the centre past `place`, and there is no direction to slide along at all where the
+  #   two are concentric.
+  if away + bound.radius <= reach: return SphereWorld(centre: place, radius: reach)
+  let radius = 0.5*(away + bound.radius + reach)
+  # Slide the centre toward the new ball by exactly what the far side gives up, so the
   #   old sphere stays enclosed rather than being trimmed on the way.
   SphereWorld(centre: bound.centre + ((radius - bound.radius)/away)*offset, radius: radius)
 
 
-func aimIncluding*(aim: Option[CameraAim]; m: Multivector; scale: DrawExtent): Option[CameraAim] =
+func aimIncluding*(
+  aim: Option[CameraAim]; m: Multivector; scale: DrawExtent;
+  anchor_override: Option[Position] = none(Position)
+): Option[CameraAim] =
   ## Fold one more object into an aim, or start one where there was none.
   ##   Unchanged by geometry that draws nothing, and by a plane at horizon, which fills the
   ##   sky and is in view from every camera there is.
   ##   A point at horizon is a fixed star, faced along its own direction. A line at horizon
   ##   is a whole great circle, so no single direction faces it; the first axis spanning
   ##   perpendicular to its normal is picked, which puts some of that circle in view.
-  ##   Everything finite widens the sphere by `anchorFor`'s own representative point, so
-  ##   the camera frames exactly what the overlay already rings -- except that the first
-  ##   *point* folded in throws away whatever lines and planes had contributed, and they
-  ##   contribute nothing thereafter; see `CameraAim.is_bound_by_points`. The outcome does
-  ##   not depend on the order they arrive in.
+  ##   Everything finite widens the sphere about `anchorFor`'s own representative point,
+  ##   and a finite plane widens it by the whole disc drawn round that point rather than by
+  ##   the point alone, so the camera frames exactly what a reader can see -- except that
+  ##   the first object that has to *fit* throws away whatever lines had contributed, and
+  ##   they contribute nothing thereafter; see `CameraAim.is_bound_by_fitted`. Which
+  ##   objects contribute does not depend on the order they arrive in.
+  ##   `anchor_override` centres a plane's disc there instead of on its own support, read
+  ##   exactly as `mesh.addPlane` reads it, so the sphere is built round the disc actually
+  ##   drawn; ignored for every other shape, as it is there.
   ##   Horizon objects deliberately widen nothing: `anchorFor` places a star at
   ##   `scale.eye`, and a goal built from where the camera stands would stop comparing
   ##   equal frame to frame.
@@ -445,25 +459,36 @@ func aimIncluding*(aim: Option[CameraAim]; m: Multivector; scale: DrawExtent): O
     grown.heading = if merged.isSome: merged else: grown.heading
     return some(grown)
 
-  let anchor = anchorFor(m, scale)
+  let is_plane = shape_m.get == Shape.Plane
+  var anchor = anchorFor(m, scale)
+  if is_plane and anchor_override.isSome: anchor = anchor_override
   if anchor.isNone: return aim
-  let is_point = shape_m.get == Shape.Point
-  if grown.is_bound_by_points and not is_point: return some(grown)
-  if is_point and not grown.is_bound_by_points:
+  let
+    # A plane is drawn as a disc of this radius about its anchor, at a size no camera
+    #   changes, so what the camera has to fit is the whole ball -- not the anchor alone,
+    #   which would leave the disc it stands at the middle of hanging off every side.
+    reach = if is_plane: EXTENT_PLANE_F else: 0.0
+    does_fit = shape_m.get in {Shape.Point, Shape.Plane}
+  if grown.is_bound_by_fitted and not does_fit: return some(grown)
+  # The first object that has to fit starts the bound afresh, discarding the lines that
+  #   only had to cross.
+  if does_fit and not grown.is_bound_by_fitted:
     return some(CameraAim(
-      sphere: some(SphereWorld(centre: anchor.get, radius: 0.0)),
-      is_bound_by_points: true, heading: grown.heading,
+      sphere: some(SphereWorld(centre: anchor.get, radius: reach)),
+      is_bound_by_fitted: true, heading: grown.heading,
     ))
   grown.sphere =
-    if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: 0.0))
-    else: some(grown.sphere.get.widened(anchor.get))
+    if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: reach))
+    else: some(grown.sphere.get.widened(anchor.get, reach))
   some(grown)
 
 
-func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
+func aimFor*(
+  m: Multivector; scale: DrawExtent; anchor_override: Option[Position] = none(Position)
+): Option[CameraAim] =
   ## Resolve what a camera has been asked to show for one object alone, or none where it
   ## draws nothing. The one-object case of `aimIncluding`, for callers that have one.
-  aimIncluding(none(CameraAim), m, scale)
+  aimIncluding(none(CameraAim), m, scale, anchor_override)
 
 
 func reachCentred*(width, height: int; inset: float): (float, float) =
