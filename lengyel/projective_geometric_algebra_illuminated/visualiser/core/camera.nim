@@ -54,8 +54,9 @@ const
     ## mid-air. Worse, a plane fixed nearer than `DISTANCE_LIMIT_FAR` clips the target
     ## itself away once the eye orbits past it.
   FRACTION_VIEW_CENTRED* = 2.0/3.0
-    ## Fraction of the frame, across and down alike, that counts as being looked at. The
-    ## box is centred, so it runs from a sixth of the way in to five sixths.
+    ## Fraction of the frame that counts as being looked at: this much of its height, and
+    ## this much of its width **or its height, whichever is less**. `reachCentred` is the
+    ## one place that shape is written down, and says why the width is capped.
     ##   Why a box at all rather than the whole frame: an object clinging to the very edge
     ##   is on screen without being what the view is about, and the marker ringing it is
     ##   half off-frame. Why not the exact middle: a selection is *framed* inside this box,
@@ -465,21 +466,48 @@ func aimFor*(m: Multivector; scale: DrawExtent): Option[CameraAim] =
   aimIncluding(none(CameraAim), m, scale)
 
 
-func halfAngleCentred*(camera: Camera; width, height: int; inset: float): float =
-  ## Measure the half-angle, from the sight axis, that the centred box covers -- the
-  ## narrower of its two, so anything inside that cone is inside the box both ways.
+func reachCentred*(width, height: int; inset: float): (float, float) =
+  ## Measure the centred box, across and down, in pixels of a `width` x `height` frame.
+  ##   The one statement of the box's shape: `picking` turns it into the margins its pixel
+  ## test compares against, and `halfAngleCentred` below turns it into the cone
+  ## `distanceFitting` solves. Written twice, the two drifted apart -- the cone already took
+  ## the narrower axis while the pixel test took the whole rectangle.
+  ##   **Why the width is capped at the height.** The field of view is vertical, so a
+  ## fraction of the frame's width is a fraction of `aspect` times as much *world*: at
+  ## 1440x900 the box reached 23.9 degrees off the sight axis across against 15.4 down,
+  ## while at 390x844 it reached 7.3. That is one rule behaving as three, and it is what
+  ## made picking an object on a desktop window almost never move the camera -- measured
+  ## on the shipped build, a point stayed "already in view" out to two thirds of the way to
+  ## the frame's edge whatever the window's shape, which on a wide one is most of the world
+  ## in front of the reader. Capping the width at the height makes the box's reach the same
+  ## in angle both ways, so a pick behaves the same under a mouse as under a finger.
+  ##   The cap is one-sided on purpose: on a frame taller than it is wide -- a phone held
+  ## upright -- the width is already the shorter side, so the box is left exactly as it was
+  ## and touch keeps the behaviour it already had. Taking `min` on both axes instead would
+  ## have tightened the phone's own vertical band to under a third of the frame.
   ##   `inset` pulls the box in by that many pixels on every side, for a caller that needs
   ## what it asks to fit to fit *with room to spare*: `framing` passes the room a point's
   ## own drawn dot takes, so a distance solved from this really does satisfy the pixel test
-  ## in `picking`, which insets by the same amount.
+  ## in `picking`, which insets by the same amount. A box inset past nothing collapses to
+  ## the very middle of the frame rather than turning inside out.
+  (
+    max(FRACTION_VIEW_CENTRED*float(min(width, height)) - 2.0*inset, 0.0),
+    max(FRACTION_VIEW_CENTRED*float(height) - 2.0*inset, 0.0),
+  )
+
+
+func halfAngleCentred*(camera: Camera; width, height: int; inset: float): float =
+  ## Measure the half-angle, from the sight axis, that the centred box covers -- the
+  ## narrower of its two, so anything inside that cone is inside the box both ways.
   ##   The box is a fraction of the frame *in the projection plane*, not in angle, so its
   ## own half-angles come from scaling tangents rather than from scaling the field of view.
+  ## Both scale by the frame's **height**, since that is the dimension the vertical field
+  ## of view sizes; the box's own width already carries whatever the aspect did to it.
   let
     tangent_half = tan(0.5*degToRad(camera.degrees_field_of_view))
-    reach_down = max(FRACTION_VIEW_CENTRED - 2.0*inset/float(height), 1.0e-6)
-    reach_across = max(FRACTION_VIEW_CENTRED - 2.0*inset/float(width), 1.0e-6)
-    tangent_down = reach_down*tangent_half
-    tangent_across = reach_across*tangent_half*(float(width)/float(height))
+    (reach_across, reach_down) = reachCentred(width, height, inset)
+    tangent_down = max(reach_down/float(height), 1.0e-6)*tangent_half
+    tangent_across = max(reach_across/float(height), 1.0e-6)*tangent_half
   arctan(min(tangent_down, tangent_across))
 
 

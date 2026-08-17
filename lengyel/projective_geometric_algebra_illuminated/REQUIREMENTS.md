@@ -409,6 +409,12 @@ its own drawn radius so it is whole rather than clipped at the edge. A line or a
 only *cross* it — their drawn representation runs off the frame in any usable view, so
 demanding containment would push the camera back until they were unreadably small.
 
+**That box must reach no further across than it reaches down.** Two thirds of a *width* is
+two thirds of an aspect ratio's worth of world, since the field of view is vertical, so a
+box that is simply two thirds of each dimension accepts three times as much on a desktop
+window as on a phone held upright — and a pick on a desktop then hardly ever moves the
+camera. The same gesture must frame the same way whatever shape the window is.
+
 **The move is the least one that achieves that, across zoom, pan and orbit together.** Three
 requirements follow, and each was a complaint about a shipped build:
 

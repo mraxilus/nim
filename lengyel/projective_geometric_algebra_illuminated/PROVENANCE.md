@@ -2084,9 +2084,38 @@ comment already pointed ("matching exactly where `mesh.addPoint` draws it").
 
 The rule (`framing.nim`): on a new creation or a new pick, the camera moves by the **least
 of pan, zoom and orbit together** that puts every selected object in view — not at all when
-they all already are — where in view means the centred two thirds of the frame
-(`camera.FRACTION_VIEW_CENTRED = 2/3`, so the box runs from a sixth of the way in to five
-sixths).
+they all already are — where in view means the centred box `camera.reachCentred` shapes:
+`FRACTION_VIEW_CENTRED = 2/3` of the frame's height, and two thirds of its width **or its
+height, whichever is less**.
+
+**Why the width is capped.** The field of view is vertical, so a fraction of the frame's
+*width* is `aspect` times as much world. Measured on the shipped build by driving the
+browser page: the acceptance edge stood at two thirds of the way from the middle to the
+frame's edge on every axis and every viewport — which is 23.9° off the sight axis across a
+1440×900 window against 15.4° down, and 7.3° across a 390×844 phone. One rule behaving as
+three. The visible consequence was that **picking an object on a desktop window practically
+never moved the camera** while the same pick on a phone did, reported as centring that
+"doesn't seem to be working with mouse, only touch". Capping the box's width at its height
+makes its reach the same in angle both ways: re-measured after the change, the edge across
+1440×900 moved from 0.667 to 0.417 of the half-frame, exactly `2/3 × 900/1440`, and the
+vertical edge and both of the phone's stayed where they were.
+
+The cap is **one-sided on purpose**. On a frame taller than it is wide the width is already
+the shorter side, so nothing changes and touch keeps the behaviour it had. Taking `min` on
+both axes instead would have tightened the phone's vertical band to under a third of its
+frame, which nobody asked for.
+
+It was *not* a fault on the mouse path, which was the other live hypothesis: driving the
+same pick with a real mouse and with real CDP touch at one viewport gave identical camera
+readings on every demo object, at 1440×900 and 390×844 alike. `abandon` is unreachable
+between a click and the ease — a mouse press that begins a construction drag returns before
+`glue.js`'s orbit branch, and after the release the pointer is out of `pointers`, so a bare
+hover returns earlier still.
+
+`camera.reachCentred` is the **one statement of the box's shape**, which `picking`
+turns into pixel margins and `camera.halfAngleCentred` into the cone `distanceFitting`
+solves. Written twice, those two had already drifted: the cone took the narrower of its axes
+while the pixel test took the whole rectangle.
 
 **Pan and zoom are preferred over orbit by construction, not by weighing.** The full move
 the least is cut back from carries no turn for a finite selection (target and distance

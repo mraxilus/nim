@@ -1676,6 +1676,72 @@ suite "Camera Aim":
     check not isShownCentrally(point, camera, WIDTH_AIM, HEIGHT_AIM)
 
 
+  proc offsetFromTarget(camera: Camera; across, down: float): Multivector =
+    ## Build a point standing off the camera's own target, sideways and downward, by these
+    ## fractions of its orbit distance -- which is to say by those tangents from the sight
+    ## axis, since the offsets are square to it and so leave the depth alone.
+    let axes = camera.frame(camera.eye)
+    toMultivector(
+      camera.target + (across*camera.distance)*axes.axis_right -
+        (down*camera.distance)*axes.axis_up
+    )
+
+
+  test "a wider window does not widen what counts as in view":
+    # The defect the box's shape exists to prevent. The field of view is vertical, so a
+    #   fraction of the frame's *width* is `aspect` times as much world: on the shipped
+    #   build the box reached 23.9 degrees off the sight axis across a 1440x900 window
+    #   against 15.4 down, and 7.3 across a 390x844 phone. Picking an object on a desktop
+    #   therefore almost never moved the camera, which is the whole complaint. Every width
+    #   from square to twice the height now returns one verdict.
+    for azimuth in AZIMUTHS_AIM:
+      for elevation in ELEVATIONS_AIM:
+        let camera = placementAim(azimuth, elevation)
+        for step in 1 .. 12:
+          let place = offsetFromTarget(camera, 0.06*float(step), 0.0)
+          let verdict = isShownCentrally(place, camera, HEIGHT_AIM, HEIGHT_AIM)
+          for width in [HEIGHT_AIM, 1200, WIDTH_AIM, 2*HEIGHT_AIM]:
+            check isShownCentrally(place, camera, width, HEIGHT_AIM) == verdict
+
+
+  test "the box never reaches further across than it reaches down":
+    # The property that makes the one above true of *every* frame rather than of wide ones
+    #   only: a tall frame keeps its own narrower reach across -- a phone held upright is
+    #   deliberately left as it was -- so the rule is an implication, not an equality.
+    for (width, height) in [(HEIGHT_AIM, HEIGHT_AIM), (WIDTH_AIM, HEIGHT_AIM), (390, 844)]:
+      for azimuth in AZIMUTHS_AIM:
+        let camera = placementAim(azimuth, 0.2)
+        for step in 1 .. 14:
+          let reach = 0.06*float(step)
+          if isShownCentrally(offsetFromTarget(camera, reach, 0.0), camera, width, height):
+            check isShownCentrally(
+              offsetFromTarget(camera, 0.0, reach), camera, width, height
+            )
+
+
+  test "on a wide frame the box is as far across as it is down, to the pixel":
+    # The shape itself, measured rather than asserted: walk a point out sideways until it
+    #   leaves the box and check where it went. The edge stands at the frame's *height*,
+    #   not its width -- 300 px from the middle of a 1440x900 frame rather than 480 -- less
+    #   the room the drawn dot takes.
+    let camera = placementAim(0.0, 0.0)
+    let
+      edge_measured = 0.5*FRACTION_VIEW_CENTRED*float(HEIGHT_AIM) - INSET_POINT_SHOWN
+      edge_by_width = 0.5*FRACTION_VIEW_CENTRED*float(WIDTH_AIM) - INSET_POINT_SHOWN
+    var reach_last = 0.0
+    for step in 1 .. 2000:
+      let reach = 0.001*float(step)
+      if not isShownCentrally(
+        offsetFromTarget(camera, reach, 0.0), camera, WIDTH_AIM, HEIGHT_AIM
+      ): break
+      reach_last = reach
+    # Back out of the tangent the sweep stopped at into the pixels it stands for.
+    let edge_found = reach_last*0.5*float(HEIGHT_AIM) /
+      tan(0.5*degToRad(camera.degrees_field_of_view))
+    check abs(edge_found - edge_measured) < 2.0
+    check abs(edge_found - edge_by_width) > 100.0
+
+
   test "a point has to fit inside the box; a line and a plane only to cross it":
     # The two criteria, stated apart. A line and a plane are drawn far past anything the
     #   frame can show, so demanding they fit would demand a camera pulled back until they

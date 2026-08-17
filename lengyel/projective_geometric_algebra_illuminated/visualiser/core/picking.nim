@@ -334,10 +334,11 @@ func marginCentred(width, height: int; inset: float): (float, float) =
   ## Measure how far in, across and down, the centred box begins.
   ##   `inset` pulls both margins further in by that many pixels, for a caller asking
   ##   whether something of its own size fits rather than whether a bare position lands.
-  (
-    0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(width) + inset,
-    0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(height) + inset,
-  )
+  ##   The box itself is `camera.reachCentred`'s to shape -- including why it is not simply
+  ##   the same fraction of each dimension -- so that the pixel test here and the cone
+  ##   `camera.distanceFitting` solves cannot come to disagree about what "in view" means.
+  let (reach_across, reach_down) = reachCentred(width, height, inset)
+  (0.5*(float(width) - reach_across), 0.5*(float(height) - reach_down))
 
 
 func isWithinCentre(screen: ScreenPosition; width, height: int; inset: float): bool =
