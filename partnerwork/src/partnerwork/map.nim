@@ -35,6 +35,7 @@ import ./diagram
 import ./frame
 import ./motion
 import ./transition
+import ./draw/[style, terms]
 
 
 
@@ -117,8 +118,6 @@ func centreOf*(target: Frame): (int, int) =
 #[ Ink ]#
 
 const
-  COLOUR_LEFT = "var(--left, #2b6c8c)"
-  COLOUR_RIGHT = "var(--right, #a85f22)"
   COLOUR_INK = "var(--ink, #1a1f1e)"
   COLOUR_DIM = "var(--dim, #6b716e)"
   LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
@@ -126,11 +125,17 @@ const
   NAME_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
 
 
-func armColour(side: Side): string =
+func armColour*(side: Side): string =
   ## Get the ink one arm of the lead is drawn in.
-  case side
-  of Side.Left: COLOUR_LEFT
-  of Side.Right: COLOUR_RIGHT
+  ##   The **deep** shade, because a line on this map is the lead acting: they
+  ##     are the one who collects and drops, and the deep shade is theirs
+  ##     wherever the two dancers are told apart (`draw/style`).  It used to be
+  ##     the plain one, which is the follow's -- so every line said the right
+  ##     arm in the wrong voice, and the key beside it said so too.
+  ##   Asked of the shared palette rather than kept here.  This module and
+  ##     `spokes` each had their own copy, and the copies had already drifted
+  ##     from the frame pictures' by a whole hue.
+  DEEP[if side == Side.Left: Arm.L else: Arm.R]
 
 
 
@@ -234,6 +239,55 @@ const
     ##     changes.
 
 
+const
+  LABEL_AIR = 5
+    ## Daylight between a line's cut end and the box of the name that cut it.
+  LONG_ENOUGH = 999
+    ## A dash longer than any line on the map, for the stretch after the gap.
+
+
+func gapAt(ax, ay, bx, by: int; box: Box): (int, int) =
+  ## Get where a name's box crosses its own line: how far the line runs before
+  ## the break, and how long the break is.
+  ##   Nothing, where the name sits clear of the line -- which is what
+  ##     `placeLabel` arranges whenever it can find the room.
+  ##   The box is clipped against the line rather than measured from its
+  ##     middle, so the break is as wide as the name really is at the angle the
+  ##     line really crosses it.  A name met corner-on cuts less than one met
+  ##     square, which is what the eye expects.
+  let
+    run = float(bx - ax)
+    rise = float(by - ay)
+    length = sqrt(run * run + rise * rise)
+  if length < 1:
+    return (0, 0)
+  var
+    lo = 0.0
+    hi = 1.0
+  for (start, delta, near, far) in [
+      (float(ax), run, float(box.x), float(box.x + box.w)),
+      (float(ay), rise, float(box.y), float(box.y + box.h))]:
+    if abs(delta) < 1e-9:
+      if start < near or start > far:
+        return (0, 0)                  # runs parallel to the box and outside it
+    else:
+      var
+        t0 = (near - start) / delta
+        t1 = (far - start) / delta
+      if t0 > t1:
+        swap t0, t1
+      lo = max(lo, t0)
+      hi = min(hi, t1)
+  if hi <= lo:
+    return (0, 0)                      # the name is not on this line at all
+  let
+    opens = max(lo * length - float(LABEL_AIR), 1.0)
+    shuts = min(hi * length + float(LABEL_AIR), length)
+  if shuts <= opens:
+    return (0, 0)
+  (int(opens), int(shuts - opens))
+
+
 func isClear(box: Box; used: seq[Box]): bool =
   ## Test whether something can be drawn here without landing on anything else.
   for other in used:
@@ -305,13 +359,6 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
       (was == some(b) and taken == some(a))
     marks = (if is_lit: " lit" else: "") & (if is_taken: " taking" else: "") &
       waking(is_lit, was_lit, was.isSome)
-  # A line and the name of the line are one thing, and dim or come forward as
-  # one: a name without its line to belong to says nothing.  So the two are put
-  # in two groups wearing the same marks rather than in one group.
-  let ink = "<g class=\"way" & marks & "\">" &
-    "<line class=\"edge\" x1=\"" & $ax & "\" y1=\"" & $ay &
-    "\" x2=\"" & $bx & "\" y2=\"" & $by & "\" style=\"stroke: " &
-    armColour(side) & "\"/></g>"
   # Two ends, asked for two different reasons, and since the tower was turned up
   # the right way they are no longer the same end: what a line is *called* is
   # read from the frame holding less, and where the name is *written* is
@@ -335,6 +382,25 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
     (dx, dy) = centreOf(bottom)
   # The name sits along the line, wherever along it there is room.
   let (nx, ny) = placeLabel(sx, sy, dx, dy, naming, used)
+  # And where it lands on the line, the line is *cut* for it rather than
+  # painted over.  A plate hides what is under it and leaves a hole with square
+  # ends, which since the frame pictures learned to break a connection is a
+  # mark that means something else: a gap says this one passes underneath.  So
+  # the line wears its own break, the same way a moving reach does -- a dash
+  # pattern, because an element cut into pieces is a different number of
+  # pieces -- and the round cap on each side says the ending was meant.
+  let
+    (before, gap) = gapAt(ax, ay, bx, by, labelBox(nx, ny, naming))
+    broken = if gap <= 0: ""
+             else: "; stroke-dasharray: " & $before & " " & $gap & " " &
+               $LONG_ENOUGH
+  # A line and the name of the line are one thing, and dim or come forward as
+  # one: a name without its line to belong to says nothing.  So the two are put
+  # in two groups wearing the same marks rather than in one group.
+  let ink = "<g class=\"way" & marks & "\">" &
+    "<line class=\"edge\" x1=\"" & $ax & "\" y1=\"" & $ay &
+    "\" x2=\"" & $bx & "\" y2=\"" & $by & "\" style=\"stroke: " &
+    armColour(side) & "; stroke-linecap: round" & broken & "\"/></g>"
   (ink, "<g class=\"way naming" & marks & "\">" &
     stack(nx, ny, naming, LABEL_FONT & "; fill: " & armColour(side),
       "edge-plate") & "</g>")

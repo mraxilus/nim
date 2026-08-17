@@ -312,8 +312,15 @@ func label*(source: Frame; move: Move): seq[string] =
   ##     same hand of the lead can reach either, and it has to say over or
   ##     under where both arms cross, because that is the whole difference
   ##     between the two frames it could arrive in.
-  ##   A `drop` says neither: the hand that acts is already holding one thing,
-  ##     so there is nothing left to choose.
+  ##   A `drop` says which hand it lets go of, for the same reason read the
+  ##     other way round.
+  ##     It used to say only `drop`, on the grounds that the hand which acts is
+  ##       already holding one thing, so nothing is left to choose.  True of the
+  ##       *lead's* hand and beside the point: a reader looking at the drawing
+  ##       cannot see which of the lead's hands acts except by reading the ink,
+  ##       so a bare `drop` left them to work out what was being released.  Now
+  ##       every label names a hand, and `collect left` and `drop left` are the
+  ##       two directions of one line.
   ##   The hand named is the follow's, and is said to be by its case alone:
   ##     `left` is the follow's where `Left` would be the lead's, throughout
   ##     the ontology.
@@ -327,7 +334,9 @@ func label*(source: Frame; move: Move): seq[string] =
     if move.to.hasOverlap:
       result.add(if move.to.over.get == move.side: "over" else: "under")
   of Helper.Drop:
-    result = @["drop"]
+    # The frame being left is where the hold still exists, which is why this
+    # reads `source` where a collect reads `to`.
+    result = @["drop " & followName(source.hold[move.side].get)]
 
 
 

@@ -145,12 +145,15 @@ picture was worked out as published mock-ups before it went in
 the two cannot drift. Every frame's picture is built at compile time, so what
 the browser ships is the finished markup and none of the routing.
 
-A line's ink is the arm that acts as you travel along it. For a primitive that
+A line's ink is the arm that acts as you travel along it, in the lead's **deep**
+shade, because the lead is the one who collects and drops. For a primitive that
 is one arm whichever way you read it, so the line has one ink; a compound hands
 the follow's hand from one of the lead's arms to the other, so it is drawn in
 halves, each in the ink of the arm that acts on the way into it, and stays
 dashed because it is still two moves. That is what lets a move be named
-`collect left` or `place left` and still say which of the lead's arms does it.
+`collect left` or `drop left` and still say which of the lead's arms does it —
+every name says the hand of the follow it takes or lets go of, and the ink says
+whose arm.
 
 Every line on the map goes down before a single word does. A name carries a plate
 to keep the drawing out from under it, and a plate can only hide what is already
@@ -158,6 +161,14 @@ there: written as each line was drawn, a name was struck through by the next lin
 to cross it, which is a wrong drawing rather than an ugly one — the reader is
 told the wrong move. The names are still *placed* in the other order, curves
 first, because a curve has only the one place it can be named.
+
+The plate used to be the whole of it, and that became a second wrong drawing once
+the frame pictures learned to break a connection: an opaque box over a line
+leaves a hole with square ends, and a hole in a line now *means* something — it
+says the connection passes underneath. So a name is a bordered chip, visibly a
+thing laid on the drawing, and the line is **cut** for it as well: the same dash
+the frame pictures wear, with a round cap either side and a little air before the
+chip begins. What was an accident now reads as a decision.
 
 Both drawings say a move the same way — the mark passes along the line to the
 frame chosen — and each takes its own time over it. The close drawing has to clear the

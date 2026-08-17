@@ -212,11 +212,17 @@ table.matrix td.two { color: var(--dim); font-style: italic; font-weight: 400; }
 .map .edge.lit { opacity: 1; }
 .map .arc { fill: none; stroke-width: 1.5;
   stroke-dasharray: 5 4; }
-.map .arc-plate, .map .edge-plate, .map .name-plate { fill: var(--ground); }
+/* A name lies on the drawing as a chip, bordered like a frame's own plate, so
+   that where it interrupts a line the interruption reads as a thing put there
+   rather than as the line stopping.  The line is cut for it as well -- see
+   `map.gapAt` -- and the two together are what make the break deliberate. */
+.map .arc-plate, .map .edge-plate { fill: var(--ground);
+  stroke: var(--rule); stroke-width: 1; }
+.map .name-plate { fill: var(--ground); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node-name { fill: var(--ink); }
-.swatch i.arm-left { background: var(--left); }
-.swatch i.arm-right { background: var(--right); }
+.swatch i.arm-left { background: var(--left-deep); }
+.swatch i.arm-right { background: var(--right-deep); }
 
 /* ---------- findings ---------- */
 
@@ -326,8 +332,8 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   exactly where the forearms overlap. That is the whole state space.</p>
   {{gallery}}
   <div class="legend">
-    <span class="swatch"><i style="background: var(--left)"></i> lead's Left arm</span>
-    <span class="swatch"><i style="background: var(--right)"></i> lead's Right arm</span>
+    <span class="swatch"><i style="background: var(--left-deep)"></i> lead&rsquo;s Left arm</span>
+    <span class="swatch"><i style="background: var(--right-deep)"></i> lead&rsquo;s Right arm</span>
     <span class="dim">Seen from above &middot; lead at the bottom in squares,
     follow at the top in circles, each with a chevron for the way they face
     &middot; a connection goes <em>round</em> a body rather than through one,
@@ -354,8 +360,13 @@ footer { border-top: 1px solid var(--rule-strong); padding-top: 1.25rem;
   <code>collect</code> and a step down is a <code>drop</code>. The tower is
   built upwards &mdash; <code>free</code> at its foot, both hands held at its
   head &mdash; because a collect builds the frame up and a drop lets it fall.
-  That leaves each line with only one thing left to say, which is the arm that
-  acts, and it says it in ink.</p>
+  So a line says three things and no more: the direction, in which way up it
+  runs; the hand of the follow it takes or lets go of, in the word written on
+  it; and which of the lead's arms does it, in the ink that word and that line
+  are written in &mdash; the deep shade, because the lead is the one acting.
+  Where a name lies across its own line the line is cut for it, round-ended
+  either side, so the break reads as a name put there rather than as a line
+  stopping.</p>
   {{arms}}
   <div class="scroll">
     {{map}}

@@ -214,18 +214,13 @@ func labelAt*(spoke: Spoke): (int, int) =
 #[ Ink ]#
 
 const
-  COLOUR_LEFT = "var(--left, #2b6c8c)"
-  COLOUR_RIGHT = "var(--right, #a85f22)"
   COLOUR_QUIET = "var(--dim, #6b716e)"
     ## Ink for a name whose line has no one ink of its own to lend it.
   LABEL_FONT = "font: " & $LABEL_SIZE & "px ui-sans-serif, system-ui, sans-serif"
 
-
-func armColour(side: Side): string =
-  ## Get the ink one arm of the lead is drawn in.
-  case side
-  of Side.Left: COLOUR_LEFT
-  of Side.Right: COLOUR_RIGHT
+  ## The arm inks come from `map.armColour`, which this drawing shares rather
+  ## than repeats: the two views draw one ontology and a reader moves between
+  ## them, so a line that changed hue on the way would be saying something.
 
 
 func widest(lines: seq[string]): int =

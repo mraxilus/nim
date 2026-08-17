@@ -163,7 +163,8 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
     calc(var(--py) * var(--unit))); }
 .spokes .spoke-line { stroke-width: 3; vector-effect: non-scaling-stroke; }
 .spokes .spoke.two .spoke-line { stroke-dasharray: 6 5; stroke-width: 2; }
-.spokes .spoke-plate { fill: var(--panel); }
+.spokes .spoke-plate { fill: var(--panel); stroke: var(--rule);
+  stroke-width: 1; }
 .spokes .node-plate { fill: var(--panel); stroke: var(--rule-strong);
   stroke-width: 1; }
 .spokes .node.two .node-plate { stroke-dasharray: 5 4; }
@@ -258,8 +259,8 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
   color: var(--dim); align-items: center; margin-left: auto; }
 .swatch { display: inline-flex; align-items: center; gap: 0.4rem; }
 .swatch i { width: 1.3rem; height: 3px; border-radius: 2px; display: block; }
-.swatch i.arm-left { background: var(--left); }
-.swatch i.arm-right { background: var(--right); }
+.swatch i.arm-left { background: var(--left-deep); }
+.swatch i.arm-right { background: var(--right-deep); }
 .swatch.aside { padding-left: 1rem; border-left: 1px solid var(--rule);
   font-style: italic; }
 .scroll { overflow-x: auto; }
@@ -284,7 +285,12 @@ button { font: inherit; color: inherit; cursor: pointer; border-radius: 7px;
 .map .join.lit .arc, .map .join.lit text { opacity: 1; }
 .map .arc { fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; }
 .map .join.lit .arc { stroke-width: 2; }
-.map .edge-plate, .map .arc-plate { fill: var(--panel); }
+/* A name lies on the drawing as a chip, bordered like a frame's own plate, so
+   that where it interrupts a line the interruption reads as a thing put there
+   rather than as the line stopping.  The line is cut for it as well -- see
+   `map.gapAt` -- and the two together are what make the break deliberate. */
+.map .edge-plate, .map .arc-plate { fill: var(--panel);
+  stroke: var(--rule); stroke-width: 1; }
 .name-plate { fill: var(--panel); }
 .map .node-plate { fill: var(--panel); stroke: var(--rule); stroke-width: 1; }
 .map .node .frame, .map .node .node-name { opacity: .4; }

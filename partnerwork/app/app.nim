@@ -374,7 +374,11 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
       "below, so a line up the page is a collect and a line down is a drop. " &
       "A line you are standing on is named for the move away from you, which is " &
       "the one you could make; a line you are not is named for the move that " &
-      "runs up it. A dashed curve is a compound, and is inked in both " &
+      "runs up it. Every name says the hand of the follow it takes or lets go " &
+      "of, and the ink says which of the lead's arms does it. Where a name " &
+      "lies across its own line the line is cut for it, with a round end " &
+      "either side, so the break reads as a name put there rather than as a " &
+      "line stopping. A dashed curve is a compound, and is inked in both " &
       "arms because it hands a hand from one of them to the other: the ink at " &
       "each end is the arm that acts on the way to it. The frames you can " &
       "reach from where you stand come forward and the rest go quiet, and the " &

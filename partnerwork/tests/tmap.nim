@@ -199,13 +199,19 @@ suite "the drawing":
           to: move.to))
         for line in naming:
           check picture.contains(">" & line & "<")
-      # A drop from here is named as a drop, and there is one to name.
+      # And a drop names the hand it lets go of, as a collect names the hand it
+      # takes.  It used to read a bare `drop`, which left the reader to work out
+      # what was being released from the ink the word was written in.
       var drops = 0
       for move in moves(here):
-        if move.helper == Helper.Drop:
-          inc drops
-      if drops > 0:
-        check picture.contains(">drop<")
+        if move.helper != Helper.Drop:
+          continue
+        inc drops
+        check picture.contains(
+          ">drop " & followName(here.hold[move.side].get) & "<")
+      check not picture.contains(">drop<")
+      if here.countHolds > 0:
+        check drops > 0
 
   test "a compound underfoot names the hand it moves, and one nobody stands on may not":
     # Stood on one end a curve has a direction like any other line.  Stood on
@@ -252,9 +258,14 @@ suite "the drawing":
       check picture.contains("class=\"name-plate\" x=\"" & $x & "\" y=\"" & $y &
         "\" width=\"" & $w & "\" height=\"" & $h & "\"")
 
-  test "the ink of a line is the arm that acts, whichever way it is read":
+  test "the ink of a line is the acting arm, in the lead's own shade":
     # Once a line is unlit the two arms are told apart by colour alone, so every
     # line has to carry an arm's ink and not the quiet ink of the background.
+    # And the *deep* shade of it: a line is the lead acting, and deep is theirs
+    # wherever the two dancers are told apart.
+    #   Checked for the deep shade by name rather than by the hue alone, which
+    #   is how the plain one went unnoticed here for as long as it did:
+    #   `var(--left` matches `var(--left-deep` just as happily.
     let picture = renderMap(none(Frame))
     var lines = 0
     for fragment in picture.split("<line class=\"edge"):
@@ -262,7 +273,10 @@ suite "the drawing":
         continue
       inc lines
       let element = fragment[0 ..< fragment.find("/>")]
-      check element.contains("var(--left") or element.contains("var(--right")
+      check element.contains("var(--left-deep") or
+        element.contains("var(--right-deep")
+      check not element.contains("var(--left,")
+      check not element.contains("var(--right,")
     var moved = 0
     for source in FRAMES:
       moved += moves(source).len
