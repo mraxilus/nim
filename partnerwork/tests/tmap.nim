@@ -125,10 +125,19 @@ suite "the drawing":
       check last_ink < first_name
 
   test "every frame is drawn, with its name":
-    let picture = renderMap(none(Frame))
+    # Read past the ink: a frame is named in the hands it names, so its name is
+    # several elements and not one.  Asked of the drawn name and not of the
+    # whole picture -- every node carries an SVG `<title>` saying the same
+    # words, which would answer this whether the name were drawn or not.
+    let picture = renderMap(none(Frame)).spoken
+    var names: seq[string] = @[]
+    for chunk in picture.split("class=\"node-name\"")[1 .. ^1]:
+      let said = chunk[0 ..< chunk.find("</text>")]
+      names.add said[said.find('>') + 1 .. ^1]
+    check names.len == FRAMES.len
     for target in FRAMES:
       check picture.contains("data-frame=\"" & target.key & "\"")
-      check picture.contains(">" & target.describe & "<")
+      check target.describe in names
 
   test "a map with nobody on it has no marker and lights nothing":
     let picture = renderMap(none(Frame))
@@ -320,3 +329,27 @@ suite "the drawing":
         check not picture.contains("<tspan style=\"fill: " &
           armColour(move.side) & "\">" & followName(hand.get) & "</tspan>")
     check named_hands > 0
+
+  test "a frame's name is drawn in the hands the frame joins":
+    # The same law one step further out.  `Left to left` names two hands as
+    # surely as `collect left` does, so the two are inked the one way and a
+    # reader who has learnt the shades from a line can read a frame with them.
+    #   Which is why the wrapping lives in `text`, the one helper every word on
+    #   the drawing goes through, rather than at each name in turn.
+    let picture = renderMap(none(Frame))
+    var named_frames = 0
+    for target in FRAMES:
+      if target.countHolds == 0:
+        # `free` joins nothing and names nothing, so it stays one plain word.
+        check picture.contains(">" & target.describe & "<")
+        continue
+      inc named_frames
+      for side in Side:
+        if target.hold[side].isNone:
+          continue
+        check picture.contains("<tspan style=\"fill: " & armColour(side) &
+          "\">" & leadName(side) & "</tspan>")
+        check picture.contains("<tspan style=\"fill: " &
+          followColour(target.hold[side].get) & "\">" &
+          followName(target.hold[side].get) & "</tspan>")
+    check named_frames == FRAMES.len - 1

@@ -148,16 +148,20 @@ func followColour*(site: Site): string =
 
 func labelled*(line: string): string =
   ## Say one line of a name as markup, each hand in its own dancer's ink.
-  ##   A name says which hands a move joins, and until now said it in one
-  ##     voice: `collect right` was all of it the acting arm's deep ink, while
+  ##   A name says which hands it joins, and until now said it in one voice:
+  ##     `collect right` was all of it the acting arm's deep ink, while
   ##     `right` there is the *follow's* hand and is drawn in their plain
   ##     shade everywhere else on the page.  Inked apart, the words draw the
   ##     connection they name -- deep running into plain, hand to hand, the
   ##     way the picture beside them does (rule 9).
+  ##   Every name the drawing writes, and not only a move's: a frame is called
+  ##     `Left to left` because those are the two hands it joins, so it is
+  ##     drawn in them for the same reason the line beside it is.  A reader
+  ##     who has learnt the two shades anywhere has learnt them everywhere.
   ##   Only a stretch that names a hand is wrapped, so a line with no hand in
-  ##     it -- `over`, `cut`, `two moves` -- stays the one plain text node it
-  ##     always was, and the space before a hand stays outside the wrapping so
-  ##     the words are still words.
+  ##     it -- `over`, `cut`, `two moves`, `free` -- stays the one plain text
+  ##     node it always was, and the space before a hand stays outside the
+  ##     wrapping so the words are still words.
   ##   The line's own width is measured before this, on the plain text, since
   ##     what a plate has to cover is the letters and not the markup.
   for run in named(line):
@@ -173,9 +177,13 @@ func labelled*(line: string): string =
 #[ Elements ]#
 
 func text(x, y: int; body, style: string; classes = "map-label"): string =
-  ## Draw one label, centred on a point.
+  ## Draw one label, centred on a point, in the hands the words name.
+  ##   Every word the drawing writes goes through here -- a line's name, a
+  ##     curve's, a frame's -- so the hands are inked the one way in all of
+  ##     them and no caller has to remember to ask.
   "<text class=\"" & classes & "\" x=\"" & $x & "\" y=\"" & $y &
-    "\" text-anchor=\"middle\" style=\"" & style & "\">" & body & "</text>"
+    "\" text-anchor=\"middle\" style=\"" & style & "\">" & labelled(body) &
+    "</text>"
 
 
 func widest(lines: seq[string]): int =
@@ -197,8 +205,7 @@ func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
     "\" y=\"" & $top & "\" width=\"" & $width & "\" height=\"" & $height &
     "\" rx=\"3\"/>"
   for index, line in lines:
-    result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, labelled(line),
-      style)
+    result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, line, style)
 
 
 func waking(now, was, moving: bool): string =

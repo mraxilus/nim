@@ -274,8 +274,14 @@ func ringOf*(pose: Pose): string =
 
 
 func caption*(centre: Point; facing: float; arm: Arm; text: string;
-    wind = 0.0): string =
-  ## Set a hand's name just past it, growing outwards.
+    wind = 0.0; ink = FAINT): string =
+  ## Set a hand's name just past it, growing outwards, in that hand's own ink.
+  ##   A caption names one hand, and a hand is drawn in a colour that says
+  ##     whose it is, so the word that names it is written in the same one --
+  ##     the mark and its name are then the one thing said twice rather than
+  ##     two things a reader has to pair up.
+  ##   The lead's captions take the deep shade and the follow's the plain,
+  ##     as the marks below them do.
   let
     p = polar(centre.x, centre.y, CAPTION_R, handBearing(facing, arm, wind))
     dx = p.x - centre.x
@@ -285,4 +291,4 @@ func caption*(centre: Point; facing: float; arm: Arm; text: string;
       else: ("middle", if p.y < centre.y: -3.0 else: 8.0)
   &"""<text x="{n(p.x)}" y="{n(p.y + dy)}" text-anchor="{anchor}"""" &
     " style=\"font: 8px ui-sans-serif, system-ui, sans-serif;" &
-    &""" fill: {FAINT}">{text}</text>"""
+    &""" fill: {ink}">{text}</text>"""

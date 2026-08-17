@@ -277,10 +277,11 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
     for arm in Arm:
       bits.add caption(put.place[Dancer.Lead], put.facing[Dancer.Lead], arm,
                        (if arm == Arm.L: "Left" else: "Right"),
-                       put.wind[Dancer.Lead][arm])
+                       put.wind[Dancer.Lead][arm], DEEP[arm])
     for own in [Arm.R, Arm.L]:
       bits.add caption(put.place[Dancer.Follow], put.facing[Dancer.Follow],
-                       own, handName(own), put.wind[Dancer.Follow][own])
+                       own, handName(own), put.wind[Dancer.Follow][own],
+                       INK[own])
   bits.filterIt(it.len > 0)
 
 

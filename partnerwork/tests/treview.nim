@@ -43,10 +43,23 @@ suite "the review page":
     check found.len == want.len
 
   test "the page shows every frame and every move":
-    let page = readFile(PAGE_PATH)
+    # A name is written in the hands it names, so it is several elements and
+    # not one.  Read past the ink for the words, and read the gallery's own
+    # card rather than the whole page: every picture carries an SVG `<title>`
+    # saying the same words, which would answer this whether the frame were
+    # named on the page or not.
+    let page = readFile(PAGE_PATH).multiReplace(("</span>", ""))
+    var named: seq[string] = @[]
+    for chunk in page.split("<div class=\"name\">")[1 .. ^1]:
+      var said = chunk[0 ..< chunk.find("</div>")]
+      while said.contains("<span"):
+        said = said[0 ..< said.find("<span")] & said[said.find('>',
+          said.find("<span")) + 1 .. ^1]
+      named.add said
+    check named.len == FRAMES.len
     var cells = 0
     for source in FRAMES:
-      check page.contains(">" & source.describe & "<")
+      check source.describe in named
       cells += moves(source).len
       for target in FRAMES:
         if compound(source, target).isSome:

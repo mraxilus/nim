@@ -255,7 +255,7 @@ func renderMoves(source: Frame): string =
       previous = helper
     rows.add button("move", move.to.key, "move",
       tag("span", "class=\"phrase\"", inked(phrase(source, move))) &
-      tag("span", "class=\"target\"", esc(move.to.describe)))
+      tag("span", "class=\"target\"", inked(move.to.describe)))
   var shortcuts = ""
   for target in FRAMES:
     let helper = compound(source, target)
@@ -269,7 +269,7 @@ func renderMoves(source: Frame): string =
       spelled.add esc(step.helper.name)
     shortcuts.add button("compound", target.key, "move two",
       tag("span", "class=\"phrase\"", inked(compoundPhrase(source, target))) &
-      tag("span", "class=\"target\"", esc(target.describe) & " &middot; " &
+      tag("span", "class=\"target\"", inked(target.describe) & " &middot; " &
         spelled))
   if shortcuts.len > 0:
     shortcuts = tag("h4", "", "two moves, led as one") & shortcuts
@@ -309,10 +309,10 @@ func renderElsewhere(source: Frame): string =
     var standing = source
     for step in route(source, target):
       detail.add tag("span", "class=\"step\"",
-        inked(phrase(standing, step)) & tag("i", "", esc(step.to.describe)))
+        inked(phrase(standing, step)) & tag("i", "", inked(step.to.describe)))
       standing = step.to
     rows.add tag("div", "class=\"far\"",
-      tag("span", "class=\"phrase\"", esc(target.describe)) &
+      tag("span", "class=\"phrase\"", inked(target.describe)) &
       tag("span", "class=\"target\"", $route(source, target).len & " moves") &
       detail)
   tag("section", "class=\"panel muted\"",
@@ -324,7 +324,7 @@ func renderHistory(danced: seq[Step]): string =
   var rows = ""
   for index in countdown(danced.high, 0):
     rows.add tag("li", "", inked(danced[index].phrase) & " &rarr; " &
-      esc(danced[index].to.describe))
+      inked(danced[index].to.describe))
   tag("section", "class=\"panel\"",
     tag("h3", "", "danced &middot; " & $danced.len) &
     button("undo", "", "flat", "undo") & button("reset", "", "flat", "reset") &
@@ -351,11 +351,19 @@ func renderArms(): string =
   ##     the page, so the drawing tells them here.
   var swatches = ""
   for side in Side:
+    # The words go inside one element of their own: a swatch is a flex row and
+    # sets a gap between its children, so inking a word into a span of its own
+    # would otherwise push the sentence apart at exactly the word being read.
     swatches.add tag("span", "class=\"swatch\"",
       "<i class=\"arm-" & (if side == Side.Left: "left" else: "right") & "\"></i>" &
-      "the lead's " & esc(leadName(side)) & " arm")
+      tag("span", "", "the lead's " & inked(leadName(side)) & " arm"))
+  # Said in the two inks it is about, so the sentence that explains the
+  # convention is itself an instance of it, and taken from the model rather
+  # than spelled again here.
   swatches.add tag("span", "class=\"swatch aside\"",
-    "&ldquo;Left&rdquo; is the lead's hand, &ldquo;left&rdquo; the follow's")
+    tag("span", "",
+      "&ldquo;" & inked(leadName(Side.Left)) & "&rdquo; is the lead's hand, " &
+      "&ldquo;" & inked(followName(Site.LeftHand)) & "&rdquo; the follow's"))
   tag("div", "class=\"legend\"", swatches)
 
 
@@ -425,7 +433,7 @@ func renderStageBody(current: Frame; vis: Vis; motion: Motion;
     of Vis.Dynamic: renderSpokesView(current, motion, taken)
     of Vis.Overview: renderMapView(current, motion, taken)
   tag("div", "class=\"stage-head\"",
-    tag("h3", "", "frame") & tag("h2", "", esc(current.describe)) &
+    tag("h3", "", "frame") & tag("h2", "", inked(current.describe)) &
     renderVisSwitch(vis) & renderArms()) &
     renderKey() & tag("div", "class=\"views\"", drawing)
 
@@ -497,7 +505,7 @@ func renderGallery(narrowing: Filter): string =
     let ways = moves(target).len
     cards.add button("start", target.key, "card",
       renderFrame(target) &
-      tag("span", "class=\"phrase\"", esc(target.describe)) &
+      tag("span", "class=\"phrase\"", inked(target.describe)) &
       tag("span", "class=\"target\"", $ways & " moves &middot; " &
         $target.countHolds & (if target.countHolds == 1: " hand" else: " hands")))
   tag("div", "class=\"stage\"", tag("section", "class=\"panel wide\"",
@@ -532,7 +540,12 @@ const
 
 func toneOf(side: Side): string =
   ## Name the custom property holding the ink of one of the lead's arms.
-  if side == Side.Left: "var(--left)" else: "var(--right)"
+  ##   The deep shade, because a cell is the lead acting -- the same reading
+  ##     that inks a line on the map and the acting word of every name.  The
+  ##     plain shade is the follow's, and a cell is never theirs.
+  ##   The key directly above this table draws the two arms deep, so a plain
+  ##     cell disagreed with the legend it was being read under.
+  if side == Side.Left: "var(--left-deep)" else: "var(--right-deep)"
 
 
 func cell(classes, tone, told, body: string): string =
@@ -625,7 +638,7 @@ func renderMatrix(): string =
   for index, target in order:
     head.add tag("th", "class=\"head" & (if opens[index]: " gap" else: "") &
       "\" title=\"" & esc(target.describe) & "\"",
-      renderFrame(target) & tag("span", "class=\"who\"", esc(target.brief)))
+      renderFrame(target) & tag("span", "class=\"who\"", inked(target.brief)))
   var body = ""
   for down, source in order:
     let step = if opens[down]: " top" else: ""
@@ -636,7 +649,7 @@ func renderMatrix(): string =
     # the marks, where before it was only in captions too small to read.
     var row = tag("th", "class=\"row" & step & "\" title=\"" &
       esc(source.describe) & "\"",
-      tag("span", "class=\"who\"", esc(source.brief)) & renderFrame(source))
+      tag("span", "class=\"who\"", inked(source.brief)) & renderFrame(source))
     for across, target in order:
       let
         edge = (if opens[across]: " gap" else: "") & step

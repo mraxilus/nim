@@ -218,6 +218,14 @@ func describeConnection*(side: Side; site: Site; joiner = "-to-"): string =
   leadName(side) & joiner & followName(site)
 
 
+func briefName*(side: Side): string = leadName(side)[0 .. 0]
+  ## Abbreviate a hand of the lead to the one letter that says which.
+
+
+func briefName*(site: Site): string = followName(site)[0 .. 0]
+  ## Abbreviate a hand of the follow to the one letter that says which.
+
+
 # At most one of the two hands is ever filled, and which one is the whole of
 # what a drawing needs to know to ink the word: the model's own two types are
 # what keep the dancers' hands apart, so they are what this hands back rather
@@ -249,11 +257,17 @@ func named*(said: string): seq[Named] =
 
   func hand(word: string): Named =
     ## Read one word as a hand, where it is one.
+    ##   The abbreviations count as much as the words.  `brief` shortens a
+    ##     name to its letters precisely because a letter has a case and so
+    ##     says whose hand it is on its own, and `L to l` in the matrix's
+    ##     margin is the same sentence as `Left to left` in the drawing.
+    ##   `L` and `l` are the only one-letter words this vocabulary has, so
+    ##     nothing else can be caught by reading them.
     for side in Side:
-      if word == leadName(side):
+      if word == leadName(side) or word == briefName(side):
         return ("", some side, none(Site))
     for site in Site:
-      if word == followName(site):
+      if word == followName(site) or word == briefName(site):
         return ("", none(Side), some site)
     ("", none(Side), none(Site))
 
@@ -299,14 +313,6 @@ func describe*(frame: Frame): string =
     let joiner = if frame.over.isSome: " over " else: " and "
     describeConnection(first, frame.hold[first].get) & joiner &
       describeConnection(other(first), frame.hold[other(first)].get)
-
-
-func briefName*(side: Side): string = leadName(side)[0 .. 0]
-  ## Abbreviate a hand of the lead to the one letter that says which.
-
-
-func briefName*(site: Site): string = followName(site)[0 .. 0]
-  ## Abbreviate a hand of the follow to the one letter that says which.
 
 
 func brief*(frame: Frame): string =

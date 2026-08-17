@@ -84,6 +84,26 @@ func escape(text: string): string =
   text.multiReplace(("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"))
 
 
+func inked(said: string; escaping = true): string =
+  ## Say a name with each hand it names written in that dancer's own ink.
+  ##   The page's drawings ink their words this way, and a name in the prose
+  ##     beside them is the same name; a reader who has learnt the two shades
+  ##     from the map should not have to learn them again from the gallery.
+  ##   The third renderer of the one reading, after the drawings' `labelled`
+  ##     and the app's own: the reading is shared and the markup is not,
+  ##     because `<tspan>` and `<span>` are not the same element.
+  ##   `escaping` is off for words already lifted out of the page, which are
+  ##     markup-ready and would be escaped a second time.
+  for run in named(said):
+    let text = if escaping: escape(run.text) else: run.text
+    if run.lead.isNone and run.follow.isNone:
+      result.add text
+      continue
+    let ink = if run.lead.isSome: armColour(run.lead.get)
+              else: followColour(run.follow.get)
+    result.add "<span style=\"color: " & ink & "\">" & text & "</span>"
+
+
 func statCard(number: int; caption: string; is_good = false): string =
   ## Draw one figure in the strip at the head of the page.
   "<div class=\"stat" & (if is_good: " good" else: "") & "\"><b>" & $number &
@@ -109,7 +129,7 @@ func renderGallery(): string =
     let absent = workbookName(target).isNone
     result.add "<div class=\"card" & (if absent: " absent" else: "") & "\">" &
       renderFrame(target) & "<div><div class=\"name\">" &
-      escape(target.describe) & "</div><div class=\"meta\">" &
+      inked(target.describe) & "</div><div class=\"meta\">" &
       $moves(target).len & " moves" &
       (if absent: " &middot; no row in the sheet" else: "") & "</div></div></div>"
   result.add "</div>"
@@ -146,7 +166,7 @@ func renderMatrix(): string =
     result.add "<th>" & renderFrame(target) & "</th>"
   result.add "</tr></thead><tbody>"
   for source in FRAMES:
-    result.add "<tr><th class=\"row\">" & escape(source.describe) & "</th>"
+    result.add "<tr><th class=\"row\">" & inked(source.describe) & "</th>"
     for target in FRAMES:
       if source == target:
         result.add "<td class=\"self\"></td>"
@@ -220,6 +240,38 @@ func renderAudit(): string =
 
 #[ Assembly ]#
 
+func inkTerms(page: string): string =
+  ## Ink the hands in every term of art the prose quotes.
+  ##   A term marked up as one -- `Left to left`, `Left-to-right and
+  ##     Right-to-left` -- is a name, and a name is written in the hands it
+  ##     names wherever the page writes it.  Left alone, the prose would call
+  ##     a frame one thing and the gallery two inches below it would call the
+  ##     same frame another.
+  ##   Done to the finished page rather than by hand in the template, so a
+  ##     term written later is inked without anyone remembering to, and so
+  ##     the prose stays prose to read and to edit.
+  ##   Only inside the mark: a hand named in an ordinary sentence is being
+  ##     talked about rather than named, and the sentence around it is doing
+  ##     that work already.
+  ##   Terms with no hand in them -- `open`, `closed`, `wrap` -- come back
+  ##     from `named` as one unmarked stretch and are handed back untouched.
+  const
+    opens = "<em class=\"term\">"
+    shuts = "</em>"
+  result = page
+  var at = 0
+  while true:
+    let start = result.find(opens, at)
+    if start < 0:
+      break
+    let
+      inner = start + opens.len
+      stop = result.find(shuts, inner)
+    let said = inked(result[inner ..< stop], escaping = false)
+    result = result[0 ..< inner] & said & result[stop .. ^1]
+    at = inner + said.len + shuts.len
+
+
 proc renderReview*(): string =
   ## Fill the prose of the review with what the model says.
   let free_frame = fromKey("--.").get
@@ -255,7 +307,7 @@ proc renderReview*(): string =
     let at = page.find("{{")
     quit "unfilled marker in " & TEMPLATE_PATH & ": " &
       page[at ..< min(at + 24, page.len)]
-  page
+  inkTerms(page)
 
 
 proc writeReview*() =
