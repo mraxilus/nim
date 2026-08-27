@@ -340,10 +340,11 @@ not from orbit distance, so it reads as extending indefinitely however far the c
 - Furniture is **fog about the camera**, not a halo about the world origin: both fade radii
   are measured from the eye, and the grid's lattice is re-laid around wherever the camera
   stands. Panning away from the origin must never leave the reader without ground.
-- Grid cell size is **fixed at 100 world units**, never stepped with the reach: a cell that
+- Grid cell size is **fixed at 10 world units**, never stepped with the reach: a cell that
   re-scales as the camera dollies makes no two distances read off it comparable. The reach is
-  capped instead, at 24 cells each way, which is what keeps a camera-following fog inside a
-  fixed vertex budget.
+  capped instead, at 120 cells each way, which is what keeps a camera-following fog inside a
+  fixed vertex budget. That cap must exceed the orbit distance a reader works at, or the
+  ground stops reaching the content they are looking at.
 - Each grid line is cut into 8 pieces fading **per vertex** (not per piece, so interpolation
   stays smooth) from full alpha at 0.06 × extent to zero at 0.20 × extent, both measured from
   the eye. The grid is dimmed by a further 0.75 where it is built — not in the palette, whose

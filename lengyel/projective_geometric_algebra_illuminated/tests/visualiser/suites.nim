@@ -723,7 +723,7 @@ suite "Mesh":
     #   ground silently re-scaled under them and no distance read off it was comparable
     #   with the last. Checked by counting what is actually laid, at two reaches four
     #   doublings apart, against what a fixed cell says should be there.
-    check SIZE_CELL_GRID =~ 100.0
+    check SIZE_CELL_GRID =~ 10.0
     for (extent, height) in [(1000.0, 60.0), (4000.0, 60.0)]:
       # Straight down from high above a lattice crossing, so every line the fog reaches is
       #   drawn whole: nothing falls behind the near plane to be clipped, and the count

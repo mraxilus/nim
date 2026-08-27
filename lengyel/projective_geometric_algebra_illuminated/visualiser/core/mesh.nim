@@ -166,27 +166,33 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to the seconds `animationProgress` works in.
 
 const
-  SIZE_CELL_GRID* = 100.0
+  SIZE_CELL_GRID* = 10.0
     ## Set the ground grid's own cell size, in world units. **One size, at every orbit
     ## distance**: the grid used to step its cell size with its own reach, doubling from
     ## a two-unit cell, which meant the ground silently re-scaled under a reader as they
     ## dollied and no distance read off it was comparable with the last one. A fixed cell
     ## is a ruler; a stepping one is not.
-    ##   The cost is stated rather than hidden: the reach still follows orbit distance
-    ##   (`fogFurnitureFor`), so at the opening placement -- distance 19, a reach near 72
-    ##   units -- a hundred-unit cell puts at most one line in view and usually none, and
-    ##   the ground reads as empty until the camera pulls back past a distance near 30.
-    ##   **Measured, by rendering both**: at ten units the same placement lays a legible
-    ##   lattice. A hundred is what was asked for, and it is one constant to retune.
-  CELLS_GRID_HALF_MAX* = 24
+    ##   Ten rather than a hundred, **measured by rendering both**: the reach follows orbit
+    ##   distance (`fogFurnitureFor`), and at the opening placement -- distance 19, a reach
+    ##   near 72 units -- a hundred-unit cell put at most one line in view and usually
+    ##   none, leaving the ground reading as empty. Ten lays a legible lattice there.
+  CELLS_GRID_HALF_MAX* = 120
     ## Bound how many cells the ground grid lays between the camera and the edge of its
     ## own reach, in each direction. The reach follows the camera's own far clip plane,
     ## which follows orbit distance, so a reach left unbounded would multiply the lines
-    ## drawn without limit as the camera pulls back -- past the vertex budget, and long
-    ## past the point where cells crowd below one screen pixel and stop being a reference
-    ## at all. `fogFurnitureFor` cuts the *reach* against this rather than the geometry,
-    ## so where the bound bites the grid still fades to nothing at its own drawn edge
-    ## instead of ending in a hard ring.
+    ## drawn without limit as the camera pulls back, straight past the vertex budget.
+    ## `fogFurnitureFor` cuts the *reach* against this rather than the geometry, so where
+    ## the bound bites the grid still fades to nothing at its own drawn edge instead of
+    ## ending in a hard ring.
+    ##   **What the number has to clear** is the orbit distance a reader may work at: the
+    ##   content sits at the target, one orbit distance from the eye, so ground stays under
+    ##   it exactly while the capped reach exceeds that distance. At 120 cells of ten units
+    ##   the cap is 1,200, past twice `camera.DISTANCE_LIMIT_FAR`. It was 24 while the cell
+    ##   was a hundred; dropping the cell to ten without raising this left the cap at 240,
+    ##   and at an orbit distance of 300 the grid became a patch floating in the near field
+    ##   with no ground at all under the objects being looked at. Rendered, not reasoned.
+    ##   Costs about 23,000 ribbon vertices where it binds, against `VERTICES_MAX`; world
+    ##   furniture keeps a mesh set of its own, so that is the whole of what it competes with.
   ALPHA_GRID* = 0.75'f32
     ## Scale the ground grid's own opacity by this, on top of whatever `alphaGridFade`
     ## leaves it. Width alone (`WIDTH_LINE_FURNITURE` against `WIDTH_LINE_OBJECT`) was not

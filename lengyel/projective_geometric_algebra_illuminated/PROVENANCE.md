@@ -275,17 +275,24 @@ hundred units away left no ground at all, and the camera read as bounded to a re
 only its orbit distance ever was. **Verified by rendering it**: an eye a thousand units from
 the origin now stands on lit ground, with the axes correctly gone.
 
-The **cell size is fixed at `SIZE_CELL_GRID` = 100.0**, replacing a size that doubled with
-the reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A stepping cell re-scaled the
+The **cell size is fixed at `SIZE_CELL_GRID` = 10.0**, replacing a size that doubled with the
+reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A stepping cell re-scaled the
 ground under a reader as they dollied, so no distance read off it was comparable with the
 last; a fixed cell is a ruler. What the doubling was protecting against — a reach that
 follows the camera laying lines without limit — is now handled by capping the *reach* at
-`CELLS_GRID_HALF_MAX × SIZE_CELL_GRID` (2400 units), which keeps the outer edge a fade
-rather than a cut. The cost is measured and accepted: at the opening placement the reach is
-≈72 units, so a hundred-unit cell puts at most one line in view and usually none, and the
-ground reads as empty until the camera pulls back past a distance near 30. At ten units the
-same placement lays a legible lattice; 100 is what was asked for and is one constant to
-retune.
+`CELLS_GRID_HALF_MAX × SIZE_CELL_GRID`, which keeps the outer edge a fade rather than a cut.
+A hundred-unit cell was tried first and rendered: at the opening placement the reach is ≈72
+units, so it put at most one line in view and usually none, and the ground read as empty
+until the camera pulled back past a distance near 30.
+
+`CELLS_GRID_HALF_MAX` = 120 follows from that cell, and the number that matters is the
+**capped reach**, 1,200 units. Content sits at the target, one orbit distance from the eye,
+so ground stays under it exactly while that cap exceeds the orbit distance — 1,200 is past
+twice `DISTANCE_LIMIT_FAR`. The cap was 24 while the cell was 100; dropping the cell to 10
+without raising it left the cap at 240, and at an orbit distance of 300 the grid rendered as
+a patch floating in the near field with no ground at all under the objects being looked at.
+Where the cap binds it costs ≈23,000 ribbon vertices against `VERTICES_MAX` = 49,152, which
+world furniture has a mesh set to itself.
 
 The **fade fractions were re-tuned with the move to the eye**, 0.03/0.12 → 0.06/0.20, and
 the two sets are not comparable: a radius measured from the origin reached that far *past*
