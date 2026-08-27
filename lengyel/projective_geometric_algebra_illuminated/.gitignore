@@ -18,3 +18,9 @@
 
 # Vendored WOFF2 faces under OFL-1.1, embedded into the browser page at build time.
 /fonts/
+
+# Dear ImGui checkout, under the MIT licence, compiled straight into the desktop binary
+#   rather than linked; `dependencies.list` carries the clone command and `gui.nim` the
+#   path it expects. PROVENANCE.md has always named it among the paths the working tree
+#   carries and the repository does not; it was the one of the four missing from here.
+/deps/
