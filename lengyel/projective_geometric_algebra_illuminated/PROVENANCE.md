@@ -260,19 +260,47 @@ shape and depth-buffer precision — a function of the far-to-near ratio — sta
 instead of decaying as the camera pulls back.
 
 **Furniture** (ground grid, world axes) reaches `extent_furniture`, computed from that far
-clip (`extentFurnitureFor`). The grid's cell size steps with its reach (`sizeCellGridFor`):
-`SIZE_CELL_GRID` = 2.0 doubled until no more than `CELLS_GRID_HALF_MAX` = 24 cells cover it.
-Doubling rather than dividing the reach evenly, so a coarser grid's lines fall exactly on a
-subset of the finer one's and the change reads as alternate lines dropping out rather than
-the grid sliding to new positions. A cell size fixed against a reach that now follows the
-camera would multiply without limit — it overran the 16384-vertex budget outright at a
-400-unit orbit, long after cells had crowded below one screen pixel. `addGrid` cuts each
-line into `SEGMENTS_GRID_FADE` pieces fading per-vertex (not per-piece, so GL
-interpolation stays smooth) from full alpha at
-`FRACTION_GRID_FADE_START` × extent to zero at `FRACTION_GRID_FADE_END` × extent — 0.03 /
-0.12, tuned by direct visual comparison. The ground plane skips the two lines that would
-coincide with the X/Y axes, avoiding depth-fighting. Axes use standard convention (x red,
-y green, z blue).
+clip (`extentFurnitureFor`), and is drawn as **fog about the eye** rather than as a halo
+about the world origin. `fogFurnitureFor` solves the two radii, both measured from
+`DrawExtent.eye`: full strength within `FRACTION_GRID_FADE_START` × extent, gone by
+`FRACTION_GRID_FADE_END` × extent. `addGrid` lays lines on world multiples of the cell size
+that fall within the ground disc the fog leaves — radius `sqrt(radius_gone² − height²)`
+about the point below the eye — and cuts each into `SEGMENTS_GRID_FADE` pieces fading
+per-vertex (not per-piece, so GL interpolation stays smooth) by each endpoint's own distance
+from the eye. The two lines through the world origin are skipped, coinciding with the X/Y
+axes and depth-fighting them. Axes use standard convention (x red, y green, z blue).
+
+Fog, not a halo, because a halo makes the origin a place the reader may not leave: panning a
+hundred units away left no ground at all, and the camera read as bounded to a region though
+only its orbit distance ever was. **Verified by rendering it**: an eye a thousand units from
+the origin now stands on lit ground, with the axes correctly gone.
+
+The **cell size is fixed at `SIZE_CELL_GRID` = 100.0**, replacing a size that doubled with
+the reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A stepping cell re-scaled the
+ground under a reader as they dollied, so no distance read off it was comparable with the
+last; a fixed cell is a ruler. What the doubling was protecting against — a reach that
+follows the camera laying lines without limit — is now handled by capping the *reach* at
+`CELLS_GRID_HALF_MAX × SIZE_CELL_GRID` (2400 units), which keeps the outer edge a fade
+rather than a cut. The cost is measured and accepted: at the opening placement the reach is
+≈72 units, so a hundred-unit cell puts at most one line in view and usually none, and the
+ground reads as empty until the camera pulls back past a distance near 30. At ten units the
+same placement lays a legible lattice; 100 is what was asked for and is one constant to
+retune.
+
+The **fade fractions were re-tuned with the move to the eye**, 0.03/0.12 → 0.06/0.20, and
+the two sets are not comparable: a radius measured from the origin reached that far *past*
+the content, while the same radius from the eye is spent getting to it. 0.06 is 1.14 orbit
+distances, which puts what the camera is looking at inside the solid core; 0.20 is 3.8, which
+puts the fog's edge about 2.8 distances beyond it and still a fifth of the far clip. Both
+numbers came from rendering the alternatives: at 0.03/0.12 the ground at the target was
+faint enough to read as absent.
+
+The grid is additionally **dimmed by `ALPHA_GRID` = 0.75** where it is built. Width alone
+(1.5 px against a line's 2.5) was not carrying the difference between reference and content.
+Applied in `addGrid` rather than to `Ink.Grid`, which is also `INK_POOL_FREE` — dimming the
+palette entry would make a scene object taking that colour translucent. 0.55 was tried first
+and rendered a ground that read as absent rather than as recessive; the grid's colour already
+sits close to the backdrop, so opacity spends fast.
 
 **The world axes are reference, not geometry, and they are drawn that way.** Readers kept
 taking them for drawn lines. Measured against the source rather than judged: an axis was the
@@ -282,14 +310,16 @@ mark in any frame. Width already separated them (1.5 px against a line's 2.5, co
 asserted) and clearly was not enough on its own.
 
 Two changes. The axes now fade and cut off on **the grid's own schedule**, so all the
-furniture ends at one horizon and reference reads as a neighbourhood around the origin —
+furniture ends at one horizon and reference reads as a neighbourhood around the *reader* —
 this deliberately reverses an earlier decision to let them reach indefinitely, which bought
-orientation at any zoom and cost the confusion above. And the three hues are **dimmed and
-desaturated**, through `axisTinted` at compile time from `MUTE_AXIS_TOWARD_GREY` (0.22 →
-0.45) and a new `SCALE_AXIS_LUMINANCE` (0.50). Those constants were previously
-documentation only — the blend was hand-applied into the literals and nothing read the
-constant, so the number and the colours it described could drift apart. They are the source
-now.
+orientation at any zoom and cost the confusion above. Each axis is drawn over the chord of
+the fog sphere it crosses, so one the camera has flown clear of contributes nothing; the
+cost, accepted, is that beyond the fog nothing marks where the origin is. And the three hues
+are **dimmed and desaturated**, through `axisTinted` at compile time from
+`MUTE_AXIS_TOWARD_GREY` (0.22 → 0.45) and a new `SCALE_AXIS_LUMINANCE` (0.50). Those
+constants were previously documentation only — the blend was hand-applied into the literals
+and nothing read the constant, so the number and the colours it described could drift apart.
+They are the source now.
 
 **The dimming was settled by the palette gate, not by eye.** A first attempt at 0.62
 luminance read well and *failed* `tools/check_palette`: dimming had walked the green and

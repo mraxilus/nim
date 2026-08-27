@@ -636,33 +636,146 @@ suite "Mesh":
     check MESHES[Primitive.Triangle].count_vertices <= VERTICES_MAX
 
 
-  test "world furniture stays within its own, separately tracked extent":
-    MESHES.addAxes(SCALE_TEST.extent_furniture, SCALE_TEST)
-    MESHES.addGrid(SCALE_TEST.extent_furniture, SCALE_TEST)
+  func scaleFurnitureAt(eye: Position; extent: float): DrawExtent =
+    ## Stand an eye somewhere, with a stated furniture reach, for the fog cases below.
+    ##   `SCALE_TEST` cannot serve them: its eye is seven units up with a reach of thirty,
+    ##   which `fogFurnitureFor` cuts to 3.6 -- shorter than that height, so its fog never
+    ##   reaches the ground and no grid is drawn at all. A fog case needs an eye standing
+    ##   inside its own fog, and several need it far from the origin, which is the whole
+    ##   point of the rule being checked.
+    DrawExtent(
+      extent_furniture: extent,
+      eye: eye, radius_horizon: extent,
+      # Looking a little ahead and down, which every ground fixture below lies under.
+      forward: direction(
+        toMultivector(eye) ∧ toMultivector(Position(x: eye.x + 1.0, y: eye.y, z: 0.0))
+      ).get,
+      tangent_half_view: tan(0.5*degToRad(45.0)),
+      height_pixels: HEIGHT_SCALE_TEST,
+      depth_near: 0.1,
+    )
+
+  let SCALE_FOG = scaleFurnitureAt(Position(x: 103, y: -97, z: 5), 300.0)
+    ## Eye inside its own fog: a reach of 300 fades out at 36 units, well past the five
+    ## the eye stands above the ground.
+    ##   Stood a few units off a lattice crossing rather than anywhere convenient, so that
+    ##   a hundred-unit cell actually lays a line through the fog's solid core -- the
+    ##   nearest lines are three units away, and an eye parked between crossings would
+    ##   leave the core empty and a fade case with nothing to measure.
+
+
+  test "world furniture stays inside the fog it is drawn in":
+    MESHES.clearMeshes
+    MESHES.addAxes(SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addGrid(SCALE_FOG.extent_furniture, SCALE_FOG)
     check MESHES[Primitive.Ribbon].count_vertices > 0
+    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
       let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-      check max(abs(at.x), max(abs(at.y), abs(at.z))) <=
-        SCALE_TEST.extent_furniture + TOLERANCE_TEST
+      # Slack of one unit for the ribbon's own half-width, which steps each corner off
+      #   the line it draws by half a pixel's worth of world at that depth.
+      check norm(at - SCALE_FOG.eye) <= fog.radius_gone + 1.0
 
 
-  test "ground grid holds full alpha near the origin and fades toward its own reach":
+  test "world furniture is fog about the camera, not a halo about the origin":
+    # The rule this project had before: furniture was laid about the world origin and a
+    #   reader who panned away from it lost the ground entirely. Both halves are checked,
+    #   since either alone passes under the old behaviour.
+    let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
     MESHES.clearMeshes
-    MESHES.addGrid(SCALE_TEST.extent_furniture, SCALE_TEST)
-    let radius_fade_start = FRACTION_GRID_FADE_START*SCALE_TEST.extent_furniture
+    MESHES.addGrid(scale_afar.extent_furniture, scale_afar)
+    check MESHES[Primitive.Ribbon].count_vertices > 0
+    let fog = fogFurnitureFor(scale_afar.extent_furniture)
+    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
+      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
+      check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
+      check norm(at - ORIGIN) > fog.radius_gone
+
+
+  test "ground grid holds full alpha near the camera and fades to nothing at its reach":
+    MESHES.clearMeshes
+    MESHES.addGrid(SCALE_FOG.extent_furniture, SCALE_FOG)
+    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     var
       alpha_near_min = 1.0
       alpha_far_max = 0.0
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
       let
         vertex = MESHES[Primitive.Ribbon].vertices[i]
-        radius = norm(vertex.toPosition - ORIGIN)
-      if radius <= radius_fade_start:
+        radius = norm(vertex.toPosition - SCALE_FOG.eye)
+      if radius <= fog.radius_full:
         alpha_near_min = min(alpha_near_min, float(vertex.alpha))
-      if radius >= SCALE_TEST.extent_furniture - TOLERANCE_TEST:
+      if radius >= fog.radius_gone - TOLERANCE_TEST:
         alpha_far_max = max(alpha_far_max, float(vertex.alpha))
-    check isNear(alpha_near_min, Ink.Grid.colour.alpha)
+    check isNear(alpha_near_min, Ink.Grid.colour.alpha*ALPHA_GRID)
     check alpha_far_max <= TOLERANCE_SINGLE
+
+
+  test "the grid reads as reference: dimmer than the ink an object of that colour takes":
+    # `Ink.Grid` is also `INK_POOL_FREE`, so the dimming has to live in the grid rather
+    #   than in the palette entry; an object taking that ink must stay opaque.
+    check ALPHA_GRID < 1.0
+    check isNear(Ink.Grid.colour.alpha, 1.0)
+
+
+  test "grid cells are one fixed size, at every reach the camera asks for":
+    # The size this replaced doubled with the reach, so a reader who dollied out found the
+    #   ground silently re-scaled under them and no distance read off it was comparable
+    #   with the last. Checked by counting what is actually laid, at two reaches four
+    #   doublings apart, against what a fixed cell says should be there.
+    check SIZE_CELL_GRID =~ 100.0
+    for (extent, height) in [(1000.0, 60.0), (4000.0, 60.0)]:
+      # Straight down from high above a lattice crossing, so every line the fog reaches is
+      #   drawn whole: nothing falls behind the near plane to be clipped, and the count
+      #   below is then exact arithmetic rather than a reading of what happened to survive.
+      let
+        scale_above = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
+        fog = fogFurnitureFor(extent)
+        radius = sqrt(fog.radius_gone*fog.radius_gone - height*height)
+        # Lines each way from the eye, in each of the two families, skipping the one
+        #   through the origin that coincides with a world axis.
+        lines = 4*int(floor(radius/SIZE_CELL_GRID))
+      MESHES.clearMeshes
+      MESHES.addGrid(extent, scale_above)
+      check MESHES[Primitive.Ribbon].count_vertices == lines*SEGMENTS_GRID_FADE*6
+      for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
+        let
+          at = MESHES[Primitive.Ribbon].vertices[i].toPosition
+          off_x = abs(at.x - SIZE_CELL_GRID*round(at.x/SIZE_CELL_GRID))
+          off_y = abs(at.y - SIZE_CELL_GRID*round(at.y/SIZE_CELL_GRID))
+        check min(off_x, off_y) <= 1.0
+
+
+  test "the grid's own cap bounds what a camera dollied far out may lay":
+    # What keeps an unbounded orbit distance from laying lines without limit: the reach
+    #   is capped rather than the geometry, so the outer edge stays a fade.
+    check fogFurnitureFor(1.0e9).radius_gone =~ float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
+    check fogFurnitureFor(1.0e9).radius_full <
+      fogFurnitureFor(1.0e9).radius_gone
+    MESHES.clearMeshes
+    MESHES.addGrid(1.0e9, scaleFurnitureAt(Position(x: 0, y: 0, z: 40), 1.0e9))
+    check MESHES[Primitive.Ribbon].count_vertices > 0
+    check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+
+
+  test "the axes fog too: the one the camera stands by is drawn, the far ones are not":
+    # Fog applies to the axes as well, so all the furniture ends at one horizon rather
+    #   than the grid stopping while the axes run on. An eye a thousand units out along x
+    #   stands beside that axis and has flown clear of the other two -- and both halves
+    #   matter, since an axis rule that draws nothing at all passes the second alone.
+    let
+      scale_afar = scaleFurnitureAt(Position(x: 1000, y: 0, z: 6), 300.0)
+      fog = fogFurnitureFor(scale_afar.extent_furniture)
+    check norm(scale_afar.eye - ORIGIN) > fog.radius_gone
+    MESHES.clearMeshes
+    MESHES.addAxes(scale_afar.extent_furniture, scale_afar)
+    check MESHES[Primitive.Ribbon].count_vertices > 0
+    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
+      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
+      # Everything drawn lies on the x axis: the y and z axes are outside the fog, and
+      #   the stretch of the x axis that is drawn is the stretch inside it.
+      check abs(at.y) <= 1.0 and abs(at.z) <= 1.0
+      check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
 
 
   test "radiusHorizonFor scales with the camera's own far clip distance":

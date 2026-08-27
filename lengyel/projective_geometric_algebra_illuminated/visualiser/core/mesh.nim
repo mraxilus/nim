@@ -32,8 +32,10 @@
 ## instead, tied to the camera's own far clip distance rather than to orbit distance
 ## (`extentFurnitureFor`), so it reads as extending indefinitely into the distance
 ## regardless of how far the camera has dollied in or out to inspect finite content.
-## Held distinct from `radius_horizon` deliberately: furniture has no attitude of its
-## own to meet, so nothing ties its reach to the eye the way a line's does.
+## It is drawn as **fog about the eye** (`fogFurnitureFor`): solid nearby, faded to
+## nothing at the reach above, and laid wherever the camera has flown to rather than
+## only around the world origin. A finite *line object* still reaches that same extent
+## from its own support, since it is content and not reference.
 ##
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
 ##   Rebuilding beats tracking which object changed, while scene holds only tens of objects.
@@ -88,15 +90,28 @@ const
     ## way to camera's own far clip plane -- tied to that fixed depth rather than to
     ## orbit distance, so all three read as extending indefinitely into the distance
     ## regardless of how far the camera has dollied in or out to inspect finite content.
-  FRACTION_GRID_FADE_START* = 0.03
+  FRACTION_GRID_FADE_START* = 0.06
     ## Hold ground grid lines at full alpha out to this fraction of their own reach,
     ## fading the remainder out toward `FRACTION_GRID_FADE_END` -- past that point,
     ## cells crowd into fewer and fewer screen pixels under perspective, reading as
     ## aliasing noise rather than as a reference.
-  FRACTION_GRID_FADE_END* = 0.12
+    ##   Doubled from 0.03 when the fade moved from the world origin to the eye
+    ##   (`fogFurnitureFor`), and the two are not comparable: a core measured about the
+    ##   origin covered the content, while the eye stands a whole orbit distance away from
+    ##   it, so the same fraction left the ground under what the reader was looking at
+    ##   already fading. 0.06 of the reach is 1.14 orbit distances, which puts the target
+    ##   inside the solid core with room to spare. **Measured by rendering it**: at 0.03
+    ##   the ground at the target was faint enough to read as absent.
+  FRACTION_GRID_FADE_END* = 0.20
     ## Cut ground grid lines off entirely at this fraction of their own reach, well
     ## short of it -- a faint line still aliases under perspective, so the fix is to
     ## stop drawing it there, not just to dim it further.
+    ##   Raised from 0.12 with the move to fog about the eye, for the same reason
+    ##   `FRACTION_GRID_FADE_START` was: a radius measured from the origin reached that
+    ##   far *past* the content, while the same radius measured from the eye is spent
+    ##   getting to it. 0.20 of the reach is 3.8 orbit distances, which puts the fog's
+    ##   edge about 2.8 distances beyond what the camera is looking at -- close to the
+    ##   ground the halo used to cover, and still a fifth of the far clip plane.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 49152
     ## Bound how many vertices one primitive's mesh holds, per frame.
     ##   Tripled when lines became ribbons: a segment that was two vertices is now six.
@@ -151,16 +166,38 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to the seconds `animationProgress` works in.
 
 const
-  SIZE_CELL_GRID* = 2.0
-    ## Set the ground grid's own finest cell size, used whenever the grid's reach is
-    ## short enough that `CELLS_GRID_HALF_MAX` cells cover it; see `sizeCellGridFor`.
+  SIZE_CELL_GRID* = 100.0
+    ## Set the ground grid's own cell size, in world units. **One size, at every orbit
+    ## distance**: the grid used to step its cell size with its own reach, doubling from
+    ## a two-unit cell, which meant the ground silently re-scaled under a reader as they
+    ## dollied and no distance read off it was comparable with the last one. A fixed cell
+    ## is a ruler; a stepping one is not.
+    ##   The cost is stated rather than hidden: the reach still follows orbit distance
+    ##   (`fogFurnitureFor`), so at the opening placement -- distance 19, a reach near 72
+    ##   units -- a hundred-unit cell puts at most one line in view and usually none, and
+    ##   the ground reads as empty until the camera pulls back past a distance near 30.
+    ##   **Measured, by rendering both**: at ten units the same placement lays a legible
+    ##   lattice. A hundred is what was asked for, and it is one constant to retune.
   CELLS_GRID_HALF_MAX* = 24
-    ## Bound how many cells the ground grid lays between the origin and the edge of its
+    ## Bound how many cells the ground grid lays between the camera and the edge of its
     ## own reach, in each direction. The reach follows the camera's own far clip plane,
-    ## which follows orbit distance, so a cell size fixed against it would multiply
-    ## without limit as the camera pulls back -- past the vertex budget, and long past
-    ## the point where cells crowd below one screen pixel and stop being a reference at
-    ## all. Bounding the count instead is what keeps both finite.
+    ## which follows orbit distance, so a reach left unbounded would multiply the lines
+    ## drawn without limit as the camera pulls back -- past the vertex budget, and long
+    ## past the point where cells crowd below one screen pixel and stop being a reference
+    ## at all. `fogFurnitureFor` cuts the *reach* against this rather than the geometry,
+    ## so where the bound bites the grid still fades to nothing at its own drawn edge
+    ## instead of ending in a hard ring.
+  ALPHA_GRID* = 0.75'f32
+    ## Scale the ground grid's own opacity by this, on top of whatever `alphaGridFade`
+    ## leaves it. Width alone (`WIDTH_LINE_FURNITURE` against `WIDTH_LINE_OBJECT`) was not
+    ## carrying the difference: a full-strength grid line and a drawn line differ by one
+    ## pixel of width, and readers were reading the ruled ground as content.
+    ##   A quarter off rather than a half: the grid's own colour already sits close to the
+    ##   backdrop, so opacity spends fast. 0.55 was tried first and rendered a ground that
+    ##   read as absent rather than as recessive.
+    ##   Applied where the grid is built rather than to `Ink.Grid` itself, because that
+    ##   palette entry is also `INK_POOL_FREE` -- the colour a scene object takes when the
+    ##   pool has run dry -- and dimming the entry would make that object translucent.
   SEGMENTS_GRID_FADE* = 8
     ## Cut each ground grid line into this many pieces, independent of `SIZE_CELL_GRID`,
     ## so `alphaGridFade` can fade it smoothly by distance without one piece per cell.
@@ -210,6 +247,8 @@ static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
   doAssert CELLS_GRID_HALF_MAX > 0,
     &"Grid must lay at least one cell each way; got `{CELLS_GRID_HALF_MAX}`."
+  doAssert ALPHA_GRID > 0 and ALPHA_GRID < 1.0,
+    &"Grid opacity must fall strictly between 0 and 1; got `{ALPHA_GRID}`."
   doAssert SEGMENTS_GRID_FADE >= 2,
     &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
@@ -355,15 +394,29 @@ func radiusHorizonFor*(distance_far: float): float =
   distance_far * FRACTION_HORIZON
 
 
-func sizeCellGridFor*(radius_fade_end: float): float =
-  ## Choose the ground grid's own cell size for a given reach: `SIZE_CELL_GRID`, doubled
-  ## as many times as it takes to lay no more than `CELLS_GRID_HALF_MAX` cells across it.
-  ##   Doubling rather than dividing the reach evenly, so a cell size only ever steps
-  ## between fixed multiples of the finest one as the camera dollies. Every coarser grid
-  ## then has its lines exactly on a subset of the finer grid's, and the change reads as
-  ## alternate lines dropping out rather than as the whole grid sliding to new positions.
-  result = SIZE_CELL_GRID
-  while radius_fade_end/result > float(CELLS_GRID_HALF_MAX): result *= 2.0
+func fogFurnitureFor*(extent: float): tuple[radius_full, radius_gone: float] =
+  ## Solve where the world furniture's own fog begins and ends, as distances **from the
+  ## eye**: a grid line or an axis holds its full strength within `radius_full` and has
+  ## faded to nothing by `radius_gone`, with `addGrid` and `addAxes` cutting their
+  ## geometry off at the latter.
+  ##   Fog rather than a halo about the world origin, which is what this replaced. A halo
+  ## makes the origin a place the reader may not leave: pan a hundred units away and the
+  ## ground is simply gone, and the camera reads as bounded to a region even though only
+  ## its orbit distance ever was. Measured from the eye rather than from the camera's own
+  ## target so that it behaves as fog does -- what is near the reader is solid and what is
+  ## far is not, whichever way they happen to be looking.
+  ##   Both radii still follow the camera's own reach, so pulling back reveals more
+  ## ground; only their *centre* moved. `CELLS_GRID_HALF_MAX` caps the outer one, since a
+  ## reach that grows without limit lays lines without limit; capping the reach rather
+  ## than the geometry keeps the outer edge a fade rather than a cut.
+  let radius_gone = min(
+    FRACTION_GRID_FADE_END*extent, float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
+  )
+  # Held as a ratio of the outer radius rather than as its own fraction of `extent`, so
+  #   the cap above shortens the solid core with the fog instead of leaving a grid that is
+  #   at full strength right up to the edge it is cut at.
+  (radius_full: radius_gone*(FRACTION_GRID_FADE_START/FRACTION_GRID_FADE_END),
+   radius_gone: radius_gone)
 
 
 func extentFurnitureFor*(distance_far: float): float =
@@ -799,6 +852,8 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   ## fade start, a grid line's own cells crowd into fewer and fewer screen pixels
   ## under perspective, reading as aliasing noise rather than as a reference; fading
   ## them out trades that noise for a clean horizon instead of fighting it.
+  ##   `radius` is a distance **from the eye**, and the two bounds come from
+  ##   `fogFurnitureFor`; see it for why the fog is centred there and not on the origin.
   ##   Shared with `addAxes`, which fades on the same schedule so that all the world
   ##   furniture ends at one horizon rather than the grid stopping while the axes run on.
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
@@ -807,86 +862,139 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
 proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
   ## Append world axes through origin, each in the standard convention: x red, y green,
   ## z blue, so orientation reads at a glance regardless of where the camera stands.
-  ##   **Faded out and cut off on the ground grid's own schedule**, rather than running the
-  ##   full furniture extent at flat alpha as they used to. An axis reaching the horizon at
-  ##   full strength is the longest, brightest mark in the frame, and readers were taking
-  ##   them for drawn lines -- width alone (`WIDTH_LINE_FURNITURE` against
-  ##   `WIDTH_LINE_OBJECT`) was never going to carry that on its own. Sharing the grid's
-  ##   fractions rather than taking constants of their own puts all the furniture inside one
-  ##   horizon, so reference reads as a neighbourhood around the origin and anything outside
-  ##   it is content.
-  ##   This reverses an earlier decision to let the axes reach indefinitely. What that
-  ##   bought was orientation at any zoom; what it cost was the confusion above, which a
-  ##   reader hit repeatedly. The grid was already cut off at the same radius and no one
-  ##   reported losing their bearings from it.
+  ##   **Faded out and cut off in the ground grid's own fog**, rather than running the
+  ## full furniture extent at flat alpha as they once did. An axis reaching the horizon at
+  ## full strength is the longest, brightest mark in the frame, and readers were taking
+  ## them for drawn lines -- width alone (`WIDTH_LINE_FURNITURE` against
+  ## `WIDTH_LINE_OBJECT`) was never going to carry that on its own. Sharing the grid's own
+  ## fog rather than taking radii of their own puts all the furniture inside one horizon,
+  ## so reference reads as a neighbourhood around the *reader* and anything outside it is
+  ## content.
+  ##   Each axis is drawn only over the stretch of it lying inside that fog: a chord of
+  ## the sphere of radius `radius_gone` about the eye, solved below. An axis the eye has
+  ## flown clear of contributes nothing at all, which is what fog means -- the origin is
+  ## a place in the world rather than a place the reader is tied to.
   const AXES_WORLD = [
     (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
     (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
     (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
   let
-    radius_fade_end = FRACTION_GRID_FADE_END * extent
-    radius_fade_start = FRACTION_GRID_FADE_START * extent
+    fog = fogFurnitureFor(extent)
+    offset_eye = scale.eye - ORIGIN_WORLD
   for (axis, ink) in AXES_WORLD:
-    let tint = ink.colour
-    func tintAt(reach: float): Rgba =
+    # Chord of the fog sphere along this axis, about the point on it nearest the eye:
+    #   the axis passes the eye at `separation`, so it is inside the fog for `half`
+    #   either side of `middle` and nowhere else.
+    let
+      middle = dot(offset_eye, axis)
+      separation_squared = max(0.0, dot(offset_eye, offset_eye) - middle*middle)
+      half_squared = fog.radius_gone*fog.radius_gone - separation_squared
+    if half_squared <= 0.0: continue
+    let
+      half = sqrt(half_squared)
+      tint = ink.colour
+    func tintAt(at: Position): Rgba =
       tint.fade(
-        tint.alpha * alphaGridFade(abs(reach), radius_fade_start, radius_fade_end)
+        tint.alpha * alphaGridFade(
+          norm(at - scale.eye), fog.radius_full, fog.radius_gone
+        )
       )
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
-    #   distance from the origin, so the cutoff never reads as a hard edge.
+    #   distance from the eye, so the cutoff never reads as a hard edge.
+    #   Each end is placed here rather than by a nested `placed(reach)`, since `axis` is
+    #   the loop's own `lent` view of a constant and a closure may not capture one.
     for j in 0 ..< 2*SEGMENTS_GRID_FADE:
       let
-        a = radius_fade_end * (float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
-        b = radius_fade_end * (float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
+        tail = ORIGIN_WORLD +
+          (middle + half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
+        head = ORIGIN_WORLD +
+          (middle + half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
       meshes.addSegment(
-        ORIGIN_WORLD + a*axis, ORIGIN_WORLD + b*axis, tintAt(a), tintAt(b),
-        WIDTH_LINE_FURNITURE, scale,
+        tail, head, tintAt(tail), tintAt(head), WIDTH_LINE_FURNITURE, scale,
       )
 
 
-proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
-  ## Append reference grid on ground, so distance and direction stay judgeable, at the
-  ## cell size `sizeCellGridFor` picks for how far it reaches. Rather
-  ## than drawing all the way out to `extent` at ever-fainter alpha, every line is cut
-  ## off entirely at `radius_fade_end` -- well short of `extent` -- since past that
-  ## point cells crowd into so few screen pixels under perspective that even a faint
-  ## line still aliases; cutting the geometry off there removes the aliasing outright
-  ## rather than just dimming it. Within `radius_fade_end`, each line is cut into
-  ## `SEGMENTS_GRID_FADE` pieces, faded by each endpoint's own distance from the
-  ## origin (`alphaGridFade`) from `radius_fade_start` so the cutoff itself is never
-  ## visible as a hard edge.
-  ##   Skips the two lines through the origin itself: those coincide exactly with the
-  ##   x and y world axes, and would either fight them for the same depth or hide their
-  ##   colour under plain grid grey, depending on which happened to draw last.
+proc addGridFamily(
+  meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
+  fog: tuple[radius_full, radius_gone: float]; radius_ground: float;
+  along, across: Direction
+) =
+  ## Append one family of ground grid lines: every lattice line running along `along`,
+  ## stepped by `SIZE_CELL_GRID` along `across`, that falls within `radius_ground` of the
+  ## point on the ground directly below the eye.
+  ##   The two families are laid separately, unlike the single origin-centred loop this
+  ## replaced, because each is now centred on a different one of the eye's own ground
+  ## coordinates and no longer shares the other's offsets.
+  ##   Lines still sit on **world** multiples of the cell size rather than on offsets from
+  ## the camera, so what the reader sees slide past as they move is the world going by,
+  ## not a grid dragged along with them -- and a line stays where it was when they come
+  ## back to it.
   let
-    tint = Ink.Grid.colour
-    radius_fade_end = FRACTION_GRID_FADE_END * extent
-    radius_fade_start = FRACTION_GRID_FADE_START * extent
-    size_cell = sizeCellGridFor(radius_fade_end)
-    count = int(ceil(radius_fade_end / size_cell))
-  func tintAt(u, offset: float): Rgba =
-    tint.fade(
-      tint.alpha * alphaGridFade(
-        norm(Direction(x: u, y: offset, z: 0)), radius_fade_start, radius_fade_end,
-      )
-    )
-  for i in -count .. count:
+    centre_across = dot(scale.eye - ORIGIN_WORLD, across)
+    centre_along = dot(scale.eye - ORIGIN_WORLD, along)
+    first = int(ceil((centre_across - radius_ground)/SIZE_CELL_GRID))
+    last = int(floor((centre_across + radius_ground)/SIZE_CELL_GRID))
+  for i in first .. last:
+    # Skips the lattice line through the world origin: it coincides exactly with a world
+    #   axis, and would either fight it for the same depth or hide its colour under plain
+    #   grid grey, depending on which happened to draw last.
     if i == 0: continue
-    let offset = float(i) * size_cell
-    let reach = sqrt(max(0.0, radius_fade_end*radius_fade_end - offset*offset))
+    let
+      offset = float(i)*SIZE_CELL_GRID
+      reach_squared = radius_ground*radius_ground -
+        (offset - centre_across)*(offset - centre_across)
+    if reach_squared <= 0.0: continue
+    let reach = sqrt(reach_squared)
+    func placed(run: float): Position =
+      ORIGIN_WORLD + offset*across + (centre_along + run)*along
+    func tintAt(run: float): Rgba =
+      tint.fade(
+        tint.alpha * alphaGridFade(
+          norm(placed(run) - scale.eye), fog.radius_full, fog.radius_gone
+        )
+      )
     for j in 0 ..< SEGMENTS_GRID_FADE:
       let
         a = reach * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
         b = reach * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
       meshes.addSegment(
-        Position(x: offset, y: a, z: 0), Position(x: offset, y: b, z: 0),
-        tintAt(a, offset), tintAt(b, offset), WIDTH_LINE_FURNITURE, scale,
+        placed(a), placed(b), tintAt(a), tintAt(b), WIDTH_LINE_FURNITURE, scale,
       )
-      meshes.addSegment(
-        Position(x: a, y: offset, z: 0), Position(x: b, y: offset, z: 0),
-        tintAt(a, offset), tintAt(b, offset), WIDTH_LINE_FURNITURE, scale,
-      )
+
+
+proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
+  ## Append reference grid on the ground, so distance and direction stay judgeable, at
+  ## `SIZE_CELL_GRID` cells laid around wherever the camera is standing.
+  ##   **Fog, not a halo.** Every line is faded by its own endpoints' distance from the
+  ## eye and cut off entirely at `fogFurnitureFor`'s outer radius -- so the ground is
+  ## solid underfoot and gone in the distance, wherever the reader has flown to. Cutting
+  ## the geometry rather than drawing it at ever-fainter alpha is deliberate: past that
+  ## radius cells crowd into so few screen pixels under perspective that even a faint line
+  ## still aliases.
+  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about the
+  ## point below the eye, of radius `sqrt(radius_gone^2 - height^2)`: a camera high above
+  ## the ground sees less of it than one standing on it, exactly as fog would leave.
+  ## An eye higher than the fog reaches sees no ground at all.
+  ##   Dimmed by `ALPHA_GRID` on top of that fade, so the ruled ground reads as reference
+  ## rather than as content; see that constant for why it is applied here and not to the
+  ## palette entry.
+  let
+    base = Ink.Grid.colour
+    tint = base.fade(base.alpha*ALPHA_GRID)
+    fog = fogFurnitureFor(extent)
+    height = abs(scale.eye.z)
+    radius_squared = fog.radius_gone*fog.radius_gone - height*height
+  if radius_squared <= 0.0: return
+  let radius_ground = sqrt(radius_squared)
+  meshes.addGridFamily(
+    scale, tint, fog, radius_ground,
+    along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
+  )
+  meshes.addGridFamily(
+    scale, tint, fog, radius_ground,
+    along = Direction(x: 1, y: 0, z: 0), across = Direction(x: 0, y: 1, z: 0),
+  )
 
 
 

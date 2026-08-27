@@ -337,13 +337,19 @@ ordinary washes crossing still look order-dependent — a known, accepted limit.
 **Furniture** (ground grid, world axes) reaches a distance derived from the far clip plane,
 not from orbit distance, so it reads as extending indefinitely however far the camera dollies.
 
-- Grid cell size **steps with reach**: base 2.0 world units, doubled until no more than 24
-  cells cover the reach. Doubling rather than dividing evenly, so a coarser grid's lines fall
-  exactly on a subset of the finer one's and the change reads as alternate lines dropping out
-  rather than the grid sliding. A cell size fixed against a camera-following reach overruns a
-  fixed vertex budget outright, long after cells crowd below one screen pixel.
+- Furniture is **fog about the camera**, not a halo about the world origin: both fade radii
+  are measured from the eye, and the grid's lattice is re-laid around wherever the camera
+  stands. Panning away from the origin must never leave the reader without ground.
+- Grid cell size is **fixed at 100 world units**, never stepped with the reach: a cell that
+  re-scales as the camera dollies makes no two distances read off it comparable. The reach is
+  capped instead, at 24 cells each way, which is what keeps a camera-following fog inside a
+  fixed vertex budget.
 - Each grid line is cut into 8 pieces fading **per vertex** (not per piece, so interpolation
-  stays smooth) from full alpha at 0.03 × extent to zero at 0.12 × extent.
+  stays smooth) from full alpha at 0.06 × extent to zero at 0.20 × extent, both measured from
+  the eye. The grid is dimmed by a further 0.75 where it is built — not in the palette, whose
+  grid entry doubles as a scene object's colour.
+- The world axes fog on the same rule, each drawn only over the stretch inside it, so all the
+  furniture ends at one horizon.
 - The ground plane skips the two lines that would coincide with the x and y axes, avoiding
   depth fighting. Axes use the standard convention: x red, y green, z blue.
 
