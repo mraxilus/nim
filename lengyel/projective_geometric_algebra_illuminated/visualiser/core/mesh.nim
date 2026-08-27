@@ -187,8 +187,11 @@ const
     ##   **What the number has to clear** is the orbit distance a reader may work at: the
     ##   content sits at the target, one orbit distance from the eye, so ground stays under
     ##   it exactly while the capped reach exceeds that distance. At 120 cells of ten units
-    ##   the cap is 1,200, past twice `camera.DISTANCE_LIMIT_FAR`. It was 24 while the cell
-    ##   was a hundred; dropping the cell to ten without raising this left the cap at 240,
+    ##   the cap is 1,200, and an orbit distance is no longer bounded at all
+    ##   (`camera.DISTANCE_LIMIT_NEAR`), so past 1,200 the ground stops reaching what the
+    ##   camera is looking at -- fog behaving as fog, and the price of a fixed cell.
+    ##   It was 24 while the cell was a hundred; dropping the cell to ten without raising
+    ##   this left the cap at 240,
     ##   and at an orbit distance of 300 the grid became a patch floating in the near field
     ##   with no ground at all under the objects being looked at. Rendered, not reasoned.
     ##   Costs about 23,000 ribbon vertices where it binds, against `VERTICES_MAX`; world

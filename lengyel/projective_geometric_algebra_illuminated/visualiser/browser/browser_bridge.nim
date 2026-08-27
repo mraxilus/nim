@@ -620,10 +620,10 @@ proc nimSetCameraElevation(v: cfloat) {.exportc.} =
 
 
 proc nimSetCameraDistance(v: cfloat) {.exportc.} =
-  ## Rewrite distance from target, in world units, clamped to the same bound
-  ## `panel.layoutView`'s own drag widget uses.
+  ## Rewrite distance from target, in world units, held off the one bound an orbit
+  ## distance has; see `camera.distanceHeld`.
   g_tween_camera.abandon()
-  g_camera.distance = clamp(float(v), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
+  g_camera.distance = distanceHeld(float(v))
 
 
 proc nimSetCameraFov(v: cfloat) {.exportc.} = g_camera.degrees_field_of_view = float(v)
@@ -637,9 +637,11 @@ proc nimSetCameraTarget(x, y, z: cfloat) {.exportc.} =
 
 
 proc nimCameraLimits(): seq[float32] {.exportc.} =
-  ## Report the same bounds `panel.layoutView`'s own drag widgets clamp to, so a numeric
-  ## input in the browser cannot walk the camera somewhere the desktop build would refuse.
-  @[cfloat(ELEVATION_LIMIT), cfloat(DISTANCE_LIMIT_NEAR), cfloat(DISTANCE_LIMIT_FAR)]
+  ## Report the bounds a camera placement is held to, for a caller offering numeric input:
+  ## elevation either side of the horizon, and the one floor an orbit distance has. There
+  ## is deliberately no third entry -- nothing bounds how far out the camera may orbit; see
+  ## `camera.DISTANCE_LIMIT_NEAR`.
+  @[cfloat(ELEVATION_LIMIT), cfloat(DISTANCE_LIMIT_NEAR)]
 
 
 

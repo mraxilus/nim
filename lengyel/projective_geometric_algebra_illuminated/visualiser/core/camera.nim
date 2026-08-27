@@ -41,9 +41,21 @@ const
   ELEVATION_LIMIT* = 0.5*PI - 0.02
     ## Bound elevation short of pole, where sight axis would run along `UP_WORLD`.
   DISTANCE_LIMIT_NEAR* = 0.05
-    ## Bound how close eye may orbit to target.
-  DISTANCE_LIMIT_FAR* = 500.0
-    ## Bound how far eye may orbit from target.
+    ## Bound how close eye may orbit to target, through `distanceHeld`.
+    ##   **The only bound left on where the camera may stand.** It is not a matter of
+    ##   taste: at an orbit distance of zero the eye coincides with its target, the sight
+    ##   axis joining them is undefined, and every direction `frame` derives from it
+    ##   collapses. The far end had a limit of 500 for no comparable reason -- it was a
+    ##   round number -- and a reader who dollied out to look at something a kilometre
+    ##   across simply stopped moving, which is the camera reading as bounded to a region.
+    ##   Nothing downstream needs a ceiling: the clip planes are both fractions of the
+    ##   orbit distance (`FACTOR_CLIP_NEAR`, `FACTOR_CLIP_FAR`), so the frustum keeps its
+    ##   shape at any distance, and the ground grid bounds its own line count
+    ##   (`mesh.CELLS_GRID_HALF_MAX`) rather than leaning on this. What does degrade, far
+    ##   out, is `mesh.Vertex`'s float32 storage: past roughly a million units a
+    ##   coordinate carries less than a tenth of a unit of precision, and furniture that
+    ##   far out will visibly quantise. That is a reason to state the limit, not to
+    ##   impose one short of it.
   FACTOR_CLIP_FAR* = 20.0
     ## Set the far clip plane this many times the orbit distance out. Scaled rather than
     ## fixed so everything meant to read as "at the horizon" -- `mesh.radiusHorizonFor`,
@@ -51,8 +63,9 @@ const
     ## the frame can show at any orbit distance. A fixed plane cannot: the view's own
     ## extent grows with distance while the plane does not, so dollying out eventually
     ## brings a line's own far end inside the frame, where it reads as stopping in
-    ## mid-air. Worse, a plane fixed nearer than `DISTANCE_LIMIT_FAR` clips the target
-    ## itself away once the eye orbits past it.
+    ## mid-air. Worse, a plane fixed at any particular distance clips the target itself
+    ## away once the eye orbits past it, and there is no longer a ceiling on how far out
+    ## it may orbit.
   FRACTION_VIEW_CENTRED* = 2.0/3.0
     ## Fraction of the frame that counts as being looked at: this much of its height, and
     ## this much of its width **or its height, whichever is less**. `reachCentred` is the
@@ -160,11 +173,19 @@ func initMatrixView*(eye: Position; frame: FrameCamera): Matrix4 =
 
 #[ Camera Placement ]#
 
+func distanceHeld*(distance: float): float = max(distance, DISTANCE_LIMIT_NEAR)
+  ## Hold an orbit distance off the one value it may not take; see `DISTANCE_LIMIT_NEAR`.
+  ##   Every path that writes a distance goes through here -- construction, the dolly, both
+  ##   front-ends' numeric fields, and the fitted distance framing solves -- so the floor is
+  ##   stated once. It replaced a `clamp` written out at each of those sites, which is
+  ##   exactly the shape a limit takes when one site is later missed.
+
+
 func initCamera*(target: Position; distance, azimuth, elevation: float): Camera =
   ## Construct camera orbiting `target` at given separation and angles.
   Camera(
     target: target,
-    distance: clamp(distance, DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR),
+    distance: distanceHeld(distance),
     azimuth: azimuth,
     elevation: clamp(elevation, -ELEVATION_LIMIT, ELEVATION_LIMIT),
     degrees_field_of_view: 45.0,
@@ -225,10 +246,8 @@ proc orbit*(camera: var Camera; turn, rise: float) =
 
 
 proc dolly*(camera: var Camera; factor: float) =
-  ## Scale separation of eye from target, keeping it within orbit's bounds.
-  camera.distance = clamp(
-    camera.distance * factor, DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR
-  )
+  ## Scale separation of eye from target, holding it off the near bound.
+  camera.distance = distanceHeld(camera.distance * factor)
 
 
 proc pan*(camera: var Camera; across, up: float) =
@@ -542,14 +561,15 @@ func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: 
   ##   The sphere's tangent condition, `sin`, not the flat one, `tan`: a point on the near
   ##   side of the sphere stands as far off the sight axis as the far side does while being
   ##   closer to the eye, so it subtends more.
-  ##   Clamped to the same bound the user's own dolly is clamped to, so a selection spread
-  ##   wider than the world may be viewed from pulls back as far as it may and no further.
+  ##   Held off the near bound exactly as the user's own dolly is, and unbounded above it:
+  ##   a selection is framed by pulling back however far it takes, since nothing about the
+  ##   frustum or the furniture stops working at a distance.
   ##   Solves the **centred box**, which is what a point is held to and stricter than what a
   ##   plane's rim is (`picking.isPlaneShownCentrally` holds that to the frame). That keeps
   ##   this a valid *upper bracket* for `framing.placementFor`'s bisection, which is all it
   ##   is used as -- never as the answer.
   let sine = sin(halfAngleCentred(camera, width, height, inset))
-  clamp(radius/max(sine, 1.0e-6), DISTANCE_LIMIT_NEAR, DISTANCE_LIMIT_FAR)
+  distanceHeld(radius/max(sine, 1.0e-6))
 
 
 func isGoalHeld*(tween: CameraTween; goal: CameraAim): bool =

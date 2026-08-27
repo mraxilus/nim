@@ -388,15 +388,24 @@ Orbit camera: target point, orbit distance, azimuth, elevation, vertical field o
 |----------|-------|
 | World up | +z |
 | Elevation limit | ±(π/2 − 0.02), short of the pole |
-| Orbit distance | 0.05 … 500 |
+| Orbit distance | 0.05 and up, with no ceiling |
 | Far clip plane | 20 × orbit distance |
 | Near clip plane | orbit distance / 400 |
 | Default view | target (0, 0, 1), distance 19, azimuth 1.05 rad, elevation 0.42 rad |
 
+**The camera's location is not bounded to a region.** The only bound on where it may stand
+is the floor on orbit distance, and that one is geometry rather than taste: at zero the eye
+coincides with its target and every direction derived from the line joining them collapses.
+There is no ceiling, no bound on the target, and the ground follows the camera wherever it
+goes. Past ≈10⁶ units float32 vertex storage quantises visibly — a limit to state, not to
+impose.
+
 **Clip planes are derived from orbit distance, never stored.** A stored pair keeps its
 construction-time value through every dolly — the far plane sat at a fixed 400 while the
-orbit limit is 500, so dollying past it clipped the whole scene away, and well before that a
-line's far end came back inside the frame and read as stopping in mid-air. Both scale
+orbit limit was then 500, so dollying past it clipped the whole scene away, and well before
+that a line's far end came back inside the frame and read as stopping in mid-air. Deriving
+them is also what lets the ceiling go: both scale with the distance, so the frustum keeps its
+shape however far out the camera stands. Both scale
 together, so the frustum keeps its shape and depth-buffer precision (a function of the
 far-to-near ratio) stays constant instead of decaying as the camera pulls back.
 

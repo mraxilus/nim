@@ -298,6 +298,45 @@ suite "Camera":
       check isNear(clipped[1]/clipped[3], 0)
 
 
+  test "an orbit distance has a floor and no ceiling":
+    # The floor is geometry: at zero the eye coincides with its target and every direction
+    #   derived from the line joining them collapses. The ceiling was a round number, and
+    #   a reader who dollied out to look at something a kilometre across simply stopped.
+    check distanceHeld(0.0) =~ DISTANCE_LIMIT_NEAR
+    check distanceHeld(-5.0) =~ DISTANCE_LIMIT_NEAR
+    for distance in [1.0, 500.0, 5_000.0, 1.0e6]:
+      check distanceHeld(distance) =~ distance
+      check initCamera(ORIGIN, distance, 0.7, 0.3).distance =~ distance
+
+    # Dollying out, one press at a time, walks straight past where the limit used to sit.
+    var camera = initCameraDefault()
+    for _ in 1 .. 64: camera.dolly(FACTOR_DOLLY_PRESS)
+    check camera.distance > 5_000.0
+
+
+  test "the camera still derives a frame and a transform a thousand kilometres out":
+    # Nothing downstream of the distance has a ceiling of its own: both clip planes are
+    #   fractions of it, so the frustum keeps its shape however far the eye stands.
+    let camera = initCamera(target = ORIGIN, distance = 1.0e6, azimuth = 0.9, elevation = 0.4)
+    check camera.distance =~ 1.0e6
+    let axes = camera.frame(camera.eye)
+    check isNear(norm(axes.axis_right), 1.0)
+    check isNear(norm(axes.axis_up), 1.0)
+    check isNear(norm(axes.forward), 1.0)
+    check camera.distanceNear > 0.0
+    check camera.distanceFar > camera.distanceNear
+    let clipped = transform(camera.initMatrixViewProjection(1.6), camera.target, 1.0)
+    check clipped[3] > 0
+    check isNear(clipped[0]/clipped[3], 0)
+    check isNear(clipped[1]/clipped[3], 0)
+
+
+  test "framing a selection wider than the old ceiling pulls back past it":
+    # `distanceFitting` used to be clamped to the same 500, so anything larger than the
+    #   frame could hold at that distance was framed by giving up rather than by moving.
+    let camera = initCamera(target = ORIGIN, distance = 19.0, azimuth = 1.0, elevation = 0.4)
+    check distanceFitting(4_000.0, camera, 1440, 900, 0.0) > 500.0
+
 
 suite "Mesh":
   const

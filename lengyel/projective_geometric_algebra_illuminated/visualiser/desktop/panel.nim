@@ -876,9 +876,11 @@ proc layoutView*(panel: var Panel; camera: var Camera) =
     camera.elevation = float(placement[1])
   gui.tooltip("Tilt the camera up or down; clamped short of looking straight up or down.")
   fieldLabel("distance")
-  if gui.dragFloat("##distance", addr placement[2], 0.05,
-      cfloat(DISTANCE_LIMIT_NEAR), cfloat(DISTANCE_LIMIT_FAR)):
-    camera.distance = float(placement[2])
+  # Unbounded at the widget, floored by `distanceHeld` on the way in: there is no ceiling
+  #   on how far the camera may orbit, and the one value it may not take is stated in
+  #   `camera` rather than repeated in a widget's own bounds.
+  if gui.dragFloat("##distance", addr placement[2], 0.05, 0.0, 0.0):
+    camera.distance = distanceHeld(float(placement[2]))
   gui.tooltip("Move the camera toward or away from its target.")
 
   var target = [cfloat(camera.target.x), cfloat(camera.target.y), cfloat(camera.target.z)]

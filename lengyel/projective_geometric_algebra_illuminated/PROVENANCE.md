@@ -250,10 +250,26 @@ bucket **first**, before every other visible object (via the shared `objects.isH
 guaranteeing an ordinary plane's fill blends over the dome whatever slots they occupy. Two
 ordinary washes crossing still look order-dependent — a known, accepted limit.
 
+**An orbit distance has a floor and no ceiling.** `DISTANCE_LIMIT_NEAR` = 0.05 is geometry:
+at zero the eye coincides with its target, the line joining them is undefined, and every
+direction `camera.frame` derives from it collapses. The 500-unit ceiling that stood beside it
+was a round number, and it was the camera reading as bounded to a region — dolly out to look
+at something a kilometre across and the view simply stopped moving. It is gone, along with
+the `clamp` that had been written out at five sites; `camera.distanceHeld` is the one
+statement of the floor, and construction, the dolly, both front-ends' numeric fields and
+`distanceFitting` all pass through it. Nothing downstream needed the ceiling: the clip planes
+are fractions of the distance, so the frustum keeps its shape at any distance, and the grid
+bounds its own line count rather than leaning on the camera's limits.
+
+What does degrade far out is `mesh.Vertex`'s float32 storage: past roughly 10⁶ units a
+coordinate carries under a tenth of a unit. Driven by the wheel out to 3 × 10¹⁹ the view
+empties to a speck rather than breaking — no NaN, no crash — and Home returns the camera to
+where it started. A stated limit, not an imposed one.
+
 **Clip planes follow orbit distance** (`camera.distanceNear`/`distanceFar`, at 1/400 and 20
 times it). Derived rather than stored, so they cannot go stale — a stored pair set once at
 construction keeps its original value through every dolly, which is exactly the bug this
-replaced: the far plane sat at a fixed 400 while the orbit limit is 500, so dollying past
+replaced: the far plane sat at a fixed 400 while the orbit limit was then 500, so dollying past
 400 clipped the whole scene away, and well before that a line's own far end came back inside
 the frame and read as stopping in mid-air. Both scale together, so the frustum keeps its
 shape and depth-buffer precision — a function of the far-to-near ratio — stays constant
@@ -287,12 +303,17 @@ until the camera pulled back past a distance near 30.
 
 `CELLS_GRID_HALF_MAX` = 120 follows from that cell, and the number that matters is the
 **capped reach**, 1,200 units. Content sits at the target, one orbit distance from the eye,
-so ground stays under it exactly while that cap exceeds the orbit distance — 1,200 is past
-twice `DISTANCE_LIMIT_FAR`. The cap was 24 while the cell was 100; dropping the cell to 10
-without raising it left the cap at 240, and at an orbit distance of 300 the grid rendered as
-a patch floating in the near field with no ground at all under the objects being looked at.
-Where the cap binds it costs ≈23,000 ribbon vertices against `VERTICES_MAX` = 49,152, which
-world furniture has a mesh set to itself.
+so ground stays under it exactly while that cap exceeds the orbit distance. The cap was 24
+while the cell was 100; dropping the cell to 10 without raising it left the cap at 240, and
+at an orbit distance of 300 the grid rendered as a patch floating in the near field with no
+ground at all under the objects being looked at. Where the cap binds it costs ≈23,000 ribbon
+vertices against `VERTICES_MAX` = 49,152, which world furniture has a mesh set to itself.
+
+**Past 1,200 the ground stops reaching the content**, which an orbit distance may now do
+since it has no ceiling (below). Measured: at 900 the view is a full lattice with the axes
+and the scene on it; at 2,000 the scene is a speck with the fog's own disc left behind near
+the eye. That is the price of a fixed cell, and it is a limit rather than a bug — the
+alternatives are a cell that re-scales, which was rejected, or an unbounded line count.
 
 The **fade fractions were re-tuned with the move to the eye**, 0.03/0.12 → 0.06/0.20, and
 the two sets are not comparable: a radius measured from the origin reached that far *past*
@@ -2351,8 +2372,9 @@ that panning is not. The least sufficient distance is found by **bisection on th
 form `radius / sin θ` is used only as the upper bracket, since it would over-dolly whenever
 a line already crosses the frame. Sound because the test is monotone in distance —
 everything converges on the middle of the frame as the eye pulls back. Where even the
-bracket fails, at `DISTANCE_LIMIT_FAR` or with two stars facing opposite ways, the bracket
-stands rather than a wrong answer being reported as a right one.
+bracket fails — two stars facing opposite ways, or a spread the frame cannot hold — the
+bracket stands rather than a wrong answer being reported as a right one. It is no longer cut
+short by an orbit ceiling: `distanceFitting` pulls back as far as the fit takes.
 
 **Finite framing wins over facing a star.** The angles turn to the merged heading only when
 nothing finite was picked. A star behind the reader and a point in front have no placement
