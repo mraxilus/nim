@@ -250,10 +250,17 @@ bucket **first**, before every other visible object (via the shared `objects.isH
 guaranteeing an ordinary plane's fill blends over the dome whatever slots they occupy. Two
 ordinary washes crossing still look order-dependent — a known, accepted limit.
 
-**The wheel zooms toward what the pointer is over**, and a pinch toward its own midpoint —
-the map reading of a zoom, which is what Google Maps, Supreme Commander and every strategy
-game since do. Zooming at the middle of the frame makes a reader aim in three moves (zoom,
-pan, zoom again) where one should do.
+**The wheel zooms toward what the pointer is over** — the map reading of a zoom, which is
+what Google Maps, Supreme Commander and every strategy game since do. Zooming at the middle
+of the frame makes a reader aim in three moves (zoom, pan, zoom again) where one should do.
+
+**A pinch does not**, and that exception is deliberate. It was aimed at the pinch's own
+midpoint at first, on the reasoning that a midpoint is a finger's way of pointing; on a phone
+it read as wrong, immediately. The two-finger gesture already pans the view by that
+midpoint's own travel between events, so aiming the zoom there as well translates the view
+*twice* for one gesture, and a pinch anywhere but dead centre slides the scene while it
+scales it. A wheel carries no pan beside it, which is exactly why the same rule is right
+there and wrong here. The pinch is centred, as it was before the camera pass touched it.
 
 `picking.positionUnderCursor` solves the anchor: where the cursor's own sight ray meets the
 **horizontal plane through the camera's target**, and none where it never does. That plane

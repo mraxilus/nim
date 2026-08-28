@@ -281,10 +281,7 @@ const lut_help_entries* = block:
     HelpPath.Camera, "drag empty space with one finger",
     "orbit the view around what you are looking at", is_touch = true,
   )
-  add(
-    HelpPath.Camera, "pinch", "move toward or away from the middle of the pinch",
-    is_touch = true,
-  )
+  add(HelpPath.Camera, "pinch", "move closer in or further out", is_touch = true)
   add(
     HelpPath.Camera, "drag with two fingers",
     "slide the view sideways and up or down", is_touch = true,

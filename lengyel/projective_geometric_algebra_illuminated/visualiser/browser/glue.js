@@ -1992,16 +1992,12 @@ canvas.addEventListener('pointermove', (e) => {
     const points_flat = [...pointers.values()];
     const separation = pointerDist(points_flat);
     const mid = pointerMid(points_flat);
-    if (separation_pinch_start) {
-      // Toward the pinch's own midpoint, which is a finger's way of pointing at what it
-      // wants to look at -- the same rule the wheel follows, said the same way.
-      const rect_pinch = canvas.getBoundingClientRect();
-      nimUpdateCursor(mid.x - rect_pinch.left, mid.y - rect_pinch.top);
-      nimCameraDollyAt(
-        separation_pinch_start / Math.max(1, separation),
-        canvas.clientWidth, canvas.clientHeight,
-      );
-    }
+    // Straight in and out, at the middle of the frame -- **not** aimed at the pinch's own
+    // midpoint the way the wheel is aimed at the pointer. The pan below already moves the
+    // view by that midpoint's own travel, so aiming the zoom there too translates the view
+    // twice for one gesture, and a pinch anywhere but dead centre slides the scene while it
+    // scales it. A wheel has no pan beside it, which is why the same rule is right there.
+    if (separation_pinch_start) nimCameraDolly(separation_pinch_start / Math.max(1, separation));
     separation_pinch_start = separation;
 
     if (pan_last) {
