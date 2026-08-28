@@ -151,7 +151,8 @@ report(
   'home returns the camera to where it opened',
   Math.abs(homed.distance - 19) < 1e-6 && Math.abs(homed.target[0]) < 1e-6 &&
     Math.abs(homed.target[1]) < 1e-6 && Math.abs(homed.target[2] - 1) < 1e-6,
-  `distance ${homed.distance.toFixed(3)}, target ${homed.target.map((v) => v.toFixed(3)).join(', ')}`,
+  `distance ${homed.distance.toFixed(3)}, ` +
+    `target ${homed.target.map((v) => v.toFixed(3)).join(', ')}`,
 );
 
 const pixelOf = (slot) => page.evaluate((s) => {
@@ -593,6 +594,81 @@ report(
   )),
   'closed by its own button',
 );
+
+/* ---- A horizon line's comet runs where a reader can see it ---- */
+
+// The fault: a horizon line's marker is two circles on the sky running out to the line's
+// own vanishing points, and an uncut one laps in hundreds of thousands of pixels of
+// outline no camera can show. The comet, travelling at a fixed screen pace, was then off
+// screen for all but a few frames in a thousand -- "the comet does not work on horizon
+// lines". Driven rather than reasoned: this reads what the page would actually stroke.
+await page.evaluate(() => showHelp(false));
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+const slot_horizon = await page.evaluate(() => {
+  const plane = nimSceneSlots().find((slot) => nimItemShapeWord(slot) === 'plane');
+  if (plane === undefined) return null;
+  const before = nimSceneSlots();
+  // `Attitude` is the catalogue's own first operation, and a plane's attitude is the
+  //   pencil of directions lying in it -- a line at horizon.
+  nimApplyOperation(0, plane, plane, performance.now() / 1000);
+  const built = nimSceneSlots().find((slot) => !before.includes(slot));
+  // Level with the ground, so the sky the bands wrap is in front of the camera rather
+  //   than above the top edge of it.
+  nimSetCameraElevation(0.0);
+  nimSelectClear();
+  selectOnly(built, null);
+  return built === undefined ? null : built;
+});
+const insideCanvas = (points) => page.evaluate((given) => {
+  const canvas = document.getElementById('gl');
+  return given.every(
+    ([x, y]) => x >= -1 && y >= -1 &&
+      x <= canvas.clientWidth + 1 && y <= canvas.clientHeight + 1,
+  );
+}, points);
+const headOf = () => page.evaluate((slot) => {
+  const canvas = document.getElementById('gl');
+  const flat = nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, 1, false, 0);
+  if (flat.length === 0 || flat[0] < 1) return null;
+  return [flat[2], flat[3]];
+}, slot_horizon);
+const marker_horizon = slot_horizon === null ? { kind: -1, points: [] } : await page.evaluate(
+  (slot) => {
+    const canvas = document.getElementById('gl');
+    const flat = nimSelectionMarker(
+      slot, canvas.clientWidth, canvas.clientHeight, 1, false, 0,
+    );
+    const points = [];
+    for (let i = 4; i + 1 < flat.length; i += 2) points.push([flat[i], flat[i + 1]]);
+    return { kind: flat.length === 0 ? -1 : flat[0], points };
+  },
+  slot_horizon,
+);
+// The page's own mirror of `marker.MarkerKind`, read from it rather than copied here.
+const kind_bands = await page.evaluate(() => MARKER_BANDS);
+report(
+  'a plane\'s attitude is drawn as bands the window itself bounds',
+  marker_horizon.kind === kind_bands && marker_horizon.points.length > 0 &&
+    (await insideCanvas(marker_horizon.points)),
+  `kind ${marker_horizon.kind}, ${marker_horizon.points.length} points`,
+);
+
+const head_first = await headOf();
+await page.waitForTimeout(500);
+const head_second = await headOf();
+const travelled = head_first === null || head_second === null
+  ? -1
+  : Math.hypot(head_second[0] - head_first[0], head_second[1] - head_first[1]);
+report(
+  'its comet is on screen and travelling along it',
+  head_first !== null && head_second !== null &&
+    (await insideCanvas([head_first, head_second])),
+  `head ${JSON.stringify(head_first)} then ${JSON.stringify(head_second)}`,
+);
+// Half a second at SPEED_MARKER_PULSE is 30 pixels; banded rather than exact, since the
+//   page's own frame pacing decides how much of that half second the clock actually saw.
+reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 5, 60, 'px');
 
 /* ---- Nothing may have thrown along the way ---- */
 

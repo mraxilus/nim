@@ -23,13 +23,14 @@ const
   COLUMNS_MAX = 100
     ## Hard limit on a line's width, in characters. `STYLE.md` states it as hard: not a
     ## guideline, and not a limit a comment may exceed.
-  PATHS_SKIPPED = ["bin", "deps", "fonts", "out", "pga", "pga.nim"]
+  PATHS_SKIPPED = ["bin", "deps", "fonts", "node_modules", "out", "pga", "pga.nim"]
     ## Files and directories holding nothing this project wrote: build output, and
     ## vendored source kept locally but never committed. Checking vendored code would
     ## report failures nobody here may fix. Matched against each path component, so a
     ## directory name here skips everything beneath it.
   EXTENSIONS_CHECKED = [
-    ".nim", ".nims", ".cfg", ".cpp", ".h", ".js", ".html", ".css", ".sh", ".md", ".list",
+    ".nim", ".nims", ".cfg", ".cpp", ".h", ".js", ".mjs", ".html", ".css", ".sh", ".md",
+    ".list",
   ] ## Every file kind this project authors. A file kind absent here is not exempt; it is
     ## a file kind that does not exist yet, and adding one means adding it here.
 

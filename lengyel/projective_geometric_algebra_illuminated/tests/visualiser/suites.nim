@@ -4801,17 +4801,101 @@ suite "Marker":
     # A plane's own attitude is a line at horizon -- the pencil of directions lying in it.
     let marker = markerOf(LINE_HORIZON).get
     check marker.kind == MarkerKind.Bands
-    # Both bands survive: they are circles about the eye, so whatever the camera faces,
-    #   each has points in front of it -- unlike a finite line's rails, which can be
-    #   clipped away entirely.
+    # Both bands survive here: this line crosses the view, so each of its two flanking
+    #   circles has a stretch of itself on screen.
     check marker.counts_band[0] > 0
     check marker.counts_band[1] > 0
 
-    # Only what survives the near plane is reported, so every point handed to an overlay
-    #   is one it can actually stroke -- the rule `Loop` already follows, twice over.
+    # Only what survives the near plane *and* the edge of the window is reported, so every
+    #   point handed to an overlay is one it can actually stroke and one a reader can
+    #   actually see -- `Loop`'s own rule, twice over and one cut further.
     for side in 0 .. 1:
       for i in 0 ..< marker.counts_band[side]:
         check marker.points_band[side][i].isInFront
+        check marker.points_band[side][i].isWithinView(WIDTH_MARK, HEIGHT_MARK)
+
+    # And it stops *at* the edge rather than a sample short of it: a band's samples are
+    #   even in angle around the sky and hundreds of pixels apart once projected, so the
+    #   crossing point is placed rather than rounded to the last one inside.
+    for side in 0 .. 1:
+      let (first, last) = (
+        marker.points_band[side][0],
+        marker.points_band[side][marker.counts_band[side] - 1],
+      )
+      for at in [first, last]:
+        check min(min(at.x, WIDTH_MARK.float - at.x), min(at.y, HEIGHT_MARK.float - at.y)) =~ 0.0
+
+
+  test "a horizon line's bands lap in what the view can show, so its comet is seen":
+    # The fault this guards: a band is a circle running out to the line's own vanishing
+    #   points, and uncut it laps in hundreds of thousands of pixels of outline no camera
+    #   can see -- measured at 396,102 against the 1,490 on screen. A comet travelling at
+    #   a fixed screen pace was then off screen for all but four frames in a thousand,
+    #   which is what "the pulse does not work on horizon lines" meant.
+    let
+      bands = markerOf(LINE_HORIZON, travel = some(0.3*LENGTH_MARKER_COMET)).get
+      rails = markerOf(LINE, travel = some(0.3*LENGTH_MARKER_COMET)).get
+    # Within the same order of magnitude as a finite line's rails, which are bounded by
+    #   the very same rule. A window's own diagonal is the scale both are measuring.
+    check bands.lap > 0.0
+    check bands.lap < 4.0*rails.lap
+    check bands.lap < hypot(WIDTH_MARK.float, HEIGHT_MARK.float)*2.0
+    # Both bands pulse, and in step: one of a pair lit and the other not reads as the
+    #   marker having broken rather than as a direction.
+    check bands.count_run_pulse == 2
+
+    # The comet advances along the band at the screen pace, rather than standing still
+    #   because almost all of its lap is somewhere a reader cannot look.
+    var travel = 0.3*LENGTH_MARKER_COMET
+    var heads: seq[ScreenPosition]
+    for frame in 0 .. 3:
+      let marker = markerOf(LINE_HORIZON, travel = some(travel)).get
+      check marker.count_run_pulse > 0
+      heads.add(marker.pulses[0][0])
+      travel = travelAdvanced(travel, marker.lap, 1.0)
+    for i in 1 ..< heads.len:
+      let step = hypot(heads[i].x - heads[i - 1].x, heads[i].y - heads[i - 1].y)
+      # The chord of a gently curved band rather than the arc along it, so within a
+      #   fraction of a percent of the pace rather than exactly it.
+      check abs(step - SPEED_MARKER_PULSE) < 0.01*SPEED_MARKER_PULSE
+      check heads[i].isWithinView(WIDTH_MARK, HEIGHT_MARK)
+
+
+  test "a cut arc still measures its pulse from the ring's own angle zero":
+    # Twelve samples, the arc emitted from sample 9, five of them surviving: angle zero is
+    #   the fourth of those, since 9, 10, 11, 0 walks to it.
+    check originAfterCut(12, 9, 5) == 3
+    # Points placed ahead of the samples -- the crossing point at the edge a band enters
+    #   through -- shift it by however many there are, or the comet would be anchored to
+    #   the cut rather than to the object.
+    check originAfterCut(12, 9, 5, count_before = 1) == 4
+    # Angle zero cut away leaves nothing view-independent to measure from, and the arc's
+    #   own start is what is left -- the crossing point itself, where there is one.
+    check originAfterCut(12, 9, 2) == 0
+    check originAfterCut(12, 9, 2, count_before = 1) == 0
+
+
+  test "one band is drawn from the longest stretch of it the window holds":
+    # A ring can cross the window more than once -- a band seen nearly end on is a circle
+    #   about the vanishing point, entering and leaving twice. One outline per band is
+    #   what the marker holds, so the largest piece is the one drawn.
+    let ring = [
+      ScreenPosition(x: 10.0, y: 10.0, depth: 1.0),
+      ScreenPosition(x: 20.0, y: 10.0, depth: 1.0),
+      ScreenPosition(x: -50.0, y: 10.0, depth: 1.0),
+      ScreenPosition(x: 30.0, y: 20.0, depth: 1.0),
+      ScreenPosition(x: 420.0, y: 20.0, depth: 1.0),
+      ScreenPosition(x: -60.0, y: 20.0, depth: 1.0),
+    ]
+    # Two stretches of two samples each: samples 0..1 spanning 10 pixels and samples 3..4
+    #   spanning 390. The longer one wins, and it is not the one found first.
+    check runShownLongest(ring, [true, true, false, true, true, false]) == (3, 2)
+    # A stretch straddling sample zero is one stretch, not the two an index walk sees.
+    check runShownLongest(ring, [true, false, false, false, true, true]) == (4, 3)
+    # A ring wholly shown is one closed stretch from its own first sample.
+    check runShownLongest(ring, [true, true, true, true, true, true]) == (0, 6)
+    # And nothing shown is no stretch at all, which draws no band.
+    check runShownLongest(ring, [false, false, false, false, false, false]) == (0, 0)
 
 
   test "a horizon line's bands close inward as its hold fills, from outside any view":
@@ -5044,7 +5128,12 @@ suite "Marker":
     #   a plane at horizon carries no normal at all, so neither says anything.
     check pulsed(PLANE, 0.3).count_run_pulse > 0
     check pulsed(LINE, 0.3).count_run_pulse > 0
-    check pulsed(LINE_HORIZON, 0.3).count_run_pulse > 0
+    # A horizon line's bands are cut to the view at both ends, and their own angle zero
+    #   stands off screen here, so travel is measured from the edge the arc enters
+    #   through -- a third of a pixel past which is a comet with no tail yet, by the same
+    #   clamp that keeps an arc's run from drawing a chord across the view. Read where
+    #   the comet is actually on its way round.
+    check pulsed(LINE_HORIZON, 0.3*LENGTH_MARKER_COMET).count_run_pulse > 0
     check pulsed(POINT_A, 0.3).count_run_pulse == 0
     check pulsed(PLANE_HORIZON, 0.3).count_run_pulse == 0
     # Nothing pulses unless a caller says the object is selected by passing a time.

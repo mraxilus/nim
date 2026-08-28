@@ -155,6 +155,10 @@ const
     ## Cut each of a horizon line's own two flanking circles into this many pieces.
     ##   Fewer than the `SEGMENTS_CIRCLE_HORIZON` the drawn great circle uses, for the
     ##   reason `SEGMENTS_MARKER_LOOP` gives: this is a thin overlay, not scene geometry.
+  POINTS_MARKER_BAND* = SEGMENTS_MARKER_BANDS + 2
+    ## Bound the points one band is drawn through, its sampling and its cut ends together.
+    ##   Two past the sampling: a band the edge of the view cuts carries the crossing point
+    ##   at each of its two ends, which is where its outline actually stops.
   SEGMENTS_MARKER_FRAME* = 64
     ## Cut a horizon plane's own boundary into this many even angular steps, before the
     ## four corner directions are merged in.
@@ -255,8 +259,8 @@ static:
   doAssert SEGMENTS_MARKER_FRAME mod 4 == 0,
     &"A frame's steps must land on the four edge midpoints; got " &
     &"`{SEGMENTS_MARKER_FRAME}`."
-  doAssert SEGMENTS_MARKER_BANDS <= SEGMENTS_MARKER_OUTLINE,
-    &"A pulse must fit every outline it rides; bands are `{SEGMENTS_MARKER_BANDS}` against " &
+  doAssert POINTS_MARKER_BAND <= SEGMENTS_MARKER_OUTLINE,
+    &"A pulse must fit every outline it rides; bands are `{POINTS_MARKER_BAND}` against " &
     &"`{SEGMENTS_MARKER_OUTLINE}`."
   doAssert FRACTION_MARKER_PULSE < 0.5,
     &"A pulse covering half its outline states no direction; got " &
@@ -330,9 +334,11 @@ type
     of MarkerKind.Bands:
       counts_band*: array[2, int] ## Points used of each band below.
       are_closed_band*: array[2, bool] ## Whether each band joins back to its own first
-        ## point, false where the eye cut it into an arc -- `Loop`'s own rule, twice.
-      points_band*: array[2, array[SEGMENTS_MARKER_BANDS, ScreenPosition]]
-        ## Each band's own points, in order around the sky, already projected.
+        ## point, false where the eye or the edge of the view cut it into an arc --
+        ## `Loop`'s own rule, twice, and one cut further.
+      points_band*: array[2, array[POINTS_MARKER_BAND, ScreenPosition]]
+        ## Each band's own points, in order around the sky, already projected, and only
+        ## the stretch of it standing inside the viewport.
     of MarkerKind.Frame:
       count_frame*: int ## Points used of `points_frame` below.
       points_frame*: array[
@@ -395,8 +401,8 @@ func trackAlong*(
     if i < origin: result.behind += step else: result.ahead += step
 
 
-func originAfterCut*(count_ring, start, count_emitted: int): int =
-  ## Say where a ring's own angle-zero point sits in the arc that survived an eye cut.
+func originAfterCut*(count_ring, start, count_emitted: int; count_before: int = 0): int =
+  ## Say where a ring's own angle-zero point sits in the arc that survived a cut.
   ##   A cut ring is emitted from `start`, the first point whose predecessor was cut, so
   ##   emitted index zero is wherever the eye happened to slice it -- a camera's answer, and
   ##   the same fault a rail's clipped end carries. Angle zero is generated from the
@@ -406,9 +412,14 @@ func originAfterCut*(count_ring, start, count_emitted: int): int =
   ##   the one case with no view-independent point left on screen to measure from. The comet
   ##   is then anchored to the cut for as long as that lasts; there is nothing better, and
   ##   the alternative is refusing to draw a pulse at all on a plane seen edge on.
+  ##   `count_before` counts points placed ahead of the surviving samples -- a band's own
+  ##   crossing point at the edge it enters through -- which shift every sample one along
+  ##   without being samples themselves. `count_emitted` stays the count of samples, since
+  ##   that is what decides whether angle zero is among them.
   if count_ring <= 0 or count_emitted <= 0: return
   result = (count_ring - start) mod count_ring
-  if result >= count_emitted: result = 0
+  if result >= count_emitted: return 0
+  result += count_before
 
 
 func shared*(track: PulseTrack; behind, ahead: float): PulseTrack =
@@ -755,6 +766,18 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
   limit(-dy, tail.y)
   limit(dy, float(height) - tail.y)
   result = max(result, 0.0)
+
+
+func isWithinView*(point: ScreenPosition; width, height: int): bool =
+  ## Say whether a projected point stands inside the viewport it was projected for.
+  ##   In front of the eye as well as within both bounds: a point behind the eye projects
+  ##   through a negative divide, so where its coordinates land in the rectangle says
+  ##   nothing at all about where it would be seen.
+  ##   Bounds taken closed, which matches `fractionLeavingView` -- a point exactly on the
+  ##   edge is the last one still drawn, not the first one cut.
+  point.isInFront and
+    point.x >= 0.0 and point.x <= float(width) and
+    point.y >= 0.0 and point.y <= float(height)
 
 
 func railsAt(
@@ -1105,6 +1128,49 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
   angle_closed + (1.0 - clamp(progress, 0.0, 1.0))*(ANGLE_MARKER_BANDS_OPEN - angle_closed)
 
 
+func runShownLongest*(
+  ring: openArray[ScreenPosition]; are_shown: openArray[bool]
+): (int, int) =
+  ## Find the longest unbroken stretch of a sampled ring that is shown, as the index it
+  ## starts at and how many samples it runs for.
+  ##   Cyclic, so a stretch straddling sample zero counts as one rather than two: where a
+  ##   ring's sampling happens to start is an artefact of how it was generated and means
+  ##   nothing to a reader.
+  ##   **The longest, not the first**, because a ring can cross the viewport more than
+  ##   once -- a band seen nearly end on is a circle about the line's own vanishing point,
+  ##   which enters and leaves the screen twice. One outline per band is what
+  ##   `points_band` holds and what an unbroken pulse can ride, so the largest piece is
+  ##   the one drawn and the rest are dropped.
+  ##   Longest **in screen pixels**, not in samples. The samples are even in angle around
+  ##   the sky and wildly uneven once projected -- measured at 160 px a step across the
+  ##   middle of the view against 200,000 near a vanishing point -- so counting them
+  ##   would rank a bunched corner above the stretch spanning the whole window.
+  ##   `(0, 0)` where nothing is shown, and the whole ring where all of it is.
+  let count = are_shown.len
+  var count_shown = 0
+  for shown in are_shown:
+    if shown: inc count_shown
+  if count_shown == 0: return (0, 0)
+  if count_shown == count: return (0, count)
+  var length_best = -1.0
+  for start in 0 ..< count:
+    # Each stretch is found once, from the sample whose predecessor was cut.
+    if not are_shown[start] or are_shown[(start + count - 1) mod count]: continue
+    var
+      length = 0.0
+      taken = 0
+    while taken < count and are_shown[(start + taken) mod count]:
+      if taken > 0:
+        let
+          at = ring[(start + taken) mod count]
+          before = ring[(start + taken - 1) mod count]
+        length += hypot(at.x - before.x, at.y - before.y)
+      inc taken
+    if length > length_best:
+      length_best = length
+      result = (start, taken)
+
+
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
   progress, clearance: float; travel: Option[float]
@@ -1116,9 +1182,18 @@ func markerBands(
   ##   to a great circle means there. Built from `directionNormalHorizon` and
   ##   `spanPerpendicular`, the same pair `mesh.addLine` builds its great circle from, so
   ##   the three wrap the sky as one family rather than merely near one another.
-  ##   Cuts each band to whatever stays in front of the eye and reports the remainder as
-  ##   an arc, exactly as `markerLoop` does -- half the sky is behind the camera at all
-  ##   times, so this is the common case here rather than an edge one.
+  ##   Cuts each band to whatever stays in front of the eye **and inside the viewport**,
+  ##   reporting the remainder as an arc the way `markerLoop` does -- half the sky is
+  ##   behind the camera at all times, so a cut is the common case here rather than an
+  ##   edge one.
+  ##   The second cut is what `fractionLeavingView` already does for a rail, and for the
+  ##   same reason: these circles run out to the line's own vanishing points, so an
+  ##   uncut band is mostly outline no camera can see. Measured on a horizon line held
+  ##   across the middle of the view, the full ring laps in **396,102 pixels against the
+  ##   1,490 of it on screen** -- a comet at a fixed screen pace is then visible for four
+  ##   frames in a thousand, which is what "the pulse does not work on horizon lines"
+  ##   turned out to mean. Cut to the view, the lap is a finite line's rails' own 1,045
+  ##   within a factor of two, and the two kinds of line pulse alike.
   ##   `travel` places a pulse round both bands, taking its sense from the great
   ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
   ##   laid out around that normal's frame, so the projection answers which way they read.
@@ -1139,40 +1214,49 @@ func markerBands(
     let centre = scale.eye + (if side == 0: offset else: -offset)*normal.get
     var
       ring: array[SEGMENTS_MARKER_BANDS, ScreenPosition]
-      are_in_front: array[SEGMENTS_MARKER_BANDS, bool]
-      count_in_front = 0
+      are_shown: array[SEGMENTS_MARKER_BANDS, bool]
     for i in 0 ..< SEGMENTS_MARKER_BANDS:
       let turn = (2.0*PI*float(i))/float(SEGMENTS_MARKER_BANDS)
       ring[i] = projectToScreen(
         view_projection, width, height,
         centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
       )
-      are_in_front[i] = ring[i].isInFront
-      if are_in_front[i]: inc count_in_front
-    if count_in_front == 0: continue
+      are_shown[i] = ring[i].isWithinView(width, height)
+    # One unbroken stretch, so an arc is emitted whole rather than wrapping a cut and
+    #   drawing a chord across the view -- `markerLoop`'s rule, over both cuts at once.
+    let (start, count_shown) = runShownLongest(ring, are_shown)
+    if count_shown == 0: continue
 
-    marker.are_closed_band[side] = count_in_front == SEGMENTS_MARKER_BANDS
-    # Start where the run of surviving points begins, so an arc is emitted unbroken rather
-    #   than wrapping the cut and drawing a chord across the view -- `markerLoop`'s rule.
-    var start = 0
+    marker.are_closed_band[side] = count_shown == SEGMENTS_MARKER_BANDS
+    # Reach the edge the band leaves through, rather than stopping at the last sample
+    #   still inside it, which is up to a whole step short of it -- and a step here spans
+    #   a good part of the window. Only where the sample past the edge is in front of the
+    #   eye: one behind it has no meaningful screen position to aim at.
+    template placeCrossing(inside, outside: int) =
+      if ring[outside].isInFront:
+        marker.points_band[side][marker.counts_band[side]] = ring[inside].towards(
+          ring[outside], fractionLeavingView(ring[inside], ring[outside], width, height)
+        )
+        inc marker.counts_band[side]
     if not marker.are_closed_band[side]:
-      for i in 0 ..< SEGMENTS_MARKER_BANDS:
-        let before = (i + SEGMENTS_MARKER_BANDS - 1) mod SEGMENTS_MARKER_BANDS
-        if are_in_front[i] and not are_in_front[before]:
-          start = i
-          break
-    for step in 0 ..< SEGMENTS_MARKER_BANDS:
+      placeCrossing(start, (start + SEGMENTS_MARKER_BANDS - 1) mod SEGMENTS_MARKER_BANDS)
+    let count_before = marker.counts_band[side]
+    for step in 0 ..< count_shown:
       let i = (start + step) mod SEGMENTS_MARKER_BANDS
-      if not are_in_front[i]: break
       marker.points_band[side][marker.counts_band[side]] = ring[i]
       inc marker.counts_band[side]
+    if not marker.are_closed_band[side]:
+      placeCrossing(
+        (start + count_shown - 1) mod SEGMENTS_MARKER_BANDS,
+        (start + count_shown) mod SEGMENTS_MARKER_BANDS,
+      )
     if travel.isSome:
       # Each band is anchored at its own angle zero, which `spanPerpendicular` fixes from
       #   the geometry alone, so the two bands stay in step through a cut. Lapped against
       #   the first band that produced one, for the reason a line's rails share theirs.
       let track = trackAlong(
         marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side],
-        originAfterCut(SEGMENTS_MARKER_BANDS, start, marker.counts_band[side]),
+        originAfterCut(SEGMENTS_MARKER_BANDS, start, count_shown, count_before),
       )
       if marker.lap <= 0.0: marker.lap = track.lap
       marker.addPulse(

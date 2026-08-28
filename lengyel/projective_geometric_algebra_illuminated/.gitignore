@@ -24,3 +24,8 @@
 #   path it expects. PROVENANCE.md has always named it among the paths the working tree
 #   carries and the repository does not; it was the one of the four missing from here.
 /deps/
+
+# Playwright, under Apache-2.0, installed locally so `tools/drive_browser.mjs` can drive a
+#   real browser. Kept in the working tree and never staged, like every other dependency
+#   here; `dependencies.list` carries the install command.
+/node_modules/

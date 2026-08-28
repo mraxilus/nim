@@ -29,6 +29,10 @@ nodejs  # Run the JS-backend suite `tools/verify.sh` builds, and `tools/drive_br
 # reason. Point `VISUALISER_CHROMIUM` at a browser to use one already on the machine.
 #   npm install --global playwright && npx playwright install chromium
 #   NODE_PATH="$(npm root --global)" ./tools/verify.sh
+# Installing it into the project instead works without `NODE_PATH`, and leaves a
+# `node_modules/` the working tree carries and the repository does not -- `.gitignore` drops
+# it and `tools/check_columns.nim` skips it, as with every other vendored dependency here.
+#   npm install --no-save playwright && npx playwright install chromium
 
 xvfb  # Give the desktop build a display to drive against, headless: its own driven modes
   # (`--drive-keys` and friends) push real SDL events and need a window to push them at.

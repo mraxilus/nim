@@ -702,6 +702,29 @@ angle-zero point back through an eye cut, because `markerLoop` and `markerBands`
 their first emitted point when the near plane slices them — the same fault as a rail's
 clipped end, checked rather than assumed.
 
+**A horizon line's bands are cut to the viewport, not just to the eye**, and until this
+round they were not. Each band is a circle on the sky running out to the line's own two
+vanishing points, so an uncut one is mostly outline no camera can show: measured on a
+horizon line held across the middle of the view, the ring laps in **396,102 px against the
+1,490 of it on screen**, and a comet travelling at a fixed *screen* pace is then visible for
+about four frames in a thousand. That is what "the comet does not work on horizon lines"
+turned out to be — the comet was always built (probed: two runs, kind `Bands`, at every
+travel), just almost never anywhere a reader could look. `markerBands` now keeps the longest
+stretch of each ring standing inside the window, `isWithinView` deciding and
+`fractionLeavingView` placing the crossing point at each end so the band reaches the edge
+rather than stopping a sample short of it — the very rule a rail's drawn end already
+followed. The lap comes out at **832 px against a finite line's rails' 870** at the suite's
+own placement, and the head advances 60.0 px a second along it.
+
+The costs, stated: a horizon line whose bands fall wholly off screen now yields **no marker
+at all** rather than one drawn where nothing can see it, which is the same picture and one
+fewer thing drawn; the longest stretch is kept and any *other* stretch of the same ring is
+dropped, since `points_band` holds one outline per band and a pulse needs one to ride; and
+the anchor falls back to the arc's own start whenever the band's angle zero is off screen,
+which for a horizon line is most of the time — `originAfterCut`'s documented fallback,
+carrying its documented price. Anchoring to a view-independent point that is not on screen
+was the alternative, and it puts the comet where the reader is not.
+
 **The travel is reduced into the current lap every frame, and that is load-bearing rather
 than tidy.** An unbounded travel read back as `travelled mod lap` amplifies a one-percent
 change in the lap by however many laps have accumulated, which is the original teleport in
