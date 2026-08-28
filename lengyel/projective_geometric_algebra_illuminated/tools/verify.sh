@@ -5,11 +5,11 @@
 # prints its own name before running, so a failure names itself without reading the log
 # upward.
 #
-# What it deliberately does NOT do is render anything and look at it. Several bugs here
-# survived a green run of everything below -- a handler called directly while the event
-# wiring that was actually broken went untouched, a page that compiled and served a blank
-# canvas. Passing this is necessary, never sufficient; see `PROVENANCE.md` on verifying by
-# running.
+# It now drives real events into the built page and asserts what they reached
+# (`drive_browser.mjs`), which is what a handler called directly can never check. What it
+# still does NOT do is *look* at anything: a page that compiles, answers every gesture and
+# renders a blank canvas passes this. Passing it is necessary, never sufficient; see
+# `PROVENANCE.md` on verifying by running.
 
 set -euo pipefail
 
@@ -19,6 +19,9 @@ cd "${DIR_PROJECT}"
 # The compiler is the one built from this tree, never a system Nim: a release compiler
 #   rejects some of what this project uses, e.g. a `var`-returning index operator.
 NIM="${NIM:-${DIR_PROJECT}/../../bin/nim}"
+# Node runs both the JS suite and the driven browser checks; override for a build kept
+#   somewhere other than the path.
+NODE="${NODE:-node}"
 DEFINES_PGA="-d:pga.dimensions=4 -d:pga.is_conformal=false"
 
 step() {
@@ -62,12 +65,20 @@ step 'Suite, JS backend'
 # shellcheck disable=SC2086
 "${NIM}" js --hints:off -d:testing -d:nimUnittestAbortOnError:on ${DEFINES_PGA} \
   -o:bin/test_browser.js tests/visualiser/test_4d_browser.nim
-node bin/test_browser.js
+"${NODE}" bin/test_browser.js
 
 step 'Build: desktop'
 "${NIM}" c --hints:off -o:bin/visualiser visualiser.nim
 
 step 'Build: browser page'
 ./build_browser.sh
+
+# Everything above stops at "it compiles and its rules hold". This drives real events into
+#   the built page and asserts what they reached, which is the only way a rule wired to the
+#   wrong event is caught: the suites call the rules directly and stay green while a wheel
+#   notch, a key release or a pinch goes somewhere else. It was a `/tmp` script run by hand
+#   until a pinch regression shipped past every green suite.
+step 'Drive: browser, real key, wheel and touch events'
+"${NODE}" tools/drive_browser.mjs
 
 printf '\n\033[1mEvery check passed.\033[0m Now render it and look at it.\n'

@@ -19,6 +19,21 @@ fonts-noto-core  # Provide the UI text face (Noto Sans), the operator and bold-o
 #   curl -sSLO $base/noto-serif/files/noto-serif-latin-400-normal.woff2
 #   curl -sSLO $base/commit-mono/files/commit-mono-latin-400-normal.woff2
 
+nodejs  # Run the JS-backend suite `tools/verify.sh` builds, and `tools/drive_browser.mjs`
+  # beside it: the checks that press keys, turn the wheel and pinch the built page rather
+  # than calling its rules directly.
+
+# Playwright drives that page, with its own Chromium. It is an npm package rather than a
+# system one, and a *global* install needs `NODE_PATH` set, since Node's ESM loader does not
+# read it for bare imports -- the driver requires it through `createRequire` for exactly that
+# reason. Point `VISUALISER_CHROMIUM` at a browser to use one already on the machine.
+#   npm install --global playwright && npx playwright install chromium
+#   NODE_PATH="$(npm root --global)" ./tools/verify.sh
+
+xvfb  # Give the desktop build a display to drive against, headless: its own driven modes
+  # (`--drive-keys` and friends) push real SDL events and need a window to push them at.
+libgl1-mesa-dri  # Provide the software GL the headless runs render through.
+
 # Dear ImGui is compiled from source rather than linked, so clone it beside the visualiser:
 #   git clone --branch docking https://github.com/ocornut/imgui.git deps/imgui
 # Point elsewhere with `--define:visualiser.path_imgui=/some/where/imgui`.
