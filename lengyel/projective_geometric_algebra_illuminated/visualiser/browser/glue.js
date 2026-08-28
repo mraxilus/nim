@@ -159,10 +159,6 @@ function refreshSelectionSnapshot() {
 }
 
 function onSelectionChanged(position_local) {
-  // Choosing something is itself one of the things the hint teaches, and a plain click
-  //   that selects moves the pointer far too little to trip the movement test that
-  //   dismisses it on an orbit.
-  dismissHint();
   refreshSelectionSnapshot();
   refreshSelectionMenu(position_local);
   refreshObjectsUI(); // Also re-syncs the apply controls and the row checkboxes.
@@ -470,20 +466,14 @@ document.getElementById('toggle-grid').addEventListener('click', (e) => {
   is_grid_shown = !is_grid_shown; e.target.classList.toggle('on', is_grid_shown);
 });
 /* ---------------------------------------------------------------------- */
-/* Help: the hint says it once, the ? button says it whenever asked.       */
+/* Help: the ? button says it whenever asked.                             */
 /* ---------------------------------------------------------------------- */
 
-// The hint stays until the reader does something, rather than for a fixed four seconds.
-//   A timer cuts off whoever reads slowly, and a first-time reader is exactly who reads
-//   slowly; a reader who has already orbited has told us they do not need it. Dismissed
-//   by a gesture that moves the camera or changes the scene -- not by a hover, which is
-//   not a decision.
-let has_hint_shown = true;
-function dismissHint() {
-  if (!has_hint_shown) return;
-  has_hint_shown = false;
-  document.getElementById('hint').classList.add('hidden');
-}
+// A pill naming a few gestures used to greet every load and leave on the reader's first
+//   action. The panel below outgrew it -- it lists every path and every operation, on
+//   demand and for as long as the reader wants -- and a page that explains itself when
+//   asked does not need to explain itself unasked. The five gestures that dismissed the
+//   pill now dismiss nothing, which is why no call replaced them.
 
 // Built from `help.lut_help_entries` across the bridge, so this panel and the desktop's
 //   own say the same thing by construction. Four strings per entry; see nimHelpEntries.
@@ -679,7 +669,6 @@ document.addEventListener('keydown', (e) => {
     //   `keyup` below; a key that acts does so on this press.
     if (nimKeyBound(e.code)) {
       e.preventDefault(); // Arrows would otherwise scroll the page under the canvas.
-      dismissHint();
       const slot = nimKeyDown(e.code);
       if (slot >= 0) {
         // Shift adds rather than replaces, exactly as shift-click does -- the one thing
@@ -1482,8 +1471,9 @@ function parseAndLoadScene(buffer) {
 
 /* ---------------------------------------------------------------------- */
 /* Diagnostics: browser-appropriate stand-ins for the desktop build's own */
-/* arena/frame-time panel -- see this file's own `.help-text` and         */
-/* `browser_bridge.nim`'s doc comment for why the numbers differ in kind. */
+/* arena/frame-time panel -- see `browser_bridge.nim`'s own doc comment   */
+/* for why the numbers differ in kind. The drawer states none of this: a  */
+/* reader opening a diagnostics panel wants the numbers, not an essay.    */
 /* ---------------------------------------------------------------------- */
 
 const FRAMES_HISTORY = 240;
@@ -2008,9 +1998,6 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (e.pointerType === 'mouse') {
     nimUpdateCursor(cursor_last.x, cursor_last.y);
-    // `nimUpdateCursor` above is what notices a press leaving its own landing spot, so
-    //   the hint only has to react to that having happened.
-    if (button_mouse_down !== null && !nimIsClick(now())) dismissHint();
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
       // Re-check hover for the drag's own destination preview.
       nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
@@ -2055,7 +2042,6 @@ canvas.addEventListener('pointermove', (e) => {
     //   because touch pointermove has not updated the cursor yet -- so it must run before
     //   the two lines below start following the finger.
     has_touch_moved = true;
-    dismissHint();
     nimCancelHold(); // Moved, so this press will never mature into a selection.
     if (slot_touch_down >= 0 && pointers.size === 1) {
       // A finger has no second button to ask the wheel for, so it is the one pointer that
@@ -2196,7 +2182,6 @@ canvas.addEventListener('pointerleave', (e) => { if (e.buttons === 0) releasePoi
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  dismissHint();
   // Toward what the pointer is over, the way a map zooms. Where that is comes from the
   // cursor this build already tracks, so the wheel says it the same way picking does.
   const rect = canvas.getBoundingClientRect();

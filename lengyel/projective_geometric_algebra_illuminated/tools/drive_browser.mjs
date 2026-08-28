@@ -76,6 +76,20 @@ const spanTarget = (before, after) => Math.hypot(
   after.target[2] - before.target[2],
 );
 
+// Panels an earlier check opened sit *over* the canvas and swallow every pointer event, so
+//   a gesture driven at a pixel beneath one never reaches the application at all. **The
+//   drawer opens on the left**, the side the desktop's own panel occupies, which is the
+//   side most of the gestures below start from -- so every section that drives the canvas
+//   clears the glass first rather than trusting the pixels it aims at to be canvas.
+async function clearTheGlass() {
+  await page.evaluate(() => {
+    clearSelection();
+    hideSelectionMenu();
+    if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  });
+  await page.waitForTimeout(200);
+}
+
 async function holdKeys(codes, milliseconds) {
   const before = await readCamera();
   for (const code of codes) await page.keyboard.down(code);
@@ -508,6 +522,9 @@ if (slot_by_picker === undefined || slot_by_bridge === undefined) {
 // **Panning was dead while anything stayed selected**: the standing framing offer re-armed
 // every frame and dragged the camera back to where it had aimed. Reported as a touch bug,
 // and neither touch- nor browser-specific.
+// The pinch below starts at x=400, the drawer's own right edge once it is open on the
+//   left, so the glass is cleared before the selection this check needs is made.
+await clearTheGlass();
 await page.evaluate(() => nimSelectOnly(nimSceneSlots()[0]));
 await page.waitForTimeout(700); // Let the framing ease finish before moving by hand.
 const panned_selected_before = await readCamera();
@@ -566,17 +583,9 @@ report(
 /* ---- A camera gesture is not a hover ---- */
 
 await page.keyboard.press('Home');
-// Clear what the checks above left on screen: a selection menu standing over the canvas
-//   swallows the pointer moves below, so the application never learns where the cursor is
-//   and this section would be measuring the menu rather than the hover rule.
-await page.evaluate(() => {
-  clearSelection();
-  hideSelectionMenu();
-  // And the drawer the apply checks opened: it covers the right third of the viewport, so
-  //   a pointer move over an object standing there never reaches the canvas at all.
-  if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
-});
-await page.waitForTimeout(200);
+// Clear what the checks above left on screen, or this section measures the menu and the
+//   drawer rather than the hover rule.
+await clearTheGlass();
 // Read afresh: the checks above delete and build, so the slot list captured for the touch
 //   gestures no longer names what is alive here.
 const slots_now_live = await page.evaluate(() => nimSceneSlots());
@@ -734,6 +743,9 @@ reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 
 
 /* ---- A mouse pan grabs the level, and keeps its height ---- */
 
+// The drag below starts at x=160, which is drawer once the drawer is open -- and it opens
+//   on the left. Clear the glass first, or this measures a panel swallowing the press.
+await clearTheGlass();
 await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
 await page.keyboard.press('Home');
 await page.waitForTimeout(900);
@@ -1003,18 +1015,6 @@ report(
 // `Home` glides the camera back rather than snapping it, so anything that reads an object's
 //   own pixel has to wait for the glide to finish -- a pixel read mid-flight names where the
 //   object *was*, and the press then lands on empty space.
-// Panels the checks above opened sit *over* the canvas and swallow every pointer event, so
-//   a gesture driven at a pixel beneath one never reaches the application at all. Cleared
-//   the same way the hover section already clears them.
-async function clearTheGlass() {
-  await page.evaluate(() => {
-    clearSelection();
-    hideSelectionMenu();
-    if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
-  });
-  await page.waitForTimeout(200);
-}
-
 async function settleCamera() {
   let previous = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
