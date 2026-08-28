@@ -995,6 +995,167 @@ report(
 
 /* ---- Nothing may have thrown along the way ---- */
 
+/* ---- Touch drags as a finger really performs them ---- */
+
+// Last of the checks, and deliberately so: these build objects, and the budget and zoom
+// checks above are written against the opening scene's own weight and layout.
+
+// `Home` glides the camera back rather than snapping it, so anything that reads an object's
+//   own pixel has to wait for the glide to finish -- a pixel read mid-flight names where the
+//   object *was*, and the press then lands on empty space.
+// Panels the checks above opened sit *over* the canvas and swallow every pointer event, so
+//   a gesture driven at a pixel beneath one never reaches the application at all. Cleared
+//   the same way the hover section already clears them.
+async function clearTheGlass() {
+  await page.evaluate(() => {
+    clearSelection();
+    hideSelectionMenu();
+    if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  });
+  await page.waitForTimeout(200);
+}
+
+async function settleCamera() {
+  let previous = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const now_at = await readCamera();
+    if (previous !== null && Math.abs(now_at.distance - previous.distance) < 1e-9 &&
+        Math.abs(now_at.azimuth - previous.azimuth) < 1e-9 &&
+        spanTarget(previous, now_at) < 1e-9) return;
+    previous = now_at;
+    await page.waitForTimeout(50);
+  }
+}
+
+// **A finger that eases into its drag rather than flicking.** The press target chooses the
+// scheme, so a press on an object is a construction press from the moment it lands -- but
+// touch used to orbit over the few pixels before the tap slop was crossed, which latched the
+// camera-dragging flag, and hover is suppressed while the camera moves. The construction
+// drag that armed a moment later then ran blind for the rest of the gesture: no destination,
+// no ghost, nothing built. Driven here in sub-slop steps, which is what a real finger does
+// and what no flick-speed check could reach.
+await clearTheGlass();
+await page.keyboard.press('Home');
+await settleCamera();
+await page.evaluate(() => nimSelectClear());
+// Read afresh, for the same reason the section above says: the checks between here and
+//   the opening scene delete and build, so the slot list captured up there is stale.
+const points_live = await page.evaluate(() => nimSceneSlots()
+  .filter((slot) => nimItemShapeWord(slot) === 'point'));
+const count_before_creep = await page.evaluate(() => nimSceneCount());
+const camera_before_creep = await page.evaluate(() => ({
+  azimuth: nimCameraAzimuth(), elevation: nimCameraElevation(),
+}));
+const from_creep = await pixelOf(points_live[0]);
+const onto_creep = await pixelOf(points_live[1]);
+// Four steps of a third of the slop each, so the gesture spends three moves under the
+//   threshold before crossing it -- exactly the frames that used to orbit.
+const step_creep = (await page.evaluate(() => nimTapSlop())) / 3;
+await touchAt('touchStart', [{ x: from_creep[0], y: from_creep[1] }]);
+await page.waitForTimeout(90);
+for (let step = 1; step <= 4; step += 1) {
+  const reach = (step * step_creep) /
+    Math.hypot(onto_creep[0] - from_creep[0], onto_creep[1] - from_creep[1]);
+  await touchAt('touchMove', [{
+    x: from_creep[0] + (onto_creep[0] - from_creep[0]) * reach,
+    y: from_creep[1] + (onto_creep[1] - from_creep[1]) * reach,
+  }]);
+  await page.waitForTimeout(35);
+}
+for (let step = 1; step <= 8; step += 1) {
+  await touchAt('touchMove', [{
+    x: from_creep[0] + ((onto_creep[0] - from_creep[0]) * step) / 8,
+    y: from_creep[1] + ((onto_creep[1] - from_creep[1]) * step) / 8,
+  }]);
+  await page.waitForTimeout(35);
+}
+const creep_mid = await page.evaluate(() => ({
+  hover: nimHoverSlot(), dragging: nimDragActive(),
+}));
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+const camera_after_creep = await page.evaluate(() => ({
+  azimuth: nimCameraAzimuth(), elevation: nimCameraElevation(),
+}));
+report(
+  'a finger easing into its drag still sees what it is pointing at',
+  creep_mid.dragging && creep_mid.hover === points_live[1] &&
+    (await page.evaluate(() => nimSceneCount())) === count_before_creep + 1,
+  `dragging ${creep_mid.dragging}, hovering ${creep_mid.hover} (wanted ${points_live[1]}), ` +
+    `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_creep}`,
+);
+report(
+  'and it never moved the camera on the way',
+  Math.abs(camera_after_creep.azimuth - camera_before_creep.azimuth) < 1e-6 &&
+    Math.abs(camera_after_creep.elevation - camera_before_creep.elevation) < 1e-6,
+  `azimuth ${camera_before_creep.azimuth.toFixed(4)} -> ` +
+    `${camera_after_creep.azimuth.toFixed(4)}, elevation ` +
+    `${camera_before_creep.elevation.toFixed(4)} -> ${camera_after_creep.elevation.toFixed(4)}`,
+);
+
+// **A plane is pickable over the disc it is drawn as, whichever way its normal faces.** The
+// hit test read the depth of the raw meet, whose weight carries which side the ray crossed
+// from, so a plane met from behind its normal read as standing behind the eye and could not
+// be picked anywhere at all -- while the ground plane, whose normal happens to face the eye,
+// picked fine and hid it. Held here on a plane the gesture itself builds, since that is the
+// only kind a reader makes.
+await clearTheGlass();
+await page.keyboard.press('Home');
+await settleCamera();
+await page.evaluate(() => nimSelectClear());
+const points_for_plane = await page.evaluate(() => nimSceneSlots()
+  .filter((slot) => nimItemShapeWord(slot) === 'point'));
+const from_plane = await pixelOf(points_for_plane[0]);
+const onto_plane = await pixelOf(points_for_plane[1]);
+await touchAt('touchStart', [{ x: from_plane[0], y: from_plane[1] }]);
+for (let step = 1; step <= 8; step += 1) {
+  await touchAt('touchMove', [{
+    x: from_plane[0] + ((onto_plane[0] - from_plane[0]) * step) / 8,
+    y: from_plane[1] + ((onto_plane[1] - from_plane[1]) * step) / 8,
+  }]);
+  await page.waitForTimeout(35);
+}
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+const slot_line_made = await page.evaluate(() => nimSceneSlots()
+  .find((slot) => nimItemShapeWord(slot) === 'line'));
+// That line joined with a third point gives a plane, which is what is being reached for.
+const on_line = await page.evaluate((slot) => {
+  const at = nimAnchorScreen(slot, window.innerWidth, window.innerHeight);
+  return at && at.length ? [at[0], at[1]] : null;
+}, slot_line_made);
+const onto_third = await pixelOf(points_for_plane[2]);
+await touchAt('touchStart', [{ x: on_line[0], y: on_line[1] }]);
+for (let step = 1; step <= 8; step += 1) {
+  await touchAt('touchMove', [{
+    x: on_line[0] + ((onto_third[0] - on_line[0]) * step) / 8,
+    y: on_line[1] + ((onto_third[1] - on_line[1]) * step) / 8,
+  }]);
+  await page.waitForTimeout(35);
+}
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+const slot_plane_made = await page.evaluate(() => nimSceneSlots()
+  .find((slot) => nimItemShapeWord(slot) === 'plane' && nimItemLabel(slot) !== 'ground'));
+// Sweep the canvas for a pixel that picks it. A disc this size covers a good part of the
+//   view, so finding none at all is the fault this guards against.
+const pixels_on_plane = slot_plane_made === undefined ? 0 : await page.evaluate((slot) => {
+  let found = 0;
+  for (let y = 40; y < window.innerHeight - 40; y += 40) {
+    for (let x = 40; x < window.innerWidth - 40; x += 40) {
+      nimUpdateCursor(x, y);
+      nimUpdateHover(window.innerWidth, window.innerHeight);
+      if (nimHoverSlot() === slot) found += 1;
+    }
+  }
+  return found;
+}, slot_plane_made);
+report(
+  'a plane the gesture built can be pointed at where it is drawn',
+  slot_plane_made !== undefined && pixels_on_plane > 0,
+  `plane slot ${slot_plane_made}, picked at ${pixels_on_plane} sampled pixels`,
+);
+
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
 
 await browser.close();

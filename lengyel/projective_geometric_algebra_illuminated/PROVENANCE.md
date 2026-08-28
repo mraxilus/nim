@@ -208,6 +208,22 @@ and `picking.nim` (click bound) and nowhere else — every construction path rea
 untruncated `Multivector`, so a meet lands correctly arbitrarily far outside the drawn
 disc. There is a regression test asserting this.
 
+**A meet is read back as the point it names before anything signed is asked of it.** A
+meet's weight carries the orientation of the crossing — which side of the plane the ray
+came from — and `unitize` divides by the weight's *norm*, so that sign survives it.
+`objects.depthAgainst` is linear in its point, so a meet passed in as it came reports its
+distance ahead of the eye **negated** on every plane the ray meets from behind the plane's
+own normal. `picking.rayPlaneHit` did exactly that for one release, and every such plane
+was read as standing behind the eye: unpickable at every pixel of the disc it was plainly
+drawn at, so no drag could reach one and no ghost could form. Measured on the built page —
+a plane joined from three of the opening scene's own points picked at **0 of 462 sampled
+pixels**; the ground plane, whose normal happens to face the eye, picked fine throughout
+and hid the fault. The fix is `position` (which divides by the *signed* weight) and
+`toMultivector` (which restates the answer at weight one) — the form every other
+`depthAgainst` call in that module already passed, which is why only this one site broke.
+Held from both sides of one plane by a suite case, and end to end by a driven check that
+sweeps the canvas for a pixel picking a plane the gesture itself built.
+
 **Line.** Drawn as **two segments meeting on the line at its support**, each running out to
 one of the line's own two vanishing points, `eye ± radius_horizon*axis`. The forward one is
 exactly where that line's horizon-attitude marker draws, so a line reaches its own attitude
@@ -1188,6 +1204,23 @@ finger pauses far more readily than a mouse. It also sat *under* `SECONDS_LONG_P
 to end through real CDP touch on a Pixel 5 profile: **0.63 s → 0.93 s** from the last
 movement to the wheel appearing, the extra ~0.18 s in both being the 50 ms poll granularity
 and the frame loop's own latency under SwiftShader.
+**A press that can construct never moves the camera, not even before its slop is crossed.**
+The press target chooses the scheme, and the mouse follows that by choosing at the button —
+but touch reached the same rule by a different road and got it wrong. A finger that *eased*
+into its drag rather than flicking spent its first frame or two under `PIXELS_TAP_SLOP`, and
+those frames fell through to the one-finger orbit, which latches `nimSetCameraDragging`.
+Hover is suppressed while the camera moves (see the highlight rule above), and nothing
+cleared the latch when the construction drag armed a moment later — so that drag ran blind
+for the rest of the gesture: no destination, no ghost, nothing built on release. A flick
+that cleared the slop within a single event armed before any of it and worked, which is what
+made the fault read as intermittent rather than as a rule. `glue.js` now decides at the
+press, in `is_touch_press_constructing`, whether this press *can* become a drag — the same
+question `interaction.beginDrag` answers when the slop is finally crossed, including its
+refusal over the sky, so a press on the backdrop still falls through to the camera. Driven
+in sub-slop steps by `drive_browser.mjs`, which is what a real finger does and what no
+flick-speed check could reach; without the rule that check reports the camera orbiting
+(azimuth 1.0500 → 1.0633) and hover dead.
+
 **A wheel the reader summoned may veto the release; one that invited itself may not.**
 Lifting at an open wheel's centre used to mean "chose nothing; nothing done" on every
 arming. On the right button that is correct — the press asked for the wheel — but the dwell

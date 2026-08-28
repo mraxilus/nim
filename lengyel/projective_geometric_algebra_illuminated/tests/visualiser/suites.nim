@@ -3696,6 +3696,36 @@ suite "Picking":
       check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, cursor).isNone
 
 
+  test "a plane is picked from either side of it, whichever way its normal points":
+    # **The regression case for a shipped fault.** A plane's hit test read the depth of
+    #   the raw `ray ∨ plane` meet, whose weight carries which side the ray crossed from,
+    #   not where the crossing is. `unitize` divides by that weight's *norm* and so keeps
+    #   its sign, and `depthAgainst` is linear in its point -- so every plane met from
+    #   behind its own normal reported its distance ahead of the eye negated, was read as
+    #   standing behind the eye, and went unpickable at every pixel of the disc it was
+    #   plainly drawn at. Measured on the built page: a plane joined from three of the
+    #   opening scene's own points could not be picked anywhere on a 900x800 canvas, so
+    #   no drag could reach one; the ground plane, whose normal happens to face the eye,
+    #   picked fine and hid the fault.
+    #   Held from both sides of one plane rather than on one built to fail: the pair is
+    #   what makes the *sign* the subject, and either alone passes on a coin flip.
+    for facing in [1.0, -1.0]:
+      var scene = initScene()
+      # Three points spanning x = 0. Ordered by `facing`, so the two runs differ in
+      #   nothing but the orientation of the very same plane.
+      let corners = [
+        toMultivector(Position(x: 0, y: -3*facing, z: -3)),
+        toMultivector(Position(x: 0, y: 3*facing, z: -3)),
+        toMultivector(Position(x: 0, y: 0, z: 3)),
+      ]
+      scene.addItem(corners[0] ∧ corners[1] ∧ corners[2], "spanning", Ink.Olive)
+      let camera = cameraFacingOrigin()
+      let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+      check pickNearest(
+        scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+      ) == some(0)
+
+
   test "nearer plane wins over a farther one behind it":
     # Eye sits at (10, 0, 0) looking toward the origin along -x, so a plane at x=6 stands
     #   nearer the eye (distance 4) than one at x=3 (distance 7).

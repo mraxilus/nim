@@ -309,10 +309,18 @@ func rayPlaneHit(
   ## drawn disc, so a nearer plane can be preferred over a farther one behind it.
   ##   None where the ray misses the plane, the hit falls behind the eye -- its depth
   ##   against `plane_eye` -- or it lands outside the drawn disc.
-  ##   The meet is unitized once and kept as a point multivector, feeding the depth read
-  ##   and the containment both, rather than read out and rebuilt.
-  let hit = unitize(wedgeAnti(ray, plane))
-  if position(hit).isNone: return
+  ##   **The meet is read back as the point it names before anything signed is asked of
+  ##   it.** A meet's weight carries the orientation of the crossing -- which side of the
+  ##   plane the ray came from -- and `unitize` divides by the weight's *norm*, so that
+  ##   sign survives it. `depthAgainst` is linear in its point, so a meet left as it came
+  ##   reports the distance ahead of the eye negated on every plane the ray meets from
+  ##   behind its normal, and this refused each such plane at every pixel of its own disc.
+  ##   `position` divides by the signed weight and `toMultivector` restates the answer at
+  ##   weight one, which is the form every other `depthAgainst` in this module passes.
+  let met = wedgeAnti(ray, plane)
+  let where = position(met)
+  if where.isNone: return
+  let hit = toMultivector(where.get)
 
   let distance = depthAgainst(plane_eye, hit)
   if distance <= 1.0e-6: return

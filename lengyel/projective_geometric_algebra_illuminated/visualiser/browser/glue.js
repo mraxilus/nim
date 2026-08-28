@@ -1893,6 +1893,17 @@ let has_long_press_fired = false;
 //   `slot_touch_down` is read once at pointerdown, while hover still holds it -- picking
 //   again later would report whatever the finger has since moved over.
 let slot_touch_down = -1, is_touch_dragging = false;
+// Whether the press landed on something a drag may be built from, decided at the press and
+//   held for the gesture. **A press that can construct never moves the camera, not even
+//   over the pixels before the slop is crossed** -- that is the press-target rule the mouse
+//   already follows by choosing its scheme at the button. Touch reached the same place by a
+//   different road and got it wrong: a finger that eased into its drag orbited for the frame
+//   or two before the slop, which latched `nimSetCameraDragging`, and hover is suppressed
+//   while the camera moves -- so the construction drag that armed a moment later ran blind
+//   for the rest of the gesture, ghosting nothing and building nothing. A flick that cleared
+//   the slop in one event armed before any of that and worked, which is what made the fault
+//   read as intermittent.
+let is_touch_press_constructing = false;
 // How far a press may move and still be a press comes from `interaction.PIXELS_TAP_SLOP`:
 //   it decides which scheme the gesture enters, which is a rule about the gesture, not a
 //   presentation number. The tap *timeout* stays here -- that one really is local.
@@ -1968,6 +1979,12 @@ canvas.addEventListener('pointerdown', (e) => {
     //   against where the finger landed rather than against the last mouse press.
     nimBeginPress(now());
     slot_touch_down = nimHoverSlot();
+    // Whether this press *can* become a construction drag, decided here at the press and
+    //   not re-asked -- the same question `interaction.beginDrag` answers when the slop is
+    //   finally crossed, asked early because the moves before that have to know which
+    //   scheme they belong to. The sky is hovered wherever nothing else is and is refused
+    //   there, so a press on it still falls through to the camera; see `beginDrag`.
+    is_touch_press_constructing = slot_touch_down >= 0 && !nimIsHoverBackdrop();
     if (slot_touch_down >= 0) nimBeginHold(slot_touch_down, now());
   } else {
     touch_down_at = null; // A second finger landed; this is a pinch/pan gesture, not a tap.
@@ -1976,6 +1993,7 @@ canvas.addEventListener('pointerdown', (e) => {
     //   commit on whichever finger happens to lift first.
     if (is_touch_dragging) { nimCancelDrag(); is_touch_dragging = false; }
     slot_touch_down = -1;
+    is_touch_press_constructing = false;
   }
   if (pointers.size === 2) {
     const points_flat = [...pointers.values()];
@@ -2058,6 +2076,10 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.size === 1) {
     // One finger that is not constructing and not holding is orbiting, which the hover
     //   ring should sit out; the two branches above return before reaching here.
+    //   A press that came down on an object is not orbiting even now, before its slop is
+    //   crossed: it is a construction press waiting to become a drag, and moving the
+    //   camera under it would both jerk the view and put out the hover the drag needs.
+    if (is_touch_press_constructing) return;
     nimSetCameraDragging(true);
     const dx = current.x - prev.x, dy = current.y - prev.y;
     nimCameraOrbit(
