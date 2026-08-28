@@ -9,6 +9,21 @@ srcDir        = "src"
 requires "nim >= 2.0.0"
 
 
+proc bundleOne(dir, work: string) =
+  ## Fold a page's script into its markup, as one file that carries the whole.
+  let
+    markup = readFile(dir & "/index.html")
+    script = readFile(dir & "/" & dir & ".js")
+    tag = "<script src=\"" & dir & ".js\"></script>"
+  var head = markup[markup.find("<title>") .. markup.find("</style>") + 7]
+  head = head.replace("<title>", "<title>Ontology Partnerwork \u2014 ")
+  var body = markup[markup.find("<body>") + 6 ..< markup.find("</body>")]
+  if not body.contains(tag):
+    quit dir & "/index.html no longer loads its script the way the bundle expects"
+  body = body.replace(tag, "<script>\n" & script & "\n</script>")
+  writeFile(dir & "/artifact.html", head & body)
+
+
 proc bundleApp() =
   ## Fold the script into the markup, as one file that carries the whole app.
   ##
@@ -52,6 +67,14 @@ task audit, "Print the model and what it says about the workbook":
 task marks, "Check and rebuild the mark workbench's four pages":
   # A debug build on purpose: the workbench's doAssert gates are the build.
   exec "nim c -r --hints:off design/marks.nim"
+
+task sim, "Check the body sim's laws, then build its page":
+  # The laws first: a page that draws a model which has stopped holding is
+  # worse than no page.  Nothing here touches the ontology, which is the
+  # whole point of the directory being its own.
+  exec "nim c -r --hints:off sim/laws.nim"
+  exec "nim js -d:release --hints:off -o:sim/sim.js sim/page.nim"
+  bundleOne("sim", "the body sim")
 
 task shot, "Build the workbench's screenshot helper for node":
   exec "nim js --hints:off -d:nodejs -o:design/shot.js design/shot.nim"
