@@ -49,7 +49,7 @@ task review, "Write the review page and the frame pictures from the model":
 task audit, "Print the model and what it says about the workbook":
   exec "nim c -r --hints:off tools/audit.nim"
 
-task marks, "Check and rebuild the rotation mark workbench's two pages":
+task marks, "Check and rebuild the mark workbench's five pages":
   # A debug build on purpose: the workbench's doAssert gates are the build.
   exec "nim c -r --hints:off design/marks.nim"
 

@@ -12,7 +12,8 @@
 
 import std/[os, strformat, tables, unicode]
 
-import ./[checks, frame_page, hands_page, parts, sign_page, turns_single_page]
+import ./[checks, frame_page, hands_page, parts, rig_page, sign_page,
+          turns_single_page]
 
 
 proc checkFrameAndRules() =
@@ -39,6 +40,10 @@ const PAGES = [
    partsOf: proc (): Parts {.nimcall.} = handTurnParts(),
    check: proc () {.nimcall.} = checkHandTurns(),
    render: proc (P: Parts): string {.nimcall.} = hands_page.render(P)),
+  (name: "rig.html",
+   partsOf: proc (): Parts {.nimcall.} = rigParts(),
+   check: proc () {.nimcall.} = checkRig(),
+   render: proc (P: Parts): string {.nimcall.} = rig_page.render(P)),
 ] ## Each page: its file, its figures, its checks, its layout.
 
 

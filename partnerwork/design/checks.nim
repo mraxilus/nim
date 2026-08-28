@@ -19,7 +19,9 @@
 import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
             tables]
 
-import ./[parts, rules, sign]
+import ./[parts, rig, rules, sign]
+import ../src/partnerwork/frame as ontology
+import ../src/partnerwork/sim
 import ../src/partnerwork/draw/[body, figure, geometry, pose, route, style]
 
 
@@ -1382,3 +1384,159 @@ proc checkSign*() =
       clear_said = clear.toSeq.sorted.mapIt($it).join(", ")
     echo &"  {rows}/4: sides [{sides_said}] margins [{margins_said}] " &
       &"gaps [{gaps_said}] circle clearance [{clear_said}]"
+
+
+proc checkRig*() =
+  ## Verify what the rig derives, and say what was measured.
+  ##   These are not entries in the rule ledger: nobody handed them down, the
+  ##     model works them out from arm against girth.  So they are spoken as
+  ##     `rig:` rather than `rule:`, and the count of rules does not move.
+  ##   Every figure on the page is checked as a drawing as well as a claim --
+  ##     a law that holds in the model and is drawn wrong is still a page
+  ##     that lies.
+  var told: seq[string]
+  let built = rigParts()
+
+  # Every frame the ontology names is a frame two bodies can hold, with rope
+  # left over to dance it.  The notation's first duty, and the rig's first
+  # answer.
+  var least = Inf
+  for target in FRAMES:
+    let couple = atRest(HUMAN, target, GAP)
+    doAssert feasible(HUMAN, couple),
+      &"A named frame cannot be held; got `{target.describe}`."
+    for held in couple.ropes:
+      least = min(least, slack(HUMAN, GAP, held))
+    doAssert built[&"state_{target.slug}"].len > 0,
+      &"A frame went undrawn; got `{target.describe}`."
+  told.add &"all {FRAMES.len} frames hold at the smallest gap, the tightest " &
+    &"with {metres(least)} m of rope to spare"
+
+  # A parallel connection is a straight line; a crossed one cannot be, because
+  # the straight line runs through both chests.  The name says which, and the
+  # rope agrees: this is the mirror of facing partners as a fact about bodies
+  # rather than as a convention about words.
+  var bent, straight: int
+  for one in LINKS:
+    let
+      laid = lie(HUMAN, GAP, one.side, one.site)
+      chord = dist(leadShoulder(HUMAN, one.side),
+        followShoulder(HUMAN, GAP, one.site))
+    doAssert crossesMidline(laid) == isCrossed(one.side, one.site),
+      &"A rope disagrees with its own name; got " &
+      &"`{describeConnection(one.side, one.site)}`."
+    if isCrossed(one.side, one.site):
+      inc bent
+      doAssert laid.bends == 2 and laid.length > chord + 1e-6,
+        &"A crossed rope took the straight way; got `{laid.bends}` bends."
+    else:
+      inc straight
+      doAssert laid.bends == 0 and abs(laid.length - chord) < 1e-9,
+        &"A parallel rope bent; got `{laid.bends}` bends."
+    doAssert clearance(HUMAN, GAP, laid) >= HUMAN.torso - 2e-4,
+      &"A rope passes through a body; got " &
+      &"`{fmt(clearance(HUMAN, GAP, laid), 4)}`."
+  told.add &"{straight} connections run straight and {bent} bend round both " &
+    "bodies, each crossing the midline exactly when its name says crossed, " &
+    &"and none nearer a centre than the {metres(HUMAN.torso)} m torso"
+
+  # `Frame.over` is not a field the notation chose to keep: it is the answer
+  # to a question the bodies ask.  Two crossed ropes meet, and one of them has
+  # to be on top; two parallel ropes never meet, and the model refuses the
+  # field there.
+  for target in FRAMES:
+    let couple = atRest(HUMAN, target, GAP)
+    if couple.ropes.len < 2:
+      continue
+    let met = crossings(
+      lie(HUMAN, GAP, couple.ropes[0].side, couple.ropes[0].site),
+      lie(HUMAN, GAP, couple.ropes[1].side, couple.ropes[1].site))
+    doAssert met <= 1 and (met == 1) == target.over.isSome,
+      &"A pair crosses where it has no over; got `{target.describe}`, {met}."
+  # And the same, read off the drawn paths rather than the metre-space lies,
+  # because the figure is what a reader is asked to believe.  A rope is
+  # broken by cutting its polyline into two runs, which `reachMarkup` joins
+  # into one `d`, so the break shows up as an extra `M` and nowhere else.
+  for (key, target, meeting) in [("pair_crossed", "lrL", 1),
+                                 ("pair_parallel", "rl.", 0)]:
+    let here = fromKey(target).get
+    var held: seq[tuple[side: Side, site: Site]]
+    for side in Side:
+      if here.hold[side].isSome:
+        held.add (side, here.hold[side].get)
+    doAssert crossingsOf(drawn(lie(HUMAN, GAP, held[0].side, held[0].site)),
+      drawn(lie(HUMAN, GAP, held[1].side, held[1].site))).len == meeting,
+      &"The drawn pair does not meet as the model says; got `{key}`."
+  # The break itself, measured rather than counted.  A gap cannot be counted
+  # off the markup: `reachMarkup` folds a broken reach's runs into one `d`,
+  # and the crossing here falls so near the rope's middle that the two runs
+  # land one per shade -- so a broken rope draws exactly as many subpaths as
+  # a whole one.  What it does not draw is the length it gave up.
+  let
+    dives = drawn(lie(HUMAN, GAP, Side.Right, Site.RightHand))
+    above = drawn(lie(HUMAN, GAP, Side.Left, Site.LeftHand))
+    whole = polylineLen(dives)
+    left_drawn = cutGap(dives, above).mapIt(polylineLen(it)).sum
+  doAssert whole - left_drawn > BREAK - 1.0,
+    &"The rope that dives lost no length to its gap; got " &
+    &"`{fmt(whole - left_drawn, 2)}` against a break of `{fmt(BREAK, 2)}`."
+  told.add "the two crossed ropes meet once and must say which is on top; " &
+    "the parallel pair never meet, and the model has no `over` to give them"
+
+  # Winding is the price of a turn danced low, and the price is the girth.
+  # The wrap capacity `rotation.nim` had to measure falls out of it: half a
+  # turn fits inside two arms and a whole one does not, even with the bodies
+  # touching.
+  let held = rope(Side.Left, Site.RightHand)
+  for turns in 1 .. 3:
+    doAssert abs(cost(HUMAN, GAP, windFollow(held, turns)) -
+      cost(HUMAN, GAP, held) - float(turns) * PI * HUMAN.torso) < 1e-9,
+      &"A wind was mispriced; got `{turns}` half turns."
+  for one in LINKS:
+    doAssert pinLimit(HUMAN, one.side, one.site) == WRAP_CAP,
+      &"The rope allows a different wrap; got " &
+      &"`{pinLimit(HUMAN, one.side, one.site)}`."
+  told.add &"a half turn low costs {metres(PI * HUMAN.torso)} m of rope, so " &
+    &"two arms afford {WRAP_CAP} and refuse the next -- the wrap capacity " &
+    "the axis model had to measure, derived"
+
+  # Over the head the rope is on the axis the body turns about, so it spends
+  # no length at all.  What it spends is the grip, and that ceiling is
+  # anatomy: the rig takes it as an input and the axis model holds the same
+  # number, so the two cannot drift apart in silence.
+  for turns in 1 .. GRIP_CAP:
+    doAssert cost(HUMAN, GAP, twisted(held, turns)) == cost(HUMAN, GAP, held),
+      &"A twist cost rope; got `{turns}` half turns."
+    doAssert comfortable(HUMAN, twisted(held, turns)),
+      &"A twist inside the grip was refused; got `{turns}`."
+  doAssert not comfortable(HUMAN, twisted(held, GRIP_CAP + 1)),
+    "A twist past the grip was allowed."
+  doAssert liftable(HUMAN, GAP, held) and
+    slack(HUMAN, GAP, shedFollow(windFollow(held, 1))) ==
+      slack(HUMAN, GAP, held),
+    "A wrap shed over the head did not give its rope back."
+  told.add &"a turn over the head costs no rope and stops at {GRIP_CAP} half " &
+    &"turns of grip; the lift it rides on wants {metres(rise(HUMAN))} m, " &
+    &"which the {metres(budget(HUMAN))} m of two arms affords here"
+
+  # Every rope on the page is drawn in both dancers' shades, because a
+  # connection is two arms and the drawing says so (rule 9).
+  for key, figure in built:
+    if not key.startsWith("state_") and not key.startsWith("lie_") and
+        not key.startsWith("pair_") and not key.startsWith("wind_"):
+      continue
+    if key == &"state_{fromKey(\"--.\").get.slug}":
+      # `free` joins nothing, so it has no rope and no hand to ink.  It is
+      # two bodies and the space between them, which is what it is.
+      doAssert "var(--left" notin figure and "var(--right" notin figure,
+        &"The frame that holds nothing drew a connection; got `{key}`."
+      continue
+    doAssert "var(--left" in figure or "var(--right" in figure,
+      &"A figure lost its ink; got `{key}`."
+    doAssert "-deep" in figure,
+      &"A figure drew no lead's end; got `{key}`."
+  told.add &"{built.len} figures, every one of them the solver's own path " &
+    &"put on the page at {fmt(PX, 0)} units to the metre"
+
+  for line in told:
+    echo &"  rig: {line}"

@@ -53,25 +53,29 @@
 
 import std/[math, options]
 
+import ./draw/geometry
 import ./frame
 import ./rotation
+
+export geometry.Point, geometry.dist
 
 
 
 #[ Vectors ]#
 
-type Vec* = tuple ## One point of the plan, in metres.
-  x, y: float
+type Vec* = Point ## One point of the plan, in metres.
+  ## The drawing's own point type, borrowed rather than restated: the two were
+  ##   the same tuple written twice, and a mock-up that draws a solved lie
+  ##   should not have to convert it first.
+  ## Only `Point` and `dist` are taken.  `geometry`'s angles run clockwise
+  ##   from up the page where these run from the x axis, so its `polar` and
+  ##   `bearing` are the one thing here that must not be reached for.
 
 func `+`(a, b: Vec): Vec = (a.x + b.x, a.y + b.y)
 func `-`(a, b: Vec): Vec = (a.x - b.x, a.y - b.y)
 func `*`(a: Vec; by: float): Vec = (a.x * by, a.y * by)
 func dot(a, b: Vec): float = a.x * b.x + a.y * b.y
 func cross(a, b: Vec): float = a.x * b.y - a.y * b.x
-
-func dist*(a, b: Vec): float =
-  ## Measure the straight way between two points.
-  sqrt(dot(a - b, a - b))
 
 func unit(a: Vec): Vec = a * (1.0 / max(dist(a, (0.0, 0.0)), 1e-12))
 
