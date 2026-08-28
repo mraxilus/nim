@@ -246,6 +246,8 @@ src/partnerwork/spokes.nim      the frame held and every way out of it, and no m
 src/partnerwork/motion.nim      when a drawing moves: the phases and their times
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
+src/partnerwork/sim.nim         the physical rig: bodies and ropes, refereeing
+                                what the names and drawings are shorthand for
 app/                            the browser validator
 tools/audit.nim                 the same audit, printed
 tools/review.nim                writes the review page from the model

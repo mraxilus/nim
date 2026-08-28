@@ -32,8 +32,8 @@ proc bundleApp() =
 
 
 task test, "Run the law tests":
-  for name in ["tframe", "ttransition", "tworkbook", "trotation", "tdiagram",
-      "tmap", "tspokes", "treview"]:
+  for name in ["tframe", "ttransition", "tworkbook", "trotation", "tsim",
+      "tdiagram", "tmap", "tspokes", "treview"]:
     exec "nim c -r --hints:off tests/" & name & ".nim"
 
 task app, "Build the browser validator, and bundle it into one file":
