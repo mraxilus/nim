@@ -384,10 +384,27 @@ about the world origin. `fogFurnitureFor` solves the two radii, both measured fr
 `DrawExtent.eye`: full strength within `FRACTION_GRID_FADE_START` × extent, gone by
 `FRACTION_GRID_FADE_END` × extent. `addGrid` lays lines on world multiples of the cell size
 that fall within the ground disc the fog leaves — radius `sqrt(radius_gone² − height²)`
-about the point below the eye — and cuts each into `SEGMENTS_GRID_FADE` pieces fading
-per-vertex (not per-piece, so GL interpolation stays smooth) by each endpoint's own distance
-from the eye. The two lines through the world origin are skipped, coinciding with the X/Y
+about the point below the eye, `mesh.radiusGroundFor` — and cuts each into as many as
+`SEGMENTS_GRID_FADE` pieces fading per-vertex (not per-piece, so GL interpolation stays
+smooth) by each endpoint's own distance from the eye; how many is `segmentsGridFadeFor`'s
+answer, bounded by the segment budget recorded in the bottleneck ledger. The two lines
+through the world origin are skipped, coinciding with the X/Y
 axes and depth-fighting them. Axes use standard convention (x red, y green, z blue).
+
+**The scale bar**, bottom left, is what makes that ruled ground measurable rather than
+decorative: a span of ground drawn at its true screen length with the distance it covers
+written under it, and the grid's own current cell size beside that. The span is stepped
+1-2-5 by decade to land near 130 px, the way every map scale is stepped — a bar tied
+rigidly to one cell runs off the screen at close range and shrinks to nothing far out,
+because the cell steps by decades while the projection does not; measured before the
+stepping, one cell ran 11,983 px at orbit distance 3 and 53 px at 120. Both numbers come
+from `browser_bridge.nimGridMetrics`, which reads the same `mesh.sizeCellGridAt` that
+`addGrid` lays the lattice with, so what a reader is told and what is drawn cannot come
+apart — the export exists for exactly the reason `nimRenderLineWidths` does. It is built
+from `extentViewOverlay`, hence in **CSS** pixels, since a bar is read in the same pixels
+the pointer works in. Hidden outright where no ground is drawn at all — an eye above the
+fog's own reach. The driven layer checks the bar's drawn length against the distance its
+label claims, at two camera distances a decade apart so the cell's own step is exercised.
 
 Fog, not a halo, because a halo makes the origin a place the reader may not leave: panning a
 hundred units away left no ground at all, and the camera read as bounded to a region though

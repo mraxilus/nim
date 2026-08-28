@@ -1315,6 +1315,31 @@ proc extentViewOverlay(width, height: int): (DrawExtent, Matrix4) =
   (g_scale_overlay, g_vp_overlay)
 
 
+proc nimGridMetrics(width, height: cint): seq[float32] {.exportc.} =
+  ## Report `[size_cell, world_per_pixel]` for the ground grid as it is drawn right now:
+  ## the cell's own size in world units, and how much world one screen pixel spans at the
+  ## height the grid is laid at. `[0, 0]` where no ground is drawn at all -- an eye above
+  ## the fog's own reach -- which a caller reads as "no scale to show".
+  ##   Exported rather than re-derived in JS for the reason `nimRenderLineWidths` and
+  ## `nimOverlayMetrics` are: the number a reader is shown has to be the number the grid
+  ## was built with, and a formula copied across the boundary is a second answer waiting
+  ## to disagree. Both come from `mesh.sizeCellGridAt`, which `addGrid` itself reads.
+  ##   Through `extentViewOverlay`, so the extent is the overlay's own -- built at the
+  ## **CSS** height its caller passes rather than the framebuffer's. A scale bar is drawn
+  ## in the same pixels the pointer works in; see `glue.js`'s own note on the two.
+  let (scale, _) = extentViewOverlay(int(width), int(height))
+  let size_cell = sizeCellGridAt(scale.extent_furniture, scale)
+  if size_cell.isNone: return @[0.0'f32, 0.0'f32]
+  # Measured at the ground point below the eye, which is where the cell being reported is
+  #   laid; a pixel spans more world further away, and a bar drawn for the far distance
+  #   would not match the cells under the reader's own cursor.
+  let below = position(wedgeAnti(
+    wedge(scale.eye_point, toMultivector(Direction(x: 0, y: 0, z: -1))), groundPlane()
+  ))
+  let at = if below.isSome: below.get else: scale.eye
+  @[float32(size_cell.get), float32(worldPerPixelAt(at, scale))]
+
+
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ## Project the same representative point `mesh.anchorFor` and
   ## `visualiser.drawInteractionOverlay` use for this item onto screen pixels, so the

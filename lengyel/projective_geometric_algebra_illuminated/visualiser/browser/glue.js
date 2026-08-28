@@ -1730,6 +1730,46 @@ function drawExceedance() {
     '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames';
 }
 
+// The scale bar's own reading, as a map carries one: a span of ground drawn at its true
+//   screen length, with the distance it covers written under it, and **the ground grid's
+//   own cell size beside that** -- which is what makes the ruled ground measurable rather
+//   than decorative. The span is chosen 1-2-5 by decade to land near
+//   `PIXELS_RULER_TARGET`, the way every map scale is stepped: a bar tied rigidly to one
+//   cell runs off the screen when the camera is close and shrinks to nothing when it is
+//   far, because the cell steps by decades while the projection does not.
+//   The cell comes from `nimGridMetrics`, which reads the same `mesh.sizeCellGridAt` the
+//   grid is laid with; nothing here re-derives a cell size of its own.
+const ruler = document.getElementById('ruler');
+const ruler_bar = document.getElementById('ruler-bar');
+const ruler_label = document.getElementById('ruler-label');
+const PIXELS_RULER_TARGET = 130;
+const STEPS_RULER = [1, 2, 5];
+function refreshRuler() {
+  if (ruler === null) return;
+  const [size_cell, world_per_pixel] =
+    nimGridMetrics(canvas.clientWidth, canvas.clientHeight);
+  // No ground drawn -- an eye above the fog's own reach -- so there is nothing to measure.
+  if (!(size_cell > 0) || !(world_per_pixel > 0)) { ruler.hidden = true; return; }
+  const world_target = PIXELS_RULER_TARGET * world_per_pixel;
+  const decade = Math.pow(10, Math.floor(Math.log10(world_target)));
+  let span = decade;
+  for (const step of STEPS_RULER) {
+    // The largest 1-2-5 step still at or under the target: a bar that overshoots crowds
+    //   the corner it sits in, while one that undershoots is only harder to read against.
+    if (step * decade <= world_target) span = step * decade;
+  }
+  ruler.hidden = false;
+  ruler_bar.style.width = (span / world_per_pixel).toFixed(1) + 'px';
+  // Thousands separated with a thin space rather than a comma: a comma reads as a decimal
+  //   point to much of the world, and these numbers are what the bar is claiming.
+  const written = (value) => (value >= 1000
+    ? value.toLocaleString('en-US').replace(/,/g, '\u2009')
+    : String(Number(value.toPrecision(3))));
+  ruler_label.textContent = span === size_cell
+    ? written(span) + ' units, one grid cell'
+    : written(span) + ' units \u00b7 grid ' + written(size_cell);
+}
+
 function refreshDiagnostics() {
   drawExceedance();
   const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
@@ -2762,6 +2802,7 @@ function frame() {
     count_refresh_ui = 0;
     const ms_before_ui = performance.now();
     refreshCameraFields();
+    refreshRuler();
     refreshDiagnostics();
     refreshUndoRedoButtons(); // catches every history-touching path this tick's own
       // click handlers above don't reach directly (add, apply, remove, load demo,

@@ -228,6 +228,32 @@
      44px minimum, which is the touch-target size Apple's guidelines ask for and comfortably
      over the 24px WCAG 2.5.8 requires -- a control a reader reaches for when they are
      already lost is the last one to make them aim. */
+  /* ---- Scale bar: what one cell of the ground grid measures ---- */
+  .ruler {
+    position: fixed;
+    left: max(14px, env(safe-area-inset-left));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    pointer-events: none;
+    z-index: 5;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-muted);
+    text-shadow: 0 1px 2px var(--bg); /* Legible over a pale grid line as over dark sky. */
+  }
+  /* Drawn as a span with two end ticks rather than a filled block: the ticks are where the
+     measurement actually starts and stops, and a block leaves that to the eye. */
+  .ruler-bar {
+    height: 5px;
+    border: 1px solid var(--ink-faint);
+    border-top: none;
+    box-sizing: border-box;
+  }
+  .ruler-label {
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
   .help-open {
     position: fixed;
     right: max(14px, env(safe-area-inset-right));
@@ -897,6 +923,18 @@
     </div>
     <input type="file" id="file-load-scene" accept=".rgascene" style="display:none;">
   </div>
+</div>
+
+<!-- The scale bar, bottom left, the way a map carries one: a span of the ground drawn at
+     its true screen length with the distance it covers written under it. What it spans is
+     **one cell of the ground grid**, so the ruled ground stops being decoration and
+     becomes something a reader can measure against -- and where a cell would run more
+     than a third of the way across the view, it falls back to a tenth of one and says so.
+     Both numbers come from `nimGridMetrics`, which reads the same `mesh.sizeCellGridAt`
+     the grid itself is laid with. Hidden outright when there is no ground drawn at all. -->
+<div class="ruler" id="ruler" hidden>
+  <div class="ruler-bar" id="ruler-bar"></div>
+  <div class="ruler-label" id="ruler-label">&mdash;</div>
 </div>
 
 <button class="help-open" id="btn-help" type="button" aria-label="help" aria-expanded="false">

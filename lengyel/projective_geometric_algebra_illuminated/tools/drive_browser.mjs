@@ -1328,6 +1328,39 @@ report(
   `${seen_above} pixels from above, ${seen_below} from below, ${seen_edge_on} edge-on`,
 );
 
+// **The scale bar measures what it says it measures.** A bar drawn from one derivation and
+// labelled from another is the classic way a map scale goes quietly wrong, so both halves
+// are checked against the bridge's own `nimGridMetrics` -- and at two distances a decade
+// apart, since the grid's cell steps by decades and a bar that ignored the step would still
+// pass at a single distance.
+const rulers = [];
+for (const distance of [19, 4000]) {
+  await page.evaluate((d) => nimSetCameraDistance(d), distance);
+  await page.waitForTimeout(400);
+  rulers.push(await page.evaluate((d) => {
+    const [cell, world_per_pixel] =
+      nimGridMetrics(window.innerWidth, window.innerHeight);
+    const label = document.getElementById('ruler-label').textContent;
+    const width = document.getElementById('ruler-bar').getBoundingClientRect().width;
+    // The span the label claims, read back out of the label itself -- thin spaces and all.
+    const span = Number(label.split(' units')[0].replace(/\u2009/g, ''));
+    return { distance: d, cell, world_per_pixel, label, width, span,
+      hidden: document.getElementById('ruler').hidden };
+  }, distance));
+}
+await page.evaluate(() => nimSetCameraDistance(19));
+const rulers_true = rulers.filter((r) =>
+  !r.hidden && Number.isFinite(r.span) && r.span > 0 &&
+  Math.abs(r.width - r.span / r.world_per_pixel) <= 1.5 &&
+  r.label.includes(String(r.cell >= 1000
+    ? r.cell.toLocaleString('en-US').replace(/,/g, '\u2009') : r.cell)));
+report(
+  'the scale bar is as long as the distance it claims, and names the grid it measures',
+  rulers_true.length === rulers.length && rulers[0].cell !== rulers[1].cell,
+  rulers.map((r) => `at ${r.distance}: "${r.label}" over ${r.width.toFixed(1)}px ` +
+    `(claims ${(r.span / r.world_per_pixel).toFixed(1)}px)`).join('; '),
+);
+
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
 
 await browser.close();

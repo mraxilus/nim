@@ -1084,6 +1084,33 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
       )
 
 
+func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
+  ## Solve how far the ground grid reaches from the point directly below the eye, in world
+  ## units, for a camera whose furniture extends `extent`.
+  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about that
+  ## point, of radius `sqrt(radius_gone^2 - height^2)`, the height read as the eye's own
+  ## depth against `objects.groundPlane`. None where the eye stands higher than the fog
+  ## reaches and there is no ground to draw at all.
+  ##   Stated here rather than inside `addGrid` because the cell size a reader is shown on
+  ## the scale bar has to be the cell the grid was drawn with, and two derivations of the
+  ## same disc are two chances to disagree -- the argument `algebraFilled` and
+  ## `extentViewOverlay` already make for their own shared answers.
+  let
+    fog = fogFurnitureFor(extent)
+    height = abs(depthAgainst(groundPlane(), scale.eye_point))
+    radius_squared = fog.radius_gone*fog.radius_gone - height*height
+  if radius_squared <= 0.0: return
+  some(sqrt(radius_squared))
+
+
+func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
+  ## Report the cell size the ground grid is laid on for this camera, in world units, or
+  ## none where no ground is drawn. The one answer both the grid and the scale bar read.
+  let radius_ground = radiusGroundFor(extent, scale)
+  if radius_ground.isNone: return
+  some(sizeCellGridFor(radius_ground.get))
+
+
 func segmentsGridFadeFor*(count_lines: int): int =
   ## Choose how many pieces each of `count_lines` grid lines is cut into for its fade.
   ##   `SEGMENTS_GRID_FADE` wherever the whole family fits inside its half of
@@ -1187,13 +1214,13 @@ proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     base = Ink.Grid.colour
     tint = base.fade(base.alpha*ALPHA_GRID)
     fog = fogFurnitureFor(extent)
-    # The eye's height over the ground, read as its depth against the ground's own plane
-    #   -- `objects.groundPlane`, the algebra's one spelling of it.
-    height = abs(depthAgainst(groundPlane(), scale.eye_point))
-    radius_squared = fog.radius_gone*fog.radius_gone - height*height
-  if radius_squared <= 0.0: return
+    # The disc the fog leaves on the ground, and the cell laid across it -- both through
+    #   `radiusGroundFor`, so what a reader is told the cell is and what the grid is drawn
+    #   with cannot come apart.
+    reach = radiusGroundFor(extent, scale)
+  if reach.isNone: return
   let
-    radius_ground = sqrt(radius_squared)
+    radius_ground = reach.get
     size_cell = sizeCellGridFor(radius_ground)
   meshes.addGridFamily(
     scale, tint, fog, radius_ground, size_cell,
