@@ -903,9 +903,13 @@ report(
   work_moving !== null,
   `${work_moving === null ? 0 : work_moving.n} frames sampled mid-drag`,
 );
+// The band grew from 20 when `directionAcross` went back to being the triple join it is
+// specified as: exercising the algebra is what the project exists to do, and the join is
+// its measured price -- see PROVENANCE.md's bottleneck ledger. The band still catches the
+// collapse class a reader felt (30+ ms builds).
 reportWithin(
   'a frame is still assembled inside its budget while the camera moves',
-  work_moving === null ? -1 : work_moving.median, 0, 20, 'ms',
+  work_moving === null ? -1 : work_moving.median, 0, 26, 'ms',
 );
 
 // What buys that: a camera that has not moved draws the very same grid and axes, so they

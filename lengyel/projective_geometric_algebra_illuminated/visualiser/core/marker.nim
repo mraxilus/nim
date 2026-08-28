@@ -782,7 +782,7 @@ func isWithinView*(point: ScreenPosition; width, height: int): bool =
 
 func railsAt(
   anchor: Position; axis, across: Direction; offset: float; scale: DrawExtent;
-  placement: Camera; forward: Direction; view_projection: Matrix4; width, height: int;
+  view_projection: Matrix4; width, height: int;
   progress: float; marker: var Marker;
   walks: var array[2, array[3, Option[ScreenPosition]]]
 ) =
@@ -798,8 +798,7 @@ func railsAt(
   for index_side, side in [offset, -offset]:
     for index_half, reach in [scale.radius_horizon, -scale.radius_horizon]:
       let clipped = clipToEyeSide(
-        anchor + side*across, scale.eye + reach*axis, scale.eye, forward,
-        placement.distanceNear,
+        anchor + side*across, scale.eye + reach*axis, scale.plane_near
       )
       if clipped.isNone: continue
       let (position_tail, position_head) = clipped.get
@@ -844,7 +843,7 @@ func apartWidest(walks: array[2, array[3, Option[ScreenPosition]]]): float =
 
 
 func markerRails(
-  geometry: Multivector; scale: DrawExtent; placement: Camera;
+  geometry: Multivector; scale: DrawExtent;
   view_projection: Matrix4; width, height: int; progress, clearance: float;
   travel: Option[float]
 ): Option[Marker] =
@@ -897,7 +896,6 @@ func markerRails(
     across = directionAcross(geometry, scale.eye)
   if anchor.isNone or axis.isNone or across.isNone: return
 
-  let frame_camera = placement.frame(scale.eye)
   var
     marker = Marker(kind: MarkerKind.Rails)
     walks: array[2, array[3, Option[ScreenPosition]]]
@@ -915,8 +913,8 @@ func markerRails(
   #   pair breathed sideways while it grew. Caught by the case pinning that a growing rail
   #   starts where the finished one does.
   railsAt(
-    anchor.get, axis.get, across.get, offset_stated, scale, placement,
-    frame_camera.forward, view_projection, width, height, 1.0, marker, walks,
+    anchor.get, axis.get, across.get, offset_stated, scale,
+    view_projection, width, height, 1.0, marker, walks,
   )
   if marker.count_segment == 0: return
 
@@ -950,15 +948,15 @@ func markerRails(
     if widest <= ceiling: break
     offset = offset*ceiling/widest
     railsAt(
-      anchor.get, axis.get, across.get, offset, scale, placement,
-      frame_camera.forward, view_projection, width, height, 1.0, marker, walks,
+      anchor.get, axis.get, across.get, offset, scale,
+      view_projection, width, height, 1.0, marker, walks,
     )
     if marker.count_segment == 0: return
 
   if progress < 1.0:
     railsAt(
-      anchor.get, axis.get, across.get, offset, scale, placement,
-      frame_camera.forward, view_projection, width, height, progress, marker, walks,
+      anchor.get, axis.get, across.get, offset, scale,
+      view_projection, width, height, progress, marker, walks,
     )
     if marker.count_segment == 0: return
 
@@ -1397,8 +1395,7 @@ func markerFor*(
       )
     else:
       markerRails(
-        geometry, scale, placement, view_projection, width, height, progress, clearance,
-        travel,
+        geometry, scale, view_projection, width, height, progress, clearance, travel
       )
   of Shape.Plane:
     if is_horizon: markerFrame(width, height, progress, clearance)

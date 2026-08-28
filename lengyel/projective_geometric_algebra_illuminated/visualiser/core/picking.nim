@@ -134,26 +134,32 @@ func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
 #[ Segment Test ]#
 
 func clipToEyeSide*(
-  tail, head: Position; eye: Position; forward: Direction; distance_near: float
+  tail, head: Position; plane_near: Multivector
 ): Option[(Position, Position)] =
-  ## Clip segment `tail`-`head` to the half-space at least `distance_near` in front of
-  ## `eye` -- the same near-side clip the GPU already performs when actually drawing
-  ## the segment, done by hand here since a screen-space hit test needs to divide by
-  ## each endpoint's own depth, which the far reach `mesh.addLine` now gives a line can
-  ## put at or behind the eye from some camera angles even though the near half of the
-  ## very same segment stays plainly on screen.
+  ## Clip segment `tail`-`head` to the near side of `plane_near` -- the camera's own near
+  ## plane, `DrawExtent.plane_near` -- the same near-side clip the GPU performs when
+  ## actually drawing the segment, needed here since a screen-space hit test divides by
+  ## each endpoint's own depth, which the far reach `mesh.addLine` gives a line can put
+  ## at or behind the eye even while the near half of the same segment fills the screen.
+  ##   The crossing is the meet of the segment's own line with the plane -- the algebra's
+  ##   statement of the clip -- and each end's side is its `depthAgainst` sign. Held equal
+  ##   to the componentwise interpolation `mesh.addSegment`'s packing still performs (that
+  ##   copy is the GPU boundary and is licensed to stay plain) by a suite case, so the
+  ##   two clips cannot drift apart.
   ##   Exported for `marker.markerRails`, which flanks exactly the run this clips and
   ##   therefore has to clip it the same way; a marker drawn past the eye plane wraps to
   ##   the opposite side of the screen.
-  ##   None where the whole segment lies behind `eye`.
+  ##   None where the whole segment lies behind the plane.
   let
-    depth_tail = dot(tail - eye, forward)
-    depth_head = dot(head - eye, forward)
-  if depth_tail <= distance_near and depth_head <= distance_near: return
-  if depth_tail > distance_near and depth_head > distance_near: return some((tail, head))
-  let crossing =
-    tail + ((distance_near - depth_tail) / (depth_head - depth_tail))*(head - tail)
-  if depth_tail > distance_near: some((tail, crossing)) else: some((crossing, head))
+    depth_tail = depthAgainst(plane_near, toMultivector(tail))
+    depth_head = depthAgainst(plane_near, toMultivector(head))
+  if depth_tail <= 0.0 and depth_head <= 0.0: return
+  if depth_tail > 0.0 and depth_head > 0.0: return some((tail, head))
+  let crossing = position(wedgeAnti(
+    wedge(toMultivector(tail), toMultivector(head)), plane_near
+  ))
+  if crossing.isNone: return # Unreachable with straddling signs; stated for the reader.
+  if depth_tail > 0.0: some((tail, crossing.get)) else: some((crossing.get, head))
 
 
 func distanceToSegment(point, tail, head: ScreenPosition): float =
@@ -207,17 +213,15 @@ func positionUnderCursor*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    # The horizontal plane through the target, as the join of that point with two
-    #   independent horizontal directions -- points at its own horizon, which is what a
-    #   `Direction` is here.
-    level = toMultivector(camera.target) ∧
-      toMultivector(Direction(x: 1, y: 0, z: 0)) ∧
-      toMultivector(Direction(x: 0, y: 1, z: 0))
-    hit = position(ray ∨ level)
+    # The horizontal plane through the target -- `objects.levelPlaneThrough`, the one
+    #   spelling of what a level means to the algebra.
+    hit = position(ray ∨ levelPlaneThrough(toMultivector(camera.target)))
   if hit.isNone: return
   # Behind the eye is not under the cursor: a ray aimed at the sky meets the plane on the
-  #   far side of the reader, and zooming toward that point would fly the camera backwards.
-  if dot(hit.get - eye, frame_camera.forward) <= 1.0e-6: return
+  #   far side of the reader, and zooming toward that point would fly the camera
+  #   backwards. Depth read against the eye's own plane.
+  let plane_eye = planeThrough(toMultivector(eye), toMultivector(frame_camera.forward))
+  if depthAgainst(plane_eye, toMultivector(hit.get)) <= 1.0e-6: return
   hit
 
 
@@ -231,25 +235,32 @@ func positionOnLineNearest*(
   ##   nearest the ray is the only answer that is on the line and under the cursor at once.
   ##   None where the two run parallel, which has no one nearest point but a whole shared
   ##   direction of them; a caller then has nothing on this line to aim at and says so.
+  ##   **The algebra's own answer, in three moves.** The join of the two lines' attitudes
+  ##   is the horizon line through both directions, whose normal is their common
+  ##   perpendicular -- the very reading `directionNormalHorizon` documents, and it
+  ##   vanishes exactly where the lines run parallel, which is the refusal. The plane
+  ##   `ray ∧ commonPerpendicular` contains the ray and the segment realising the nearest
+  ##   approach, so its meet with the line is that approach's foot on the line. Held
+  ##   equal to the classical two-dot closed form -- which lives in the suite, where
+  ##   checking the algebra is the point -- over a scatter of line/ray pairs.
   let
-    between = anchor - ray_from
-    along_both = dot(axis, ray_along)
-    denominator = 1.0 - along_both*along_both
-  if abs(denominator) <= 1.0e-9: return
-  let step = (along_both*dot(ray_along, between) - dot(axis, between))/denominator
-  some(anchor + step*axis)
+    line = wedge(toMultivector(anchor), toMultivector(axis))
+    ray = wedge(toMultivector(ray_from), toMultivector(ray_along))
+    normal_common = directionNormalHorizon(wedge(attitude(line), attitude(ray)))
+  if normal_common.isNone: return
+  position(wedgeAnti(line, wedge(ray, toMultivector(normal_common.get))))
 
 
 func positionOnItemUnder(
-  geometry: Multivector; ray: Multivector; eye: Position; forward: Direction
+  geometry: Multivector; ray: Multivector; plane_eye: Multivector
 ): Option[Position] =
   ## Solve the world point of one item that the cursor's own sight `ray` is over.
   ##   A point stands where it stands, a plane is met where the ray crosses it, and a line
   ##   is read at its nearest point to the ray -- see `positionOnLineNearest`.
   ##   **Finite shapes only.** An object at horizon is drawn at `radius_horizon` about the
   ##   eye and is not *at* any place in the world, so there is nothing there to fly toward.
-  ##   None also for a hit behind the eye, which is not under the cursor whatever the
-  ##   arithmetic says, and none for a ray with no direction to read.
+  ##   None also for a hit behind the eye -- read as its depth against the eye's own
+  ##   plane, `plane_eye` -- and none for a ray with no direction to read.
   if geometry.isHorizon: return
   let
     shaped = shape(geometry)
@@ -261,10 +272,14 @@ func positionOnItemUnder(
   of Shape.Line:
     let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
     if anchor.isSome and axis.isSome:
-      found = positionOnLineNearest(anchor.get, axis.get, eye, heading.get)
+      # The ray's own two defining elements are read back off the ray multivector, so the
+      #   nearest-point question is asked of exactly the ray that was cast.
+      let ray_from = positionSupport(ray)
+      if ray_from.isSome:
+        found = positionOnLineNearest(anchor.get, axis.get, ray_from.get, heading.get)
   of Shape.Plane: found = position(ray ∨ geometry)
   if found.isNone: return
-  if dot(found.get - eye, forward) <= 1.0e-6: return
+  if depthAgainst(plane_eye, toMultivector(found.get)) <= 1.0e-6: return
   found
 
 
@@ -278,34 +293,32 @@ func positionOnGround*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    # The ground, as the join of the origin with two independent horizontal directions.
-    ground = toMultivector(ORIGIN_WORLD) ∧
-      toMultivector(Direction(x: 1, y: 0, z: 0)) ∧
-      toMultivector(Direction(x: 0, y: 1, z: 0))
-    hit = position(ray ∨ ground)
+    hit = position(ray ∨ groundPlane())
   if hit.isNone: return
-  if dot(hit.get - eye, frame_camera.forward) <= 1.0e-6: return
+  let plane_eye = planeThrough(toMultivector(eye), toMultivector(frame_camera.forward))
+  if depthAgainst(plane_eye, toMultivector(hit.get)) <= 1.0e-6: return
   hit
 
 
 func rayPlaneHit(
-  ray: Multivector; eye: Position; forward: Direction;
-  plane: Multivector; anchor: Position; axes: FramePlane; extent: float
+  ray, plane_eye: Multivector; plane: Multivector; anchor: Position; extent: float
 ): Option[float] =
-  ## Meet cursor's sight ray with `plane`; report distance from eye where it lands inside
-  ## the drawn disc, so a nearer plane can be preferred over a farther one behind it.
-  ##   None where the ray misses the plane, the hit falls behind the eye, or it lands
-  ##   outside the drawn disc.
-  let hit = position(ray ∨ plane)
-  if hit.isNone: return
+  ## Meet cursor's sight ray with `plane`; report view depth where it lands inside the
+  ## drawn disc, so a nearer plane can be preferred over a farther one behind it.
+  ##   None where the ray misses the plane, the hit falls behind the eye -- its depth
+  ##   against `plane_eye` -- or it lands outside the drawn disc.
+  ##   The meet is unitized once and kept as a point multivector, feeding the depth read
+  ##   and the containment both, rather than read out and rebuilt.
+  let hit = unitize(wedgeAnti(ray, plane))
+  if position(hit).isNone: return
 
-  let distance = dot(hit.get - eye, forward)
+  let distance = depthAgainst(plane_eye, hit)
   if distance <= 1.0e-6: return
 
   # Bound is circular, matching `mesh.addPlaneRing` exactly: a plane's own hit test
   #   should agree with what is drawn, not with a square the render no longer produces.
-  let local = hit.get - anchor
-  if dot(local, local) > extent*extent: return
+  #   Distance between the hit and the disc's own centre, through the algebra.
+  if distanceBetween(hit, toMultivector(anchor)) > extent: return
   some(distance)
 
 
@@ -340,6 +353,14 @@ func pickNearest*(
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
     scale = DrawExtent(eye: eye, radius_horizon: radiusHorizonFor(camera.distanceFar))
+    # The eye's own plane and the near plane, once per pick -- every branch below reads
+    #   depths and clips against these rather than re-deriving either per candidate.
+    eye_point = toMultivector(eye)
+    forward_point = toMultivector(frame_camera.forward)
+    plane_eye = planeThrough(eye_point, forward_point)
+    plane_near = planeThrough(
+      add(eye_point, wedge(camera.distanceNear, forward_point)), forward_point
+    )
 
   var
     slot_best = none(int)
@@ -402,9 +423,7 @@ func pickNearest*(
       if anchor.isNone or axis.isNone: continue
       var distance_nearest = Inf
       for reach in [scale.radius_horizon, -scale.radius_horizon]:
-        let clipped = clipToEyeSide(
-          anchor.get, eye + reach*axis.get, eye, frame_camera.forward, camera.distanceNear,
-        )
+        let clipped = clipToEyeSide(anchor.get, eye + reach*axis.get, plane_near)
         if clipped.isNone: continue
         let (position_tail, position_head) = clipped.get
         let
@@ -425,11 +444,10 @@ func pickNearest*(
       let
         anchor =
           if item.anchorOverride.isSome: item.anchorOverride else: positionAnchor(geometry)
-        axes = frame(geometry)
-      if anchor.isNone or axes.isNone: continue
-      let hit = rayPlaneHit(
-        ray, eye, frame_camera.forward, geometry, anchor.get, axes.get, EXTENT_PLANE_F
-      )
+      # The frame guard survives the hit test no longer taking the axes: a plane the
+      #   algebra can span no frame for is one the disc was never drawn for either.
+      if anchor.isNone or frame(geometry).isNone: continue
+      let hit = rayPlaneHit(ray, plane_eye, geometry, anchor.get, EXTENT_PLANE_F)
       if hit.isSome: consider(3, hit.get)
 
   slot_best
@@ -461,9 +479,10 @@ func anchorZoomAt*(
       eye = camera.eye
       frame_camera = camera.frame(eye)
       ray = castRay(camera, eye, frame_camera, width, height, cursor)
-      found = positionOnItemUnder(
-        scene.geometryOf(slot.get), ray, eye, frame_camera.forward
+      plane_eye = planeThrough(
+        toMultivector(eye), toMultivector(frame_camera.forward)
       )
+      found = positionOnItemUnder(scene.geometryOf(slot.get), ray, plane_eye)
     if found.isSome: return found
   let ground = positionOnGround(camera, width, height, cursor)
   if ground.isSome: return ground
@@ -595,9 +614,7 @@ func isLineShownCentrally(
   let (anchor, axis) = (positionAnchor(m), direction(m))
   if anchor.isNone or axis.isNone: return false
   for reach in [scale.radius_horizon, -scale.radius_horizon]:
-    let clipped = clipToEyeSide(
-      anchor.get, scale.eye + reach*axis.get, scale.eye, scale.forward, scale.depth_near
-    )
+    let clipped = clipToEyeSide(anchor.get, scale.eye + reach*axis.get, scale.plane_near)
     if clipped.isNone: continue
     let
       tail = projectToScreen(view_projection, width, height, clipped.get[0])

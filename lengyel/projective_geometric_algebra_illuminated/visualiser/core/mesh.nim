@@ -383,6 +383,23 @@ type
 
 #[ Camera-Relative Scale ]#
 
+func algebraFilled*(scale: DrawExtent): DrawExtent =
+  ## Return the extent with its four multivector twins derived from its own plain fields.
+  ##   The one derivation point: `camera.drawExtentFor` goes through here, and so must any
+  ##   hand-built extent -- a test fixture, a partial one -- or its twins are zero
+  ##   multivectors and everything algebraic downstream silently draws nothing. Found
+  ##   exactly that way: the suite's own fixtures built extents fieldwise and the ground
+  ##   grid vanished from every one of them.
+  result = scale
+  result.eye_point = toMultivector(scale.eye)
+  result.forward_point = toMultivector(scale.forward)
+  result.plane_eye = planeThrough(result.eye_point, result.forward_point)
+  result.plane_near = planeThrough(
+    add(result.eye_point, wedge(scale.depth_near, result.forward_point)),
+    result.forward_point,
+  )
+
+
 func radiansPerPixel*(scale: DrawExtent): float =
   ## Measure how much of the camera's own angular field one pixel of height spans.
   ##   The small-angle reading of `worldPerPixelAt` at unit depth, and the right unit for
@@ -717,20 +734,15 @@ func directionAcross*(tail, head, eye: Position): Option[Direction] =
   ##   module, so it delegates here rather than the two carrying a derivation each.
   ##   None where the eye lies on the segment's own line, or where the segment has no
   ##   length: neither has a side to step off toward.
-  ##   **The specification is the join** -- `directionNormal(tail ∧ head ∧ eye)` -- and
-  ##   what is computed is that plane's normal written out: the cross product of the two
-  ##   edges from `tail`, which is the same answer to the last bit, sign included, and the
-  ##   suite holds the two equal over a spread of triples so this cannot quietly drift.
-  ##   Written out because this is the one derivation on the per-segment hot path: every
-  ##   ribbon of every frame runs it, and the ground grid alone is ~3,800 ribbons a frame
-  ##   while the camera moves. Under the JS backend each `∧` of full multivectors walks
-  ##   16x16 coefficient pairs through `nimCopy`, and profiling a real orbit drag put that
-  ##   churn at the top of the page's own self-time -- the frame build measured 10.3 ms a
-  ##   frame with the join and 3.6 ms with the arithmetic, for identical output.
-  let (a, b) = (head - tail, eye - tail)
-  normalize(Direction(
-    x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x,
-  ))
+  ##   **The join is the implementation, and it is the hot path's largest cost -- kept.**
+  ##   Every ribbon of every frame runs this, ~3,800 times a frame while the camera moves,
+  ##   and under the JS backend each `∧` of full multivectors walks 16x16 coefficient
+  ##   pairs through `nimCopy`; a written-out cross product was measured 6.7 ms a frame
+  ##   cheaper and was shipped briefly, then reverted -- exercising the algebra is what
+  ##   this project exists to do, and a cost it carries is a finding, not a fault. See
+  ##   PROVENANCE.md's bottleneck ledger. The suite still holds this normal equal to the
+  ##   classical cross product, sign included -- the classical form lives in the test.
+  directionNormal(toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye))
 
 
 func blend(first, second: Rgba; fraction: float): Rgba =
@@ -944,17 +956,22 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
     (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
-  let
-    fog = fogFurnitureFor(extent)
-    offset_eye = scale.eye - ORIGIN_WORLD
+  let fog = fogFurnitureFor(extent)
   for (axis, ink) in AXES_WORLD:
-    # Chord of the fog sphere along this axis, about the point on it nearest the eye:
-    #   the axis passes the eye at `separation`, so it is inside the fog for `half`
-    #   either side of `middle` and nowhere else.
+    # Chord of the fog sphere along this axis, about the eye's own perpendicular foot on
+    #   it: the axis passes the eye at `separation`, so it is inside the fog for `half`
+    #   either side of the foot and nowhere else. The foot is the algebra's orthogonal
+    #   projection of the eye onto the axis line; the chord half-length stays a scalar
+    #   solve, since a sphere has no representative in the rigid algebra -- the one
+    #   documented exception, and the incidence feeding it is the library's own.
     let
-      middle = dot(offset_eye, axis)
-      separation_squared = max(0.0, dot(offset_eye, offset_eye) - middle*middle)
-      half_squared = fog.radius_gone*fog.radius_gone - separation_squared
+      axis_line = wedge(toMultivector(ORIGIN_WORLD), toMultivector(axis))
+      foot_raw = projectOrthogonal(scale.eye_point, axis_line)
+      foot = position(foot_raw)
+    if foot.isNone: continue
+    let
+      separation = distanceBetween(unitize(foot_raw), scale.eye_point)
+      half_squared = fog.radius_gone*fog.radius_gone - separation*separation
     if half_squared <= 0.0: continue
     let
       half = sqrt(half_squared)
@@ -971,10 +988,8 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     #   the loop's own `lent` view of a constant and a closure may not capture one.
     for j in 0 ..< 2*SEGMENTS_GRID_FADE:
       let
-        tail = ORIGIN_WORLD +
-          (middle + half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
-        head = ORIGIN_WORLD +
-          (middle + half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
+        tail = foot.get + (half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
+        head = foot.get + (half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
       meshes.addSegment(
         tail, head, tintAt(tail), tintAt(head), WIDTH_LINE_FURNITURE, scale,
       )
@@ -998,9 +1013,16 @@ proc addGridFamily(
   ## the camera, so what the reader sees slide past as they move is the world going by,
   ## not a grid dragged along with them -- and a line stays where it was when they come
   ## back to it.
+  # The eye resolved onto the two lattice axes: its depth against the plane through the
+  #   origin perpendicular to each -- the algebra's statement of a coordinate. One plane
+  #   per family per frame, hoisted here rather than rebuilt per lattice line.
   let
-    centre_across = dot(scale.eye - ORIGIN_WORLD, across)
-    centre_along = dot(scale.eye - ORIGIN_WORLD, along)
+    centre_across = depthAgainst(
+      planeThrough(toMultivector(ORIGIN_WORLD), toMultivector(across)), scale.eye_point
+    )
+    centre_along = depthAgainst(
+      planeThrough(toMultivector(ORIGIN_WORLD), toMultivector(along)), scale.eye_point
+    )
     first = int(ceil((centre_across - radius_ground)/size_cell))
     last = int(floor((centre_across + radius_ground)/size_cell))
   for i in first .. last:
@@ -1051,7 +1073,9 @@ proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     base = Ink.Grid.colour
     tint = base.fade(base.alpha*ALPHA_GRID)
     fog = fogFurnitureFor(extent)
-    height = abs(scale.eye.z)
+    # The eye's height over the ground, read as its depth against the ground's own plane
+    #   -- `objects.groundPlane`, the algebra's one spelling of it.
+    height = abs(depthAgainst(groundPlane(), scale.eye_point))
     radius_squared = fog.radius_gone*fog.radius_gone - height*height
   if radius_squared <= 0.0: return
   let

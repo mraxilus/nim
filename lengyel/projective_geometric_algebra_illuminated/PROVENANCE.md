@@ -1853,18 +1853,30 @@ band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this
 renders through swiftshader, so its frame times say more about the software renderer than
 about anything in this repository.
 
-**The moving frame was the collapse a reader felt, and it was per-segment multivector
-churn.** A camera drag rebuilds the ground grid every frame, and `addSegment` derived each
-ribbon's across direction as `directionNormal(tail ∧ head ∧ eye)` — a triple join of full
-multivectors, run ~3,800 times a frame, whose 16×16 `nimCopy` walks topped a sampling
-profile of a real orbit drag. The join stays as the *specification* in the doc comment and
-the suite (held equal to the arithmetic over 200 triples, sign included — sign-only
-agreement would swap a ribbon's edges silently); what runs is that plane's normal written
-out as a cross product, the same answer to 1.2e-14 over 20,000 random triples. `blend` was
-also hoisted out of `addSegment`, where the JS backend materialised the closure per call.
-Measured on the shipped page: the frame build under an orbit drag went **10.3 → 7.0 ms**
-(max 35 → 17), and the still frame **5.8 → 3.2** — the same fix reaches every scene ribbon,
-a plane's 96-segment rim included.
+**The bottleneck ledger.** PGA equations are never replaced with standard linear algebra —
+the library is what this project exists to exercise, so a cost the algebra carries is a
+finding to record here, not a fault to patch around. A PGA equation may be restructured
+only in PGA's own terms (hoisting an invariant multivector, sharing one join across the
+collinear pieces that provably share it). Each entry: the site, the measured price on the
+driving container's shipped page, and why it is kept.
+
+**`mesh.directionAcross` — the triple join `directionNormal(tail ∧ head ∧ eye)`, once per
+ribbon, ~3,800 times a moving frame.** Price: +6.7 ms a moving frame against a written-out
+cross product, measured both ways on the shipped page. Kept — this is the mandate's own
+case: the cross product was shipped briefly (`0275e82d8`) and reverted; the suite now holds
+the join's normal equal to the classical cross computed *in the test*, sign included, and
+the join is what runs.
+
+**Dense 16-float `Multivector` operations under the JS backend.** Price: each binary op
+walks 16×16 coefficient pairs through `nimCopy`, ~1–2 µs an op on the driving container.
+Kept — it is the library's own representation. The page stays `-d:release`, and redundant
+recomputation is cut by caches that skip bit-identical inputs without replacing any math.
+
+`blend` stays hoisted out of `addSegment` (the JS backend materialised the closure per
+call — no math changed), and the exactness caches stay: the furniture hold, the marker
+memo and the shared overlay extent skip recomputation when every input is bit-identical,
+which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
+live face of this ledger.
 
 **The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
 and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as

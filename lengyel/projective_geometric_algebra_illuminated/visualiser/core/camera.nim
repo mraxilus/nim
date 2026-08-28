@@ -355,8 +355,11 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
   doAssert axis_up.isSome,
     "Camera sight axis and right direction must span plane; they are perpendicular."
 
-  # Pin view's +y to world up, as antidual fixes axis only up to sign.
-  let orientation = if dot(axis_up.get, UP_WORLD) < 0: -1.0 else: 1.0
+  # Pin view's +y to world up, as antidual fixes axis only up to sign. The alignment is
+  #   the library's own inner product of the two directions, read at its scalar.
+  let orientation =
+    if dot(toMultivector(axis_up.get), toMultivector(UP_WORLD))[Basis.scalar] < 0: -1.0
+    else: 1.0
   FrameCamera(
     axis_right: axis_right.get,
     axis_up: orientation * axis_up.get,
@@ -373,30 +376,18 @@ func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
   ##   it reads a `Camera` and `camera` imports `mesh` rather than the other way round.
   ##   `height_pixels` is the framebuffer's, not the window's: a ribbon's width is
   ##   measured in the pixels actually drawn.
-  let
-    eye = camera.eye
-    forward = camera.frame(eye).forward
-    eye_point = toMultivector(eye)
-    forward_point = toMultivector(forward)
-    # The eye plane once, and the near plane as the same construction pushed forward --
-    #   both unitized by `planeThrough`, so `depthAgainst` either reads metric depth.
-    plane_eye = planeThrough(eye_point, forward_point)
-    plane_near = planeThrough(
-      add(eye_point, wedge(camera.distanceNear, forward_point)), forward_point
-    )
-  DrawExtent(
+  let eye = camera.eye
+  # `algebraFilled` derives the four multivector twins from the plain fields -- the one
+  #   derivation point, shared with every hand-built extent.
+  algebraFilled(DrawExtent(
     extent_furniture: extentFurnitureFor(camera.distanceFar),
     eye: eye,
     radius_horizon: radiusHorizonFor(camera.distanceFar),
-    forward: forward,
+    forward: camera.frame(eye).forward,
     tangent_half_view: tan(0.5*degToRad(camera.degrees_field_of_view)),
     height_pixels: height_pixels,
     depth_near: camera.distanceNear,
-    eye_point: eye_point,
-    forward_point: forward_point,
-    plane_eye: plane_eye,
-    plane_near: plane_near,
-  )
+  ))
 
 
 func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =

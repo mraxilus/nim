@@ -539,6 +539,82 @@ suite "Camera":
     ).isNone
 
 
+  test "the algebra's nearest point on a line agrees with the closed form":
+    # `positionOnLineNearest` answers through joins and a meet; the classical two-dot
+    #   closed form lives HERE, in the test -- checking the algebra against it is the
+    #   project's purpose. A deterministic scatter of line/ray pairs, comfortably away
+    #   from parallel, so a failure names the same pair on every run.
+    var seed = 9.0
+    proc pseudo(): float =
+      seed = (seed*97.31 + 33.77) mod 41.0
+      seed - 20.5
+    proc someway(): Direction =
+      var d = Direction(x: 0, y: 0, z: 0)
+      while norm(d) < 0.1: d = Direction(x: pseudo(), y: pseudo(), z: pseudo())
+      normalize(d).get
+    for trial in 0 ..< 100:
+      let
+        anchor = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        axis = someway()
+        ray_from = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        ray_along = someway()
+        between = anchor - ray_from
+        along_both = dot(axis, ray_along)
+        denominator = 1.0 - along_both*along_both
+      if abs(denominator) <= 1.0e-3: continue # A near-parallel pair proves nothing here.
+      let
+        step = (along_both*dot(ray_along, between) - dot(axis, between))/denominator
+        classical = anchor + step*axis
+        answered = positionOnLineNearest(anchor, axis, ray_from, ray_along)
+      check answered.isSome
+      if answered.isSome:
+        check answered.get =~ classical
+
+
+  test "the algebra's near clip agrees with the componentwise clip":
+    # `clipToEyeSide` clips by plane depths and a meet; the componentwise interpolation
+    #   -- the very formula `mesh.addSegment`'s boundary packing still performs -- lives
+    #   HERE as the reference, which also pins the two clips to each other so the
+    #   deliberate boundary asymmetry cannot drift.
+    var seed = 17.0
+    proc pseudo(): float =
+      seed = (seed*97.31 + 33.77) mod 41.0
+      seed - 20.5
+    proc someway(): Direction =
+      var d = Direction(x: 0, y: 0, z: 0)
+      while norm(d) < 0.1: d = Direction(x: pseudo(), y: pseudo(), z: pseudo())
+      normalize(d).get
+    for trial in 0 ..< 100:
+      let
+        tail = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        head = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        eye = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        forward = someway()
+        near = 0.05 + abs(pseudo())/10.0
+        plane_near = planeThrough(
+          add(toMultivector(eye), wedge(near, toMultivector(forward))),
+          toMultivector(forward),
+        )
+        answered = clipToEyeSide(tail, head, plane_near)
+        # The componentwise reference, exactly as the boundary's own packing clips.
+        depth_tail = dot(tail - eye, forward)
+        depth_head = dot(head - eye, forward)
+      if depth_tail <= near and depth_head <= near:
+        check answered.isNone
+        continue
+      check answered.isSome
+      if answered.isNone: continue
+      var (expected_tail, expected_head) = (tail, head)
+      if depth_tail <= near:
+        expected_tail =
+          tail + ((near - depth_tail)/(depth_head - depth_tail))*(head - tail)
+      elif depth_head <= near:
+        expected_head =
+          head + ((near - depth_head)/(depth_tail - depth_head))*(tail - head)
+      check answered.get[0] =~ expected_tail
+      check answered.get[1] =~ expected_head
+
+
   test "a pan grabs the level under the pointer and carries it to the cursor":
     # The fault: a pan of so many hundredths of the orbit distance per pixel is right at
     #   one depth and one tilt and wrong everywhere else -- driven, a 200-pixel drag
@@ -661,7 +737,9 @@ suite "Mesh":
 
   let SCALE_TEST = block:
     let eye = Position(x: 5, y: -3, z: 7)
-    DrawExtent(
+    # `algebraFilled`, as every hand-built extent must be, or the multivector twins the
+    #   tessellation reads are zero and it silently draws nothing.
+    algebraFilled(DrawExtent(
       extent_furniture: 30.0,
       eye: eye, radius_horizon: 50.0,
       # Looking back at the origin, which is where every fixture below is built around.
@@ -669,7 +747,7 @@ suite "Mesh":
       tangent_half_view: tan(0.5*degToRad(45.0)),
       height_pixels: HEIGHT_SCALE_TEST,
       depth_near: 0.1,
-    )
+    ))
   ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
     ## mistake, instead of to `eye`, would fail every horizon check below.
     ##   `extent_furniture` held distinct from `EXTENT_PLANE_F` (a plane's own fixed
@@ -996,7 +1074,7 @@ suite "Mesh":
     ##   reaches the ground and no grid is drawn at all. A fog case needs an eye standing
     ##   inside its own fog, and several need it far from the origin, which is the whole
     ##   point of the rule being checked.
-    DrawExtent(
+    algebraFilled(DrawExtent(
       extent_furniture: extent,
       eye: eye, radius_horizon: extent,
       # Looking a little ahead and down, which every ground fixture below lies under.
@@ -1006,7 +1084,7 @@ suite "Mesh":
       tangent_half_view: tan(0.5*degToRad(45.0)),
       height_pixels: HEIGHT_SCALE_TEST,
       depth_near: 0.1,
-    )
+    ))
 
   let SCALE_FOG = scaleFurnitureAt(Position(x: 103, y: -97, z: 5), 300.0)
     ## Eye inside its own fog: a reach of 300 fades out at 36 units, well past the five
@@ -1071,13 +1149,11 @@ suite "Mesh":
     check isNear(Ink.Grid.colour.alpha, 1.0)
 
 
-  test "a ribbon's across direction is the join's own normal, written out":
-    # `mesh.directionAcross` is specified as the normal of the plane joining the segment
-    #   with the eye -- `directionNormal(tail ∧ head ∧ eye)` -- but computes that normal
-    #   as written-out arithmetic, because it runs once per ribbon and the ground grid
-    #   alone is thousands of ribbons a frame under a moving camera. This holds the two
-    #   equal, **sign included**: agreement up to sign would let the ribbon's two edges
-    #   swap sides without a word from the suite.
+  test "the join's normal is the classical cross product, sign included":
+    # `mesh.directionAcross` IS the join -- `directionNormal(tail ∧ head ∧ eye)` -- and
+    #   this holds the algebra against the classical cross product computed HERE, in the
+    #   test, which is the project's purpose. **Sign included**: agreement up to sign
+    #   would let a ribbon's two edges swap sides without a word from the suite.
     var seed = 1.0
     proc pseudo(): float =
       # A deterministic scatter, so a failure names the same triple on every run.
@@ -1088,13 +1164,15 @@ suite "Mesh":
         tail = Position(x: pseudo(), y: pseudo(), z: pseudo())
         head = Position(x: pseudo(), y: pseudo(), z: pseudo())
         eye = Position(x: pseudo(), y: pseudo(), z: pseudo())
-        specified = directionNormal(
-          toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye)
-        )
         computed = directionAcross(tail, head, eye)
-      check specified.isSome == computed.isSome
-      if specified.isSome:
-        check computed.get =~ specified.get
+        # The classical form: the cross product of the two edges from `tail`, normalized.
+        (a, b) = (head - tail, eye - tail)
+        classical = normalize(Direction(
+          x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x,
+        ))
+      check classical.isSome == computed.isSome
+      if classical.isSome:
+        check computed.get =~ classical.get
     # And the two refusals: a segment of no length, and an eye on the segment's own line,
     #   neither of which has a side to step off toward.
     let (a, b) = (Position(x: 1, y: 2, z: 3), Position(x: 2, y: 4, z: 6))
@@ -4323,10 +4401,10 @@ suite "Interaction":
     #   fault it guards against is silent: a mesh nobody marked has to draw *entirely*
     #   depth-tested, and a sentinel index of zero would have said the opposite -- every
     #   line of furniture drawn over the scene, on every frame.
-    let scale = DrawExtent(
+    let scale = algebraFilled(DrawExtent(
       extent_furniture: 10.0, radius_horizon: 10.0, tangent_half_view: 0.5,
       height_pixels: 600, depth_near: 0.1, forward: Direction(x: 0, y: 0, z: -1),
-    )
+    ))
     var meshes: MeshSet
     clearMeshes(meshes)
     for primitive in Primitive: check meshes[primitive].index_overlay.isNone
