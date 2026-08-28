@@ -2946,6 +2946,35 @@ Cases needing a C entry point — `snprintf`, the PNG and GIF encoders, the aren
 save/load, which needs a filesystem — guard themselves `when not defined(js)` and are skipped
 on the JS row. That row runs 104 of the 115 tests; the small-capacity row runs all 115.
 
+**The suites test rules; a second layer drives events.** Every case above calls a rule
+directly, so none of them can catch a rule wired to the wrong event — and that is where this
+project's bugs actually live. A pinch came to zoom at its own midpoint and slide the view
+with it while every suite case stayed green; a ghost was previewed from a picker's *position*
+passed through as a *slot*; a rename left a callback bound to nothing. Each was found by
+driving the thing by hand, and none of the drives was ever committed.
+
+Both front-ends are now driven by `tools/verify.sh`, and the checks assert rather than
+narrate:
+
+| Layer | What runs it | What it covers |
+|---|---|---|
+| Suites | three entry points, C and JS | the rules, 244 cases |
+| Desktop drive | `--drive-assert`, under `xvfb-run` | six gestures, through SDL's queue |
+| Browser drive | `drive_browser.mjs`, via Playwright | 23 checks: keys, wheel, touch, DOM |
+| Checkers | `check_columns --self-test` and friends | layout, palette floors, glyphs |
+
+**The rule this establishes: a fix is not finished until something checks it at the layer the
+bug lived at.** A rule bug earns a suite case; a wiring bug earns a driven check. Writing the
+driven layer immediately paid for itself twice — `--drive-undo` had been pushing key presses
+with no releases, which became a real fault the moment a held key meant continuous movement,
+and `--drive-sky` had never done anything at all, because the scene it scans for a horizon
+plane has none in it until one is built. Both had been "passing" for as long as they existed.
+
+Timing-dependent quantities in the browser drive are asserted as **bands**, never as figures:
+how far a held key travels depends on how many frames the machine drew while it was down, and
+a check written against an exact number flakes. What is exact is asserted exactly — a wheel
+notch each way returns the camera to distance 19.000 and target (0, 0, 1).
+
 
 Measurements
 ---

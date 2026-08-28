@@ -246,6 +246,232 @@ report(
   `target moved ${spanTarget(panned_before, panned_after).toFixed(3)} units`,
 );
 
+/* ---- Touch, the way a finger uses this ---- */
+
+// Gestures the suites cannot reach and nothing committed has ever checked: they live in
+// `glue.js`'s pointer handling, which is where the pinch regression lived too.
+const touchAt = (type, points) => touch(type, points);
+async function tapAt(x, y, milliseconds = 60) {
+  await touchAt('touchStart', [{ x, y }]);
+  await page.waitForTimeout(milliseconds);
+  await touchAt('touchEnd', []);
+  await page.waitForTimeout(250);
+}
+
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+await page.evaluate(() => nimSelectClear());
+const slots_scene = await page.evaluate(() => nimSceneSlots());
+const pixel_first = await pixelOf(slots_scene[1]);
+const pixel_second = await pixelOf(slots_scene[2]);
+
+// A long press is the only way a finger has to start a selection; `SECONDS_HOLD_SELECT`
+// decides when, so hold well past it.
+await tapAt(pixel_first[0], pixel_first[1], 1400);
+report(
+  'a long press selects what it is over',
+  (await page.evaluate(() => nimSelectionCount())) === 1,
+  `${await page.evaluate(() => nimSelectionCount())} selected`,
+);
+
+await tapAt(pixel_second[0], pixel_second[1]);
+report(
+  'a tap toggles a second object into the selection',
+  (await page.evaluate(() => nimSelectionCount())) === 2,
+  `${await page.evaluate(() => nimSelectionCount())} selected`,
+);
+
+await tapAt(40, SIZE_VIEW.height - 40);
+report(
+  'a tap on empty space clears the selection',
+  (await page.evaluate(() => nimSelectionCount())) === 0,
+  `${await page.evaluate(() => nimSelectionCount())} selected`,
+);
+
+// Two fingers moving together, at a fixed separation: a pan and only a pan.
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+const dragged_before = await readCamera();
+await pinch({ x: 400, y: 400 }, { x: 700, y: 500 }, 80, 80);
+const dragged_after = await readCamera();
+report(
+  'two fingers moving together pan without zooming',
+  spanTarget(dragged_before, dragged_after) > 0.5 &&
+    Math.abs(dragged_after.distance - dragged_before.distance) < 1e-6,
+  `target moved ${spanTarget(dragged_before, dragged_after).toFixed(3)}, ` +
+    `distance ${dragged_after.distance.toFixed(3)}`,
+);
+
+// A finger dragging one object onto another builds a third, which is the whole gesture the
+// application is about.
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+await page.evaluate(() => nimSelectClear());
+const count_before_drag = await page.evaluate(() => nimSceneCount());
+const from = await pixelOf(slots_scene[1]);
+const onto = await pixelOf(slots_scene[2]);
+await touchAt('touchStart', [{ x: from[0], y: from[1] }]);
+for (let step = 1; step <= 10; step += 1) {
+  await touchAt('touchMove', [{
+    x: from[0] + ((onto[0] - from[0]) * step) / 10,
+    y: from[1] + ((onto[1] - from[1]) * step) / 10,
+  }]);
+  await page.waitForTimeout(30);
+}
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+report(
+  'a finger dragging one object onto another builds a third',
+  (await page.evaluate(() => nimSceneCount())) === count_before_drag + 1,
+  `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_drag}`,
+);
+
+/* ---- Regressions this layer inherited ---- */
+
+// **The apply picker names positions, the scene names slots.** A ghost was once previewed
+// from a picker's own position passed straight through as a slot, which is only ever right
+// while nothing has been deleted. Checked where positions and slots genuinely differ.
+// Deleted the way a reader deletes -- selection, menu, delete -- rather than through the
+//   bridge: the operand pickers are rebuilt by the UI action, not by a periodic tick, so a
+//   scene changed behind the UI's back is a state no gesture can actually produce.
+await page.evaluate(() => {
+  const slots = nimSceneSlots();
+  selectOnly(slots[0], null);
+  refreshSelectionMenu();
+  document.getElementById('selection-menu-delete').click();
+});
+await page.waitForTimeout(250);
+const slots_now = await page.evaluate(() => nimSceneSlots());
+report(
+  'deleting an item leaves the picker positions offset from the scene slots',
+  slots_now[0] !== 0,
+  `slots ${JSON.stringify(slots_now)}`,
+);
+
+await page.click('#btn-drawer');
+await page.waitForTimeout(300);
+report(
+  'the operand pickers follow a scene the reader has just changed',
+  await page.evaluate(
+    () => document.getElementById('op-first').options.length === nimSceneCount(),
+  ),
+  `${await page.evaluate(() => document.getElementById('op-first').options.length)} options, ` +
+    `${await page.evaluate(() => nimSceneCount())} items`,
+);
+const count_before_apply = await page.evaluate(() => nimSceneCount());
+// Applied twice over: once through the picker, which names *positions*, and once straight
+//   through the bridge with the slots those positions stand for. The two build the same
+//   object from the same pair, so their drawn anchors coincide -- and would not if the
+//   picker's position were passed through as a slot, which is the bug.
+const slots_before_apply = await page.evaluate(() => nimSceneSlots());
+const applied = await page.evaluate(() => {
+  const slots = nimSceneSlots();
+  document.getElementById('op-first').value = '0';
+  document.getElementById('op-second').value = '1';
+  const operation = parseInt(document.getElementById('op-select').value, 10);
+  document.getElementById('btn-apply').click();
+  return { operation, first: slots[0], second: slots[1] };
+});
+await page.waitForTimeout(300);
+const coefficientsOf = (slot) => page.evaluate((s) => nimItemCoefficients(s), slot);
+// The slot a new item lands in is the lowest free one, which after a delete is somewhere in
+//   the middle -- "the last slot" is not the newest item and saying so quietly compares the
+//   wrong object.
+const addedSlot = (before, after) => after.find((slot) => !before.includes(slot));
+const slots_after_picker = await page.evaluate(() => nimSceneSlots());
+const slot_by_picker = addedSlot(slots_before_apply, slots_after_picker);
+await page.evaluate(
+  (applied_pair) => nimApplyOperation(
+    applied_pair.operation, applied_pair.first, applied_pair.second, performance.now() / 1000,
+  ),
+  applied,
+);
+await page.waitForTimeout(300);
+const slots_after_bridge = await page.evaluate(() => nimSceneSlots());
+const slot_by_bridge = addedSlot(slots_after_picker, slots_after_bridge);
+if (slot_by_picker === undefined || slot_by_bridge === undefined) {
+  // Reading a position as a slot names a slot that was freed by the delete above, and
+  //   applying to a dead operand builds nothing at all -- so this is the shape the
+  //   regression takes here, and it is reported rather than thrown over.
+  report(
+    'apply builds from the operands its pickers name, not from their positions', false,
+    `the picker built ${slot_by_picker === undefined ? 'nothing' : 'slot ' + slot_by_picker}` +
+      `, the bridge ${slot_by_bridge === undefined ? 'nothing' : 'slot ' + slot_by_bridge}`,
+  );
+} else {
+  // Compared by their own coefficients rather than by where they are drawn: the operation
+  //   the picker happens to default to may be one whose result stands at the horizon, and a
+  //   horizon object has no drawn anchor to compare.
+  const built_by_picker = await coefficientsOf(slot_by_picker);
+  const built_by_slot = await coefficientsOf(slot_by_bridge);
+  const span_built = Math.max(
+    ...built_by_picker.map((value, index) => Math.abs(value - built_by_slot[index])),
+  );
+  report(
+    'apply builds from the operands its pickers name, not from their positions',
+    span_built < 1e-9,
+    `the two agree to ${span_built.toExponential(1)} across every coefficient`,
+  );
+}
+
+// **Panning was dead while anything stayed selected**: the standing framing offer re-armed
+// every frame and dragged the camera back to where it had aimed. Reported as a touch bug,
+// and neither touch- nor browser-specific.
+await page.evaluate(() => nimSelectOnly(nimSceneSlots()[0]));
+await page.waitForTimeout(700); // Let the framing ease finish before moving by hand.
+const panned_selected_before = await readCamera();
+await pinch({ x: 400, y: 400 }, { x: 650, y: 520 }, 80, 80);
+const panned_selected_at = await readCamera();
+await page.waitForTimeout(700);
+const panned_selected_after = await readCamera();
+report(
+  'a pan while a selection stands is not taken back',
+  spanTarget(panned_selected_before, panned_selected_at) > 0.3 &&
+    spanTarget(panned_selected_at, panned_selected_after) < 0.05,
+  `panned ${spanTarget(panned_selected_before, panned_selected_at).toFixed(3)}, ` +
+    `then drifted ${spanTarget(panned_selected_at, panned_selected_after).toFixed(4)}`,
+);
+
+// **A timeline key did nothing in the frames right after an edit**, because the buttons it
+// answers through were refreshed on a low-cadence tick.
+const count_before_undo = await page.evaluate(() => nimSceneCount());
+await page.evaluate(() => document.getElementById('gl').focus());
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(250);
+report(
+  'undo reaches the timeline in the frames right after an edit',
+  (await page.evaluate(() => nimSceneCount())) === count_before_undo - 1,
+  `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_undo}`,
+);
+
+// **WCAG 2.5.7**: every operation the drag reaches is reachable with no dragging at all,
+// through selection -> menu -> apply. The route, not the wording. Selected through the
+// page's own helpers rather than the bridge, so the menu's view of the selection is the one
+// a finger would have left it with.
+await page.evaluate(() => {
+  const slots = nimSceneSlots();
+  selectOnly(slots[0], null);
+  toggleSelection(slots[1], null);
+});
+await page.waitForTimeout(200);
+const count_before_menu = await page.evaluate(() => nimSceneCount());
+// The menu's apply is press-twice by design: the first press opens the picker beside it,
+//   the second commits whatever that picker names.
+await page.evaluate(() => document.getElementById('selection-menu-apply').click());
+await page.waitForTimeout(200);
+await page.evaluate(() => {
+  const select = document.getElementById('selection-menu-select');
+  select.value = select.options[0].value;
+  select.dispatchEvent(new Event('change'));
+  document.getElementById('selection-menu-apply').click();
+});
+await page.waitForTimeout(300);
+report(
+  'every operation is reachable without dragging at all',
+  (await page.evaluate(() => nimSceneCount())) === count_before_menu + 1,
+  `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_menu}`,
+);
+
 /* ---- Nothing may have thrown along the way ---- */
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));

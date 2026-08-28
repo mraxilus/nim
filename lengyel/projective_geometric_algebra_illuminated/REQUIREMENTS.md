@@ -760,6 +760,14 @@ so hover only ever updates at a touch-down point; without the clear, the last re
 stale forever and its ring — only 20% dimmer than a selection ring — reads as a second
 selected object.
 
+**Every fix is checked at the layer the bug lived at.** A rule that was wrong earns a suite
+case; a rule wired to the wrong event earns a *driven* check — one that presses the key,
+turns the wheel or puts the fingers down and then asserts what the application did. A suite
+that calls handlers directly cannot catch the second kind, and the second kind is what ships:
+a pinch aimed at its own midpoint, a picker's position read as a scene slot, a callback left
+bound to nothing by a rename. Driven checks are committed and run by the same command as
+everything else, never retyped into a scratch file when somebody remembers.
+
 **Keyboard, both front-ends.** Everything must be operable from the keyboard alone
 (**WCAG 2.1.1, Level A**), and that includes the 3D view, not merely the panels around it.
 The view is **one ordinary tab stop**: reached by Tab and left by Tab, with its own keys
