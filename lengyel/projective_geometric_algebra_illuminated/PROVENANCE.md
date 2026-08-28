@@ -1853,14 +1853,46 @@ band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this
 renders through swiftshader, so its frame times say more about the software renderer than
 about anything in this repository.
 
+**The moving frame was the collapse a reader felt, and it was per-segment multivector
+churn.** A camera drag rebuilds the ground grid every frame, and `addSegment` derived each
+ribbon's across direction as `directionNormal(tail ∧ head ∧ eye)` — a triple join of full
+multivectors, run ~3,800 times a frame, whose 16×16 `nimCopy` walks topped a sampling
+profile of a real orbit drag. The join stays as the *specification* in the doc comment and
+the suite (held equal to the arithmetic over 200 triples, sign included — sign-only
+agreement would swap a ribbon's edges silently); what runs is that plane's normal written
+out as a cross product, the same answer to 1.2e-14 over 20,000 random triples. `blend` was
+also hoisted out of `addSegment`, where the JS backend materialised the closure per call.
+Measured on the shipped page: the frame build under an orbit drag went **10.3 → 7.0 ms**
+(max 35 → 17), and the still frame **5.8 → 3.2** — the same fix reaches every scene ribbon,
+a plane's 96-segment rim included.
+
+**The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
+and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as
+"a few dozen projections", and a profile put it at ~1 ms per selected object per frame —
+the largest overlay cost left. The marker call now shapes *with* the slot's current travel
+(the outline is identical; travel only populates pulse runs) and leaves the shaped marker
+in `g_shaped_marker`; the pulse call reuses it wherever every input matches. Reuse is sound
+because the overlay draws marker-then-pulse back to back in one synchronous pass — nothing
+can interleave — and the marker call always overwrites the entry, so it cannot survive into
+a frame whose scene differs. The stored marker is **boxed behind a `ref`**: held by value,
+the memo's own store-and-read deep-copied the wide variant twice over through `nimCopy` and
+measured as slow as the shaping it replaced — the fourth catch of the backend trap the list
+above opens with. The overlay calls also now share one `(DrawExtent, view-projection)`
+derivation per placement (`extentViewOverlay`) instead of each running `camera.frame`'s
+joins for itself.
+
+The driven layer holds the moving case now, not just the still one: a real drag from empty
+sky, with the frame build's mid-drag median banded — generous, to catch the collapse rather
+than to time the container — beside the still-frame bands.
+
 Two further things were considered and **not** done. Caching the *whole* frame, scene
 included, needs a "nothing changed" test over the scene version, the selection, the ghost,
 the hold progress and every per-object arrival animation — a stale frame is a visible bug,
-and the test is far easier to get subtly wrong than the camera-only one. And the remaining
-cost is Nim-on-JS value semantics: `mesh.addSegment` alone does four `nimCopy` deep copies
-of its endpoints and tints per call, some 3,840 times a frame while the grid is rebuilding.
-Restructuring shared geometry code to suit one backend's copying rules was judged the wrong
-trade for a visualiser.
+and the test is far easier to get subtly wrong than the camera-only one. And restructuring
+the whole of the shared geometry code around the JS backend's copying rules was judged the
+wrong trade for a visualiser — the `directionAcross` rewrite above is the one exception,
+taken because it sat on the per-segment hot path and could be pinned to its own
+specification mechanically.
 
 `scene.formatMultivector` and `format.nim` bind C `snprintf` and stay desktop-only.
 `nimFormatMultivector` calls the library's own `$` directly instead — confirmed by compiling

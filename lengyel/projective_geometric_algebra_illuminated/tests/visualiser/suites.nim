@@ -1017,6 +1017,37 @@ suite "Mesh":
     check isNear(Ink.Grid.colour.alpha, 1.0)
 
 
+  test "a ribbon's across direction is the join's own normal, written out":
+    # `mesh.directionAcross` is specified as the normal of the plane joining the segment
+    #   with the eye -- `directionNormal(tail ∧ head ∧ eye)` -- but computes that normal
+    #   as written-out arithmetic, because it runs once per ribbon and the ground grid
+    #   alone is thousands of ribbons a frame under a moving camera. This holds the two
+    #   equal, **sign included**: agreement up to sign would let the ribbon's two edges
+    #   swap sides without a word from the suite.
+    var seed = 1.0
+    proc pseudo(): float =
+      # A deterministic scatter, so a failure names the same triple on every run.
+      seed = (seed*97.31 + 33.77) mod 41.0
+      seed - 20.5
+    for trial in 0 ..< 200:
+      let
+        tail = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        head = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        eye = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        specified = directionNormal(
+          toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye)
+        )
+        computed = directionAcross(tail, head, eye)
+      check specified.isSome == computed.isSome
+      if specified.isSome:
+        check computed.get =~ specified.get
+    # And the two refusals: a segment of no length, and an eye on the segment's own line,
+    #   neither of which has a side to step off toward.
+    let (a, b) = (Position(x: 1, y: 2, z: 3), Position(x: 2, y: 4, z: 6))
+    check directionAcross(a, a, b).isNone
+    check directionAcross(a, b, Position(x: 3, y: 6, z: 9)).isNone
+
+
   test "grid cells are one fixed size, at every reach the camera asks for":
     # The size this replaced doubled with the reach, so a reader who dollied out found the
     #   ground silently re-scaled under them and no distance read off it was comparable

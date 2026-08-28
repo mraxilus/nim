@@ -65,6 +65,31 @@ type SettingsFurniture = tuple
   is_axes_shown, is_grid_shown: bool
 
 
+type SettingsOverlay = tuple
+  ## Name everything the overlay's shared draw extent and view-projection depend on:
+  ## the camera's whole placement and the viewport it is asked about.
+  target_x, target_y, target_z: float
+  distance, azimuth, elevation, degrees_field_of_view: float
+  width, height: int
+
+type ShapedMarker = tuple
+  ## One shaped marker beside everything it was shaped from; see `g_shaped_marker`.
+  slot: int
+  width, height: int
+  progress: float
+  is_touch: bool
+  swell: float
+  travel: float
+  settings: SettingsOverlay
+  marker: ref Marker
+    ## Boxed, and the box is the point: a `Marker` is a wide variant object -- two 35-point
+    ## pulse runs, a 64-point loop, both bands -- and the JS backend deep-copies every
+    ## value assignment through `nimCopy`. Stored by value, the memo's own store-and-read
+    ## copied the marker twice over and measured as slow as the shaping it replaced; the
+    ## same backend trap PROVENANCE.md already lists three earlier catches of. Behind a
+    ## ref there is one copy at the store and none at the read.
+
+
 var
   g_scene: Scene
   g_camera: Camera
@@ -84,6 +109,22 @@ var
     ## `g_meshes_furniture` was built from, or none where none has been built yet.
     ##   Kept so a frame whose settings match can skip the rebuild entirely; see
     ## `FrameData.is_furniture_held` for the measurement that earns it.
+  g_settings_overlay = none(SettingsOverlay) ## What `g_scale_overlay`/`g_vp_overlay`
+    ## below were derived from, or none where none has been derived yet.
+  g_scale_overlay: DrawExtent ## The draw extent the overlay calls share; see
+    ## `extentViewOverlay`.
+  g_vp_overlay: Matrix4 ## The view-projection those same calls share.
+  g_shaped_marker = none(ShapedMarker) ## The marker `nimSelectionMarker` last shaped,
+    ## with everything it was shaped from, so `nimSelectionPulse` asked the very same
+    ## question in the very same frame reads the answer instead of shaping it again.
+    ##   Why reuse is sound: the overlay draws each slot marker-then-pulse back to back in
+    ## one synchronous pass, so nothing -- no pointer event, no edit -- can run between
+    ## the write and the read; and the marker call *always* shapes fresh and overwrites
+    ## this, so an entry can never outlive the frame that wrote it into a later one whose
+    ## scene differs. The key still carries every non-scene input, so a pulse asked at
+    ## other settings shapes for itself rather than trusting a near miss.
+    ##   Measured before this existed: shaping twice cost ~1 ms per selected object per
+    ## frame on the driving container, the largest overlay cost left after the mesh work.
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
@@ -1240,6 +1281,26 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   )
 
 
+proc extentViewOverlay(width, height: int): (DrawExtent, Matrix4) =
+  ## Hand back the draw extent and view-projection the overlay calls share, deriving them
+  ## only when the camera or the viewport has changed since the last ask.
+  ##   Every overlay call -- the anchor, each selected object's marker, each pulse, each
+  ## hover ring -- was deriving both for itself, and each derivation runs `camera.frame`'s
+  ## joins twice over. Within one frame they are all the same answer: these are functions
+  ## of the placement and the viewport alone, which is exactly what the key holds, so this
+  ## is the furniture cache's reasoning applied to the overlay's own inputs.
+  let settings: SettingsOverlay = (
+    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
+    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
+    width, height,
+  )
+  if g_settings_overlay.isNone or g_settings_overlay.get != settings:
+    g_settings_overlay = some(settings)
+    g_scale_overlay = g_camera.drawExtentFor(height)
+    g_vp_overlay = g_camera.initMatrixViewProjection(float(width)/float(height))
+  (g_scale_overlay, g_vp_overlay)
+
+
 proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ## Project the same representative point `mesh.anchorFor` and
   ## `visualiser.drawInteractionOverlay` use for this item onto screen pixels, so the
@@ -1265,11 +1326,10 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   if g_scene.geometryAt(int(slot)).isHorizonPlane:
     return @[0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32]
   let
-    scale = g_camera.drawExtentFor(int(height))
+    (scale, vp) = extentViewOverlay(int(width), int(height))
     item = g_scene[int(slot)]
     anchor = anchorFor(item.geometry, item.anchorOverride, scale)
   if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
-  let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   let screen = projectToScreen(vp, int(width), int(height), anchor.get)
   @[cfloat(screen.x), cfloat(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)]
 
@@ -1310,16 +1370,30 @@ proc nimSelectionMarker(
   ##   fixed to the eye now have a marker wrapping what is drawn.
   if not g_scene.isAlive(int(slot)): return
   let
-    scale = g_camera.drawExtentFor(int(height))
-    vp = g_camera.initMatrixViewProjection(float(width) / float(height))
+    (scale, vp) = extentViewOverlay(int(width), int(height))
+    # Shaped **with the slot's current travel**, though this call reports no pulse: the
+    #   outline is identical either way -- travel only populates the pulse runs -- and
+    #   shaping the whole marker once lets `nimSelectionPulse` reuse it rather than
+    #   shaping the same thing again a call later. The clock is not advanced here; that
+    #   stays the pulse call's own job, whether or not it finds this entry.
+    travel = g_clock_pulse.travelAt(int(slot))
     shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
       g_camera, vp, int(width), int(height), float(progress), is_touch,
-      swell = float(swell),
+      travel = some(travel), swell = float(swell),
     )
-  if shaped.isNone: return
+  if shaped.isNone:
+    g_shaped_marker = none(ShapedMarker)
+    return
 
   let marker = shaped.get
+  var boxed: ref Marker
+  new(boxed)
+  boxed[] = marker
+  g_shaped_marker = some((
+    int(slot), int(width), int(height), float(progress), is_touch, float(swell),
+    travel, g_settings_overlay.get, boxed,
+  ))
   result = @[cfloat(ord(marker.kind)), 0.0'f32, 0.0'f32, 0.0'f32]
   case marker.kind
   of MarkerKind.Ring:
@@ -1367,8 +1441,11 @@ proc nimSelectionPulse(
   ## fill**, not a path to stroke -- the run tapers, and a stroke has one width.
   ##   Its own call rather than a tail on `nimSelectionMarker`, whose format promises that
   ## the points are "whatever is left" -- appending a second array behind them would make
-  ## that false for every kind at once. The cost is shaping the marker twice for a
-  ## selected item, which is a few dozen projections against a whole frame of mesh.
+  ## that false for every kind at once. The marker is still shaped **once**: that call
+  ## shapes with this slot's travel and leaves the result in `g_shaped_marker`, and this
+  ## one reuses it wherever every input matches, shaping for itself only where they do
+  ## not. Shaping twice was accepted as "a few dozen projections" when this split was
+  ## made, and had grown into the largest overlay cost a profile showed.
   ##   Takes the same `progress` and `is_touch` the marker itself was asked for, so the
   ## pulse lies on the outline actually drawn rather than on the settled one -- a swollen
   ## marker's pulse has to swell with it.
@@ -1384,16 +1461,27 @@ proc nimSelectionPulse(
   ## right after shaping and was never affected.
   if not g_scene.isAlive(int(slot)): return
   let
-    scale = g_camera.drawExtentFor(int(height))
-    vp = g_camera.initMatrixViewProjection(float(width) / float(height))
-    shaped = markerFor(
+    (scale, vp) = extentViewOverlay(int(width), int(height))
+    travel = g_clock_pulse.travelAt(int(slot))
+  var held = (ref Marker)(nil)
+  if g_shaped_marker.isSome:
+    let stored = g_shaped_marker.get
+    if stored.slot == int(slot) and stored.width == int(width) and
+        stored.height == int(height) and stored.progress == float(progress) and
+        stored.is_touch == is_touch and stored.swell == float(swell) and
+        stored.travel == travel and stored.settings == g_settings_overlay.get:
+      held = stored.marker
+  if held == nil:
+    let shaped = markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), scale,
       g_camera, vp, int(width), int(height), float(progress), is_touch,
-      travel = some(g_clock_pulse.travelAt(int(slot))), swell = float(swell),
+      travel = some(travel), swell = float(swell),
     )
-  if shaped.isNone: return
+    if shaped.isNone: return
+    new(held)
+    held[] = shaped.get
 
-  let marker = shaped.get
+  template marker: Marker = held[]
   # Carried against the length this marker actually came out at, so orbiting changes how
   #   fast the comet travels and never where it is. See `selection.PulseClock`.
   g_clock_pulse.advance(int(slot), marker.lap, g_seconds_step_pulse)

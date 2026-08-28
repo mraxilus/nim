@@ -845,6 +845,36 @@ reportWithin(
   work_frame === null ? -1 : work_frame.p90, 0, 24, 'ms',
 );
 
+// The same budget while the camera actually moves, which is when a reader felt it
+// collapse: a moving camera rebuilds the ground grid every frame, and per-segment
+// multivector churn once put that rebuild at 3x the still frame's whole build. The band
+// is generous for the same reason the still ones are -- it exists to catch the collapse,
+// not to time this container -- and the drag is a real one, from empty sky, so the frames
+// sampled are the frames a hand would feel.
+const index_before_drag = await page.evaluate(() => window.__work_frame.length);
+await page.mouse.move(SIZE_VIEW.width / 2, 60);
+await page.mouse.down();
+for (let i = 0; i < 40; i += 1) {
+  await page.mouse.move(
+    SIZE_VIEW.width / 2 + 350 * Math.sin(i / 6), 60 + 20 * Math.cos(i / 6), { steps: 3 },
+  );
+}
+await page.mouse.up();
+const work_moving = await page.evaluate((from) => {
+  const sorted = window.__work_frame.slice(from).sort((a, b) => a - b);
+  const at = (share) => sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
+  return sorted.length < 10 ? null : { n: sorted.length, median: at(0.5), p90: at(0.9) };
+}, index_before_drag);
+report(
+  'the camera was really moved for the moving-frame sample',
+  work_moving !== null,
+  `${work_moving === null ? 0 : work_moving.n} frames sampled mid-drag`,
+);
+reportWithin(
+  'a frame is still assembled inside its budget while the camera moves',
+  work_moving === null ? -1 : work_moving.median, 0, 20, 'ms',
+);
+
 // What buys that: a camera that has not moved draws the very same grid and axes, so they
 // are built once and held -- and the loop above should have held them on nearly every one
 // of the frames it just drew, since nothing moved the camera for those two seconds.
