@@ -1514,9 +1514,55 @@ function recordPhaseTime(name, delta_milliseconds) {
   // leaves its other slots at -1, which the median below skips.
   history_phase[name][index_history_frame] = delta_milliseconds;
 }
+// Scratch the median borrows rather than allocating: this runs per phase per refresh, and
+//   the rows a tree can hold grow faster than the frames between refreshes do. A filter
+//   plus a sort built two arrays each time and threw both away.
+const scratch_median = new Array(FRAMES_HISTORY);
 function medianPhase(name) {
-  const written = history_phase[name].filter((v) => v >= 0).sort((a, b) => a - b);
-  return written.length === 0 ? null : written[Math.floor(written.length / 2)];
+  const ring = history_phase[name];
+  let count = 0;
+  for (let i = 0; i < FRAMES_HISTORY; i += 1) {
+    if (ring[i] >= 0) { scratch_median[count] = ring[i]; count += 1; }
+  }
+  if (count === 0) return null;
+  // Insertion sort over the written part: the ring is nearly sorted only by accident, but
+  //   it is small and this beats allocating a fresh sorted copy of it every refresh.
+  for (let i = 1; i < count; i += 1) {
+    const value = scratch_median[i];
+    let j = i - 1;
+    while (j >= 0 && scratch_median[j] > value) {
+      scratch_median[j + 1] = scratch_median[j];
+      j -= 1;
+    }
+    scratch_median[j + 1] = value;
+  }
+  return scratch_median[count >> 1];
+}
+
+// The rows that have children, and whether each is open. **Every one starts closed**: a
+//   reader opens the diagnostics panel to see whether a frame is slow, and goes looking for
+//   which step only once it is. A closed node's rows are skipped by `refreshDiagnostics`
+//   entirely, so a subtotal nobody is reading costs nothing to keep offering.
+const NODES_DIAGNOSTIC = { build: ['furniture', 'scene', 'flatten'] };
+const element_node = {};
+for (const name in NODES_DIAGNOSTIC) {
+  const node = document.querySelector('.diag-node[data-node="' + name + '"]');
+  if (node === null) continue;
+  element_node[name] = node;
+  node.querySelector('.diag-parent').addEventListener('click', () => {
+    const is_open = node.classList.toggle('open');
+    node.querySelector('.diag-parent').setAttribute('aria-expanded', String(is_open));
+  });
+  node.querySelector('.diag-parent').setAttribute('aria-expanded', 'false');
+}
+function isPhaseShown(name) {
+  // A phase is shown unless it sits inside a node that is closed.
+  for (const parent in NODES_DIAGNOSTIC) {
+    if (!NODES_DIAGNOSTIC[parent].includes(name)) continue;
+    const node = element_node[parent];
+    return node === undefined || node.classList.contains('open');
+  }
+  return true;
 }
 
 function refreshDeliveryReport() {
@@ -1563,6 +1609,7 @@ function refreshDiagnostics() {
   // happens. A phase that has not run yet stays an em dash.
   const index_latest = (index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY;
   for (const [name] of PHASES_DIAGNOSTIC) {
+    if (!isPhaseShown(name)) continue; // Inside a closed node; nobody is reading it.
     const median = medianPhase(name);
     if (median === null) continue;
     let now_phase = history_phase[name][index_latest];

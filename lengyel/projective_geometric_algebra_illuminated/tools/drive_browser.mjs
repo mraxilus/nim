@@ -915,13 +915,29 @@ report(
   `${sane.length} of ${phases.length} frames consistent`,
 );
 // And the drawer's rows actually render them, so a reader can see each step live. The
-// diagnostics section is collapsed by default; its numbers still update.
+// **tree starts wholly closed** -- a reader opens this panel to learn whether a frame is
+// slow, and goes looking for which step only once it is -- so the subtotals under `build`
+// are checked to be idle first, then opened the way a reader opens them, and only then
+// checked to be live. Without the first half a tree that never closed would pass.
+const rows_closed = await page.evaluate(() => ({
+  is_open: document.querySelector('.diag-node[data-node="build"]').classList.contains('open'),
+  children: ['furniture', 'scene', 'flatten']
+    .map((n) => document.getElementById('diag-' + n).textContent),
+}));
+report(
+  'the frame-time breakdown starts collapsed',
+  !rows_closed.is_open && rows_closed.children.every((t) => !/ ms$/.test(t)),
+  `node open ${rows_closed.is_open}, children ${JSON.stringify(rows_closed.children)}`,
+);
+await page.evaluate(() =>
+  document.querySelector('.diag-node[data-node="build"] .diag-parent').click());
+await page.waitForTimeout(400);
 const row_texts = await page.evaluate(() => Object.fromEntries(
   ['build', 'furniture', 'scene', 'flatten', 'upload', 'overlay', 'menu', 'ui']
     .map((n) => [n, document.getElementById('diag-' + n).textContent])
 ));
 report(
-  'every drawing step has a live row in the diagnostics tab',
+  'every drawing step has a live row once its branch is opened',
   Object.values(row_texts).every((t) => / ms$/.test(t)),
   Object.entries(row_texts).map(([n, t]) => `${n}: ${t}`).join(', '),
 );

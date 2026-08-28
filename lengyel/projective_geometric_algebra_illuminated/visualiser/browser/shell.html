@@ -715,6 +715,32 @@
     justify-content: space-between;
   }
   .diag-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  /* A parent row is a button so it is reachable by keyboard and announced as one, and is
+     otherwise the same row: the chevron and its rotation match the section headers above,
+     since both answer "there is more under here". */
+  .diag-parent {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    width: 100%;
+    /* Family and weight only, never the `font` shorthand: that resets `font-size` too,
+       and `.diag-line`'s own 11.5px is the size every sibling row is read at. */
+    font-family: inherit;
+    font-weight: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .diag-parent .chev {
+    display: inline-block;
+    width: 12px;
+    color: var(--ink-faint);
+    font-size: 9px;
+    transition: transform var(--anim) var(--ease);
+  }
+  .diag-node.open .diag-parent .chev { transform: rotate(90deg); }
+  .diag-children { display: none; padding-left: 12px; }
+  .diag-node.open .diag-children { display: block; }
   .sparkline { width: 100%; height: 40px; display: block; }
   /* Route-by-route evidence, wrapped rather than clipped: a line the reader cannot finish
      reading is no better than the silence it replaced. */
@@ -965,17 +991,28 @@
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
         <!-- Each step of the drawing process, latest (median) in ms, so a reader can see
-             where a frame went rather than one opaque total. The first four come from the
-             bridge's own clocks inside nimBuildFrame; the rest are timed by glue.js
-             around its own calls. GL rows are command submission only - the GPU's own
-             work runs asynchronously and no CPU clock here can see it. -->
-        <div class="diag-line"><span>build (bridge)</span><b id="diag-build">&mdash;</b></div>
-        <div class="diag-line"><span>&ensp;scenery (grid+axes)</span
-          ><b id="diag-furniture">&mdash;</b></div>
-        <div class="diag-line"><span>&ensp;scene objects</span
-          ><b id="diag-scene">&mdash;</b></div>
-        <div class="diag-line"><span>&ensp;flatten + pack</span
-          ><b id="diag-flatten">&mdash;</b></div>
+             where a frame went rather than one opaque total. The rows that have children
+             carry a chevron and open on a click, and every one of them starts closed: a
+             reader opens this panel to see whether a frame is slow, and goes looking for
+             *which step* only once it is. `refreshDiagnostics` skips whatever is closed,
+             so a subtotal nobody is reading costs nothing to keep offering.
+             Timings come from the bridge's own clocks inside nimBuildFrame where the step
+             is Nim's, and from glue.js around its own calls where it is not. GL rows are
+             command submission only - the GPU's own work runs asynchronously and no CPU
+             clock here can see it. -->
+        <div class="diag-node" data-node="build">
+          <button class="diag-line diag-parent" type="button"
+            ><span><span class="chev">&#9656;</span>build (bridge)</span
+            ><b id="diag-build">&mdash;</b></button>
+          <div class="diag-children">
+            <div class="diag-line"><span>scenery (grid+axes)</span
+              ><b id="diag-furniture">&mdash;</b></div>
+            <div class="diag-line"><span>scene objects</span
+              ><b id="diag-scene">&mdash;</b></div>
+            <div class="diag-line"><span>flatten + pack</span
+              ><b id="diag-flatten">&mdash;</b></div>
+          </div>
+        </div>
         <div class="diag-line"><span>upload + draw calls</span
           ><b id="diag-upload">&mdash;</b></div>
         <div class="diag-line"><span>overlay (markers)</span
