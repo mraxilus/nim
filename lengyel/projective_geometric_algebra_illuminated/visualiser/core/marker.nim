@@ -795,10 +795,19 @@ func railsAt(
   ##   parts of one line and meet at no angle at all.
   marker.count_segment = 0
   walks = default(array[2, array[3, Option[ScreenPosition]]])
+  # The rail frame hoisted: the anchor point, the across arm and the axis arm as
+  #   multivectors, one assembly per call; each rail end is then one scaled arm on its
+  #   own base point.
+  let
+    anchor_point = toMultivector(anchor)
+    across_point = toMultivector(across)
+    axis_point = toMultivector(axis)
   for index_side, side in [offset, -offset]:
+    let rail_base = pointFrom(add(anchor_point, wedge(side, across_point)))
     for index_half, reach in [scale.radius_horizon, -scale.radius_horizon]:
       let clipped = clipToEyeSide(
-        anchor + side*across, scale.eye + reach*axis, scale.plane_near
+        rail_base, pointFrom(add(scale.eye_point, wedge(reach, axis_point))),
+        scale.plane_near,
       )
       if clipped.isNone: continue
       let (position_tail, position_head) = clipped.get
@@ -1026,9 +1035,16 @@ func positionsMarkerLoop*(
   ##   the whole circle lies *on* the plane by construction rather than by adjustment --
   ##   which is what makes the marker read as painted onto the surface rather than as a
   ##   hoop floating near it. Asserted directly in the suite, point by point.
+  # The circle's frame hoisted once -- centre and two radius-long arms as multivectors --
+  #   each point two scaled arms on the centre, read out at the boundary.
+  let
+    centre_point = toMultivector(centre)
+    arm_first = wedge(radius, toMultivector(axes.axis_first))
+    arm_second = wedge(radius, toMultivector(axes.axis_second))
   for i in 0 ..< SEGMENTS_MARKER_LOOP:
     let angle = (2.0*PI*float(i))/float(SEGMENTS_MARKER_LOOP)
-    result[i] = centre + radius*(cos(angle)*axes.axis_first + sin(angle)*axes.axis_second)
+    result[i] = pointFrom(add(centre_point,
+      add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
 
 
 func markerLoop(
@@ -1208,8 +1224,14 @@ func markerBands(
     offset = scale.radius_horizon*sin(angle)
 
   var marker = Marker(kind: MarkerKind.Bands)
+  let
+    normal_point = toMultivector(normal.get)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   for side in 0 .. 1:
-    let centre = scale.eye + (if side == 0: offset else: -offset)*normal.get
+    let centre_point = add(
+      scale.eye_point, wedge((if side == 0: offset else: -offset), normal_point)
+    )
     var
       ring: array[SEGMENTS_MARKER_BANDS, ScreenPosition]
       are_shown: array[SEGMENTS_MARKER_BANDS, bool]
@@ -1217,7 +1239,8 @@ func markerBands(
       let turn = (2.0*PI*float(i))/float(SEGMENTS_MARKER_BANDS)
       ring[i] = projectToScreen(
         view_projection, width, height,
-        centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
+        pointFrom(add(centre_point,
+          add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
       )
       are_shown[i] = ring[i].isWithinView(width, height)
     # One unbroken stretch, so an arc is emitted whole rather than wrapping a cut and

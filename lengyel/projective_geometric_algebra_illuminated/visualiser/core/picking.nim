@@ -397,7 +397,10 @@ func pickNearest*(
         if normal.isNone: continue
         let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
         if axes.isNone: continue
-        let (axis_first, axis_second) = axes.get
+        let
+          (axis_first, axis_second) = axes.get
+          arm_first = wedge(scale.radius_horizon, toMultivector(axis_first))
+          arm_second = wedge(scale.radius_horizon, toMultivector(axis_second))
         var
           distance_nearest = Inf
           previous = none(ScreenPosition)
@@ -406,7 +409,8 @@ func pickNearest*(
             float(SEGMENTS_CIRCLE_HORIZON)
           let here = projectToScreen(
             view_projection, width, height,
-            eye + scale.radius_horizon*(cos(turn)*axis_first + sin(turn)*axis_second),
+            pointFrom(add(eye_point,
+              add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
           )
           if here.isInFront and previous.isSome:
             distance_nearest = min(
@@ -423,7 +427,10 @@ func pickNearest*(
       if anchor.isNone or axis.isNone: continue
       var distance_nearest = Inf
       for reach in [scale.radius_horizon, -scale.radius_horizon]:
-        let clipped = clipToEyeSide(anchor.get, eye + reach*axis.get, plane_near)
+        let clipped = clipToEyeSide(
+          anchor.get,
+          pointFrom(add(eye_point, wedge(reach, toMultivector(axis.get)))), plane_near,
+        )
         if clipped.isNone: continue
         let (position_tail, position_head) = clipped.get
         let
@@ -559,13 +566,18 @@ func isRingCrossingCentre(
 ): bool =
   ## Report whether a world circle, sampled the way this project draws one, crosses the
   ## centred box anywhere.
+  let
+    centre_point = toMultivector(centre)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   var previous = none(ScreenPosition)
   for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
     let turn =
       (2.0*PI*float(i mod SEGMENTS_CIRCLE_HORIZON))/float(SEGMENTS_CIRCLE_HORIZON)
     let here = projectToScreen(
       view_projection, width, height,
-      centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
+      pointFrom(add(centre_point,
+        add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
     )
     if here.isInFront and previous.isSome and
         isCrossingCentre(previous.get, here, width, height):
@@ -585,11 +597,16 @@ func isRingWithinFrame(
   ##   False the moment any sample falls behind the eye. A disc reaching past the eye has
   ##   no screen extent to fit, and no distance the camera could stand at would give it
   ##   one without first turning to face the thing.
+  let
+    centre_point = toMultivector(centre)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
     let turn = (2.0*PI*float(i))/float(SEGMENTS_CIRCLE_HORIZON)
     let here = projectToScreen(
       view_projection, width, height,
-      centre + radius*(cos(turn)*axis_first + sin(turn)*axis_second),
+      pointFrom(add(centre_point,
+        add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
     )
     if not isWithinFrame(here, width, height, INSET_RIM_SHOWN): return false
   true
@@ -614,7 +631,11 @@ func isLineShownCentrally(
   let (anchor, axis) = (positionAnchor(m), direction(m))
   if anchor.isNone or axis.isNone: return false
   for reach in [scale.radius_horizon, -scale.radius_horizon]:
-    let clipped = clipToEyeSide(anchor.get, scale.eye + reach*axis.get, scale.plane_near)
+    let clipped = clipToEyeSide(
+      anchor.get,
+      pointFrom(add(scale.eye_point, wedge(reach, toMultivector(axis.get)))),
+      scale.plane_near,
+    )
     if clipped.isNone: continue
     let
       tail = projectToScreen(view_projection, width, height, clipped.get[0])

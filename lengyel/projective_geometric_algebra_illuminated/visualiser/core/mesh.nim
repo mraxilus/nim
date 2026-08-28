@@ -648,7 +648,9 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
     if place.isSome: return place
     let heading = directionHorizon(m)
     if heading.isNone: return
-    some(scale.eye + scale.radius_horizon*heading.get)
+    position(add(
+      scale.eye_point, wedge(scale.radius_horizon, toMultivector(heading.get))
+    ))
   of Shape.Line, Shape.Plane:
     positionAnchor(m)
 
@@ -723,6 +725,18 @@ proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   meshes.addVertex(Primitive.Point, at, tint)
 
 
+func pointFrom*(m: Multivector): Position =
+  ## Read a point assembled by the tessellation back out for the boundary.
+  ##   Exported for `marker` and `picking`, whose own sampling loops assemble points the
+  ##   same way and read them out at the same boundary.
+  ##   Every caller here builds `m` as a unit-weight point plus weightless directions, so
+  ##   the weight is exactly one and the read cannot refuse; asserted rather than silently
+  ##   defaulted, because a zero weight here means the assembly upstream is wrong.
+  let read = position(m)
+  doAssert read.isSome, "A tessellated point must carry weight; its assembly is wrong."
+  read.get
+
+
 func directionAcross*(tail, head, eye: Position): Option[Direction] =
   ## Resolve which way to step off a segment so its own two edges land either side of it
   ## on screen.
@@ -760,23 +774,28 @@ func blend(first, second: Rgba; fraction: float): Rgba =
   )
 
 
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
-  scale: DrawExtent
+proc addSegmentAcross*(
+  meshes: var MeshSet; tail, head: Position; across: Direction;
+  tint_tail, tint_head: Rgba; width: float32; scale: DrawExtent
 ) =
   ## Append a line segment joining two positions, as a **ribbon**: a world-space quad
-  ## `width` pixels across, wound as two triangles.
+  ## `width` pixels across, wound as two triangles, stepped off along `across`.
   ##   A quad rather than a `GL_LINES` pair because a line width is a *hint* both this
   ## project's targets are entitled to ignore -- most WebGL implementations clamp it to
   ## one pixel outright, and core-profile OpenGL only ever guaranteed one. Drawing the
   ## width as geometry is the only way both builds show the same thing.
+  ##   `across` is the caller's, because collinear segments before one eye share one
+  ## plane: the ground grid derives each lattice line's across **once** -- the same
+  ## `directionNormal(line ∧ eye)` the per-piece join would re-derive eight times over --
+  ## and hands it down. A restructuring in the algebra's own terms: fewer joins, the same
+  ## joins. `addSegment` below derives it per segment for a caller with nothing to share.
+  ##   Everything in this body is the GPU boundary -- the licensed componentwise copy of
+  ## what a geometry shader would do -- and its near clip is pinned equal to the algebra's
+  ## own `clipToEyeSide` by the suite:
   ##   Each end is offset by half a width of *its own* world-per-pixel, so the ribbon
   ## narrows with distance exactly as the line it draws does, and two parallel lines keep
   ## their shared vanishing point. A constant world offset would hold the far end open;
   ## a constant screen offset would not converge at all.
-  ##   Silently appends nothing where the segment has no side to step off toward -- zero
-  ## length, or an eye lying on its own line, where the ribbon is edge-on and covers no
-  ## pixels anyway.
   ##   Takes a tint per end, since the ground grid fades along its own lines; the pair of
   ## corners at one end share that end's own tint, so the fade runs along the ribbon
   ## exactly as it ran along the line.
@@ -788,8 +807,6 @@ proc addSegment*(
   ## near the origin. Clipping restores the property rather than patching the symptom:
   ## both ends then have real, positive depth, and the interpolation between them is
   ## exact. Found by rendering a frame and looking at it.
-  let across = directionAcross(tail, head, scale.eye)
-  if across.isNone: return
   let
     depth_tail = dot(tail - scale.eye, scale.forward)
     depth_head = dot(head - scale.eye, scale.forward)
@@ -808,8 +825,8 @@ proc addSegment*(
     tint_far = blend(tint_head, tint_tail, fraction)
 
   let
-    offset_near = 0.5*float(width)*worldPerPixelAt(near, scale)*across.get
-    offset_far = 0.5*float(width)*worldPerPixelAt(far, scale)*across.get
+    offset_near = 0.5*float(width)*worldPerPixelAt(near, scale)*across
+    offset_far = 0.5*float(width)*worldPerPixelAt(far, scale)*across
     corners = [
       near - offset_near, far - offset_far, far + offset_far, near + offset_near,
     ]
@@ -817,6 +834,19 @@ proc addSegment*(
   for index in [0, 1, 2, 0, 2, 3]:
     meshes.addVertex(Primitive.Ribbon, corners[index], tints[index])
 
+
+proc addSegment*(
+  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
+  scale: DrawExtent
+) =
+  ## Append the ribbon for one segment, deriving its own across direction.
+  ##   The general form: the across is the join's normal, per segment -- see
+  ## `directionAcross` -- and the packing is `addSegmentAcross`'s. Silently appends
+  ## nothing where the segment has no side to step off toward: zero length, or an eye
+  ## lying on its own line, where the ribbon is edge-on and covers no pixels anyway.
+  let across = directionAcross(tail, head, scale.eye)
+  if across.isNone: return
+  meshes.addSegmentAcross(tail, head, across.get, tint_tail, tint_head, width, scale)
 
 proc addSegment*(
   meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
@@ -839,12 +869,21 @@ proc addPlaneRing(
   ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
   ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is
   ## drawn.
+  # The circle's own frame, hoisted: the centre and its two radius-long arms as
+  #   multivectors, one assembly per circle; each point is then two scaled arms on the
+  #   centre, read out at the boundary.
+  let
+    centre_point = toMultivector(center)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   for i in 0 ..< segments:
     let
       angle_a = (2.0*PI * float(i)) / float(segments)
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
-      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+      point_a = pointFrom(add(centre_point,
+        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
+      point_b = pointFrom(add(centre_point,
+        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
     meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
 
 
@@ -857,12 +896,18 @@ proc addPlaneFill(
   ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
   ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
   ## legible through every one of its triangles alike.
+  let
+    centre_point = toMultivector(center)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   for i in 0 ..< segments:
     let
       angle_a = (2.0*PI * float(i)) / float(segments)
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
-      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+      point_a = pointFrom(add(centre_point,
+        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
+      point_b = pointFrom(add(centre_point,
+        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
     meshes.addVertex(Primitive.Triangle, center, tint)
     meshes.addVertex(Primitive.Triangle, point_a, tint)
     meshes.addVertex(Primitive.Triangle, point_b, tint)
@@ -875,18 +920,28 @@ proc addGreatCircle(
   ## Append a closed ring of segments around `center`, in the plane `axis_first` and
   ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
   ## the sky, seen from any point, standing for the pencil of directions it names.
+  let
+    centre_point = toMultivector(center)
+    arm_first = wedge(radius, toMultivector(axis_first))
+    arm_second = wedge(radius, toMultivector(axis_second))
   for i in 0 ..< segments:
     let
       angle_a = (2.0*PI * float(i)) / float(segments)
       angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = center + radius*(cos(angle_a)*axis_first + sin(angle_a)*axis_second)
-      point_b = center + radius*(cos(angle_b)*axis_first + sin(angle_b)*axis_second)
+      point_a = pointFrom(add(centre_point,
+        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
+      point_b = pointFrom(add(centre_point,
+        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
     meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
 
 
-func spherePoint(center: Position; radius: float; theta, phi: float): Position =
-  ## Place point on sphere around `center`, at colatitude `theta` and longitude `phi`.
-  center + radius*Direction(x: sin(theta)*cos(phi), y: sin(theta)*sin(phi), z: cos(theta))
+func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
+  ## Place point on sphere around the centre point, at colatitude `theta`, longitude `phi`.
+  ##   The angles parametrise a unit direction -- ground-field trig -- and the point is
+  ##   the centre plus that direction scaled, assembled through the algebra.
+  pointFrom(add(centre_point, wedge(radius, toMultivector(Direction(
+    x: sin(theta)*cos(phi), y: sin(theta)*sin(phi), z: cos(theta)
+  )))))
 
 
 proc addDome(
@@ -905,6 +960,7 @@ proc addDome(
   ## against anything nearer is the ordinary depth test's job (still on for this
   ## translucent pass, only its write is off), same as any other drawn geometry --
   ## not something this proc's own shape needs to work around.
+  let centre_point = toMultivector(center)
   for lat in 0 ..< latitudes:
     let
       theta_a = PI * float(lat) / float(latitudes)
@@ -914,10 +970,10 @@ proc addDome(
         phi_a = 2.0*PI * float(lon) / float(longitudes)
         phi_b = 2.0*PI * float(lon + 1) / float(longitudes)
       meshes.addQuad([
-        spherePoint(center, radius, theta_a, phi_a),
-        spherePoint(center, radius, theta_a, phi_b),
-        spherePoint(center, radius, theta_b, phi_b),
-        spherePoint(center, radius, theta_b, phi_a),
+        spherePoint(centre_point, radius, theta_a, phi_a),
+        spherePoint(centre_point, radius, theta_a, phi_b),
+        spherePoint(centre_point, radius, theta_b, phi_b),
+        spherePoint(centre_point, radius, theta_b, phi_a),
       ], tint)
 
 
@@ -976,22 +1032,27 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     let
       half = sqrt(half_squared)
       tint = ink.colour
-    func tintAt(at: Position): Rgba =
-      tint.fade(
-        tint.alpha * alphaGridFade(
-          norm(at - scale.eye), fog.radius_full, fog.radius_gone
-        )
-      )
+      foot_point = unitize(foot_raw)
+      axis_point = toMultivector(axis)
+      # One across for the whole axis: all its pieces lie on the one line, so they share
+      #   the plane it joins with the eye -- the grid's own per-line rule.
+      across_axis = directionNormal(wedge(axis_line, scale.eye_point))
+    if across_axis.isNone: continue
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
     #   distance from the eye, so the cutoff never reads as a hard edge.
-    #   Each end is placed here rather than by a nested `placed(reach)`, since `axis` is
-    #   the loop's own `lent` view of a constant and a closure may not capture one.
     for j in 0 ..< 2*SEGMENTS_GRID_FADE:
       let
-        tail = foot.get + (half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
-        head = foot.get + (half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0))*axis
-      meshes.addSegment(
-        tail, head, tintAt(tail), tintAt(head), WIDTH_LINE_FURNITURE, scale,
+        end_tail = add(foot_point,
+          wedge(half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
+        end_head = add(foot_point,
+          wedge(half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
+        tint_tail = tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_tail, scale.eye_point), fog.radius_full, fog.radius_gone))
+        tint_head = tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_head, scale.eye_point), fog.radius_full, fog.radius_gone))
+      meshes.addSegmentAcross(
+        pointFrom(end_tail), pointFrom(end_head), across_axis.get, tint_tail, tint_head,
+        WIDTH_LINE_FURNITURE, scale,
       )
 
 
@@ -1017,12 +1078,11 @@ proc addGridFamily(
   #   origin perpendicular to each -- the algebra's statement of a coordinate. One plane
   #   per family per frame, hoisted here rather than rebuilt per lattice line.
   let
-    centre_across = depthAgainst(
-      planeThrough(toMultivector(ORIGIN_WORLD), toMultivector(across)), scale.eye_point
-    )
-    centre_along = depthAgainst(
-      planeThrough(toMultivector(ORIGIN_WORLD), toMultivector(along)), scale.eye_point
-    )
+    origin_point = toMultivector(ORIGIN_WORLD)
+    along_point = toMultivector(along)
+    across_point = toMultivector(across)
+    centre_across = depthAgainst(planeThrough(origin_point, across_point), scale.eye_point)
+    centre_along = depthAgainst(planeThrough(origin_point, along_point), scale.eye_point)
     first = int(ceil((centre_across - radius_ground)/size_cell))
     last = int(floor((centre_across + radius_ground)/size_cell))
   for i in first .. last:
@@ -1035,21 +1095,30 @@ proc addGridFamily(
       reach_squared = radius_ground*radius_ground -
         (offset - centre_across)*(offset - centre_across)
     if reach_squared <= 0.0: continue
-    let reach = sqrt(reach_squared)
-    func placed(run: float): Position =
-      ORIGIN_WORLD + offset*across + (centre_along + run)*along
-    func tintAt(run: float): Rgba =
-      tint.fade(
-        tint.alpha * alphaGridFade(
-          norm(placed(run) - scale.eye), fog.radius_full, fog.radius_gone
-        )
-      )
+    let
+      reach = sqrt(reach_squared)
+      # One base point and **one across** per lattice line: all eight fade pieces lie on
+      #   this line, so they share the plane it joins with the eye, and deriving that
+      #   join's normal once here is the same algebra the per-piece form ran eight times.
+      base = add(origin_point,
+        add(wedge(offset, across_point), wedge(centre_along, along_point)))
+      across_line = directionNormal(wedge(wedge(base, along_point), scale.eye_point))
+    # An eye on the lattice line itself has no side to step a ribbon off toward -- the
+    #   very refusal `addSegment` makes per piece, made once for the line.
+    if across_line.isNone: continue
     for j in 0 ..< SEGMENTS_GRID_FADE:
       let
         a = reach * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
         b = reach * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
-      meshes.addSegment(
-        placed(a), placed(b), tintAt(a), tintAt(b), WIDTH_LINE_FURNITURE, scale,
+        end_a = add(base, wedge(a, along_point))
+        end_b = add(base, wedge(b, along_point))
+        tint_a = tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_a, scale.eye_point), fog.radius_full, fog.radius_gone))
+        tint_b = tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_b, scale.eye_point), fog.radius_full, fog.radius_gone))
+      meshes.addSegmentAcross(
+        pointFrom(end_a), pointFrom(end_b), across_line.get, tint_a, tint_b,
+        WIDTH_LINE_FURNITURE, scale,
       )
 
 
@@ -1110,7 +1179,9 @@ proc addPoint(
   let heading = directionHorizon(geometry)
   if heading.isNone: return Placement.Empty
   meshes.addMarker(
-    scale.eye + (progress*scale.radius_horizon)*heading.get, tint.fade(tint.alpha*progress)
+    pointFrom(add(scale.eye_point,
+      wedge(progress*scale.radius_horizon, toMultivector(heading.get)))),
+    tint.fade(tint.alpha*progress),
   )
   Placement.Horizon
 
@@ -1149,12 +1220,11 @@ proc addLine(
     let
       reach = progress*scale.radius_horizon
       tint_progress = tint.fade(tint.alpha*progress)
-    meshes.addSegment(
-      anchor.get, scale.eye + reach*axis.get, tint_progress, WIDTH_LINE_OBJECT, scale
-    )
-    meshes.addSegment(
-      anchor.get, scale.eye - reach*axis.get, tint_progress, WIDTH_LINE_OBJECT, scale
-    )
+      axis_point = toMultivector(axis.get)
+      far_ahead = pointFrom(add(scale.eye_point, wedge(reach, axis_point)))
+      far_behind = pointFrom(add(scale.eye_point, wedge(-reach, axis_point)))
+    meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, scale)
+    meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, scale)
     return Placement.Finite
 
   let normal = directionNormalHorizon(geometry)
