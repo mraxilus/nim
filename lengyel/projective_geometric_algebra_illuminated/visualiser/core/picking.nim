@@ -221,6 +221,73 @@ func positionUnderCursor*(
   hit
 
 
+func positionOnLineNearest*(
+  anchor: Position; axis: Direction; ray_from: Position; ray_along: Direction
+): Option[Position] =
+  ## Find the point of the line through `anchor` along `axis` standing nearest the ray from
+  ## `ray_from` along `ray_along`.
+  ##   What "the line, where the cursor is over it" has to mean: a cursor is a ray, a line
+  ##   is a line, and in three dimensions the two miss each other. The point of the line
+  ##   nearest the ray is the only answer that is on the line and under the cursor at once.
+  ##   None where the two run parallel, which has no one nearest point but a whole shared
+  ##   direction of them; a caller then has nothing on this line to aim at and says so.
+  let
+    between = anchor - ray_from
+    along_both = dot(axis, ray_along)
+    denominator = 1.0 - along_both*along_both
+  if abs(denominator) <= 1.0e-9: return
+  let step = (along_both*dot(ray_along, between) - dot(axis, between))/denominator
+  some(anchor + step*axis)
+
+
+func positionOnItemUnder(
+  geometry: Multivector; ray: Multivector; eye: Position; forward: Direction
+): Option[Position] =
+  ## Solve the world point of one item that the cursor's own sight `ray` is over.
+  ##   A point stands where it stands, a plane is met where the ray crosses it, and a line
+  ##   is read at its nearest point to the ray -- see `positionOnLineNearest`.
+  ##   **Finite shapes only.** An object at horizon is drawn at `radius_horizon` about the
+  ##   eye and is not *at* any place in the world, so there is nothing there to fly toward.
+  ##   None also for a hit behind the eye, which is not under the cursor whatever the
+  ##   arithmetic says, and none for a ray with no direction to read.
+  if geometry.isHorizon: return
+  let
+    shaped = shape(geometry)
+    heading = direction(ray)
+  if shaped.isNone or heading.isNone: return
+  var found = none(Position)
+  case shaped.get
+  of Shape.Point: found = positionAnchor(geometry)
+  of Shape.Line:
+    let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
+    if anchor.isSome and axis.isSome:
+      found = positionOnLineNearest(anchor.get, axis.get, eye, heading.get)
+  of Shape.Plane: found = position(ray ∨ geometry)
+  if found.isNone: return
+  if dot(found.get - eye, forward) <= 1.0e-6: return
+  found
+
+
+func positionOnGround*(
+  camera: Camera; width, height: int; cursor: ScreenPosition
+): Option[Position] =
+  ## Solve where the cursor's own sight ray meets the ground plane, `z = 0`.
+  ##   None where the ray never reaches it: running along the ground, or aimed above the
+  ## horizon at the sky, where the meet lands behind the reader.
+  let
+    eye = camera.eye
+    frame_camera = camera.frame(eye)
+    ray = castRay(camera, eye, frame_camera, width, height, cursor)
+    # The ground, as the join of the origin with two independent horizontal directions.
+    ground = toMultivector(ORIGIN_WORLD) ∧
+      toMultivector(Direction(x: 1, y: 0, z: 0)) ∧
+      toMultivector(Direction(x: 0, y: 1, z: 0))
+    hit = position(ray ∨ ground)
+  if hit.isNone: return
+  if dot(hit.get - eye, frame_camera.forward) <= 1.0e-6: return
+  hit
+
+
 func rayPlaneHit(
   ray: Multivector; eye: Position; forward: Direction;
   plane: Multivector; anchor: Position; axes: FramePlane; extent: float
@@ -366,6 +433,41 @@ func pickNearest*(
       if hit.isSome: consider(3, hit.get)
 
   slot_best
+
+
+func anchorZoomAt*(
+  scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int;
+  cursor: ScreenPosition
+): Option[Position] =
+  ## Solve the world point a zoom aimed at `cursor` should hold still: whatever finite
+  ## object the cursor is over, else the ground under it, else the level the target sits
+  ## on.
+  ##   **In that order, and the order is the rule.** A reader pointing at an object means
+  ## that object, at the depth it actually stands at; a zoom anchored instead on a plane
+  ## through the target crept past or short of it, and what was under the cursor slid away
+  ## as the wheel turned. Failing an object, the ground is what a reader means by "there"
+  ## -- the surface the scene is laid out over, and the one every map zooms against.
+  ##   The level through the target survives as the last answer rather than the first, for
+  ## the case the other two miss: a cursor on empty sky above the horizon, where there is
+  ## no ground ahead to meet and the reader has turned the wheel anyway.
+  ##   `pickNearest` ranks a horizon plane last and matches it everywhere, so the sky is
+  ## "under the cursor" almost always; `positionOnItemUnder` refuses horizon shapes for
+  ## exactly that reason, and the fall-through does the work.
+  ##   None where none of the three answers, which leaves a caller to zoom at the middle of
+  ## the frame.
+  let slot = pickNearest(scene, camera, view_projection, width, height, cursor)
+  if slot.isSome:
+    let
+      eye = camera.eye
+      frame_camera = camera.frame(eye)
+      ray = castRay(camera, eye, frame_camera, width, height, cursor)
+      found = positionOnItemUnder(
+        scene.geometryOf(slot.get), ray, eye, frame_camera.forward
+      )
+    if found.isSome: return found
+  let ground = positionOnGround(camera, width, height, cursor)
+  if ground.isSome: return ground
+  positionUnderCursor(camera, width, height, cursor)
 
 
 

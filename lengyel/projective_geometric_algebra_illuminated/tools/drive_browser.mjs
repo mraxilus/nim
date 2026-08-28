@@ -159,8 +159,25 @@ const pixelOf = (slot) => page.evaluate((s) => {
   const at = nimAnchorScreen(s, window.innerWidth, window.innerHeight);
   return at && at.length ? [at[0], at[1]] : null;
 }, slot);
+// The object standing furthest from every other on screen, rather than whichever slot
+//   happens to be last. A zoom aims at what `picking.pickNearest` finds under the pointer
+//   and ranks a point above a plane, so a pointer over two overlapping objects anchors on
+//   the thinner one -- and this check would then be measuring the object it did not aim
+//   at. The opening scene has a point sitting 13 px from the ground plane's own drawn
+//   anchor, which is exactly that case.
 const slots = await page.evaluate(() => nimSceneSlots());
-const slot_aimed = slots[slots.length - 1];
+const anchors = [];
+for (const slot of slots) anchors.push({ slot, at: await pixelOf(slot) });
+const alone = anchors
+  .filter((one) => one.at !== null)
+  .map((one) => ({
+    slot: one.slot,
+    apart: Math.min(...anchors
+      .filter((other) => other.slot !== one.slot && other.at !== null)
+      .map((other) => Math.hypot(one.at[0] - other.at[0], one.at[1] - other.at[1]))),
+  }))
+  .sort((a, b) => b.apart - a.apart)[0];
+const slot_aimed = alone.slot;
 const pixel_before = await pixelOf(slot_aimed);
 const wheel_before = await readCamera();
 
@@ -174,10 +191,13 @@ report(
   wheel_in.distance < wheel_before.distance * 0.6,
   `distance ${wheel_before.distance.toFixed(2)} -> ${wheel_in.distance.toFixed(2)}`,
 );
+// Exact, not merely close: the zoom anchors on the very object the pointer is over, so
+//   the pixel it was on is the pixel it stays on. Measured at 0.000 px across eight
+//   notches; it was 1.957 while the anchor was a plane through the camera's own target.
 reportWithin(
   'what the pointer is over stays under the pointer',
   Math.hypot(pixel_after[0] - pixel_before[0], pixel_after[1] - pixel_before[1]),
-  0, 12, 'px',
+  0, 1, 'px',
 );
 
 for (let i = 0; i < 8; i += 1) { await page.mouse.wheel(0, 120); await page.waitForTimeout(40); }
@@ -669,6 +689,35 @@ report(
 // Half a second at SPEED_MARKER_PULSE is 30 pixels; banded rather than exact, since the
 //   page's own frame pacing decides how much of that half second the clock actually saw.
 reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 5, 60, 'px');
+
+/* ---- A zoom aims at what the pointer is over, and settles the target onto it ---- */
+
+// Anchored on a plane through the target, a zoom left the orbit centre stranded on the
+// level it started at however far the reader went in -- "the target gets away from what
+// I'm looking at". Anchored on the object or the ground under the pointer, it comes down
+// onto what is being zoomed into.
+// The canvas has to hold focus for a key to reach the view at all: the help's own close
+//   button took it a few checks ago, and a Home pressed into a button moves nothing.
+await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
+await page.keyboard.press('Home');
+// Long enough for the camera's own tween home to settle: a height read mid-flight is not
+//   the height this check means to zoom away from.
+await page.waitForTimeout(900);
+const before_aim = await readCamera();
+// Low in the frame, where the sight ray reaches the ground well in front of the camera.
+await page.mouse.move(SIZE_VIEW.width / 2, SIZE_VIEW.height - 200);
+for (let notch = 0; notch < 8; notch += 1) {
+  await page.mouse.wheel(0, -120);
+  await page.waitForTimeout(40);
+}
+const after_aim = await readCamera();
+report(
+  'zooming in over the ground brings the orbit centre down onto it',
+  before_aim.target[2] > 0.9 &&
+    after_aim.target[2] < before_aim.target[2] - 0.2 && after_aim.target[2] > -0.5,
+  `target height ${before_aim.target[2].toFixed(2)} -> ${after_aim.target[2].toFixed(2)}, ` +
+    `distance ${after_aim.distance.toFixed(2)}`,
+);
 
 /* ---- The ground is still under the camera however far it has pulled back ---- */
 

@@ -394,19 +394,118 @@ suite "Camera":
 
 
   test "a zoom with nothing under the cursor falls back to zooming at the middle":
-    # Over the sky, or along the level the target sits on, there is no point to aim at. The
-    #   answer is the plain dolly a wheel did before this, not a refusal to zoom.
+    # Over the sky there is no object, no ground ahead and no level to meet, so there is
+    #   no point to aim at. The answer is the plain dolly a wheel did before any of this,
+    #   not a refusal to zoom.
     var
       interaction = Interaction(is_enabled: true)
       camera = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = 0.05)
+      scene = initScene()
     let cursor = ScreenPosition(x: 720.0, y: 60.0) # High in the frame, from a camera barely
-      # above the level it is looking at: that ray tilts up into the sky and never comes
-      # back down to the target's own level.
+      # above the level it is looking at: that ray tilts up into the sky and comes back
+      # down to neither the ground nor the target's own level.
     check positionUnderCursor(camera, 1440, 900, cursor).isNone
+    check positionOnGround(camera, 1440, 900, cursor).isNone
     interaction.updateCursor(cursor.x, cursor.y)
-    interaction.dollyAtCursor(camera, 2.0, 1440, 900)
+    interaction.dollyAtCursor(camera, scene, 2.0, 1440, 900)
     check camera.distance =~ 24.0
     check camera.target =~ ORIGIN
+
+
+  test "a zoom aims at the object under the cursor, then the ground, then the level":
+    # The order is the rule: a reader pointing at an object means that object, at the depth
+    #   it actually stands at. Anchored on a plane through the target instead, a zoom crept
+    #   past or short of it and what was under the cursor slid away as the wheel turned.
+    const (WIDE, TALL) = (1440, 900)
+    let
+      camera = initCamera(target = ORIGIN, distance = 20.0, azimuth = 0.4, elevation = 0.5)
+      view_projection = camera.initMatrixViewProjection(float(WIDE)/float(TALL))
+      # A point standing well above the ground, so aiming at *it* and aiming at the ground
+      #   under the cursor are different answers and the test can tell them apart.
+      raised = Position(x: 2.0, y: -1.0, z: 6.0)
+      on_screen = projectToScreen(view_projection, WIDE, TALL, raised)
+    var scene = initScene()
+    scene.addItem(toMultivector(raised), "raised", inkCycled(0))
+
+    # Over the point: its own place, not the ground below it nor the target's level.
+    let at_object = anchorZoomAt(
+      scene, camera, view_projection, WIDE, TALL,
+      ScreenPosition(x: on_screen.x, y: on_screen.y),
+    )
+    check at_object.isSome
+    check at_object.get =~ raised
+
+    # A cursor a little off it falls through to the ground, which is `z = 0` itself rather
+    #   than the level the target happens to sit on.
+    var camera_raised = camera
+    camera_raised.target = Position(x: 0.0, y: 0.0, z: 5.0)
+    let
+      elsewhere = ScreenPosition(x: on_screen.x + 200.0, y: on_screen.y + 160.0)
+      at_ground = anchorZoomAt(
+        scene, camera_raised, camera_raised.initMatrixViewProjection(
+          float(WIDE)/float(TALL)
+        ), WIDE, TALL, elsewhere,
+      )
+    check at_ground.isSome
+    check abs(at_ground.get.z) <= 1.0e-6
+    # And it is the ground the *cursor* is over, not the ground below the eye.
+    check at_ground.get =~ positionOnGround(camera_raised, WIDE, TALL, elsewhere).get
+
+    # A cursor whose ray reaches no ground still meets the level through the target, which
+    #   is the last answer rather than the first.
+    let
+      level = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = -0.4)
+      upward = ScreenPosition(x: 720.0, y: 40.0)
+    if positionOnGround(level, WIDE, TALL, upward).isNone:
+      let at_level = anchorZoomAt(
+        initScene(), level, level.initMatrixViewProjection(float(WIDE)/float(TALL)),
+        WIDE, TALL, upward,
+      )
+      let at_target = positionUnderCursor(level, WIDE, TALL, upward)
+      check at_level.isSome == at_target.isSome
+      if at_level.isSome: check at_level.get =~ at_target.get
+
+
+  test "a line is aimed at where the cursor crosses it, not at its stored support":
+    # A cursor is a ray and a line is a line, so in three dimensions the two miss. The
+    #   point of the line nearest the ray is the only answer both on the line and under
+    #   the cursor, and it moves along the line as the cursor slides down it.
+    let
+      anchor = Position(x: 0.0, y: 0.0, z: 0.0)
+      axis = Direction(x: 1.0, y: 0.0, z: 0.0)
+      # A ray crossing that line from above, four units along it.
+      found = positionOnLineNearest(
+        anchor, axis, Position(x: 4.0, y: 0.0, z: 3.0), Direction(x: 0, y: 0, z: -1),
+      )
+    check found.isSome
+    check found.get =~ Position(x: 4.0, y: 0.0, z: 0.0)
+    # A ray running along the line has a whole direction of nearest points, not one.
+    check positionOnLineNearest(
+      anchor, axis, Position(x: 0.0, y: 1.0, z: 0.0), axis
+    ).isNone
+
+
+  test "an aimed zoom draws the target toward what it aimed at":
+    # `dollyToward` scales the target toward the anchor by exactly the factor the distance
+    #   took, which is the whole of why an aimed zoom settles the orbit centre onto what
+    #   the reader is zooming into. Aimed at the ground, the target comes down onto it
+    #   rather than staying stranded on the level it started at -- driven in the shipped
+    #   browser, eight notches over the ground carried it from z 1.00 to 0.32, where before
+    #   this it held at 1.00 however far in the reader went.
+    var camera = initCamera(
+      target = Position(x: 0, y: 0, z: 4), distance = 20.0, azimuth = 0.3, elevation = 0.5
+    )
+    let
+      opening = camera
+      anchor = Position(x: 3.0, y: -2.0, z: 0.0)
+    camera.dollyToward(0.5, anchor)
+    let scale = camera.distance/opening.distance
+    check camera.target =~ anchor + scale*(opening.target - anchor)
+    check camera.target.z < opening.target.z
+    # And back out along the same line, so a reader who overshoots loses nothing.
+    camera.dollyToward(1.0/scale, anchor)
+    check camera.target =~ opening.target
+    check camera.distance =~ opening.distance
 
 
   test "an aimed zoom is held off the near floor, and stays a placement while it is":

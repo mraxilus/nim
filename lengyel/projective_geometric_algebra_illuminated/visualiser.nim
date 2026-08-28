@@ -1035,7 +1035,7 @@ proc handleEvent(
     #   `interaction.dollyAtCursor`. The frame's own size is passed in because a sight ray
     #   needs it and this handler runs before the frame that would report it again.
     interaction.dollyAtCursor(
-      camera, pow(FACTOR_DOLLY, -float(event.wheel.y)), width_frame, height_frame
+      camera, scene, pow(FACTOR_DOLLY, -float(event.wheel.y)), width_frame, height_frame
     )
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))

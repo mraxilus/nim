@@ -594,7 +594,9 @@ proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
   ## zoom somewhere -- a wheel at the pointer, a pinch at its own midpoint -- says where by
   ## moving the cursor there first, exactly as picking does.
   g_tween_camera.abandon()
-  g_interaction.dollyAtCursor(g_camera, float(factor), int(width), int(height))
+  g_interaction.dollyAtCursor(
+    g_camera, g_scene, float(factor), int(width), int(height)
+  )
 
 
 proc nimCameraPan(across, up: cfloat) {.exportc.} =

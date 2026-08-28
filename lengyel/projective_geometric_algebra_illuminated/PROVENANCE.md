@@ -262,13 +262,28 @@ midpoint's own travel between events, so aiming the zoom there as well translate
 scales it. A wheel carries no pan beside it, which is exactly why the same rule is right
 there and wrong here. The pinch is centred, as it was before the camera pass touched it.
 
-`picking.positionUnderCursor` solves the anchor: where the cursor's own sight ray meets the
-**horizontal plane through the camera's target**, and none where it never does. That plane
-rather than the ground at `z = 0`, for two reasons — it sits at the height the reader is
-working at, which is what they mean when they point at something, and a ground plane far
-below a raised target puts the hit wildly far off at a shallow angle. Where there is no hit
-(the sky, or a ray running along that level) the wheel falls back to the plain dolly it did
-before, which is the right answer there rather than a refusal to zoom.
+`picking.anchorZoomAt` solves the anchor, in three answers and **that order**: the finite
+object the pointer is over, else the ground at `z = 0` under it, else the horizontal plane
+through the camera's own target. Where none answers — a pointer on empty sky above the
+horizon — the wheel falls back to the plain centred dolly, which is the right answer there
+rather than a refusal to zoom.
+
+The object comes first because a reader pointing at something means *that thing, at the
+depth it stands at*. `positionOnItemUnder` reads a point at its own place, a plane where the
+sight ray crosses it, and a line at the point of it nearest that ray (`positionOnLineNearest`
+— a cursor is a ray and a line is a line, and in three dimensions the two miss). Objects at
+horizon are refused: they are drawn at `radius_horizon` about the eye and are not *at* any
+place in the world, and a horizon plane in particular is ranked last by `pickNearest` and
+matches every ray, so without that refusal the sky would be "under the pointer" almost
+always.
+
+**This reverses an earlier decision recorded here**, which anchored on the target's own
+level and argued that anchoring on the hovered object "makes the zoom jump between depths as
+the pointer crosses things". The jump is real and it is the price: two notches taken with
+the pointer either side of an object's edge converge on different depths. It is worth
+paying, and the measurements say why (below). The target-level rule survives as the last
+answer rather than the first — it is genuinely the best thing left when a ray reaches
+neither an object nor the ground.
 
 `camera.dollyToward` then moves the eye **along its own line to that anchor** rather than
 straight in, leaving the angles alone. That is the whole trick and it is worth stating: the
@@ -280,11 +295,17 @@ describing where the eye is, which the suite checks by comparing `norm(eye - tar
 the distance.
 
 **Measured through real wheel events**, not by reasoning about the algebra: an object under
-the pointer drifted 2 px across a 3.2× zoom (19 → 6.0 units), and wheeling back out returned
-the camera to distance 19.000 and target (0, 0, 1) — the opening placement exactly. Those 2
-px are the anchor being on the target's level while the object sits above it; a reader cannot
-see them, and the alternative (anchoring on whatever object is hovered) makes the zoom jump
-between depths as the pointer crosses things.
+the pointer drifts **0.000 px** across a 3.2× zoom (19 → 6.0 units), against 1.957 px while
+the anchor was the target's own level, and wheeling back out returns the camera to distance
+19.000 and target (0, 0, 1) — the opening placement exactly.
+
+**And the orbit centre now settles onto what is being zoomed into**, which is the other half
+of the same complaint: "the target gets away from what I'm looking at". `dollyToward` scales
+the target toward the anchor by exactly the factor the distance took — the whole of it is
+`target' = anchor + s·(target − anchor)` — so an anchor on the target's own level left the
+target on that level *for ever*, however far in the reader went, while an anchor on the
+ground draws it down. Driven in the shipped browser, eight notches over the ground carried
+the target from z = 1.00 to **0.32**; before this it held at 1.00 exactly.
 
 **An orbit distance has a floor and no ceiling.** `DISTANCE_LIMIT_NEAR` = 0.05 is geometry:
 at zero the eye coincides with its target, the line joining them is undefined, and every
