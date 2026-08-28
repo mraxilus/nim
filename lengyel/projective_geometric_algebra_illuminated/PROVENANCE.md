@@ -1817,6 +1817,51 @@ own legend now read.
    stack allocation for a fixed-size array inside a proc — re-declaring measured
    ~90 ms/frame *regardless of item count*, versus ~6 ms hoisted.
 
+4. **The page is compiled `-d:release`; the JS suite is not.** The flag lives in
+   `build_browser.sh` rather than in `browser_bridge.nim.cfg` for exactly that reason — it
+   is a property of the shipped artefact, and `tools/verify.sh`'s own JS build must keep
+   its checks and stack traces. Measured on the opening scene, one `nimBuildFrame` call:
+   **36.7 ms debug, 21.9 ms released**, identical output. `-d:danger` measured 18.4 ms and
+   was rejected: a further tenth of a frame is not worth removing every bounds, range and
+   field check from the one build a reader actually runs.
+
+**The frame time was erratic because the frame was too big, not because the loop was.** The
+reader saw it jumping between 30 and 60; the cause is a frame whose work does not fit the
+budget, so some frames miss the compositor's deadline and some do not. Profiled by wrapping
+each phase of `glue.js`'s own loop and sampling: `nimBuildFrame` was **34.4 ms of a 67 ms
+frame** (on this container's software renderer), against 0.2 ms for the whole SVG overlay,
+0.5 ms for the diagnostics tick and 0.05 ms per buffer upload. Everything except the frame
+build was noise, including the periodic UI refresh that looked like the obvious suspect.
+Split further by toggling what goes into it: the ground grid and axes were **15 ms of the
+21.9**, the scene's own objects 6.9, an empty scene with no furniture 0.46.
+
+So the furniture is built once and **held while the camera is still**
+(`FrameData.is_furniture_held`, `SettingsFurniture`). It is a function of the camera alone,
+and the camera is still for most of the frames of an ordinary session — between drags, while
+reading, while typing a coefficient. Driven in the shipped page, 48 of 48 idle frames held
+it, and `nimBuildFrame`'s median fell from **34.4 ms to 5.8 ms**. The bridge sends an empty
+`furn_ribbon_verts` on a held frame and `glue.js` keeps the buffer it already uploaded, so
+nothing is re-flattened either. The comparison is exact rather than approximate: the
+question is whether anything moved at all, not whether it moved enough to see.
+
+**"Uncapped" is not available and was not chased.** A browser page draws through
+`requestAnimationFrame`, which the compositor paces at the display's own rate; there is no
+loop that presents faster, and a loop that *runs* faster only burns battery drawing frames
+nobody sees. What "extremely consistent" can mean here is that every frame's work fits
+inside the budget, which is what the numbers above buy. The driven layer guards it as a
+band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this machine
+renders through swiftshader, so its frame times say more about the software renderer than
+about anything in this repository.
+
+Two further things were considered and **not** done. Caching the *whole* frame, scene
+included, needs a "nothing changed" test over the scene version, the selection, the ghost,
+the hold progress and every per-object arrival animation — a stale frame is a visible bug,
+and the test is far easier to get subtly wrong than the camera-only one. And the remaining
+cost is Nim-on-JS value semantics: `mesh.addSegment` alone does four `nimCopy` deep copies
+of its endpoints and tints per call, some 3,840 times a frame while the grid is rebuilding.
+Restructuring shared geometry code to suit one backend's copying rules was judged the wrong
+trade for a visualiser.
+
 `scene.formatMultivector` and `format.nim` bind C `snprintf` and stay desktop-only.
 `nimFormatMultivector` calls the library's own `$` directly instead — confirmed by compiling
 both that it is pure Nim and byte-identical across backends. The bold Unicode it emits is

@@ -38,8 +38,15 @@ done
 mkdir -p "${DIR_OUT}"
 
 # Compile every shared module the desktop runs, through the JS backend. Flags come from
-#   `browser_bridge.nim.cfg` beside the source, not from here.
-"${NIM}" js --hints:off -o:"${PATH_BRIDGE}" "${DIR_PROJECT}/visualiser/browser/browser_bridge.nim"
+#   `browser_bridge.nim.cfg` beside the source, not from here -- except `-d:release`, which
+#   is a property of *this artefact* rather than of the source: the suite's own JS build
+#   (`tools/verify.sh`) must keep its checks and stack traces, and the page must not carry
+#   them. Measured on the opening scene, one `nimBuildFrame` call: **36.7 ms debug against
+#   21.9 ms released**, for identical output. `-d:danger` was measured too, at 18.4 ms, and
+#   rejected: it buys a further tenth of the frame by removing every bounds, range and
+#   field check from the one build a reader actually runs.
+"${NIM}" js --hints:off -d:release -o:"${PATH_BRIDGE}" \
+  "${DIR_PROJECT}/visualiser/browser/browser_bridge.nim"
 
 # Inline each face at the token naming it, so the page reaches no external font host.
 : > "${PATH_PAGE}"

@@ -82,6 +82,10 @@ const vbo = {
 };
 const STRIDE = 7 * 4;
 
+// How many furniture vertices its own buffer holds, carried between frames because the
+// bridge stops sending them once the camera is still; see `renderFrame`.
+let count_furniture_held = null;
+
 // One mesh handed to the driver whole, ready to be drawn as one run or two. Separate
 // from drawing because the two runs go out in different passes (see the draw loop below),
 // and a mesh uploaded twice a frame would be the one real cost of that split.
@@ -2391,8 +2395,14 @@ function renderFrame(now_seconds) {
   // World furniture first, with normal depth test/write. Its ribbons already carry their
   // own thinner width as geometry -- there is no width to set here any more. Mirrors
   // renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
-  const count_furn = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture);
-  drawRun(vbo.ribbon_furniture, count_furn, gl.TRIANGLES, false, 0, false);
+  // Kept rather than re-uploaded where the bridge says the furniture is unchanged: the
+  // grid and the axes are a function of the camera alone, and rebuilding them for a camera
+  // that has not moved is two thirds of a frame spent drawing the same picture. The buffer
+  // still holds last frame's vertices, so only the count has to survive here.
+  if (!data.is_furniture_held) {
+    count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture);
+  }
+  drawRun(vbo.ribbon_furniture, count_furniture_held, gl.TRIANGLES, false, 0, false);
 
   // Scene objects last; opaque kinds before plane washes (triangles), with depth writes
   // off for those, so a translucent plane never occludes a line or point that happens to

@@ -52,6 +52,19 @@ import ../core/[
 
 #[ Panel State ]#
 
+type SettingsFurniture = tuple
+  ## Name everything the ground grid and the world axes are built from.
+  ##   `mesh.addGrid` and `mesh.addAxes` read only a reach and a `DrawExtent`, and
+  ## `camera.drawExtentFor` derives every field of that from exactly these -- so two frames
+  ## agreeing here draw the same furniture, vertex for vertex. A field added to `Camera`
+  ## that `drawExtentFor` reads has to be added here too, or a frame will hold furniture
+  ## that no longer matches the view.
+  target_x, target_y, target_z: float
+  distance, azimuth, elevation, degrees_field_of_view: float
+  height_pixels: int
+  is_axes_shown, is_grid_shown: bool
+
+
 var
   g_scene: Scene
   g_camera: Camera
@@ -67,6 +80,10 @@ var
     ## scratch, whether the scene held nine objects or sixty-four. Fixed the same way
     ## the desktop build already avoids this: allocate once, clear (not reallocate)
     ## every frame.
+  g_settings_furniture = none(SettingsFurniture) ## What the furniture standing in
+    ## `g_meshes_furniture` was built from, or none where none has been built yet.
+    ##   Kept so a frame whose settings match can skip the rebuild entirely; see
+    ## `FrameData.is_furniture_held` for the measurement that earns it.
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
@@ -1470,6 +1487,18 @@ type FrameData = object
   furn_ribbon_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, and
     ## already built at their own thinner width (see `mesh.WIDTH_LINE_FURNITURE`), since a
     ## ribbon carries its width as geometry rather than as a draw-call setting.
+    ## **Empty where `is_furniture_held` is set**, which is not "no furniture" but "the
+    ## furniture you already have"; see that field.
+  is_furniture_held: bool ## Whether the furniture above is unchanged from the last frame,
+    ## so a caller should keep the buffer it already uploaded rather than read an empty
+    ## `furn_ribbon_verts` as an empty world.
+    ##   The ground grid and the world axes are a function of the camera alone, and the
+    ## camera is still for most of the frames of an ordinary session -- between drags,
+    ## while reading, while typing a coefficient. Measured on the opening scene, one
+    ## `nimBuildFrame` call: **21.9 ms with the furniture and 6.9 ms without it**, so
+    ## rebuilding a grid nothing moved is two thirds of the frame spent redrawing the same
+    ## picture. A JS-backend concern and stated as one: the desktop's own furniture
+    ## assembly is native and pays a fraction of this, and is left alone.
   tri_over, ribbon_over, point_over: int ## How many vertices at the *end* of each of the
     ## three above are the overlay run -- drawn after the rest with the depth test off, so
     ## a selected object lands over whatever stands between it and the camera. A count of
@@ -1497,7 +1526,6 @@ proc nimBuildFrame(
   ##   Also draws `g_ghost`, if any, through the same `addObject` dispatch, tinted
   ##   `INK_GHOST` and muted -- see that var's own doc comment for why it never touches
   ##   `g_scene` and so is invisible to `nimSceneSlots`/undo/redo/save/picking.
-  clearMeshes(g_meshes_furniture)
   # A focus is a slot carried across frames like any other, so it needs the same liveness
   #   guard the selection keeps; mirrors `visualiser.renderFrame`.
   g_interaction.pruneFocus(g_scene)
@@ -1518,8 +1546,22 @@ proc nimBuildFrame(
     int(height_pixels), float(now), ANIMATION_SECONDS,
   )
 
-  if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
-  if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
+  # Everything `drawExtentFor` reads, and the two toggles: the furniture is a function of
+  #   exactly these, so a frame whose settings match the last one is drawing the very same
+  #   vertices and may keep them. Compared exactly rather than approximately -- the
+  #   question is "did anything move at all", not "did it move enough to see".
+  let settings_furniture = (
+    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
+    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
+    int(height_pixels), is_axes_shown, is_grid_shown,
+  )
+  let is_furniture_held =
+    g_settings_furniture.isSome and g_settings_furniture.get == settings_furniture
+  if not is_furniture_held:
+    g_settings_furniture = some(settings_furniture)
+    clearMeshes(g_meshes_furniture)
+    if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
+    if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
 
   clearMeshes(g_meshes)
   # A horizon plane's own dome first, before anything else that might share its own
@@ -1604,7 +1646,9 @@ proc nimBuildFrame(
     ribbon_verts: flatten(g_meshes[Primitive.Ribbon]),
     point_verts: flatten(g_meshes[Primitive.Point]),
     view_projection: view_projection,
-    furn_ribbon_verts: flatten(g_meshes_furniture[Primitive.Ribbon]),
+    furn_ribbon_verts:
+      if is_furniture_held: @[] else: flatten(g_meshes_furniture[Primitive.Ribbon]),
+    is_furniture_held: is_furniture_held,
     tri_over: countOverlay(g_meshes[Primitive.Triangle]),
     ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
     point_over: countOverlay(g_meshes[Primitive.Point]),

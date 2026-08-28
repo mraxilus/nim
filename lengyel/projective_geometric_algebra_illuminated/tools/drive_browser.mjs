@@ -795,6 +795,101 @@ report(
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
 
+/* ---- The draw loop's own work fits inside a frame ---- */
+
+// The reader's complaint was an erratic frame time jumping between 30 and 60. A browser
+// page cannot draw faster than the compositor presents -- `requestAnimationFrame` is the
+// only honest loop and it is paced by the display -- so "uncapped" is not a thing to reach
+// for; what makes the cadence even is every frame's work fitting inside the budget.
+// Measured here is the part this page owns, not the wall clock: the machine running these
+// checks renders through a software GL, so its frame times say more about swiftshader than
+// about anything in this repository.
+await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
+await page.keyboard.press('Home');
+await page.waitForTimeout(600);
+await page.evaluate(() => {
+  window.__work_frame = [];
+  window.__held_frame = 0;
+  const built = globalThis.nimBuildFrame;
+  globalThis.nimBuildFrame = function (...given) {
+    const started = performance.now();
+    const data = built.apply(this, given);
+    window.__work_frame.push(performance.now() - started);
+    if (data.is_furniture_held) window.__held_frame += 1;
+    return data;
+  };
+});
+await page.waitForTimeout(2500);
+const work_frame = await page.evaluate(() => {
+  const sorted = [...window.__work_frame].sort((a, b) => a - b);
+  const at = (share) => sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
+  return sorted.length === 0 ? null : {
+    n: sorted.length, median: at(0.5), p90: at(0.9), max: sorted[sorted.length - 1],
+    held: window.__held_frame,
+  };
+});
+report(
+  'the draw loop keeps building frames',
+  work_frame !== null && work_frame.n > 30,
+  `${work_frame === null ? 0 : work_frame.n} frames sampled`,
+);
+// Bands rather than figures: this is a real machine's real clock. The numbers that matter
+// are the ratios recorded in PROVENANCE.md -- 34.4 ms a frame before this round's work,
+// 5.8 ms after, on this same software renderer.
+reportWithin(
+  'a frame is assembled in a fraction of its own budget',
+  work_frame === null ? -1 : work_frame.median, 0, 16, 'ms',
+);
+reportWithin(
+  'and its slowest tenth stays inside one',
+  work_frame === null ? -1 : work_frame.p90, 0, 24, 'ms',
+);
+
+// What buys that: a camera that has not moved draws the very same grid and axes, so they
+// are built once and held -- and the loop above should have held them on nearly every one
+// of the frames it just drew, since nothing moved the camera for those two seconds.
+report(
+  'a still camera holds its ground and axes rather than rebuilding them',
+  work_frame !== null && work_frame.held > 0.8 * work_frame.n,
+  `${work_frame === null ? 0 : work_frame.held} of ` +
+    `${work_frame === null ? 0 : work_frame.n} frames held`,
+);
+// Stated directly too, since a share of frames could be right by accident: move the
+// camera, so the next call must build, and the one after it must hold.
+const furniture_held = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const aspect = canvas.width / canvas.height;
+  const once = () => nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true);
+  nimCameraOrbit(0.05, 0.0);
+  const first = once();
+  const second = once();
+  return {
+    first: { held: first.is_furniture_held, floats: first.furn_ribbon_verts.length },
+    second: { held: second.is_furniture_held, floats: second.furn_ribbon_verts.length },
+  };
+});
+report(
+  'a still camera builds its ground and axes once and holds them',
+  furniture_held.first.floats > 0 && furniture_held.first.held === false &&
+    furniture_held.second.held === true && furniture_held.second.floats === 0,
+  `first ${furniture_held.first.floats} floats (held ${furniture_held.first.held}), ` +
+    `second ${furniture_held.second.floats} (held ${furniture_held.second.held})`,
+);
+// And a camera that has moved rebuilds them, or the view would keep a grid it has left.
+const furniture_rebuilt = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const aspect = canvas.width / canvas.height;
+  nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true);
+  nimCameraOrbit(0.3, 0.0);
+  const after = nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true);
+  return { held: after.is_furniture_held, floats: after.furn_ribbon_verts.length };
+});
+report(
+  'and a camera that has moved builds them again',
+  furniture_rebuilt.held === false && furniture_rebuilt.floats > 0,
+  `held ${furniture_rebuilt.held}, ${furniture_rebuilt.floats} floats`,
+);
+
 /* ---- Nothing may have thrown along the way ---- */
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
