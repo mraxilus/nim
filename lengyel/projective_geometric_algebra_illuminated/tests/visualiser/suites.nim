@@ -4291,6 +4291,43 @@ suite "Interaction":
     check interaction.index_focus.isNone
 
 
+  test "a camera move is not a hover, however much it sweeps the pointer past":
+    # Hover is recomputed from the cursor every frame, so a pan drags the ring across every
+    #   object it sweeps and a held W lights up whatever slides under a cursor standing
+    #   still. Neither gesture is pointing at anything.
+    var scene = initScene()
+    let target = Position(x: 0, y: 0, z: 0)
+    scene.addItem(toMultivector(target), "p", Ink.Rose)
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
+    let view_projection = camera.initMatrixViewProjection(800.0/600.0)
+    proc hovering(interaction: var Interaction): Option[int] =
+      interaction.updateHover(scene, camera, view_projection, 800, 600)
+      interaction.index_hover
+    interaction.updateCursor(400.0, 300.0) # Straight at the item.
+    check interaction.hovering == some(0)
+
+    interaction.is_dragging_camera = true
+    check interaction.hovering.isNone
+    interaction.is_dragging_camera = false
+    check interaction.hovering == some(0) # And back the frame the gesture ends.
+
+    interaction.holdKey(Key.W)
+    check interaction.hovering.isNone
+    interaction.releaseKey(Key.W)
+    check interaction.hovering == some(0)
+
+    # Shift alone moves nothing, so it is not a camera move and hover stands.
+    interaction.holdKey(Key.Shift)
+    check interaction.hovering == some(0)
+    interaction.releaseKey(Key.Shift)
+
+    # A *construction* drag is the opposite case: what it points at is the whole gesture.
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    check interaction.hovering == some(0)
+
+
   test "keyboard focus is not hover, and a pointer moving does not erase it":
     # The whole reason `index_focus` is its own field: `updateHover` recomputes hover from
     #   the cursor every frame, so a focus stored there would be gone before it was drawn.

@@ -328,6 +328,11 @@ type
     settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
       ## what movement is measured against to decide the dwell has been interrupted.
     menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
+    is_dragging_camera*: bool ## Whether a pointer gesture is moving the *camera* right now
+      ## -- an orbit or a pan drag, or two fingers on the canvas. Each render path owns its
+      ## own drag state and says so here; what it means for hover is `updateHover`'s to say.
+      ## Distinct from `is_dragging`, which is a *construction* drag and must keep hovering:
+      ## the whole point of that gesture is what it is pointing at.
     keys_held*: set[Key] ## Physical keys down right now, which `driveHeld` moves the camera
       ## by once a frame. A set rather than a per-key flag, so two keys held together
       ## compose without anything having to enumerate the pairs.
@@ -694,13 +699,29 @@ proc updateCursor*(interaction: var Interaction; x, y: float) =
       interaction.is_press_still = false
 
 
+func isMovingCamera*(interaction: Interaction): bool =
+  ## Report whether the camera is being moved right now, by pointer or by key.
+  ##   The key half is answered here rather than by each front-end, since `keys_held` is
+  ##   already this module's; `Key.Shift` alone is not movement, which is why this asks
+  ##   `motionFor` rather than counting keys.
+  if interaction.is_dragging_camera: return true
+  for key in interaction.keys_held:
+    if motionFor(key).isSome: return true
+  false
+
+
 proc updateHover*(
   interaction: var Interaction; scene: Scene;
   camera: Camera; view_projection: Matrix4; width, height: int
 ) =
   ## Recompute item nearest cursor, so overlay and drag-start agree on what stands under it.
+  ##   **Nothing is hovered while the camera is moving.** Hover is recomputed from the cursor
+  ##   every frame, so a pan drags the highlight across every object it sweeps past and a
+  ##   held W lights up whatever slides under a cursor standing still -- a rash of rings for
+  ##   a gesture that is not pointing at anything. A camera move is not a hover, and the ring
+  ##   comes back the frame it ends.
   interaction.index_hover =
-    if interaction.is_enabled:
+    if interaction.is_enabled and not interaction.isMovingCamera:
       pickNearest(scene, camera, view_projection, width, height, interaction.cursor)
     else:
       none(int)

@@ -500,6 +500,61 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_menu}`,
 );
 
+/* ---- A camera gesture is not a hover ---- */
+
+await page.keyboard.press('Home');
+// Clear what the checks above left on screen: a selection menu standing over the canvas
+//   swallows the pointer moves below, so the application never learns where the cursor is
+//   and this section would be measuring the menu rather than the hover rule.
+await page.evaluate(() => {
+  clearSelection();
+  hideSelectionMenu();
+  // And the drawer the apply checks opened: it covers the right third of the viewport, so
+  //   a pointer move over an object standing there never reaches the canvas at all.
+  if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+});
+await page.waitForTimeout(200);
+// Read afresh: the checks above delete and build, so the slot list captured for the touch
+//   gestures no longer names what is alive here.
+const slots_now_live = await page.evaluate(() => nimSceneSlots());
+const slot_swept = slots_now_live[1];
+const pixel_swept = await pixelOf(slot_swept);
+// An **orbit** drag from empty space, swinging the scene across the pointer. Orbit rather
+// than pan because a pan carries the world along with the drag -- what was under the cursor
+// stays under it -- while an orbit sweeps objects past a pointer that is also moving, which
+// is the case that used to light up a string of them. Every step is sampled, not just the
+// end: one frame of highlight is one too many.
+await page.mouse.move(80, SIZE_VIEW.height - 80);
+await page.mouse.down();
+let hovered_while_moving = -1;
+for (let step = 1; step <= 10; step += 1) {
+  await page.mouse.move(
+    80 + ((pixel_swept[0] - 80) * step) / 10,
+    SIZE_VIEW.height - 80 + ((pixel_swept[1] - (SIZE_VIEW.height - 80)) * step) / 10,
+  );
+  await page.evaluate(() => nimUpdateHover(window.innerWidth, window.innerHeight));
+  const slot = await page.evaluate(() => nimHoverSlot());
+  if (slot >= 0) hovered_while_moving = slot;
+  await page.waitForTimeout(20);
+}
+await page.mouse.up();
+await page.waitForTimeout(150);
+report(
+  'a camera drag sweeping over objects highlights none of them',
+  hovered_while_moving < 0,
+  `slot hovered mid-gesture: ${hovered_while_moving}`,
+);
+// Onto where that object stands *now* -- the pan moved the world under the pointer, so its
+// old pixel holds nothing any more, and asking there would say nothing about the rule.
+const pixel_settled = await pixelOf(slot_swept);
+await page.mouse.move(pixel_settled[0], pixel_settled[1]);
+await page.evaluate(() => nimUpdateHover(window.innerWidth, window.innerHeight));
+report(
+  'the highlight comes back the moment the gesture ends',
+  (await page.evaluate(() => nimHoverSlot())) >= 0,
+  `hovering slot ${await page.evaluate(() => nimHoverSlot())} after the release`,
+);
+
 /* ---- The help stays open, and lists the catalogue ---- */
 
 await page.evaluate(() => showHelp(true));

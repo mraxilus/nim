@@ -670,6 +670,13 @@ proc nimUpdateCursor(x, y: cfloat) {.exportc.} =
   interaction.updateCursor(g_interaction, float(x), float(y))
 
 
+proc nimSetCameraDragging(is_dragging: bool) {.exportc.} =
+  ## Say whether a pointer gesture is moving the camera right now -- an orbit or pan drag,
+  ## or two fingers on the canvas. What that means for hover is `interaction.updateHover`'s
+  ## to say; this build only knows which of its own gestures is under way.
+  g_interaction.is_dragging_camera = is_dragging
+
+
 proc nimUpdateHover(width, height: cint) {.exportc.} =
   ## Forward to `interaction.updateHover`; see its own doc comment.
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))

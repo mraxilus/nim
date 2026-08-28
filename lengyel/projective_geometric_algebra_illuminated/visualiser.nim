@@ -1039,6 +1039,9 @@ proc handleEvent(
     )
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))
+    if is_dragging_orbit or is_dragging_pan:
+      # The camera is moving *now*, which is what the hover rule asks; see `updateHover`.
+      interaction.is_dragging_camera = true
     if is_dragging_orbit:
       panel.tween_camera.abandon()
       camera.orbit(
@@ -1637,6 +1640,12 @@ proc runInteractive(
         is_dragging_orbit, is_dragging_pan, is_running, button_dragging, now,
         width_frame, height_frame,
       )
+
+    # Cleared here, and only here, so a release that took an early return cannot leave it
+    #   set. It is *raised* by the motion that actually turns or slides the camera (see the
+    #   `MouseMotion` branch), never by the press: a press that never moves is a click, and
+    #   a click has to know what it came down on.
+    if not (is_dragging_orbit or is_dragging_pan): interaction.is_dragging_camera = false
 
     # Whatever is held moves the camera by one frame's worth, after the events that
     #   started and stopped those holds and before anything is drawn from the placement.

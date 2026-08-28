@@ -706,10 +706,10 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
   nimKeyUp(e.code);
 });
-window.addEventListener('blur', () => { nimReleaseKeysAll(); });
+window.addEventListener('blur', () => { nimReleaseKeysAll(); nimSetCameraDragging(false); });
 canvas.addEventListener('blur', () => { nimReleaseKeysAll(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) nimReleaseKeysAll();
+  if (document.hidden) { nimReleaseKeysAll(); nimSetCameraDragging(false); }
 });
 
 function refreshUndoRedoButtons() {
@@ -1868,6 +1868,12 @@ function pointerMid(points_flat) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
+  // Every gesture starts by saying it is not a camera move; the branches below say so where
+  //   they are one. Cleared here rather than only at the release because a release can go
+  //   missing -- a pointer cancelled, a touch sequence the browser tears down -- and a flag
+  //   left true stops the hover ring working for the rest of the session, with nothing on
+  //   screen to say why. Same failure the held keys have, handled the same way.
+  if (pointers.size === 0) nimSetCameraDragging(false);
   const rect = canvas.getBoundingClientRect();
   const local = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1946,6 +1952,9 @@ canvas.addEventListener('pointermove', (e) => {
     const current = { x: e.clientX, y: e.clientY };
     pointers.set(e.pointerId, current);
     const dx = current.x - prev.x, dy = current.y - prev.y;
+    // A camera gesture is not a hover, said at the *move* rather than at the press: a
+    // press that never moves is a click, and a click has to know what it came down on.
+    if (button_mouse_drag === 'orbit' || button_mouse_drag === 'pan') nimSetCameraDragging(true);
     if (button_mouse_drag === 'orbit') {
       nimCameraOrbit(
         -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
@@ -1990,11 +1999,15 @@ canvas.addEventListener('pointermove', (e) => {
   }
 
   if (pointers.size === 1) {
+    // One finger that is not constructing and not holding is orbiting, which the hover
+    //   ring should sit out; the two branches above return before reaching here.
+    nimSetCameraDragging(true);
     const dx = current.x - prev.x, dy = current.y - prev.y;
     nimCameraOrbit(
       -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
     );
   } else if (pointers.size === 2) {
+    nimSetCameraDragging(true); // Two fingers pan and pinch; neither points at anything.
     const points_flat = [...pointers.values()];
     const separation = pointerDist(points_flat);
     const mid = pointerMid(points_flat);
@@ -2048,6 +2061,7 @@ function endMouseDrag(e) {
 
   button_mouse_drag = null;
   button_mouse_down = null;
+  nimSetCameraDragging(false);
 }
 
 function releasePointer(e) {
@@ -2088,6 +2102,7 @@ function releasePointer(e) {
   slot_touch_down = -1;
   pointers.delete(e.pointerId);
   if (pointers.size < 2) { separation_pinch_start = null; pan_last = null; }
+  if (pointers.size === 0) nimSetCameraDragging(false);
   if (pointers.size === 0) nimClearHover(); // No finger left touching the canvas -- there's
     // no cursor position left to be "hovering" anything, so don't let the last touch-down's
     // own hover reading linger and draw its ring forever.

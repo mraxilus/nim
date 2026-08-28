@@ -2860,6 +2860,28 @@ target moved 0.0000 further.
 cannot also do; that went to `ctrl+s`, beside the other accelerators, and the panel's own
 "save PNG" button is untouched.
 
+**A camera move is not a hover.** Hover is recomputed from the cursor every frame, so an
+orbit drag swept the highlight across every object it passed and a held movement key lit up
+whatever slid under a cursor standing still — a rash of rings for a gesture that is pointing
+at nothing. `updateHover` now reports nothing while the camera is moving, and the ring
+returns the frame the gesture ends. What counts as moving is `isMovingCamera`: the pointer
+half is each front-end's own (`Interaction.is_dragging_camera`, since each owns its drag
+state), the key half is answered here from `keys_held` — and asks `motionFor`, so shift alone
+is not movement. A *construction* drag is deliberately excluded: what it is pointing at is
+the whole gesture.
+
+**Raised by the movement, not by the press.** Setting it when a camera button goes down
+broke clicking outright: a press that never moves is a click, a click reads what is under the
+cursor, and hover was already suppressed by the time it asked. The desktop's own sky drive
+caught it within a minute of the change — "a click on bare sky selects it" went to 0
+selected — which is exactly what that layer is for.
+
+A latched flag can be left set by a release that never arrives — a cancelled pointer, a torn
+down touch sequence — and a stuck one would kill hover for the rest of the session with
+nothing on screen to explain it. It is therefore cleared on blur, on the tab being hidden,
+and at the start of any gesture that finds no pointer already down: the same failure the held
+keys have, handled the same way.
+
 **Focus is its own state, not hover.** `updateHover` recomputes hover from the cursor every
 frame, so a keyboard focus stored there would be erased before it could be drawn once.
 `interaction.index_focus` is separate, pruned against liveness like every other slot carried

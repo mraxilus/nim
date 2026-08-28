@@ -768,6 +768,13 @@ a pinch aimed at its own midpoint, a picker's position read as a scene slot, a c
 bound to nothing by a rename. Driven checks are committed and run by the same command as
 everything else, never retyped into a scratch file when somebody remembers.
 
+**Moving the camera never hovers anything.** Hover follows the cursor every frame, so a
+camera gesture — an orbit or pan drag, two fingers, or a held movement key — must report no
+hover at all, and must report one again the frame it ends. A construction drag is the
+exception: what it points at is the gesture. Whatever records that a gesture is under way has
+to be cleared when a release goes missing (blur, a hidden tab, a cancelled pointer), or hover
+stays dead for the session.
+
 **The help is dismissed only by the reader.** It is opened to be read *while* doing the thing
 it describes, so nothing the reader does to the scene may close it — no tap-outside, no
 gesture. It needs a visible close control of its own on every front-end, since a touch device
