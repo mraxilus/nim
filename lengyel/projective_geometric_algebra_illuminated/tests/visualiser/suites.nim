@@ -853,6 +853,8 @@ suite "Mesh":
     #   doublings apart, against what a fixed cell says should be there.
     check SIZE_CELL_GRID =~ 10.0
     for (extent, height) in [(1000.0, 60.0), (4000.0, 60.0)]:
+      # Both reaches are inside what a fixed cell covers, which is the claim being made:
+      #   nothing here is the stepped cell `sizeCellGridFor` falls back on far out.
       # Straight down from high above a lattice crossing, so every line the fog reaches is
       #   drawn whole: nothing falls behind the near plane to be clipped, and the count
       #   below is then exact arithmetic rather than a reading of what happened to survive.
@@ -874,16 +876,52 @@ suite "Mesh":
         check min(off_x, off_y) <= 1.0
 
 
-  test "the grid's own cap bounds what a camera dollied far out may lay":
-    # What keeps an unbounded orbit distance from laying lines without limit: the reach
-    #   is capped rather than the geometry, so the outer edge stays a fade.
-    check fogFurnitureFor(1.0e9).radius_gone =~ float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
-    check fogFurnitureFor(1.0e9).radius_full <
-      fogFurnitureFor(1.0e9).radius_gone
-    MESHES.clearMeshes
-    MESHES.addGrid(1.0e9, scaleFurnitureAt(Position(x: 0, y: 0, z: 40), 1.0e9))
-    check MESHES[Primitive.Ribbon].count_vertices > 0
-    check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+  test "a camera dollied far out still has ground under it, at a coarser cell":
+    # The fault: the fog's reach was capped at `CELLS_GRID_HALF_MAX` cells, so past 1,200
+    #   units the ground stopped reaching what the camera was looking at, and past twice
+    #   that there was nothing drawn at all -- a black void, axes included. The bound now
+    #   steps the *cell*, which lays the same count of lines across the reach the camera
+    #   actually has.
+    check fogFurnitureFor(1.0e9).radius_gone =~ FRACTION_GRID_FADE_END*1.0e9
+    check fogFurnitureFor(1.0e9).radius_full < fogFurnitureFor(1.0e9).radius_gone
+
+    # The cell holds at its fixed size right up to the reach it can cover, and steps only
+    #   past it -- a reader working at any ordinary distance never meets a step.
+    let radius_fixed = float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
+    check sizeCellGridFor(0.0) =~ SIZE_CELL_GRID
+    check sizeCellGridFor(radius_fixed) =~ SIZE_CELL_GRID
+    check sizeCellGridFor(1.5*radius_fixed) =~ 10.0*SIZE_CELL_GRID
+    check sizeCellGridFor(15.0*radius_fixed) =~ 100.0*SIZE_CELL_GRID
+    # By decades, so every line of the coarser lattice is a line of the finer one and a
+    #   step coarsens what is drawn without moving anything a reader was measuring against.
+    for radius in [2.0e3, 5.0e4, 3.0e6, 1.0e9]:
+      let decades = log10(sizeCellGridFor(radius)/SIZE_CELL_GRID)
+      check decades =~ round(decades)
+      # And never more lines than the bound, however far out the camera has gone.
+      check radius/sizeCellGridFor(radius) <= float(CELLS_GRID_HALF_MAX)
+
+    # Ground is still drawn where it used to be gone entirely, and still within budget.
+    for (extent, height) in [(1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7)]:
+      let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
+      MESHES.clearMeshes
+      MESHES.addGrid(extent, scale_afar)
+      check MESHES[Primitive.Ribbon].count_vertices > 0
+      check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+      # Laid on world multiples of the cell this reach asked for, so the lattice is still
+      #   the world's rather than one dragged along under the camera.
+      let
+        fog = fogFurnitureFor(extent)
+        size_cell = sizeCellGridFor(sqrt(fog.radius_gone*fog.radius_gone - height*height))
+      for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
+        let
+          at = MESHES[Primitive.Ribbon].vertices[i].toPosition
+          off_x = abs(at.x - size_cell*round(at.x/size_cell))
+          off_y = abs(at.y - size_cell*round(at.y/size_cell))
+        # Within a fiftieth of a cell rather than exactly on it: a line is drawn as a
+        #   ribbon, so its vertices stand half its own screen width either side of the
+        #   lattice line, which in world units grows with the distance it is drawn at.
+        #   Measured at 0.005 of a cell across all three reaches.
+        check min(off_x, off_y) <= 0.02*size_cell
 
 
   test "the axes fog too: the one the camera stands by is drawn, the far ones are not":

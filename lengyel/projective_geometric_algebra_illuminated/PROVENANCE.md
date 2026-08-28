@@ -327,29 +327,40 @@ hundred units away left no ground at all, and the camera read as bounded to a re
 only its orbit distance ever was. **Verified by rendering it**: an eye a thousand units from
 the origin now stands on lit ground, with the axes correctly gone.
 
-The **cell size is fixed at `SIZE_CELL_GRID` = 10.0**, replacing a size that doubled with the
-reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A stepping cell re-scaled the
-ground under a reader as they dollied, so no distance read off it was comparable with the
-last; a fixed cell is a ruler. What the doubling was protecting against — a reach that
-follows the camera laying lines without limit — is now handled by capping the *reach* at
-`CELLS_GRID_HALF_MAX × SIZE_CELL_GRID`, which keeps the outer edge a fade rather than a cut.
-A hundred-unit cell was tried first and rendered: at the opening placement the reach is ≈72
+The **cell size is `SIZE_CELL_GRID` = 10.0 at every reach a reader works at**, replacing a
+size that doubled with the reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A
+cell that walks continuously with the reach re-scales the ground under a reader as they
+dolly, so no distance read off it is comparable with the last; a fixed cell is a ruler. A
+hundred-unit cell was tried first and rendered: at the opening placement the reach is ≈72
 units, so it put at most one line in view and usually none, and the ground read as empty
 until the camera pulled back past a distance near 30.
 
-`CELLS_GRID_HALF_MAX` = 120 follows from that cell, and the number that matters is the
-**capped reach**, 1,200 units. Content sits at the target, one orbit distance from the eye,
-so ground stays under it exactly while that cap exceeds the orbit distance. The cap was 24
-while the cell was 100; dropping the cell to 10 without raising it left the cap at 240, and
-at an orbit distance of 300 the grid rendered as a patch floating in the near field with no
-ground at all under the objects being looked at. Where the cap binds it costs ≈23,000 ribbon
-vertices against `VERTICES_MAX` = 49,152, which world furniture has a mesh set to itself.
+`CELLS_GRID_HALF_MAX` = 120 bounds the lines laid, at ≈23,000 ribbon vertices against
+`VERTICES_MAX` = 49,152, which world furniture has a mesh set to itself. **That bound is
+spent on the cell, not on the reach**, and that is the second thing it has done. Cutting the
+*reach* at 120 cells — 1,200 units — meant a camera dollied past it had the ground stop
+reaching what it was looking at, and past twice that saw nothing at all: measured in the
+shipped browser at orbit distance 5,000 and 1,000,000, **zero grid vertices built**, a black
+void with no reference of any kind, axes included, since the axes fade on the grid's own
+schedule. An orbit distance has no ceiling, so a reader meets this by scrolling.
 
-**Past 1,200 the ground stops reaching the content**, which an orbit distance may now do
-since it has no ceiling (below). Measured: at 900 the view is a full lattice with the axes
-and the scene on it; at 2,000 the scene is a speck with the fog's own disc left behind near
-the eye. That is the price of a fixed cell, and it is a limit rather than a bug — the
-alternatives are a cell that re-scales, which was rejected, or an unbounded line count.
+`sizeCellGridFor` steps the cell instead, by **decades** — the smallest power of ten that
+keeps the ground disc inside `CELLS_GRID_HALF_MAX` cells. Decades rather than a gentler
+1-2-5 sequence because they *nest*: every line of a hundred-unit lattice is a line of the
+ten-unit one, so a step coarsens what is drawn without moving a line the reader was
+measuring against, where 10 → 20 would replace every odd line with nothing. The first step
+is at 1,200 units of ground reach, orbit distance ≈316, well past any distance a reader is
+reading numbers off the ground at — and by then a ten-unit cell is already the aliasing haze
+`FRACTION_GRID_FADE_END` exists to cut short. Measured in the shipped browser, grid vertices
+built at orbit distance 300 / 1,000 / 5,000 / 10⁶: **86,142 / 95,088 / 0 / 0** before,
+**86,142 / 28,392 / 13,818 / 28,392** after. Rendered and looked at: the opening view and
+the view at 300 are pixel-identical to what they were, and 1,000 upward gains a legible
+lattice where it had a haze or a void.
+
+This is a cell that steps, which the paragraph above argues against, and the argument still
+holds where it was made. What is answered here is the case that rule left with nothing at
+all: past the reach a fixed cell can cover, the choice is not "fixed cell or stepped" but
+"stepped cell or no ground".
 
 The **fade fractions were re-tuned with the move to the eye**, 0.03/0.12 → 0.06/0.20, and
 the two sets are not comparable: a radius measured from the origin reached that far *past*

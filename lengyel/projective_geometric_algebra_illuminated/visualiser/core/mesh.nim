@@ -167,11 +167,13 @@ const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
 
 const
   SIZE_CELL_GRID* = 10.0
-    ## Set the ground grid's own cell size, in world units. **One size, at every orbit
-    ## distance**: the grid used to step its cell size with its own reach, doubling from
-    ## a two-unit cell, which meant the ground silently re-scaled under a reader as they
+    ## Set the ground grid's own cell size, in world units, at every reach a reader works
+    ## at. **One size**: the grid used to step its cell with its own reach, doubling from a
+    ## two-unit cell, which meant the ground silently re-scaled under a reader as they
     ## dollied and no distance read off it was comparable with the last one. A fixed cell
     ## is a ruler; a stepping one is not.
+    ##   `sizeCellGridFor` steps it by decades past 1,200 units of ground reach, where the
+    ##   alternative to stepping is no ground at all rather than a finer grid; see there.
     ##   Ten rather than a hundred, **measured by rendering both**: the reach follows orbit
     ##   distance (`fogFurnitureFor`), and at the opening placement -- distance 19, a reach
     ##   near 72 units -- a hundred-unit cell put at most one line in view and usually
@@ -181,18 +183,15 @@ const
     ## own reach, in each direction. The reach follows the camera's own far clip plane,
     ## which follows orbit distance, so a reach left unbounded would multiply the lines
     ## drawn without limit as the camera pulls back, straight past the vertex budget.
-    ## `fogFurnitureFor` cuts the *reach* against this rather than the geometry, so where
-    ## the bound bites the grid still fades to nothing at its own drawn edge instead of
-    ## ending in a hard ring.
-    ##   **What the number has to clear** is the orbit distance a reader may work at: the
-    ##   content sits at the target, one orbit distance from the eye, so ground stays under
-    ##   it exactly while the capped reach exceeds that distance. At 120 cells of ten units
-    ##   the cap is 1,200, and an orbit distance is no longer bounded at all
-    ##   (`camera.DISTANCE_LIMIT_NEAR`), so past 1,200 the ground stops reaching what the
-    ##   camera is looking at -- fog behaving as fog, and the price of a fixed cell.
+    ##   **`sizeCellGridFor` spends this on the cell, not on the reach**, and that is the
+    ##   second thing this number has bounded. Cutting the *reach* against it meant a
+    ##   camera further out than 1,200 units had the ground stop reaching what it was
+    ##   looking at, and past twice that saw no ground at all -- a black void with no
+    ##   reference of any kind, which is what a reader zooming out actually met. Stepping
+    ##   the cell instead keeps the same count of lines, drawn across the reach the camera
+    ##   has rather than across the first 1,200 units of it.
     ##   It was 24 while the cell was a hundred; dropping the cell to ten without raising
-    ##   this left the cap at 240,
-    ##   and at an orbit distance of 300 the grid became a patch floating in the near field
+    ##   this left the grid a patch floating in the near field at an orbit distance of 300,
     ##   with no ground at all under the objects being looked at. Rendered, not reasoned.
     ##   Costs about 23,000 ribbon vertices where it binds, against `VERTICES_MAX`; world
     ##   furniture keeps a mesh set of its own, so that is the whole of what it competes with.
@@ -414,18 +413,44 @@ func fogFurnitureFor*(extent: float): tuple[radius_full, radius_gone: float] =
   ## its orbit distance ever was. Measured from the eye rather than from the camera's own
   ## target so that it behaves as fog does -- what is near the reader is solid and what is
   ## far is not, whichever way they happen to be looking.
-  ##   Both radii still follow the camera's own reach, so pulling back reveals more
-  ## ground; only their *centre* moved. `CELLS_GRID_HALF_MAX` caps the outer one, since a
-  ## reach that grows without limit lays lines without limit; capping the reach rather
-  ## than the geometry keeps the outer edge a fade rather than a cut.
-  let radius_gone = min(
-    FRACTION_GRID_FADE_END*extent, float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
-  )
-  # Held as a ratio of the outer radius rather than as its own fraction of `extent`, so
-  #   the cap above shortens the solid core with the fog instead of leaving a grid that is
-  #   at full strength right up to the edge it is cut at.
+  ##   Both radii follow the camera's own reach, so pulling back reveals more ground; only
+  ## their *centre* moved. **Uncapped**, and that is the second thing this proc has been:
+  ## the outer radius used to stop at `CELLS_GRID_HALF_MAX` cells, which bounded the lines
+  ## drawn but meant a camera further out than that -- 1,200 units, easily reached now that
+  ## orbit distance is unbounded -- had the ground vanish from under it and was left in a
+  ## black void with no reference of any kind, axes included. The line count is bounded by
+  ## `sizeCellGridFor` stepping the *cell* instead, which spends the same budget on the
+  ## reach a reader is actually looking across.
+  let radius_gone = FRACTION_GRID_FADE_END*extent
+  # Held as a ratio of the outer radius rather than as its own fraction of `extent`, so the
+  #   two always keep the same proportion whatever the reach comes out at.
   (radius_full: radius_gone*(FRACTION_GRID_FADE_START/FRACTION_GRID_FADE_END),
    radius_gone: radius_gone)
+
+
+func sizeCellGridFor*(radius_ground: float): float =
+  ## Choose the ground grid's own cell size for a ground disc of `radius_ground`, in world
+  ## units: `SIZE_CELL_GRID` wherever that lays no more than `CELLS_GRID_HALF_MAX` cells
+  ## across the disc's radius, and ten times it for every further factor of ten needed.
+  ##   **A cell that steps, which this file argued against, and the argument still holds
+  ## where it was made.** A grid whose cell walks continuously with the reach is not a
+  ## ruler: nothing read off it is comparable with what was read a moment ago, and that is
+  ## why `SIZE_CELL_GRID` is one fixed number. What is answered here is the case that rule
+  ## left with nothing at all -- the reach past which a fixed cell would lay tens of
+  ## thousands of lines, where the choice is not "fixed cell or stepped" but "stepped cell
+  ## or no ground".
+  ##   **Decades, so the coarser grid's lines are the finer grid's lines.** Every line of a
+  ## hundred-unit lattice is a line of the ten-unit one, so a step coarsens what is drawn
+  ## without moving anything: a reader who was measuring against a line still has that
+  ## line. A 1-2-5 sequence, which a chart axis would use, does not nest -- stepping 10 to
+  ## 20 replaces every odd line with nothing -- and buys only a gentler jump for it.
+  ##   The first step is at 1,200 units of ground reach, about orbit distance 316: far past
+  ## anything a reader is reading distances off, and by then a ten-unit cell is already the
+  ## aliasing haze `FRACTION_GRID_FADE_END` exists to cut short.
+  ##   `SIZE_CELL_GRID` itself for a disc of no radius, which lays no lines to size.
+  let radius_cells = float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
+  if radius_ground <= radius_cells: return SIZE_CELL_GRID
+  SIZE_CELL_GRID*pow(10.0, ceil(log10(radius_ground/radius_cells)))
 
 
 func extentFurnitureFor*(distance_far: float): float =
@@ -926,12 +951,15 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
 
 proc addGridFamily(
   meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; radius_ground: float;
+  fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
   along, across: Direction
 ) =
   ## Append one family of ground grid lines: every lattice line running along `along`,
-  ## stepped by `SIZE_CELL_GRID` along `across`, that falls within `radius_ground` of the
+  ## stepped by `size_cell` along `across`, that falls within `radius_ground` of the
   ## point on the ground directly below the eye.
+  ##   The cell is passed in rather than read from `SIZE_CELL_GRID` so that both families
+  ## are laid on the one `sizeCellGridFor` answered for this frame's disc; two calls could
+  ## not disagree, but a reader of one family should not have to prove that.
   ##   The two families are laid separately, unlike the single origin-centred loop this
   ## replaced, because each is now centred on a different one of the eye's own ground
   ## coordinates and no longer shares the other's offsets.
@@ -942,15 +970,15 @@ proc addGridFamily(
   let
     centre_across = dot(scale.eye - ORIGIN_WORLD, across)
     centre_along = dot(scale.eye - ORIGIN_WORLD, along)
-    first = int(ceil((centre_across - radius_ground)/SIZE_CELL_GRID))
-    last = int(floor((centre_across + radius_ground)/SIZE_CELL_GRID))
+    first = int(ceil((centre_across - radius_ground)/size_cell))
+    last = int(floor((centre_across + radius_ground)/size_cell))
   for i in first .. last:
     # Skips the lattice line through the world origin: it coincides exactly with a world
     #   axis, and would either fight it for the same depth or hide its colour under plain
     #   grid grey, depending on which happened to draw last.
     if i == 0: continue
     let
-      offset = float(i)*SIZE_CELL_GRID
+      offset = float(i)*size_cell
       reach_squared = radius_ground*radius_ground -
         (offset - centre_across)*(offset - centre_across)
     if reach_squared <= 0.0: continue
@@ -974,7 +1002,7 @@ proc addGridFamily(
 
 proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
   ## Append reference grid on the ground, so distance and direction stay judgeable, at
-  ## `SIZE_CELL_GRID` cells laid around wherever the camera is standing.
+  ## `sizeCellGridFor` cells laid around wherever the camera is standing.
   ##   **Fog, not a halo.** Every line is faded by its own endpoints' distance from the
   ## eye and cut off entirely at `fogFurnitureFor`'s outer radius -- so the ground is
   ## solid underfoot and gone in the distance, wherever the reader has flown to. Cutting
@@ -995,13 +1023,15 @@ proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     height = abs(scale.eye.z)
     radius_squared = fog.radius_gone*fog.radius_gone - height*height
   if radius_squared <= 0.0: return
-  let radius_ground = sqrt(radius_squared)
+  let
+    radius_ground = sqrt(radius_squared)
+    size_cell = sizeCellGridFor(radius_ground)
   meshes.addGridFamily(
-    scale, tint, fog, radius_ground,
+    scale, tint, fog, radius_ground, size_cell,
     along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
   )
   meshes.addGridFamily(
-    scale, tint, fog, radius_ground,
+    scale, tint, fog, radius_ground, size_cell,
     along = Direction(x: 1, y: 0, z: 0), across = Direction(x: 0, y: 1, z: 0),
   )
 

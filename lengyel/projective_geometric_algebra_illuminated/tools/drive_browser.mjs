@@ -670,6 +670,49 @@ report(
 //   page's own frame pacing decides how much of that half second the clock actually saw.
 reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 5, 60, 'px');
 
+/* ---- The ground is still under the camera however far it has pulled back ---- */
+
+// The fault: the fog's reach was capped at 1,200 units, so a camera dollied past that had
+// the ground stop reaching what it was looking at, and past twice that met a black void
+// with no reference of any kind -- grid, axes and all. Driven through the page's own frame
+// build, so what is counted is what would actually be uploaded and drawn.
+await page.evaluate(() => { nimSelectClear(); });
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+// Grid only, with the axes switched off: three axis lines are drawn by a rule of their
+//   own and would keep the count above zero in exactly the case being guarded against.
+const groundAt = (distance) => page.evaluate((given) => {
+  nimSetCameraDistance(given);
+  const canvas = document.getElementById('gl');
+  const data = nimBuildFrame(
+    canvas.width / canvas.height, performance.now() / 1000, canvas.height, false, true,
+  );
+  // The distance the frame was actually built at, not the one asked for: the camera can
+  //   be mid-tween toward a framing of the scene, and a count reported against a distance
+  //   it was not standing at says nothing.
+  return { count: data.furn_ribbon_verts.length, distance: nimCameraDistance() };
+}, distance);
+const ground = {};
+for (const distance of [19, 300, 1000, 5000, 40000, 1000000]) {
+  ground[distance] = await groundAt(distance);
+}
+report(
+  'there is ground under the camera at every distance it can reach',
+  Object.values(ground).every((at) => at.count > 0),
+  Object.values(ground)
+    .map((at) => `${at.distance.toFixed(0)}: ${at.count}`).join(', '),
+);
+// The cell steps by decades to keep that true, so what is drawn stays inside the budget
+//   the fixed cell was bounded by rather than growing with the reach.
+report(
+  'and no more of it is drawn far out than close in',
+  Math.max(...Object.values(ground).map((at) => at.count)) <= 1.1 * ground[300].count,
+  `most ${Math.max(...Object.values(ground).map((at) => at.count))}, ` +
+    `at 300 ${ground[300].count}`,
+);
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+
 /* ---- Nothing may have thrown along the way ---- */
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
