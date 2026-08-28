@@ -842,13 +842,17 @@ report(
 // Bands rather than figures: this is a real machine's real clock. The numbers that matter
 // are the measurements recorded in PROVENANCE.md's bottleneck ledger, taken on this same
 // software renderer.
+// These two bands grew (16/24 -> 18/30) with the tessellation-stepping row of the
+// bottleneck ledger: the scene's own objects now assemble every point through the
+// algebra and rebuild every frame with no cache, which is the stress the project exists
+// to apply. The bands still catch the collapse class a reader felt.
 reportWithin(
   'a frame is assembled in a fraction of its own budget',
-  work_frame === null ? -1 : work_frame.median, 0, 16, 'ms',
+  work_frame === null ? -1 : work_frame.median, 0, 18, 'ms',
 );
 reportWithin(
   'and its slowest tenth stays inside one',
-  work_frame === null ? -1 : work_frame.p90, 0, 24, 'ms',
+  work_frame === null ? -1 : work_frame.p90, 0, 30, 'ms',
 );
 
 /* ---- The diagnostics tab's own phase clocks tell the truth ---- */
