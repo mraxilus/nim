@@ -3338,7 +3338,7 @@ suite "Interaction":
     check interaction.destinationOf.isNone
     let outcome = interaction.endDrag(scene)
     check outcome.index_created.isNone
-    check "empty space" in outcome.message
+    check outcome.message.len == 0
 
     # A horizon *line* is an ordinary drag target both ways: it is a curve, not a backdrop.
     interaction.is_hover_backdrop = false
@@ -3594,8 +3594,20 @@ suite "Interaction":
     let outcome = interaction.endDrag(scene)
     check scene.len == 1
     check not interaction.is_dragging
-    check "empty space" in outcome.message
     check outcome.index_created.isNone
+    # **And says nothing about it.** A drag let go of over empty space is the commonest
+    #   thing a reader does with a gesture they thought better of, and it is plain on the
+    #   screen that nothing arrived; a status line for it is a message that fires all day.
+    #   The refusals that *land on something* still speak, since those a reader cannot read
+    #   off the screen -- see the case below.
+    check outcome.message.len == 0
+
+    # A release that lands on an object and still builds nothing does earn its message.
+    interaction.index_hover = some(0)
+    discard interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    let refused = interaction.endDrag(scene)
+    check refused.index_created.isNone
+    check refused.message.len > 0
 
 
   test "releasing on its own source adds nothing":

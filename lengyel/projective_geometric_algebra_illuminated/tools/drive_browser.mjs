@@ -326,6 +326,34 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_drag}`,
 );
 
+// A drag let go of over empty space built nothing and says nothing: the reader can see the
+// nothing, and a status line for it fires on every gesture anybody thought better of.
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+await page.evaluate(() => {
+  nimSelectClear();
+  // Cleared, not just hidden: a check that only asked whether the bar is up would pass on
+  //   a message that was never dismissed from an earlier gesture.
+  const bar = document.getElementById('toast');
+  bar.classList.remove('show');
+  bar.textContent = '';
+});
+const from_empty = await pixelOf(slots_scene[1]);
+await page.mouse.move(from_empty[0], from_empty[1]);
+await page.mouse.down();
+await page.mouse.move(SIZE_VIEW.width - 30, SIZE_VIEW.height - 30, { steps: 8 });
+await page.mouse.up();
+await page.waitForTimeout(300);
+const said_on_empty = await page.evaluate(() => ({
+  shown: document.getElementById('toast').classList.contains('show'),
+  text: document.getElementById('toast').textContent,
+}));
+report(
+  'a drag released over empty space says nothing at all',
+  !said_on_empty.shown && said_on_empty.text === '',
+  `shown ${said_on_empty.shown}, text ${JSON.stringify(said_on_empty.text)}`,
+);
+
 /* ---- Regressions this layer inherited ---- */
 
 // **The apply picker names positions, the scene names slots.** A ghost was once previewed

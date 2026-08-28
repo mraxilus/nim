@@ -224,6 +224,10 @@ function adoptConstructionSelection() {
 const element_toast = document.getElementById('toast');
 let timer_toast = null;
 function toast(message) {
+  // An empty message is one the caller decided not to say -- a drag released over empty
+  // space, say -- and showing an empty bar for it is worse than saying nothing. The desktop
+  // has always guarded its own status line this way; this is that guard, on this side.
+  if (!message) return;
   element_toast.textContent = message;
   element_toast.classList.remove('actionable');
   element_toast.classList.add('show');

@@ -1153,8 +1153,10 @@ proc commitChoice*(
   ##   ready for, and it is why `index_created` is an `Option`. The menu greys the wedges
   ##   this would refuse, so the menu path reaches that refusal only by insisting.
   let over = destinationOf(interaction)
-  if over.isNone:
-    return DragOutcome(message: "Released over empty space; nothing done.")
+  # Silent for the same reason `endDrag` is: a choice committed over nothing built nothing,
+  #   and the reader can see that. Reachable here only through a menu whose target went away
+  #   under it.
+  if over.isNone: return DragOutcome()
   if over.get == interaction.index_source:
     return DragOutcome(message: "Released on its own source; nothing done.")
   if not (scene.isAlive(interaction.index_source) and scene.isAlive(over.get)):
@@ -1246,7 +1248,13 @@ proc endDrag*(
     return commitChoice(interaction, scene, choice.get, now)
 
   let over = destinationOf(interaction)
-  if over.isNone: return DragOutcome(message: "Released over empty space; nothing done.")
+  # **Nothing to say about a release over nothing.** The reader dragged a line into empty
+  #   space and let go; they can see that no object arrived, and a status line telling them
+  #   so is a message that fires on every abandoned gesture -- the commonest thing a reader
+  #   does with a drag they thought better of. The refusals below do earn their messages:
+  #   each one is a release that landed *on something* and still built nothing, which is
+  #   the case a reader cannot read off the screen.
+  if over.isNone: return DragOutcome()
   if over.get == interaction.index_source:
     return DragOutcome(message: "Released on its own source; nothing done.")
   if not (scene.isAlive(interaction.index_source) and scene.isAlive(over.get)):
