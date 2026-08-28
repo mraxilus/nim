@@ -290,6 +290,28 @@ suite "Objects":
 
 
 suite "Camera":
+  test "the eye assembled through the algebra is the eye the trig names":
+    # `camera.eye` places the point as a multivector sum; the spherical closed form lives
+    #   HERE. The angles are parametrization -- what is checked is the placement.
+    var seed = 27.0
+    proc pseudo(): float =
+      seed = (seed*97.31 + 33.77) mod 41.0
+      seed - 20.5
+    for trial in 0 ..< 100:
+      let
+        target = Position(x: pseudo(), y: pseudo(), z: pseudo())
+        distance = 1.0 + abs(pseudo())
+        azimuth = pseudo()/7.0
+        elevation = pseudo()/20.0
+        camera = initCamera(target, distance, azimuth, elevation)
+        radius = distance*cos(camera.elevation)
+        classical = target + Direction(
+          x: radius*cos(camera.azimuth), y: radius*sin(camera.azimuth),
+          z: distance*sin(camera.elevation),
+        )
+      check camera.eye =~ classical
+
+
   test "frame is orthonormal and perpendicular to sight axis":
     for i in 0 ..< SAMPLES:
       let camera = initCamera(

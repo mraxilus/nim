@@ -232,12 +232,21 @@ func distanceFar*(camera: Camera): float = camera.distance*FACTOR_CLIP_FAR
 
 func eye*(camera: Camera): Position =
   ## Place eye on sphere about target, from azimuth and elevation.
-  let radius = camera.distance * cos(camera.elevation)
-  camera.target + Direction(
-    x: radius * cos(camera.azimuth),
-    y: radius * sin(camera.azimuth),
-    z: camera.distance * sin(camera.elevation),
-  )
+  ##   The angles are parametrization -- trig scalars are ground field -- and the *point*
+  ##   they place is assembled through the algebra: the target plus one spherical offset
+  ##   direction, as a multivector sum read back at the end. Held equal to the spherical
+  ##   closed form by its own suite case.
+  let
+    radius = camera.distance * cos(camera.elevation)
+    offset = toMultivector(Direction(
+      x: radius * cos(camera.azimuth),
+      y: radius * sin(camera.azimuth),
+      z: camera.distance * sin(camera.elevation),
+    ))
+    placed = position(add(toMultivector(camera.target), offset))
+  # A unit-weight point plus a weightless direction is a unit-weight point; the read
+  #   cannot refuse, and the fallback target states that rather than hiding an Option.
+  if placed.isSome: placed.get else: camera.target
 
 
 func azimuthElevationFor*(heading: Direction): (float, float) =
@@ -281,22 +290,33 @@ proc dollyToward*(camera: var Camera; factor: float; anchor: Position) =
   ## it was allowed -- otherwise the two disagree and the placement no longer describes
   ## where the eye is.
   let
-    eye = camera.eye
+    eye_point = toMultivector(camera.eye)
+    target_point = toMultivector(camera.target)
+    anchor_point = toMultivector(anchor)
     distance_settled = distanceHeld(camera.distance*factor)
     scale = distance_settled/camera.distance
-    # Unit direction from target to eye, which the placement's own angles fix and this
-    #   leaves alone; the new target is the new eye walked back along it.
-    toward_eye = (1.0/camera.distance)*(eye - camera.target)
-  camera.target = (anchor + scale*(eye - anchor)) - distance_settled*toward_eye
+    # The new eye is the anchor plus the old offset scaled; the new target is that eye
+    #   walked back along the target-to-eye direction the placement's own angles fix --
+    #   one multivector expression, read back at the end. Every difference of unit-weight
+    #   points is a direction, so the sum stays a unit-weight point throughout.
+    settled = position(subtract(
+      add(anchor_point, wedge(scale, subtract(eye_point, anchor_point))),
+      wedge(distance_settled/camera.distance, subtract(eye_point, target_point)),
+    ))
+  if settled.isSome: camera.target = settled.get
   camera.distance = distance_settled
 
 
 proc pan*(camera: var Camera; across, up: float) =
   ## Slide target within plane facing eye, so whole view shifts with it.
-  let axes = camera.frame(camera.eye)
-  camera.target = camera.target +
-    (across * camera.distance)*axes.axis_right +
-    (up * camera.distance)*axes.axis_up
+  ##   The slide is a multivector sum along the frame's own two axes.
+  let
+    axes = camera.frame(camera.eye)
+    slid = position(add(toMultivector(camera.target), add(
+      wedge(across * camera.distance, toMultivector(axes.axis_right)),
+      wedge(up * camera.distance, toMultivector(axes.axis_up)),
+    )))
+  if slid.isSome: camera.target = slid.get
 
 
 func headingGround*(camera: Camera): Direction =
@@ -325,11 +345,16 @@ proc slideGround*(camera: var Camera; ahead, across, rise: float) =
   ##   All three are fractions of orbit distance, exactly as `pan`'s arguments are, so a
   ##   reader zoomed in on one object travels it at the same apparent speed as one looking
   ##   at the whole scene.
-  let axes = camera.frame(camera.eye)
-  camera.target = camera.target +
-    (ahead * camera.distance)*camera.headingGround +
-    (across * camera.distance)*axes.axis_right +
-    (rise * camera.distance)*UP_WORLD
+  let
+    axes = camera.frame(camera.eye)
+    slid = position(add(toMultivector(camera.target), add(
+      add(
+        wedge(ahead * camera.distance, toMultivector(camera.headingGround)),
+        wedge(across * camera.distance, toMultivector(axes.axis_right)),
+      ),
+      wedge(rise * camera.distance, toMultivector(UP_WORLD)),
+    )))
+  if slid.isSome: camera.target = slid.get
 
 
 
@@ -498,17 +523,24 @@ func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
   ##   the order objects arrive in and can be a little wider than the tightest sphere over
   ##   the same set; it is always a true bound, which is all the framing needs.
   let
-    offset = place - bound.centre
-    away = norm(offset)
+    centre_point = toMultivector(bound.centre)
+    place_point = toMultivector(place)
+    away = distanceBetween(centre_point, place_point)
   if away + reach <= bound.radius: return bound
   # The new ball swallowing the old one is its own case: the arithmetic below would slide
   #   the centre past `place`, and there is no direction to slide along at all where the
   #   two are concentric.
   if away + bound.radius <= reach: return SphereWorld(centre: place, radius: reach)
-  let radius = 0.5*(away + bound.radius + reach)
-  # Slide the centre toward the new ball by exactly what the far side gives up, so the
-  #   old sphere stays enclosed rather than being trimmed on the way.
-  SphereWorld(centre: bound.centre + ((radius - bound.radius)/away)*offset, radius: radius)
+  let
+    radius = 0.5*(away + bound.radius + reach)
+    # Slide the centre toward the new ball by exactly what the far side gives up, so the
+    #   old sphere stays enclosed rather than being trimmed on the way.
+    slid = position(add(centre_point, wedge(
+      (radius - bound.radius)/away, subtract(place_point, centre_point)
+    )))
+  SphereWorld(
+    centre: (if slid.isSome: slid.get else: place), radius: radius
+  )
 
 
 func aimIncluding*(
@@ -550,7 +582,11 @@ func aimIncluding*(
     if heading.isNone: return aim
     let merged =
       if grown.heading.isNone: heading
-      else: normalize(grown.heading.get + heading.get)
+      # Two headings merged as the sum of their horizon points, read back through the
+      #   sanctioned horizon reader -- which also refuses the cancelling pair for us.
+      else: directionHorizon(add(
+        toMultivector(grown.heading.get), toMultivector(heading.get)
+      ))
     # Two headings that cancel outright leave the first standing: they face opposite ways
     #   and neither turn shows both, so turning to the one already asked for beats turning
     #   to whatever a zero-length sum happens to normalise into.
@@ -689,8 +725,13 @@ func toward*(from_placement, to_placement: CameraPlacement; progress: float): Ca
   while delta > PI: delta -= 2.0*PI
   while delta < -PI: delta += 2.0*PI
   let (near, far) = (max(from_placement.distance, 1.0e-6), max(to_placement.distance, 1.0e-6))
+  let stepped = position(add(toMultivector(from_placement.target), wedge(
+    progress, subtract(
+      toMultivector(to_placement.target), toMultivector(from_placement.target)
+    )
+  )))
   CameraPlacement(
-    target: from_placement.target + progress*(to_placement.target - from_placement.target),
+    target: (if stepped.isSome: stepped.get else: to_placement.target),
     distance: near*pow(far/near, progress),
     azimuth: from_placement.azimuth + progress*delta,
     elevation: from_placement.elevation +

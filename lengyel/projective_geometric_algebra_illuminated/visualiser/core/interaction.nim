@@ -804,24 +804,31 @@ proc panAcross*(
   ## ending on sky above the horizon -- which is the gesture as it stood and the only thing
   ## left to do there.
   let
-    eye = camera.eye
+    eye_point = toMultivector(camera.eye)
+    target_point = toMultivector(camera.target)
+    level = levelPlaneThrough(target_point)
     reach_max = FACTOR_PAN_REACH_MAX*camera.distance
-  func held(hit: Option[Position]): Option[Position] =
-    ## Draw a hold point no further out than the bound, along its own ray.
+  func heldFoot(hit: Option[Position]): Option[Multivector] =
+    ## Draw a hold point no further out than the bound along its own ray, then take its
+    ## foot on the level -- the algebra's own statement of "the horizontal part": both
+    ## feet share the level by construction, so the step between them cannot carry any
+    ## of the clamp's vertical artefact.
     if hit.isNone: return
-    let reach = norm(hit.get - eye)
-    if reach <= reach_max or reach <= 0.0: return hit
-    some(eye + (reach_max/reach)*(hit.get - eye))
+    var held = toMultivector(hit.get)
+    let reach = distanceBetween(held, eye_point)
+    if reach > reach_max and reach > 0.0:
+      held = add(eye_point, wedge(reach_max/reach, subtract(held, eye_point)))
+    some(unitize(projectOrthogonal(held, level)))
   let
-    at_before = held(positionUnderCursor(camera, width, height, before))
-    at_after = held(positionUnderCursor(camera, width, height, after))
+    at_before = heldFoot(positionUnderCursor(camera, width, height, before))
+    at_after = heldFoot(positionUnderCursor(camera, width, height, after))
   if at_before.isSome and at_after.isSome:
-    # The horizontal part of the step only. Unclamped the two hold points share a level and
-    #   the step is horizontal already, so this changes nothing there; where the bound bit,
-    #   the vertical part is the bound's own artefact and not something a pan should carry.
-    let step = at_before.get - at_after.get
-    camera.target = camera.target + Direction(x: step.x, y: step.y, z: 0.0)
-    return
+    let carried = position(add(
+      target_point, subtract(at_before.get, at_after.get)
+    ))
+    if carried.isSome:
+      camera.target = carried.get
+      return
   camera.pan(
     -FRACTION_PAN_PIXEL*(after.x - before.x), FRACTION_PAN_PIXEL*(after.y - before.y)
   )
