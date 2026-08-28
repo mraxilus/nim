@@ -1156,6 +1156,47 @@ report(
   `plane slot ${slot_plane_made}, picked at ${pixels_on_plane} sampled pixels`,
 );
 
+// **And from underneath it, not only from above.** A plane has two faces and neither is
+// its front: the hit test asks where the sight ray crosses, and where is not a side. The
+// shipped fault read the crossing's *orientation* as its depth, so a plane met from behind
+// its own normal reported itself behind the eye and went unpickable over its whole disc --
+// reported as "I can only select a plane from one side". The ground plane is the honest
+// subject for the pin: it lies flat, so above and below are the same view mirrored, and a
+// reading that differs between them is the sign leaking back in rather than geometry.
+const slot_ground = await page.evaluate(() => nimSceneSlots()
+  .find((slot) => nimItemLabel(slot) === 'ground'));
+const seenFromElevation = (elevation) => page.evaluate(([slot, rise]) => {
+  nimSetCameraElevation(rise);
+  let found = 0;
+  for (let y = 40; y < window.innerHeight - 40; y += 40) {
+    for (let x = 40; x < window.innerWidth - 40; x += 40) {
+      nimUpdateCursor(x, y);
+      nimUpdateHover(window.innerWidth, window.innerHeight);
+      if (nimHoverSlot() === slot) found += 1;
+    }
+  }
+  return found;
+}, [slot_ground, elevation]);
+// Everything else hidden, so a point or a line standing in front cannot take a pixel the
+//   plane would otherwise have answered for and make the two sides differ for that reason.
+const hidden_for_sides = await page.evaluate((keep) => {
+  const hidden = nimSceneSlots().filter((slot) => slot !== keep && nimItemVisible(slot));
+  for (const slot of hidden) nimSetVisible(slot, false);
+  return hidden;
+}, slot_ground);
+const seen_above = await seenFromElevation(0.9);
+const seen_below = await seenFromElevation(-0.9);
+const seen_edge_on = await seenFromElevation(0.0);
+await page.evaluate((slots) => { for (const slot of slots) nimSetVisible(slot, true); },
+  hidden_for_sides);
+await page.keyboard.press('Home');
+report(
+  'and from underneath it, as readily as from above',
+  seen_above > 20 && seen_below > 20 &&
+    Math.min(seen_above, seen_below) > 0.5 * Math.max(seen_above, seen_below),
+  `${seen_above} pixels from above, ${seen_below} from below, ${seen_edge_on} edge-on`,
+);
+
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
 
 await browser.close();
