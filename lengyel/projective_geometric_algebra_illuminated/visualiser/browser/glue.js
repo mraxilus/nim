@@ -1597,8 +1597,63 @@ function refreshDeliveryReport() {
     ? 'nothing saved yet' : report_delivery.join('\n');
 }
 
+// **How often a frame runs long, over a window long enough to answer that.** The
+//   sparkline holds four seconds and shows *when*; a reader chasing a stall that happens
+//   once a minute needs *how often*, which is a distribution rather than a trace. Kept as
+//   a rolling window of the last `FRAMES_EXCEEDANCE` frames, which at 60 fps is a minute
+//   or so, and summarised as the share of them at or over each duration.
+//   The window is a ring of samples *and* a histogram of the same samples, maintained
+//   together: a frame entering increments its bucket, the frame it evicts decrements the
+//   one it was in. That keeps the per-frame cost a couple of array writes -- this runs on
+//   every frame, including the ones being measured -- and leaves the curve a single
+//   suffix scan over the buckets, done only when the panel is actually open.
+const FRAMES_EXCEEDANCE = 4096;
+const MILLISECONDS_BUCKET = 0.5; // Fine enough to separate a 16.7 ms frame from a 17.2.
+const BUCKETS_EXCEEDANCE = 256; // Up to 128 ms; everything slower lands in the last one.
+const history_exceedance = new Float32Array(FRAMES_EXCEEDANCE);
+const buckets_exceedance = new Int32Array(BUCKETS_EXCEEDANCE);
+let index_exceedance = 0;
+let count_exceedance = 0; // Rises to the window's own size, then stays there.
+const exceedance = document.getElementById('exceedance');
+const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
+const diagnostic_exceedance = document.getElementById('diag-exceedance');
+
+function bucketOf(milliseconds) {
+  const index = Math.floor(milliseconds / MILLISECONDS_BUCKET);
+  // Anything past the last bucket lands *in* it rather than being dropped: a 300 ms stall
+  //   is the most important sample the window ever holds, and a curve that discarded it
+  //   would read as calmer than the session actually was.
+  return Math.max(0, Math.min(BUCKETS_EXCEEDANCE - 1, index));
+}
+
+function recordExceedance(delta_milliseconds) {
+  if (count_exceedance === FRAMES_EXCEEDANCE) {
+    buckets_exceedance[bucketOf(history_exceedance[index_exceedance])] -= 1;
+  } else {
+    count_exceedance += 1;
+  }
+  history_exceedance[index_exceedance] = delta_milliseconds;
+  buckets_exceedance[bucketOf(delta_milliseconds)] += 1;
+  index_exceedance = (index_exceedance + 1) % FRAMES_EXCEEDANCE;
+}
+
+// The complementary distribution, as a share of the window per bucket, scanned from the
+//   slow end so each entry is "this many frames took at least this long". Written into a
+//   buffer the caller owns so the scan allocates nothing on a path that runs ten times a
+//   second; returns how much of it is meaningful.
+const shares_exceedance = new Float64Array(BUCKETS_EXCEEDANCE);
+function scanExceedance() {
+  let running = 0;
+  for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
+    running += buckets_exceedance[i];
+    shares_exceedance[i] = count_exceedance === 0 ? 0 : running / count_exceedance;
+  }
+  return count_exceedance;
+}
+
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
+  recordExceedance(delta_milliseconds);
   index_history_frame = (index_history_frame + 1) % FRAMES_HISTORY;
   // The slot the phases are about to write into is cleared up front, so a phase that
   // does not run this frame (the UI block, a held furniture build) reads as absent
@@ -1606,7 +1661,77 @@ function recordFrameTime(delta_milliseconds) {
   for (const [name] of PHASES_DIAGNOSTIC) history_phase[name][index_history_frame] = -1;
 }
 
+// Log probability down, milliseconds across: a curve on a linear probability axis is a
+//   vertical drop and a flat line, which says nothing about the tail -- and the tail is
+//   the whole question. Decades from every frame down to one in a thousand.
+const DECADES_EXCEEDANCE = 3;
+function drawExceedance() {
+  if (context_exceedance === null) return;
+  const w = exceedance.clientWidth || 300, h = exceedance.clientHeight || 74;
+  if (exceedance.width !== w) exceedance.width = w;
+  if (exceedance.height !== h) exceedance.height = h;
+  context_exceedance.clearRect(0, 0, w, h);
+  const counted = scanExceedance();
+  if (counted === 0) return;
+  // Across: out to the slowest bucket the window holds, with a floor so an idle session
+  //   at a steady 16 ms still reads against a sensible scale rather than filling the plot.
+  let last_used = 0;
+  for (let i = BUCKETS_EXCEEDANCE - 1; i > 0; i -= 1) {
+    if (buckets_exceedance[i] > 0) { last_used = i; break; }
+  }
+  const milliseconds_full = Math.max(33.4, (last_used + 1) * MILLISECONDS_BUCKET);
+  const share_floor = Math.pow(10, -DECADES_EXCEEDANCE);
+  const yOf = (share) => {
+    if (share <= share_floor) return h;
+    return h - (1 + Math.log10(share) / DECADES_EXCEEDANCE) * h;
+  };
+  // A decade line per order of magnitude, so the reader can see where one frame in ten,
+  //   one in a hundred and one in a thousand fall without a labelled axis eating the plot.
+  context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
+  context_exceedance.lineWidth = 1;
+  for (let decade = 1; decade <= DECADES_EXCEEDANCE; decade += 1) {
+    const y = Math.round(yOf(Math.pow(10, -decade))) + 0.5;
+    context_exceedance.beginPath();
+    context_exceedance.moveTo(0, y);
+    context_exceedance.lineTo(w, y);
+    context_exceedance.stroke();
+  }
+  // And the frame budget itself, which is the line a reader is actually asking about.
+  const x_budget = Math.round((16.7 / milliseconds_full) * w) + 0.5;
+  context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.30)';
+  context_exceedance.setLineDash([2, 3]);
+  context_exceedance.beginPath();
+  context_exceedance.moveTo(x_budget, 0);
+  context_exceedance.lineTo(x_budget, h);
+  context_exceedance.stroke();
+  context_exceedance.setLineDash([]);
+
+  context_exceedance.strokeStyle = '#00a7a5';
+  context_exceedance.lineWidth = 1.5;
+  context_exceedance.beginPath();
+  let is_started = false;
+  for (let i = 0; i <= last_used; i += 1) {
+    const milliseconds = i * MILLISECONDS_BUCKET;
+    if (milliseconds > milliseconds_full) break;
+    const x = (milliseconds / milliseconds_full) * w;
+    const y = yOf(shares_exceedance[i]);
+    if (!is_started) { context_exceedance.moveTo(x, y); is_started = true; }
+    else context_exceedance.lineTo(x, y);
+  }
+  context_exceedance.stroke();
+
+  // The one number worth stating outright beside the curve: what the slowest frame in a
+  //   hundred took. A reader tuning for smoothness is tuning that, not the median.
+  let milliseconds_p99 = 0;
+  for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
+    if (shares_exceedance[i] >= 0.01) { milliseconds_p99 = i * MILLISECONDS_BUCKET; break; }
+  }
+  diagnostic_exceedance.textContent =
+    '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames';
+}
+
 function refreshDiagnostics() {
+  drawExceedance();
   const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
   if (sparkline.width !== w) sparkline.width = w;
   if (sparkline.height !== h) sparkline.height = h;

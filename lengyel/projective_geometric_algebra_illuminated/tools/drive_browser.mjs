@@ -947,6 +947,51 @@ report(
   Object.entries(row_texts).map(([n, t]) => `${n}: ${t}`).join(', '),
 );
 
+// **The frame-time distribution, over a window long enough to hold a rare stall.** The
+// sparkline holds four seconds and says *when*; this says *how often*, which is the
+// question a reader chasing an occasional stutter is actually asking. Held as the three
+// properties that make a curve a distribution rather than a drawing: every frame is at or
+// over zero, the share never rises as the duration does, and the buckets account for
+// exactly the frames in the window -- plus the stated 1-in-100 agreeing with the same
+// percentile taken directly off the ring, which is the arithmetic the buckets stand in for.
+const curve = await page.evaluate(() => {
+  const counted = scanExceedance();
+  let is_monotone = true;
+  for (let i = 1; i < BUCKETS_EXCEEDANCE; i += 1) {
+    if (shares_exceedance[i] > shares_exceedance[i - 1] + 1e-12) is_monotone = false;
+  }
+  let held = 0;
+  for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) held += buckets_exceedance[i];
+  // The same percentile, taken the slow honest way off the samples themselves.
+  const sorted = Array.from(history_exceedance.slice(0, counted)).sort((a, b) => a - b);
+  const direct = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))];
+  let bucketed = 0;
+  for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
+    if (shares_exceedance[i] >= 0.01) { bucketed = i * MILLISECONDS_BUCKET; break; }
+  }
+  const canvas = document.getElementById('exceedance');
+  const pixels = canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data;
+  let lit = 0;
+  for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 8) lit += 1;
+  return { counted, held, is_monotone, at_zero: shares_exceedance[0], direct, bucketed, lit };
+});
+report(
+  'the frame-time curve is a distribution, and the window accounts for itself',
+  curve.counted > 60 && curve.held === curve.counted && curve.is_monotone &&
+    Math.abs(curve.at_zero - 1) < 1e-9,
+  `${curve.counted} frames, ${curve.held} in buckets, monotone ${curve.is_monotone}, ` +
+    `P(at or over 0) = ${curve.at_zero}`,
+);
+report(
+  'and its stated 1-in-100 agrees with the samples it was taken from',
+  // Within a bucket and a half: the curve reports the bucket's own lower edge, and the
+  //   direct percentile lands anywhere inside that bucket.
+  Math.abs(curve.direct - curve.bucketed) <= 1.0 && curve.lit > 200,
+  `curve says ${curve.bucketed.toFixed(1)} ms, samples say ${curve.direct.toFixed(1)} ms, ` +
+    `${curve.lit} pixels drawn`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the
