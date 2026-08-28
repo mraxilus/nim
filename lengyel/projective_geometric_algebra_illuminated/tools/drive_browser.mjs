@@ -500,6 +500,45 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_menu}`,
 );
 
+/* ---- The help stays open, and lists the catalogue ---- */
+
+await page.evaluate(() => showHelp(true));
+await page.waitForTimeout(200);
+await page.mouse.click(SIZE_VIEW.width / 2, SIZE_VIEW.height - 80);
+await page.waitForTimeout(200);
+await page.click('#btn-drawer');
+await page.waitForTimeout(200);
+report(
+  'the help stays open while the reader uses what it describes',
+  await page.evaluate(() => document.getElementById('help-panel').classList.contains('show')),
+  'still open after a click on the canvas and on the drawer',
+);
+
+const rows_catalogue = await page.evaluate(() => {
+  // The tab strip names its tabs; open the catalogue one and count what it renders.
+  const tab = [...document.querySelectorAll('#help-tabs button')]
+    .find((button) => button.textContent.trim() === 'operations');
+  if (!tab) return -1;
+  tab.click();
+  // Every path's rows live in the one box, shown and hidden by tab; count this tab's own.
+  return document.querySelectorAll('#help-rows .help-row[data-path="operations"]').length;
+});
+report(
+  'the help lists every operation the build offers',
+  rows_catalogue === (await page.evaluate(() => nimOperationCount())),
+  `${rows_catalogue} rows, ${await page.evaluate(() => nimOperationCount())} operations`,
+);
+
+await page.click('#help-close');
+await page.waitForTimeout(200);
+report(
+  'the help closes when the reader closes it',
+  !(await page.evaluate(
+    () => document.getElementById('help-panel').classList.contains('show'),
+  )),
+  'closed by its own button',
+);
+
 /* ---- Nothing may have thrown along the way ---- */
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));

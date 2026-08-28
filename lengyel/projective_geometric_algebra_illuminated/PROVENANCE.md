@@ -2782,6 +2782,27 @@ having pressed Tab. `gui.wantsKeys` asks the two things that genuinely mean "the
 ImGui's": a field is taking text (`WantTextInput`), or navigation has landed on a widget
 (`IsAnyItemFocused`). Neither is true while the reader is simply looking at the scene.
 
+**The help stays open until it is closed.** A tap anywhere outside it used to dismiss it,
+canvas included, so a reader who opened it to find out what a gesture does lost it on the
+first touch of that gesture — which is the one moment the panel exists for, and the reason it
+is cut by way of working rather than by kind of control. The two popovers either side of it
+in that guard keep their tap-outside dismissal: those are transient. The browser panel gained
+a close button of its own in the same change; it had none, and removing the outside tap
+without one would have stranded a phone, which has no escape key.
+
+**The help lists the whole catalogue, generated.** A seventh tab, `operations`, holds one row
+per `Operation`: `scene.notationSymbolic` against `scene.notationNamed`, the two halves of
+one split at the double space the catalogue table separates them with. Nothing is
+transcribed, so the tab cannot fall behind the catalogue — and a suite case says so, since
+the day someone hand-writes a row is the day it can. The catalogue table moved from `let` to
+`const` to make that possible (`help.nim` builds its table at compile time), with the
+`cstring` array a picker needs built from it rather than the other way round: addresses can
+be derived from text, text cannot be derived from addresses.
+
+**"Up to date" is a check, not a reading.** Two suite cases hold the help to the build: every
+operation appears with the name the pickers offer it under, and every `Key` the view answers
+appears in some row. A reading is only true on the day it is made.
+
 **Tab is deliberately not rebound.** Cycling objects with it inside the view is the tempting
 binding and risks a **keyboard trap — WCAG 2.1.2, also Level A**. Fixing 2.1.1 by creating
 2.1.2 is not a fix, so the view is one ordinary tab stop and traversal took the brackets:

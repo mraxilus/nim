@@ -1052,7 +1052,7 @@ suite "Scene":
   test "every operation names itself and is offered once":
     var seen: array[Operation, int]
     for operation in Operation:
-      check len($lut_operation_to_notation[operation]) > 0
+      check len(lut_operation_to_notation[operation]) > 0
       inc seen[operation]
     for operation in Operation:
       check seen[operation] == 1
@@ -3094,12 +3094,48 @@ suite "Help":
     # Asserted at compile time too, in `help.nim`'s own `static` block; stated here as well
     #   because that assertion is invisible in a passing run, and this is the property the
     #   whole tab split exists to hold.
-    #   `keys` has a bound of its own, and a larger one: it describes a keyboard, and the
-    #   screen this bound is a proxy for is a phone. See `ENTRIES_MAX_PATH_KEYS`.
+    #   Two paths have bounds of their own. `keys` describes a keyboard, and the screen this
+    #   bound is a proxy for is a phone; `operations` *is* the catalogue, one row per
+    #   operation, and the only bound worth holding it to is that size exactly.
     for path in HelpPath:
       let entries_max =
-        if path == HelpPath.Keys: ENTRIES_MAX_PATH_KEYS else: ENTRIES_MAX_PATH
+        case path
+        of HelpPath.Operations: ENTRIES_MAX_PATH_CATALOGUE
+        of HelpPath.Keys: ENTRIES_MAX_PATH_KEYS
+        else: ENTRIES_MAX_PATH
       check countOf(path) in 1 .. entries_max
+
+
+  test "the help records every operation the build offers, by the name it offers it under":
+    # Generated from the catalogue rather than transcribed, so this cannot drift -- and the
+    #   case is here to say that if anyone ever transcribes it, the drift fails the build.
+    for operation in Operation:
+      var is_listed = false
+      for entry in lut_help_entries:
+        if entry.path == HelpPath.Operations and entry.action == notationSymbolic(operation):
+          check entry.outcome == notationNamed(operation)
+          is_listed = true
+      check is_listed
+    check countOf(HelpPath.Operations) == COUNT_OPERATION
+
+
+  test "the help records every key, every motion and every action the view answers":
+    # What "up to date" has to mean if it is to stay true: a binding added without a row
+    #   fails the build the day it is added, rather than being noticed by a reader who
+    #   went looking for it and found nothing.
+    let text = block:
+      var joined = ""
+      for entry in lut_help_entries: joined &= entry.action & " " & entry.outcome & " "
+      joined
+    for key in Key:
+      check nameOf(key) in text
+    # Every motion and action is *described* by some row; the rows group them by job, so
+    #   this asks for the words a reader would look for rather than the enum's own name.
+    for phrase in [
+      "slide the view", "lower or raise", "orbit", "further out", "faster",
+      "previous or next object", "select", "back into view", "back where it started",
+    ]:
+      check phrase in text
 
 
   test "a tab's entries are contiguous, so neither UI renders one tab twice":

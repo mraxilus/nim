@@ -92,7 +92,8 @@ for driven in \
   '--drive-undo --frames:44' \
   '--drive-select --frames:24' \
   '--drive-drag --frames:9' \
-  '--drive-help:keys --frames:8'
+  '--drive-help:keys --frames:8' \
+  '--drive-help:operations --frames:8'
 do
   # shellcheck disable=SC2086  # Word splitting is what carries the separate options.
   xvfb-run -a -s "-screen 0 1440x900x24" ./bin/visualiser --hidden --drive-assert ${driven}

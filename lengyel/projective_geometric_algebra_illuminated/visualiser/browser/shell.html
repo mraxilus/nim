@@ -306,6 +306,25 @@
     z-index: 6;
   }
   .help-panel.show { opacity: 1; transform: none; pointer-events: auto; }
+  /* The panel's own way out. It stays open until the reader closes it -- a tap outside no
+     longer dismisses it -- so on a phone, which has no escape key and where the `?` that
+     opened it may sit under the panel itself, this is the only way out. Pinned to the
+     corner rather than placed in the tab strip, which wraps to two lines there. */
+  .help-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-muted);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .help-close:hover { color: var(--ink); background: var(--surface-raised); }
   /* Tabs wrap rather than scroll sideways: five short words fit one line on a desktop and
      two on a phone, and a horizontally scrolling strip hides the tabs past its edge. */
   .help-tabs {
@@ -313,6 +332,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
+    /* Clear of the close button pinned in the corner above, so a wrapped strip never runs
+       under it. */
+    padding-right: 26px;
     margin-bottom: 10px;
     border-bottom: 1px solid var(--border);
     padding-bottom: 8px;
@@ -876,6 +898,7 @@
   <span aria-hidden="true">?</span>
 </button>
 <div class="help-panel" id="help-panel" role="dialog" aria-label="help">
+  <button class="help-close" id="help-close" type="button" aria-label="close help">×</button>
   <div class="help-tabs" id="help-tabs" role="tablist" aria-label="help sections"></div>
   <p class="help-description" id="help-description"></p>
   <div class="help-rows" id="help-rows"></div>

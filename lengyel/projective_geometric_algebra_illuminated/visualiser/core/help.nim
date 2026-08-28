@@ -38,11 +38,18 @@
 
 import std/[options, strutils]
 
-import ./interaction
+import ./[interaction, scene]
 
 
 
 #[ Type Definitions ]#
+
+const ENTRIES_MAX_PATH_CATALOGUE* = COUNT_OPERATION
+  ## Bound the `operations` path at exactly the size of the catalogue it lists.
+  ##   Not a height at all, unlike the two bounds below: this tab *is* the catalogue, one
+  ##   row per operation, so the only bound worth checking is that it holds every one of
+  ##   them and nothing else. It scrolls on any screen and is meant to -- a reference list
+  ##   read by looking something up, not by taking it in at a glance.
 
 const ENTRIES_MAX_PATH_KEYS* = 12
   ## Bound how many entries the `keys` path may hold, checked at compile time.
@@ -110,6 +117,7 @@ type
     Panel, ## The panel and the buttons above it.
     Camera, ## Moving the view.
     Keys, ## Keyboard.
+    Operations, ## What every operation in the catalogue is called.
 
   HelpEntry* = object ## Hold one thing a reader can do and what it does.
     path*: HelpPath ## Way of working it belongs to, and so the tab it appears under.
@@ -130,6 +138,7 @@ func titleOf*(path: HelpPath): string =
   of HelpPath.Panel: "panel"
   of HelpPath.Camera: "camera"
   of HelpPath.Keys: "keys"
+  of HelpPath.Operations: "operations"
 
 
 func descriptionOf*(path: HelpPath): string =
@@ -154,6 +163,9 @@ func descriptionOf*(path: HelpPath): string =
     "Move your viewpoint. None of this changes the scene itself."
   of HelpPath.Keys:
     "Keyboard shortcuts. The 3D view needs focus first — press tab until it has it."
+  of HelpPath.Operations:
+    "Every operation the apply section and the selection menu offer, and what each is " &
+    "called."
 
 
 
@@ -168,11 +180,12 @@ const lut_help_entries* = block:
   ## Every entry the two UIs render, grouped by path and in the order a reader meets them.
   ##   A fixed array rather than a `seq`, with `count` asserted against its length at
   ## compile time, so adding an entry without resizing fails the build rather than leaving
-  ## a blank row at the bottom of the panel.
+  ## a blank row at the bottom of the panel. Its size is the hand-written rows plus the
+  ## catalogue, which is generated: adding an operation resizes this on its own.
   ##   Entries of one path are written together, and the assertion below insists they stay
   ## that way: both front-ends walk this once in order, so a path split across two runs
   ## would render as two tabs of the same name.
-  var lut: array[39, HelpEntry]
+  var lut: array[39 + COUNT_OPERATION, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -312,6 +325,7 @@ const lut_help_entries* = block:
     HelpPath.Keys, nameOf(Key.Minus) & ", " & nameOf(Key.Plus), "move further out, or closer in"
   )
   add(HelpPath.Keys, nameOf(Key.F), "bring whatever is selected back into view")
+
   add(
     HelpPath.Keys, nameOf(Key.BracketLeft) & ", " & nameOf(Key.BracketRight),
     "move the highlight to the previous or next object",
@@ -321,6 +335,12 @@ const lut_help_entries* = block:
     "select the highlighted object; hold shift to add it",
   )
   add(HelpPath.Keys, nameOf(Key.Home), "put the camera back where it started")
+  # The whole catalogue, generated rather than transcribed: a row per operation, each
+  #   naming it exactly as every picker in both builds offers it (`scene.notationSymbolic`
+  #   and `scene.notationNamed`, the two halves of one split). A hand-written list would
+  #   fall behind the catalogue the first time one was added, and nothing would say so.
+  for operation in Operation:
+    add(HelpPath.Operations, notationSymbolic(operation), notationNamed(operation))
 
   doAssert count == len(lut), "Every help slot must be filled; adjust the array's size."
   lut
@@ -345,7 +365,10 @@ static:
   for path in HelpPath:
     doAssert path in seen, "Every help path must hold at least one entry: " & titleOf(path)
     let entries_max =
-      if path == HelpPath.Keys: ENTRIES_MAX_PATH_KEYS else: ENTRIES_MAX_PATH
+      case path
+      of HelpPath.Operations: ENTRIES_MAX_PATH_CATALOGUE
+      of HelpPath.Keys: ENTRIES_MAX_PATH_KEYS
+      else: ENTRIES_MAX_PATH
     doAssert countOf(path) <= entries_max,
       "Help path `" & titleOf(path) & "` outgrew what fits a phone; split it or raise " &
       "its own bound deliberately."

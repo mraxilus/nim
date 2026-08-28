@@ -168,34 +168,34 @@ const lut_operation_to_arity*: array[Operation, Arity] = [
 ] ## Map operation to number of operands it consumes.
 
 
-let lut_operation_to_notation*: array[Operation, cstring] = [
-  Operation.Attitude: cstring"𝐦⊖  attitude",
-  Operation.Support: cstring"𝐦∩  support",
-  Operation.SupportAnti: cstring"𝐦∪  antisupport",
-  Operation.Bulk: cstring"𝐦∙  bulk",
-  Operation.Weight: cstring"𝐦∘  weight",
-  Operation.Unitize: cstring"𝐦ˆ  unitize",
-  Operation.ComplementLeft: cstring"𝐦ˍ  left complement",
-  Operation.ComplementRight: cstring"𝐦¯  right complement",
-  Operation.DualBulk: cstring"𝐦★  bulk dual",
-  Operation.DualWeight: cstring"𝐦☆  weight dual",
-  Operation.Reverse: cstring"𝐦˜  reverse",
-  Operation.ReverseAnti: cstring"𝐦˷  antireverse",
-  Operation.Negate: cstring"−𝐦  negate",
-  Operation.Add: cstring"𝐦 + 𝐧  add",
-  Operation.Subtract: cstring"𝐦 - 𝐧  subtract",
-  Operation.Wedge: cstring"𝐦 ∧ 𝐧  wedge (join)",
-  Operation.WedgeAnti: cstring"𝐦 ∨ 𝐧  antiwedge (meet)",
-  Operation.WedgeDot: cstring"𝐦 ⟑ 𝐧  geometric product",
-  Operation.WedgeDotAnti: cstring"𝐦 ⟇ 𝐧  geometric antiproduct",
-  Operation.Dot: cstring"𝐦 ∙ 𝐧  inner product",
-  Operation.DotAnti: cstring"𝐦 ∘ 𝐧  inner antiproduct",
-  Operation.ExpandBulk: cstring"𝐦 ∧ 𝐧★  bulk expansion",
-  Operation.ExpandWeight: cstring"𝐦 ∧ 𝐧☆  weight expansion",
-  Operation.ContractBulk: cstring"𝐦 ∨ 𝐧★  bulk contraction",
-  Operation.ContractWeight: cstring"𝐦 ∨ 𝐧☆  weight contraction",
-  Operation.ProjectCentral: cstring"𝐧 ∨ (𝐦 ∧ 𝐧★)  central projection",
-  Operation.ProjectOrthogonal: cstring"𝐧 ∨ (𝐦 ∧ 𝐧☆)  orthogonal projection",
+const lut_operation_to_notation* = [
+  Operation.Attitude: "𝐦⊖  attitude",
+  Operation.Support: "𝐦∩  support",
+  Operation.SupportAnti: "𝐦∪  antisupport",
+  Operation.Bulk: "𝐦∙  bulk",
+  Operation.Weight: "𝐦∘  weight",
+  Operation.Unitize: "𝐦ˆ  unitize",
+  Operation.ComplementLeft: "𝐦ˍ  left complement",
+  Operation.ComplementRight: "𝐦¯  right complement",
+  Operation.DualBulk: "𝐦★  bulk dual",
+  Operation.DualWeight: "𝐦☆  weight dual",
+  Operation.Reverse: "𝐦˜  reverse",
+  Operation.ReverseAnti: "𝐦˷  antireverse",
+  Operation.Negate: "−𝐦  negate",
+  Operation.Add: "𝐦 + 𝐧  add",
+  Operation.Subtract: "𝐦 - 𝐧  subtract",
+  Operation.Wedge: "𝐦 ∧ 𝐧  wedge (join)",
+  Operation.WedgeAnti: "𝐦 ∨ 𝐧  antiwedge (meet)",
+  Operation.WedgeDot: "𝐦 ⟑ 𝐧  geometric product",
+  Operation.WedgeDotAnti: "𝐦 ⟇ 𝐧  geometric antiproduct",
+  Operation.Dot: "𝐦 ∙ 𝐧  inner product",
+  Operation.DotAnti: "𝐦 ∘ 𝐧  inner antiproduct",
+  Operation.ExpandBulk: "𝐦 ∧ 𝐧★  bulk expansion",
+  Operation.ExpandWeight: "𝐦 ∧ 𝐧☆  weight expansion",
+  Operation.ContractBulk: "𝐦 ∨ 𝐧★  bulk contraction",
+  Operation.ContractWeight: "𝐦 ∨ 𝐧☆  weight contraction",
+  Operation.ProjectCentral: "𝐧 ∨ (𝐦 ∧ 𝐧★)  central projection",
+  Operation.ProjectOrthogonal: "𝐧 ∨ (𝐦 ∧ 𝐧☆)  orthogonal projection",
 ] ## Map operation to notation and name GUI offers it under, for both render paths.
   ##   Operands are written in Lengyel's own mathematical bold, and every symbol's
   ##   placement is his, written with spacing modifier letters (`ˆ` U+02C6, `ˍ` U+02CD,
@@ -207,28 +207,43 @@ let lut_operation_to_notation*: array[Operation, cstring] = [
   ##   same way and the five stay distinguishable. Not a second, plain-ASCII table beside
   ##   this one: the atlas merges faces carrying the astral-plane glyphs (see
   ##   `visualiser.PATH_FONT_MATH`), and one table is what stops the two builds drifting.
-  ##   Bound as `let` rather than `const`, since picker needs address of first entry.
+  ##   **A `const` of `string`, with the `cstring` array a picker needs built from it
+  ##   below.** It was the other way round, and could not be: `help.nim` builds its own
+  ##   table at compile time, so a catalogue tab generated from this one needs the text
+  ##   before the program runs. Deriving the addresses from the text costs one array;
+  ##   deriving the text from the addresses cannot be done at all.
+
+
+let lut_operation_to_notation_c* = block:
+  ## The same entries as `cstring`, which is what a picker offers: Dear ImGui takes the
+  ## address of the first one and reads them for the life of the combo, so they have to
+  ## outlive the call. Built from the table above rather than written beside it.
+  var lut: array[Operation, cstring]
+  for operation in Operation: lut[operation] = cstring(lut_operation_to_notation[operation])
+  lut
 
 
 const COUNT_OPERATION* = ord(Operation.high) + 1
   ## Count operations, for handing whole catalogue to a picker.
 
 
-let lut_operation_symbolic* = block:
-  ## Each operation's symbols alone, without the English name beside them in the table
-  ## above -- what every picker offers.
-  ##   Bound as `let` and built once for the same reason `lut_operation_to_notation` is: a
-  ##   combo takes the address of its first entry, so these strings have to outlive the
-  ##   call that offers them.
-  var lut: array[Operation, string]
+const lut_operation_split* = block:
+  ## Each operation's two halves: the symbols it is written with, and the English name the
+  ## catalogue table carries after them. **One split, at one place** -- the double space
+  ## between them -- so a caller wanting either half cannot cut at a second place that
+  ## drifts from this one.
+  ##   A `const`, so `help.nim` can build a catalogue tab out of it at compile time.
+  var lut: array[Operation, tuple[symbols, name: string]]
   for operation in Operation:
-    let full = $lut_operation_to_notation[operation]
+    let full = lut_operation_to_notation[operation]
     let cutoff = full.find("  ")
-    lut[operation] = if cutoff >= 0: full[0 ..< cutoff] else: full
+    lut[operation] =
+      if cutoff >= 0: (symbols: full[0 ..< cutoff], name: full[cutoff + 2 .. ^1].strip())
+      else: (symbols: full, name: "")
   lut
 
 
-proc notationSymbolic*(operation: Operation): string =
+func notationSymbolic*(operation: Operation): string =
   ## Report just the symbols an operation is written with, without the English name the
   ## catalogue table carries after them -- `𝐦 ∧ 𝐧`, not `𝐦 ∧ 𝐧  wedge (join)`.
   ##   What a picker offers, on both front-ends. The full entry is three to five times
@@ -236,9 +251,15 @@ proc notationSymbolic*(operation: Operation): string =
   ##   can reach; the name it drops is still there for a tooltip to read.
   ##   Split on the double space the table separates the two halves with, so this and
   ##   `notationSubstituted` below cut at exactly one place rather than two that can drift.
-  ##   A `proc` rather than a `func` for the reason `notationSubstituted` is one: the table
-  ##   it reads is a `let`, since a picker needs the address of its first entry.
-  lut_operation_symbolic[operation]
+  lut_operation_split[operation].symbols
+
+
+func notationNamed*(operation: Operation): string =
+  ## Report the English name an operation is offered under -- `wedge (join)`, not
+  ## `𝐦 ∧ 𝐧`. The other half of `notationSymbolic`'s own split, from the same one cut.
+  ##   What the help's catalogue tab reads for its outcome column, so that tab says exactly
+  ##   what every picker in both builds offers and cannot fall behind it.
+  lut_operation_split[operation].name
 
 
 proc notationSubstituted*(operation: Operation; name_first, name_second: string): string =

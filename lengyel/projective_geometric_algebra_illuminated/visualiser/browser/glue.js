@@ -550,6 +550,8 @@ function showHelpPath(path) {
 }
 buildHelp();
 
+document.getElementById('help-close').addEventListener('click', () => showHelp(false));
+
 function showHelp(is_shown) {
   panel_help.classList.toggle('show', is_shown);
   button_help.setAttribute('aria-expanded', is_shown ? 'true' : 'false');
@@ -2306,13 +2308,11 @@ document.addEventListener('pointerdown', (e) => {
       e.target !== canvas && !drawer.contains(e.target) && !row_chip.contains(e.target)) {
     clearSelection();
   }
-  // Help panel: same shape of guard, its own state/target. Closed by a tap anywhere
-  //   outside it and outside its own button, including on the canvas -- unlike the
-  //   selection menu, nothing about it is mid-gesture, so there is no resolution to race.
-  if (panel_help.classList.contains('show') && !panel_help.contains(e.target) &&
-      e.target !== button_help && !button_help.contains(e.target)) {
-    showHelp(false);
-  }
+  // **The help is not dismissed by a tap outside it**, unlike the two popovers either side
+  //   of this. It is opened to be read *while* doing the thing it describes -- that is the
+  //   whole reason it is cut by way of working rather than by kind of control -- and the
+  //   first touch of that thing used to close it, including a touch on the canvas. It goes
+  //   when the reader says so: its own close button, the `?` that opened it, or escape.
   // Top menu: same shape of guard, its own state/target -- a tap landing outside the
   //   popover and outside its own trigger button closes it.
   if (menu_top.classList.contains('show') && !menu_top.contains(e.target)

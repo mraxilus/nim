@@ -659,12 +659,12 @@ proc offerOperationsOfArity*(
   ##   it is the difference between scanning and hunting.
   ##   Reports the operations alongside the notations because a combo hands back a dense
   ##   position, which names nothing on its own once the list has been filtered.
-  ##   A `proc` rather than a `func`, though it is pure in effect: the notation table it
-  ##   reads is bound as `let` rather than `const` so a picker can take the address of
-  ##   its first entry, and `strictFuncs` counts reading a module global as an effect.
+  ##   The `cstring`s handed back point into this build's own storage rather than at the
+  ##   `const` table they are taken from, which is what a combo needs: it keeps the address
+  ##   of the first entry and reads through it for as long as the list is open.
   for operation in Operation:
     if lut_operation_to_arity[operation] != arity: continue
-    result[0][result[2]] = cstring(lut_operation_symbolic[operation])
+    result[0][result[2]] = cstring(notationSymbolic(operation))
     result[1][result[2]] = operation
     inc result[2]
 

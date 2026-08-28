@@ -768,6 +768,13 @@ a pinch aimed at its own midpoint, a picker's position read as a scene slot, a c
 bound to nothing by a rename. Driven checks are committed and run by the same command as
 everything else, never retyped into a scratch file when somebody remembers.
 
+**The help is dismissed only by the reader.** It is opened to be read *while* doing the thing
+it describes, so nothing the reader does to the scene may close it — no tap-outside, no
+gesture. It needs a visible close control of its own on every front-end, since a touch device
+has no escape key. It must also list every operation the build offers, generated from the
+catalogue rather than transcribed, and what it says about the keys must be checked against
+the binding table rather than read over.
+
 **Keyboard, both front-ends.** Everything must be operable from the keyboard alone
 (**WCAG 2.1.1, Level A**), and that includes the 3D view, not merely the panels around it.
 The view is **one ordinary tab stop**: reached by Tab and left by Tab, with its own keys
