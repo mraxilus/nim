@@ -253,6 +253,10 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* The drawer opens over this corner, so the bar steps aside to the edge of it rather
+     than being drawn across the object list. Set from the drawer's own toggle, since the
+     bar sits before the drawer in the document and no sibling selector reaches backwards. */
+  .ruler.aside { left: calc(min(400px, 100vw) + 14px); }
 
   .help-open {
     position: fixed;
@@ -560,6 +564,8 @@
       transform: translateY(100%);
     }
     .drawer.open { transform: translateY(0); }
+    /* The bottom sheet covers the whole of this corner, so there is no aside to step to. */
+    .ruler.aside { display: none; }
   }
 
   @media (min-width: 641px) {

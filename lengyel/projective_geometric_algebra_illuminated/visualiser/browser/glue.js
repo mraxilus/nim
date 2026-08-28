@@ -436,6 +436,8 @@ const button_drawer = document.getElementById('btn-drawer');
 button_drawer.addEventListener('click', () => {
   const open = drawer.classList.toggle('open');
   button_drawer.classList.toggle('on', open);
+  // The drawer opens over the corner the scale bar sits in; see `.ruler.aside`.
+  document.getElementById('ruler').classList.toggle('aside', open);
 });
 
 // Top menu: one popover holding every top-bar action (undo/redo, axes/grid, save/load
