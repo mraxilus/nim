@@ -2750,18 +2750,58 @@ ImGui's": a field is taking text (`WantTextInput`), or navigation has landed on 
 binding and risks a **keyboard trap — WCAG 2.1.2, also Level A**. Fixing 2.1.1 by creating
 2.1.2 is not a fix, so the view is one ordinary tab stop and traversal took the brackets:
 
-| Key | Does |
-|---|---|
-| arrows | orbit |
-| shift+arrows | pan |
-| `-` / `+` | dolly out / in |
-| `[` / `]` | focus the previous / next object |
-| `enter` | select it, or add it where shift is held |
-| `home` | put the camera back where it started |
+| Key | Does | Kind |
+|---|---|---|
+| `w` `a` `s` `d` | slide the view across the ground | held |
+| `q` / `e` | lower / raise it | held |
+| arrows | orbit | held |
+| `-` / `+` | dolly out / in | held |
+| `shift` | multiply every rate above by `FACTOR_HASTE` | held |
+| `[` / `]` | focus the previous / next object | press |
+| `enter` | select it, or add it where shift is held | press |
+| `f` | frame whatever is selected | press |
+| `home` | put the camera back where it started | press |
 
-`interaction.actionFor` is that table; each path translates only its own naming (SDL
-scancodes, DOM `KeyboardEvent.key`) exactly as each already does for mouse buttons, and
-`help.nim` renders its keyboard rows out of it rather than transcribing them.
+`interaction.motionFor` and `interaction.actionFor` are that table, split by **kind**: a
+motion runs every frame its key is down (`driveHeld`), an action happens once at the press.
+One enum would have left every caller asking which kind it had, and an action re-run by the
+operating system's own auto-repeat is a bug waiting to happen. Each path translates only its
+own naming — SDL scancodes, DOM `KeyboardEvent.code` — exactly as each already does for mouse
+buttons, and `help.nim` renders its keyboard rows out of both rather than transcribing them.
+
+**The bindings came from what other software does**, checked rather than guessed. Unity,
+Unreal, Godot and Blender's fly mode all bind WASD to *movement* and Q/E to down/up, all four
+use shift for *faster*, and three of them put "frame the selection" on F (Blender on numpad
+`.`). The one fork is what movement means: those editors *fly* the eye along its sight line,
+behind a held mouse button, while a map or an RTS *slides* the view across the ground. This
+project slides — the camera orbits a target on the ground plane, and the zoom that goes with
+it aims at the cursor — so holding W skims the ground rather than diving into it, and the
+height never changes. Measured through the browser's own events: 500 ms of W moved the target
+12.8 units with `z` unchanged to four decimals, and shift over the same interval moved 49.3.
+
+**Shift stopped meaning something different per key.** It used to turn an arrow's orbit into
+a pan, which is one meaning on four keys and none anywhere else; it is now a rate multiplier
+on every movement key, and `Key.Shift` is a key in the held set rather than a flag threaded
+through the calls — so letting go of it mid-movement is just another release.
+
+**Movement runs while held, not once per press.** The old per-press steps leaned on the
+operating system's auto-repeat: movement began after the repeat delay and arrived in
+stutters. Both front-ends now watch key *up* as well as key *down* (neither did before),
+`Interaction.keys_held` carries what is down, and `driveHeld` applies each held key once a
+frame scaled by that frame's own elapsed time — so a hold covers the same ground at 60 Hz and
+144 Hz. The dolly compounds as `pow(FACTOR_DOLLY_SECOND, seconds)` rather than multiplying
+per frame, which would have moved a fast machine further for the same hold.
+
+**Releases go missing in three ways, and all three are handled.** The window loses focus
+(`SDL_EVENT_WINDOW_FOCUS_LOST`, `blur`), the tab is hidden (`visibilitychange`), or a panel
+widget takes the keyboard (`gui.wantsKeys`). In each the release is delivered somewhere else,
+and a key left in the held set moves the camera forever with no press able to stop it;
+`releaseKeysAll` empties it. Verified by dispatching a blur mid-hold in the browser: the
+target moved 0.0000 further.
+
+**Plain `s` had to move.** It was bound to writing a PNG on the desktop, which a movement key
+cannot also do; that went to `ctrl+s`, beside the other accelerators, and the panel's own
+"save PNG" button is untouched.
 
 **Focus is its own state, not hover.** `updateHover` recomputes hover from the cursor every
 frame, so a keyboard focus stored there would be erased before it could be drawn once.
@@ -2771,7 +2811,7 @@ machinery already built and already tested rather than a second indicator invent
 The browser adds a `:focus-visible` ring on the canvas itself, inset rather than outset
 because the canvas fills the viewport and an outside ring would fall off every edge.
 
-Camera keys move by one **shared** amount per press (`camera.TURN_PRESS` and friends),
+Camera keys move by one **shared** rate per second (`camera.TURN_SECOND` and friends),
 unlike the per-pixel drag rates, which differ per front-end for a real reason —
 `visualiser.SPEED_ORBIT` is radians per pixel and `glue.js` works in fractions of canvas
 width. A press has no pixels in it. `home` needed the opening placement, which was written

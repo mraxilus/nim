@@ -817,7 +817,17 @@ func keyFor(scancode: uint32): Option[Key] =
   ##   Only the numbering is this build's own; what each key *does* is
   ##   `interaction.actionFor`'s to say, so both render paths and the help panel answer
   ##   from one table.
-  if scancode == uint32(Scancode.Left): some(Key.Left)
+  if scancode == uint32(Scancode.W): some(Key.W)
+  elif scancode == uint32(Scancode.A): some(Key.A)
+  elif scancode == uint32(Scancode.S): some(Key.S)
+  elif scancode == uint32(Scancode.D): some(Key.D)
+  elif scancode == uint32(Scancode.Q): some(Key.Q)
+  elif scancode == uint32(Scancode.E): some(Key.E)
+  elif scancode == uint32(Scancode.F): some(Key.F)
+  elif scancode == uint32(Scancode.ShiftLeft) or scancode == uint32(Scancode.ShiftRight):
+    # Either shift key, since a reader holds whichever hand is free; see `Scancode`.
+    some(Key.Shift)
+  elif scancode == uint32(Scancode.Left): some(Key.Left)
   elif scancode == uint32(Scancode.Right): some(Key.Right)
   elif scancode == uint32(Scancode.Up): some(Key.Up)
   elif scancode == uint32(Scancode.Down): some(Key.Down)
@@ -891,7 +901,10 @@ proc handleEvent(
       elif panel.session.isSome: panel.session = none(EditSession)
       elif panel.is_menu_selection_shown: panel.hideSelectionMenu()
       elif len(panel.selection) > 0: panel.selection.clear()
-    elif event.key.scancode == uint32(Scancode.S) and not is_accelerator:
+    elif is_accelerator and event.key.scancode == uint32(Scancode.S):
+      # Ctrl+S rather than the bare S it used to be: S now slides the view back, and a
+      #   movement key cannot also write a PNG. Ctrl+S is what a reader presses to save
+      #   anywhere else, and the panel's own "save PNG" button is unaffected.
       panel.is_export_requested = true
     elif is_accelerator and event.key.scancode == uint32(Scancode.Q):
       is_running = false
@@ -907,20 +920,38 @@ proc handleEvent(
       #   every branch above falls through rather than orbiting the camera by accident.
       let key = keyFor(event.key.scancode)
       if key.isSome:
-        let index_selected = interaction.applyAction(
-          camera, scene, actionFor(key.get, is_shifted)
-        )
-        if index_selected.isSome:
-          # Shift adds rather than replaces, exactly as shift-click does -- the one place
-          #   the shift state means something `actionFor` cannot answer on its own.
-          if is_shifted: panel.selection.toggle(index_selected.get)
-          else: panel.selection.selectOnly(index_selected.get)
-          # Reached without a pointer at all, so the menu is the only place the keyboard
-          #   can get at apply, edit, hide and delete for what it just picked.
-          panel.showSelectionMenu()
-        # Moving the camera by key is a camera move like any other, so it abandons a tween
-        #   already carrying it somewhere; otherwise the tween would drag it straight back.
-        panel.tween_camera.abandon()
+        # A key that moves the view is *held*, not acted on: `driveHeld` moves the camera
+        #   by it every frame until the release below. A key that acts does so once, and
+        #   the auto-repeat SDL sends while it stays down is ignored, since `holdKey` is
+        #   idempotent and an action is taken only on a press that changes nothing else.
+        interaction.holdKey(key.get)
+        let action = actionFor(key.get)
+        if action.isSome:
+          let index_selected = interaction.applyAction(camera, scene, action.get)
+          if index_selected.isSome:
+            # Shift adds rather than replaces, exactly as shift-click does -- the one place
+            #   the shift state means something the binding table cannot answer on its own.
+            if is_shifted: panel.selection.toggle(index_selected.get)
+            else: panel.selection.selectOnly(index_selected.get)
+            # Reached without a pointer at all, so the menu is the only place the keyboard
+            #   can get at apply, edit, hide and delete for what it just picked.
+            panel.showSelectionMenu()
+          # Framing is the standing offer's own job (`framing.offerAim`); all this key does
+          #   is let go of the goal it is holding, so the next frame aims afresh at
+          #   whatever is selected. See `interaction.applyAction`.
+          if action.get == KeyAction.FrameSelection: panel.tween_camera.release()
+          else: panel.tween_camera.abandon()
+        else:
+          # Moving the camera by key is a camera move like any other, so it abandons a
+          #   tween already carrying it somewhere; otherwise the tween would drag it back.
+          panel.tween_camera.abandon()
+  of uint32(EventKind.KeyUp):
+    let key = keyFor(event.key.scancode)
+    if key.isSome: interaction.releaseKey(key.get)
+  of uint32(EventKind.WindowFocusLost):
+    # The releases for anything held now go to whichever window took the focus, so let go
+    #   of everything rather than moving the camera forever.
+    interaction.releaseKeysAll()
   of uint32(EventKind.MouseButtonDown):
     if gui.wantsMouse(): return
     # Every press is noted before anything is decided about it: whether it was a click is
@@ -1098,39 +1129,83 @@ proc driveDrag(
     sdl3.pushEvent(addr press)
 
 
+type KeyStep = object ## One frame of the scripted keyboard run; see `lut_keys_driven`.
+  ## A frame carrying no key at all is the point of `Option` here: a held key moves the
+  ## camera on the frames *between* its press and its release, and a script that sent an
+  ## event every frame could never leave it held.
+  pressed: Option[tuple[scancode: Scancode; keycode: uint32]]
+  is_down: bool ## Whether this step presses the key or lets go of it.
+
+
+func stepKey(scancode: Scancode; keycode: uint32; is_down = true): KeyStep =
+  ## Name one scripted press or release.
+  KeyStep(pressed: some((scancode: scancode, keycode: keycode)), is_down: is_down)
+
+
+func stepHold(): KeyStep = KeyStep(pressed: none((Scancode, uint32)), is_down: false)
+  ## Let a frame pass with whatever is held still held, so a hold covers real frames.
+
+
+const
+  KEYCODE_RIGHT = 1073741903'u32
+  KEYCODE_UP = 1073741906'u32
+  KEYCODE_SHIFT = 1073742049'u32
+    ## SDL's own keycodes for the three non-ASCII keys the script sends; see `driveKeys`
+    ## on why a synthesised event needs one at all.
+
 const lut_keys_driven = [
-  Scancode.BracketRight, Scancode.BracketRight, Scancode.Return,
-  Scancode.Right, Scancode.Right, Scancode.Up, Scancode.Equals, Scancode.Tab,
-] ## Script one press per frame for `--drive-keys`: walk the focus on twice, select what it
-  ## lands on, then orbit and dolly. Chosen to touch every kind of action the view answers
-  ## -- traversal, selection, camera -- so one run says whether Dear ImGui's own navigation
-  ## has swallowed the lot. The trailing Tab is the opposite check: the application binds
-  ## it to nothing, so `gui.wantsKeys` turning true afterwards is nav having taken it and
-  ## landed on a panel widget, which is what makes the panels reachable at all.
-
-
-const lut_keycodes_driven = [
-  uint32(ord(']')), uint32(ord(']')), 13'u32, # Return is ASCII carriage return.
-  1073741903'u32, 1073741903'u32, 1073741906'u32, # SDLK_RIGHT, RIGHT, UP.
-  uint32(ord('=')), 9'u32, # Tab is ASCII horizontal tab.
-] ## Pair each scripted scancode with the keycode SDL would have sent beside it; see
-  ## `driveKeys` on why both are needed. One entry per `lut_keys_driven` entry.
+  # Walk the focus on twice and select what it lands on.
+  stepKey(Scancode.BracketRight, uint32(ord(']'))),
+  stepKey(Scancode.BracketRight, uint32(ord(']')), is_down = false),
+  stepKey(Scancode.BracketRight, uint32(ord(']'))),
+  stepKey(Scancode.BracketRight, uint32(ord(']')), is_down = false),
+  stepKey(Scancode.Return, 13'u32), # Return is ASCII carriage return.
+  stepKey(Scancode.Return, 13'u32, is_down = false),
+  # Hold W for four frames and let go: the frames in the middle are the ones that prove
+  #   movement runs while a key is down rather than once per press, and the release is what
+  #   proves the key-up wiring exists at all. A handler called directly would prove neither.
+  stepKey(Scancode.W, uint32(ord('w'))),
+  stepHold(), stepHold(), stepHold(),
+  stepKey(Scancode.W, uint32(ord('w')), is_down = false),
+  stepHold(), # Nothing held: the target must stand still across this frame.
+  # Then shift and W together, which must cover `FACTOR_HASTE` times the ground.
+  stepKey(Scancode.ShiftLeft, KEYCODE_SHIFT),
+  stepKey(Scancode.W, uint32(ord('w'))),
+  stepHold(), stepHold(), stepHold(),
+  stepKey(Scancode.W, uint32(ord('w')), is_down = false),
+  stepKey(Scancode.ShiftLeft, KEYCODE_SHIFT, is_down = false),
+  # An orbit and a dolly, each held a frame, so both of those reach the camera too.
+  stepKey(Scancode.Right, KEYCODE_RIGHT), stepHold(),
+  stepKey(Scancode.Right, KEYCODE_RIGHT, is_down = false),
+  stepKey(Scancode.Equals, uint32(ord('='))), stepHold(),
+  stepKey(Scancode.Equals, uint32(ord('=')), is_down = false),
+  stepKey(Scancode.Tab, 9'u32), # Tab is ASCII horizontal tab.
+] ## Script one keyboard step per frame for `--drive-keys`: walk the focus, select, hold a
+  ## movement key, hold it again hastened, then orbit and dolly. Chosen to touch every kind
+  ## of binding the view answers -- traversal, selection, a held motion, its release -- so
+  ## one run says whether Dear ImGui's own navigation has swallowed the lot. The trailing
+  ## Tab is the opposite check: the application binds it to nothing, so `gui.wantsKeys`
+  ## turning true afterwards is nav having taken it and landed on a panel widget, which is
+  ## what makes the panels reachable at all.
 
 
 proc driveKeys(count_drawn: int) =
-  ## Push one scripted key per frame onto SDL's own queue, for `--drive-keys`.
+  ## Push one scripted keyboard step per frame onto SDL's own queue, for `--drive-keys`.
   ##   Posted to the queue rather than handed to `handleEvent`, for the reason `driveDrag`
   ##   gives: the wiring between the two is exactly what a scripted test is for.
   const FRAME_FIRST = 3 # Past startup, so the first frame's own layout has settled.
   let step = count_drawn - FRAME_FIRST
   if step notin 0 ..< len(lut_keys_driven): return
-  var event = Event(kind: uint32(EventKind.KeyDown))
-  event.key.scancode = uint32(lut_keys_driven[step])
+  let scripted = lut_keys_driven[step]
+  if scripted.pressed.isNone: return
+  var event = Event(
+    kind: uint32(if scripted.is_down: EventKind.KeyDown else: EventKind.KeyUp)
+  )
+  event.key.scancode = uint32(scripted.pressed.get.scancode)
   # Dear ImGui's own backend reads the layout keycode rather than the scancode, so an
-  #   event without one is invisible to it -- and the Tab below is aimed at exactly that.
-  #   ASCII is the keycode for every key this script sends.
-  event.key.keycode = lut_keycodes_driven[step]
-  event.key.is_down = true
+  #   event without one is invisible to it -- and the Tab above is aimed at exactly that.
+  event.key.keycode = scripted.pressed.get.keycode
+  event.key.is_down = scripted.is_down
   event.key.modifiers = 0
   sdl3.pushEvent(addr event)
 
@@ -1367,8 +1442,12 @@ proc runInteractive(
     #   on vsync (or didn't) at the tail of that previous iteration. Always taken, not
     #   just under `--timings`, since the panel's own live graph needs it every frame too.
     let ticks_frame_start = getMonoTime().ticks
+    var seconds_frame = 0.0
     if count_drawn > 0:
       let delta_milliseconds = float32(ticks_frame_start - ticks_previous_frame) / 1_000_000.0
+      # The same measurement, in the units a held key's rates are stated in. Zero on the
+      #   very first frame, which has no previous one to measure against and no key held.
+      seconds_frame = float(delta_milliseconds)/1000.0
       panel.milliseconds_history[panel.index_history] = cfloat(delta_milliseconds)
       panel.index_history = (panel.index_history + 1) mod FRAMES_HISTORY
       if options.is_timed:
@@ -1400,6 +1479,17 @@ proc runInteractive(
         event, camera, panel, scene, interaction,
         is_dragging_orbit, is_dragging_pan, is_running, button_dragging, now,
       )
+
+    # Whatever is held moves the camera by one frame's worth, after the events that
+    #   started and stopped those holds and before anything is drawn from the placement.
+    #   Its elapsed time is the frame time already measured above for the panel's own
+    #   graph, so a hold travels the same distance however fast the machine draws.
+    #   A panel widget with the keyboard takes it back: Dear ImGui's navigation and text
+    #   fields swallow the releases, so anything still held has to be let go of here.
+    if gui.wantsKeys(): interaction.releaseKeysAll()
+    elif interaction.keys_held.len > 0:
+      interaction.driveHeld(camera, seconds_frame)
+      panel.tween_camera.abandon()
 
     let (width, height) =
       renderFrame(
@@ -1436,7 +1526,9 @@ proc runInteractive(
     #   none means nothing got through.
     echo &"Keys: focus {interaction.index_focus}, selected {len(panel.selection)}, " &
       &"azimuth {camera.azimuth:.4f}, elevation {camera.elevation:.4f}, " &
-      &"distance {camera.distance:.4f}; " &
+      &"distance {camera.distance:.4f}, " &
+      &"target ({camera.target.x:.3f}, {camera.target.y:.3f}, {camera.target.z:.3f}), " &
+      &"held {len(interaction.keys_held)}; " &
       &"gui.wantsKeys {gui.wantsKeys()}, nav enabled {gui.isNavEnabled()}."
   if options.is_timed and count_drawn > 1:
     reportTimings(TIMINGS_FRAME_MILLISECONDS.toOpenArray(0, count_drawn - 2))

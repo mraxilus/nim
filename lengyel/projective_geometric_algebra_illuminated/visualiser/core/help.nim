@@ -28,8 +28,8 @@
 ## thing's rows are of any use to them right then. So `HelpPath` is the axis, one tab per
 ## path, and `ENTRIES_MAX_PATH` holds each tab to what fits a phone without scrolling. The
 ## table as a whole is under no such bound and no longer pretends to be: it grew from 18
-## entries to 26 across three rounds while its own header still claimed everything here fit
-## one popup, which is exactly the drift a compile-time cap now fails the build over.
+## entries to 39 across four rounds while its own header once still claimed everything here
+## fit one popup, which is exactly the drift a compile-time cap now fails the build over.
 ##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
 ## paths; see `visualiser.nim`'s own "Render Paths" table.
@@ -44,8 +44,16 @@ import ./interaction
 
 #[ Type Definitions ]#
 
+const ENTRIES_MAX_PATH_KEYS* = 12
+  ## Bound how many entries the `keys` path may hold, checked at compile time.
+  ##   Its own bound, larger than every other path's, because the measurement below already
+  ##   found this the one tab not worth fitting a 320-pixel viewport: it describes a
+  ##   keyboard, and a viewport that size is a phone. The bound is still here so the tab
+  ##   cannot grow without anyone noticing -- it went from 8 rows to 11 when the movement
+  ##   keys arrived, and that was a deliberate raise rather than a silent one.
+
 const ENTRIES_MAX_PATH* = 8
-  ## Bound how many entries one path may hold, checked at compile time.
+  ## Bound how many entries any other path may hold, checked at compile time.
   ##   A proxy, and named as one: the real constraint is *rendered height*, and a count is
   ##   what compile time can check. **Measured, not estimated**: the built page is driven
   ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- and each tab is
@@ -60,7 +68,7 @@ const ENTRIES_MAX_PATH* = 8
   ##   | `menu` | 5 | 219 px | 0 |
   ##   | `panel` | 5 | 328 px | 0 |
   ##   | `camera` | 6 | 314 px | 0 |
-  ##   | `keys` | 8 | 320 px | **129 px** |
+  ##   | `keys` | 11 | 320 px | **scrolls; see below** |
   ##
   ##   **`select` now scrolls too, by one row, and that is the trade taken.** Moving the
   ##   menu onto the right button gave it two more rows to carry -- which button reveals,
@@ -72,8 +80,9 @@ const ENTRIES_MAX_PATH* = 8
   ##   teaching, on the tightest phone alone.
   ##   `drag`'s 4 px is new since these numbers were first taken while its rows are
   ##   untouched, so it is drift in the measuring environment rather than a change here.
-  ##   **`keys` is the other tab that scrolls there, and it is left scrolling.** Its
-  ##   eight rows come to 449 px against a 320 px box. Fitting them means every outcome
+  ##   **`keys` is the other tab that scrolls there, and it is left scrolling.** Its rows
+  ##   came to 449 px against a 320 px box when there were eight of them, and there are
+  ##   eleven now that the movement keys are bound. Fitting them means every outcome
   ##   under about 39 characters, which costs real bindings -- `enter`'s "hold shift to add
   ##   it" and `escape`'s "one step at a time" are exactly the things a reader cannot
   ##   discover any other way. Paying that on every screen to serve a 320-pixel one is the
@@ -163,7 +172,7 @@ const lut_help_entries* = block:
   ##   Entries of one path are written together, and the assertion below insists they stay
   ## that way: both front-ends walk this once in order, so a path split across two runs
   ## would render as two tabs of the same name.
-  var lut: array[36, HelpEntry]
+  var lut: array[39, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
@@ -283,18 +292,26 @@ const lut_help_entries* = block:
   )
   add(HelpPath.Keys, "ctrl+z, ctrl+shift+z", "undo, then redo, the last change to the scene")
   add(HelpPath.Keys, "tab", "move focus between the controls and the 3D view")
-  # Read out of `interaction.actionFor` rather than written here, so rebinding a key
-  #   rewrites its own row. Grouped by what they do because a reader looks for the job
-  #   first and the key second; the names still come from `nameOf`, one per key.
+  # Read out of `interaction.motionFor` and `interaction.actionFor` rather than written
+  #   here, so rebinding a key rewrites its own row. Grouped by what they do because a
+  #   reader looks for the job first and the key second; the names still come from
+  #   `nameOf`, one per key.
+  add(
+    HelpPath.Keys,
+    nameOf(Key.W) & ", " & nameOf(Key.A) & ", " & nameOf(Key.S) & ", " & nameOf(Key.D),
+    "slide the view across the ground; hold " & nameOf(Key.Shift) & " to move faster",
+  )
+  add(HelpPath.Keys, nameOf(Key.Q) & ", " & nameOf(Key.E), "lower or raise the view")
   add(
     HelpPath.Keys,
     nameOf(Key.Left) & ", " & nameOf(Key.Right) & ", " &
       nameOf(Key.Up) & ", " & nameOf(Key.Down),
-    "orbit the view; hold shift to slide it instead",
+    "orbit the view around what you are looking at",
   )
   add(
     HelpPath.Keys, nameOf(Key.Minus) & ", " & nameOf(Key.Plus), "move further out, or closer in"
   )
+  add(HelpPath.Keys, nameOf(Key.F), "bring whatever is selected back into view")
   add(
     HelpPath.Keys, nameOf(Key.BracketLeft) & ", " & nameOf(Key.BracketRight),
     "move the highlight to the previous or next object",
@@ -327,6 +344,8 @@ static:
       path_last = some(entry.path)
   for path in HelpPath:
     doAssert path in seen, "Every help path must hold at least one entry: " & titleOf(path)
-    doAssert countOf(path) <= ENTRIES_MAX_PATH,
+    let entries_max =
+      if path == HelpPath.Keys: ENTRIES_MAX_PATH_KEYS else: ENTRIES_MAX_PATH
+    doAssert countOf(path) <= entries_max,
       "Help path `" & titleOf(path) & "` outgrew what fits a phone; split it or raise " &
-      "`ENTRIES_MAX_PATH` deliberately."
+      "its own bound deliberately."

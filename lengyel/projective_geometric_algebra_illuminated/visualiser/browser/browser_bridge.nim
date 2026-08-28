@@ -882,41 +882,93 @@ proc nimHoldMature(now: cfloat): bool {.exportc.} =
   isHoldMature(g_interaction, float(now))
 
 
-proc nimKeyAction(name: cstring; is_shifted: bool): cint {.exportc.} =
-  ## Say what one key does to the view, as a `KeyAction` ordinal, or `SLOT_NONE` for a key
-  ## the view does not answer.
-  ##   Named by the DOM's own `KeyboardEvent.key`, which is only the *naming* this build
-  ##   owns; what each key does is `interaction.actionFor`'s to say, exactly as the SDL
-  ##   side translates scancodes and asks the same table.
-  let key = case $name
-    of "ArrowLeft": some(Key.Left)
-    of "ArrowRight": some(Key.Right)
-    of "ArrowUp": some(Key.Up)
-    of "ArrowDown": some(Key.Down)
-    of "[": some(Key.BracketLeft)
-    of "]": some(Key.BracketRight)
-    of "-": some(Key.Minus)
-    # A shifted `=` is what most layouts put `+` on, so both names reach the same action
-    # rather than leaving a reader to discover which one this build happened to bind.
-    of "+", "=": some(Key.Plus)
-    of "Enter": some(Key.Enter)
-    of "Home": some(Key.Home)
-    else: none(Key)
+func keyFor(code: string): Option[Key] =
+  ## Translate one DOM `KeyboardEvent.code` into the key the view knows it by, if it is one.
+  ##   **`code`, not `key`**: it names the *physical* key, which is what the desktop's own
+  ##   scancodes name, so W is the same key under the hand on both builds and on every
+  ##   layout. Reading `key` bound the browser to whatever the layout prints -- on AZERTY
+  ##   that is the key the desktop calls Z -- and it also changes under shift, which now
+  ##   means "faster" rather than a different binding.
+  ##   Only the naming is this build's own; what each key *does* is
+  ##   `interaction.motionFor` and `interaction.actionFor`'s to say.
+  case code
+  of "KeyW": some(Key.W)
+  of "KeyA": some(Key.A)
+  of "KeyS": some(Key.S)
+  of "KeyD": some(Key.D)
+  of "KeyQ": some(Key.Q)
+  of "KeyE": some(Key.E)
+  of "KeyF": some(Key.F)
+  of "ShiftLeft", "ShiftRight": some(Key.Shift)
+  of "ArrowLeft": some(Key.Left)
+  of "ArrowRight": some(Key.Right)
+  of "ArrowUp": some(Key.Up)
+  of "ArrowDown": some(Key.Down)
+  of "BracketLeft": some(Key.BracketLeft)
+  of "BracketRight": some(Key.BracketRight)
+  of "Minus": some(Key.Minus)
+  # The physical key most layouts print `+` on is the one carrying `=`; shift decides
+  #   which is drawn on it, and the view wants the key rather than the glyph.
+  of "Equal": some(Key.Plus)
+  of "Enter": some(Key.Enter)
+  of "Home": some(Key.Home)
+  else: none(Key)
+
+
+proc nimKeyBound(code: cstring): bool {.exportc.} =
+  ## Report whether the view answers this key at all, so a caller knows whether to keep the
+  ## browser's own default behaviour for it -- an arrow scrolling the page under the canvas
+  ## is the case that matters.
+  keyFor($code).isSome
+
+
+proc nimKeyDown(code: cstring): cint {.exportc.} =
+  ## Take one key press: hold it for `nimDriveHeld` to move the camera by, carry out
+  ## whatever it does at a press, and report the slot the caller should select, or
+  ## `SLOT_NONE`.
+  ##   One entry point for both kinds of binding, so `glue.js` carries no opinion about
+  ## which keys move the view -- that is `interaction`'s to say, and stating it in
+  ## JavaScript is exactly the drift this project keeps finding.
+  ##   Idempotent on a key already down, which is what the browser's own auto-repeat
+  ## sends; the action below is re-run by a repeat, which is harmless for all four of them.
+  let key = keyFor($code)
   if key.isNone: return SLOT_NONE
-  cint(ord(actionFor(key.get, is_shifted)))
-
-
-proc nimApplyKeyAction(action_ordinal: cint): cint {.exportc.} =
-  ## Carry out one key action and report the slot the caller should select, or `SLOT_NONE`.
-  ##   Forwards to `interaction.applyAction`; see its own doc comment for why the selection
-  ##   is the caller's to change rather than this one's.
-  let slot = applyAction(
-    g_interaction, g_camera, g_scene, KeyAction(action_ordinal)
-  )
-  # A key that moved the camera is a camera move like any other, so it abandons whatever
-  #   tween was carrying it somewhere -- otherwise the tween drags it straight back.
-  g_tween_camera.abandon()
+  g_interaction.holdKey(key.get)
+  let action = actionFor(key.get)
+  if action.isNone:
+    # A key that moves the camera is a camera move like any other, so it abandons whatever
+    #   tween was carrying it somewhere -- otherwise the tween drags it straight back.
+    g_tween_camera.abandon()
+    return SLOT_NONE
+  let slot = applyAction(g_interaction, g_camera, g_scene, action.get)
+  # Framing is the standing offer's own job (`framing.offerAim`); the key only lets go of
+  #   the goal it holds, so the next frame aims afresh at whatever is selected.
+  if action.get == KeyAction.FrameSelection: g_tween_camera.release()
+  else: g_tween_camera.abandon()
   if slot.isNone: SLOT_NONE else: cint(slot.get)
+
+
+proc nimKeyUp(code: cstring) {.exportc.} =
+  ## Take one key release, so whatever it was moving stops.
+  let key = keyFor($code)
+  if key.isSome: g_interaction.releaseKey(key.get)
+
+
+proc nimReleaseKeysAll() {.exportc.} =
+  ## Let go of every held key, for a page that has stopped being told about releases --
+  ## the window losing focus, or the tab going to the background. Without it the release
+  ## arrives somewhere else and the camera moves forever.
+  g_interaction.releaseKeysAll()
+
+
+proc nimDriveHeld(seconds: cfloat) {.exportc.} =
+  ## Move the camera by every held key, for one frame of `seconds`; see
+  ## `interaction.driveHeld`.
+  ##   Abandons the tween only when something is actually held, so a frame with no key
+  ## down leaves a camera ease alone.
+  if g_interaction.keys_held.len == 0: return
+  g_interaction.driveHeld(g_camera, float(seconds))
+  g_tween_camera.abandon()
 
 
 proc nimFocusSlot(): cint {.exportc.} =

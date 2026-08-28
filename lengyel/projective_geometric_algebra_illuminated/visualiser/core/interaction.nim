@@ -34,7 +34,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strformat]
+import std/[math, options, strformat]
 
 import ../../pga
 import ./[camera, format, mesh, objects, picking, scene]
@@ -220,20 +220,35 @@ type
     North, East, South, West
 
   Key* {.pure.} = enum ## Name a key the 3D view itself reacts to, in neither backend's naming.
-    ## SDL names these by scancode and the DOM by `KeyboardEvent.key`; each render path
-    ## translates its own into this and asks `actionFor` below, exactly as each translates
-    ## its own mouse-button numbering into `PointerButton`. Only keys the *view* reacts to
-    ## are here -- the accelerators that reach the timeline and the panels stay where they
-    ## already are, since those are reached from anywhere rather than from the canvas.
-    Left, Right, Up, Down, BracketLeft, BracketRight, Minus, Plus, Enter, Home
+    ## Both render paths name the **physical** key: SDL by scancode, the DOM by
+    ## `KeyboardEvent.code`. Each translates its own into this and asks `motionFor` or
+    ## `actionFor` below, exactly as each translates its own mouse-button numbering into
+    ## `PointerButton`. Physical on both sides so that W is the same key under the hand on
+    ## every layout -- the browser used to read `KeyboardEvent.key`, which on AZERTY names
+    ## the key the desktop calls Z.
+    ##   Only keys the *view* reacts to are here -- the accelerators that reach the timeline
+    ## and the panels stay where they already are, since those are reached from anywhere
+    ## rather than from the canvas.
+    ##   `Shift` is a key here rather than a flag threaded through every call, because it
+    ## is held exactly as the movement keys are: one mechanism then carries both which way
+    ## the camera goes and how fast, and letting go of shift mid-movement is just another
+    ## key release.
+    W, A, S, D, Q, E, F,
+    Left, Right, Up, Down, BracketLeft, BracketRight, Minus, Plus, Enter, Home, Shift
 
-  KeyAction* {.pure.} = enum ## Name what a key does to the view.
+  Motion* {.pure.} = enum ## Name a way the view keeps moving while a key is held.
+    ## Separate from `KeyAction` because the two are answered at different times: a motion
+    ## is applied every frame its key is down, by `driveHeld`, and an action happens once,
+    ## at the press. A single enum would have left every caller asking which kind it had.
+    Forward, Back, Left, Right, Down, Up,
     OrbitLeft, OrbitRight, OrbitUp, OrbitDown,
-    PanLeft, PanRight, PanUp, PanDown,
-    DollyIn, DollyOut,
+    DollyIn, DollyOut
+
+  KeyAction* {.pure.} = enum ## Name what one press of a key does to the view.
     FocusPrevious, FocusNext,
     SelectFocused, ## Alone, or added to the selection where shift is held.
-    FrameAll ## Return the camera to where it started.
+    FrameSelection, ## Bring whatever is selected into view, through the framing rule.
+    ViewHome ## Return the camera to the placement both builds open at.
 
   Hold* = object ## Hold a press that will select its item once it has lasted long enough.
     slot*: int ## Item pressed, and the one whose marker fills as the press matures.
@@ -313,6 +328,13 @@ type
     settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
       ## what movement is measured against to decide the dwell has been interrupted.
     menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
+    keys_held*: set[Key] ## Physical keys down right now, which `driveHeld` moves the camera
+      ## by once a frame. A set rather than a per-key flag, so two keys held together
+      ## compose without anything having to enumerate the pairs.
+      ##   Emptied by `releaseKeysAll` whenever the view stops receiving key releases --
+      ## the window losing focus, the reader tabbing into a panel. Not a nicety: the
+      ## release for a key held at that moment is delivered to somebody else, and a key
+      ## left in here moves the camera forever.
     index_disengaged*: Option[int] ## Target a menu was let go of, while the cursor is still
       ## over it. Without this the wheel would re-open on that same object the very next
       ## frame -- `MenuArming.Always` is due on every frame over a target -- and disengaging
@@ -332,34 +354,71 @@ type PointerButton* {.pure.} = enum ## Name a physical mouse button, however num
   Left, Middle, Right
 
 
-func actionFor*(key: Key; is_shifted: bool): KeyAction =
-  ## Say what one key does to the view, with and without shift.
-  ##   **The binding table**, stated once. `help.nim` renders its keyboard rows out of this
-  ##   rather than transcribing them, so rebinding a key rewrites the help with it -- the
-  ##   same arrangement that has kept the drag rows honest across two rebindings.
-  ##   Arrows orbit and shift+arrows pan, which is the convention every 3D tool a reader
-  ##   has met already uses. **Tab is deliberately absent**: cycling objects with it while
-  ##   the view has focus is the tempting binding, and it risks a keyboard trap -- WCAG
-  ##   2.1.2, also Level A -- so traversal took the brackets instead and Tab keeps meaning
-  ##   "next control" everywhere. Fixing 2.1.1 by breaking 2.1.2 is not a fix.
-  ##   Total by construction: every key does something in both shift states, so no caller
-  ##   has an unhandled case and the suite can walk the whole table.
+func motionFor*(key: Key): Option[Motion] =
+  ## Say which way one key keeps moving the view while it is held, or none where it moves
+  ## nothing.
+  ##   **Half the binding table**, stated once; `actionFor` below is the other half and
+  ##   `help.nim` renders its keyboard rows out of both rather than transcribing them, so
+  ##   rebinding a key rewrites the help with it -- the same arrangement that has kept the
+  ##   drag rows honest across two rebindings.
+  ##   **WASD slides the view across the ground and the arrows orbit it**, which is the
+  ##   pairing a reader arrives with: every editor that binds WASD at all (Unity, Unreal,
+  ##   Godot, Blender's fly mode) means "move" by it, and every map does. Q and E lower and
+  ##   raise, which those same four editors agree on. Shift is not here because it changes
+  ##   no key's direction -- it multiplies every rate by `FACTOR_HASTE`; see `driveHeld`.
+  ##   It used to turn an arrow's orbit into a pan, so shift meant one thing on the arrows
+  ##   and nothing anywhere else.
+  ##   Total by construction: every key answers, so no caller has an unhandled case and the
+  ##   suite can walk the whole table.
   case key
-  of Key.Left: (if is_shifted: KeyAction.PanLeft else: KeyAction.OrbitLeft)
-  of Key.Right: (if is_shifted: KeyAction.PanRight else: KeyAction.OrbitRight)
-  of Key.Up: (if is_shifted: KeyAction.PanUp else: KeyAction.OrbitUp)
-  of Key.Down: (if is_shifted: KeyAction.PanDown else: KeyAction.OrbitDown)
-  of Key.BracketLeft: KeyAction.FocusPrevious
-  of Key.BracketRight: KeyAction.FocusNext
-  of Key.Minus: KeyAction.DollyOut
-  of Key.Plus: KeyAction.DollyIn
-  of Key.Enter: KeyAction.SelectFocused
-  of Key.Home: KeyAction.FrameAll
+  of Key.W: some(Motion.Forward)
+  of Key.S: some(Motion.Back)
+  of Key.A: some(Motion.Left)
+  of Key.D: some(Motion.Right)
+  of Key.Q: some(Motion.Down)
+  of Key.E: some(Motion.Up)
+  of Key.Left: some(Motion.OrbitLeft)
+  of Key.Right: some(Motion.OrbitRight)
+  of Key.Up: some(Motion.OrbitUp)
+  of Key.Down: some(Motion.OrbitDown)
+  of Key.Minus: some(Motion.DollyOut)
+  of Key.Plus: some(Motion.DollyIn)
+  of Key.F, Key.BracketLeft, Key.BracketRight, Key.Enter, Key.Home, Key.Shift:
+    none(Motion)
+
+
+func actionFor*(key: Key): Option[KeyAction] =
+  ## Say what one press of a key does to the view, or none where it does nothing at a press
+  ## -- which is every key that moves the view instead; see `motionFor`.
+  ##   **Tab is deliberately absent**: cycling objects with it while the view has focus is
+  ##   the tempting binding, and it risks a keyboard trap -- WCAG 2.1.2, also Level A -- so
+  ##   traversal took the brackets instead and Tab keeps meaning "next control" everywhere.
+  ##   Fixing 2.1.1 by breaking 2.1.2 is not a fix.
+  ##   **F frames the selection**, which Unity, Godot and Blender (on numpad `.`) all bind;
+  ##   Home stays what it was, the placement both builds open at, and the two are different
+  ##   enough to deserve different keys.
+  case key
+  of Key.BracketLeft: some(KeyAction.FocusPrevious)
+  of Key.BracketRight: some(KeyAction.FocusNext)
+  of Key.Enter: some(KeyAction.SelectFocused)
+  of Key.F: some(KeyAction.FrameSelection)
+  of Key.Home: some(KeyAction.ViewHome)
+  of Key.W, Key.A, Key.S, Key.D, Key.Q, Key.E, Key.Left, Key.Right, Key.Up, Key.Down,
+      Key.Minus, Key.Plus, Key.Shift:
+    none(KeyAction)
 
 
 func nameOf*(key: Key): string =
   ## Name a key as a reader would say it, for the help table to print.
   case key
+  of Key.W: "w"
+  of Key.A: "a"
+  of Key.S: "s"
+  of Key.D: "d"
+  of Key.Q: "q"
+  of Key.E: "e"
+  of Key.F: "f"
+  of Key.Shift: "shift"
   of Key.Left: "left"
   of Key.Right: "right"
   of Key.Up: "up"
@@ -654,6 +713,62 @@ proc updateHover*(
 
 #[ Keyboard ]#
 
+proc holdKey*(interaction: var Interaction; key: Key) =
+  ## Note a key as held, so `driveHeld` moves the camera by it every frame until it is
+  ## released. Harmless on a key already held, which is what an auto-repeat sends.
+  interaction.keys_held.incl(key)
+
+
+proc releaseKey*(interaction: var Interaction; key: Key) =
+  ## Note a key as let go of. Harmless on a key not held, which is what a release arriving
+  ## after `releaseKeysAll` is.
+  interaction.keys_held.excl(key)
+
+
+proc releaseKeysAll*(interaction: var Interaction) =
+  ## Let go of every held key at once, for a view that has stopped being told about
+  ## releases: the window losing focus, or the reader tabbing into a panel.
+  ##   **Not a nicety.** The release of a key held at that moment is delivered somewhere
+  ## else, so without this the camera moves forever and no key press stops it.
+  interaction.keys_held = {}
+
+
+proc driveHeld*(interaction: Interaction; camera: var Camera; seconds: float) =
+  ## Move the camera by every key currently held, for one frame of `seconds`.
+  ##   Called once a frame by both render paths rather than at each key event, which is
+  ## what makes a hold read as continuous movement instead of as the operating system's own
+  ## auto-repeat: a delay, then stutters. It also makes two keys held together compose --
+  ## W and D slide diagonally -- with nothing here enumerating the pairs.
+  ##   Every rate is per second (`TURN_SECOND` and its neighbours) and multiplied by
+  ## `seconds` here, so how far a hold travels depends on how long it was held rather than
+  ## on how fast the machine draws. The dolly is the one that cannot be a multiplication:
+  ## it compounds, so it takes `FACTOR_DOLLY_SECOND` to the power of the elapsed seconds.
+  ##   Shift multiplies every rate by `FACTOR_HASTE` rather than changing any direction.
+  if interaction.keys_held.len == 0: return
+  let
+    haste = if Key.Shift in interaction.keys_held: FACTOR_HASTE else: 1.0
+    turn = TURN_SECOND*haste*seconds
+    rise = RISE_SECOND*haste*seconds
+    slide = SLIDE_SECOND*haste*seconds
+    dolly = pow(FACTOR_DOLLY_SECOND, haste*seconds)
+  for key in interaction.keys_held:
+    let motion = motionFor(key)
+    if motion.isNone: continue
+    case motion.get
+    of Motion.Forward: camera.slideGround(slide, 0.0, 0.0)
+    of Motion.Back: camera.slideGround(-slide, 0.0, 0.0)
+    of Motion.Left: camera.slideGround(0.0, -slide, 0.0)
+    of Motion.Right: camera.slideGround(0.0, slide, 0.0)
+    of Motion.Down: camera.slideGround(0.0, 0.0, -slide)
+    of Motion.Up: camera.slideGround(0.0, 0.0, slide)
+    of Motion.OrbitLeft: camera.orbit(-turn, 0.0)
+    of Motion.OrbitRight: camera.orbit(turn, 0.0)
+    of Motion.OrbitUp: camera.orbit(0.0, rise)
+    of Motion.OrbitDown: camera.orbit(0.0, -rise)
+    of Motion.DollyIn: camera.dolly(1.0/dolly)
+    of Motion.DollyOut: camera.dolly(dolly)
+
+
 proc applyAction*(
   interaction: var Interaction; camera: var Camera; scene: Scene; action: KeyAction
 ): Option[int] =
@@ -665,17 +780,13 @@ proc applyAction*(
   ##   selection and adding to it -- see `KeyAction.SelectFocused`.
   ##   None for every action but a select, and for a select with nothing focused, which is
   ##   what a reader gets for pressing enter before walking anywhere.
+  ##   **`FrameSelection` does nothing here**, deliberately: framing reads the selection,
+  ##   which this module does not own, and both paths already offer the camera an aim over
+  ##   that selection once a frame (`framing.offerAim`). All the key has to do is clear the
+  ##   goal that offer is holding, so the next frame aims afresh -- `CameraTween.release`,
+  ##   which each path calls on its own tween. Doing it any other way would mean a second
+  ##   statement of what "in view" means.
   case action
-  of KeyAction.OrbitLeft: camera.orbit(-TURN_PRESS, 0.0)
-  of KeyAction.OrbitRight: camera.orbit(TURN_PRESS, 0.0)
-  of KeyAction.OrbitUp: camera.orbit(0.0, RISE_PRESS)
-  of KeyAction.OrbitDown: camera.orbit(0.0, -RISE_PRESS)
-  of KeyAction.PanLeft: camera.pan(PAN_PRESS, 0.0)
-  of KeyAction.PanRight: camera.pan(-PAN_PRESS, 0.0)
-  of KeyAction.PanUp: camera.pan(0.0, -PAN_PRESS)
-  of KeyAction.PanDown: camera.pan(0.0, PAN_PRESS)
-  of KeyAction.DollyIn: camera.dolly(1.0/FACTOR_DOLLY_PRESS)
-  of KeyAction.DollyOut: camera.dolly(FACTOR_DOLLY_PRESS)
   of KeyAction.FocusPrevious: interaction.index_focus = scene.slotStepped(
     interaction.index_focus, -1
   )
@@ -685,7 +796,8 @@ proc applyAction*(
   of KeyAction.SelectFocused:
     if interaction.index_focus.isSome and scene.isAlive(interaction.index_focus.get):
       return interaction.index_focus
-  of KeyAction.FrameAll:
+  of KeyAction.FrameSelection: discard
+  of KeyAction.ViewHome:
     # The placement both builds open at, so "home" means the same thing as starting again.
     camera = initCameraDefault()
   none(int)

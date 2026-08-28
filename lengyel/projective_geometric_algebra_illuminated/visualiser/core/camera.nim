@@ -85,18 +85,34 @@ const
     ## rather than letting it decay as the camera pulls back.
 
 const
-  ## How far one **key press** moves the camera. Shared by both front-ends, unlike the
-  ## per-pixel drag rates, which differ for a real reason: `visualiser.SPEED_ORBIT` is
-  ## radians per pixel dragged and `glue.js` works in fractions of canvas width, so those
-  ## two cannot be one number. A press has no pixels in it, so these can be, and are.
-  ##   Sized so a reader crosses the useful range in a handful of presses rather than
-  ## dozens -- a keyboard route nobody can be bothered to hold down is a keyboard route in
-  ## name only -- while still landing somewhere deliberate rather than overshooting.
-  TURN_PRESS* = 0.10 ## Azimuth one arrow press turns through, in radians (about 6 degrees).
-  RISE_PRESS* = 0.08 ## Elevation one arrow press rises through, in radians.
-  PAN_PRESS* = 0.06 ## Target shift one press slides, as a fraction of orbit distance.
-  FACTOR_DOLLY_PRESS* = 1.15 ## Orbit distance one press scales by, dollying out; its
-    ## reciprocal dollies in, so a press each way returns exactly where it started.
+  ## How fast a **held key** moves the camera, per second of holding. Shared by both
+  ## front-ends, unlike the per-pixel drag rates, which differ for a real reason:
+  ## `visualiser.SPEED_ORBIT` is radians per pixel dragged and `glue.js` works in fractions
+  ## of canvas width, so those two cannot be one number. A held key has no pixels in it, so
+  ## these can be, and are.
+  ##   **Per second, not per press.** These replaced a set of per-press steps that leaned on
+  ## the operating system's own auto-repeat to move any distance: movement began only after
+  ## the repeat delay and then arrived in stutters, which is not what a reader who has held
+  ## W in any other program expects. `interaction.driveHeld` applies them once a frame,
+  ## scaled by the frame's own elapsed time, so how far a hold travels depends on how long
+  ## it was held and not on how fast the machine draws.
+  ##   Sized so a reader crosses the useful range in a second or two of holding rather than
+  ## in ten -- a keyboard route nobody can be bothered to hold is a keyboard route in name
+  ## only -- while still being controllable in short taps.
+  TURN_SECOND* = 1.4 ## Azimuth a held arrow turns through per second, in radians.
+  RISE_SECOND* = 1.1 ## Elevation a held arrow rises through per second, in radians.
+  SLIDE_SECOND* = 1.2 ## Ground distance a held key slides per second, as a fraction of
+    ## orbit distance -- so a reader who has zoomed in to inspect one object crosses it at
+    ## the same apparent speed as one looking at the whole scene.
+  FACTOR_DOLLY_SECOND* = 4.0 ## Orbit distance a held key scales by per second, dollying
+    ## out; its reciprocal dollies in, so a second each way returns exactly where it
+    ## started. **Compounded as a power of the elapsed seconds**, never multiplied per
+    ## frame: a scale applied once per frame would move a 144 Hz reader more than twice as
+    ## far as a 60 Hz one for the same hold.
+  FACTOR_HASTE* = 4.0 ## Multiply every rate above by this while shift is held.
+    ## Shift means *faster* on every movement key rather than meaning something different
+    ## on each -- it used to turn an arrow's orbit into a pan -- which is what Blender,
+    ## Unity, Unreal and Godot all do with it.
 
 
 
@@ -256,6 +272,39 @@ proc pan*(camera: var Camera; across, up: float) =
   camera.target = camera.target +
     (across * camera.distance)*axes.axis_right +
     (up * camera.distance)*axes.axis_up
+
+
+func headingGround*(camera: Camera): Direction =
+  ## Read the way the camera faces, flattened onto the ground: the direction a reader
+  ## means by "forward" when they are looking at a scene standing on the ground plane.
+  ##   Solved from azimuth rather than by flattening `frame.forward` and normalising, which
+  ##   is the same direction everywhere it is defined and unstable where it matters: at the
+  ##   elevation limit the sight direction is within 0.02 radians of `UP_WORLD`, so its
+  ##   horizontal part is a rounding error being scaled up to unit length. `eye`'s own
+  ##   formula puts the eye at `target + radius*(cos azimuth, sin azimuth, ...)`, so the
+  ##   way back to the target is the negation of that, and elevation drops out of it.
+  Direction(x: -cos(camera.azimuth), y: -sin(camera.azimuth), z: 0.0)
+
+
+proc slideGround*(camera: var Camera; ahead, across, rise: float) =
+  ## Slide target across the world -- forward along `headingGround`, sideways along the
+  ## camera's own right, and up along world up -- leaving the eye's placement about it
+  ## alone, so the whole view travels without turning.
+  ##   The **map** reading of a movement key rather than the *fly* one: forward keeps the
+  ##   camera's height whatever it is looking at, so holding W skims the ground instead of
+  ##   diving into it. That is what Supreme Commander and Google Maps do, and it is the
+  ##   reading that goes with a zoom aimed at the cursor.
+  ##   `across` reuses the frame's own `axis_right`, which is already horizontal -- it is
+  ##   the join of the sight line and world up, dualised -- rather than deriving a second
+  ##   side direction here that could disagree with the one mouse pan uses in sign.
+  ##   All three are fractions of orbit distance, exactly as `pan`'s arguments are, so a
+  ##   reader zoomed in on one object travels it at the same apparent speed as one looking
+  ##   at the whole scene.
+  let axes = camera.frame(camera.eye)
+  camera.target = camera.target +
+    (ahead * camera.distance)*camera.headingGround +
+    (across * camera.distance)*axes.axis_right +
+    (rise * camera.distance)*UP_WORLD
 
 
 

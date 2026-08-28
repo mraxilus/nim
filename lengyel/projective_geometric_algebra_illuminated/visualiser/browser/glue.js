@@ -664,14 +664,16 @@ document.addEventListener('keydown', (e) => {
   //   Which key does what is `interaction.actionFor`'s to say; only the DOM's own naming
   //   of the keys is translated across, exactly as SDL scancodes are on the desktop side.
   if (document.activeElement === canvas && !(e.ctrlKey || e.metaKey || e.altKey)) {
-    const action = nimKeyAction(e.key, e.shiftKey);
-    if (action >= 0) {
+    // `e.code`, the physical key, which is what the desktop's scancodes name -- see
+    //   `browser_bridge.keyFor`. A key that moves the view is held from here until its
+    //   `keyup` below; a key that acts does so on this press.
+    if (nimKeyBound(e.code)) {
       e.preventDefault(); // Arrows would otherwise scroll the page under the canvas.
       dismissHint();
-      const slot = nimApplyKeyAction(action);
+      const slot = nimKeyDown(e.code);
       if (slot >= 0) {
         // Shift adds rather than replaces, exactly as shift-click does -- the one thing
-        //   the shift state means that the shared action table cannot answer alone.
+        //   the shift state means that the shared binding table cannot answer alone.
         if (e.shiftKey) toggleSelection(slot, null); else selectOnly(slot, null);
       }
       return;
@@ -689,6 +691,19 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     stepHistory(false);
   }
+});
+
+// A key can only stop moving the camera if its release is seen, and there are three ways
+// for one to go missing: the release lands while another element has focus, the window
+// loses focus entirely, or the tab is hidden. The first is handled by matching the keydown
+// guard; the other two let go of everything.
+document.addEventListener('keyup', (e) => {
+  nimKeyUp(e.code);
+});
+window.addEventListener('blur', () => { nimReleaseKeysAll(); });
+canvas.addEventListener('blur', () => { nimReleaseKeysAll(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) nimReleaseKeysAll();
 });
 
 function refreshUndoRedoButtons() {
@@ -2370,8 +2385,15 @@ function frame() {
   const now_seconds = now();
 
   const now_milliseconds = performance.now();
+  const seconds_frame = (now_milliseconds - time_frame_last) / 1000;
   recordFrameTime(now_milliseconds - time_frame_last);
   time_frame_last = now_milliseconds;
+
+  // Whatever key is held moves the camera by one frame's worth, before anything is drawn
+  // from the placement. Scaled by the frame's own elapsed time, so a hold travels the same
+  // distance on a 60 Hz screen and a 144 Hz one -- which way it moves the camera is
+  // `interaction.driveHeld`'s to say, never this file's.
+  nimDriveHeld(seconds_frame);
 
   // A press that has now lasted long enough selects its item. Checked here rather than by
   //   a timer that fires on its own, so that the moment the marker finishes filling is the

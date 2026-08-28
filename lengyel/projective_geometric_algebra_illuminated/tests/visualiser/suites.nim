@@ -308,9 +308,9 @@ suite "Camera":
       check distanceHeld(distance) =~ distance
       check initCamera(ORIGIN, distance, 0.7, 0.3).distance =~ distance
 
-    # Dollying out, one press at a time, walks straight past where the limit used to sit.
+    # Holding the dolly out walks straight past where the limit used to sit.
     var camera = initCameraDefault()
-    for _ in 1 .. 64: camera.dolly(FACTOR_DOLLY_PRESS)
+    for _ in 1 .. 6: camera.dolly(FACTOR_DOLLY_SECOND)
     check camera.distance > 5_000.0
 
 
@@ -3005,8 +3005,12 @@ suite "Help":
     # Asserted at compile time too, in `help.nim`'s own `static` block; stated here as well
     #   because that assertion is invisible in a passing run, and this is the property the
     #   whole tab split exists to hold.
+    #   `keys` has a bound of its own, and a larger one: it describes a keyboard, and the
+    #   screen this bound is a proxy for is a phone. See `ENTRIES_MAX_PATH_KEYS`.
     for path in HelpPath:
-      check countOf(path) in 1 .. ENTRIES_MAX_PATH
+      let entries_max =
+        if path == HelpPath.Keys: ENTRIES_MAX_PATH_KEYS else: ENTRIES_MAX_PATH
+      check countOf(path) in 1 .. entries_max
 
 
   test "a tab's entries are contiguous, so neither UI renders one tab twice":
@@ -3957,48 +3961,172 @@ suite "Interaction":
     check scene.slotStepped(none(int), 1).isNone
 
 
-  test "every key does something in both shift states":
+  test "every key answers the binding table, and answers exactly one half of it":
     # The table has to be total: each render path translates its own naming and then trusts
-    #   this, so a key with no answer would be a case nobody handled.
+    #   this, so a key with no answer would be a case nobody handled. The halves also have
+    #   to be disjoint -- a key that both moved the view while held and did something at
+    #   the press would do the second thing again on every auto-repeat.
     for key in Key:
-      for is_shifted in [false, true]:
-        discard actionFor(key, is_shifted) # A missing branch is a compile error in Nim;
-          # this walks the table so a *runtime* gap could not hide either.
-    # Shift is what separates orbiting from panning, and only for the arrows.
-    check actionFor(Key.Left, false) == KeyAction.OrbitLeft
-    check actionFor(Key.Left, true) == KeyAction.PanLeft
-    check actionFor(Key.BracketRight, false) == actionFor(Key.BracketRight, true)
+      let (motion, action) = (motionFor(key), actionFor(key))
+      check not (motion.isSome and action.isSome)
+      if key == Key.Shift:
+        # The one key that is neither: it multiplies every rate rather than binding one.
+        check motion.isNone and action.isNone
+      else:
+        check motion.isSome or action.isSome
+    check motionFor(Key.W) == some(Motion.Forward)
+    check motionFor(Key.Left) == some(Motion.OrbitLeft)
+    check actionFor(Key.F) == some(KeyAction.FrameSelection)
+    check actionFor(Key.Home) == some(KeyAction.ViewHome)
 
 
-  test "each camera key moves the camera by its own shared step":
+  test "a held key slides the view across the ground, never through it":
+    # The **map** reading of a movement key rather than the fly one: forward keeps the
+    #   camera's height whatever it is looking at. Judged from a camera tilted well down,
+    #   where a slide along the raw sight direction would plainly lose height.
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCamera(target = ORIGIN, distance = 20.0, azimuth = 0.4, elevation = 0.9)
+    let opening = camera
+    interaction.holdKey(Key.W)
+    interaction.driveHeld(camera, 1.0)
+    check camera.target.z =~ opening.target.z
+    check camera.distance =~ opening.distance
+    check camera.azimuth =~ opening.azimuth
+    check camera.elevation =~ opening.elevation
+    # Forward is the way the camera faces, flattened: the move lies along it exactly.
+    let moved = camera.target - opening.target
+    check norm(moved) =~ SLIDE_SECOND*opening.distance
+    check dot(moved, opening.headingGround) =~ norm(moved)
+
+    # Sideways is perpendicular to that, and level with it.
+    interaction.releaseKey(Key.W)
+    interaction.holdKey(Key.D)
+    var sideways = initCamera(ORIGIN, 20.0, 0.4, 0.9)
+    interaction.driveHeld(sideways, 1.0)
+    check sideways.target.z =~ 0.0
+    check abs(dot(sideways.target - ORIGIN, sideways.headingGround)) <= TOLERANCE_TEST
+
+    # Up and down are world up, and nothing else.
+    interaction.releaseKey(Key.D)
+    interaction.holdKey(Key.E)
+    var lifted = initCamera(ORIGIN, 20.0, 0.4, 0.9)
+    interaction.driveHeld(lifted, 1.0)
+    check lifted.target.x =~ 0.0
+    check lifted.target.y =~ 0.0
+    check lifted.target.z =~ SLIDE_SECOND*lifted.distance
+
+
+  test "held keys compose, and letting one go leaves the other running":
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCamera(target = ORIGIN, distance = 20.0, azimuth = 0.4, elevation = 0.3)
+    interaction.holdKey(Key.W)
+    interaction.holdKey(Key.E)
+    interaction.driveHeld(camera, 1.0)
+    let both = camera.target
+    check both.z > 0.0
+    check norm(Direction(x: both.x, y: both.y, z: 0)) > 0.0
+
+    interaction.releaseKey(Key.E)
+    interaction.driveHeld(camera, 1.0)
+    check camera.target.z =~ both.z # The lift stopped exactly when its key was let go of.
+    check norm(camera.target - both) > 0.0 # The slide did not.
+
+
+  test "how far a hold travels depends on how long it was held":
+    # The whole point of driving movement per frame: a rate stated per second, multiplied
+    #   by the frame's own elapsed time, so a fast machine and a slow one agree.
+    var interaction = Interaction(is_enabled: true)
+    interaction.holdKey(Key.W)
+    var
+      once = initCamera(ORIGIN, 20.0, 0.0, 0.3)
+      twice = initCamera(ORIGIN, 20.0, 0.0, 0.3)
+    interaction.driveHeld(once, 0.5)
+    interaction.driveHeld(twice, 1.0)
+    check norm(twice.target - ORIGIN) =~ 2.0*norm(once.target - ORIGIN)
+
+    # The dolly is the one that compounds rather than adding, so it takes the rate to the
+    #   power of the elapsed seconds: two half-seconds must equal one whole one.
+    interaction.releaseKey(Key.W)
+    interaction.holdKey(Key.Minus)
+    var
+      halves = initCamera(ORIGIN, 20.0, 0.0, 0.3)
+      whole = initCamera(ORIGIN, 20.0, 0.0, 0.3)
+    interaction.driveHeld(halves, 0.5)
+    interaction.driveHeld(halves, 0.5)
+    interaction.driveHeld(whole, 1.0)
+    check halves.distance =~ whole.distance
+    check whole.distance =~ 20.0*FACTOR_DOLLY_SECOND
+
+
+  test "shift makes every movement key faster, and changes none of them":
+    var interaction = Interaction(is_enabled: true)
+    interaction.holdKey(Key.W)
+    var
+      plain = initCamera(ORIGIN, 20.0, 0.4, 0.3)
+      hastened = initCamera(ORIGIN, 20.0, 0.4, 0.3)
+    interaction.driveHeld(plain, 0.25)
+    interaction.holdKey(Key.Shift)
+    interaction.driveHeld(hastened, 0.25)
+    check norm(hastened.target - ORIGIN) =~ FACTOR_HASTE*norm(plain.target - ORIGIN)
+    # Same direction, not a different binding -- which is what shift+arrow used to mean.
+    check dot(hastened.target - ORIGIN, plain.headingGround) > 0.0
+
+    var
+      turned = initCamera(ORIGIN, 20.0, 0.4, 0.3)
+      turned_fast = initCamera(ORIGIN, 20.0, 0.4, 0.3)
+    interaction.releaseKeysAll()
+    interaction.holdKey(Key.Left)
+    interaction.driveHeld(turned, 0.25)
+    interaction.holdKey(Key.Shift)
+    interaction.driveHeld(turned_fast, 0.25)
+    check (turned_fast.azimuth - 0.4) =~ FACTOR_HASTE*(turned.azimuth - 0.4)
+
+
+  test "letting go of everything at once stops the camera, however it lost the release":
+    # A window that loses focus never sees the key up, and a key left held moves the camera
+    #   forever with no press able to stop it.
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCamera(target = ORIGIN, distance = 20.0, azimuth = 0.4, elevation = 0.3)
+    interaction.holdKey(Key.W)
+    interaction.holdKey(Key.Shift)
+    check interaction.keys_held.len == 2
+    interaction.releaseKeysAll()
+    check interaction.keys_held.len == 0
+    let standing = camera.target
+    interaction.driveHeld(camera, 1.0)
+    check camera.target =~ standing
+
+
+  test "each key that acts at a press does its own thing, and moves nothing while held":
     var scene = initScene()
     scene.addItem(GENERAL_POINTS[0], "a", Ink.Rose)
-    var interaction = Interaction(is_enabled: true)
-    var camera = initCameraDefault()
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCameraDefault()
     let opening = camera
 
-    discard interaction.applyAction(camera, scene, KeyAction.OrbitRight)
-    check camera.azimuth =~ opening.azimuth + TURN_PRESS
-    discard interaction.applyAction(camera, scene, KeyAction.OrbitLeft)
-    check camera.azimuth =~ opening.azimuth # A press each way returns exactly where it was.
-
-    discard interaction.applyAction(camera, scene, KeyAction.OrbitUp)
-    check camera.elevation =~ opening.elevation + RISE_PRESS
-    discard interaction.applyAction(camera, scene, KeyAction.OrbitDown)
+    # Home returns to the placement both builds open at, from wherever the reader has gone.
+    camera.slideGround(3.0, 2.0, 1.0)
+    camera.orbit(0.5, 0.2)
+    discard interaction.applyAction(camera, scene, KeyAction.ViewHome)
+    check camera.target =~ opening.target
+    check camera.distance =~ opening.distance
+    check camera.azimuth =~ opening.azimuth
     check camera.elevation =~ opening.elevation
 
-    discard interaction.applyAction(camera, scene, KeyAction.DollyOut)
-    check camera.distance =~ opening.distance*FACTOR_DOLLY_PRESS
-    discard interaction.applyAction(camera, scene, KeyAction.DollyIn)
+    # Framing is the standing offer's own job, so the key itself moves nothing: each front
+    #   end releases its tween's goal and `framing.offerAim` aims afresh the next frame.
+    check interaction.applyAction(camera, scene, KeyAction.FrameSelection).isNone
+    check camera.target =~ opening.target
     check camera.distance =~ opening.distance
 
-    discard interaction.applyAction(camera, scene, KeyAction.PanRight)
-    check not (camera.target.x =~ opening.target.x) or
-      not (camera.target.y =~ opening.target.y)
-    discard interaction.applyAction(camera, scene, KeyAction.FrameAll)
-    check camera.target.x =~ opening.target.x
-    check camera.target.y =~ opening.target.y
-    check camera.distance =~ opening.distance
+    # And a key held down is not an action at all, however long it is held.
+    interaction.holdKey(Key.F)
+    interaction.driveHeld(camera, 1.0)
+    check camera.target =~ opening.target
 
 
   test "enter reports the focused slot for the caller to select, and nothing before then":

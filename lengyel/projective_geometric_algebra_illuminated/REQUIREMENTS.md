@@ -772,8 +772,26 @@ key" flag suggests. **Measure what that flag actually reports before using it as
 the view's own keys must still reach the view while the reader is merely looking at the
 scene, and must not while a field is taking text or navigation has landed on a widget.
 
-Keys that move the camera move it by **one shared amount per press**, unlike the per-pixel
-drag rates, which differ per front-end for a real reason. A press has no pixels in it.
+Keys that move the camera move it by **one shared rate per second**, unlike the per-pixel
+drag rates, which differ per front-end for a real reason. A held key has no pixels in it.
+
+**Movement keys run while held**, applied once a frame and scaled by that frame's elapsed
+time, so a hold covers the same ground however fast the machine draws; a compounding rate
+like a dolly takes its factor to the power of the elapsed seconds rather than multiplying per
+frame. Both front-ends must therefore watch key *up* as well as key *down*, and must let go
+of everything whenever releases stop arriving — the window losing focus, the tab being
+hidden, or a panel widget taking the keyboard. A key left held moves the camera forever and
+no press can stop it.
+
+**Both front-ends bind the physical key**, SDL scancodes and DOM `KeyboardEvent.code`. The
+layout-dependent name changes under shift and differs per layout, so binding it would put W
+under a different finger on AZERTY than the desktop's W.
+
+The binding table follows what other 3D software does, which is checked rather than assumed:
+WASD moves, Q/E lower and raise, shift means *faster* on every movement key rather than
+something different on each, and F frames the selection. Movement is the **map** reading —
+the view slides across the ground and its height never changes — not the *fly* one, because
+the camera orbits a target on the ground and its zoom aims at the cursor.
 
 The document-level "tap outside closes the floating menu" listener must **exclude the canvas,
 the drawer and the chip row**. It fires on pointer-down, before the tap gesture resolves on

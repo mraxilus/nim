@@ -37,7 +37,12 @@ type
   EventKind* {.pure.} = enum ## Name event kinds visualiser reacts to.
     Quit = 0x100,
     WindowResized = 0x206,
+    WindowFocusLost = 0x20f,
+      ## Watched so held keys can be let go of: their releases go to whichever window took
+      ## the focus, and a key left held would move the camera forever. See
+      ## `interaction.releaseKeysAll`.
     KeyDown = 0x300,
+    KeyUp = 0x301,
     MouseMotion = 0x400,
     MouseButtonDown = 0x401,
     MouseButtonUp = 0x402,
@@ -47,8 +52,13 @@ type
     ## USB HID usage IDs, which is what an SDL scancode is; every one below is checked
     ## against the header's own macro at compile time by `CHECKS_MIRROR`, so a wrong
     ## number fails the build rather than binding a key nobody pressed.
+    A = 4,
+    D = 7,
+    E = 8,
+    F = 9,
     Q = 20,
     S = 22,
+    W = 26,
     Y = 28,
     Z = 29,
     Return = 40,
@@ -66,6 +76,12 @@ type
     Left = 80,
     Down = 81,
     Up = 82,
+    ShiftLeft = 225,
+    ShiftRight = 229,
+      ## Both shift keys are bound, and to the same thing: a reader holds whichever one
+      ## their other hand is nearer. The modifier bitmask (`MODIFIER_SHIFT`) cannot serve
+      ## here, since what is wanted is shift's own press and release, not its state at
+      ## some other key's event.
 
   MouseButton* {.pure.} = enum ## Name mouse buttons visualiser reacts to.
     Left = 1,
@@ -175,12 +191,21 @@ proc pushEvent*(event: ptr Event): bool
 const lut_mirror_to_symbol = [
   (int(EventKind.Quit), "SDL_EVENT_QUIT"),
   (int(EventKind.WindowResized), "SDL_EVENT_WINDOW_RESIZED"),
+  (int(EventKind.WindowFocusLost), "SDL_EVENT_WINDOW_FOCUS_LOST"),
   (int(EventKind.KeyDown), "SDL_EVENT_KEY_DOWN"),
+  (int(EventKind.KeyUp), "SDL_EVENT_KEY_UP"),
   (int(EventKind.MouseMotion), "SDL_EVENT_MOUSE_MOTION"),
   (int(EventKind.MouseButtonDown), "SDL_EVENT_MOUSE_BUTTON_DOWN"),
   (int(EventKind.MouseButtonUp), "SDL_EVENT_MOUSE_BUTTON_UP"),
   (int(EventKind.MouseWheel), "SDL_EVENT_MOUSE_WHEEL"),
   (int(Scancode.Escape), "SDL_SCANCODE_ESCAPE"),
+  (int(Scancode.A), "SDL_SCANCODE_A"),
+  (int(Scancode.D), "SDL_SCANCODE_D"),
+  (int(Scancode.E), "SDL_SCANCODE_E"),
+  (int(Scancode.F), "SDL_SCANCODE_F"),
+  (int(Scancode.W), "SDL_SCANCODE_W"),
+  (int(Scancode.ShiftLeft), "SDL_SCANCODE_LSHIFT"),
+  (int(Scancode.ShiftRight), "SDL_SCANCODE_RSHIFT"),
   (int(Scancode.S), "SDL_SCANCODE_S"),
   (int(Scancode.Y), "SDL_SCANCODE_Y"),
   (int(Scancode.Z), "SDL_SCANCODE_Z"),
