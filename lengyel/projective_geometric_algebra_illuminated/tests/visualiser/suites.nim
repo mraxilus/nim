@@ -298,6 +298,22 @@ suite "Camera":
       check isNear(clipped[1]/clipped[3], 0)
 
 
+  test "the clip planes follow the orbit distance, rather than where they were built":
+    # The bug this guards: the pair was stored at construction and kept its value through
+    #   every dolly, so the far plane sat at a fixed 400 while the orbit could reach 500 --
+    #   dollying past it clipped the whole scene away, and well before that a line's own far
+    #   end came back inside the frame and read as stopping in mid-air. Deriving both is
+    #   also what let the orbit ceiling go, so this is load-bearing twice over.
+    var camera = initCameraDefault()
+    let (near_opened, far_opened) = (camera.distanceNear, camera.distanceFar)
+    camera.dolly(4.0)
+    check camera.distanceNear =~ 4.0*near_opened
+    check camera.distanceFar =~ 4.0*far_opened
+    # Scaled together, so the frustum keeps its shape and the depth buffer its precision --
+    #   a function of the far-to-near ratio -- however far the camera stands.
+    check camera.distanceFar/camera.distanceNear =~ far_opened/near_opened
+
+
   test "an orbit distance has a floor and no ceiling":
     # The floor is geometry: at zero the eye coincides with its target and every direction
     #   derived from the line joining them collapses. The ceiling was a round number, and

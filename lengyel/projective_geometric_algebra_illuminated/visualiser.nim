@@ -252,6 +252,8 @@ type Options = object ## Hold what command line asked of this run.
   is_novsync: bool ## Whether to disable vsync from startup, for uncapped timing runs.
   is_filled: bool ## Whether to top scene up to capacity with synthetic items, for
     ## timing the heaviest tessellation and draw load rather than the demo's own light one.
+  is_asserted: bool ## Whether a driven run ends in a verdict rather than a report, and
+    ## exits non-zero where it fails. See `verdictDriven`.
   is_drag_driven: bool ## Whether to script a construction drag through the event queue,
     ## so a headless run can be made to show a drag mid-gesture. See `driveDrag`.
   is_key_driven: bool ## Whether to script a run of view keys through the event queue, so
@@ -281,6 +283,7 @@ proc parseOptions(): Options =
       of "timings": result.is_timed = true
       of "novsync": result.is_novsync = true
       of "fill": result.is_filled = true
+      of "drive-assert": result.is_asserted = true
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
       of "drive-select": result.is_select_driven = true
@@ -294,8 +297,8 @@ proc parseOptions(): Options =
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, drive-drag, drive-keys, " &
-          "drive-select, drive-undo, drive-sky or drive-help."
+          "frames, hidden, timings, novsync, fill, drive-assert, drive-drag, " &
+          "drive-keys, drive-select, drive-undo, drive-sky or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
     of cmdEnd: discard
@@ -1285,15 +1288,20 @@ proc driveSelect(
 
 
 const lut_keys_undo_driven = [
-  (Scancode.Right, uint32(1073741903), 0'u16), # SDLK_RIGHT, no modifier: orbit.
-  (Scancode.Right, uint32(1073741903), 0'u16),
-  (Scancode.Right, uint32(1073741903), 0'u16),
-  (Scancode.Up, uint32(1073741906), 0'u16), # SDLK_UP: rise.
-  (Scancode.Z, uint32(ord('z')), MODIFIER_CONTROL), # The undo under test.
-] ## Script the keys `--drive-undo` sends after its construction lands: three orbit steps
-  ## and a rise, far enough that a view left where they put it cannot be mistaken for the
-  ## one the construction was made from, then the undo itself. Scancode, keycode and
-  ## modifiers together, for the reason `driveKeys` gives about the keycode.
+  (Scancode.Right, uint32(1073741903), 0'u16, true), # SDLK_RIGHT, no modifier: orbit.
+  (Scancode.Right, uint32(1073741903), 0'u16, false),
+  (Scancode.Up, uint32(1073741906), 0'u16, true), # SDLK_UP: rise.
+  (Scancode.Up, uint32(1073741906), 0'u16, false),
+  (Scancode.Z, uint32(ord('z')), MODIFIER_CONTROL, true), # The undo under test.
+  (Scancode.Z, uint32(ord('z')), MODIFIER_CONTROL, false),
+] ## Script the keys `--drive-undo` sends after its construction lands: an orbit and a rise,
+  ## held for a frame each -- far enough that a view left where they put it cannot be
+  ## mistaken for the one the construction was made from -- then the undo itself. Scancode,
+  ## keycode, modifiers and whether the key goes down or comes up.
+  ##   **Every press is paired with its release**, which it was not when a key meant one
+  ## step per press: an arrow left down now orbits every frame for the rest of the run, so
+  ## the undo restored the view and the still-held key immediately took it away again. The
+  ## verdict caught exactly that.
 
 proc driveUndo(
   scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
@@ -1347,11 +1355,13 @@ proc driveUndo(
   #   camera aim armed before the orbit that has to override it starts.
   let index = step - STEPS_DRAG - 1
   if index notin 0 ..< len(lut_keys_undo_driven): return
-  let (scancode, keycode, modifiers) = lut_keys_undo_driven[index]
-  var event = Event(kind: uint32(EventKind.KeyDown))
+  let (scancode, keycode, modifiers, is_down) = lut_keys_undo_driven[index]
+  var event = Event(
+    kind: uint32(if is_down: EventKind.KeyDown else: EventKind.KeyUp)
+  )
   event.key.scancode = uint32(scancode)
   event.key.keycode = keycode
-  event.key.is_down = true
+  event.key.is_down = is_down
   event.key.modifiers = modifiers
   sdl3.pushEvent(addr event)
 
@@ -1372,7 +1382,7 @@ func positionOverSky(
 
 
 proc driveSky(
-  scene: Scene; camera: Camera; width, height, count_drawn: int
+  scene: var Scene; camera: Camera; width, height, count_drawn: int; now: float
 ) =
   ## Script a left drag across bare sky, then a plain click on it, one step per frame.
   ##   For `--drive-sky`, and reached from nowhere else. It guards the one regression
@@ -1386,6 +1396,22 @@ proc driveSky(
   const
     FRAME_FIRST = 2
     STEPS_DRAG = 5 # Reach, press, and three frames of travel; the release follows.
+  # **Its own precondition, built here.** There is no sky in the opening scene -- the seeds
+  #   are three points, the origin and the ground -- so every scan below found nothing and
+  #   this drive silently did nothing at all, for as long as it has existed. It only ever
+  #   said anything when somebody happened to build a horizon plane by hand first.
+  if count_drawn == FRAME_FIRST - 1:
+    var has_sky = false
+    for slot in 0 ..< ITEMS_MAX:
+      if scene.isAlive(slot) and scene.geometryOf(slot).isHorizonPlane: has_sky = true
+    if not has_sky:
+      discard scene.addItem(
+        toMultivector(Direction(x: 1, y: 0, z: 0)) ∧
+          toMultivector(Direction(x: 0, y: 1, z: 0)) ∧
+          toMultivector(Direction(x: 0, y: 0, z: 1)),
+        "sky", Ink.Cobalt, now,
+      )
+    return
   let step = count_drawn - FRAME_FIRST
   if step notin 0 .. STEPS_DRAG + 3: return
   let over_sky = positionOverSky(
@@ -1413,6 +1439,106 @@ proc driveSky(
   sdl3.pushEvent(addr event)
 
 
+proc verdictDriven(
+  options: Options; scene: Scene; camera, camera_opened: Camera;
+  interaction: Interaction; panel: Panel; count_settled: int;
+  was_dragging, was_menu_open: bool
+): int =
+  ## Judge what a `--drive-*` run actually reached, and report every check pass or fail.
+  ## Answers with the number that failed, for the caller to exit on.
+  ##   **The drives used to narrate and leave the reading to a human**: each pushes real SDL
+  ##   events and then printed, or drew, what happened. That is how the *screenshots* are
+  ##   read and it stays that way, but it means nothing guarded the wiring between runs, and
+  ##   a rule wired to the wrong event is invisible to a suite that calls the rule directly.
+  ##   `tools/drive_browser.mjs` is the other half of this, for the other front end, and
+  ##   reports in the same shape deliberately.
+  ##   Each verdict belongs to one drive and is only asked where that drive ran, so a run
+  ##   asserts what it actually scripted and nothing else. What is checked comes from each
+  ##   drive's own doc comment -- what it says it exists to prove.
+  var count_failed = 0
+  proc report(name: string; is_passing: bool; detail: string) =
+    if not is_passing: inc count_failed
+    echo (if is_passing: "  ok   " else: " FAIL  ") & name & " -- " & detail
+
+  if options.is_key_driven:
+    # Traversal, selection and every kind of camera motion, through the queue and past Dear
+    #   ImGui's own navigation.
+    report(
+      "the scripted keys reached the view", interaction.index_focus.isSome and
+        len(panel.selection) >= 1 and
+        abs(camera.azimuth - camera_opened.azimuth) > 1.0e-6 and
+        abs(camera.distance - camera_opened.distance) > 1.0e-6,
+      &"focus {interaction.index_focus}, selected {len(panel.selection)}, " &
+        &"azimuth {camera.azimuth:.4f}, distance {camera.distance:.4f}",
+    )
+    report(
+      "a held key slid the view, and kept its height",
+      norm(camera.target - camera_opened.target) > 0.5 and
+        abs(camera.target.z - camera_opened.target.z) < 1.0e-3,
+      &"target ({camera.target.x:.3f}, {camera.target.y:.3f}, {camera.target.z:.3f})",
+    )
+    report(
+      "every scripted key was let go of again", interaction.keys_held.len == 0,
+      &"{interaction.keys_held.len} still held",
+    )
+  if options.is_sky_driven:
+    # The regression a pickable horizon plane could cause: it is hovered wherever nothing
+    #   else is, so a press on it must still fall through to the camera. See `driveSky`.
+    report(
+      "a drag across bare sky still turns the view",
+      abs(camera.azimuth - camera_opened.azimuth) > 1.0e-6,
+      &"azimuth {camera_opened.azimuth:.4f} -> {camera.azimuth:.4f}",
+    )
+    report(
+      "a drag across bare sky builds nothing", len(scene) == count_settled,
+      &"{len(scene)} items, settled at {count_settled}",
+    )
+    report(
+      "a click on bare sky selects it", len(panel.selection) == 1,
+      &"{len(panel.selection)} selected",
+    )
+  if options.is_undo_driven:
+    # Undo's own point is the view: it puts the camera back where the construction was made
+    #   from, through the key wiring, the panel and a tween it has to survive.
+    report(
+      "undo took the construction back", len(scene) == count_settled,
+      &"{len(scene)} items, settled at {count_settled}",
+    )
+    report(
+      "undo brought the view back to where it built from",
+      abs(camera.azimuth - camera_opened.azimuth) < 0.2,
+      &"azimuth {camera_opened.azimuth:.4f} -> {camera.azimuth:.4f}",
+    )
+  if options.is_select_driven:
+    # The menu at one, two and three objects, and then a drag off the object it sits over,
+    #   which is the thing a menu swallowing its own next press would break.
+    report(
+      "clicking objects selects them", len(panel.selection) >= 1,
+      &"{len(panel.selection)} selected",
+    )
+    report(
+      "the menu did not swallow the drag after it", was_dragging,
+      &"a drag began after the clicks: {was_dragging}",
+    )
+  if options.is_drag_driven:
+    # Caught mid-gesture by design, so either outcome is the drag having reached the view:
+    #   its menu is open, or it has already committed.
+    report(
+      "a drag from one object onto another opens its choice menu",
+      was_dragging and was_menu_open,
+      &"dragged {was_dragging}, menu opened {was_menu_open}",
+    )
+  if options.path_help_driven.isSome:
+    report(
+      "the help tab asked for opened, with rows in it",
+      panel.is_help_open and countOf(options.path_help_driven.get) > 0,
+      &"open {panel.is_help_open}, " &
+        &"{countOf(options.path_help_driven.get)} rows in " &
+        &"`{titleOf(options.path_help_driven.get)}`",
+    )
+  count_failed
+
+
 proc runInteractive(
   window: Window; renderer: Renderer; options: Options;
   panel: var Panel; scene: var Scene; camera: var Camera;
@@ -1438,6 +1564,26 @@ proc runInteractive(
   # The drawable's own size, as the last frame reported it; the window's configured size
   #   until one has been drawn. Events read it, so it cannot wait for the frame.
   var (width_frame, height_frame) = (PIXELS_WIDTH, PIXELS_HEIGHT)
+
+  # What the scene and the camera were before a single event was folded in, which is what
+  #   `--drive-assert`'s verdicts are read against: every one of them is a statement about
+  #   what the scripted gesture *changed*.
+  let
+    count_opened = len(scene)
+    camera_opened = camera
+  # Two gestures prove themselves by having happened rather than by what they left behind: a
+  #   drag is released before the run ends, and a right release at a menu's own centre
+  #   commits nothing by design. Watched here rather than read off the end state, which
+  #   would say nothing about either.
+  var
+    was_dragging = false
+    was_menu_open = false
+    # The scene as the gestures found it, taken after the drives' own setup frame rather
+    #   than before the loop: `--drive-sky` builds the horizon plane it needs to gesture at,
+    #   and counting before that made its own precondition look like something the drag
+    #   built. No gesture has committed anything this early -- every drive spends its first
+    #   frames moving a cursor.
+    count_settled = count_opened
 
   while is_running:
     # Frame arena starts every frame empty; nothing in the draw loop itself asks it for
@@ -1470,7 +1616,7 @@ proc runInteractive(
 
     if options.is_key_driven: driveKeys(count_drawn)
     if options.is_sky_driven:
-      driveSky(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn)
+      driveSky(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, count_drawn, now)
     if options.is_drag_driven or options.is_select_driven or options.is_undo_driven:
       let scale_driven = camera.drawExtentFor(PIXELS_HEIGHT)
       if options.is_drag_driven:
@@ -1508,6 +1654,10 @@ proc runInteractive(
         window, renderer, panel, scene, camera, interaction, now,
         path_help = options.path_help_driven,
       )
+    if options.is_asserted:
+      was_dragging = was_dragging or interaction.is_dragging
+      was_menu_open = was_menu_open or interaction.menu.isSome
+      if count_drawn == 2: count_settled = len(scene)
     # Carried into the next iteration's events, which need the frame's own size to cast a
     #   sight ray and run before anything reports it again.
     (width_frame, height_frame) = (int(width), int(height))
@@ -1545,6 +1695,15 @@ proc runInteractive(
       &"target ({camera.target.x:.3f}, {camera.target.y:.3f}, {camera.target.z:.3f}), " &
       &"held {len(interaction.keys_held)}; " &
       &"gui.wantsKeys {gui.wantsKeys()}, nav enabled {gui.isNavEnabled()}."
+  if options.is_asserted:
+    let count_failed = verdictDriven(
+      options, scene, camera, camera_opened, interaction, panel, count_settled,
+      was_dragging, was_menu_open,
+    )
+    if count_failed > 0:
+      echo &"\n{count_failed} driven check(s) failed."
+      quit(1)
+    echo "\nEvery driven check passed."
   if options.is_timed and count_drawn > 1:
     reportTimings(TIMINGS_FRAME_MILLISECONDS.toOpenArray(0, count_drawn - 2))
     echo &"  tessellate mean {total_tessellate_microseconds/float(count_drawn):.1f}us, " &

@@ -32,6 +32,9 @@ step() {
 #   that is going to fail should fail in a second rather than after two compiles.
 step 'Layout: line width in characters, trailing whitespace, tabs'
 "${NIM}" c --hints:off -o:bin/check_columns tools/check_columns.nim
+# The checker first, against its own fixtures: it is measured in characters, and one that
+#   counted bytes would pass every file here while lying about every line holding a `∧`.
+./bin/check_columns --self-test
 ./bin/check_columns
 
 step 'Palette: separation floors under typical and colour-deficient vision'
@@ -73,11 +76,28 @@ step 'Build: desktop'
 step 'Build: browser page'
 ./build_browser.sh
 
-# Everything above stops at "it compiles and its rules hold". This drives real events into
-#   the built page and asserts what they reached, which is the only way a rule wired to the
-#   wrong event is caught: the suites call the rules directly and stay green while a wheel
-#   notch, a key release or a pinch goes somewhere else. It was a `/tmp` script run by hand
-#   until a pinch regression shipped past every green suite.
+# Everything above stops at "it compiles and its rules hold". These two drive real events
+#   into the built artefacts and assert what they reached, which is the only way a rule wired
+#   to the wrong event is caught: the suites call the rules directly and stay green while a
+#   wheel notch, a key release or a pinch goes somewhere else. Both were run by hand, when
+#   remembered, until a pinch regression shipped past every green suite.
+step 'Drive: desktop, real SDL events under a virtual display'
+# Each mode scripts one kind of gesture into SDL's own queue and then judges what it
+#   reached; `--drive-assert` is what turns the report into a verdict and the exit code.
+#   Frame counts come from each drive's own schedule -- `--drive-drag` is caught mid-gesture
+#   with its menu open by design, so it stops at the frame that menu is up.
+for driven in \
+  '--drive-keys --frames:40' \
+  '--drive-sky --frames:20' \
+  '--drive-undo --frames:44' \
+  '--drive-select --frames:24' \
+  '--drive-drag --frames:9' \
+  '--drive-help:keys --frames:8'
+do
+  # shellcheck disable=SC2086  # Word splitting is what carries the separate options.
+  xvfb-run -a -s "-screen 0 1440x900x24" ./bin/visualiser --hidden --drive-assert ${driven}
+done
+
 step 'Drive: browser, real key, wheel and touch events'
 "${NODE}" tools/drive_browser.mjs
 

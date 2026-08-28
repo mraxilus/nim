@@ -101,10 +101,60 @@ proc complaintsIn(path: string): seq[Complaint] =
 
 
 
+#[ Self-Test ]#
+
+proc selfTest(): int =
+  ## Check the checker against fixtures it writes itself, and report each case pass or fail.
+  ## Answers with the number that failed, for `main` to exit on.
+  ##   **The rule this exists for**: the column limit is measured in *characters*, and a
+  ##   checker counting bytes lies about every line holding non-ASCII -- which this project's
+  ##   sources are full of (`∧`, `☆`, `𝐦`, an em dash in every other comment). A checker
+  ##   nobody checks is a checker that can quietly start passing everything, and this one
+  ##   gates every commit.
+  let directory = getTempDir() / "check_columns_self_test"
+  createDir(directory)
+  defer: removeDir(directory)
+  var count_failed = 0
+
+  proc expect(name, content: string; rules: seq[string]) =
+    let path = directory / "fixture.nim"
+    writeFile(path, content)
+    var found: seq[string]
+    for complaint in complaintsIn(path): found.add(complaint.rule)
+    let is_passing = found == rules
+    if not is_passing: inc count_failed
+    echo (if is_passing: "  ok   " else: " FAIL  ") & name &
+      &" -- reported {found}, wanted {rules}"
+
+  expect(
+    "a line of exactly the limit in non-ASCII characters passes",
+    "# " & repeat("é", COLUMNS_MAX - 2) & "\n", @[],
+  )
+  expect(
+    "one character past the limit is caught, non-ASCII or not",
+    "# " & repeat("é", COLUMNS_MAX - 1) & "\n", @["column limit"],
+  )
+  expect("trailing whitespace is caught", "let x = 1 \n", @["trailing whitespace"])
+  expect("a tab is caught", "let x =\t1\n", @["tab"])
+  expect("a file not ending in a newline is caught", "let x = 1", @["final newline"])
+  expect(
+    "a testament spec is exempt, and only the spec",
+    "discard \"\"\"\ncmd: \"" & repeat("x", COLUMNS_MAX) & "\"\n\"\"\"\nlet x = 1\n",
+    @[],
+  )
+  count_failed
+
+
+
 #[ Report ]#
 
 proc main() =
   ## Check every source file and report, exiting non-zero on any complaint.
+  ##   `--self-test` checks the checker against its own fixtures instead; see `selfTest`.
+  if paramCount() >= 1 and paramStr(1) == "--self-test":
+    let count_failed = selfTest()
+    echo &"\n{count_failed} self-test(s) failed."
+    quit(if count_failed > 0: 1 else: 0)
   let root = if paramCount() >= 1: paramStr(1) else: "."
   var
     complaints: seq[Complaint]
