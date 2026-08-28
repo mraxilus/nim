@@ -6,17 +6,14 @@ deliberately excludes rotation until these marks are settled and the ontology
 is finished — see `../src/partnerwork/rotation.nim` for what the model already
 knows, and the repository README for why the views came out.
 
-Five pages, because they are five explorations that happen to be related:
+Four pages, because they are four explorations that happen to be related:
 `frames.html` is the frame picture (what a held pair of hands looks like, and
 how a move changes it), `signs.html` is the turn sign (how to label an *edge*
 with an amount of turning), and `turns-single.html` and `turns-hands.html`
 are the turn mock-ups so far -- every position a hold turns through and every
 transition between them, for one hand and for two.  The second is where a
 pair's winding is worked out, and the drawing of it is measured off the pose
-rather than told (rule 28).  `rig.html` is the odd one out: the other four
-settle how a thing is *drawn*, and it settles whether the thing can be
-*done*, drawing `../src/partnerwork/sim.nim`'s own solved rope paths against
-the states and turns the ontology names.  They share the palette,
+rather than told (rule 28).  They share the palette,
 the level fills and the two arm inks, which live in `page.nim` and `body.nim`
 so they cannot drift.
 
@@ -51,7 +48,6 @@ the whole release step.  The URLs, so they are not hunted for:
 | `signs.html` | https://claude.ai/code/artifact/153dee12-0829-4c04-ad01-72fe96f7607e |
 | `turns-single.html` | https://claude.ai/code/artifact/a2dce7eb-7a87-4575-a1c8-ce8d488a6530 |
 | `turns-hands.html` | https://claude.ai/code/artifact/9c4d89c1-8b72-4574-8051-c41e130148f1 |
-| `rig.html` | https://claude.ai/code/artifact/d1abc467-51cc-49a6-9b87-048c98a40086 |
 | the app itself | https://claude.ai/code/artifact/a447cf22-a71a-4416-a905-ae4999d7284c |
 
 Live pages only.  Retired ones keep whatever URL they were last published at,
@@ -657,16 +653,14 @@ and `marks.nim` is the build, over the rest of these in this order:
 
 ```
 rules.nim       the ledger above as data; re-exports draw/terms
-rig.nim         the physical model on the page: metres into marks, and a head
 sign.nim        the quarter-turn sign
-parts.nim       every figure the five pages place, keyed as they use them
+parts.nim       every figure the four pages place, keyed as they use them
 checks.nim      every claim the pages make, asserted and spoken
-page.nim        the chrome the five pages share: style sheet, key, wrapper
+page.nim        the chrome the four pages share: style sheet, key, wrapper
 frame_page.nim  the frame page's prose and layout
 sign_page.nim   the turn-sign page's prose and layout
 turns_single_page.nim  the single-hand turns page, generated as a table
 hands_page.nim  the hand-to-hand turns page, the chain and its four walkers
-rig_page.nim    the rig page: what `src/partnerwork/sim.nim` derives, law by law
 marks.nim       build: parts, checks, pages, files
 shot.nim        screenshot helper (light and dark, full page), nim js
 ```

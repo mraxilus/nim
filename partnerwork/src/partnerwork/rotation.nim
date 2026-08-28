@@ -103,11 +103,13 @@ const
   CAPACITY_PAIR* = 1   ## Hold half a turn on two hand-to-hand connections.
   CAPACITY_CONTACT* = 0 ## Hold nothing while a hand rests on the partner's body.
   CAPACITY_WRAP_LOW* = 1
-    ## Hold half a turn while the arm is wrapped low.  Measured first, and
-    ## since derived: `sim.nim`'s rig prices a half turn wound low at half a
-    ## torso's girth of rope, and the two arms' budget affords one such half
-    ## turn and not two, even with the bodies touching.  `tests/tsim.nim`
-    ## holds the measurement and the derivation to the same number.
+    ## Hold half a turn while the arm is wrapped low.  Measured, not derived.
+    ##   A body sim briefly claimed to derive this and did not: it priced a
+    ##     wound half turn at half a torso's girth by assumption, so the
+    ##     arithmetic only returned the measurement it was fitted to -- and
+    ##     the two modules were not independent witnesses anyway, since the
+    ##     sim took its grip ceiling from `CAPACITY_SINGLE` here.  The claim
+    ##     is withdrawn until a model that actually turns a body earns it.
   CAPACITY_ARM* = 2
     ## Hold a full turn while the arm is anywhere else.  Measured for a low
     ## lock; assumed for the two high ones, which is the next thing to dance.

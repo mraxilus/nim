@@ -8,7 +8,7 @@
 ## The notation gate was evaluated and closed: partner dance has no canonical
 ## symbolic notation, so plain names are the only spelling used.
 ##
-## The umbrella indexes and re-exports the ten modules rather than forwarding
+## The umbrella indexes and re-exports the nine modules rather than forwarding
 ## each symbol through a documented one-liner.
 ##   Cost of re-exporting instead of forwarding: per-symbol docs live at the
 ##     definitions, one hop away.  Accepted -- the index comments below name
@@ -17,7 +17,6 @@
 ## Order of module bootstrapping, each stage importing only earlier ones:
 ##   [frame, motion]
 ##   frame -> [transition, rotation]
-##   [frame, rotation] -> sim
 ##   [frame, transition] -> workbook
 ##   [frame, rotation] -> diagram
 ##   [diagram, frame, motion, transition] -> map
@@ -38,8 +37,6 @@ import ./partnerwork/motion
 import ./partnerwork/axle
 ## Model the unfinished rotation axis: twist, capacity, wraps and locks.
 import ./partnerwork/rotation
-## Model the couple as bodies and ropes, and referee what is possible.
-import ./partnerwork/sim
 ## Draw only where the couple are and where they can go next.
 import ./partnerwork/spokes
 ## The relation: primitives, compounds, moves between frames, and routes.
@@ -48,4 +45,4 @@ import ./partnerwork/transition
 import ./partnerwork/workbook
 
 ## Re-export the whole surface, so one import serves a caller.
-export axle, diagram, frame, map, motion, rotation, sim, spokes, transition, workbook
+export axle, diagram, frame, map, motion, rotation, spokes, transition, workbook
