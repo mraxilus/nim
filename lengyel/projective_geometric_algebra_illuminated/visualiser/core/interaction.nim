@@ -14,8 +14,9 @@
 ## before committing it, which is the self-revelation the gesture had none of.
 ##
 ## What is ghosted is always **what letting go right now would commit**: the wedge the cursor
-## stands in once the right button's wheel is open, and `proposalFor`'s own answer where it
-## is not. `Interaction.proposal` holds that one answer, `endDrag` obeys it, and
+## stands in once a wheel is open and entered, and `proposalFor`'s own answer where none is —
+## under a dwell wheel nobody has entered included; see `endDrag` on why that wheel may not
+## veto the release. `Interaction.proposal` holds that one answer, `endDrag` obeys it, and
 ## `ReleaseEffect` names the three things it can amount to — nothing, a refusal, an object —
 ## which is what the rubber-band is tinted from.
 ##
@@ -236,6 +237,8 @@ type
     ## finger, which has no second button to ask with, still waits.
     Never, ## Take the proposal on release; no menu, however long the drag stands still.
     OnDwell, ## Open after `SECONDS_DWELL_MENU` of standing still over the target.
+      ## This wheel invites itself -- under a finger pausing to aim, which also covers
+      ## it -- so until it is first entered it may not veto the release; see `endDrag`.
     Always ## Open the moment the drag arrives over a target.
 
   Compass* {.pure.} = enum ## Name where a choice sits in the menu, always.
@@ -337,7 +340,9 @@ type
       ## The wedge the cursor stands in while a menu is open, and `proposalFor`'s own answer
       ## where none is -- resolved in the very order `endDrag` resolves it, so what is
       ## previewed and what is committed cannot come apart. None where a release would
-      ## commit nothing at all: over no target, or back at an open menu's own centre.
+      ## commit nothing at all: over no target, or back at the centre of a menu that may
+      ## veto the release -- an unentered dwell wheel may not, so under one the pair's
+      ## own answer stands here; see `endDrag`.
     preview*: Option[Preview] ## What that proposal would make, for each render path to
       ## ghost -- `scene.Preview`, the same construction both apply pickers offer, rather
       ## than a second one written out here.
@@ -353,6 +358,11 @@ type
     settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
       ## what movement is measured against to decide the dwell has been interrupted.
     menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
+    is_menu_entered*: bool ## Whether the cursor has stood in any wedge of the open menu
+      ## since it opened, offered or not. What separates "lifted at the centre without
+      ## ever engaging the wheel" from "walked into a wedge and came back to cancel": the
+      ## first may not veto a dwell wheel's release, the second always does -- see
+      ## `endDrag`. Reset each time a menu opens.
     is_dragging_camera*: bool ## Whether a pointer gesture is moving the *camera* right now
       ## -- an orbit or a pan drag, or two fingers on the canvas. Each render path owns its
       ## own drag state and says so here; what it means for hover is `updateHover`'s to say.
@@ -678,11 +688,17 @@ func effectOf*(interaction: Interaction): ReleaseEffect =
   ##   are told apart, and a second derivation is a second answer waiting to disagree.
   if not interaction.is_over_target: return ReleaseEffect.Nothing
   if interaction.proposal.isNone:
-    # Two ways to have no answer, and they are not the same event. With a menu open the
-    #   cursor is simply back at its centre and the gesture is being called off; with none
-    #   open `proposalFor` found nothing this pair makes, which is a refusal to warn about.
+    # Two ways to have no answer, and they are not the same event. At the centre of a
+    #   wheel that may veto -- one the reader summoned, or one they walked into and left
+    #   -- the gesture is being called off; everywhere else `proposalFor` found nothing
+    #   this pair makes, which is a refusal to warn about. An unentered dwell wheel is
+    #   the second kind: `updateDrag` already gave it the pair's own answer, so a none
+    #   here means the pair itself makes nothing.
     return
-      if interaction.menu.isSome: ReleaseEffect.Nothing else: ReleaseEffect.Refused
+      if interaction.menu.isSome and
+          (interaction.is_menu_entered or interaction.arming != MenuArming.OnDwell):
+        ReleaseEffect.Nothing
+      else: ReleaseEffect.Refused
   if interaction.proposal.get == DragChoice.More: return ReleaseEffect.Builds
   if interaction.preview.isSome: ReleaseEffect.Builds else: ReleaseEffect.Refused
 
@@ -696,7 +712,9 @@ func inkOfDrag*(interaction: Interaction; ink_next: Ink): Ink =
   ##   release rather than as a message after it, which is the whole point of previewing at
   ##   all -- and it is never colour alone, since the ghost simultaneously fails to appear.
   ##   With the wheel open all three are reachable without leaving the target: the centre is
-  ##   neutral, a greyed wedge is magenta, an offered one is the new object's hue.
+  ##   neutral where the wheel may veto -- an unentered dwell wheel's centre keeps the
+  ##   build hue instead, since lifting there builds; see `endDrag` -- a greyed wedge is
+  ##   magenta, an offered one is the new object's hue.
   ##   `ink_next` is `scene.inkNext`, passed in because this has no scene to ask. It used to
   ##   be the *operation's* own colour, which told a reader which of join/meet/project they
   ##   were about to get but nothing about the object they were about to have -- and the
@@ -1119,6 +1137,7 @@ proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): b
   interaction.entered = now
   interaction.settled = interaction.cursor
   interaction.menu = none(ScreenPosition)
+  interaction.is_menu_entered = false
   interaction.index_disengaged = none(int) # A fresh drag holds nothing at arm's length.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
@@ -1130,6 +1149,7 @@ proc cancelDrag*(interaction: var Interaction) =
   ## Abandon drag in progress without applying anything.
   interaction.is_dragging = false
   interaction.menu = none(ScreenPosition)
+  interaction.is_menu_entered = false
   interaction.index_disengaged = none(int) # Or the next drag opens no menu over that object.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
@@ -1213,13 +1233,23 @@ proc updateDrag*(
     of MenuArming.Always: true
   if interaction.menu.isNone and is_menu_due and interaction.index_disengaged.isNone:
     interaction.menu = some(interaction.cursor)
+    interaction.is_menu_entered = false
 
   let
     m = scene.geometryOf(interaction.index_source)
     n = scene.geometryOf(over.get)
-  # `endDrag`'s own order: the wheel answers where one is open, `proposalFor` where none is.
+  # `endDrag`'s own order: the wheel answers where one is open, `proposalFor` where none
+  #   is -- except that a dwell wheel nobody has entered yet answers nothing at its
+  #   centre, so there the pair's own answer keeps standing, ghost and all. See `endDrag`
+  #   for why that wheel may not veto the release it interrupted.
+  if interaction.menu.isSome and interaction.choosing.isSome:
+    interaction.is_menu_entered = true
   interaction.proposal =
-    if interaction.menu.isSome: interaction.choosing else: proposalFor(m, n)
+    if interaction.menu.isNone: proposalFor(m, n)
+    elif interaction.choosing.isNone and not interaction.is_menu_entered and
+        interaction.arming == MenuArming.OnDwell:
+      proposalFor(m, n)
+    else: interaction.choosing
   # Through `scene.previewApplying`, the same call both apply pickers offer their own answer
   #   from -- so the ghost this gesture draws and the ghost a picker draws are one thing,
   #   anchor included, rather than two constructions that happen to agree.
@@ -1310,7 +1340,9 @@ proc endDrag*(
   ## End the drag in progress, applying whatever the release resolved to.
   ##   **One release rule: a release commits whatever is under the cursor.** With a menu
   ##   open that is the wedge the cursor stands in, and nothing where it went back to the
-  ##   centre. With no menu it is `proposalFor`'s own answer. Either way it is exactly what
+  ##   centre -- unless the menu is a dwell wheel nobody ever entered, which may not veto:
+  ##   there the release takes `proposalFor`'s own answer, exactly as if the wheel had
+  ##   never opened. With no menu it is `proposalFor`'s own answer. Either way it is what
   ##   `interaction.proposal` holds and what the preview has been ghosting all along -- one
   ##   rule, drawn and then obeyed, rather than a preview computed one way and a commit
   ##   another. `updateDrag` resolves it in this same order, off `choosing`.
@@ -1351,8 +1383,17 @@ proc endDrag*(
 
   if interaction.menu.isSome:
     let choice = interaction.choosing
-    if choice.isNone: return DragOutcome(message: "Released without choosing; nothing done.")
-    return commitChoice(interaction, scene, choice.get, now)
+    if choice.isSome: return commitChoice(interaction, scene, choice.get, now)
+    # **A wheel the reader summoned may veto the release; one that invited itself may
+    #   not.** A right press asked for the wheel, so lifting back at its centre withdraws
+    #   the gesture -- and so does lifting there after walking into a wedge and thinking
+    #   better of it, on any wheel. The dwell wheel alone arrives unasked, under a finger
+    #   pausing over its target to aim -- covered by that very finger -- and before it is
+    #   first entered, reading the release as "chose nothing" eats the build the ghost
+    #   promised the whole way over. Measured on a phone: pausing before lifting is the
+    #   common touch release, not the rare one, and it built nothing every time.
+    if interaction.is_menu_entered or interaction.arming != MenuArming.OnDwell:
+      return DragOutcome(message: "Released without choosing; nothing done.")
 
   let over = destinationOf(interaction)
   # **Nothing to say about a release over nothing.** The reader dragged a line into empty

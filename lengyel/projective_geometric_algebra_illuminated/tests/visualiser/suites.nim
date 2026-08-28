@@ -4418,6 +4418,81 @@ suite "Interaction":
     check never.menu.isNone
 
 
+  test "a dwell wheel nobody entered does not veto the release":
+    # The touch gesture as a finger actually does it: drag onto the target, pause there
+    #   to aim -- the wheel opens under the finger, hidden by it -- and lift. Measured on
+    #   a phone before this rule: that release built nothing every time, which read as
+    #   the drag itself being broken.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    interaction.updateCursor(400.0, 200.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    interaction.updateDrag(scene, now = SECONDS_DWELL_MENU + 0.1)
+    check interaction.menu.isSome
+    # The pair's own answer keeps standing under the unentered wheel, ghost included, so
+    #   what the band promises and what the lift commits stay one thing.
+    check interaction.proposal == some(DragChoice.Join)
+    check interaction.preview.isSome
+    let outcome = interaction.endDrag(scene, SECONDS_DWELL_MENU + 0.2)
+    check outcome.index_created == some(2)
+    check scene.len == 3
+
+
+  test "a wedge walked into and left again cancels the release, dwell wheel included":
+    # The other half of the rule: entering the wheel is engaging with it, so coming back
+    #   to the centre afterwards is the deliberate way out -- on the dwell wheel exactly
+    #   as on the summoned one.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    interaction.updateCursor(400.0, 200.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    interaction.updateDrag(scene, now = SECONDS_DWELL_MENU + 0.1)
+    check interaction.menu.isSome
+    interaction.updateCursor(400.0 + PIXELS_MENU_REACH, 200.0) # Into the east wedge...
+    interaction.updateDrag(scene, now = SECONDS_DWELL_MENU + 0.2)
+    interaction.updateCursor(400.0, 200.0) # ...and back to the centre.
+    interaction.updateDrag(scene, now = SECONDS_DWELL_MENU + 0.3)
+    check interaction.proposal.isNone # No ghost: the band already says this lift cancels.
+    let outcome = interaction.endDrag(scene, SECONDS_DWELL_MENU + 0.4)
+    check outcome.index_created.isNone
+    check scene.len == 2
+
+
+  test "a summoned wheel still cancels at its own centre":
+    # The arming distinction the release rule turns on: a right press asked for the
+    #   wheel, so lifting back at its centre withdraws the gesture even though no wedge
+    #   was ever entered.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(200.0, 200.0)
+    interaction.index_hover = some(0)
+    interaction.beginPress(now = 0.0)
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.updateCursor(400.0, 200.0)
+    interaction.index_hover = some(1)
+    interaction.updateDrag(scene, now = 0.0)
+    check interaction.menu.isSome
+    let outcome = interaction.endDrag(scene, 0.5)
+    check outcome.index_created.isNone
+    check scene.len == 2
+
+
   test "an overlay run covers exactly what was added after it was marked":
     # The mechanism a selected object is drawn over everything with. Held here because the
     #   fault it guards against is silent: a mesh nobody marked has to draw *entirely*

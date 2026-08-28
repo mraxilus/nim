@@ -357,6 +357,38 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_drag}`,
 );
 
+// The same gesture as a finger actually performs it: pause over the target to aim before
+// lifting. The dwell wheel opens under the finger during that pause -- hidden by it -- and
+// once read the release as "chose nothing", so exactly the careful drags built nothing.
+// A wheel nobody entered may not veto the release: it takes the pair's own answer, as the
+// quick lift above does. The check first holds that the wheel really did open, so a slower
+// dwell could never turn this into a second copy of the quick-lift check.
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+await page.evaluate(() => nimSelectClear());
+const count_before_pause = await page.evaluate(() => nimSceneCount());
+const from_pause = await pixelOf(slots_scene[1]);
+const onto_pause = await pixelOf(slots_scene[2]);
+await touchAt('touchStart', [{ x: from_pause[0], y: from_pause[1] }]);
+for (let step = 1; step <= 10; step += 1) {
+  await touchAt('touchMove', [{
+    x: from_pause[0] + ((onto_pause[0] - from_pause[0]) * step) / 10,
+    y: from_pause[1] + ((onto_pause[1] - from_pause[1]) * step) / 10,
+  }]);
+  await page.waitForTimeout(30);
+}
+await page.waitForTimeout(1100); // Past SECONDS_DWELL_MENU, as a finger pausing to aim is.
+const is_wheel_open_paused = await page.evaluate(() => nimDragMenuOpen());
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+report(
+  'a paused finger still builds on lifting, through the wheel its pause opened',
+  is_wheel_open_paused &&
+    (await page.evaluate(() => nimSceneCount())) === count_before_pause + 1,
+  `wheel open ${is_wheel_open_paused}; ` +
+    `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_pause}`,
+);
+
 // A drag let go of over empty space built nothing and says nothing: the reader can see the
 // nothing, and a status line for it fires on every gesture anybody thought better of.
 await page.keyboard.press('Home');

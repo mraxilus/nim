@@ -1188,6 +1188,18 @@ finger pauses far more readily than a mouse. It also sat *under* `SECONDS_LONG_P
 to end through real CDP touch on a Pixel 5 profile: **0.63 s → 0.93 s** from the last
 movement to the wheel appearing, the extra ~0.18 s in both being the 50 ms poll granularity
 and the frame loop's own latency under SwiftShader.
+**A wheel the reader summoned may veto the release; one that invited itself may not.**
+Lifting at an open wheel's centre used to mean "chose nothing; nothing done" on every
+arming. On the right button that is correct — the press asked for the wheel — but the dwell
+wheel opens *under a finger pausing over its target to aim*, hidden by that finger, and
+pausing before lifting is the common touch release, not the rare one. Measured through
+driven touch at a phone-sized viewport: every careful point-onto-point drag built nothing,
+which reads as the drag itself being broken. So `endDrag` lets an unentered dwell wheel's
+centre release fall through to `proposalFor`'s own answer, `updateDrag` mirrors it so the
+ghost and band keep promising that answer under the unentered wheel, and
+`Interaction.is_menu_entered` — set the first time the cursor stands in any wedge, offered
+or not — is what "entered" means. Walking into a wedge and returning to the centre still
+cancels on every wheel: engagement, not arming, is what buys the veto back.
 **Middle is unbound**: `project` used to live there, which put a third of the vocabulary
 behind hardware most trackpads lack.
 A plain click selects instead of dragging; shift-click toggles into a multi-selection; a
