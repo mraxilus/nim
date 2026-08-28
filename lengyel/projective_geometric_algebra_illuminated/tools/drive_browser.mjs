@@ -322,6 +322,16 @@ report(
   `target moved ${spanTarget(dragged_before, dragged_after).toFixed(3)}, ` +
     `distance ${dragged_after.distance.toFixed(3)}`,
 );
+// A pan slides the view across a level, so the orbit centre keeps its height exactly. It
+// used to slide within the plane facing the eye, which is tilted: a drag up the screen
+// lifted the target off the ground -- driven at z 1.00 -> 6.40 -- and every later orbit
+// then swung about a point in mid-air.
+report(
+  'and without lifting the orbit centre off the level it was on',
+  Math.abs(dragged_after.target[2] - dragged_before.target[2]) < 1e-6,
+  `target height ${dragged_before.target[2].toFixed(3)} -> ` +
+    `${dragged_after.target[2].toFixed(3)}`,
+);
 
 // A finger dragging one object onto another builds a third, which is the whole gesture the
 // application is about.
@@ -689,6 +699,29 @@ report(
 // Half a second at SPEED_MARKER_PULSE is 30 pixels; banded rather than exact, since the
 //   page's own frame pacing decides how much of that half second the clock actually saw.
 reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 5, 60, 'px');
+
+/* ---- A mouse pan grabs the level, and keeps its height ---- */
+
+await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
+await page.keyboard.press('Home');
+await page.waitForTimeout(900);
+const pan_before = await readCamera();
+// Started well clear of every object, so the right button pans rather than arming a drag,
+// and dragged up the screen -- the direction that used to lift the target.
+await page.mouse.move(160, 170);
+await page.mouse.down({ button: 'right' });
+await page.mouse.move(360, 470, { steps: 12 });
+await page.mouse.up({ button: 'right' });
+await page.waitForTimeout(250);
+const pan_after = await readCamera();
+report(
+  'a right-button drag pans, and keeps the orbit centre on its level',
+  spanTarget(pan_before, pan_after) > 0.5 &&
+    Math.abs(pan_after.target[2] - pan_before.target[2]) < 1e-6 &&
+    Math.abs(pan_after.distance - pan_before.distance) < 1e-6,
+  `target moved ${spanTarget(pan_before, pan_after).toFixed(3)}, height ` +
+    `${pan_before.target[2].toFixed(3)} -> ${pan_after.target[2].toFixed(3)}`,
+);
 
 /* ---- A zoom aims at what the pointer is over, and settles the target onto it ---- */
 

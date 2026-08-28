@@ -95,6 +95,31 @@ const SECONDS_SWELL_SHRINK* = 0.15
   ##   this is the marker arriving at what it will stay as, and an outline that snaps to its
   ##   final size reads as a second marker replacing the first.
 
+const FACTOR_PAN_REACH_MAX* = 4.0
+  ## Bound how far out along its own sight ray a pan may take hold, as a multiple of the
+  ## orbit distance.
+  ##   **Why a grab needs a bound at all**: the level a pan grabs is horizontal, so a ray
+  ##   aimed near the horizon meets it a very long way off, and one pixel of drag there is
+  ##   hundreds of world units. Ungoverned, a drag beginning high in the frame threw the
+  ##   view across the scene -- driven, a 200-pixel drag from a fifth of the way down the
+  ##   window carried the view three times as far as the same drag through the middle.
+  ##   The *hold point* is clamped rather than the movement, so the rule stays continuous:
+  ##   `min(reach, bound)` moves smoothly as the cursor crosses the bound, where switching
+  ##   to a different rule there would jolt mid-drag.
+  ##   Four rather than two: at the opening placement a ray a fifth of the way down the
+  ##   window already reaches 2.7 distances, and that is an ordinary place to start a drag
+  ##   from. Bounding it below what a reader routinely grabs would make the common case
+  ##   the governed one.
+
+const FRACTION_PAN_PIXEL* = 0.0016
+  ## Slide the target this fraction of the orbit distance per dragged pixel, where a pan
+  ## has no surface to grab.
+  ##   The rate a drag *used* to move at everywhere, and now only the fallback for a drag
+  ##   whose sight ray never meets the level it would otherwise grab -- see `panAcross`.
+  ##   Both presentation layers spelled it separately, the desktop as this number per pixel
+  ##   and the browser as 1.4 across the canvas, which over a 900-pixel window is 0.00156:
+  ##   the same rate said twice and free to drift. Said once here.
+
 const PIXELS_TAP_SLOP* = 12.0
   ## Move a press further than this and it stops being a press.
   ##   **Which scheme the gesture enters**, not merely whether it was a tap: a press that
@@ -753,6 +778,53 @@ proc dollyAtCursor*(
   )
   if anchor.isNone: camera.dolly(factor)
   else: camera.dollyToward(factor, anchor.get)
+
+
+proc panAcross*(
+  camera: var Camera; before, after: ScreenPosition; width, height: int
+) =
+  ## Slide the view so the world point under `before` comes to lie under `after`.
+  ##   **A grab, not a rate**, and that is the whole change. A pan of so many hundredths of
+  ## the orbit distance per dragged pixel is right at exactly one depth and one tilt, and
+  ## wrong everywhere else: driven through real drags in the shipped browser, a 200-pixel
+  ## drag carried the scene **288 pixels**, so a reader dragging a thing to the middle of
+  ## the frame overshot it by nearly half and dragged back.
+  ##   Worse, `camera.pan` slides the target within the plane *facing the eye*, which is
+  ## tilted, so a vertical drag lifts the target off the ground: the same driven 200-pixel
+  ## drag took it from z **1.00 to 6.40**, and a drag the other way to **-2.24**. The orbit
+  ## centre ends up in mid-air, every later orbit swings about a point that is not on
+  ## anything, and a later zoom is scaled by a distance measured to nowhere. That is what
+  ## "the target gets away from what I'm looking at" is.
+  ##   Both rays meet the **horizontal plane through the target** -- `positionUnderCursor`'s
+  ## own surface -- so the translation between their hits is horizontal by construction and
+  ## the target's height cannot drift at all. It is a plane rather than the object under the
+  ## pointer because a drag needs one surface for its whole length: an anchor that changed
+  ## depth as the pointer crossed things would slide the world under the finger holding it.
+  ##   Falls back to the rate where either ray misses that plane -- a drag beginning or
+  ## ending on sky above the horizon -- which is the gesture as it stood and the only thing
+  ## left to do there.
+  let
+    eye = camera.eye
+    reach_max = FACTOR_PAN_REACH_MAX*camera.distance
+  func held(hit: Option[Position]): Option[Position] =
+    ## Draw a hold point no further out than the bound, along its own ray.
+    if hit.isNone: return
+    let reach = norm(hit.get - eye)
+    if reach <= reach_max or reach <= 0.0: return hit
+    some(eye + (reach_max/reach)*(hit.get - eye))
+  let
+    at_before = held(positionUnderCursor(camera, width, height, before))
+    at_after = held(positionUnderCursor(camera, width, height, after))
+  if at_before.isSome and at_after.isSome:
+    # The horizontal part of the step only. Unclamped the two hold points share a level and
+    #   the step is horizontal already, so this changes nothing there; where the bound bit,
+    #   the vertical part is the bound's own artefact and not something a pan should carry.
+    let step = at_before.get - at_after.get
+    camera.target = camera.target + Direction(x: step.x, y: step.y, z: 0.0)
+    return
+  camera.pan(
+    -FRACTION_PAN_PIXEL*(after.x - before.x), FRACTION_PAN_PIXEL*(after.y - before.y)
+  )
 
 
 proc holdKey*(interaction: var Interaction; key: Key) =

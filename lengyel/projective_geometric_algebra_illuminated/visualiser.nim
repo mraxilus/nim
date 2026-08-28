@@ -143,8 +143,6 @@ const
 const
   SPEED_ORBIT = 0.008
     ## Set how far a dragged pixel turns the orbit, in radians.
-  SPEED_PAN = 0.0016
-    ## Set how far a dragged pixel slides the target, as fraction of orbit distance.
   FACTOR_DOLLY = 1.12
     ## Set how much one wheel notch scales orbit distance; the notch is aimed at the
     ## cursor rather than at the middle of the frame (`interaction.dollyAtCursor`).
@@ -1049,7 +1047,17 @@ proc handleEvent(
       )
     if is_dragging_pan:
       panel.tween_camera.abandon()
-      camera.pan(-SPEED_PAN*float(event.motion.xrel), SPEED_PAN*float(event.motion.yrel))
+      # Where the pointer was and where it is now, rather than how far it moved: a pan
+      #   grabs the level under it and carries that point to the cursor, which needs both
+      #   ends of the step and not just its length. See `interaction.panAcross`.
+      camera.panAcross(
+        ScreenPosition(
+          x: float(event.motion.x - event.motion.xrel),
+          y: float(event.motion.y - event.motion.yrel),
+        ),
+        ScreenPosition(x: float(event.motion.x), y: float(event.motion.y)),
+        width_frame, height_frame,
+      )
   else: discard
 
 

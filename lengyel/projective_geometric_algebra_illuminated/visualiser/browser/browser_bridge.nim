@@ -601,8 +601,24 @@ proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
 
 proc nimCameraPan(across, up: cfloat) {.exportc.} =
   ## Slide camera's own target sideways and vertically in its own view plane.
+  ##   The rate reading of a pan, kept for a caller that has only a step to give.
+  ## `nimCameraPanAt` below is what a drag uses.
   g_tween_camera.abandon()
   camera.pan(g_camera, float(across), float(up))
+
+
+proc nimCameraPanAt(
+  before_x, before_y, after_x, after_y: cfloat; width, height: cint
+) {.exportc.} =
+  ## Slide the view so the world point under `(before_x, before_y)` comes to lie under
+  ## `(after_x, after_y)`; see `interaction.panAcross`.
+  ##   Both ends of the pointer's step rather than its length, because a grab needs to know
+  ## where it started as well as how far it went.
+  g_tween_camera.abandon()
+  panAcross(
+    g_camera, ScreenPosition(x: float(before_x), y: float(before_y)),
+    ScreenPosition(x: float(after_x), y: float(after_y)), int(width), int(height),
+  )
 
 
 proc nimCameraAzimuth(): cfloat {.exportc.} = cfloat(g_camera.azimuth)

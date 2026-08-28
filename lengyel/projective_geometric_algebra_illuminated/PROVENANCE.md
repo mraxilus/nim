@@ -299,6 +299,33 @@ the pointer drifts **0.000 px** across a 3.2× zoom (19 → 6.0 units), against 
 the anchor was the target's own level, and wheeling back out returns the camera to distance
 19.000 and target (0, 0, 1) — the opening placement exactly.
 
+**A drag pan grabs the level under the pointer and carries it**, rather than sliding the
+target at a rate. `interaction.panAcross` meets both ends of the pointer's step with the
+horizontal plane through the target and translates by the difference, so the world point a
+reader took hold of lands under the cursor. It replaces a rate of `FRACTION_PAN_PIXEL` of
+the orbit distance per pixel — right at exactly one depth and one tilt, and driven, a
+200-pixel drag carried the scene **288 pixels**. The rate survives only where a ray misses
+the level entirely, which is a drag beginning or ending on sky above the horizon.
+
+The rate's worse half was that `camera.pan` slides within the plane **facing the eye**,
+which is tilted: driven, one 200-pixel drag up the screen took the target from z **1.00 to
+6.40**, and a drag the other way to **−2.24**. The orbit centre ended up in mid-air, so
+every later orbit swung about a point on nothing and every later zoom was scaled by a
+distance measured to nowhere. Both hold points lie on one horizontal level, so the
+translation is horizontal by construction and the height cannot move at all — driven, 1.000
+to 1.000 on the mouse drag and on the two-finger pan alike, which used to be spelled
+separately in `glue.js` and now go through the one rule.
+
+**The hold point is bounded at `FACTOR_PAN_REACH_MAX` = 4 orbit distances**, because a
+horizontal level meets a ray aimed near the horizon a very long way off and one pixel of
+drag there is hundreds of world units. The *point* is clamped rather than the movement, so
+`min(reach, bound)` keeps the rule continuous as the cursor crosses the bound where
+switching rules there would jolt mid-drag; the clamp can tilt the step, so only its
+horizontal part is taken, which changes nothing in the unclamped case. Four rather than two:
+at the opening placement a ray a fifth of the way down the window already reaches 2.7
+distances, and bounding below what a reader routinely grabs would make the common case the
+governed one.
+
 **And the orbit centre now settles onto what is being zoomed into**, which is the other half
 of the same complaint: "the target gets away from what I'm looking at". `dollyToward` scales
 the target toward the anchor by exactly the factor the distance took — the whole of it is

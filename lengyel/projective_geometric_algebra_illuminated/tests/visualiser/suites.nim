@@ -485,6 +485,78 @@ suite "Camera":
     ).isNone
 
 
+  test "a pan grabs the level under the pointer and carries it to the cursor":
+    # The fault: a pan of so many hundredths of the orbit distance per pixel is right at
+    #   one depth and one tilt and wrong everywhere else -- driven, a 200-pixel drag
+    #   carried the scene 288 -- and it slid the target within the plane *facing the eye*,
+    #   which is tilted, so the same drag lifted the target from z 1.00 to 6.40.
+    const (WIDE, TALL) = (1440, 900)
+    var camera = initCamera(
+      target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05,
+      elevation = 0.42,
+    )
+    let
+      before = ScreenPosition(x: 700.0, y: 560.0)
+      after = ScreenPosition(x: 940.0, y: 660.0)
+      grabbed = positionUnderCursor(camera, WIDE, TALL, before)
+      height_opening = camera.target.z
+    check grabbed.isSome
+    camera.panAcross(before, after, WIDE, TALL)
+    # The very point that was under the pointer is now under where the pointer went.
+    let landed = projectToScreen(
+      camera.initMatrixViewProjection(float(WIDE)/float(TALL)), WIDE, TALL, grabbed.get
+    )
+    check hypot(landed.x - after.x, landed.y - after.y) < 0.5
+    # And the orbit centre keeps its height exactly, whatever direction the drag went.
+    check camera.target.z =~ height_opening
+    for step in [
+      (ScreenPosition(x: 700.0, y: 560.0), ScreenPosition(x: 700.0, y: 260.0)),
+      (ScreenPosition(x: 200.0, y: 800.0), ScreenPosition(x: 1300.0, y: 300.0)),
+    ]:
+      var camera_step = camera
+      camera_step.panAcross(step[0], step[1], WIDE, TALL)
+      check camera_step.target.z =~ camera.target.z
+
+
+  test "a pan takes hold no further out than its own bound":
+    # A horizontal level meets a ray aimed near the horizon a very long way off, and one
+    #   pixel of drag there is hundreds of world units. The hold point is clamped, so a
+    #   drag high in the frame is governed rather than thrown across the scene.
+    const (WIDE, TALL) = (1440, 900)
+    var camera = initCamera(
+      target = ORIGIN, distance = 19.0, azimuth = 0.0, elevation = 0.06
+    )
+    # Walk up the middle of the frame for the first row whose ray grazes the level far
+    #   enough out to be governed, rather than naming a pixel that a change in the field of
+    #   view would quietly move off the case being checked.
+    var grazing = none(ScreenPosition)
+    for row in countdown(450, 360):
+      let at = ScreenPosition(x: 720.0, y: float(row))
+      let hit = positionUnderCursor(camera, WIDE, TALL, at)
+      # Four times past the bound, not merely over it: at the bound itself the clamp
+      #   barely bites and there is no governing to see.
+      if hit.isSome and
+          norm(hit.get - camera.eye) > 4.0*FACTOR_PAN_REACH_MAX*camera.distance:
+        grazing = some(at)
+        break
+    check grazing.isSome
+    let
+      opening = camera
+      lower = ScreenPosition(x: 720.0, y: grazing.get.y + 30.0)
+      unbounded = norm(
+        positionUnderCursor(camera, WIDE, TALL, grazing.get).get -
+        positionUnderCursor(camera, WIDE, TALL, lower).get
+      )
+    camera.panAcross(grazing.get, lower, WIDE, TALL)
+    let moved = norm(camera.target - opening.target)
+    # It moves -- a governed pan is still a pan -- but by a fraction of what the ungoverned
+    #   grab would have thrown the view, and never past what two bounded holds can span.
+    check moved > 0.0
+    check moved < 0.5*unbounded
+    check moved <= 2.0*FACTOR_PAN_REACH_MAX*opening.distance
+    check camera.target.z =~ opening.target.z
+
+
   test "an aimed zoom draws the target toward what it aimed at":
     # `dollyToward` scales the target toward the anchor by exactly the factor the distance
     #   took, which is the whole of why an aimed zoom settles the orbit centre onto what

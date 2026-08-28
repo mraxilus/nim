@@ -1960,7 +1960,13 @@ canvas.addEventListener('pointermove', (e) => {
         -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
       );
     } else if (button_mouse_drag === 'pan') {
-      nimCameraPan(-dx / canvas.clientWidth * 1.4, dy / canvas.clientHeight * 1.4);
+      // Where the pointer was and where it is, not how far it moved: a pan grabs the
+      // level under it and carries that point along, which needs both ends of the step.
+      nimCameraPanAt(
+        prev.x - rect.left, prev.y - rect.top,
+        current.x - rect.left, current.y - rect.top,
+        canvas.clientWidth, canvas.clientHeight,
+      );
     }
     nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
     return;
@@ -2020,9 +2026,13 @@ canvas.addEventListener('pointermove', (e) => {
     separation_pinch_start = separation;
 
     if (pan_last) {
-      const dx = (mid.x - pan_last.x) / canvas.clientWidth;
-      const dy = (mid.y - pan_last.y) / canvas.clientHeight;
-      nimCameraPan(-dx * 1.4, dy * 1.4);
+      // The two fingers' own midpoint, grabbed and carried exactly as a mouse drag is --
+      // the same rule for both, so a fix to one is a fix to both.
+      nimCameraPanAt(
+        pan_last.x - rect.left, pan_last.y - rect.top,
+        mid.x - rect.left, mid.y - rect.top,
+        canvas.clientWidth, canvas.clientHeight,
+      );
     }
     pan_last = mid;
   }
