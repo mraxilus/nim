@@ -840,8 +840,8 @@ report(
   `${work_frame === null ? 0 : work_frame.n} frames sampled`,
 );
 // Bands rather than figures: this is a real machine's real clock. The numbers that matter
-// are the ratios recorded in PROVENANCE.md -- 34.4 ms a frame before this round's work,
-// 5.8 ms after, on this same software renderer.
+// are the measurements recorded in PROVENANCE.md's bottleneck ledger, taken on this same
+// software renderer.
 reportWithin(
   'a frame is assembled in a fraction of its own budget',
   work_frame === null ? -1 : work_frame.median, 0, 16, 'ms',

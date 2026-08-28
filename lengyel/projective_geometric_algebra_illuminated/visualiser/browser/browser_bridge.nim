@@ -1591,11 +1591,11 @@ type FrameData = object
     ## `furn_ribbon_verts` as an empty world.
     ##   The ground grid and the world axes are a function of the camera alone, and the
     ## camera is still for most of the frames of an ordinary session -- between drags,
-    ## while reading, while typing a coefficient. Measured on the opening scene, one
-    ## `nimBuildFrame` call: **21.9 ms with the furniture and 6.9 ms without it**, so
-    ## rebuilding a grid nothing moved is two thirds of the frame spent redrawing the same
-    ## picture. A JS-backend concern and stated as one: the desktop's own furniture
-    ## assembly is native and pays a fraction of this, and is left alone.
+    ## while reading, while typing a coefficient. The furniture is the moving frame's
+    ## largest phase -- the diagnostics tab's own scenery row is the live figure, and
+    ## PROVENANCE.md's bottleneck ledger the recorded one -- so a still frame that skips
+    ## it does most of a frame less work. A JS-backend concern and stated as one: the
+    ## desktop's own furniture assembly is native and pays a fraction of this.
   ms_build, ms_furniture, ms_scene, ms_flatten: float32
     ## What this frame's own assembly cost, in milliseconds: the whole of `nimBuildFrame`,
     ## and its three phases -- the world furniture (ground grid and axes), the scene's own

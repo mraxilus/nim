@@ -320,8 +320,11 @@ separately in `glue.js` and now go through the one rule.
 horizontal level meets a ray aimed near the horizon a very long way off and one pixel of
 drag there is hundreds of world units. The *point* is clamped rather than the movement, so
 `min(reach, bound)` keeps the rule continuous as the cursor crosses the bound where
-switching rules there would jolt mid-drag; the clamp can tilt the step, so only its
-horizontal part is taken, which changes nothing in the unclamped case. Four rather than two:
+switching rules there would jolt mid-drag; the clamp can tilt the step, so each hold point
+is taken to its **foot on the level through the target** (`projectOrthogonal`) and the
+step runs between the feet -- which changes nothing in the unclamped case, where both
+hits already lie on the level, and drops exactly the clamp's vertical artefact when it
+bites. Four rather than two:
 at the opening placement a ray a fifth of the way down the window already reaches 2.7
 distances, and bounding below what a reader routinely grabs would make the common case the
 governed one.
@@ -1853,6 +1856,37 @@ band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this
 renders through swiftshader, so its frame times say more about the software renderer than
 about anything in this repository.
 
+**The algebra boundary.** All world-space mathematics goes through the `pga` library:
+construction, incidence, meets, joins, normals, projections, nearest points, ray casts,
+side tests, the near-clip crossing, and every act of *stepping* — a point offset along a
+direction, a circle or dome parametrised around a centre, a camera target slid, a bounding
+sphere merged. Points are assembled as multivector sums (`P₀ + s·A₁ + t·A₂`, with the
+invariant multivectors hoisted to the widest loop-invariant scope) and read back through
+`position`/`pointFrom` only at the boundary. Standard component arithmetic is licensed in
+exactly these places, and nowhere else:
+
+- the Matrix4 pipeline (`camera.initMatrixProjection/View/ViewProjection`);
+- `picking.projectToScreen` and all post-projection `ScreenPosition` math;
+- `mesh.addVertex` packing, `worldPerPixelAt`, `radiansPerPixel`, and
+  `mesh.addSegmentAcross`'s clip/offset/blend body — the componentwise copy of what a
+  geometry shader would do, pinned equal to the algebra's own `clipToEyeSide` by the
+  suite so the licensed asymmetry cannot drift;
+- scalar sphere/circle **chord solves** (`fogFurnitureFor`, the grid's disc radius, the
+  axes' chord half-lengths): a sphere has no representative in the rigid algebra
+  (conformal-only), so the metric halves stay scalar while the incidence feeding them —
+  the eye's feet by `projectOrthogonal`, its heights by `depthAgainst` — is the library's;
+- trig parametrisation scalars (azimuth/elevation, circle angles) — ground field — and the
+  ±1 orientation flip `camera.frame` applies to a record after the algebra's own inner
+  product decided the sign;
+- tests and drive verdicts, which hold the algebra against classical closed forms
+  computed *in the test* — the project's purpose.
+
+The vocabulary these conversions speak — `planeThrough`, `depthAgainst`,
+`distanceBetween`, `groundPlane`/`levelPlaneThrough`, `pointFrom`, `algebraFilled` — lives
+in `objects.nim` and `mesh.nim`, each sign and argument order pinned by its own suite
+case. Every hand-built `DrawExtent` must pass `algebraFilled`, or its multivector twins
+are zero and the tessellation silently draws nothing (found exactly that way).
+
 **The bottleneck ledger.** PGA equations are never replaced with standard linear algebra —
 the library is what this project exists to exercise, so a cost the algebra carries is a
 finding to record here, not a fault to patch around. A PGA equation may be restructured
@@ -1866,6 +1900,19 @@ cross product, measured both ways on the shipped page. Kept — this is the mand
 case: the cross product was shipped briefly (`0275e82d8`) and reverted; the suite now holds
 the join's normal equal to the classical cross computed *in the test*, sign included, and
 the join is what runs.
+
+**Tessellation stepping through multivector sums, per vertex.** Price, on the driving
+container's shipped page: the frame build under a real orbit drag went 11.5 → 12.6 ms —
+about +1 ms net, because the restructuring that came with it is itself algebra: each
+collinear run (a lattice line, a world axis) derives **one** across join
+(`directionNormal(line ∧ eye)`, `addSegmentAcross`) where the per-piece form ran the same
+join eight times over, ~3,800 joins a frame down to ~500. The **still** frame carries the
+larger share: the scene's own objects rebuild every frame with no cache to hide behind,
+and their phase reads ~8 ms in the diagnostics tab against ~2 before the stepping — a
+plane's rim is 96 chord joins and 192 assembled points, the dome 1,152 assembled points.
+Kept — the sums are the algebra's own statement of placement, this is the stress the
+project exists to apply, and the scenery half of the frame is still protected by the
+furniture hold.
 
 **Dense 16-float `Multivector` operations under the JS backend.** Price: each binary op
 walks 16×16 coefficient pairs through `nimCopy`, ~1–2 µs an op on the driving container.

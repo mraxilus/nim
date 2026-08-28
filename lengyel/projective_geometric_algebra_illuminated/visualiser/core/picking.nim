@@ -1,10 +1,12 @@
 ## Hit-test scene items against the cursor, so a mouse action knows which object it touched.
 ##
-## Point and line are tested in screen space, by pixel distance: that answers where a pixel
-## is, a rasterisation question, not an algebraic one, exactly as the camera's own clip
-## volume is written out directly rather than derived. A line's own endpoints are computed
-## the same way `mesh.addLine` draws them -- `radius_horizon` backward from support, the
-## same radius forward from the eye instead -- so a hit always agrees with what is drawn.
+## Every world-space derivation here goes through the algebra -- rays as joins, hits as
+## meets, depths as `depthAgainst`, nearest points and clips by the library's own
+## operators -- and only the *pixel* half of a test is screen math: a point or line is
+## judged by pixel distance to its projection, which answers where a pixel is, a
+## rasterisation question. A line's own endpoints are assembled the same way
+## `mesh.addLine` draws them -- `radius_horizon` along its attitude from the eye's own
+## point -- so a hit always agrees with what is drawn.
 ##
 ## Plane is tested differently, through the algebra rather than around it: cursor's own
 ## sight ray is built as an RGA line (eye ∧ heading) and met with the plane directly,
