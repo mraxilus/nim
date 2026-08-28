@@ -118,6 +118,11 @@ var
     ## `g_meshes_furniture` was built from, or none where none has been built yet.
     ##   Kept so a frame whose settings match can skip the rebuild entirely; see
     ## `FrameData.is_furniture_held` for the measurement that earns it.
+  g_count_grid_segments = 0 ## How many ribbon segments the ground grid alone was last
+    ## built from -- the axes' own fixed share excluded, so the figure means what its name
+    ## says. Kept beside the furniture it describes rather than recounted per frame: a
+    ## held frame draws the grid it already had and should report that grid's own count
+    ## rather than zero.
   g_settings_overlay = none(SettingsOverlay) ## What `g_scale_overlay`/`g_vp_overlay`
     ## below were derived from, or none where none has been derived yet.
   g_scale_overlay: DrawExtent ## The draw extent the overlay calls share; see
@@ -1604,6 +1609,17 @@ type FrameData = object
     ## drawing process rather than one opaque frame time; the phases the bridge cannot
     ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
     ## A held furniture frame reports ~0 for its furniture phase, which is the point.
+  ms_grid, ms_axes: float32
+    ## What the two halves of the scenery cost, in milliseconds, inside `ms_furniture`.
+    ## The axes are three lines however far the camera stands; the grid is however many
+    ## lines the ground reach asks for, so these two answer very differently to distance
+    ## and a single scenery figure cannot say which of them moved.
+  count_grid_segments: int
+    ## How many ribbon segments the **ground grid** is drawn from -- the count
+    ## `mesh.SEGMENTS_GRID_MAX` bounds -- reported so the drawn work can be read beside its
+    ## price rather than inferred from it. The axes are excluded: they are three lines
+    ## however far the camera stands, and folding their fixed share in would make a
+    ## budgeted number stop matching its own budget.
   ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float32
     ## What each *kind* of scene object cost inside `ms_scene`, in milliseconds, with the
     ## counts below beside them. The phase total answered "the scene is slow"; a reader
@@ -1738,11 +1754,24 @@ proc nimBuildFrame(
   let is_furniture_held =
     g_settings_furniture.isSome and g_settings_furniture.get == settings_furniture
   let ms_before_furniture = performanceNow()
+  var
+    ms_grid = 0.0
+    ms_axes = 0.0
   if not is_furniture_held:
     g_settings_furniture = some(settings_furniture)
     clearMeshes(g_meshes_furniture)
+    # Clocked apart because they are not the same size of thing: the axes are three lines
+    #   and the grid is however many the ground reaches, so a scenery figure that rose
+    #   could not say which of them rose without this.
+    let ms_before_grid = performanceNow()
     if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
+    # Counted here, between the two, so the figure is the grid's own and not the grid's
+    #   plus the axes' fixed share; see `mesh.addSegmentAcross` for the six a segment is.
+    g_count_grid_segments = g_meshes_furniture[Primitive.Ribbon].count_vertices div 6
+    let ms_before_axes = performanceNow()
     if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
+    ms_grid = ms_before_axes - ms_before_grid
+    ms_axes = performanceNow() - ms_before_axes
   let ms_after_furniture = performanceNow()
 
   clearMeshes(g_meshes)
@@ -1855,6 +1884,9 @@ proc nimBuildFrame(
     view_projection: view_projection,
     furn_ribbon_verts: furn_ribbon_verts,
     is_furniture_held: is_furniture_held,
+    ms_grid: float32(ms_grid),
+    ms_axes: float32(ms_axes),
+    count_grid_segments: g_count_grid_segments,
     ms_points: float32(cost.ms_points),
     ms_lines: float32(cost.ms_lines),
     ms_planes: float32(cost.ms_planes),

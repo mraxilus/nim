@@ -1221,15 +1221,78 @@ suite "Mesh":
         # Lines each way from the eye, in each of the two families, skipping the one
         #   through the origin that coincides with a world axis.
         lines = 4*int(floor(radius/SIZE_CELL_GRID))
+        # ...and how finely each is cut for its fade, which the segment budget decides
+        #   from how many lines the family lays. Asked here rather than assumed to be
+        #   `SEGMENTS_GRID_FADE`: the count below is exact arithmetic, and the budget is
+        #   part of that arithmetic at the wider of these two reaches.
+        pieces = segmentsGridFadeFor(2*int(floor(radius/SIZE_CELL_GRID)) + 1)
       MESHES.clearMeshes
       MESHES.addGrid(extent, scale_above)
-      check MESHES[Primitive.Ribbon].count_vertices == lines*SEGMENTS_GRID_FADE*6
+      check MESHES[Primitive.Ribbon].count_vertices == lines*pieces*6
       for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
         let
           at = MESHES[Primitive.Ribbon].vertices[i].toPosition
           off_x = abs(at.x - SIZE_CELL_GRID*round(at.x/SIZE_CELL_GRID))
           off_y = abs(at.y - SIZE_CELL_GRID*round(at.y/SIZE_CELL_GRID))
         check min(off_x, off_y) <= 1.0
+
+
+  test "the grid's fade is cut as finely as its budget affords, and no finer":
+    # **The regression case for a shipped cost.** The scenery's price is its segment count
+    #   and nothing else -- about 50-60 us a segment on the driving container -- and that
+    #   count sawtoothed with camera distance, because the cell steps by a decade only
+    #   after the line count has climbed a decade's worth. Measured before this rule: 154
+    #   segments and 7.3 ms at orbit distance 19, but 2,084 and 126.5 ms at distance 300,
+    #   dropping back to 706 once the cell stepped. A reader panning near the top of a
+    #   decade met a tenth of a second of scenery, intermittently.
+    check SEGMENTS_GRID_FADE_MIN < SEGMENTS_GRID_FADE
+    # A family laying few lines is cut as finely as it ever was: the near view, where a
+    #   fade has room to band, is exactly what it was before the budget existed.
+    check segmentsGridFadeFor(0) == SEGMENTS_GRID_FADE
+    check segmentsGridFadeFor(1) == SEGMENTS_GRID_FADE
+    check segmentsGridFadeFor((SEGMENTS_GRID_MAX div 2) div SEGMENTS_GRID_FADE) ==
+      SEGMENTS_GRID_FADE
+    # One line past what the budget affords at full fineness, and the cut coarsens.
+    check segmentsGridFadeFor((SEGMENTS_GRID_MAX div 2) div SEGMENTS_GRID_FADE + 1) <
+      SEGMENTS_GRID_FADE
+    # However many lines are asked for, the cut never falls through its own floor: two
+    #   pieces still fade from both ends toward the middle, and one could not fade at all.
+    for count in [1, 10, 100, 1_000, 100_000]:
+      check segmentsGridFadeFor(count) >= SEGMENTS_GRID_FADE_MIN
+      check segmentsGridFadeFor(count) <= SEGMENTS_GRID_FADE
+      # And the family's own spend stays inside its half of the budget wherever the floor
+      #   is not what is binding.
+      let spent = count*segmentsGridFadeFor(count)
+      check spent <= SEGMENTS_GRID_MAX div 2 or
+        segmentsGridFadeFor(count) == SEGMENTS_GRID_FADE_MIN
+    # Monotone: more lines never buys a finer cut, so a reader pulling steadily back never
+    #   sees the fade sharpen again.
+    var previous = SEGMENTS_GRID_FADE
+    for count in 1 .. 400:
+      check segmentsGridFadeFor(count) <= previous
+      previous = segmentsGridFadeFor(count)
+
+
+  test "the grid stays inside its segment budget however far the camera pulls back":
+    # Held on what is actually laid rather than on the rule alone: the budget is only
+    #   worth having if `addGrid` spends it, and the two families each hold half without
+    #   knowing what the other drew.
+    for (extent, height) in [
+      (1.0e3, 6.0e1), (4.0e3, 6.0e1), (1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7),
+    ]:
+      let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
+      MESHES.clearMeshes
+      MESHES.addGrid(extent, scale_afar)
+      # Six vertices a segment; see `addSegmentAcross`.
+      check MESHES[Primitive.Ribbon].count_vertices div 6 <= SEGMENTS_GRID_MAX
+      check MESHES[Primitive.Ribbon].count_vertices > 0
+
+    # And the opening view never reaches the budget at all, which is what "the near view
+    #   is untouched" means: nothing there is drawn more coarsely than it was.
+    let scale_opening = scaleFurnitureAt(Position(x: 0, y: 0, z: 1.0e1), 2.0e2)
+    MESHES.clearMeshes
+    MESHES.addGrid(2.0e2, scale_opening)
+    check MESHES[Primitive.Ribbon].count_vertices div 6 < SEGMENTS_GRID_MAX div 2
 
 
   test "a camera dollied far out still has ground under it, at a coarser cell":

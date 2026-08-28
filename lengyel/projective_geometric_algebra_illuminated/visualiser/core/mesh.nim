@@ -207,8 +207,36 @@ const
     ##   palette entry is also `INK_POOL_FREE` -- the colour a scene object takes when the
     ##   pool has run dry -- and dimming the entry would make that object translucent.
   SEGMENTS_GRID_FADE* = 8
-    ## Cut each ground grid line into this many pieces, independent of `SIZE_CELL_GRID`,
-    ## so `alphaGridFade` can fade it smoothly by distance without one piece per cell.
+    ## Cut each ground grid line into at most this many pieces, independent of
+    ## `SIZE_CELL_GRID`, so `alphaGridFade` can fade it smoothly by distance without one
+    ## piece per cell. **At most**, because `SEGMENTS_GRID_MAX` may spend fewer on a
+    ## family drawing many lines; see there.
+  SEGMENTS_GRID_MAX* = 640
+    ## Spend no more than this many ribbon segments on the ground grid, both families
+    ## together, however many lattice lines the ground reach asks for.
+    ##   **The scenery's cost is its segment count, and its segment count sawtooths with
+    ## camera distance.** `sizeCellGridFor` steps the cell by a decade only once the
+    ## ground reach passes `CELLS_GRID_HALF_MAX*SIZE_CELL_GRID`, so within each decade the
+    ## line count climbs with distance to as many as `2*CELLS_GRID_HALF_MAX` a family
+    ## before the step drops it back by ten. Measured on the driving container at a fixed
+    ## viewport, grid phase against distance: **154 segments/7.3 ms at 19, 712/35.4 ms at
+    ## 100, 2,084/126.5 ms at 300**, then 706/44.6 ms at 1,000 once the cell had stepped --
+    ## about 50-60 us a segment throughout, so the price is the count and nothing else. A
+    ## reader panning near the top of a decade met a scenery phase of over a tenth of a
+    ## second, intermittently, which is exactly how it was reported.
+    ##   The lines themselves are untouched: what a reader sees is where the world's own
+    ## lattice falls, and thinning that would move the grid rather than cheapen it. What
+    ## adapts is how finely each line is *cut for its fade* -- 8 pieces where a family
+    ## draws few lines, down to a floor of `SEGMENTS_GRID_FADE_MIN` where it draws many.
+    ## A far-out grid line spans few pixels and its fade has correspondingly little room
+    ## to band in, which is why the coarser sampling is not visible where it applies and
+    ## the near view, which never reaches the budget, is bit-identical.
+    ##   640 rather than a round 1,000: it holds the worst case near the 19-distance
+    ## opening view's own price, which is the frame a reader spends most of a session in.
+  SEGMENTS_GRID_FADE_MIN* = 2
+    ## Never cut a grid line into fewer pieces than this, however many lines there are.
+    ## Two pieces still fade from both ends toward the middle; one could not fade at all,
+    ## and a line of flat alpha reads as a hard edge where the fog should have taken it.
   SEGMENTS_CIRCLE_HORIZON* = 96
     ## Set segment count in a horizon line's own great circle, or a finite plane's own
     ## rim, dense enough to read as circular.
@@ -1056,6 +1084,19 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
       )
 
 
+func segmentsGridFadeFor*(count_lines: int): int =
+  ## Choose how many pieces each of `count_lines` grid lines is cut into for its fade.
+  ##   `SEGMENTS_GRID_FADE` wherever the whole family fits inside its half of
+  ## `SEGMENTS_GRID_MAX`, and as few as `SEGMENTS_GRID_FADE_MIN` where it does not. The
+  ## budget is halved because the grid is two families laid the same way, and neither
+  ## knows what the other will draw.
+  ##   A pure function of the count so the rule can be held on its own by the suite,
+  ## rather than only observable through a vertex total.
+  if count_lines <= 0: return SEGMENTS_GRID_FADE
+  let allowed = (SEGMENTS_GRID_MAX div 2) div count_lines
+  max(SEGMENTS_GRID_FADE_MIN, min(SEGMENTS_GRID_FADE, allowed))
+
+
 proc addGridFamily(
   meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
   fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
@@ -1085,6 +1126,10 @@ proc addGridFamily(
     centre_along = depthAgainst(planeThrough(origin_point, along_point), scale.eye_point)
     first = int(ceil((centre_across - radius_ground)/size_cell))
     last = int(floor((centre_across + radius_ground)/size_cell))
+    # How finely each line is cut for its fade, decided once for the family from how many
+    #   lines it is about to lay: the budget is a property of the family, and a per-line
+    #   answer would cut neighbouring lines differently and band the fade across the grid.
+    segments_fade = segmentsGridFadeFor(last - first + 1)
   for i in first .. last:
     # Skips the lattice line through the world origin: it coincides exactly with a world
     #   axis, and would either fight it for the same depth or hide its colour under plain
@@ -1097,19 +1142,19 @@ proc addGridFamily(
     if reach_squared <= 0.0: continue
     let
       reach = sqrt(reach_squared)
-      # One base point and **one across** per lattice line: all eight fade pieces lie on
-      #   this line, so they share the plane it joins with the eye, and deriving that
-      #   join's normal once here is the same algebra the per-piece form ran eight times.
+      # One base point and **one across** per lattice line: every fade piece lies on this
+      #   line, so they share the plane it joins with the eye, and deriving that join's
+      #   normal once here is the same algebra the per-piece form ran once a piece.
       base = add(origin_point,
         add(wedge(offset, across_point), wedge(centre_along, along_point)))
       across_line = directionNormal(wedge(wedge(base, along_point), scale.eye_point))
     # An eye on the lattice line itself has no side to step a ribbon off toward -- the
     #   very refusal `addSegment` makes per piece, made once for the line.
     if across_line.isNone: continue
-    for j in 0 ..< SEGMENTS_GRID_FADE:
+    for j in 0 ..< segments_fade:
       let
-        a = reach * (2.0*float(j)/float(SEGMENTS_GRID_FADE) - 1.0)
-        b = reach * (2.0*float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0)
+        a = reach * (2.0*float(j)/float(segments_fade) - 1.0)
+        b = reach * (2.0*float(j + 1)/float(segments_fade) - 1.0)
         end_a = add(base, wedge(a, along_point))
         end_b = add(base, wedge(b, along_point))
         tint_a = tint.fade(tint.alpha * alphaGridFade(

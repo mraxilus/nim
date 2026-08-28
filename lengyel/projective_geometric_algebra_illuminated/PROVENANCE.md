@@ -1959,6 +1959,28 @@ Kept — the sums are the algebra's own statement of placement, this is the stre
 project exists to apply, and the scenery half of the frame is still protected by the
 furniture hold.
 
+**The ground grid's segment count, which sawtoothed with camera distance.** The scenery's
+price *is* its segment count — about 50-60 us a segment on the driving container, flat
+across every distance measured — and that count climbs within each decade of camera reach
+before `sizeCellGridFor` steps the cell and drops it back by ten. Measured through the
+bridge's own grid clock, fixed viewport, moving camera: **154 segments / 7.3 ms at orbit
+distance 19, 370 / 25.2 at 50, 712 / 35.4 at 100, 2,084 / 126.5 at 300**, then 706 / 44.6
+at 1,000 once the cell had stepped, and up again to 2,075 / 113 at 3,000. So the worst
+frame is not the farthest one but the one just before a step, which is why a reader met it
+*intermittently* while panning and reported it as such.
+  Bounded rather than ledgered, because what was spent was not algebra: `SEGMENTS_GRID_MAX`
+(640, both families together) caps the ribbon segments the grid may spend, and
+`mesh.segmentsGridFadeFor` decides from a family's own line count how finely each line is
+cut **for its fade** — the full `SEGMENTS_GRID_FADE` = 8 where the family fits, down to a
+floor of 2. The lattice itself is untouched: which lines are drawn is where the world's own
+grid falls, and thinning that would move the grid rather than cheapen it. What coarsens is
+only the sampling of a gradient along lines that are, at those distances, a few pixels
+apart. Measured after: **626 segments / 30.4 ms at distance 300** against 2,045 / 113.9 with
+the rule reverted, and the near views bit-identical (67 segments at distance 6, 154 at 19 —
+the opening view never reaches the budget). Screenshots of the far view before and after are
+indistinguishable. The per-segment algebra is exactly as it was; this is a rendering-detail
+bound, not a change to what the algebra computes.
+
 **What a scene object costs, by kind.** The scene phase used to be one number, and a
 reader could see only that it was large. Broken out by kind — `FrameData.ms_points`,
 `ms_lines`, `ms_planes`, `ms_sky`, `ms_ghost`, `ms_selected`, each with the count it is a

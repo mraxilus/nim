@@ -982,6 +982,36 @@ report(
   Object.entries(rows_kind).map(([n, t]) => `${n}: ${t}`).join(', '),
 );
 
+// **The scenery, at the distance where it used to cost the most.** Its price is its
+// segment count, and that count climbs with camera distance until the cell steps a decade
+// and drops it back -- so the worst frame is not the farthest one but the one just before
+// a step. Measured at orbit distance 300 before the budget: 2,084 segments and 126.5 ms of
+// grid, against 154 and 7.3 ms at the opening view. Held here at that same distance,
+// through the bridge's own grid clock and segment count, as a band rather than a figure.
+const scenery_far = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const aspect = canvas.width / canvas.height;
+  const distance_before = nimCameraDistance();
+  nimSetCameraDistance(300);
+  const milliseconds = [];
+  let segments = 0;
+  for (let i = 0; i < 9; i += 1) {
+    nimCameraOrbit(0.005, 0); // Move, so the furniture cache cannot hold and it rebuilds.
+    const data = nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true);
+    milliseconds.push(data.ms_grid);
+    segments = data.count_grid_segments;
+  }
+  nimSetCameraDistance(distance_before);
+  milliseconds.sort((a, b) => a - b);
+  return { median: milliseconds[4], segments };
+});
+report(
+  'the scenery holds its segment budget where it used to cost the most',
+  scenery_far.segments > 0 && scenery_far.segments <= 640,
+  `${scenery_far.segments} segments at orbit distance 300, ` +
+    `${scenery_far.median.toFixed(1)} ms of grid`,
+);
+
 // The same budget while the camera actually moves, which is when a reader felt it
 // collapse: a moving camera rebuilds the ground grid every frame, and per-segment
 // multivector churn once put that rebuild at 3x the still frame's whole build. The band
