@@ -810,12 +810,18 @@ await page.waitForTimeout(600);
 await page.evaluate(() => {
   window.__work_frame = [];
   window.__held_frame = 0;
+  window.__phase_frame = [];
   const built = globalThis.nimBuildFrame;
   globalThis.nimBuildFrame = function (...given) {
     const started = performance.now();
     const data = built.apply(this, given);
     window.__work_frame.push(performance.now() - started);
     if (data.is_furniture_held) window.__held_frame += 1;
+    window.__phase_frame.push({
+      build: data.ms_build, furniture: data.ms_furniture,
+      scene: data.ms_scene, flatten: data.ms_flatten,
+      wall: window.__work_frame[window.__work_frame.length - 1],
+    });
     return data;
   };
 });
@@ -843,6 +849,33 @@ reportWithin(
 reportWithin(
   'and its slowest tenth stays inside one',
   work_frame === null ? -1 : work_frame.p90, 0, 24, 'ms',
+);
+
+/* ---- The diagnostics tab's own phase clocks tell the truth ---- */
+
+// The bridge reports each step of its own build -- scenery, scene objects, flatten -- and
+// those steps have to (a) be populated, (b) sum to no more than the whole they are steps
+// of, and (c) agree with a wall clock held around the call from outside. Bands generous:
+// performance.now() is sub-ms quantised and this container is slow.
+const phases = await page.evaluate(() => window.__phase_frame.slice(2));
+const sane = phases.filter((p) =>
+  p.build > 0 && p.scene >= 0 && p.furniture >= 0 && p.flatten >= 0 &&
+  p.furniture + p.scene + p.flatten <= p.build + 1.0 && p.build <= p.wall + 1.0);
+report(
+  'the build reports its phases, and they add up',
+  phases.length > 30 && sane.length === phases.length,
+  `${sane.length} of ${phases.length} frames consistent`,
+);
+// And the drawer's rows actually render them, so a reader can see each step live. The
+// diagnostics section is collapsed by default; its numbers still update.
+const row_texts = await page.evaluate(() => Object.fromEntries(
+  ['build', 'furniture', 'scene', 'flatten', 'upload', 'overlay', 'menu', 'ui']
+    .map((n) => [n, document.getElementById('diag-' + n).textContent])
+));
+report(
+  'every drawing step has a live row in the diagnostics tab',
+  Object.values(row_texts).every((t) => / ms$/.test(t)),
+  Object.entries(row_texts).map(([n, t]) => `${n}: ${t}`).join(', '),
 );
 
 // The same budget while the camera actually moves, which is when a reader felt it

@@ -1499,6 +1499,36 @@ const strip_pool = document.getElementById('pool-strip');
 const diagnostic_delivery = document.getElementById('diag-delivery');
 let is_strip_pool_built = false;
 
+// One ring per step of the drawing process, so the diagnostics tab can show where a frame
+// actually went rather than one opaque total. The bridge reports its own three phases on
+// FrameData (build = furniture + scene + flatten, timed inside nimBuildFrame where only it
+// can see them); this side times what only it can see -- the GL upload+draw, the SVG
+// overlay, the selection menu, and the low-cadence UI block. Rings rather than a latest
+// value, so each row can show a rolling median beside the instantaneous number: a single
+// frame's reading flickers too fast to read, and a median is what a reader means by "how
+// long does this step take".
+const PHASES_DIAGNOSTIC = [
+  ['build', 'diag-build'], ['furniture', 'diag-furniture'], ['scene', 'diag-scene'],
+  ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
+  ['menu', 'diag-menu'], ['ui', 'diag-ui'],
+];
+const history_phase = {};
+const element_phase = {};
+for (const [name, id] of PHASES_DIAGNOSTIC) {
+  history_phase[name] = new Array(FRAMES_HISTORY).fill(-1); // -1 marks a never-written slot.
+  element_phase[name] = document.getElementById(id);
+}
+function recordPhaseTime(name, delta_milliseconds) {
+  // Shares the frame ring's own index, advanced once per frame by recordFrameTime, so
+  // every ring lines up frame for frame; the UI phase only runs one frame in six and
+  // leaves its other slots at -1, which the median below skips.
+  history_phase[name][index_history_frame] = delta_milliseconds;
+}
+function medianPhase(name) {
+  const written = history_phase[name].filter((v) => v >= 0).sort((a, b) => a - b);
+  return written.length === 0 ? null : written[Math.floor(written.length / 2)];
+}
+
 function refreshDeliveryReport() {
   // Where a save went, in the reader's own words -- because on a phone in a frame this page
   //   does not control, that is otherwise unknowable to anyone. The toast carries it too,
@@ -1510,6 +1540,10 @@ function refreshDeliveryReport() {
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
   index_history_frame = (index_history_frame + 1) % FRAMES_HISTORY;
+  // The slot the phases are about to write into is cleared up front, so a phase that
+  // does not run this frame (the UI block, a held furniture build) reads as absent
+  // rather than as whatever it cost 240 frames ago.
+  for (const [name] of PHASES_DIAGNOSTIC) history_phase[name][index_history_frame] = -1;
 }
 
 function refreshDiagnostics() {
@@ -1533,6 +1567,19 @@ function refreshDiagnostics() {
   const latest = history_frame[(index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY];
   diagnostic_frame_time.textContent =
     latest.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(latest, 1)) + ' fps)';
+
+  // Each step of the drawing process, as `latest (median)` over the ring: the median is
+  // the number a reader can act on, the instantaneous one is what shows a spike as it
+  // happens. A phase that has not run yet stays an em dash.
+  const index_latest = (index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY;
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    const median = medianPhase(name);
+    if (median === null) continue;
+    let now_phase = history_phase[name][index_latest];
+    if (now_phase < 0) now_phase = median; // A phase idle this frame shows its median.
+    element_phase[name].textContent =
+      now_phase.toFixed(2) + ' (' + median.toFixed(2) + ') ms';
+  }
 
   if (performance.memory) {
     diagnostic_heap.textContent =
@@ -2387,7 +2434,14 @@ function renderFrame(now_seconds) {
   const data = nimBuildFrame(
     aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown,
   );
+  // The bridge times its own three phases where only it can see them; this side just
+  // records what came back, into the same rings its own phases use.
+  recordPhaseTime('build', data.ms_build);
+  recordPhaseTime('furniture', data.ms_furniture);
+  recordPhaseTime('scene', data.ms_scene);
+  recordPhaseTime('flatten', data.ms_flatten);
 
+  const ms_before_draw = performance.now();
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.uniformMatrix4fv(uniform_view_projection, false, new Float32Array(data.view_projection));
@@ -2429,6 +2483,9 @@ function renderFrame(now_seconds) {
     drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
     gl.enable(gl.DEPTH_TEST);
   }
+  // Command submission only: GL runs asynchronously, so what a CPU clock can honestly
+  // bracket here is the upload and the draw-call issue, not the GPU's own work.
+  recordPhaseTime('upload', performance.now() - ms_before_draw);
 }
 
 function frame() {
@@ -2476,14 +2533,19 @@ function frame() {
   //   moment the drawing buffer is still there to read; see `captureFrameIfAsked`.
   captureFrameIfAsked();
 
+  const ms_before_overlay = performance.now();
   refreshOverlay(cursor_last);
+  const ms_before_menu = performance.now();
+  recordPhaseTime('overlay', ms_before_menu - ms_before_overlay);
   updateSelectionMenuPosition();
+  recordPhaseTime('menu', performance.now() - ms_before_menu);
 
   // UI (camera fields, diagnostics) refresh at a lower cadence than the draw loop --
   // no visual harm in a number lagging one frame, and it keeps DOM writes off the hot path.
   count_refresh_ui += 1;
   if (count_refresh_ui >= 6) {
     count_refresh_ui = 0;
+    const ms_before_ui = performance.now();
     refreshCameraFields();
     refreshDiagnostics();
     refreshUndoRedoButtons(); // catches every history-touching path this tick's own
@@ -2491,6 +2553,7 @@ function frame() {
       // scene load/clear).
     syncOperandsToSelection(); // catches selection changes from tap-to-select too.
     refreshAddButton(); // catches paths that fill or empty the scene without a click here.
+    recordPhaseTime('ui', performance.now() - ms_before_ui);
   }
 
   requestAnimationFrame(frame);

@@ -1015,6 +1015,24 @@
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
+        <!-- Each step of the drawing process, latest (median) in ms, so a reader can see
+             where a frame went rather than one opaque total. The first four come from the
+             bridge's own clocks inside nimBuildFrame; the rest are timed by glue.js
+             around its own calls. GL rows are command submission only - the GPU's own
+             work runs asynchronously and no CPU clock here can see it. -->
+        <div class="diag-line"><span>build (bridge)</span><b id="diag-build">&mdash;</b></div>
+        <div class="diag-line"><span>&ensp;scenery (grid+axes)</span
+          ><b id="diag-furniture">&mdash;</b></div>
+        <div class="diag-line"><span>&ensp;scene objects</span
+          ><b id="diag-scene">&mdash;</b></div>
+        <div class="diag-line"><span>&ensp;flatten + pack</span
+          ><b id="diag-flatten">&mdash;</b></div>
+        <div class="diag-line"><span>upload + draw calls</span
+          ><b id="diag-upload">&mdash;</b></div>
+        <div class="diag-line"><span>overlay (markers)</span
+          ><b id="diag-overlay">&mdash;</b></div>
+        <div class="diag-line"><span>selection menu</span><b id="diag-menu">&mdash;</b></div>
+        <div class="diag-line"><span>ui refresh</span><b id="diag-ui">&mdash;</b></div>
         <div class="diag-line"><span>JS heap</span><b id="diag-heap">unavailable</b></div>
         <hr class="rule">
         <div class="diag-line"><span>object pool</span><b id="diag-pool">0 / 64</b></div>

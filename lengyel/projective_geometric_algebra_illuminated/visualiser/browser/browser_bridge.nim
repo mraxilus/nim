@@ -50,6 +50,15 @@ import ../core/[
 
 
 
+proc performanceNow(): float {.importjs: "performance.now()".}
+  ## Read the page's own monotonic clock, in milliseconds.
+  ##   The bridge's one piece of interop beyond its exports: everything else takes the
+  ##   frame's `now` as a parameter, but the per-phase draw timings the diagnostics tab
+  ##   shows have to bracket work *inside* one call, which a single caller-supplied
+  ##   reading cannot do. Confined to timing -- no rule may read it.
+
+
+
 #[ Panel State ]#
 
 type SettingsFurniture = tuple
@@ -1587,6 +1596,14 @@ type FrameData = object
     ## rebuilding a grid nothing moved is two thirds of the frame spent redrawing the same
     ## picture. A JS-backend concern and stated as one: the desktop's own furniture
     ## assembly is native and pays a fraction of this, and is left alone.
+  ms_build, ms_furniture, ms_scene, ms_flatten: float32
+    ## What this frame's own assembly cost, in milliseconds: the whole of `nimBuildFrame`,
+    ## and its three phases -- the world furniture (ground grid and axes), the scene's own
+    ## objects (ghost and drag preview included), and the flatten-and-pack of every mesh
+    ## into the arrays above. Read by the diagnostics tab, which shows each step of the
+    ## drawing process rather than one opaque frame time; the phases the bridge cannot
+    ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
+    ## A held furniture frame reports ~0 for its furniture phase, which is the point.
   tri_over, ribbon_over, point_over: int ## How many vertices at the *end* of each of the
     ## three above are the overlay run -- drawn after the rest with the depth test off, so
     ## a selected object lands over whatever stands between it and the camera. A count of
@@ -1614,6 +1631,9 @@ proc nimBuildFrame(
   ##   Also draws `g_ghost`, if any, through the same `addObject` dispatch, tinted
   ##   `INK_GHOST` and muted -- see that var's own doc comment for why it never touches
   ##   `g_scene` and so is invisible to `nimSceneSlots`/undo/redo/save/picking.
+  # One clock per phase boundary, so the diagnostics tab can show each step of the
+  #   drawing process rather than one opaque build figure. `performanceNow` is timing-only.
+  let ms_entered = performanceNow()
   # A focus is a slot carried across frames like any other, so it needs the same liveness
   #   guard the selection keeps; mirrors `visualiser.renderFrame`.
   g_interaction.pruneFocus(g_scene)
@@ -1645,11 +1665,13 @@ proc nimBuildFrame(
   )
   let is_furniture_held =
     g_settings_furniture.isSome and g_settings_furniture.get == settings_furniture
+  let ms_before_furniture = performanceNow()
   if not is_furniture_held:
     g_settings_furniture = some(settings_furniture)
     clearMeshes(g_meshes_furniture)
     if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
     if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
+  let ms_after_furniture = performanceNow()
 
   clearMeshes(g_meshes)
   # A horizon plane's own dome first, before anything else that might share its own
@@ -1729,14 +1751,31 @@ proc nimBuildFrame(
     for column in 0 .. 3:
       view_projection[4*column + row] = vp.at(row, column)
 
+  # Flattened into locals rather than in the constructor, so the pack-and-copy phase has
+  #   a start and an end a clock can bracket.
+  let ms_before_flatten = performanceNow()
+  let
+    tri_verts = flatten(g_meshes[Primitive.Triangle])
+    ribbon_verts = flatten(g_meshes[Primitive.Ribbon])
+    point_verts = flatten(g_meshes[Primitive.Point])
+    furn_ribbon_verts =
+      if is_furniture_held: newSeq[float32](0)
+      else: flatten(g_meshes_furniture[Primitive.Ribbon])
+  let ms_done = performanceNow()
+
   FrameData(
-    tri_verts: flatten(g_meshes[Primitive.Triangle]),
-    ribbon_verts: flatten(g_meshes[Primitive.Ribbon]),
-    point_verts: flatten(g_meshes[Primitive.Point]),
+    tri_verts: tri_verts,
+    ribbon_verts: ribbon_verts,
+    point_verts: point_verts,
     view_projection: view_projection,
-    furn_ribbon_verts:
-      if is_furniture_held: @[] else: flatten(g_meshes_furniture[Primitive.Ribbon]),
+    furn_ribbon_verts: furn_ribbon_verts,
     is_furniture_held: is_furniture_held,
+    ms_build: float32(ms_done - ms_entered),
+    ms_furniture: float32(ms_after_furniture - ms_before_furniture),
+    # The scene phase is everything between the furniture and the flatten: clearing,
+    #   both draw-order passes, the ghost and the drag preview, and the overlay marking.
+    ms_scene: float32(ms_before_flatten - ms_after_furniture),
+    ms_flatten: float32(ms_done - ms_before_flatten),
     tri_over: countOverlay(g_meshes[Primitive.Triangle]),
     ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
     point_over: countOverlay(g_meshes[Primitive.Point]),
