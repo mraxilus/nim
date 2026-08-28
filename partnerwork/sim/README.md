@@ -42,6 +42,9 @@ happens when the width goes to zero.
 - **That a pair of hands binds tighter than one.** Two crossed connections run
   out at roughly half the turn a single one does, with nothing told to it.
 
+Published at <https://claude.ai/code/artifact/2944bc6a-551e-4b86-a258-7df1bfa83629>;
+republishing `sim/artifact.html` to that URL is the whole release step.
+
 ## Reading it
 
 ```
