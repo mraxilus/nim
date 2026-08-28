@@ -353,6 +353,19 @@ type
     eye*: Position ## Camera's own eye position, horizon geometry is anchored to, so it
       ## stays in a fixed apparent direction as the camera pans or dollies, exactly as
       ## a real star at effectively infinite distance would.
+      ##   The *boundary* reading of the eye; world-space algebra reads `eye_point`.
+    # The four multivector twins below are the algebra's own reading of this camera,
+    #   derived once per frame in `camera.drawExtentFor` so nothing downstream rebuilds
+    #   `toMultivector(eye)` -- or worse, a whole plane -- per segment. The Position and
+    #   Direction fields they twin stay, because the boundary (the view matrix, ribbon
+    #   packing, `worldPerPixelAt`) is licensed to read components; everything else takes
+    #   the multivectors.
+    eye_point*: Multivector ## The eye as a unit-weight point.
+    forward_point*: Multivector ## The sight direction as a point at the horizon.
+    plane_eye*: Multivector ## The unitized plane through the eye perpendicular to the
+      ## sight direction: `depthAgainst` it is view depth, and its sign is "in front".
+    plane_near*: Multivector ## The same plane pushed `depth_near` forward: the near clip
+      ## as the algebra states it, for `clipToEyeSide`'s own meet.
     radius_horizon*: float ## How far from `eye` horizon geometry -- a star, a great
       ## circle, a whole-sky dome -- is drawn.
     # The four below are what a *ribbon* needs to hold a constant width on screen; see

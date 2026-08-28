@@ -111,8 +111,11 @@ func `*`*(scale: float, d: Direction): Direction =
 
 func dot*(d, e: Direction): float = d.x*e.x + d.y*e.y + d.z*e.z
   ## Get inner product of directions.
-  ##   Plain arithmetic rather than 𝐝 ∙ 𝐞, as resolving vector against axis does no
-  ##   geometric work that algebra would illuminate; RGA is kept for joins and meets.
+  ##   **Boundary vocabulary only.** World-space alignment questions go through the
+  ##   algebra -- `depthAgainst`, `distanceBetween`, `projectOrthogonal`, the library's
+  ##   own inner product -- and this exists for the one place standard math is licensed:
+  ##   where the GPU needs to draw. Its callers are the view matrix, `worldPerPixelAt`,
+  ##   and `addSegment`'s ribbon packing; nothing that derives scene geometry may use it.
 
 
 func norm*(d: Direction): float = sqrt(dot(d, d))
@@ -284,3 +287,63 @@ func frame*(m: Multivector): Option[FramePlane] =
   if axes.isNone: return
   let (axis_first, axis_second) = axes.get
   some(FramePlane(axis_first: axis_first, axis_second: axis_second, normal: normal.get))
+
+
+
+#[ Incidence Vocabulary ]#
+
+# The named incidence questions the rest of the visualiser asks, each stated once through
+#   the library's own operators. Everything here returns either a multivector for further
+#   algebra or a scalar read out at the end -- the same shape `isHorizon` above set. Every
+#   sign and argument order below is pinned by its own suite case against the classical
+#   closed form, which is the project's purpose: the classical form lives in the test, the
+#   algebra lives here.
+
+func planeThrough*(point, direction: Multivector): Multivector =
+  ## Build the plane through `point` perpendicular to the line through it along
+  ## `direction`, unitized so `depthAgainst` reads metric distance straight off it.
+  ##   The weight expansion of the point onto its own line: `p ∧ (p ∧ d)☆` is the plane
+  ##   containing `p` whose normal is the line's direction -- the library's own
+  ##   `expandWeight`, the same operator the apply catalogue exposes as `𝐦 ∧ 𝐧☆`.
+  unitize(expandWeight(point, wedge(point, direction)))
+
+
+func depthAgainst*(plane, point: Multivector): float =
+  ## Measure the signed distance of a unit-weight point from a unitized plane: positive on
+  ## the side the plane's construction direction points toward, zero on it.
+  ##   The meet of a plane and a point is the volume they span, whose one coefficient is
+  ##   the point's height over the plane -- antigrades 1 and 3 close to 4, which is the
+  ##   *scalar* slot, not `scalarAnti`. **This argument order**: `plane ∨ point`; the other
+  ##   order negates, and the suite pins a point one unit along a plane's own direction at
+  ##   exactly +1.
+  wedgeAnti(plane, point)[Basis.scalar]
+
+
+func distanceBetween*(p, q: Multivector): float =
+  ## Measure the distance between two unit-weight points.
+  ##   The weight norm of their joining line: for unitized points the join's moment is
+  ##   carried in its bulk and its direction in its weight, and the weight's length is the
+  ##   separation itself -- `‖p ∧ q‖∘`, read from the norm's own `scalarAnti` slot.
+  normWeight(wedge(p, q))[Basis.scalarAnti]
+
+
+func levelPlaneThrough*(point: Multivector): Multivector =
+  ## Build the horizontal plane through `point` -- the level a reader works at when their
+  ## camera targets that point -- oriented so `depthAgainst` reads **up as positive**.
+  ##   Joined y-then-x rather than x-then-y, because the blade the joins produce points
+  ##   down the other way round: probed, the x∧y join reads a point one unit above at
+  ##   -1 and the y∧x join at +1, and height is what every caller means. Unitized for
+  ##   `depthAgainst`'s contract, though a join of unit axes is already unit weight.
+  unitize(
+    point ∧
+      toMultivector(Direction(x: 0, y: 1, z: 0)) ∧
+      toMultivector(Direction(x: 1, y: 0, z: 0))
+  )
+
+
+func groundPlane*(): Multivector =
+  ## Build the ground, `z = 0`, oriented up-positive.
+  ##   `levelPlaneThrough` at the origin -- one construction, two heights, so the two
+  ##   spellings cannot drift apart. Stated here rather than re-joined at each site that
+  ##   needs it: the picker's ground hit, the grid's own height.
+  levelPlaneThrough(toMultivector(Position(x: 0, y: 0, z: 0)))

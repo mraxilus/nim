@@ -234,6 +234,60 @@ suite "Objects":
       check directionHorizon(attitude).isSome
 
 
+  test "the incidence vocabulary answers what the classical forms answer, sign included":
+    # The classical forms live HERE, in the test, and the algebra lives in `objects.nim`
+    #   -- holding the two equal is the project's purpose, and it is also what pins every
+    #   sign and argument order before anything downstream leans on them. A deterministic
+    #   scatter, so a failure names the same case on every run.
+    var seed = 3.0
+    proc pseudo(): float =
+      seed = (seed*97.31 + 33.77) mod 41.0
+      seed - 20.5
+    proc somewhere(): Position =
+      Position(x: pseudo(), y: pseudo(), z: pseudo())
+    proc someway(): Direction =
+      var d = Direction(x: 0, y: 0, z: 0)
+      while norm(d) < 0.1: d = Direction(x: pseudo(), y: pseudo(), z: pseudo())
+      normalize(d).get
+
+    # The one fixed pin first: a point one unit along a plane's own construction
+    #   direction reads exactly +1 -- `plane ∨ point`, in that order; the other order
+    #   negates and must not be what ships.
+    let plane_pin = planeThrough(
+      toMultivector(Position(x: 0, y: 0, z: 2)),
+      toMultivector(Direction(x: 0, y: 0, z: 1)),
+    )
+    check depthAgainst(plane_pin, toMultivector(Position(x: 0, y: 0, z: 3))) =~ 1.0
+    check depthAgainst(plane_pin, toMultivector(Position(x: 0, y: 0, z: 2))) =~ 0.0
+    check depthAgainst(plane_pin, toMultivector(Position(x: 5, y: -4, z: 1))) =~ -1.0
+    # A doubled construction direction must change nothing: `planeThrough` unitizes, so
+    #   the depth read is metric whatever length the caller's direction happened to have.
+    let plane_doubled = planeThrough(
+      toMultivector(Position(x: 0, y: 0, z: 2)),
+      toMultivector(Direction(x: 0, y: 0, z: 2)),
+    )
+    check depthAgainst(plane_doubled, toMultivector(Position(x: 0, y: 0, z: 3))) =~ 1.0
+
+    for trial in 0 ..< 100:
+      let
+        at = somewhere()
+        along = someway()
+        probe = somewhere()
+        other = somewhere()
+      # `depthAgainst` a `planeThrough` is the classical signed distance along the normal.
+      check depthAgainst(
+        planeThrough(toMultivector(at), toMultivector(along)), toMultivector(probe)
+      ) =~ dot(probe - at, along)
+      # `distanceBetween` is the classical Euclidean distance.
+      check distanceBetween(toMultivector(probe), toMultivector(other)) =~
+        norm(probe - other)
+
+    # The two ground spellings agree with each other and with what "ground" means.
+    check depthAgainst(groundPlane(), toMultivector(Position(x: 3, y: -8, z: 5.5))) =~ 5.5
+    let level = levelPlaneThrough(toMultivector(Position(x: 1, y: 2, z: 4)))
+    check depthAgainst(level, toMultivector(Position(x: -9, y: 6, z: 7))) =~ 3.0
+
+
 
 suite "Camera":
   test "frame is orthonormal and perpendicular to sight axis":
