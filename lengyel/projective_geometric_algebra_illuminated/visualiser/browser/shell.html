@@ -1007,8 +1007,29 @@
           <div class="diag-children">
             <div class="diag-line"><span>scenery (grid+axes)</span
               ><b id="diag-furniture">&mdash;</b></div>
-            <div class="diag-line"><span>scene objects</span
-              ><b id="diag-scene">&mdash;</b></div>
+            <div class="diag-node" data-node="scene">
+              <button class="diag-line diag-parent" type="button"
+                ><span><span class="chev">&#9656;</span>scene objects</span
+                ><b id="diag-scene">&mdash;</b></button>
+              <!-- Each kind with its own count beside its time, because the kinds differ
+                   by two orders of magnitude: a point is one vertex, a plane is a rim of
+                   ribbons each carrying a join, a sky is a whole dome. A time without its
+                   count cannot tell "one of these is expensive" from "there are many". -->
+              <div class="diag-children">
+                <div class="diag-line"><span>points</span
+                  ><b id="diag-points">&mdash;</b></div>
+                <div class="diag-line"><span>lines</span
+                  ><b id="diag-lines">&mdash;</b></div>
+                <div class="diag-line"><span>planes</span
+                  ><b id="diag-planes">&mdash;</b></div>
+                <div class="diag-line"><span>sky (horizon planes)</span
+                  ><b id="diag-sky">&mdash;</b></div>
+                <div class="diag-line"><span>ghost + preview</span
+                  ><b id="diag-ghost">&mdash;</b></div>
+                <div class="diag-line"><span>selected, drawn again</span
+                  ><b id="diag-selected">&mdash;</b></div>
+              </div>
+            </div>
             <div class="diag-line"><span>flatten + pack</span
               ><b id="diag-flatten">&mdash;</b></div>
           </div>

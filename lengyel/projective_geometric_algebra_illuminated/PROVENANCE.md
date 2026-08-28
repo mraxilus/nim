@@ -1959,6 +1959,23 @@ Kept — the sums are the algebra's own statement of placement, this is the stre
 project exists to apply, and the scenery half of the frame is still protected by the
 furniture hold.
 
+**What a scene object costs, by kind.** The scene phase used to be one number, and a
+reader could see only that it was large. Broken out by kind — `FrameData.ms_points`,
+`ms_lines`, `ms_planes`, `ms_sky`, `ms_ghost`, `ms_selected`, each with the count it is a
+time for — the opening scene on the driving container reads: **points 0.10 ms for four
+(~0.025 ms each), one line ~1.7 ms, one plane 6.3–7.5 ms.** A plane is a rim of
+`SEGMENTS_CIRCLE_HORIZON` = 96 ribbon chords, each carrying its own `directionAcross`
+triple join, over a 288-vertex fan; a point is a single vertex. So "one more object" costs
+between a fortieth of a millisecond and most of a frame depending entirely on which object
+it is, which is the question the split exists to answer. A **selected** object is drawn a
+second time as the overlay tail and costs its full price again — a selected plane was
+measured at 7.7 ms on top of its own 7.5.
+  The tally reads the clock once per object rather than twice (the mark closing one object
+opens the next). `performance.now` measured at **0.27 µs a call** on the driving container,
+so a full 64-object scene pays **0.017 ms** for the whole breakdown — under a fifth of a
+percent of a 15 ms scene phase, and it lands inside `ms_scene` where it is honest about
+itself. Kept, and the rows start collapsed, so nothing is even formatted until asked.
+
 **Dense 16-float `Multivector` operations under the JS backend.** Price: each binary op
 walks 16×16 coefficient pairs through `nimCopy`, ~1–2 µs an op on the driving container.
 Kept — it is the library's own representation. The page stays `-d:release`, and redundant

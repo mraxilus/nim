@@ -1604,12 +1604,84 @@ type FrameData = object
     ## drawing process rather than one opaque frame time; the phases the bridge cannot
     ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
     ## A held furniture frame reports ~0 for its furniture phase, which is the point.
+  ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float32
+    ## What each *kind* of scene object cost inside `ms_scene`, in milliseconds, with the
+    ## counts below beside them. The phase total answered "the scene is slow"; a reader
+    ## asking why needs to know which kind of object is slow, because the kinds differ by
+    ## two orders of magnitude -- a point is a single vertex, while a plane is a rim of
+    ## `mesh.SEGMENTS_CIRCLE_HORIZON` ribbons each carrying its own `directionAcross`
+    ## join, and the sky is a dome of `LATITUDES_HORIZON*LONGITUDES_HORIZON` quads.
+    ##   `sky` is the horizon planes drawn first (their own pass, for the blend order);
+    ## `ghost` is the staged edit and the drag preview together, both being the same
+    ## uncommitted claim; `selected` is the overlay tail, which draws its objects a second
+    ## time with the depth test off and so costs what they cost again.
+    ##   Timed by a clock read once per object rather than twice -- the mark from the end
+    ## of one object is the start of the next -- so the reading costs one `performance.now`
+    ## per drawn object rather than two. `performance.now` measured at 0.27 us a call on
+    ## the driving container, so a full 64-item scene pays 0.017 ms for the whole
+    ## breakdown; that overhead lands inside `ms_scene`, where it is honest about itself.
+  count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
+    ## How many objects of each kind the times above are for, so a reader can divide. The
+    ## question this answers is "is one of these expensive, or are there simply many?", and
+    ## a time without its count cannot tell those apart.
   tri_over, ribbon_over, point_over: int ## How many vertices at the *end* of each of the
     ## three above are the overlay run -- drawn after the rest with the depth test off, so
     ## a selected object lands over whatever stands between it and the camera. A count of
     ## the tail rather than the index it starts at, so the glue subtracts nothing: see
     ## `mesh.Mesh.index_overlay`, which is the same split stated from the other end, and
     ## `renderer.drawPrimitive`, which is the desktop's own two-call draw.
+
+
+type SceneCost = object
+  ## Tally what each kind of scene object cost this frame, and how many there were.
+  ##   One clock read per object, not two: the mark closing one object opens the next, so
+  ##   the tally costs a `performance.now` per drawn object rather than a pair. Kinds are
+  ##   the ones a reader can act on -- a point is one vertex, a plane is a rim of ribbons
+  ##   each carrying a join, a sky is a whole dome -- and the ghost and the overlay tail
+  ##   are kinds of their own because neither is a scene object a reader counted.
+  ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float
+  count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
+  mark: float ## When the object now being drawn started, on `performanceNow`'s own clock.
+
+
+proc openTally(cost: var SceneCost) =
+  ## Start the tally's clock, so the first object measures from here rather than from zero.
+  cost.mark = performanceNow()
+
+
+proc chargeTally(cost: var SceneCost; geometry: Multivector; is_sky, is_ghost, is_selected: bool) =
+  ## Charge whatever has been drawn since the last mark to the kind it belongs to.
+  ##   Reads the shape rather than being told it, so a caller cannot file a plane under
+  ##   lines; `shape` is the same reader `mesh.addObject` dispatches on, so the bucket and
+  ##   the work charged to it are decided by one answer rather than two.
+  let
+    now_mark = performanceNow()
+    spent = now_mark - cost.mark
+  cost.mark = now_mark
+  if is_ghost:
+    cost.ms_ghost += spent
+    cost.count_ghost += 1
+    return
+  if is_selected:
+    cost.ms_selected += spent
+    cost.count_selected += 1
+    return
+  if is_sky:
+    cost.ms_sky += spent
+    cost.count_sky += 1
+    return
+  let shaped = shape(geometry)
+  if shaped.isNone: return # Nothing drawable was drawn, so there is nothing to charge.
+  case shaped.get
+  of Shape.Point:
+    cost.ms_points += spent
+    cost.count_points += 1
+  of Shape.Line:
+    cost.ms_lines += spent
+    cost.count_lines += 1
+  of Shape.Plane:
+    cost.ms_planes += spent
+    cost.count_planes += 1
 
 
 proc nimBuildFrame(
@@ -1674,6 +1746,8 @@ proc nimBuildFrame(
   let ms_after_furniture = performanceNow()
 
   clearMeshes(g_meshes)
+  var cost: SceneCost
+  cost.openTally()
   # A horizon plane's own dome first, before anything else that might share its own
   #   translucent `Primitive.Triangle` bucket -- see `visualiser.assembleMeshes`'s own
   #   doc comment (mirrored here) for why draw order matters: that bucket draws in
@@ -1699,6 +1773,7 @@ proc nimBuildFrame(
         discard g_meshes.addObject(
           geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
         )
+        cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
 
   for slot in 0 ..< ITEMS_MAX:
     if not g_scene.isAlive(slot) or slot in g_selection: continue
@@ -1709,6 +1784,7 @@ proc nimBuildFrame(
         discard g_meshes.addObject(
           geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
         )
+        cost.chargeTally(geometry, is_sky = false, is_ghost = false, is_selected = false)
 
   # An open session's staged geometry, or an apply control's own preview where none is --
   #   one ghost for both, since they are the same "not committed yet" claim about one
@@ -1720,6 +1796,9 @@ proc nimBuildFrame(
       ghost.get.geometry, INK_GHOST.colour.muted(), scale,
       anchor_override = ghost.get.anchor,
     )
+    cost.chargeTally(
+      ghost.get.geometry, is_sky = false, is_ghost = true, is_selected = false
+    )
 
   # What the drag in progress would build, in that same ghost ink, so a reader learns one
   #   "this is not committed yet" appearance rather than two. Mirrors
@@ -1730,6 +1809,9 @@ proc nimBuildFrame(
     discard g_meshes.addObject(
       g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
       anchor_override = g_interaction.preview.get.anchor,
+    )
+    cost.chargeTally(
+      g_interaction.preview.get.geometry, is_sky = false, is_ghost = true, is_selected = false
     )
 
   # Everything selected, held back to here and drawn with the depth test off, so a picked
@@ -1743,6 +1825,9 @@ proc nimBuildFrame(
     discard g_meshes.addObject(
       g_scene.geometryAt(slot), g_scene.inkAt(slot).colour, scale, progress,
       g_scene.anchorOverrideAt(slot),
+    )
+    cost.chargeTally(
+      g_scene.geometryAt(slot), is_sky = false, is_ghost = false, is_selected = true
     )
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
@@ -1770,6 +1855,18 @@ proc nimBuildFrame(
     view_projection: view_projection,
     furn_ribbon_verts: furn_ribbon_verts,
     is_furniture_held: is_furniture_held,
+    ms_points: float32(cost.ms_points),
+    ms_lines: float32(cost.ms_lines),
+    ms_planes: float32(cost.ms_planes),
+    ms_sky: float32(cost.ms_sky),
+    ms_ghost: float32(cost.ms_ghost),
+    ms_selected: float32(cost.ms_selected),
+    count_points: cost.count_points,
+    count_lines: cost.count_lines,
+    count_planes: cost.count_planes,
+    count_sky: cost.count_sky,
+    count_ghost: cost.count_ghost,
+    count_selected: cost.count_selected,
     ms_build: float32(ms_done - ms_entered),
     ms_furniture: float32(ms_after_furniture - ms_before_furniture),
     # The scene phase is everything between the furniture and the flatten: clearing,

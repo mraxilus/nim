@@ -1499,15 +1499,26 @@ let is_strip_pool_built = false;
 // long does this step take".
 const PHASES_DIAGNOSTIC = [
   ['build', 'diag-build'], ['furniture', 'diag-furniture'], ['scene', 'diag-scene'],
+  ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
+  ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
   ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
   ['menu', 'diag-menu'], ['ui', 'diag-ui'],
 ];
+// The rows that carry a count beside their time, and the ring each count is written to.
+//   A time alone cannot tell "one of these is expensive" from "there are many of them",
+//   which is the whole question a reader opens this branch to answer.
+const COUNTS_DIAGNOSTIC = {
+  points: 'count_points', lines: 'count_lines', planes: 'count_planes',
+  sky: 'count_sky', ghost: 'count_ghost', selected: 'count_selected',
+};
+const count_phase = {};
 const history_phase = {};
 const element_phase = {};
 for (const [name, id] of PHASES_DIAGNOSTIC) {
   history_phase[name] = new Array(FRAMES_HISTORY).fill(-1); // -1 marks a never-written slot.
   element_phase[name] = document.getElementById(id);
 }
+for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
   // Shares the frame ring's own index, advanced once per frame by recordFrameTime, so
   // every ring lines up frame for frame; the UI phase only runs one frame in six and
@@ -1543,24 +1554,37 @@ function medianPhase(name) {
 //   reader opens the diagnostics panel to see whether a frame is slow, and goes looking for
 //   which step only once it is. A closed node's rows are skipped by `refreshDiagnostics`
 //   entirely, so a subtotal nobody is reading costs nothing to keep offering.
-const NODES_DIAGNOSTIC = { build: ['furniture', 'scene', 'flatten'] };
+const NODES_DIAGNOSTIC = {
+  build: ['furniture', 'scene', 'flatten'],
+  scene: ['points', 'lines', 'planes', 'sky', 'ghost', 'selected'],
+};
 const element_node = {};
 for (const name in NODES_DIAGNOSTIC) {
   const node = document.querySelector('.diag-node[data-node="' + name + '"]');
   if (node === null) continue;
   element_node[name] = node;
-  node.querySelector('.diag-parent').addEventListener('click', () => {
+  // The node's *own* parent row, not a descendant's: a nested branch puts another
+  //   `.diag-parent` inside this one, and `querySelector` would find that one first.
+  const header = node.querySelector(':scope > .diag-parent');
+  header.addEventListener('click', () => {
     const is_open = node.classList.toggle('open');
-    node.querySelector('.diag-parent').setAttribute('aria-expanded', String(is_open));
+    header.setAttribute('aria-expanded', String(is_open));
   });
-  node.querySelector('.diag-parent').setAttribute('aria-expanded', 'false');
+  header.setAttribute('aria-expanded', 'false');
 }
 function isPhaseShown(name) {
-  // A phase is shown unless it sits inside a node that is closed.
-  for (const parent in NODES_DIAGNOSTIC) {
-    if (!NODES_DIAGNOSTIC[parent].includes(name)) continue;
+  // Walk up: a row is shown only where every branch holding it is open. A closed branch
+  //   nested inside an open one hides its rows just as an outermost closed one does.
+  let child = name;
+  for (let depth = 0; depth < 8; depth += 1) {
+    let parent = null;
+    for (const above in NODES_DIAGNOSTIC) {
+      if (NODES_DIAGNOSTIC[above].includes(child)) { parent = above; break; }
+    }
+    if (parent === null) return true; // Reached a row nothing encloses.
     const node = element_node[parent];
-    return node === undefined || node.classList.contains('open');
+    if (node !== undefined && !node.classList.contains('open')) return false;
+    child = parent;
   }
   return true;
 }
@@ -1614,8 +1638,9 @@ function refreshDiagnostics() {
     if (median === null) continue;
     let now_phase = history_phase[name][index_latest];
     if (now_phase < 0) now_phase = median; // A phase idle this frame shows its median.
+    const tally = name in COUNTS_DIAGNOSTIC ? ' \u00b7 ' + count_phase[name] : '';
     element_phase[name].textContent =
-      now_phase.toFixed(2) + ' (' + median.toFixed(2) + ') ms';
+      now_phase.toFixed(2) + ' (' + median.toFixed(2) + ') ms' + tally;
   }
 
   if (performance.memory) {
@@ -2494,6 +2519,17 @@ function renderFrame(now_seconds) {
   recordPhaseTime('furniture', data.ms_furniture);
   recordPhaseTime('scene', data.ms_scene);
   recordPhaseTime('flatten', data.ms_flatten);
+  // The scene phase broken out by the kind of object each millisecond went to, with the
+  //   counts kept beside them. Counts are latest rather than ringed: a median count would
+  //   lag a deletion by two seconds and read as a scene that still holds what it no longer
+  //   does, while the *time* wants its median precisely because a single frame flickers.
+  recordPhaseTime('points', data.ms_points);
+  recordPhaseTime('lines', data.ms_lines);
+  recordPhaseTime('planes', data.ms_planes);
+  recordPhaseTime('sky', data.ms_sky);
+  recordPhaseTime('ghost', data.ms_ghost);
+  recordPhaseTime('selected', data.ms_selected);
+  for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = data[COUNTS_DIAGNOSTIC[name]];
 
   const ms_before_draw = performance.now();
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);

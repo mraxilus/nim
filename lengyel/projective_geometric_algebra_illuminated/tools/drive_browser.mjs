@@ -864,6 +864,11 @@ await page.evaluate(() => {
     window.__phase_frame.push({
       build: data.ms_build, furniture: data.ms_furniture,
       scene: data.ms_scene, flatten: data.ms_flatten,
+      points: data.ms_points, lines: data.ms_lines, planes: data.ms_planes,
+      sky: data.ms_sky, ghost: data.ms_ghost, selected: data.ms_selected,
+      count_points: data.count_points, count_lines: data.count_lines,
+      count_planes: data.count_planes, count_sky: data.count_sky,
+      count_ghost: data.count_ghost, count_selected: data.count_selected,
       wall: window.__work_frame[window.__work_frame.length - 1],
     });
     return data;
@@ -940,6 +945,41 @@ report(
   'every drawing step has a live row once its branch is opened',
   Object.values(row_texts).every((t) => / ms$/.test(t)),
   Object.entries(row_texts).map(([n, t]) => `${n}: ${t}`).join(', '),
+);
+
+// **The scene phase, broken down by the kind of object each millisecond went to.** The
+// kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
+// ribbons each carrying its own join -- so a reader asking why a scene is slow needs the
+// split, not the total. Held the only way a breakdown can be held honest: the parts must
+// account for the whole they are parts of, frame by frame, and each part must carry the
+// count it is a time for.
+const kinds = await page.evaluate(() => window.__phase_frame.slice(2).map((p) => ({
+  scene: p.scene,
+  parts: p.points + p.lines + p.planes + p.sky + p.ghost + p.selected,
+  counted: p.count_points + p.count_lines + p.count_planes +
+    p.count_sky + p.count_ghost + p.count_selected,
+})));
+const kinds_sane = kinds.filter((k) =>
+  k.parts <= k.scene + 0.6 && k.parts >= k.scene - 3.0 && k.counted > 0);
+report(
+  'the scene phase is accounted for by the kinds it is spent on',
+  kinds.length > 30 && kinds_sane.length === kinds.length,
+  `${kinds_sane.length} of ${kinds.length} frames account, ` +
+    `last frame ${kinds.length ? kinds[kinds.length - 1].parts.toFixed(2) : '?'} of ` +
+    `${kinds.length ? kinds[kinds.length - 1].scene.toFixed(2) : '?'} ms ` +
+    `over ${kinds.length ? kinds[kinds.length - 1].counted : '?'} objects`,
+);
+await page.evaluate(() =>
+  document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click());
+await page.waitForTimeout(400);
+const rows_kind = await page.evaluate(() => Object.fromEntries(
+  ['points', 'lines', 'planes', 'sky', 'ghost', 'selected']
+    .map((n) => [n, document.getElementById('diag-' + n).textContent])
+));
+report(
+  'each kind reports its own count beside its own time',
+  Object.values(rows_kind).every((t) => / ms \u00b7 \d+$/.test(t)),
+  Object.entries(rows_kind).map(([n, t]) => `${n}: ${t}`).join(', '),
 );
 
 // The same budget while the camera actually moves, which is when a reader felt it
