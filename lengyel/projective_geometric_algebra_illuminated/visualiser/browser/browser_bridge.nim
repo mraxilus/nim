@@ -587,6 +587,16 @@ proc nimCameraDolly(factor: cfloat) {.exportc.} =
   camera.dolly(g_camera, float(factor))
 
 
+proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
+  ## Scale camera's own distance from target by factor, toward whatever the cursor is
+  ## over; see `interaction.dollyAtCursor`.
+  ##   Reads the cursor this build already tracks (`nimUpdateCursor`), so a caller aiming a
+  ## zoom somewhere -- a wheel at the pointer, a pinch at its own midpoint -- says where by
+  ## moving the cursor there first, exactly as picking does.
+  g_tween_camera.abandon()
+  g_interaction.dollyAtCursor(g_camera, float(factor), int(width), int(height))
+
+
 proc nimCameraPan(across, up: cfloat) {.exportc.} =
   ## Slide camera's own target sideways and vertically in its own view plane.
   g_tween_camera.abandon()

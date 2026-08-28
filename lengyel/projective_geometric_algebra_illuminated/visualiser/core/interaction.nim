@@ -713,6 +713,20 @@ proc updateHover*(
 
 #[ Keyboard ]#
 
+proc dollyAtCursor*(
+  interaction: Interaction; camera: var Camera; factor: float; width, height: int
+) =
+  ## Zoom the camera by `factor`, toward whatever the cursor is over.
+  ##   The one statement of what a wheel notch does, so both front-ends and a pinch all
+  ## zoom the same way; each of them only has to say where the cursor is.
+  ##   Falls back to a plain `dolly` where the cursor is over nothing to aim at -- the sky,
+  ## or a sight line running along the level the target sits on. Zooming toward the middle
+  ## of the frame is what a wheel did before this and is still the sensible answer there.
+  let anchor = positionUnderCursor(camera, width, height, interaction.cursor)
+  if anchor.isNone: camera.dolly(factor)
+  else: camera.dollyToward(factor, anchor.get)
+
+
 proc holdKey*(interaction: var Interaction; key: Key) =
   ## Note a key as held, so `driveHeld` moves the camera by it every frame until it is
   ## released. Harmless on a key already held, which is what an auto-repeat sends.

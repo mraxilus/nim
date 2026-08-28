@@ -266,6 +266,31 @@ proc dolly*(camera: var Camera; factor: float) =
   camera.distance = distanceHeld(camera.distance * factor)
 
 
+proc dollyToward*(camera: var Camera; factor: float; anchor: Position) =
+  ## Scale the separation of eye from target by `factor`, moving the eye **along its own
+  ## line to `anchor`** rather than straight in, so whatever stands at that point keeps the
+  ## pixel it was already on.
+  ##   How a map zooms, and a strategy game: the wheel takes the reader toward what they
+  ## are pointing at rather than toward the middle of the frame, which is the difference
+  ## between aiming once and dollying-then-panning-then-dollying again.
+  ##   **Why the anchor keeps its pixel**: the angles do not change, so the sight direction
+  ## is fixed, and the eye stays on the line joining it to `anchor`. That line is therefore
+  ## the same line afterwards, and a point on the view ray through a pixel is still on it.
+  ##   The scale actually applied is read back from `distanceHeld` rather than assumed, so
+  ## that a zoom stopped by the near floor moves the eye by exactly as much as the distance
+  ## it was allowed -- otherwise the two disagree and the placement no longer describes
+  ## where the eye is.
+  let
+    eye = camera.eye
+    distance_settled = distanceHeld(camera.distance*factor)
+    scale = distance_settled/camera.distance
+    # Unit direction from target to eye, which the placement's own angles fix and this
+    #   leaves alone; the new target is the new eye walked back along it.
+    toward_eye = (1.0/camera.distance)*(eye - camera.target)
+  camera.target = (anchor + scale*(eye - anchor)) - distance_settled*toward_eye
+  camera.distance = distance_settled
+
+
 proc pan*(camera: var Camera; across, up: float) =
   ## Slide target within plane facing eye, so whole view shifts with it.
   let axes = camera.frame(camera.eye)

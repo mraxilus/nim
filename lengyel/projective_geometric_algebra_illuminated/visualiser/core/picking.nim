@@ -189,6 +189,38 @@ func castRay(
   toMultivector(eye) ∧ toMultivector(heading)
 
 
+func positionUnderCursor*(
+  camera: Camera; width, height: int; cursor: ScreenPosition
+): Option[Position] =
+  ## Solve the world point the cursor is over: where its sight ray meets the **horizontal
+  ## plane through the camera's own target**. None where the ray never meets it -- looking
+  ## along that plane, or away from it at the sky.
+  ##   That plane rather than the ground at `z = 0`, for two reasons. It always sits at the
+  ## height the reader is actually working at, which is what they mean by "there" when they
+  ## point at something; and it keeps the hit at a sane distance, where a ground plane far
+  ## below a raised target puts it wildly far off at a shallow angle.
+  ##   Meant for a zoom that keeps what is under the cursor under the cursor
+  ## (`camera.dollyToward`), which is what every map and most strategy games do with a
+  ## wheel. Lives here rather than in `camera` because it needs the sight ray, and `camera`
+  ## is what this module imports rather than the other way round.
+  let
+    eye = camera.eye
+    frame_camera = camera.frame(eye)
+    ray = castRay(camera, eye, frame_camera, width, height, cursor)
+    # The horizontal plane through the target, as the join of that point with two
+    #   independent horizontal directions -- points at its own horizon, which is what a
+    #   `Direction` is here.
+    level = toMultivector(camera.target) ∧
+      toMultivector(Direction(x: 1, y: 0, z: 0)) ∧
+      toMultivector(Direction(x: 0, y: 1, z: 0))
+    hit = position(ray ∨ level)
+  if hit.isNone: return
+  # Behind the eye is not under the cursor: a ray aimed at the sky meets the plane on the
+  #   far side of the reader, and zooming toward that point would fly the camera backwards.
+  if dot(hit.get - eye, frame_camera.forward) <= 1.0e-6: return
+  hit
+
+
 func rayPlaneHit(
   ray: Multivector; eye: Position; forward: Direction;
   plane: Multivector; anchor: Position; axes: FramePlane; extent: float

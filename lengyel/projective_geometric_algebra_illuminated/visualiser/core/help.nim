@@ -274,14 +274,17 @@ const lut_help_entries* = block:
 
   add(HelpPath.Camera, "drag empty space", "orbit the view around what you are looking at")
   add(HelpPath.Camera, "right-drag empty space", "slide the view sideways and up or down")
-  add(HelpPath.Camera, "wheel", "move closer in or further out")
+  add(HelpPath.Camera, "wheel", "move toward or away from whatever you point at")
   # "empty space", not just "with one finger": a finger that starts on an *object* builds
   #   something now, so the unqualified row would send a reader to the wrong gesture.
   add(
     HelpPath.Camera, "drag empty space with one finger",
     "orbit the view around what you are looking at", is_touch = true,
   )
-  add(HelpPath.Camera, "pinch", "move closer in or further out", is_touch = true)
+  add(
+    HelpPath.Camera, "pinch", "move toward or away from the middle of the pinch",
+    is_touch = true,
+  )
   add(
     HelpPath.Camera, "drag with two fingers",
     "slide the view sideways and up or down", is_touch = true,

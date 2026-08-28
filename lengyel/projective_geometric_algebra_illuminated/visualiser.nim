@@ -71,7 +71,8 @@
 ##   reserved magenta over a pair that makes nothing. Left takes that answer; right opens
 ##   a four-way choice menu instead, as does holding still over the target. `more…` in
 ##   that menu hands both operands to the apply section, for the other twenty-four.
-##   Drag from empty space instead to move the camera: left orbits, right pans, wheel dollies.
+##   Drag from empty space instead to move the camera: left orbits, right pans, and the
+##   wheel zooms toward whatever the pointer is over.
 ##   `S` writes current frame to the export path. `Escape` abandons whatever is in
 ##   progress -- the help panel, a drag, an open edit, a selection -- and `ctrl+Z` and
 ##   `ctrl+shift+Z` step the same timeline the panel's own undo and redo buttons do.
@@ -145,7 +146,8 @@ const
   SPEED_PAN = 0.0016
     ## Set how far a dragged pixel slides the target, as fraction of orbit distance.
   FACTOR_DOLLY = 1.12
-    ## Set how much one wheel notch scales orbit distance.
+    ## Set how much one wheel notch scales orbit distance; the notch is aimed at the
+    ## cursor rather than at the middle of the frame (`interaction.dollyAtCursor`).
   FRAMES_SETTLE = 2
     ## Draw this many frames before capturing, so widget layout has settled.
   INK_GHOST = Ink.Guide
@@ -868,7 +870,7 @@ proc handleEvent(
   event: Event;
   camera: var Camera; panel: var Panel; scene: var Scene; interaction: var Interaction;
   is_dragging_orbit, is_dragging_pan, is_running: var bool; button_dragging: var Option[uint8];
-  now: float;
+  now: float; width_frame, height_frame: int;
 ) =
   ## Fold one SDL3 event into camera placement, drag state, panel state or run state.
   ##   Mouse is ignored while GUI wants it, so dragging a widget never turns the view or
@@ -1026,7 +1028,12 @@ proc handleEvent(
   of uint32(EventKind.MouseWheel):
     if gui.wantsMouse(): return
     panel.tween_camera.abandon()
-    camera.dolly(pow(FACTOR_DOLLY, -float(event.wheel.y)))
+    # Toward whatever the cursor is over, not toward the middle of the frame; see
+    #   `interaction.dollyAtCursor`. The frame's own size is passed in because a sight ray
+    #   needs it and this handler runs before the frame that would report it again.
+    interaction.dollyAtCursor(
+      camera, pow(FACTOR_DOLLY, -float(event.wheel.y)), width_frame, height_frame
+    )
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))
     if is_dragging_orbit:
@@ -1428,6 +1435,10 @@ proc runInteractive(
     total_tessellate_microseconds = 0.0
     total_vertices = 0
 
+  # The drawable's own size, as the last frame reported it; the window's configured size
+  #   until one has been drawn. Events read it, so it cannot wait for the frame.
+  var (width_frame, height_frame) = (PIXELS_WIDTH, PIXELS_HEIGHT)
+
   while is_running:
     # Frame arena starts every frame empty; nothing in the draw loop itself asks it for
     #   anything today, but `exportFrame` below may, and always leaves it reset behind it.
@@ -1478,6 +1489,7 @@ proc runInteractive(
       handleEvent(
         event, camera, panel, scene, interaction,
         is_dragging_orbit, is_dragging_pan, is_running, button_dragging, now,
+        width_frame, height_frame,
       )
 
     # Whatever is held moves the camera by one frame's worth, after the events that
@@ -1496,6 +1508,9 @@ proc runInteractive(
         window, renderer, panel, scene, camera, interaction, now,
         path_help = options.path_help_driven,
       )
+    # Carried into the next iteration's events, which need the frame's own size to cast a
+    #   sight ray and run before anything reports it again.
+    (width_frame, height_frame) = (int(width), int(height))
     if options.is_timed:
       total_tessellate_microseconds += panel.microseconds_tessellate
       total_vertices += panel.count_vertices

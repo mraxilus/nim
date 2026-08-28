@@ -331,6 +331,79 @@ suite "Camera":
     check isNear(clipped[1]/clipped[3], 0)
 
 
+  test "a zoom aimed at the cursor keeps what is under it under it":
+    # The map reading of a wheel: the reader points at something and arrives there, rather
+    #   than zooming at the middle of the frame and panning afterwards. Checked where it
+    #   has to hold -- in pixels, against the transform the frame is actually drawn with.
+    const (WIDTH_ZOOM, HEIGHT_ZOOM) = (1440, 900)
+    for cursor in [
+      ScreenPosition(x: 200.0, y: 700.0), ScreenPosition(x: 1300.0, y: 120.0),
+      ScreenPosition(x: 720.0, y: 450.0),
+    ]:
+      for factor in [0.5, 2.0]:
+        var camera = initCameraDefault()
+        let anchor = positionUnderCursor(camera, WIDTH_ZOOM, HEIGHT_ZOOM, cursor)
+        check anchor.isSome
+        let before = projectToScreen(
+          camera.initMatrixViewProjection(float(WIDTH_ZOOM)/float(HEIGHT_ZOOM)),
+          WIDTH_ZOOM, HEIGHT_ZOOM, anchor.get,
+        )
+        camera.dollyToward(factor, anchor.get)
+        let after = projectToScreen(
+          camera.initMatrixViewProjection(float(WIDTH_ZOOM)/float(HEIGHT_ZOOM)),
+          WIDTH_ZOOM, HEIGHT_ZOOM, anchor.get,
+        )
+        check after.isInFront
+        check abs(after.x - before.x) <= 0.5 # Half a pixel: what a reader could not see.
+        check abs(after.y - before.y) <= 0.5
+        check camera.distance =~ 19.0*factor
+        # The angles are what keep the anchor on its own ray; a zoom must not turn.
+        check camera.azimuth =~ initCameraDefault().azimuth
+        check camera.elevation =~ initCameraDefault().elevation
+
+
+  test "zooming in and back out returns the camera exactly where it stood":
+    # A wheel notch each way has to be a round trip, or a reader who overshoots and corrects
+    #   ends up somewhere they never chose -- and an aimed zoom moves the target as well as
+    #   the distance, so there is more to come back to than there used to be.
+    var camera = initCameraDefault()
+    let opening = camera
+    let anchor = positionUnderCursor(camera, 1440, 900, ScreenPosition(x: 300.0, y: 640.0))
+    check anchor.isSome
+    camera.dollyToward(0.5, anchor.get)
+    check not (camera.target =~ opening.target) # It really did move the view, not just in.
+    camera.dollyToward(2.0, anchor.get)
+    check camera.target =~ opening.target
+    check camera.distance =~ opening.distance
+
+
+  test "a zoom with nothing under the cursor falls back to zooming at the middle":
+    # Over the sky, or along the level the target sits on, there is no point to aim at. The
+    #   answer is the plain dolly a wheel did before this, not a refusal to zoom.
+    var
+      interaction = Interaction(is_enabled: true)
+      camera = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = 0.05)
+    let cursor = ScreenPosition(x: 720.0, y: 60.0) # High in the frame, from a camera barely
+      # above the level it is looking at: that ray tilts up into the sky and never comes
+      # back down to the target's own level.
+    check positionUnderCursor(camera, 1440, 900, cursor).isNone
+    interaction.updateCursor(cursor.x, cursor.y)
+    interaction.dollyAtCursor(camera, 2.0, 1440, 900)
+    check camera.distance =~ 24.0
+    check camera.target =~ ORIGIN
+
+
+  test "an aimed zoom is held off the near floor, and stays a placement while it is":
+    # `dollyToward` reads back what `distanceHeld` allowed rather than assuming its own
+    #   factor took, so a zoom stopped by the floor still describes where the eye is.
+    var camera = initCamera(target = ORIGIN, distance = 0.1, azimuth = 0.4, elevation = 0.5)
+    let anchor = positionUnderCursor(camera, 1440, 900, ScreenPosition(x: 400.0, y: 600.0))
+    check anchor.isSome
+    camera.dollyToward(0.001, anchor.get)
+    check camera.distance =~ DISTANCE_LIMIT_NEAR
+    check norm(camera.eye - camera.target) =~ camera.distance
+
+
   test "framing a selection wider than the old ceiling pulls back past it":
     # `distanceFitting` used to be clamped to the same 500, so anything larger than the
     #   frame could hold at that distance was framed by giving up rather than by moving.

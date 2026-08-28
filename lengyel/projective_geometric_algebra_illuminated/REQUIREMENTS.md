@@ -663,7 +663,11 @@ selection, and the wheel of operations a drag offers.
 
 **The press target chooses the scheme; the button chooses whether you are asked.** Press an
 object and the drag constructs; press empty space and it moves the camera (left orbits,
-right pans, wheel dollies). Orbit 0.008 rad per pixel; pan 0.0016 × orbit distance per
+right pans, wheel zooms **toward what the pointer is over**, and a pinch toward its own
+midpoint — the map reading of a zoom, so a reader aims once rather than zooming, panning and
+zooming again. The point aimed at is where the sight ray meets the horizontal plane through
+the target; where there is none — the sky, or a ray running along that level — the zoom falls
+back to the middle of the frame. Orbit 0.008 rad per pixel; pan 0.0016 × orbit distance per
 pixel; one wheel notch scales distance by 1.12. A plain click — under 0.35 s and 6 px of
 movement — selects instead of dragging; shift-click toggles into a multi-selection; a plain
 click on empty space clears it. Both bounds are **one rule in the core**, asked at the

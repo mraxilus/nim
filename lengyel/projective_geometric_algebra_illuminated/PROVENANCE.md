@@ -250,6 +250,35 @@ bucket **first**, before every other visible object (via the shared `objects.isH
 guaranteeing an ordinary plane's fill blends over the dome whatever slots they occupy. Two
 ordinary washes crossing still look order-dependent — a known, accepted limit.
 
+**The wheel zooms toward what the pointer is over**, and a pinch toward its own midpoint —
+the map reading of a zoom, which is what Google Maps, Supreme Commander and every strategy
+game since do. Zooming at the middle of the frame makes a reader aim in three moves (zoom,
+pan, zoom again) where one should do.
+
+`picking.positionUnderCursor` solves the anchor: where the cursor's own sight ray meets the
+**horizontal plane through the camera's target**, and none where it never does. That plane
+rather than the ground at `z = 0`, for two reasons — it sits at the height the reader is
+working at, which is what they mean when they point at something, and a ground plane far
+below a raised target puts the hit wildly far off at a shallow angle. Where there is no hit
+(the sky, or a ray running along that level) the wheel falls back to the plain dolly it did
+before, which is the right answer there rather than a refusal to zoom.
+
+`camera.dollyToward` then moves the eye **along its own line to that anchor** rather than
+straight in, leaving the angles alone. That is the whole trick and it is worth stating: the
+sight direction is fixed and the eye stays on the line joining it to the anchor, so that line
+is the same line afterwards and the anchor keeps its pixel. The scale actually applied is
+read back from `distanceHeld` rather than assumed, so a zoom stopped by the near floor moves
+the eye by exactly as much as the distance it was allowed — otherwise the placement stops
+describing where the eye is, which the suite checks by comparing `norm(eye - target)` against
+the distance.
+
+**Measured through real wheel events**, not by reasoning about the algebra: an object under
+the pointer drifted 2 px across a 3.2× zoom (19 → 6.0 units), and wheeling back out returned
+the camera to distance 19.000 and target (0, 0, 1) — the opening placement exactly. Those 2
+px are the anchor being on the target's level while the object sits above it; a reader cannot
+see them, and the alternative (anchoring on whatever object is hovered) makes the zoom jump
+between depths as the pointer crosses things.
+
 **An orbit distance has a floor and no ceiling.** `DISTANCE_LIMIT_NEAR` = 0.05 is geometry:
 at zero the eye coincides with its target, the line joining them is undefined, and every
 direction `camera.frame` derives from it collapses. The 500-unit ceiling that stood beside it
@@ -1040,11 +1069,11 @@ format is untouched.
 
 **Desktop / mouse and pen.** Drag from an object onto another to derive a third. **The
 press target chooses the scheme; the button chooses whether you are asked.** Press an object
-and you are constructing; press empty space and you are moving the camera (left orbits,
-right pans, wheel dollies). Left then takes the algebra's own answer on release; right opens
-a four-way choice menu instead. Both buttons reach the same choices, so this is redundancy
-for different expertise rather than a mode split — which is exactly why it is safe where the
-button-per-operation mapping it replaced was not.
+and you are constructing; press empty space and you are moving the camera (left orbits, right
+pans, the wheel zooms at the pointer). Left then takes the algebra's own answer on release;
+right opens a four-way choice menu instead. Both buttons reach the same choices, so this is
+redundancy for different expertise rather than a mode split — which is exactly why it is safe
+where the button-per-operation mapping it replaced was not.
 
 **A mouse never waits.** `interaction.MenuArming` is three-valued — `Never`, `OnDwell`,
 `Always` — rather than the "forced" flag it replaced, because a flag could only say *now* or

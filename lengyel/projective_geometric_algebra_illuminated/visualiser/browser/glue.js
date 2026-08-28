@@ -1991,10 +1991,19 @@ canvas.addEventListener('pointermove', (e) => {
   } else if (pointers.size === 2) {
     const points_flat = [...pointers.values()];
     const separation = pointerDist(points_flat);
-    if (separation_pinch_start) nimCameraDolly(separation_pinch_start / Math.max(1, separation));
+    const mid = pointerMid(points_flat);
+    if (separation_pinch_start) {
+      // Toward the pinch's own midpoint, which is a finger's way of pointing at what it
+      // wants to look at -- the same rule the wheel follows, said the same way.
+      const rect_pinch = canvas.getBoundingClientRect();
+      nimUpdateCursor(mid.x - rect_pinch.left, mid.y - rect_pinch.top);
+      nimCameraDollyAt(
+        separation_pinch_start / Math.max(1, separation),
+        canvas.clientWidth, canvas.clientHeight,
+      );
+    }
     separation_pinch_start = separation;
 
-    const mid = pointerMid(points_flat);
     if (pan_last) {
       const dx = (mid.x - pan_last.x) / canvas.clientWidth;
       const dy = (mid.y - pan_last.y) / canvas.clientHeight;
@@ -2088,7 +2097,13 @@ canvas.addEventListener('pointerleave', (e) => { if (e.buttons === 0) releasePoi
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   dismissHint();
-  nimCameraDolly(Math.exp(e.deltaY * 0.0012));
+  // Toward what the pointer is over, the way a map zooms. Where that is comes from the
+  // cursor this build already tracks, so the wheel says it the same way picking does.
+  const rect = canvas.getBoundingClientRect();
+  nimUpdateCursor(e.clientX - rect.left, e.clientY - rect.top);
+  nimCameraDollyAt(
+    Math.exp(e.deltaY * 0.0012), canvas.clientWidth, canvas.clientHeight,
+  );
 }, { passive: false });
 
 /* ---- Touch tap-to-toggle / mouse click-to-select ---- */
