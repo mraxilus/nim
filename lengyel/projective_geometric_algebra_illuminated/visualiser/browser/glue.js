@@ -1625,6 +1625,22 @@ const exceedance = document.getElementById('exceedance');
 const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
 const diagnostic_exceedance = document.getElementById('diag-exceedance');
 const label_exceedance_axis = document.getElementById('diag-exceedance-axis');
+// The vertical axis's own switch, wired here rather than beside the header's chips because
+//   it reads the chart it belongs to. Linear by default: the chart exists to say what share
+//   of the session ran at each speed, and a proportion reads as a proportion on a linear
+//   axis. Log answers a narrower question -- how bad the slowest one percent is, which
+//   linear squeezes flat against the ceiling -- so it is offered rather than assumed.
+const toggle_exceedance_log = document.getElementById('toggle-exceedance-log');
+let is_exceedance_log = false;
+if (toggle_exceedance_log !== null) {
+  toggle_exceedance_log.addEventListener('click', (e) => {
+    is_exceedance_log = !is_exceedance_log;
+    e.target.classList.toggle('on', is_exceedance_log);
+    // Redrawn on the spot rather than at the diagnostics panel's own six-frame cadence: a
+    //   switch that answers a sixth of a second late reads as one that did not work.
+    drawExceedance();
+  });
+}
 
 function bucketOf(milliseconds) {
   const index = Math.floor(milliseconds / MILLISECONDS_BUCKET);
@@ -1706,9 +1722,8 @@ function recordFrameTime(delta_milliseconds) {
   for (const [name] of PHASES_DIAGNOSTIC) history_phase[name][index_history_frame] = -1;
 }
 
-// Log probability down, milliseconds across: a curve on a linear probability axis is a
-//   vertical drop and a flat line, which says nothing about the tail -- and the tail is
-//   the whole question. Decades from every frame down to one in a thousand.
+// How far the log axis runs, when the reader switches to it: decades from every frame down
+//   to one in a thousand, which is as fine as a window of a thousand frames can resolve.
 const DECADES_EXCEEDANCE = 3;
 // **The axis follows the window, but never closes below the slowest budget.** Fitting it to
 //   the slowest frame is what makes the max readable -- the curve reaches 100% exactly
@@ -1766,32 +1781,52 @@ function drawExceedance() {
   const xOf = (milliseconds) => (milliseconds / milliseconds_full) * w;
   // Proportion **below**, rising: the question a reader is asking is how much of the
   //   session came in under a duration, and a curve that answers it climbing left to right
-  //   is read without translation. Linear, so the axis is the proportion itself.
-  const yOf = (share_below) => h - share_below * h;
+  //   is read without translation.
+  //   Linear, where the axis is the proportion itself; or, on the switch, three decades of
+  //   the distance from the top -- the share still at or over -- which is the only way the
+  //   slowest one percent is legible at all, since linear squeezes it flat against the
+  //   ceiling for the last third of the chart.
+  const yOf = is_exceedance_log
+    ? (share_below) => {
+        const share_over = Math.max(1 - share_below, Math.pow(10, -DECADES_EXCEEDANCE));
+        return h * (1 + Math.log10(share_over) / DECADES_EXCEEDANCE);
+      }
+    : (share_below) => h - share_below * h;
 
-  // A quarter at a time, recessive, so the height can be read without a labelled axis --
-  //   and **0% and 100% among them**, since those two are what the curve's own ends are
-  //   read against: leaving one and arriving at the other is how the fastest and slowest
-  //   frames in the window are seen at a glance.
+  context_exceedance.font = '9px ' +
+    (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
+      'monospace');
+  context_exceedance.textBaseline = 'top';
+  // Recessive rules at the heights the axis actually resolves. Linear takes a quarter at a
+  //   time, **0% and 100% among them**, since those two are what the curve's own ends are
+  //   read against: leaving one and arriving at the other is how the window's extremes are
+  //   seen at a glance. Log takes the decades instead, and labels them -- a quarter is
+  //   self-evident where "the line nine tenths of the way up" is not. Its own ceiling and
+  //   floor stay unlabelled: they are the frame, and the caption names how far it runs.
+  const gridlines = is_exceedance_log
+    ? [{ share: 0 }, { share: 0.9, label: '90%' }, { share: 0.99, label: '99%' },
+      { share: 0.999 }]
+    : [{ share: 0 }, { share: 0.25 }, { share: 0.5 }, { share: 0.75 }, { share: 1 }];
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
   context_exceedance.lineWidth = 1;
-  for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+  for (const gridline of gridlines) {
     // Held a half-pixel inside the canvas at the two ends, where the line would otherwise
     //   straddle the edge and render at half its weight or not at all.
-    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(share)) + 0.5));
+    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
     context_exceedance.beginPath();
     context_exceedance.moveTo(0, y);
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
+    if (gridline.label === undefined) continue;
+    // Under the line and at the left margin, which the budget labels along the top row and
+    //   the curve's own climb both leave clear.
+    context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
+    context_exceedance.fillText(gridline.label, 2, y + 1);
   }
   // The budgets themselves, each named by its frame rate, and drawn only where the axis
   //   actually reaches them: at the floor the 30 fps line stands on the right edge, and a
   //   window with nothing slower than 120 fps in it has no business drawing the other two.
   context_exceedance.setLineDash([2, 3]);
-  context_exceedance.font = '9px ' +
-    (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
-      'monospace');
-  context_exceedance.textBaseline = 'top';
   for (const budget of BUDGETS_EXCEEDANCE) {
     if (!Number.isFinite(budget.milliseconds)) continue;
     if (budget.milliseconds > milliseconds_full) continue;
@@ -1854,8 +1889,11 @@ function drawExceedance() {
   // The axis's own extent, said where the reader is looking rather than left to be
   //   inferred from a curve that now moves with the window.
   if (label_exceedance_axis !== null) {
+    // The mode is named in the caption as well as lit on its own pill, so a screenshot of
+    //   the drawer says which axis the curve in it was read against.
     label_exceedance_axis.textContent =
-      'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms';
+      'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms' +
+      (is_exceedance_log ? ' \u00b7 log to 99.9%' : '');
   }
 }
 

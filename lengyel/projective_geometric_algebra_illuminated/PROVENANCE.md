@@ -2041,10 +2041,21 @@ it over.
 how much of the session came in under this. It is drawn only between the two ends of the
 window it plots, so it leaves 0% at one and arrives at 100% at the other instead of running
 flat along both edges, and those two arrivals are how the extremes are read off it. The
-vertical axis is linear, ruled at every quarter and at both bounds; a log axis from the top
-was the alternative, and it would have kept the last 1% legible where linear squeezes it
-against the ceiling — the trade taken deliberately for a proportion that reads as a
-proportion.
+vertical axis is linear by default, ruled at every quarter and at both bounds, because a
+proportion reads as a proportion; the ceiling and the floor stay unlabelled, being the frame
+the curve's own two ends are read against.
+  **The axis switches to log, on a pill in the caption row.** Linear squeezes the slowest
+1% flat against the ceiling for the last third of the chart, and that region is exactly what
+a reader tuning for smoothness is after; log over three decades of the distance from the top
+(the share still at or over) reads it properly and compresses the bulk in exchange. Neither
+is right for every question, so it is a switch rather than a choice made once — off by
+default, since linear is what the chart is for and log is the question a reader goes looking
+for. In log the rules move to the decades and are labelled (90%, 99%), a decade line not
+being self-evident the way a quarter is, and the caption names the mode so a screenshot says
+which axis its curve was read against. The bands, the labelled budget lines, the trim and
+the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
+pill shares the header chips' own CSS rules rather than copying them, at the caption row's
+scale.
   **The axis follows the window, floored at the 30 fps mark.** Fitting alone made the same
 curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
 max its place on the chart. The floor is what keeps both: at 30 fps and better the axis

@@ -1183,6 +1183,54 @@ report(
     `${trimmed.rightmost} of ${trimmed.width}`,
 );
 
+// **The vertical axis switches, and the curve switches with it.** Linear reads the
+// proportion as a proportion; log reads three decades of the distance from the top, which
+// is the only way the slowest one percent is legible at all. Driven through the pill the
+// reader actually presses rather than by setting the flag, since the flag being right and
+// the button being wired are separate claims -- and held on the pixels, because the same
+// data drawn against a different axis is a different curve.
+const axes_curve = await page.evaluate(async () => {
+  const inked = () => {
+    const canvas = document.getElementById('exceedance');
+    const pixels = canvas.getContext('2d')
+      .getImageData(0, 0, canvas.width, canvas.height).data;
+    // The curve alone, at the opacity only it is drawn with, summarised as the row each
+    //   column's mark sits on -- which is the shape of the curve and nothing else.
+    const rows = [];
+    for (let x = 0; x < canvas.width; x += 1) {
+      let row = -1;
+      for (let y = 0; y < canvas.height; y += 1) {
+        if (pixels[(y * canvas.width + x) * 4 + 3] < 200) continue;
+        row = y;
+        break;
+      }
+      rows.push(row);
+    }
+    return rows.join(',');
+  };
+  const pill = document.getElementById('toggle-exceedance-log');
+  const caption = document.getElementById('diag-exceedance-axis');
+  drawExceedance();
+  const linear = { rows: inked(), said: caption.textContent, on: pill.classList.contains('on') };
+  pill.click();
+  const log = { rows: inked(), said: caption.textContent, on: pill.classList.contains('on') };
+  pill.click();
+  const back = { rows: inked(), said: caption.textContent, on: pill.classList.contains('on') };
+  return { linear, log, back };
+});
+report(
+  'the curve switches between a linear axis and a log one, and back',
+  axes_curve.linear.on === false && axes_curve.log.on === true &&
+    axes_curve.back.on === false &&
+    axes_curve.log.said !== axes_curve.linear.said &&
+    axes_curve.back.said === axes_curve.linear.said &&
+    axes_curve.log.rows !== axes_curve.linear.rows &&
+    axes_curve.back.rows === axes_curve.linear.rows,
+  `"${axes_curve.linear.said}" then "${axes_curve.log.said}", ` +
+    `curve ${axes_curve.log.rows === axes_curve.linear.rows ? 'unchanged' : 'redrawn'} ` +
+    `and ${axes_curve.back.rows === axes_curve.linear.rows ? 'restored' : 'not restored'}`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the

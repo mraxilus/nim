@@ -213,7 +213,11 @@
     border-radius: 999px;
     padding: 5px;
   }
-  .toggles button {
+  /* `.diag-toggle` wears the same pill as the header chips at the caption row's own scale:
+     a control that changes what the chart above it means should be recognisably the same
+     kind of thing as the controls that change what the scene shows. Shared rather than
+     copied, so a change to the chip is a change to both. */
+  .toggles button, .diag-toggle {
     appearance: none;
     border: 1px solid transparent;
     background: transparent;
@@ -225,14 +229,19 @@
     border-radius: 999px;
     line-height: 1;
   }
-  .toggles button.on {
+  .toggles button.on, .diag-toggle.on {
     background: rgba(0, 167, 165, 0.16);
     border-color: var(--accent);
     color: var(--accent-ink);
   }
-  .toggles button:focus-visible {
+  .toggles button:focus-visible, .diag-toggle:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  .diag-toggle {
+    font-size: 9.5px;
+    padding: 2px 7px;
+    color: var(--ink-faint);
   }
 
 
@@ -798,8 +807,12 @@
     color: var(--ink-faint);
     margin: 2px 0 8px;
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 8px;
     justify-content: space-between;
   }
+  .diag-legend-axis { display: flex; align-items: center; gap: 6px; }
   .diag-legend b { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
   /* Route-by-route evidence, wrapped rather than clipped: a line the reader cannot finish
      reading is no better than the silence it replaced. */
@@ -1068,7 +1081,21 @@
              end, so that a lone collection pause cannot set the axis for everything. -->
         <canvas class="exceedance" id="exceedance"></canvas>
         <div class="diag-legend">
-          <span id="diag-exceedance-axis">frames under</span
+          <!-- The axis and its switch travel together, so the control sits beside the
+               words it changes rather than adrift between them. The vertical axis is
+               switchable because linear reads the proportion as a proportion while log
+               reads the slowest one percent, which linear squeezes flat against the
+               ceiling. Off by default -- linear is what the chart is for, and log is the
+               question a reader goes looking for. -->
+          <span class="diag-legend-axis"
+            ><span id="diag-exceedance-axis">frames under</span
+            ><button
+              id="toggle-exceedance-log"
+              class="diag-toggle"
+              type="button"
+              aria-label="log probability axis"
+            >log</button
+          ></span
             ><b id="diag-exceedance">&mdash;</b>
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
