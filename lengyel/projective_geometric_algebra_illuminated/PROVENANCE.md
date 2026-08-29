@@ -2026,6 +2026,40 @@ memo and the shared overlay extent skip recomputation when every input is bit-id
 which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
 live face of this ledger.
 
+**A phase's absence is recorded beside its time, never inside it.** The per-phase rings
+marked "did not run this frame" with a negative in the value's own range, and every mobile
+browser coarsens and jitters `performance.now` against timing attacks — so a sub-millisecond
+step measures as zero or below and a real reading becomes indistinguishable from silence.
+On a phone that left *every* sub-millisecond row of the breakdown an em dash — the two
+scenery halves and all six object kinds — while the six-millisecond rows read correctly;
+the desktop, whose clock is fine-grained and monotonic, showed nothing wrong, and the
+driven checks passed on it. Presence is now a parallel `Uint8Array` per phase, a
+non-positive reading is clamped to zero (a negative elapsed time is a clock artefact, not a
+duration, and "too short to measure" is the honest reading of it), and a non-finite one is
+left absent so a genuine wiring break still shows as an em dash rather than a confident
+0.00. The verified reproduction is the driven check that feeds a phase nothing but zeros
+and negatives; guard-run against the old rule, it fails with exactly the phone's symptom.
+  This is `STYLE.md`'s no-sentinel rule, and it was broken here in the one place where the
+value's range genuinely could not spare a member.
+
+**Readings are averaged over 200 ms, and rewritten on the same 200 ms.** Each row showed the
+newest frame's number beside a median, and a single frame changes several times faster than
+anyone can read it; the frame-rate line swung by tens of fps between glances. The leading
+figure is now the mean over the frames covering the last 200 ms — counted in the frames'
+own durations, so it is a dozen frames at 60 fps and two on a labouring phone, and either
+way it is the last 200 ms — with the ring's median kept beside it as the settled figure.
+The UI refresh moved from a six-frame count to that same 200 ms of wall clock: six frames is
+a twelfth of a second on a desktop and a third of one on a slow phone, so the digits changed
+at whichever rate the reader happened to be running at. 200 ms is the conventional settling
+time for a performance readout — long enough that the digits hold still, short enough that a
+stall is still on screen while it happens.
+
+**The disclosure triangles are the solid glyph, not U+25B8's small one.** At the sizes these
+rows are read at the small triangle is a speck that reads as punctuation; a reader could not
+tell which rows opened. Both the tree's rows and the section headers use U+25B6 at 10px in
+`--ink-muted`, and they stay matched deliberately — both answer "there is more under here",
+and one idea should not need two marks.
+
 **How much of the session runs at each speed.** The drawer's sparkline holds 240 frames and
 answers "when did that stutter happen"; above it sits the distribution — for each duration,
 the share of recent frames that came in *under* it — across a rolling window of the last

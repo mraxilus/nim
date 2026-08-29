@@ -1517,17 +1517,65 @@ const COUNTS_DIAGNOSTIC = {
 };
 const count_phase = {};
 const history_phase = {};
+// **Whether a phase ran is kept beside its time, never inside it.** A sentinel in the
+//   value's own range was doing that job, and a duration has no room for one: every mobile
+//   browser coarsens and jitters `performance.now` against timing attacks, so a
+//   sub-millisecond step can measure as zero or below, and a real reading then becomes
+//   indistinguishable from "never ran". That is precisely what left every sub-millisecond
+//   row of the tree an em dash on a phone while the six-millisecond ones read fine.
+const written_phase = {};
 const element_phase = {};
 for (const [name, id] of PHASES_DIAGNOSTIC) {
-  history_phase[name] = new Array(FRAMES_HISTORY).fill(-1); // -1 marks a never-written slot.
+  history_phase[name] = new Float64Array(FRAMES_HISTORY);
+  written_phase[name] = new Uint8Array(FRAMES_HISTORY);
   element_phase[name] = document.getElementById(id);
 }
 for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
   // Shares the frame ring's own index, advanced once per frame by recordFrameTime, so
   // every ring lines up frame for frame; the UI phase only runs one frame in six and
-  // leaves its other slots at -1, which the median below skips.
-  history_phase[name][index_history_frame] = delta_milliseconds;
+  // leaves its other slots unwritten, which the readings below skip.
+  if (!Number.isFinite(delta_milliseconds)) return; // Nothing measured; leave it absent.
+  // Clamped at zero: a negative elapsed time is an artefact of a coarsened clock, not a
+  //   duration, and the honest reading of it is "too short to measure".
+  history_phase[name][index_history_frame] =
+    delta_milliseconds > 0 ? delta_milliseconds : 0;
+  written_phase[name][index_history_frame] = 1;
+}
+
+// **How long a reading is averaged over, and how often it is rewritten.** A single frame's
+//   number changes faster than anyone can read it, which is what made these rows flicker.
+//   200 ms is the settling time a performance readout is conventionally given: long enough
+//   that the digits hold still, short enough that a stall is still on screen while it is
+//   happening. The same span governs the averaging and the refresh, so the number shown is
+//   the number for the interval since the last one -- not an average over one window
+//   sampled on the cadence of another.
+const MILLISECONDS_WINDOW_READING = 200;
+// How many frames back that span reaches, measured in the frames' own durations rather
+//   than assumed from a frame rate: at 60 fps it is a dozen, on a labouring phone it is
+//   two, and either way it is the last 200 ms.
+function framesRecent() {
+  let spanned = 0;
+  for (let i = 0; i < FRAMES_HISTORY; i += 1) {
+    spanned += history_frame[(index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY];
+    if (spanned >= MILLISECONDS_WINDOW_READING) return i + 1;
+  }
+  return FRAMES_HISTORY;
+}
+// A phase's mean over those frames, skipping the ones it did not run in. The mean rather
+//   than the latest: the whole complaint about the latest is that one frame decides it.
+function meanPhase(name, frames) {
+  const ring = history_phase[name];
+  const written = written_phase[name];
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < frames; i += 1) {
+    const at = (index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY;
+    if (written[at] === 0) continue;
+    total += ring[at];
+    count += 1;
+  }
+  return count === 0 ? null : total / count;
 }
 // Scratch the median borrows rather than allocating: this runs per phase per refresh, and
 //   the rows a tree can hold grow faster than the frames between refreshes do. A filter
@@ -1535,9 +1583,10 @@ function recordPhaseTime(name, delta_milliseconds) {
 const scratch_median = new Array(FRAMES_HISTORY);
 function medianPhase(name) {
   const ring = history_phase[name];
+  const written = written_phase[name];
   let count = 0;
   for (let i = 0; i < FRAMES_HISTORY; i += 1) {
-    if (ring[i] >= 0) { scratch_median[count] = ring[i]; count += 1; }
+    if (written[i] === 1) { scratch_median[count] = ring[i]; count += 1; }
   }
   if (count === 0) return null;
   // Insertion sort over the written part: the ring is nearly sorted only by accident, but
@@ -1719,7 +1768,7 @@ function recordFrameTime(delta_milliseconds) {
   // The slot the phases are about to write into is cleared up front, so a phase that
   // does not run this frame (the UI block, a held furniture build) reads as absent
   // rather than as whatever it cost 240 frames ago.
-  for (const [name] of PHASES_DIAGNOSTIC) history_phase[name][index_history_frame] = -1;
+  for (const [name] of PHASES_DIAGNOSTIC) written_phase[name][index_history_frame] = 0;
 }
 
 // How far the log axis runs, when the reader switches to it: decades from every frame down
@@ -1956,23 +2005,32 @@ function refreshDiagnostics() {
   }
   context_sparkline.stroke();
 
-  const latest = history_frame[(index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY];
+  // Averaged over the last 200 ms rather than taken from the newest frame: a per-frame
+  //   reading changes several times faster than it can be read, and a frame rate quoted
+  //   off one frame swings by tens of fps between glances.
+  const frames_recent = framesRecent();
+  let total_recent = 0;
+  for (let i = 0; i < frames_recent; i += 1) {
+    total_recent += history_frame[(index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY];
+  }
+  const mean_frame = total_recent / frames_recent;
   diagnostic_frame_time.textContent =
-    latest.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(latest, 1)) + ' fps)';
+    mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';
 
-  // Each step of the drawing process, as `latest (median)` over the ring: the median is
-  // the number a reader can act on, the instantaneous one is what shows a spike as it
-  // happens. A phase that has not run yet stays an em dash.
-  const index_latest = (index_history_frame + FRAMES_HISTORY - 1) % FRAMES_HISTORY;
+  // Each step of the drawing process, as `mean over 200 ms (median over the ring)`: the
+  // short mean is what a reader watches while changing something, the long median is the
+  // settled figure to act on. A phase that has not run at all stays an em dash.
   for (const [name] of PHASES_DIAGNOSTIC) {
     if (!isPhaseShown(name)) continue; // Inside a closed node; nobody is reading it.
     const median = medianPhase(name);
     if (median === null) continue;
-    let now_phase = history_phase[name][index_latest];
-    if (now_phase < 0) now_phase = median; // A phase idle this frame shows its median.
+    // A phase idle for the whole window shows its median rather than nothing: it is a step
+    //   that runs, and "0.00" would claim it had run for free this window.
+    const recent = meanPhase(name, frames_recent);
     const tally = name in COUNTS_DIAGNOSTIC ? ' \u00b7 ' + count_phase[name] : '';
     element_phase[name].textContent =
-      now_phase.toFixed(2) + ' (' + median.toFixed(2) + ') ms' + tally;
+      (recent === null ? median : recent).toFixed(2) +
+      ' (' + median.toFixed(2) + ') ms' + tally;
   }
 
   if (performance.memory) {
@@ -2832,7 +2890,7 @@ window.addEventListener('resize', resize);
 /* matrix out of the compiled Nim module and upload them straight to GL.   */
 /* ---------------------------------------------------------------------- */
 
-let count_refresh_ui = 0;
+let ms_refresh_ui = 0;
 
 // Draw one frame, and nothing else. Split out of `frame()` so the PNG button can draw and
 //   read back **inside its own click**, without also re-running the per-tick simulation that
@@ -2968,10 +3026,14 @@ function frame() {
   recordPhaseTime('menu', performance.now() - ms_before_menu);
 
   // UI (camera fields, diagnostics) refresh at a lower cadence than the draw loop --
-  // no visual harm in a number lagging one frame, and it keeps DOM writes off the hot path.
-  count_refresh_ui += 1;
-  if (count_refresh_ui >= 6) {
-    count_refresh_ui = 0;
+  // no visual harm in a number lagging a frame, and it keeps DOM writes off the hot path.
+  // Paced by the clock rather than by a frame count, so the readings settle over the same
+  // 200 ms they are averaged over however fast or slow the machine is drawing: six frames
+  // is a twelfth of a second on a desktop and a third of one on a labouring phone, and the
+  // digits changed at whichever of those the reader happened to be on.
+  const ms_now_ui = performance.now();
+  if (ms_now_ui - ms_refresh_ui >= MILLISECONDS_WINDOW_READING) {
+    ms_refresh_ui = ms_now_ui;
     const ms_before_ui = performance.now();
     refreshCameraFields();
     refreshRuler();

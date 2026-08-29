@@ -626,10 +626,14 @@
     padding: 4px 2px;
     cursor: pointer;
   }
+  /* The solid triangle, not U+25B8's small one: at the sizes these rows are read at the
+     small glyph is a speck that reads as punctuation rather than as a control. Shared with
+     the tree rows below, which match these deliberately -- both answer "there is more
+     under here", and a reader should not have to learn two marks for one idea. */
   .section-header .chev {
-    color: var(--ink-faint);
+    color: var(--ink-muted);
     transition: transform var(--anim) var(--ease);
-    font-size: 11px;
+    font-size: 10px;
   }
   .section.open .section-header .chev { transform: rotate(90deg); }
   .section-body { display: none; padding-top: 10px; }
@@ -794,13 +798,20 @@
     text-align: left;
     cursor: pointer;
   }
+  /* Sized and inked to be *recognisable as a triangle* on a phone. At 9px in the faintest
+     ink it was four pixels of grey -- a speck beside the label, which is not an invitation
+     to press anything; a reader has to be able to tell at a glance which rows open. Its
+     own row is the hit target, which is the full drawer width, so the glyph only has to
+     be legible rather than large enough to hit. */
   .diag-parent .chev {
     display: inline-block;
-    width: 12px;
-    color: var(--ink-faint);
-    font-size: 9px;
+    width: 14px;
+    color: var(--ink-muted);
+    font-size: 10px;
     transition: transform var(--anim) var(--ease);
   }
+  .diag-parent:hover .chev, .diag-parent:focus-visible .chev { color: var(--accent); }
+  .diag-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .diag-node.open .diag-parent .chev { transform: rotate(90deg); }
   .diag-children { display: none; padding-left: 12px; }
   .diag-node.open .diag-children { display: block; }
@@ -1047,7 +1058,7 @@
       <button
         class="section-header"
         type="button"
-      ><span>apply</span><span class="chev">&#9656;</span></button>
+      ><span>apply</span><span class="chev">&#9654;</span></button>
       <div class="section-body">
         <div class="field">
           <label>arity</label>
@@ -1076,7 +1087,7 @@
       <button
         class="section-header"
         type="button"
-      ><span>diagnostics</span><span class="chev">&#9656;</span></button>
+      ><span>diagnostics</span><span class="chev">&#9654;</span></button>
       <div class="section-body">
         <!-- What a session's frame times actually look like, rather than the last four
              seconds of them: for each duration, the share of recent frames that came in
@@ -1106,8 +1117,11 @@
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
-        <!-- Each step of the drawing process, latest (median) in ms, so a reader can see
-             where a frame went rather than one opaque total. The rows that have children
+        <!-- Each step of the drawing process, as `mean over the last 200 ms (median over
+             the whole ring)` in ms, so a reader can see where a frame went rather than one
+             opaque total. The short mean is what to watch while changing something and the
+             long median the settled figure to act on; neither is a single frame, which
+             changes faster than anyone can read it. The rows that have children
              carry a chevron and open on a click, and every one of them starts closed: a
              reader opens this panel to see whether a frame is slow, and goes looking for
              *which step* only once it is. `refreshDiagnostics` skips whatever is closed,
@@ -1118,12 +1132,12 @@
              clock here can see it. -->
         <div class="diag-node" data-node="build">
           <button class="diag-line diag-parent" type="button"
-            ><span><span class="chev">&#9656;</span>build (bridge)</span
+            ><span><span class="chev">&#9654;</span>build (bridge)</span
             ><b id="diag-build">&mdash;</b></button>
           <div class="diag-children">
             <div class="diag-node" data-node="furniture">
               <button class="diag-line diag-parent" type="button"
-                ><span><span class="chev">&#9656;</span>scenery</span
+                ><span><span class="chev">&#9654;</span>scenery</span
                 ><b id="diag-furniture">&mdash;</b></button>
               <!-- The two halves are not the same size of thing: the axes are three lines
                    however far the camera stands, while the grid is however many the ground
@@ -1139,7 +1153,7 @@
             </div>
             <div class="diag-node" data-node="scene">
               <button class="diag-line diag-parent" type="button"
-                ><span><span class="chev">&#9656;</span>scene objects</span
+                ><span><span class="chev">&#9654;</span>scene objects</span
                 ><b id="diag-scene">&mdash;</b></button>
               <!-- Each kind with its own count beside its time, because the kinds differ
                    by two orders of magnitude: a point is one vertex, a plane is a rim of
@@ -1191,7 +1205,7 @@
           class="objects-header"
           style="width:100%;"
         ><span>objects</span> <span class="objects-count" id="objects-count">(0 of 64)</span></span>
-        <span class="chev">&#9656;</span>
+        <span class="chev">&#9654;</span>
       </button>
       <div class="section-body">
         <div id="objects-list"></div>
@@ -1203,7 +1217,7 @@
       <button
         class="section-header"
         type="button"
-      ><span>view</span><span class="chev">&#9656;</span></button>
+      ><span>view</span><span class="chev">&#9654;</span></button>
       <div class="section-body">
         <div class="field-row">
           <div class="field">

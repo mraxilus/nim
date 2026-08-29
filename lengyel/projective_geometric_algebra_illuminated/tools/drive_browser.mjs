@@ -1231,6 +1231,78 @@ report(
     `and ${axes_curve.back.rows === axes_curve.linear.rows ? 'restored' : 'not restored'}`,
 );
 
+// **A step too quick for the clock still reports a time.** Every mobile browser coarsens
+// and jitters `performance.now` against timing attacks, so a sub-millisecond phase can
+// measure as zero or below. Absence used to be marked by a negative in the value's own
+// range, which made such a reading indistinguishable from "this never ran" -- and left
+// every sub-millisecond row of the tree an em dash on a phone while the six-millisecond
+// ones read fine. Driven with exactly that: a phase whose every measurement is zero or
+// negative must still report, at zero.
+// Both synthetic runs below fill the rings by hand, and `recordFrameTime` clears every
+// phase's presence as it advances -- so they hand the rings back exactly as they found
+// them. Without that, a check reading a real phase after one of these reads a ring this
+// harness itself wiped, and reports the page broken when it was the driving that was.
+const keepRings = () => page.evaluate(() => {
+  const kept = { at: index_history_frame, frames: Array.from(history_frame), phases: {} };
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    kept.phases[name] = [Array.from(history_phase[name]), Array.from(written_phase[name])];
+  }
+  return kept;
+});
+const restoreRings = (kept) => page.evaluate((k) => {
+  index_history_frame = k.at;
+  for (let i = 0; i < k.frames.length; i += 1) history_frame[i] = k.frames[i];
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    history_phase[name].set(k.phases[name][0]);
+    written_phase[name].set(k.phases[name][1]);
+  }
+}, kept);
+
+const kept_rings = await keepRings();
+const unmeasured = await page.evaluate(() => {
+  for (const node of document.querySelectorAll('.diag-node')) node.classList.add('open');
+  // The frame ring is advanced first and the phases written into it after, exactly as the
+  //   draw loop does it, so the slots line up the way they really would.
+  for (let i = 0; i < 240; i += 1) {
+    recordFrameTime(16.7);
+    recordPhaseTime('sky', i % 2 === 0 ? 0 : -0.4);
+  }
+  refreshDiagnostics();
+  return {
+    text: document.getElementById('diag-sky').textContent,
+    median: medianPhase('sky'),
+  };
+});
+report(
+  'a step too quick for the clock to measure still reports, at zero',
+  unmeasured.median === 0 && unmeasured.text.startsWith('0.00 (0.00) ms'),
+  `the row reads "${unmeasured.text}", median ${unmeasured.median}`,
+);
+
+// **A reading is the mean over 200 ms, not the newest frame.** One frame's number changes
+// several times faster than it can be read, which is what made these rows flicker. Driven
+// with a phase that alternates between 1 ms and 9 ms every frame: the newest frame is
+// always one or the other, and only an averaged reading lands between them.
+const smoothed = await page.evaluate(() => {
+  for (const node of document.querySelectorAll('.diag-node')) node.classList.add('open');
+  for (let i = 0; i < 240; i += 1) {
+    recordFrameTime(16.7);
+    recordPhaseTime('overlay', i % 2 === 0 ? 1 : 9);
+  }
+  refreshDiagnostics();
+  return {
+    text: document.getElementById('diag-overlay').textContent,
+    frames: framesRecent(),
+  };
+});
+await restoreRings(kept_rings);
+report(
+  'a reading is the mean over the last 200 ms, not whatever the newest frame said',
+  // 200 ms of 16.7 ms frames is a dozen of them, and a dozen alternating 1s and 9s mean 5.
+  smoothed.text.startsWith('5.00 ') && smoothed.frames >= 9 && smoothed.frames <= 16,
+  `the row reads "${smoothed.text}" over ${smoothed.frames} frames`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the
