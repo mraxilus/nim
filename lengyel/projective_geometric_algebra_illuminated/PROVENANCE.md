@@ -2134,6 +2134,29 @@ against fixed colours so tuning a threshold does not mean rewriting the check.
   Hue is not the sole encoding, as it is not on the curve: each row's own figure stands
 beside it, and a key under the frame-time row names what the hue measures — without it a red
 row costing two milliseconds reads as an absolute verdict on two milliseconds.
+  **The band is then capped at the worst the curve above it is actually drawing.** A share is
+relative, so on a session that never drops below 120 fps the costliest row was still painted
+red while the chart a centimetre away was entirely blue — two views of the same frame
+contradicting each other in one glance. The ceiling is the band of the curve's own slowest
+stroked point, from the same histogram scan the chart uses (`spanExceedance`, shared rather
+than written twice, so the two cannot disagree about what the window holds). The consequence
+is deliberate and is stated at the code: **a row can be over half the work and still drawn
+blue.** The share says which row to look at; the cap says whether anything needs looking at.
+`Math.min` is monotone, so the ordering the rows promise is untouched — verified by the
+ordering check staying green with the cap in place, and by a driven check that a fast
+synthetic window leaves every row in the first band while a slow one unlocks the last.
+
+**Each counted row carries its count beside its name, not after its time.** Seven rows report
+a count as well as a duration. Appended after the unit — `0.03 (0.00) ms · 3` — it pushed the
+`ms` inward on exactly the rows that had one, and with the value right-aligned in a flex row
+the units landed in three different columns down a tree of twenty numbers. A count is a
+property of the row's subject rather than of its duration, so it moved to the label; every
+value now ends in `ms` and, with the tabular figures already in force, every time ends in one
+column. Measured that way too: the driven check ranges over the `ms` characters themselves
+and counts distinct right edges, because the *box* is right-aligned whatever it holds and its
+edge was identical in both arrangements — the first version of that check would have passed
+either way. `sky (horizon planes)` became `sky, horizon planes` so the only parentheses on a
+row are the count's.
 
 **The last-save readout is gone.** It held a durable transcript of what a save attempt tried
 — the environment probe and one line per route. `REQUIREMENTS.md`'s rule is to record each

@@ -1535,6 +1535,7 @@ const history_phase = {};
 const written_phase = {};
 const element_phase = {};
 const element_row = {};
+const element_tally = {};
 for (const [name, id] of PHASES_DIAGNOSTIC) {
   history_phase[name] = new Float64Array(FRAMES_HISTORY);
   written_phase[name] = new Uint8Array(FRAMES_HISTORY);
@@ -1544,6 +1545,11 @@ for (const [name, id] of PHASES_DIAGNOSTIC) {
   //   and both carry `.diag-line`.
   element_row[name] = element_phase[name] === null
     ? null : element_phase[name].closest('.diag-line');
+  // And the slot beside the row's own name where its count goes, on the rows that have one.
+  //   Written into rather than the label being rewritten, so the label's words stay in the
+  //   markup and this file never holds a second copy of them to keep in step.
+  element_tally[name] = element_row[name] === null
+    ? null : element_row[name].querySelector('.diag-tally');
 }
 for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
@@ -1896,6 +1902,36 @@ function axisEased(milliseconds_wanted) {
     (milliseconds_wanted - milliseconds_axis) * (1 - Math.exp(-since / MILLISECONDS_AXIS_EASE));
   return milliseconds_axis;
 }
+function spanExceedance() {
+  // The window's own bounds, in buckets: the fastest frame it holds and the slowest. The
+  //   curve is drawn between exactly these, so it leaves 0% at one and reaches 100% at the
+  //   other instead of running flat along both edges -- which is what makes the two of them
+  //   readable rather than merely present. Both extremes are the window's own: a lone
+  //   collection pause belongs on a chart of what the session actually did, and it is the
+  //   axis's easing, not a trim, that stops one deciding how the rest is drawn.
+  //   Shared with `bandCeilingExceedance` rather than scanned twice, so the chart and the
+  //   ceiling it imposes on the timing rows can never disagree about what the window holds.
+  let first = -1;
+  let last = 0;
+  for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
+    if (buckets_exceedance[i] === 0) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  return { first, last };
+}
+
+function bandCeilingExceedance() {
+  // The worst band the curve is **actually drawing**, or -1 where the window is still
+  //   empty. Its slowest stroked point is `last * MILLISECONDS_BUCKET`, which is the same
+  //   duration the curve's own per-bucket loop bands, so this is the colour a reader can
+  //   see on the chart rather than one inferred about it. Clamped to the row ramp's four
+  //   slots: `BUDGETS_EXCEEDANCE` carries five and its last two are both `--speed-poor`.
+  const { first, last } = spanExceedance();
+  if (first < 0) return -1;
+  return Math.min(bandOfExceedance(last * MILLISECONDS_BUCKET), 3);
+}
+
 function bandOfExceedance(milliseconds) {
   for (let i = 0; i < BUDGETS_EXCEEDANCE.length; i += 1) {
     if (milliseconds < BUDGETS_EXCEEDANCE[i].milliseconds) return i;
@@ -1911,19 +1947,7 @@ function drawExceedance() {
   const counted = scanExceedance();
   if (counted === 0) return;
 
-  // The window's own bounds, in buckets: the fastest frame it holds and the slowest. The
-  //   curve is drawn between exactly these, so it leaves 0% at one and reaches 100% at the
-  //   other instead of running flat along both edges -- which is what makes the two of them
-  //   readable rather than merely present. Both extremes are the window's own: a lone
-  //   collection pause belongs on a chart of what the session actually did, and it is the
-  //   axis's easing below, not a trim, that stops one deciding how the rest is drawn.
-  let bucket_first = -1;
-  let bucket_last = 0;
-  for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
-    if (buckets_exceedance[i] === 0) continue;
-    if (bucket_first < 0) bucket_first = i;
-    bucket_last = i;
-  }
+  const { first: bucket_first, last: bucket_last } = spanExceedance();
   if (bucket_first < 0) return;
   const milliseconds_full = axisEased(
     Math.max(MILLISECONDS_AXIS_LEAST, (bucket_last + 1) * MILLISECONDS_BUCKET),
@@ -2154,6 +2178,15 @@ function refreshDiagnostics() {
     const spent = meanPhase(name, frames_recent);
     if (spent !== null) work_recent += spent;
   }
+  // **How loudly the rows are allowed to speak**: never past the worst band the curve above
+  //   them is drawing. A share is a relative measure, so on a session that never drops below
+  //   120 fps the costliest row would still be painted red while the chart a centimetre away
+  //   is entirely blue -- two views of the same frame contradicting each other in one glance.
+  //   The share still decides the *ordering*, which row is worst; the session's own state
+  //   decides whether that ordering is worth raising your voice about. **So a row can be
+  //   over half the work and still drawn blue**, and that is the intent rather than a fault:
+  //   it is the answer to "which step costs most" on a frame where nothing costs too much.
+  const band_ceiling = bandCeilingExceedance();
   diagnostic_frame_time.textContent =
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';
 
@@ -2167,21 +2200,29 @@ function refreshDiagnostics() {
     // A phase idle for the whole window shows its median rather than nothing: it is a step
     //   that runs, and "0.00" would claim it had run for free this window.
     const recent = meanPhase(name, frames_recent);
-    const tally = name in COUNTS_DIAGNOSTIC ? ' \u00b7 ' + count_phase[name] : '';
     const shown = recent === null ? median : recent;
     element_phase[name].textContent =
-      shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms' + tally;
-    // And what that number is worth, in the curve's own colours. **`idle` is deliberately
-    //   left neutral**: it is the frame's leftover rather than work done, so on a healthy
-    //   frame it is the largest share of all, and banding it would paint the best case red
-    //   and say the opposite of the truth.
+      shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms';
+    // The count beside the row's own name, so **every** value ends in `ms` and the times
+    //   down the tree finish in one column. A zero is shown rather than left off: a kind
+    //   present but empty says something a kind that is absent does not.
+    if (element_tally[name] !== null) {
+      element_tally[name].textContent = ' (' + count_phase[name] + ')';
+    }
+    // And what that number is worth, in the curve's own colours.
     if (element_row[name] === null) continue;
-    if (name === 'idle' || !(work_recent > 0)) {
+    // Some rows keep the neutral ink instead. **`idle` always**: it is the frame's
+    //   leftover rather than work done, so on a healthy frame it is the largest share of
+    //   all and banding it would paint the best case red. And where nothing has been
+    //   measured yet there is neither a share to take nor a ceiling to cap it against.
+    if (name === 'idle' || !(work_recent > 0) || band_ceiling < 0) {
       element_row[name].style.color = '';
       element_phase[name].style.color = '';
       continue;
     }
-    const band = bandOfShare(shown / work_recent);
+    // `Math.min` is monotone, so capping cannot disturb the ordering the rows promise: a
+    //   costlier row still never wears a faster colour than a cheaper one.
+    const band = Math.min(bandOfShare(shown / work_recent), band_ceiling);
     element_row[name].style.color = colours_row_label[band];
     element_phase[name].style.color = colours_row_value[band];
   }

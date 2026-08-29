@@ -1440,6 +1440,85 @@ report(
   `idle carries ${tinted.idle === '' ? 'no inline colour' : tinted.idle}`,
 );
 
+// **Every time in the tree ends in one column.** That is the whole reason the counts moved
+// off the end of the value: a trailing tally pushed the `ms` inward on exactly the rows that
+// had one, so the units landed at three different places down a column of twenty numbers.
+// Asserted on the rendered geometry, not on the strings, because it is a claim about where
+// things *are*.
+const aligned = await page.evaluate(() => {
+  // Where the **`ms` itself** ends, not where its box does. The row is flex-laid with the
+  //   value right-aligned, so the box's own edge is identical whatever it contains -- it
+  //   was, with a trailing count, which makes it useless as evidence. A Range over the two
+  //   characters measures the thing a reader's eye actually runs along.
+  const edges = new Set();
+  const trailing = [];
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    const value = element_phase[name];
+    if (value === null || value.firstChild === null) continue;
+    const text = value.textContent;
+    const at = text.lastIndexOf('ms');
+    if (at < 0) continue;
+    const span = document.createRange();
+    span.setStart(value.firstChild, at);
+    span.setEnd(value.firstChild, at + 2);
+    edges.add(Math.round(span.getBoundingClientRect().right));
+    if (!/ ms$/.test(text)) trailing.push(name + ': ' + text);
+  }
+  return { edges: [...edges], trailing };
+});
+report(
+  'every timing row ends its unit in the same column',
+  aligned.edges.length === 1 && aligned.trailing.length === 0,
+  `${aligned.edges.length} distinct ms column(s) at ${aligned.edges.join(', ')}` +
+    (aligned.trailing.length === 0 ? '' : `; trailing past ms: ${aligned.trailing.join(', ')}`),
+);
+
+// **And the tree never speaks louder than its own chart.** A row's band comes from its share
+// of the frame's work, which is relative -- so on a session that never drops below 120 fps
+// the costliest row would still be painted red while the curve above it is entirely blue.
+// The band is capped at the worst the curve is actually drawing, which is checked here at
+// both ends: a window fast enough that only the first band exists, and one slow enough to
+// unlock the last. The share still orders the rows; the cap decides how loudly.
+const cappedAt = async (least, span) => {
+  // The whole ring is refilled rather than the histogram cleared: each sample evicts the
+  //   oldest, so a hand-zeroed histogram goes negative as the stale entries leave and the
+  //   bucket scan reads those as occupied.
+  await page.evaluate(([floor, width]) => {
+    for (let i = 0; i < FRAMES_EXCEEDANCE; i += 1) {
+      window.__record_kept(floor + Math.random() * width);
+    }
+  }, [least, span]);
+  await page.waitForTimeout(300);
+  return page.evaluate(() => {
+    refreshDiagnostics();
+    const scratch = document.createElement('span');
+    const normalised = colours_row_value.map((colour) => {
+      scratch.style.color = colour;
+      return scratch.style.color;
+    });
+    const bands = [];
+    for (const [name] of PHASES_DIAGNOSTIC) {
+      const value = element_phase[name];
+      if (value === null || name === 'idle' || value.style.color === '') continue;
+      bands.push(normalised.indexOf(value.style.color));
+    }
+    return { ceiling: bandCeilingExceedance(), worst: Math.max(...bands), rows: bands.length };
+  });
+};
+const capped_fast = await cappedAt(2, 4);
+const capped_slow = await cappedAt(20, 70);
+report(
+  'no timing row wears a colour the chart above it is not drawing',
+  capped_fast.rows > 8 && capped_fast.worst <= capped_fast.ceiling &&
+    capped_slow.rows > 8 && capped_slow.worst <= capped_slow.ceiling &&
+    // And the cap genuinely binds rather than sitting harmlessly above everything: a window
+    //   with nothing slow in it must leave every row in the very first band.
+    capped_fast.ceiling === 0 && capped_fast.worst === 0 &&
+    capped_slow.ceiling > capped_fast.ceiling,
+  `fast window: ceiling ${capped_fast.ceiling}, worst row ${capped_fast.worst}; ` +
+    `slow window: ceiling ${capped_slow.ceiling}, worst row ${capped_slow.worst}`,
+);
+
 // **The axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one
 // slow frame widened it and the moment that frame aged out it snapped back, so two glances
 // a second apart could not be compared. Driven exactly as that happens: a settled window,
@@ -1710,25 +1789,33 @@ report(
 await page.evaluate(() =>
   document.querySelector('.diag-node[data-node="furniture"] > .diag-parent').click());
 await page.waitForTimeout(400);
-const rows_scenery = await page.evaluate(() => Object.fromEntries(
-  ['grid', 'axes'].map((n) => [n, document.getElementById('diag-' + n).textContent])));
+const readRow = (names) => page.evaluate((given) => Object.fromEntries(given.map((n) => {
+  const value = document.getElementById('diag-' + n);
+  return [n, {
+    value: value.textContent,
+    label: value.closest('.diag-line').querySelector('span').textContent,
+  }];
+})), names);
+const rows_scenery = await readRow(['grid', 'axes']);
 report(
   'and both halves have their own row, the grid carrying its segment count',
-  / ms \u00b7 \d+$/.test(rows_scenery.grid) && / ms$/.test(rows_scenery.axes),
-  `grid: ${rows_scenery.grid}, axes: ${rows_scenery.axes}`,
+  // The count sits beside the row's **name**, so every value ends in `ms` and the times
+  //   down the tree finish in one column; the grid names its segments, the axes name none.
+  / ms$/.test(rows_scenery.grid.value) && /\(\d+\)$/.test(rows_scenery.grid.label) &&
+    / ms$/.test(rows_scenery.axes.value) && !/\(\d+\)$/.test(rows_scenery.axes.label),
+  `grid: ${rows_scenery.grid.label} ${rows_scenery.grid.value}, ` +
+    `axes: ${rows_scenery.axes.label} ${rows_scenery.axes.value}`,
 );
 
 await page.evaluate(() =>
   document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click());
 await page.waitForTimeout(400);
-const rows_kind = await page.evaluate(() => Object.fromEntries(
-  ['points', 'lines', 'planes', 'sky', 'ghost', 'selected']
-    .map((n) => [n, document.getElementById('diag-' + n).textContent])
-));
+const rows_kind = await readRow(['points', 'lines', 'planes', 'sky', 'ghost', 'selected']);
 report(
-  'each kind reports its own count beside its own time',
-  Object.values(rows_kind).every((t) => / ms \u00b7 \d+$/.test(t)),
-  Object.entries(rows_kind).map(([n, t]) => `${n}: ${t}`).join(', '),
+  'each kind reports its own count beside its own name',
+  Object.values(rows_kind).every((r) =>
+    / ms$/.test(r.value) && /\(\d+\)$/.test(r.label)),
+  Object.entries(rows_kind).map(([n, r]) => `${n}: ${r.label} ${r.value}`).join(', '),
 );
 
 // **The scenery, at the distance where it used to cost the most.** Its price is its

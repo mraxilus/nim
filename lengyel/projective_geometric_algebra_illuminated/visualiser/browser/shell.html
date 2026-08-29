@@ -1163,7 +1163,7 @@
                    them rose. The grid carries its segment count, since its cost *is* that
                    count and the count is what `SEGMENTS_GRID_MAX` bounds. -->
               <div class="diag-children">
-                <div class="diag-line"><span>ground grid</span
+                <div class="diag-line"><span>ground grid<span class="diag-tally"></span></span
                   ><b id="diag-grid">&mdash;</b></div>
                 <div class="diag-line"><span>world axes</span
                   ><b id="diag-axes">&mdash;</b></div>
@@ -1173,22 +1173,28 @@
               <button class="diag-line diag-parent" type="button"
                 ><span><span class="chev">&#9654;</span>scene objects</span
                 ><b id="diag-scene">&mdash;</b></button>
-              <!-- Each kind with its own count beside its time, because the kinds differ
+              <!-- Each kind with its own count beside its name, because the kinds differ
                    by two orders of magnitude: a point is one vertex, a plane is a rim of
                    ribbons each carrying a join, a sky is a whole dome. A time without its
-                   count cannot tell "one of these is expensive" from "there are many". -->
+                   count cannot tell "one of these is expensive" from "there are many".
+                   Beside the *name* and not after the time: a count is a property of the
+                   thing, not of its duration, and trailing it after the unit pushed the
+                   `ms` inward on exactly the rows that had one, so the times down the tree
+                   stopped ending in a single column. -->
               <div class="diag-children">
-                <div class="diag-line"><span>points</span
+                <div class="diag-line"><span>points<span class="diag-tally"></span></span
                   ><b id="diag-points">&mdash;</b></div>
-                <div class="diag-line"><span>lines</span
+                <div class="diag-line"><span>lines<span class="diag-tally"></span></span
                   ><b id="diag-lines">&mdash;</b></div>
-                <div class="diag-line"><span>planes</span
+                <div class="diag-line"><span>planes<span class="diag-tally"></span></span
                   ><b id="diag-planes">&mdash;</b></div>
-                <div class="diag-line"><span>sky (horizon planes)</span
+                <div class="diag-line"><span>sky, horizon planes<span
+                  class="diag-tally"></span></span
                   ><b id="diag-sky">&mdash;</b></div>
-                <div class="diag-line"><span>ghost + preview</span
+                <div class="diag-line"><span>ghost + preview<span class="diag-tally"></span></span
                   ><b id="diag-ghost">&mdash;</b></div>
-                <div class="diag-line"><span>selected, drawn again</span
+                <div class="diag-line"><span>selected, drawn again<span
+                  class="diag-tally"></span></span
                   ><b id="diag-selected">&mdash;</b></div>
               </div>
             </div>
