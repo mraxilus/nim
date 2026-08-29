@@ -1043,6 +1043,46 @@ report(
     `${curve.lit} pixels drawn`,
 );
 
+// **The curve is drawn in the colour of the budget each part of it sits inside**, and the
+// axis it is drawn against is fixed rather than fitted. Every frame this container draws is
+// slower than 30 fps, so the fast bands cannot be reached by driving the page harder; the
+// window is fed a spread through `recordExceedance` -- the very call the frame loop makes
+// -- which exercises the drawing without pretending the machine is faster than it is.
+const bands = await page.evaluate(() => {
+  for (let i = 0; i < 3000; i += 1) {
+    const roll = Math.random();
+    recordExceedance(roll < 0.7 ? 5 + Math.random() * 3
+      : roll < 0.92 ? 9 + Math.random() * 7
+      : roll < 0.99 ? 17 + Math.random() * 15 : 34 + Math.random() * 40);
+  }
+  drawExceedance();
+  const canvas = document.getElementById('exceedance');
+  const pixels = canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data;
+  const counted = new Map();
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 200) continue;
+    counted.set(`${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`,
+      (counted.get(`${pixels[i]},${pixels[i + 1]},${pixels[i + 2]}`) || 0) + 1);
+  }
+  // The tokens the stylesheet sets, as the canvas would have written them.
+  const wanted = ['--speed-fast', '--speed-good', '--speed-fair', '--speed-poor'].map((t) => {
+    const hex = getComputedStyle(document.documentElement).getPropertyValue(t).trim();
+    return [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(',');
+  });
+  return {
+    drawn: wanted.filter((rgb) => (counted.get(rgb) || 0) > 15).length,
+    wanted: wanted.length,
+    // The axis is fixed at 0-50 ms, so the 60 fps budget stands exactly a third across.
+    width: canvas.width,
+  };
+});
+report(
+  'the curve wears the colour of the budget each part of it is inside',
+  bands.drawn >= 3,
+  `${bands.drawn} of ${bands.wanted} band colours on the canvas`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the

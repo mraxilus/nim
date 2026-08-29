@@ -2026,6 +2026,29 @@ memo and the shared overlay extent skip recomputation when every input is bit-id
 which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
 live face of this ledger.
 
+**How often, not only when.** The drawer's sparkline holds 240 frames and answers "when did
+that stutter happen"; above it sits the complementary curve — for each duration, the share
+of recent frames at or over it — across a rolling window of the last 4,096 frames, about a
+minute at 60 fps. Kept as a ring and a histogram of the same samples maintained together, so
+a frame costs two array writes and the curve is one suffix scan taken only when the panel is
+open; a sample past the last bucket lands *in* it, since a 300 ms stall is the most
+important sample the window holds.
+  **The axis is fixed at 0–50 ms, not fitted to the window.** Fitting made the same curve
+mean a different thing minute to minute — a session that got worse redrew itself flatter —
+and no two readings could be compared. A curve still carrying height at the right edge is a
+session with frames slower than 50 ms, which reads as off the chart; the buckets keep their
+full range, so the 1-in-100 stated beside the curve is true even when it lies beyond the
+axis. The three budgets a reader aims at are dashed and labelled by *rate* (120, 60, 30),
+because a duration means nothing to most people and "60" means something to everyone, and
+the curve is drawn in one run per band so the colour changes exactly at the line it is read
+against. The four band colours are a **status** ramp, not the object palette — an object's
+colour says which object — screened through the dataviz validator against the drawer's own
+surface exactly as the object palette was: all four inside the dark lightness band, all
+clearing 3:1, worst adjacent normal-vision ΔE 16.3. The "good" band is a **jade** rather
+than a pure green because pure green against amber measures ΔE 1.2 under protanopia, where
+jade measures 7.9; amber against red sits at 7.7 under deuteranopia, inside the band the
+validator allows only with secondary encoding, which the labelled boundary lines are.
+
 **The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
 and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as
 "a few dozen projections", and a profile put it at ~1 ms per selected object per frame —

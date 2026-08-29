@@ -1667,6 +1667,33 @@ function recordFrameTime(delta_milliseconds) {
 //   vertical drop and a flat line, which says nothing about the tail -- and the tail is
 //   the whole question. Decades from every frame down to one in a thousand.
 const DECADES_EXCEEDANCE = 3;
+// **The axis is fixed, not fitted.** It used to run out to the slowest bucket the window
+//   held, which made the same curve mean a different thing minute to minute: a session
+//   that got worse redrew itself flatter, and no two readings could be compared. Fifty
+//   milliseconds holds every budget below plus half again, and a curve still carrying
+//   height at the right edge is a session with frames slower than that -- which reads as
+//   "off the chart", correctly. The buckets keep their own full range, so the 1-in-100
+//   stated beside the curve is true even when it lies beyond the axis.
+const MILLISECONDS_AXIS_EXCEEDANCE = 50;
+// The frame budgets a reader actually aims at, each named by the rate it is: a duration
+//   means nothing to most people and "60" means something to everyone.
+const BUDGETS_EXCEEDANCE = [
+  { milliseconds: 1000 / 120, label: '120', token: '--speed-fast' },
+  { milliseconds: 1000 / 60, label: '60', token: '--speed-good' },
+  { milliseconds: 1000 / 30, label: '30', token: '--speed-fair' },
+  { milliseconds: Infinity, label: '', token: '--speed-poor' },
+];
+// Read once from the stylesheet, which is where they are set and tuned; see the tokens'
+//   own comment in `shell.html` for how the four were screened.
+const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
+  getComputedStyle(document.documentElement).getPropertyValue(budget.token).trim() ||
+    '#00a7a5');
+function bandOfExceedance(milliseconds) {
+  for (let i = 0; i < BUDGETS_EXCEEDANCE.length; i += 1) {
+    if (milliseconds < BUDGETS_EXCEEDANCE[i].milliseconds) return i;
+  }
+  return BUDGETS_EXCEEDANCE.length - 1;
+}
 function drawExceedance() {
   if (context_exceedance === null) return;
   const w = exceedance.clientWidth || 300, h = exceedance.clientHeight || 74;
@@ -1675,18 +1702,13 @@ function drawExceedance() {
   context_exceedance.clearRect(0, 0, w, h);
   const counted = scanExceedance();
   if (counted === 0) return;
-  // Across: out to the slowest bucket the window holds, with a floor so an idle session
-  //   at a steady 16 ms still reads against a sensible scale rather than filling the plot.
-  let last_used = 0;
-  for (let i = BUCKETS_EXCEEDANCE - 1; i > 0; i -= 1) {
-    if (buckets_exceedance[i] > 0) { last_used = i; break; }
-  }
-  const milliseconds_full = Math.max(33.4, (last_used + 1) * MILLISECONDS_BUCKET);
   const share_floor = Math.pow(10, -DECADES_EXCEEDANCE);
   const yOf = (share) => {
     if (share <= share_floor) return h;
     return h - (1 + Math.log10(share) / DECADES_EXCEEDANCE) * h;
   };
+  const xOf = (milliseconds) => (milliseconds / MILLISECONDS_AXIS_EXCEEDANCE) * w;
+
   // A decade line per order of magnitude, so the reader can see where one frame in ten,
   //   one in a hundred and one in a thousand fall without a labelled axis eating the plot.
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
@@ -1698,29 +1720,57 @@ function drawExceedance() {
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
   }
-  // And the frame budget itself, which is the line a reader is actually asking about.
-  const x_budget = Math.round((16.7 / milliseconds_full) * w) + 0.5;
-  context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.30)';
+  // The budgets themselves, each named by its frame rate. These are what divide the curve
+  //   into its four coloured runs below, so the line a reader reads the colour against is
+  //   the very line the colour changes at.
   context_exceedance.setLineDash([2, 3]);
-  context_exceedance.beginPath();
-  context_exceedance.moveTo(x_budget, 0);
-  context_exceedance.lineTo(x_budget, h);
-  context_exceedance.stroke();
+  context_exceedance.font = '9px ' +
+    (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
+      'monospace');
+  context_exceedance.textBaseline = 'top';
+  for (const budget of BUDGETS_EXCEEDANCE) {
+    if (!Number.isFinite(budget.milliseconds)) continue;
+    const x = Math.round(xOf(budget.milliseconds)) + 0.5;
+    context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.30)';
+    context_exceedance.beginPath();
+    context_exceedance.moveTo(x, 0);
+    context_exceedance.lineTo(x, h);
+    context_exceedance.stroke();
+    context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
+    context_exceedance.fillText(budget.label, x + 2, 1);
+  }
   context_exceedance.setLineDash([]);
 
-  context_exceedance.strokeStyle = '#00a7a5';
+  // The curve, in one run per band, each stroked in that band's own colour and each
+  //   starting where the last ended so the line is continuous across the change. Drawn
+  //   band by band rather than sampling a colour per segment: a run is one path and one
+  //   stroke, and the join at a boundary is exact rather than a pixel of the wrong hue.
   context_exceedance.lineWidth = 1.5;
-  context_exceedance.beginPath();
-  let is_started = false;
-  for (let i = 0; i <= last_used; i += 1) {
-    const milliseconds = i * MILLISECONDS_BUCKET;
-    if (milliseconds > milliseconds_full) break;
-    const x = (milliseconds / milliseconds_full) * w;
-    const y = yOf(shares_exceedance[i]);
-    if (!is_started) { context_exceedance.moveTo(x, y); is_started = true; }
-    else context_exceedance.lineTo(x, y);
+  const last_bucket = Math.min(
+    BUCKETS_EXCEEDANCE - 1,
+    Math.ceil(MILLISECONDS_AXIS_EXCEEDANCE / MILLISECONDS_BUCKET),
+  );
+  let band_open = -1;
+  for (let i = 0; i <= last_bucket; i += 1) {
+    const milliseconds = Math.min(i * MILLISECONDS_BUCKET, MILLISECONDS_AXIS_EXCEEDANCE);
+    const band = bandOfExceedance(milliseconds);
+    const point = [xOf(milliseconds), yOf(shares_exceedance[i])];
+    if (band !== band_open) {
+      if (band_open >= 0) {
+        // Carry the run into the boundary before closing it, so the two runs meet on the
+        //   dashed line rather than a bucket short of it.
+        context_exceedance.lineTo(point[0], point[1]);
+        context_exceedance.stroke();
+      }
+      context_exceedance.beginPath();
+      context_exceedance.moveTo(point[0], point[1]);
+      context_exceedance.strokeStyle = colours_exceedance[band];
+      band_open = band;
+    } else {
+      context_exceedance.lineTo(point[0], point[1]);
+    }
   }
-  context_exceedance.stroke();
+  if (band_open >= 0) context_exceedance.stroke();
 
   // The one number worth stating outright beside the curve: what the slowest frame in a
   //   hundred took. A reader tuning for smoothness is tuning that, not the median.

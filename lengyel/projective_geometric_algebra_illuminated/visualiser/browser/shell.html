@@ -12,6 +12,22 @@
     --accent: #00a7a5;
     --accent-ink: #bdf3f0;
     --danger: #e0577a;
+    /* The four frame-rate bands the exceedance curve is drawn in, worst last. A **status**
+       ramp, deliberately not the object palette: an object's colour says which object, and
+       reusing one here would have the curve impersonate a series.
+         Screened through the dataviz skill's own validator against this drawer's surface,
+       exactly as `mesh.nim`'s object palette was: all four sit inside the dark lightness
+       band, clear 3:1 contrast, and hold the normal-vision floor (worst adjacent pair at
+       16.3). The green is a **jade** rather than a pure green because pure green against
+       amber measures deltaE 1.2 under protanopia -- indistinguishable -- where jade
+       measures 7.9. The amber/red pair sits at 7.7 under deuteranopia, inside the 6-8 band
+       the validator allows only with secondary encoding: here every band is bounded by its
+       own *labelled* dashed line, so which band a stretch of curve is in is read from the
+       120/60/30 beside it and never from hue alone. */
+    --speed-fast: #3d8ee0;
+    --speed-good: #14a06e;
+    --speed-fair: #bb8215;
+    --speed-poor: #d03b3b;
     /* "Noto Sans UI" sits in the mono and serif stacks as well as being the sans face:
        the maths and symbol faces are declared under that family by unicode-range, and
        neither Commit Mono nor Noto Serif carries a single one of those codepoints. Without
@@ -1051,7 +1067,8 @@
              frame in a hundred takes longer than here". -->
         <canvas class="exceedance" id="exceedance"></canvas>
         <div class="diag-legend">
-          <span>frames at or over</span><b id="diag-exceedance">&mdash;</b>
+          <span>frames at or over &middot; 0&ndash;50 ms</span
+            ><b id="diag-exceedance">&mdash;</b>
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
