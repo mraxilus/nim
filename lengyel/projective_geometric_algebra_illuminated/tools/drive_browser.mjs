@@ -1152,14 +1152,18 @@ const settleAxis = async () => {
   }
 };
 
-// The two figures below are read **off the page** rather than restated here: a copy would
-// pass while the page drifted away from it, which is the one thing these checks exist to
-// stop. `ROW_LABEL_EXCEEDANCE` is how much of the canvas each label row takes, and
-// `MILLISECONDS_AXIS_LEAST` is how narrow the axis is allowed to get.
-const { ROW_LABEL_DRAWN, MILLISECONDS_FLOOR_DRAWN } = await page.evaluate(() => ({
-  ROW_LABEL_DRAWN: ROW_LABEL_EXCEEDANCE,
+// How narrow the axis may get is read **off the page** rather than restated here: a copy
+// would pass while the page drifted away from it, which is the one thing these checks exist
+// to stop.
+const { MILLISECONDS_FLOOR_DRAWN } = await page.evaluate(() => ({
   MILLISECONDS_FLOOR_DRAWN: MILLISECONDS_AXIS_LEAST,
 }));
+// How deep a band at each end to look in for a mark's own labels. **This check's own
+// sampling window, not a copy of anything the page declares** -- the rates and durations are
+// drawn over the plot rather than in rows of their own, so there is no page-side row height
+// to read. Comfortably more than the 9px line they are set in, and comfortably less than the
+// canvas, which is all it has to be.
+const ROW_LABEL_DRAWN = 11;
 
 // **The curve is drawn in the colour of the budget each part of it sits inside**, and the
 // axis it is drawn against is fixed rather than fitted. Every frame this container draws is
@@ -1233,13 +1237,11 @@ const reach = await page.evaluate(() => {
 });
 report(
   'the curve climbs from 0% at the fastest frame to 100% at the slowest',
-  // Bottom to top of the **plot**, which is the canvas less a label row at each end -- the
-  //   rates and their durations live in those, and the curve reaching into one would be
-  //   drawn over its own axis. And all the way out to the slowest frame the window holds,
-  //   which on a window this size is the far edge, the axis being fitted to that frame.
-  reach.top >= ROW_LABEL_DRAWN - 1 && reach.top <= ROW_LABEL_DRAWN + 3 &&
-    reach.bottom >= reach.height - ROW_LABEL_DRAWN - 3 &&
-    reach.bottom <= reach.height - ROW_LABEL_DRAWN + 1 &&
+  // Bottom to top of the canvas, which the plot is the whole of: the rates and durations are
+  //   drawn over it rather than in rows of their own, so the curve owns the full height.
+  //   And all the way out to the slowest frame the window holds, which on a window this size
+  //   is the far edge, the axis being fitted to exactly that frame.
+  reach.top <= 2 && reach.bottom >= reach.height - 3 &&
     // Within the axis's own deadband of the far edge: the glide settles a couple of
     //   percent short of the extent rather than landing exactly on it, which is the axis
     //   holding still rather than chasing the last half-millisecond.

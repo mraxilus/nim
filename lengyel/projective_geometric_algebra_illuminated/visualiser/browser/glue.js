@@ -1777,6 +1777,11 @@ const DECADES_EXCEEDANCE = 3;
 //   share because the canvas is responsive -- a fixed number of milliseconds buys a
 //   different number of pixels at every drawer width -- and 14% clears the label's own
 //   14px threshold down to about a 110px canvas.
+// What a label is haloed against where the curve runs through it: the drawer's own solid
+//   surface, which is what shows through this canvas, at most of full strength -- enough to
+//   part the curve around the digits, little enough that it reads as the ground rather than
+//   as a box drawn behind them.
+const HALO_LABEL_EXCEEDANCE = 'rgba(22, 27, 34, 0.85)';
 const SHARE_MARK_LEAST = 0.86;
 const MILLISECONDS_AXIS_LEAST = (1000 / 30) / SHARE_MARK_LEAST;
 // The frame budgets a reader actually aims at, each named by the rate it is: a duration
@@ -1794,11 +1799,6 @@ const BUDGETS_EXCEEDANCE = [
   { milliseconds: 1000 / 15, label: '15', token: '--speed-poor' },
   { milliseconds: Infinity, label: '', token: '--speed-poor' },
 ];
-// How much of the canvas each label row takes, top and bottom: a 9px line plus its lead.
-//   The rows are real rather than painted over the plot because the curve reaches both
-//   corners they would sit in -- 100% at the top right, under the slowest mark's own
-//   label, and 0% at the bottom left, where the durations now go.
-const ROW_LABEL_EXCEEDANCE = 11;
 // Read once from the stylesheet, which is where they are set and tuned; see the tokens'
 //   own comment in `shell.html` for how the four were screened.
 const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
@@ -1887,65 +1887,54 @@ function drawExceedance() {
   //   the distance from the top -- the share still at or over -- which is the only way the
   //   slowest one percent is legible at all, since linear squeezes it flat against the
   //   ceiling for the last third of the chart.
-  //   The plot is the canvas less one label row at each end; this is the **one** place
-  //   that extent is stated, so the curve, the gridlines and their clamp all follow from
-  //   it and nothing else has to know where the rows are.
-  const y_plot = ROW_LABEL_EXCEEDANCE, h_plot = h - 2 * ROW_LABEL_EXCEEDANCE;
   const yOf = is_exceedance_log
     ? (share_below) => {
         const share_over = Math.max(1 - share_below, Math.pow(10, -DECADES_EXCEEDANCE));
-        return y_plot + h_plot * (1 + Math.log10(share_over) / DECADES_EXCEEDANCE);
+        return h * (1 + Math.log10(share_over) / DECADES_EXCEEDANCE);
       }
-    : (share_below) => y_plot + h_plot - share_below * h_plot;
+    : (share_below) => h - share_below * h;
 
   context_exceedance.font = '9px ' +
     (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
       'monospace');
   context_exceedance.textBaseline = 'top';
-  // Recessive rules at the heights the axis actually resolves, **every one of them named**
-  //   -- an unlabelled rule tells a reader that some height matters without saying which,
-  //   which is worse than no rule at all. Linear takes a quarter at a time, 0% and 100%
-  //   among them, since those two are what the curve's own ends are read against: leaving
-  //   one and arriving at the other is how the window's extremes are seen at a glance.
-  //   Log takes the decades instead, up to the 99.9% its three decades actually reach --
-  //   the ceiling is the whole reason to switch to it, so it is the last thing that should
-  //   have gone unnamed. Its floor stays a bare rule: 0% is where every curve starts.
+  // Recessive rules at the heights the axis actually resolves, each named except the floor.
+  //   Linear takes a quarter at a time up to 100%, which is what the curve's own arrival is
+  //   read against. Log takes the decades instead, up to the 99.9% its three decades
+  //   actually reach -- the ceiling is the whole reason to switch to it, so it is the last
+  //   thing that should go unnamed. **Neither names 0%**: it is where every curve starts,
+  //   so the label states what the shape already says, and at the very bottom of the canvas
+  //   it has nowhere to sit that is not either off the plot or on top of the label above.
   const gridlines = is_exceedance_log
     ? [{ share: 0 }, { share: 0.9, label: '90%' }, { share: 0.99, label: '99%' },
       { share: 0.999, label: '99.9%' }]
-    : [{ share: 0, label: '0%' }, { share: 0.25, label: '25%' },
-      { share: 0.5, label: '50%' }, { share: 0.75, label: '75%' },
-      { share: 1, label: '100%' }];
+    : [{ share: 0 }, { share: 0.25, label: '25%' }, { share: 0.5, label: '50%' },
+      { share: 0.75, label: '75%' }, { share: 1, label: '100%' }];
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
   context_exceedance.lineWidth = 1;
   for (const gridline of gridlines) {
-    // Held a half-pixel inside the plot at the two ends, where the line would otherwise
+    // Held a half-pixel inside the canvas at the two ends, where the line would otherwise
     //   straddle the edge and render at half its weight or not at all.
-    const y = Math.min(y_plot + h_plot - 0.5,
-      Math.max(y_plot + 0.5, Math.round(yOf(gridline.share)) + 0.5));
+    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
     context_exceedance.beginPath();
     context_exceedance.moveTo(0, y);
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
     if (gridline.label === undefined) continue;
-    // Under the line and at the left margin, which the rate labels along the top row and
-    //   the curve's own climb both leave clear.
-    //   The rule on the plot's own floor is the exception: under it is off the plot, and
-    //   above it lands on top of the next label up -- 0% and 25% overlapped outright. It
-    //   goes into the bottom row instead, at the left margin, which is empty because the
-    //   first duration stands at its own mark a fifth of the way across at the very
-    //   narrowest the axis gets.
+    // Under its own line and at the left margin, which the rates along the top and the
+    //   curve's own climb both leave clear.
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    const is_floor = y + ROW_LABEL_EXCEEDANCE >= y_plot + h_plot;
-    context_exceedance.textBaseline = is_floor ? 'bottom' : 'top';
-    context_exceedance.fillText(gridline.label, 2, is_floor ? h - 1 : y + 1);
+    context_exceedance.fillText(gridline.label, 2, y + 1);
   }
-  context_exceedance.textBaseline = 'top';
-  // The budgets themselves, **each named twice**: the rate above and the duration it is
-  //   below, so one dashed line answers both "how smooth is that" and "how long is that"
-  //   and a reader never has to convert between them in their head. The line runs the full
-  //   height of the canvas rather than the plot's, which is what ties the two ends of the
-  //   ruler together as one mark.
+  // The budgets themselves, **each named twice**: the rate at the top of the line and the
+  //   duration at its foot, so one dashed mark answers both "how smooth is that" and "how
+  //   long is that" and a reader never has to convert between them in their head.
+  //   Both sit *over* the plot rather than in rows of their own. Rows were tried, and they
+  //   do buy clearance -- the curve reaches 100% in the top right, under the slowest mark's
+  //   label, and 0% in the bottom left, under the fastest mark's duration -- but they cost
+  //   22px of a drawer that has none to spare, and a number a reader can find beside its
+  //   own line is worth more than a guarantee it is never crossed. The labels are drawn
+  //   before the curve, so where the two meet it is the curve that reads as continuous.
   //   Drawn only where the axis actually reaches them: a window with nothing slower than
   //   120 fps in it has no business drawing the others, and the 15 fps mark stays away
   //   until the window holds a frame that slow. The floor is set so the slowest mark the
@@ -1967,10 +1956,22 @@ function drawExceedance() {
     const is_room = x + 14 < w;
     context_exceedance.textAlign = is_room ? 'left' : 'right';
     const x_label = x + (is_room ? 2 : -2);
-    context_exceedance.textBaseline = 'top';
-    context_exceedance.fillText(budget.label, x_label, 1);
-    context_exceedance.textBaseline = 'bottom';
-    context_exceedance.fillText(budget.milliseconds.toFixed(1), x_label, h - 1);
+    // Haloed against the drawer's own surface before being filled. These sit over the plot
+    //   and the curve crosses the fastest ones outright -- a duration bisected by a stroke
+    //   of the same weight is unreadable, and this is what buys the numbers their place
+    //   inside without asking the chart for height it does not have.
+    const write = (text, y, baseline) => {
+      context_exceedance.textBaseline = baseline;
+      context_exceedance.strokeStyle = HALO_LABEL_EXCEEDANCE;
+      context_exceedance.lineWidth = 3;
+      context_exceedance.setLineDash([]);
+      context_exceedance.strokeText(text, x_label, y);
+      context_exceedance.fillText(text, x_label, y);
+      context_exceedance.lineWidth = 1;
+      context_exceedance.setLineDash([2, 3]);
+    };
+    write(budget.label, 1, 'top');
+    write(budget.milliseconds.toFixed(1), h - 1, 'bottom');
   }
   context_exceedance.setLineDash([]);
   context_exceedance.textAlign = 'left';
