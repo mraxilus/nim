@@ -1152,6 +1152,15 @@ const settleAxis = async () => {
   }
 };
 
+// The two figures below are read **off the page** rather than restated here: a copy would
+// pass while the page drifted away from it, which is the one thing these checks exist to
+// stop. `ROW_LABEL_EXCEEDANCE` is how much of the canvas each label row takes, and
+// `MILLISECONDS_AXIS_LEAST` is how narrow the axis is allowed to get.
+const { ROW_LABEL_DRAWN, MILLISECONDS_FLOOR_DRAWN } = await page.evaluate(() => ({
+  ROW_LABEL_DRAWN: ROW_LABEL_EXCEEDANCE,
+  MILLISECONDS_FLOOR_DRAWN: MILLISECONDS_AXIS_LEAST,
+}));
+
 // **The curve is drawn in the colour of the budget each part of it sits inside**, and the
 // axis it is drawn against is fixed rather than fitted. Every frame this container draws is
 // slower than 30 fps, so the fast bands cannot be reached by driving the page harder; the
@@ -1224,9 +1233,13 @@ const reach = await page.evaluate(() => {
 });
 report(
   'the curve climbs from 0% at the fastest frame to 100% at the slowest',
-  // Bottom to top, and all the way out to the slowest frame the window holds -- which on a
-  //   window this size is the far edge, since the axis is fitted to exactly that frame.
-  reach.top <= 2 && reach.bottom >= reach.height - 3 &&
+  // Bottom to top of the **plot**, which is the canvas less a label row at each end -- the
+  //   rates and their durations live in those, and the curve reaching into one would be
+  //   drawn over its own axis. And all the way out to the slowest frame the window holds,
+  //   which on a window this size is the far edge, the axis being fitted to that frame.
+  reach.top >= ROW_LABEL_DRAWN - 1 && reach.top <= ROW_LABEL_DRAWN + 3 &&
+    reach.bottom >= reach.height - ROW_LABEL_DRAWN - 3 &&
+    reach.bottom <= reach.height - ROW_LABEL_DRAWN + 1 &&
     // Within the axis's own deadband of the far edge: the glide settles a couple of
     //   percent short of the extent rather than landing exactly on it, which is the axis
     //   holding still rather than chasing the last half-millisecond.
@@ -1236,7 +1249,8 @@ report(
 );
 // The floor, exercised where it actually binds: a window holding nothing slower than
 // 15 ms would otherwise draw an axis a third that wide and zoom the session into its own
-// noise, so it stops at the 30 fps mark and the budget lines keep their places.
+// noise, so it stops at the 30 fps mark -- with room past it to write that mark's own
+// labels, which is why the floor is a little wider than 33.3 ms rather than exactly it.
 await page.evaluate(() => {
   for (let i = 0; i < 1024; i += 1) window.__record_kept(5 + Math.random() * 9);
 });
@@ -1248,10 +1262,118 @@ const floored = await page.evaluate(() => {
 report(
   'and its axis follows the window without ever closing below the 30 fps mark',
   Number.isFinite(reach.milliseconds) && reach.milliseconds >= 33 &&
-    // At the 33.3 ms floor, within the axis's own deadband -- the glide settles near the
-    //   extent rather than exactly on it, and the floor is an extent like any other.
-    Number.isFinite(floored) && floored >= 33 && floored <= 35,
+    // At the floor, within the axis's own deadband -- the glide settles near the extent
+    //   rather than exactly on it, and the floor is an extent like any other.
+    Number.isFinite(floored) && floored >= MILLISECONDS_FLOOR_DRAWN - 1 &&
+    floored <= MILLISECONDS_FLOOR_DRAWN + 2,
   `a mixed window reads 0-${reach.milliseconds} ms, a fast one 0-${floored} ms`,
+);
+
+// Everything the axis writes on itself, read out of the canvas by opacity. The four things
+// drawn there are laid down at four different alphas -- gridlines faintest, then the dashed
+// budget marks, then the labels, then the curve opaque -- so each can be counted apart from
+// the others without knowing where any of them went.
+const readAxisInk = () => page.evaluate((row) => {
+  const canvas = document.getElementById('exceedance');
+  const w = canvas.width, h = canvas.height;
+  const pixels = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const alphaAt = (x, y) => pixels[(y * w + x) * 4 + 3];
+  const isLabel = (x, y) => alphaAt(x, y) > 120 && alphaAt(x, y) < 230;
+  // A dashed mark is a column that **starts at the very top** and carries its own alpha
+  //   down a good part of the height. Both halves are needed: the percentages stacked in
+  //   the left margin put antialiased pixels at that alpha down a similar span of column,
+  //   and were counted as marks until the run had to begin at row 0 as only a full-height
+  //   line does. The dash pattern leaves gaps, so a third of the rows is the bar.
+  const marks = [];
+  for (let x = 0; x < w; x += 1) {
+    let down = 0, first = h;
+    for (let y = 0; y < h; y += 1) {
+      if (alphaAt(x, y) <= 60 || alphaAt(x, y) >= 120) continue;
+      if (y < first) first = y;
+      down += 1;
+    }
+    if (first <= 2 && down > h * 0.3) marks.push(x);
+  }
+  let ink_margin = 0;
+  for (let y = row; y < h - row; y += 1) {
+    for (let x = 0; x < 26; x += 1) if (isLabel(x, y)) ink_margin += 1;
+  }
+  // Each mark named at both ends: label ink in the top row and in the bottom row, within
+  //   reach of the mark's own column on whichever side it took.
+  const named = marks.map((x) => {
+    let above = 0, below = 0;
+    for (let dx = -16; dx <= 16; dx += 1) {
+      const at = x + dx;
+      if (at < 0 || at >= w) continue;
+      for (let y = 0; y < row; y += 1) if (isLabel(at, y)) above += 1;
+      for (let y = h - row; y < h; y += 1) if (isLabel(at, y)) below += 1;
+    }
+    return { x, above, below };
+  });
+  return { w, h, marks, named, ink_margin };
+}, ROW_LABEL_DRAWN);
+
+// **Both modes name the heights the curve is read against.** Linear drew five bare rules
+// and not one word, so a reader could see that some height mattered without being told
+// which; log named two of its three decades and left the 99.9% ceiling -- the whole reason
+// to switch to it -- unnamed. Checked in both, because only one of them was ever right.
+//   Toggled through the element itself rather than a real click: the drawer is shut at
+//   this point in the run, and Playwright rightly refuses to click what a reader cannot
+//   see. What is under test here is what the axis draws, not how the switch is reached --
+//   the switch's own wiring is driven with the drawer open, further up.
+const toggleLog = () => page.evaluate(() => {
+  document.getElementById('toggle-exceedance-log').click();
+  drawExceedance();
+});
+const ink_linear = (await readAxisInk()).ink_margin;
+await toggleLog();
+const ink_log = (await readAxisInk()).ink_margin;
+await toggleLog();
+report(
+  'both scales of the axis name the heights they are read against',
+  ink_linear > 40 && ink_log > 40,
+  `${ink_linear} pixels of label linear, ${ink_log} log`,
+);
+
+// **Each mark is a rate and a duration.** The dashed line is one ruler read from both ends
+// -- "60" above it and "16.7" below -- so a reader never converts between the two in their
+// head. The durations are the new half; before them the bottom row was empty.
+const ink_floor = await readAxisInk();
+report(
+  'every budget mark is named as a rate above it and a duration below it',
+  ink_floor.marks.length >= 3 &&
+    ink_floor.named.every((mark) => mark.above > 0 && mark.below > 0),
+  `${ink_floor.marks.length} marks at columns ${ink_floor.marks.join(', ')}, ` +
+    `named ${ink_floor.named.map((m) => `${m.above}/${m.below}`).join(' ')}`,
+);
+
+// **The slowest mark the axis is always guaranteed to reach stands clear of its right
+// edge.** At a floor of exactly 1000/30 the 30 fps line landed *on* that edge, half a pixel
+// outside the canvas, and its label flipped to the cramped inside-left branch -- alone
+// among the marks in reading right to left. The floor now carries room for it.
+report(
+  'the 30 fps mark stands inside the axis at its narrowest, with room to name it',
+  ink_floor.marks.length > 0 &&
+    ink_floor.marks[ink_floor.marks.length - 1] <= ink_floor.w - 15,
+  `slowest mark at column ${ink_floor.marks[ink_floor.marks.length - 1]} ` +
+    `of ${ink_floor.w}, on a 0-${MILLISECONDS_FLOOR_DRAWN.toFixed(1)} ms floor`,
+);
+
+// **And the 15 fps mark waits for a window that needs it.** It is drawn by the same rule
+// every other mark is -- only where the axis reaches it -- so it must be absent from the
+// fast window above and present once the window holds frames that slow. The floor does not
+// widen to accommodate it: 30 fps is what sets the minimum.
+await page.evaluate(() => {
+  for (let i = 0; i < 1024; i += 1) window.__record_kept(10 + Math.random() * 80);
+});
+await settleAxis();
+const ink_wide = await readAxisInk();
+report(
+  'and the 15 fps mark appears only once the window holds a frame that slow',
+  //   Counts alone: that each mark is named is the check above's business, and a check
+  //   that fails for two reasons tells you neither.
+  ink_floor.marks.length === 3 && ink_wide.marks.length === 4,
+  `${ink_floor.marks.length} marks on a fast window, ${ink_wide.marks.length} on a slow one`,
 );
 
 // **The axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one
@@ -1632,10 +1754,13 @@ report(
   work_moving !== null,
   `${work_moving === null ? 0 : work_moving.n} frames sampled mid-drag`,
 );
-// The band grew from 20 when `directionAcross` went back to being the triple join it is
-// specified as: exercising the algebra is what the project exists to do, and the join is
-// its measured price -- see PROVENANCE.md's bottleneck ledger. The band still catches the
-// collapse class a reader felt (30+ ms builds).
+// The band grew from 20 when `directionAcross` was the triple join. It is a cross product
+// again -- the ribbon is the picture's business, not the algebra's, see the boundary in
+// PROVENANCE.md -- so that justification has lapsed, and the band is now simply what
+// catches the collapse class a reader felt (30+ ms builds) without timing this container.
+// **It is close to the bone on a loaded shared runner**: identical code has measured 25.0
+// and 29.8 ms hours apart here. A failure at 27-30 says to re-measure against the previous
+// commit before believing it; a failure well past 30 is the collapse this exists for.
 reportWithin(
   'a frame is still assembled inside its budget while the camera moves',
   work_moving === null ? -1 : work_moving.median, 0, 26, 'ms',

@@ -1109,6 +1109,19 @@ different.
 line, finite plane, horizon plane. A horizon line is tested against the great circle it draws
 as, sampled the way `mesh.addGreatCircle` samples it. A horizon plane matches every ray, since
 it is a dome over every direction — last of all, so anything else under the cursor wins.
+  A **point** at the horizon was the exception, and silently: `pickNearest` built its
+`DrawExtent` fieldwise, leaving the four multivector twins zero. `tessellate.anchorFor`
+places a horizon point at `eye_point + radius*heading`, so a zero eye left the sum
+weightless, `position` answered none, and the branch hit `continue` before anything could
+be ranked. The symptom was a line's attitude being unselectable while the line itself —
+drawn out to exactly that point, "with no gap" — took every click. The ranking was never
+wrong: a point already outranks a line. The extent now goes through `algebraFilled`, the
+one derivation point, whose own doc comment had predicted this failure mode
+("a hand-built extent … or its twins are zero multivectors"); the four locals that derived
+the same values beside it are gone, so there is no second copy to fill and forget. The
+horizon *line* path had worked only because it used one of those locals rather than the
+field. Verified by a suite case that first asserts the line alone is picked at that pixel,
+so the case cannot pass on a cursor that simply misses it.
 
 That last one costs something the design had to answer rather than discover: **the cursor is
 then over *something* almost everywhere.** Scanning a grid over the eleven-step demo, "nothing
@@ -2186,26 +2199,53 @@ a reader tuning for smoothness is after; log over three decades of the distance 
 (the share still at or over) reads it properly and compresses the bulk in exchange. Neither
 is right for every question, so it is a switch rather than a choice made once — off by
 default, since linear is what the chart is for and log is the question a reader goes looking
-for. In log the rules move to the decades and are labelled (90%, 99%), a decade line not
-being self-evident the way a quarter is, and the caption names the mode so a screenshot says
-which axis its curve was read against. The bands, the labelled budget lines, the eased axis
+for. In log the rules move to the decades, and the caption names the mode so a screenshot
+says which axis its curve was read against.
+  **Every rule is labelled, in both modes.** Shipped with linear drawing five bare rules and
+log naming only two of its three decades — so linear told a reader that some height mattered
+without saying which, and log left the 99.9% ceiling, the whole reason to switch to it,
+unnamed. Linear now names its quarters (0/25/50/75/100%) and log its decades up to 99.9%,
+which also retired the caption's `log to 99.9%` suffix: the axis states its own ceiling. The
+one placement exception is the rule on the plot's floor, whose label goes into the row below
+the plot at the left margin — under it is off the plot, above it lands on 25%, and the two
+overlapped outright when first drawn. The bands, the labelled budget lines, the eased axis
 and the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
 pill shares the header chips' own CSS rules rather than copying them, at the caption row's
 scale — but **keeps a resting border and surface those chips do without**, because the
 header's chips read as controls only by sitting inside `.toggles`, which draws a bordered
 pill around the group. Shipped once without them, the switch rendered as the word "log" in
 the caption's own ink and was reported missing.
-  **The axis follows the window, floored at the 30 fps mark.** Fitting alone made the same
-curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
+  **The axis follows the window, floored a little past the 30 fps mark.** Fitting alone made
+the same curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
 max its place on the chart. The floor is what keeps both: at 30 fps and better the axis
 stands still and the budget lines keep their places, so two readings of a healthy session
 compare directly, while a session with a stall in it stretches to exactly that stall and
 the curve's 100% lands on it. It is the bands that made this affordable — an axis that
-moves stays legible when the colours and the labelled lines say where the budgets are. The
-three budgets a reader aims at are dashed and labelled by *rate* (120, 60, 30),
-because a duration means nothing to most people and "60" means something to everyone, and
-the curve is drawn in one run per band so the colour changes exactly at the line it is read
-against. The four band colours are a **status** ramp, not the object palette — an object's
+moves stays legible when the colours and the labelled lines say where the budgets are.
+  The floor is stated as the **share of the axis the slowest guaranteed mark stands at**
+(`SHARE_MARK_LEAST = 0.86`), not as that mark's own duration. At exactly `1000 / 30` the
+30 fps line landed *on* the right edge — half a pixel outside the canvas, its label flipped
+to the cramped inside-left branch, alone among the marks in reading right to left. The
+margin has to be a share because the canvas is responsive: a fixed number of milliseconds
+buys a different number of pixels at every drawer width, and 14% clears the label's own
+14px threshold down to about a 110px canvas. The floor is therefore ~38.8 ms, and 30 fps
+remains what sets it.
+  **Each mark is named twice — the rate above the line, the duration below it** (120/8.3,
+60/16.7, 30/33.3, 15/66.7) — so one dashed line answers both "how smooth is that" and
+"how long is that", and a reader never converts between them in their head. The line spans the
+full canvas height, which is what ties the two ends into one ruler; that in turn is why the
+canvas grew from 74px to 96px and the plot became the canvas less an 11px label row at each
+end. Overlaying the rows was tried and rejected: the curve reaches 100% in the top right,
+under the slowest mark's own label, and 0% in the bottom left, where the durations go.
+  The **15 fps mark** carries the poor band's own colour token on purpose. The budget list
+is both the marks and the colour bands — `bandOfExceedance` indexes it, `colours_exceedance`
+maps over it — so a fifth entry would otherwise invent a fifth band. Anything past 33.3 ms
+is poor whichever side of 66.7 it falls: the curve merely splits into two runs there and
+strokes them the same colour. The repeated token is load-bearing, and removing it would
+either lose the mark or invent a band. It appears only once the window holds a frame that
+slow; the floor does not widen to accommodate it.
+  The curve is drawn in one run per band so the colour changes exactly at the line it is
+read against. The four band colours are a **status** ramp, not the object palette — an object's
 colour says which object — screened through the dataviz validator against the drawer's own
 surface exactly as the object palette was: all four inside the dark lightness band, all
 clearing 3:1, worst adjacent normal-vision ΔE 16.3. The "good" band is a **jade** rather

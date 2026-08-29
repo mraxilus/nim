@@ -1763,22 +1763,42 @@ function recordFrameTime(delta_milliseconds) {
 // How far the log axis runs, when the reader switches to it: decades from every frame down
 //   to one in a thousand, which is as fine as a window of a thousand frames can resolve.
 const DECADES_EXCEEDANCE = 3;
-// **The axis follows the window, but never closes below the slowest budget.** Fitting it to
-//   the slowest frame is what makes the max readable -- the curve reaches 100% exactly
-//   there -- and the floor is what stops a fast session zooming into its own noise: at
-//   30 fps and better, the axis stands still and the three budget lines keep their places,
-//   so two readings of a healthy session compare directly. It is the bands that made this
-//   affordable: an axis that moves is legible when the colours and the labelled lines say
-//   where the budgets are regardless of how far it runs.
-const MILLISECONDS_AXIS_LEAST = 1000 / 30;
+// **The axis follows the window, but never closes below the slowest budget plus room to
+//   name it.** Fitting it to the slowest frame is what makes the max readable -- the curve
+//   reaches 100% exactly there -- and the floor is what stops a fast session zooming into
+//   its own noise: at 30 fps and better the axis stands still and the budget lines keep
+//   their places, so two readings of a healthy session compare directly. It is the bands
+//   that made this affordable: an axis that moves is legible when the colours and the
+//   labelled lines say where the budgets are regardless of how far it runs.
+//   Stated as the share of the axis the slowest labelled mark stands at, not as that
+//   mark's own duration. At exactly `1000 / 30` the 30 fps line landed on the right edge:
+//   half a pixel outside the canvas, and its label flipped to the cramped inside-left
+//   branch below, alone among the marks in reading right to left. The margin has to be a
+//   share because the canvas is responsive -- a fixed number of milliseconds buys a
+//   different number of pixels at every drawer width -- and 14% clears the label's own
+//   14px threshold down to about a 110px canvas.
+const SHARE_MARK_LEAST = 0.86;
+const MILLISECONDS_AXIS_LEAST = (1000 / 30) / SHARE_MARK_LEAST;
 // The frame budgets a reader actually aims at, each named by the rate it is: a duration
 //   means nothing to most people and "60" means something to everyone.
+//   This list is both the marks and the colour bands: `bandOfExceedance` indexes it and
+//   `colours_exceedance` maps over it. The 15 fps entry therefore carries the *poor band's
+//   own token* on purpose -- it is a mark a reader asked for, not a fifth band. Anything
+//   past 33.3 ms is poor whichever side of 66.7 it falls, so the curve merely splits into
+//   two runs there and strokes them the same colour. **Do not tidy the repeated token
+//   away**: dropping it would either lose the mark or invent a band.
 const BUDGETS_EXCEEDANCE = [
   { milliseconds: 1000 / 120, label: '120', token: '--speed-fast' },
   { milliseconds: 1000 / 60, label: '60', token: '--speed-good' },
   { milliseconds: 1000 / 30, label: '30', token: '--speed-fair' },
+  { milliseconds: 1000 / 15, label: '15', token: '--speed-poor' },
   { milliseconds: Infinity, label: '', token: '--speed-poor' },
 ];
+// How much of the canvas each label row takes, top and bottom: a 9px line plus its lead.
+//   The rows are real rather than painted over the plot because the curve reaches both
+//   corners they would sit in -- 100% at the top right, under the slowest mark's own
+//   label, and 0% at the bottom left, where the durations now go.
+const ROW_LABEL_EXCEEDANCE = 11;
 // Read once from the stylesheet, which is where they are set and tuned; see the tokens'
 //   own comment in `shell.html` for how the four were screened.
 const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
@@ -1867,46 +1887,70 @@ function drawExceedance() {
   //   the distance from the top -- the share still at or over -- which is the only way the
   //   slowest one percent is legible at all, since linear squeezes it flat against the
   //   ceiling for the last third of the chart.
+  //   The plot is the canvas less one label row at each end; this is the **one** place
+  //   that extent is stated, so the curve, the gridlines and their clamp all follow from
+  //   it and nothing else has to know where the rows are.
+  const y_plot = ROW_LABEL_EXCEEDANCE, h_plot = h - 2 * ROW_LABEL_EXCEEDANCE;
   const yOf = is_exceedance_log
     ? (share_below) => {
         const share_over = Math.max(1 - share_below, Math.pow(10, -DECADES_EXCEEDANCE));
-        return h * (1 + Math.log10(share_over) / DECADES_EXCEEDANCE);
+        return y_plot + h_plot * (1 + Math.log10(share_over) / DECADES_EXCEEDANCE);
       }
-    : (share_below) => h - share_below * h;
+    : (share_below) => y_plot + h_plot - share_below * h_plot;
 
   context_exceedance.font = '9px ' +
     (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
       'monospace');
   context_exceedance.textBaseline = 'top';
-  // Recessive rules at the heights the axis actually resolves. Linear takes a quarter at a
-  //   time, **0% and 100% among them**, since those two are what the curve's own ends are
-  //   read against: leaving one and arriving at the other is how the window's extremes are
-  //   seen at a glance. Log takes the decades instead, and labels them -- a quarter is
-  //   self-evident where "the line nine tenths of the way up" is not. Its own ceiling and
-  //   floor stay unlabelled: they are the frame, and the caption names how far it runs.
+  // Recessive rules at the heights the axis actually resolves, **every one of them named**
+  //   -- an unlabelled rule tells a reader that some height matters without saying which,
+  //   which is worse than no rule at all. Linear takes a quarter at a time, 0% and 100%
+  //   among them, since those two are what the curve's own ends are read against: leaving
+  //   one and arriving at the other is how the window's extremes are seen at a glance.
+  //   Log takes the decades instead, up to the 99.9% its three decades actually reach --
+  //   the ceiling is the whole reason to switch to it, so it is the last thing that should
+  //   have gone unnamed. Its floor stays a bare rule: 0% is where every curve starts.
   const gridlines = is_exceedance_log
     ? [{ share: 0 }, { share: 0.9, label: '90%' }, { share: 0.99, label: '99%' },
-      { share: 0.999 }]
-    : [{ share: 0 }, { share: 0.25 }, { share: 0.5 }, { share: 0.75 }, { share: 1 }];
+      { share: 0.999, label: '99.9%' }]
+    : [{ share: 0, label: '0%' }, { share: 0.25, label: '25%' },
+      { share: 0.5, label: '50%' }, { share: 0.75, label: '75%' },
+      { share: 1, label: '100%' }];
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
   context_exceedance.lineWidth = 1;
   for (const gridline of gridlines) {
-    // Held a half-pixel inside the canvas at the two ends, where the line would otherwise
+    // Held a half-pixel inside the plot at the two ends, where the line would otherwise
     //   straddle the edge and render at half its weight or not at all.
-    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
+    const y = Math.min(y_plot + h_plot - 0.5,
+      Math.max(y_plot + 0.5, Math.round(yOf(gridline.share)) + 0.5));
     context_exceedance.beginPath();
     context_exceedance.moveTo(0, y);
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
     if (gridline.label === undefined) continue;
-    // Under the line and at the left margin, which the budget labels along the top row and
+    // Under the line and at the left margin, which the rate labels along the top row and
     //   the curve's own climb both leave clear.
+    //   The rule on the plot's own floor is the exception: under it is off the plot, and
+    //   above it lands on top of the next label up -- 0% and 25% overlapped outright. It
+    //   goes into the bottom row instead, at the left margin, which is empty because the
+    //   first duration stands at its own mark a fifth of the way across at the very
+    //   narrowest the axis gets.
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    context_exceedance.fillText(gridline.label, 2, y + 1);
+    const is_floor = y + ROW_LABEL_EXCEEDANCE >= y_plot + h_plot;
+    context_exceedance.textBaseline = is_floor ? 'bottom' : 'top';
+    context_exceedance.fillText(gridline.label, 2, is_floor ? h - 1 : y + 1);
   }
-  // The budgets themselves, each named by its frame rate, and drawn only where the axis
-  //   actually reaches them: at the floor the 30 fps line stands on the right edge, and a
-  //   window with nothing slower than 120 fps in it has no business drawing the other two.
+  context_exceedance.textBaseline = 'top';
+  // The budgets themselves, **each named twice**: the rate above and the duration it is
+  //   below, so one dashed line answers both "how smooth is that" and "how long is that"
+  //   and a reader never has to convert between them in their head. The line runs the full
+  //   height of the canvas rather than the plot's, which is what ties the two ends of the
+  //   ruler together as one mark.
+  //   Drawn only where the axis actually reaches them: a window with nothing slower than
+  //   120 fps in it has no business drawing the others, and the 15 fps mark stays away
+  //   until the window holds a frame that slow. The floor is set so the slowest mark the
+  //   axis is guaranteed to reach -- 30 fps -- stands clear of the right edge with room
+  //   for its own labels; see `SHARE_MARK_LEAST`.
   context_exceedance.setLineDash([2, 3]);
   for (const budget of BUDGETS_EXCEEDANCE) {
     if (!Number.isFinite(budget.milliseconds)) continue;
@@ -1918,13 +1962,19 @@ function drawExceedance() {
     context_exceedance.lineTo(x, h);
     context_exceedance.stroke();
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    // Inside the line where it would otherwise run off the right edge.
+    // Inside the line where it would otherwise run off the right edge. Both rows take the
+    //   same side, so the rate and its duration stay in one column whichever way they go.
     const is_room = x + 14 < w;
     context_exceedance.textAlign = is_room ? 'left' : 'right';
-    context_exceedance.fillText(budget.label, x + (is_room ? 2 : -2), 1);
+    const x_label = x + (is_room ? 2 : -2);
+    context_exceedance.textBaseline = 'top';
+    context_exceedance.fillText(budget.label, x_label, 1);
+    context_exceedance.textBaseline = 'bottom';
+    context_exceedance.fillText(budget.milliseconds.toFixed(1), x_label, h - 1);
   }
   context_exceedance.setLineDash([]);
   context_exceedance.textAlign = 'left';
+  context_exceedance.textBaseline = 'top';
 
   // The curve, in one run per band, each stroked in that band's own colour and each
   //   starting where the last ended so the line is continuous across the change. Drawn
@@ -1974,7 +2024,7 @@ function drawExceedance() {
     //   the drawer says which axis the curve in it was read against.
     label_exceedance_axis.textContent =
       'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms' +
-      (is_exceedance_log ? ' \u00b7 log to 99.9%' : '');
+      (is_exceedance_log ? ' \u00b7 log' : '');
   }
 }
 
