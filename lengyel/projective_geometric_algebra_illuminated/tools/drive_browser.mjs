@@ -1136,6 +1136,53 @@ report(
   `a mixed window reads 0-${reach.milliseconds} ms, a fast one 0-${floored} ms`,
 );
 
+// **One freak frame does not get to set the axis.** A collection pause, or a tab regaining
+// focus, drops a single enormous sample into the window; an axis fitted to it flattens
+// every other frame against the left edge for the seventeen seconds it takes to age out.
+// Exactly one sample comes off each end for the drawing, so the outlier below is spent
+// disarming itself -- while the histogram keeps it and the window still counts it, because
+// a stated statistic that discarded its own worst sample would be lying about the session.
+const trimmed = await page.evaluate(() => {
+  for (let i = 0; i < 1024; i += 1) recordExceedance(5 + Math.random() * 9);
+  recordExceedance(400);
+  drawExceedance();
+  const canvas = document.getElementById('exceedance');
+  const pixels = canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data;
+  let top = canvas.height;
+  let rightmost = -1;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (pixels[(y * canvas.width + x) * 4 + 3] < 200) continue;
+      if (y < top) top = y;
+      if (x > rightmost) rightmost = x;
+    }
+  }
+  const said = document.getElementById('diag-exceedance-axis').textContent;
+  return {
+    milliseconds: Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]),
+    // A 400 ms frame lands in the last bucket, which is where everything past the
+    //   histogram's own end is kept rather than dropped.
+    held: buckets_exceedance[BUCKETS_EXCEEDANCE - 1],
+    counted: scanExceedance(),
+    drawn: scanTrimmed(),
+    top, rightmost, width: canvas.width,
+  };
+});
+report(
+  'a single freak frame is left out of the drawing, and kept in the window',
+  // The axis stands at its floor rather than at the outlier's 128 ms, the curve still
+  //   arrives at 100%, and it does so where the second-slowest frame is -- a third of the
+  //   way across -- rather than running out to the far edge the outlier would have set.
+  Math.round(trimmed.milliseconds) === 33 && trimmed.held === 1 &&
+    trimmed.counted - trimmed.drawn === 2 &&
+    trimmed.top <= 2 && trimmed.rightmost < trimmed.width * 0.6,
+  `axis 0-${trimmed.milliseconds} ms with a 400 ms frame in the window, ` +
+    `${trimmed.held} in the last bucket, ${trimmed.counted} counted and ` +
+    `${trimmed.drawn} drawn, curve to row ${trimmed.top} and column ` +
+    `${trimmed.rightmost} of ${trimmed.width}`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the

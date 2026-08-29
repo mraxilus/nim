@@ -2038,13 +2038,13 @@ taken only when the panel is open; a sample past the last bucket lands *in* it, 
 exceedance** — the suffix sum is the natural way to compute it — and only the drawing turns
 it over.
   **It climbs, between its own two ends.** A rising curve answers the question as asked:
-how much of the session came in under this. It is drawn only from the fastest frame the
-window holds to the slowest, so it leaves 0% at one and arrives at 100% at the other
-instead of running flat along both edges, and those two arrivals are how the fastest and
-slowest frames are read off it. The vertical axis is linear, ruled at every quarter and at
-both bounds; a log axis from the top was the alternative, and it would have kept the last
-1% legible where linear squeezes it against the ceiling — the trade taken deliberately for
-a proportion that reads as a proportion.
+how much of the session came in under this. It is drawn only between the two ends of the
+window it plots, so it leaves 0% at one and arrives at 100% at the other instead of running
+flat along both edges, and those two arrivals are how the extremes are read off it. The
+vertical axis is linear, ruled at every quarter and at both bounds; a log axis from the top
+was the alternative, and it would have kept the last 1% legible where linear squeezes it
+against the ceiling — the trade taken deliberately for a proportion that reads as a
+proportion.
   **The axis follows the window, floored at the 30 fps mark.** Fitting alone made the same
 curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
 max its place on the chart. The floor is what keeps both: at 30 fps and better the axis
@@ -2062,6 +2062,20 @@ clearing 3:1, worst adjacent normal-vision ΔE 16.3. The "good" band is a **jade
 than a pure green because pure green against amber measures ΔE 1.2 under protanopia, where
 jade measures 7.9; amber against red sits at 7.7 under deuteranopia, inside the band the
 validator allows only with secondary encoding, which the labelled boundary lines are.
+  **One sample comes off each end, for the drawing only.** A collection pause, or a tab
+regaining focus, drops a single enormous frame into the window; an axis fitted to it
+flattens every other frame against the left edge for the seventeen seconds it takes to age
+out, and one implausibly quick frame does the same at the other end. The drawing works from
+a trimmed copy of the histogram, one sample decremented off the first and last populated
+buckets (both off the same bucket where the spread is one bucket wide), skipped below
+sixteen samples where two are a visible share of the window. Exactly one from each end
+rather than a percentile: enough to disarm a single accident, few enough that a genuine
+cluster of slow frames still sets the axis and still reads as slow. The copy is 256 entries
+per draw and keeps the trimmed view separate from the honest one instead of entangling the
+two. **The histogram and the stated 1 in 100 are untouched** — a statistic that quietly
+discarded its own worst sample would be lying about the session — so the readout can name a
+duration the axis does not reach, which is the intended reading: the trim says what the
+*plot* leaves out, not what the window forgot.
 
 **The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
 and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as

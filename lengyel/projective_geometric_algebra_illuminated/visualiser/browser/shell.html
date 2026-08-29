@@ -1064,7 +1064,8 @@
              under it. A sparkline shows *when* a spike happened and forgets it a few
              seconds later; this shows *how much* of the session runs at each speed. The
              curve leaves 0% at the fastest frame the window holds and reaches 100% at the
-             slowest, so both ends are read straight off it. -->
+             slowest, so both ends are read straight off it -- less one sample from each
+             end, so that a lone collection pause cannot set the axis for everything. -->
         <canvas class="exceedance" id="exceedance"></canvas>
         <div class="diag-legend">
           <span id="diag-exceedance-axis">frames under</span

@@ -1659,6 +1659,43 @@ function scanExceedance() {
   return count_exceedance;
 }
 
+// **The same distribution with its two extremes dropped, for the drawing alone.** One
+//   collection pause, or one tab regaining focus, sets the axis for as long as it takes to
+//   age out and flattens every other frame against the left edge; one implausibly quick
+//   frame does the same to the other end. Exactly one sample comes off each end -- enough
+//   to disarm a single accident, few enough that a genuine cluster of slow frames still
+//   sets the axis and still reads as slow. The histogram itself is left whole: the stated
+//   1 in 100 reports the window as it really was, and a statistic that quietly discarded
+//   its own worst sample would be lying about the session.
+const SAMPLES_TRIM_LEAST = 16; // Below this, two samples are a visible share of the window.
+const trimmed_exceedance = new Int32Array(BUCKETS_EXCEEDANCE);
+const shares_trimmed = new Float64Array(BUCKETS_EXCEEDANCE);
+function scanTrimmed() {
+  trimmed_exceedance.set(buckets_exceedance);
+  let counted = count_exceedance;
+  if (counted >= SAMPLES_TRIM_LEAST) {
+    let first = -1;
+    let last = 0;
+    for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
+      if (trimmed_exceedance[i] === 0) continue;
+      if (first < 0) first = i;
+      last = i;
+    }
+    // Both come off the one bucket where the window's whole spread is a single bucket
+    //   wide. That bucket then holds at least fourteen, since the trim is skipped below a
+    //   handful of samples, so neither decrement can drive a count negative.
+    trimmed_exceedance[first] -= 1;
+    trimmed_exceedance[last] -= 1;
+    counted -= 2;
+  }
+  let running = 0;
+  for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
+    running += trimmed_exceedance[i];
+    shares_trimmed[i] = counted === 0 ? 0 : running / counted;
+  }
+  return counted;
+}
+
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
   recordExceedance(delta_milliseconds);
@@ -1708,15 +1745,17 @@ function drawExceedance() {
   context_exceedance.clearRect(0, 0, w, h);
   const counted = scanExceedance();
   if (counted === 0) return;
+  scanTrimmed();
 
-  // The window's own bounds, in buckets: the fastest frame it holds and the slowest. The
-  //   curve is drawn between exactly these, so it leaves 0% where the fastest frame is and
-  //   reaches 100% at the slowest instead of running flat along both edges -- which is what
-  //   makes the two of them readable rather than merely present.
+  // The drawn window's own bounds, in buckets: its fastest frame and its slowest, both
+  //   read off the *trimmed* histogram so a single accident at either end cannot set them.
+  //   The curve is drawn between exactly these, so it leaves 0% where the second-fastest
+  //   frame is and reaches 100% at the second-slowest instead of running flat along both
+  //   edges -- which is what makes the two of them readable rather than merely present.
   let bucket_first = -1;
   let bucket_last = 0;
   for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
-    if (buckets_exceedance[i] === 0) continue;
+    if (trimmed_exceedance[i] === 0) continue;
     if (bucket_first < 0) bucket_first = i;
     bucket_last = i;
   }
@@ -1780,10 +1819,10 @@ function drawExceedance() {
   for (let i = bucket_first; i <= bucket_last; i += 1) {
     const milliseconds = i * MILLISECONDS_BUCKET;
     const band = bandOfExceedance(milliseconds);
-    // `shares_exceedance[i]` is the share at or over this duration, so its complement is
-    //   the share below it -- the histogram stays an exceedance and only the drawing turns
+    // `shares_trimmed[i]` is the share at or over this duration, so its complement is the
+    //   share below it -- the histogram stays an exceedance and only the drawing turns
     //   over, which is what keeps the scan a plain suffix sum.
-    const point = [xOf(milliseconds), yOf(1 - shares_exceedance[i])];
+    const point = [xOf(milliseconds), yOf(1 - shares_trimmed[i])];
     if (band !== band_open) {
       if (band_open >= 0) {
         // Carry the run into the boundary before closing it, so the two runs meet on the
