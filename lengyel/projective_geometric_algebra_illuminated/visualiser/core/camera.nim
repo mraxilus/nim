@@ -29,7 +29,7 @@
 import std/[math, options]
 
 import ../../pga
-import ./[boundary, mesh]
+import ./[boundary, tessellate]
 
 
 
@@ -51,15 +51,15 @@ const
     ##   Nothing downstream needs a ceiling: the clip planes are both fractions of the
     ##   orbit distance (`FACTOR_CLIP_NEAR`, `FACTOR_CLIP_FAR`), so the frustum keeps its
     ##   shape at any distance, and the ground grid bounds its own line count
-    ##   (`mesh.CELLS_GRID_HALF_MAX`) rather than leaning on this. What does degrade, far
-    ##   out, is `mesh.Vertex`'s float32 storage: past roughly a million units a
+    ##   (`tessellate.CELLS_GRID_HALF_MAX`) rather than leaning on this. What does degrade, far
+    ##   out, is `tessellate.Vertex`'s float32 storage: past roughly a million units a
     ##   coordinate carries less than a tenth of a unit of precision, and furniture that
     ##   far out will visibly quantise. That is a reason to state the limit, not to
     ##   impose one short of it.
   FACTOR_CLIP_FAR* = 20.0
     ## Set the far clip plane this many times the orbit distance out. Scaled rather than
-    ## fixed so everything meant to read as "at the horizon" -- `mesh.radiusHorizonFor`,
-    ## `mesh.extentFurnitureFor`, and the far end of every drawn line -- stays past what
+    ## fixed so everything meant to read as "at the horizon" -- `tessellate.radiusHorizonFor`,
+    ## `tessellate.extentFurnitureFor`, and the far end of every drawn line -- stays past what
     ## the frame can show at any orbit distance. A fixed plane cannot: the view's own
     ## extent grows with distance while the plane does not, so dollying out eventually
     ## brings a line's own far end inside the frame, where it reads as stopping in
@@ -397,21 +397,23 @@ func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
   ## where from, and everything a ribbon needs to hold a constant width on screen.
   ##   One constructor, because there were four -- three literal copies in `visualiser.nim`
   ##   and a fourth in `browser_bridge`, whose own doc comment admitted to duplicating
-  ##   them. It lives here rather than in `mesh`, where `DrawExtent` is declared, because
-  ##   it reads a `Camera` and `camera` imports `mesh` rather than the other way round.
+  ##   them. It lives here rather than in `tessellate`, where `DrawExtent` is declared, because
+  ##   it reads a `Camera` and `camera` imports `tessellate` rather than the other way round.
   ##   `height_pixels` is the framebuffer's, not the window's: a ribbon's width is
   ##   measured in the pixels actually drawn.
   let eye = camera.eye
   # `algebraFilled` derives the four multivector twins from the plain fields -- the one
   #   derivation point, shared with every hand-built extent.
   algebraFilled(DrawExtent(
-    extent_furniture: extentFurnitureFor(camera.distanceFar),
-    eye: eye,
-    radius_horizon: radiusHorizonFor(camera.distanceFar),
-    forward: camera.frame(eye).forward,
-    tangent_half_view: tan(0.5*degToRad(camera.degrees_field_of_view)),
-    height_pixels: height_pixels,
-    depth_near: camera.distanceNear,
+    scale: DrawScale(
+      extent_furniture: extentFurnitureFor(camera.distanceFar),
+      eye: eye,
+      radius_horizon: radiusHorizonFor(camera.distanceFar),
+      forward: camera.frame(eye).forward,
+      tangent_half_view: tan(0.5*degToRad(camera.degrees_field_of_view)),
+      height_pixels: height_pixels,
+      depth_near: camera.distanceNear,
+    ),
   ))
 
 
@@ -534,7 +536,7 @@ func `==`*(a, b: CameraAim): bool =
 
 func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
   ## Grow a bound just enough to contain one more ball -- a point where `reach` is zero, a
-  ## plane's whole drawn disc where it is `mesh.EXTENT_PLANE_F`.
+  ## plane's whole drawn disc where it is `tessellate.EXTENT_PLANE_F`.
   ##   Incremental rather than a fit over the whole set at once, so a caller folding a
   ##   selection needs no array to fold over and allocates nothing. The result depends on
   ##   the order objects arrive in and can be a little wider than the tightest sphere over
@@ -577,7 +579,7 @@ func aimIncluding*(
   ##   they contribute nothing thereafter; see `CameraAim.is_bound_by_fitted`. Which
   ##   objects contribute does not depend on the order they arrive in.
   ##   `anchor_override` centres a plane's disc there instead of on its own support, read
-  ##   exactly as `mesh.addPlane` reads it, so the sphere is built round the disc actually
+  ##   exactly as `tessellate.addPlane` reads it, so the sphere is built round the disc actually
   ##   drawn; ignored for every other shape, as it is there.
   ##   Horizon objects deliberately widen nothing: `anchorFor` places a star at
   ##   `scale.eye`, and a goal built from where the camera stands would stop comparing
@@ -821,7 +823,7 @@ proc advance*(
 ) =
   ## Carry the camera one frame further toward its destination, and mark it arrived there.
   ##   `ease` is passed in rather than imported so this module stays independent of where
-  ##   the project keeps its easing curve; callers hand it `mesh.easeOutCubic`, which is
+  ##   the project keeps its easing curve; callers hand it `tessellate.easeOutCubic`, which is
   ##   the same curve and duration a freshly added object grows in with.
   if tween.goal.isNone or tween.is_arrived: return
   let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))

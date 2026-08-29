@@ -5,7 +5,7 @@
 ## operators -- and only the *pixel* half of a test is screen math: a point or line is
 ## judged by pixel distance to its projection, which answers where a pixel is, a
 ## rasterisation question. A line's own endpoints are assembled the same way
-## `mesh.addLine` draws them -- `radius_horizon` along its attitude from the eye's own
+## `tessellate.addLine` draws them -- `radius_horizon` along its attitude from the eye's own
 ## point -- so a hit always agrees with what is drawn.
 ##
 ## Plane is tested differently, through the algebra rather than around it: cursor's own
@@ -36,7 +36,7 @@
 import std/[math, options]
 
 import ../../pga
-import ./[boundary, camera, mesh, scene]
+import ./[boundary, camera, tessellate, scene]
 
 
 
@@ -66,7 +66,7 @@ const
 const INSET_POINT_SHOWN* = 0.5*float(SIZE_POINT)
   ## Shrink the centred box by this many pixels when asking whether a *point* is in view,
   ## so its drawn dot fits inside rather than only its middle.
-  ##   Half of what `mesh.addPoint` draws, which is the dot's own radius.
+  ##   Half of what `tessellate.addPoint` draws, which is the dot's own radius.
   ##   Deliberately **not** the selection marker's own radius, which would be the wider
   ##   reading of "fits": that ring swells while a touch hold fills (see
   ##   `marker.clearanceTouch`), and a box that breathed with a gesture would re-frame the
@@ -78,7 +78,7 @@ const INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
   ## Shrink the **frame** by this many pixels when asking whether a *plane* is in view, so
   ## a rim resting on the very edge has its whole stroke drawn rather than half of it
   ## clipped away.
-  ##   Half of what `mesh.addPlaneRing` strokes the rim at, which is the same relationship
+  ##   Half of what `tessellate.addPlaneRing` strokes the rim at, which is the same relationship
   ##   `INSET_POINT_SHOWN` has to the dot it keeps whole -- and, at 1.25 px, the entire
   ##   price of letting a disc reach the edge instead of stopping short of it.
 
@@ -141,11 +141,11 @@ func clipToEyeSide*(
   ## Clip segment `tail`-`head` to the near side of `plane_near` -- the camera's own near
   ## plane, `DrawExtent.plane_near` -- the same near-side clip the GPU performs when
   ## actually drawing the segment, needed here since a screen-space hit test divides by
-  ## each endpoint's own depth, which the far reach `mesh.addLine` gives a line can put
+  ## each endpoint's own depth, which the far reach `tessellate.addLine` gives a line can put
   ## at or behind the eye even while the near half of the same segment fills the screen.
   ##   The crossing is the meet of the segment's own line with the plane -- the algebra's
   ##   statement of the clip -- and each end's side is its `depthAgainst` sign. Held equal
-  ##   to the componentwise interpolation `mesh.addSegment`'s packing still performs (that
+  ##   to the componentwise interpolation `tessellate.addSegment`'s packing still performs (that
   ##   copy is the GPU boundary and is licensed to stay plain) by a suite case, so the
   ##   two clips cannot drift apart.
   ##   Exported for `marker.markerRails`, which flanks exactly the run this clips and
@@ -325,7 +325,7 @@ func rayPlaneHit(
   let distance = depthAgainst(plane_eye, hit)
   if distance <= 1.0e-6: return
 
-  # Bound is circular, matching `mesh.addPlaneRing` exactly: a plane's own hit test
+  # Bound is circular, matching `tessellate.addPlaneRing` exactly: a plane's own hit test
   #   should agree with what is drawn, not with a square the render no longer produces.
   #   Distance between the hit and the disc's own centre, through the algebra.
   if distanceBetween(hit, toMultivector(anchor)) > extent: return
@@ -362,7 +362,10 @@ func pickNearest*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    scale = DrawExtent(eye: eye, radius_horizon: radiusHorizonFor(camera.distanceFar))
+    scale = DrawExtent(scale: DrawScale(
+      eye: eye,
+      radius_horizon: radiusHorizonFor(camera.distanceFar),
+    ))
     # The eye's own plane and the near plane, once per pick -- every branch below reads
     #   depths and clips against these rather than re-deriving either per candidate.
     eye_point = toMultivector(eye)
@@ -401,7 +404,7 @@ func pickNearest*(
     of Shape.Line:
       if geometry.isHorizon:
         # Drawn as a great circle on the sky, so tested against that circle -- sampled the
-        #   way `mesh.addGreatCircle` samples it, so a hit agrees with what is drawn, the
+        #   way `tessellate.addGreatCircle` samples it, so a hit agrees with what is drawn, the
         #   rule this module already follows for a finite line's two halves.
         let normal = directionNormalHorizon(geometry)
         if normal.isNone: continue
@@ -430,7 +433,7 @@ func pickNearest*(
         if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
         continue
 
-      # Test both halves `mesh.addLine` draws -- support out to each of the line's own
+      # Test both halves `tessellate.addLine` draws -- support out to each of the line's own
       #   two vanishing points. Testing one would leave the other half of a line on
       #   screen unpickable, and which half that is changes as the camera orbits.
       let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
@@ -636,7 +639,7 @@ func isLineShownCentrally(
       view_projection, width, height,
     )
 
-  # Both halves `mesh.addLine` draws, clipped to the eye side exactly as `pickNearest`
+  # Both halves `tessellate.addLine` draws, clipped to the eye side exactly as `pickNearest`
   #   clips them: half a line can sit behind the eye while the other half fills the frame.
   let (anchor, axis) = (positionAnchor(m), direction(m))
   if anchor.isNone or axis.isNone: return false
@@ -672,7 +675,7 @@ func isPlaneShownCentrally(
   ##   A plane at horizon is the whole sky, drawn as a dome around the eye, so it is in
   ##   view from every camera there is.
   ##   `anchor_override` centres the disc there instead of on the plane's own support, read
-  ##   exactly as `mesh.addPlane` reads it, so what is judged is the circle a reader can
+  ##   exactly as `tessellate.addPlane` reads it, so what is judged is the circle a reader can
   ##   actually see: the two stand as far as 3.7 units apart on the demo scene's own planes,
   ##   against a disc of radius 8.
   if m.isHorizon: return true
@@ -714,7 +717,7 @@ func isShownCentrally*(
   ##   what seeing it means instead. A plane splits the question in two, since its disc is
   ##   the one drawn thing wide enough that "fits" and "is what the view is about" want
   ##   different bounds; see `isPlaneShownCentrally`.
-  ##   Each shape is tested against exactly what `mesh.addObject` puts on screen for it,
+  ##   Each shape is tested against exactly what `tessellate.addObject` puts on screen for it,
   ##   `anchor_override` included, the rule `pickNearest` already follows and for the same
   ##   reason: what counts as in view has to agree with what a reader can actually see.
   ##   Only the *ratio* of `width` to `height` matters -- projection and box scale with

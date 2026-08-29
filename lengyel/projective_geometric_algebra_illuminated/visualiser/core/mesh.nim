@@ -64,8 +64,7 @@
 
 import std/[math, options, strformat]
 
-import ../../pga
-import ./boundary
+import ./euclid
 
 
 
@@ -377,7 +376,12 @@ type
 
   MeshSet* = array[Primitive, Mesh] ## Hold one mesh per primitive kind.
 
-  DrawExtent* = object ## Hold how far this frame's geometry reaches, and from where.
+  DrawScale* = object ## Hold how far this frame's geometry reaches, and from where.
+    ## **The Euclidean half of a frame's camera.** Everything a ribbon needs to hold a
+    ## constant width on screen, and everything the picture is measured against. The
+    ## algebra's own reading of the same camera lives beside it in
+    ## `tessellate.DrawExtent`, which carries this whole record and adds the multivector
+    ## twins; this module cannot name those, which is the point of the split.
     extent_furniture*: float ## How far the ground grid, world axes, and every finite
       ## line extend from the origin or their own support -- tied to the camera's own
       ## far clip distance, via `extentFurnitureFor`, rather than to orbit distance, so
@@ -386,24 +390,8 @@ type
     eye*: Position ## Camera's own eye position, horizon geometry is anchored to, so it
       ## stays in a fixed apparent direction as the camera pans or dollies, exactly as
       ## a real star at effectively infinite distance would.
-      ##   The *boundary* reading of the eye; world-space algebra reads `eye_point`.
-    # The four multivector twins below are the algebra's own reading of this camera,
-    #   derived once per frame in `camera.drawExtentFor` so nothing downstream rebuilds
-    #   `toMultivector(eye)` -- or worse, a whole plane -- per segment. The Position and
-    #   Direction fields they twin stay, because the boundary (the view matrix, ribbon
-    #   packing, `worldPerPixelAt`) is licensed to read components; everything else takes
-    #   the multivectors.
-    eye_point*: Multivector ## The eye as a unit-weight point.
-    forward_point*: Multivector ## The sight direction as a point at the horizon.
-    plane_eye*: Multivector ## The unitized plane through the eye perpendicular to the
-      ## sight direction: `depthAgainst` it is view depth, and its sign is "in front".
-    plane_near*: Multivector ## The same plane pushed `depth_near` forward: the near clip
-      ## as the algebra states it, for `clipToEyeSide`'s own meet.
     radius_horizon*: float ## How far from `eye` horizon geometry -- a star, a great
       ## circle, a whole-sky dome -- is drawn.
-    # The four below are what a *ribbon* needs to hold a constant width on screen; see
-    #   `worldPerPixelAt`. They are the camera's own facts rather than a `Camera`, because
-    #   `camera` imports this module and cannot be imported back.
     forward*: Direction ## Camera's own sight axis, depth is measured along.
     tangent_half_view*: float ## Tangent of half the vertical field of view.
     height_pixels*: int ## Framebuffer height, which the vertical field of view spans.
@@ -416,24 +404,7 @@ type
 
 #[ Camera-Relative Scale ]#
 
-func algebraFilled*(scale: DrawExtent): DrawExtent =
-  ## Return the extent with its four multivector twins derived from its own plain fields.
-  ##   The one derivation point: `camera.drawExtentFor` goes through here, and so must any
-  ##   hand-built extent -- a test fixture, a partial one -- or its twins are zero
-  ##   multivectors and everything algebraic downstream silently draws nothing. Found
-  ##   exactly that way: the suite's own fixtures built extents fieldwise and the ground
-  ##   grid vanished from every one of them.
-  result = scale
-  result.eye_point = toMultivector(scale.eye)
-  result.forward_point = toMultivector(scale.forward)
-  result.plane_eye = planeThrough(result.eye_point, result.forward_point)
-  result.plane_near = planeThrough(
-    add(result.eye_point, wedge(scale.depth_near, result.forward_point)),
-    result.forward_point,
-  )
-
-
-func radiansPerPixel*(scale: DrawExtent): float =
+func radiansPerPixel*(scale: DrawScale): float =
   ## Measure how much of the camera's own angular field one pixel of height spans.
   ##   The small-angle reading of `worldPerPixelAt` at unit depth, and the right unit for
   ##   anything placed by *direction* rather than by position -- horizon geometry is drawn
@@ -441,7 +412,7 @@ func radiansPerPixel*(scale: DrawExtent): float =
   2.0*scale.tangent_half_view/float(max(scale.height_pixels, 1))
 
 
-func worldPerPixelAt*(place: Position; scale: DrawExtent): float =
+func worldPerPixelAt*(place: Position; scale: DrawScale): float =
   ## Measure how much world distance one screen pixel spans at `place`'s own depth.
   ##   What turns a width or a clearance stated in pixels into the world offset it has to
   ##   use, wherever it is anchored in space rather than on screen. Every ribbon's own
@@ -663,49 +634,6 @@ func muted*(base: Rgba): Rgba =
 
 
 
-#[ Representative Point ]#
-
-func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
-  ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
-  ##   Point uses its own place, or its own star position at horizon where it has none,
-  ##   matching exactly where `mesh.addPoint` draws it.
-  ##   Line and plane use their support point, matching what mesh actually anchors on;
-  ##   neither is pickable at horizon (see `pickNearest`'s own doc comment), so no
-  ##   equivalent horizon anchor is needed for them here.
-  ##   None where `m` carries no drawable geometry at all.
-  let shape = shape(m)
-  if shape.isNone: return
-  case shape.get
-  of Shape.Point:
-    let place = position(m)
-    if place.isSome: return place
-    let heading = directionHorizon(m)
-    if heading.isNone: return
-    position(add(
-      scale.eye_point, wedge(scale.radius_horizon, toMultivector(heading.get))
-    ))
-  of Shape.Line, Shape.Plane:
-    positionAnchor(m)
-
-
-func anchorFor*(
-  m: Multivector; anchor_override: Option[Position]; scale: DrawExtent
-): Option[Position] =
-  ## Resolve one point standing for `m` **as it is actually drawn**, for anything that has
-  ## to meet an object on screen: a rubber-band leaving it, a comet aimed from it, a menu
-  ## hanging off it.
-  ##   Reads `anchor_override` exactly as `addPlane` and `marker.markerFor` read it, so a
-  ##   plane's disc has one centre and not two. It matters: on this project's own demo scene
-  ##   the stored creation anchor stands 0.5, 2.7 and 3.7 units from the support, against a
-  ##   disc of radius 8, so a band drawn from the support leaves from a point nowhere on the
-  ##   circle a reader can see.
-  ##   Ignored for every other shape, as `addObject` ignores it: a point and a line are
-  ##   drawn about their own places whatever an item happens to carry.
-  if anchor_override.isSome and shape(m) == some(Shape.Plane): return anchor_override
-  anchorFor(m, scale)
-
-
-
 #[ Appear Animation ]#
 
 func easeOutCubic*(t: float): float =
@@ -741,7 +669,9 @@ proc markOverlay*(meshes: var MeshSet) =
     meshes[primitive].index_overlay = some(meshes[primitive].count_vertices)
 
 
-proc addVertex(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rgba) =
+proc addVertex*(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rgba) =
+  ## Exported for `tessellate`, which fans a plane's fill straight into the triangle
+  ##   bucket rather than through a shape helper.
   ## Append single vertex to mesh of given primitive kind.
   let count = meshes[primitive].count_vertices
   doAssert count < VERTICES_MAX,
@@ -756,28 +686,6 @@ proc addVertex(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rg
 proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   ## Append point marking single position.
   meshes.addVertex(Primitive.Point, at, tint)
-
-
-func directionAcross*(tail, head, eye: Position): Option[Direction] =
-  ## Resolve which way to step off a segment so its own two edges land either side of it
-  ## on screen.
-  ##   Joining the segment's line with the eye gives the one plane containing both; that
-  ##   plane's normal is perpendicular to the line and to every sight ray reaching it,
-  ##   which is exactly the direction that shows as sideways from where the camera stands.
-  ##   The same rule `marker.directionAcross` flanks a line's rails by, stated here over
-  ##   two endpoints rather than over a line's own multivector -- `marker` imports this
-  ##   module, so it delegates here rather than the two carrying a derivation each.
-  ##   None where the eye lies on the segment's own line, or where the segment has no
-  ##   length: neither has a side to step off toward.
-  ##   **The join is the implementation, and it is the hot path's largest cost -- kept.**
-  ##   Every ribbon of every frame runs this, ~3,800 times a frame while the camera moves,
-  ##   and under the JS backend each `∧` of full multivectors walks 16x16 coefficient
-  ##   pairs through `nimCopy`; a written-out cross product was measured 6.7 ms a frame
-  ##   cheaper and was shipped briefly, then reverted -- exercising the algebra is what
-  ##   this project exists to do, and a cost it carries is a finding, not a fault. See
-  ##   PROVENANCE.md's bottleneck ledger. The suite still holds this normal equal to the
-  ##   classical cross product, sign included -- the classical form lives in the test.
-  directionNormal(toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye))
 
 
 func blend(first, second: Rgba; fraction: float): Rgba =
@@ -797,7 +705,7 @@ func blend(first, second: Rgba; fraction: float): Rgba =
 
 proc addSegmentAcross*(
   meshes: var MeshSet; tail, head: Position; across: Direction;
-  tint_tail, tint_head: Rgba; width: float32; scale: DrawExtent
+  tint_tail, tint_head: Rgba; width: float32; scale: DrawScale
 ) =
   ## Append a line segment joining two positions, as a **ribbon**: a world-space quad
   ## `width` pixels across, wound as two triangles, stepped off along `across`.
@@ -856,508 +764,10 @@ proc addSegmentAcross*(
     meshes.addVertex(Primitive.Ribbon, corners[index], tints[index])
 
 
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
-  scale: DrawExtent
-) =
-  ## Append the ribbon for one segment, deriving its own across direction.
-  ##   The general form: the across is the join's normal, per segment -- see
-  ## `directionAcross` -- and the packing is `addSegmentAcross`'s. Silently appends
-  ## nothing where the segment has no side to step off toward: zero length, or an eye
-  ## lying on its own line, where the ribbon is edge-on and covers no pixels anyway.
-  let across = directionAcross(tail, head, scale.eye)
-  if across.isNone: return
-  meshes.addSegmentAcross(tail, head, across.get, tint_tail, tint_head, width, scale)
-
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
-  scale: DrawExtent
-) =
-  ## Append a ribbon of one tint end to end; see the two-tint form above for what it draws.
-  meshes.addSegment(tail, head, tint, tint, width, scale)
-
-
 proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
   ## Append filled quadrilateral, wound as two triangles.
   for index in [0, 1, 2, 0, 2, 3]:
     meshes.addVertex(Primitive.Triangle, corners[index], tint)
 
 
-proc addPlaneRing(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
-) =
-  ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
-  ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is
-  ## drawn.
-  # The circle's own frame, hoisted: the centre and its two radius-long arms as
-  #   multivectors, one assembly per circle; each point is then two scaled arms on the
-  #   centre, read out at the boundary.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
 
-
-proc addPlaneFill(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
-) =
-  ## Append a flat, uniformly translucent fan filling the same circle `addPlaneRing`
-  ## outlines -- flat rather than faded toward the rim, since the rim itself already
-  ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
-  ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
-  ## legible through every one of its triangles alike.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addVertex(Primitive.Triangle, center, tint)
-    meshes.addVertex(Primitive.Triangle, point_a, tint)
-    meshes.addVertex(Primitive.Triangle, point_b, tint)
-
-
-proc addGreatCircle(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
-) =
-  ## Append a closed ring of segments around `center`, in the plane `axis_first` and
-  ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
-  ## the sky, seen from any point, standing for the pencil of directions it names.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
-
-
-func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
-  ## Place point on sphere around the centre point, at colatitude `theta`, longitude `phi`.
-  ##   The angles parametrise a unit direction -- ground-field trig -- and the point is
-  ##   the centre plus that direction scaled, assembled through the algebra.
-  pointFrom(add(centre_point, wedge(radius, toMultivector(Direction(
-    x: sin(theta)*cos(phi), y: sin(theta)*sin(phi), z: cos(theta)
-  )))))
-
-
-proc addDome(
-  meshes: var MeshSet; center: Position; radius: float; tint: Rgba;
-  latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
-) =
-  ## Append a full sphere around `center` -- a plane at horizon is the unique universal
-  ## "whole sky" object, the same regardless of which points produced it (see
-  ## `directionNormalHorizon`'s own doc comment for why), so nothing about its own
-  ## coefficients decides its shape here; only `radius` and `tint` do. Every direction
-  ## the camera can actually see sky in should show it, including looking down across
-  ## the ground grid toward the horizon, not only straight overhead -- an earlier
-  ## version stopped this dome at the eye's own horizontal, reasoning a full sphere
-  ## would bleed through the sparse ground grid's own gaps; reverted on explicit
-  ## feedback that halving it cut off sky the camera genuinely can see. Occlusion
-  ## against anything nearer is the ordinary depth test's job (still on for this
-  ## translucent pass, only its write is off), same as any other drawn geometry --
-  ## not something this proc's own shape needs to work around.
-  let centre_point = toMultivector(center)
-  for lat in 0 ..< latitudes:
-    let
-      theta_a = PI * float(lat) / float(latitudes)
-      theta_b = PI * float(lat + 1) / float(latitudes)
-    for lon in 0 ..< longitudes:
-      let
-        phi_a = 2.0*PI * float(lon) / float(longitudes)
-        phi_b = 2.0*PI * float(lon + 1) / float(longitudes)
-      meshes.addQuad([
-        spherePoint(centre_point, radius, theta_a, phi_a),
-        spherePoint(centre_point, radius, theta_a, phi_b),
-        spherePoint(centre_point, radius, theta_b, phi_b),
-        spherePoint(centre_point, radius, theta_b, phi_a),
-      ], tint)
-
-
-
-#[ World Furniture ]#
-
-func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
-  ## Fall from full alpha at `radius_fade_start` to none at `radius_end` -- past the
-  ## fade start, a grid line's own cells crowd into fewer and fewer screen pixels
-  ## under perspective, reading as aliasing noise rather than as a reference; fading
-  ## them out trades that noise for a clean horizon instead of fighting it.
-  ##   `radius` is a distance **from the eye**, and the two bounds come from
-  ##   `fogFurnitureFor`; see it for why the fog is centred there and not on the origin.
-  ##   Shared with `addAxes`, which fades on the same schedule so that all the world
-  ##   furniture ends at one horizon rather than the grid stopping while the axes run on.
-  1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
-
-
-proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
-  ## Append world axes through origin, each in the standard convention: x red, y green,
-  ## z blue, so orientation reads at a glance regardless of where the camera stands.
-  ##   **Faded out and cut off in the ground grid's own fog**, rather than running the
-  ## full furniture extent at flat alpha as they once did. An axis reaching the horizon at
-  ## full strength is the longest, brightest mark in the frame, and readers were taking
-  ## them for drawn lines -- width alone (`WIDTH_LINE_FURNITURE` against
-  ## `WIDTH_LINE_OBJECT`) was never going to carry that on its own. Sharing the grid's own
-  ## fog rather than taking radii of their own puts all the furniture inside one horizon,
-  ## so reference reads as a neighbourhood around the *reader* and anything outside it is
-  ## content.
-  ##   Each axis is drawn only over the stretch of it lying inside that fog: a chord of
-  ## the sphere of radius `radius_gone` about the eye, solved below. An axis the eye has
-  ## flown clear of contributes nothing at all, which is what fog means -- the origin is
-  ## a place in the world rather than a place the reader is tied to.
-  const AXES_WORLD = [
-    (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
-    (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
-    (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
-  ]
-  let fog = fogFurnitureFor(extent)
-  for (axis, ink) in AXES_WORLD:
-    # Chord of the fog sphere along this axis, about the eye's own perpendicular foot on
-    #   it: the axis passes the eye at `separation`, so it is inside the fog for `half`
-    #   either side of the foot and nowhere else. The foot is the algebra's orthogonal
-    #   projection of the eye onto the axis line; the chord half-length stays a scalar
-    #   solve, since a sphere has no representative in the rigid algebra -- the one
-    #   documented exception, and the incidence feeding it is the library's own.
-    let
-      axis_line = wedge(toMultivector(ORIGIN_WORLD), toMultivector(axis))
-      foot_raw = projectOrthogonal(scale.eye_point, axis_line)
-      foot = position(foot_raw)
-    if foot.isNone: continue
-    let
-      separation = distanceBetween(unitize(foot_raw), scale.eye_point)
-      half_squared = fog.radius_gone*fog.radius_gone - separation*separation
-    if half_squared <= 0.0: continue
-    let
-      half = sqrt(half_squared)
-      tint = ink.colour
-      foot_point = unitize(foot_raw)
-      axis_point = toMultivector(axis)
-      # One across for the whole axis: all its pieces lie on the one line, so they share
-      #   the plane it joins with the eye -- the grid's own per-line rule.
-      across_axis = directionNormal(wedge(axis_line, scale.eye_point))
-    if across_axis.isNone: continue
-    # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
-    #   distance from the eye, so the cutoff never reads as a hard edge.
-    for j in 0 ..< 2*SEGMENTS_GRID_FADE:
-      let
-        end_tail = add(foot_point,
-          wedge(half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
-        end_head = add(foot_point,
-          wedge(half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
-        tint_tail = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_tail, scale.eye_point), fog.radius_full, fog.radius_gone))
-        tint_head = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_head, scale.eye_point), fog.radius_full, fog.radius_gone))
-      meshes.addSegmentAcross(
-        pointFrom(end_tail), pointFrom(end_head), across_axis.get, tint_tail, tint_head,
-        WIDTH_LINE_FURNITURE, scale,
-      )
-
-
-func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
-  ## Solve how far the ground grid reaches from the point directly below the eye, in world
-  ## units, for a camera whose furniture extends `extent`.
-  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about that
-  ## point, of radius `sqrt(radius_gone^2 - height^2)`, the height read as the eye's own
-  ## depth against `objects.groundPlane`. None where the eye stands higher than the fog
-  ## reaches and there is no ground to draw at all.
-  ##   Stated here rather than inside `addGrid` because the cell size a reader is shown on
-  ## the scale bar has to be the cell the grid was drawn with, and two derivations of the
-  ## same disc are two chances to disagree -- the argument `algebraFilled` and
-  ## `extentViewOverlay` already make for their own shared answers.
-  let
-    fog = fogFurnitureFor(extent)
-    height = abs(depthAgainst(groundPlane(), scale.eye_point))
-    radius_squared = fog.radius_gone*fog.radius_gone - height*height
-  if radius_squared <= 0.0: return
-  some(sqrt(radius_squared))
-
-
-func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
-  ## Report the cell size the ground grid is laid on for this camera, in world units, or
-  ## none where no ground is drawn. The one answer both the grid and the scale bar read.
-  let radius_ground = radiusGroundFor(extent, scale)
-  if radius_ground.isNone: return
-  some(sizeCellGridFor(radius_ground.get))
-
-
-func segmentsGridFadeFor*(count_lines: int): int =
-  ## Choose how many pieces each of `count_lines` grid lines is cut into for its fade.
-  ##   `SEGMENTS_GRID_FADE` wherever the whole family fits inside its half of
-  ## `SEGMENTS_GRID_MAX`, and as few as `SEGMENTS_GRID_FADE_MIN` where it does not. The
-  ## budget is halved because the grid is two families laid the same way, and neither
-  ## knows what the other will draw.
-  ##   A pure function of the count so the rule can be held on its own by the suite,
-  ## rather than only observable through a vertex total.
-  if count_lines <= 0: return SEGMENTS_GRID_FADE
-  let allowed = (SEGMENTS_GRID_MAX div 2) div count_lines
-  max(SEGMENTS_GRID_FADE_MIN, min(SEGMENTS_GRID_FADE, allowed))
-
-
-proc addGridFamily(
-  meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
-  along, across: Direction
-) =
-  ## Append one family of ground grid lines: every lattice line running along `along`,
-  ## stepped by `size_cell` along `across`, that falls within `radius_ground` of the
-  ## point on the ground directly below the eye.
-  ##   The cell is passed in rather than read from `SIZE_CELL_GRID` so that both families
-  ## are laid on the one `sizeCellGridFor` answered for this frame's disc; two calls could
-  ## not disagree, but a reader of one family should not have to prove that.
-  ##   The two families are laid separately, unlike the single origin-centred loop this
-  ## replaced, because each is now centred on a different one of the eye's own ground
-  ## coordinates and no longer shares the other's offsets.
-  ##   Lines still sit on **world** multiples of the cell size rather than on offsets from
-  ## the camera, so what the reader sees slide past as they move is the world going by,
-  ## not a grid dragged along with them -- and a line stays where it was when they come
-  ## back to it.
-  # The eye resolved onto the two lattice axes: its depth against the plane through the
-  #   origin perpendicular to each -- the algebra's statement of a coordinate. One plane
-  #   per family per frame, hoisted here rather than rebuilt per lattice line.
-  let
-    origin_point = toMultivector(ORIGIN_WORLD)
-    along_point = toMultivector(along)
-    across_point = toMultivector(across)
-    centre_across = depthAgainst(planeThrough(origin_point, across_point), scale.eye_point)
-    centre_along = depthAgainst(planeThrough(origin_point, along_point), scale.eye_point)
-    first = int(ceil((centre_across - radius_ground)/size_cell))
-    last = int(floor((centre_across + radius_ground)/size_cell))
-    # How finely each line is cut for its fade, decided once for the family from how many
-    #   lines it is about to lay: the budget is a property of the family, and a per-line
-    #   answer would cut neighbouring lines differently and band the fade across the grid.
-    segments_fade = segmentsGridFadeFor(last - first + 1)
-  for i in first .. last:
-    # Skips the lattice line through the world origin: it coincides exactly with a world
-    #   axis, and would either fight it for the same depth or hide its colour under plain
-    #   grid grey, depending on which happened to draw last.
-    if i == 0: continue
-    let
-      offset = float(i)*size_cell
-      reach_squared = radius_ground*radius_ground -
-        (offset - centre_across)*(offset - centre_across)
-    if reach_squared <= 0.0: continue
-    let
-      reach = sqrt(reach_squared)
-      # One base point and **one across** per lattice line: every fade piece lies on this
-      #   line, so they share the plane it joins with the eye, and deriving that join's
-      #   normal once here is the same algebra the per-piece form ran once a piece.
-      base = add(origin_point,
-        add(wedge(offset, across_point), wedge(centre_along, along_point)))
-      across_line = directionNormal(wedge(wedge(base, along_point), scale.eye_point))
-    # An eye on the lattice line itself has no side to step a ribbon off toward -- the
-    #   very refusal `addSegment` makes per piece, made once for the line.
-    if across_line.isNone: continue
-    for j in 0 ..< segments_fade:
-      let
-        a = reach * (2.0*float(j)/float(segments_fade) - 1.0)
-        b = reach * (2.0*float(j + 1)/float(segments_fade) - 1.0)
-        end_a = add(base, wedge(a, along_point))
-        end_b = add(base, wedge(b, along_point))
-        tint_a = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_a, scale.eye_point), fog.radius_full, fog.radius_gone))
-        tint_b = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_b, scale.eye_point), fog.radius_full, fog.radius_gone))
-      meshes.addSegmentAcross(
-        pointFrom(end_a), pointFrom(end_b), across_line.get, tint_a, tint_b,
-        WIDTH_LINE_FURNITURE, scale,
-      )
-
-
-proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
-  ## Append reference grid on the ground, so distance and direction stay judgeable, at
-  ## `sizeCellGridFor` cells laid around wherever the camera is standing.
-  ##   **Fog, not a halo.** Every line is faded by its own endpoints' distance from the
-  ## eye and cut off entirely at `fogFurnitureFor`'s outer radius -- so the ground is
-  ## solid underfoot and gone in the distance, wherever the reader has flown to. Cutting
-  ## the geometry rather than drawing it at ever-fainter alpha is deliberate: past that
-  ## radius cells crowd into so few screen pixels under perspective that even a faint line
-  ## still aliases.
-  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about the
-  ## point below the eye, of radius `sqrt(radius_gone^2 - height^2)`: a camera high above
-  ## the ground sees less of it than one standing on it, exactly as fog would leave.
-  ## An eye higher than the fog reaches sees no ground at all.
-  ##   Dimmed by `ALPHA_GRID` on top of that fade, so the ruled ground reads as reference
-  ## rather than as content; see that constant for why it is applied here and not to the
-  ## palette entry.
-  let
-    base = Ink.Grid.colour
-    tint = base.fade(base.alpha*ALPHA_GRID)
-    fog = fogFurnitureFor(extent)
-    # The disc the fog leaves on the ground, and the cell laid across it -- both through
-    #   `radiusGroundFor`, so what a reader is told the cell is and what the grid is drawn
-    #   with cannot come apart.
-    reach = radiusGroundFor(extent, scale)
-  if reach.isNone: return
-  let
-    radius_ground = reach.get
-    size_cell = sizeCellGridFor(radius_ground)
-  meshes.addGridFamily(
-    scale, tint, fog, radius_ground, size_cell,
-    along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
-  )
-  meshes.addGridFamily(
-    scale, tint, fog, radius_ground, size_cell,
-    along = Direction(x: 1, y: 0, z: 0), across = Direction(x: 0, y: 1, z: 0),
-  )
-
-
-
-#[ Object Tessellation ]#
-
-proc addPoint(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
-): Placement =
-  ## Append grade-1 object as marker, or, at horizon, as a marker fixed at `scale.eye`
-  ## plus its own direction scaled out to `scale.radius_horizon` -- a star effectively
-  ## infinitely far away, staying in the same apparent direction as the camera pans or
-  ## dollies, moving only as the eye itself does.
-  ##   `progress` fades a marker in and, at horizon, also grows how far out it stands.
-  let place = position(geometry)
-  if place.isSome:
-    meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
-    return Placement.Finite
-
-  let heading = directionHorizon(geometry)
-  if heading.isNone: return Placement.Empty
-  meshes.addMarker(
-    pointFrom(add(scale.eye_point,
-      wedge(progress*scale.radius_horizon, toMultivector(heading.get)))),
-    tint.fade(tint.alpha*progress),
-  )
-  Placement.Horizon
-
-
-proc addLine(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
-): Placement =
-  ## Append grade-2 object as two segments meeting on the line at its support, each
-  ## running out to one of the line's own two vanishing points, `scale.eye` plus and
-  ## minus `scale.radius_horizon` along its attitude. The forward one is exactly where
-  ## `addPoint` draws this line's attitude as a horizon marker, so the drawn line
-  ## reaches its own attitude with no gap.
-  ##   Two segments rather than one because a vanishing point is a property of the
-  ## *eye*, not of the line: an end anchored a fixed reach from the support instead
-  ## stops short of it by roughly the eye-to-line separation over that reach, which is
-  ## a visible gap as soon as the line's support is not close to the camera. Anchoring
-  ## both ends to the eye is what closes it at both, and a single segment cannot -- one
-  ## running eye-to-eye passes through the eye and projects to a point.
-  ##   Each segment has one end on the true line and one at `eye ± radius*axis`, so both
-  ## lie in the plane through the eye containing the line. That plane projects to a
-  ## single screen line, so the pair draws exactly over the true line's own projection
-  ## however far the far ends sit from it in world space -- verified as zero screen skew
-  ## to floating-point precision, not argued. What it costs is depth: the far ends are
-  ## displaced along the view ray, so occlusion against other objects is approximate
-  ## there. Rebuilt every frame against the current eye, so this holds as the camera
-  ## orbits.
-  ##   Or, at horizon, as a great circle around `scale.eye` -- the pencil of directions
-  ##   the line stands for, traced across the sky at `scale.radius_horizon`.
-  ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
-  ##   fades it in alongside, so a freshly derived line visibly extends rather than
-  ##   popping in.
-  let
-    anchor = positionAnchor(geometry)
-    axis = direction(geometry)
-  if anchor.isSome and axis.isSome:
-    let
-      reach = progress*scale.radius_horizon
-      tint_progress = tint.fade(tint.alpha*progress)
-      axis_point = toMultivector(axis.get)
-      far_ahead = pointFrom(add(scale.eye_point, wedge(reach, axis_point)))
-      far_behind = pointFrom(add(scale.eye_point, wedge(-reach, axis_point)))
-    meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, scale)
-    meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, scale)
-    return Placement.Finite
-
-  let normal = directionNormalHorizon(geometry)
-  if normal.isNone: return Placement.Empty
-  let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
-  if axes.isNone: return Placement.Empty
-  let (axis_first, axis_second) = axes.get
-  meshes.addGreatCircle(
-    scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
-    tint.fade(tint.alpha*progress), scale,
-  )
-  Placement.Horizon
-
-
-proc addPlane(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
-  anchor_override: Option[Position] = none(Position)
-): Placement =
-  ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
-  ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
-  ## filling the whole sky around `scale.eye` -- the unique universal object every
-  ## plane at horizon stands for, regardless of which points produced it.
-  ##   `anchor_override`, if given, centres the disc there instead -- some point the
-  ##   plane's own construction fixed more specifically than its closest-to-origin
-  ##   support does; see `scene.creationAnchor`. `frame`'s own axes do not depend on
-  ##   which point anchors the plane (see `spanPerpendicular`'s own doc comment), so
-  ##   only where the disc is drawn changes, never how it is oriented.
-  ##   `progress` grows the disc and its rim out from nothing, and fades both in
-  ##   alongside.
-  ##   **No normal is drawn.** A bare shaft out of the anchor used to mark one, which told
-  ##   a plane apart from its own reflection -- but it did so on *every* plane in the
-  ##   scene, permanently, to answer a question a reader asks about one object at a time.
-  ##   Orientation now rides on the selection marker instead, as the direction a pulse
-  ##   travels round it; see `marker.markerFor`.
-  let
-    anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
-    axes = frame(geometry)
-  if anchor.isSome and axes.isSome:
-    let
-      (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
-      extent = progress*EXTENT_PLANE_F
-      tint_progress = tint.fade(tint.alpha*progress)
-
-    # Fill first, so plane reads as a surface rather than a bare outline; flat, since
-    #   the rim drawn over it already marks the edge crisply on its own.
-    meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
-    meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
-
-    return Placement.Finite
-
-  meshes.addDome(scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress))
-  Placement.Horizon
-
-
-proc addObject*(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
-  anchor_override: Option[Position] = none(Position)
-): Placement =
-  ## Append object, dispatching on geometry its grade stands for.
-  ##   Empty where multivector carries no drawable geometry at all.
-  ##   `progress` is how much of its appear animation the object has completed, from
-  ##   `mesh.animationProgress`; defaults to fully appeared, for a caller with nothing
-  ##   to animate against.
-  ##   `anchor_override` centres a plane's own disc there instead of its own support;
-  ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  let shape = shape(geometry)
-  if shape.isNone: return Placement.Empty
-  case shape.get
-  of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
-  of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)

@@ -26,7 +26,7 @@
 {.experimental: "strictFuncs".}
 
 import ../../pga
-import ./[boundary, mesh, scene]
+import ./[boundary, tessellate, scene]
 
 
 

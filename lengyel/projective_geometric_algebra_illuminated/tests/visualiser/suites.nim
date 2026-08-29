@@ -19,8 +19,8 @@ import std/[math, options, os, random, strformat, strutils, tables, unicode, uni
 
 import ../../pga
 import ../../visualiser/core/[
-  boundary, camera, format, framing, help, history, interaction, mesh, picking, scene,
-  selection, storyboard,
+  boundary, camera, format, framing, help, history, interaction, picking, scene,
+  selection, storyboard, tessellate,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -788,7 +788,7 @@ suite "Mesh":
     let eye = Position(x: 5, y: -3, z: 7)
     # `algebraFilled`, as every hand-built extent must be, or the multivector twins the
     #   tessellation reads are zero and it silently draws nothing.
-    algebraFilled(DrawExtent(
+    algebraFilled(DrawExtent(scale: DrawScale(
       extent_furniture: 30.0,
       eye: eye, radius_horizon: 50.0,
       # Looking back at the origin, which is where every fixture below is built around.
@@ -796,7 +796,7 @@ suite "Mesh":
       tangent_half_view: tan(0.5*degToRad(45.0)),
       height_pixels: HEIGHT_SCALE_TEST,
       depth_near: 0.1,
-    ))
+    )))
   ## Eye held off-origin deliberately: horizon geometry anchored to the origin by
     ## mistake, instead of to `eye`, would fail every horizon check below.
     ##   `extent_furniture` held distinct from `EXTENT_PLANE_F` (a plane's own fixed
@@ -1123,7 +1123,7 @@ suite "Mesh":
     ##   reaches the ground and no grid is drawn at all. A fog case needs an eye standing
     ##   inside its own fog, and several need it far from the origin, which is the whole
     ##   point of the rule being checked.
-    algebraFilled(DrawExtent(
+    algebraFilled(DrawExtent(scale: DrawScale(
       extent_furniture: extent,
       eye: eye, radius_horizon: extent,
       # Looking a little ahead and down, which every ground fixture below lies under.
@@ -1133,7 +1133,7 @@ suite "Mesh":
       tangent_half_view: tan(0.5*degToRad(45.0)),
       height_pixels: HEIGHT_SCALE_TEST,
       depth_near: 0.1,
-    ))
+    )))
 
   let SCALE_FOG = scaleFurnitureAt(Position(x: 103, y: -97, z: 5), 300.0)
     ## Eye inside its own fog: a reach of 300 fades out at 36 units, well past the five
@@ -2371,9 +2371,9 @@ suite "History":
 
 
 suite "Camera Aim":
-  let SCALE_AIM = DrawExtent(
+  let SCALE_AIM = DrawExtent(scale: DrawScale(
     extent_furniture: 100.0, eye: ORIGIN, radius_horizon: 90.0,
-  ) ## No ribbon fields: nothing here tessellates anything, it only aims a camera.
+  )) ## No ribbon fields: nothing here tessellates anything, it only aims a camera.
 
   const
     (WIDTH_AIM, HEIGHT_AIM) = (1440, 900) ## Frame the centred box is measured in.
@@ -4638,10 +4638,10 @@ suite "Interaction":
     #   fault it guards against is silent: a mesh nobody marked has to draw *entirely*
     #   depth-tested, and a sentinel index of zero would have said the opposite -- every
     #   line of furniture drawn over the scene, on every frame.
-    let scale = algebraFilled(DrawExtent(
+    let scale = algebraFilled(DrawExtent(scale: DrawScale(
       extent_furniture: 10.0, radius_horizon: 10.0, tangent_half_view: 0.5,
       height_pixels: 600, depth_near: 0.1, forward: Direction(x: 0, y: 0, z: -1),
-    ))
+    )))
     var meshes: MeshSet
     clearMeshes(meshes)
     for primitive in Primitive: check meshes[primitive].index_overlay.isNone

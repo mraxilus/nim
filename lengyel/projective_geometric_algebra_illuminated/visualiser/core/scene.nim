@@ -37,7 +37,7 @@
 import std/[math, options, strformat, strutils, unicode]
 
 import ../../pga
-import ./[boundary, format, mesh]
+import ./[boundary, format, tessellate]
 
 
 
@@ -998,7 +998,7 @@ func itemUpgraded*(item: ItemSaved; version: uint8): Option[ItemSaved] =
 const
   SECONDS_REPLAY_STEP* = 0.12
     ## Beat between one loaded object appearing and the next.
-    ##   Shorter than `mesh.ANIMATION_SECONDS`, so each object is still growing in as the
+    ##   Shorter than `tessellate.ANIMATION_SECONDS`, so each object is still growing in as the
     ##   next arrives: the replay reads as one construction unfolding rather than as a
     ##   queue of separate pop-ins.
   SECONDS_REPLAY_WHOLE* = 2.5

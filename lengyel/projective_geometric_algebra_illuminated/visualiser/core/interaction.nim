@@ -38,7 +38,7 @@
 import std/[math, options, strformat]
 
 import ../../pga
-import ./[boundary, camera, format, mesh, picking, scene]
+import ./[boundary, camera, format, tessellate, picking, scene]
 
 
 
@@ -984,7 +984,7 @@ func progressHold*(interaction: Interaction; now: float): float =
   ## due; 0 where no press is in progress.
   ##   Clamped at both ends, so a caller may keep asking after the press is due and after
   ##   the clock has jumped, and still get something it can draw.
-  ##   Linear, deliberately, and not through `mesh.easeOutCubic` as every other animation
+  ##   Linear, deliberately, and not through `tessellate.easeOutCubic` as every other animation
   ##   here is: this is a clock being shown rather than a transition being softened, and an
   ##   eased clock reads as stalling just before it fires -- exactly where a user is
   ##   deciding whether the hold is working.
@@ -1013,7 +1013,7 @@ func swellHold*(interaction: Interaction; now: float): float =
   ## the selection landed -- shrinking while the reader was still deciding, and gone when
   ## it mattered. It now stays out until the finger says otherwise, for as long as that
   ## takes.
-  ##   Eased at both ends through `mesh.easeOutCubic`, unlike `progressHold` beside it:
+  ##   Eased at both ends through `tessellate.easeOutCubic`, unlike `progressHold` beside it:
   ## these are transitions being softened, where that is a clock being shown.
   if interaction.hold.isNone: return 0.0
   let hold = interaction.hold.get

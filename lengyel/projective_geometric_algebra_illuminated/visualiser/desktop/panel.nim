@@ -43,7 +43,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ./gui
-import ../core/[boundary, camera, format, help, history, interaction, mesh, scene, selection]
+import ../core/[boundary, camera, format, help, history, interaction, tessellate, scene, selection]
 
 
 
@@ -220,7 +220,7 @@ type
     bytes_arena_frame_capacity*: int ## Snapshot of the frame arena's `capacity`.
     bytes_memory_total*: int ## Sum of every fixed reservation this binary makes for
       ## itself; computed once where every piece is visible, since `panel` alone cannot
-      ## see the arenas' own backing storage or the mesh and timing buffers beside them.
+      ## see the arenas' own backing storage or the tessellate and timing buffers beside them.
 
 
 func initPanel*(path_export: string): Panel =
@@ -267,7 +267,7 @@ proc stage*(session: var EditSession; geometry: Multivector) =
 func staged*(panel: Panel): Option[Preview] =
   ## Resolve what this panel is offering as not-yet-committed: an open edit session's own
   ## geometry, else whatever an apply control is previewing, else nothing.
-  ##   **The session wins**, and the order is stated here once rather than at the mesh and
+  ##   **The session wins**, and the order is stated here once rather than at the tessellate and
   ##   the camera separately: a session is being typed into, while a preview is a passive
   ##   reading of two pickers, and the one the reader's hands are on is the one to show.
   ##   Its sibling is `browser_bridge.staged`, which answers the same question for the same
@@ -379,7 +379,7 @@ proc layoutSessionFields(panel: var Panel; is_pending: bool) =
   # Offer the categorical run alone: the structural slots before it belong to the drawing's
   #   own furniture, and the combo therefore counts positions within that run rather than
   #   whole-palette ordinals. Names come from the shared table at its own offset, since the
-  #   run is contiguous -- see `mesh.COUNT_INK_CATEGORICAL` for what holds that true.
+  #   run is contiguous -- see `tessellate.COUNT_INK_CATEGORICAL` for what holds that true.
   var index_categorical = cint(categoricalIndex(Ink(panel.session.get.index_ink)))
   fieldLabel("colour")
   if gui.combo(

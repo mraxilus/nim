@@ -9,7 +9,7 @@
 ## Every marker keeps the same clear space, `GAP_MARKER` pixels, between the object's own
 ## drawn edge and its own outline, so the three read as one family at one weight rather
 ## than three unrelated decorations. That gap is measured out from the sizes the object is
-## actually drawn at (`mesh.SIZE_POINT`, `mesh.WIDTH_LINE_OBJECT`, `mesh.EXTENT_PLANE_F`),
+## actually drawn at (`tessellate.SIZE_POINT`, `mesh.WIDTH_LINE_OBJECT`, `mesh.EXTENT_PLANE_F`),
 ## so changing a draw size moves its marker with it.
 ##
 ##   |------------------|---------------------------------------------------------------|
@@ -43,7 +43,7 @@
 import std/[math, options, strformat]
 
 import ../../pga
-import ./[boundary, camera, mesh, picking]
+import ./[boundary, camera, tessellate, picking]
 
 
 
@@ -95,7 +95,7 @@ const
 const
   SEGMENTS_MARKER_RAILS* = 4
     ## Bound how many segments a line's own rails come to: one each side, each cut into
-    ## the two halves `mesh.addLine` draws the line itself as.
+    ## the two halves `tessellate.addLine` draws the line itself as.
   RADIUS_MARKER_POINT* = 0.5*float(SIZE_POINT) + GAP_MARKER
     ## Place a point's own ring this far from the point, in pixels.
   OFFSET_MARKER_RAIL* = 0.5*float(WIDTH_LINE_OBJECT) + GAP_MARKER
@@ -1053,7 +1053,7 @@ func markerLoop(
   progress, clearance: float; travel: Option[float]
 ): Option[Marker] =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
-  ##   Reads `anchor_override` exactly as `mesh.addPlane` does, so the marker is
+  ##   Reads `anchor_override` exactly as `tessellate.addPlane` does, so the marker is
   ##   concentric with the drawn disc rather than with the plane's own support -- for a
   ##   plane built from operands that do not straddle the origin those are different
   ##   points, and a marker around the wrong one names nothing.
@@ -1194,7 +1194,7 @@ func markerBands(
   ##   Each band is a *small* circle of the same sphere -- centre stepped along the great
   ##   circle's own normal, radius shrunk to stay on that sphere -- which is what parallel
   ##   to a great circle means there. Built from `directionNormalHorizon` and
-  ##   `spanPerpendicular`, the same pair `mesh.addLine` builds its great circle from, so
+  ##   `spanPerpendicular`, the same pair `tessellate.addLine` builds its great circle from, so
   ##   the three wrap the sky as one family rather than merely near one another.
   ##   Cuts each band to whatever stays in front of the eye **and inside the viewport**,
   ##   reporting the remainder as an arc the way `markerLoop` does -- half the sky is
@@ -1375,7 +1375,7 @@ func markerFor*(
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
   ##   `anchor_override` is the item's own stored creation anchor, used for a plane and
-  ##   ignored for a point or line, matching `mesh.addObject`'s own treatment of it.
+  ##   ignored for a point or line, matching `tessellate.addObject`'s own treatment of it.
   ##   `progress` draws the marker part-built, for a press maturing into a selection: 1
   ##   is the finished marker and is what every caller not animating a hold wants, which
   ##   is why it is the default. How a partial marker is shaped is each outline's own
