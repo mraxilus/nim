@@ -372,7 +372,6 @@ async function deliverFile(blob, filename, mime, described) {
   //    callers run inside a click, so the transient activation it needs is present -- see
   //    `captureFrameIfAsked` on what it cost to make that true of the image too.
   if (await shareFile(file, filename)) {
-    refreshDeliveryReport();
     if (report_delivery[report_delivery.length - 1] === 'share: opened') {
       toast('Shared `' + filename + '`.');
     }
@@ -409,7 +408,6 @@ async function deliverFile(blob, filename, mime, described) {
   //    An image goes on screen with it, which a refused frame cannot take away.
   if (window.self !== window.top) {
     report_delivery.push('link: offered');
-    refreshDeliveryReport();
     toastWithLink(
       described + ' is ready.', url, filename, 'save ' + filename,
       mime.startsWith('image/') ? url : undefined,
@@ -1494,7 +1492,6 @@ const diagnostic_frame_time = document.getElementById('diag-frametime');
 const diagnostic_heap = document.getElementById('diag-heap');
 const diagnostic_pool = document.getElementById('diag-pool');
 const strip_pool = document.getElementById('pool-strip');
-const diagnostic_delivery = document.getElementById('diag-delivery');
 let is_strip_pool_built = false;
 
 // One ring per step of the drawing process, so the diagnostics tab can show where a frame
@@ -1653,14 +1650,6 @@ function isPhaseShown(name) {
     child = parent;
   }
   return true;
-}
-
-function refreshDeliveryReport() {
-  // Where a save went, in the reader's own words -- because on a phone in a frame this page
-  //   does not control, that is otherwise unknowable to anyone. The toast carries it too,
-  //   but a toast is transient and this is the copy somebody can screenshot at leisure.
-  diagnostic_delivery.textContent = report_delivery.length === 0
-    ? 'nothing saved yet' : report_delivery.join('\n');
 }
 
 // **How often a frame runs long, over a window long enough to answer that.** The
@@ -2121,8 +2110,6 @@ function refreshDiagnostics() {
       (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + ' / ' +
       (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB';
   }
-
-  refreshDeliveryReport();
 
   const count = nimSceneCount(), capacity = nimSceneCapacity();
   diagnostic_pool.textContent = count + ' / ' + capacity;
