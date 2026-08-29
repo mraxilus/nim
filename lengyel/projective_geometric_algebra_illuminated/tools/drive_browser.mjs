@@ -1710,6 +1710,35 @@ report(
     `(claims ${(r.span / r.world_per_pixel).toFixed(1)}px)`).join('; '),
 );
 
+// **The drawer covers the scale bar rather than moving or hiding it.** The bar belongs to
+// the view it measures, so it stays put and the drawer is simply drawn over it. It used to
+// step aside to the drawer's far edge, which on a phone -- where the drawer is a
+// full-width sheet -- put it off-screen entirely; a reading that vanishes when a panel
+// opens is worse than one the panel is sitting on.
+const covered = await page.evaluate(() => {
+  const ruler = document.getElementById('ruler');
+  const drawer = document.querySelector('.drawer');
+  const boxOf = () => ruler.getBoundingClientRect();
+  const closed = boxOf();
+  document.getElementById('btn-drawer').click();
+  const open = boxOf();
+  const layer = (el) => Number(getComputedStyle(el).zIndex);
+  const shown = getComputedStyle(ruler).display !== 'none' &&
+    getComputedStyle(ruler).visibility !== 'hidden' && !ruler.hidden;
+  document.getElementById('btn-drawer').click(); // Leave it as it was found.
+  return {
+    moved: Math.abs(open.left - closed.left) + Math.abs(open.top - closed.top),
+    shown, ruler: layer(ruler), drawer: layer(drawer), width: open.width,
+  };
+});
+report(
+  'the drawer covers the scale bar rather than moving it aside or hiding it',
+  covered.moved === 0 && covered.shown && covered.width > 0 &&
+    covered.ruler < covered.drawer,
+  `moved ${covered.moved}px, shown ${covered.shown}, ` +
+    `layer ${covered.ruler} under the drawer's ${covered.drawer}`,
+);
+
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
 
 await browser.close();

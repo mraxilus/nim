@@ -405,6 +405,15 @@ from `extentViewOverlay`, hence in **CSS** pixels, since a bar is read in the sa
 the pointer works in. Hidden outright where no ground is drawn at all — an eye above the
 fog's own reach. The driven layer checks the bar's drawn length against the distance its
 label claims, at two camera distances a decade apart so the cell's own step is exercised.
+  **The drawer is drawn over it, rather than displacing or hiding it.** The bar sits at
+`z-index: 3`, under the drawer's 4, so it stays in the corner it measures from and the panel
+simply covers it — what a map's scale bar does when a panel opens across it. It used to step
+aside to the drawer's far edge, and a media query hid it outright in the bottom-sheet
+layout: on a phone, where the sheet is full width, "aside" was off-screen, so opening the
+drawer deleted the reading. A bar a panel is sitting on can still be read by closing the
+panel; one that has vanished cannot be found at all. Held by a driven check that opens the
+drawer and requires the bar to have moved zero pixels, to still be displayed, and to sit on
+a lower layer than the drawer.
 
 Fog, not a halo, because a halo makes the origin a place the reader may not leave: panning a
 hundred units away left no ground at all, and the camera read as bounded to a region though

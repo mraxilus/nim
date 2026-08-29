@@ -265,7 +265,12 @@
     left: max(14px, env(safe-area-inset-left));
     bottom: max(14px, env(safe-area-inset-bottom));
     pointer-events: none;
-    z-index: 5;
+    /* **Below the drawer, not beside it and never hidden.** The bar belongs to the view it
+       measures, so it stays where that view is and the drawer simply covers it -- the same
+       thing a map's scale bar does when a panel opens over it. It stepped aside to the
+       drawer's far edge before, which on a phone (a full-width sheet) put it off-screen
+       altogether: a reading that vanishes is worse than one a panel is sitting on. */
+    z-index: 3;
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--ink-muted);
@@ -284,11 +289,6 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  /* The drawer opens over this corner, so the bar steps aside to the edge of it rather
-     than being drawn across the object list. Set from the drawer's own toggle, since the
-     bar sits before the drawer in the document and no sibling selector reaches backwards. */
-  .ruler.aside { left: calc(min(400px, 100vw) + 14px); }
-
   .help-open {
     position: fixed;
     right: max(14px, env(safe-area-inset-right));
@@ -595,8 +595,6 @@
       transform: translateY(100%);
     }
     .drawer.open { transform: translateY(0); }
-    /* The bottom sheet covers the whole of this corner, so there is no aside to step to. */
-    .ruler.aside { display: none; }
   }
 
   @media (min-width: 641px) {
