@@ -1126,19 +1126,48 @@ report(
     `${curve.lit} pixels drawn`,
 );
 
+// The axis waits before it moves and then glides, so a synthetic window has to be given
+// wall-clock time to arrive at it. `recordExceedance` is stubbed while it settles: a real
+// frame entering the window mid-settle would change the very extent being waited for, and
+// on this container every real frame is slower than anything these checks feed in.
+// Held **around** the fill as well as the settle: on this container every real frame is
+// slower than anything these checks feed in, so a single one slipping into the window
+// between filling it and waiting on it moves the very extent being waited for. Feed through
+// `window.__record_kept` while the hold stands.
+const holdExceedance = () => page.evaluate(() => {
+  if (window.__record_kept === undefined) window.__record_kept = recordExceedance;
+  globalThis.recordExceedance = () => {};
+});
+const releaseExceedance = () => page.evaluate(() => {
+  if (window.__record_kept !== undefined) globalThis.recordExceedance = window.__record_kept;
+});
+const settleAxis = async () => {
+  for (let i = 0; i < 48; i += 1) {
+    await page.waitForTimeout(120);
+    const settled = await page.evaluate(() => {
+      drawExceedance();
+      return ms_axis_restless === 0;
+    });
+    if (settled && i > 4) break;
+  }
+};
+
 // **The curve is drawn in the colour of the budget each part of it sits inside**, and the
 // axis it is drawn against is fixed rather than fitted. Every frame this container draws is
 // slower than 30 fps, so the fast bands cannot be reached by driving the page harder; the
 // window is fed a spread through `recordExceedance` -- the very call the frame loop makes
 // -- which exercises the drawing without pretending the machine is faster than it is.
-const bands = await page.evaluate(() => {
+await holdExceedance();
+await page.evaluate(() => {
   for (let i = 0; i < 3000; i += 1) {
     const roll = Math.random();
-    recordExceedance(roll < 0.7 ? 5 + Math.random() * 3
+    window.__record_kept(roll < 0.7 ? 5 + Math.random() * 3
       : roll < 0.92 ? 9 + Math.random() * 7
       : roll < 0.99 ? 17 + Math.random() * 15 : 34 + Math.random() * 40);
   }
-  drawExceedance();
+});
+await settleAxis();
+const bands = await page.evaluate(() => {
   const canvas = document.getElementById('exceedance');
   const pixels = canvas.getContext('2d')
     .getImageData(0, 0, canvas.width, canvas.height).data;
@@ -1198,71 +1227,71 @@ report(
   // Bottom to top, and all the way out to the slowest frame the window holds -- which on a
   //   window this size is the far edge, since the axis is fitted to exactly that frame.
   reach.top <= 2 && reach.bottom >= reach.height - 3 &&
-    reach.rightmost >= reach.width - 2,
+    // Within the axis's own deadband of the far edge: the glide settles a couple of
+    //   percent short of the extent rather than landing exactly on it, which is the axis
+    //   holding still rather than chasing the last half-millisecond.
+    reach.rightmost >= reach.width * 0.95,
   `drawn from row ${reach.top} to ${reach.bottom} of ${reach.height}, ` +
     `out to column ${reach.rightmost} of ${reach.width}`,
 );
 // The floor, exercised where it actually binds: a window holding nothing slower than
 // 15 ms would otherwise draw an axis a third that wide and zoom the session into its own
 // noise, so it stops at the 30 fps mark and the budget lines keep their places.
+await page.evaluate(() => {
+  for (let i = 0; i < 1024; i += 1) window.__record_kept(5 + Math.random() * 9);
+});
+await settleAxis();
 const floored = await page.evaluate(() => {
-  for (let i = 0; i < 1024; i += 1) recordExceedance(5 + Math.random() * 9);
-  drawExceedance();
   const said = document.getElementById('diag-exceedance-axis').textContent;
   return Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]);
 });
 report(
   'and its axis follows the window without ever closing below the 30 fps mark',
   Number.isFinite(reach.milliseconds) && reach.milliseconds >= 33 &&
-    Number.isFinite(floored) && Math.round(floored) === 33,
+    // At the 33.3 ms floor, within the axis's own deadband -- the glide settles near the
+    //   extent rather than exactly on it, and the floor is an extent like any other.
+    Number.isFinite(floored) && floored >= 33 && floored <= 35,
   `a mixed window reads 0-${reach.milliseconds} ms, a fast one 0-${floored} ms`,
 );
 
-// **One freak frame does not get to set the axis.** A collection pause, or a tab regaining
-// focus, drops a single enormous sample into the window; an axis fitted to it flattens
-// every other frame against the left edge for the seventeen seconds it takes to age out.
-// Exactly one sample comes off each end for the drawing, so the outlier below is spent
-// disarming itself -- while the histogram keeps it and the window still counts it, because
-// a stated statistic that discarded its own worst sample would be lying about the session.
-const trimmed = await page.evaluate(() => {
-  for (let i = 0; i < 1024; i += 1) recordExceedance(5 + Math.random() * 9);
-  recordExceedance(400);
+// **The axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one
+// slow frame widened it and the moment that frame aged out it snapped back, so two glances
+// a second apart could not be compared. Driven exactly as that happens: a settled window,
+// then one much slower frame put into it. Immediately after, the axis must not have moved
+// at all -- that wait is what lets a dip-and-return leave it where it was -- and some
+// seconds later it must have arrived, having passed through the middle rather than jumped.
+const axis_reading = () => page.evaluate(() => {
   drawExceedance();
-  const canvas = document.getElementById('exceedance');
-  const pixels = canvas.getContext('2d')
-    .getImageData(0, 0, canvas.width, canvas.height).data;
-  let top = canvas.height;
-  let rightmost = -1;
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      if (pixels[(y * canvas.width + x) * 4 + 3] < 200) continue;
-      if (y < top) top = y;
-      if (x > rightmost) rightmost = x;
-    }
-  }
-  const said = document.getElementById('diag-exceedance-axis').textContent;
-  return {
-    milliseconds: Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]),
-    // A 400 ms frame lands in the last bucket, which is where everything past the
-    //   histogram's own end is kept rather than dropped.
-    held: buckets_exceedance[BUCKETS_EXCEEDANCE - 1],
-    counted: scanExceedance(),
-    drawn: scanTrimmed(),
-    top, rightmost, width: canvas.width,
-  };
+  return Number((document.getElementById('diag-exceedance-axis').textContent
+    .match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]);
 });
+await page.evaluate(() => {
+  for (let i = 0; i < 1024; i += 1) window.__record_kept(40 + Math.random() * 2);
+});
+await settleAxis();
+const axis_settled = await axis_reading();
+// One frame three times slower than anything else in the window, and nothing else changed.
+await page.evaluate(() => window.__record_kept(126));
+const axis_at_once = await axis_reading();
+await page.waitForTimeout(1000);
+const axis_midway = await axis_reading();
+for (let i = 0; i < 24; i += 1) {
+  await page.waitForTimeout(120);
+  if (await page.evaluate(() => { drawExceedance(); return ms_axis_restless === 0; })) break;
+}
+const axis_arrived = await axis_reading();
+await releaseExceedance(); // Every synthetic window above is done with; real frames resume.
 report(
-  'a single freak frame is left out of the drawing, and kept in the window',
-  // The axis stands at its floor rather than at the outlier's 128 ms, the curve still
-  //   arrives at 100%, and it does so where the second-slowest frame is -- a third of the
-  //   way across -- rather than running out to the far edge the outlier would have set.
-  Math.round(trimmed.milliseconds) === 33 && trimmed.held === 1 &&
-    trimmed.counted - trimmed.drawn === 2 &&
-    trimmed.top <= 2 && trimmed.rightmost < trimmed.width * 0.6,
-  `axis 0-${trimmed.milliseconds} ms with a 400 ms frame in the window, ` +
-    `${trimmed.held} in the last bucket, ${trimmed.counted} counted and ` +
-    `${trimmed.drawn} drawn, curve to row ${trimmed.top} and column ` +
-    `${trimmed.rightmost} of ${trimmed.width}`,
+  'the axis waits before it moves, then glides to the new extent rather than jumping',
+  Number.isFinite(axis_settled) && axis_settled > 0 &&
+    // Unmoved while the wait stands.
+    axis_at_once === axis_settled &&
+    // Under way, but not there yet: the glide passes through the middle.
+    axis_midway > axis_settled && axis_midway < axis_arrived &&
+    // Arrived at the slow frame's own bucket, which is what the window now reaches to.
+    axis_arrived >= 120,
+  `settled 0-${axis_settled} ms; at once 0-${axis_at_once}; after 1 s 0-${axis_midway}; ` +
+    `arrived 0-${axis_arrived}`,
 );
 
 // **The vertical axis switches, and the curve switches with it.** Linear reads the
@@ -1521,17 +1550,28 @@ const work_moving = await page.evaluate((from) => {
 const scenery = await page.evaluate((from) => window.__phase_frame.slice(from),
   index_before_drag);
 const scenery_moving = scenery.filter((p) => p.furniture > 0.05);
+// The slack is **proportional**, as the per-kind check's is and for the same reason: the
+// bracket around the two halves also spans the mesh clear and the loop between them, and on
+// a frame the scheduler interrupts that gap grows with the frame rather than by a fixed
+// amount. A flat +-1 ms was ample on an 8 ms rebuild and failed one frame in a hundred and
+// twenty on a 15 ms one -- a flake, not a finding, and a flaky check gets deleted rather
+// than fixed.
+const sceneryOff = (p) => (p.grid + p.axes) - p.furniture;
 const scenery_sane = scenery_moving.filter((p) =>
-  p.grid + p.axes <= p.furniture + 0.6 && p.grid + p.axes >= p.furniture - 1.0 &&
+  sceneryOff(p) <= Math.max(0.6, 0.08 * p.furniture) &&
+  sceneryOff(p) >= -Math.max(1.0, 0.12 * p.furniture) &&
   p.segments > 0);
 report(
   'the scenery is accounted for by the grid and the axes it is drawn from',
   scenery_moving.length > 3 && scenery_sane.length === scenery_moving.length,
   `${scenery_sane.length} of ${scenery_moving.length} rebuilt frames account` +
     (scenery_moving.length === 0 ? '' : (() => {
-      const last = scenery_moving[scenery_moving.length - 1];
-      return `, last ${last.grid.toFixed(1)} + ${last.axes.toFixed(1)} ` +
-        `of ${last.furniture.toFixed(1)} ms over ${last.segments} segments`;
+      // The worst frame, not the last: a bare count says nothing about what went wrong.
+      const worst = scenery_moving.reduce(
+        (a, b) => (Math.abs(sceneryOff(b)) > Math.abs(sceneryOff(a)) ? b : a));
+      return `, worst ${worst.grid.toFixed(1)} + ${worst.axes.toFixed(1)} ` +
+        `of ${worst.furniture.toFixed(1)} ms (off by ${sceneryOff(worst).toFixed(2)}) ` +
+        `over ${worst.segments} segments`;
     })()),
 );
 

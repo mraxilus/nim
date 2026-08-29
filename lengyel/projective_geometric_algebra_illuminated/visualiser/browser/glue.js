@@ -1727,43 +1727,6 @@ function scanExceedance() {
   return count_exceedance;
 }
 
-// **The same distribution with its two extremes dropped, for the drawing alone.** One
-//   collection pause, or one tab regaining focus, sets the axis for as long as it takes to
-//   age out and flattens every other frame against the left edge; one implausibly quick
-//   frame does the same to the other end. Exactly one sample comes off each end -- enough
-//   to disarm a single accident, few enough that a genuine cluster of slow frames still
-//   sets the axis and still reads as slow. The histogram itself is left whole: the stated
-//   1 in 100 reports the window as it really was, and a statistic that quietly discarded
-//   its own worst sample would be lying about the session.
-const SAMPLES_TRIM_LEAST = 16; // Below this, two samples are a visible share of the window.
-const trimmed_exceedance = new Int32Array(BUCKETS_EXCEEDANCE);
-const shares_trimmed = new Float64Array(BUCKETS_EXCEEDANCE);
-function scanTrimmed() {
-  trimmed_exceedance.set(buckets_exceedance);
-  let counted = count_exceedance;
-  if (counted >= SAMPLES_TRIM_LEAST) {
-    let first = -1;
-    let last = 0;
-    for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
-      if (trimmed_exceedance[i] === 0) continue;
-      if (first < 0) first = i;
-      last = i;
-    }
-    // Both come off the one bucket where the window's whole spread is a single bucket
-    //   wide. That bucket then holds at least fourteen, since the trim is skipped below a
-    //   handful of samples, so neither decrement can drive a count negative.
-    trimmed_exceedance[first] -= 1;
-    trimmed_exceedance[last] -= 1;
-    counted -= 2;
-  }
-  let running = 0;
-  for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
-    running += trimmed_exceedance[i];
-    shares_trimmed[i] = counted === 0 ? 0 : running / counted;
-  }
-  return counted;
-}
-
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
   // **Everything the page did not spend itself**: waiting on the display, and the browser's
@@ -1812,6 +1775,49 @@ const BUDGETS_EXCEEDANCE = [
 const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
   getComputedStyle(document.documentElement).getPropertyValue(budget.token).trim() ||
     '#00a7a5');
+// **The axis follows the window, but not at the window's own speed.** Fitted frame for
+//   frame it snapped: one slow frame widened it, and the moment that frame aged out of the
+//   window it snapped back, so the curve jumped about and two glances a second apart could
+//   not be compared. Two things fix that without going back to a fixed axis.
+//   *A wait before anything moves.* An extent that differs from what is drawn starts a
+//   clock, and only a difference that stands for `MILLISECONDS_AXIS_WAIT` moves the axis at
+//   all -- so a window that dips and comes back, which is what an ageing spike does, leaves
+//   the axis exactly where it was rather than travelling out and back.
+//   *Then a glide, not a jump.* An exponential ease toward the extent, on a time constant
+//   rather than a step count, so it runs at the same speed however often it is drawn.
+//   The deadband is proportional: half a millisecond matters on a 33 ms axis and is noise
+//   on a 130 ms one.
+const MILLISECONDS_AXIS_WAIT = 400;
+const MILLISECONDS_AXIS_EASE = 420;
+const SHARE_AXIS_DEADBAND = 0.02;
+let milliseconds_axis = 0; // What is drawn; zero until the first extent arrives.
+let ms_axis_restless = 0; // When the extent first differed from it; zero while settled.
+let ms_axis_eased = 0; // Last ease, for the elapsed time the glide is scaled by.
+// True while the axis is still travelling, so the frame loop can redraw the curve at its
+//   own rate instead of the panel's five-a-second, which would show the glide as steps.
+let is_axis_gliding = false;
+function axisEased(milliseconds_wanted) {
+  const now = performance.now();
+  const since = ms_axis_eased === 0 ? 0 : now - ms_axis_eased;
+  ms_axis_eased = now;
+  // The first extent is simply adopted: there is nothing to ease from.
+  if (milliseconds_axis === 0) milliseconds_axis = milliseconds_wanted;
+  const apart = Math.abs(milliseconds_wanted - milliseconds_axis);
+  if (apart <= SHARE_AXIS_DEADBAND * milliseconds_axis) {
+    ms_axis_restless = 0; // Settled: the clock only runs while the two are apart.
+    is_axis_gliding = false;
+    return milliseconds_axis;
+  }
+  if (ms_axis_restless === 0) ms_axis_restless = now;
+  if (now - ms_axis_restless < MILLISECONDS_AXIS_WAIT) {
+    is_axis_gliding = false;
+    return milliseconds_axis; // Still inside the wait; the extent may yet come back.
+  }
+  is_axis_gliding = true;
+  milliseconds_axis +=
+    (milliseconds_wanted - milliseconds_axis) * (1 - Math.exp(-since / MILLISECONDS_AXIS_EASE));
+  return milliseconds_axis;
+}
 function bandOfExceedance(milliseconds) {
   for (let i = 0; i < BUDGETS_EXCEEDANCE.length; i += 1) {
     if (milliseconds < BUDGETS_EXCEEDANCE[i].milliseconds) return i;
@@ -1826,23 +1832,23 @@ function drawExceedance() {
   context_exceedance.clearRect(0, 0, w, h);
   const counted = scanExceedance();
   if (counted === 0) return;
-  scanTrimmed();
 
-  // The drawn window's own bounds, in buckets: its fastest frame and its slowest, both
-  //   read off the *trimmed* histogram so a single accident at either end cannot set them.
-  //   The curve is drawn between exactly these, so it leaves 0% where the second-fastest
-  //   frame is and reaches 100% at the second-slowest instead of running flat along both
-  //   edges -- which is what makes the two of them readable rather than merely present.
+  // The window's own bounds, in buckets: the fastest frame it holds and the slowest. The
+  //   curve is drawn between exactly these, so it leaves 0% at one and reaches 100% at the
+  //   other instead of running flat along both edges -- which is what makes the two of them
+  //   readable rather than merely present. Both extremes are the window's own: a lone
+  //   collection pause belongs on a chart of what the session actually did, and it is the
+  //   axis's easing below, not a trim, that stops one deciding how the rest is drawn.
   let bucket_first = -1;
   let bucket_last = 0;
   for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
-    if (trimmed_exceedance[i] === 0) continue;
+    if (buckets_exceedance[i] === 0) continue;
     if (bucket_first < 0) bucket_first = i;
     bucket_last = i;
   }
   if (bucket_first < 0) return;
-  const milliseconds_full = Math.max(
-    MILLISECONDS_AXIS_LEAST, (bucket_last + 1) * MILLISECONDS_BUCKET,
+  const milliseconds_full = axisEased(
+    Math.max(MILLISECONDS_AXIS_LEAST, (bucket_last + 1) * MILLISECONDS_BUCKET),
   );
   const xOf = (milliseconds) => (milliseconds / milliseconds_full) * w;
   // Proportion **below**, rising: the question a reader is asking is how much of the
@@ -1920,10 +1926,10 @@ function drawExceedance() {
   for (let i = bucket_first; i <= bucket_last; i += 1) {
     const milliseconds = i * MILLISECONDS_BUCKET;
     const band = bandOfExceedance(milliseconds);
-    // `shares_trimmed[i]` is the share at or over this duration, so its complement is the
-    //   share below it -- the histogram stays an exceedance and only the drawing turns
+    // `shares_exceedance[i]` is the share at or over this duration, so its complement is
+    //   the share below it -- the histogram stays an exceedance and only the drawing turns
     //   over, which is what keeps the scan a plain suffix sum.
-    const point = [xOf(milliseconds), yOf(1 - shares_trimmed[i])];
+    const point = [xOf(milliseconds), yOf(1 - shares_exceedance[i])];
     if (band !== band_open) {
       if (band_open >= 0) {
         // Carry the run into the boundary before closing it, so the two runs meet on the
@@ -3048,6 +3054,11 @@ function frame() {
   // 200 ms they are averaged over however fast or slow the machine is drawing: six frames
   // is a twelfth of a second on a desktop and a third of one on a labouring phone, and the
   // digits changed at whichever of those the reader happened to be on.
+  // A travelling axis is redrawn at the frame's own rate: the panel refreshes five times a
+  //   second, which would show the glide as five steps rather than a movement. Only while
+  //   it travels, and only while the curve is actually on screen -- a canvas inside a
+  //   closed section reports no width.
+  if (is_axis_gliding && exceedance !== null && exceedance.clientWidth > 0) drawExceedance();
   const ms_now_ui = performance.now();
   if (ms_now_ui - ms_refresh_ui >= MILLISECONDS_WINDOW_READING) {
     ms_refresh_ui = ms_now_ui;

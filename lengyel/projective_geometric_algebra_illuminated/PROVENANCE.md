@@ -2142,8 +2142,8 @@ is right for every question, so it is a switch rather than a choice made once �
 default, since linear is what the chart is for and log is the question a reader goes looking
 for. In log the rules move to the decades and are labelled (90%, 99%), a decade line not
 being self-evident the way a quarter is, and the caption names the mode so a screenshot says
-which axis its curve was read against. The bands, the labelled budget lines, the trim and
-the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
+which axis its curve was read against. The bands, the labelled budget lines, the eased axis
+and the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
 pill shares the header chips' own CSS rules rather than copying them, at the caption row's
 scale — but **keeps a resting border and surface those chips do without**, because the
 header's chips read as controls only by sitting inside `.toggles`, which draws a bordered
@@ -2166,20 +2166,25 @@ clearing 3:1, worst adjacent normal-vision ΔE 16.3. The "good" band is a **jade
 than a pure green because pure green against amber measures ΔE 1.2 under protanopia, where
 jade measures 7.9; amber against red sits at 7.7 under deuteranopia, inside the band the
 validator allows only with secondary encoding, which the labelled boundary lines are.
-  **One sample comes off each end, for the drawing only.** A collection pause, or a tab
-regaining focus, drops a single enormous frame into the window; an axis fitted to it
-flattens every other frame against the left edge for the seventeen seconds it takes to age
-out, and one implausibly quick frame does the same at the other end. The drawing works from
-a trimmed copy of the histogram, one sample decremented off the first and last populated
-buckets (both off the same bucket where the spread is one bucket wide), skipped below
-sixteen samples where two are a visible share of the window. Exactly one from each end
-rather than a percentile: enough to disarm a single accident, few enough that a genuine
-cluster of slow frames still sets the axis and still reads as slow. The copy is 256 entries
-per draw and keeps the trimmed view separate from the honest one instead of entangling the
-two. **The histogram and the stated 1 in 100 are untouched** — a statistic that quietly
-discarded its own worst sample would be lying about the session — so the readout can name a
-duration the axis does not reach, which is the intended reading: the trim says what the
-*plot* leaves out, not what the window forgot.
+  **The whole window is drawn, both extremes included.** A trim of one sample off each end
+was tried, to stop a lone collection pause setting the axis. It worked, and it was the wrong
+tool: a chart of what a session did should not quietly leave out the worst thing it did, and
+what that problem actually wanted was the axis's own timing. Removed.
+  **The axis waits, then glides.** Fitted frame for frame it snapped — one slow frame widened
+it, and the moment that frame aged out of the window it snapped back, so the curve jumped
+about and two glances a second apart could not be compared. An extent differing from what is
+drawn now starts a clock, and only a difference standing for **400 ms** moves the axis at
+all, so the dip-and-return an ageing spike produces leaves it exactly where it was — which
+is the case the trim had been covering for. Past the wait it eases exponentially on a
+**420 ms** time constant, written against elapsed time rather than a step count so it runs
+at one speed however often it is drawn, and it stops inside a **2%** deadband rather than
+chasing the last half-millisecond. While it travels, the curve is redrawn on the frame loop
+rather than the panel's five-a-second, which would show a glide as five steps; that redraw
+is gated on the canvas reporting a width, which a closed section does not.
+  Two consequences to know when reading a driven check: the axis settles a couple of percent
+short of the extent, so the curve's right-hand end lands near the far edge rather than on it;
+and a synthetic window must be fed **and** waited on with the recorder held, since one real
+frame entering between the two moves the very extent being waited for.
 
 **The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
 and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as
