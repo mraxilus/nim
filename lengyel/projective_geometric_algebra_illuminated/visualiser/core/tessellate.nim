@@ -134,49 +134,6 @@ func anchorFor*(
 
 #[ Segments and Circles ]#
 
-func directionAcross*(tail, head, eye: Position): Option[Direction] =
-  ## Resolve which way to step off a segment so its own two edges land either side of it
-  ## on screen.
-  ##   Joining the segment's line with the eye gives the one plane containing both; that
-  ##   plane's normal is perpendicular to the line and to every sight ray reaching it,
-  ##   which is exactly the direction that shows as sideways from where the camera stands.
-  ##   The same rule `marker.directionAcross` flanks a line's rails by, stated here over
-  ##   two endpoints rather than over a line's own multivector -- `marker` imports this
-  ##   module, so it delegates here rather than the two carrying a derivation each.
-  ##   None where the eye lies on the segment's own line, or where the segment has no
-  ##   length: neither has a side to step off toward.
-  ##   **The join is the implementation, and it is the hot path's largest cost -- kept.**
-  ##   Every ribbon of every frame runs this, ~3,800 times a frame while the camera moves,
-  ##   and under the JS backend each `∧` of full multivectors walks 16x16 coefficient
-  ##   pairs through `nimCopy`; a written-out cross product was measured 6.7 ms a frame
-  ##   cheaper and was shipped briefly, then reverted -- exercising the algebra is what
-  ##   this project exists to do, and a cost it carries is a finding, not a fault. See
-  ##   PROVENANCE.md's bottleneck ledger. The suite still holds this normal equal to the
-  ##   classical cross product, sign included -- the classical form lives in the test.
-  directionNormal(toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye))
-
-
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
-  scale: DrawExtent
-) =
-  ## Append the ribbon for one segment, deriving its own across direction.
-  ##   The general form: the across is the join's normal, per segment -- see
-  ## `directionAcross` -- and the packing is `addSegmentAcross`'s. Silently appends
-  ## nothing where the segment has no side to step off toward: zero length, or an eye
-  ## lying on its own line, where the ribbon is edge-on and covers no pixels anyway.
-  let across = directionAcross(tail, head, scale.eye)
-  if across.isNone: return
-  meshes.addSegmentAcross(tail, head, across.get, tint_tail, tint_head, width, scale)
-
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
-  scale: DrawExtent
-) =
-  ## Append a ribbon of one tint end to end; see the two-tint form above for what it draws.
-  meshes.addSegment(tail, head, tint, tint, width, scale)
-
-
 proc addPlaneRing(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
@@ -350,8 +307,11 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
       foot_point = unitize(foot_raw)
       axis_point = toMultivector(axis)
       # One across for the whole axis: all its pieces lie on the one line, so they share
-      #   the plane it joins with the eye -- the grid's own per-line rule.
-      across_axis = directionNormal(wedge(axis_line, scale.eye_point))
+      #   the direction sideways from the eye -- the grid's own per-line rule. The axis
+      #   itself is placed through the algebra above; this is only how wide the ribbon
+      #   standing for it is drawn, so it is the picture's cross product. See
+      #   `mesh.directionAcross`, which the pieces would otherwise each run.
+      across_axis = normalize(cross(axis, scale.eye - foot.get))
     if across_axis.isNone: continue
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
     #   distance from the eye, so the cutoff never reads as a hard edge.
@@ -456,12 +416,13 @@ proc addGridFamily(
     if reach_squared <= 0.0: continue
     let
       reach = sqrt(reach_squared)
-      # One base point and **one across** per lattice line: every fade piece lies on this
-      #   line, so they share the plane it joins with the eye, and deriving that join's
-      #   normal once here is the same algebra the per-piece form ran once a piece.
+      # One base point and **one across** per lattice line. The base is placed through the
+      #   algebra, as the lattice line itself is; the across is the picture's -- every fade
+      #   piece lies on this one line and so shares one direction sideways from the eye,
+      #   which is the cross `mesh.directionAcross` would otherwise take once a piece.
       base = add(origin_point,
         add(wedge(offset, across_point), wedge(centre_along, along_point)))
-      across_line = directionNormal(wedge(wedge(base, along_point), scale.eye_point))
+      across_line = normalize(cross(along, scale.eye - pointFrom(base)))
     # An eye on the lattice line itself has no side to step a ribbon off toward -- the
     #   very refusal `addSegment` makes per piece, made once for the line.
     if across_line.isNone: continue

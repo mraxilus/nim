@@ -1214,14 +1214,17 @@ suite "Mesh":
         head = Position(x: pseudo(), y: pseudo(), z: pseudo())
         eye = Position(x: pseudo(), y: pseudo(), z: pseudo())
         computed = directionAcross(tail, head, eye)
-        # The classical form: the cross product of the two edges from `tail`, normalized.
-        (a, b) = (head - tail, eye - tail)
-        classical = normalize(Direction(
-          x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x,
-        ))
-      check classical.isSome == computed.isSome
-      if classical.isSome:
-        check computed.get =~ classical.get
+        # **The algebra is the reference now, not the implementation.** The shipped form is
+        #   a cross product, because a ribbon's width is the picture's business and not the
+        #   geometry's; what it is held against is the join it replaced -- the one plane
+        #   through the segment and the eye, read for its normal. Sign included: the two
+        #   agree exactly, or the picture has quietly started flanking lines the wrong way.
+        algebraic = directionNormal(
+          toMultivector(tail) ∧ toMultivector(head) ∧ toMultivector(eye)
+        )
+      check algebraic.isSome == computed.isSome
+      if algebraic.isSome:
+        check computed.get =~ algebraic.get
     # And the two refusals: a segment of no length, and an eye on the segment's own line,
     #   neither of which has a side to step off toward.
     let (a, b) = (Position(x: 1, y: 2, z: 3), Position(x: 2, y: 4, z: 6))

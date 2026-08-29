@@ -764,6 +764,45 @@ proc addSegmentAcross*(
     meshes.addVertex(Primitive.Ribbon, corners[index], tints[index])
 
 
+func directionAcross*(tail, head, eye: Position): Option[Direction] =
+  ## Resolve which way to step off a segment so its own two edges land either side of it
+  ## on screen.
+  ##   Perpendicular to the segment and to the sight ray reaching it, which is exactly the
+  ##   direction that shows as sideways from where the camera stands: the cross product of
+  ##   the two edges leaving `tail`.
+  ##   **The picture's own quantity, not the geometry's.** Which way a line runs is the
+  ##   algebra's answer and stays there; how wide the quad standing for it is drawn is not,
+  ##   and this is that. It was the join `directionNormal(tail ∧ head ∧ eye)` -- the same
+  ##   plane, read for its normal -- which every ribbon of every frame ran, ~3,800 times a
+  ##   frame while the camera moves, walking 16x16 coefficient pairs through `nimCopy` on
+  ##   the JS backend each time. The suite holds this cross equal to that join, sign
+  ##   included: the algebra is what the shipped form is proved against.
+  ##   None where the eye lies on the segment's own line, or where the segment has no
+  ##   length: neither has a side to step off toward.
+  normalize(cross(head - tail, eye - tail))
+
+
+proc addSegment*(
+  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
+  scale: DrawScale
+) =
+  ## Append the ribbon for one segment, deriving its own across direction.
+  ##   The general form: the across is the join's normal, per segment -- see
+  ## `directionAcross` -- and the packing is `addSegmentAcross`'s. Silently appends
+  ## nothing where the segment has no side to step off toward: zero length, or an eye
+  ## lying on its own line, where the ribbon is edge-on and covers no pixels anyway.
+  let across = directionAcross(tail, head, scale.eye)
+  if across.isNone: return
+  meshes.addSegmentAcross(tail, head, across.get, tint_tail, tint_head, width, scale)
+
+proc addSegment*(
+  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
+  scale: DrawScale
+) =
+  ## Append a ribbon of one tint end to end; see the two-tint form above for what it draws.
+  meshes.addSegment(tail, head, tint, tint, width, scale)
+
+
 proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
   ## Append filled quadrilateral, wound as two triangles.
   for index in [0, 1, 2, 0, 2, 3]:
