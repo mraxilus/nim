@@ -1087,8 +1087,22 @@
             ><span><span class="chev">&#9656;</span>build (bridge)</span
             ><b id="diag-build">&mdash;</b></button>
           <div class="diag-children">
-            <div class="diag-line"><span>scenery (grid+axes)</span
-              ><b id="diag-furniture">&mdash;</b></div>
+            <div class="diag-node" data-node="furniture">
+              <button class="diag-line diag-parent" type="button"
+                ><span><span class="chev">&#9656;</span>scenery</span
+                ><b id="diag-furniture">&mdash;</b></button>
+              <!-- The two halves are not the same size of thing: the axes are three lines
+                   however far the camera stands, while the grid is however many the ground
+                   reach asks for -- so a scenery figure that rose could not say which of
+                   them rose. The grid carries its segment count, since its cost *is* that
+                   count and the count is what `SEGMENTS_GRID_MAX` bounds. -->
+              <div class="diag-children">
+                <div class="diag-line"><span>ground grid</span
+                  ><b id="diag-grid">&mdash;</b></div>
+                <div class="diag-line"><span>world axes</span
+                  ><b id="diag-axes">&mdash;</b></div>
+              </div>
+            </div>
             <div class="diag-node" data-node="scene">
               <button class="diag-line diag-parent" type="button"
                 ><span><span class="chev">&#9656;</span>scene objects</span

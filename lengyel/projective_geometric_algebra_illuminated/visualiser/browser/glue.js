@@ -1500,7 +1500,8 @@ let is_strip_pool_built = false;
 // frame's reading flickers too fast to read, and a median is what a reader means by "how
 // long does this step take".
 const PHASES_DIAGNOSTIC = [
-  ['build', 'diag-build'], ['furniture', 'diag-furniture'], ['scene', 'diag-scene'],
+  ['build', 'diag-build'], ['furniture', 'diag-furniture'],
+  ['grid', 'diag-grid'], ['axes', 'diag-axes'], ['scene', 'diag-scene'],
   ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
   ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
   ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
@@ -1510,6 +1511,7 @@ const PHASES_DIAGNOSTIC = [
 //   A time alone cannot tell "one of these is expensive" from "there are many of them",
 //   which is the whole question a reader opens this branch to answer.
 const COUNTS_DIAGNOSTIC = {
+  grid: 'count_grid_segments',
   points: 'count_points', lines: 'count_lines', planes: 'count_planes',
   sky: 'count_sky', ghost: 'count_ghost', selected: 'count_selected',
 };
@@ -1558,6 +1560,7 @@ function medianPhase(name) {
 //   entirely, so a subtotal nobody is reading costs nothing to keep offering.
 const NODES_DIAGNOSTIC = {
   build: ['furniture', 'scene', 'flatten'],
+  furniture: ['grid', 'axes'],
   scene: ['points', 'lines', 'planes', 'sky', 'ghost', 'selected'],
 };
 const element_node = {};
@@ -2734,6 +2737,11 @@ function renderFrame(now_seconds) {
   // records what came back, into the same rings its own phases use.
   recordPhaseTime('build', data.ms_build);
   recordPhaseTime('furniture', data.ms_furniture);
+  // The scenery's own two halves, which the bridge has clocked apart since the grid's
+  //   segment budget went in: the axes are three lines at any distance, the grid however
+  //   many the ground reach asks for, and only the split says which of them moved.
+  recordPhaseTime('grid', data.ms_grid);
+  recordPhaseTime('axes', data.ms_axes);
   recordPhaseTime('scene', data.ms_scene);
   recordPhaseTime('flatten', data.ms_flatten);
   // The scene phase broken out by the kind of object each millisecond went to, with the

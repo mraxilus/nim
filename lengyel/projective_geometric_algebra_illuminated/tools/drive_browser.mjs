@@ -915,6 +915,7 @@ await page.evaluate(() => {
     window.__phase_frame.push({
       build: data.ms_build, furniture: data.ms_furniture,
       scene: data.ms_scene, flatten: data.ms_flatten,
+      grid: data.ms_grid, axes: data.ms_axes, segments: data.count_grid_segments,
       points: data.ms_points, lines: data.ms_lines, planes: data.ms_planes,
       sky: data.ms_sky, ghost: data.ms_ghost, selected: data.ms_selected,
       count_points: data.count_points, count_lines: data.count_lines,
@@ -1112,6 +1113,17 @@ report(
     `over ${kinds.length ? kinds[kinds.length - 1].counted : '?'} objects`,
 );
 await page.evaluate(() =>
+  document.querySelector('.diag-node[data-node="furniture"] > .diag-parent').click());
+await page.waitForTimeout(400);
+const rows_scenery = await page.evaluate(() => Object.fromEntries(
+  ['grid', 'axes'].map((n) => [n, document.getElementById('diag-' + n).textContent])));
+report(
+  'and both halves have their own row, the grid carrying its segment count',
+  / ms \u00b7 \d+$/.test(rows_scenery.grid) && / ms$/.test(rows_scenery.axes),
+  `grid: ${rows_scenery.grid}, axes: ${rows_scenery.axes}`,
+);
+
+await page.evaluate(() =>
   document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click());
 await page.waitForTimeout(400);
 const rows_kind = await page.evaluate(() => Object.fromEntries(
@@ -1174,6 +1186,25 @@ const work_moving = await page.evaluate((from) => {
   const at = (share) => sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))];
   return sorted.length < 10 ? null : { n: sorted.length, median: at(0.5), p90: at(0.9) };
 }, index_before_drag);
+// **The scenery, split into the two halves that answer differently to distance.** The axes
+// are three lines however far the camera stands; the grid is however many the ground reach
+// asks for, and its cost *is* its segment count. The bridge has clocked them apart since
+// the grid gained its budget; these are the rows that show it.
+const scenery = await page.evaluate((from) => window.__phase_frame.slice(from),
+  index_before_drag);
+const scenery_moving = scenery.filter((p) => p.furniture > 0.05);
+const scenery_sane = scenery_moving.filter((p) =>
+  p.grid + p.axes <= p.furniture + 0.6 && p.grid + p.axes >= p.furniture - 1.0 &&
+  p.segments > 0);
+report(
+  'the scenery is accounted for by the grid and the axes it is drawn from',
+  scenery_moving.length > 3 && scenery_sane.length === scenery_moving.length,
+  `${scenery_sane.length} of ${scenery_moving.length} rebuilt frames account, ` +
+    `last ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].grid.toFixed(1) : '?'}` +
+    ` + ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].axes.toFixed(1) : '?'}` +
+    ` of ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].furniture.toFixed(1) : '?'} ms`,
+);
+
 report(
   'the camera was really moved for the moving-frame sample',
   work_moving !== null,
