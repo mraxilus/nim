@@ -460,17 +460,23 @@ type
       ## Merged where several were asked for: no single direction faces two stars on
       ## opposite sides of the sky, and the sum of their unit directions is the nearest
       ## thing to one that does.
-    centroid*: Option[Position] ## Middle of the same finite objects `sphere` is over, or
-      ## none where there are none. **What the orbit turns about once a selection stands**:
-      ## the sphere is a bound and its centre is wherever holding everything happened to
-      ## put it, while this is the middle of what was actually picked, which is the point a
-      ## reader means when they pick things and turn to look at them.
+    centroid_sum*: Option[Multivector] ## Middle of the same finite objects `sphere` is over,
+      ## **carried as the sum the algebra makes it out of** rather than as a place. Adding
+      ## unit-weight points adds their weights, so this sum's own weight is how many places
+      ## it is the middle of, and `centroid` below reads the mean straight back out of it --
+      ## the division that reads a point out *is* the averaging, and nothing here does any.
+      ## Rebuilt from nothing on every `aimFor`, so it never accumulates across frames: its
+      ## weight reaches the number of watched objects and stops. That restart is what makes
+      ## the aim compare equal to itself frame to frame, which is this record's whole worth.
+      ## None where there are no finite objects at all.
+      ## **What the orbit turns about once a selection stands**: the sphere is a bound and
+      ## its centre is wherever holding everything happened to put it, while this is the
+      ## middle of what was actually picked, which is the point a reader means when they
+      ## pick things and turn to look at them.
       ##   Over the same objects as `sphere` rather than over everything picked, and for
       ## the same reason `is_bound_by_fitted` gives: a line whose support stands a hundred
       ## units away would drag the centre off the point beside it, and dragging the *target*
       ## there is worse than dragging a bound there.
-    count_centroid*: int ## How many places `centroid` is the middle of, so one more can be
-      ## folded in without an array to fold over; see `objects.centroidFolded`.
 
   CameraPlacement* = object ## Where a camera stands -- everything an ease moves.
     ## The lens is not here: a field of view is the reader's own setting, and nothing that
@@ -513,6 +519,15 @@ func `==`*(a, b: SphereWorld): bool =
     a.radius == b.radius
 
 
+func centroid*(aim: CameraAim): Option[Position] =
+  ## Read the middle of what was picked, as a place to point a camera at.
+  ##   The sum's own weight is the count, so the read-out's division is the averaging; see
+  ##   `centroid_sum`. None where nothing finite was picked -- never for a sum of finite
+  ##   points, which cannot lose the weight it accumulated.
+  if aim.centroid_sum.isNone: return
+  position(aim.centroid_sum.get)
+
+
 func `==`*(a, b: CameraAim): bool =
   ## Compare two aims. Written out rather than left to Nim so the comparison is stated
   ## where the reason for it is.
@@ -522,12 +537,15 @@ func `==`*(a, b: CameraAim): bool =
   if a.sphere.isSome != b.sphere.isSome: return false
   if a.sphere.isSome and not (a.sphere.get == b.sphere.get): return false
   if a.is_bound_by_fitted != b.is_bound_by_fitted: return false
-  if a.count_centroid != b.count_centroid: return false
-  if a.centroid.isSome != b.centroid.isSome: return false
-  if a.centroid.isSome and not (
-    a.centroid.get.x == b.centroid.get.x and a.centroid.get.y == b.centroid.get.y and
-    a.centroid.get.z == b.centroid.get.z
-  ): return false
+  if a.centroid_sum.isSome != b.centroid_sum.isSome: return false
+  # The sum's four coefficients, not the place it reads out to: the weight is the count, so
+  #   comparing the sum is exactly the old test of "same middle *and* same number of things
+  #   it is the middle of" in one field instead of two. A sum of points is grade 1, so these
+  #   four slots are the whole of it.
+  if a.centroid_sum.isSome:
+    let (m, n) = (a.centroid_sum.get, b.centroid_sum.get)
+    for slot in [Basis.E1, Basis.E2, Basis.E3, Basis.E4]:
+      if m[slot] != n[slot]: return false
   if a.heading.isSome != b.heading.isSome: return false
   if a.heading.isNone: return true
   let (d, e) = (a.heading.get, b.heading.get)
@@ -633,7 +651,7 @@ func aimIncluding*(
       is_bound_by_fitted: true, heading: grown.heading,
       # The middle starts afresh with the bound: whatever the lines contributed is being
       #   discarded here, and a centre still holding them would sit off everything left.
-      centroid: some(anchor.get), count_centroid: 1,
+      centroid_sum: some(toMultivector(anchor.get)),
     ))
   grown.sphere =
     if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: reach))
@@ -641,20 +659,11 @@ func aimIncluding*(
   # The middle of the very same objects, folded through the algebra's own reading of one:
   #   see `objects.centroidFolded`. A plane folds in by its disc's centre, not by its whole
   #   ball -- a disc's middle *is* where it stands, and the ball is only what has to fit.
-  #   The running middle is carried as a *place* rather than as the sum it comes from,
-  #   because a `CameraAim` is compared exactly frame to frame and a multivector has no
-  #   exact comparison to be compared by; the sum is rebuilt from the place and the count
-  #   each fold, which costs one lift and one read over a handful of picked objects once a
-  #   frame. The point scales back up to the weight it stands for before the new one joins
-  #   it, since a place read back out carries weight one however many it is the middle of.
-  if grown.centroid.isSome:
-    grown.centroid = position(centroidFolded(
-      wedge(float(grown.count_centroid), toMultivector(grown.centroid.get)),
-      toMultivector(anchor.get),
-    ))
-  else:
-    grown.centroid = some(anchor.get)
-  grown.count_centroid += 1
+  #   Nothing is read out or scaled here: the sum carries its own weight, and the one
+  #   division that turns it back into a place happens in `centroid`, once, at the end.
+  grown.centroid_sum =
+    if grown.centroid_sum.isNone: some(toMultivector(anchor.get))
+    else: some(centroidFolded(grown.centroid_sum.get, toMultivector(anchor.get)))
   some(grown)
 
 

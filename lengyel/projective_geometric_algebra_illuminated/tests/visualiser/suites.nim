@@ -3017,10 +3017,11 @@ suite "Camera Aim":
     #   three leans back toward it. That is why `framing.watched` yields each object once
     #   -- a unary preview naming its own operand twice must not weigh it twice.
     check aim_two.get.centroid.get =~ ORIGIN
-    check aim_two.get.count_centroid == 2
+    # The sum's weight is the count -- which is what lets one field say both.
+    check aim_two.get.centroid_sum.get[Basis.E4] =~ 2.0
     let aim_thrice = aim_two.aimIncluding(toMultivector(a), SCALE_AIM)
     check aim_thrice.get.centroid.get =~ Position(x: 1.0, y: 0.0, z: 0.0)
-    check aim_thrice.get.count_centroid == 3
+    check aim_thrice.get.centroid_sum.get[Basis.E4] =~ 3.0
 
     let horizon = attitude(LINES[0]) # A line's attitude is a point at the horizon.
     check isHorizon(horizon)
