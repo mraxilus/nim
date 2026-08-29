@@ -238,10 +238,16 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+  /* A lone chip has to carry its own affordance. The header's chips read as controls
+     because `.toggles` draws a bordered pill around the group; there is no group here, and
+     without a resting border and surface of its own this one renders as the word "log" in
+     the caption's own ink, indistinguishable from the caption it sits in. */
   .diag-toggle {
     font-size: 9.5px;
     padding: 2px 7px;
-    color: var(--ink-faint);
+    color: var(--ink-muted);
+    border-color: var(--border);
+    background: var(--surface-raised);
   }
 
 

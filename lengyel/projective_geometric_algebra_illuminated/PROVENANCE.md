@@ -2055,7 +2055,10 @@ being self-evident the way a quarter is, and the caption names the mode so a scr
 which axis its curve was read against. The bands, the labelled budget lines, the trim and
 the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
 pill shares the header chips' own CSS rules rather than copying them, at the caption row's
-scale.
+scale — but **keeps a resting border and surface those chips do without**, because the
+header's chips read as controls only by sitting inside `.toggles`, which draws a bordered
+pill around the group. Shipped once without them, the switch rendered as the word "log" in
+the caption's own ink and was reported missing.
   **The axis follows the window, floored at the 30 fps mark.** Fitting alone made the same
 curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
 max its place on the chart. The floor is what keeps both: at 30 fps and better the axis
