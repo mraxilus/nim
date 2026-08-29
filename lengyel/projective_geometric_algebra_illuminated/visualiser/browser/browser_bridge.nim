@@ -44,8 +44,8 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
-  interaction, marker, picking, scene, selection, storyboard, tessellate,
+  algebra_view, boundary, camera, format, framing, help, history, interaction, marker,
+  picking, scene, selection, storyboard, tessellate,
 ]
 
 

@@ -106,7 +106,7 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  algebra_view, boundary, camera, format, framing, help, history,
   interaction, marker, picking,
   scene, selection, storyboard, tessellate,
 ]

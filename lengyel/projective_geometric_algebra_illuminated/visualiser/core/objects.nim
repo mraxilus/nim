@@ -19,7 +19,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options]
+import std/options
 
 import ../../pga
 
