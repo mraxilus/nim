@@ -810,9 +810,16 @@
   }
   .diag-parent:hover .chev, .diag-parent:focus-visible .chev { color: var(--accent); }
   .diag-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .diag-node.open .diag-parent .chev { transform: rotate(90deg); }
+  /* **`>`, not a descendant combinator.** These nodes nest, and a descendant selector
+     matched every `.diag-children` and every `.chev` *below* an open node -- so opening
+     `build` revealed the whole tree at once and rotated all three chevrons, while
+     `isPhaseShown` went on correctly reporting the inner nodes closed and never wrote
+     their rows. The result read as a tree whose deeper rows were permanently broken: every
+     one of them on screen, expanded, and showing an em dash. A node's own class must reach
+     its own children and stop there. */
+  .diag-node.open > .diag-parent .chev { transform: rotate(90deg); }
   .diag-children { display: none; padding-left: 12px; }
-  .diag-node.open .diag-children { display: block; }
+  .diag-node.open > .diag-children { display: block; }
   .sparkline { width: 100%; height: 40px; display: block; }
   .exceedance { width: 100%; height: 74px; display: block; }
   /* The curve's own caption, in the row idiom the numbers below it use, so the legend and

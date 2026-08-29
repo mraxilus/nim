@@ -999,6 +999,88 @@ report(
   Object.entries(row_texts).map(([n, t]) => `${n}: ${t}`).join(', '),
 );
 
+// **A branch opens its own rows and stops there.** `build` is open at this point and
+// nothing under it has been touched, so the two nested branches must still be shut: their
+// rows out of the layout and their chevrons unturned. This is the check the tree needed
+// from the start -- the rules that reveal a branch's children and turn its chevron used a
+// descendant combinator, so opening `build` laid the whole tree bare and rotated all three
+// chevrons while `isPhaseShown` went on correctly treating the inner nodes as closed and
+// never wrote their rows. Every deeper row then sat on screen, apparently expanded, showing
+// an em dash for good. Driving every branch open hid it: only opening the outermost one
+// does.
+// Opened for real first: a chevron's rotation is only resolvable on a rendered element --
+//   inside a `display: none` subtree `getComputedStyle().transform` answers `none` whatever
+//   the rule says -- and the rows this check is about are written whether or not anyone can
+//   see them. Both are put back at the end.
+const glass_before = await page.evaluate(() => {
+  const drawer = document.querySelector('.drawer');
+  const section = document.querySelector('.section[data-section="diagnostics"]');
+  const was = { drawer: drawer.classList.contains('open'),
+    section: section.classList.contains('open') };
+  if (!was.drawer) document.getElementById('btn-drawer').click();
+  if (!was.section) section.querySelector('.section-header').click();
+  return was;
+});
+await page.waitForTimeout(500);
+const nested = await page.evaluate(() => {
+  // Asked of the row's own branch container, not of `offsetParent`: everything in the
+  //   drawer sits inside a `position: fixed` ancestor, which makes `offsetParent` null
+  //   whatever the branch is doing, so it cannot tell an open branch from a shut one.
+  const laid = (id) => getComputedStyle(
+    document.getElementById(id).closest('.diag-children')).display !== 'none';
+  const turned = (node) => getComputedStyle(document.querySelector(
+    '.diag-node[data-node="' + node + '"] > .diag-parent .chev')).transform !== 'none';
+  const shut = {
+    grid: laid('diag-grid'), points: laid('diag-points'),
+    scenery_turned: turned('furniture'), scene_turned: turned('scene'),
+  };
+
+  document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click();
+  return shut;
+});
+// Read after the chevron's own 350 ms turn has finished: asked in the same tick as the
+//   click, a transition that has not started yet still reports its old transform.
+await page.waitForTimeout(700);
+const nested_open = await page.evaluate(() => {
+  const laid = (id) => getComputedStyle(
+    document.getElementById(id).closest('.diag-children')).display !== 'none';
+  const turned = (node) => getComputedStyle(document.querySelector(
+    '.diag-node[data-node="' + node + '"] > .diag-parent .chev')).transform !== 'none';
+  return {
+    points: laid('diag-points'), grid: laid('diag-grid'),
+    scene_turned: turned('scene'), scenery_turned: turned('furniture'),
+    reading: document.getElementById('diag-points').textContent,
+  };
+});
+report(
+  'opening a branch reveals its own rows only, and they carry numbers',
+  // Shut: neither nested branch is laid out or turned, though their parent is open.
+  !nested.grid && !nested.points && !nested.scenery_turned && !nested.scene_turned &&
+    // Opened: `scene` alone -- its rows appear and its chevron turns, `scenery` stays shut.
+    nested_open.points && nested_open.scene_turned &&
+    !nested_open.grid && !nested_open.scenery_turned &&
+    / ms/.test(nested_open.reading),
+  `with build alone open: grid laid ${nested.grid}, points laid ${nested.points}, ` +
+    `chevrons turned ${nested.scenery_turned}/${nested.scene_turned}; after opening scene: ` +
+    `points laid ${nested_open.points} turned ${nested_open.scene_turned} reading ` +
+    `"${nested_open.reading}", grid laid ${nested_open.grid} turned ` +
+    `${nested_open.scenery_turned}`,
+);
+// `scenery` opened too, for the checks below which read every row; then the drawer and the
+// section are put back exactly as this check found them.
+await page.evaluate((was) => {
+  document.querySelector('.diag-node[data-node="furniture"] > .diag-parent').click();
+  const drawer = document.querySelector('.drawer');
+  const section = document.querySelector('.section[data-section="diagnostics"]');
+  if (drawer.classList.contains('open') !== was.drawer) {
+    document.getElementById('btn-drawer').click();
+  }
+  if (section.classList.contains('open') !== was.section) {
+    section.querySelector('.section-header').click();
+  }
+}, glass_before);
+await page.waitForTimeout(400);
+
 // **The frame-time distribution, over a window long enough to hold a rare stall.** The
 // sparkline holds four seconds and says *when*; this says *how often*, which is the
 // question a reader chasing an occasional stutter is actually asking. Held as the three

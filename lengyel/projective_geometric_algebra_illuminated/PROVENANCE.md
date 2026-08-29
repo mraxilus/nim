@@ -2039,10 +2039,10 @@ live face of this ledger.
 marked "did not run this frame" with a negative in the value's own range, and every mobile
 browser coarsens and jitters `performance.now` against timing attacks — so a sub-millisecond
 step measures as zero or below and a real reading becomes indistinguishable from silence.
-On a phone that left *every* sub-millisecond row of the breakdown an em dash — the two
-scenery halves and all six object kinds — while the six-millisecond rows read correctly;
-the desktop, whose clock is fine-grained and monotonic, showed nothing wrong, and the
-driven checks passed on it. Presence is now a parallel `Uint8Array` per phase, a
+This was **not** what emptied those rows in practice — see the tree's own combinator bug
+below, which was — and no reading has been observed to be lost to it; the hazard is real but
+the evidence for it here is a driven check that constructs it, not a session that suffered
+it. Presence is now a parallel `Uint8Array` per phase, a
 non-positive reading is clamped to zero (a negative elapsed time is a clock artefact, not a
 duration, and "too short to measure" is the honest reading of it), and a non-finite one is
 left absent so a genuine wiring break still shows as an em dash rather than a confident
@@ -2062,6 +2062,25 @@ a twelfth of a second on a desktop and a third of one on a slow phone, so the di
 at whichever rate the reader happened to be running at. 200 ms is the conventional settling
 time for a performance readout — long enough that the digits hold still, short enough that a
 stall is still on screen while it happens.
+
+**A branch reveals its own rows and stops there — `>`, not a descendant combinator.** The
+two rules that show an open node's children and turn its chevron were written with
+descendant selectors, and these nodes nest: opening `build` therefore matched *every*
+`.diag-children` and *every* `.chev` beneath it, laying the whole tree bare and rotating all
+three chevrons at once, while `isPhaseShown` went on correctly reporting the inner nodes
+closed and so never wrote their rows. What a reader saw was a fully expanded tree in which
+the two scenery halves and all six object kinds showed an em dash permanently — the deeper
+half of the breakdown looked broken and no amount of clicking fixed it, because the rows
+were already "open". Both rules are now scoped with `>`.
+  The driven checks had missed it for a structural reason worth recording: they opened every
+branch explicitly before reading, which makes the inner nodes genuinely open and hides the
+fault completely. The check that now guards it opens **only the outermost branch** and
+requires the inner branches to be neither laid out nor turned — the state a reader is in
+after one click. Two harness traps were found writing it: `offsetParent` is null for
+everything inside the `position: fixed` drawer, so it cannot tell an open branch from a shut
+one (ask the branch's own `.diag-children` for its computed `display` instead), and
+`getComputedStyle().transform` resolves to `none` inside a `display: none` subtree, so the
+panel has to be genuinely on screen before a chevron's rotation can be read at all.
 
 **The disclosure triangles are the solid glyph, not U+25B8's small one.** At the sizes these
 rows are read at the small triangle is a speck that reads as punctuation; a reader could not
