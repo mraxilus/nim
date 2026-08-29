@@ -1084,6 +1084,58 @@ report(
   `${bands.drawn} of ${bands.wanted} band colours on the canvas`,
 );
 
+// **It reads bottom-left to top-right, between its own two ends.** The curve is the share
+// of frames that came in *under* each duration, so it climbs; and it is drawn only between
+// the fastest frame the window holds and the slowest, so it leaves 0% at one and arrives at
+// 100% at the other rather than running flat along both edges. Those two arrivals are how
+// the min and the max are read off it, so they are what is held here.
+const reach = await page.evaluate(() => {
+  const canvas = document.getElementById('exceedance');
+  const pixels = canvas.getContext('2d')
+    .getImageData(0, 0, canvas.width, canvas.height).data;
+  // The curve alone: the gridlines are drawn at a fifth of this opacity.
+  let top = canvas.height;
+  let bottom = -1;
+  let rightmost = -1;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (pixels[(y * canvas.width + x) * 4 + 3] < 200) continue;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+      if (x > rightmost) rightmost = x;
+    }
+  }
+  const said = document.getElementById('diag-exceedance-axis').textContent;
+  return {
+    top, bottom, rightmost, height: canvas.height, width: canvas.width,
+    milliseconds: Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]),
+  };
+});
+report(
+  'the curve climbs from 0% at the fastest frame to 100% at the slowest',
+  // Bottom to top, and all the way out to the slowest frame the window holds -- which on a
+  //   window this size is the far edge, since the axis is fitted to exactly that frame.
+  reach.top <= 2 && reach.bottom >= reach.height - 3 &&
+    reach.rightmost >= reach.width - 2,
+  `drawn from row ${reach.top} to ${reach.bottom} of ${reach.height}, ` +
+    `out to column ${reach.rightmost} of ${reach.width}`,
+);
+// The floor, exercised where it actually binds: a window holding nothing slower than
+// 15 ms would otherwise draw an axis a third that wide and zoom the session into its own
+// noise, so it stops at the 30 fps mark and the budget lines keep their places.
+const floored = await page.evaluate(() => {
+  for (let i = 0; i < 1024; i += 1) recordExceedance(5 + Math.random() * 9);
+  drawExceedance();
+  const said = document.getElementById('diag-exceedance-axis').textContent;
+  return Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]);
+});
+report(
+  'and its axis follows the window without ever closing below the 30 fps mark',
+  Number.isFinite(reach.milliseconds) && reach.milliseconds >= 33 &&
+    Number.isFinite(floored) && Math.round(floored) === 33,
+  `a mixed window reads 0-${reach.milliseconds} ms, a fast one 0-${floored} ms`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the
@@ -1199,10 +1251,12 @@ const scenery_sane = scenery_moving.filter((p) =>
 report(
   'the scenery is accounted for by the grid and the axes it is drawn from',
   scenery_moving.length > 3 && scenery_sane.length === scenery_moving.length,
-  `${scenery_sane.length} of ${scenery_moving.length} rebuilt frames account, ` +
-    `last ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].grid.toFixed(1) : '?'}` +
-    ` + ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].axes.toFixed(1) : '?'}` +
-    ` of ${scenery_moving.length ? scenery_moving[scenery_moving.length - 1].furniture.toFixed(1) : '?'} ms`,
+  `${scenery_sane.length} of ${scenery_moving.length} rebuilt frames account` +
+    (scenery_moving.length === 0 ? '' : (() => {
+      const last = scenery_moving[scenery_moving.length - 1];
+      return `, last ${last.grid.toFixed(1)} + ${last.axes.toFixed(1)} ` +
+        `of ${last.furniture.toFixed(1)} ms over ${last.segments} segments`;
+    })()),
 );
 
 report(

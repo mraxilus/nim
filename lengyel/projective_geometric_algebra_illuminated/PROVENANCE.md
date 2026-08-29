@@ -2026,19 +2026,33 @@ memo and the shared overlay extent skip recomputation when every input is bit-id
 which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
 live face of this ledger.
 
-**How often, not only when.** The drawer's sparkline holds 240 frames and answers "when did
-that stutter happen"; above it sits the complementary curve — for each duration, the share
-of recent frames at or over it — across a rolling window of the last 4,096 frames, about a
-minute at 60 fps. Kept as a ring and a histogram of the same samples maintained together, so
-a frame costs two array writes and the curve is one suffix scan taken only when the panel is
-open; a sample past the last bucket lands *in* it, since a 300 ms stall is the most
-important sample the window holds.
-  **The axis is fixed at 0–50 ms, not fitted to the window.** Fitting made the same curve
-mean a different thing minute to minute — a session that got worse redrew itself flatter —
-and no two readings could be compared. A curve still carrying height at the right edge is a
-session with frames slower than 50 ms, which reads as off the chart; the buckets keep their
-full range, so the 1-in-100 stated beside the curve is true even when it lies beyond the
-axis. The three budgets a reader aims at are dashed and labelled by *rate* (120, 60, 30),
+**How much of the session runs at each speed.** The drawer's sparkline holds 240 frames and
+answers "when did that stutter happen"; above it sits the distribution — for each duration,
+the share of recent frames that came in *under* it — across a rolling window of the last
+1,024 frames, about seventeen seconds at 60 fps. That length is a trade the window has to
+make: long enough to hold a stall, short enough that one ages out again rather than
+widening the axis for a minute. Kept as a ring and a histogram of the same samples
+maintained together, so a frame costs two array writes and the curve is one suffix scan
+taken only when the panel is open; a sample past the last bucket lands *in* it, since a
+300 ms stall is the most important sample the window holds. **The histogram stays an
+exceedance** — the suffix sum is the natural way to compute it — and only the drawing turns
+it over.
+  **It climbs, between its own two ends.** A rising curve answers the question as asked:
+how much of the session came in under this. It is drawn only from the fastest frame the
+window holds to the slowest, so it leaves 0% at one and arrives at 100% at the other
+instead of running flat along both edges, and those two arrivals are how the fastest and
+slowest frames are read off it. The vertical axis is linear, ruled at every quarter and at
+both bounds; a log axis from the top was the alternative, and it would have kept the last
+1% legible where linear squeezes it against the ceiling — the trade taken deliberately for
+a proportion that reads as a proportion.
+  **The axis follows the window, floored at the 30 fps mark.** Fitting alone made the same
+curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
+max its place on the chart. The floor is what keeps both: at 30 fps and better the axis
+stands still and the budget lines keep their places, so two readings of a healthy session
+compare directly, while a session with a stall in it stretches to exactly that stall and
+the curve's 100% lands on it. It is the bands that made this affordable — an axis that
+moves stays legible when the colours and the labelled lines say where the budgets are. The
+three budgets a reader aims at are dashed and labelled by *rate* (120, 60, 30),
 because a duration means nothing to most people and "60" means something to everyone, and
 the curve is drawn in one run per band so the colour changes exactly at the line it is read
 against. The four band colours are a **status** ramp, not the object palette — an object's

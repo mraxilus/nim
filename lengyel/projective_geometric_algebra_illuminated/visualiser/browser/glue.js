@@ -1605,14 +1605,16 @@ function refreshDeliveryReport() {
 // **How often a frame runs long, over a window long enough to answer that.** The
 //   sparkline holds four seconds and shows *when*; a reader chasing a stall that happens
 //   once a minute needs *how often*, which is a distribution rather than a trace. Kept as
-//   a rolling window of the last `FRAMES_EXCEEDANCE` frames, which at 60 fps is a minute
-//   or so, and summarised as the share of them at or over each duration.
+//   a rolling window of the last `FRAMES_EXCEEDANCE` frames -- about seventeen seconds at
+//   60 fps, which is long enough to hold a stall and short enough that one ages out again
+//   rather than flattening the chart for a minute -- summarised as the share of them at or
+//   over each duration.
 //   The window is a ring of samples *and* a histogram of the same samples, maintained
 //   together: a frame entering increments its bucket, the frame it evicts decrements the
 //   one it was in. That keeps the per-frame cost a couple of array writes -- this runs on
 //   every frame, including the ones being measured -- and leaves the curve a single
 //   suffix scan over the buckets, done only when the panel is actually open.
-const FRAMES_EXCEEDANCE = 4096;
+const FRAMES_EXCEEDANCE = 1024;
 const MILLISECONDS_BUCKET = 0.5; // Fine enough to separate a 16.7 ms frame from a 17.2.
 const BUCKETS_EXCEEDANCE = 256; // Up to 128 ms; everything slower lands in the last one.
 const history_exceedance = new Float32Array(FRAMES_EXCEEDANCE);
@@ -1622,6 +1624,7 @@ let count_exceedance = 0; // Rises to the window's own size, then stays there.
 const exceedance = document.getElementById('exceedance');
 const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
 const diagnostic_exceedance = document.getElementById('diag-exceedance');
+const label_exceedance_axis = document.getElementById('diag-exceedance-axis');
 
 function bucketOf(milliseconds) {
   const index = Math.floor(milliseconds / MILLISECONDS_BUCKET);
@@ -1670,14 +1673,14 @@ function recordFrameTime(delta_milliseconds) {
 //   vertical drop and a flat line, which says nothing about the tail -- and the tail is
 //   the whole question. Decades from every frame down to one in a thousand.
 const DECADES_EXCEEDANCE = 3;
-// **The axis is fixed, not fitted.** It used to run out to the slowest bucket the window
-//   held, which made the same curve mean a different thing minute to minute: a session
-//   that got worse redrew itself flatter, and no two readings could be compared. Fifty
-//   milliseconds holds every budget below plus half again, and a curve still carrying
-//   height at the right edge is a session with frames slower than that -- which reads as
-//   "off the chart", correctly. The buckets keep their own full range, so the 1-in-100
-//   stated beside the curve is true even when it lies beyond the axis.
-const MILLISECONDS_AXIS_EXCEEDANCE = 50;
+// **The axis follows the window, but never closes below the slowest budget.** Fitting it to
+//   the slowest frame is what makes the max readable -- the curve reaches 100% exactly
+//   there -- and the floor is what stops a fast session zooming into its own noise: at
+//   30 fps and better, the axis stands still and the three budget lines keep their places,
+//   so two readings of a healthy session compare directly. It is the bands that made this
+//   affordable: an axis that moves is legible when the colours and the labelled lines say
+//   where the budgets are regardless of how far it runs.
+const MILLISECONDS_AXIS_LEAST = 1000 / 30;
 // The frame budgets a reader actually aims at, each named by the rate it is: a duration
 //   means nothing to most people and "60" means something to everyone.
 const BUDGETS_EXCEEDANCE = [
@@ -1705,27 +1708,46 @@ function drawExceedance() {
   context_exceedance.clearRect(0, 0, w, h);
   const counted = scanExceedance();
   if (counted === 0) return;
-  const share_floor = Math.pow(10, -DECADES_EXCEEDANCE);
-  const yOf = (share) => {
-    if (share <= share_floor) return h;
-    return h - (1 + Math.log10(share) / DECADES_EXCEEDANCE) * h;
-  };
-  const xOf = (milliseconds) => (milliseconds / MILLISECONDS_AXIS_EXCEEDANCE) * w;
 
-  // A decade line per order of magnitude, so the reader can see where one frame in ten,
-  //   one in a hundred and one in a thousand fall without a labelled axis eating the plot.
+  // The window's own bounds, in buckets: the fastest frame it holds and the slowest. The
+  //   curve is drawn between exactly these, so it leaves 0% where the fastest frame is and
+  //   reaches 100% at the slowest instead of running flat along both edges -- which is what
+  //   makes the two of them readable rather than merely present.
+  let bucket_first = -1;
+  let bucket_last = 0;
+  for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
+    if (buckets_exceedance[i] === 0) continue;
+    if (bucket_first < 0) bucket_first = i;
+    bucket_last = i;
+  }
+  if (bucket_first < 0) return;
+  const milliseconds_full = Math.max(
+    MILLISECONDS_AXIS_LEAST, (bucket_last + 1) * MILLISECONDS_BUCKET,
+  );
+  const xOf = (milliseconds) => (milliseconds / milliseconds_full) * w;
+  // Proportion **below**, rising: the question a reader is asking is how much of the
+  //   session came in under a duration, and a curve that answers it climbing left to right
+  //   is read without translation. Linear, so the axis is the proportion itself.
+  const yOf = (share_below) => h - share_below * h;
+
+  // A quarter at a time, recessive, so the height can be read without a labelled axis --
+  //   and **0% and 100% among them**, since those two are what the curve's own ends are
+  //   read against: leaving one and arriving at the other is how the fastest and slowest
+  //   frames in the window are seen at a glance.
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
   context_exceedance.lineWidth = 1;
-  for (let decade = 1; decade <= DECADES_EXCEEDANCE; decade += 1) {
-    const y = Math.round(yOf(Math.pow(10, -decade))) + 0.5;
+  for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+    // Held a half-pixel inside the canvas at the two ends, where the line would otherwise
+    //   straddle the edge and render at half its weight or not at all.
+    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(share)) + 0.5));
     context_exceedance.beginPath();
     context_exceedance.moveTo(0, y);
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
   }
-  // The budgets themselves, each named by its frame rate. These are what divide the curve
-  //   into its four coloured runs below, so the line a reader reads the colour against is
-  //   the very line the colour changes at.
+  // The budgets themselves, each named by its frame rate, and drawn only where the axis
+  //   actually reaches them: at the floor the 30 fps line stands on the right edge, and a
+  //   window with nothing slower than 120 fps in it has no business drawing the other two.
   context_exceedance.setLineDash([2, 3]);
   context_exceedance.font = '9px ' +
     (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
@@ -1733,6 +1755,7 @@ function drawExceedance() {
   context_exceedance.textBaseline = 'top';
   for (const budget of BUDGETS_EXCEEDANCE) {
     if (!Number.isFinite(budget.milliseconds)) continue;
+    if (budget.milliseconds > milliseconds_full) continue;
     const x = Math.round(xOf(budget.milliseconds)) + 0.5;
     context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.30)';
     context_exceedance.beginPath();
@@ -1740,24 +1763,27 @@ function drawExceedance() {
     context_exceedance.lineTo(x, h);
     context_exceedance.stroke();
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    context_exceedance.fillText(budget.label, x + 2, 1);
+    // Inside the line where it would otherwise run off the right edge.
+    const is_room = x + 14 < w;
+    context_exceedance.textAlign = is_room ? 'left' : 'right';
+    context_exceedance.fillText(budget.label, x + (is_room ? 2 : -2), 1);
   }
   context_exceedance.setLineDash([]);
+  context_exceedance.textAlign = 'left';
 
   // The curve, in one run per band, each stroked in that band's own colour and each
   //   starting where the last ended so the line is continuous across the change. Drawn
   //   band by band rather than sampling a colour per segment: a run is one path and one
   //   stroke, and the join at a boundary is exact rather than a pixel of the wrong hue.
   context_exceedance.lineWidth = 1.5;
-  const last_bucket = Math.min(
-    BUCKETS_EXCEEDANCE - 1,
-    Math.ceil(MILLISECONDS_AXIS_EXCEEDANCE / MILLISECONDS_BUCKET),
-  );
   let band_open = -1;
-  for (let i = 0; i <= last_bucket; i += 1) {
-    const milliseconds = Math.min(i * MILLISECONDS_BUCKET, MILLISECONDS_AXIS_EXCEEDANCE);
+  for (let i = bucket_first; i <= bucket_last; i += 1) {
+    const milliseconds = i * MILLISECONDS_BUCKET;
     const band = bandOfExceedance(milliseconds);
-    const point = [xOf(milliseconds), yOf(shares_exceedance[i])];
+    // `shares_exceedance[i]` is the share at or over this duration, so its complement is
+    //   the share below it -- the histogram stays an exceedance and only the drawing turns
+    //   over, which is what keeps the scan a plain suffix sum.
+    const point = [xOf(milliseconds), yOf(1 - shares_exceedance[i])];
     if (band !== band_open) {
       if (band_open >= 0) {
         // Carry the run into the boundary before closing it, so the two runs meet on the
@@ -1773,6 +1799,9 @@ function drawExceedance() {
       context_exceedance.lineTo(point[0], point[1]);
     }
   }
+  // The last bucket's own upper edge, where the share below reaches one: the slowest frame
+  //   the window holds, standing at 100% and at the axis's own end.
+  context_exceedance.lineTo(xOf((bucket_last + 1) * MILLISECONDS_BUCKET), yOf(1));
   if (band_open >= 0) context_exceedance.stroke();
 
   // The one number worth stating outright beside the curve: what the slowest frame in a
@@ -1783,6 +1812,12 @@ function drawExceedance() {
   }
   diagnostic_exceedance.textContent =
     '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames';
+  // The axis's own extent, said where the reader is looking rather than left to be
+  //   inferred from a curve that now moves with the window.
+  if (label_exceedance_axis !== null) {
+    label_exceedance_axis.textContent =
+      'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms';
+  }
 }
 
 // The scale bar's own reading, as a map carries one: a span of ground drawn at its true

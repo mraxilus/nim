@@ -1060,14 +1060,14 @@
       ><span>diagnostics</span><span class="chev">&#9656;</span></button>
       <div class="section-body">
         <!-- What a session's frame times actually look like, rather than the last four
-             seconds of them: for each duration, the share of recent frames that took at
-             least that long. A sparkline shows *when* a spike happened and forgets it a
-             few seconds later; this shows *how often* one happens, over a window long
-             enough for a once-a-minute stall to still be on the chart. Read it as "one
-             frame in a hundred takes longer than here". -->
+             seconds of them: for each duration, the share of recent frames that came in
+             under it. A sparkline shows *when* a spike happened and forgets it a few
+             seconds later; this shows *how much* of the session runs at each speed. The
+             curve leaves 0% at the fastest frame the window holds and reaches 100% at the
+             slowest, so both ends are read straight off it. -->
         <canvas class="exceedance" id="exceedance"></canvas>
         <div class="diag-legend">
-          <span>frames at or over &middot; 0&ndash;50 ms</span
+          <span id="diag-exceedance-axis">frames under</span
             ><b id="diag-exceedance">&mdash;</b>
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
