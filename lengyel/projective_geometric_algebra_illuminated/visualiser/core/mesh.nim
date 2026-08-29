@@ -803,6 +803,54 @@ proc addSegment*(
   meshes.addSegment(tail, head, tint, tint, width, scale)
 
 
+proc addPlaneRing*(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; scale: DrawScale; segments: int = SEGMENTS_CIRCLE_HORIZON
+) =
+  ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
+  ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is drawn.
+  ##   **A disc is not a plane.** A plane is infinite; this circle is the stand-in drawn
+  ##   for one, sized for an eye and carrying no geometric meaning of its own, so it is
+  ##   stepped with `euclid.onCircle` rather than assembled as multivector sums. Which
+  ##   plane the two arms span is still the algebra's answer -- `boundary.frame` -- and
+  ##   `tessellate.addPlane` hands it down; only the walk around the rim is arithmetic.
+  ##   The suite holds each point equal to the multivector sum it replaced.
+  let
+    arm_first = radius*axis_first
+    arm_second = radius*axis_second
+  for i in 0 ..< segments:
+    let
+      angle_a = (2.0*PI * float(i)) / float(segments)
+      angle_b = (2.0*PI * float(i + 1)) / float(segments)
+    meshes.addSegment(
+      onCircle(center, arm_first, arm_second, angle_a),
+      onCircle(center, arm_first, arm_second, angle_b),
+      tint, WIDTH_LINE_OBJECT, scale,
+    )
+
+
+proc addPlaneFill*(
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+) =
+  ## Append a flat, uniformly translucent fan filling the same circle `addPlaneRing`
+  ## outlines -- flat rather than faded toward the rim, since the rim itself already
+  ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
+  ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
+  ## legible through every one of its triangles alike.
+  ##   Stepped the same way the rim is, and for the same reason; see `addPlaneRing`.
+  let
+    arm_first = radius*axis_first
+    arm_second = radius*axis_second
+  for i in 0 ..< segments:
+    let
+      angle_a = (2.0*PI * float(i)) / float(segments)
+      angle_b = (2.0*PI * float(i + 1)) / float(segments)
+    meshes.addVertex(Primitive.Triangle, center, tint)
+    meshes.addVertex(Primitive.Triangle, onCircle(center, arm_first, arm_second, angle_a), tint)
+    meshes.addVertex(Primitive.Triangle, onCircle(center, arm_first, arm_second, angle_b), tint)
+
+
 proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
   ## Append filled quadrilateral, wound as two triangles.
   for index in [0, 1, 2, 0, 2, 3]:

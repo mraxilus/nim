@@ -1006,6 +1006,35 @@ suite "Mesh":
           check abs(dot(corner.toPosition - anchor.get, normal.get)) <= bound + 1e-5
 
 
+  test "the disc is stepped in arithmetic, and lands where the algebra says":
+    # **The algebra is the reference, not the implementation.** A disc is the stand-in
+    #   drawn for a plane, not a plane, so its rim and its fan are stepped with
+    #   `euclid.onCircle`; what that is held against is the multivector sum it replaced --
+    #   the centre plus two scaled arms, read back out as a place. Swept over real plane
+    #   frames rather than one contrived pair, since the arms come from `boundary.frame`
+    #   and a claim about them should hold wherever it puts them.
+    for plane in PLANES:
+      let
+        anchor = positionAnchor(plane)
+        axes = frame(plane)
+      check anchor.isSome and axes.isSome
+      let
+        centre_point = toMultivector(anchor.get)
+        radius = EXTENT_PLANE_F
+        arm_first = radius*axes.get.axis_first
+        arm_second = radius*axes.get.axis_second
+        arm_first_point = wedge(radius, toMultivector(axes.get.axis_first))
+        arm_second_point = wedge(radius, toMultivector(axes.get.axis_second))
+      for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+        let
+          angle = (2.0*PI * float(i)) / float(SEGMENTS_CIRCLE_HORIZON)
+          stepped = onCircle(anchor.get, arm_first, arm_second, angle)
+          assembled = pointFrom(add(centre_point, add(
+            wedge(cos(angle), arm_first_point), wedge(sin(angle), arm_second_point),
+          )))
+        check stepped =~ assembled
+
+
   test "point at horizon becomes a star fixed at eye plus its own direction":
     for line in LINES:
       MESHES.clearMeshes

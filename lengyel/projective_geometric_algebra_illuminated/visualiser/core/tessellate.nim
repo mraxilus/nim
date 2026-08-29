@@ -134,57 +134,6 @@ func anchorFor*(
 
 #[ Segments and Circles ]#
 
-proc addPlaneRing(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
-) =
-  ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
-  ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is
-  ## drawn.
-  # The circle's own frame, hoisted: the centre and its two radius-long arms as
-  #   multivectors, one assembly per circle; each point is then two scaled arms on the
-  #   centre, read out at the boundary.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
-
-
-proc addPlaneFill(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
-) =
-  ## Append a flat, uniformly translucent fan filling the same circle `addPlaneRing`
-  ## outlines -- flat rather than faded toward the rim, since the rim itself already
-  ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
-  ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
-  ## legible through every one of its triangles alike.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addVertex(Primitive.Triangle, center, tint)
-    meshes.addVertex(Primitive.Triangle, point_a, tint)
-    meshes.addVertex(Primitive.Triangle, point_b, tint)
-
-
 proc addGreatCircle(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
