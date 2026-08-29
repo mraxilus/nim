@@ -25,6 +25,11 @@
 ## really is, the ray under the cursor and where it meets the level being worked at. Each is
 ## geometry a frame genuinely derived and never showed anyone. See `algebra_trace`.
 ##
+## **What is recorded is decided here, once.** `addFrameTrace` is the whole layer's entry
+## point and both render paths call it rather than each listing what to record: an entry
+## reaching one picture and missing the other is exactly the fault this layer exists to
+## expose, and it must not be one the layer can itself have.
+##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths; see `visualiser.nim`'s own "Render Paths" table.
 
