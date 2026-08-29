@@ -362,18 +362,21 @@ func pickNearest*(
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    scale = DrawExtent(scale: DrawScale(
+    # **Through `algebraFilled`, never fieldwise.** It derives the multivector twins --
+    #   the eye as a point, the sight as a horizon point, the eye and near planes -- and
+    #   an extent built without it carries zeros in all four. That is not a quiet
+    #   inefficiency: `tessellate.anchorFor` places a point at the horizon at
+    #   `eye_point + radius*heading`, so a zero eye leaves the sum weightless, `position`
+    #   answers none, and every such point is skipped before it can be ranked. A line's
+    #   attitude was unpickable for exactly that reason, while the line it came from was
+    #   not. The four are read straight off `scale` below rather than kept beside it, so
+    #   there is no second copy to fill and forget.
+    scale = algebraFilled(DrawExtent(scale: DrawScale(
       eye: eye,
+      forward: frame_camera.forward,
+      depth_near: camera.distanceNear,
       radius_horizon: radiusHorizonFor(camera.distanceFar),
-    ))
-    # The eye's own plane and the near plane, once per pick -- every branch below reads
-    #   depths and clips against these rather than re-deriving either per candidate.
-    eye_point = toMultivector(eye)
-    forward_point = toMultivector(frame_camera.forward)
-    plane_eye = planeThrough(eye_point, forward_point)
-    plane_near = planeThrough(
-      add(eye_point, wedge(camera.distanceNear, forward_point)), forward_point
-    )
+    )))
 
   var
     slot_best = none(int)
@@ -422,7 +425,7 @@ func pickNearest*(
             float(SEGMENTS_CIRCLE_HORIZON)
           let here = projectToScreen(
             view_projection, width, height,
-            pointFrom(add(eye_point,
+            pointFrom(add(scale.eye_point,
               add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
           )
           if here.isInFront and previous.isSome:
@@ -442,7 +445,8 @@ func pickNearest*(
       for reach in [scale.radius_horizon, -scale.radius_horizon]:
         let clipped = clipToEyeSide(
           anchor.get,
-          pointFrom(add(eye_point, wedge(reach, toMultivector(axis.get)))), plane_near,
+          pointFrom(add(scale.eye_point, wedge(reach, toMultivector(axis.get)))),
+          scale.plane_near,
         )
         if clipped.isNone: continue
         let (position_tail, position_head) = clipped.get
@@ -467,7 +471,7 @@ func pickNearest*(
       # The frame guard survives the hit test no longer taking the axes: a plane the
       #   algebra can span no frame for is one the disc was never drawn for either.
       if anchor.isNone or frame(geometry).isNone: continue
-      let hit = rayPlaneHit(ray, plane_eye, geometry, anchor.get, EXTENT_PLANE_F)
+      let hit = rayPlaneHit(ray, scale.plane_eye, geometry, anchor.get, EXTENT_PLANE_F)
       if hit.isSome: consider(3, hit.get)
 
   slot_best

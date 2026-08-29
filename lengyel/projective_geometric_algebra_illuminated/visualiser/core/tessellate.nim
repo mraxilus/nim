@@ -95,9 +95,11 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
   ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
   ##   Point uses its own place, or its own star position at horizon where it has none,
   ##   matching exactly where `mesh.addPoint` draws it.
-  ##   Line and plane use their support point, matching what mesh actually anchors on;
-  ##   neither is pickable at horizon (see `pickNearest`'s own doc comment), so no
-  ##   equivalent horizon anchor is needed for them here.
+  ##   Line and plane use their support point, matching what mesh actually anchors on.
+  ##   Neither needs a horizon anchor: `pickNearest` tests a horizon line against the great
+  ##   circle it is drawn as and matches a horizon plane outright, so both are pickable
+  ##   without ever asking for one representative point -- which is just as well, since
+  ##   neither has one.
   ##   None where `m` carries no drawable geometry at all.
   let shape = shape(m)
   if shape.isNone: return

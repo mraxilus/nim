@@ -3749,6 +3749,46 @@ suite "Picking":
     check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
 
 
+  test "a line's attitude is picked over the line it came from":
+    # The attitude of a line is a point at the horizon, and `tessellate.addLine` runs the
+    #   line out to *exactly* where `addPoint` draws that attitude, "with no gap" -- so the
+    #   two overlap on screen precisely and the ranking is what has to separate them.
+    #   Points outrank lines, so the star must win. It did not: `pickNearest` built its
+    #   `DrawExtent` fieldwise, leaving `scale.eye_point` a zero multivector, so
+    #   `anchorFor` answered none for every horizon point and the whole branch was skipped
+    #   before anything could be ranked.
+    let camera = cameraFacingOrigin()
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let frame_camera = camera.frame(camera.eye)
+    # Running away from the eye but tilted off the sight line, so the line is a streak
+    #   rather than a dot and its vanishing point stands clear of the screen's middle.
+    let heading = normalize(frame_camera.forward + 0.3*Direction(x: 0, y: 0, z: 1))
+    check heading.isSome
+    let line = toMultivector(ORIGIN_WORLD) ∧ toMultivector(ORIGIN_WORLD + heading.get)
+    let star = attitude(line)
+    check isHorizon(star)
+
+    # Where the star is actually drawn, asked of the same proc the drawing asks.
+    let place = anchorFor(star, camera.drawExtentFor(HEIGHT_PICK))
+    check place.isSome
+    let screen = projectToScreen(view_projection, WIDTH_PICK, HEIGHT_PICK, place.get)
+    check screen.isInFront
+    let at = ScreenPosition(x: screen.x, y: screen.y, depth: 0.0)
+
+    # The line alone is picked there -- without this the case would pass on a cursor that
+    #   simply misses the line, proving nothing about which of the two wins.
+    var scene_line = initScene()
+    scene_line.addItem(line, "L", Ink.Jade)
+    check pickNearest(scene_line, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, at) ==
+      some(0)
+
+    # With both in the scene, the star takes it.
+    var scene = initScene()
+    scene.addItem(line, "L", Ink.Jade)
+    scene.addItem(star, "att", Ink.Cobalt)
+    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, at) == some(1)
+
+
   test "point pick radius tolerates cursor imprecision, not unlimited slack":
     var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
