@@ -43,7 +43,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ./gui
-import ../core/[camera, format, help, history, interaction, mesh, objects, scene, selection]
+import ../core/[boundary, camera, format, help, history, interaction, mesh, scene, selection]
 
 
 

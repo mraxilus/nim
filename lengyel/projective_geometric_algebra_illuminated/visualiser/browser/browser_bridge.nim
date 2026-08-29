@@ -44,7 +44,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  camera, format, framing, help, history, interaction, marker, mesh, objects, picking,
+  boundary, camera, format, framing, help, history, interaction, marker, mesh, picking,
   scene, selection, storyboard,
 ]
 

@@ -106,7 +106,7 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  camera, format, framing, help, history, interaction, marker, mesh, objects, picking,
+  boundary, camera, format, framing, help, history, interaction, marker, mesh, picking,
   scene, selection, storyboard,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]

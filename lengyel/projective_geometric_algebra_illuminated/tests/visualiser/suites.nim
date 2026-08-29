@@ -19,7 +19,7 @@ import std/[math, options, os, random, strformat, strutils, tables, unicode, uni
 
 import ../../pga
 import ../../visualiser/core/[
-  camera, format, framing, help, history, interaction, mesh, objects, picking, scene,
+  boundary, camera, format, framing, help, history, interaction, mesh, picking, scene,
   selection, storyboard,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
@@ -290,30 +290,29 @@ suite "Objects":
     # The centroid, folded one place at a time, against the mean written out here. A sum
     #   of unit-weight points carries weight n and the total of the coordinates, so the
     #   division `position` already does *is* the averaging -- which is the claim.
-    var
-      middle = none(Position)
-      counted = 0
     let places = [
       Position(x: 3.0, y: -1.0, z: 2.0), Position(x: -5.0, y: 4.0, z: 0.5),
       Position(x: 1.0, y: 9.0, z: -3.5), Position(x: 8.0, y: -2.0, z: 6.0),
     ]
-    for place in places:
-      middle = centroidFolded(middle, counted, place)
-      counted += 1
+    # The fold starts from the first point itself -- one place is its own middle -- and
+    #   carries the running sum as a multivector, so nothing has to be told the count.
+    var middle = toMultivector(places[0])
+    check position(middle).get =~ places[0]
+    for counted in 1 .. places.high:
+      middle = centroidFolded(middle, toMultivector(places[counted]))
       var (sum_x, sum_y, sum_z) = (0.0, 0.0, 0.0)
-      for i in 0 ..< counted:
+      for i in 0 .. counted:
         sum_x += places[i].x
         sum_y += places[i].y
         sum_z += places[i].z
       # Every prefix, not only the whole: an incremental fold that is right at the end and
       #   wrong halfway is right by luck, and the camera reads it at every length.
-      check middle.get =~ Position(
-        x: sum_x/float(counted), y: sum_y/float(counted), z: sum_z/float(counted)
+      check position(middle).get =~ Position(
+        x: sum_x/float(counted + 1), y: sum_y/float(counted + 1), z: sum_z/float(counted + 1)
       )
-    # One place is its own middle, and folding onto nothing starts there rather than
-    #   averaging against an origin nobody picked.
-    check centroidFolded(none(Position), 0, places[2]).get =~ places[2]
-    check centroidFolded(some(places[0]), 0, places[2]).get =~ places[2]
+      # And the sum's own weight *is* how many places it is the middle of -- which is what
+      #   lets the running total stand in for a count nobody carries.
+      check middle[Basis.E4] =~ float(counted + 1)
 
 
 

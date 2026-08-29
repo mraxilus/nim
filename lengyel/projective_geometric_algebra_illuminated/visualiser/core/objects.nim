@@ -1,28 +1,18 @@
-## Read drawable quantities out of RGA multivectors.
+## The algebra's own vocabulary: what an object is, and the named incidence questions the
+## rest of the visualiser asks of it.
 ##
 ## Module is specialised to 4D RGA, i.e. 3D Euclidean space:
 ##   Grade 1 is point, grade 2 is line, grade 3 is plane.
 ##   Grades 0 and 4 are scalar and antiscalar, carrying no geometry to draw.
 ##
-## Quantities are read through library's own operators rather than out of coefficient table,
-## so renderer exercises algebra it exists to show:
+## **Multivector in, multivector or scalar out.** Nothing here names a Euclidean quantity;
+## lifting one in or reading one back out is `boundary.nim`'s job, and it is the only module
+## that does both. That is what keeps the algebra separable from the picture drawn out of it
+## -- see `euclid.nim`'s own header for which side owns what.
 ##
-##   |-----------------|--------------|----------------------------------------------|
-##   | Identifier      | Lengyel      | Meaning                                      |
-##   |-----------------|--------------|----------------------------------------------|
-##   | position        | 𝐩 ÷ pʷ       | Euclidean position of point.                 |
-##   | positionSupport | sup(𝐦) = 𝐦∩  | Point of object nearest origin.              |
-##   | positionAnchor  | derived      | Point to build drawing of object around.     |
-##   | direction       | att(𝐦) = ⊖𝐦  | Unit direction line extends along.           |
-##   | directionNormal | -𝐦☆          | Unit direction perpendicular to plane.       |
-##   | directionHorizon| 𝐩 at pʷ = 0  | Unit direction point at horizon stands for.  |
-##   | frame           | derived      | Orthonormal pair of directions inside plane. |
-##   |-----------------|--------------|----------------------------------------------|
-##
-## `Position` and `Direction` are separate types because they do not mix:
-##   Difference of two positions is direction; position offset by direction is position.
-##   Weight coefficient pʷ decides which of two a grade-1 multivector holds.
-##   Confusing them silently drops perspective divide, so type makes that uncompilable.
+## Every sign and argument order below is pinned by its own suite case against the classical
+## closed form, which is the project's purpose: the classical form lives in the test, the
+## algebra lives here.
 ##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths; see `visualiser.nim`'s own "Render Paths" table.
@@ -49,99 +39,10 @@ type
     Line, ## Grade 2.
     Plane, ## Grade 3.
 
-  Position* = object ## Hold Euclidean position, in world units.
-    x*, y*, z*: float
-
-  Direction* = object ## Hold Euclidean direction, in world units.
-    x*, y*, z*: float
-
-  FramePlane* = object ## Hold orthonormal pair of directions spanning plane.
-    axis_first*, axis_second*: Direction
-    normal*: Direction ## Unit direction perpendicular to plane; same as `directionNormal(m)`.
-
-  Placement* {.pure.} = enum ## Report what became of object once drawn.
-    Finite, ## Object had finite extent and was drawn where it stands.
-    Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
-    Empty, ## Multivector carried no drawable geometry at all.
 
 
-# Forbid exact comparison, as every coordinate below is an accumulated float.
-func `==`*(p, q: Position): bool {.error:
-  "Use approximate comparison, `=~`, or compare coordinates directly."
-.}
+#[ Shape Classification ]#
 
-
-func `==`*(d, e: Direction): bool {.error:
-  "Use approximate comparison, `=~`, or compare coordinates directly."
-.}
-
-
-
-#[ Euclidean Arithmetic ]#
-
-func `+`*(p: Position, d: Direction): Position =
-  ## Offset position by direction.
-  Position(x: p.x + d.x, y: p.y + d.y, z: p.z + d.z)
-
-
-func `-`*(p: Position, d: Direction): Position =
-  ## Offset position against direction.
-  Position(x: p.x - d.x, y: p.y - d.y, z: p.z - d.z)
-
-
-func `-`*(p, q: Position): Direction =
-  ## Subtract positions to obtain direction separating them.
-  Direction(x: p.x - q.x, y: p.y - q.y, z: p.z - q.z)
-
-
-func `-`*(d: Direction): Direction =
-  ## Reverse direction.
-  Direction(x: -d.x, y: -d.y, z: -d.z)
-
-
-func `+`*(d, e: Direction): Direction =
-  ## Add directions, e.g. to compose a ray from steps along independent axes.
-  Direction(x: d.x + e.x, y: d.y + e.y, z: d.z + e.z)
-
-
-func `*`*(scale: float, d: Direction): Direction =
-  ## Scale direction.
-  Direction(x: scale * d.x, y: scale * d.y, z: scale * d.z)
-
-
-func dot*(d, e: Direction): float = d.x*e.x + d.y*e.y + d.z*e.z
-  ## Get inner product of directions.
-  ##   **Boundary vocabulary only.** World-space alignment questions go through the
-  ##   algebra -- `depthAgainst`, `distanceBetween`, `projectOrthogonal`, the library's
-  ##   own inner product -- and this exists for the one place standard math is licensed:
-  ##   where the GPU needs to draw. Its callers are the view matrix, `worldPerPixelAt`,
-  ##   and `addSegment`'s ribbon packing; nothing that derives scene geometry may use it.
-
-
-func norm*(d: Direction): float = sqrt(dot(d, d))
-  ## Get magnitude of direction.
-
-
-func normalize*(d: Direction): Option[Direction] =
-  ## Scale direction to unit magnitude.
-  ##   None where direction has no magnitude, as it names no direction at all.
-  let magnitude = d.norm
-  if magnitude <= TOLERANCE_ABS: return
-  some(Direction(x: d.x/magnitude, y: d.y/magnitude, z: d.z/magnitude))
-
-
-
-#[ Multivector Conversion ]#
-
-func toMultivector*(p: Position): Multivector =
-  ## Convert Euclidean position to unit-weight grade-1 point.
-  p.x.e1 + p.y.e2 + p.z.e3 + 1.0.e4
-
-
-func toMultivector*(d: Direction): Multivector =
-  ## Convert Euclidean direction to grade-1 point at horizon.
-  ##   Weight is 0, so point stands for direction rather than place.
-  d.x.e1 + d.y.e2 + d.z.e3
 
 
 func shape*(m: Multivector): Option[Shape] =
@@ -166,127 +67,6 @@ func isHorizonPlane*(m: Multivector): bool = shape(m) == some(Shape.Plane) and i
   ## caller assembling a frame's own meshes can single it out and insert its dome
   ## before anything else shares its own translucent (`Primitive.Triangle`) bucket --
   ## see `visualiser.assembleMeshes`'s own doc comment for why draw order matters here.
-
-
-
-#[ Object Interrogation ]#
-
-func position*(m: Multivector): Option[Position] =
-  ## Read Euclidean position of point.
-  ##   None where point lies at horizon, as direction has no place.
-  ##   Divides by signed weight rather than weight norm, so antipodal points stay distinct.
-  let weight = m[Basis.E4]
-  if abs(weight) <= TOLERANCE_ABS: return
-  some(Position(x: m[Basis.E1]/weight, y: m[Basis.E2]/weight, z: m[Basis.E3]/weight))
-
-
-func positionSupport*(m: Multivector): Option[Position] =
-  ## Read point of object nearest origin, i.e. orthogonal projection of origin onto object.
-  ##   None where object passes through origin, as support then vanishes.
-  position(∩ m)
-
-
-func positionAnchor*(m: Multivector): Option[Position] =
-  ## Choose point of object to build its drawing around.
-  ##   Support point where object misses origin, origin itself where it does not.
-  ##   None where object lies at horizon, as it then has no finite point at all.
-  let support = positionSupport(m)
-  if support.isSome: return support
-  if m.isHorizon: return
-  some(Position(x: 0, y: 0, z: 0))
-
-
-func direction*(m: Multivector): Option[Direction] =
-  ## Read unit direction line extends along.
-  ##   None where line lies at horizon, as its attitude then vanishes.
-  let attitude = ⊖ m
-  normalize(Direction(x: attitude[Basis.E1], y: attitude[Basis.E2], z: attitude[Basis.E3]))
-
-
-func directionHorizon*(m: Multivector): Option[Direction] =
-  ## Read unit direction point at horizon stands for.
-  ##   None where point has weight, as it then names place rather than direction.
-  if not m.isHorizon: return
-  normalize(Direction(x: m[Basis.E1], y: m[Basis.E2], z: m[Basis.E3]))
-
-
-func directionNormalHorizon*(m: Multivector): Option[Direction] =
-  ## Read unit direction normal to the pencil of directions a horizon line stands for.
-  ##   A line's own weight lives in its `E41`/`E42`/`E43` terms; `E23`/`E31`/`E12` survive
-  ##   at horizon and carry the very same normal a finite plane's own attitude would leave
-  ##   there, unnormalized -- confirmed directly by comparing a plane's `directionNormal`
-  ##   against `(⊖ that plane)[E23], [E31], [E12]`, which agree component for component.
-  ##   None where line has weight, as it then runs along a direction, not perpendicular
-  ##   to a pencil of them.
-  if not m.isHorizon: return
-  normalize(Direction(x: m[Basis.E23], y: m[Basis.E31], z: m[Basis.E12]))
-
-
-func directionNormal*(m: Multivector): Option[Direction] =
-  ## Read unit direction perpendicular to plane.
-  ##   Antidual is negated so normal runs along plane's own weight gˣ, gʸ, gᶻ.
-  ##   None where plane lies at horizon, as horizon has no normal in Euclidean space.
-  let normal = -☆(m)
-  normalize(Direction(x: normal[Basis.E1], y: normal[Basis.E2], z: normal[Basis.E3]))
-
-
-
-#[ Plane Frame ]#
-
-func spanPerpendicular*(anchor: Position; normal: Direction): Option[(Direction, Direction)] =
-  ## Derive orthonormal pair of directions perpendicular to `normal`, through `anchor`.
-  ##   Built the same way `frame` spans a plane's own two axes, so a caller holding a
-  ##   normal read some other way -- not necessarily `directionNormal` of a multivector
-  ##   `frame` could take directly -- still spans it algebraically, through joins and
-  ##   antiduals, rather than by a raw cross product outside the library's own operators.
-  ##   Pair is arbitrary up to rotation about `normal`; only the plane it spans is
-  ##   meaningful. `anchor` only fixes where the spanning joins are built through --
-  ##   the two directions found do not depend on which point is chosen.
-  ##   None only where library's own antiduals fail to resolve, which does not happen
-  ##   for any unit `normal`.
-
-  # Pick world axis least aligned with normal, so joins below stay well conditioned.
-  const AXES_WORLD = [
-    Direction(x: 1, y: 0, z: 0),
-    Direction(x: 0, y: 1, z: 0),
-    Direction(x: 0, y: 0, z: 1),
-  ]
-  let alignments = [abs(normal.x), abs(normal.y), abs(normal.z)]
-  var index_least = 0
-  for i in 1 .. 2:
-    if alignments[i] < alignments[index_least]: index_least = i
-  let axis_world = AXES_WORLD[index_least]
-
-  # Span plane through anchor holding both helper axis and normal.
-  #   Its own normal is perpendicular to both, so it lies inside the plane `normal` spans.
-  let
-    point_anchor = toMultivector(anchor)
-    point_normal = toMultivector(normal)
-    plane_first = point_anchor ∧ toMultivector(axis_world) ∧ point_normal
-    axis_first = directionNormal(plane_first)
-  if axis_first.isNone: return
-
-  # Repeat against first axis, to obtain second axis perpendicular to it inside the plane.
-  let
-    plane_second = point_anchor ∧ toMultivector(axis_first.get) ∧ point_normal
-    axis_second = directionNormal(plane_second)
-  if axis_second.isNone: return
-
-  some((axis_first.get, axis_second.get))
-
-
-func frame*(m: Multivector): Option[FramePlane] =
-  ## Derive orthonormal pair of directions lying inside plane.
-  ##   Pair is arbitrary up to rotation about normal; only plane it spans is meaningful.
-  ##   None where plane lies at horizon, as it then spans no Euclidean directions.
-  let
-    normal = directionNormal(m)
-    anchor = positionAnchor(m)
-  if normal.isNone or anchor.isNone: return
-  let axes = spanPerpendicular(anchor.get, normal.get)
-  if axes.isNone: return
-  let (axis_first, axis_second) = axes.get
-  some(FramePlane(axis_first: axis_first, axis_second: axis_second, normal: normal.get))
 
 
 
@@ -319,26 +99,19 @@ func depthAgainst*(plane, point: Multivector): float =
   wedgeAnti(plane, point)[Basis.scalar]
 
 
-func centroidFolded*(
-  centroid: Option[Position]; count: int; place: Position
-): Option[Position] =
-  ## Fold one more place into the running centroid of the `count` places already folded,
-  ## or start one where there was none.
+func centroidFolded*(centroid: Multivector; place: Multivector): Multivector =
+  ## Fold one more unit-weight point into a running centroid.
   ##   **A sum of unit-weight points is their centroid.** Adding points adds their weights,
   ##   so the sum of `n` unit points carries weight `n` and the total of their coordinates,
-  ##   and `position` -- which divides by the signed weight -- reads the mean straight back
-  ##   out of it. There is no averaging written here: the division is the algebra's own.
-  ##   Incremental rather than a fold over an array, so a caller walking a selection needs
-  ##   nothing to walk it into and allocates nothing -- the same shape `camera.widened`
-  ##   takes, and for the same reason. The running point is scaled back up to the weight it
-  ##   stands for before the new one joins it, since a point read back through `position`
-  ##   carries weight one however many places it is the middle of.
-  ##   None only where the sum refuses to be read as a place at all, which a sum of finite
-  ##   points cannot be; a caller folding horizon objects has already dropped them.
-  if centroid.isNone or count <= 0: return some(place)
-  position(add(
-    wedge(float(count), toMultivector(centroid.get)), toMultivector(place)
-  ))
+  ##   and reading it back through `boundary.position` -- which divides by the signed
+  ##   weight -- yields the mean. There is no averaging written anywhere: the division is
+  ##   the algebra's own.
+  ##   The running sum is carried as a multivector rather than read back to a place and
+  ##   lifted again on each fold, so the weight it has accumulated *is* how many points it
+  ##   is the middle of, and nothing has to be told the count. A caller starts from the
+  ##   first point itself and folds the rest in, allocating nothing -- the same shape
+  ##   `camera.widened` takes, and for the same reason.
+  add(centroid, place)
 
 
 func distanceBetween*(p, q: Multivector): float =
@@ -356,11 +129,10 @@ func levelPlaneThrough*(point: Multivector): Multivector =
   ##   down the other way round: probed, the x∧y join reads a point one unit above at
   ##   -1 and the y∧x join at +1, and height is what every caller means. Unitized for
   ##   `depthAgainst`'s contract, though a join of unit axes is already unit weight.
-  unitize(
-    point ∧
-      toMultivector(Direction(x: 0, y: 1, z: 0)) ∧
-      toMultivector(Direction(x: 1, y: 0, z: 0))
-  )
+  ##   The two axes are written as the algebra's own weightless points, `e2` then `e1`,
+  ##   rather than lifted from Euclidean directions: a basis element is what a world axis
+  ##   *is* here, and stating it directly keeps this module clear of the other language.
+  unitize(point ∧ 1.0.e2 ∧ 1.0.e1)
 
 
 func groundPlane*(): Multivector =
@@ -368,4 +140,5 @@ func groundPlane*(): Multivector =
   ##   `levelPlaneThrough` at the origin -- one construction, two heights, so the two
   ##   spellings cannot drift apart. Stated here rather than re-joined at each site that
   ##   needs it: the picker's ground hit, the grid's own height.
-  levelPlaneThrough(toMultivector(Position(x: 0, y: 0, z: 0)))
+  ##   The origin is the unit-weight point with no bulk at all, `e4`.
+  levelPlaneThrough(1.0.e4)

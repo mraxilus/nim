@@ -43,7 +43,7 @@
 import std/[math, options, strformat]
 
 import ../../pga
-import ./[camera, mesh, objects, picking]
+import ./[boundary, camera, mesh, picking]
 
 
 

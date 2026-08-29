@@ -29,7 +29,7 @@
 import std/[math, options]
 
 import ../../pga
-import ./[mesh, objects]
+import ./[boundary, mesh]
 
 
 
@@ -639,7 +639,19 @@ func aimIncluding*(
   # The middle of the very same objects, folded through the algebra's own reading of one:
   #   see `objects.centroidFolded`. A plane folds in by its disc's centre, not by its whole
   #   ball -- a disc's middle *is* where it stands, and the ball is only what has to fit.
-  grown.centroid = centroidFolded(grown.centroid, grown.count_centroid, anchor.get)
+  #   The running middle is carried as a *place* rather than as the sum it comes from,
+  #   because a `CameraAim` is compared exactly frame to frame and a multivector has no
+  #   exact comparison to be compared by; the sum is rebuilt from the place and the count
+  #   each fold, which costs one lift and one read over a handful of picked objects once a
+  #   frame. The point scales back up to the weight it stands for before the new one joins
+  #   it, since a place read back out carries weight one however many it is the middle of.
+  if grown.centroid.isSome:
+    grown.centroid = position(centroidFolded(
+      wedge(float(grown.count_centroid), toMultivector(grown.centroid.get)),
+      toMultivector(anchor.get),
+    ))
+  else:
+    grown.centroid = some(anchor.get)
   grown.count_centroid += 1
   some(grown)
 

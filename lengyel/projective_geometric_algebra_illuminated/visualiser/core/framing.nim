@@ -28,7 +28,7 @@
 import std/options
 
 import ../../pga
-import ./[camera, mesh, objects, picking, scene, selection]
+import ./[boundary, camera, mesh, picking, scene, selection]
 
 
 

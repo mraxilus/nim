@@ -65,7 +65,7 @@
 import std/[math, options, strformat]
 
 import ../../pga
-import ./objects
+import ./boundary
 
 
 
@@ -346,6 +346,11 @@ type
     ## `Triangle` because the two draw differently: a ribbon writes depth, a plane's own
     ## translucent wash does not.
     Triangle, Ribbon, Point
+
+  Placement* {.pure.} = enum ## Report what became of object once drawn.
+    Finite, ## Object had finite extent and was drawn where it stands.
+    Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
+    Empty, ## Multivector carried no drawable geometry at all.
 
   Rgba* = object ## Hold colour channels, in 0 .. 1.
     red*, green*, blue*, alpha*: float32
@@ -751,18 +756,6 @@ proc addVertex(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rg
 proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   ## Append point marking single position.
   meshes.addVertex(Primitive.Point, at, tint)
-
-
-func pointFrom*(m: Multivector): Position =
-  ## Read a point assembled by the tessellation back out for the boundary.
-  ##   Exported for `marker` and `picking`, whose own sampling loops assemble points the
-  ##   same way and read them out at the same boundary.
-  ##   Every caller here builds `m` as a unit-weight point plus weightless directions, so
-  ##   the weight is exactly one and the read cannot refuse; asserted rather than silently
-  ##   defaulted, because a zero weight here means the assembly upstream is wrong.
-  let read = position(m)
-  doAssert read.isSome, "A tessellated point must carry weight; its assembly is wrong."
-  read.get
 
 
 func directionAcross*(tail, head, eye: Position): Option[Direction] =
