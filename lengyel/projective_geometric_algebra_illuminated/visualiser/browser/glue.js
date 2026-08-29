@@ -1534,10 +1534,16 @@ const history_phase = {};
 //   row of the tree an em dash on a phone while the six-millisecond ones read fine.
 const written_phase = {};
 const element_phase = {};
+const element_row = {};
 for (const [name, id] of PHASES_DIAGNOSTIC) {
   history_phase[name] = new Float64Array(FRAMES_HISTORY);
   written_phase[name] = new Uint8Array(FRAMES_HISTORY);
   element_phase[name] = document.getElementById(id);
+  // The whole row as well as its number, so a row can be tinted entire. `closest` rather
+  //   than `parentElement`: a leaf's value sits in a plain div and a parent's in a button,
+  //   and both carry `.diag-line`.
+  element_row[name] = element_phase[name] === null
+    ? null : element_phase[name].closest('.diag-line');
 }
 for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
@@ -1793,6 +1799,60 @@ const BUDGETS_EXCEEDANCE = [
 const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
   getComputedStyle(document.documentElement).getPropertyValue(budget.token).trim() ||
     '#00a7a5');
+// **Which timing rows are expensive, said in colour.** Twenty-odd numbers down the drawer,
+//   and nothing in them says which one to look at; the same four-band ramp the curve wears
+//   answers it at a glance. One ramp in the page, not two.
+//   **Banded by share of the frame's own work, not by absolute duration.** The curve's
+//   bands are whole-frame budgets -- 8.3, 16.7, 33.3 ms -- and a step costing 0.4 ms would
+//   sit in the fastest of them forever, so reusing them here would paint every row blue.
+//   A tenth, a quarter and a half is the ladder instead: whichever row takes half of what
+//   the page did is the one worth finding, whether the frame was fast or slow. The shares
+//   nest correctly too, a parent's being the sum of its children's.
+//   The denominator is the **work**, `PHASES_TOP_DIAGNOSTIC` summed, and not the wall-clock
+//   frame. Against the frame everything is blue and the colour says nothing: a page waiting
+//   on the display spends most of every frame idle -- 32 of 35 ms on the container this was
+//   first run on -- so no step of the actual drawing reaches even a tenth of it. Idle is
+//   not work, and it is the one row left uncoloured anyway.
+const SHARES_ROW_DIAGNOSTIC = [0.1, 0.25, 0.5];
+// How much brighter a row's number is drawn than its label, as a fraction of the way from
+//   the band's own colour to `--ink`. It replaces the `--ink-muted`/`--ink` step the rows
+//   carry when untinted, and it is **small on purpose**: mixing toward a near-white ink
+//   desaturates, and the four bands converge as it does. Measured through the dataviz
+//   validator against this drawer's surface -- at 0.15 the worst adjacent pair still holds
+//   normal-vision deltaE 15.7 and colour-deficient 8.6 (better than the ramp's own 7.7),
+//   where by 0.35 jade and blue have closed to 12.9 and are no longer tellable apart.
+const LIFT_VALUE_DIAGNOSTIC = 0.15;
+
+function bandOfShare(share) {
+  // Which band a share of the frame falls in; the last band is everything past the ladder.
+  for (let i = 0; i < SHARES_ROW_DIAGNOSTIC.length; i += 1) {
+    if (share < SHARES_ROW_DIAGNOSTIC[i]) return i;
+  }
+  return SHARES_ROW_DIAGNOSTIC.length;
+}
+
+function mixedHex(from, to, weight) {
+  // Blend two `#rrggbb` strings. Both come from the stylesheet's own tokens, so the format
+  //   is known; anything else is returned untouched rather than half-parsed.
+  if (from.length !== 7 || to.length !== 7) return from;
+  let out = '#';
+  for (let i = 1; i < 7; i += 2) {
+    const mixed = Math.round(parseInt(from.slice(i, i + 2), 16) * (1 - weight) +
+      parseInt(to.slice(i, i + 2), 16) * weight);
+    out += mixed.toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+// The label wears the band's own screened colour and the number a lifted one, so the row
+//   keeps the shade step it has when untinted -- number brighter than label -- with both in
+//   the one hue. Derived from the ramp rather than declared beside it, so the pairs cannot
+//   drift apart.
+const colours_row_label = colours_exceedance.slice(0, 4);
+const colours_row_value = colours_row_label.map((colour) => mixedHex(colour,
+  getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#e7ecf1',
+  LIFT_VALUE_DIAGNOSTIC));
+
 // **The axis follows the window, but not at the window's own speed.** Fitted frame for
 //   frame it snapped: one slow frame widened it, and the moment that frame aged out of the
 //   window it snapped back, so the curve jumped about and two glances a second apart could
@@ -2086,6 +2146,14 @@ function refreshDiagnostics() {
     total_recent += history_frame[(index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY];
   }
   const mean_frame = total_recent / frames_recent;
+  // What the page actually did this window, against which each row's share is taken; see
+  //   `SHARES_ROW_DIAGNOSTIC`. The top phases do not overlap, so their sum is the whole of
+  //   the work and every row is some part of it.
+  let work_recent = 0;
+  for (const name of PHASES_TOP_DIAGNOSTIC) {
+    const spent = meanPhase(name, frames_recent);
+    if (spent !== null) work_recent += spent;
+  }
   diagnostic_frame_time.textContent =
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';
 
@@ -2100,9 +2168,22 @@ function refreshDiagnostics() {
     //   that runs, and "0.00" would claim it had run for free this window.
     const recent = meanPhase(name, frames_recent);
     const tally = name in COUNTS_DIAGNOSTIC ? ' \u00b7 ' + count_phase[name] : '';
+    const shown = recent === null ? median : recent;
     element_phase[name].textContent =
-      (recent === null ? median : recent).toFixed(2) +
-      ' (' + median.toFixed(2) + ') ms' + tally;
+      shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms' + tally;
+    // And what that number is worth, in the curve's own colours. **`idle` is deliberately
+    //   left neutral**: it is the frame's leftover rather than work done, so on a healthy
+    //   frame it is the largest share of all, and banding it would paint the best case red
+    //   and say the opposite of the truth.
+    if (element_row[name] === null) continue;
+    if (name === 'idle' || !(work_recent > 0)) {
+      element_row[name].style.color = '';
+      element_phase[name].style.color = '';
+      continue;
+    }
+    const band = bandOfShare(shown / work_recent);
+    element_row[name].style.color = colours_row_label[band];
+    element_phase[name].style.color = colours_row_value[band];
   }
 
   if (performance.memory) {

@@ -2105,6 +2105,44 @@ frame's duration and its own phases occupy the same ring slot: the delta being w
 measures the frame whose phases were recorded at that index. Held by a driven check that
 reconstructs every frame's duration from its six rows; measured worst error 0.0000 ms.
 
+**Each row is tinted by what it costs, in the exceedance curve's own ramp.** Twenty-odd
+numbers say nothing about which one to look at. The label takes the band's own screened
+token and the number the same colour lifted 15% toward `--ink`, which reproduces the
+`--ink-muted`/`--ink` step the rows carry untinted while keeping both in one hue; the
+chevron inherits, so a parent row reads as one thing. The lift is small because mixing
+toward a near-white ink desaturates and the four bands converge as it does — measured
+through the dataviz validator against the drawer's surface, at 0.15 the worst adjacent pair
+holds normal-vision ΔE **15.7** and colour-deficient **8.6** (better than the shipped ramp's
+own 7.7 warning), where by 0.35 jade and blue have closed to **12.9** and stop being
+tellable apart. Contrast against the surface runs 3.60–5.20 for the labels and 4.31–6.14 for
+the numbers. Blending the *other* way, toward the surface, was measured first and abandoned:
+it reaches 2.63 for the red at any usable strength, dimmer than the `--ink-muted` it
+replaced.
+  **The bands are shares of the frame's own work, not durations, and not shares of the
+frame.** Durations fail because the curve's bands are whole-frame budgets and a step costing
+0.4 ms would sit in the fastest of them forever. Share of the wall-clock frame was
+implemented, run, and found to paint *every* row blue: a page waiting on the display spends
+most of a frame idle — 32.5 of 35 ms on the driving container — so no step of the drawing
+reaches even a tenth of it. The denominator is `PHASES_TOP_DIAGNOSTIC` summed; the ladder is
+a tenth, a quarter, a half. This was reasoning corrected by rendering it, which is the only
+reason it is right.
+  `idle` is **deliberately left uncoloured**: it is the frame's leftover rather than work
+done, so on a healthy frame it is the largest share of all and a band on it would paint the
+best case as the worst. Held by its own driven check, as is the ordering — a costlier row
+may never wear a faster colour than a cheaper one, asserted as an ordering rather than
+against fixed colours so tuning a threshold does not mean rewriting the check.
+  Hue is not the sole encoding, as it is not on the curve: each row's own figure stands
+beside it, and a key under the frame-time row names what the hue measures — without it a red
+row costing two milliseconds reads as an absolute verdict on two milliseconds.
+
+**The last-save readout is gone.** It held a durable transcript of what a save attempt tried
+— the environment probe and one line per route. `REQUIREMENTS.md`'s rule is to record each
+route's outcome *and show it beside the failure*; the toast's own detail line joins the same
+`report_delivery` array and does exactly that, so the requirement stands unchanged and only
+the copy outliving the toast is lost. The data layer — `report_delivery`,
+`describeEnvironment`, `shareFile`, `deliverFile` — is untouched, `deliverFile` being the
+save path for both the image and the scene file.
+
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
 17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:

@@ -1378,6 +1378,68 @@ report(
   `${ink_floor.marks.length} marks on a fast window, ${ink_wide.marks.length} on a slow one`,
 );
 
+// **The timing rows wear the cost they carry.** Twenty-odd numbers say nothing about which
+// to look at; the curve's own ramp, banded by each row's share of the frame's *work*, does.
+// Checked as an ordering rather than against fixed colours, so tuning a threshold does not
+// mean rewriting this: a row that costs more may never wear a faster colour than one that
+// costs less. Every branch is opened first -- `refreshDiagnostics` skips what is closed, so
+// a shut node's rows would be read stale.
+await page.evaluate(() => {
+  const drawer = document.querySelector('.drawer');
+  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  const section = document.querySelector('.section[data-section="diagnostics"]');
+  if (!section.classList.contains('open')) section.querySelector('.section-header').click();
+  for (const node of document.querySelectorAll('.diag-node')) {
+    if (!node.classList.contains('open')) node.querySelector(':scope > .diag-parent').click();
+  }
+});
+await page.waitForTimeout(600);
+const tinted = await page.evaluate(() => {
+  // The page tints with hex and reads back `rgb(...)`, so the ramp is put through the same
+  //   normalisation before anything is compared to it.
+  const scratch = document.createElement('span');
+  const normalised = colours_row_value.map((colour) => {
+    scratch.style.color = colour;
+    return scratch.style.color;
+  });
+  const rows = [];
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    const value = element_phase[name];
+    if (value === null || element_row[name] === null) continue;
+    const said = Number((value.textContent.match(/^([\d.]+)/) || [])[1]);
+    if (!Number.isFinite(said)) continue;
+    rows.push({
+      name, milliseconds: said,
+      // The band is read back through the ramp the page tinted with, so this check never
+      //   holds an opinion about which colour a band is.
+      band: normalised.indexOf(value.style.color),
+      colour: value.style.color,
+    });
+  }
+  return { rows, idle: element_phase.idle.style.color };
+});
+// Ordering: sort by cost and walk, allowing equal bands but never a cheaper row in a
+//   costlier band. Rows the page left untinted carry no band and sit out of the comparison.
+const ranked = tinted.rows.filter((r) => r.band >= 0 && r.name !== 'idle')
+  .sort((a, b) => b.milliseconds - a.milliseconds);
+let is_ordered = true;
+for (let i = 1; i < ranked.length; i += 1) {
+  if (ranked[i].band > ranked[i - 1].band) is_ordered = false;
+}
+report(
+  'a costlier timing row never wears a faster colour than a cheaper one',
+  ranked.length >= 4 && is_ordered,
+  `${ranked.length} tinted rows, worst-first: ` +
+    ranked.slice(0, 5).map((r) => `${r.name} ${r.milliseconds} band ${r.band}`).join(', '),
+);
+// And the frame's leftover is left alone: it is the largest share of a healthy frame, so a
+// band on it would paint the best case as the worst.
+report(
+  "and the frame's own idle time is left uncoloured, being no work at all",
+  tinted.idle === '',
+  `idle carries ${tinted.idle === '' ? 'no inline colour' : tinted.idle}`,
+);
+
 // **The axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one
 // slow frame widened it and the moment that frame aged out it snapped back, so two glances
 // a second apart could not be compared. Driven exactly as that happens: a settled window,
