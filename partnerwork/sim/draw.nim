@@ -17,6 +17,7 @@ import ./rope
 const
   PX* = 250.0     ## Pixels to the metre.
   LEAST_HALF* = 0.34 ## The smallest half-box, so a close couple does not fill it.
+  BREAK* = 0.036 ## Half the gap an under rope is drawn with, in metres.
   INKS* = ["var(--rope-a, #3d7fd0)", "var(--rope-b, #d0763d)",
            "var(--rope-c, #4f9d69)", "var(--rope-d, #9a6fc0)"]
     ## One colour per connection.  Not per hand and not per dancer: what this
@@ -62,6 +63,57 @@ func reachOf*(state: State): float =
   result += 0.06
 
 
+func atAlong(px: seq[(float, float)]; along: seq[float];
+    want: float): (float, float) =
+  ## Get the pixel point a given plan distance along a traced rope.
+  if px.len == 0: return (0.0, 0.0)
+  for i in 0 ..< px.high:
+    if want <= along[i + 1] or i == px.high - 1:
+      let step = along[i + 1] - along[i]
+      if step < 1e-12: return px[i]
+      let f = clamp((want - along[i]) / step, 0.0, 1.0)
+      return (px[i][0] + (px[i + 1][0] - px[i][0]) * f,
+              px[i][1] + (px[i + 1][1] - px[i][1]) * f)
+  px[^1]
+
+
+func brokenPath(px: seq[(float, float)]; along: seq[float];
+    cuts: seq[float]; gap: float): string =
+  ## Draw a rope as an SVG path, with a break wherever another passes over it.
+  ##   The break is where the over-under is said.  A ring drawn beside the
+  ##     crossing says which rope the reader should believe; a rope that stops
+  ##     and starts again says it in the drawing itself, and cannot disagree
+  ##     with the geometry because it is cut at the distance the crossing was
+  ##     found at.
+  if px.len < 2:
+    return ""
+  var stops: seq[(float, float)]
+  var at = 0.0
+  for cut in cuts:
+    let
+      lo = cut - gap
+      hi = cut + gap
+    if hi <= at:
+      continue
+    if lo > at:
+      stops.add (at, lo)
+    at = max(at, hi)
+  if at < along[^1]:
+    stops.add (at, along[^1])
+  for (lo, hi) in stops:
+    if hi - lo < 1e-9:
+      continue
+    var d = ""
+    let start = atAlong(px, along, lo)
+    d.add "M" & n(start[0]) & " " & n(start[1])
+    for i in 0 ..< px.len:
+      if along[i] > lo and along[i] < hi:
+        d.add " L" & n(px[i][0]) & " " & n(px[i][1])
+    let stop = atAlong(px, along, hi)
+    d.add " L" & n(stop[0]) & " " & n(stop[1])
+    result.add d & " "
+
+
 func plan*(state: State; inks: seq[int] = @[]): string =
   ## Draw the couple from above: the bodies, and every rope where it lies.
   let mid = middle(state)
@@ -81,41 +133,68 @@ func plan*(state: State; inks: seq[int] = @[]): string =
       """ class="head"/>"""
     bits.add &"""<line x1="{n(c[0])}" y1="{n(c[1])}" x2="{n(tip[0])}"""" &
       &""" y2="{n(tip[1])}" class="face"/>"""
-  # The ropes, exactly where the solver put them.
+  # Every rope, traced once: the points, where they are on the page, and how
+  # far along the rope each of them is, which is what a crossing is measured in.
+  var
+    laid: seq[Lie]
+    shown: seq[bool]
+    inked: seq[seq[(float, float)]]
+    along: seq[seq[float]]
+    cuts: seq[seq[float]]
+  for link in state.links:
+    let got = lay(state, link)
+    shown.add got.isSome
+    laid.add (if got.isSome: got.get else: Lie())
+    var
+      px: seq[(float, float)]
+      run: seq[float]
+    if got.isSome:
+      let at = trace(got.get)
+      for i, p in at:
+        px.add put(p)
+        run.add (if i == 0: 0.0 else: run[i - 1] + dist(at[i - 1], p))
+    inked.add px
+    along.add run
+    cuts.add @[]
+  # Where two ropes cross, the lower one gives way: it is the under rope, and
+  # it is drawn broken rather than annotated.
+  var rings: seq[string]
+  for i in 0 ..< state.links.len:
+    for j in i + 1 ..< state.links.len:
+      if not (shown[i] and shown[j]):
+        continue
+      for met in meetings(state, state.links[i], laid[i], state.links[j],
+          laid[j]):
+        let top = overOf(state.rig, met)
+        if top.isNone:
+          # Nearer than two ropes can lie: the geometry has no answer, and
+          # the state is refused elsewhere for the same reason.
+          let p = put(met.at)
+          rings.add &"""<circle cx="{n(p[0])}" cy="{n(p[1])}" r="7"""" &
+            """ class="met" style="stroke: var(--faint, #948d85)"/>"""
+        elif top.get == 0:
+          cuts[j].add met.along[1]
+        else:
+          cuts[i].add met.along[0]
   for index, link in state.links:
-    let laid = lay(state, link)
-    if laid.isNone:
+    if not shown[index]:
       continue
-    var d = ""
-    for i, at in trace(laid.get):
-      let p = put(at)
-      d.add (if i == 0: "M" else: " L") & n(p[0]) & " " & n(p[1])
+    var order = cuts[index]
+    for a in 0 ..< order.len:
+      for b in a + 1 ..< order.len:
+        if order[b] < order[a]:
+          swap order[a], order[b]
     let bad = faultOf(state, link).isSome
-    bits.add &"""<path d="{d}" class="rope{(if bad: " bad" else: "")}"""" &
+    bits.add &"""<path d="{brokenPath(inked[index], along[index], order, BREAK)}"""" &
+      &"""" class="rope{(if bad: " bad" else: "")}"""" &
       &""" style="stroke: {inkFor(inks, index)}"/>"""
     for e in 0 .. 1:
       let a = put(anchor(state, link.ends[e]))
       bits.add &"""<circle cx="{n(a[0])}" cy="{n(a[1])}" r="4" class="grip"""" &
         &""" style="fill: {inkFor(inks, index)}"/>"""
-  # Where two ropes cross, ring the one that is over.
-  for i in 0 ..< state.links.len:
-    for j in i + 1 ..< state.links.len:
-      let
-        a = lay(state, state.links[i])
-        b = lay(state, state.links[j])
-      if a.isNone or b.isNone:
-        continue
-      for met in meetings(state, state.links[i], a.get, state.links[j], b.get):
-        let
-          p = put(met.at)
-          top = overOf(state.rig, met)
-          ink = if top.isNone: "var(--faint, #948d85)"
-                else: inkFor(inks, (if top.get == 0: i else: j))
-        bits.add &"""<circle cx="{n(p[0])}" cy="{n(p[1])}" r="7"""" &
-          &""" class="met" style="stroke: {ink}"/>"""
   let side = reachOf(state) * PX
   &"""<svg class="view" viewBox="{n(-side)} {n(-side)} {n(2 * side)}""" &
-    &""" {n(2 * side)}" role="img">""" & bits.join("") & "</svg>"
+    &""" {n(2 * side)}" role="img">""" & bits.join("") & rings.join("") & "</svg>"
 
 
 func elevation*(state: State; inks: seq[int] = @[]): string =
@@ -143,15 +222,23 @@ func elevation*(state: State; inks: seq[int] = @[]): string =
     let laid = lay(state, link)
     if laid.isNone:
       continue
-    # The rope as it is carried: up from one shoulder to the joined hands and
-    # down to the other, drawn against the plan length it actually spans.
+    # The rope as it is actually carried, point by point: the tent up to the
+    # joined hands where there is only a tent, and the braid's own rise and
+    # fall where there is a braid.  Drawn against the plan length it spans, so
+    # two ropes crossing show here as one passing above the other.
     let
+      walk = traced(state, link, laid.get)
       half = laid.get.span / 2.0
-      (x0, y0) = put(-half, state.rig.shoulder)
-      (x1, y1) = put(0.0, link.height)
-      (x2, y2) = put(half, state.rig.shoulder)
-    bits.add &"""<path d="M{n(x0)} {n(y0)} L{n(x1)} {n(y1)} L{n(x2)}""" &
-      &""" {n(y2)}" class="rope" style="stroke: {inkFor(inks, index)}"/>"""
+    var
+      d = ""
+      gone = 0.0
+    for i, at in walk.at:
+      if i > 0:
+        gone += dist(walk.at[i - 1], at)
+      let (x, y) = put(gone - half, walk.high[i])
+      d.add (if i == 0: "M" else: " L") & n(x) & " " & n(y)
+    bits.add &"""<path d="{d}" class="rope"""" &
+      &""" style="stroke: {inkFor(inks, index)}"/>"""
   let
     wide = max(reachOf(state), 0.80) * PX
     tall = (state.rig.crown + 0.35) * PX

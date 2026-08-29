@@ -30,8 +30,6 @@ const DIALS = [
        step: 0.01, unit: " turns"),
   Dial(key: "apart", name: "stand apart", low: 0.32, high: 1.30,
        step: 0.005, unit: " m"),
-  Dial(key: "height", name: "raise the joined hands", low: 1.40, high: 2.05,
-       step: 0.005, unit: " m"),
   Dial(key: "arm", name: "arm", low: 0.45, high: 0.85, step: 0.005,
        unit: " m"),
   Dial(key: "torso", name: "torso, radius", low: 0.10, high: 0.26,
@@ -50,9 +48,24 @@ const PAIRS = [
   ## this page has no vocabulary of frames to name them with.
 
 
+const
+  HIGH_LOW = 1.40  ## The lowest a pair of joined hands is offered.
+  HIGH_HIGH = 2.05 ## And the highest, which is well over a crown.
+  HIGH_STEP = 0.005
+
+
 var
-  dial: array[DIALS.len, float] = [0.0, 0.0, 0.40, 1.40, 0.62, 0.16]
-  joined: array[PAIRS.len, bool] = [true, false, false, false]
+  dial: array[DIALS.len, float] = [0.0, 0.0, 0.40, 0.62, 0.16]
+  joined: array[PAIRS.len, bool] = [true, true, false, false]
+  high: array[PAIRS.len, float] = [1.82, 1.82, 1.82, 1.82]
+    ## One height per connection, not one for all of them.
+    ##   Two hands joined at one height and two at another is an ordinary
+    ##     thing to do, and the model was always ready for it: `Link.height`
+    ##     is per connection and every reading of it is per connection.  Only
+    ##     this page tied them together, through a single slider written into
+    ##     every link.
+    ##   They start over both crowns, because that is where the braid has
+    ##     nothing in the way of it and the twist can be looked at on its own.
 
 
 proc valueOf(key: string): float =
@@ -80,7 +93,7 @@ proc built(): State =
   for i, pair in PAIRS:
     if joined[i]:
       base.links.add Link(ends: [(Body.One, pair.a), (Body.Two, pair.b)],
-                          height: max(valueOf("height"), rig.shoulder))
+                          height: max(high[i], rig.shoulder))
   # Replayed from rest, both turns, so the picture is a function of the
   # sliders and not of the order they were dragged in.
   result = turned(settled(base), Body.One, valueOf("turn1") * 2.0 * PI)
@@ -99,6 +112,52 @@ func says(fault: Option[Fault]): string =
   of Fault.Tangent: "cannot be laid"
   of Fault.Through: "passes through a body"
   of Fault.Budget: "wants more rope than there is"
+  of Fault.Braided: "passes through the other rope"
+  of Fault.Swan: "twisted past the swan"
+
+
+func rung(crossings: int): string =
+  ## Name the rung of the ladder a braid is standing on.
+  ##   Named by the crossings that are actually there, counted off the drawn
+  ##     ropes, rather than by the angle turned.  A hold that joins hands of
+  ##     the same name starts already crossed, so it starts a rung up -- which
+  ##     falls out of counting and would have to be special-cased if the name
+  ##     came from the turn.
+  case crossings
+  of 0: "no twist"
+  of 1: "the X, one over the other"
+  of 2: "the diamond"
+  of 3: "the swan"
+  else: "past the swan"
+
+
+func braid(state: State): string =
+  ## Say what the two connections are doing to each other.
+  if state.links.len != 2:
+    return ""
+  let
+    a = lay(state, state.links[0])
+    b = lay(state, state.links[1])
+  if a.isNone or b.isNone:
+    return ""
+  let
+    met = meetings(state, state.links[0], a.get, state.links[1], b.get)
+    turns = twist(state) / (2.0 * PI)
+  &"""<p class="limit">The two connections are twisted <b>{m(turns)} """ &
+    &"""turns</b> against each other and cross <b>{met.len}</b> """ &
+    (if met.len == 1: "time. " else: "times. ") &
+    (if not braiding(state):
+       "A body has got in between, so the two are not braiding here &mdash; " &
+         "the winding governs, and this model does not do both at once, so " &
+         "the ladder is not being climbed."
+     elif braidedLie(a.get) and braidedLie(b.get):
+       &"""They are braiding: <b>{rung(met.len)}</b>. Where they cross, the """ &
+         "geometry says which is over, and the under one is drawn broken."
+     else:
+       "Square on, so the braid is a braid of nothing and the two ropes run " &
+         "straight past each other. Turn a body and they begin to wind " &
+         "about one another.") &
+    """</p>"""
 
 
 func readout(state: State; inks: seq[int]): string =
@@ -125,14 +184,17 @@ func readout(state: State; inks: seq[int]): string =
       let
         spent = laid.get.length
         room = budget(state.rig) - spent
-      cells.add &"<td>{m(spent)} m</td><td>{m(budget(state.rig))} m</td>" &
+      cells.add &"<td>{m(link.height)} m</td>" &
+        &"<td>{m(spent)} m</td><td>{m(budget(state.rig))} m</td>" &
         &"""<td class="{(if room < 0: "short" else: "spare")}">{m(room)} m</td>""" &
         &"<td>{winds}</td><td>" & (
-          if link.height > state.rig.crown: "over both heads"
+          if braidedLie(laid.get): "braided"
+          elif link.height > state.rig.crown: "over both heads"
           elif link.winds.len > 0: "on the rim"
           else: m(clearance(state, link, laid.get)) & " m") & "</td>"
     else:
-      cells.add "<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>" &
+      cells.add &"<td>{m(link.height)} m</td>" &
+        "<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>" &
         &"<td>{winds}</td><td>&mdash;</td>"
     cells.add &"""<td class="{(if fault.isSome: "short" else: "spare")}">""" &
       &"{says(fault)}</td>"
@@ -158,9 +220,9 @@ func readout(state: State; inks: seq[int]): string =
               &"</b> passes over " &
               &"{esc(PAIRS[inks[(if top.get == 0: j else: i)]].name)}, by " &
               &"{m(abs(one.high[0] - one.high[1]))} m") & "</li>"
-  &"""<table class="says"><tr><th>rope</th><th>taut</th><th>has</th>""" &
-    "<th>spare</th><th>wound on</th><th>clears</th><th></th></tr>" &
-    rows & "</table>" &
+  &"""<table class="says"><tr><th>rope</th><th>hands at</th><th>taut</th>""" &
+    "<th>has</th><th>spare</th><th>wound on</th><th>lies</th><th></th></tr>" &
+    rows & "</table>" & braid(state) &
     (if met.len > 0: &"<ul class=\"met\">{met}</ul>" else: "")
 
 
@@ -189,13 +251,28 @@ proc limits(state: State): string =
     key.add &"/{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}:{link.height}"
   if key == limitFor:
     return limitSaid
-  let got = windLimit(settled(base), Body.Two, most = 6.0 * PI)
+  let
+    rested = settled(base)
+    got = windLimit(rested, Body.Two, most = 6.0 * PI, swan = false)
   limitFor = key
-  limitSaid = &"""<p class="limit">From rest, and with the couple where they stand, the """ &
-    &"""follow can turn <b>{m(got / (2.0 * PI))} turns</b> """ &
-    &"""({m(got / PI)} half turns) before some rope runs out. Nothing in the """ &
-    """model holds that number &mdash; it is found by turning until """ &
-    """something gives, so it moves when the arm or the torso does.</p>"""
+  limitSaid = &"""<p class="limit">From rest, and with the couple where they """ &
+    """stand, the follow can turn """ &
+    &"""<b>{m(got / (2.0 * PI))} turns</b> ({m(got / PI)} half turns) """ &
+    """before some rope runs out or two ropes meet. Nothing in the model """ &
+    """holds that number &mdash; it is found by turning until something """ &
+    """gives, so it moves when the arm or the torso does.""" &
+    (if base.links.len < 2: "</p>"
+     else:
+       &""" The dance says a pair may twist to the swan and no further, """ &
+         &"""which is <b>{m(state.rig.swan)} turns</b> each way. <b>That """ &
+         """number is asserted, not derived</b> &mdash; it is a report of """ &
+         """what dancers manage, and it is kept beside the swept one rather """ &
+         """than folded into it, so the two can disagree in the open. """ &
+         (if got >= state.rig.swan * 2.0 * PI - 1e-9:
+            "Here the geometry reaches it."
+          else:
+            "Here the geometry falls short of it: lengthen the arm or " &
+              "narrow the torso and watch where the two meet.") & "</p>")
   limitSaid
 
 
@@ -212,6 +289,14 @@ proc mount() =
       &"""<b id="dv{i}">{m(dial[i])}{d.unit}</b></span>""" &
       &"""<input type="range" data-dial="{i}" min="{d.low}" max="{d.high}"""" &
       &""" step="{d.step}" value="{dial[i]}"></label>"""
+  # One height slider per connection, all four written once and then only
+  # shown or hidden: rebuilding them would replace the very slider a pointer
+  # is holding, and the drag would stop dead after its first event.
+  for i, pair in PAIRS:
+    controls.add &"""<label class="dial" id="hl{i}"><span>""" &
+      &"""{esc(pair.name)} hands at<b id="hv{i}">{m(high[i])} m</b></span>""" &
+      &"""<input type="range" data-high="{i}" min="{HIGH_LOW}"""" &
+      &""" max="{HIGH_HIGH}" step="{HIGH_STEP}" value="{high[i]}"></label>"""
   var picks = ""
   for i, pair in PAIRS:
     picks.add &"""<button id="pk{i}" data-pair="{i}" class="pick"""" &
@@ -219,7 +304,16 @@ proc mount() =
   document.getElementById("app").innerHTML = cstring(
     """<div class="stage" id="stage"></div>""" &
     &"""<div class="panel"><div class="picks">{picks}</div>{controls}</div>""" &
-    """<div class="says-wrap" id="says"></div>""")
+    """<div class="says-wrap"><div id="says"></div>""" &
+    """<div id="limit"></div></div>""")
+
+
+var
+  booked = false ## Whether the limit is booked for once the drag stops.
+  later: TimeOut
+    ## The free-standing `setTimeout`, not the window's: the window's is
+    ## declared to give back an `Interval` that its own `clearTimeout` will
+    ## not take.
 
 
 proc render() =
@@ -233,10 +327,23 @@ proc render() =
   for i, pair in PAIRS:
     document.getElementById(cstring(&"pk{i}")).className =
       cstring(if joined[i]: "pick on" else: "pick")
+    document.getElementById(cstring(&"hl{i}")).className =
+      cstring(if joined[i]: "dial" else: "dial off")
+    document.getElementById(cstring(&"hv{i}")).textContent =
+      cstring(&"{m(high[i])} m")
   document.getElementById("stage").innerHTML =
     cstring(draw.plan(state, on) & draw.elevation(state, on))
-  document.getElementById("says").innerHTML =
-    cstring(readout(state, on) & limits(state))
+  document.getElementById("says").innerHTML = cstring(readout(state, on))
+  # The limit is a sweep from rest, and much the dearest thing on the page --
+  # a drag of any slider it depends on would otherwise pay for it on every
+  # frame.  So the picture goes up first and the limit follows a moment later,
+  # once the finger has stopped moving.  It is a readout and not the model.
+  if booked:
+    clearTimeout(later)
+  booked = true
+  later = setTimeout(proc () =
+    booked = false
+    document.getElementById("limit").innerHTML = cstring(limits(built())), 150)
 
 
 var pending = false ## Whether a redraw is already booked for the next frame.
@@ -271,11 +378,17 @@ proc handle(event: Event) =
 
 proc slide(event: Event) =
   let target = event.target
-  if target == nil or target.getAttribute("data-dial") == nil:
+  if target == nil or (target.getAttribute("data-dial") == nil and
+      target.getAttribute("data-high") == nil):
     return
   # The property, not the attribute: dragging a range moves `value` and
   # leaves the `value=` it was written with exactly where it was, so reading
   # the attribute gives the starting number for ever.
+  if target.getAttribute("data-high") != nil:
+    high[parseInt($target.getAttribute("data-high"))] =
+      parseFloat($cast[InputElement](target).value)
+    paint()
+    return
   let which = parseInt($target.getAttribute("data-dial"))
   dial[which] = parseFloat($cast[InputElement](target).value)
   paint()

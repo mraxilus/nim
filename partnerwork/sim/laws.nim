@@ -18,8 +18,9 @@ import ./rope
 
 
 const
-  APART = 0.34          ## A stance with the rims a centimetre or two clear.
-  LOW = HUMAN.shoulder  ## Hands carried where they hang.
+  APART = 0.34            ## A stance with the rims a centimetre or two clear.
+  LOW = HUMAN.shoulder    ## Hands carried where they hang.
+  HIGH = HUMAN.crown + 0.15 ## And carried clear over both crowns.
 
 
 func oneLink(apart: float; a, b: Arm; height = LOW): State =
@@ -242,19 +243,29 @@ suite "two ropes":
     for one in met:
       check overOf(HUMAN, one) == some(1)
 
-  test "two ropes at one height leave the question open":
-    # Within an arm's thickness they are touching, and which is on top is
-    # something the dancers settle.  The model hands the question back
-    # rather than inventing an answer to it.
+  test "two ropes through each other leave the question open":
+    # Where a body has got in between, the two ropes are not braiding, and two
+    # ropes crossing at one height with no braid to order them are simply in
+    # the same place.  The model refuses that state -- and declines to say
+    # which of them is over, because there is nothing there to say it with.
+    #   Settled first, on purpose: a crossed hold at shoulder height runs
+    #   through both chests, so taking it is what puts the winding on and the
+    #   winding is what stops the pair braiding.
     var s = facing(HUMAN, APART)
     s.links = @[
       Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Left)], height: LOW),
       Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Right)], height: LOW)]
     let
-      a = lay(s, s.links[0]).get
-      b = lay(s, s.links[1]).get
-    for one in meetings(s, s.links[0], a, s.links[1], b):
+      here = settled(s)
+      a = lay(here, here.links[0]).get
+      b = lay(here, here.links[1]).get
+    check not braidedLie(a)
+    check not braidedLie(b)
+    let met = meetings(here, here.links[0], a, here.links[1], b)
+    check met.len >= 1
+    for one in met:
       check overOf(HUMAN, one).isNone
+    check refusal(here, swan = false) == some(Fault.Braided)
 
   test "ropes joining opposite hands never meet at all":
     var s = facing(HUMAN, APART)
@@ -265,3 +276,156 @@ suite "two ropes":
       a = lay(s, s.links[0]).get
       b = lay(s, s.links[1]).get
     check meetings(s, s.links[0], a, s.links[1], b).len == 0
+
+
+suite "two ropes braid":
+  func overhead(a0, b0, a1, b1: Arm; ha = HIGH; hb = HIGH): State =
+    ## Two connections carried over both crowns, where nothing is in the way.
+    result = facing(HUMAN, APART)
+    result.links = @[
+      Link(ends: [(Body.One, a0), (Body.Two, b0)], height: ha),
+      Link(ends: [(Body.One, a1), (Body.Two, b1)], height: hb)]
+
+  func rope(state: State): float =
+    ## Measure the rope the pair is spending between them.
+    ##   The pair's, not one rope's.  A braid puts one strand above the
+    ##     couple's height and the other below, so at any rung one of the two
+    ##     is climbing a little less than it would unbraided -- and asking
+    ##     that one alone whether braiding costs rope gets the answer no.
+    for link in state.links:
+      let laid = lay(state, link)
+      if laid.isSome:
+        result += laid.get.length
+
+  func crossings(state: State): int =
+    ## Count where the two ropes cross, off the drawn paths and nothing else.
+    let
+      a = lay(state, state.links[0])
+      b = lay(state, state.links[1])
+    if a.isNone or b.isNone: -1
+    else: meetings(state, state.links[0], a.get, state.links[1], b.get).len
+
+  test "the relative turn is read off the facings, laps and all":
+    # Nothing carries it.  A facing accumulates without wrapping, so the turn
+    # one body has made against the other has been in the state since the
+    # beginning -- and it has to survive past a whole turn, which is exactly
+    # what a wrapped reading would lose.
+    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
+    check abs(twist(base)) < 1e-12
+    for turns in [0.5, 1.0, 1.5, 2.0, -1.5]:
+      let s = turned(base, Body.Two, turns * 2.0 * PI)
+      check abs(twist(s) / (2.0 * PI) - turns) < 1e-9
+    # And turning the lead is the same turn the other way.
+    let back = turned(base, Body.One, 2.0 * PI)
+    check abs(twist(back) / (2.0 * PI) + 1.0) < 1e-9
+
+  test "the ladder: no twist, the X, the diamond, the swan":
+    # The rungs of it, counted off the drawn ropes rather than off the angle.
+    # Nothing in the module counts crossings; a cosine has that many zeroes.
+    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
+    for half in 0 .. 3:
+      let s = turned(base, Body.Two, PI * float(half))
+      check crossings(s) == half
+
+  test "a hold that joins hands of the same name starts a rung up":
+    # It is already crossed over its partner, which is half a turn of braid
+    # before anybody has turned at all -- so the same ladder, shifted by one.
+    let base = overhead(Arm.Left, Arm.Left, Arm.Right, Arm.Right)
+    for half in 0 .. 2:
+      let s = turned(base, Body.Two, PI * float(half))
+      check crossings(s) == half + 1
+
+  test "turning the lead braids as surely as turning the follow":
+    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
+    for half in 0 .. 3:
+      check crossings(turned(base, Body.One, -PI * float(half))) == half
+
+  test "no two ropes ever cross closer than they can lie":
+    # The braid does not check this and then refuse: it is shaped so that a
+    # crossing is a place where one rope is the spiral's own radius above the
+    # axis and the other the same below.  Held to over the whole ladder,
+    # quarter turn by quarter turn, and both ways round.
+    for step in -6 .. 6:
+      let s = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left),
+        Body.Two, PI / 2.0 * float(step))
+      let
+        a = lay(s, s.links[0])
+        b = lay(s, s.links[1])
+      check a.isSome and b.isSome
+      for one in meetings(s, s.links[0], a.get, s.links[1], b.get):
+        check abs(one.high[0] - one.high[1]) > 2.0 * HUMAN.limb - 1e-2
+      check refusal(s, swan = false) != some(Fault.Braided)
+
+  test "hands held apart braid wider, and the wider braid costs rope":
+    # Decoupled heights are not a drawing: holding one pair of hands higher
+    # than the other opens the braid out, which the two ropes then pay for.
+    let
+      level = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left),
+        Body.Two, PI)
+      apart = turned(overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left,
+        HIGH - 0.09, HIGH + 0.09), Body.Two, PI)
+    var least = [9.9, 9.9]
+    for k, s in [level, apart]:
+      let
+        a = lay(s, s.links[0]).get
+        b = lay(s, s.links[1]).get
+      for one in meetings(s, s.links[0], a, s.links[1], b):
+        least[k] = min(least[k], abs(one.high[0] - one.high[1]))
+    check least[1] > least[0] + 0.05
+    # The same pair of hands, the same height between them, spread apart: the
+    # braid opens to the gap and the two ropes pay for the opening.
+    check rope(apart) > rope(level)
+
+  test "braiding costs rope, rung after rung":
+    let base = overhead(Arm.Left, Arm.Right, Arm.Right, Arm.Left)
+    var was = [0.0, 0.0]
+    for half in 0 .. 3:
+      let s = turned(base, Body.Two, PI * float(half))
+      # Both measures, because they answer different questions: the plan span
+      # is how far round the rope has had to go, and the length is what it
+      # costs once the climb is paid for.
+      check lay(s, s.links[0]).get.span > was[0]
+      check rope(s) > was[1]
+      was = [lay(s, s.links[0]).get.span, rope(s)]
+
+  test "the swan is the limit, both ways, and it is asserted not derived":
+    # `Rig.swan` is a report of what dancers manage and is cited to nothing in
+    # the model.  So it is kept apart from the geometry: `holds` will apply it
+    # and `holds(swan = false)` will not, and the page shows both numbers.
+    var rig = HUMAN
+    rig.arm = 0.80 # Long enough that the geometry itself reaches past 1.5.
+    func pair(rig: Rig): State =
+      result = facing(rig, APART)
+      result.links = @[
+        Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)],
+             height: rig.crown + 0.15),
+        Link(ends: [(Body.One, Arm.Right), (Body.Two, Arm.Left)],
+             height: rig.crown + 0.15)]
+    let base = pair(rig)
+    for way in [1.0, -1.0]:
+      let
+        under = turned(base, Body.Two, way * (rig.swan - 0.05) * 2.0 * PI)
+        over = turned(base, Body.Two, way * (rig.swan + 0.05) * 2.0 * PI)
+      check holds(under)
+      check refusal(over) == some(Fault.Swan)
+      # And the geometry alone says nothing about it either way.
+      check refusal(over, swan = false).isNone
+    check abs(windLimit(base, Body.Two, most = 8.0 * PI) -
+      rig.swan * 2.0 * PI) < 0.05
+    check windLimit(base, Body.Two, most = 8.0 * PI, swan = false) >
+      rig.swan * 2.0 * PI
+
+  test "a pair of hands binds tighter than one, with nothing told to it":
+    # The claim the README makes, which was read off a page rather than
+    # measured until now.  Two connections run out sooner than one, at the
+    # same height and the same stance, because they must braid past each
+    # other as well as reach.
+    for height in [LOW, HIGH]:
+      var alone = facing(HUMAN, APART)
+      alone.links = @[Link(ends: [(Body.One, Arm.Left), (Body.Two, Arm.Right)],
+                           height: height)]
+      let
+        one = windLimit(settled(alone), Body.Two, most = 8.0 * PI, swan = false)
+        two = windLimit(settled(overhead(Arm.Left, Arm.Right, Arm.Right,
+          Arm.Left, height, height)), Body.Two, most = 8.0 * PI, swan = false)
+      check two < one
