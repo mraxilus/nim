@@ -100,15 +100,24 @@ type
     Reach, ## Straight through the air.
     Hug    ## Along a cylinder: an arc in plan, a helix in space.
 
-  Stretch* = object ## One stretch of a taut rope.
+  Piece* = object ## One stretch of a taut rope, as measurements rather than
+                  ## as points.
+    ##   A hug is a centre, a radius and an angle; drawing it means sampling
+    ##     it, and sampling is the one expensive thing here -- a rope wound
+    ##     three times is some four hundred points, and the solver is asked
+    ##     for a lie thousands of times a sweep while only one of them is
+    ##     ever drawn.  So a lie carries what it *is* and `trace` makes the
+    ##     points, once, for whoever actually needs them.
     kind*: Kind
-    plan*: seq[Vec] ## Its plan polyline.
-    span*: float    ## Its plan length.
-    turn*: float    ## `Hug` only: signed total turning, which may pass 2*PI.
+    a*, b*: Vec  ## Where the stretch starts and ends.
+    span*: float ## Its plan length: the chord, or the arc.
+    centre*: Vec ## `Hug` only: the rim it runs on.
+    radius*: float
+    start*: float ## `Hug` only: the angle it joins the rim at.
+    turn*: float  ## `Hug` only: signed total turning, which may pass 2*PI.
 
   Lie* = object ## How a connection lies taut, in the winds it is carrying.
-    stretches*: seq[Stretch]
-    plan*: seq[Vec] ## The whole plan polyline, anchor to anchor.
+    pieces*: seq[Piece]
     span*: float    ## Its plan length.
     length*: float  ## Its length in space, once the climb is paid for.
     hugs*: int      ## How many rims it hugs.
@@ -313,13 +322,16 @@ func lay*(state: State; link: Link): Option[Lie] =
   ## winds name, in order, joined by the straight runs between them.  With no
   ## winds that is a straight line from shoulder to shoulder, which is what a
   ## rope at rest is.
+  ##
+  ## Nothing is sampled here.  An arc is measured as `radius * angle`, which
+  ## is exact and costs nothing, where drawing it costs a few hundred points
+  ## -- and this is called on every step of every sweep.
   let
     p = anchor(state, link.ends[0])
     q = anchor(state, link.ends[1])
   var lie = Lie(hugs: link.winds.len)
   if link.winds.len == 0:
-    lie.stretches = @[Stretch(kind: Kind.Reach, plan: @[p, q], span: dist(p, q))]
-    lie.plan = @[p, q]
+    lie.pieces = @[Piece(kind: Kind.Reach, a: p, b: q, span: dist(p, q))]
     lie.span = dist(p, q)
   else:
     var enters, leaves: seq[float]
@@ -342,7 +354,6 @@ func lay*(state: State; link: Link): Option[Lie] =
         let got = offTo(centre, q, radius, wind.way.float)
         if got.isNone: return none(Lie)
         leaves[i] = got.get
-    # Walk it: reach in, hug, reach on, and out to the far anchor.
     var stand = p
     for i, wind in link.winds:
       let
@@ -351,28 +362,40 @@ func lay*(state: State; link: Link): Option[Lie] =
         turn = wind.way.float *
           (sweepOf(enters[i], leaves[i], wind.way.float) +
             2.0 * PI * wind.turns.float)
+        stop = rimAt(centre, radius, enters[i] + turn)
       if dist(stand, start) > 1e-9:
-        lie.stretches.add Stretch(kind: Kind.Reach, plan: @[stand, start],
+        lie.pieces.add Piece(kind: Kind.Reach, a: stand, b: start,
           span: dist(stand, start))
-      let arc = arcPoints(centre, radius, enters[i], turn)
-      lie.stretches.add Stretch(kind: Kind.Hug, plan: arc,
-        span: radius * abs(turn), turn: turn)
-      stand = arc[^1]
+      lie.pieces.add Piece(kind: Kind.Hug, a: start, b: stop,
+        span: radius * abs(turn), centre: centre, radius: radius,
+        start: enters[i], turn: turn)
+      stand = stop
     if dist(stand, q) > 1e-9:
-      lie.stretches.add Stretch(kind: Kind.Reach, plan: @[stand, q],
+      lie.pieces.add Piece(kind: Kind.Reach, a: stand, b: q,
         span: dist(stand, q))
-    for stretch in lie.stretches:
-      lie.span += stretch.span
-      for at in stretch.plan:
-        if lie.plan.len == 0 or dist(lie.plan[^1], at) > 1e-12:
-          lie.plan.add at
+    for piece in lie.pieces:
+      lie.span += piece.span
   # The joined hands ride at the middle of the rope, so raising them is a
-  # tent: up from one shoulder and down to the other.  An arc is measured
-  # exactly rather than off its own samples, so the length does not depend
-  # on how finely it was drawn.
+  # tent: up from one shoulder and down to the other.
   let rise = max(0.0, link.height - state.rig.shoulder)
   lie.length = sqrt(lie.span * lie.span + 4.0 * rise * rise)
   some(lie)
+
+
+func trace*(lie: Lie): seq[Vec] =
+  ## Sample a lie as a polyline, for whatever has to draw it or cross it.
+  ##   The one place arcs become points, and it is called once per rope per
+  ##     picture rather than thousands of times per sweep.
+  for piece in lie.pieces:
+    case piece.kind
+    of Kind.Reach:
+      if result.len == 0: result.add piece.a
+      result.add piece.b
+    of Kind.Hug:
+      let arc = arcPoints(piece.centre, piece.radius, piece.start, piece.turn)
+      for i, at in arc:
+        if result.len == 0 or dist(result[^1], at) > 1e-12:
+          result.add at
 
 
 func heightAt*(state: State; link: Link; lie: Lie; s: float): float =
@@ -399,16 +422,16 @@ func clearance*(state: State; link: Link; lie: Lie): float =
   ##     is not leaving or arriving at.
   result = Inf
   var gone = 0.0
-  for stretch in lie.stretches:
-    if stretch.kind == Kind.Reach:
+  for piece in lie.pieces:
+    if piece.kind == Kind.Reach:
       let
-        mid = gone + stretch.span / 2.0
+        mid = gone + piece.span / 2.0
         bar = girth(state.rig, heightAt(state, link, lie, mid))
       if bar > 0.0:
         for who in Body:
-          result = min(result, nearing(stretch.plan[0], stretch.plan[^1],
+          result = min(result, nearing(piece.a, piece.b,
             state.stance[who].centre) - bar)
-    gone += stretch.span
+    gone += piece.span
 
 
 func faultOf*(state: State; link: Link): Option[Fault] =
@@ -491,17 +514,17 @@ func caught(state: State; link: Link): int =
   if laid.isNone:
     return -1
   var gone = 0.0
-  for stretch in laid.get.stretches:
-    if stretch.kind == Kind.Reach:
+  for piece in laid.get.pieces:
+    if piece.kind == Kind.Reach:
       let
-        mid = gone + stretch.span / 2.0
+        mid = gone + piece.span / 2.0
         bar = girth(state.rig, heightAt(state, link, laid.get, mid))
       if bar > 0.0:
         for who in Body:
-          if bitesInto(stretch.plan[0], stretch.plan[^1],
-              state.stance[who].centre, bar, BIRTH_BITE):
+          if bitesInto(piece.a, piece.b, state.stance[who].centre, bar,
+              BIRTH_BITE):
             return ord(who)
-    gone += stretch.span
+    gone += piece.span
   -1
 
 
@@ -597,13 +620,21 @@ func advance*(state: State; who: Body; by: float): State =
     result.links[i] = carried(state, result, state.links[i])
 
 
-func turned*(state: State; who: Body; to: float; step = 0.02): State =
+func turned*(state: State; who: Body; to: float; step = 0.10): State =
   ## Turn one body all the way to an angle, in steps small enough to count.
   ##   Pure: the answer depends on where the body is asked to end up and not
   ##     at all on how it was dragged there, because the whole turn is
   ##     replayed from where it started every time.  The winding underneath
   ##     is path-dependent and has to be; replaying is what keeps that from
   ##     reaching the surface.
+  ##   The step is as coarse as it can be without changing the answer.  What
+  ##     has to stay under half a circle is the *sweep*, not the turn, and
+  ##     the halving below watches the sweep -- so a fine step buys nothing
+  ##     but work, and the work is a replay per frame on a page.  Measured:
+  ##     every step from 0.01 to 0.30 radians gives the same lengths and the
+  ##     same lap counts out to two turns, on both a parallel hold and a
+  ##     crossed one -- the halving finds the places that need care, and
+  ##     there are not many of them.
   result = state
   if abs(to) < 1e-12:
     return
@@ -635,23 +666,32 @@ func turned*(state: State; who: Body; to: float; step = 0.02): State =
 
 
 func windLimit*(state: State; who: Body; most = 4.0 * PI;
-    step = 0.02): float =
+    step = 0.10): float =
   ## Get how far one body can turn before some connection first refuses.
   ##   Swept, not assumed.  The wind grows, the arc lengthens, and the limit
   ##     is wherever the length first crosses what two arms have.  The number
   ##     is not in the model; it comes out of it.
-  var went = 0.0
+  ##   Scanned once, carrying the turn forward.  Asking `turned` for the
+  ##     whole angle at every step of the scan replays the sweep from rest
+  ##     each time, which turns a walk into a triangle -- the same answer for
+  ##     the square of the work, and it was most of a second on the page.
+  ##   The bisection runs inside the one step that failed, from the state at
+  ##     the start of it, so the answer is the geometry's rather than the
+  ##     step size's without paying for a replay per guess either.
+  var
+    went = 0.0
+    here = state
   while went < most:
-    let next = turned(state, who, went + step, step)
+    let next = turned(here, who, step, step)
     if not holds(next):
-      # Bisect the step that failed, so the answer is not the step size.
       var
-        lo = went
-        hi = went + step
-      for _ in 0 ..< 24:
+        lo = 0.0
+        hi = step
+      for _ in 0 ..< 20:
         let mid = (lo + hi) / 2.0
-        if holds(turned(state, who, mid, step)): lo = mid else: hi = mid
-      return lo
+        if holds(turned(here, who, mid, step)): lo = mid else: hi = mid
+      return went + lo
+    here = next
     went += step
   most
 
@@ -669,15 +709,18 @@ func meetings*(state: State; a_link: Link; a: Lie;
   ## Find every place two ropes cross, seen from above.
   ##   Where they cross is where the question of which is on top gets asked;
   ##     everywhere else there is nothing to ask.
+  let
+    a_at = trace(a)
+    b_at = trace(b)
   var gone_a = 0.0
-  for i in 0 ..< a.plan.high:
+  for i in 0 ..< a_at.high:
     var gone_b = 0.0
-    for j in 0 ..< b.plan.high:
+    for j in 0 ..< b_at.high:
       let
-        p1 = a.plan[i]
-        p2 = a.plan[i + 1]
-        q1 = b.plan[j]
-        q2 = b.plan[j + 1]
+        p1 = a_at[i]
+        p2 = a_at[i + 1]
+        q1 = b_at[j]
+        q2 = b_at[j + 1]
         d1 = cross(q2 - q1, p1 - q1)
         d2 = cross(q2 - q1, p2 - q1)
         d3 = cross(p2 - p1, q1 - p1)
@@ -693,7 +736,7 @@ func meetings*(state: State; a_link: Link; a: Lie;
           high: [heightAt(state, a_link, a, sa),
                  heightAt(state, b_link, b, sb)])
       gone_b += dist(q1, q2)
-    gone_a += dist(a.plan[i], a.plan[i + 1])
+    gone_a += dist(a_at[i], a_at[i + 1])
 
 
 func overOf*(rig: Rig; met: Meeting): Option[int] =

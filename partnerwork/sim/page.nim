@@ -164,7 +164,12 @@ func readout(state: State; inks: seq[int]): string =
     (if met.len > 0: &"<ul class=\"met\">{met}</ul>" else: "")
 
 
-func limits(state: State): string =
+var
+  limitFor = ""  ## The state the standing limit below was worked out for.
+  limitSaid = "" ## And what it came to, kept so a turn drag need not ask again.
+
+
+proc limits(state: State): string =
   ## Say how far the follow could turn from rest before the rope refuses.
   ##   Swept on the spot, from the rig as the sliders have it: the number is
   ##     not held anywhere, it is found by turning until something gives.
@@ -175,33 +180,84 @@ func limits(state: State): string =
     base.links[i].winds = @[]
   if base.links.len == 0:
     return ""
-  let got = windLimit(settled(base), Body.Two, most = 6.0 * PI, step = 0.05)
-  &"""<p class="limit">From rest, and with the couple where they stand, the """ &
+  # The sweep starts from rest, so it cannot depend on either turn -- which is
+  # the slider being dragged.  Asking it again for every frame of a drag was
+  # the whole of what made this page slow, and it is still the dearest thing
+  # on it, so it is asked only when one of its own inputs moves.
+  var key = &"{base.rig.arm}/{base.rig.torso}/{base.stance[Body.Two].centre.y}"
+  for link in base.links:
+    key.add &"/{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}:{link.height}"
+  if key == limitFor:
+    return limitSaid
+  let got = windLimit(settled(base), Body.Two, most = 6.0 * PI)
+  limitFor = key
+  limitSaid = &"""<p class="limit">From rest, and with the couple where they stand, the """ &
     &"""follow can turn <b>{m(got / (2.0 * PI))} turns</b> """ &
     &"""({m(got / PI)} half turns) before some rope runs out. Nothing in the """ &
     """model holds that number &mdash; it is found by turning until """ &
     """something gives, so it moves when the arm or the torso does.</p>"""
+  limitSaid
 
 
-proc render() =
-  ## Rebuild the page from the controls.
-  let
-    state = built()
-    on = chosen()
+proc mount() =
+  ## Put the controls on the page, once.
+  ##   Once, and never again, because rebuilding them replaces the very
+  ##     slider the pointer is holding: the drag loses its element and stops
+  ##     dead after the first event.  Redrawing the picture on every input
+  ##     while leaving the controls alone is the whole difference between a
+  ##     slider that follows the finger and one that has to be nudged.
   var controls = ""
   for i, d in DIALS:
     controls.add &"""<label class="dial"><span>{d.name}""" &
-      &"""<b>{m(dial[i])}{d.unit}</b></span>""" &
+      &"""<b id="dv{i}">{m(dial[i])}{d.unit}</b></span>""" &
       &"""<input type="range" data-dial="{i}" min="{d.low}" max="{d.high}"""" &
       &""" step="{d.step}" value="{dial[i]}"></label>"""
   var picks = ""
   for i, pair in PAIRS:
-    picks.add &"""<button data-pair="{i}" class="pick{(if joined[i]: " on" else: "")}"""" &
+    picks.add &"""<button id="pk{i}" data-pair="{i}" class="pick"""" &
       &"""" style="--ink: {draw.INKS[i mod draw.INKS.len]}">{pair.name}</button>"""
   document.getElementById("app").innerHTML = cstring(
-    &"""<div class="stage">{draw.plan(state, on)}{draw.elevation(state, on)}</div>""" &
+    """<div class="stage" id="stage"></div>""" &
     &"""<div class="panel"><div class="picks">{picks}</div>{controls}</div>""" &
-    &"""<div class="says-wrap">{readout(state, on)}{limits(state)}</div>""")
+    """<div class="says-wrap" id="says"></div>""")
+
+
+proc render() =
+  ## Redraw what the state says, leaving the controls where they are.
+  let
+    state = built()
+    on = chosen()
+  for i, d in DIALS:
+    document.getElementById(cstring(&"dv{i}")).textContent =
+      cstring(&"{m(dial[i])}{d.unit}")
+  for i, pair in PAIRS:
+    document.getElementById(cstring(&"pk{i}")).className =
+      cstring(if joined[i]: "pick on" else: "pick")
+  document.getElementById("stage").innerHTML =
+    cstring(draw.plan(state, on) & draw.elevation(state, on))
+  document.getElementById("says").innerHTML =
+    cstring(readout(state, on) & limits(state))
+
+
+var pending = false ## Whether a redraw is already booked for the next frame.
+
+
+proc paint() =
+  ## Redraw at most once a frame, however fast the controls are moved.
+  ##   A slider fires as fast as the pointer moves, and a redraw is not free:
+  ##     wound right up it is some tens of milliseconds.  Drawing every event
+  ##     as it lands queues them behind each other, so the picture falls
+  ##     further behind the finger the longer the drag goes on -- which is
+  ##     the whole of what "the slider takes a second to register" is.
+  ##   Booking one frame instead means the events that arrive while a redraw
+  ##     is pending are collapsed into it, and the picture always shows where
+  ##     the slider is now rather than where it was several events ago.
+  if pending:
+    return
+  pending = true
+  discard window.requestAnimationFrame(proc (time: float) =
+    pending = false
+    render())
 
 
 proc handle(event: Event) =
@@ -210,7 +266,7 @@ proc handle(event: Event) =
     return
   let which = parseInt($target.getAttribute("data-pair"))
   joined[which] = not joined[which]
-  render()
+  paint()
 
 
 proc slide(event: Event) =
@@ -222,10 +278,11 @@ proc slide(event: Event) =
   # the attribute gives the starting number for ever.
   let which = parseInt($target.getAttribute("data-dial"))
   dial[which] = parseFloat($cast[InputElement](target).value)
-  render()
+  paint()
 
 
 when isMainModule:
   document.addEventListener("click", handle)
   document.addEventListener("input", slide)
+  mount()
   render()

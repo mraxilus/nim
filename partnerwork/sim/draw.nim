@@ -57,7 +57,7 @@ func reachOf*(state: State): float =
   for link in state.links:
     let laid = lay(state, link)
     if laid.isSome:
-      for at in laid.get.plan:
+      for at in trace(laid.get):
         result = max(result, dist(at, mid))
   result += 0.06
 
@@ -87,7 +87,7 @@ func plan*(state: State; inks: seq[int] = @[]): string =
     if laid.isNone:
       continue
     var d = ""
-    for i, at in laid.get.plan:
+    for i, at in trace(laid.get):
       let p = put(at)
       d.add (if i == 0: "M" else: " L") & n(p[0]) & " " & n(p[1])
     let bad = faultOf(state, link).isSome

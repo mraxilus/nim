@@ -160,13 +160,33 @@ suite "turning winds the rope":
   test "the same angle gives the same state, whatever the step":
     # The winding underneath is path-dependent and has to be.  Replaying the
     # whole turn from rest every time is what keeps that from reaching the
-    # surface, and this is what says it worked: three step sizes, one answer.
-    var seen: seq[float]
-    for step in [0.05, 0.02, 0.01]:
-      let s = turned(oneLink(APART, Arm.Left, Arm.Right), Body.Two, PI, step)
-      seen.add lay(s, s.links[0]).get.span
-    for span in seen:
-      check abs(span - seen[0]) < 1e-9
+    # surface, and this is what says it worked: five step sizes across a
+    # factor of thirty, one answer.
+    #   Asked out to two turns and not just one, because it is the laps that
+    #   a coarse step would drop, and at half a turn there are none to drop.
+    #   This is also what lets the step be coarse: it is replayed on every
+    #   frame of a drag, so a finer one than the answer needs is just a
+    #   slower page.
+    for turns in [0.5, 1.4, 2.0]:
+      var spans: seq[float]
+      var laps: seq[int]
+      for step in [0.30, 0.15, 0.10, 0.05, 0.01]:
+        let s = turned(oneLink(APART, Arm.Left, Arm.Right), Body.Two,
+          turns * 2.0 * PI, step)
+        spans.add lay(s, s.links[0]).get.span
+        var round = 0
+        for wind in s.links[0].winds:
+          round += wind.turns
+        laps.add round
+      for i in 0 ..< spans.len:
+        # The laps have to match exactly -- they are the memory, and dropping
+        # one is the failure this guards against.  The spans match to a
+        # tolerance and not to the bit, because a facing is reached by adding
+        # `to / steps` that many times, and the last bits of that sum depend
+        # on how many steps there were.  Asking for equality here would be
+        # asking floating point for something it does not owe.
+        check abs(spans[i] - spans[0]) < 1e-9
+        check laps[i] == laps[0]
 
 
 suite "what the rope will not do":
