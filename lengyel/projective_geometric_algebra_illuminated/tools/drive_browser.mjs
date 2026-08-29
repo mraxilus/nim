@@ -1378,6 +1378,33 @@ const smoothed = await page.evaluate(() => {
   };
 });
 await restoreRings(kept_rings);
+// **The rows account for the whole frame, not a fraction of it.** Everything the page
+// spends is `build + upload + overlay + menu + ui`; the rest of a frame is waiting on the
+// display plus the browser's own style, layout, paint, compositing and collection. Without
+// that remainder on the panel a spike could not be told from a stall in the page's own
+// code, which is the first thing a reader needs to know. Held frame by frame: the six rows
+// must reconstruct the frame time they are a breakdown of.
+const accounted = await page.evaluate(() => {
+  const rows = [];
+  for (let i = 2; i < FRAMES_HISTORY - 2; i += 1) {
+    const at = (index_history_frame + i) % FRAMES_HISTORY;
+    if (written_phase.idle[at] !== 1) continue;
+    let sum = history_phase.idle[at];
+    for (const name of PHASES_TOP_DIAGNOSTIC) {
+      if (written_phase[name][at] === 1) sum += history_phase[name][at];
+    }
+    rows.push({ frame: history_frame[at], sum });
+  }
+  const off = rows.map((r) => Math.abs(r.frame - r.sum));
+  return { n: rows.length, worst: off.length === 0 ? 0 : Math.max(...off) };
+});
+report(
+  'the breakdown rows account for the whole frame they break down',
+  // Exact but for float32 rounding on the bridge's own three phases.
+  accounted.n > 100 && accounted.worst < 0.05,
+  `${accounted.n} frames reconstructed, worst off by ${accounted.worst.toFixed(4)} ms`,
+);
+
 report(
   'a reading is the mean over the last 200 ms, not whatever the newest frame said',
   // 200 ms of 16.7 ms frames is a dozen of them, and a dozen alternating 1s and 9s mean 5.

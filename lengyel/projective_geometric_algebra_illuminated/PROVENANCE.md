@@ -2035,6 +2035,34 @@ memo and the shared overlay extent skip recomputation when every input is bit-id
 which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
 live face of this ledger.
 
+**The breakdown accounts for the whole frame, not a fraction of it.** Everything the page
+spends is `build + upload + overlay + menu + ui`; on a page keeping pace with the display
+that is a small part of a frame, and the rest — waiting on the display, plus the browser's
+own style, layout, paint, compositing and collection — went unnamed. A reader watching a
+frame spike therefore could not tell a stall in this code from one outside it, which is the
+first thing worth knowing and the thing that decides whether to look at the tree at all. The
+remainder now has its own row, computed inside `recordFrameTime`, which is the one moment a
+frame's duration and its own phases occupy the same ring slot: the delta being written
+measures the frame whose phases were recorded at that index. Held by a driven check that
+reconstructs every frame's duration from its six rows; measured worst error 0.0000 ms.
+
+**On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
+the driving container, which is the wrong machine for the question — its median frame is
+17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:
+  - *Not a timer of ours.* The page has no `setInterval`, no `requestIdleCallback`, and no
+    CSS animation; its only `setTimeout`s dismiss a toast and revoke object URLs.
+  - *Not the drawer.* Its `backdrop-filter: blur(16px)` over an animating canvas was the
+    obvious suspect. Open against closed, over 30 s each: 44 spikes against 40, and 85%
+    against 87% of the excess outside the page's own work. No difference.
+  - *Unlikely to be collection.* Sampled allocation runs at 0.02 MB/s, the largest single
+    allocator being `drawExceedance` at 64 kB over 12 s. `performance.memory` is quantised
+    to a single value in this Chromium, so heap-drop detection is unavailable here and the
+    elimination rests on the allocation rate alone.
+  - *What is left.* On this container 85% of a spike's excess is outside anything the page
+    measures. That is the container's own software GL and shared CPU and says nothing about
+    another machine — which is exactly why the remainder now has a row: the instrument to
+    answer this belongs on the machine that has the symptom.
+
 **A phase's absence is recorded beside its time, never inside it.** The per-phase rings
 marked "did not run this frame" with a negative in the value's own range, and every mobile
 browser coarsens and jitters `performance.now` against timing attacks — so a sub-millisecond

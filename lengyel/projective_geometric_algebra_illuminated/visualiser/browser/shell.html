@@ -1189,6 +1189,15 @@
           ><b id="diag-overlay">&mdash;</b></div>
         <div class="diag-line"><span>selection menu</span><b id="diag-menu">&mdash;</b></div>
         <div class="diag-line"><span>ui refresh</span><b id="diag-ui">&mdash;</b></div>
+        <!-- The remainder of the frame, so the rows above account for all of it rather
+             than a fraction: time spent waiting on the display plus whatever the browser
+             did for itself -- style, layout, paint, compositing, collection. On a page
+             keeping pace with the display most of a frame is this, and that is the healthy
+             reading. It earns its row when a frame runs long: a spike here is not the
+             page's own code, and a reader chasing one needs to know that before looking
+             any further into the tree above. -->
+        <div class="diag-line"><span>display wait + browser</span
+          ><b id="diag-idle">&mdash;</b></div>
         <div class="diag-line"><span>JS heap</span><b id="diag-heap">unavailable</b></div>
         <hr class="rule">
         <div class="diag-line"><span>object pool</span><b id="diag-pool">0 / 64</b></div>

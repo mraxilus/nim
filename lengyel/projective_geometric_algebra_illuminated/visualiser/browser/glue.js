@@ -1503,8 +1503,13 @@ const PHASES_DIAGNOSTIC = [
   ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
   ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
   ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
-  ['menu', 'diag-menu'], ['ui', 'diag-ui'],
+  ['menu', 'diag-menu'], ['ui', 'diag-ui'], ['idle', 'diag-idle'],
 ];
+// The phases nothing else contains: their sum is everything this page spent on a frame,
+//   and the rest of the frame is `idle` below. `build` holds the bridge's own three, and
+//   those hold the scenery halves and the object kinds, so counting any of them here would
+//   count the same milliseconds twice.
+const PHASES_TOP_DIAGNOSTIC = ['build', 'upload', 'overlay', 'menu', 'ui'];
 // The rows that carry a count beside their time, and the ring each count is written to.
 //   A time alone cannot tell "one of these is expensive" from "there are many of them",
 //   which is the whole question a reader opens this branch to answer.
@@ -1761,6 +1766,20 @@ function scanTrimmed() {
 
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
+  // **Everything the page did not spend itself**: waiting on the display, and the browser's
+  //   own style, layout, paint, compositing and collection. Without it the breakdown
+  //   accounted for a fraction of the frame and left the rest unexplained, so a spike could
+  //   not be told from a stall in the page's own code -- which is the first question a
+  //   reader has. Computed here because this is the one moment a frame's duration and its
+  //   own phases sit in the same slot: the delta written just above measures the frame
+  //   whose phases were recorded into this index, and the advance below moves past both.
+  let spent = 0;
+  for (const name of PHASES_TOP_DIAGNOSTIC) {
+    if (written_phase[name][index_history_frame] === 1) {
+      spent += history_phase[name][index_history_frame];
+    }
+  }
+  recordPhaseTime('idle', delta_milliseconds - spent);
   recordExceedance(delta_milliseconds);
   index_history_frame = (index_history_frame + 1) % FRAMES_HISTORY;
   // The slot the phases are about to write into is cleared up front, so a phase that
