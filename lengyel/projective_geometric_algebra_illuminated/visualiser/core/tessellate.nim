@@ -280,6 +280,21 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
       )
 
 
+func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Option[float] =
+  ## Solve how far a lattice laid on `plane` reaches from the eye's own foot on it.
+  ##   The fog is a sphere about the eye, so what it leaves on any plane is a disc about
+  ## that foot, of radius `sqrt(radius_gone^2 - height^2)` -- the height being the eye's
+  ## depth against the plane, which is the algebra's own answer for any plane and not the
+  ## ground's alone. None where the eye stands further off than the fog reaches, and there
+  ## is nothing of that plane to draw.
+  let
+    fog = fogFurnitureFor(extent)
+    height = abs(depthAgainst(plane, scale.eye_point))
+    radius_squared = fog.radius_gone*fog.radius_gone - height*height
+  if radius_squared <= 0.0: return
+  some(sqrt(radius_squared))
+
+
 func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
   ## Solve how far the ground grid reaches from the point directly below the eye, in world
   ## units, for a camera whose furniture extends `extent`.
@@ -291,12 +306,7 @@ func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
   ## the scale bar has to be the cell the grid was drawn with, and two derivations of the
   ## same disc are two chances to disagree -- the argument `algebraFilled` and
   ## `extentViewOverlay` already make for their own shared answers.
-  let
-    fog = fogFurnitureFor(extent)
-    height = abs(depthAgainst(groundPlane(), scale.eye_point))
-    radius_squared = fog.radius_gone*fog.radius_gone - height*height
-  if radius_squared <= 0.0: return
-  some(sqrt(radius_squared))
+  radiusOnPlaneFor(extent, scale, groundPlane())
 
 
 func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
@@ -320,14 +330,17 @@ func segmentsGridFadeFor*(count_lines: int): int =
   max(SEGMENTS_GRID_FADE_MIN, min(SEGMENTS_GRID_FADE, allowed))
 
 
-proc addGridFamily(
+proc addGridFamily*(
   meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
   fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
-  along, across: Direction
+  along, across: Direction; origin: Position = ORIGIN_WORLD
 ) =
-  ## Append one family of ground grid lines: every lattice line running along `along`,
-  ## stepped by `size_cell` along `across`, that falls within `radius_ground` of the
-  ## point on the ground directly below the eye.
+  ## Append one family of lattice lines: every line running along `along`, stepped by
+  ## `size_cell` along `across`, that falls within `radius_ground` of the eye's own foot on
+  ## the plane the two span.
+  ##   Exported for `algebra_view`, whose debug layer lays this same lattice on an
+  ##   arbitrary plane to draw it as the infinite thing it is -- the ground is that case
+  ##   with `origin` at the world origin and the two world axes for its span.
   ##   The cell is passed in rather than read from `SIZE_CELL_GRID` so that both families
   ## are laid on the one `sizeCellGridFor` answered for this frame's disc; two calls could
   ## not disagree, but a reader of one family should not have to prove that.
@@ -342,7 +355,7 @@ proc addGridFamily(
   #   origin perpendicular to each -- the algebra's statement of a coordinate. One plane
   #   per family per frame, hoisted here rather than rebuilt per lattice line.
   let
-    origin_point = toMultivector(ORIGIN_WORLD)
+    origin_point = toMultivector(origin)
     along_point = toMultivector(along)
     across_point = toMultivector(across)
     centre_across = depthAgainst(planeThrough(origin_point, across_point), scale.eye_point)

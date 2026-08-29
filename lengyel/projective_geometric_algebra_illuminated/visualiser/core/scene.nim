@@ -910,10 +910,12 @@ const
   ORDINAL_INK_CATEGORICAL_V1* = 7
     ## Where the categorical hues began in the `Ink` a version-1 file was written under.
     ##   That palette ran `Backdrop, AxisX, AxisY, AxisZ, Grid, Guide, Outline` and then
-    ##   eight hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`. The
-    ##   structural prefix is unchanged to this day; `Invalid` was inserted after it, which
-    ##   is what moved every hue along by one. Recorded as a number rather than looked up,
-    ##   because the enum it indexes no longer exists to look it up in.
+    ##   eight hues `Rose, Copper, Olive, Jade, Cobalt, Violet, Magenta, Cerise`. Those
+    ##   seven structural slots are unchanged to this day, and every structural slot
+    ##   reserved after them -- `Invalid`, then `Algebra` -- moves the hues along by one
+    ##   more, which is why the fold below reads today's start through `inkCycled` instead
+    ##   of adding a fixed shift. Recorded as a number rather than looked up, because the
+    ##   enum it indexes no longer exists to look it up in.
   ORDINAL_INK_HIGH_V1* = 14
     ## Last palette slot a version-1 file could name, being `Cerise`'s.
     ##   Bounded rather than left open because the fold below would otherwise turn any
@@ -941,11 +943,12 @@ type ItemSaved* = object
 func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
   ## Carry one item from what version 1 meant to what version 2 means. None where version
   ## 1 could not have written it.
-  ##   Only the palette moved. Version 1's hues began one slot earlier and ran three
-  ##   longer; `Invalid` was then reserved after the structural slots, pushing every hue
-  ##   along by one, and `Violet`, `Magenta` and `Cerise` were retired. The structural
-  ##   slots are untouched, the five surviving hues shift by exactly one, and the three
-  ##   retired ones fold onto hues that exist by the same cycle `inkCycled` walks -- a
+  ##   Only the palette moved. Version 1's hues began earlier and ran three longer;
+  ##   `Invalid` and later `Algebra` were reserved after the structural slots, pushing
+  ##   every hue along by one apiece, and `Violet`, `Magenta` and `Cerise` were retired.
+  ##   Version 1's own seven structural slots are untouched, the five surviving hues land
+  ##   in order on today's first five, and the three retired ones fold onto hues that
+  ##   exist by the same cycle `inkCycled` walks -- a
   ##   colour the reader could have chosen for themselves, rather than a refusal.
   ##   **The one file this gets wrong** is the browser's own: it stamped version 1 onto
   ##   version-2 content for a while (see `MAGIC_SCENE`'s own note), and nothing in the

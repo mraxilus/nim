@@ -44,8 +44,8 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  boundary, camera, format, framing, help, history, interaction, marker, picking,
-  scene, selection, storyboard, tessellate,
+  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  interaction, marker, picking, scene, selection, storyboard, tessellate,
 ]
 
 
@@ -1626,6 +1626,12 @@ type FrameData = object
     ## PROVENANCE.md's bottleneck ledger the recorded one -- so a still frame that skips
     ## it does most of a frame less work. A JS-backend concern and stated as one: the
     ## desktop's own furniture assembly is native and pays a fraction of this.
+  ms_algebra: float32
+    ## What the debug layer cost, beside `ms_scene` rather than inside it: every multivector
+    ## the frame recorded,
+    ## drawn in its true form, a plane as an infinite lattice rather than a disc. Zero
+    ## where the layer is switched off, which is its resting state -- a lattice per plane
+    ## is not cheap and the panel should say so rather than fold it into the scene.
   ms_build, ms_furniture, ms_scene, ms_flatten: float32
     ## What this frame's own assembly cost, in milliseconds: the whole of `nimBuildFrame`,
     ## and its three phases -- the world furniture (ground grid and axes), the scene's own
@@ -1726,7 +1732,8 @@ proc chargeTally(cost: var SceneCost; geometry: Multivector; is_sky, is_ghost, i
 
 
 proc nimBuildFrame(
-  aspect, now: cfloat; height_pixels: cint; is_axes_shown, is_grid_shown: bool
+  aspect, now: cfloat; height_pixels: cint;
+  is_axes_shown, is_grid_shown, is_algebra_shown: bool
 ): FrameData {.exportc.} =
   ## Tessellate every visible object in the live scene, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
@@ -1884,6 +1891,17 @@ proc nimBuildFrame(
       g_scene.geometryAt(slot), is_sky = false, is_ghost = false, is_selected = true
     )
 
+  # **The algebra's own layer**, drawn over the scene it explains: every multivector this
+  #   frame derived, in its true form. What lands in it is `algebra_view.addFrameTrace`'s
+  #   answer, shared with the desktop path so the two cannot drift.
+  let ms_before_algebra = performanceNow()
+  if is_algebra_shown:
+    g_meshes.addFrameTrace(
+      g_scene, g_camera, staged(), g_interaction.cursor, scale,
+      width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
+    )
+  let ms_after_algebra = performanceNow()
+
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   var view_projection = newSeq[float32](16)
   for row in 0 .. 3:
@@ -1928,7 +1946,8 @@ proc nimBuildFrame(
     ms_furniture: float32(ms_after_furniture - ms_before_furniture),
     # The scene phase is everything between the furniture and the flatten: clearing,
     #   both draw-order passes, the ghost and the drag preview, and the overlay marking.
-    ms_scene: float32(ms_before_flatten - ms_after_furniture),
+    ms_algebra: float32(ms_after_algebra - ms_before_algebra),
+    ms_scene: float32(ms_before_algebra - ms_after_furniture),
     ms_flatten: float32(ms_done - ms_before_flatten),
     tri_over: countOverlay(g_meshes[Primitive.Triangle]),
     ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),

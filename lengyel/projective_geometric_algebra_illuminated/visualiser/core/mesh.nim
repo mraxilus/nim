@@ -311,6 +311,14 @@ type
     Outline, ## Selection outline drawn around the one object currently highlighted --
       ## never cycled to automatically, only drawn where a caller names a specific
       ## slot as highlighted (see `renderer.drawOutline`).
+    Algebra, ## The debug layer that draws the multivectors a frame computed, in their true
+      ## form -- see `algebra_trace`. Structural, and deliberately not assignable: an
+      ## entry drawn in it is the *algebra's* own geometry, and a reader must never have
+      ## to wonder whether a shape in that ink is something they built -- so it is screened
+      ## against every assignable slot and against `Invalid`, at the floors an assignable
+      ## pair is held to. A cyan: worst measured separation is 8.2 against jade under
+      ## tritanopia and 9.2 against cobalt under a red-green deficiency, both over the 6.0
+      ## floor, and 54.4 against the backdrop it is drawn over.
     Invalid, ## Reserved for an object that is wrong rather than merely coloured -- a
       ## magenta no object may be assigned, so seeing it always means something is
       ## invalid. Structural for exactly that reason: a status colour a caller could
@@ -528,6 +536,7 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Grid: Rgba(red: 0.180, green: 0.204, blue: 0.259, alpha: 1.0),
   Ink.Guide: Rgba(red: 0.286, green: 0.322, blue: 0.400, alpha: 1.0),
   Ink.Outline: Rgba(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+  Ink.Algebra: Rgba(red: 0.000, green: 0.729, blue: 0.780, alpha: 1.0),
   Ink.Invalid: Rgba(red: 0.612, green: 0.000, blue: 0.722, alpha: 1.0),
   Ink.Rose: Rgba(red: 0.690, green: 0.090, blue: 0.373, alpha: 1.0),
   Ink.Copper: Rgba(red: 0.812, green: 0.451, blue: 0.275, alpha: 1.0),

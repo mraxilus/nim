@@ -130,6 +130,9 @@ type
     degrees_field_of_view*: float ## Vertical field of view, in degrees.
 
   FrameCamera* = object ## Hold orthonormal directions of camera's own axes.
+    axis_sight*: Multivector ## The line joining eye to target, which every direction below
+      ## is derived from. Carried rather than discarded because it is the frame's own first
+      ## join and the debug layer draws it; see `algebra_trace.TracedRole.SightAxis`.
     axis_right*: Direction ## Unit direction of view's +x.
     axis_up*: Direction ## Unit direction of view's +y.
     forward*: Direction ## Unit direction eye looks along.
@@ -386,6 +389,7 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
     if dot(toMultivector(axis_up.get), toMultivector(UP_WORLD))[Basis.scalar] < 0: -1.0
     else: 1.0
   FrameCamera(
+    axis_sight: axis_sight,
     axis_right: axis_right.get,
     axis_up: orientation * axis_up.get,
     forward: forward.get,

@@ -178,7 +178,7 @@ func distanceToSegment(point, tail, head: ScreenPosition): float =
 
 #[ Sight Ray ]#
 
-func castRay(
+func castRay*(
   camera: Camera; eye: Position; frame: FrameCamera; width, height: int; cursor: ScreenPosition
 ): Multivector =
   ## Build RGA line running from eye through cursor's own pixel, into the scene.

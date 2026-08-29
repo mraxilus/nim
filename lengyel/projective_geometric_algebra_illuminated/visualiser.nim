@@ -106,7 +106,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  boundary, camera, format, framing, help, history, interaction, marker, picking,
+  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  interaction, marker, picking,
   scene, selection, storyboard, tessellate,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
@@ -331,7 +332,7 @@ proc offerCameraAim(
 
 proc assembleMeshes(
   panel: var Panel; scene: Scene; interaction: Interaction;
-  camera: Camera; now: float; scale: DrawExtent;
+  camera: Camera; now: float; scale: DrawExtent; width, height: int;
   are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool])
 ) =
   ## Refill vertex storage from scene as it stands this frame, recording what it cost.
@@ -413,6 +414,16 @@ proc assembleMeshes(
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+
+  # **The algebra's own layer**, over everything else: every multivector this frame
+  #   computed, drawn as what it is rather than as the stand-in the picture uses -- a plane
+  #   as the infinite lattice it actually is. What lands in it is
+  #   `algebra_view.addFrameTrace`'s answer, shared with the browser path so the two
+  #   cannot drift. See `algebra_trace`.
+  if panel.is_algebra_shown:
+    MESHES.addFrameTrace(
+      scene, camera, staged, interaction.cursor, scale, width = width, height = height,
+    )
 
   panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
   panel.count_vertices = 0
@@ -759,7 +770,9 @@ proc renderFrame(
   interaction.updateHover(scene, camera, view_projection, int(width), int(height))
   interaction.pruneFocus(scene)
   interaction.updateDrag(scene, now)
-  assembleMeshes(panel, scene, interaction, camera, now, scale, are_dimmed)
+  assembleMeshes(
+    panel, scene, interaction, camera, now, scale, int(width), int(height), are_dimmed
+  )
   clearFrame(int(width), int(height))
   renderer.drawMeshes(MESHES_FURNITURE, view_projection)
   renderer.drawMeshes(MESHES, view_projection)

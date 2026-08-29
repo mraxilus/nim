@@ -1441,6 +1441,58 @@ report(
   `the row reads "${smoothed.text}" over ${smoothed.frames} frames`,
 );
 
+// **The algebra's own layer draws what the picture only stands for.** The ordinary picture
+// draws a plane as a disc of fixed radius, because an infinite surface would bury
+// everything; switched on, the debug layer draws it as the infinite lattice it actually is,
+// reaching the furniture's own extent instead of `EXTENT_PLANE`. It also draws geometry the
+// scene does not contain at all -- the camera's sight axis, its near plane, the ray under
+// the cursor -- so the toggle has to change more than a tint.
+const layered = await page.evaluate(async () => {
+  const settle = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const chip = document.getElementById('toggle-algebra');
+  const count = () => nimBuildFrame(1.4, 2.0, 700, true, true, chip.classList.contains('on'));
+  const off = count();
+  const lit_off = chip.classList.contains('on');
+  chip.click();
+  await settle();
+  const on = count();
+  return {
+    lit_off, lit_on: chip.classList.contains('on'),
+    // Ribbons: the lattice is drawn as ribbons, as every line in this build is.
+    ribbons_off: off.ribbon_verts.length, ribbons_on: on.ribbon_verts.length,
+    ms_off: off.ms_algebra, ms_on: on.ms_algebra,
+  };
+});
+report(
+  'the algebra layer is off until asked for, and then draws more than the scene',
+  !layered.lit_off && layered.lit_on &&
+    layered.ms_off === 0 && layered.ms_on > 0 &&
+    layered.ribbons_on > layered.ribbons_off,
+  `off: ${layered.ribbons_off} ribbon vertices, ${layered.ms_off} ms; ` +
+    `on: ${layered.ribbons_on}, ${layered.ms_on.toFixed(1)} ms`,
+);
+
+// **A plane is drawn infinite, not as its disc.** The lattice reaches the furniture's own
+// extent, which is far outside the fixed radius the disc stands at -- so the furthest thing
+// the layer draws has to lie well beyond `EXTENT_PLANE`, or the plane is still a disc.
+const reached = await page.evaluate((EXTENT_PLANE_DRIVE) => {
+  const data = nimBuildFrame(1.4, 2.0, 700, false, false, true);
+  // Furniture off, so every vertex counted here belongs to the scene and the layer over it.
+  let furthest = 0;
+  const v = data.ribbon_verts;
+  // Seven floats a vertex: three of place, four of colour.
+  for (let i = 0; i < v.length; i += 7) {
+    furthest = Math.max(furthest, Math.hypot(v[i], v[i + 1], v[i + 2]));
+  }
+  return { furthest, extent_plane: EXTENT_PLANE_DRIVE };
+}, 8.0); // `mesh.EXTENT_PLANE`, the fixed radius a plane's disc stands at.
+report(
+  'a plane is drawn as the infinite thing it is, not as the disc that stands for one',
+  reached.furthest > 4*reached.extent_plane,
+  `furthest lattice vertex ${reached.furthest.toFixed(1)} units out, ` +
+    `against a disc of ${reached.extent_plane}`,
+);
+
 // **The scene phase, broken down by the kind of object each millisecond went to.** The
 // kinds differ by two orders of magnitude -- a point is one vertex, a plane a rim of
 // ribbons each carrying its own join -- so a reader asking why a scene is slow needs the

@@ -973,6 +973,11 @@
       <div class="toggles">
         <button id="toggle-axes" class="on" type="button">axes</button>
         <button id="toggle-grid" class="on" type="button">grid</button>
+        <!-- The algebra's own layer: every multivector the frame computed, drawn as what
+             it is -- a plane as the infinite lattice it actually is, not the disc that
+             stands for one. Off by default; the picture is what the build is for, and this
+             is what a reader switches to when they want to see the library instead. -->
+        <button id="toggle-algebra" type="button">algebra</button>
       </div>
       <button class="brand" id="btn-menu" type="button" aria-label="menu">
         <span aria-hidden="true">&#9776;</span>
@@ -1180,6 +1185,11 @@
                   ><b id="diag-selected">&mdash;</b></div>
               </div>
             </div>
+            <!-- The algebra's own layer, when it is switched on: a lattice per plane is
+                 not cheap and the panel should say so rather than fold it into the scene
+                 it is drawn over. Zero while the layer is off. -->
+            <div class="diag-line"><span>algebra layer</span
+              ><b id="diag-algebra">&mdash;</b></div>
             <div class="diag-line"><span>flatten + pack</span
               ><b id="diag-flatten">&mdash;</b></div>
           </div>

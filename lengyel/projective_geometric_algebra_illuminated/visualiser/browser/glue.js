@@ -134,6 +134,10 @@ document.documentElement.style.setProperty('--bg', rgbToCss(backdrop));
 
 nimInit(performance.now() / 1000);
 let is_axes_shown = true, is_grid_shown = true;
+// The debug layer, off by default: it draws every multivector the frame computed, with a
+//   plane drawn as the infinite lattice it actually is rather than as the disc that stands
+//   for one. A reader switches it on to see the algebra rather than the illustration of it.
+let is_algebra_shown = false;
 
 function now() { return performance.now() / 1000; }
 
@@ -464,6 +468,10 @@ document.getElementById('toggle-axes').addEventListener('click', (e) => {
 });
 document.getElementById('toggle-grid').addEventListener('click', (e) => {
   is_grid_shown = !is_grid_shown; e.target.classList.toggle('on', is_grid_shown);
+});
+document.getElementById('toggle-algebra').addEventListener('click', (e) => {
+  is_algebra_shown = !is_algebra_shown;
+  e.target.classList.toggle('on', is_algebra_shown);
 });
 /* ---------------------------------------------------------------------- */
 /* Help: the ? button says it whenever asked.                             */
@@ -1502,6 +1510,7 @@ const PHASES_DIAGNOSTIC = [
   ['grid', 'diag-grid'], ['axes', 'diag-axes'], ['scene', 'diag-scene'],
   ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
   ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
+  ['algebra', 'diag-algebra'],
   ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
   ['menu', 'diag-menu'], ['ui', 'diag-ui'], ['idle', 'diag-idle'],
 ];
@@ -1611,7 +1620,7 @@ function medianPhase(name) {
 //   which step only once it is. A closed node's rows are skipped by `refreshDiagnostics`
 //   entirely, so a subtotal nobody is reading costs nothing to keep offering.
 const NODES_DIAGNOSTIC = {
-  build: ['furniture', 'scene', 'flatten'],
+  build: ['furniture', 'scene', 'algebra', 'flatten'],
   furniture: ['grid', 'axes'],
   scene: ['points', 'lines', 'planes', 'sky', 'ghost', 'selected'],
 };
@@ -2924,7 +2933,7 @@ function renderFrame(now_seconds) {
   const aspect = canvas.width / canvas.height;
 
   const data = nimBuildFrame(
-    aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown,
+    aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown, is_algebra_shown,
   );
   // The bridge times its own three phases where only it can see them; this side just
   // records what came back, into the same rings its own phases use.
@@ -2936,6 +2945,10 @@ function renderFrame(now_seconds) {
   recordPhaseTime('grid', data.ms_grid);
   recordPhaseTime('axes', data.ms_axes);
   recordPhaseTime('scene', data.ms_scene);
+  // The debug layer, beside the scene rather than inside it, so the per-kind rows still
+  //   account for the scene exactly. Zero whenever the layer is off, which is its resting
+  //   state.
+  recordPhaseTime('algebra', data.ms_algebra);
   recordPhaseTime('flatten', data.ms_flatten);
   // The scene phase broken out by the kind of object each millisecond went to, with the
   //   counts kept beside them. Counts are latest rather than ringed: a median count would

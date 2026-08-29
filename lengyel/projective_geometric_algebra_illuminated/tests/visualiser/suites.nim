@@ -1863,10 +1863,11 @@ suite "Scene":
       check ink == inkCycled(step)
       check ink != Ink.Invalid
       check ink in inkCategorical(0) .. inkCategorical(COUNT_INK_CATEGORICAL - 1)
-    # The five hues version 1 shares with today shift by exactly one, no more.
-    for step in 0 ..< COUNT_INK_CATEGORICAL:
-      let carried = itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1 + step), 1'u8)
-      check carried.get.ink_ordinal == ORDINAL_INK_CATEGORICAL_V1 + step + 1
+    # Deliberately *not* pinned to a fixed shift from version 1's own start. A structural
+    #   slot reserved since -- `Invalid`, then `Algebra` -- moves every hue along by one
+    #   more while leaving the fold correct, so such an assertion fails on a legitimate
+    #   palette change and catches no real fault. Where each hue lands is stated above,
+    #   through `inkCycled`, which is what the fold actually promises.
     # Ordinals version 1 could never have written are a corrupt file, not another hue.
     check itemUpgraded(savedWith(ORDINAL_INK_HIGH_V1 + 1), 1'u8).isNone
     check itemUpgraded(savedWith(-1), 1'u8).isNone

@@ -135,10 +135,22 @@ proc main() =
         separationDeficient(a, b, Deficiency.Tritanopia), SEPARATION_ASSIGNABLE_TRITAN)
 
   # Furniture has to stay visible on its own ground, which is the price of dimming it.
-  for ink in [Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid]:
+  #   `Algebra` joins them: the debug layer draws over the same backdrop, and a reader who
+  #   cannot see it there cannot use it.
+  for ink in [Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid, Ink.Algebra]:
     record(&"{ink} / Backdrop, typical vision",
       separation(ink.linearOf.toOklab, Ink.Backdrop.linearOf.toOklab),
       SEPARATION_FURNITURE_BACKDROP)
+
+  # The debug layer must not be mistaken for an object a reader built, nor for the warning
+  #   ink -- so it is screened against every assignable slot and against `Invalid`, at the
+  #   same floors an assignable pair is held to.
+  for ink in [Ink.Rose, Ink.Copper, Ink.Olive, Ink.Jade, Ink.Cobalt, Ink.Invalid]:
+    record(&"Algebra / {ink}, red-green deficiency",
+      separationRedGreen(Ink.Algebra.linearOf, ink.linearOf), SEPARATION_ASSIGNABLE_CVD)
+    record(&"Algebra / {ink}, tritanopia",
+      separationDeficient(Ink.Algebra.linearOf, ink.linearOf, Deficiency.Tritanopia),
+      SEPARATION_ASSIGNABLE_TRITAN)
 
   for ink in ASSIGNABLE:
     record(&"{ink} / Invalid, red-green deficiency",

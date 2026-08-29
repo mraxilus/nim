@@ -20,7 +20,7 @@
 import std/[algorithm, os, sequtils, sets, strformat, strutils, unicode]
 
 import ../pga
-import ../visualiser/core/[objects, scene]
+import ../visualiser/core/[boundary, scene]
 
 
 

@@ -1927,63 +1927,109 @@ band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this
 renders through swiftshader, so its frame times say more about the software renderer than
 about anything in this repository.
 
-**The algebra boundary.** All world-space mathematics goes through the `pga` library:
-construction, incidence, meets, joins, normals, projections, nearest points, ray casts,
-side tests, the near-clip crossing, and every act of *stepping* — a point offset along a
-direction, a circle or dome parametrised around a centre, a camera target slid, a bounding
-sphere merged. Points are assembled as multivector sums (`P₀ + s·A₁ + t·A₂`, with the
-invariant multivectors hoisted to the widest loop-invariant scope) and read back through
-`position`/`pointFrom` only at the boundary. Standard component arithmetic is licensed in
-exactly these places, and nowhere else:
+**The algebra boundary.** *(Rewritten: the rule below replaced an earlier one requiring PGA
+everywhere in world space. What changed is stated in "What moved, and what the picture costs
+now".)*
 
-- the Matrix4 pipeline (`camera.initMatrixProjection/View/ViewProjection`);
-- `picking.projectToScreen` and all post-projection `ScreenPosition` math;
-- `mesh.addVertex` packing, `worldPerPixelAt`, `radiansPerPixel`, and
-  `mesh.addSegmentAcross`'s clip/offset/blend body — the componentwise copy of what a
-  geometry shader would do, pinned equal to the algebra's own `clipToEyeSide` by the
-  suite so the licensed asymmetry cannot drift;
-- scalar sphere/circle **chord solves** (`fogFurnitureFor`, the grid's disc radius, the
-  axes' chord half-lengths): a sphere has no representative in the rigid algebra
-  (conformal-only), so the metric halves stay scalar while the incidence feeding them —
-  the eye's feet by `projectOrthogonal`, its heights by `depthAgainst` — is the library's;
-- trig parametrisation scalars (azimuth/elevation, circle angles) — ground field — and the
-  ±1 orientation flip `camera.frame` applies to a record after the algebra's own inner
-  product decided the sign;
-- tests and drive verdicts, which hold the algebra against classical closed forms
-  computed *in the test* — the project's purpose.
+The **algebra owns geometry** -- what a thing is and where it stands: scene-object
+construction, incidence, meets, joins, projections, nearest points, side tests; the
+world-space camera; rays cast from the screen; the ground grid's lattice lines and the world
+axes, which are lines; and everything at the horizon, where a point is a star, a line is the
+great circle of the directions it names, and a plane is the whole sky.
 
-The vocabulary these conversions speak — `planeThrough`, `depthAgainst`,
-`distanceBetween`, `groundPlane`/`levelPlaneThrough`, `pointFrom`, `algebraFilled` — lives
-in `objects.nim` and `mesh.nim`, each sign and argument order pinned by its own suite
-case. Every hand-built `DrawExtent` must pass `algebraFilled`, or its multivector twins
-are zero and the tessellation silently draws nothing (found exactly that way).
+The **picture owns representation** -- how geometry becomes GPU primitives: a plane's disc,
+fill and rim, since a disc is not a plane but a stand-in sized for an eye; and a ribbon's
+across-vector, since a ribbon is how wide a line is drawn and not where it runs. Both are
+built with whatever arithmetic is quickest. A point has no picture to own: its place is the
+algebra's and its marker is a single vertex sized by a uniform, with no construction between.
 
-**The bottleneck ledger.** PGA equations are never replaced with standard linear algebra —
-the library is what this project exists to exercise, so a cost the algebra carries is a
-finding to record here, not a fault to patch around. A PGA equation may be restructured
-only in PGA's own terms (hoisting an invariant multivector, sharing one join across the
-collinear pieces that provably share it). Each entry: the site, the measured price on the
-driving container's shipped page, and why it is kept.
+**The boundary is enforced by the compiler, not by a comment.** `mesh.nim` imports
+`euclid.nim` and nothing else, so `Multivector` is not a type it can name; `euclid` reaches
+`pga/algebra.nim` only, which is the metric and grade constants and names no multivector.
+`objects.nim` is the algebra's own vocabulary and names no Euclidean type. `boundary.nim` is
+the one module speaking both, so every lift and read-out is findable in one file.
+`tessellate.nim` is the geometry side of drawing and calls down into `mesh` to emit
+primitives.
 
-**`mesh.directionAcross` — the triple join `directionNormal(tail ∧ head ∧ eye)`, once per
-ribbon, ~3,800 times a moving frame.** Price: +6.7 ms a moving frame against a written-out
-cross product, measured both ways on the shipped page. Kept — this is the mandate's own
-case: the cross product was shipped briefly (`0275e82d8`) and reverted; the suite now holds
-the join's normal equal to the classical cross computed *in the test*, sign included, and
-the join is what runs.
+**What moved, and what the picture costs now.** Two things left the algebra, each measured on
+the shipped page as the median build phase over a still camera, an orbiting one, and a
+six-plane scene:
 
-**Tessellation stepping through multivector sums, per vertex.** Price, on the driving
-container's shipped page: the frame build under a real orbit drag went 11.5 → 12.6 ms —
-about +1 ms net, because the restructuring that came with it is itself algebra: each
-collinear run (a lattice line, a world axis) derives **one** across join
-(`directionNormal(line ∧ eye)`, `addSegmentAcross`) where the per-piece form ran the same
-join eight times over, ~3,800 joins a frame down to ~500. The **still** frame carries the
-larger share: the scene's own objects rebuild every frame with no cache to hide behind,
-and their phase reads ~8 ms in the diagnostics tab against ~2 before the stepping — a
-plane's rim is 96 chord joins and 192 assembled points, the dome 1,152 assembled points.
-Kept — the sums are the algebra's own statement of placement, this is the stress the
-project exists to apply, and the scenery half of the frame is still protected by the
-furniture hold.
+| | still | moving | six planes |
+|---|---|---|---|
+| before | 5.10 ms | 5.50 ms | 34.50 ms |
+| ribbon across-vector as a cross | 3.20 | 3.40 | 22.10 |
+| plane's disc stepped in arithmetic | **1.40** | **1.50** | **15.20** |
+
+A plane's own phase went 15.30 -> 2.20 ms on the six-plane scene; lines 3.80 -> 1.70. The
+sky is 8.3 ms of what remains and is untouched, as are the great circle, the lattice lines
+and the axes -- those are geometry. The grid did not move at all (4.00 -> 3.80): its across
+was already hoisted once per line, so it never ran the per-segment join, and the change there
+is consistency rather than speed. Both moved forms are **pinned to the algebra in the suite**,
+inverted from how they used to be pinned: the cross is held equal to
+`directionNormal(tail ∧ head ∧ eye)` sign included, and every stepped disc point to the
+multivector sum it replaced. The algebra is still exercised on every build; where it no
+longer ships, it is what the shipped form is proved against.
+
+**The debug layer.** Because the picture is no longer the algebra's own statement, the
+algebra gets a layer of its own -- `algebra_trace` records every multivector a frame computed
+and `algebra_view` draws each as what it is, the way a game engine draws its physics world in
+wireframe over the art. A finite plane is drawn there as a **fog-faded lattice over the whole
+plane**, which is how this project already draws an infinite plane: the ground grid *is* one,
+at `z = 0`. `radiusOnPlaneFor` and `addGridFamily` were generalised from the ground to an
+arbitrary plane rather than a second idiom being invented. The layer also draws geometry the
+scene does not contain -- the sight axis `camera.frame` derives and used to discard, the eye
+and near planes, the cursor's ray and where it meets the level being worked at. Both render
+paths call one `algebra_view.addFrameTrace` rather than each listing what to record, so an
+entry cannot reach one picture and miss the other -- which is exactly the fault this layer
+exists to expose.
+  **What it does not reach, stated plainly:** the per-candidate meets `picking.rayPlaneHit`
+forms inside `pickNearest`, one against each visible plane, most of them rejected. Reaching
+them is not a matter of adding a record call: `rayPlaneHit` returns `Option[float]` and
+`pickNearest` returns `Option[int]`, so a collector would have to be threaded back out
+through both, and a `var` parameter would make `pickNearest` a `proc` where the module
+currently documents it as pure. Re-deriving the meets inside `algebra_view` from the traced
+ray was rejected as the worse answer: it would be a second copy of the hit test drifting
+against the first, and it would show what the drawer computed rather than what the pick did.
+So the layer covers the render path's own intermediates in full and the hit test's not at
+all; the ray the pick casts *is* drawn, and it is the same ray.
+  Off by default, and it carries its own diagnostics row *beside* the scene rather than
+inside it, so the per-kind rows still account for the scene exactly. It is not cheap: a
+lattice per plane measured 16.5 ms on the driving container against 0 with the layer off,
+which is exactly why the panel says so. Its ink is one hue, `Ink.Algebra`, screened against
+every assignable slot and against `Invalid` at the floors an assignable pair is held to
+(worst 8.2 against jade under tritanopia, 9.2 against cobalt under a red-green deficiency,
+against a floor of 6.0), so nothing it draws can be mistaken for an object a reader built.
+
+**The bottleneck ledger.** A PGA equation on the *geometry* side is never replaced with
+standard linear algebra: the library is what this project exists to exercise, so a cost it
+carries there is a finding to record here, not a fault to patch around, and it may be
+restructured only in PGA's own terms (hoisting an invariant multivector, sharing one join
+across the collinear pieces that provably share it). What may leave the algebra is the
+*picture* — see the boundary above — and when it does, the algebra becomes the reference the
+shipped form is proved against rather than something dropped. Each entry: the site, the
+measured price on the driving container's shipped page, and where it stands now.
+
+**`mesh.directionAcross` — was the triple join `directionNormal(tail ∧ head ∧ eye)`, once
+per ribbon, ~3,800 times a moving frame.** Price measured both ways on the shipped page:
++6.7 ms a moving frame against a written-out cross product. **Resolved by the boundary
+above, not paid**: a ribbon is how wide a line is drawn, which is the picture's business,
+so the cross is what ships and the join is now the reference the suite holds it against,
+sign included. The two sites that hoist one across per *line* rather than per piece — a
+world axis, a lattice line — take the same cross; the lines themselves are still placed
+through the algebra.
+
+**A plane's disc assembled as multivector sums, per vertex — 96 points for the rim, 192 for
+the fan, per plane per frame.** Price: the scene phase read ~8 ms against ~2 before the
+stepping went in. **Resolved the same way**: a disc is not a plane but a stand-in sized for
+an eye, so it steps through `euclid.onCircle`, and the suite holds every stepped point equal
+to the sum it replaced. Which plane the two arms span is still `boundary.frame`'s answer.
+
+**What the algebra still carries, and what it costs.** The horizon shapes are geometry and
+stay: the sky dome is 8.3 ms of a six-plane frame, and the great circle a line at infinity
+traces is its own. So do the ground grid's lattice lines and the world axes, whose per-piece
+fade stepping is ~3.8 ms of a rebuilt frame. These are the stress the project exists to
+apply, and they are what the frame's remaining build time is spent on.
 
 **The ground grid's segment count, which sawtoothed with camera distance.** The scenery's
 price *is* its segment count — about 50-60 us a segment on the driving container, flat

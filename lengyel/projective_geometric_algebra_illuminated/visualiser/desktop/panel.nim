@@ -198,6 +198,10 @@ type
       ## arity the selection implies, so one number could not name a position in both.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
+    is_algebra_shown*: bool ## Whether the algebra's own debug layer is drawn over the
+      ## scene -- every multivector the frame computed, in its true form, a plane as the
+      ## infinite lattice it is rather than the disc that stands for one. Off by default;
+      ## see `algebra_view`.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
     is_undo_requested*, is_redo_requested*: bool ## Whether a key asked to step the
       ## timeline. Set by the key handler and consumed by the caller right after layout,
@@ -227,6 +231,7 @@ func initPanel*(path_export: string): Panel =
   ## Construct panel with world furniture shown and export aimed at `path_export`.
   result.is_grid_shown = true
   result.is_axes_shown = true
+  result.is_algebra_shown = false
   result.is_vsync_enabled = true
   toChars(path_export, result.path_export)
   toChars("scene.rgascene", result.path_scene)
@@ -632,6 +637,12 @@ proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
   gui.sameLine()
   discard gui.checkbox("grid", addr panel.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
+  gui.sameLine()
+  discard gui.checkbox("algebra", addr panel.is_algebra_shown)
+  gui.tooltip(
+    "Draw every multivector this frame computed, in its true form -- a plane as the " &
+    "infinite lattice it is, not the disc that stands for one."
+  )
 
   widthPushField()
   fieldLabel("scene file")
