@@ -309,13 +309,20 @@ report(
   `${await page.evaluate(() => nimSelectionCount())} selected`,
 );
 
-await tapAt(pixel_second[0], pixel_second[1]);
+// **Read the second object's pixel afresh, after the ease.** Picking turns the orbit about
+//   what was picked, so the view is still gliding when the press above lets go and every
+//   other object is somewhere new by the time it settles. A pixel read before the first
+//   press names where the second object *was*.
+await settleCamera();
+const pixel_second_now = await pixelOf(slots_scene[2]);
+await tapAt(pixel_second_now[0], pixel_second_now[1]);
 report(
   'a tap toggles a second object into the selection',
   (await page.evaluate(() => nimSelectionCount())) === 2,
   `${await page.evaluate(() => nimSelectionCount())} selected`,
 );
 
+await settleCamera();
 await tapAt(40, SIZE_VIEW.height - 40);
 report(
   'a tap on empty space clears the selection',
@@ -518,6 +525,50 @@ if (slot_by_picker === undefined || slot_by_bridge === undefined) {
     `the two agree to ${span_built.toExponential(1)} across every coefficient`,
   );
 }
+
+// **The orbit turns about what is picked.** Turning about a point is what an orbit is, so
+// a reader who picks objects and turns means to turn about those -- and framing used to
+// leave the target wherever it was whenever everything picked was already on screen, which
+// swung the picked object around the view instead. Held end to end: one pick lands the
+// target on that object, a second lands it on the middle of the two, and the reader's own
+// distance and orbit are untouched throughout.
+await clearTheGlass();
+await page.keyboard.press('Home');
+await settleCamera();
+const placeOfSlot = (slot) => page.evaluate((s) => {
+  const c = Array.from(nimItemCoefficients(s));
+  return [c[1] / c[4], c[2] / c[4], c[3] / c[4]];
+}, slot);
+const points_pickable = await page.evaluate(() => nimSceneSlots()
+  .filter((slot) => nimItemShapeWord(slot) === 'point'));
+const camera_before_pick = await readCamera();
+await page.evaluate((slot) => nimSelectOnly(slot), points_pickable[0]);
+await page.waitForTimeout(700);
+const centred_one = await readCamera();
+const place_one = await placeOfSlot(points_pickable[0]);
+await page.evaluate((slot) => nimSelectToggle(slot), points_pickable[1]);
+await page.waitForTimeout(700);
+const centred_two = await readCamera();
+const place_two = await placeOfSlot(points_pickable[1]);
+const middle_two = place_one.map((v, i) => (v + place_two[i]) / 2);
+const spanOf = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+report(
+  'picking an object turns the orbit about it, and a pair about their middle',
+  spanOf(centred_one.target, place_one) < 0.01 &&
+    spanOf(centred_two.target, middle_two) < 0.01,
+  `one pick -> ${centred_one.target.map((v) => v.toFixed(2))} ` +
+    `(object at ${place_one.map((v) => v.toFixed(2))}); ` +
+    `two -> ${centred_two.target.map((v) => v.toFixed(2))} ` +
+    `(middle ${middle_two.map((v) => v.toFixed(2))})`,
+);
+report(
+  'and re-centring alone never touches the reader\'s distance or orbit',
+  Math.abs(centred_two.distance - camera_before_pick.distance) < 1e-6 &&
+    Math.abs(centred_two.azimuth - camera_before_pick.azimuth) < 1e-6,
+  `distance ${camera_before_pick.distance.toFixed(3)} -> ` +
+    `${centred_two.distance.toFixed(3)}, azimuth ` +
+    `${camera_before_pick.azimuth.toFixed(4)} -> ${centred_two.azimuth.toFixed(4)}`,
+);
 
 // **Panning was dead while anything stayed selected**: the standing framing offer re-armed
 // every frame and dragged the camera back to where it had aimed. Reported as a touch bug,
@@ -1004,8 +1055,14 @@ const kinds = await page.evaluate(() => window.__phase_frame.slice(2).map((p) =>
   counted: p.count_points + p.count_lines + p.count_planes +
     p.count_sky + p.count_ghost + p.count_selected,
 })));
+// The parts may never exceed the whole by more than a rounding, and must account for the
+//   bulk of it -- but not for all of it: the phase also walks all 64 slots twice, marks the
+//   overlay and packs the view-projection, and none of that belongs to any one kind. That
+//   remainder is a share of the frame rather than a fixed cost, so the floor is a share
+//   too; a fixed 3 ms floor failed one frame in sixty when the frame itself ran long.
 const kinds_sane = kinds.filter((k) =>
-  k.parts <= k.scene + 0.6 && k.parts >= k.scene - 3.0 && k.counted > 0);
+  k.parts <= k.scene + 0.6 && k.parts >= k.scene - Math.max(3.0, 0.3 * k.scene) &&
+  k.counted > 0);
 report(
   'the scene phase is accounted for by the kinds it is spent on',
   kinds.length > 30 && kinds_sane.length === kinds.length,

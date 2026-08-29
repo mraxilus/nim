@@ -2571,9 +2571,10 @@ comment already pointed ("matching exactly where `mesh.addPoint` draws it").
 
 ### Framing the whole selection
 
-The rule (`framing.nim`): on a new creation or a new pick, the camera moves by the **least
-of pan, zoom and orbit together** that puts every selected object in view — not at all when
-they all already are — where in view means the centred box `camera.reachCentred` shapes:
+The rule (`framing.nim`): on a new creation or a new pick, **the orbit target comes to the
+middle of what was picked**, and the camera moves by the **least zoom and orbit** on top of
+that which puts every selected object in view — no zoom and no turn at all when they all
+already are — where in view means the centred box `camera.reachCentred` shapes:
 `FRACTION_VIEW_CENTRED = 2/3` of the frame's height, and two thirds of its width **or its
 height, whichever is less**.
 
@@ -2612,10 +2613,39 @@ only), and *only* a turn for a horizon-only one — pan and zoom cannot bring a 
 view. So a finite pick never changes azimuth or elevation, and a star is turned toward only
 as far as it takes.
 
+**The target is not part of the cut.** Turning about a point is what an orbit *is*, so a
+reader who picks objects and turns means to turn about those; leaving the target where it
+was swung the picked object around the screen instead. The middle therefore lands whatever
+else happens — including when everything picked is already in view, where the camera
+otherwise does nothing at all. This is not the old "swung the view on every pick" bug
+returning: **nothing the reader set moves.** The distance and the orbit angles are
+untouched by re-centring, and the aim compares equal from the next frame on, so the ease
+runs once for the pick and never re-arms. The search below therefore starts from the
+camera as it stands *with the target already at the middle*, so the fraction it searches
+over is a fraction of the zoom and the turn alone — were the re-centring inside that path,
+the search would find that a fraction of nothing already shows everything and quietly drop
+the very move it is there to make.
+
+**The middle is the centroid, and the centroid is a sum.** `objects.centroidFolded` states
+it once: a sum of unit-weight points carries weight *n* and the total of the coordinates,
+so `position` — which divides by the signed weight — reads the mean straight back out, and
+no averaging is written anywhere. Folded one place at a time so a caller walking a selection
+allocates nothing, exactly as `camera.widened` is. It is over the same objects the bound is
+over, and for the same reason `is_bound_by_fitted` gives: a line whose support stands a
+hundred units away would drag the middle off the point beside it, and dragging the *target*
+there is worse than dragging a bound there. Horizon objects fold into nothing — `anchorFor`
+places a star at the eye, and a middle that moved with the camera would re-aim it every
+frame, which is the standing offer's one forbidden behaviour.
+  A bound cannot be widened by a ball it already holds, but a middle a place is folded into
+twice does lean toward it: as a bound an aim is a set, as a middle it is a tally. That is
+why `framing.watched` now yields each object **once** — a unary preview names its own
+operand twice, and it used to be framed twice on the grounds that a repeat changed no
+answer, which was true only of the bound.
+
 **The cut.** `placementFor` first asks whether everything is already in view *where the
-camera stands* — judging that at the centred placement instead was precisely the bug that
-swung the view on every pick of something plainly visible. Otherwise it builds the full
-placement (centred target, facing angles for horizon-only, bisected least distance) and
+camera stands* — judging that at the centred placement instead was the bug that pulled the
+view about on every pick of something plainly visible. Otherwise it builds the full
+placement (middle as target, facing angles for horizon-only, bisected least distance) and
 searches the least fraction of `camera.toward` — the exact path the ease travels, geometric
 distance included — that satisfies `isShownAll`: `STEPS_PLACEMENT_LEAST = 12` even steps to
 bracket the crossing, `ROUNDS_PLACEMENT_LEAST = 5` halvings into it (within 1/384 of the

@@ -77,9 +77,13 @@ iterator watched*(
     yield (staged.get.geometry, staged.get.anchor)
     if staged.get.operands.isSome:
       let (first, second) = staged.get.operands.get
-      for slot in [first, second]:
-        # A unary operation names its own operand twice; yielding it twice frames the same
-        #   thing twice, which costs a projection and changes no answer.
+      # A unary operation names its own operand twice, and it is yielded **once**. It used
+      #   to be yielded twice on the grounds that framing the same thing twice costs a
+      #   projection and changes no answer -- true of a bound, which cannot be widened by a
+      #   ball it already holds, but not of a middle, which a place folded twice would pull
+      #   toward. The camera turns about that middle, so the duplicate has to go here
+      #   rather than be tolerated downstream.
+      for slot in (if first == second: @[first] else: @[first, second]):
         if scene.isAlive(slot):
           yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
   else:
@@ -133,17 +137,29 @@ func placementFor*(
   ##   and a selection with something finite in it is overwhelmingly the one a reader is
   ##   working on. A star picked alongside a point may therefore stay out of view; there
   ##   is no placement that would have helped.
-  # Everything already in view costs no movement at all. Judged where the camera *is*,
-  #   not at the centred placement -- judging there was precisely the bug that swung the
-  #   view on every pick of something already plainly visible.
+  # Everything already in view costs no *fitting* movement: the distance and the orbit are
+  #   left exactly as the reader set them. Judged where the camera *is*, not at the centred
+  #   placement -- judging there was the bug that pulled the view about on every pick of
+  #   something already plainly visible.
+  #   **The target still comes to the middle of what was picked.** Turning about a point
+  #   is what an orbit is, and a reader who picks an object and turns means to turn about
+  #   *it*; leaving the target where it was swings the picked object around the screen
+  #   instead. This is not the old bug in new clothes: nothing about the reader's own
+  #   framing moves, and the aim compares equal from the next frame on, so the ease runs
+  #   once for the pick and never re-arms -- see `CameraAim` and `CameraTween.abandon`.
   if isShownAll(scene, picked, staged, camera, width, height):
-    return camera.placementOf
+    var held = camera.placementOf
+    if aim.centroid.isSome: held.target = aim.centroid.get
+    return held
 
   let angles =
     if aim.sphere.isSome or aim.heading.isNone: (camera.azimuth, camera.elevation)
     else: azimuthElevationFor(aim.heading.get)
   var settled = CameraPlacement(
-    target: if aim.sphere.isSome: aim.sphere.get.centre else: camera.target,
+    # The middle of what was picked, not the middle of the bound holding it: a bound's
+    #   centre sits whereever enclosing everything put it, which is not where a reader
+    #   pointing at those objects is looking. The bound still decides the *distance*.
+    target: if aim.centroid.isSome: aim.centroid.get else: camera.target,
     distance: camera.distance,
     azimuth: angles[0],
     # Clamped exactly as an orbit drag is: past the pole the camera's own up direction
@@ -191,7 +207,13 @@ func placementFor*(
   #   between a partial pan and a partial zoom -- the fitted distance was solved at the
   #   *centred* target -- cannot admit a fraction that fails; the step-then-halve
   #   first-crossing shape is what handles the path not being strictly monotone.
-  let start = camera.placementOf
+  # Started from where the camera stands **but already centred**, so the fraction searched
+  #   over is a fraction of the zoom and the turn alone. The re-centring is not a
+  #   concession to fitting and is not cut back with it: were it in the path, the search
+  #   would find that a fraction of nothing already shows everything and quietly drop the
+  #   very move this is here to make.
+  var start = camera.placementOf
+  start.target = settled.target
   var (lower, upper) = (0.0, 1.0)
   for step in 1 .. STEPS_PLACEMENT_LEAST:
     let fraction = float(step)/float(STEPS_PLACEMENT_LEAST)

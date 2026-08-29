@@ -319,6 +319,28 @@ func depthAgainst*(plane, point: Multivector): float =
   wedgeAnti(plane, point)[Basis.scalar]
 
 
+func centroidFolded*(
+  centroid: Option[Position]; count: int; place: Position
+): Option[Position] =
+  ## Fold one more place into the running centroid of the `count` places already folded,
+  ## or start one where there was none.
+  ##   **A sum of unit-weight points is their centroid.** Adding points adds their weights,
+  ##   so the sum of `n` unit points carries weight `n` and the total of their coordinates,
+  ##   and `position` -- which divides by the signed weight -- reads the mean straight back
+  ##   out of it. There is no averaging written here: the division is the algebra's own.
+  ##   Incremental rather than a fold over an array, so a caller walking a selection needs
+  ##   nothing to walk it into and allocates nothing -- the same shape `camera.widened`
+  ##   takes, and for the same reason. The running point is scaled back up to the weight it
+  ##   stands for before the new one joins it, since a point read back through `position`
+  ##   carries weight one however many places it is the middle of.
+  ##   None only where the sum refuses to be read as a place at all, which a sum of finite
+  ##   points cannot be; a caller folding horizon objects has already dropped them.
+  if centroid.isNone or count <= 0: return some(place)
+  position(add(
+    wedge(float(count), toMultivector(centroid.get)), toMultivector(place)
+  ))
+
+
 func distanceBetween*(p, q: Multivector): float =
   ## Measure the distance between two unit-weight points.
   ##   The weight norm of their joining line: for unitized points the join's moment is

@@ -287,6 +287,34 @@ suite "Objects":
     let level = levelPlaneThrough(toMultivector(Position(x: 1, y: 2, z: 4)))
     check depthAgainst(level, toMultivector(Position(x: -9, y: 6, z: 7))) =~ 3.0
 
+    # The centroid, folded one place at a time, against the mean written out here. A sum
+    #   of unit-weight points carries weight n and the total of the coordinates, so the
+    #   division `position` already does *is* the averaging -- which is the claim.
+    var
+      middle = none(Position)
+      counted = 0
+    let places = [
+      Position(x: 3.0, y: -1.0, z: 2.0), Position(x: -5.0, y: 4.0, z: 0.5),
+      Position(x: 1.0, y: 9.0, z: -3.5), Position(x: 8.0, y: -2.0, z: 6.0),
+    ]
+    for place in places:
+      middle = centroidFolded(middle, counted, place)
+      counted += 1
+      var (sum_x, sum_y, sum_z) = (0.0, 0.0, 0.0)
+      for i in 0 ..< counted:
+        sum_x += places[i].x
+        sum_y += places[i].y
+        sum_z += places[i].z
+      # Every prefix, not only the whole: an incremental fold that is right at the end and
+      #   wrong halfway is right by luck, and the camera reads it at every length.
+      check middle.get =~ Position(
+        x: sum_x/float(counted), y: sum_y/float(counted), z: sum_z/float(counted)
+      )
+    # One place is its own middle, and folding onto nothing starts there rather than
+    #   averaging against an origin nobody picked.
+    check centroidFolded(none(Position), 0, places[2]).get =~ places[2]
+    check centroidFolded(some(places[0]), 0, places[2]).get =~ places[2]
+
 
 
 suite "Camera":
@@ -2766,32 +2794,47 @@ suite "Camera Aim":
         check framed.distance > camera.distance # Panning alone could not have done it.
 
 
-  test "a selection already in view moves the camera not at all":
-    # What the least-movement rule rests on, judged where the camera *is*: judging it at
-    #   the centred placement instead was precisely the bug that swung the view on every
-    #   pick of something already plainly visible.
+  test "a selection already in view keeps the reader's own framing, and re-centres":
+    # The least-movement rule, judged where the camera *is*: judging it at the centred
+    #   placement instead was the bug that pulled the view about on every pick of
+    #   something already plainly visible. What survives of that is the reader's own
+    #   framing -- **the distance and the orbit do not move at all** -- while the target
+    #   comes to the middle of what was picked, since turning about a point is what an
+    #   orbit is and a reader who picks objects means to turn about those.
     let (scene, picked) = sceneOf(
       toMultivector(Position(x: 2.0, y: 0.0, z: 0.0)),
       toMultivector(Position(x: -2.0, y: 0.0, z: 0.0)),
       toMultivector(Position(x: 0.0, y: 2.0, z: 0.0)),
     )
+    # The mean of the three, computed here the classical way: the algebra's answer is what
+    #   is under test, so the arithmetic it is held against lives in the test.
+    let middle = Position(x: (2.0 - 2.0 + 0.0)/3.0, y: (0.0 + 0.0 + 2.0)/3.0, z: 0.0)
     for azimuth in AZIMUTHS_AIM:
       for elevation in ELEVATIONS_AIM:
         var camera = placementAim(azimuth, elevation)
         check isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
-        check framedFor(scene, picked, camera) == camera.placementOf
-        # End to end: the tween arrives the moment the goal is armed, so no frame of the
-        #   animation window ever writes to the camera.
+        let framed = framedFor(scene, picked, camera)
+        check framed.target =~ middle
+        check framed.distance == camera.distance
+        check framed.azimuth == camera.azimuth
+        check framed.elevation == camera.elevation
+        # End to end: the ease carries the target there and leaves everything else alone.
         var tween: CameraTween
         tween.offerAim(
           camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
         )
-        check tween.is_arrived
+        tween.settle(camera)
+        check camera.target =~ middle
+        check camera.distance == placementAim(azimuth, elevation).distance
+        check camera.azimuth == placementAim(azimuth, elevation).azimuth
 
 
-  test "an object outside the box is carried to its edge and no further":
-    let point = toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))
-    let (scene, picked) = sceneOf(point)
+  test "an object picked on its own is carried to the middle, and nothing else moves":
+    # A single pick has one middle and it is the object itself, so the target lands on it
+    #   exactly -- and once it is centred there is nothing left for a zoom or a turn to
+    #   fix, which is the least-movement rule holding over everything the reader set.
+    let place = Position(x: 9.0, y: -7.0, z: 4.0)
+    let (scene, picked) = sceneOf(toMultivector(place))
     for azimuth in AZIMUTHS_AIM:
       for elevation in ELEVATIONS_AIM:
         let camera = placementAim(azimuth, elevation)
@@ -2799,15 +2842,10 @@ suite "Camera Aim":
         check isShownAll(
           scene, picked, none(Preview), camera.placed(framed), WIDTH_AIM, HEIGHT_AIM
         )
-        if isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM):
-          continue
-        # No further than enough: a tenth of the way back along the very move fails. A
-        #   tenth rather than a hair because the search settles to within 1/384 of the
-        #   full move, so a hair is inside its own resolution and would prove nothing.
-        let short = camera.placementOf.toward(framed, 0.9)
-        check not isShownAll(
-          scene, picked, none(Preview), camera.placed(short), WIDTH_AIM, HEIGHT_AIM
-        )
+        check framed.target =~ place
+        check framed.distance == camera.distance
+        check framed.azimuth == camera.azimuth
+        check framed.elevation == camera.elevation
 
 
   test "a finite selection never turns the orbit":
@@ -2972,8 +3010,18 @@ suite "Camera Aim":
     let aim_two = aim_one.aimIncluding(toMultivector(b), SCALE_AIM)
     check aim_two.get.sphere.get.centre =~ ORIGIN
     check aim_two.get.sphere.get.radius =~ 3.0
-    # Folding one in twice changes nothing, so an aim is a set and not a tally.
-    check aim_two.aimIncluding(toMultivector(a), SCALE_AIM).get == aim_two.get
+    # A bound cannot be widened by a ball it already holds, so folding one in twice leaves
+    #   it exactly as it was: as a *bound*, an aim is a set and not a tally.
+    check aim_two.aimIncluding(toMultivector(a), SCALE_AIM).get.sphere.get ==
+      aim_two.get.sphere.get
+    # Its **middle** is a tally, because a middle is: fold `a` again and the mean of the
+    #   three leans back toward it. That is why `framing.watched` yields each object once
+    #   -- a unary preview naming its own operand twice must not weigh it twice.
+    check aim_two.get.centroid.get =~ ORIGIN
+    check aim_two.get.count_centroid == 2
+    let aim_thrice = aim_two.aimIncluding(toMultivector(a), SCALE_AIM)
+    check aim_thrice.get.centroid.get =~ Position(x: 1.0, y: 0.0, z: 0.0)
+    check aim_thrice.get.count_centroid == 3
 
     let horizon = attitude(LINES[0]) # A line's attitude is a point at the horizon.
     check isHorizon(horizon)

@@ -1451,7 +1451,7 @@ proc driveSky(
 
 
 proc verdictDriven(
-  options: Options; scene: Scene; camera, camera_opened: Camera;
+  options: Options; scene: Scene; camera, camera_opened, camera_before_slide: Camera;
   interaction: Interaction; panel: Panel; count_settled: int;
   was_dragging, was_menu_open: bool
 ): int =
@@ -1484,9 +1484,13 @@ proc verdictDriven(
     )
     report(
       "a held key slid the view, and kept its height",
+      # Height against where the slide started rather than where the run opened: the pick
+      #   before it turns the orbit about what was picked, which moves the target in every
+      #   axis by design. What a *slide* must not do is change the height it slides at.
       norm(camera.target - camera_opened.target) > 0.5 and
-        abs(camera.target.z - camera_opened.target.z) < 1.0e-3,
-      &"target ({camera.target.x:.3f}, {camera.target.y:.3f}, {camera.target.z:.3f})",
+        abs(camera.target.z - camera_before_slide.target.z) < 1.0e-3,
+      &"target ({camera.target.x:.3f}, {camera.target.y:.3f}, {camera.target.z:.3f}), " &
+      &"from height {camera_before_slide.target.z:.3f}",
     )
     report(
       "every scripted key was let go of again", interaction.keys_held.len == 0,
@@ -1589,6 +1593,14 @@ proc runInteractive(
   var
     was_dragging = false
     was_menu_open = false
+    # The camera as the first held motion key found it. **Picking now turns the orbit
+    #   about what was picked**, and this script selects before it slides, so the opening
+    #   placement is no longer what a slide starts from -- the ease is still carrying the
+    #   target onto the selection when `W` goes down. That ease is abandoned by the very
+    #   first held frame (see `driveHeld` below), so from here on the height is the
+    #   slide's own doing and nothing else's, which is what the verdict is about.
+    camera_before_slide = camera_opened
+    is_slide_started = false
     # The scene as the gestures found it, taken after the drives' own setup frame rather
     #   than before the loop: `--drive-sky` builds the horizon plane it needs to gesture at,
     #   and counting before that made its own precondition look like something the drag
@@ -1672,6 +1684,13 @@ proc runInteractive(
         path_help = options.path_help_driven,
       )
     if options.is_asserted:
+      if not is_slide_started and interaction.isMovingCamera:
+        # The first frame a key that *moves* the camera is held -- not merely any bound
+        #   key, since walking the focus holds one too and holds it before the pick. Taken
+        #   after this frame's own motion and its `abandon`, so the ease cannot still be
+        #   writing to what the rest of the hold is measured against.
+        is_slide_started = true
+        camera_before_slide = camera
       was_dragging = was_dragging or interaction.is_dragging
       was_menu_open = was_menu_open or interaction.menu.isSome
       if count_drawn == 2: count_settled = len(scene)
@@ -1714,8 +1733,8 @@ proc runInteractive(
       &"gui.wantsKeys {gui.wantsKeys()}, nav enabled {gui.isNavEnabled()}."
   if options.is_asserted:
     let count_failed = verdictDriven(
-      options, scene, camera, camera_opened, interaction, panel, count_settled,
-      was_dragging, was_menu_open,
+      options, scene, camera, camera_opened, camera_before_slide, interaction, panel,
+      count_settled, was_dragging, was_menu_open,
     )
     if count_failed > 0:
       echo &"\n{count_failed} driven check(s) failed."

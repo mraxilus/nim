@@ -458,6 +458,17 @@ type
       ## Merged where several were asked for: no single direction faces two stars on
       ## opposite sides of the sky, and the sum of their unit directions is the nearest
       ## thing to one that does.
+    centroid*: Option[Position] ## Middle of the same finite objects `sphere` is over, or
+      ## none where there are none. **What the orbit turns about once a selection stands**:
+      ## the sphere is a bound and its centre is wherever holding everything happened to
+      ## put it, while this is the middle of what was actually picked, which is the point a
+      ## reader means when they pick things and turn to look at them.
+      ##   Over the same objects as `sphere` rather than over everything picked, and for
+      ## the same reason `is_bound_by_fitted` gives: a line whose support stands a hundred
+      ## units away would drag the centre off the point beside it, and dragging the *target*
+      ## there is worse than dragging a bound there.
+    count_centroid*: int ## How many places `centroid` is the middle of, so one more can be
+      ## folded in without an array to fold over; see `objects.centroidFolded`.
 
   CameraPlacement* = object ## Where a camera stands -- everything an ease moves.
     ## The lens is not here: a field of view is the reader's own setting, and nothing that
@@ -509,6 +520,12 @@ func `==`*(a, b: CameraAim): bool =
   if a.sphere.isSome != b.sphere.isSome: return false
   if a.sphere.isSome and not (a.sphere.get == b.sphere.get): return false
   if a.is_bound_by_fitted != b.is_bound_by_fitted: return false
+  if a.count_centroid != b.count_centroid: return false
+  if a.centroid.isSome != b.centroid.isSome: return false
+  if a.centroid.isSome and not (
+    a.centroid.get.x == b.centroid.get.x and a.centroid.get.y == b.centroid.get.y and
+    a.centroid.get.z == b.centroid.get.z
+  ): return false
   if a.heading.isSome != b.heading.isSome: return false
   if a.heading.isNone: return true
   let (d, e) = (a.heading.get, b.heading.get)
@@ -564,7 +581,9 @@ func aimIncluding*(
   ##   drawn; ignored for every other shape, as it is there.
   ##   Horizon objects deliberately widen nothing: `anchorFor` places a star at
   ##   `scale.eye`, and a goal built from where the camera stands would stop comparing
-  ##   equal frame to frame.
+  ##   equal frame to frame. **That applies twice over to the centroid**, which the orbit
+  ##   turns about: a middle that moved with the eye would re-aim the camera every frame,
+  ##   which is the standing offer's one forbidden behaviour.
   let shape_m = shape(m)
   if shape_m.isNone: return aim
   var grown = if aim.isSome: aim.get else: CameraAim()
@@ -610,10 +629,18 @@ func aimIncluding*(
     return some(CameraAim(
       sphere: some(SphereWorld(centre: anchor.get, radius: reach)),
       is_bound_by_fitted: true, heading: grown.heading,
+      # The middle starts afresh with the bound: whatever the lines contributed is being
+      #   discarded here, and a centre still holding them would sit off everything left.
+      centroid: some(anchor.get), count_centroid: 1,
     ))
   grown.sphere =
     if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: reach))
     else: some(grown.sphere.get.widened(anchor.get, reach))
+  # The middle of the very same objects, folded through the algebra's own reading of one:
+  #   see `objects.centroidFolded`. A plane folds in by its disc's centre, not by its whole
+  #   ball -- a disc's middle *is* where it stands, and the ball is only what has to fit.
+  grown.centroid = centroidFolded(grown.centroid, grown.count_centroid, anchor.get)
+  grown.count_centroid += 1
   some(grown)
 
 
