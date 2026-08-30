@@ -36,7 +36,7 @@
 import std/[math, options]
 
 import ../../pga
-import ./[boundary, camera, tessellate, scene]
+import ./[boundary, camera, euclid, tessellate, scene]
 
 
 
@@ -335,7 +335,7 @@ func rayPlaneHit(
 
 #[ Item Hit Testing ]#
 
-func pickNearest*(
+proc pickNearest*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition
 ): Option[int] =
@@ -378,9 +378,13 @@ func pickNearest*(
       distance_best = distance
       slot_best = some(slot)
 
-  for slot, item in scene.pairs:
-    if not item.isVisible: continue
-    let geometry = item.geometry
+  # Walks slots with the by-slot readers rather than through `pairs`: under the JS
+  #   backend an `Item` holds its `Scene` by value, so `pairs` copies the whole scene
+  #   once per live slot -- the trap `nimBuildFrame`'s walk documents, found again here
+  #   costing most of each hover pick, on a proc that runs per pointer move.
+  for slot in 0 ..< ITEMS_MAX:
+    if not scene.isAlive(slot) or not scene.isVisible(slot): continue
+    let geometry = scene.geometryOf(slot)
     let shape = shape(geometry)
     if shape.isNone: continue
 
@@ -402,20 +406,23 @@ func pickNearest*(
         if normal.isNone: continue
         let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
         if axes.isNone: continue
+        # Stepped off the same fixed table the drawn circle walks (see
+        #   `tessellate.addGreatCircle`): which plane the arms span is still the
+        #   algebra's answer above, and the ring itself is arithmetic -- it used to be
+        #   ninety-seven multivector sums per horizon candidate per pointer move, the
+        #   bulk of what a hover pick cost once the scene copies were gone.
         let
           (axis_first, axis_second) = axes.get
-          arm_first = wedge(scale.radius_horizon, toMultivector(axis_first))
-          arm_second = wedge(scale.radius_horizon, toMultivector(axis_second))
+          arm_first = scale.radius_horizon*axis_first
+          arm_second = scale.radius_horizon*axis_second
         var
           distance_nearest = Inf
           previous = none(ScreenPosition)
         for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
-          let turn = (2.0*PI*float(i mod SEGMENTS_CIRCLE_HORIZON))/
-            float(SEGMENTS_CIRCLE_HORIZON)
+          let entry = UNIT_CIRCLE_RIM[i mod SEGMENTS_CIRCLE_HORIZON]
           let here = projectToScreen(
             view_projection, width, height,
-            pointFrom(add(scale.eye_point,
-              add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
+            onCircleAt(scale.eye, arm_first, arm_second, entry.cos_angle, entry.sin_angle),
           )
           if here.isInFront and previous.isSome:
             distance_nearest = min(
@@ -455,8 +462,8 @@ func pickNearest*(
         continue
 
       let
-        anchor =
-          if item.anchorOverride.isSome: item.anchorOverride else: positionAnchor(geometry)
+        override = scene.anchorOverrideAt(slot)
+        anchor = if override.isSome: override else: positionAnchor(geometry)
       # The frame guard survives the hit test no longer taking the axes: a plane the
       #   algebra can span no frame for is one the disc was never drawn for either.
       if anchor.isNone or frame(geometry).isNone: continue
@@ -466,9 +473,9 @@ func pickNearest*(
   slot_best
 
 
-func anchorZoomAt*(
-  scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int;
-  cursor: ScreenPosition
+proc anchorZoomAt*(
+  scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
+  width, height: int; cursor: ScreenPosition
 ): Option[Position] =
   ## Solve the world point a zoom aimed at `cursor` should hold still: whatever finite
   ## object the cursor is over, else the ground under it, else the level the target sits
@@ -486,10 +493,9 @@ func anchorZoomAt*(
   ## exactly that reason, and the fall-through does the work.
   ##   None where none of the three answers, which leaves a caller to zoom at the middle of
   ## the frame.
-  # Event-time, so this builds the one extent itself -- there is no frame in flight whose
-  #   extent a wheel handler could borrow -- and then reads the eye and its plane off it
-  #   rather than deriving both a second time below.
-  let scale = camera.drawExtentFor(height)
+  # The caller's own extent, not a derivation of this proc's: on the browser the wheel
+  #   handler holds the overlay cache's extent for exactly this camera, and deriving a
+  #   fresh one here ran `algebraFilled` and `camera.frame`'s joins per wheel notch.
   let slot = pickNearest(scene, camera, scale, view_projection, width, height, cursor)
   if slot.isSome:
     let

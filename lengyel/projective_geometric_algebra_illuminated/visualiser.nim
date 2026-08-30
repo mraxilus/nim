@@ -1087,7 +1087,10 @@ proc handleEvent(
     #   `interaction.dollyAtCursor`. The frame's own size is passed in because a sight ray
     #   needs it and this handler runs before the frame that would report it again.
     interaction.dollyAtCursor(
-      camera, scene, pow(FACTOR_DOLLY, -float(event.wheel.y)), width_frame, height_frame
+      camera, scene, pow(FACTOR_DOLLY, -float(event.wheel.y)),
+      camera.drawExtentFor(height_frame),
+      camera.initMatrixViewProjection(float(width_frame)/float(height_frame)),
+      width_frame, height_frame,
     )
   of uint32(EventKind.MouseMotion):
     interaction.updateCursor(float(event.motion.x), float(event.motion.y))
@@ -1431,7 +1434,7 @@ proc driveUndo(
   sdl3.pushEvent(addr event)
 
 
-func positionOverSky(
+proc positionOverSky(
   scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int
 ): Option[ScreenPosition] =
   ## Find a point on screen where the topmost thing under the cursor is a plane at horizon.

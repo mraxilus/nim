@@ -963,7 +963,7 @@ proc addSegment*(
   meshes.addRibbon(tail, head, tint, tint, width)
 
 
-let UNIT_CIRCLE_RIM: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]] =
+let UNIT_CIRCLE_RIM*: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]] =
   block:
     # One boundary past the wrap rather than a reuse of the first entry, so the closing
     #   segment ends on the value `cos(2*PI)` actually takes, a hair off `cos(0)`'s --
@@ -977,6 +977,9 @@ let UNIT_CIRCLE_RIM: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_ang
   ## trigonometry `euclid.onCircle` uses -- at run time rather than compile time, since
   ## the compile-time evaluator's `cos` need not agree with each backend's own in the
   ## last bit, and the suite holds these points equal to the sums they replaced.
+  ##   Exported for the other walkers of the same ring: a horizon line's great circle
+  ## (through `addPlaneRing` itself) and `picking`'s sampling of that circle, which must
+  ## step the very angles the drawn one does for a hit to agree with what is drawn.
 
 
 proc addPlaneRing*(

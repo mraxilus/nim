@@ -137,31 +137,19 @@ func anchorFor*(
 #[ Segments and Circles ]#
 
 proc addGreatCircle(
-  meshes: var MeshSet; scratch: var DrawScratch; center: Position;
-  axis_first, axis_second: Direction; radius: float; tint: Rgba; scale: DrawExtent;
-  segments: int = SEGMENTS_CIRCLE_HORIZON
+  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba
 ) =
   ## Append a closed ring of segments around `center`, in the plane `axis_first` and
   ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
   ## the sky, seen from any point, standing for the pencil of directions it names.
-  let
-    centre_point = toMultivector(center)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
-  # The ring assembled once, then walked. Each place was previously worked out **twice** --
-  #   as one segment's far end and the next one's near end -- so this is the seam and a
-  #   halving of the algebra at once. `segments + 1` places rather than a wrap back to the
-  #   first: the closing segment then ends on a place stepped at the angle the loop would
-  #   have used, where `cos(2*PI)` and `cos(0)` differ in the last bits.
-  let count_places = min(segments + 1, len(scratch.places))
-  timed(Side.Placing):
-    for i in 0 ..< count_places:
-      let angle = (2.0*PI * float(i)) / float(segments)
-      scratch.places[i] = pointFrom(add(centre_point,
-        add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
-  timed(Side.Emitting):
-    for i in 0 ..< count_places - 1:
-      meshes.addSegment(scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT)
+  ##   The very walk `mesh.addPlaneRing` steps, delegated to it so the two circles cannot
+  ##   drift: which plane the arms span is still the algebra's answer
+  ##   (`spanPerpendicular`, at the caller), and the ring itself is arithmetic off the
+  ##   fixed table of angles -- it used to be assembled as per-angle multivector sums,
+  ##   which the suite holds that arithmetic equal to, and `picking.pickNearest` samples
+  ##   its own copy of this circle the same way so a hit still agrees with what is drawn.
+  meshes.addPlaneRing(center, axis_first, axis_second, radius, tint)
 
 
 #[ World Furniture ]#
@@ -556,10 +544,11 @@ proc addLine(
         axes = some((first: spanned.get[0], second: spanned.get[1]))
   if axes.isNone: return Placement.Empty
   let (axis_first, axis_second) = (axes.get.first, axes.get.second)
-  meshes.addGreatCircle(
-    scratch, scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
-    tint.fade(tint.alpha*progress), scale,
-  )
+  timed(Side.Emitting):
+    meshes.addGreatCircle(
+      scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
+      tint.fade(tint.alpha*progress),
+    )
   Placement.Horizon
 
 

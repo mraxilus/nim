@@ -149,8 +149,12 @@ proc addFrameTrace*(
   ##   inside `pickNearest`; see `PROVENANCE.md`'s debug-layer note for why.
   var trace: AlgebraTrace
   trace.clear()
-  for slot, item in scene.pairs:
-    if item.isVisible: trace.record(TracedRole.SceneObject, item.geometry)
+  # By-slot readers, never `pairs`: an `Item` holds its `Scene` by value on the JS
+  #   backend, so `pairs` copies the whole scene once per live slot -- see
+  #   `picking.pickNearest`'s own note on the same walk.
+  for slot in 0 ..< ITEMS_MAX:
+    if scene.isAlive(slot) and scene.isVisible(slot):
+      trace.record(TracedRole.SceneObject, scene.geometryOf(slot))
   if staged.isSome: trace.record(TracedRole.Ghost, staged.get.geometry)
 
   # What the camera itself is, which nothing ever draws: where it stands, the line it

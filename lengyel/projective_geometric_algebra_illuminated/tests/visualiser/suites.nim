@@ -515,7 +515,10 @@ suite "Camera":
     check positionUnderCursor(camera, 1440, 900, cursor).isNone
     check positionOnGround(camera, 1440, 900, cursor).isNone
     interaction.updateCursor(cursor.x, cursor.y)
-    interaction.dollyAtCursor(camera, scene, 2.0, 1440, 900)
+    interaction.dollyAtCursor(
+      camera, scene, 2.0, camera.drawExtentFor(900),
+      camera.initMatrixViewProjection(1440.0/900.0), 1440, 900,
+    )
     check camera.distance =~ 24.0
     check camera.target =~ ORIGIN
 
@@ -537,7 +540,7 @@ suite "Camera":
 
     # Over the point: its own place, not the ground below it nor the target's level.
     let at_object = anchorZoomAt(
-      scene, camera, view_projection, WIDE, TALL,
+      scene, camera, camera.drawExtentFor(TALL), view_projection, WIDE, TALL,
       ScreenPosition(x: on_screen.x, y: on_screen.y),
     )
     check at_object.isSome
@@ -550,9 +553,9 @@ suite "Camera":
     let
       elsewhere = ScreenPosition(x: on_screen.x + 200.0, y: on_screen.y + 160.0)
       at_ground = anchorZoomAt(
-        scene, camera_raised, camera_raised.initMatrixViewProjection(
-          float(WIDE)/float(TALL)
-        ), WIDE, TALL, elsewhere,
+        scene, camera_raised, camera_raised.drawExtentFor(TALL),
+        camera_raised.initMatrixViewProjection(float(WIDE)/float(TALL)),
+        WIDE, TALL, elsewhere,
       )
     check at_ground.isSome
     check abs(at_ground.get.z) <= 1.0e-6
@@ -566,7 +569,8 @@ suite "Camera":
       upward = ScreenPosition(x: 720.0, y: 40.0)
     if positionOnGround(level, WIDE, TALL, upward).isNone:
       let at_level = anchorZoomAt(
-        initScene(), level, level.initMatrixViewProjection(float(WIDE)/float(TALL)),
+        initScene(), level, level.drawExtentFor(TALL),
+        level.initMatrixViewProjection(float(WIDE)/float(TALL)),
         WIDE, TALL, upward,
       )
       let at_target = positionUnderCursor(level, WIDE, TALL, upward)

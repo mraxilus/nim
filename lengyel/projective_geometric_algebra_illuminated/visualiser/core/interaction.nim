@@ -779,7 +779,7 @@ proc updateHover*(
 
 proc dollyAtCursor*(
   interaction: Interaction; camera: var Camera; scene: Scene; factor: float;
-  width, height: int
+  scale: DrawExtent; view_projection: Matrix4; width, height: int
 ) =
   ## Zoom the camera by `factor`, toward whatever the cursor is over.
   ##   The one statement of what a wheel notch does, so both front-ends and a pinch all
@@ -790,9 +790,10 @@ proc dollyAtCursor*(
   ##   Falls back to a plain `dolly` where none of the three answers, which is a cursor on
   ## empty sky above the horizon. Zooming toward the middle of the frame is what a wheel
   ## did before any of this and is still the sensible answer there.
+  # The caller's extent and matrix, not fresh derivations per wheel notch; see
+  #   `picking.anchorZoomAt`'s own note.
   let anchor = anchorZoomAt(
-    scene, camera, camera.initMatrixViewProjection(float(width)/float(height)),
-    width, height, interaction.cursor,
+    scene, camera, scale, view_projection, width, height, interaction.cursor,
   )
   if anchor.isNone: camera.dolly(factor)
   else: camera.dollyToward(factor, anchor.get)

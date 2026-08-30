@@ -739,6 +739,30 @@ proc nimOverlayMetrics(): seq[float32] {.exportc.} =
 
 
 
+proc ensureViewOverlay(width, height: int) =
+  ## Refresh the draw extent and view-projection the overlay calls share --
+  ## `g_scale_overlay` and `g_vp_overlay` -- deriving them only when the camera or the
+  ## viewport has changed since the last ask.
+  ##   Every overlay call -- the anchor, each selected object's marker, each pulse, each
+  ## hover ring -- was deriving both for itself, and each derivation runs `camera.frame`'s
+  ## joins twice over. Within one frame they are all the same answer: these are functions
+  ## of the placement and the viewport alone, which is exactly what the key holds, so this
+  ## is the furniture cache's reasoning applied to the overlay's own inputs.
+  ##   Callers read the globals rather than being handed copies: this used to *return*
+  ## the pair, and on the JS backend building that tuple deep-copied a `DrawExtent` full
+  ## of multivectors on every call -- about a quarter of a millisecond per overlay call,
+  ## cache hit or not, which dwarfed some of the calls it was made for.
+  let settings: SettingsOverlay = (
+    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
+    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
+    width, height,
+  )
+  if g_settings_overlay.isNone or g_settings_overlay.get != settings:
+    g_settings_overlay = some(settings)
+    g_scale_overlay = g_camera.drawExtentFor(height)
+    g_vp_overlay = g_camera.initMatrixViewProjection(float(width)/float(height))
+
+
 #[ Camera ]#
 
 proc nimCameraOrbit(turn, rise: cfloat) {.exportc.} =
@@ -760,8 +784,12 @@ proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
   ## zoom somewhere -- a wheel at the pointer, a pinch at its own midpoint -- says where by
   ## moving the cursor there first, exactly as picking does.
   g_tween_camera.abandon()
+  # Through the overlay cache: a wheel arrives in bursts, and each notch was deriving a
+  #   fresh extent and matrix for a camera that only changes as a *result* of the notch.
+  ensureViewOverlay(int(width), int(height))
   g_interaction.dollyAtCursor(
-    g_camera, g_scene, float(factor), int(width), int(height)
+    g_camera, g_scene, float(factor), g_scale_overlay, g_vp_overlay,
+    int(width), int(height),
   )
 
 
@@ -859,30 +887,6 @@ proc nimSetCameraDragging(is_dragging: bool) {.exportc.} =
   ## or two fingers on the canvas. What that means for hover is `interaction.updateHover`'s
   ## to say; this build only knows which of its own gestures is under way.
   g_interaction.is_dragging_camera = is_dragging
-
-
-proc ensureViewOverlay(width, height: int) =
-  ## Refresh the draw extent and view-projection the overlay calls share --
-  ## `g_scale_overlay` and `g_vp_overlay` -- deriving them only when the camera or the
-  ## viewport has changed since the last ask.
-  ##   Every overlay call -- the anchor, each selected object's marker, each pulse, each
-  ## hover ring -- was deriving both for itself, and each derivation runs `camera.frame`'s
-  ## joins twice over. Within one frame they are all the same answer: these are functions
-  ## of the placement and the viewport alone, which is exactly what the key holds, so this
-  ## is the furniture cache's reasoning applied to the overlay's own inputs.
-  ##   Callers read the globals rather than being handed copies: this used to *return*
-  ## the pair, and on the JS backend building that tuple deep-copied a `DrawExtent` full
-  ## of multivectors on every call -- about a quarter of a millisecond per overlay call,
-  ## cache hit or not, which dwarfed some of the calls it was made for.
-  let settings: SettingsOverlay = (
-    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
-    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
-    width, height,
-  )
-  if g_settings_overlay.isNone or g_settings_overlay.get != settings:
-    g_settings_overlay = some(settings)
-    g_scale_overlay = g_camera.drawExtentFor(height)
-    g_vp_overlay = g_camera.initMatrixViewProjection(float(width)/float(height))
 
 
 proc nimUpdateHover(width, height: cint) {.exportc.} =
