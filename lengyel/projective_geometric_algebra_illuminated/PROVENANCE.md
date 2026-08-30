@@ -2200,6 +2200,79 @@ the copy outliving the toast is lost. The data layer — `report_delivery`,
 `describeEnvironment`, `shareFile`, `deliverFile` — is untouched, `deliverFile` being the
 save path for both the image and the scene file.
 
+**The demo preset is the build's own worst case: 64 objects laid out as a solar system.**
+It replaced the eleven-step storyboard, which showed sixteen objects and could say nothing
+about how the build behaves under load — which is the one question a reader pressing *demo*
+on a visualiser with a diagnostics drawer is most likely to have. The storyboard itself is
+untouched and is still what `visualiser --storyboard` captures; the two had been the same
+thing only because nothing had yet asked them to differ.
+  **Every item slot filled, and every drawable kind in it.** `orrery.constructOrrery` builds
+34 points, 16 lines, 11 planes and one of each object at horizon — a star, a great circle and
+a sky dome — which is exactly `scene.ITEMS_MAX`, asserted rather than hoped for so a build
+compiled with a different capacity fails naming both numbers. Everything after the placed
+points is **derived**: every line and plane is a join of points already in the scene, and the
+three at horizon are attitudes of objects already in it.
+  **A solar system is the arrangement, not the subject.** Clusters of small objects around
+larger ones, at radii spanning a wide range, is the distribution that makes culling, fading
+and extent decisions all matter at once — where `visualiser.fillSceneForBenchmark`'s flat
+helix, which `--timings` still uses, deliberately has no structure at all.
+  Three constants were settled by rendering rather than by reasoning. **Orbits are spaced
+evenly, not by the power law a real system follows**: at true spacing the inner four planets
+piled into one knot in the middle of the frame, which defeats laying a scene out in clusters
+so the clusters can be told apart. **Moon systems are a third of their orbit wide**, not the
+hundredth a real one is; only the ratio matters, since scaling every radius together moves
+the fitted camera with it and changes nothing on screen, and at a fifth every cluster still
+read as one dot with the whole arrangement in frame. **The comets run past the framed view**
+on purpose — a comet always on screen is not doing the job a comet is here to do.
+  **The demo places its own camera**, which the storyboard preset never needed to: the
+opening camera was placed to show the *seed* scene whole and sits inside this one, nearly in
+its plane. It is pitched to `ELEVATION_ORRERY_SHOWN` = 0.95 rad first — at the opening 0.42
+the ecliptic is edge-on, every moon rosette collapses to a line and the arrangement reads as
+a starburst — and then pulled back by `camera.distanceFitting`, the same sphere-tangent solve
+a framed selection uses, so the demo cannot come to disagree with the rest of the build about
+what "whole" means. `RADIUS_ORRERY` bounds the **planets** and is folded from the layout
+tables rather than written down beside them. Azimuth is left where the reader had it.
+  **Six of the sixty-four drew nothing, and counting found it where looking did not.** Three
+collinear points wedge to a multivector of no clean grade, which `objects.shape` reports as
+nothing to draw: the item holds a slot and never appears, while the scene still reports 64.
+Every comet sheet was built from the star, the head and a tail pointing *exactly* away from
+the star — collinear by construction — and each two-moon planet's moons sit on opposite sides
+of it, so planet and both moons were collinear too. Fixed by leaning the tail off the radius
+by `BEND_TAIL_COMET` = 0.55, which is also the direction a real tail is swept, and by
+spanning every moon plane through the star instead of through a second moon — one rule for
+all six planets, and the plane then contains the radius line as well. Both are now held by an
+assertion at construction *and* by a suite case that lists the offending labels, because the
+collinearity comes from the layout tables and any edit to them can reintroduce it.
+
+**The stress scene found a crash the whole build had, and two weak checks.** Worth stating
+separately, because it is the argument for having it.
+  **A construction gesture released on a full scene took the page down.** Every *panel* path
+already checked `scene.isFull` — the desktop greys its add and apply controls, the browser
+toasts — but the drag gesture commits inside `interaction.endDrag`, in shared code, with no
+check between it and `scene.addItem`'s assertion. So both front-ends had the hole, and
+neither could reach it: filling 64 slots by hand is not something anyone had done. One click
+now does. Refused in the same shape as the neighbouring "makes nothing drawable" case, so the
+reader gets a sentence rather than a dead page, and pinned by a driven check that loads the
+demo and drags on it.
+  **The per-kind accounting check was near-vacuous, and is now asked twice.** On the opening
+scene the whole `scene` phase is around half a millisecond on this container, and every
+reading is quantised to a tenth — halving every part's contribution was measured to still
+pass, because the lower bound's allowance for unattributed work swamps the phase itself.
+Nothing about the rule is wrong; the scene is simply too cheap to divide. The same rule now
+runs a second time with the demo loaded, where the phase is 7–14 ms and the 0.6 ms upper
+tolerance is 5–8% rather than 120%. Both versions were guard-run by doubling every part:
+0 of 857 and 0 of 67 frames account.
+  Separately, that check's demand that **every** frame account was tightened to a quantile
+(99.5%, per-frame tolerance unchanged). It held for ten runs at ~600 frames and then failed
+twice at ~825 as the container sped up and the sample grew, which is a property of the sample
+size and not of the accounting. Loosening the per-frame tolerance instead would have weakened
+it on all 800; a real fault misses on every frame and cannot hide inside four.
+  A third, unrelated: the horizon comet's driven check sampled the pulse head immediately
+after building the object, and a fresh object starts its pulse at zero on purpose, so the
+first read sometimes found no head and reported it as off screen — three failures in six runs.
+It now waits for a head before timing the travel. No fault in the comet.
+
+
 **The breakdown is cut by the algebra boundary, and it sums.** Two faults were found while
 regrouping it, both older than the change. `build` did not sum from its rows: the frame's
 prologue — focus pruning, the camera tween, this frame's `DrawExtent`, and `framing.offerAim`

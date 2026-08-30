@@ -1325,6 +1325,19 @@ proc commitChoice*(
       choice: some(choice), operands: operands,
     )
 
+  # **A full scene refuses the gesture rather than asserting through it.** Every *panel*
+  #   path already checks `isFull` before committing -- the desktop greys its apply and add
+  #   controls, the browser toasts -- but the drag gesture commits here, in shared code, and
+  #   had no check at all, so a release on a full scene crashed both front-ends alike. It
+  #   was unreachable until a preset arrived that fills the scene in one click. Refused in
+  #   the same shape as the "makes nothing drawable" case above, so a reader who cannot
+  #   build gets a sentence saying why rather than a dead gesture or a dead page.
+  if scene.isFull:
+    return DragOutcome(
+      message: &"The scene holds all {ITEMS_MAX} objects it can; {label} was not added.",
+      choice: some(choice), operands: operands,
+    )
+
   let
     anchor = creationAnchor(operation, m, n, derived.get)
     index_created =

@@ -1120,8 +1120,8 @@ function captureFrameIfAsked() {
 }
 
 document.getElementById('btn-load-demo').addEventListener('click', () => {
-  nimLoadDemo(now());
-  toast('Loaded the eleven-step demo construction.');
+  nimLoadDemo(now(), canvas.width, canvas.height);
+  toast(`Loaded the orrery: ${nimSceneCount()} objects, every slot filled.`);
   adoptConstructionSelection();
 });
 

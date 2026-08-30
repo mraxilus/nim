@@ -19,8 +19,8 @@ import std/[math, options, os, random, strformat, strutils, tables, unicode, uni
 
 import ../../pga
 import ../../visualiser/core/[
-  boundary, camera, format, framing, help, history, interaction, picking, scene,
-  selection, storyboard, tessellate,
+  boundary, camera, format, framing, help, history, interaction, objects, orrery, picking,
+  scene, selection, storyboard, tessellate,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -6325,3 +6325,101 @@ suite "Marker":
 
   test "geometry standing for no shape gets no marker":
     check markerOf(POINT_A + PLANE).isNone
+
+
+
+# The orrery needs the full item capacity, and one configuration here deliberately compiles a
+#   much smaller scene to exercise the pool's own limits. Guarded rather than shrunk: an
+#   arrangement scaled down to twelve objects would no longer be the stress case these cases
+#   exist to check.
+when ITEMS_MAX >= ITEMS_ORRERY:
+  suite "Orrery":
+    ## The demo preset is the heaviest scene this build draws, and its whole value is that it
+    ## is heavy in every dimension at once: every slot taken, every drawable kind present,
+    ## nothing silently drawing nothing. Each of those is a property a plausible edit to the
+    ## layout tables breaks quietly, so each is checked here rather than looked at.
+
+    test "the orrery fills every slot the scene has":
+      var scene = initScene()
+      constructOrrery(scene)
+      check scene.len == ITEMS_ORRERY
+      check scene.isFull
+
+    test "every object it builds draws something":
+      # The failure this exists for: three collinear points wedge to a multivector of no
+      #   clean grade, which takes a slot and renders nothing. Six of the sixty-four did
+      #   exactly that -- every comet sheet, and the moon plane of each two-moon planet --
+      #   and the scene still reported sixty-four items, so only counting *shapes* finds it.
+      var scene = initScene()
+      constructOrrery(scene)
+      var without: seq[string] = @[]
+      for slot in 0 ..< ITEMS_MAX:
+        if shape(scene.geometryAt(slot)).isNone: without.add(toText(scene.labelAt(slot)))
+      check without == newSeq[string]()
+
+    test "it carries every drawable kind, at horizon as well as in the finite world":
+      var scene = initScene()
+      constructOrrery(scene)
+      var tally: array[Shape, int]
+      var at_horizon: array[Shape, int]
+      for slot in 0 ..< ITEMS_MAX:
+        let geometry = scene.geometryAt(slot)
+        let kind = shape(geometry)
+        if kind.isNone: continue
+        inc tally[kind.get]
+        if isHorizon(geometry): inc at_horizon[kind.get]
+      # A stress scene is only a stress scene if the expensive kinds are actually in it: the
+      #   plane count is the one that matters most, each plane being a disc fan, and the
+      #   three at horizon are the three special paths -- a star, a great circle, a sky dome.
+      check tally[Shape.Point] >= 30
+      check tally[Shape.Line] >= 12
+      check tally[Shape.Plane] >= 8
+      check at_horizon[Shape.Point] >= 1
+      check at_horizon[Shape.Line] >= 1
+      check at_horizon[Shape.Plane] >= 1
+
+    test "its planets stand apart from each other, so the clusters read as clusters":
+      # Asked of the scene rather than of the layout tables: what has to hold is that the
+      #   objects end up separated, and a table read back only restates itself.
+      var scene = initScene()
+      constructOrrery(scene)
+      var planets: Table[string, Multivector]
+      var moons: seq[(string, Multivector)] = @[]
+      for slot in 0 ..< ITEMS_MAX:
+        let label = toText(scene.labelAt(slot))
+        if label.startsWith("planet "):
+          planets[label[len("planet ") .. ^1]] = scene.geometryAt(slot)
+        elif label.startsWith("moon ") and '.' in label:
+          moons.add((label[len("moon ") ..< label.find('.')], scene.geometryAt(slot)))
+      check len(planets) >= 5
+      # Each planet's own reach is measured from the scene, not read off a table: how far
+      #   its furthest moon actually stands from it.
+      var reaches: Table[string, float]
+      for (which, moon) in moons:
+        let apart = distanceBetween(moon, planets[which])
+        reaches[which] = max(reaches.getOrDefault(which, 0.0), apart)
+      # No two clusters may interleave, or neither can be told from the other.
+      for first, planet_first in planets:
+        for second, planet_second in planets:
+          if first == second: continue
+          check distanceBetween(planet_first, planet_second) >
+            reaches[first] + reaches[second]
+
+    test "the framing radius bounds the planets, and the comets run past it":
+      # `RADIUS_ORRERY` is what the demo's own camera is fitted to, and its whole claim is
+      #   that it holds the planet system and not the comets -- so a reader who pulls back
+      #   finds something. Both halves are load-bearing and neither is visible in the number.
+      var scene = initScene()
+      constructOrrery(scene)
+      let star = toMultivector(POSITION_STAR)
+      var far_planets = 0.0
+      var far_comets = 0.0
+      for slot in 0 ..< ITEMS_MAX:
+        let geometry = scene.geometryAt(slot)
+        if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
+        let apart = distanceBetween(geometry, star)
+        if toText(scene.labelAt(slot)).startsWith("comet"):
+          far_comets = max(far_comets, apart)
+        else: far_planets = max(far_planets, apart)
+      check far_planets <= RADIUS_ORRERY + TOLERANCE_SINGLE
+      check far_comets > RADIUS_ORRERY

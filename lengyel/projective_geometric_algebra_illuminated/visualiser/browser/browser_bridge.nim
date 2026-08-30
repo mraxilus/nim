@@ -45,7 +45,7 @@ import std/[options, strformat]
 import ../../pga
 import ../core/[
   algebra_view, boundary, camera, format, framing, help, history, interaction, marker,
-  picking, ramp, scene, selection, storyboard, tessellate, timings,
+  orrery, picking, ramp, scene, selection, storyboard, tessellate, timings,
 ]
 
 
@@ -329,25 +329,40 @@ proc nimInit(now: cfloat) {.exportc.} =
   g_history = initHistory(g_scene, g_camera)
 
 
-proc nimLoadDemo(now: cfloat) {.exportc.} =
-  ## Replace the current scene with the full eleven-step storyboard construction, as
-  ## ordinary live items -- a one-click preset rather than a scripted playback mode: once
-  ## loaded, every one of its objects is exactly as editable, removable and pickable as
-  ## anything built by hand.
-  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the
-  ##   seeds appear one after another and then each derived step in turn, exactly as a
-  ##   loaded `.rgascene` file does. The same rule for all three because they are the same
-  ##   thing to a reader -- a construction handed over whole, played back in the order it
-  ##   was made -- and one beat kept in one place cannot drift from the others.
-  ##   Restamped after the fact rather than as each step is applied, so the beat is fitted
+proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
+  ## Replace the current scene with the orrery -- every item slot filled, every drawable
+  ## kind present, laid out as a solar system -- as ordinary live items: a one-click preset
+  ## rather than a scripted playback mode, so once loaded every one of its objects is
+  ## exactly as editable, removable and pickable as anything built by hand.
+  ##   **The heaviest scene this build ever draws**, which is what a demo is for here: the
+  ##   eleven-step storyboard it replaced showed sixteen objects and could not say anything
+  ##   about how the build behaves under load. The storyboard itself is unchanged and is
+  ##   still what `visualiser --storyboard` captures; see `orrery`'s own module comment for
+  ##   the arrangement and `storyboard.STEPS` for the teaching sequence.
+  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the star
+  ##   appears first and then each cluster outward in turn, exactly as a loaded `.rgascene`
+  ##   file does. The same rule for all three because they are the same thing to a reader --
+  ##   a construction handed over whole, played back in the order it was made -- and one
+  ##   beat kept in one place cannot drift from the others.
+  ##   Restamped after the fact rather than as each object is placed, so the beat is fitted
   ##   to the whole arrival without this proc having to count it out in advance.
   g_scene = initScene()
   let clock = float(now)
-  constructSeeds(g_scene, clock)
-  for step in STEPS: applyStep(g_scene, step, clock)
+  constructOrrery(g_scene, clock)
   g_scene.replayFrom(clock)
   for slot in 0 ..< g_scene.len: g_borns[slot] = g_scene.bornAt(slot)
   g_selection.clear()
+  # Stand back far enough to hold the planet system, look at the star, and pitch up over the
+  #   ecliptic. The opening camera was placed to show the *seed* scene whole: it sits inside
+  #   this one, and nearly in its plane. Solved rather than guessed -- `distanceFitting` is
+  #   the same sphere-tangent solve a framed selection uses, so the demo cannot come to
+  #   disagree with the rest of the build about what "whole" means -- and pitched first,
+  #   since the solve reads the camera it is handed. Azimuth is left where the reader had it.
+  g_camera.target = POSITION_STAR
+  g_camera.elevation = ELEVATION_ORRERY_SHOWN
+  g_camera.distance = distanceFitting(
+    RADIUS_ORRERY, g_camera, int(width), int(height), INSET_ORRERY_SHOWN
+  )
   g_history = initHistory(g_scene, g_camera)
 
 

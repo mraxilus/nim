@@ -1007,9 +1007,9 @@ the smallest device, for a button pressed once.
 ---
 
 Five seeds, then eleven derived steps. Both front-ends **open on the seeds alone**, so the
-window and the script agree on where a construction starts. The eleven steps are reachable as
-a **one-click preset** that populates the scene with ordinary, fully editable items — not a
-separate scripted-playback mode.
+window and the script agree on where a construction starts. The steps are what capture mode
+records; they are not what the **one-click preset** loads — see §16b — but both populate the
+scene with ordinary, fully editable items rather than a separate scripted-playback mode.
 
 **Both arrive as a replay**, on the same beat a loaded file does (§15): the opening scene and
 the preset are constructions the reader did not build, and watching one assemble says what a
@@ -1047,6 +1047,38 @@ draws **muted as background context rather than hidden** — objects disappearin
 confusing than informative. Horizon-producing steps reorient the capture through the closed-form
 inverse of the orbit camera's own forward-direction formula, then restore the default view. No
 field-of-view widening: reorienting suffices, and no FOV can fix content behind the camera.
+
+
+16b. The Demo Preset
+---
+
+The preset behind the browser's *demo* button is the **heaviest scene the build ever draws**,
+not a teaching sequence. A reader pressing it on a tool that ships a diagnostics drawer is
+asking what this thing does under load, and sixteen objects cannot answer. It fills **every
+item slot** and carries **every drawable kind**, one of each object at horizon included, so
+that no drawing path goes unexercised.
+
+Three rules keep it honest.
+
+- **Everything is derived.** After the placed points, every line and plane is a join of points
+  already in the scene and every object at horizon is an attitude of one — the same rule §2.2
+  applies to the rest of the build. A plane written down as coefficients would be shorter and
+  would say nothing.
+- **Nothing in it may draw nothing.** Three collinear points wedge to a multivector of no clean
+  grade, which holds a slot and never appears while the scene still reports itself full. This
+  is a **counting** property, not a looking one, and must be asserted where the scene is built
+  as well as tested: it has already happened to six objects at once. (§16's `a ∧ ground` is the
+  deliberate exception, and it is a teaching step, not a preset item.)
+- **It places its own camera.** The opening camera frames the seed scene and stands inside this
+  one, nearly in its plane. The preset pitches up off the arrangement's own plane and pulls
+  back through the same solve a framed selection uses, so the two cannot disagree about what
+  "whole" means. Azimuth is left where the reader had it — this pulls the view back, it does
+  not swing it round.
+
+The arrangement is **clusters at a range of distances**, which is what makes culling, fading
+and extent decisions all matter in one frame. Its layout constants are chosen by rendering it
+and looking: a distribution that is physically faithful but collapses every cluster to a dot
+is the wrong one, and the reasoning belongs in `PROVENANCE.md` beside the numbers.
 
 
 17. Desktop Front-End

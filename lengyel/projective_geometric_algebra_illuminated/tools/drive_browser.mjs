@@ -776,7 +776,16 @@ report(
   `kind ${marker_horizon.kind}, ${marker_horizon.points.length} points`,
 );
 
-const head_first = await headOf();
+// Wait for the comet to have a head before timing how far it travels. The object was
+//   created moments ago and a fresh one starts its pulse at zero (`nimEndDrag` forgets its
+//   clock on purpose), so sampling straight away sometimes catches it before there is a
+//   head to report -- which came back as `null` and read as "off screen". Three failures in
+//   six runs on this container, and none of them a fault in the comet.
+let head_first = null;
+for (let waited = 0; waited < 40 && head_first === null; waited += 1) {
+  head_first = await headOf();
+  if (head_first === null) await page.waitForTimeout(50);
+}
 await page.waitForTimeout(500);
 const head_second = await headOf();
 const travelled = head_first === null || head_second === null
@@ -1864,10 +1873,21 @@ const kinds = await page.evaluate(() => window.__phase_frame.slice(2).map((p) =>
 const kinds_sane = kinds.filter((k) =>
   k.parts <= k.scene + 0.6 && k.parts >= k.scene - Math.max(3.0, 0.3 * k.scene) &&
   k.counted > 0);
+// **A share of the frames rather than all of them**, at an unchanged per-frame tolerance.
+//   Every reading is quantised to a tenth of a millisecond, so summing six parts against one
+//   whole carries up to 0.35 ms of rounding before any real disagreement, and a frame whose
+//   brackets straddle a collection adds more. Demanding *every* frame account held for ten
+//   runs at around 600 frames and then failed twice at 825 as the container sped up and the
+//   sample grew -- which is a property of the sample size, not of the accounting.
+//   Loosening the per-frame tolerance instead would have weakened the check on all 800; a
+//   quantile keeps it exactly as strict per frame, since a real accounting fault misses on
+//   every frame and cannot hide inside four of them.
+const FRACTION_KINDS_ACCOUNT = 0.995;
 report(
   'the scene phase is accounted for by the kinds it is spent on',
-  kinds.length > 30 && kinds_sane.length === kinds.length,
-  `${kinds_sane.length} of ${kinds.length} frames account, ` +
+  kinds.length > 30 && kinds_sane.length >= FRACTION_KINDS_ACCOUNT*kinds.length,
+  `${kinds_sane.length} of ${kinds.length} frames account ` +
+    `(floor ${Math.ceil(FRACTION_KINDS_ACCOUNT*kinds.length)}), ` +
     `last frame ${kinds.length ? kinds[kinds.length - 1].parts.toFixed(2) : '?'} of ` +
     `${kinds.length ? kinds[kinds.length - 1].scene.toFixed(2) : '?'} ms ` +
     `over ${kinds.length ? kinds[kinds.length - 1].counted : '?'} objects`,
@@ -2471,6 +2491,95 @@ report(
     covered.ruler < covered.drawer,
   `moved ${covered.moved}px, shown ${covered.shown}, ` +
     `layer ${covered.ruler} under the drawer's ${covered.drawer}`,
+);
+
+/* ---- The demo preset ---- */
+
+// **The demo is the build's own stress case**, and its whole value is that it is heavy in
+// every dimension at once. Driven through the button a reader presses rather than by calling
+// `nimLoadDemo`, because the wiring between the two is exactly what a rename breaks.
+//   The Nim suite already checks what the *scene* contains; what only this can check is that
+// pressing the button gets that scene onto the page, and that the camera it leaves behind
+// actually holds the arrangement.
+await page.click('#btn-menu');
+await page.click('#btn-load-demo');
+await page.click('#btn-menu'); // Shut the popover again, as a reader would.
+await page.waitForTimeout(600);
+const demo = await page.evaluate(() => {
+  const tally = {};
+  for (const slot of nimSceneSlots()) {
+    const word = nimItemShapeWord(slot);
+    tally[word] = (tally[word] || 0) + 1;
+  }
+  return {
+    count: nimSceneCount(), capacity: nimSceneCapacity(), tally,
+    distance: nimCameraDistance(),
+  };
+});
+report(
+  'the demo button fills every slot the scene has',
+  demo.count === demo.capacity && demo.capacity >= 64,
+  `${demo.count} of ${demo.capacity} slots`,
+);
+// Every kind, and nothing that draws nothing. The mixed-grade case is the one worth naming:
+//   three collinear points wedge to no clean grade, and such an item holds a slot while
+//   drawing nothing at all -- six of the sixty-four did, and the scene still counted 64.
+const drawing = ['point', 'line', 'plane', 'point at horizon', 'line at horizon',
+  'plane at horizon'];
+const undrawn = Object.keys(demo.tally).filter((word) => !drawing.includes(word));
+report(
+  'it carries every drawable kind, including one of each at horizon, and nothing blank',
+  drawing.every((word) => (demo.tally[word] || 0) >= 1) && undrawn.length === 0 &&
+    demo.tally.plane >= 8 && demo.tally.line >= 12 && demo.tally.point >= 30,
+  Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
+);
+// And the camera it leaves is standing back far enough to see what it just built: on the
+//   opening camera the demo loads *inside* its own inner planets.
+report(
+  'and it stands the camera back far enough to hold what it built',
+  demo.distance > 40,
+  `camera at ${demo.distance.toFixed(1)}, opening distance is 19`,
+);
+
+// **The per-kind accounting, asked again where the numbers mean something.** The same check
+// runs far above on the opening scene, and on a fast container that scene's whole phase is
+// around half a millisecond -- every reading is quantised to a tenth, so the lower bound is
+// inert there: halving every part's contribution was measured to still pass. Nothing about
+// the check is wrong; the scene is simply too cheap to divide. Under the demo the phase is
+// an order of magnitude larger, and the same rule applied to it *means* something: 0.6 ms
+// against a 7-14 ms phase is a 5-8% tolerance where against 0.5 ms it was 120%. The lower
+// bound keeps the allowance the check above uses, because the work it allows for -- two
+// walks of all 64 slots, marking the overlay, packing the view-projection -- belongs to no
+// kind and gets *larger* with 64 objects, not smaller. Measured over three runs, the worst
+// excess on this side was 0.00 ms; the lower bound is the one that occasionally moves.
+await page.evaluate(() => { window.__phase_frame = []; });
+// The drag is also the check below it: a construction gesture released on a **full** scene
+//   used to reach `scene.addItem` through shared code with no `isFull` between, and take
+//   the whole page down with an assertion. Every panel path guarded it; the gesture did
+//   not, and nothing could reach a full scene in one step until this preset existed.
+await page.mouse.move(720, 450);
+await page.mouse.down();
+for (let i = 0; i < 20; i += 1) await page.mouse.move(720 + 8*i, 450 + 3*i);
+await page.mouse.up();
+await page.waitForTimeout(700);
+const after_drag = await page.evaluate(() => nimSceneCount());
+report(
+  'a construction gesture on a full scene is refused, not crashed through',
+  errors_page.length === 0 && after_drag === demo.capacity,
+  `${after_drag} items after the drag, ${errors_page.length} page error(s)`,
+);
+const loaded = await page.evaluate(() => window.__phase_frame.slice(2).map((p) => ({
+  scene: p.scene,
+  parts: p.points + p.lines + p.planes + p.sky + p.ghost + p.selected,
+})));
+const heavy = loaded.filter((k) => k.scene >= 2.0);
+const heavy_sane = heavy.filter((k) =>
+  k.parts <= k.scene + 0.6 && k.parts >= k.scene - Math.max(3.0, 0.3*k.scene));
+report(
+  'and under it the same accounting still holds, on a phase big enough to divide',
+  heavy.length > 20 && heavy_sane.length >= FRACTION_KINDS_ACCOUNT*heavy.length,
+  `${heavy_sane.length} of ${heavy.length} frames over 2 ms account, ` +
+    `worst scene phase ${Math.max(0, ...heavy.map((k) => k.scene)).toFixed(2)} ms`,
 );
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
