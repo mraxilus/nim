@@ -2009,6 +2009,155 @@ report(
   `held ${furniture_rebuilt.held}, ${furniture_rebuilt.floats} floats`,
 );
 
+/* ---- Performance regression pins ---- */
+
+// Every entry here pins a repaired performance fault to a band roughly three to four
+// times its repaired cost on the driving container -- generous enough to survive a
+// loaded shared runner, tight enough to catch the fault class returning, since every
+// fault below was a 3-30x multiplier while it was alive. The faults themselves, their
+// causes and their measurements live in PROVENANCE.md's performance ledger.
+//   **Raising a band is a sign-off.** A band is changed only with the justification
+// recorded beside the ledger entry it pins -- never adjusted to quiet a failure
+// unexamined. A failure just past a band on a slow run says re-measure against the
+// previous commit first; a failure at multiples of it is the fault this exists for.
+const BANDS_PERF = {
+  hover_pick_ms: 5, // Repaired 1.5 ms; the scene-copy-per-slot fault measured 7.1.
+  anchor_us: 100, // Repaired 8 us; the extent-tuple + Item-copy fault measured 280.
+  marker_pair_ms: 1.5, // Repaired ~0.5 ms; the Option[Marker] copy chain measured ~1.9.
+  grid_moving_ms: 20, // Repaired 8.7 ms; per-boundary fade sampling measured 26.1.
+  emitting_moving_ms: 4.5, // Repaired ~1.2 ms; CPU ribbon/fan expansion measured 6.3.
+  debug_layer_ms: 12, // Repaired 4.7 ms; per-piece lattice fades measured 18.5.
+};
+
+// A hover pick must stay off the copy paths: it walks the scene by slot (never through
+// `pairs`, whose Item carries the whole Scene by value on this backend) and steps the
+// horizon circle off the fixed angle table. It runs on every pointer move, which is why
+// no frame row ever showed it.
+const pin_pick = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  nimUpdateCursor(canvas.clientWidth / 2, canvas.clientHeight / 2);
+  const times = [];
+  for (let i = 0; i < 25; i += 1) {
+    const start = performance.now();
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+    times.push(performance.now() - start);
+  }
+  times.sort((a, b) => a - b);
+  return times[12];
+});
+reportWithin(
+  'a hover pick stays off the scene-copy paths', pin_pick, 0, BANDS_PERF.hover_pick_ms,
+  'ms median',
+);
+
+// An anchor lookup must stay a projection, not a copy: the overlay view cache hands out
+// no `(DrawExtent, Matrix4)` value pair, and the item is read by slot.
+const pin_anchor = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const slot = nimSceneSlots()[0];
+  const start = performance.now();
+  for (let i = 0; i < 400; i += 1) {
+    nimAnchorScreen(slot, canvas.clientWidth, canvas.clientHeight);
+  }
+  return (1000 * (performance.now() - start)) / 400;
+});
+reportWithin(
+  'an anchor lookup stays a projection, not a copy', pin_anchor, 0, BANDS_PERF.anchor_us,
+  'us mean',
+);
+
+// A marker and its pulse must shape into caller storage: `markerFor` fills a
+// `var Marker`, and nothing walks the marker's fixed arrays through nimCopy on the way
+// out. Measured as the pair the overlay actually draws per selected object per frame.
+const pin_marker = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const slot = nimSceneSlots()[0];
+  const start = performance.now();
+  for (let i = 0; i < 100; i += 1) {
+    nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, 1, false, 0);
+    nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, 1, false);
+  }
+  return (performance.now() - start) / 100;
+});
+reportWithin(
+  'a marker and its pulse shape without copying', pin_marker, 0, BANDS_PERF.marker_pair_ms,
+  'ms mean',
+);
+
+// The grid and the CPU emit must stay at one record per line with the fog fade in the
+// fragment shader: the moving-camera rebuild is the frame this repository has spent the
+// most rounds on, and its cost is the line count and nothing else now.
+const pin_grid = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const aspect = canvas.width / canvas.height;
+  const distance_before = nimCameraDistance();
+  nimSetCameraDistance(300);
+  const grid = [];
+  const emitting = [];
+  for (let i = 0; i < 9; i += 1) {
+    nimCameraOrbit(0.005, 0); // Move, so the furniture cache cannot hold.
+    const data = nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true);
+    grid.push(data.ms_grid);
+    emitting.push(data.ms_emitting);
+  }
+  nimSetCameraDistance(distance_before);
+  grid.sort((a, b) => a - b);
+  emitting.sort((a, b) => a - b);
+  return { grid: grid[4], emitting: emitting[4] };
+});
+reportWithin(
+  'the moving grid stays at one record per line', pin_grid.grid, 0,
+  BANDS_PERF.grid_moving_ms, 'ms median',
+);
+reportWithin(
+  'the CPU emit stays a copy of records, not an expansion', pin_grid.emitting, 0,
+  BANDS_PERF.emitting_moving_ms, 'ms median',
+);
+
+// The debug layer must keep riding the shared lattice machinery: a traced plane is
+// lattice lines at one record each, not fade pieces, and the trace is read by slot.
+const pin_debug = await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const aspect = canvas.width / canvas.height;
+  const layer = [];
+  for (let i = 0; i < 15; i += 1) {
+    const data = nimBuildFrame(
+      aspect, performance.now() / 1000, canvas.height, true, true, true,
+    );
+    layer.push(data.ms_algebra);
+  }
+  layer.sort((a, b) => a - b);
+  return layer[7];
+});
+reportWithin(
+  'the debug layer rides the shared lattice machinery', pin_debug, 0,
+  BANDS_PERF.debug_layer_ms, 'ms median',
+);
+
+// The overlay must reuse its own SVG elements rather than rebuilding the layer: mark the
+// nodes standing now, let the draw loop run, and the same nodes must still be there --
+// a layer cleared with innerHTML creates fresh nodes every frame and keeps none.
+await page.keyboard.press('Home'); // Earlier checks left the camera wherever they orbited
+await page.waitForTimeout(800); //   it; the hover below needs an anchor actually on screen.
+const pixel_hover_pool = await pixelOf((await page.evaluate(() => nimSceneSlots()))[0]);
+await page.mouse.move(pixel_hover_pool[0], pixel_hover_pool[1]);
+await page.waitForTimeout(250);
+const pin_pool = await page.evaluate(async () => {
+  const layer = document.getElementById('overlay');
+  const before = layer.children.length;
+  for (const element of layer.children) element.__probe_pool = true;
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  let kept = 0;
+  for (const element of layer.children) if (element.__probe_pool) kept += 1;
+  return { before, after: layer.children.length, kept };
+});
+report(
+  'the overlay reuses its elements across frames rather than rebuilding',
+  pin_pool.before > 0 && pin_pool.kept > 0,
+  `${pin_pool.kept} of ${pin_pool.after} elements survived from ${pin_pool.before} ` +
+    'marked a few frames earlier',
+);
+
 /* ---- Nothing may have thrown along the way ---- */
 
 /* ---- Touch drags as a finger really performs them ---- */

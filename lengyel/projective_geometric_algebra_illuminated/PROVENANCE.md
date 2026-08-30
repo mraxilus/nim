@@ -2270,6 +2270,49 @@ exercise, and its equations may be restructured only in PGA's own terms; changin
 storage to make it faster would change the thing being measured. The boundary work above is
 the sanctioned answer: derive through the algebra once, and stop paying for it twice.
 
+**The performance ledger.** Every repaired performance fault, ordered by what it cost at
+its worst, each pinned by a driven check whose band `REQUIREMENTS.md`'s regression policy
+governs (raising a band requires a justification recorded beside the entry here). The
+prose entries below and above carry each fault's full story; this table is the index.
+All figures are from the driving container, browser build.
+
+|---|-----------------------------------|---------------------|---------------|----------------|
+| # | Fault                             | Worst measured      | Repaired      | Pinned by      |
+|---|-----------------------------------|---------------------|---------------|----------------|
+| 1 | Grid fog fade sampled per piece   | 26.1 ms per moving  | 8.7 ms        | grid_moving_ms |
+|   | boundary on the CPU               | frame (25.3 Placing)|               |                |
+| 2 | Debug layer: a fade-piece lattice | 18.5 ms per frame,  | 4.7 ms        | debug_layer_ms |
+|   | per traced plane, derived planes  | layer on            |               |                |
+|   | included                          |                     |               |                |
+| 3 | Picker copied the Scene per slot  | 7.1 ms per pointer  | 1.5 ms        | hover_pick_ms  |
+|   | per pointer move; 97 sums per     | move                |               |                |
+|   | horizon candidate; an extent per  |                     |               |                |
+|   | wheel notch                       |                     |               |                |
+| 4 | Overlay row: Option[Marker] copy  | 7.45 ms per frame   | 3.97 ms       | marker_pair_ms,|
+|   | chain, extent-tuple returns,      | with 2 selected     | (0.26 ms a    | anchor_us, the |
+|   | g_scene[slot], innerHTML rebuild, | (0.99 ms a ring     | ring; 8 us an | element-reuse  |
+|   | per-wedge getBBox                 | marker; 0.28 ms an  | anchor)       | pin            |
+|   |                                   | anchor)             |               |                |
+| 5 | Sky dome and plane fills fanned   | 5.1 ms sky + 2.35   | 0.1 + 0.6 ms; | emitting band, |
+|   | on the CPU per frame              | flatten; 18,144     | 56 floats     | suite record   |
+|   |                                   | floats over the FFI |               | pins           |
+| 6 | Ribbon widening on the CPU, six   | 6.3 ms emitting     | 1.4 ms;       | emitting band  |
+|   | vertices a segment                | moving; 33,964      | 13,444 floats |                |
+|   |                                   | floats over the FFI |               |                |
+| 7 | Great circle assembled as 96      | inside rows 3 and   | table-stepped | hover_pick_ms  |
+|   | multivector sums per frame and    | the lines row       | arithmetic    |                |
+|   | per pick candidate                |                     |               |                |
+|---|-----------------------------------|---------------------|---------------|----------------|
+
+Three root causes account for all of it, and each is now guarded: **JS-backend deep
+copies of value types** (an `Item` carries its `Scene`, an `Option[Marker]` its arrays, a
+returned tuple its extent -- four sightings of one trap, invisible to allocation greps
+because a return looks like a read); **immediate-mode CPU tessellation of
+camera-independent geometry** (fans, domes, fade pieces re-derived per frame, moved to
+records widened by shaders); and **instrumentation gaps** (rows that existed got
+optimised, while pointer events, the debug layer and per-call exports had no row at all
+-- which is what the regression pins now close).
+
 **The ribbon widening runs in the vertex shader, on both targets.** Every line segment
 used to become six CPU-built vertices -- near clip, across-vector, per-end screen-constant
 width -- exactly the work `addSegmentAcross`'s own comment called "the licensed

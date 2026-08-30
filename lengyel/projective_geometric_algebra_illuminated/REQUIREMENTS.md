@@ -1287,6 +1287,30 @@ walked the palette, are both legible at a glance. **Both front-ends receive the 
 one buffer of colour triples**, so neither presentation layer carries a palette rule.
 
 
+**Performance regression policy.** Every repaired performance fault is pinned by a driven
+check in `tools/drive_browser.mjs` (the "Performance regression pins" section), which the
+standard verify runs on every pass — so a regression cannot land without a check going red.
+The rules that make the pins trustworthy on a shared, noisy runner:
+
+- **Bands sit at roughly three to four times the repaired cost** as measured on the driving
+  container. Every fault in the ledger was a 3–30× multiplier while it was alive, so a band
+  at that height catches the fault class returning while riding out runner noise. Where a
+  property can be pinned structurally instead of by clock — records per line, elements
+  reused, floats per record — it is, because a structural pin cannot flake.
+- **Raising a band is a sign-off, never a quieting.** A band changes only together with a
+  justification recorded beside the corresponding entry in `PROVENANCE.md`'s performance
+  ledger — what got slower, why that is accepted, and the new measurement. Adjusting a band
+  to make a red check pass without that entry is the one thing this policy exists to forbid.
+- **A failure just past a band on a slow run is a measurement first**: re-run against the
+  previous commit on the same container before concluding either way, exactly as the
+  frame-budget band's own note prescribes. A failure at multiples of the band is the fault.
+- **New per-frame or per-event work gets a pin when it ships**, measured before and after,
+  with the numbers recorded in the ledger — the faults in it were invisible precisely
+  because the paths they lived on (pointer events, the debug layer, per-call exports) had
+  no row anywhere, and a cost with no measurement is a regression waiting to be discovered
+  by a user instead of a check.
+
+
 21. Typography
 ---
 
