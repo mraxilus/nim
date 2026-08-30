@@ -2063,13 +2063,25 @@ for (let step = 1; step <= 4; step += 1) {
   }]);
   await page.waitForTimeout(35);
 }
+// **The finger chases the object's live pixel, not a memorised one.** The press starts
+//   the aim tween, which glides the camera target toward the drag -- so every anchor
+//   moves on screen while the gesture is still in flight. A real finger tracks the thing
+//   it is reaching for; a finger creeping to where the object stood at the press misses
+//   it by exactly the tween's progress, which is why this raced the runner's own speed
+//   -- slow frames left the anchors near their read positions, fast ones did not.
 for (let step = 1; step <= 8; step += 1) {
+  const onto_live = await pixelOf(points_live[1]);
   await touchAt('touchMove', [{
-    x: from_creep[0] + ((onto_creep[0] - from_creep[0]) * step) / 8,
-    y: from_creep[1] + ((onto_creep[1] - from_creep[1]) * step) / 8,
+    x: from_creep[0] + ((onto_live[0] - from_creep[0]) * step) / 8,
+    y: from_creep[1] + ((onto_live[1] - from_creep[1]) * step) / 8,
   }]);
   await page.waitForTimeout(35);
 }
+// And the last touch settles on wherever the object stands now, so the hover read below
+//   is a claim about picking rather than about how far the tween happened to get.
+const onto_final = await pixelOf(points_live[1]);
+await touchAt('touchMove', [{ x: onto_final[0], y: onto_final[1] }]);
+await page.waitForTimeout(80);
 const creep_mid = await page.evaluate(() => ({
   hover: nimHoverSlot(), dragging: nimDragActive(),
 }));
