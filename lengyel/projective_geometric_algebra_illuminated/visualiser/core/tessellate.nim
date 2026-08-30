@@ -231,6 +231,37 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
+proc placeFadeLine(
+  scratch: var DrawScratch; count_assembled: var int; centre, axis_point: Multivector;
+  span: float; pieces: int; across: Direction; tint: Rgba;
+  fog: tuple[radius_full, radius_gone: float]; eye_point: Multivector
+) =
+  ## Resolve one faded line into `scratch.ribbons`: `pieces` ribbon pieces running `span`
+  ## either side of `centre` along `axis_point`, each end faded by its own distance from
+  ## the eye. Silently stops at the scratch's end, for the reason `placeGridFamily` gives.
+  ##   **Each boundary is assembled once.** Adjacent pieces share an end -- piece `j`'s
+  ## head is piece `j + 1`'s tail, by the same formula -- and the loops this replaces
+  ## assembled every interior boundary twice over: two multivector sums, two reads back
+  ## across the language boundary and two fades where one of each suffices. Shared by the
+  ## grid and the axes, whose per-piece loops were copies of each other but for the span.
+  let count_boundaries = min(pieces, 2*SEGMENTS_GRID_FADE) + 1
+  for j in 0 ..< count_boundaries:
+    let at = add(centre, wedge(span*(2.0*float(j)/float(pieces) - 1.0), axis_point))
+    scratch.places[j] = pointFrom(at)
+    scratch.fade_tints[j] = tint.fade(tint.alpha * alphaGridFade(
+      distanceBetween(at, eye_point), fog.radius_full, fog.radius_gone))
+  for j in 0 ..< count_boundaries - 1:
+    if count_assembled >= len(scratch.ribbons): return
+    scratch.ribbons[count_assembled] = RibbonPiece(
+      tail: scratch.places[j],
+      head: scratch.places[j + 1],
+      across: across,
+      tint_tail: scratch.fade_tints[j],
+      tint_head: scratch.fade_tints[j + 1],
+    )
+    count_assembled += 1
+
+
 proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int =
   ## Resolve the world axes into `scratch` and report how many pieces: one through the
   ## origin along each of x, y and z, in the standard convention -- x red, y green, z
@@ -285,27 +316,10 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
     if across_axis.isNone: continue
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
     #   distance from the eye, so the cutoff never reads as a hard edge.
-    for j in 0 ..< 2*SEGMENTS_GRID_FADE:
-      # Assembled rather than drawn, as the grid's pieces are and for the same reason;
-      #   all three axes go into the one run, each piece carrying its own axis's ink and
-      #   its own across, so the emit below needs to know nothing about which axis it is
-      #   walking. See `mesh.RibbonPiece`.
-      if count_assembled >= len(scratch.ribbons): break
-      let
-        end_tail = add(foot_point,
-          wedge(half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
-        end_head = add(foot_point,
-          wedge(half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
-      scratch.ribbons[count_assembled] = RibbonPiece(
-        tail: pointFrom(end_tail),
-        head: pointFrom(end_head),
-        across: across_axis.get,
-        tint_tail: tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_tail, scale.eye_point), fog.radius_full, fog.radius_gone)),
-        tint_head: tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_head, scale.eye_point), fog.radius_full, fog.radius_gone)),
-      )
-      count_assembled += 1
+    scratch.placeFadeLine(
+      count_assembled, foot_point, axis_point, half, 2*SEGMENTS_GRID_FADE,
+      across_axis.get, tint, fog, scale.eye_point,
+    )
 
   count_assembled
 
@@ -437,29 +451,14 @@ proc placeGridFamily(
     # An eye on the lattice line itself has no side to step a ribbon off toward -- the
     #   very refusal `addSegment` makes per piece, made once for the line.
     if across_line.isNone: continue
-    for j in 0 ..< segments_fade:
-      # Assembled, not drawn. Every piece of the family is resolved into `scratch` through
-      #   the algebra first and the whole run emitted below, so the two languages meet at
-      #   a `RibbonPiece` rather than inside an argument list -- see that type's own note.
-      #   Silently stops at the scratch's end rather than growing it: the caller sized it
-      #   from `SEGMENTS_GRID_MAX`, which is the same budget `segmentsGridFadeFor` cuts
-      #   the fade to, so a full buffer means that budget was raised and this was not.
-      if count_assembled >= len(scratch.ribbons): break
-      let
-        a = reach * (2.0*float(j)/float(segments_fade) - 1.0)
-        b = reach * (2.0*float(j + 1)/float(segments_fade) - 1.0)
-        end_a = add(base, wedge(a, along_point))
-        end_b = add(base, wedge(b, along_point))
-      scratch.ribbons[count_assembled] = RibbonPiece(
-        tail: pointFrom(end_a),
-        head: pointFrom(end_b),
-        across: across_line.get,
-        tint_tail: tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_a, scale.eye_point), fog.radius_full, fog.radius_gone)),
-        tint_head: tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_b, scale.eye_point), fog.radius_full, fog.radius_gone)),
-      )
-      count_assembled += 1
+    # Assembled, not drawn -- see `placeFadeLine`, which also stops silently at the
+    #   scratch's end: the caller sized it from `SEGMENTS_GRID_MAX`, the same budget
+    #   `segmentsGridFadeFor` cuts the fade to, so a full buffer means that budget was
+    #   raised and this was not.
+    scratch.placeFadeLine(
+      count_assembled, base, along_point, reach, segments_fade,
+      across_line.get, tint, fog, scale.eye_point,
+    )
 
   count_assembled
 

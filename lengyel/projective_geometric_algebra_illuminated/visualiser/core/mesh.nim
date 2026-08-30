@@ -746,6 +746,11 @@ type DrawScratch* = object
   ## carry nothing between callers and need no clearing.
   ribbons*: array[SEGMENTS_GRID_MAX, RibbonPiece]
   places*: array[POINTS_SCRATCH_MAX, Position]
+  fade_tints*: array[2*SEGMENTS_GRID_FADE + 1, Rgba]
+    ## One faded colour per fade boundary of the line currently being placed, beside the
+    ## boundary's own place in `places`. Here rather than a local: a fresh local array is
+    ## an allocation per lattice line on the JS backend, which is the churn this scratch
+    ## exists to end.
 
 
 proc addSegmentAcross*(
