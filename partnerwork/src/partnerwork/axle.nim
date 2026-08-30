@@ -12,6 +12,10 @@
 ##       cannot take.  Accepted -- a drawing that showed only what is
 ##       allowed would be a menu, and what makes this a validator is that
 ##       it can show a turn and refuse it in the same breath.
+##   Nothing places this drawing yet.  The app's Dance view is graph-first
+##     and the rotation exploration moved to the design workbench, so the
+##     axle waits for the page that stands postures in links.  `taxle`
+##     holds its laws green in the meantime, so the wait cannot rot.
 
 {.experimental: "strictFuncs".}
 
@@ -27,7 +31,7 @@ import ./rotation
 #[ Layout ]#
 
 const
-  AXLE_HEIGHT* = 360
+  AXLE_HEIGHT* = 360 ## The height the axle drawing asks its viewBox for.
   NODE_WIDTH = 84   ## Width a posture is drawn at along the axle.
   STEP = 132       ## Distance along the axle between one half turn and the next.
   AXLE_Y = 250     ## Row the postures are drawn in, under their arcs.
@@ -36,8 +40,12 @@ const
   LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
 
 
-func axleWidth*(stood: Posture): int =
+func axleWidth*: int =
   ## Get how wide the axle has to be for the postures that stand on it.
+  ##   A constant expression today -- every posture stands on the same axle
+  ##     -- and a callable so the width can start depending on the posture
+  ##     without the callers changing.  It used to take the posture and
+  ##     read nothing from it, which promised the dependence untruthfully.
   2 * (MOST_TURN * STEP) + NODE_WIDTH + 60
 
 
@@ -46,7 +54,7 @@ func centreOf*(stood: Posture; twist: HalfTurns): (int, int) =
   ##   Placed by the twist itself rather than by an index, so the distance
   ##     between two postures on the drawing is the size of the turn between
   ##     them.  A half turn is one step wherever it is taken.
-  (axleWidth(stood) div 2 + twist * STEP, AXLE_Y)
+  (axleWidth() div 2 + twist * STEP, AXLE_Y)
 
 
 func standing*(stood: Posture): seq[HalfTurns] =
@@ -94,7 +102,7 @@ func renderAxle*(stood: Posture; motion = Motion.Still;
     taken = none(HalfTurns)): string =
   ## Draw the twist axis, the postures on it, and every turn out of the one held.
   let
-    width = axleWidth(stood)
+    width = axleWidth()
     leaving = motion == Motion.Leaving and taken.isSome
     here = if leaving: taken.get else: stood.twist
   result = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " & $width &
