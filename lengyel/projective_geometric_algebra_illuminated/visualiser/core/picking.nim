@@ -336,8 +336,8 @@ func rayPlaneHit(
 #[ Item Hit Testing ]#
 
 func pickNearest*(
-  scene: Scene; camera: Camera; view_projection: Matrix4; width, height: int;
-  cursor: ScreenPosition
+  scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
+  width, height: int; cursor: ScreenPosition
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   None where nothing visible falls within its shape's pick radius.
@@ -358,25 +358,14 @@ func pickNearest*(
 
   # Eye, camera frame and sight ray depend only on camera and cursor, not on which item is
   #   being tested, so each is built once here rather than once per plane candidate below.
+  # `scale` must be this camera's own extent, as `drawExtentFor` built it this frame --
+  #   the branches below read the eye and its planes off it, and an extent from another
+  #   camera would rank items against a view nobody is looking through. Taking it beats
+  #   deriving a fresh one here, which ran `algebraFilled` a third time per frame.
   let
-    eye = camera.eye
+    eye = scale.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    # **Through `algebraFilled`, never fieldwise.** It derives the multivector twins --
-    #   the eye as a point, the sight as a horizon point, the eye and near planes -- and
-    #   an extent built without it carries zeros in all four. That is not a quiet
-    #   inefficiency: `tessellate.anchorFor` places a point at the horizon at
-    #   `eye_point + radius*heading`, so a zero eye leaves the sum weightless, `position`
-    #   answers none, and every such point is skipped before it can be ranked. A line's
-    #   attitude was unpickable for exactly that reason, while the line it came from was
-    #   not. The four are read straight off `scale` below rather than kept beside it, so
-    #   there is no second copy to fill and forget.
-    scale = algebraFilled(DrawExtent(scale: DrawScale(
-      eye: eye,
-      forward: frame_camera.forward,
-      depth_near: camera.distanceNear,
-      radius_horizon: radiusHorizonFor(camera.distanceFar),
-    )))
 
   var
     slot_best = none(int)
@@ -497,16 +486,16 @@ func anchorZoomAt*(
   ## exactly that reason, and the fall-through does the work.
   ##   None where none of the three answers, which leaves a caller to zoom at the middle of
   ## the frame.
-  let slot = pickNearest(scene, camera, view_projection, width, height, cursor)
+  # Event-time, so this builds the one extent itself -- there is no frame in flight whose
+  #   extent a wheel handler could borrow -- and then reads the eye and its plane off it
+  #   rather than deriving both a second time below.
+  let scale = camera.drawExtentFor(height)
+  let slot = pickNearest(scene, camera, scale, view_projection, width, height, cursor)
   if slot.isSome:
     let
-      eye = camera.eye
-      frame_camera = camera.frame(eye)
-      ray = castRay(camera, eye, frame_camera, width, height, cursor)
-      plane_eye = planeThrough(
-        toMultivector(eye), toMultivector(frame_camera.forward)
-      )
-      found = positionOnItemUnder(scene.geometryOf(slot.get), ray, plane_eye)
+      frame_camera = camera.frame(scale.eye)
+      ray = castRay(camera, scale.eye, frame_camera, width, height, cursor)
+      found = positionOnItemUnder(scene.geometryOf(slot.get), ray, scale.plane_eye)
     if found.isSome: return found
   let ground = positionOnGround(camera, width, height, cursor)
   if ground.isSome: return ground

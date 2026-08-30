@@ -158,14 +158,17 @@ proc addFrameTrace*(
   #   rather than as a number in a matrix.
   let eye = camera.eye
   trace.record(TracedRole.EyePoint, scale.eye_point)
-  trace.record(TracedRole.SightAxis, camera.frame(eye).axis_sight)
+  # One `camera.frame` for the layer: its joins are the priciest thing this block asks
+  #   for, and it was run twice in two statements for the same eye.
+  let frame_camera = camera.frame(eye)
+  trace.record(TracedRole.SightAxis, frame_camera.axis_sight)
   trace.record(TracedRole.PlaneEye, scale.plane_eye)
   trace.record(TracedRole.PlaneNear, scale.plane_near)
   trace.record(TracedRole.GroundPlane, groundPlane())
 
   # The cursor's own ray and where it meets the level being worked at -- what the picker
   #   and the zoom both rest on, and the pair a reader most wants to see.
-  let ray = castRay(camera, eye, camera.frame(eye), width, height, cursor)
+  let ray = castRay(camera, eye, frame_camera, width, height, cursor)
   trace.record(TracedRole.CursorRay, ray)
   let met = ray ∨ levelPlaneThrough(toMultivector(camera.target))
   if position(met).isSome: trace.record(TracedRole.CursorHit, met)

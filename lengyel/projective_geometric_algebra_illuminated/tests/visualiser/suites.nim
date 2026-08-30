@@ -2860,7 +2860,8 @@ suite "Camera Aim":
         # End to end: the ease carries the target there and leaves everything else alone.
         var tween: CameraTween
         tween.offerAim(
-          camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
+          camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
         )
         tween.settle(camera)
         check camera.target =~ middle
@@ -2998,19 +2999,21 @@ suite "Camera Aim":
     var tween: CameraTween
     let (scene, picked) = sceneOf(toMultivector(Position(x: 3.0, y: -2.0, z: 1.5)))
     tween.offerAim(
-      camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
+      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, 0.35
     )
     check tween.goal.isSome
 
     tween.offerAim(
-      camera, scene, Selection(), none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.1, 0.35
+      camera, scene, Selection(), none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.1, 0.35
     )
     check tween.goal.isNone
 
     var empty: Multivector
     tween.offerAim(
       camera, scene, Selection(), some(previewStaging(empty)),
-      WIDTH_AIM, HEIGHT_AIM, 0.2, 0.35,
+      camera.drawExtentFor(HEIGHT_AIM), WIDTH_AIM, HEIGHT_AIM, 0.2, 0.35,
     )
     check tween.goal.isNone
 
@@ -3028,12 +3031,14 @@ suite "Camera Aim":
     check not isShownAll(scene, picked, none(Preview), camera, WIDTH_AIM, HEIGHT_AIM)
 
     tween.offerAim(
-      camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION
+      camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, 0.0, DURATION
     )
     for frame in 1 .. 30:
       let now = DURATION*float(frame)/20.0
       tween.offerAim( # Re-offered every frame, exactly as a front-end re-offers it.
-        camera, scene, picked, none(Preview), WIDTH_AIM, HEIGHT_AIM, now, DURATION
+        camera, scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM),
+      WIDTH_AIM, HEIGHT_AIM, now, DURATION
       )
       tween.advance(camera, now, easeOutCubic)
     check tween.is_arrived
@@ -3783,7 +3788,10 @@ suite "Picking":
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(0)
 
 
   test "cursor far from every item picks nothing":
@@ -3792,7 +3800,10 @@ suite "Picking":
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     let corner = ScreenPosition(x: 5.0, y: 5.0, depth: 0.0)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, corner).isNone
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, corner
+    ).isNone
 
 
   test "hidden item is never picked":
@@ -3801,7 +3812,10 @@ suite "Picking":
     scene.setVisible(0, false)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE).isNone
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ).isNone
 
 
   test "line through target is picked at screen centre":
@@ -3811,7 +3825,10 @@ suite "Picking":
     scene.addItem(axis_z, "axis_z", Ink.Jade)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(0)
 
 
   test "a line's attitude is picked over the line it came from":
@@ -3844,14 +3861,20 @@ suite "Picking":
     #   simply misses the line, proving nothing about which of the two wins.
     var scene_line = initScene()
     scene_line.addItem(line, "L", Ink.Jade)
-    check pickNearest(scene_line, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, at) ==
+    check pickNearest(
+      scene_line, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, at
+    ) ==
       some(0)
 
     # With both in the scene, the star takes it.
     var scene = initScene()
     scene.addItem(line, "L", Ink.Jade)
     scene.addItem(star, "att", Ink.Cobalt)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, at) == some(1)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, at
+    ) == some(1)
 
 
   test "point pick radius tolerates cursor imprecision, not unlimited slack":
@@ -3863,8 +3886,14 @@ suite "Picking":
     #   point is what actually exercises the radius bound.
     let near = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT - 1.0, y: CENTRE.y, depth: 0.0)
     let far = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT + 1.0, y: CENTRE.y, depth: 0.0)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, near) == some(0)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, far).isNone
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, near
+    ) == some(0)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, far
+    ).isNone
 
 
   test "line pick radius tolerates cursor imprecision, not unlimited slack":
@@ -3876,8 +3905,14 @@ suite "Picking":
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     let near = ScreenPosition(x: CENTRE.x + RADIUS_PICK_LINE - 1.0, y: CENTRE.y, depth: 0.0)
     let far = ScreenPosition(x: CENTRE.x + RADIUS_PICK_LINE + 1.0, y: CENTRE.y, depth: 0.0)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, near) == some(0)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, far).isNone
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, near
+    ) == some(0)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, far
+    ).isNone
 
 
   test "point wins a tie over a line through it":
@@ -3888,7 +3923,10 @@ suite "Picking":
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose) # Index 1: point.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(1)
 
 
   test "line wins a tie over a plane behind it":
@@ -3904,7 +3942,10 @@ suite "Picking":
     scene.addItem(axis_z, "axis_z", Ink.Jade) # Index 1: line, passes straight through origin.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(1)
 
 
   test "point wins a tie over a plane behind it":
@@ -3918,7 +3959,10 @@ suite "Picking":
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose) # Index 1: point.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(1)
 
 
   test "plane misses where its sight ray lands outside the drawn rim":
@@ -3936,13 +3980,19 @@ suite "Picking":
     scene.addItem(facing, "facing", Ink.Olive)
     let camera = cameraFacingOrigin(distance = 30.0)
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(0)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(0)
     for (label, cx, cy) in [
       ("top-left corner", 0.0, 0.0),
       ("bottom-right corner", float(WIDTH_PICK), float(HEIGHT_PICK)),
     ]:
       let cursor = ScreenPosition(x: cx, y: cy, depth: 0.0)
-      check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, cursor).isNone
+      check pickNearest(
+        scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+        WIDTH_PICK, HEIGHT_PICK, cursor
+      ).isNone
 
 
   test "a plane is picked from either side of it, whichever way its normal points":
@@ -3971,7 +4021,8 @@ suite "Picking":
       let camera = cameraFacingOrigin()
       let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
       check pickNearest(
-        scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+        scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+        WIDTH_PICK, HEIGHT_PICK, CENTRE,
       ) == some(0)
 
 
@@ -3993,7 +4044,10 @@ suite "Picking":
     scene.addItem(near_plane, "near", Ink.Cobalt) # Index 1.
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    check pickNearest(scene, camera, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE) == some(1)
+    check pickNearest(
+      scene, camera, camera.drawExtentFor(HEIGHT_PICK), view_projection,
+      WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == some(1)
 
 
 
@@ -5051,7 +5105,9 @@ suite "Interaction":
       camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
     let view_projection = camera.initMatrixViewProjection(800.0/600.0)
     proc hovering(interaction: var Interaction): Option[int] =
-      interaction.updateHover(scene, camera, view_projection, 800, 600)
+      interaction.updateHover(
+        scene, camera, camera.drawExtentFor(600), view_projection, 800, 600,
+      )
       interaction.index_hover
     interaction.updateCursor(400.0, 300.0) # Straight at the item.
     check interaction.hovering == some(0)
@@ -5088,7 +5144,10 @@ suite "Interaction":
     discard interaction.applyAction(camera, scene, KeyAction.FocusNext)
     check interaction.index_focus == some(0)
     interaction.updateCursor(799.0, 1.0) # A corner, away from everything.
-    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    interaction.updateHover(
+      scene, camera, camera.drawExtentFor(600),
+      camera.initMatrixViewProjection(800.0/600.0), 800, 600,
+    )
     check interaction.index_hover != interaction.index_focus
     check interaction.index_focus == some(0)
 
@@ -5183,7 +5242,10 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: false)
     let camera = initCamera(target = PLACES[0], distance = 10.0, azimuth = 0.0, elevation = 0.0)
     interaction.updateCursor(400.0, 300.0)
-    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    interaction.updateHover(
+      scene, camera, camera.drawExtentFor(600),
+      camera.initMatrixViewProjection(800.0/600.0), 800, 600,
+    )
     check interaction.index_hover.isNone
 
 
@@ -5194,7 +5256,10 @@ suite "Interaction":
     var interaction = Interaction(is_enabled: true)
     let camera = initCamera(target = target, distance = 10.0, azimuth = 0.0, elevation = 0.0)
     interaction.updateCursor(400.0, 300.0)
-    interaction.updateHover(scene, camera, camera.initMatrixViewProjection(800.0/600.0), 800, 600)
+    interaction.updateHover(
+      scene, camera, camera.drawExtentFor(600),
+      camera.initMatrixViewProjection(800.0/600.0), 800, 600,
+    )
     check interaction.index_hover == some(0)
 
 

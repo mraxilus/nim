@@ -776,14 +776,39 @@ proc nimSetCameraDragging(is_dragging: bool) {.exportc.} =
   g_interaction.is_dragging_camera = is_dragging
 
 
+proc extentViewOverlay(width, height: int): (DrawExtent, Matrix4) =
+  ## Hand back the draw extent and view-projection the overlay calls share, deriving them
+  ## only when the camera or the viewport has changed since the last ask.
+  ##   Every overlay call -- the anchor, each selected object's marker, each pulse, each
+  ## hover ring -- was deriving both for itself, and each derivation runs `camera.frame`'s
+  ## joins twice over. Within one frame they are all the same answer: these are functions
+  ## of the placement and the viewport alone, which is exactly what the key holds, so this
+  ## is the furniture cache's reasoning applied to the overlay's own inputs.
+  let settings: SettingsOverlay = (
+    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
+    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
+    width, height,
+  )
+  if g_settings_overlay.isNone or g_settings_overlay.get != settings:
+    g_settings_overlay = some(settings)
+    g_scale_overlay = g_camera.drawExtentFor(height)
+    g_vp_overlay = g_camera.initMatrixViewProjection(float(width)/float(height))
+  (g_scale_overlay, g_vp_overlay)
+
+
 proc nimUpdateHover(width, height: cint) {.exportc.} =
   ## Forward to `interaction.updateHover`; see its own doc comment.
   # Charged to the record rather than to a phase: this runs from an event handler, so the
   #   frame that reports it is the next one. Accumulated rather than assigned -- a pointer
   #   can move many times between two frames and every one of those picks is real work.
   let ms_entered_hover = nowMilliseconds()
-  let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
-  interaction.updateHover(g_interaction, g_scene, g_camera, vp, int(width), int(height))
+  # Through the overlay cache, not a fresh derivation: a pointer can move many times
+  #   between two frames, and each move was rebuilding the view matrix -- running
+  #   `camera.frame`'s joins -- for a camera that cannot have changed, since hover skips
+  #   while the camera moves. The cache's key is the placement and viewport, exactly the
+  #   inputs a pick depends on.
+  let (scale, vp) = extentViewOverlay(int(width), int(height))
+  interaction.updateHover(g_interaction, g_scene, g_camera, scale, vp, int(width), int(height))
   recordThisFrame().ms_hover_pick += nowMilliseconds() - ms_entered_hover
 
 
@@ -1309,26 +1334,6 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   )
 
 
-proc extentViewOverlay(width, height: int): (DrawExtent, Matrix4) =
-  ## Hand back the draw extent and view-projection the overlay calls share, deriving them
-  ## only when the camera or the viewport has changed since the last ask.
-  ##   Every overlay call -- the anchor, each selected object's marker, each pulse, each
-  ## hover ring -- was deriving both for itself, and each derivation runs `camera.frame`'s
-  ## joins twice over. Within one frame they are all the same answer: these are functions
-  ## of the placement and the viewport alone, which is exactly what the key holds, so this
-  ## is the furniture cache's reasoning applied to the overlay's own inputs.
-  let settings: SettingsOverlay = (
-    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
-    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
-    width, height,
-  )
-  if g_settings_overlay.isNone or g_settings_overlay.get != settings:
-    g_settings_overlay = some(settings)
-    g_scale_overlay = g_camera.drawExtentFor(height)
-    g_vp_overlay = g_camera.initMatrixViewProjection(float(width)/float(height))
-  (g_scale_overlay, g_vp_overlay)
-
-
 proc nimGridMetrics(width, height: cint): seq[float32] {.exportc.} =
   ## Report `[size_cell, world_per_pixel]` for the ground grid as it is drawn right now:
   ## the cell's own size in world units, and how much world one screen pixel spans at the
@@ -1808,8 +1813,9 @@ proc nimBuildFrame(
   let scale = g_camera.drawExtentFor(int(height_pixels))
   # The width the centred box is measured across comes back from the aspect, since this
   #   build is handed that rather than the framebuffer's own two dimensions.
+  let ghost = staged()
   g_tween_camera.offerAim(
-    g_camera, g_scene, g_selection, staged(), int(float(aspect)*float(height_pixels)),
+    g_camera, g_scene, g_selection, ghost, scale, int(float(aspect)*float(height_pixels)),
     int(height_pixels), float(now), ANIMATION_SECONDS,
   )
 
@@ -1895,7 +1901,7 @@ proc nimBuildFrame(
   #   one ghost for both, since they are the same "not committed yet" claim about one
   #   object; `staged` is where that order is decided. Centred on the anchor the commit
   #   will store, so a previewed plane stays where it was ghosted.
-  let ghost = staged()
+  # `ghost` read once in the prologue; nothing since has touched the session.
   if ghost.isSome:
     discard g_meshes.addObject(
       g_scratch, ghost.get.geometry, INK_GHOST.colour.muted(), scale,
@@ -1941,7 +1947,7 @@ proc nimBuildFrame(
   let ms_before_algebra = performanceNow()
   if is_algebra_shown:
     g_meshes.addFrameTrace(
-      g_scratch, g_scene, g_camera, staged(), g_interaction.cursor, scale,
+      g_scratch, g_scene, g_camera, ghost, g_interaction.cursor, scale,
       width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
     )
   let ms_after_algebra = performanceNow()

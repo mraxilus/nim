@@ -328,7 +328,8 @@ proc secondsNow(): float =
 
 
 proc offerCameraAim(
-  panel: var Panel; scene: Scene; camera: Camera; now: float; width, height: int
+  panel: var Panel; scene: Scene; camera: Camera; scale: DrawExtent; now: float;
+  width, height: int
 ) =
   ## Offer the camera whatever is being worked on to frame, from one rule rather than from
   ## each path that could change it.
@@ -340,7 +341,8 @@ proc offerCameraAim(
   ##   an operation, releasing a drag and stepping the storyboard all frame the result
   ##   without knowing anything about the camera.
   panel.tween_camera.offerAim(
-    camera, scene, panel.selection, panel.staged, width, height, now, ANIMATION_SECONDS
+    camera, scene, panel.selection, panel.staged, scale, width, height, now,
+    ANIMATION_SECONDS,
   )
 
 
@@ -778,7 +780,7 @@ proc renderFrame(
   panel.tween_camera.advance(camera, now, easeOutCubic)
 
   let scale = camera.drawExtentFor(int(height))
-  offerCameraAim(panel, scene, camera, now, int(width), int(height))
+  offerCameraAim(panel, scene, camera, scale, now, int(width), int(height))
   # Hover and the drag reading it run *before* meshes are assembled, so the drag's own
   #   preview is this frame's rather than last frame's. Costs nothing to order this way:
   #   the transform they pick against needs only the camera, which has already advanced.
@@ -792,7 +794,7 @@ proc renderFrame(
     anchorOfSelection(panel, scene, view_projection, int(width), int(height), scale),
     now,
   )
-  interaction.updateHover(scene, camera, view_projection, int(width), int(height))
+  interaction.updateHover(scene, camera, scale, view_projection, int(width), int(height))
   interaction.pruneFocus(scene)
   interaction.updateDrag(scene, now)
   assembleMeshes(
@@ -1423,10 +1425,11 @@ func positionOverSky(
   ##   scene and on wherever the camera has been left, and a fixed pixel would quietly
   ##   start testing something else the moment either changed.
   const STEP_SCAN = 40
+  let scale = camera.drawExtentFor(height)
   for y in countup(STEP_SCAN, height - STEP_SCAN, STEP_SCAN):
     for x in countup(STEP_SCAN, width - STEP_SCAN, STEP_SCAN):
       let at = ScreenPosition(x: float(x), y: float(y))
-      let slot = pickNearest(scene, camera, view_projection, width, height, at)
+      let slot = pickNearest(scene, camera, scale, view_projection, width, height, at)
       if slot.isSome and scene.geometryOf(slot.get).isHorizonPlane: return some(at)
 
 

@@ -754,8 +754,8 @@ func isMovingCamera*(interaction: Interaction): bool =
 
 
 proc updateHover*(
-  interaction: var Interaction; scene: Scene;
-  camera: Camera; view_projection: Matrix4; width, height: int
+  interaction: var Interaction; scene: Scene; camera: Camera; scale: DrawExtent;
+  view_projection: Matrix4; width, height: int
 ) =
   ## Recompute item nearest cursor, so overlay and drag-start agree on what stands under it.
   ##   **Nothing is hovered while the camera is moving.** Hover is recomputed from the cursor
@@ -765,7 +765,7 @@ proc updateHover*(
   ##   comes back the frame it ends.
   interaction.index_hover =
     if interaction.is_enabled and not interaction.isMovingCamera:
-      pickNearest(scene, camera, view_projection, width, height, interaction.cursor)
+      pickNearest(scene, camera, scale, view_projection, width, height, interaction.cursor)
     else:
       none(int)
   # Noted here because this is where the scene is in hand; see `is_hover_backdrop`.

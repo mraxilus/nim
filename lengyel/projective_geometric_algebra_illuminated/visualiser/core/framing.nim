@@ -237,7 +237,7 @@ func placementFor*(
 
 proc offerAim*(
   tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
-  staged: Option[Preview]; width, height: int; now, duration: float
+  staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float
 ) =
   ## Offer the camera whatever is being worked on to look at -- the one call both front-ends
   ## and the storyboard make, once a frame.
@@ -249,7 +249,10 @@ proc offerAim*(
   ##   The `isGoalHeld` guard is not an optimisation to taste: it is what keeps
   ##   `placementFor`'s search off the hot path, since the offer below is re-made on every
   ##   frame a selection stands and the answer would be discarded on all but the first.
-  let aim = aimFor(scene, picked, staged, camera.drawExtentFor(height))
+  # The caller's own extent, not a second derivation: every front-end has already built
+  #   this frame's `DrawExtent` by the time it offers the aim, and building another here
+  #   ran `algebraFilled` and `camera.frame`'s joins twice a frame for the same answer.
+  let aim = aimFor(scene, picked, staged, scale)
   if aim.isNone:
     tween.release()
     return
@@ -276,5 +279,5 @@ proc offerAimAt*(
   var alone: Scene
   offerAim(
     tween, camera, alone, Selection(), some(previewStaging(m)),
-    width, height, now, duration,
+    camera.drawExtentFor(height), width, height, now, duration,
   )
