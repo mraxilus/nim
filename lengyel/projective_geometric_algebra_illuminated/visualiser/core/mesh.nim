@@ -968,20 +968,13 @@ proc addSegment*(
   meshes.addRibbon(tail, head, tint, tint, width)
 
 
-let UNIT_CIRCLE_RIM*: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]] =
-  block:
-    # One boundary past the wrap rather than a reuse of the first entry, so the closing
-    #   segment ends on the value `cos(2*PI)` actually takes, a hair off `cos(0)`'s --
-    #   exactly the rule `tessellate.addGreatCircle` states for its own ring.
-    var table: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]]
-    for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
-      let angle = (2.0*PI * float(i)) / float(SEGMENTS_CIRCLE_HORIZON)
-      table[i] = (cos_angle: cos(angle), sin_angle: sin(angle))
-    table
-  ## The rim's fixed ring of angles, resolved once at start-up with the same library
-  ## trigonometry `euclid.onCircle` uses -- at run time rather than compile time, since
-  ## the compile-time evaluator's `cos` need not agree with each backend's own in the
-  ## last bit, and the suite holds these points equal to the sums they replaced.
+let UNIT_CIRCLE_RIM* = unitRing[SEGMENTS_CIRCLE_HORIZON + 1](SEGMENTS_CIRCLE_HORIZON)
+  ## The rim's fixed ring of angles, resolved once at start-up by `euclid.unitRing` --
+  ## the one generator every fixed ring in this project walks; see it for why the table
+  ## is built at run time and what the suites hold it to.
+  ##   One boundary past the wrap rather than a reuse of the first entry, so the closing
+  ## segment ends on the value `cos(2*PI)` actually takes, a hair off `cos(0)`'s --
+  ## exactly the rule `tessellate.addGreatCircle` states for its own ring.
   ##   Exported for the other walkers of the same ring: a horizon line's great circle
   ## (through `addPlaneRing` itself) and `picking`'s sampling of that circle, which must
   ## step the very angles the drawn one does for a hit to agree with what is drawn.

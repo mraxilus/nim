@@ -1030,7 +1030,18 @@ func radiusMarkerLoop*(
   EXTENT_PLANE_F + (GAP_MARKER + clearance)*worldPerPixelAt(centre, scale)
 
 
-func positionsMarkerLoop*(
+let
+  UNIT_RING_LOOP* = unitRing[SEGMENTS_MARKER_LOOP](SEGMENTS_MARKER_LOOP)
+    ## A plane's marker circle's fixed ring of angles, from `euclid.unitRing` -- the one
+    ## generator every fixed ring in this project walks; see it for why the table is
+    ## built at run time and what the suites hold it to. No entry past the wrap: a
+    ## marker's outline closes on its own first point rather than emitting a last
+    ## segment, unlike the drawn rim's.
+  UNIT_RING_BANDS* = unitRing[SEGMENTS_MARKER_BANDS](SEGMENTS_MARKER_BANDS)
+    ## A horizon line's marker bands' own ring, by the same rule.
+
+
+proc positionsMarkerLoop*(
   centre: Position; axes: FramePlane; radius: float
 ): array[SEGMENTS_MARKER_LOOP, Position] =
   ## Trace a plane's own marker circle in world space, in order around it.
@@ -1038,19 +1049,24 @@ func positionsMarkerLoop*(
   ##   the whole circle lies *on* the plane by construction rather than by adjustment --
   ##   which is what makes the marker read as painted onto the surface rather than as a
   ##   hoop floating near it. Asserted directly in the suite, point by point.
-  # The circle's frame hoisted once -- centre and two radius-long arms as multivectors --
-  #   each point two scaled arms on the centre, read out at the boundary.
+  # The circle's frame hoisted once -- centre and two radius-long arms -- then stepped
+  #   off the fixed table, which is arithmetic: a marker circle is a stand-in drawn for
+  #   the eye, exactly as the disc rim it is concentric with, and which plane the two
+  #   arms span is still the algebra's answer (`boundary.frame`, at the caller). It was
+  #   sixty-four multivector sums per marker per frame, which is most of what a selected
+  #   plane cost the overlay; the suite holds this arithmetic equal to those sums, point
+  #   for point, as it does for the rim.
   let
-    centre_point = toMultivector(centre)
-    arm_first = wedge(radius, toMultivector(axes.axis_first))
-    arm_second = wedge(radius, toMultivector(axes.axis_second))
+    arm_first = radius*axes.axis_first
+    arm_second = radius*axes.axis_second
   for i in 0 ..< SEGMENTS_MARKER_LOOP:
-    let angle = (2.0*PI*float(i))/float(SEGMENTS_MARKER_LOOP)
-    result[i] = pointFrom(add(centre_point,
-      add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
+    result[i] = onCircleAt(
+      centre, arm_first, arm_second,
+      UNIT_RING_LOOP[i].cos_angle, UNIT_RING_LOOP[i].sin_angle,
+    )
 
 
-func markerLoop(
+proc markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
   progress, clearance: float; travel: Option[float]; marker: var Marker
@@ -1188,7 +1204,7 @@ func runShownLongest*(
       result = (start, taken)
 
 
-func markerBands(
+proc markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
   progress, clearance: float; travel: Option[float]; marker: var Marker
 ): bool =
@@ -1227,23 +1243,28 @@ func markerBands(
     offset = scale.radius_horizon*sin(angle)
 
   marker = Marker(kind: MarkerKind.Bands)
+  # Where each band's centre stands is the algebra's -- the eye stepped along the great
+  #   circle's own normal -- and the ring around that centre is arithmetic off the fixed
+  #   table, for the reason `positionsMarkerLoop` gives. Two rings of forty-eight sums
+  #   apiece per frame is what a selected horizon line used to cost.
   let
     normal_point = toMultivector(normal.get)
-    arm_first = wedge(radius, toMultivector(axis_first))
-    arm_second = wedge(radius, toMultivector(axis_second))
+    arm_first = radius*axis_first
+    arm_second = radius*axis_second
   for side in 0 .. 1:
-    let centre_point = add(
+    let centre = pointFrom(add(
       scale.eye_point, wedge((if side == 0: offset else: -offset), normal_point)
-    )
+    ))
     var
       ring: array[SEGMENTS_MARKER_BANDS, ScreenPosition]
       are_shown: array[SEGMENTS_MARKER_BANDS, bool]
     for i in 0 ..< SEGMENTS_MARKER_BANDS:
-      let turn = (2.0*PI*float(i))/float(SEGMENTS_MARKER_BANDS)
       ring[i] = projectToScreen(
         view_projection, width, height,
-        pointFrom(add(centre_point,
-          add(wedge(cos(turn), arm_first), wedge(sin(turn), arm_second)))),
+        onCircleAt(
+          centre, arm_first, arm_second,
+          UNIT_RING_BANDS[i].cos_angle, UNIT_RING_BANDS[i].sin_angle,
+        ),
       )
       are_shown[i] = ring[i].isWithinView(width, height)
     # One unbroken stretch, so an arc is emitted whole rather than wrapping a cut and
@@ -1370,7 +1391,7 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
 
 #[ Marker Dispatch ]#
 
-func markerFor*(
+proc markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int; marker: var Marker;
   progress: float = 1.0;

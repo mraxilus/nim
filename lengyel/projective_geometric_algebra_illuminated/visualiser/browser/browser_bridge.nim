@@ -127,6 +127,12 @@ var
   g_scale_overlay: DrawExtent ## The draw extent the overlay calls share; see
     ## `ensureViewOverlay`.
   g_vp_overlay: Matrix4 ## The view-projection those same calls share.
+  g_box_marker: ref Marker = new(Marker) ## The one box every shaping fills.
+    ## Allocated once, not per call: a `Marker` reserves every marker kind's own fixed
+    ## arrays, so `new` per shaping was kilobytes allocated and zeroed per selected
+    ## object per frame -- most of what a *point*'s marker cost, whose whole answer is
+    ## four floats. `markerFor` fills caller storage, so one box serves every call and
+    ## `nimSelectionPulse` reads back the very object `nimSelectionMarker` filled.
   g_shaped_marker = none(ShapedMarker) ## The marker `nimSelectionMarker` last shaped,
     ## with everything it was shaped from, so `nimSelectionPulse` asked the very same
     ## question in the very same frame reads the answer instead of shaping it again.
@@ -1538,22 +1544,20 @@ proc nimSelectionMarker(
   #   shaping the same thing again a call later. The clock is not advanced here; that
   #   stays the pulse call's own job, whether or not it finds this entry.
   let travel = g_clock_pulse.travelAt(int(slot))
-  # Shaped straight into the box the pulse call will reuse: `markerFor` fills caller
-  #   storage now, so nothing here copies a `Marker` at all.
-  var boxed: ref Marker
-  new(boxed)
+  # Shaped straight into the shared box the pulse call reads back: `markerFor` fills
+  #   caller storage, so nothing here allocates or copies a `Marker` at all.
   if not markerFor(
     g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
-    g_camera, g_vp_overlay, int(width), int(height), boxed[], float(progress), is_touch,
-    travel = some(travel), swell = float(swell),
+    g_camera, g_vp_overlay, int(width), int(height), g_box_marker[], float(progress),
+    is_touch, travel = some(travel), swell = float(swell),
   ):
     g_shaped_marker = none(ShapedMarker)
     return
 
-  template marker: Marker = boxed[]
+  template marker: Marker = g_box_marker[]
   g_shaped_marker = some((
     int(slot), int(width), int(height), float(progress), is_touch, float(swell),
-    travel, g_settings_overlay.get, boxed,
+    travel, g_settings_overlay.get, g_box_marker,
   ))
   result = @[cfloat(ord(marker.kind)), 0.0'f32, 0.0'f32, 0.0'f32]
   case marker.kind
@@ -1632,7 +1636,10 @@ proc nimSelectionPulse(
         stored.travel == travel and stored.settings == g_settings_overlay.get:
       held = stored.marker
   if held == nil:
-    new(held)
+    # The shared box again, and the entry it belongs to is dropped: whatever the marker
+    #   call left there is about to be overwritten, so a stale key must not outlive it.
+    g_shaped_marker = none(ShapedMarker)
+    held = g_box_marker
     if not markerFor(
       g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
       g_camera, g_vp_overlay, int(width), int(height), held[], float(progress), is_touch,

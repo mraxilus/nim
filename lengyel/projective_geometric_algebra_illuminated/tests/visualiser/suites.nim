@@ -5701,6 +5701,46 @@ suite "Marker":
       check abs((unitize(toMultivector(point)) ∧ unitize(PLANE))[Basis.scalarAnti]) =~ 0.0
 
 
+  test "a marker's ring is stepped in arithmetic, and lands where the algebra says":
+    # **The algebra is the reference, not the implementation** -- the rule the disc rim
+    #   and the great circle already follow, applied to the marker rings that were the
+    #   overlay's last multivector cost. Held over real plane frames rather than one
+    #   contrived pair, since the arms come from `boundary.frame` and the claim should
+    #   hold wherever it puts them.
+    let (_, _, scale_ring) = setUp()
+    for plane in PLANES:
+      let axes = frame(plane)
+      let anchor = positionAnchor(plane)
+      check axes.isSome and anchor.isSome
+      let
+        centre = anchor.get
+        radius = radiusMarkerLoop(centre, scale_ring, setUp()[0], HEIGHT_MARK)
+        ring = positionsMarkerLoop(centre, axes.get, radius)
+        centre_point = toMultivector(centre)
+        arm_first_point = wedge(radius, toMultivector(axes.get.axis_first))
+        arm_second_point = wedge(radius, toMultivector(axes.get.axis_second))
+      check len(ring) == SEGMENTS_MARKER_LOOP
+      for i in 0 ..< SEGMENTS_MARKER_LOOP:
+        let
+          angle = (2.0*PI*float(i))/float(SEGMENTS_MARKER_LOOP)
+          assembled = pointFrom(add(centre_point, add(
+            wedge(cos(angle), arm_first_point), wedge(sin(angle), arm_second_point),
+          )))
+        check ring[i] =~ assembled
+
+    # And the ring the bands are stepped from is the same table's, at their own count:
+    #   both rings are `euclid.unitRing`'s, so neither can drift from the angles the
+    #   sums above take.
+    for i in 0 ..< SEGMENTS_MARKER_LOOP:
+      let angle = (2.0*PI*float(i))/float(SEGMENTS_MARKER_LOOP)
+      check UNIT_RING_LOOP[i].cos_angle =~ cos(angle)
+      check UNIT_RING_LOOP[i].sin_angle =~ sin(angle)
+    for i in 0 ..< SEGMENTS_MARKER_BANDS:
+      let angle = (2.0*PI*float(i))/float(SEGMENTS_MARKER_BANDS)
+      check UNIT_RING_BANDS[i].cos_angle =~ cos(angle)
+      check UNIT_RING_BANDS[i].sin_angle =~ sin(angle)
+
+
   test "a plane's marker circle clears the drawn rim by the shared gap":
     let (placement, _, scale) = setUp()
     let

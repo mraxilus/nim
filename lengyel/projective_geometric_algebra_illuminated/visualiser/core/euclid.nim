@@ -121,6 +121,29 @@ func normalize*(d: Direction): Option[Direction] =
   some(Direction(x: d.x/magnitude, y: d.y/magnitude, z: d.z/magnitude))
 
 
+type RingAngle* = tuple[cos_angle, sin_angle: float]
+  ## One entry of a fixed ring of angles: the cosine and sine a caller weights its two
+  ## arms by, for `onCircleAt` below.
+
+
+proc unitRing*[N: static int](segments: int): array[N, RingAngle] =
+  ## Resolve `N` entries of the ring stepped `segments` ways round a circle, entry `i` at
+  ## angle `2*PI*i/segments`.
+  ##   **One generator for every fixed ring this project walks**: the plane rim and a
+  ## horizon line's great circle (`mesh.UNIT_CIRCLE_RIM`, which takes one entry past the
+  ## wrap so its closing segment lands on the value `cos(2*PI)` actually takes), a
+  ## plane's marker loop, and a horizon line's marker bands. Each of those assembled its
+  ## own angles as multivector sums per sample per frame until it was measured; a third
+  ## hand-rolled table would have been a third chance to disagree about what "the ring"
+  ## means.
+  ##   Called at start-up rather than evaluated at compile time: the compile-time `cos`
+  ## need not agree with each backend's own in the last bit, and the suites hold these
+  ## points equal to the multivector sums they replaced.
+  for i in 0 ..< N:
+    let angle = (2.0*PI*float(i))/float(segments)
+    result[i] = (cos_angle: cos(angle), sin_angle: sin(angle))
+
+
 func onCircleAt*(
   centre: Position; arm_first, arm_second: Direction; cos_angle, sin_angle: float
 ): Position =

@@ -2023,7 +2023,7 @@ report(
 const BANDS_PERF = {
   hover_pick_ms: 5, // Repaired 1.5 ms; the scene-copy-per-slot fault measured 7.1.
   anchor_us: 100, // Repaired 8 us; the extent-tuple + Item-copy fault measured 280.
-  marker_pair_ms: 1.5, // Repaired ~0.5 ms; the Option[Marker] copy chain measured ~1.9.
+  marker_pair_ms: 4, // Worst live shape; repaired ~1.2 ms, the per-sample sums ~3.2.
   grid_moving_ms: 20, // Repaired 8.7 ms; per-boundary fade sampling measured 26.1.
   emitting_moving_ms: 4.5, // Repaired ~1.2 ms; CPU ribbon/fan expansion measured 6.3.
   debug_layer_ms: 12, // Repaired 4.7 ms; per-piece lattice fades measured 18.5.
@@ -2066,22 +2066,30 @@ reportWithin(
   'us mean',
 );
 
-// A marker and its pulse must shape into caller storage: `markerFor` fills a
-// `var Marker`, and nothing walks the marker's fixed arrays through nimCopy on the way
-// out. Measured as the pair the overlay actually draws per selected object per frame.
+// A marker and its pulse must shape into caller storage and off the fixed angle table:
+// `markerFor` fills a shared `var Marker`, nothing walks its fixed arrays through
+// nimCopy, and the loop and band rings are stepped rather than assembled.
+//   **The worst live shape, never slot zero.** A point's marker is a ring of four
+// floats and a line's or plane's is a sampled outline an order of magnitude dearer, so
+// a pin that happened to time a point would pass while a selected plane cost multiples
+// of it -- which is exactly how this cost stayed hidden until it was decomposed.
 const pin_marker = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
-  const slot = nimSceneSlots()[0];
-  const start = performance.now();
-  for (let i = 0; i < 100; i += 1) {
-    nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, 1, false, 0);
-    nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, 1, false);
+  let worst = { ms: 0, word: 'none' };
+  for (const slot of nimSceneSlots()) {
+    const start = performance.now();
+    for (let i = 0; i < 30; i += 1) {
+      nimSelectionMarker(slot, canvas.clientWidth, canvas.clientHeight, 1, false, 0);
+      nimSelectionPulse(slot, canvas.clientWidth, canvas.clientHeight, 1, false);
+    }
+    const ms = (performance.now() - start) / 30;
+    if (ms > worst.ms) worst = { ms, word: nimItemShapeWord(slot) };
   }
-  return (performance.now() - start) / 100;
+  return worst;
 });
 reportWithin(
-  'a marker and its pulse shape without copying', pin_marker, 0, BANDS_PERF.marker_pair_ms,
-  'ms mean',
+  `a marker and its pulse shape without copying (worst: ${pin_marker.word})`,
+  pin_marker.ms, 0, BANDS_PERF.marker_pair_ms, 'ms mean',
 );
 
 // The grid and the CPU emit must stay at one record per line with the fog fade in the
