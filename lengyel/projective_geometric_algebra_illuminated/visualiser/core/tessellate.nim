@@ -160,9 +160,13 @@ proc addGreatCircle(
       scratch.places[i] = pointFrom(add(centre_point,
         add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
   timed(Side.Emitting):
+    # Converted once for the ring, not per segment: the implicit `toScale` builds and
+    #   copies a fresh `DrawScale` at every call site it fires from, which inside this
+    #   loop was an allocation per segment on the JS backend.
+    let plain = toScale(scale)
     for i in 0 ..< count_places - 1:
       meshes.addSegment(
-        scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, scale,
+        scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, plain,
       )
 
 
@@ -599,8 +603,10 @@ proc addLine(
   if anchor.isSome and axis.isSome:
     let tint_progress = tint.fade(tint.alpha*progress)
     timed(Side.Emitting):
-      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, scale)
-      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, scale)
+      # One conversion for the pair; see `addGreatCircle`'s note on what each costs.
+      let plain = toScale(scale)
+      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, plain)
+      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, plain)
     return Placement.Finite
 
   var axes = none(tuple[first, second: Direction])
