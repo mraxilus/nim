@@ -5502,12 +5502,27 @@ suite "Marker":
     ## against.
     setUpAt(azimuth = 0.9, elevation = 0.4, distance = distance)
 
+  proc shapedMarkerFor(
+    geometry: Multivector; anchor: Option[Position]; scale: DrawExtent;
+    placement: Camera; view_projection: Matrix4; width, height: int;
+    progress: float = 1.0; is_touch: bool = false; travel: Option[float] = none(float)
+  ): Option[Marker] =
+    ## The suite's own option wrapper over `markerFor`'s fill-in-place shape: cases here
+    ## read one answer many times over, and clarity outranks the copy the option costs
+    ## in a test.
+    var marker: Marker
+    if markerFor(
+      geometry, anchor, scale, placement, view_projection, width, height, marker,
+      progress, is_touch, travel,
+    ): some(marker)
+    else: none(Marker)
+
   proc markerOf(
     geometry: Multivector; anchor = none(Position); progress = 1.0;
     travel = none(float); distance = 19.0
   ): Option[Marker] =
     let (placement, view_projection, scale) = setUp(distance)
-    markerFor(
+    shapedMarkerFor(
       geometry, anchor, scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
       progress, is_touch = false, travel = travel,
     )
@@ -5590,7 +5605,7 @@ suite "Marker":
       for elevation in [0.05, 0.4, 0.9]:
         for distance in [8.0, 19.0, 30.0]:
           let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
-          let marker = markerFor(
+          let marker = shapedMarkerFor(
             LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
             HEIGHT_MARK, progress = 1.0, is_touch = false, travel = none(float),
           )
@@ -5619,7 +5634,7 @@ suite "Marker":
     for azimuth in [0.2, 0.6, 1.6, 2.4, 4.0]:
       for elevation in [0.05, 0.4, 0.9]:
         let (placement, view_projection, scale) = setUpAt(azimuth, elevation, 19.0)
-        let marker = markerFor(
+        let marker = shapedMarkerFor(
           LINE, none(Position), scale, placement, view_projection, WIDTH_MARK,
           HEIGHT_MARK, progress = 1.0, is_touch = false, travel = none(float),
         )
@@ -5639,7 +5654,7 @@ suite "Marker":
     #   never the marker itself.
     proc apartAtSupport(azimuth, elevation, distance: float): float =
       let (placement, view_projection, scale) = setUpAt(azimuth, elevation, distance)
-      let marker = markerFor(
+      let marker = shapedMarkerFor(
         LINE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK,
         progress = 1.0, is_touch = false, travel = none(float),
       )
@@ -5922,7 +5937,7 @@ suite "Marker":
         elevation = 0.4,
       )
       let scale = placement.drawExtentFor(HEIGHT_MARK)
-      markerFor(
+      shapedMarkerFor(
         attitude(LINE), none(Position), scale, placement,
         placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), WIDTH_MARK, HEIGHT_MARK,
       )
@@ -6157,7 +6172,7 @@ suite "Marker":
         for distance in [9.0, 19.0, 34.0]:
           let (placement, view_projection, scale) =
             setUpAt(azimuth = azimuth, elevation = elevation, distance = distance)
-          let shaped = markerFor(
+          let shaped = shapedMarkerFor(
             LINE, none(Position), scale, placement, view_projection,
             WIDTH_MARK, HEIGHT_MARK, 1.0, is_touch = false, travel = some(TRAVEL_CASE),
           )

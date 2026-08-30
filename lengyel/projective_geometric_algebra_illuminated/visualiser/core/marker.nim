@@ -679,9 +679,11 @@ func clearanceTouch*(swell: float; is_touch: bool): float =
 
 func markerRing(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float
-): Option[Marker] =
+  progress, clearance: float; marker: var Marker
+): bool =
   ## Build a point's own ring, about wherever that point is drawn.
+  ##   Fills the caller's `marker` and reports whether one was shaped -- the shape the
+  ##   whole family takes; see `markerFor` for why it is not a returned `Option[Marker]`.
   ##   Screen-space rather than a world-space circle facing the camera, because a point
   ##   has no orientation to echo: any world circle would have to pick a facing, and
   ##   every choice looks the same from the one angle it is seen from anyway.
@@ -693,10 +695,11 @@ func markerRing(
   if anchor.isNone: return
   let centre = projectToScreen(view_projection, width, height, anchor.get)
   if not centre.isInFront: return
-  some(Marker(
+  marker = Marker(
     kind: MarkerKind.Ring, centre: centre, radius: RADIUS_MARKER_POINT + clearance,
     fraction: progress,
-  ))
+  )
+  true
 
 
 func offsetMarkerRail(anchor: Position; scale: DrawExtent; clearance: float = 0.0): float =
@@ -854,8 +857,8 @@ func apartWidest(walks: array[2, array[3, Option[ScreenPosition]]]): float =
 func markerRails(
   geometry: Multivector; scale: DrawExtent;
   view_projection: Matrix4; width, height: int; progress, clearance: float;
-  travel: Option[float]
-): Option[Marker] =
+  travel: Option[float]; marker: var Marker
+): bool =
   ## Build a line's own pair of rails: two straight screen lines flanking it, one to each
   ## side, holding `OFFSET_MARKER_RAIL` pixels of clear space and closing only on a
   ## vanishing point a reader can actually see.
@@ -905,8 +908,8 @@ func markerRails(
     across = directionAcross(geometry, scale.eye)
   if anchor.isNone or axis.isNone or across.isNone: return
 
+  marker = Marker(kind: MarkerKind.Rails)
   var
-    marker = Marker(kind: MarkerKind.Rails)
     walks: array[2, array[3, Option[ScreenPosition]]]
     rails: array[2, array[3, ScreenPosition]] ## Each side compacted to what survived.
     counts: array[2, int] ## How many of each side's three points that was.
@@ -1005,7 +1008,7 @@ func markerRails(
           rails[index_side], counts[index_side], is_closed = false,
           tracks[index_side].shared(behind, ahead), travel.get,
         )
-  some(marker)
+  true
 
 
 
@@ -1050,8 +1053,8 @@ func positionsMarkerLoop*(
 func markerLoop(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
   placement: Camera; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; travel: Option[float]
-): Option[Marker] =
+  progress, clearance: float; travel: Option[float]; marker: var Marker
+): bool =
   ## Build a plane's own marker circle, concentric with the disc actually drawn.
   ##   Reads `anchor_override` exactly as `tessellate.addPlane` does, so the marker is
   ##   concentric with the drawn disc rather than with the plane's own support -- for a
@@ -1093,7 +1096,7 @@ func markerLoop(
     if are_in_front[i]: inc count_in_front
   if count_in_front == 0: return
 
-  var marker = Marker(
+  marker = Marker(
     kind: MarkerKind.Loop, is_closed: count_in_front == SEGMENTS_MARKER_LOOP
   )
   # Start the arc at the first point whose predecessor was cut, so the surviving run is
@@ -1121,7 +1124,7 @@ func markerLoop(
     marker.addPulse(
       marker.points, marker.count_point, marker.is_closed, track, travel.get
     )
-  some(marker)
+  true
 
 
 
@@ -1187,8 +1190,8 @@ func runShownLongest*(
 
 func markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; travel: Option[float]
-): Option[Marker] =
+  progress, clearance: float; travel: Option[float]; marker: var Marker
+): bool =
   ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
   ## the great circle the line itself is drawn as.
   ##   Each band is a *small* circle of the same sphere -- centre stepped along the great
@@ -1223,7 +1226,7 @@ func markerBands(
     radius = scale.radius_horizon*cos(angle)
     offset = scale.radius_horizon*sin(angle)
 
-  var marker = Marker(kind: MarkerKind.Bands)
+  marker = Marker(kind: MarkerKind.Bands)
   let
     normal_point = toMultivector(normal.get)
     arm_first = wedge(radius, toMultivector(axis_first))
@@ -1285,7 +1288,7 @@ func markerBands(
         marker.are_closed_band[side], track, travel.get,
       )
   if marker.counts_band[0] == 0 and marker.counts_band[1] == 0: return
-  some(marker)
+  true
 
 
 func radiusToEdge(half_width, half_height, angle: float): float =
@@ -1300,7 +1303,7 @@ func radiusToEdge(half_width, half_height, angle: float): float =
   min(half_width/across, half_height/down)
 
 
-func markerFrame(width, height: int; progress, clearance: float): Option[Marker] =
+func markerFrame(width, height: int; progress, clearance: float; marker: var Marker): bool =
   ## Build a horizon plane's own frame: a boundary around the viewport itself, expanding
   ## from the centre of the view as a circle and settling as the viewport's own rectangle.
   ##   A plane at horizon is the whole sky, the same universal object however it was
@@ -1340,7 +1343,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
     turns_corner = [
       turn_corner, PI - turn_corner, PI + turn_corner, 2.0*PI - turn_corner
     ]
-  var marker = Marker(kind: MarkerKind.Frame)
+  marker = Marker(kind: MarkerKind.Frame)
   template emit(angle: float) =
     let radius = min(reach, radiusToEdge(half_width, half_height, angle))
     marker.points_frame[marker.count_frame] = ScreenPosition(
@@ -1361,7 +1364,7 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
   while next_corner < CORNERS_MARKER_FRAME:
     emit(turns_corner[next_corner])
     inc next_corner
-  some(marker)
+  true
 
 
 
@@ -1369,11 +1372,18 @@ func markerFrame(width, height: int; progress, clearance: float): Option[Marker]
 
 func markerFor*(
   geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
-  placement: Camera; view_projection: Matrix4; width, height: int; progress: float = 1.0;
+  placement: Camera; view_projection: Matrix4; width, height: int; marker: var Marker;
+  progress: float = 1.0;
   is_touch: bool = false; travel: Option[float] = none(float); swell: float = 0.0
-): Option[Marker] =
+): bool =
   ## Shape the marker for one object, dispatching on the geometry its grade stands for
   ## and on whether that geometry stands at horizon.
+  ##   **Fills the caller's `marker` and reports whether one was shaped**, rather than
+  ##   returning an `Option[Marker]`: a `Marker` reserves every kind's fixed arrays, and
+  ##   on the JS backend each return, `get` and assignment of one walked all of it
+  ##   through `nimCopy` -- measured at most of a millisecond per shaped marker, for six
+  ##   floats of ring. The caller's storage is written once instead; on `false` it holds
+  ##   nothing readable.
   ##   `anchor_override` is the item's own stored creation anchor, used for a plane and
   ##   ignored for a point or line, matching `tessellate.addObject`'s own treatment of it.
   ##   `progress` draws the marker part-built, for a press maturing into a selection: 1
@@ -1410,20 +1420,22 @@ func markerFor*(
   #   ring needs no horizon branch of its own -- unlike the two below, which are drawn as
   #   a great circle and a whole sky and have no anchor at all.
   of Shape.Point:
-    markerRing(geometry, scale, view_projection, width, height, progress, clearance)
+    markerRing(geometry, scale, view_projection, width, height, progress, clearance, marker)
   of Shape.Line:
     if is_horizon:
       markerBands(
-        geometry, scale, view_projection, width, height, progress, clearance, travel
+        geometry, scale, view_projection, width, height, progress, clearance, travel,
+        marker,
       )
     else:
       markerRails(
-        geometry, scale, view_projection, width, height, progress, clearance, travel
+        geometry, scale, view_projection, width, height, progress, clearance, travel,
+        marker,
       )
   of Shape.Plane:
-    if is_horizon: markerFrame(width, height, progress, clearance)
+    if is_horizon: markerFrame(width, height, progress, clearance, marker)
     else:
       markerLoop(
         geometry, anchor_override, scale, placement, view_projection, width, height,
-        progress, clearance, travel,
+        progress, clearance, travel, marker,
       )

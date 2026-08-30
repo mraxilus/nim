@@ -2552,10 +2552,36 @@ const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE,
 // `.menu-wedge`, which is `.selection-menu button` -- see shell.html.
 const FLOATS_MENU_WEDGE = 3;
 
-function svgEl(tag, attrs) {
-  const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+// **The overlay reuses its own elements rather than rebuilding the DOM each frame.**
+// `refreshOverlay` used to clear the layer with innerHTML and create every marker,
+// pulse and wedge afresh -- element construction plus garbage per frame, roughly half
+// the overlay row's cost while anything was selected. Now each frame *stages* what it
+// wants drawn: `stageEl` takes a recycled element of the right tag (stripping whatever
+// attributes the last use left on it), and one `replaceChildren` at the end swaps the
+// layer's children in staged order -- so z-order still reads straight down the staging
+// calls, and an element unused this frame simply comes off the DOM into the pool.
+const pool_overlay = new Map();
+let staged_overlay = [];
+function stageEl(tag, attrs) {
+  const bin = pool_overlay.get(tag);
+  const element = bin !== undefined && bin.length > 0
+    ? bin.pop()
+    : document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (let i = element.attributes.length - 1; i >= 0; i -= 1) {
+    const name = element.attributes[i].name;
+    if (!(name in attrs)) element.removeAttribute(name);
+  }
   for (const k in attrs) element.setAttribute(k, attrs[k]);
+  staged_overlay.push(element);
   return element;
+}
+function recycleOverlay() {
+  for (const element of svg_overlay.children) {
+    let bin = pool_overlay.get(element.tagName);
+    if (bin === undefined) { bin = []; pool_overlay.set(element.tagName, bin); }
+    bin.push(element);
+  }
+  staged_overlay = [];
 }
 
 // Stroke one object's marker into the overlay. Every geometric decision -- which outline,
@@ -2589,9 +2615,9 @@ function appendMarkerPulse(slot, alpha, progress, is_touch) {
     const points = [];
     for (let i = 0; i < count; i++) points.push(flat[at + 2 * i] + ',' + flat[at + 2 * i + 1]);
     at += 2 * count;
-    svg_overlay.appendChild(svgEl('polygon', {
+    stageEl('polygon', {
       points: points.join(' '), fill: fill, stroke: 'none',
-    }));
+    });
   }
 }
 
@@ -2613,10 +2639,10 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
     // not filling draws exactly as it did before holds were animated. Only a partial one
     // becomes an arc path.
     if (fraction >= 1) {
-      svg_overlay.appendChild(svgEl('circle', {
+      stageEl('circle', {
         cx: points[0][0], cy: points[0][1], r: radius,
         fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
+      });
     } else if (fraction > 0) {
       // Clockwise from twelve o'clock, measuring the angle from the top so the sweep
       // reads the way every other progress dial does. With y downward, SVG's positive
@@ -2624,29 +2650,29 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
       const [cx, cy] = points[0];
       const turn = fraction * 2 * Math.PI;
       const ex = cx + radius * Math.sin(turn), ey = cy - radius * Math.cos(turn);
-      svg_overlay.appendChild(svgEl('path', {
+      stageEl('path', {
         d: 'M ' + cx + ',' + (cy - radius) +
            ' A ' + radius + ',' + radius + ' 0 ' + (fraction > 0.5 ? 1 : 0) + ',1 ' +
            ex + ',' + ey,
         fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
+      });
     }
   } else if (kind === MARKER_RAILS) {
     for (let i = 0; i < points.length; i += 2) {
-      svg_overlay.appendChild(svgEl('line', {
+      stageEl('line', {
         x1: points[i][0], y1: points[i][1], x2: points[i + 1][0], y2: points[i + 1][1],
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
+      });
     }
   } else if (kind === MARKER_LOOP || kind === MARKER_FRAME) {
     // A frame is a closed polyline too -- a circle while it expands, the screen's own
     // rectangle once it arrives -- so it strokes through the very same element a plane's
     // loop does rather than through a <rect> of its own: one path for every closed
     // outline, and nothing to keep in step when one of them changes.
-    svg_overlay.appendChild(svgEl(is_closed ? 'polygon' : 'polyline', {
+    stageEl(is_closed ? 'polygon' : 'polyline', {
       points: points.map((p) => p[0] + ',' + p[1]).join(' '),
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-    }));
+    });
   } else if (kind === MARKER_BANDS) {
     // Two runs in one array: the header says how many points the first band holds and
     // whether each band closed, since either can be cut into an arc by the eye on its own.
@@ -2657,16 +2683,16 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
     ];
     for (const band of bands) {
       if (band.run.length === 0) continue;
-      svg_overlay.appendChild(svgEl(band.closed ? 'polygon' : 'polyline', {
+      stageEl(band.closed ? 'polygon' : 'polyline', {
         points: band.run.map((p) => p[0] + ',' + p[1]).join(' '),
         fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
+      });
     }
   }
 }
 
 function refreshOverlay(cursor) {
-  svg_overlay.innerHTML = '';
+  recycleOverlay();
   const w = canvas.clientWidth, h = canvas.clientHeight;
   // One clock reading for the whole overlay, before any pulse is shaped: every selected
   // object's comet advances by that same step. A pulse carries its phase between frames
@@ -2720,10 +2746,10 @@ function refreshOverlay(cursor) {
       const tint = nimDragTint();
       const stroke = 'rgba(' + Math.round(tint[0] * 255) + ',' +
         Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)';
-      svg_overlay.appendChild(svgEl('line', {
+      stageEl('line', {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
-      }));
+      });
       // Which way round the pair is being taken: the band swelling into its own last
       // stretch, the same shape the orientation pulse wears. Shaped by `marker.cometFor`
       // across the bridge rather than worked out here -- the band's direction is the
@@ -2733,19 +2759,44 @@ function refreshOverlay(cursor) {
       if (comet.length) {
         const points = [];
         for (let i = 0; i + 1 < comet.length; i += 2) points.push(comet[i] + ',' + comet[i + 1]);
-        svg_overlay.appendChild(svgEl('polygon', {
+        stageEl('polygon', {
           points: points.join(' '), fill: stroke, stroke: 'none',
-        }));
+        });
       }
     }
     appendChoiceMenu(w, h);
   }
+
+  // One swap for the whole layer, in staged order. Also what detaches whatever last
+  //   frame drew and this one did not: those elements sit in the pool, off the DOM.
+  svg_overlay.replaceChildren(...staged_overlay);
 }
 
 // Draw the four wedges of an open choice menu. Every position, colour, label and whether
 // a wedge is offered comes from interaction.nim through nimDragMenuLayout/Labels, and
 // which one the cursor stands in from nimDragMenuHighlighted -- the same call the release
 // resolves through, so the highlight is never a second opinion about where the cursor is.
+// A wedge label's laid-out width, measured once per label and remembered. Still measured
+// from what the browser actually laid it out as -- never estimated from a character
+// count, which drifts the moment the face loaded is not the one the estimate was tuned
+// against -- but a label's metrics cannot change between frames, and `getBBox` forces a
+// layout, so paying it once per label is the whole point. The cache empties when the
+// document's fonts finish loading, in case an early measure ran against a fallback face.
+const widths_menu_label = new Map();
+document.fonts.ready.then(() => widths_menu_label.clear());
+function widthMenuLabel(label) {
+  const held = widths_menu_label.get(label);
+  if (held !== undefined) return held;
+  const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  text.setAttribute('class', 'menu-wedge-label');
+  text.textContent = label;
+  svg_overlay.appendChild(text);
+  const width = text.getBBox().width;
+  text.remove();
+  widths_menu_label.set(label, width);
+  return width;
+}
+
 function appendChoiceMenu(w, h) {
   const layout = nimDragMenuLayout();
   if (layout.length === 0) return;
@@ -2756,10 +2807,15 @@ function appendChoiceMenu(w, h) {
     const at = i * FLOATS_MENU_WEDGE;
     const [x, y] = [layout[at], layout[at + 1]];
     const is_offered = layout[at + 2] > 0.5;
-    // Label first, then a rect sized from what the browser actually laid it out as --
-    // measured rather than estimated from a character count, which drifts the moment the
-    // face loaded is not the one the estimate was tuned against.
-    const text = svgEl('text', {
+    const width = widthMenuLabel(labels[i]) + PADDING_MENU_WEDGE;
+    stageEl('rect', {
+      x: x - width / 2, y: y - HEIGHT_MENU_WEDGE / 2,
+      width: width, height: HEIGHT_MENU_WEDGE, rx: ROUNDING_MENU_WEDGE,
+      'fill-opacity': is_offered ? ALPHA_MENU_WEDGE : ALPHA_MENU_UNOFFERED,
+      'stroke-width': WIDTH_MENU_WEDGE_BORDER,
+      class: i === highlighted ? 'menu-wedge on' : 'menu-wedge',
+    });
+    const text = stageEl('text', {
       x: x, y: y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
       // An unoffered wedge is dimmed rather than dropped: a gap where a wedge should be is
       // unreadable, and the point of a fixed compass is that a choice never moves.
@@ -2767,22 +2823,13 @@ function appendChoiceMenu(w, h) {
       class: i === highlighted ? 'menu-wedge-label on' : 'menu-wedge-label',
     });
     text.textContent = labels[i];
-    svg_overlay.appendChild(text);
-    const width = text.getBBox().width + PADDING_MENU_WEDGE;
-    svg_overlay.insertBefore(svgEl('rect', {
-      x: x - width / 2, y: y - HEIGHT_MENU_WEDGE / 2,
-      width: width, height: HEIGHT_MENU_WEDGE, rx: ROUNDING_MENU_WEDGE,
-      'fill-opacity': is_offered ? ALPHA_MENU_WEDGE : ALPHA_MENU_UNOFFERED,
-      'stroke-width': WIDTH_MENU_WEDGE_BORDER,
-      class: i === highlighted ? 'menu-wedge on' : 'menu-wedge',
-    }), text);
   }
   // The middle is where nothing is chosen, and the way out of a menu that opened unasked.
-  svg_overlay.appendChild(svgEl('circle', {
+  stageEl('circle', {
     cx: centre[0], cy: centre[1],
     r: RADIUS_MENU_CENTRE,
     fill: 'none', class: 'menu-centre', 'stroke-width': WIDTH_OVERLAY_LINE,
-  }));
+  });
 }
 
 /* ---------------------------------------------------------------------- */

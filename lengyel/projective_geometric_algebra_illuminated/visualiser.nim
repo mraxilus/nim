@@ -569,15 +569,15 @@ proc drawSelectionMarker(
     # A phase is what says "this one is selected": it places the orientation pulse round
     #   the outline, and the hover and focus paths below pass none, so motion means
     #   selected rather than merely under the cursor.
-    let marker = markerFor(
+    var marker: Marker
+    if not markerFor(
       item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
-      travel = some(clock.travelAt(slot)),
-    )
-    if marker.isNone: continue
+      marker, travel = some(clock.travelAt(slot)),
+    ): continue
     # Reduced against the lap this marker actually came out with, so orbiting changes only
     #   where the comet wraps and never how fast it travels. See `PulseClock`.
-    clock.advance(slot, marker.get.lap, seconds_step)
-    drawMarker(marker.get, tint, ALPHA_MARKER_SELECTED)
+    clock.advance(slot, marker.lap, seconds_step)
+    drawMarker(marker, tint, ALPHA_MARKER_SELECTED)
     result.inc
 
 
@@ -673,11 +673,12 @@ proc drawInteractionOverlay(
   for index in [interaction.index_hover, interaction.index_focus]:
     if index.isNone or not scene.isAlive(index.get): continue
     let item = scene[index.get]
-    let marker = markerFor(
-      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height
-    )
-    if marker.isSome:
-      drawMarker(marker.get, Ink.Outline.colour, ALPHA_MARKER_HOVER)
+    var marker: Marker
+    if markerFor(
+      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
+      marker,
+    ):
+      drawMarker(marker, Ink.Outline.colour, ALPHA_MARKER_HOVER)
 
   if interaction.is_dragging:
     let source = scene[interaction.index_source]
