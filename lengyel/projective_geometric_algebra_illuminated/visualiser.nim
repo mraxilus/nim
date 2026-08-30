@@ -178,12 +178,21 @@ const
     ## Set the frame arena's own size: whichever of PNG's filtered/compressed scanlines
     ## or one GIF frame's quantized indices and LZW output is using it, reclaimed the
     ## moment that single unit of work is written out.
+  CAPACITY_ARENA_SWAP* {.define: "visualiser.capacity_arena_swap".} = 256*1024
+    ## Set each half of the frame swap pair. Two blocks of this, not one: the pair's whole
+    ## promise is that last frame's bytes are still there to read, which one block reset in
+    ## place cannot make.
+    ##   Sized from the loops that carve it rather than guessed. The largest is the ground
+    ## grid's, bounded by `mesh.SEGMENTS_GRID_MAX` pieces each carrying two ends and two
+    ## tints -- about 36 KiB -- with the sky's dome and a horizon circle well under that.
+    ## A quarter of a mebibyte leaves room for the next step that wants somewhere to
+    ## assemble, and both halves together are a ten-thousandth of the export arena.
   FRAMES_TIMING_MAX* {.define: "visualiser.frames_timing_max".} = 20_000
     ## Bound how many per-frame timings `--timings` can record; independent of either
     ## arena above, since a benchmarking run is not itself the interactive draw loop
     ## either arena was carved to serve.
   BYTES_MEMORY_TOTAL* =
-    CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME +
+    CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME + 2*CAPACITY_ARENA_SWAP +
     sizeof(MeshSet) + sizeof(Scene) + sizeof(Panel) + FRAMES_TIMING_MAX*sizeof(float32)
     ## Sum of every fixed-size reservation this binary makes for itself: both arenas at
     ## their full capacity, committed in the data segment regardless of use; tessellation
@@ -220,6 +229,11 @@ var
   ARENA_PERMANENT = initArena(BUFFER_ARENA_PERMANENT)
   BUFFER_ARENA_FRAME: array[CAPACITY_ARENA_FRAME, byte]
   ARENA_FRAME = initArena(BUFFER_ARENA_FRAME)
+  # The draw loop's own scratch, two blocks swapped each frame so what one frame assembled
+  #   is still readable through the next. See `arena.ArenaSwap`.
+  BUFFER_ARENA_SWAP_FIRST: array[CAPACITY_ARENA_SWAP, byte]
+  BUFFER_ARENA_SWAP_SECOND: array[CAPACITY_ARENA_SWAP, byte]
+  ARENA_SWAP = initArenaSwap(BUFFER_ARENA_SWAP_FIRST, BUFFER_ARENA_SWAP_SECOND)
 
 # Carved once from the permanent arena: the pixel readback every export reuses.
 var PIXELS_READBACK = push[uint8](ARENA_PERMANENT, WIDTH_EXPORT_MAX*HEIGHT_EXPORT_MAX*3)
@@ -1622,9 +1636,14 @@ proc runInteractive(
     count_settled = count_opened
 
   while is_running:
-    # Frame arena starts every frame empty; nothing in the draw loop itself asks it for
-    #   anything today, but `exportFrame` below may, and always leaves it reset behind it.
+    # The export arena starts every frame empty. Nothing in the draw loop asks it for
+    #   anything -- the loop's own scratch is the swap pair below -- but `exportFrame` may,
+    #   and always leaves it reset behind it.
     ARENA_FRAME.reset()
+    # And the frame pair turns over: what this frame is about to carve goes in the block
+    #   reclaimed here, while the block the *previous* frame carved stays whole and
+    #   readable until the swap after this one comes back round to it.
+    ARENA_SWAP.swap()
 
     # One reading per frame, shared by every drag that completes this frame and by the
     #   frame's own render, so a completed drag and what gets drawn agree on "now".
