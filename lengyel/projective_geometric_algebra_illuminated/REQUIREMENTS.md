@@ -346,10 +346,11 @@ not from orbit distance, so it reads as extending indefinitely however far the c
   capped instead, at 120 cells each way, which is what keeps a camera-following fog inside a
   fixed vertex budget. That cap must exceed the orbit distance a reader works at, or the
   ground stops reaching the content they are looking at.
-- Each grid line is cut into 8 pieces fading **per vertex** (not per piece, so interpolation
-  stays smooth) from full alpha at 0.06 × extent to zero at 0.20 × extent, both measured from
-  the eye. The grid is dimmed by a further 0.75 where it is built — not in the palette, whose
-  grid entry doubles as a scene object's colour.
+- Each grid line is **one record** fading **per fragment** in the shaders, from full alpha at
+  0.06 × extent to zero at 0.20 × extent, both measured from the eye — exact along a line of
+  any length, where the retired per-piece cut sampled the fade at boundaries. The grid is
+  dimmed by a further 0.75 where it is built — not in the palette, whose grid entry doubles
+  as a scene object's colour.
 - The world axes fog on the same rule, each drawn only over the stretch inside it, so all the
   furniture ends at one horizon.
 - The ground plane skips the two lines that would coincide with the x and y axes, avoiding

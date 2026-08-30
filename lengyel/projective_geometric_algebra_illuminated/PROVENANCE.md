@@ -2361,6 +2361,60 @@ none of it was the geometry:
 cannot move to a shader -- its wedges are laid-out text, and text layout is the browser's --
 but nothing per-frame remains in it beyond class toggles and a handful of attributes.
 
+**The picker copied the scene per slot per pointer move, and nothing measured it.** A
+systematic audit -- time every reachable export, grep every proc returning a large value
+type -- found `pickNearest` at **7.1 ms per call** on the nine-item demo scene, invisible
+to every bench because benches do not wiggle the pointer and the hover row only reports
+what the previous frame's moves happened to cost. Three layers, fixed in order: the
+`scene.pairs` walk (an `Item` holds its `Scene` by value; the same walk sat in the debug
+layer's `addFrameTrace`) went to the by-slot readers; the horizon-line hit test's
+ninety-seven multivector sums per candidate went to the fixed angle table through
+`euclid.onCircleAt`, with `addGreatCircle` delegating to `addPlaneRing` -- the same walk --
+so a hit still agrees with what is drawn; and the wheel path's fresh extent and matrix per
+notch went through the overlay cache (`anchorZoomAt`/`dollyAtCursor` take the caller's
+now). One hover pick is **1.5 ms**; the residue is the per-candidate meets and clips,
+which are the algebra this project exists to exercise. The `offerAim` duplicate-extent
+finding recorded two rounds up was in fact already fixed by the regroup itself; what
+remains of that shape is `placementFor`'s derivation inside `isShownCentrally`, which runs
+only when the aim changes and stays.
+
+**The furniture fog fades per fragment, and a lattice line is one record.** The grid's
+26.1 ms at the orbit worst case was almost entirely Placing, and the Placing was almost
+entirely fade sampling: each line was cut into pieces purely so `alphaGridFade` could be
+evaluated at their boundaries, under a 640-piece budget squeezing the cut as lines
+multiplied -- ~920 boundary sums, fades and depth dots per moving frame. The fade runs in
+the ribbon fragment shaders now, against the fragment's own interpolated world position
+and two fog-radius uniforms -- exact along a record of any length, where the per-piece cut
+was piecewise-linear -- held to `alphaGridFade` as its reference under the same three-way
+sibling rule as the widening. A per-record `fog` flag (the sixteenth float) says who
+fades, so fogged furniture and plain scene ribbons share one buffer in emission order; a
+lattice line, an axis chord and a debug lattice line are one record each, whole-line
+behind-eye cull included (depth is linear along a straight segment, so two behind-eye
+endpoints put all of it behind). The piece-cutting economy -- `SEGMENTS_GRID_FADE`, its
+floor, `SEGMENTS_GRID_MAX`, `segmentsGridFadeFor` and the suite case that held them -- is
+deleted; the bound is `LINES_GRID_MAX`, which `CELLS_GRID_HALF_MAX` always implied.
+  Measured at the orbit worst case: **build 29.9 → 10.8 ms, grid 26.1 → 8.7, Placing
+25.3 → 8.1**, 381 records where 629 pieces were. The residue is the per-line placement
+through the algebra -- two boundary sums and a line base per lattice line -- which is
+deliberate and stays. Verified by looking: the far-orbit fade is visibly smoother than
+the piecewise version it replaces, which is why no pixel-identical A/B was expected or
+sought for this change; the suites hold the reference's shape and the records' flat
+tints instead, sampled along each record the way the fragments are.
+
+**Why the debug layer cost twenty milliseconds, explained and mostly repaired.** Measured
+with the layer on over the demo scene: build 2.3 → 22.4 ms, 18.5 of it the layer, 16.5 of
+that Placing. The reason is structural: every traced *finite plane* is drawn as a full
+grid-scale lattice through `addGridFamily`, and the trace holds more planes than the
+scene shows -- the scene's own, plus the derived eye plane, near plane and ground plane --
+so the layer was laying roughly six grids' worth of per-boundary fade sampling per frame.
+The fog-fade move above repairs the machinery they all share (**18.5 → 4.7 ms** on the
+same scene), and the `pairs` walk in `addFrameTrace` went to by-slot readers with the
+picker's. What remains is the honest cost of tracing: a lattice per traced plane, at two
+boundary sums per line, which is the layer doing what its module doc promises. Its
+controls now say what the diagnostics tree already said: the browser chip and the desktop
+checkbox read **"debug"**, not "algebra" -- a control named algebra read as the subject of
+the whole app, not as the optional wireframe it switches (element ids stay, as wiring).
+
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
 17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:
