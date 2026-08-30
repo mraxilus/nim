@@ -74,8 +74,9 @@ layout (location = 0) in vec2 in_corner;
 layout (location = 1) in vec3 in_tail;
 layout (location = 2) in vec3 in_head;
 layout (location = 3) in float in_width;
-layout (location = 4) in vec4 in_tint_tail;
-layout (location = 5) in vec4 in_tint_head;
+layout (location = 4) in float in_fog;
+layout (location = 5) in vec4 in_tint_tail;
+layout (location = 6) in vec4 in_tint_head;
 uniform mat4 view_projection;
 uniform vec3 eye;
 uniform vec3 forward;
@@ -83,7 +84,10 @@ uniform float depth_near;
 uniform float tangent_half_view;
 uniform float height_pixels;
 out vec4 vertex_colour;
+out vec3 vertex_world;
+out float vertex_fog;
 void main() {
+  vertex_fog = in_fog;
   float depth_tail = dot(in_tail - eye, forward);
   float depth_head = dot(in_head - eye, forward);
   vec3 across_raw = cross(in_head - in_tail, eye - in_tail);
@@ -91,6 +95,7 @@ void main() {
   if (max(depth_tail, depth_head) < depth_near || across_length < 1e-12) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     vertex_colour = vec4(0.0);
+    vertex_world = in_tail;
     return;
   }
   vec3 near_end = in_tail;
@@ -112,6 +117,7 @@ void main() {
   float world_per_pixel = 2.0*depth_at*tangent_half_view/height_pixels;
   at += in_corner.y*0.5*in_width*world_per_pixel*across;
   gl_Position = view_projection*vec4(at, 1.0);
+  vertex_world = at;
   vertex_colour = mix(tint_near, tint_far, in_corner.x);
 }
 """ ## Widen one ribbon record into the corner this invocation is, on the GPU.
@@ -122,7 +128,35 @@ void main() {
   ## crosses it and blend its tint by the same fraction, derive the across as the cross
   ## the join reduces to, and step this corner off by half a width of its own end's
   ## world-per-pixel. `in_corner` is (end, side): which end of the segment, and which
-  ## side of it, this invocation stands for.
+  ## side of it, this invocation stands for. `in_fog` and the world position pass
+  ## through untouched for the fragment stage's fog; see `SOURCE_FRAGMENT_RIBBON`.
+
+
+const SOURCE_FRAGMENT_RIBBON = """
+#version 330 core
+in vec4 vertex_colour;
+in vec3 vertex_world;
+in float vertex_fog;
+uniform vec3 eye;
+uniform float fog_radius_full;
+uniform float fog_radius_gone;
+out vec4 out_colour;
+void main() {
+  float fade = 1.0 - clamp(
+    (distance(vertex_world, eye) - fog_radius_full)/(fog_radius_gone - fog_radius_full),
+    0.0, 1.0
+  );
+  out_colour = vec4(
+    vertex_colour.rgb, vertex_colour.a*mix(1.0, fade, clamp(vertex_fog, 0.0, 1.0))
+  );
+}
+""" ## Shade one ribbon fragment, fading a fogged record by its own distance from the eye.
+  ##   **A sibling copy of `mesh.alphaGridFade`, the reference the fog is held to, and of
+  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
+  ## until the other two are checked.** Per fragment rather than per vertex, so the fade
+  ## is exact along a record of any length -- which is what lets a lattice line be one
+  ## record instead of a chain of fade pieces. A record with `fog` zero passes through
+  ## untouched, which is every scene ribbon.
 
 
 const CORNERS_RIBBON: array[12, float32] = [
@@ -196,6 +230,8 @@ type
     location_ribbon_depth_near: gl.Int
     location_ribbon_tangent: gl.Int
     location_ribbon_height: gl.Int
+    location_ribbon_fog_full: gl.Int
+    location_ribbon_fog_gone: gl.Int
     array_ribbon: gl.Uint
     buffer_ribbon_corners: gl.Uint
     buffer_ribbon_records: gl.Uint
@@ -279,7 +315,7 @@ proc initRenderer*(): Renderer =
   )
   gl.bindVertexArray(0)
 
-  result.program_ribbon = linkProgram(SOURCE_VERTEX_RIBBON, SOURCE_FRAGMENT)
+  result.program_ribbon = linkProgram(SOURCE_VERTEX_RIBBON, SOURCE_FRAGMENT_RIBBON)
   result.location_ribbon_view_projection =
     gl.getUniformLocation(result.program_ribbon, "view_projection")
   result.location_ribbon_eye = gl.getUniformLocation(result.program_ribbon, "eye")
@@ -290,9 +326,10 @@ proc initRenderer*(): Renderer =
     gl.getUniformLocation(result.program_ribbon, "tangent_half_view")
   result.location_ribbon_height =
     gl.getUniformLocation(result.program_ribbon, "height_pixels")
-  # The ribbon program shares `SOURCE_FRAGMENT`, whose point-rounding is off unless asked.
-  gl.useProgram(result.program_ribbon)
-  gl.uniform1f(gl.getUniformLocation(result.program_ribbon, "as_point"), 0.0)
+  result.location_ribbon_fog_full =
+    gl.getUniformLocation(result.program_ribbon, "fog_radius_full")
+  result.location_ribbon_fog_gone =
+    gl.getUniformLocation(result.program_ribbon, "fog_radius_gone")
 
   gl.genVertexArrays(1, addr result.array_ribbon)
   gl.genBuffers(1, addr result.buffer_ribbon_corners)
@@ -309,10 +346,10 @@ proc initRenderer*(): Renderer =
     cast[pointer](0))
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ribbon_records)
   const STRIDE_RECORD = gl.Sizei(sizeof(RibbonRecord))
-  # (attribute, floats, float offset) for each of the record's five views.
+  # (attribute, floats, float offset) for each of the record's six views.
   for (index, floats, offset) in [
     (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(1), 6),
-    (gl.Uint(4), gl.Int(4), 7), (gl.Uint(5), gl.Int(4), 11),
+    (gl.Uint(4), gl.Int(1), 7), (gl.Uint(5), gl.Int(4), 8), (gl.Uint(6), gl.Int(4), 12),
   ]:
     gl.enableVertexAttribArray(index)
     gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RECORD,
@@ -482,7 +519,7 @@ proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
   const STRIDE_RECORD = gl.Sizei(sizeof(RibbonRecord))
   for (index, floats, offset) in [
     (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(1), 6),
-    (gl.Uint(4), gl.Int(4), 7), (gl.Uint(5), gl.Int(4), 11),
+    (gl.Uint(4), gl.Int(1), 7), (gl.Uint(5), gl.Int(4), 8), (gl.Uint(6), gl.Int(4), 12),
   ]:
     gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RECORD,
       cast[pointer]((run.first*sizeof(RibbonRecord)) + offset*sizeof(float32)))
@@ -590,6 +627,11 @@ proc drawMeshes*(
   gl.uniform1f(renderer.location_ribbon_depth_near, gl.Float(scale.depth_near))
   gl.uniform1f(renderer.location_ribbon_tangent, gl.Float(scale.tangent_half_view))
   gl.uniform1f(renderer.location_ribbon_height, gl.Float(scale.height_pixels))
+  # The furniture fog's two radii, for the fragment stage's fade of fogged records; one
+  #   schedule per frame, from the same rule the placement cuts the chords with.
+  let fog = fogFurnitureFor(scale.extent_furniture)
+  gl.uniform1f(renderer.location_ribbon_fog_full, gl.Float(fog.radius_full))
+  gl.uniform1f(renderer.location_ribbon_fog_gone, gl.Float(fog.radius_gone))
   renderer.uploadRibbons(meshes)
 
   gl.useProgram(renderer.program)

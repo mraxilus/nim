@@ -154,54 +154,32 @@ proc addGreatCircle(
 
 #[ World Furniture ]#
 
-func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
-  ## Fall from full alpha at `radius_fade_start` to none at `radius_end` -- past the
-  ## fade start, a grid line's own cells crowd into fewer and fewer screen pixels
-  ## under perspective, reading as aliasing noise rather than as a reference; fading
-  ## them out trades that noise for a clean horizon instead of fighting it.
-  ##   `radius` is a distance **from the eye**, and the two bounds come from
-  ##   `fogFurnitureFor`; see it for why the fog is centred there and not on the origin.
-  ##   Shared with `addAxes`, which fades on the same schedule so that all the world
-  ##   furniture ends at one horizon rather than the grid stopping while the axes run on.
-  1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
-
-
-proc placeFadeLine(
+proc placeChord(
   scratch: var DrawScratch; count_assembled: var int; centre, axis_point: Multivector;
-  span: float; pieces: int; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; scale: DrawExtent
+  span: float; tint: Rgba; scale: DrawExtent
 ) =
-  ## Resolve one faded line into `scratch.ribbons`: `pieces` ribbon pieces running `span`
-  ## either side of `centre` along `axis_point`, each end faded by its own distance from
-  ## the eye. Silently stops at the scratch's end, for the reason `placeGridFamily` gives.
-  ##   **Each boundary is assembled once.** Adjacent pieces share an end -- piece `j`'s
-  ## head is piece `j + 1`'s tail, by the same formula -- and the loops this replaces
-  ## assembled every interior boundary twice over: two multivector sums, two reads back
-  ## across the language boundary and two fades where one of each suffices. Shared by the
-  ## grid and the axes, whose per-piece loops were copies of each other but for the span.
-  let count_boundaries = min(pieces, 2*SEGMENTS_GRID_FADE) + 1
-  for j in 0 ..< count_boundaries:
-    let at = add(centre, wedge(span*(2.0*float(j)/float(pieces) - 1.0), axis_point))
-    scratch.places[j] = pointFrom(at)
-    scratch.fade_tints[j] = tint.fade(tint.alpha * alphaGridFade(
-      distanceBetween(at, scale.eye_point), fog.radius_full, fog.radius_gone))
-    scratch.fade_depths[j] = dot(scratch.places[j] - scale.eye, scale.forward)
-  for j in 0 ..< count_boundaries - 1:
-    # **Whole pieces behind the eye are culled here, not carried.** The shader refuses
-    #   them anyway, but a record it refuses still crossed the wire and still counted
-    #   against the grid's own segment budget -- which is a budget of what is *drawn*.
-    #   The coarse cull is the placement's; the exact per-end clip stays the shader's.
-    if scratch.fade_depths[j] < scale.depth_near and
-        scratch.fade_depths[j + 1] < scale.depth_near:
-      continue
-    if count_assembled >= len(scratch.ribbons): return
-    scratch.ribbons[count_assembled] = RibbonPiece(
-      tail: scratch.places[j],
-      head: scratch.places[j + 1],
-      tint_tail: scratch.fade_tints[j],
-      tint_head: scratch.fade_tints[j + 1],
-    )
-    count_assembled += 1
+  ## Resolve one furniture line into `scratch.ribbons` as a single piece running `span`
+  ## either side of `centre` along `axis_point`, at its full tint -- the fog fade that
+  ## used to be sampled here piece by piece runs per fragment in the shaders now, against
+  ## `mesh.alphaGridFade`. Silently stops at the scratch's end, for the reason
+  ## `placeGridFamily` gives. Shared by the grid, the axes and the debug layer's
+  ## lattices, so all the furniture is placed by one rule.
+  ##   **A whole line behind the eye is culled here, not carried.** The shader refuses it
+  ##   anyway, but a record it refuses still crossed the wire and still counted against
+  ##   the grid's own record count. Depth along the sight axis is linear along a straight
+  ##   segment, so two behind-eye endpoints put all of it behind; the exact per-end clip
+  ##   stays the shader's.
+  if count_assembled >= len(scratch.ribbons): return
+  let
+    tail = pointFrom(add(centre, wedge(-span, axis_point)))
+    head = pointFrom(add(centre, wedge(span, axis_point)))
+  if dot(tail - scale.eye, scale.forward) < scale.depth_near and
+      dot(head - scale.eye, scale.forward) < scale.depth_near:
+    return
+  scratch.ribbons[count_assembled] = RibbonPiece(
+    tail: tail, head: head, tint_tail: tint, tint_head: tint,
+  )
+  count_assembled += 1
 
 
 proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int =
@@ -249,15 +227,10 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
       tint = ink.colour
       foot_point = unitize(foot_raw)
       axis_point = toMultivector(axis)
-    # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
-    #   distance from the eye, so the cutoff never reads as a hard edge. No across is
-    #   taken any more: which way a ribbon steps off moved to the vertex shader with the
-    #   widening itself -- see `mesh.expandRibbon`, whose cross is the very one this
-    #   hoisted per line.
-    scratch.placeFadeLine(
-      count_assembled, foot_point, axis_point, half, 2*SEGMENTS_GRID_FADE,
-      tint, fog, scale,
-    )
+    # One piece for the whole chord: the fade that used to demand cutting it runs per
+    #   fragment now, and no across is taken either -- both moved to the shaders with
+    #   the widening itself; see `mesh.expandRibbon` and `mesh.alphaGridFade`.
+    scratch.placeChord(count_assembled, foot_point, axis_point, half, tint, scale)
 
   count_assembled
 
@@ -272,6 +245,7 @@ proc addAxes*(
   timed(Side.Emitting):
     meshes.addRibbonPieces(
       scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE,
+      is_fogged = true,
     )
 
 
@@ -312,32 +286,18 @@ func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
   some(sizeCellGridFor(radius_ground.get))
 
 
-func segmentsGridFadeFor*(count_lines: int): int =
-  ## Choose how many pieces each of `count_lines` grid lines is cut into for its fade.
-  ##   `SEGMENTS_GRID_FADE` wherever the whole family fits inside its half of
-  ## `SEGMENTS_GRID_MAX`, and as few as `SEGMENTS_GRID_FADE_MIN` where it does not. The
-  ## budget is halved because the grid is two families laid the same way, and neither
-  ## knows what the other will draw.
-  ##   A pure function of the count so the rule can be held on its own by the suite,
-  ## rather than only observable through a vertex total.
-  if count_lines <= 0: return SEGMENTS_GRID_FADE
-  let allowed = (SEGMENTS_GRID_MAX div 2) div count_lines
-  max(SEGMENTS_GRID_FADE_MIN, min(SEGMENTS_GRID_FADE, allowed))
-
-
 proc placeGridFamily(
   scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
-  along, across: Direction; origin: Position
+  radius_ground, size_cell: float; along, across: Direction; origin: Position
 ): int =
-  ## Resolve every piece of one family of lattice lines into `scratch`, and report how
-  ## many: every line running along `along`, stepped by `size_cell` along `across`, that
-  ## falls within `radius_ground` of the eye's own foot on the plane the two span.
-  ##   **Draws nothing.** This is the algebra's half of the seam. Almost all of it is
-  ## multivector work, with two Euclidean exceptions that ride along because they sit
-  ## inside the loop: a line's across-vector is one cross product, and each piece's two
-  ## fade colours are scalar. Both are named where they happen, and both are charged to
-  ## this side -- which is worth knowing when reading what the panel says it cost.
+  ## Resolve one family of lattice lines into `scratch` -- **one piece per line** -- and
+  ## report how many: every line running along `along`, stepped by `size_cell` along
+  ## `across`, that falls within `radius_ground` of the eye's own foot on the plane the
+  ## two span.
+  ##   **Draws nothing.** This is the algebra's half of the seam, and it is all
+  ## multivector work now: the per-piece fade colours that used to ride along moved to
+  ## the fragment shader with the fog itself (`mesh.alphaGridFade`), which is what took
+  ## this family from a boundary sum per fade piece to two per line.
   ##   Exported for `algebra_view`, whose debug layer lays this same lattice on an
   ##   arbitrary plane to draw it as the infinite thing it is -- the ground is that case
   ##   with `origin` at the world origin and the two world axes for its span.
@@ -362,10 +322,6 @@ proc placeGridFamily(
     centre_along = depthAgainst(planeThrough(origin_point, along_point), scale.eye_point)
     first = int(ceil((centre_across - radius_ground)/size_cell))
     last = int(floor((centre_across + radius_ground)/size_cell))
-    # How finely each line is cut for its fade, decided once for the family from how many
-    #   lines it is about to lay: the budget is a property of the family, and a per-line
-    #   answer would cut neighbouring lines differently and band the fade across the grid.
-    segments_fade = segmentsGridFadeFor(last - first + 1)
   var count_assembled = 0
   for i in first .. last:
     # Skips the lattice line through the world origin: it coincides exactly with a world
@@ -381,24 +337,19 @@ proc placeGridFamily(
       reach = sqrt(reach_squared)
       base = add(origin_point,
         add(wedge(offset, across_point), wedge(centre_along, along_point)))
-    # Assembled, not drawn -- see `placeFadeLine`, which also stops silently at the
-    #   scratch's end: the caller sized it from `SEGMENTS_GRID_MAX`, the same budget
-    #   `segmentsGridFadeFor` cuts the fade to, so a full buffer means that budget was
-    #   raised and this was not. The across the line used to hoist moved to the vertex
-    #   shader with the widening; collinear pieces provably share it there too, since
-    #   `cross(along, eye - t*along)` does not depend on `t`.
-    scratch.placeFadeLine(
-      count_assembled, base, along_point, reach, segments_fade,
-      tint, fog, scale,
-    )
+    # Assembled, not drawn -- see `placeChord`, which also stops silently at the
+    #   scratch's end: `mesh.LINES_GRID_MAX` sizes it from the very bound
+    #   `CELLS_GRID_HALF_MAX` puts on `first .. last`, so a full buffer means that bound
+    #   was raised and this was not.
+    scratch.placeChord(count_assembled, base, along_point, reach, tint, scale)
 
   count_assembled
 
 
 proc addGridFamily*(
   meshes: var MeshSet; scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
-  along, across: Direction; origin: Position = ORIGIN_WORLD
+  radius_ground, size_cell: float; along, across: Direction;
+  origin: Position = ORIGIN_WORLD
 ) =
   ## Append one family of lattice lines; `placeGridFamily` says what a family is.
   ##   **The seam, as two calls.** Where the pieces go is worked out by one proc and drawn
@@ -408,11 +359,12 @@ proc addGridFamily*(
   var count_assembled = 0
   timed(Side.Placing):
     count_assembled = placeGridFamily(
-      scratch, scale, tint, fog, radius_ground, size_cell, along, across, origin,
+      scratch, scale, tint, radius_ground, size_cell, along, across, origin,
     )
   timed(Side.Emitting):
     meshes.addRibbonPieces(
       scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE,
+      is_fogged = true,
     )
 
 
@@ -437,7 +389,6 @@ proc addGrid*(
   let
     base = Ink.Grid.colour
     tint = base.fade(base.alpha*ALPHA_GRID)
-    fog = fogFurnitureFor(extent)
     # The disc the fog leaves on the ground, and the cell laid across it -- both through
     #   `radiusGroundFor`, so what a reader is told the cell is and what the grid is drawn
     #   with cannot come apart.
@@ -450,11 +401,11 @@ proc addGrid*(
   #   it before the next begins, so the buffer is sized for the larger family rather than
   #   for both at once.
   meshes.addGridFamily(
-    scratch, scale, tint, fog, radius_ground, size_cell,
+    scratch, scale, tint, radius_ground, size_cell,
     along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
   )
   meshes.addGridFamily(
-    scratch, scale, tint, fog, radius_ground, size_cell,
+    scratch, scale, tint, radius_ground, size_cell,
     along = Direction(x: 1, y: 0, z: 0), across = Direction(x: 0, y: 1, z: 0),
   )
 

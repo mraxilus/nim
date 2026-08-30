@@ -1272,21 +1272,44 @@ suite "Mesh":
 
 
   test "ground grid holds full alpha near the camera and fades to nothing at its reach":
+    # The fade runs per fragment in the shaders now, so what the records carry is the
+    #   grid's own full tint with the fog *flag* set, and the drawn alpha is that tint
+    #   times `alphaGridFade` -- the reference both fragment shaders are held to --
+    #   evaluated here at each corner's own distance from the eye, exactly as they do.
     MESHES.clearMeshes
     MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     var
       alpha_near_min = 1.0
       alpha_far_max = 0.0
+      count_near = 0
     for i in 0 ..< MESHES.ribbons.count:
-      let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_FOG))
-      if not isRibbonDrawn(corners): continue
-      for vertex in corners:
-        let radius = norm(vertex.toPosition - SCALE_FOG.eye)
+      let record = MESHES.ribbons.records[i]
+      check record.fog > 0.5
+      check isNear(float(record.tail_alpha), Ink.Grid.colour.alpha*ALPHA_GRID)
+      check isNear(float(record.head_alpha), Ink.Grid.colour.alpha*ALPHA_GRID)
+      # Sampled *along* each record rather than at its corners alone: a line is one
+      #   record spanning its whole chord now, and the fade is the fragment's, evaluated
+      #   at every point of it -- so the claim is checked where the fragments are.
+      let
+        tail = Position(
+          x: float(record.tail_x), y: float(record.tail_y), z: float(record.tail_z))
+        head = Position(
+          x: float(record.head_x), y: float(record.head_y), z: float(record.head_z))
+        count_samples = 32
+      for step in 0 .. count_samples:
+        let
+          t = float(step)/float(count_samples)
+          at = tail + t*(head - tail)
+          radius = norm(at - SCALE_FOG.eye)
+          alpha_drawn = float(record.tail_alpha)*alphaGridFade(
+            radius, fog.radius_full, fog.radius_gone)
         if radius <= fog.radius_full:
-          alpha_near_min = min(alpha_near_min, float(vertex.alpha))
+          alpha_near_min = min(alpha_near_min, alpha_drawn)
+          inc count_near
         if radius >= fog.radius_gone - TOLERANCE_TEST:
-          alpha_far_max = max(alpha_far_max, float(vertex.alpha))
+          alpha_far_max = max(alpha_far_max, alpha_drawn)
+    check count_near > 0
     check isNear(alpha_near_min, Ink.Grid.colour.alpha*ALPHA_GRID)
     check alpha_far_max <= TOLERANCE_SINGLE
 
@@ -1351,14 +1374,10 @@ suite "Mesh":
         # Lines each way from the eye, in each of the two families, skipping the one
         #   through the origin that coincides with a world axis.
         lines = 4*int(floor(radius/SIZE_CELL_GRID))
-        # ...and how finely each is cut for its fade, which the segment budget decides
-        #   from how many lines the family lays. Asked here rather than assumed to be
-        #   `SEGMENTS_GRID_FADE`: the count below is exact arithmetic, and the budget is
-        #   part of that arithmetic at the wider of these two reaches.
-        pieces = segmentsGridFadeFor(2*int(floor(radius/SIZE_CELL_GRID)) + 1)
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_above)
-      check 6*MESHES.ribbons.count == lines*pieces*6
+      # One record per lattice line, since the fog fade moved to the fragment shader.
+      check MESHES.ribbons.count == lines
       for i in 0 ..< MESHES.ribbons.count:
         let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_above))
         if not isRibbonDrawn(corners): continue
@@ -1370,62 +1389,40 @@ suite "Mesh":
           check min(off_x, off_y) <= 1.0
 
 
-  test "the grid's fade is cut as finely as its budget affords, and no finer":
-    # **The regression case for a shipped cost.** The scenery's price is its segment count
-    #   and nothing else -- about 50-60 us a segment on the driving container -- and that
-    #   count sawtoothed with camera distance, because the cell steps by a decade only
-    #   after the line count has climbed a decade's worth. Measured before this rule: 154
-    #   segments and 7.3 ms at orbit distance 19, but 2,084 and 126.5 ms at distance 300,
-    #   dropping back to 706 once the cell stepped. A reader panning near the top of a
-    #   decade met a tenth of a second of scenery, intermittently.
-    check SEGMENTS_GRID_FADE_MIN < SEGMENTS_GRID_FADE
-    # A family laying few lines is cut as finely as it ever was: the near view, where a
-    #   fade has room to band, is exactly what it was before the budget existed.
-    check segmentsGridFadeFor(0) == SEGMENTS_GRID_FADE
-    check segmentsGridFadeFor(1) == SEGMENTS_GRID_FADE
-    check segmentsGridFadeFor((SEGMENTS_GRID_MAX div 2) div SEGMENTS_GRID_FADE) ==
-      SEGMENTS_GRID_FADE
-    # One line past what the budget affords at full fineness, and the cut coarsens.
-    check segmentsGridFadeFor((SEGMENTS_GRID_MAX div 2) div SEGMENTS_GRID_FADE + 1) <
-      SEGMENTS_GRID_FADE
-    # However many lines are asked for, the cut never falls through its own floor: two
-    #   pieces still fade from both ends toward the middle, and one could not fade at all.
-    for count in [1, 10, 100, 1_000, 100_000]:
-      check segmentsGridFadeFor(count) >= SEGMENTS_GRID_FADE_MIN
-      check segmentsGridFadeFor(count) <= SEGMENTS_GRID_FADE
-      # And the family's own spend stays inside its half of the budget wherever the floor
-      #   is not what is binding.
-      let spent = count*segmentsGridFadeFor(count)
-      check spent <= SEGMENTS_GRID_MAX div 2 or
-        segmentsGridFadeFor(count) == SEGMENTS_GRID_FADE_MIN
-    # Monotone: more lines never buys a finer cut, so a reader pulling steadily back never
-    #   sees the fade sharpen again.
-    var previous = SEGMENTS_GRID_FADE
-    for count in 1 .. 400:
-      check segmentsGridFadeFor(count) <= previous
-      previous = segmentsGridFadeFor(count)
+  test "the fog fade is the shader's, held here to the reference it is a copy of":
+    # **The successor to the fade-piece budget's regression case.** Each grid line used
+    #   to be cut into fade pieces under a segment budget, whose cost sawtoothed with
+    #   camera distance -- measured at 154 segments/7.3 ms at orbit distance 19 against
+    #   2,084/126.5 ms at 300 before the budget, and ~920 per-boundary sums per moving
+    #   frame under it. A line is one record now and `alphaGridFade` runs per fragment,
+    #   so what is held is the reference's own shape: full inside the fade start, gone at
+    #   the reach, monotone between -- the very curve both fragment shaders copy.
+    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
+    check isNear(alphaGridFade(0.0, fog.radius_full, fog.radius_gone), 1.0)
+    check isNear(alphaGridFade(fog.radius_full, fog.radius_full, fog.radius_gone), 1.0)
+    check isNear(alphaGridFade(fog.radius_gone, fog.radius_full, fog.radius_gone), 0.0)
+    check isNear(alphaGridFade(2.0*fog.radius_gone, fog.radius_full, fog.radius_gone), 0.0)
+    var previous = 1.0
+    for step in 0 .. 100:
+      let at = fog.radius_full +
+        (fog.radius_gone - fog.radius_full)*float(step)/100.0
+      let fade = alphaGridFade(at, fog.radius_full, fog.radius_gone)
+      check fade <= previous + TOLERANCE_SINGLE
+      previous = fade
 
 
-  test "the grid stays inside its segment budget however far the camera pulls back":
-    # Held on what is actually laid rather than on the rule alone: the budget is only
-    #   worth having if `addGrid` spends it, and the two families each hold half without
-    #   knowing what the other drew.
+  test "the grid stays inside its line bound however far the camera pulls back":
+    # Held on what is actually laid rather than on the rule alone: a line is one record,
+    #   so the grid's whole spend is its line count, which `CELLS_GRID_HALF_MAX` bounds
+    #   per family through the stepped cell.
     for (extent, height) in [
       (1.0e3, 6.0e1), (4.0e3, 6.0e1), (1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7),
     ]:
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_afar)
-      # Six vertices a segment; see `addSegmentAcross`.
-      check 6*MESHES.ribbons.count div 6 <= SEGMENTS_GRID_MAX
-      check 6*MESHES.ribbons.count > 0
-
-    # And the opening view never reaches the budget at all, which is what "the near view
-    #   is untouched" means: nothing there is drawn more coarsely than it was.
-    let scale_opening = scaleFurnitureAt(Position(x: 0, y: 0, z: 1.0e1), 2.0e2)
-    MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH, 2.0e2, scale_opening)
-    check 6*MESHES.ribbons.count div 6 < SEGMENTS_GRID_MAX div 2
+      check MESHES.ribbons.count <= 2*LINES_GRID_MAX
+      check MESHES.ribbons.count > 0
 
 
   test "a camera dollied far out still has ground under it, at a coarser cell":

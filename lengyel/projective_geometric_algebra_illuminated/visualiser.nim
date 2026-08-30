@@ -183,10 +183,11 @@ const
     ## promise is that last frame's bytes are still there to read, which one block reset in
     ## place cannot make.
     ##   Sized from the loops that carve it rather than guessed. The largest is the ground
-    ## grid's, bounded by `mesh.SEGMENTS_GRID_MAX` pieces each carrying two ends and two
-    ## tints -- about 36 KiB -- with the sky's dome and a horizon circle well under that.
-    ## A quarter of a mebibyte leaves room for the next step that wants somewhere to
-    ## assemble, and both halves together are a ten-thousandth of the export arena.
+    ## grid's, bounded by `mesh.LINES_GRID_MAX` one-piece chords now that the fog fade is
+    ## the fragment shader's -- under 20 KiB -- with a horizon circle's places well under
+    ## that. A quarter of a mebibyte leaves generous room for the next step that wants
+    ## somewhere to assemble, and both halves together are a ten-thousandth of the export
+    ## arena.
   FRAMES_TIMING_MAX* {.define: "visualiser.frames_timing_max".} = 20_000
     ## Bound how many per-frame timings `--timings` can record; independent of either
     ## arena above, since a benchmarking run is not itself the interactive draw loop

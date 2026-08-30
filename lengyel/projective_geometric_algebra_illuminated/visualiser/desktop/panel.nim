@@ -638,7 +638,9 @@ proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
   discard gui.checkbox("grid", addr panel.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
   gui.sameLine()
-  discard gui.checkbox("algebra", addr panel.is_algebra_shown)
+  # "debug", matching the browser chip and the diagnostics tree's "debug overlay" row:
+  #   a control called algebra reads as the subject of the whole app, not the wireframe.
+  discard gui.checkbox("debug", addr panel.is_algebra_shown)
   gui.tooltip(
     "Draw every multivector this frame computed, in its true form -- a plane as the " &
     "infinite lattice it is, not the disc that stands for one."

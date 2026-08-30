@@ -994,11 +994,14 @@
       <div class="toggles">
         <button id="toggle-axes" class="on" type="button">axes</button>
         <button id="toggle-grid" class="on" type="button">grid</button>
-        <!-- The algebra's own layer: every multivector the frame computed, drawn as what
+        <!-- The debug layer: every multivector the frame computed, drawn as what
              it is -- a plane as the infinite lattice it actually is, not the disc that
              stands for one. Off by default; the picture is what the build is for, and this
-             is what a reader switches to when they want to see the library instead. -->
-        <button id="toggle-algebra" type="button">algebra</button>
+             is what a reader switches to when they want to see the library instead.
+             Labelled "debug", matching the diagnostics tree's own "debug overlay" row:
+             a chip called algebra read as the subject of the whole page, not as the
+             optional wireframe it switches. The element id stays, as wiring not label. -->
+        <button id="toggle-algebra" type="button">debug</button>
       </div>
       <button class="brand" id="btn-menu" type="button" aria-label="menu">
         <span aria-hidden="true">&#9776;</span>
@@ -1191,8 +1194,8 @@
               <!-- The two halves are not the same size of thing: the axes are three lines
                    however far the camera stands, while the grid is however many the ground
                    reach asks for -- so a scenery figure that rose could not say which of
-                   them rose. The grid carries its segment count, since its cost *is* that
-                   count and the count is what `SEGMENTS_GRID_MAX` bounds. -->
+                   them rose. The grid carries its record count -- one per lattice line
+                   -- since its cost *is* that count, bounded by `LINES_GRID_MAX`. -->
               <div class="diag-children">
                 <div class="diag-line"><span>ground grid<span class="diag-tally"></span></span
                   ><b id="diag-grid">&mdash;</b></div>

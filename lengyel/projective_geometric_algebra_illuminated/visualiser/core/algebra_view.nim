@@ -95,14 +95,13 @@ proc addLattice*(
   let
     radius = reach.get
     size_cell = sizeCellGridFor(radius)
-    fog = fogFurnitureFor(scale.extent_furniture)
     (first, second) = (axes.get.axis_first, axes.get.axis_second)
   meshes.addGridFamily(
-    scratch, scale, tint, fog, radius, size_cell,
+    scratch, scale, tint, radius, size_cell,
     along = first, across = second, origin = anchor.get,
   )
   meshes.addGridFamily(
-    scratch, scale, tint, fog, radius, size_cell,
+    scratch, scale, tint, radius, size_cell,
     along = second, across = first, origin = anchor.get,
   )
 

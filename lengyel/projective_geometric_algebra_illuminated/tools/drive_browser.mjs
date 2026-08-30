@@ -1787,9 +1787,10 @@ const reached = await page.evaluate((EXTENT_PLANE_DRIVE) => {
   // Furniture off, so every vertex counted here belongs to the scene and the layer over it.
   let furthest = 0;
   const v = data.ribbon_verts;
-  // Fifteen floats a record now the widening runs in the vertex shader: tail xyz, head
-  //   xyz, width, then two tints. Both ends are positions the lattice actually reaches.
-  for (let i = 0; i < v.length; i += 15) {
+  // Sixteen floats a record now the widening and the fog both run in the shaders: tail
+  //   xyz, head xyz, width, fog, then two tints. Both ends are positions the lattice
+  //   actually reaches.
+  for (let i = 0; i < v.length; i += 16) {
     furthest = Math.max(furthest,
       Math.hypot(v[i], v[i + 1], v[i + 2]), Math.hypot(v[i + 3], v[i + 4], v[i + 5]));
   }
@@ -1886,9 +1887,11 @@ const scenery_far = await page.evaluate(() => {
   return { median: milliseconds[4], segments };
 });
 report(
-  'the scenery holds its segment budget where it used to cost the most',
-  scenery_far.segments > 0 && scenery_far.segments <= 640,
-  `${scenery_far.segments} segments at orbit distance 300, ` +
+  'the scenery holds its line bound where it used to cost the most',
+  // One record per lattice line now the fog fade is the fragment shader's; the bound is
+  // two families of at most `2*CELLS_GRID_HALF_MAX + 1` lines each.
+  scenery_far.segments > 0 && scenery_far.segments <= 2 * (2 * 120 + 1),
+  `${scenery_far.segments} grid records at orbit distance 300, ` +
     `${scenery_far.median.toFixed(1)} ms of grid`,
 );
 

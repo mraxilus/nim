@@ -79,7 +79,7 @@ const [SIZE_POINT] = nimRenderLineWidths();
 
 // A sibling copy of `mesh.expandRibbon` -- the reference the suite pins to the algebra --
 // and of the GLSL 3.30 source in `renderer.nim`; a change to any one of the three is not
-// finished until the other two are checked. Widens one 15-float ribbon record into the
+// finished until the other two are checked. Widens one 16-float ribbon record into the
 // corner this invocation is: clip to the near plane, blend the clipped end's tint by the
 // same fraction, derive the across as the cross the join reduces to, and step off by half
 // a width of this end's own world-per-pixel.
@@ -88,6 +88,7 @@ const SOURCE_VERTEX_RIBBON = `
   attribute vec3 aTail;
   attribute vec3 aHead;
   attribute float aWidth;
+  attribute float aFog;
   attribute vec4 aTintTail;
   attribute vec4 aTintHead;
   uniform mat4 uMVP;
@@ -97,7 +98,10 @@ const SOURCE_VERTEX_RIBBON = `
   uniform float uTangentHalfView;
   uniform float uHeightPixels;
   varying vec4 vColor;
+  varying vec3 vWorld;
+  varying float vFog;
   void main() {
+    vFog = aFog;
     float depth_tail = dot(aTail - uEye, uForward);
     float depth_head = dot(aHead - uEye, uForward);
     vec3 across_raw = cross(aHead - aTail, uEye - aTail);
@@ -105,6 +109,7 @@ const SOURCE_VERTEX_RIBBON = `
     if (max(depth_tail, depth_head) < uDepthNear || across_length < 1e-12) {
       gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       vColor = vec4(0.0);
+      vWorld = aTail;
       return;
     }
     vec3 near_end = aTail;
@@ -126,12 +131,34 @@ const SOURCE_VERTEX_RIBBON = `
     float world_per_pixel = 2.0*depth_at*uTangentHalfView/uHeightPixels;
     at += aCorner.y*0.5*aWidth*world_per_pixel*across;
     gl_Position = uMVP*vec4(at, 1.0);
+    vWorld = at;
     vColor = mix(tint_near, tint_far, aCorner.x);
+  }
+`;
+// A sibling copy of `mesh.alphaGridFade` -- the reference the fog is held to -- and of
+// the GLSL 3.30 fragment source in `renderer.nim`; a change to any one of the three is
+// not finished until the other two are checked. Per fragment rather than per vertex, so
+// the fade is exact along a record of any length -- which is what lets a lattice line be
+// one record instead of a chain of fade pieces. A record with fog zero passes through
+// untouched, which is every scene ribbon.
+const SOURCE_FRAGMENT_RIBBON = `
+  precision mediump float;
+  varying vec4 vColor;
+  varying highp vec3 vWorld;
+  varying highp float vFog;
+  uniform highp vec3 uEye;
+  uniform highp float uFogFull;
+  uniform highp float uFogGone;
+  void main() {
+    highp float fade = 1.0 - clamp(
+      (distance(vWorld, uEye) - uFogFull)/(uFogGone - uFogFull), 0.0, 1.0
+    );
+    gl_FragColor = vec4(vColor.rgb, vColor.a*mix(1.0, fade, clamp(vFog, 0.0, 1.0)));
   }
 `;
 const program_ribbon = gl.createProgram();
 gl.attachShader(program_ribbon, compileShader(gl.VERTEX_SHADER, SOURCE_VERTEX_RIBBON));
-gl.attachShader(program_ribbon, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT));
+gl.attachShader(program_ribbon, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT_RIBBON));
 gl.linkProgram(program_ribbon);
 if (!gl.getProgramParameter(program_ribbon, gl.LINK_STATUS)) {
   throw new Error(gl.getProgramInfoLog(program_ribbon));
@@ -145,6 +172,7 @@ const ribbon_attribs = {
   tail: gl.getAttribLocation(program_ribbon, 'aTail'),
   head: gl.getAttribLocation(program_ribbon, 'aHead'),
   width: gl.getAttribLocation(program_ribbon, 'aWidth'),
+  fog: gl.getAttribLocation(program_ribbon, 'aFog'),
   tint_tail: gl.getAttribLocation(program_ribbon, 'aTintTail'),
   tint_head: gl.getAttribLocation(program_ribbon, 'aTintHead'),
 };
@@ -155,7 +183,8 @@ const ribbon_uniforms = {
   depth_near: gl.getUniformLocation(program_ribbon, 'uDepthNear'),
   tangent: gl.getUniformLocation(program_ribbon, 'uTangentHalfView'),
   height: gl.getUniformLocation(program_ribbon, 'uHeightPixels'),
-  is_round: gl.getUniformLocation(program_ribbon, 'uRound'),
+  fog_full: gl.getUniformLocation(program_ribbon, 'uFogFull'),
+  fog_gone: gl.getUniformLocation(program_ribbon, 'uFogGone'),
 };
 // The six (end, side) corners of one ribbon instance, in `expandRibbon`'s own winding.
 const buffer_ribbon_corners = gl.createBuffer();
@@ -244,7 +273,7 @@ const vbo = {
   ribbon_furniture: gl.createBuffer(),
 };
 const STRIDE = 7 * 4;
-const STRIDE_RIBBON = 15 * 4;
+const STRIDE_RIBBON = 16 * 4;
 const STRIDE_DISC = 13 * 4;
 const STRIDE_DOME = 8 * 4;
 
@@ -296,18 +325,18 @@ function drawRibbons(handle_buffer, count, count_over, is_overlay) {
   const base = first * STRIDE_RIBBON;
   for (const [attrib, floats, offset] of [
     [ribbon_attribs.tail, 3, 0], [ribbon_attribs.head, 3, 12], [ribbon_attribs.width, 1, 24],
-    [ribbon_attribs.tint_tail, 4, 28], [ribbon_attribs.tint_head, 4, 44],
+    [ribbon_attribs.fog, 1, 28],
+    [ribbon_attribs.tint_tail, 4, 32], [ribbon_attribs.tint_head, 4, 48],
   ]) {
     gl.enableVertexAttribArray(attrib);
     gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, STRIDE_RIBBON, base + offset);
     instanced.vertexAttribDivisorANGLE(attrib, 1);
   }
-  gl.uniform1i(ribbon_uniforms.is_round, 0);
   instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, span);
   // Divisors are context state, not program state: left at one they would corrupt the
   //   plain program's reads of these same attribute indices next draw.
   for (const attrib of [ribbon_attribs.tail, ribbon_attribs.head, ribbon_attribs.width,
-    ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
+    ribbon_attribs.fog, ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
     instanced.vertexAttribDivisorANGLE(attrib, 0);
     gl.disableVertexAttribArray(attrib);
   }
@@ -3475,13 +3504,16 @@ function renderFrame(now_seconds) {
   gl.uniform1f(ribbon_uniforms.depth_near, data.cam_depth_near);
   gl.uniform1f(ribbon_uniforms.tangent, data.cam_tangent_half_view);
   gl.uniform1f(ribbon_uniforms.height, data.cam_height_pixels);
+  // The furniture fog's two radii, for the fragment stage's fade of fogged records.
+  gl.uniform1f(ribbon_uniforms.fog_full, data.fog_radius_full);
+  gl.uniform1f(ribbon_uniforms.fog_gone, data.fog_radius_gone);
 
   // World furniture first, with normal depth test/write. One record a segment now --
   // kept rather than re-uploaded where the bridge says the furniture is unchanged, since
   // the grid and the axes are a function of the camera alone. Mirrors renderer.nim's own
   // drawMeshes(MESHES_FURNITURE, ...) call exactly.
   if (!data.is_furniture_held) {
-    count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture, 15);
+    count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture, 16);
   }
   drawRibbons(vbo.ribbon_furniture, count_furniture_held, 0, false);
 
@@ -3489,7 +3521,7 @@ function renderFrame(now_seconds) {
   // off for those, so a translucent plane never occludes a line or point that happens to
   // sit behind it -- it only tints over whatever was already drawn there. Mirrors
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
-  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon, 15);
+  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon, 16);
   drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, false);
   gl.useProgram(program);
   gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);

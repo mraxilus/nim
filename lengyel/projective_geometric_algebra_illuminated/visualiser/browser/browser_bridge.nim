@@ -53,9 +53,9 @@ import ../core/[
 # Where a tessellation step assembles its ribbon pieces before emitting them. **A fixed
 #   buffer rather than the desktop's frame arena**, which casts a pointer over a global and
 #   carves typed slices from it -- neither of which the JS backend can do, which is why
-#   `arena.nim` is desktop-only. Sized by the same budget that bounds the work:
-#   `SEGMENTS_GRID_MAX` is what `segmentsGridFadeFor` cuts the fade to, so a family cannot
-#   assemble more pieces than this holds.
+#   `arena.nim` is desktop-only. Sized by the same bound that limits the work:
+#   `LINES_GRID_MAX` is how many one-piece chords a grid family can lay, so a family
+#   cannot assemble more than this holds.
 var g_scratch: DrawScratch
 
 
@@ -211,27 +211,28 @@ var
 
 
 proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var seq[float32]) =
-  ## Interleave one frame's ribbon records for the instanced upload, fifteen floats each:
-  ## tail xyz, head xyz, width, tail rgba, head rgba -- `RibbonRecord`'s own field order,
-  ## which the corner-and-divisor attribute setup in `glue.js` reads back apart.
-  dest.setLen(ribbons.count * 15)
+  ## Interleave one frame's ribbon records for the instanced upload, sixteen floats each:
+  ## tail xyz, head xyz, width, fog, tail rgba, head rgba -- `RibbonRecord`'s own field
+  ## order, which the corner-and-divisor attribute setup in `glue.js` reads back apart.
+  dest.setLen(ribbons.count * 16)
   for i in 0 ..< ribbons.count:
     let r = ribbons.records[i]
-    dest[15*i + 0] = r.tail_x
-    dest[15*i + 1] = r.tail_y
-    dest[15*i + 2] = r.tail_z
-    dest[15*i + 3] = r.head_x
-    dest[15*i + 4] = r.head_y
-    dest[15*i + 5] = r.head_z
-    dest[15*i + 6] = r.width
-    dest[15*i + 7] = r.tail_red
-    dest[15*i + 8] = r.tail_green
-    dest[15*i + 9] = r.tail_blue
-    dest[15*i + 10] = r.tail_alpha
-    dest[15*i + 11] = r.head_red
-    dest[15*i + 12] = r.head_green
-    dest[15*i + 13] = r.head_blue
-    dest[15*i + 14] = r.head_alpha
+    dest[16*i + 0] = r.tail_x
+    dest[16*i + 1] = r.tail_y
+    dest[16*i + 2] = r.tail_z
+    dest[16*i + 3] = r.head_x
+    dest[16*i + 4] = r.head_y
+    dest[16*i + 5] = r.head_z
+    dest[16*i + 6] = r.width
+    dest[16*i + 7] = r.fog
+    dest[16*i + 8] = r.tail_red
+    dest[16*i + 9] = r.tail_green
+    dest[16*i + 10] = r.tail_blue
+    dest[16*i + 11] = r.tail_alpha
+    dest[16*i + 12] = r.head_red
+    dest[16*i + 13] = r.head_green
+    dest[16*i + 14] = r.head_blue
+    dest[16*i + 15] = r.head_alpha
 
 
 proc flattenDiscsInto(discs: DiscMesh; dest: var seq[float32]) =
@@ -1772,6 +1773,10 @@ type FrameData = object
     ## What the ribbon vertex shader needs of the camera, exactly `mesh.DrawScale`'s
     ## fields of the same names: the widening, the near clip and the screen-constant
     ## width run on the GPU now, and these are its uniforms.
+  fog_radius_full, fog_radius_gone: float32
+    ## The furniture fog's two radii, for the ribbon fragment shader's fade of fogged
+    ## records -- `mesh.fogFurnitureFor`'s answer for this frame's own reach, the same
+    ## schedule the placement cuts the chords with.
   ms_camera, ms_matrix, ms_unaccounted: float32
     ## The three spans of `nimBuildFrame` that used to belong to no row at all.
     ##   `ms_camera` is the prologue: focus pruning, the camera tween, this frame's own
@@ -1800,11 +1805,11 @@ type FrameData = object
     ## lines the ground reach asks for, so these two answer very differently to distance
     ## and a single scenery figure cannot say which of them moved.
   count_grid_segments: int
-    ## How many ribbon segments the **ground grid** is drawn from -- the count
-    ## `mesh.SEGMENTS_GRID_MAX` bounds -- reported so the drawn work can be read beside its
-    ## price rather than inferred from it. The axes are excluded: they are three lines
-    ## however far the camera stands, and folding their fixed share in would make a
-    ## budgeted number stop matching its own budget.
+    ## How many ribbon records the **ground grid** is drawn from -- one per lattice
+    ## line now, the count `mesh.LINES_GRID_MAX` bounds per family -- reported so the
+    ## drawn work can be read beside its price rather than inferred from it. The axes
+    ## are excluded: they are three lines however far the camera stands, and folding
+    ## their fixed share in would make a budgeted number stop matching its own budget.
   ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float32
     ## What each *kind* of scene object cost inside `ms_scene`, in milliseconds, with the
     ## counts below beside them. The phase total answered "the scene is slow"; a reader
@@ -2098,6 +2103,8 @@ proc nimBuildFrame(
     cam_depth_near: float32(scale.depth_near),
     cam_tangent_half_view: float32(scale.tangent_half_view),
     cam_height_pixels: float32(scale.height_pixels),
+    fog_radius_full: float32(fogFurnitureFor(scale.extent_furniture).radius_full),
+    fog_radius_gone: float32(fogFurnitureFor(scale.extent_furniture).radius_gone),
     ms_grid: float32(ms_grid),
     ms_axes: float32(ms_axes),
     count_grid_segments: g_count_grid_segments,

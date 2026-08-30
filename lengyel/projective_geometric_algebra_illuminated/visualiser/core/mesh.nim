@@ -220,37 +220,19 @@ const
     ##   Applied where the grid is built rather than to `Ink.Grid` itself, because that
     ##   palette entry is also `INK_POOL_FREE` -- the colour a scene object takes when the
     ##   pool has run dry -- and dimming the entry would make that object translucent.
-  SEGMENTS_GRID_FADE* = 8
-    ## Cut each ground grid line into at most this many pieces, independent of
-    ## `SIZE_CELL_GRID`, so `alphaGridFade` can fade it smoothly by distance without one
-    ## piece per cell. **At most**, because `SEGMENTS_GRID_MAX` may spend fewer on a
-    ## family drawing many lines; see there.
-  SEGMENTS_GRID_MAX* = 640
-    ## Spend no more than this many ribbon segments on the ground grid, both families
-    ## together, however many lattice lines the ground reach asks for.
-    ##   **The scenery's cost is its segment count, and its segment count sawtooths with
-    ## camera distance.** `sizeCellGridFor` steps the cell by a decade only once the
-    ## ground reach passes `CELLS_GRID_HALF_MAX*SIZE_CELL_GRID`, so within each decade the
-    ## line count climbs with distance to as many as `2*CELLS_GRID_HALF_MAX` a family
-    ## before the step drops it back by ten. Measured on the driving container at a fixed
-    ## viewport, grid phase against distance: **154 segments/7.3 ms at 19, 712/35.4 ms at
-    ## 100, 2,084/126.5 ms at 300**, then 706/44.6 ms at 1,000 once the cell had stepped --
-    ## about 50-60 us a segment throughout, so the price is the count and nothing else. A
-    ## reader panning near the top of a decade met a scenery phase of over a tenth of a
-    ## second, intermittently, which is exactly how it was reported.
-    ##   The lines themselves are untouched: what a reader sees is where the world's own
-    ## lattice falls, and thinning that would move the grid rather than cheapen it. What
-    ## adapts is how finely each line is *cut for its fade* -- 8 pieces where a family
-    ## draws few lines, down to a floor of `SEGMENTS_GRID_FADE_MIN` where it draws many.
-    ## A far-out grid line spans few pixels and its fade has correspondingly little room
-    ## to band in, which is why the coarser sampling is not visible where it applies and
-    ## the near view, which never reaches the budget, is bit-identical.
-    ##   640 rather than a round 1,000: it holds the worst case near the 19-distance
-    ## opening view's own price, which is the frame a reader spends most of a session in.
-  SEGMENTS_GRID_FADE_MIN* = 2
-    ## Never cut a grid line into fewer pieces than this, however many lines there are.
-    ## Two pieces still fade from both ends toward the middle; one could not fade at all,
-    ## and a line of flat alpha reads as a hard edge where the fog should have taken it.
+  LINES_GRID_MAX* = 2*CELLS_GRID_HALF_MAX + 1
+    ## Bound how many lattice lines one grid family lays, which since the fog fade moved
+    ## to the fragment shader is also how many ribbon records it costs: a line is **one
+    ## record** spanning its whole chord of the fog disc, faded per fragment by its own
+    ## distance from the eye.
+    ##   This replaces a whole piece-cutting economy. Each line used to be cut into up to
+    ## eight pieces purely so the fade could be sampled at their boundaries, under a
+    ## 640-piece budget (`SEGMENTS_GRID_MAX`) that squeezed the cut down to two where a
+    ## family drew many lines -- ~920 per-boundary multivector sums, fades and depth dots
+    ## per moving frame, which the diagnostics measured as the whole grid row. The
+    ## per-fragment fade needs no boundaries at all, is exact where the piecewise-linear
+    ## interpolation was an approximation, and leaves the placement two boundary sums per
+    ## line.
   SEGMENTS_CIRCLE_HORIZON* = 96
     ## Set segment count in a horizon line's own great circle, or a finite plane's own
     ## rim, dense enough to read as circular.
@@ -299,8 +281,6 @@ static:
     &"Grid must lay at least one cell each way; got `{CELLS_GRID_HALF_MAX}`."
   doAssert ALPHA_GRID > 0 and ALPHA_GRID < 1.0,
     &"Grid opacity must fall strictly between 0 and 1; got `{ALPHA_GRID}`."
-  doAssert SEGMENTS_GRID_FADE >= 2,
-    &"Grid fade needs at least 2 pieces; got `{SEGMENTS_GRID_FADE}`."
   doAssert FRACTION_DIMMED_ALPHA > 0 and FRACTION_DIMMED_ALPHA < 1.0,
     &"Dimmed alpha fraction must fall strictly between 0 and 1; got `{FRACTION_DIMMED_ALPHA}`."
   doAssert MUTE_DESATURATION > 0 and MUTE_DESATURATION <= 1.0,
@@ -396,11 +376,17 @@ type
     ## of six corners; the shader clips it to the near plane, derives the across direction
     ## as `cross(head - tail, eye - tail)`, and steps each corner off by half a width of
     ## its own end's world-per-pixel -- the very work `expandRibbon` below states in Nim,
-    ## which is the reference the shaders are held to. Fifteen floats a segment against
+    ## which is the reference the shaders are held to. Sixteen floats a segment against
     ## the forty-two its six expanded vertices cost, and none of the arithmetic on a CPU.
     tail_x*, tail_y*, tail_z*: float32
     head_x*, head_y*, head_z*: float32
     width*: float32
+    fog*: float32 ## Whether the fragment shader fades this record by its own distance
+      ## from the eye -- 1 for world furniture and the debug layer's lattices, 0 for
+      ## everything else. What the fade is is `alphaGridFade`'s statement, the reference
+      ## the fog half of both ribbon fragment shaders is held to; carrying the flag on
+      ## the record is what lets fogged and unfogged ribbons share one buffer in
+      ## whatever order the frame emitted them.
     tail_red*, tail_green*, tail_blue*, tail_alpha*: float32
     head_red*, head_green*, head_blue*, head_alpha*: float32
 
@@ -530,6 +516,24 @@ func radiusHorizonFor*(distance_far: float): float =
   ## near the renderer's own outer depth limit regardless of how far the camera has
   ## dollied in or out to view finite content.
   distance_far * FRACTION_HORIZON
+
+
+func alphaGridFade*(radius, radius_fade_start, radius_end: float): float =
+  ## Fall from full alpha at `radius_fade_start` to none at `radius_end` -- past the
+  ## fade start, a grid line's own cells crowd into fewer and fewer screen pixels
+  ## under perspective, reading as aliasing noise rather than as a reference; fading
+  ## them out trades that noise for a clean horizon instead of fighting it.
+  ##   `radius` is a distance **from the eye**, and the two bounds come from
+  ##   `fogFurnitureFor` below; see it for why the fog is centred there and not on the
+  ##   origin. One schedule for all the world furniture -- grid, axes, and the debug
+  ##   layer's lattices -- so everything reference ends at one horizon.
+  ##   **The reference the fog half of both ribbon fragment shaders is held to**, the
+  ##   rule `expandRibbon` states for the widening: a change to this, to the GLSL 3.30
+  ##   source in `renderer.nim` or to the WebGL source in `glue.js` is not finished until
+  ##   the other two are checked. It runs per fragment there, against the fragment's own
+  ##   interpolated world position -- exact along a record of any length, where the
+  ##   retired per-piece sampling was a piecewise-linear approximation.
+  1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
 func fogFurnitureFor*(extent: float): tuple[radius_full, radius_gone: float] =
@@ -830,15 +834,10 @@ type DrawScratch* = object
   ## the same shape as both.
   ##   Both members are written and read within a single step, never across two, so they
   ## carry nothing between callers and need no clearing.
-  ribbons*: array[SEGMENTS_GRID_MAX, RibbonPiece]
+  ribbons*: array[LINES_GRID_MAX, RibbonPiece]
+    ## One piece per lattice line or axis chord now that the fog fade is the fragment
+    ## shader's; sized for the larger grid family, which is the largest user left.
   places*: array[POINTS_SCRATCH_MAX, Position]
-  fade_tints*: array[2*SEGMENTS_GRID_FADE + 1, Rgba]
-  fade_depths*: array[2*SEGMENTS_GRID_FADE + 1, float]
-    ## Each boundary's view depth, for the whole-piece cull beside the tints.
-    ## One faded colour per fade boundary of the line currently being placed, beside the
-    ## boundary's own place in `places`. Here rather than a local: a fresh local array is
-    ## an allocation per lattice line on the JS backend, which is the churn this scratch
-    ## exists to end.
 
 
 func directionAcross*(tail, head, eye: Position): Option[Direction] =
@@ -924,13 +923,15 @@ func expandRibbon*(record: RibbonRecord; scale: DrawScale): array[6, Vertex] =
 
 
 proc addRibbon*(
-  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32
+  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
+  is_fogged: bool = false
 ) =
   ## Append one line segment as a ribbon record, for the vertex shader to widen.
   ##   No camera is needed here any more: the near clip, the across direction and the
   ## screen-constant width all moved to the GPU with the expansion (see `expandRibbon`,
-  ## which states exactly what it does there). The emit half of the boundary is now a
-  ## fifteen-float copy, which is the whole point.
+  ## which states exactly what it does there), and `is_fogged` says whether the fragment
+  ## shader also fades this record by distance from the eye (see `RibbonRecord.fog`).
+  ## The emit half of the boundary is a sixteen-float copy, which is the whole point.
   let count = meshes.ribbons.count
   doAssert count < RIBBONS_MAX,
     &"Frame holds at most {RIBBONS_MAX} ribbons; raise `--define:visualiser.ribbons_max`."
@@ -938,6 +939,7 @@ proc addRibbon*(
     tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
     head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
     width: width,
+    fog: (if is_fogged: 1.0'f32 else: 0.0'f32),
     tail_red: tint_tail.red, tail_green: tint_tail.green,
     tail_blue: tint_tail.blue, tail_alpha: tint_tail.alpha,
     head_red: tint_head.red, head_green: tint_head.green,
@@ -947,13 +949,16 @@ proc addRibbon*(
 
 
 proc addRibbonPieces*(
-  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32
+  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32;
+  is_fogged: bool = false
 ) =
   ## Append every assembled piece as a ribbon record.
   ##   The emit half of the seam above: no multivector is named here, and none can be --
   ##   this module cannot reach the algebra at all.
   for piece in pieces:
-    meshes.addRibbon(piece.tail, piece.head, piece.tint_tail, piece.tint_head, width)
+    meshes.addRibbon(
+      piece.tail, piece.head, piece.tint_tail, piece.tint_head, width, is_fogged
+    )
 
 
 proc addSegment*(
