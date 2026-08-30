@@ -2174,10 +2174,9 @@ total was simply larger than what it displayed. And the frame's leftover was not
 said: it absorbed `resize()`'s forced layout, the vertex marshalling, held-key motion and,
 above all, **hover picking**, which on the browser runs from event handlers rather than the
 frame loop, so no bracket inside the build could ever see it. Both are now rows.
-  A third finding the new rows made visible rather than caused: **`framing.offerAim` builds a
-second `DrawExtent` every frame** (`framing.nim:252`) instead of taking the one the bridge
-derived moments earlier — a whole extra `algebraFilled` and `camera.frame`. Recorded, not yet
-fixed.
+  A third finding the new rows made visible rather than caused: **`framing.offerAim` built a
+second `DrawExtent` every frame** instead of taking the one the bridge derived moments
+earlier. Fixed in the performance refactor below — it takes the caller's now.
   The **`of which` pair** is a second cut through the same milliseconds and is drawn as one:
 a rule and a label rather than a nested node, since indenting it under `build` would read as
 double counting the very time it re-divides. It is excluded from `PHASES_TOP_DIAGNOSTIC`, so
@@ -2230,6 +2229,46 @@ slices from it, neither of which the JS backend can do — which is why it is de
 a fixed buffer. Neither allocates per frame. The pair's *previous* half has no desktop
 consumer yet, because `updateHover` runs inside the frame there; the cross-frame need is
 browser-side, and rides `timings.FrameRecord` on the same two-frame lifetime.
+
+**The performance refactor, and what it measured.** One pass over the frame path for
+copying, duplicate work and allocation, each change benched on the shipped page at orbit
+distance 300 with the azimuth stepped so the furniture rebuilds every frame — the known
+worst case. Vertex and segment counts identical before and after every step.
+  **Each fade boundary assembled once** (the largest win): along a lattice line, piece
+`j`'s head is piece `j + 1`'s tail by the same formula, and the grid and axes loops
+assembled every interior boundary twice — two multivector sums, two boundary reads and two
+fades where one of each suffices. The two loops were also line-for-line copies of each
+other but for the span, so the fix and the deduplication are one shared `placeFadeLine`.
+Measured: grid **35.4 → 22.6 ms**, placing **31.7 → 18.6**, build **42.6 → 28.9**. The
+boundary buffers live in `DrawScratch`, not locals — a fresh local array is an allocation
+per lattice line on the JS backend.
+  **The camera derived once per frame**: `offerAim` took its own second `DrawExtent`
+(recorded as a finding last round, fixed now), `pickNearest` built a third, `addFrameTrace`
+ran `camera.frame` twice in one statement, and `nimBuildFrame` read `staged()` three times.
+All now take or reuse the frame's own. The pointer path gains most: `nimUpdateHover`
+rebuilt the view matrix per pointer move for a camera that cannot have changed (hover skips
+while the camera moves), and now reads the overlay cache. `anchorZoomAt` stays event-time
+and builds its own extent — there is no frame in flight to borrow from — but reads the eye
+and its plane off it instead of deriving both again.
+  **The FFI edge refills in place**: four fresh sequences a frame carried the vertices over
+the bridge and glue wrapped each in a fresh `Float32Array` — two allocations per buffer per
+frame for bytes living exactly as long as one `bufferData` call. Module-level buffers and
+high-water typed staging arrays now; the view matrix goes to `uniformMatrix4fv` as the
+plain sequence the spec takes. `ms_build` is stamped **after** the `FrameData` record is
+built, so the overlay scans and the record's construction — a tail that belonged to no row
+— are finally inside the total (~1 ms here, visible as `build` reading 29.8 against 28.7
+under the old, incomplete bracket).
+  **The `toScale` converter hoisted out of the one loop it fired in**: measured in the
+generated JS, each firing builds and `nimCopy`s a three-object graph; inside
+`addGreatCircle`'s emit loop that was an allocation per segment, 96 per horizon line per
+frame. The audit found no other per-iteration site. Milliseconds unchanged at the bench's
+resolution — this one is allocation churn, and is claimed as nothing more.
+  **What was deliberately left alone**: the `pga` library's own representation — a dense
+16-coefficient `Multivector` copied by value through every operation — is the deepest
+"heavy data type" in the program, and it stays. The library is what this project exists to
+exercise, and its equations may be restructured only in PGA's own terms; changing its
+storage to make it faster would change the thing being measured. The boundary work above is
+the sanctioned answer: derive through the algebra once, and stop paying for it twice.
 
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
