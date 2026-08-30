@@ -2114,23 +2114,20 @@ const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
   getComputedStyle(document.documentElement).getPropertyValue(budget.token).trim() ||
     '#00a7a5');
 // **Which timing rows are expensive, said in colour.** Twenty-odd numbers down the drawer,
-//   and nothing in them says which one to look at; the same four-band ramp the curve wears
-//   answers it at a glance. One ramp in the page, not two.
-//   **Banded by share of the frame's own work, not by absolute duration.** The curve's
-//   bands are whole-frame budgets -- 8.3, 16.7, 33.3 ms -- and a step costing 0.4 ms would
-//   sit in the fastest of them forever, so reusing them here would paint every row blue.
-//   A tenth, a quarter and a half is the ladder instead: whichever row takes half of what
-//   the page did is the one worth finding, whether the frame was fast or slow. The shares
-//   nest correctly too, a parent's being the sum of its children's.
-//   The denominator is the **work**, `PHASES_TOP_DIAGNOSTIC` summed, and not the wall-clock
-//   frame. Against the frame everything is blue and the colour says nothing: a page waiting
-//   on the display spends most of every frame idle -- 32 of 35 ms on the container this was
-//   first run on -- so no step of the actual drawing reaches even a tenth of it. Idle is
-//   not work, and it is the one row left uncoloured anyway.
-// **Where the ramp reaches its far end**: a row costing this share of the frame is drawn
-// in the map's last colour, and anything costlier stays there. Half the frame is the
-// point past which a step is no longer *part* of the frame's cost but the shape of it.
-const SHARE_RAMP_FULL_DIAGNOSTIC = 0.5;
+//   and nothing in them says which one to look at. Each row's colour answers one question
+//   -- what fraction of this frame went here -- read continuously off CET-I1.
+//   **The denominator is the whole frame, idle included, and the ramp spans all of it.** A
+//   row is drawn at the fraction it actually occupies, so the scale is absolute: a tenth of
+//   a fast frame and a tenth of a slow one wear the same colour, and the curve above says
+//   which of the two the session is in. The shares nest correctly, a parent's being the sum
+//   of its children's, and they sum with `idle` to the whole ramp.
+//   The cost is stated plainly: a page waiting on the display spends most of a frame idle,
+//   so on a healthy session every row sits near the cyan end and the tree reads as one
+//   colour. That is the honest picture of where a frame goes -- the colours open up exactly
+//   when the drawing starts to fill the frame, which is when the tree is worth reading.
+// **Where the ramp reaches its far end**: a row costing this share of the frame is drawn in
+// the map's last colour. At the whole frame the far end means a step that *is* the frame.
+const SHARE_RAMP_FULL_DIAGNOSTIC = 1.0;
 // The tree's ramp, from `ramp.nim` through `nimRampTree`: six floats a step, a row's
 // label rgb then its value rgb. What the ramp is -- CET-I1 re-lit to this drawer's own
 // text tones -- and what holds it to that is `tools/check_ramp.nim`; nothing here knows
@@ -2474,7 +2471,7 @@ function refreshDiagnostics() {
   // **No band ceiling any more, and no share-of-work denominator.** Both belonged to the
   //   four-band tint this replaced: the bands had to agree with the curve above them, so
   //   the tree was capped at whatever band that curve was drawing. The ramp is absolute --
-  //   a row's share of the *frame*, saturating at half of it -- so it says the same thing
+  //   a row's share of the *frame*, over the whole of it -- so it says the same thing
   //   whatever the curve happens to show, and there is nothing left to contradict.
   diagnostic_frame_time.textContent =
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';

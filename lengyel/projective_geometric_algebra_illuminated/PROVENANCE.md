@@ -2133,14 +2133,23 @@ checks, with the margins they passed at: the table reproduces the re-lit map to 
 by more than **0.09** (floor 1.5), which is what makes 17 enough; and each ramp's ends stay
 **26.4** apart in OKLab ×100 (floor 25.0), so the two extremes are unmistakably different
 colours at the same lightness.
-  **The denominator is the whole frame, and the ramp saturates at half of it.**
-`SHARE_RAMP_FULL_DIAGNOSTIC` = 0.5: a row taking half the frame or more is drawn at the
-orange end. Sharing against the whole frame — idle included — rather than against the summed
-work is what the reading asks for, and the two phrasings coincide here: the tree's top rows
-plus `idle` *are* the frame, so a row's share of the frame is its share against the rest of
-the tree. `idle` itself stays **untinted**, as before: it is the frame's leftover rather than
-work done, and on a healthy frame it is the largest share of all, so colouring it would paint
-the best case as the worst.
+  **The denominator is the whole frame and the ramp spans the whole of it.**
+`SHARE_RAMP_FULL_DIAGNOSTIC` = 1.0, so the mapping is a plain proportion: a row at half the
+frame sits at the ramp's own midpoint, and only a row that *is* the frame reaches orange.
+Sharing against the whole frame — idle included — rather than against the summed work is
+what the reading asks for, and the two phrasings coincide here: the tree's top rows plus
+`idle` *are* the frame, so a row's share of the frame is its share against the rest of the
+tree. `idle` itself stays **untinted**: it is the frame's leftover rather than work done, and
+on a healthy frame it is the largest share of all, so colouring it would paint the best case
+as the worst.
+  **The cost of spanning the whole frame is stated rather than tuned away.** A page waiting
+on the display spends most of a frame idle, so on a comfortable session every row lands in
+the ramp's first steps and the tree reads as close to one colour — measured on the driving
+container at 60 fps, the costliest row was 1.3 ms of a 16.7 ms frame, step 1 of 17. An
+earlier revision pulled the far end in to half the frame to open that spread up, and it was
+removed deliberately: a ramp whose end is chosen to make quiet sessions look colourful is
+reporting the ramp's calibration rather than the frame. The colours open up exactly when the
+drawing starts to fill the frame, which is when this tree is worth reading at all.
   **The band ceiling is gone, and that is the point of the change.** The previous tint was a
 share of the frame's *work*, which is a relative quantity — on a session that never dropped
 below 120 fps the costliest row was still painted red beside an entirely blue chart, so the

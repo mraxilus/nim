@@ -1491,35 +1491,37 @@ report(
     (aligned.trailing.length === 0 ? '' : `; trailing past ms: ${aligned.trailing.join(', ')}`),
 );
 
-// **The ramp says what it claims to say**, which is a row's share of the frame with its
-// far end at half of one. Checked on the rule itself rather than on a rendered row: a row
-// of exactly half the frame must wear the ramp's last colour, anything past it must stay
-// there rather than wrapping or drifting, and nothing below it may reach that colour.
-//   This replaces the band ceiling the tree used to be capped at. That cap existed because
-// the old tint was a share of the frame's *work*, a relative measure that painted the
-// costliest row red on a session where nothing was slow -- so it had to be held down to
-// whatever band the curve above it was drawing. A share of the whole frame needs no such
-// restraint: it is already absolute, and it agrees with the curve by construction.
+// **The ramp says what it claims to say**, which is a row's share of the frame spread over
+// the whole of one. Checked on the rule itself rather than on a rendered row: a row that is
+// the entire frame must wear the ramp's last colour, a quarter and a half of one must each
+// wear a distinct colour short of it, and the mapping must be a plain proportion -- half
+// the frame lands at the ramp's own midpoint, which is what "the whole proportion" means.
+//   Nothing caps it. The band ceiling the tree used to carry existed because the old tint
+// was a share of the frame's *work*, a relative measure that painted the costliest row red
+// on a session where nothing was slow -- so it had to be held down to whatever band the
+// curve above it was drawing. A share of the whole frame is already absolute.
 const ramp_rule = await page.evaluate(() => {
   const shown = (share) => rampTreeAt(share);
-  const ends = shown(SHARE_RAMP_FULL_DIAGNOSTIC);
+  const middle = RAMP_TREE[(RAMP_TREE.length - 1) / 2];
   return {
     full: SHARE_RAMP_FULL_DIAGNOSTIC,
     at_none: shown(0).value,
-    at_full: ends.value,
-    past_full: shown(0.9).value,
-    at_third: shown(SHARE_RAMP_FULL_DIAGNOSTIC / 3).value,
+    at_full: shown(1).value,
+    at_half: shown(0.5).value,
+    at_quarter: shown(0.25).value,
+    midpoint: middle === undefined ? '' : rgbToCss(middle.value),
     steps: RAMP_TREE.length,
   };
 });
 report(
-  'the tree ramp reaches its far end at half the frame, and stays there past it',
-  ramp_rule.full === 0.5 && ramp_rule.at_full === ramp_rule.past_full &&
-    ramp_rule.at_none !== ramp_rule.at_full &&
-    ramp_rule.at_third !== ramp_rule.at_full && ramp_rule.steps > 8,
+  'the tree ramp spends its whole length on the whole frame, in plain proportion',
+  ramp_rule.full === 1 && ramp_rule.at_half === ramp_rule.midpoint &&
+    new Set([ramp_rule.at_none, ramp_rule.at_quarter, ramp_rule.at_half,
+      ramp_rule.at_full]).size === 4 && ramp_rule.steps > 8,
   `full at ${ramp_rule.full} of the frame over ${ramp_rule.steps} steps; ` +
-    `0 -> ${ramp_rule.at_none}, a third -> ${ramp_rule.at_third}, ` +
-    `half -> ${ramp_rule.at_full}, 90% -> ${ramp_rule.past_full}`,
+    `0 -> ${ramp_rule.at_none}, a quarter -> ${ramp_rule.at_quarter}, ` +
+    `half -> ${ramp_rule.at_half} (ramp midpoint ${ramp_rule.midpoint}), ` +
+    `all -> ${ramp_rule.at_full}`,
 );
 
 // And the shipped ramp is the one the tool verified against CET-I1: its ends are the map's
