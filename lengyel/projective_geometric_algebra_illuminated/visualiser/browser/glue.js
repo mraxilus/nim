@@ -89,9 +89,24 @@ let count_furniture_held = null;
 // One mesh handed to the driver whole, ready to be drawn as one run or two. Separate
 // from drawing because the two runs go out in different passes (see the draw loop below),
 // and a mesh uploaded twice a frame would be the one real cost of that split.
+// One typed staging array per GL buffer, grown to its high-water mark and refilled in
+//   place: wrapping the bridge's array in a fresh Float32Array was an allocation per
+//   buffer per frame, for bytes that live exactly as long as the bufferData call.
+const staging_upload = new Map();
 function uploadBuffer(data, handle_buffer) {
   if (data.length === 0) return null;
-  const entries = data instanceof Float32Array ? data : new Float32Array(data);
+  let entries;
+  if (data instanceof Float32Array) {
+    entries = data;
+  } else {
+    let held = staging_upload.get(handle_buffer);
+    if (held === undefined || held.length < data.length) {
+      held = new Float32Array(data.length);
+      staging_upload.set(handle_buffer, held);
+    }
+    held.set(data);
+    entries = held.subarray(0, data.length);
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
   gl.bufferData(gl.ARRAY_BUFFER, entries, gl.DYNAMIC_DRAW);
   return entries.length / 7;
@@ -1809,6 +1824,11 @@ const BUDGETS_EXCEEDANCE = [
 ];
 // Read once from the stylesheet, which is where they are set and tuned; see the tokens'
 //   own comment in `shell.html` for how the four were screened.
+// Resolved once, like the colours below: this is redrawn at frame rate while the axis
+//   glides, and each draw was asking layout for the same font token.
+const FONT_EXCEEDANCE = '9px ' +
+  (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
+    'monospace');
 const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
   getComputedStyle(document.documentElement).getPropertyValue(budget.token).trim() ||
     '#00a7a5');
@@ -1974,9 +1994,7 @@ function drawExceedance() {
       }
     : (share_below) => h - share_below * h;
 
-  context_exceedance.font = '9px ' +
-    (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
-      'monospace');
+  context_exceedance.font = FONT_EXCEEDANCE;
   context_exceedance.textBaseline = 'top';
   // Recessive rules at the heights the axis actually resolves, each named except the floor.
   //   Linear takes a quarter at a time up to 100%, which is what the curve's own arrival is
@@ -3147,7 +3165,8 @@ function renderFrame(now_seconds) {
   const ms_before_draw = performance.now();
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.uniformMatrix4fv(uniform_view_projection, false, new Float32Array(data.view_projection));
+  // A plain sequence is what the spec takes; wrapping it was a copy per frame for nothing.
+  gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
 
   // World furniture first, with normal depth test/write. Its ribbons already carry their
   // own thinner width as geometry -- there is no width to set here any more. Mirrors

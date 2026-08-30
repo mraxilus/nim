@@ -209,19 +209,29 @@ func countOverlay(mesh: Mesh): int =
   max(0, mesh.count_vertices - clamp(mesh.index_overlay.get, 0, mesh.count_vertices))
 
 
-proc flatten(mesh: Mesh): seq[float32] =
-  ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, x, y, z, r, g, b, a, ...`,
+var
+  # One flat buffer per primitive, refilled in place every frame. Fresh sequences here
+  #   were four allocations a frame -- tens of kilobytes each on a full scene -- feeding
+  #   the collector for data that lives exactly one frame. The consumer uploads or reads
+  #   them within the same frame and holds nothing across two, which is what makes reuse
+  #   sound; `setLen` on a sequence that has already grown adjusts length, not storage.
+  g_flat_tri, g_flat_ribbon, g_flat_point, g_flat_furniture: seq[float32]
+  g_flat_view: seq[float32] = newSeq[float32](16)
+
+
+proc flattenInto(mesh: Mesh; dest: var seq[float32]) =
+  ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`,
   ## ready for a caller to hand straight to `gl.bufferData`.
-  result = newSeqOfCap[float32](mesh.count_vertices * 7)
+  dest.setLen(mesh.count_vertices * 7)
   for i in 0 ..< mesh.count_vertices:
     let v = mesh.vertices[i]
-    result.add(v.x)
-    result.add(v.y)
-    result.add(v.z)
-    result.add(v.red)
-    result.add(v.green)
-    result.add(v.blue)
-    result.add(v.alpha)
+    dest[7*i + 0] = v.x
+    dest[7*i + 1] = v.y
+    dest[7*i + 2] = v.z
+    dest[7*i + 3] = v.red
+    dest[7*i + 4] = v.green
+    dest[7*i + 5] = v.blue
+    dest[7*i + 6] = v.alpha
 
 
 
@@ -1953,30 +1963,27 @@ proc nimBuildFrame(
   let ms_after_algebra = performanceNow()
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
-  var view_projection = newSeq[float32](16)
   for row in 0 .. 3:
     for column in 0 .. 3:
-      view_projection[4*column + row] = vp.at(row, column)
+      g_flat_view[4*column + row] = vp.at(row, column)
 
   # Flattened into locals rather than in the constructor, so the pack-and-copy phase has
   #   a start and an end a clock can bracket.
   let ms_after_matrix = performanceNow()
   let ms_before_flatten = ms_after_matrix
-  let
-    tri_verts = flatten(g_meshes[Primitive.Triangle])
-    ribbon_verts = flatten(g_meshes[Primitive.Ribbon])
-    point_verts = flatten(g_meshes[Primitive.Point])
-    furn_ribbon_verts =
-      if is_furniture_held: newSeq[float32](0)
-      else: flatten(g_meshes_furniture[Primitive.Ribbon])
+  flattenInto(g_meshes[Primitive.Triangle], g_flat_tri)
+  flattenInto(g_meshes[Primitive.Ribbon], g_flat_ribbon)
+  flattenInto(g_meshes[Primitive.Point], g_flat_point)
+  if is_furniture_held: g_flat_furniture.setLen(0)
+  else: flattenInto(g_meshes_furniture[Primitive.Ribbon], g_flat_furniture)
   let ms_done = performanceNow()
 
-  FrameData(
-    tri_verts: tri_verts,
-    ribbon_verts: ribbon_verts,
-    point_verts: point_verts,
-    view_projection: view_projection,
-    furn_ribbon_verts: furn_ribbon_verts,
+  var data = FrameData(
+    tri_verts: g_flat_tri,
+    ribbon_verts: g_flat_ribbon,
+    point_verts: g_flat_point,
+    view_projection: g_flat_view,
+    furn_ribbon_verts: g_flat_furniture,
     is_furniture_held: is_furniture_held,
     ms_grid: float32(ms_grid),
     ms_axes: float32(ms_axes),
@@ -2016,3 +2023,11 @@ proc nimBuildFrame(
     ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
     point_over: countOverlay(g_meshes[Primitive.Point]),
   )
+  # The whole of the proc, stamped **after** the record is built: the three overlay scans
+  #   and the record's own construction used to fall past `ms_done`, so `ms_build` closed
+  #   before the work did and the tail belonged to no row at all. The residue widens by
+  #   the same span, so the rows still sum to the total they are under.
+  let ms_returned = performanceNow()
+  data.ms_build = float32(ms_returned - ms_entered)
+  data.ms_unaccounted += float32(ms_returned - ms_done)
+  data
