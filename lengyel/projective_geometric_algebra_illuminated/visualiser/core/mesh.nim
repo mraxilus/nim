@@ -712,6 +712,22 @@ func blend(first, second: Rgba; fraction: float): Rgba =
   )
 
 
+type RibbonPiece* = object
+  ## Hold one ribbon segment, fully resolved: where it runs, which way it steps off, and
+  ## what colour each end is.
+  ##   **The record the algebra hands the picture.** A lattice line's pieces used to be
+  ## assembled and emitted in one interleaved loop, with the boundary read sitting inside
+  ## `addSegmentAcross`'s own argument list -- so the two languages met in the middle of a
+  ## statement and no bracket could separate them. Assembling a whole family into these
+  ## first and emitting them after makes that seam a line in the code rather than a claim
+  ## in a comment, which is what lets the panel say what each side cost.
+  ##   Everything here is Euclidean: by the time a piece exists, the algebra has finished
+  ## with it.
+  tail*, head*: Position
+  across*: Direction ## Which way the ribbon steps off; one per lattice line, not per piece.
+  tint_tail*, tint_head*: Rgba
+
+
 proc addSegmentAcross*(
   meshes: var MeshSet; tail, head: Position; across: Direction;
   tint_tail, tint_head: Rgba; width: float32; scale: DrawScale
@@ -789,6 +805,18 @@ func directionAcross*(tail, head, eye: Position): Option[Direction] =
   ##   None where the eye lies on the segment's own line, or where the segment has no
   ##   length: neither has a side to step off toward.
   normalize(cross(head - tail, eye - tail))
+
+
+proc addRibbonPieces*(
+  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32; scale: DrawScale
+) =
+  ## Append every assembled piece as a ribbon.
+  ##   The emit half of the seam above: no multivector is named here, and none can be --
+  ##   this module cannot reach the algebra at all.
+  for piece in pieces:
+    meshes.addSegmentAcross(
+      piece.tail, piece.head, piece.across, piece.tint_tail, piece.tint_head, width, scale,
+    )
 
 
 proc addSegment*(

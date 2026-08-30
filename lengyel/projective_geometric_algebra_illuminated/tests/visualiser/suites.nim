@@ -111,6 +111,11 @@ GENERAL_SECOND = [
 # Mesh storage is far too large for a stack frame, exactly as it is in the application.
 var MESHES: MeshSet
 
+# Where a tessellation step assembles its ribbon pieces before emitting them. The
+#   application carves this from the frame arena on the desktop and holds a fixed buffer on
+#   the browser; a suite has neither, and one shared array is the same shape as both.
+var SCRATCH_RIBBON: array[SEGMENTS_GRID_MAX, RibbonPiece]
+
 
 func `=~`(a, b: float): bool =
   ## Compare approximate equality between scalars.
@@ -1176,7 +1181,7 @@ suite "Mesh":
   test "world furniture stays inside the fog it is drawn in":
     MESHES.clearMeshes
     MESHES.addAxes(SCALE_FOG.extent_furniture, SCALE_FOG)
-    MESHES.addGrid(SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addGrid(SCRATCH_RIBBON, SCALE_FOG.extent_furniture, SCALE_FOG)
     check MESHES[Primitive.Ribbon].count_vertices > 0
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
@@ -1192,7 +1197,7 @@ suite "Mesh":
     #   since either alone passes under the old behaviour.
     let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
     MESHES.clearMeshes
-    MESHES.addGrid(scale_afar.extent_furniture, scale_afar)
+    MESHES.addGrid(SCRATCH_RIBBON, scale_afar.extent_furniture, scale_afar)
     check MESHES[Primitive.Ribbon].count_vertices > 0
     let fog = fogFurnitureFor(scale_afar.extent_furniture)
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
@@ -1203,7 +1208,7 @@ suite "Mesh":
 
   test "ground grid holds full alpha near the camera and fades to nothing at its reach":
     MESHES.clearMeshes
-    MESHES.addGrid(SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addGrid(SCRATCH_RIBBON, SCALE_FOG.extent_furniture, SCALE_FOG)
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     var
       alpha_near_min = 1.0
@@ -1286,7 +1291,7 @@ suite "Mesh":
         #   part of that arithmetic at the wider of these two reaches.
         pieces = segmentsGridFadeFor(2*int(floor(radius/SIZE_CELL_GRID)) + 1)
       MESHES.clearMeshes
-      MESHES.addGrid(extent, scale_above)
+      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_above)
       check MESHES[Primitive.Ribbon].count_vertices == lines*pieces*6
       for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
         let
@@ -1341,7 +1346,7 @@ suite "Mesh":
     ]:
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
-      MESHES.addGrid(extent, scale_afar)
+      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_afar)
       # Six vertices a segment; see `addSegmentAcross`.
       check MESHES[Primitive.Ribbon].count_vertices div 6 <= SEGMENTS_GRID_MAX
       check MESHES[Primitive.Ribbon].count_vertices > 0
@@ -1350,7 +1355,7 @@ suite "Mesh":
     #   is untouched" means: nothing there is drawn more coarsely than it was.
     let scale_opening = scaleFurnitureAt(Position(x: 0, y: 0, z: 1.0e1), 2.0e2)
     MESHES.clearMeshes
-    MESHES.addGrid(2.0e2, scale_opening)
+    MESHES.addGrid(SCRATCH_RIBBON, 2.0e2, scale_opening)
     check MESHES[Primitive.Ribbon].count_vertices div 6 < SEGMENTS_GRID_MAX div 2
 
 
@@ -1382,7 +1387,7 @@ suite "Mesh":
     for (extent, height) in [(1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7)]:
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
-      MESHES.addGrid(extent, scale_afar)
+      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_afar)
       check MESHES[Primitive.Ribbon].count_vertices > 0
       check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
       # Laid on world multiples of the cell this reach asked for, so the lattice is still

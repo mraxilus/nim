@@ -50,6 +50,15 @@ import ../core/[
 
 
 
+# Where a tessellation step assembles its ribbon pieces before emitting them. **A fixed
+#   buffer rather than the desktop's frame arena**, which casts a pointer over a global and
+#   carves typed slices from it -- neither of which the JS backend can do, which is why
+#   `arena.nim` is desktop-only. Sized by the same budget that bounds the work:
+#   `SEGMENTS_GRID_MAX` is what `segmentsGridFadeFor` cuts the fade to, so a family cannot
+#   assemble more pieces than this holds.
+var g_scratch_ribbon: array[SEGMENTS_GRID_MAX, RibbonPiece]
+
+
 proc performanceNow(): float {.importjs: "performance.now()".}
   ## Read the page's own monotonic clock, in milliseconds.
   ##   The bridge's one piece of interop beyond its exports: everything else takes the
@@ -1796,7 +1805,8 @@ proc nimBuildFrame(
     #   and the grid is however many the ground reaches, so a scenery figure that rose
     #   could not say which of them rose without this.
     let ms_before_grid = performanceNow()
-    if is_grid_shown: addGrid(g_meshes_furniture, scale.extent_furniture, scale)
+    if is_grid_shown:
+      addGrid(g_meshes_furniture, g_scratch_ribbon, scale.extent_furniture, scale)
     # Counted here, between the two, so the figure is the grid's own and not the grid's
     #   plus the axes' fixed share; see `mesh.addSegmentAcross` for the six a segment is.
     g_count_grid_segments = g_meshes_furniture[Primitive.Ribbon].count_vertices div 6
@@ -1897,7 +1907,7 @@ proc nimBuildFrame(
   let ms_before_algebra = performanceNow()
   if is_algebra_shown:
     g_meshes.addFrameTrace(
-      g_scene, g_camera, staged(), g_interaction.cursor, scale,
+      g_scratch_ribbon, g_scene, g_camera, staged(), g_interaction.cursor, scale,
       width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
     )
   let ms_after_algebra = performanceNow()

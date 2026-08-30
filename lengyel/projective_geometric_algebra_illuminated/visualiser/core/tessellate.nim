@@ -333,7 +333,7 @@ func segmentsGridFadeFor*(count_lines: int): int =
 
 
 proc addGridFamily*(
-  meshes: var MeshSet; scale: DrawExtent; tint: Rgba;
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; scale: DrawExtent; tint: Rgba;
   fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
   along, across: Direction; origin: Position = ORIGIN_WORLD
 ) =
@@ -368,6 +368,7 @@ proc addGridFamily*(
     #   lines it is about to lay: the budget is a property of the family, and a per-line
     #   answer would cut neighbouring lines differently and band the fade across the grid.
     segments_fade = segmentsGridFadeFor(last - first + 1)
+  var count_assembled = 0
   for i in first .. last:
     # Skips the lattice line through the world origin: it coincides exactly with a world
     #   axis, and would either fight it for the same depth or hide its colour under plain
@@ -391,22 +392,38 @@ proc addGridFamily*(
     #   very refusal `addSegment` makes per piece, made once for the line.
     if across_line.isNone: continue
     for j in 0 ..< segments_fade:
+      # Assembled, not drawn. Every piece of the family is resolved into `scratch` through
+      #   the algebra first and the whole run emitted below, so the two languages meet at
+      #   a `RibbonPiece` rather than inside an argument list -- see that type's own note.
+      #   Silently stops at the scratch's end rather than growing it: the caller sized it
+      #   from `SEGMENTS_GRID_MAX`, which is the same budget `segmentsGridFadeFor` cuts
+      #   the fade to, so a full buffer means that budget was raised and this was not.
+      if count_assembled >= len(scratch): break
       let
         a = reach * (2.0*float(j)/float(segments_fade) - 1.0)
         b = reach * (2.0*float(j + 1)/float(segments_fade) - 1.0)
         end_a = add(base, wedge(a, along_point))
         end_b = add(base, wedge(b, along_point))
-        tint_a = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_a, scale.eye_point), fog.radius_full, fog.radius_gone))
-        tint_b = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_b, scale.eye_point), fog.radius_full, fog.radius_gone))
-      meshes.addSegmentAcross(
-        pointFrom(end_a), pointFrom(end_b), across_line.get, tint_a, tint_b,
-        WIDTH_LINE_FURNITURE, scale,
+      scratch[count_assembled] = RibbonPiece(
+        tail: pointFrom(end_a),
+        head: pointFrom(end_b),
+        across: across_line.get,
+        tint_tail: tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_a, scale.eye_point), fog.radius_full, fog.radius_gone)),
+        tint_head: tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_b, scale.eye_point), fog.radius_full, fog.radius_gone)),
       )
+      count_assembled += 1
+
+  # And the picture, in one pass over what the algebra worked out.
+  meshes.addRibbonPieces(
+    scratch.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+  )
 
 
-proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
+proc addGrid*(
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; extent: float; scale: DrawExtent
+) =
   ## Append reference grid on the ground, so distance and direction stay judgeable, at
   ## `sizeCellGridFor` cells laid around wherever the camera is standing.
   ##   **Fog, not a halo.** Every line is faded by its own endpoints' distance from the
@@ -434,12 +451,15 @@ proc addGrid*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
   let
     radius_ground = reach.get
     size_cell = sizeCellGridFor(radius_ground)
+  # One family at a time through the one scratch: each assembles, emits, and is done with
+  #   it before the next begins, so the buffer is sized for the larger family rather than
+  #   for both at once.
   meshes.addGridFamily(
-    scale, tint, fog, radius_ground, size_cell,
+    scratch, scale, tint, fog, radius_ground, size_cell,
     along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
   )
   meshes.addGridFamily(
-    scale, tint, fog, radius_ground, size_cell,
+    scratch, scale, tint, fog, radius_ground, size_cell,
     along = Direction(x: 1, y: 0, z: 0), across = Direction(x: 0, y: 1, z: 0),
   )
 

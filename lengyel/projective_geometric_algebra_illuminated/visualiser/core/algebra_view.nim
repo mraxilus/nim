@@ -73,7 +73,8 @@ func inkFor(role: TracedRole): Rgba =
 
 
 proc addLattice*(
-  meshes: var MeshSet; plane: Multivector; tint: Rgba; scale: DrawExtent
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; plane: Multivector; tint: Rgba;
+  scale: DrawExtent
 ) =
   ## Append a plane drawn as the infinite thing it is: a lattice laid across it, reaching as
   ## far as the fog does and faded out rather than stopped at an edge.
@@ -97,14 +98,19 @@ proc addLattice*(
     fog = fogFurnitureFor(scale.extent_furniture)
     (first, second) = (axes.get.axis_first, axes.get.axis_second)
   meshes.addGridFamily(
-    scale, tint, fog, radius, size_cell, along = first, across = second, origin = anchor.get,
+    scratch, scale, tint, fog, radius, size_cell,
+    along = first, across = second, origin = anchor.get,
   )
   meshes.addGridFamily(
-    scale, tint, fog, radius, size_cell, along = second, across = first, origin = anchor.get,
+    scratch, scale, tint, fog, radius, size_cell,
+    along = second, across = first, origin = anchor.get,
   )
 
 
-proc addTraced*(meshes: var MeshSet; traced: Traced; scale: DrawExtent): Placement =
+proc addTraced*(
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; traced: Traced;
+  scale: DrawExtent
+): Placement =
   ## Append one recorded multivector, in its true form.
   ##   A finite plane becomes its lattice; everything else goes through the very same
   ##   `tessellate.addObject` the ordinary picture uses, because for a point, a line, and
@@ -113,19 +119,24 @@ proc addTraced*(meshes: var MeshSet; traced: Traced; scale: DrawExtent): Placeme
   ##   Only the plane had a stand-in worth replacing.
   let tint = inkFor(traced.role)
   if shape(traced.geometry) == some(Shape.Plane) and not isHorizon(traced.geometry):
-    meshes.addLattice(traced.geometry, tint.fade(tint.alpha*ALPHA_ALGEBRA_LATTICE), scale)
+    meshes.addLattice(
+      scratch, traced.geometry, tint.fade(tint.alpha*ALPHA_ALGEBRA_LATTICE), scale,
+    )
     return Placement.Finite
   meshes.addObject(traced.geometry, tint, scale)
 
 
-proc addTrace*(meshes: var MeshSet; trace: AlgebraTrace; scale: DrawExtent) =
+proc addTrace*(
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; trace: AlgebraTrace;
+  scale: DrawExtent
+) =
   ## Append everything one frame recorded, in the order it was recorded.
-  for traced in trace: discard meshes.addTraced(traced, scale)
+  for traced in trace: discard meshes.addTraced(scratch, traced, scale)
 
 
 proc addFrameTrace*(
-  meshes: var MeshSet; scene: Scene; camera: Camera; staged: Option[Preview];
-  cursor: ScreenPosition; scale: DrawExtent; width, height: int
+  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; scene: Scene; camera: Camera;
+  staged: Option[Preview]; cursor: ScreenPosition; scale: DrawExtent; width, height: int
 ) =
   ## Record everything this frame's geometry rests on, and draw it.
   ##   **Both render paths call this one proc**, rather than each assembling its own list:
@@ -159,4 +170,4 @@ proc addFrameTrace*(
   let met = ray ∨ levelPlaneThrough(toMultivector(camera.target))
   if position(met).isSome: trace.record(TracedRole.CursorHit, met)
 
-  meshes.addTrace(trace, scale)
+  meshes.addTrace(scratch, trace, scale)

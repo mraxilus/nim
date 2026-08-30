@@ -357,7 +357,14 @@ proc assembleMeshes(
   ##   called beside this one rather than from inside it.
   let ticks_start = getMonoTime().ticks
   MESHES_FURNITURE.clearMeshes
-  if panel.is_grid_shown: MESHES_FURNITURE.addGrid(scale.extent_furniture, scale)
+  # Where the grid assembles its pieces before emitting them, carved from the frame pair
+  #   rather than reserved as another global: this is the per-frame scratch that arena was
+  #   waiting for, and the swap hands it back clean at the top of every frame.
+  let scratch_ribbon = ARENA_SWAP.current.push[:RibbonPiece](SEGMENTS_GRID_MAX)
+  if panel.is_grid_shown:
+    MESHES_FURNITURE.addGrid(
+      scratch_ribbon.toOpenArray(0, SEGMENTS_GRID_MAX - 1), scale.extent_furniture, scale,
+    )
   if panel.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture, scale)
 
   MESHES.clearMeshes
@@ -436,6 +443,7 @@ proc assembleMeshes(
   #   cannot drift. See `algebra_trace`.
   if panel.is_algebra_shown:
     MESHES.addFrameTrace(
+      scratch_ribbon.toOpenArray(0, SEGMENTS_GRID_MAX - 1),
       scene, camera, staged, interaction.cursor, scale, width = width, height = height,
     )
 
