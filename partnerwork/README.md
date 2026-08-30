@@ -246,9 +246,13 @@ src/partnerwork/spokes.nim      the frame held and every way out of it, and no m
 src/partnerwork/motion.nim      when a drawing moves: the phases and their times
 src/partnerwork/workbook.nim    the base sheet as data, and the audit against it
 src/partnerwork/rotation.nim    the unfinished rotation axis: twist, body, wraps
-src/partnerwork/sim.nim         the physical rig: bodies and ropes, refereeing
-                                what the names and drawings are shorthand for
+src/partnerwork/axle.nim        the rotation axis drawn as an axle of postures
+src/partnerwork/draw/           the shared drawing chain: geometry, style, pose,
+                                body, figure, route, scene, and its own terms
 app/                            the browser validator
+design/                         the mock-up workbench: rules first, pages after
+sim/                            the body sim: two cylinders and rope, standalone,
+                                sharing no code with any of the above on purpose
 tools/audit.nim                 the same audit, printed
 tools/review.nim                writes the review page from the model
 tests/                          the laws, checked over every pair of frames
@@ -262,6 +266,9 @@ doc/frames/*.svg                one picture per frame, for anything that is not 
 nimble test         # the laws, including that the review page is not stale
 nimble audit        # the model and what it says about the workbook, printed
 nimble review       # rewrite doc/review.html and doc/frames/ from the model
+nimble app          # rebuild the validator, and bundle it into one file
+nimble marks        # check and rebuild the mock-up workbench's pages
+nimble sim          # check the body sim's laws, then build its page
 ```
 
 
