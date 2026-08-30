@@ -64,9 +64,11 @@ node design/shot.js design/frames.html out-prefix
 ## Rules as given
 
 Every rule stated for this drawing, in the words it arrived in, and the check
-that holds the drawing to it.  The wordings live as data in `rules.nim`, so
-this list, the checks and the pages quote one source; `checks.checkRules`
-runs on every build and prints one line per rule.  A rule that is only
+that holds the drawing to it.  The wordings live as data in `rules.nim`, the
+ledger this list mirrors entry for entry — mirrors by hand: nothing loads the
+ledger yet, and `rules.nim` records making it load-bearing as an open
+question.  The checkers run on every build and print one line per standing
+rule, twenty-nine lines for the thirty-five entries here.  A rule that is only
 implemented and not asserted is a rule that quietly stops being true, which
 has happened here more than once.
 
@@ -106,13 +108,22 @@ has happened here more than once.
     (i.e. assumed all rotations are high so no wraps/locks)."**  The rotation
     page's standing assumption: every held connection carries the high dot,
     no way is ever named, and nothing settles off its side.
+    *The page is retired and the assumption inverted since: rule 17 carries
+    a turning hold `above`, and the build now asserts the high dot is
+    absent from the turn figures.*
 11. **"no additional frame positions, just the addition of rotations that
     let us travel between them."**  Every position the rotation page draws is
     one of the app's eight frames, wound.
+    *The rotation page is retired; the standing form of the rule lives on
+    the turn pages, whose positions are the app's four single-hand frames
+    in their four orientations, and the crossed pair along its chain.*
 12. **"hand to hand should have 3 positions allowed by rotation."**  Half a
     turn each way and no further -- two connections halve the ceiling.  A
     single hold gets five, a full turn each way, the model's own measured
     capacity.
+    *The single-hold half is superseded too: rule 16 removed the ceiling a
+    lone hand was counted against, so it has four orientations and no
+    wound-out end rather than five positions.*
     *The count has grown twice since, on the rules' own instruction: rule 28
     put an X between each pair, making five, and rule 31 a swan beyond each
     end, making seven.  What held is the shape -- a chain with ends, not a
@@ -193,8 +204,8 @@ has happened here more than once.
     seen gap.  The exemption for a moving reach is the rule's own, and the
     check asserts *both* halves -- statics clear every mark, animations stay
     straight.  *Carried on the turns pages first; the frame page's straight
-    and wrapping reaches are the next piece, and `partsOf`'s `clear_marks`
-    is the switch that will do it.*
+    and wrapping reaches are the next piece, and `figure.renderFigure`'s
+    `clear_marks` parameter is the switch that will do it.*
 23. **"the current line finding does a good job of finding the shortest
     line, but we also need to balance simplicity. prefer paths that have
     fewers bends (ideally 1) as well as length. in many cases I see, 1 bend
@@ -208,8 +219,10 @@ has happened here more than once.
     is a single bend by construction.  The rule's "ideally 1" is read as
     *leave alone anything already turning once or not at all*.  Measured on
     the build: of the sixty-four settled reaches the single-hand page draws,
-    fifty-six run straight, eight bend exactly once and none bends twice —
-    and the one-bend way is usually the **shorter** line as well.
+    fifty-six ran straight, eight bent exactly once and none bent twice —
+    and the one-bend way is usually the **shorter** line as well.  (A
+    snapshot: the build prints the live split and asserts only that nothing
+    bends three times.)
 24. **"prefer smooth long curves instead of sharp breaks as well. some of
     these can be accomplished with a singular bezier with a more gentle
     curvature just as well as the current sharp direction changes."**  Rule
@@ -220,9 +233,10 @@ has happened here more than once.
     clears every mark.  A bezier turns one way only, so the route is still
     one bend, and it has no corner in it.  A route that already runs plain
     is only left alone if it is *also* smooth, so a break is never kept for
-    being short.  Measured: the sharpest corner anywhere on the page turns
-    6.5 degrees, where `ROUTE_N` straight bits across a curve turn a few
-    degrees each by construction.
+    being short.  Measured when the rule landed: the sharpest corner then
+    turned 6.5 degrees.  (A snapshot from before rule 35's quadratics; the
+    build asserts the corner of the stored polyline, and the drawn curve is
+    smoother than what it measures.)
 25. **"reposition the lead such that when the follow orbits or the lead
     turns on axis, the 2nd animation stage doesn't have to move the result
     around, i.e. lead position should remain fixed as much as possible
@@ -252,8 +266,9 @@ has happened here more than once.
     long a stage lasts is the drawing's decision rather than a side effect
     of how finely it was sampled.  Three things rank the stages, which is
     what motion design does with any secondary or camera move: the
-    re-framing is paced at a fraction of the turn (`RE_FRAME_PACE` is 0.4,
-    and the clock the markup actually carries comes out at 35%), a beat is
+    re-framing is paced at a fraction of the turn (`RE_FRAME_PACE` is 0.4;
+    the clock the markup carried measured 35% when this was written, and
+    the build asserts only that it stays under half the turn's), a beat is
     held on the turn's landing so the two do not blur together
     (`ARRIVAL_HOLD`), and it still starts and ends softly, because an
     abrupt start is the one thing that would pull an eye back to it.  The
