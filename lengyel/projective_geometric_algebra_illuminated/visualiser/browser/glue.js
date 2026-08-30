@@ -2121,13 +2121,41 @@ const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
 //   a fast frame and a tenth of a slow one wear the same colour, and the curve above says
 //   which of the two the session is in. The shares nest correctly, a parent's being the sum
 //   of its children's, and they sum with `idle` to the whole ramp.
-//   The cost is stated plainly: a page waiting on the display spends most of a frame idle,
-//   so on a healthy session every row sits near the cyan end and the tree reads as one
-//   colour. That is the honest picture of where a frame goes -- the colours open up exactly
-//   when the drawing starts to fill the frame, which is when the tree is worth reading.
 // **Where the ramp reaches its far end**: a row costing this share of the frame is drawn in
 // the map's last colour. At the whole frame the far end means a step that *is* the frame.
 const SHARE_RAMP_FULL_DIAGNOSTIC = 1.0;
+// **The ramp is walked by ratio, not by difference.** Laid out linearly over the whole
+//   frame, every row on a comfortable session lands in the first two steps and the tree
+//   reads as one colour: a page waiting on the display spends most of a frame idle, so the
+//   drawing's own rows are all small fractions and the interesting differences between them
+//   -- one row ten times another -- are differences the far end of the scale cannot show.
+//   Measured that way at 28.8 ms: the costliest row at 12.7% and the floor at 0.3% sat 30
+//   units of blue apart out of the ramp's 131, and the rows between them were one colour.
+//   On this scale **equal distance along the ramp is equal ratio of cost**, which is the
+//   comparison a reader is actually making, and the spread no longer depends on whether the
+//   frame happened to be busy.
+//   The knee is where the scale stops being logarithmic and goes linear, so a row costing
+//   nothing has somewhere to sit -- a log has no zero. A hundredth of the frame is the
+//   choice: below it a row is not the one to look at whatever it sits next to.
+//   A **symlog** proper, linear under the knee and logarithmic over it, rather than the
+//   `log1p` that smooths the join. `log1p` is only asymptotically logarithmic, so its
+//   decades are not equal -- measured, the decade above the knee spanned 0.37 of the ramp
+//   where the top one spanned 0.48 -- and the equal-ratio-equal-distance promise above is
+//   the whole point. The seam costs a kink in the rate at the knee and buys exactness.
+//   The linear toe is worth **one decade of ramp**, the usual convention, which makes the
+//   whole scale legible as a sentence: below a hundredth of the frame, then a hundredth to
+//   a tenth, then a tenth to all of it -- a third of the ramp each.
+const SHARE_RAMP_KNEE_DIAGNOSTIC = 0.01;
+const DECADES_RAMP_TREE = Math.log10(SHARE_RAMP_FULL_DIAGNOSTIC / SHARE_RAMP_KNEE_DIAGNOSTIC);
+const UNITS_RAMP_TREE = DECADES_RAMP_TREE + 1; // The decades, plus the toe's own decade.
+function positionRampTree(share) {
+  // Where a share falls along the ramp, from nothing at 0 to all of it at a whole frame.
+  const held = Math.min(Math.max(share, 0), SHARE_RAMP_FULL_DIAGNOSTIC);
+  if (held <= SHARE_RAMP_KNEE_DIAGNOSTIC) {
+    return held / SHARE_RAMP_KNEE_DIAGNOSTIC / UNITS_RAMP_TREE;
+  }
+  return (1 + Math.log10(held / SHARE_RAMP_KNEE_DIAGNOSTIC)) / UNITS_RAMP_TREE;
+}
 // The tree's ramp, from `ramp.nim` through `nimRampTree`: six floats a step, a row's
 // label rgb then its value rgb. What the ramp is -- CET-I1 re-lit to this drawer's own
 // text tones -- and what holds it to that is `tools/check_ramp.nim`; nothing here knows
@@ -2144,14 +2172,20 @@ const RAMP_TREE = (() => {
   return steps;
 })();
 
-// The legend bar wears the ramp itself, painted from the same table the rows are tinted
-// from -- so a key that disagreed with the tree would have to be a bug in one line rather
-// than a second declaration left behind.
+// The legend bar is the ramp **as the rows are actually tinted**: across its width sits the
+// share, not the ramp position, so the colours crowd into its left exactly as they do down
+// the tree and a reader can lay a row's colour against it and read the share off. Painted
+// by calling the same function the rows are tinted by, so a key that disagreed with the
+// tree would have to be a bug in one line rather than a second declaration left behind.
+const STOPS_LEGEND_RAMP = 48;
 (() => {
   const bar = document.getElementById('diag-legend-ramp');
   if (bar === null) return;
-  const stops = RAMP_TREE.map((step, index) =>
-    `${rgbToCss(step.label)} ${((index / (RAMP_TREE.length - 1)) * 100).toFixed(1)}%`);
+  const stops = [];
+  for (let i = 0; i <= STOPS_LEGEND_RAMP; i += 1) {
+    const share = i / STOPS_LEGEND_RAMP;
+    stops.push(`${rampTreeAt(share).label} ${(share * 100).toFixed(1)}%`);
+  }
   bar.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
 })();
 
@@ -2159,8 +2193,7 @@ function rampTreeAt(share) {
   // Sample the ramp at one row's share of the frame, interpolating between the shipped
   //   steps so a row's colour moves as its cost does rather than stepping between bands.
   //   `check_ramp` measures what interpolating costs against the map's full 256 entries.
-  const position = Math.min(Math.max(share, 0) / SHARE_RAMP_FULL_DIAGNOSTIC, 1) *
-    (RAMP_TREE.length - 1);
+  const position = positionRampTree(share) * (RAMP_TREE.length - 1);
   const below = Math.min(Math.floor(position), RAMP_TREE.length - 2);
   const fraction = position - below;
   const mix = (first, second) => rgbToCss([0, 1, 2].map(

@@ -1283,12 +1283,16 @@ time rather than the page's.
 **A row's colour says what share of the frame it took, absolutely.** Twenty-odd numbers say
 nothing about which one to look at, so the tree is tinted — but a *relative* tint contradicts
 the curve above it, painting the costliest row of a comfortable session as though it were the
-problem. The share is therefore taken against the whole frame, idle included, spread over the
-ramp's whole length, and carries no cap: the tree says where the time went and the curve says
-whether that matters, and neither may be made to answer the other's question. The consequence
-is accepted rather than tuned away — a comfortable frame is mostly idle, so its rows crowd
-into the ramp's first steps, and pulling the far end inward to spread them out would report
-the ramp's calibration instead of the frame. Three properties hold
+problem. The share is therefore taken against the whole frame, idle included, and carries no
+cap: the tree says where the time went and the curve says whether that matters, and neither
+may be made to answer the other's question. **The ramp is walked by ratio, not by
+difference** — equal distance along it is equal ratio of cost, on a symmetric-log scale whose
+linear knee gives a row costing nothing somewhere to sit. Laid out linearly the scale is
+useless in practice: a frame is mostly idle, so every row of the drawing is a small fraction
+and they crowd into the first steps. Ratio is also the comparison a reader is making, and it
+frees the spread from whether the frame happened to be busy. Pulling the ramp's far end
+inward instead would report the ramp's calibration rather than the frame, so the end stays at
+a whole frame and the scale does the work. Three properties hold
 it up. The ramp is **isoluminant** — these rows are text, whose lightness already carries the
 label/value hierarchy, so only hue and chroma are the tint's to spend, and each row keeps the
 tone it wore untinted. The colours ship as a **table checked against their published source**

@@ -2133,23 +2133,36 @@ checks, with the margins they passed at: the table reproduces the re-lit map to 
 by more than **0.09** (floor 1.5), which is what makes 17 enough; and each ramp's ends stay
 **26.4** apart in OKLab ×100 (floor 25.0), so the two extremes are unmistakably different
 colours at the same lightness.
-  **The denominator is the whole frame and the ramp spans the whole of it.**
-`SHARE_RAMP_FULL_DIAGNOSTIC` = 1.0, so the mapping is a plain proportion: a row at half the
-frame sits at the ramp's own midpoint, and only a row that *is* the frame reaches orange.
-Sharing against the whole frame — idle included — rather than against the summed work is
-what the reading asks for, and the two phrasings coincide here: the tree's top rows plus
-`idle` *are* the frame, so a row's share of the frame is its share against the rest of the
-tree. `idle` itself stays **untinted**: it is the frame's leftover rather than work done, and
-on a healthy frame it is the largest share of all, so colouring it would paint the best case
-as the worst.
-  **The cost of spanning the whole frame is stated rather than tuned away.** A page waiting
-on the display spends most of a frame idle, so on a comfortable session every row lands in
-the ramp's first steps and the tree reads as close to one colour — measured on the driving
-container at 60 fps, the costliest row was 1.3 ms of a 16.7 ms frame, step 1 of 17. An
-earlier revision pulled the far end in to half the frame to open that spread up, and it was
-removed deliberately: a ramp whose end is chosen to make quiet sessions look colourful is
-reporting the ramp's calibration rather than the frame. The colours open up exactly when the
-drawing starts to fill the frame, which is when this tree is worth reading at all.
+  **The denominator is the whole frame and the ramp ends at the whole of it.**
+`SHARE_RAMP_FULL_DIAGNOSTIC` = 1.0: only a row that *is* the frame reaches orange. Sharing
+against the whole frame — idle included — rather than against the summed work is what the
+reading asks for, and the two phrasings coincide here: the tree's top rows plus `idle` *are*
+the frame, so a row's share of the frame is its share against the rest of the tree. `idle`
+itself stays **untinted**: it is the frame's leftover rather than work done, and on a healthy
+frame it is the largest share of all, so colouring it would paint the best case as the worst.
+  **The ramp is walked by ratio, on a symlog.** Laid out linearly it was useless in practice:
+a page waiting on the display spends most of a frame idle, so every row of the drawing is a
+small fraction and they all crowd into the ramp's first steps. Measured on a 28.8 ms frame,
+the costliest row at 12.7% and the floor at 0.3% sat one step of seventeen apart and the rows
+between them were one colour. What a reader compares is *one row against another* — this one
+is ten times that one — so equal ratios are made equal distances along the ramp, and the
+spread then no longer depends on whether the frame happened to be busy. The same frame now
+covers **nine of seventeen steps**.
+  `SHARE_RAMP_KNEE_DIAGNOSTIC` = 0.01 is the knee, below which the scale goes linear so that
+a row costing nothing has somewhere to sit — a logarithm has no zero. A hundredth of the
+frame is chosen because below it a row is not the one to look at whatever it sits beside.
+  A **symlog proper** — linear under the knee, logarithmic over it — and not the `log1p` that
+smooths the join, which was written first and measured: `log1p` is only asymptotically
+logarithmic, so its decades come out unequal, the one above the knee spanning 0.37 of the
+ramp where the top one spanned 0.48. The seam costs a kink in the rate at the knee and buys
+exactness. The linear toe is worth one decade of ramp, the usual convention, which makes the
+whole scale a sentence: under a hundredth of the frame, then a hundredth to a tenth, then a
+tenth to all of it — **a third of the ramp each**, held to 1e-9 by a driven check.
+  **The key shows the warp rather than describing it.** The legend bar is painted by calling
+the very function the rows are tinted by, sampled across share rather than across ramp
+position, so the colours crowd into its left exactly as they do down the tree and a row's
+colour can be laid against the bar and its share read off. `log` beside it is the word the
+exceedance graph directly above already uses for a scale of this shape.
   **The band ceiling is gone, and that is the point of the change.** The previous tint was a
 share of the frame's *work*, which is a relative quantity — on a session that never dropped
 below 120 fps the costliest row was still painted red beside an entirely blue chart, so the

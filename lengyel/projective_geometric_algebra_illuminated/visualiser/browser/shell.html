@@ -1172,12 +1172,14 @@
              clock here can see it. -->
         <!-- What the colours mean, said once. Each row is tinted by its own share of the
              frame on a continuous ramp, so without this line a warm row reads as a verdict
-             on the milliseconds beside it rather than on their share. The bar is the very
-             ramp the rows are drawn from -- painted by glue.js out of `nimRampTree`, not
-             re-declared here -- and it ends where the ramp does, at half the frame. Hue is
-             never the sole encoding in this drawer; every row's own figure stands beside
-             it, and this names what the hue is measuring. -->
-        <div class="diag-legend"><span>share of the frame</span
+             on the milliseconds beside it rather than on their share. The bar runs from no
+             share to a whole frame and is painted by glue.js **through the tinting function
+             itself**, so the crowding a reader sees in it is the crowding the tree has -- a
+             row's colour can be laid against the bar and its share read off the position.
+             `log` is the word the graph above already uses for a scale of this shape, so it
+             is the word used here. Hue is never the sole encoding in this drawer; every
+             row's own figure stands beside it, and this names what the hue measures. -->
+        <div class="diag-legend"><span>share of the frame &#183; log</span
           ><span class="diag-legend-axis"><b>0</b
             ><span class="key-ramp" id="diag-legend-ramp"></span><b>1</b></span></div>
         <div class="diag-node" data-node="build">

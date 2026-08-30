@@ -1491,37 +1491,62 @@ report(
     (aligned.trailing.length === 0 ? '' : `; trailing past ms: ${aligned.trailing.join(', ')}`),
 );
 
-// **The ramp says what it claims to say**, which is a row's share of the frame spread over
-// the whole of one. Checked on the rule itself rather than on a rendered row: a row that is
-// the entire frame must wear the ramp's last colour, a quarter and a half of one must each
-// wear a distinct colour short of it, and the mapping must be a plain proportion -- half
-// the frame lands at the ramp's own midpoint, which is what "the whole proportion" means.
+// **The ramp says what it claims to say**: a row's share of the frame, walked by ratio
+// rather than by difference, ending at a whole frame. Checked on the rule itself rather
+// than on a rendered row -- a decade of cost must be a fixed distance along the ramp
+// wherever it is taken, the linear toe must be worth exactly one more of those, the ends
+// must be nothing and the whole frame, and the walk must never go backwards. The tolerance
+// is tight because a symlog makes the decades exactly equal; an approximation that only
+// converges to it -- `log1p`, which this replaced -- misses by 0.11 and fails here.
 //   Nothing caps it. The band ceiling the tree used to carry existed because the old tint
 // was a share of the frame's *work*, a relative measure that painted the costliest row red
 // on a session where nothing was slow -- so it had to be held down to whatever band the
 // curve above it was drawing. A share of the whole frame is already absolute.
 const ramp_rule = await page.evaluate(() => {
-  const shown = (share) => rampTreeAt(share);
-  const middle = RAMP_TREE[(RAMP_TREE.length - 1) / 2];
+  const walked = [];
+  for (let i = 0; i <= 100; i += 1) walked.push(positionRampTree(i / 100));
   return {
     full: SHARE_RAMP_FULL_DIAGNOSTIC,
-    at_none: shown(0).value,
-    at_full: shown(1).value,
-    at_half: shown(0.5).value,
-    at_quarter: shown(0.25).value,
-    midpoint: middle === undefined ? '' : rgbToCss(middle.value),
+    knee: SHARE_RAMP_KNEE_DIAGNOSTIC,
+    at_none: positionRampTree(0),
+    at_full: positionRampTree(1),
+    toe: positionRampTree(SHARE_RAMP_KNEE_DIAGNOSTIC),
+    decade_low: positionRampTree(0.1) - positionRampTree(0.01),
+    decade_high: positionRampTree(1) - positionRampTree(0.1),
+    rising: walked.every((at, i) => i === 0 || at > walked[i - 1]),
     steps: RAMP_TREE.length,
   };
 });
+const decade_apart = Math.abs(ramp_rule.decade_low - ramp_rule.decade_high);
+const toe_apart = Math.abs(ramp_rule.toe - ramp_rule.decade_low);
 report(
-  'the tree ramp spends its whole length on the whole frame, in plain proportion',
-  ramp_rule.full === 1 && ramp_rule.at_half === ramp_rule.midpoint &&
-    new Set([ramp_rule.at_none, ramp_rule.at_quarter, ramp_rule.at_half,
-      ramp_rule.at_full]).size === 4 && ramp_rule.steps > 8,
-  `full at ${ramp_rule.full} of the frame over ${ramp_rule.steps} steps; ` +
-    `0 -> ${ramp_rule.at_none}, a quarter -> ${ramp_rule.at_quarter}, ` +
-    `half -> ${ramp_rule.at_half} (ramp midpoint ${ramp_rule.midpoint}), ` +
-    `all -> ${ramp_rule.at_full}`,
+  'a decade of cost is a fixed distance along the tree ramp, whole frame to whole ramp',
+  ramp_rule.full === 1 && ramp_rule.at_none === 0 && ramp_rule.at_full === 1 &&
+    ramp_rule.rising && decade_apart < 1e-9 && toe_apart < 1e-9 && ramp_rule.steps > 8,
+  `knee at ${ramp_rule.knee} of the frame over ${ramp_rule.steps} steps; ` +
+    `under the knee spans ${ramp_rule.toe.toFixed(4)} of the ramp, ` +
+    `1% -> 10% spans ${ramp_rule.decade_low.toFixed(4)}, ` +
+    `10% -> all spans ${ramp_rule.decade_high.toFixed(4)}`,
+);
+// **And it discriminates on a real frame**, which is the whole reason for the ratio scale.
+// Laid out linearly the rows of a comfortable session all landed within two of seventeen
+// steps and the tree read as one colour. Measured in **ramp steps recovered from what the
+// page drew**, reusing the positions the ordering check above already read back: counting
+// distinct colours instead would not bite, since rounding alone makes near-identical rows
+// come out as different `rgb()` strings -- checked, and a linear scale passed that way.
+//   The span is between a row costing nothing, which every session has, and its costliest,
+// which on this page's own frames is a few percent. A third of the ramp is the floor: the
+// linear scale reaches one step of seventeen where this reaches nine.
+const STEPS_SPREAD_RAMP_MIN = Math.ceil((ramp_rule.steps - 1) / 3);
+const stepped = tinted.rows.filter((r) => r.step >= 0 && r.name !== 'idle');
+const span_steps = stepped.length === 0 ? 0
+  : Math.max(...stepped.map((r) => r.step)) - Math.min(...stepped.map((r) => r.step));
+report(
+  'the tinted rows spread down the ramp rather than crowding its first steps',
+  span_steps >= STEPS_SPREAD_RAMP_MIN,
+  `the rows cover ${span_steps} of the ramp's ${ramp_rule.steps} steps ` +
+    `(${Math.min(...stepped.map((r) => r.step))} to ` +
+    `${Math.max(...stepped.map((r) => r.step))}), floor ${STEPS_SPREAD_RAMP_MIN}`,
 );
 
 // And the shipped ramp is the one the tool verified against CET-I1: its ends are the map's
