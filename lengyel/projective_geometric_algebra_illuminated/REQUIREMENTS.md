@@ -1280,6 +1280,22 @@ from event handlers — is measured where it happens and reported by the frame a
 two-frame record. Left alone it lands in the frame's own leftover and reads as the browser's
 time rather than the page's.
 
+**A row's colour says what share of the frame it took, absolutely.** Twenty-odd numbers say
+nothing about which one to look at, so the tree is tinted — but a *relative* tint contradicts
+the curve above it, painting the costliest row of a comfortable session as though it were the
+problem. The share is therefore taken against the whole frame, idle included, saturating at
+half of it, and carries no cap: the tree says where the time went and the curve says whether
+that matters, and neither may be made to answer the other's question. Three properties hold
+it up. The ramp is **isoluminant** — these rows are text, whose lightness already carries the
+label/value hierarchy, so only hue and chroma are the tint's to spend, and each row keeps the
+tone it wore untinted. The colours ship as a **table checked against their published source**
+and against the stylesheet's own tokens, by a tool the standard verify runs, so neither can
+drift from the other unnoticed. And hue is **never the sole encoding**: each row's own figure
+stands beside it, and a key under the frame-time row draws the ramp itself with both ends
+labelled, or a red row costing two milliseconds reads as a verdict on two milliseconds. The
+frame's leftover is left **untinted** — it is time not spent rather than work done, and on a
+healthy frame it is the largest share of all.
+
 **The object-pool strip wears the scene's own colours**: an occupied cell in that object's
 colour, a free one in the recessive grid colour. It reads as the scene rather than as an
 anonymous occupancy count — which slot an object sits in, and how far the colour cycler has

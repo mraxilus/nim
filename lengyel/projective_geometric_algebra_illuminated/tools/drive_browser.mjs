@@ -1380,11 +1380,11 @@ report(
 );
 
 // **The timing rows wear the cost they carry.** Twenty-odd numbers say nothing about which
-// to look at; the curve's own ramp, banded by each row's share of the frame's *work*, does.
-// Checked as an ordering rather than against fixed colours, so tuning a threshold does not
-// mean rewriting this: a row that costs more may never wear a faster colour than one that
-// costs less. Every branch is opened first -- `refreshDiagnostics` skips what is closed, so
-// a shut node's rows would be read stale.
+// to look at; a continuous ramp keyed on each row's share of the *frame* does. Checked as
+// an ordering rather than against fixed colours, so retuning the ramp does not mean
+// rewriting this: a row that costs more may never wear a cooler colour than one that costs
+// less. Every branch is opened first -- `refreshDiagnostics` skips what is closed, so a
+// shut node's rows would be read stale.
 await page.evaluate(() => {
   const drawer = document.querySelector('.drawer');
   if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
@@ -1396,45 +1396,62 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(600);
 const tinted = await page.evaluate(() => {
-  // The page tints with hex and reads back `rgb(...)`, so the ramp is put through the same
-  //   normalisation before anything is compared to it.
+  // Where along the ramp a row sits, recovered from the colour it actually wears: the
+  //   ramp is monotone in share, so the nearest sampled step to a row's own colour is its
+  //   position on it. Read this way rather than recomputed, so the check tests what the
+  //   page drew rather than agreeing with it by construction.
   const scratch = document.createElement('span');
-  const normalised = colours_row_value.map((colour) => {
-    scratch.style.color = colour;
-    return scratch.style.color;
-  });
+  const steps = [];
+  for (let i = 0; i < RAMP_TREE.length; i += 1) {
+    scratch.style.color = rgbToCss(RAMP_TREE[i].value);
+    steps.push(scratch.style.color);
+  }
+  const positionOf = (colour) => {
+    const exact = steps.indexOf(colour);
+    if (exact >= 0) return exact;
+    // Between two shipped steps: parse and take the nearest, which is all an ordering needs.
+    const read = (text) => (text.match(/\d+/g) || []).map(Number);
+    const target = read(colour);
+    if (target.length < 3) return -1;
+    let best = -1;
+    let closest = Infinity;
+    for (let i = 0; i < steps.length; i += 1) {
+      const step = read(steps[i]);
+      const apart = Math.hypot(...[0, 1, 2].map((c) => step[c] - target[c]));
+      if (apart < closest) { closest = apart; best = i; }
+    }
+    return best;
+  };
   const rows = [];
   for (const [name] of PHASES_DIAGNOSTIC) {
     const value = element_phase[name];
     if (value === null || element_row[name] === null) continue;
     const said = Number((value.textContent.match(/^([\d.]+)/) || [])[1]);
     if (!Number.isFinite(said)) continue;
+    if (value.style.color === '') continue;
     rows.push({
-      name, milliseconds: said,
-      // The band is read back through the ramp the page tinted with, so this check never
-      //   holds an opinion about which colour a band is.
-      band: normalised.indexOf(value.style.color),
+      name, milliseconds: said, step: positionOf(value.style.color),
       colour: value.style.color,
     });
   }
   return { rows, idle: element_phase.idle.style.color };
 });
-// Ordering: sort by cost and walk, allowing equal bands but never a cheaper row in a
-//   costlier band. Rows the page left untinted carry no band and sit out of the comparison.
-const ranked = tinted.rows.filter((r) => r.band >= 0 && r.name !== 'idle')
+// Ordering: sort by cost and walk, allowing an equal step but never a cheaper row further
+//   along the ramp. Rows the page left untinted carry no step and sit out of the comparison.
+const ranked = tinted.rows.filter((r) => r.step >= 0 && r.name !== 'idle')
   .sort((a, b) => b.milliseconds - a.milliseconds);
 let is_ordered = true;
 for (let i = 1; i < ranked.length; i += 1) {
-  if (ranked[i].band > ranked[i - 1].band) is_ordered = false;
+  if (ranked[i].step > ranked[i - 1].step) is_ordered = false;
 }
 report(
-  'a costlier timing row never wears a faster colour than a cheaper one',
+  'a costlier timing row never wears a cooler colour than a cheaper one',
   ranked.length >= 4 && is_ordered,
   `${ranked.length} tinted rows, worst-first: ` +
-    ranked.slice(0, 5).map((r) => `${r.name} ${r.milliseconds} band ${r.band}`).join(', '),
+    ranked.slice(0, 5).map((r) => `${r.name} ${r.milliseconds} step ${r.step}`).join(', '),
 );
-// And the frame's leftover is left alone: it is the largest share of a healthy frame, so a
-// band on it would paint the best case as the worst.
+// And the frame's leftover is left alone: it is the largest share of a healthy frame, so
+// tinting it would paint the best case in the ramp's loudest colour.
 report(
   "and the frame's own idle time is left uncoloured, being no work at all",
   tinted.idle === '',
@@ -1474,52 +1491,49 @@ report(
     (aligned.trailing.length === 0 ? '' : `; trailing past ms: ${aligned.trailing.join(', ')}`),
 );
 
-// **And the tree never speaks louder than its own chart.** A row's band comes from its share
-// of the frame's work, which is relative -- so on a session that never drops below 120 fps
-// the costliest row would still be painted red while the curve above it is entirely blue.
-// The band is capped at the worst the curve is actually drawing, which is checked here at
-// both ends: a window fast enough that only the first band exists, and one slow enough to
-// unlock the last. The share still orders the rows; the cap decides how loudly.
-const cappedAt = async (least, span) => {
-  // The whole ring is refilled rather than the histogram cleared: each sample evicts the
-  //   oldest, so a hand-zeroed histogram goes negative as the stale entries leave and the
-  //   bucket scan reads those as occupied.
-  await page.evaluate(([floor, width]) => {
-    for (let i = 0; i < FRAMES_EXCEEDANCE; i += 1) {
-      window.__record_kept(floor + Math.random() * width);
-    }
-  }, [least, span]);
-  await page.waitForTimeout(300);
-  return page.evaluate(() => {
-    refreshDiagnostics();
-    const scratch = document.createElement('span');
-    const normalised = colours_row_value.map((colour) => {
-      scratch.style.color = colour;
-      return scratch.style.color;
-    });
-    const bands = [];
-    for (const [name] of PHASES_DIAGNOSTIC) {
-      const value = element_phase[name];
-      if (value === null || name === 'idle' || value.style.color === '') continue;
-      bands.push(normalised.indexOf(value.style.color));
-    }
-    return { ceiling: bandCeilingExceedance(), worst: Math.max(...bands), rows: bands.length };
-  });
-};
-const capped_fast = await cappedAt(2, 4);
-const capped_slow = await cappedAt(20, 70);
+// **The ramp says what it claims to say**, which is a row's share of the frame with its
+// far end at half of one. Checked on the rule itself rather than on a rendered row: a row
+// of exactly half the frame must wear the ramp's last colour, anything past it must stay
+// there rather than wrapping or drifting, and nothing below it may reach that colour.
+//   This replaces the band ceiling the tree used to be capped at. That cap existed because
+// the old tint was a share of the frame's *work*, a relative measure that painted the
+// costliest row red on a session where nothing was slow -- so it had to be held down to
+// whatever band the curve above it was drawing. A share of the whole frame needs no such
+// restraint: it is already absolute, and it agrees with the curve by construction.
+const ramp_rule = await page.evaluate(() => {
+  const shown = (share) => rampTreeAt(share);
+  const ends = shown(SHARE_RAMP_FULL_DIAGNOSTIC);
+  return {
+    full: SHARE_RAMP_FULL_DIAGNOSTIC,
+    at_none: shown(0).value,
+    at_full: ends.value,
+    past_full: shown(0.9).value,
+    at_third: shown(SHARE_RAMP_FULL_DIAGNOSTIC / 3).value,
+    steps: RAMP_TREE.length,
+  };
+});
 report(
-  'no timing row wears a colour the chart above it is not drawing',
-  capped_fast.rows > 8 && capped_fast.worst <= capped_fast.ceiling &&
-    capped_slow.rows > 8 && capped_slow.worst <= capped_slow.ceiling &&
-    // And the cap genuinely binds rather than sitting harmlessly above everything: a window
-    //   with nothing slow in it must leave every row in the very first band.
-    capped_fast.ceiling === 0 && capped_fast.worst === 0 &&
-    capped_slow.ceiling > capped_fast.ceiling,
-  `fast window: ceiling ${capped_fast.ceiling}, worst row ${capped_fast.worst}; ` +
-    `slow window: ceiling ${capped_slow.ceiling}, worst row ${capped_slow.worst}`,
+  'the tree ramp reaches its far end at half the frame, and stays there past it',
+  ramp_rule.full === 0.5 && ramp_rule.at_full === ramp_rule.past_full &&
+    ramp_rule.at_none !== ramp_rule.at_full &&
+    ramp_rule.at_third !== ramp_rule.at_full && ramp_rule.steps > 8,
+  `full at ${ramp_rule.full} of the frame over ${ramp_rule.steps} steps; ` +
+    `0 -> ${ramp_rule.at_none}, a third -> ${ramp_rule.at_third}, ` +
+    `half -> ${ramp_rule.at_full}, 90% -> ${ramp_rule.past_full}`,
 );
 
+// And the shipped ramp is the one the tool verified against CET-I1: its ends are the map's
+// own, so a hand-edited table or a stale build shows up here rather than only on screen.
+const ramp_ends = await page.evaluate(() => ({
+  first: RAMP_TREE[0].label.map((c) => Math.round(c * 255)),
+  last: RAMP_TREE[RAMP_TREE.length - 1].label.map((c) => Math.round(c * 255)),
+}));
+report(
+  'the shipped ramp runs from the map\'s cyan to its orange',
+  ramp_ends.first[2] > ramp_ends.first[0] && ramp_ends.last[0] > ramp_ends.last[2] &&
+    ramp_ends.first[1] > 100 && ramp_ends.last[1] > 60,
+  `cyan end rgb(${ramp_ends.first.join(', ')}), orange end rgb(${ramp_ends.last.join(', ')})`,
+);
 // **The breakdown adds up.** For a long time it did not, and nothing said so: the frame's
 // prologue and its view matrix belonged to no row, so `build` was simply larger than the
 // sum of what it showed and a reader had no way to know how much was missing. Every span is

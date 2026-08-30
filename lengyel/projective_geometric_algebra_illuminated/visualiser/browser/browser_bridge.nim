@@ -45,7 +45,7 @@ import std/[options, strformat]
 import ../../pga
 import ../core/[
   algebra_view, boundary, camera, format, framing, help, history, interaction, marker,
-  picking, scene, selection, storyboard, tessellate, timings,
+  picking, ramp, scene, selection, storyboard, tessellate, timings,
 ]
 
 
@@ -718,6 +718,21 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
   ## own `gl.uniform1f`/`gl.lineWidth` calls draw at the same sizes the desktop build's
   ## `renderer.nim` does, without a hand-copied literal to drift out of sync with it.
   @[SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT]
+
+
+proc nimRampTree(): seq[float32] {.exportc.} =
+  ## Report the diagnostics tree's own colour ramp, six floats a step: a row's label rgb
+  ## then its value rgb, `STEPS_RAMP_TREE` steps from a sliver of the frame to half of it.
+  ##   Exported rather than written out again in JavaScript for the reason every derived
+  ## value here is: `ramp.nim` is the table `tools/check_ramp` regenerates from CET-I1 and
+  ## this drawer's own tokens, and a second copy in the presentation layer would be a
+  ## second thing to keep in step with the map.
+  for i in 0 ..< STEPS_RAMP_TREE:
+    let (label, value) = (RAMP_TREE_LABEL[i], RAMP_TREE_VALUE[i])
+    result.add([
+      float32(label[0]), float32(label[1]), float32(label[2]),
+      float32(value[0]), float32(value[1]), float32(value[2]),
+    ])
 
 
 proc nimDiscCorners(): seq[float32] {.exportc.} =

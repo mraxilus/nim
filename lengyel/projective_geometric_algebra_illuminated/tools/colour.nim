@@ -88,6 +88,32 @@ func toOklab*(colour: Linear): Oklab =
   )
 
 
+func toLinear*(colour: Oklab): Linear =
+  ## Convert an OKLab colour back to linear light, the inverse of `toOklab`.
+  ##   Ottosson's own inverse matrices, from the same reference implementation; see this
+  ##   module's header. Needed to *build* a colour at a chosen lightness rather than only
+  ##   to measure one -- which is what re-lighting a published colour map to this
+  ##   project's own text tones asks for; see `check_ramp.nim`.
+  ##   The result may fall outside the sRGB cube for a lightness and chroma no display
+  ##   can show; the caller decides what to do about that, since clamping a channel and
+  ##   reducing chroma are different answers to different questions.
+  let
+    l_root = colour.lightness + 0.3963377774*colour.green_red +
+      0.2158037573*colour.blue_yellow
+    m_root = colour.lightness - 0.1055613458*colour.green_red -
+      0.0638541728*colour.blue_yellow
+    s_root = colour.lightness - 0.0894841775*colour.green_red -
+      1.2914855480*colour.blue_yellow
+    l = l_root*l_root*l_root
+    m = m_root*m_root*m_root
+    s = s_root*s_root*s_root
+  Linear(
+    red: 4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+    green: -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+    blue: -0.0041960863*l - 0.7034186147*m + 1.7076147010*s,
+  )
+
+
 func separation*(first, second: Oklab): float =
   ## Report how far apart two colours read, as OKLab distance scaled by 100.
   ##   Scaled so the numbers land in the same range CIE ΔE figures do, which is the range

@@ -47,6 +47,10 @@ step 'Atlas: every codepoint the UI can draw has a glyph range'
 "${NIM}" c --hints:off ${DEFINES_PGA} -o:bin/check_atlas tools/check_atlas.nim
 ./bin/check_atlas
 
+step 'Ramp: the timing tree is tinted with CET-I1, re-lit to the drawer text tones'
+"${NIM}" c --hints:off -o:bin/check_ramp tools/check_ramp.nim
+./bin/check_ramp
+
 step 'Suite, C backend, default capacities'
 # shellcheck disable=SC2086
 "${NIM}" c --hints:off -d:testing -d:nimUnittestAbortOnError:on ${DEFINES_PGA} \

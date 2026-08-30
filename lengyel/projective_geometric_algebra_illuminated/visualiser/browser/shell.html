@@ -862,12 +862,17 @@
   }
   .diag-legend-axis { display: flex; align-items: center; gap: 6px; }
   .diag-legend b { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-  /* The row ramp's own key. Straight from the tokens the rows are tinted with, so the key
-     cannot come to name a colour the tree no longer uses. */
-  .key-band { padding: 0 3px 0 7px; font-size: 8px; vertical-align: 1px; }
-  .key-poor { color: var(--speed-poor); }
-  .key-fair { color: var(--speed-fair); }
-  .key-good { color: var(--speed-good); }
+  /* The row ramp's own key: the ramp itself, as a bar. Its gradient is set by glue.js
+     from the very table the rows are tinted out of, so the key cannot come to show a ramp
+     the tree no longer uses -- the reason the four band swatches it replaced were built
+     from the row tokens rather than restated here. */
+  .key-ramp {
+    display: inline-block;
+    width: 84px;
+    height: 6px;
+    border-radius: 3px;
+    vertical-align: 0;
+  }
   .pool-strip {
     display: flex;
     gap: 1px;
@@ -1165,15 +1170,16 @@
              is Nim's, and from glue.js around its own calls where it is not. GL rows are
              command submission only - the GPU's own work runs asynchronously and no CPU
              clock here can see it. -->
-        <!-- What the colours mean, said once. The ramp is the curve's own, but the bands
-             here are *shares of the work* rather than frame budgets, so without this line a
-             red row costing two milliseconds reads as an absolute verdict on two
-             milliseconds. Hue is never the sole encoding in this drawer; each row's own
-             figure stands beside it, and this names what the hue is measuring. -->
-        <div class="diag-legend"><span>where the work went</span
-          ><b><span class="key-band key-poor">&#9679;</span>&#189;<span
-            class="key-band key-fair">&#9679;</span>&#188;<span
-            class="key-band key-good">&#9679;</span>&#8539;</b></div>
+        <!-- What the colours mean, said once. Each row is tinted by its own share of the
+             frame on a continuous ramp, so without this line a warm row reads as a verdict
+             on the milliseconds beside it rather than on their share. The bar is the very
+             ramp the rows are drawn from -- painted by glue.js out of `nimRampTree`, not
+             re-declared here -- and it ends where the ramp does, at half the frame. Hue is
+             never the sole encoding in this drawer; every row's own figure stands beside
+             it, and this names what the hue is measuring. -->
+        <div class="diag-legend"><span>share of the frame</span
+          ><span class="diag-legend-axis"><b>0</b
+            ><span class="key-ramp" id="diag-legend-ramp"></span><b>&#189;</b></span></div>
         <div class="diag-node" data-node="build">
           <button class="diag-line diag-parent" type="button"
             ><span><span class="chev">&#9654;</span>build (bridge)</span

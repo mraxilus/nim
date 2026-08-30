@@ -2127,46 +2127,52 @@ const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
 //   on the display spends most of every frame idle -- 32 of 35 ms on the container this was
 //   first run on -- so no step of the actual drawing reaches even a tenth of it. Idle is
 //   not work, and it is the one row left uncoloured anyway.
-const SHARES_ROW_DIAGNOSTIC = [0.1, 0.25, 0.5];
-// How much brighter a row's number is drawn than its label, as a fraction of the way from
-//   the band's own colour to `--ink`. It replaces the `--ink-muted`/`--ink` step the rows
-//   carry when untinted, and it is **small on purpose**: mixing toward a near-white ink
-//   desaturates, and the four bands converge as it does. Measured through the dataviz
-//   validator against this drawer's surface -- at 0.15 the worst adjacent pair still holds
-//   normal-vision deltaE 15.7 and colour-deficient 8.6 (better than the ramp's own 7.7),
-//   where by 0.35 jade and blue have closed to 12.9 and are no longer tellable apart.
-const LIFT_VALUE_DIAGNOSTIC = 0.15;
-
-function bandOfShare(share) {
-  // Which band a share of the frame falls in; the last band is everything past the ladder.
-  for (let i = 0; i < SHARES_ROW_DIAGNOSTIC.length; i += 1) {
-    if (share < SHARES_ROW_DIAGNOSTIC[i]) return i;
+// **Where the ramp reaches its far end**: a row costing this share of the frame is drawn
+// in the map's last colour, and anything costlier stays there. Half the frame is the
+// point past which a step is no longer *part* of the frame's cost but the shape of it.
+const SHARE_RAMP_FULL_DIAGNOSTIC = 0.5;
+// The tree's ramp, from `ramp.nim` through `nimRampTree`: six floats a step, a row's
+// label rgb then its value rgb. What the ramp is -- CET-I1 re-lit to this drawer's own
+// text tones -- and what holds it to that is `tools/check_ramp.nim`; nothing here knows
+// anything about it beyond how to walk it.
+const RAMP_TREE = (() => {
+  const flat = nimRampTree();
+  const steps = [];
+  for (let at = 0; at < flat.length; at += 6) {
+    steps.push({
+      label: [flat[at], flat[at + 1], flat[at + 2]],
+      value: [flat[at + 3], flat[at + 4], flat[at + 5]],
+    });
   }
-  return SHARES_ROW_DIAGNOSTIC.length;
+  return steps;
+})();
+
+// The legend bar wears the ramp itself, painted from the same table the rows are tinted
+// from -- so a key that disagreed with the tree would have to be a bug in one line rather
+// than a second declaration left behind.
+(() => {
+  const bar = document.getElementById('diag-legend-ramp');
+  if (bar === null) return;
+  const stops = RAMP_TREE.map((step, index) =>
+    `${rgbToCss(step.label)} ${((index / (RAMP_TREE.length - 1)) * 100).toFixed(1)}%`);
+  bar.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
+})();
+
+function rampTreeAt(share) {
+  // Sample the ramp at one row's share of the frame, interpolating between the shipped
+  //   steps so a row's colour moves as its cost does rather than stepping between bands.
+  //   `check_ramp` measures what interpolating costs against the map's full 256 entries.
+  const position = Math.min(Math.max(share, 0) / SHARE_RAMP_FULL_DIAGNOSTIC, 1) *
+    (RAMP_TREE.length - 1);
+  const below = Math.min(Math.floor(position), RAMP_TREE.length - 2);
+  const fraction = position - below;
+  const mix = (first, second) => rgbToCss([0, 1, 2].map(
+    (channel) => first[channel] * (1 - fraction) + second[channel] * fraction));
+  return {
+    label: mix(RAMP_TREE[below].label, RAMP_TREE[below + 1].label),
+    value: mix(RAMP_TREE[below].value, RAMP_TREE[below + 1].value),
+  };
 }
-
-function mixedHex(from, to, weight) {
-  // Blend two `#rrggbb` strings. Both come from the stylesheet's own tokens, so the format
-  //   is known; anything else is returned untouched rather than half-parsed.
-  if (from.length !== 7 || to.length !== 7) return from;
-  let out = '#';
-  for (let i = 1; i < 7; i += 2) {
-    const mixed = Math.round(parseInt(from.slice(i, i + 2), 16) * (1 - weight) +
-      parseInt(to.slice(i, i + 2), 16) * weight);
-    out += mixed.toString(16).padStart(2, '0');
-  }
-  return out;
-}
-
-// The label wears the band's own screened colour and the number a lifted one, so the row
-//   keeps the shade step it has when untinted -- number brighter than label -- with both in
-//   the one hue. Derived from the ramp rather than declared beside it, so the pairs cannot
-//   drift apart.
-const colours_row_label = colours_exceedance.slice(0, 4);
-const colours_row_value = colours_row_label.map((colour) => mixedHex(colour,
-  getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#e7ecf1',
-  LIFT_VALUE_DIAGNOSTIC));
-
 // **The axis follows the window, but not at the window's own speed.** Fitted frame for
 //   frame it snapped: one slow frame widened it, and the moment that frame aged out of the
 //   window it snapped back, so the curve jumped about and two glances a second apart could
@@ -2217,8 +2223,8 @@ function spanExceedance() {
   //   readable rather than merely present. Both extremes are the window's own: a lone
   //   collection pause belongs on a chart of what the session actually did, and it is the
   //   axis's easing, not a trim, that stops one deciding how the rest is drawn.
-  //   Shared with `bandCeilingExceedance` rather than scanned twice, so the chart and the
-  //   ceiling it imposes on the timing rows can never disagree about what the window holds.
+  //   Read by the curve alone now: the timing rows below it used to be capped at the worst
+  //   band this reported, which the tree's own absolute ramp made unnecessary.
   let first = -1;
   let last = 0;
   for (let i = 0; i < BUCKETS_EXCEEDANCE; i += 1) {
@@ -2227,17 +2233,6 @@ function spanExceedance() {
     last = i;
   }
   return { first, last };
-}
-
-function bandCeilingExceedance() {
-  // The worst band the curve is **actually drawing**, or -1 where the window is still
-  //   empty. Its slowest stroked point is `last * MILLISECONDS_BUCKET`, which is the same
-  //   duration the curve's own per-bucket loop bands, so this is the colour a reader can
-  //   see on the chart rather than one inferred about it. Clamped to the row ramp's four
-  //   slots: `BUDGETS_EXCEEDANCE` carries five and its last two are both `--speed-poor`.
-  const { first, last } = spanExceedance();
-  if (first < 0) return -1;
-  return Math.min(bandOfExceedance(last * MILLISECONDS_BUCKET), 3);
 }
 
 function bandOfExceedance(milliseconds) {
@@ -2476,25 +2471,11 @@ function refreshDiagnostics() {
     total_recent += history_frame[(index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY];
   }
   const mean_frame = total_recent / frames_recent;
-  // What the page actually did this window, against which each row's share is taken; see
-  //   `SHARES_ROW_DIAGNOSTIC`. The top phases do not overlap, so their sum is the whole of
-  //   the work and every row is some part of it.
-  let work_recent = 0;
-  // `PHASES_TOP_DIAGNOSTIC` holds no cut row, so the work each share is taken against is
-  //   counted once; a row that re-divides time already in the total would inflate it.
-  for (const name of PHASES_TOP_DIAGNOSTIC) {
-    const spent = meanPhase(name, frames_recent);
-    if (spent !== null) work_recent += spent;
-  }
-  // **How loudly the rows are allowed to speak**: never past the worst band the curve above
-  //   them is drawing. A share is a relative measure, so on a session that never drops below
-  //   120 fps the costliest row would still be painted red while the chart a centimetre away
-  //   is entirely blue -- two views of the same frame contradicting each other in one glance.
-  //   The share still decides the *ordering*, which row is worst; the session's own state
-  //   decides whether that ordering is worth raising your voice about. **So a row can be
-  //   over half the work and still drawn blue**, and that is the intent rather than a fault:
-  //   it is the answer to "which step costs most" on a frame where nothing costs too much.
-  const band_ceiling = bandCeilingExceedance();
+  // **No band ceiling any more, and no share-of-work denominator.** Both belonged to the
+  //   four-band tint this replaced: the bands had to agree with the curve above them, so
+  //   the tree was capped at whatever band that curve was drawing. The ramp is absolute --
+  //   a row's share of the *frame*, saturating at half of it -- so it says the same thing
+  //   whatever the curve happens to show, and there is nothing left to contradict.
   diagnostic_frame_time.textContent =
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';
 
@@ -2521,18 +2502,21 @@ function refreshDiagnostics() {
     if (element_row[name] === null) continue;
     // Some rows keep the neutral ink instead. **`idle` always**: it is the frame's
     //   leftover rather than work done, so on a healthy frame it is the largest share of
-    //   all and banding it would paint the best case red. And where nothing has been
-    //   measured yet there is neither a share to take nor a ceiling to cap it against.
-    if (name === 'idle' || !(work_recent > 0) || band_ceiling < 0) {
+    //   all and tinting it would paint the best case in the ramp's loudest colour. And
+    //   where nothing has been measured yet there is no share to take.
+    if (name === 'idle' || !(mean_frame > 0)) {
       element_row[name].style.color = '';
       element_phase[name].style.color = '';
       continue;
     }
-    // `Math.min` is monotone, so capping cannot disturb the ordering the rows promise: a
-    //   costlier row still never wears a faster colour than a cheaper one.
-    const band = Math.min(bandOfShare(shown / work_recent), band_ceiling);
-    element_row[name].style.color = colours_row_label[band];
-    element_phase[name].style.color = colours_row_value[band];
+    // **Against the whole frame, not against the work in it.** A row's colour answers
+    //   "how much of a frame goes here", so the denominator is the frame -- which makes
+    //   the ramp an absolute reading a reader can compare between sessions, rather than
+    //   a share of a total that shrinks as the page gets faster and repaints every row
+    //   louder for it.
+    const tint = rampTreeAt(shown / mean_frame);
+    element_row[name].style.color = tint.label;
+    element_phase[name].style.color = tint.value;
   }
 
   if (performance.memory) {

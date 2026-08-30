@@ -2105,46 +2105,58 @@ frame's duration and its own phases occupy the same ring slot: the delta being w
 measures the frame whose phases were recorded at that index. Held by a driven check that
 reconstructs every frame's duration from its six rows; measured worst error 0.0000 ms.
 
-**Each row is tinted by what it costs, in the exceedance curve's own ramp.** Twenty-odd
-numbers say nothing about which one to look at. The label takes the band's own screened
-token and the number the same colour lifted 15% toward `--ink`, which reproduces the
-`--ink-muted`/`--ink` step the rows carry untinted while keeping both in one hue; the
-chevron inherits, so a parent row reads as one thing. The lift is small because mixing
-toward a near-white ink desaturates and the four bands converge as it does — measured
-through the dataviz validator against the drawer's surface, at 0.15 the worst adjacent pair
-holds normal-vision ΔE **15.7** and colour-deficient **8.6** (better than the shipped ramp's
-own 7.7 warning), where by 0.35 jade and blue have closed to **12.9** and stop being
-tellable apart. Contrast against the surface runs 3.60–5.20 for the labels and 4.31–6.14 for
-the numbers. Blending the *other* way, toward the surface, was measured first and abandoned:
-it reaches 2.63 for the red at any usable strength, dimmer than the `--ink-muted` it
-replaced.
-  **The bands are shares of the frame's own work, not durations, and not shares of the
-frame.** Durations fail because the curve's bands are whole-frame budgets and a step costing
-0.4 ms would sit in the fastest of them forever. Share of the wall-clock frame was
-implemented, run, and found to paint *every* row blue: a page waiting on the display spends
-most of a frame idle — 32.5 of 35 ms on the driving container — so no step of the drawing
-reaches even a tenth of it. The denominator is `PHASES_TOP_DIAGNOSTIC` summed; the ladder is
-a tenth, a quarter, a half. This was reasoning corrected by rendering it, which is the only
-reason it is right.
-  `idle` is **deliberately left uncoloured**: it is the frame's leftover rather than work
-done, so on a healthy frame it is the largest share of all and a band on it would paint the
-best case as the worst. Held by its own driven check, as is the ordering — a costlier row
-may never wear a faster colour than a cheaper one, asserted as an ordering rather than
-against fixed colours so tuning a threshold does not mean rewriting the check.
-  Hue is not the sole encoding, as it is not on the curve: each row's own figure stands
-beside it, and a key under the frame-time row names what the hue measures — without it a red
-row costing two milliseconds reads as an absolute verdict on two milliseconds.
-  **The band is then capped at the worst the curve above it is actually drawing.** A share is
-relative, so on a session that never drops below 120 fps the costliest row was still painted
-red while the chart a centimetre away was entirely blue — two views of the same frame
-contradicting each other in one glance. The ceiling is the band of the curve's own slowest
-stroked point, from the same histogram scan the chart uses (`spanExceedance`, shared rather
-than written twice, so the two cannot disagree about what the window holds). The consequence
-is deliberate and is stated at the code: **a row can be over half the work and still drawn
-blue.** The share says which row to look at; the cap says whether anything needs looking at.
-`Math.min` is monotone, so the ordering the rows promise is untouched — verified by the
-ordering check staying green with the cap in place, and by a driven check that a fast
-synthetic window leaves every row in the first band while a slow one unlocks the last.
+**Each row is tinted by the share of the frame it takes, along CET-I1.** Twenty-odd numbers
+say nothing about which one to look at. A row's colour now answers one question only — *how
+much of this frame went here* — read continuously from a perceptual ramp rather than sorted
+into bands. The map is **CET-I1** (`isoluminant_cgo_70_c39`, Kovesi, arXiv:1509.03700), taken
+from colorcet's published table at
+`https://raw.githubusercontent.com/holoviz/colorcet/main/colorcet/__init__.py`; the `.csv`
+paths under that repository 404, so the Python table is the source of record. It is
+**isoluminant** — CIELAB L\*70, chroma 39, cyan through a neutral grey to orange — which is
+exactly the property this panel needs: the rows are text, so lightness is already spoken for
+by the drawer's own type hierarchy, and a ramp that varied it would fight the label/value
+step rather than add to it.
+  **The map supplies hue and chroma; the drawer supplies lightness.** Each sample is carried
+into OKLab, its lightness replaced by the tone that row already wore untinted — `--ink-muted`
+for a label, that lifted `LIFT_VALUE_RAMP` = 0.15 toward `--ink` for the number, measured at
+0.6685 and 0.7094 against `--ink`'s 0.9407 — and carried back. Re-lighting pushes some
+samples out of sRGB, so chroma is **scaled down by bisection until the colour fits**, never
+clamped per channel: clamping a channel bends the hue, and hue is the entire signal here.
+  **The ramp ships as a table, not as an algorithm.** `visualiser/core/ramp.nim` holds
+`STEPS_RAMP_TREE` = 17 label/value pairs and imports nothing; `nimRampTree` hands them to the
+page, which interpolates between them. `tools/check_ramp.nim` is both the generator (`--emit`)
+and the checker, run by `verify.sh` before the suites: it rebuilds the table from the
+published map and from the lightness tokens **parsed out of `shell.html`**, so editing a
+token fails the tool instead of silently disagreeing with the shipped colours. Its four
+checks, with the margins they passed at: the table reproduces the re-lit map to within
+**0.001** of a display step; interpolating between 17 samples never leaves the 256-entry map
+by more than **0.09** (floor 1.5), which is what makes 17 enough; and each ramp's ends stay
+**26.4** apart in OKLab ×100 (floor 25.0), so the two extremes are unmistakably different
+colours at the same lightness.
+  **The denominator is the whole frame, and the ramp saturates at half of it.**
+`SHARE_RAMP_FULL_DIAGNOSTIC` = 0.5: a row taking half the frame or more is drawn at the
+orange end. Sharing against the whole frame — idle included — rather than against the summed
+work is what the reading asks for, and the two phrasings coincide here: the tree's top rows
+plus `idle` *are* the frame, so a row's share of the frame is its share against the rest of
+the tree. `idle` itself stays **untinted**, as before: it is the frame's leftover rather than
+work done, and on a healthy frame it is the largest share of all, so colouring it would paint
+the best case as the worst.
+  **The band ceiling is gone, and that is the point of the change.** The previous tint was a
+share of the frame's *work*, which is a relative quantity — on a session that never dropped
+below 120 fps the costliest row was still painted red beside an entirely blue chart, so the
+band was capped at the worst the exceedance curve was actually drawing. An absolute share of
+the frame needs no such cap: 12% of a 6 ms frame and 12% of a 30 ms frame are the same
+reading, and the chart beside it already says which of those two the session is in. Removing
+the cap removes `bandCeilingExceedance` and the coupling between the tree and the curve's
+histogram scan; the two views now answer different questions on purpose, the tree *where the
+time went* and the curve *whether there is a problem*.
+  Hue remains not the sole encoding: each row's own figure stands beside it, and the key
+under the frame-time row is now the **ramp itself** drawn as a gradient, labelled `0` and `½`,
+so what the colour measures and where it tops out are both legible without prose. Held by
+driven checks that recover a row's ramp position from its *rendered* colour and assert the
+ordering — a costlier row may never wear an earlier colour — that the far end is reached at
+half the frame and held past it, and that the shipped table still runs from the map's cyan to
+its orange.
 
 **Each counted row carries its count beside its name, not after its time.** Seven rows report
 a count as well as a duration. Appended after the unit — `0.03 (0.00) ms · 3` — it pushed the
