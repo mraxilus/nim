@@ -2270,6 +2270,35 @@ exercise, and its equations may be restructured only in PGA's own terms; changin
 storage to make it faster would change the thing being measured. The boundary work above is
 the sanctioned answer: derive through the algebra once, and stop paying for it twice.
 
+**The ribbon widening runs in the vertex shader, on both targets.** Every line segment
+used to become six CPU-built vertices -- near clip, across-vector, per-end screen-constant
+width -- exactly the work `addSegmentAcross`'s own comment called "the licensed
+componentwise copy of what a geometry shader would do". It is a shader now: one
+**fifteen-float `RibbonRecord`** per segment crosses the wire against the forty-two floats
+its six vertices cost, and an instanced draw (GL 3.3 core on the desktop,
+`ANGLE_instanced_arrays` on WebGL1) expands it. The across is derived per vertex as
+`cross(head − tail, eye − tail)`, which for collinear pieces is provably the per-line hoist
+it replaces -- `cross(along, eye − t·along)` does not depend on `t` -- so the grid stopped
+hoisting anything at all.
+  **The chain of custody**: the GLSL ships, `mesh.expandRibbon` is its reference in Nim --
+sibling-marked with both shader sources -- and the suite holds the reference against the
+algebra as it always held the CPU form: the near clip equal to `clipToEyeSide`, the across
+equal to the join `directionNormal(tail ∧ head ∧ eye)`. The shader was then held to the
+reference the strongest way available: the desktop, run under Xvfb on Mesa GL 4.5, captured
+the same frame under the old CPU expansion and the new instanced path, and **zero of
+1,296,000 pixels differ**.
+  One semantic knot surfaced: `count_grid_segments` counts records now, and CPU clipping
+had been hiding that the grid *places* ~904 pieces at orbit distance 300 while drawing 629
+-- the budget was a budget of drawn segments all along. Whole pieces behind the near plane
+are therefore culled at placement (a dot product per boundary, already computed for the
+fade), which restores the count's meaning and stops dead records crossing the wire; the
+exact per-end clip stays the shader's. Segment counts match the old pipeline exactly.
+  Measured at the orbit worst case, against the same scene: build **28.9 → 21.1 ms**, grid
+**22.6 → 16.5**, and the CPU emit -- the picture half of the boundary cut -- **6.3 →
+1.4 ms**, with 13,444 floats crossing the FFI where 33,964 did. `Primitive.Ribbon` is gone
+from the enum entirely: ribbons are records beside the vertex meshes, not vertices
+pretending, and the dead 1.3 MB bucket went with it.
+
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
 17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:

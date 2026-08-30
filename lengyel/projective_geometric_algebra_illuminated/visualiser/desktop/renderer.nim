@@ -67,6 +67,68 @@ void main() {
   ##   Nothing here is lit or textured, so colour passes straight through otherwise.
 
 
+const SOURCE_VERTEX_RIBBON = """
+#version 330 core
+layout (location = 0) in vec2 in_corner;
+layout (location = 1) in vec3 in_tail;
+layout (location = 2) in vec3 in_head;
+layout (location = 3) in float in_width;
+layout (location = 4) in vec4 in_tint_tail;
+layout (location = 5) in vec4 in_tint_head;
+uniform mat4 view_projection;
+uniform vec3 eye;
+uniform vec3 forward;
+uniform float depth_near;
+uniform float tangent_half_view;
+uniform float height_pixels;
+out vec4 vertex_colour;
+void main() {
+  float depth_tail = dot(in_tail - eye, forward);
+  float depth_head = dot(in_head - eye, forward);
+  vec3 across_raw = cross(in_head - in_tail, eye - in_tail);
+  float across_length = length(across_raw);
+  if (max(depth_tail, depth_head) < depth_near || across_length < 1e-12) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    vertex_colour = vec4(0.0);
+    return;
+  }
+  vec3 near_end = in_tail;
+  vec3 far_end = in_head;
+  vec4 tint_near = in_tint_tail;
+  vec4 tint_far = in_tint_head;
+  if (depth_tail < depth_near) {
+    float fraction = (depth_near - depth_tail)/(depth_head - depth_tail);
+    near_end = in_tail + fraction*(in_head - in_tail);
+    tint_near = mix(in_tint_tail, in_tint_head, fraction);
+  } else if (depth_head < depth_near) {
+    float fraction = (depth_near - depth_head)/(depth_tail - depth_head);
+    far_end = in_head + fraction*(in_tail - in_head);
+    tint_far = mix(in_tint_head, in_tint_tail, fraction);
+  }
+  vec3 across = across_raw/across_length;
+  vec3 at = mix(near_end, far_end, in_corner.x);
+  float depth_at = max(dot(at - eye, forward), depth_near);
+  float world_per_pixel = 2.0*depth_at*tangent_half_view/height_pixels;
+  at += in_corner.y*0.5*in_width*world_per_pixel*across;
+  gl_Position = view_projection*vec4(at, 1.0);
+  vertex_colour = mix(tint_near, tint_far, in_corner.x);
+}
+""" ## Widen one ribbon record into the corner this invocation is, on the GPU.
+  ##   **A sibling copy of `mesh.expandRibbon`, the reference the suite pins to the
+  ## algebra, and of the WebGL source in `glue.js` -- a change to any one of the three is
+  ## not finished until the other two are checked.** Line for line: reject a segment
+  ## wholly behind the near plane (six coincident clipped corners), clip an end that
+  ## crosses it and blend its tint by the same fraction, derive the across as the cross
+  ## the join reduces to, and step this corner off by half a width of its own end's
+  ## world-per-pixel. `in_corner` is (end, side): which end of the segment, and which
+  ## side of it, this invocation stands for.
+
+
+const CORNERS_RIBBON: array[12, float32] = [
+  0.0'f32, -1.0, 1.0, -1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 1.0, 0.0, 1.0,
+] ## The six (end, side) corners of one ribbon instance, in `expandRibbon`'s own winding.
+
+
 
 #[ Type Definitions ]#
 
@@ -81,15 +143,23 @@ type
     location_size_point: gl.Int
     location_as_point: gl.Int
     buffers: array[Primitive, Buffers]
+    program_ribbon: gl.Uint
+    location_ribbon_view_projection: gl.Int
+    location_ribbon_eye: gl.Int
+    location_ribbon_forward: gl.Int
+    location_ribbon_depth_near: gl.Int
+    location_ribbon_tangent: gl.Int
+    location_ribbon_height: gl.Int
+    array_ribbon: gl.Uint
+    buffer_ribbon_corners: gl.Uint
+    buffer_ribbon_records: gl.Uint
 
 
 const lut_primitive_to_mode: array[Primitive, gl.Enum] = [
   Primitive.Triangle: gl.TRIANGLES,
-  Primitive.Ribbon: gl.TRIANGLES,
   Primitive.Point: gl.POINTS,
-] ## Map primitive kind to OpenGL's own mode enumerant.
-  ##   A ribbon is a line drawn as triangles -- see `mesh.addSegment` for why a line width
-  ##   is not something either of this project's targets can be asked to honour.
+] ## Map primitive kind to OpenGL's own mode enumerant. Ribbons are not here: they draw
+  ## as instanced triangles through their own program; see `SOURCE_VERTEX_RIBBON`.
 
 
 
@@ -160,6 +230,47 @@ proc initRenderer*(): Renderer =
     )
   gl.bindVertexArray(0)
 
+  result.program_ribbon = linkProgram(SOURCE_VERTEX_RIBBON, SOURCE_FRAGMENT)
+  result.location_ribbon_view_projection =
+    gl.getUniformLocation(result.program_ribbon, "view_projection")
+  result.location_ribbon_eye = gl.getUniformLocation(result.program_ribbon, "eye")
+  result.location_ribbon_forward = gl.getUniformLocation(result.program_ribbon, "forward")
+  result.location_ribbon_depth_near =
+    gl.getUniformLocation(result.program_ribbon, "depth_near")
+  result.location_ribbon_tangent =
+    gl.getUniformLocation(result.program_ribbon, "tangent_half_view")
+  result.location_ribbon_height =
+    gl.getUniformLocation(result.program_ribbon, "height_pixels")
+  # The ribbon program shares `SOURCE_FRAGMENT`, whose point-rounding is off unless asked.
+  gl.useProgram(result.program_ribbon)
+  gl.uniform1f(gl.getUniformLocation(result.program_ribbon, "as_point"), 0.0)
+
+  gl.genVertexArrays(1, addr result.array_ribbon)
+  gl.genBuffers(1, addr result.buffer_ribbon_corners)
+  gl.genBuffers(1, addr result.buffer_ribbon_records)
+  gl.bindVertexArray(result.array_ribbon)
+  # Six fixed corners every instance shares, and one record per instance beside them.
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ribbon_corners)
+  gl.bufferData(
+    gl.ARRAY_BUFFER, gl.Sizeiptr(sizeof(CORNERS_RIBBON)),
+    unsafeAddr CORNERS_RIBBON[0], gl.STATIC_DRAW,
+  )
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 2, gl.FLOAT_TYPE, gl.FALSE, gl.Sizei(2*sizeof(float32)),
+    cast[pointer](0))
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ribbon_records)
+  const STRIDE_RECORD = gl.Sizei(sizeof(RibbonRecord))
+  # (attribute, floats, float offset) for each of the record's five views.
+  for (index, floats, offset) in [
+    (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(1), 6),
+    (gl.Uint(4), gl.Int(4), 7), (gl.Uint(5), gl.Int(4), 11),
+  ]:
+    gl.enableVertexAttribArray(index)
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RECORD,
+      cast[pointer](offset*sizeof(float32)))
+    gl.vertexAttribDivisor(index, 1)
+  gl.bindVertexArray(0)
+
   gl.enable(gl.DEPTH_TEST)
   gl.depthFunc(gl.LESS)
   gl.enable(gl.BLEND)
@@ -203,6 +314,46 @@ proc uploadPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) 
   )
 
 
+proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
+  ## Hand this frame's ribbon records to the driver whole; the shader does the rest.
+  if meshes.ribbons.count == 0: return
+  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ribbon_records)
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    gl.Sizeiptr(meshes.ribbons.count*sizeof(RibbonRecord)),
+    unsafeAddr meshes.ribbons.records[0],
+    gl.DYNAMIC_DRAW,
+  )
+
+
+func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: int] =
+  ## Say which stretch of the ribbon records belongs to which pass; `runOf`'s own rule.
+  let split =
+    if ribbons.index_overlay.isSome: clamp(ribbons.index_overlay.get, 0, ribbons.count)
+    else: ribbons.count
+  if is_overlay: (first: split, count: ribbons.count - split)
+  else: (first: 0, count: split)
+
+
+proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+  ## Draw one run of the already-uploaded ribbon records as instanced triangle pairs.
+  ##   GL 3.3 has no base instance, so a run that does not start at the first record
+  ##   re-points the five instance attributes at its own first byte instead -- the same
+  ##   pointers `initRenderer` set, offset by the run's start.
+  let run = runOfRibbons(meshes.ribbons, is_overlay)
+  if run.count == 0: return
+  gl.bindVertexArray(renderer.array_ribbon)
+  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ribbon_records)
+  const STRIDE_RECORD = gl.Sizei(sizeof(RibbonRecord))
+  for (index, floats, offset) in [
+    (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(1), 6),
+    (gl.Uint(4), gl.Int(4), 7), (gl.Uint(5), gl.Int(4), 11),
+  ]:
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RECORD,
+      cast[pointer]((run.first*sizeof(RibbonRecord)) + offset*sizeof(float32)))
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, gl.Sizei(run.count))
+
+
 func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
   ## Say which stretch of one mesh belongs to the depth-tested run or to the overlay run.
   ##   Empty where the mesh has no such run, which is the ordinary case for the overlay:
@@ -226,23 +377,38 @@ proc drawRun(renderer: Renderer; meshes: MeshSet; primitive: Primitive; is_overl
 
 func hasOverlay(meshes: MeshSet): bool =
   ## Report whether anything in this set asked to be drawn over the rest of it.
+  if runOfRibbons(meshes.ribbons, is_overlay = true).count > 0: return true
   for primitive in Primitive:
     if runOf(meshes[primitive], is_overlay = true).count > 0: return true
   false
 
 
-proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) =
+proc drawMeshes*(
+  renderer: Renderer; meshes: MeshSet; view_projection: Matrix4; scale: DrawScale
+) =
   ## Draw every mesh, opaque kinds before translucent ones, then the overlay over both.
-  ##   Took a line width once, and passed it to `gl.lineWidth`. It no longer does: a
-  ##   width is now geometry, built into the ribbon at `mesh.addSegment` from the same
-  ##   `WIDTH_LINE_OBJECT`/`WIDTH_LINE_FURNITURE` this used to hand the driver, so both
-  ##   builds draw it rather than asking a driver to.
+  ##   Takes the frame's own `DrawScale` because the ribbon program needs the camera: the
+  ##   widening, the near clip and the screen-constant width all run in its vertex shader
+  ##   now, fed by exactly the fields `mesh.expandRibbon` reads.
   ##   **The overlay is a second pass over every kind, not a tail on each one.** A tail was
   ##   tried and measured: a selected line came out over the other lines and still tinted
   ##   by a plane's wash, because the wash is a later kind and the overlay run, having no
   ##   depth test, writes no depth for that wash to be rejected against. A wash over the
   ##   object you just picked is exactly the complaint this answers, so the whole ordinary
   ##   set goes down before any of the overlay goes on top.
+  gl.useProgram(renderer.program_ribbon)
+  gl.uniformMatrix4fv(
+    renderer.location_ribbon_view_projection, 1, gl.FALSE, view_projection.elementsAddress
+  )
+  gl.uniform3f(renderer.location_ribbon_eye,
+    gl.Float(scale.eye.x), gl.Float(scale.eye.y), gl.Float(scale.eye.z))
+  gl.uniform3f(renderer.location_ribbon_forward,
+    gl.Float(scale.forward.x), gl.Float(scale.forward.y), gl.Float(scale.forward.z))
+  gl.uniform1f(renderer.location_ribbon_depth_near, gl.Float(scale.depth_near))
+  gl.uniform1f(renderer.location_ribbon_tangent, gl.Float(scale.tangent_half_view))
+  gl.uniform1f(renderer.location_ribbon_height, gl.Float(scale.height_pixels))
+  renderer.uploadRibbons(meshes)
+
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
@@ -251,7 +417,9 @@ proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) 
   for primitive in Primitive: renderer.uploadPrimitive(meshes, primitive)
 
   # Draw opaque kinds first, so they own depth buffer.
-  renderer.drawRun(meshes, Primitive.Ribbon, is_overlay = false)
+  gl.useProgram(renderer.program_ribbon)
+  renderer.drawRibbonRun(meshes, is_overlay = false)
+  gl.useProgram(renderer.program)
   renderer.drawRun(meshes, Primitive.Point, is_overlay = false)
 
   # Draw washes without writing depth, so objects stay visible through them.
@@ -264,7 +432,9 @@ proc drawMeshes*(renderer: Renderer; meshes: MeshSet; view_projection: Matrix4) 
   #   what is over what among the selected objects themselves.
   if meshes.hasOverlay:
     gl.disable(gl.DEPTH_TEST)
-    renderer.drawRun(meshes, Primitive.Ribbon, is_overlay = true)
+    gl.useProgram(renderer.program_ribbon)
+    renderer.drawRibbonRun(meshes, is_overlay = true)
+    gl.useProgram(renderer.program)
     renderer.drawRun(meshes, Primitive.Point, is_overlay = true)
     renderer.drawRun(meshes, Primitive.Triangle, is_overlay = true)
     gl.enable(gl.DEPTH_TEST)

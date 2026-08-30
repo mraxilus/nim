@@ -72,15 +72,103 @@ const uniform_is_round = gl.getUniformLocation(program, 'uRound');
 // Read from renderer.nim's own constants via nimRenderLineWidths, rather than a hand-
 // copied literal that could drift out of sync with them.
 // `SIZE_POINT` is still a draw-call setting here, since `gl_PointSize` is honoured. The
-// two line widths are not: `mesh.addSegment` has already built them into the ribbon
-// geometry, because WebGL clamps `gl.lineWidth` to one pixel on most implementations.
+// two line widths are not: each ribbon record carries its width and the ribbon vertex
+// shader widens it, because WebGL clamps `gl.lineWidth` to one pixel on most
+// implementations.
 const [SIZE_POINT] = nimRenderLineWidths();
+
+// A sibling copy of `mesh.expandRibbon` -- the reference the suite pins to the algebra --
+// and of the GLSL 3.30 source in `renderer.nim`; a change to any one of the three is not
+// finished until the other two are checked. Widens one 15-float ribbon record into the
+// corner this invocation is: clip to the near plane, blend the clipped end's tint by the
+// same fraction, derive the across as the cross the join reduces to, and step off by half
+// a width of this end's own world-per-pixel.
+const SOURCE_VERTEX_RIBBON = `
+  attribute vec2 aCorner;
+  attribute vec3 aTail;
+  attribute vec3 aHead;
+  attribute float aWidth;
+  attribute vec4 aTintTail;
+  attribute vec4 aTintHead;
+  uniform mat4 uMVP;
+  uniform vec3 uEye;
+  uniform vec3 uForward;
+  uniform float uDepthNear;
+  uniform float uTangentHalfView;
+  uniform float uHeightPixels;
+  varying vec4 vColor;
+  void main() {
+    float depth_tail = dot(aTail - uEye, uForward);
+    float depth_head = dot(aHead - uEye, uForward);
+    vec3 across_raw = cross(aHead - aTail, uEye - aTail);
+    float across_length = length(across_raw);
+    if (max(depth_tail, depth_head) < uDepthNear || across_length < 1e-12) {
+      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      vColor = vec4(0.0);
+      return;
+    }
+    vec3 near_end = aTail;
+    vec3 far_end = aHead;
+    vec4 tint_near = aTintTail;
+    vec4 tint_far = aTintHead;
+    if (depth_tail < uDepthNear) {
+      float fraction = (uDepthNear - depth_tail)/(depth_head - depth_tail);
+      near_end = aTail + fraction*(aHead - aTail);
+      tint_near = mix(aTintTail, aTintHead, fraction);
+    } else if (depth_head < uDepthNear) {
+      float fraction = (uDepthNear - depth_head)/(depth_tail - depth_head);
+      far_end = aHead + fraction*(aTail - aHead);
+      tint_far = mix(aTintHead, aTintTail, fraction);
+    }
+    vec3 across = across_raw/across_length;
+    vec3 at = mix(near_end, far_end, aCorner.x);
+    float depth_at = max(dot(at - uEye, uForward), uDepthNear);
+    float world_per_pixel = 2.0*depth_at*uTangentHalfView/uHeightPixels;
+    at += aCorner.y*0.5*aWidth*world_per_pixel*across;
+    gl_Position = uMVP*vec4(at, 1.0);
+    vColor = mix(tint_near, tint_far, aCorner.x);
+  }
+`;
+const program_ribbon = gl.createProgram();
+gl.attachShader(program_ribbon, compileShader(gl.VERTEX_SHADER, SOURCE_VERTEX_RIBBON));
+gl.attachShader(program_ribbon, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT));
+gl.linkProgram(program_ribbon);
+if (!gl.getProgramParameter(program_ribbon, gl.LINK_STATUS)) {
+  throw new Error(gl.getProgramInfoLog(program_ribbon));
+}
+// Instancing is an extension on WebGL1 and universally shipped; a context without it gets
+// the same loud failure a context without WebGL gets, not a silent picture with no lines.
+const instanced = gl.getExtension('ANGLE_instanced_arrays');
+if (instanced === null) throw new Error('ANGLE_instanced_arrays is unavailable');
+const ribbon_attribs = {
+  corner: gl.getAttribLocation(program_ribbon, 'aCorner'),
+  tail: gl.getAttribLocation(program_ribbon, 'aTail'),
+  head: gl.getAttribLocation(program_ribbon, 'aHead'),
+  width: gl.getAttribLocation(program_ribbon, 'aWidth'),
+  tint_tail: gl.getAttribLocation(program_ribbon, 'aTintTail'),
+  tint_head: gl.getAttribLocation(program_ribbon, 'aTintHead'),
+};
+const ribbon_uniforms = {
+  mvp: gl.getUniformLocation(program_ribbon, 'uMVP'),
+  eye: gl.getUniformLocation(program_ribbon, 'uEye'),
+  forward: gl.getUniformLocation(program_ribbon, 'uForward'),
+  depth_near: gl.getUniformLocation(program_ribbon, 'uDepthNear'),
+  tangent: gl.getUniformLocation(program_ribbon, 'uTangentHalfView'),
+  height: gl.getUniformLocation(program_ribbon, 'uHeightPixels'),
+  is_round: gl.getUniformLocation(program_ribbon, 'uRound'),
+};
+// The six (end, side) corners of one ribbon instance, in `expandRibbon`'s own winding.
+const buffer_ribbon_corners = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ribbon_corners);
+gl.bufferData(gl.ARRAY_BUFFER,
+  new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]), gl.STATIC_DRAW);
 
 const vbo = {
   tri: gl.createBuffer(), ribbon: gl.createBuffer(), point: gl.createBuffer(),
   ribbon_furniture: gl.createBuffer(),
 };
 const STRIDE = 7 * 4;
+const STRIDE_RIBBON = 15 * 4;
 
 // How many furniture vertices its own buffer holds, carried between frames because the
 // bridge stops sending them once the camera is still; see `renderFrame`.
@@ -93,7 +181,7 @@ let count_furniture_held = null;
 //   place: wrapping the bridge's array in a fresh Float32Array was an allocation per
 //   buffer per frame, for bytes that live exactly as long as the bufferData call.
 const staging_upload = new Map();
-function uploadBuffer(data, handle_buffer) {
+function uploadBuffer(data, handle_buffer, floats_each) {
   if (data.length === 0) return null;
   let entries;
   if (data instanceof Float32Array) {
@@ -109,7 +197,42 @@ function uploadBuffer(data, handle_buffer) {
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
   gl.bufferData(gl.ARRAY_BUFFER, entries, gl.DYNAMIC_DRAW);
-  return entries.length / 7;
+  return entries.length / floats_each;
+}
+
+// One run of an uploaded record buffer, drawn as instanced triangle pairs. `count_over`
+// is how many records at the END are the overlay run, exactly as `drawRun`'s split below;
+// a run that does not start at the first record re-points the five instance attributes at
+// its own first byte, since WebGL1 has no base instance. Mirrors `renderer.drawRibbonRun`.
+function drawRibbons(handle_buffer, count, count_over, is_overlay) {
+  if (!count) return;
+  const split = Math.max(0, count - Math.min(count_over || 0, count));
+  const first = is_overlay ? split : 0;
+  const span = is_overlay ? count - split : split;
+  if (span === 0) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ribbon_corners);
+  gl.enableVertexAttribArray(ribbon_attribs.corner);
+  gl.vertexAttribPointer(ribbon_attribs.corner, 2, gl.FLOAT, false, 8, 0);
+  instanced.vertexAttribDivisorANGLE(ribbon_attribs.corner, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
+  const base = first * STRIDE_RIBBON;
+  for (const [attrib, floats, offset] of [
+    [ribbon_attribs.tail, 3, 0], [ribbon_attribs.head, 3, 12], [ribbon_attribs.width, 1, 24],
+    [ribbon_attribs.tint_tail, 4, 28], [ribbon_attribs.tint_head, 4, 44],
+  ]) {
+    gl.enableVertexAttribArray(attrib);
+    gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, STRIDE_RIBBON, base + offset);
+    instanced.vertexAttribDivisorANGLE(attrib, 1);
+  }
+  gl.uniform1i(ribbon_uniforms.is_round, 0);
+  instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, span);
+  // Divisors are context state, not program state: left at one they would corrupt the
+  //   plain program's reads of these same attribute indices next draw.
+  for (const attrib of [ribbon_attribs.tail, ribbon_attribs.head, ribbon_attribs.width,
+    ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
+    instanced.vertexAttribDivisorANGLE(attrib, 0);
+    gl.disableVertexAttribArray(attrib);
+  }
 }
 
 // `count_over` is how many vertices at the END of the uploaded mesh are its overlay run;
@@ -3160,30 +3283,38 @@ function renderFrame(now_seconds) {
   const ms_before_draw = performance.now();
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  // A plain sequence is what the spec takes; wrapping it was a copy per frame for nothing.
-  gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
 
-  // World furniture first, with normal depth test/write. Its ribbons already carry their
-  // own thinner width as geometry -- there is no width to set here any more. Mirrors
-  // renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
-  // Kept rather than re-uploaded where the bridge says the furniture is unchanged: the
-  // grid and the axes are a function of the camera alone, and rebuilding them for a camera
-  // that has not moved is two thirds of a frame spent drawing the same picture. The buffer
-  // still holds last frame's vertices, so only the count has to survive here.
+  // The ribbon program's camera, once a frame: the widening runs in its vertex shader
+  // now, fed by exactly the DrawScale fields mesh.expandRibbon reads.
+  gl.useProgram(program_ribbon);
+  gl.uniformMatrix4fv(ribbon_uniforms.mvp, false, data.view_projection);
+  gl.uniform3f(ribbon_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
+  gl.uniform3f(ribbon_uniforms.forward,
+    data.cam_forward_x, data.cam_forward_y, data.cam_forward_z);
+  gl.uniform1f(ribbon_uniforms.depth_near, data.cam_depth_near);
+  gl.uniform1f(ribbon_uniforms.tangent, data.cam_tangent_half_view);
+  gl.uniform1f(ribbon_uniforms.height, data.cam_height_pixels);
+
+  // World furniture first, with normal depth test/write. One record a segment now --
+  // kept rather than re-uploaded where the bridge says the furniture is unchanged, since
+  // the grid and the axes are a function of the camera alone. Mirrors renderer.nim's own
+  // drawMeshes(MESHES_FURNITURE, ...) call exactly.
   if (!data.is_furniture_held) {
-    count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture);
+    count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture, 15);
   }
-  drawRun(vbo.ribbon_furniture, count_furniture_held, gl.TRIANGLES, false, 0, false);
+  drawRibbons(vbo.ribbon_furniture, count_furniture_held, 0, false);
 
   // Scene objects last; opaque kinds before plane washes (triangles), with depth writes
   // off for those, so a translucent plane never occludes a line or point that happens to
   // sit behind it -- it only tints over whatever was already drawn there. Mirrors
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
+  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon, 15);
+  drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, false);
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
-  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon);
-  const count_point = uploadBuffer(data.point_verts, vbo.point);
-  const count_tri = uploadBuffer(data.tri_verts, vbo.tri);
-  drawRun(vbo.ribbon, count_ribbon, gl.TRIANGLES, false, data.ribbon_over, false);
+  const count_point = uploadBuffer(data.point_verts, vbo.point, 7);
+  const count_tri = uploadBuffer(data.tri_verts, vbo.tri, 7);
   drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
   gl.depthMask(false);
   drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, false);
@@ -3195,7 +3326,9 @@ function renderFrame(now_seconds) {
   // by a plane's wash, which is a later kind. Mirrors `renderer.drawMeshes`.
   if (data.ribbon_over + data.point_over + data.tri_over > 0) {
     gl.disable(gl.DEPTH_TEST);
-    drawRun(vbo.ribbon, count_ribbon, gl.TRIANGLES, false, data.ribbon_over, true);
+    gl.useProgram(program_ribbon);
+    drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, true);
+    gl.useProgram(program);
     drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, true);
     drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
     gl.enable(gl.DEPTH_TEST);

@@ -111,6 +111,12 @@ const
     ##   getting to it. 0.20 of the reach is 3.8 orbit distances, which puts the fog's
     ##   edge about 2.8 distances beyond what the camera is looking at -- close to the
     ##   ground the halo used to cover, and still a fifth of the far clip plane.
+  RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 8192
+    ## Bound how many ribbon segments one frame holds.
+    ##   The binding case is `VERTICES_MAX`'s own -- a scene filled with planes, each
+    ## drawing `SEGMENTS_CIRCLE_HORIZON` rim segments, 64 x 96 = 6,144 -- with the same
+    ## third of headroom. One record here is what six vertices were before the widening
+    ## moved to the vertex shader.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 49152
     ## Bound how many vertices one primitive's mesh holds, per frame.
     ##   Tripled when lines became ribbons: a segment that was two vertices is now six.
@@ -348,11 +354,11 @@ type
     Rose, Copper, Olive, Jade, Cobalt,
 
   Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
-    ## Every kind is a triangle or a point on the wire; `Ribbon` is a *line drawn as*
-    ## triangles -- see `addSegment` -- kept a kind of its own rather than folded into
-    ## `Triangle` because the two draw differently: a ribbon writes depth, a plane's own
-    ## translucent wash does not.
-    Triangle, Ribbon, Point
+    ## Every kind is a triangle or a point on the wire. Ribbons are no longer one of
+    ## them: a line drawn as triangles crosses the wire as one **record per segment**
+    ## (`RibbonRecord`) and is widened by the vertex shader, so nothing CPU-side holds
+    ## its six vertices any more.
+    Triangle, Point
 
   Placement* {.pure.} = enum ## Report what became of object once drawn.
     Finite, ## Object had finite extent and was drawn where it stands.
@@ -382,7 +388,31 @@ type
       ## these buckets look like (see `visualiser.assembleMeshes`), so an index into the
       ## order costs nothing and states the same thing.
 
-  MeshSet* = array[Primitive, Mesh] ## Hold one mesh per primitive kind.
+  RibbonRecord* = object ## Hold one line segment exactly as it is uploaded.
+    ## **The vertex shader's input, not a vertex.** Each record is drawn as one instance
+    ## of six corners; the shader clips it to the near plane, derives the across direction
+    ## as `cross(head - tail, eye - tail)`, and steps each corner off by half a width of
+    ## its own end's world-per-pixel -- the very work `expandRibbon` below states in Nim,
+    ## which is the reference the shaders are held to. Fifteen floats a segment against
+    ## the forty-two its six expanded vertices cost, and none of the arithmetic on a CPU.
+    tail_x*, tail_y*, tail_z*: float32
+    head_x*, head_y*, head_z*: float32
+    width*: float32
+    tail_red*, tail_green*, tail_blue*, tail_alpha*: float32
+    head_red*, head_green*, head_blue*, head_alpha*: float32
+
+  RibbonMesh* = object ## Hold every ribbon segment of one frame, in fixed storage.
+    records*: array[RIBBONS_MAX, RibbonRecord]
+    count*: int
+    index_overlay*: Option[int] ## Where the overlay run begins; `Mesh.index_overlay`'s
+      ## own doc comment says what that means and why it is a watermark.
+
+  MeshSet* = object ## Hold one mesh per primitive kind, and the frame's ribbons.
+    ## An object rather than the bare array it was, so ribbons -- which are records now,
+    ## not vertices -- can live beside the vertex meshes without pretending to be one.
+    ## The `[]` accessors below keep every `meshes[primitive]` site reading as it did.
+    by_kind: array[Primitive, Mesh]
+    ribbons*: RibbonMesh
 
   DrawScale* = object ## Hold how far this frame's geometry reaches, and from where.
     ## **The Euclidean half of a frame's camera.** Everything a ribbon needs to hold a
@@ -407,6 +437,14 @@ type
       ## nearer is drawn, so nothing needs a width measured nearer -- and without the
       ## clamp a segment running past the eye reads a negative depth and turns its own
       ## ribbon inside out.
+
+
+func `[]`*(meshes: MeshSet; primitive: Primitive): lent Mesh = meshes.by_kind[primitive]
+  ## Reach one primitive's vertex mesh.
+
+func `[]`*(meshes: var MeshSet; primitive: Primitive): var Mesh = meshes.by_kind[primitive]
+  ## Reach one primitive's vertex mesh, writably.
+
 
 
 
@@ -662,10 +700,12 @@ func animationProgress*(now, born: float): float =
 #[ Vertex Assembly ]#
 
 proc clearMeshes*(meshes: var MeshSet) =
-  ## Drop every vertex assembled so far, so frame may be rebuilt from scratch.
+  ## Drop every vertex and ribbon assembled so far, so frame may be rebuilt from scratch.
   for primitive in Primitive:
     meshes[primitive].count_vertices = 0
     meshes[primitive].index_overlay = none(int)
+  meshes.ribbons.count = 0
+  meshes.ribbons.index_overlay = none(int)
 
 
 proc markOverlay*(meshes: var MeshSet) =
@@ -676,6 +716,7 @@ proc markOverlay*(meshes: var MeshSet) =
   ##   over what.
   for primitive in Primitive:
     meshes[primitive].index_overlay = some(meshes[primitive].count_vertices)
+  meshes.ribbons.index_overlay = some(meshes.ribbons.count)
 
 
 proc addVertex*(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rgba) =
@@ -732,7 +773,6 @@ type RibbonPiece* = object
   ##   Everything here is Euclidean: by the time a piece exists, the algebra has finished
   ## with it.
   tail*, head*: Position
-  across*: Direction ## Which way the ribbon steps off; one per lattice line, not per piece.
   tint_tail*, tint_head*: Rgba
 
 
@@ -747,71 +787,12 @@ type DrawScratch* = object
   ribbons*: array[SEGMENTS_GRID_MAX, RibbonPiece]
   places*: array[POINTS_SCRATCH_MAX, Position]
   fade_tints*: array[2*SEGMENTS_GRID_FADE + 1, Rgba]
+  fade_depths*: array[2*SEGMENTS_GRID_FADE + 1, float]
+    ## Each boundary's view depth, for the whole-piece cull beside the tints.
     ## One faded colour per fade boundary of the line currently being placed, beside the
     ## boundary's own place in `places`. Here rather than a local: a fresh local array is
     ## an allocation per lattice line on the JS backend, which is the churn this scratch
     ## exists to end.
-
-
-proc addSegmentAcross*(
-  meshes: var MeshSet; tail, head: Position; across: Direction;
-  tint_tail, tint_head: Rgba; width: float32; scale: DrawScale
-) =
-  ## Append a line segment joining two positions, as a **ribbon**: a world-space quad
-  ## `width` pixels across, wound as two triangles, stepped off along `across`.
-  ##   A quad rather than a `GL_LINES` pair because a line width is a *hint* both this
-  ## project's targets are entitled to ignore -- most WebGL implementations clamp it to
-  ## one pixel outright, and core-profile OpenGL only ever guaranteed one. Drawing the
-  ## width as geometry is the only way both builds show the same thing.
-  ##   `across` is the caller's, because collinear segments before one eye share one
-  ## plane: the ground grid derives each lattice line's across **once** -- the same
-  ## `directionNormal(line ∧ eye)` the per-piece join would re-derive eight times over --
-  ## and hands it down. A restructuring in the algebra's own terms: fewer joins, the same
-  ## joins. `addSegment` below derives it per segment for a caller with nothing to share.
-  ##   Everything in this body is the GPU boundary -- the licensed componentwise copy of
-  ## what a geometry shader would do -- and its near clip is pinned equal to the algebra's
-  ## own `clipToEyeSide` by the suite:
-  ##   Each end is offset by half a width of *its own* world-per-pixel, so the ribbon
-  ## narrows with distance exactly as the line it draws does, and two parallel lines keep
-  ## their shared vanishing point. A constant world offset would hold the far end open;
-  ## a constant screen offset would not converge at all.
-  ##   Takes a tint per end, since the ground grid fades along its own lines; the pair of
-  ## corners at one end share that end's own tint, so the fade runs along the ribbon
-  ## exactly as it ran along the line.
-  ##   **Clipped to the near plane first.** A world offset proportional to depth gives a
-  ## constant screen width only while the quad's own straight edges interpolate a depth
-  ## that is itself linear along the segment -- which stops being true the moment one end
-  ## stands behind the eye and its depth has to be clamped. Left unclipped, a world axis
-  ## running from far behind the camera to far in front of it drew twenty pixels wide
-  ## near the origin. Clipping restores the property rather than patching the symptom:
-  ## both ends then have real, positive depth, and the interpolation between them is
-  ## exact. Found by rendering a frame and looking at it.
-  let
-    depth_tail = dot(tail - scale.eye, scale.forward)
-    depth_head = dot(head - scale.eye, scale.forward)
-  if depth_tail < scale.depth_near and depth_head < scale.depth_near: return
-
-  var
-    (near, far) = (tail, head)
-    (tint_near, tint_far) = (tint_tail, tint_head)
-  if depth_tail < scale.depth_near:
-    let fraction = (scale.depth_near - depth_tail)/(depth_head - depth_tail)
-    near = tail + fraction*(head - tail)
-    tint_near = blend(tint_tail, tint_head, fraction)
-  elif depth_head < scale.depth_near:
-    let fraction = (scale.depth_near - depth_head)/(depth_tail - depth_head)
-    far = head + fraction*(tail - head)
-    tint_far = blend(tint_head, tint_tail, fraction)
-
-  let
-    offset_near = 0.5*float(width)*worldPerPixelAt(near, scale)*across
-    offset_far = 0.5*float(width)*worldPerPixelAt(far, scale)*across
-    corners = [
-      near - offset_near, far - offset_far, far + offset_far, near + offset_near,
-    ]
-    tints = [tint_near, tint_far, tint_far, tint_near]
-  for index in [0, 1, 2, 0, 2, 3]:
-    meshes.addVertex(Primitive.Ribbon, corners[index], tints[index])
 
 
 func directionAcross*(tail, head, eye: Position): Option[Direction] =
@@ -832,37 +813,108 @@ func directionAcross*(tail, head, eye: Position): Option[Direction] =
   normalize(cross(head - tail, eye - tail))
 
 
-proc addRibbonPieces*(
-  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32; scale: DrawScale
-) =
-  ## Append every assembled piece as a ribbon.
-  ##   The emit half of the seam above: no multivector is named here, and none can be --
-  ##   this module cannot reach the algebra at all.
-  for piece in pieces:
-    meshes.addSegmentAcross(
-      piece.tail, piece.head, piece.across, piece.tint_tail, piece.tint_head, width, scale,
+func expandRibbon*(record: RibbonRecord; scale: DrawScale): array[6, Vertex] =
+  ## Expand one ribbon record into the six vertices the shader will make of it -- **the
+  ## reference implementation of the ribbon vertex shader, and nothing else runs it.**
+  ##   Both render targets carry this same arithmetic in GLSL (`renderer.nim`'s ribbon
+  ## vertex shader and `glue.js`'s -- the sibling copies; a change to any one of the three
+  ## is not finished until the other two are checked). The suite holds this form against
+  ## the algebra -- its near clip equal to `clipToEyeSide`, its across equal to the join
+  ## `directionNormal(tail ∧ head ∧ eye)` through `directionAcross` -- so the chain runs
+  ## shader ≡ this ≡ the algebra, and the GPU never ships arithmetic nothing pins.
+  ##   A quad rather than a `GL_LINES` pair because a line width is a *hint* both targets
+  ## are entitled to ignore -- most WebGL implementations clamp it to one pixel outright.
+  ##   Each end is offset by half a width of *its own* world-per-pixel, so the ribbon
+  ## narrows with distance exactly as the line it draws does, and two parallel lines keep
+  ## their shared vanishing point.
+  ##   **Clipped to the near plane first.** A world offset proportional to depth gives a
+  ## constant screen width only while the quad's own edges interpolate a depth linear
+  ## along the segment -- which stops being true the moment one end stands behind the eye.
+  ## Left unclipped, a world axis running from far behind the camera drew twenty pixels
+  ## wide near the origin. Both ends clipped have real, positive depth, and the
+  ## interpolation between them is exact.
+  ##   A segment entirely behind the eye, or one the eye stands on, comes back as six
+  ## coincident zero-alpha vertices -- a quad that rasterises nothing, exactly as the
+  ## shader leaves it, rather than an optional the shader has no way to express.
+  let
+    tail = Position(x: record.tail_x, y: record.tail_y, z: record.tail_z)
+    head = Position(x: record.head_x, y: record.head_y, z: record.head_z)
+    tint_tail = Rgba(red: record.tail_red, green: record.tail_green,
+      blue: record.tail_blue, alpha: record.tail_alpha)
+    tint_head = Rgba(red: record.head_red, green: record.head_green,
+      blue: record.head_blue, alpha: record.head_alpha)
+    depth_tail = dot(tail - scale.eye, scale.forward)
+    depth_head = dot(head - scale.eye, scale.forward)
+    across = directionAcross(tail, head, scale.eye)
+  if (depth_tail < scale.depth_near and depth_head < scale.depth_near) or across.isNone:
+    return
+
+  var
+    (near, far) = (tail, head)
+    (tint_near, tint_far) = (tint_tail, tint_head)
+  if depth_tail < scale.depth_near:
+    let fraction = (scale.depth_near - depth_tail)/(depth_head - depth_tail)
+    near = tail + fraction*(head - tail)
+    tint_near = blend(tint_tail, tint_head, fraction)
+  elif depth_head < scale.depth_near:
+    let fraction = (scale.depth_near - depth_head)/(depth_tail - depth_head)
+    far = head + fraction*(tail - head)
+    tint_far = blend(tint_head, tint_tail, fraction)
+
+  let
+    offset_near = 0.5*float(record.width)*worldPerPixelAt(near, scale)*across.get
+    offset_far = 0.5*float(record.width)*worldPerPixelAt(far, scale)*across.get
+    corners = [
+      near - offset_near, far - offset_far, far + offset_far, near + offset_near,
+    ]
+    tints = [tint_near, tint_far, tint_far, tint_near]
+  for slot, index in [0, 1, 2, 0, 2, 3]:
+    result[slot] = Vertex(
+      x: float32(corners[index].x), y: float32(corners[index].y),
+      z: float32(corners[index].z),
+      red: tints[index].red, green: tints[index].green,
+      blue: tints[index].blue, alpha: tints[index].alpha,
     )
 
 
-proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
-  scale: DrawScale
+proc addRibbon*(
+  meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32
 ) =
-  ## Append the ribbon for one segment, deriving its own across direction.
-  ##   The general form: the across is the join's normal, per segment -- see
-  ## `directionAcross` -- and the packing is `addSegmentAcross`'s. Silently appends
-  ## nothing where the segment has no side to step off toward: zero length, or an eye
-  ## lying on its own line, where the ribbon is edge-on and covers no pixels anyway.
-  let across = directionAcross(tail, head, scale.eye)
-  if across.isNone: return
-  meshes.addSegmentAcross(tail, head, across.get, tint_tail, tint_head, width, scale)
+  ## Append one line segment as a ribbon record, for the vertex shader to widen.
+  ##   No camera is needed here any more: the near clip, the across direction and the
+  ## screen-constant width all moved to the GPU with the expansion (see `expandRibbon`,
+  ## which states exactly what it does there). The emit half of the boundary is now a
+  ## fifteen-float copy, which is the whole point.
+  let count = meshes.ribbons.count
+  doAssert count < RIBBONS_MAX,
+    &"Frame holds at most {RIBBONS_MAX} ribbons; raise `--define:visualiser.ribbons_max`."
+  meshes.ribbons.records[count] = RibbonRecord(
+    tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
+    head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
+    width: width,
+    tail_red: tint_tail.red, tail_green: tint_tail.green,
+    tail_blue: tint_tail.blue, tail_alpha: tint_tail.alpha,
+    head_red: tint_head.red, head_green: tint_head.green,
+    head_blue: tint_head.blue, head_alpha: tint_head.alpha,
+  )
+  meshes.ribbons.count = count + 1
+
+
+proc addRibbonPieces*(
+  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32
+) =
+  ## Append every assembled piece as a ribbon record.
+  ##   The emit half of the seam above: no multivector is named here, and none can be --
+  ##   this module cannot reach the algebra at all.
+  for piece in pieces:
+    meshes.addRibbon(piece.tail, piece.head, piece.tint_tail, piece.tint_head, width)
+
 
 proc addSegment*(
-  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32;
-  scale: DrawScale
+  meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32
 ) =
-  ## Append a ribbon of one tint end to end; see the two-tint form above for what it draws.
-  meshes.addSegment(tail, head, tint, tint, width, scale)
+  ## Append a ribbon of one tint end to end; the record form of the old expanded segment.
+  meshes.addRibbon(tail, head, tint, tint, width)
 
 
 proc addPlaneRing*(
@@ -887,7 +939,7 @@ proc addPlaneRing*(
     meshes.addSegment(
       onCircle(center, arm_first, arm_second, angle_a),
       onCircle(center, arm_first, arm_second, angle_b),
-      tint, WIDTH_LINE_OBJECT, scale,
+      tint, WIDTH_LINE_OBJECT,
     )
 
 

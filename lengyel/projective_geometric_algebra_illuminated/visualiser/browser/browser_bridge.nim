@@ -209,6 +209,30 @@ var
   g_flat_view: seq[float32] = newSeq[float32](16)
 
 
+proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var seq[float32]) =
+  ## Interleave one frame's ribbon records for the instanced upload, fifteen floats each:
+  ## tail xyz, head xyz, width, tail rgba, head rgba -- `RibbonRecord`'s own field order,
+  ## which the corner-and-divisor attribute setup in `glue.js` reads back apart.
+  dest.setLen(ribbons.count * 15)
+  for i in 0 ..< ribbons.count:
+    let r = ribbons.records[i]
+    dest[15*i + 0] = r.tail_x
+    dest[15*i + 1] = r.tail_y
+    dest[15*i + 2] = r.tail_z
+    dest[15*i + 3] = r.head_x
+    dest[15*i + 4] = r.head_y
+    dest[15*i + 5] = r.head_z
+    dest[15*i + 6] = r.width
+    dest[15*i + 7] = r.tail_red
+    dest[15*i + 8] = r.tail_green
+    dest[15*i + 9] = r.tail_blue
+    dest[15*i + 10] = r.tail_alpha
+    dest[15*i + 11] = r.head_red
+    dest[15*i + 12] = r.head_green
+    dest[15*i + 13] = r.head_blue
+    dest[15*i + 14] = r.head_alpha
+
+
 proc flattenInto(mesh: Mesh; dest: var seq[float32]) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`,
   ## ready for a caller to hand straight to `gl.bufferData`.
@@ -1659,6 +1683,12 @@ type FrameData = object
     ## drawing process rather than one opaque frame time; the phases the bridge cannot
     ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
     ## A held furniture frame reports ~0 for its furniture phase, which is the point.
+  cam_eye_x, cam_eye_y, cam_eye_z: float32
+  cam_forward_x, cam_forward_y, cam_forward_z: float32
+  cam_depth_near, cam_tangent_half_view, cam_height_pixels: float32
+    ## What the ribbon vertex shader needs of the camera, exactly `mesh.DrawScale`'s
+    ## fields of the same names: the widening, the near clip and the screen-constant
+    ## width run on the GPU now, and these are its uniforms.
   ms_camera, ms_matrix, ms_unaccounted: float32
     ## The three spans of `nimBuildFrame` that used to belong to no row at all.
     ##   `ms_camera` is the prologue: focus pruning, the camera tween, this frame's own
@@ -1843,7 +1873,7 @@ proc nimBuildFrame(
       addGrid(g_meshes_furniture, g_scratch, scale.extent_furniture, scale)
     # Counted here, between the two, so the figure is the grid's own and not the grid's
     #   plus the axes' fixed share; see `mesh.addSegmentAcross` for the six a segment is.
-    g_count_grid_segments = g_meshes_furniture[Primitive.Ribbon].count_vertices div 6
+    g_count_grid_segments = g_meshes_furniture.ribbons.count
     let ms_before_axes = performanceNow()
     if is_axes_shown:
       addAxes(g_meshes_furniture, g_scratch, scale.extent_furniture, scale)
@@ -1959,10 +1989,10 @@ proc nimBuildFrame(
   let ms_after_matrix = performanceNow()
   let ms_before_flatten = ms_after_matrix
   flattenInto(g_meshes[Primitive.Triangle], g_flat_tri)
-  flattenInto(g_meshes[Primitive.Ribbon], g_flat_ribbon)
+  flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
   flattenInto(g_meshes[Primitive.Point], g_flat_point)
   if is_furniture_held: g_flat_furniture.setLen(0)
-  else: flattenInto(g_meshes_furniture[Primitive.Ribbon], g_flat_furniture)
+  else: flattenRibbonsInto(g_meshes_furniture.ribbons, g_flat_furniture)
   let ms_done = performanceNow()
 
   var data = FrameData(
@@ -1972,6 +2002,13 @@ proc nimBuildFrame(
     view_projection: g_flat_view,
     furn_ribbon_verts: g_flat_furniture,
     is_furniture_held: is_furniture_held,
+    cam_eye_x: float32(scale.eye.x), cam_eye_y: float32(scale.eye.y),
+    cam_eye_z: float32(scale.eye.z),
+    cam_forward_x: float32(scale.forward.x), cam_forward_y: float32(scale.forward.y),
+    cam_forward_z: float32(scale.forward.z),
+    cam_depth_near: float32(scale.depth_near),
+    cam_tangent_half_view: float32(scale.tangent_half_view),
+    cam_height_pixels: float32(scale.height_pixels),
     ms_grid: float32(ms_grid),
     ms_axes: float32(ms_axes),
     count_grid_segments: g_count_grid_segments,
@@ -2007,7 +2044,10 @@ proc nimBuildFrame(
     ms_emitting: float32(spentOn(Side.Emitting)),
     ms_hover_pick: float32(recordLastFrame().ms_hover_pick),
     tri_over: countOverlay(g_meshes[Primitive.Triangle]),
-    ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
+    # For ribbons the split is in *records*: the instanced draw takes ranges of
+    #   instances, not of expanded vertices.
+    ribbon_over: (if g_meshes.ribbons.index_overlay.isSome:
+      max(0, g_meshes.ribbons.count - g_meshes.ribbons.index_overlay.get) else: 0),
     point_over: countOverlay(g_meshes[Primitive.Point]),
   )
   # The whole of the proc, stamped **after** the record is built: the three overlay scans

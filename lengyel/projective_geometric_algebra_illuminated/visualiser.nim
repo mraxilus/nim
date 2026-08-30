@@ -466,6 +466,9 @@ proc assembleMeshes(
   for primitive in Primitive:
     panel.count_vertices += MESHES[primitive].count_vertices +
       MESHES_FURNITURE[primitive].count_vertices
+  # Six per record: what the ribbon shader will emit, which is what the figure has always
+  #   meant -- vertices drawn, not floats carried.
+  panel.count_vertices += 6*(MESHES.ribbons.count + MESHES_FURNITURE.ribbons.count)
 
 
 proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
@@ -810,8 +813,8 @@ proc renderFrame(
     panel, scene, interaction, camera, now, scale, int(width), int(height), are_dimmed
   )
   clearFrame(int(width), int(height))
-  renderer.drawMeshes(MESHES_FURNITURE, view_projection)
-  renderer.drawMeshes(MESHES, view_projection)
+  renderer.drawMeshes(MESHES_FURNITURE, view_projection, scale)
+  renderer.drawMeshes(MESHES, view_projection, scale)
 
   # One reading a frame, taken before any slot advances, so every selected object's comet
   #   moves by the same step and none of them reads a clock the others have already moved.

@@ -59,6 +59,7 @@ const
   LESS* = 0x0201'u32
   ARRAY_BUFFER* = 0x8892'u32
   DYNAMIC_DRAW* = 0x88E8'u32
+  STATIC_DRAW* = 0x88E4'u32
   FLOAT_TYPE* = 0x1406'u32
   UNSIGNED_BYTE* = 0x1401'u32
   RGB* = 0x1907'u32
@@ -106,6 +107,10 @@ proc vertexAttribPointer*(
 ) {.importc: "glVertexAttribPointer", header: HEADER.}
 proc enableVertexAttribArray*(index: Uint)
   {.importc: "glEnableVertexAttribArray", header: HEADER.}
+proc vertexAttribDivisor*(index: Uint; divisor: Uint)
+  {.importc: "glVertexAttribDivisor", header: HEADER.}
+proc drawArraysInstanced*(mode: Enum; first: Int; count: Sizei; instances: Sizei)
+  {.importc: "glDrawArraysInstanced", header: HEADER.}
 proc drawArrays*(mode: Enum; first: Int; count: Sizei)
   {.importc: "glDrawArrays", header: HEADER.}
 

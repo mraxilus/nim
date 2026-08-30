@@ -160,14 +160,8 @@ proc addGreatCircle(
       scratch.places[i] = pointFrom(add(centre_point,
         add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
   timed(Side.Emitting):
-    # Converted once for the ring, not per segment: the implicit `toScale` builds and
-    #   copies a fresh `DrawScale` at every call site it fires from, which inside this
-    #   loop was an allocation per segment on the JS backend.
-    let plain = toScale(scale)
     for i in 0 ..< count_places - 1:
-      meshes.addSegment(
-        scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, plain,
-      )
+      meshes.addSegment(scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT)
 
 
 func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
@@ -237,8 +231,8 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
 
 proc placeFadeLine(
   scratch: var DrawScratch; count_assembled: var int; centre, axis_point: Multivector;
-  span: float; pieces: int; across: Direction; tint: Rgba;
-  fog: tuple[radius_full, radius_gone: float]; eye_point: Multivector
+  span: float; pieces: int; tint: Rgba;
+  fog: tuple[radius_full, radius_gone: float]; scale: DrawExtent
 ) =
   ## Resolve one faded line into `scratch.ribbons`: `pieces` ribbon pieces running `span`
   ## either side of `centre` along `axis_point`, each end faded by its own distance from
@@ -253,13 +247,20 @@ proc placeFadeLine(
     let at = add(centre, wedge(span*(2.0*float(j)/float(pieces) - 1.0), axis_point))
     scratch.places[j] = pointFrom(at)
     scratch.fade_tints[j] = tint.fade(tint.alpha * alphaGridFade(
-      distanceBetween(at, eye_point), fog.radius_full, fog.radius_gone))
+      distanceBetween(at, scale.eye_point), fog.radius_full, fog.radius_gone))
+    scratch.fade_depths[j] = dot(scratch.places[j] - scale.eye, scale.forward)
   for j in 0 ..< count_boundaries - 1:
+    # **Whole pieces behind the eye are culled here, not carried.** The shader refuses
+    #   them anyway, but a record it refuses still crossed the wire and still counted
+    #   against the grid's own segment budget -- which is a budget of what is *drawn*.
+    #   The coarse cull is the placement's; the exact per-end clip stays the shader's.
+    if scratch.fade_depths[j] < scale.depth_near and
+        scratch.fade_depths[j + 1] < scale.depth_near:
+      continue
     if count_assembled >= len(scratch.ribbons): return
     scratch.ribbons[count_assembled] = RibbonPiece(
       tail: scratch.places[j],
       head: scratch.places[j + 1],
-      across: across,
       tint_tail: scratch.fade_tints[j],
       tint_head: scratch.fade_tints[j + 1],
     )
@@ -311,18 +312,14 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
       tint = ink.colour
       foot_point = unitize(foot_raw)
       axis_point = toMultivector(axis)
-      # One across for the whole axis: all its pieces lie on the one line, so they share
-      #   the direction sideways from the eye -- the grid's own per-line rule. The axis
-      #   itself is placed through the algebra above; this is only how wide the ribbon
-      #   standing for it is drawn, so it is the picture's cross product. See
-      #   `mesh.directionAcross`, which the pieces would otherwise each run.
-      across_axis = normalize(cross(axis, scale.eye - foot.get))
-    if across_axis.isNone: continue
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
-    #   distance from the eye, so the cutoff never reads as a hard edge.
+    #   distance from the eye, so the cutoff never reads as a hard edge. No across is
+    #   taken any more: which way a ribbon steps off moved to the vertex shader with the
+    #   widening itself -- see `mesh.expandRibbon`, whose cross is the very one this
+    #   hoisted per line.
     scratch.placeFadeLine(
       count_assembled, foot_point, axis_point, half, 2*SEGMENTS_GRID_FADE,
-      across_axis.get, tint, fog, scale.eye_point,
+      tint, fog, scale,
     )
 
   count_assembled
@@ -337,7 +334,7 @@ proc addAxes*(
   timed(Side.Placing): count_assembled = placeAxes(scratch, extent, scale)
   timed(Side.Emitting):
     meshes.addRibbonPieces(
-      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE,
     )
 
 
@@ -445,23 +442,17 @@ proc placeGridFamily(
     if reach_squared <= 0.0: continue
     let
       reach = sqrt(reach_squared)
-      # One base point and **one across** per lattice line. The base is placed through the
-      #   algebra, as the lattice line itself is; the across is the picture's -- every fade
-      #   piece lies on this one line and so shares one direction sideways from the eye,
-      #   which is the cross `mesh.directionAcross` would otherwise take once a piece.
       base = add(origin_point,
         add(wedge(offset, across_point), wedge(centre_along, along_point)))
-      across_line = normalize(cross(along, scale.eye - pointFrom(base)))
-    # An eye on the lattice line itself has no side to step a ribbon off toward -- the
-    #   very refusal `addSegment` makes per piece, made once for the line.
-    if across_line.isNone: continue
     # Assembled, not drawn -- see `placeFadeLine`, which also stops silently at the
     #   scratch's end: the caller sized it from `SEGMENTS_GRID_MAX`, the same budget
     #   `segmentsGridFadeFor` cuts the fade to, so a full buffer means that budget was
-    #   raised and this was not.
+    #   raised and this was not. The across the line used to hoist moved to the vertex
+    #   shader with the widening; collinear pieces provably share it there too, since
+    #   `cross(along, eye - t*along)` does not depend on `t`.
     scratch.placeFadeLine(
       count_assembled, base, along_point, reach, segments_fade,
-      across_line.get, tint, fog, scale.eye_point,
+      tint, fog, scale,
     )
 
   count_assembled
@@ -484,7 +475,7 @@ proc addGridFamily*(
     )
   timed(Side.Emitting):
     meshes.addRibbonPieces(
-      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE,
     )
 
 
@@ -603,10 +594,8 @@ proc addLine(
   if anchor.isSome and axis.isSome:
     let tint_progress = tint.fade(tint.alpha*progress)
     timed(Side.Emitting):
-      # One conversion for the pair; see `addGreatCircle`'s note on what each costs.
-      let plain = toScale(scale)
-      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, plain)
-      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, plain)
+      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT)
+      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT)
     return Placement.Finite
 
   var axes = none(tuple[first, second: Direction])

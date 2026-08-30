@@ -1787,9 +1787,11 @@ const reached = await page.evaluate((EXTENT_PLANE_DRIVE) => {
   // Furniture off, so every vertex counted here belongs to the scene and the layer over it.
   let furthest = 0;
   const v = data.ribbon_verts;
-  // Seven floats a vertex: three of place, four of colour.
-  for (let i = 0; i < v.length; i += 7) {
-    furthest = Math.max(furthest, Math.hypot(v[i], v[i + 1], v[i + 2]));
+  // Fifteen floats a record now the widening runs in the vertex shader: tail xyz, head
+  //   xyz, width, then two tints. Both ends are positions the lattice actually reaches.
+  for (let i = 0; i < v.length; i += 15) {
+    furthest = Math.max(furthest,
+      Math.hypot(v[i], v[i + 1], v[i + 2]), Math.hypot(v[i + 3], v[i + 4], v[i + 5]));
   }
   return { furthest, extent_plane: EXTENT_PLANE_DRIVE };
 }, 8.0); // `mesh.EXTENT_PLANE`, the fixed radius a plane's disc stands at.

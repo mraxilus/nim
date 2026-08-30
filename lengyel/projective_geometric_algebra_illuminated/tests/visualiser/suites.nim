@@ -831,7 +831,13 @@ suite "Mesh":
       check anchorFor(m, none(Position), SCALE_TEST).get =~ anchorFor(m, SCALE_TEST).get
 
 
-  proc ribbonEnds(mesh: Mesh; index: int): (Position, Position) =
+  proc isRibbonDrawn(corners: array[6, Vertex]): bool =
+    ## Say whether an expansion is a drawable quad or the shader's refusal -- six
+    ## coincident vertices for a segment wholly behind the eye, or one the eye stands on.
+    corners[0].x != corners[1].x or corners[0].y != corners[1].y or
+      corners[0].z != corners[1].z
+
+  proc ribbonEnds(meshes: MeshSet; index: int): (Position, Position) =
     ## Recover the segment the `index`-th ribbon was built around.
     ##   Each end's own two corners sit an equal step either side of it, so their midpoint
     ##   is the endpoint again -- which is also the property being asserted whenever this
@@ -843,10 +849,12 @@ suite "Mesh":
         y: 0.5*(float(a.y) + float(b.y)),
         z: 0.5*(float(a.z) + float(b.z)),
       )
-    let base = VERTICES_RIBBON*index
+    # Through `expandRibbon` -- the reference of the shader that now does the widening --
+    #   so what is read back is what the old expanded storage held: the *clipped* ends.
+    let corners = expandRibbon(meshes.ribbons.records[index], toScale(SCALE_TEST))
     (
-      midpoint(mesh.vertices[base + 0], mesh.vertices[base + 5]),
-      midpoint(mesh.vertices[base + 1], mesh.vertices[base + 2]),
+      midpoint(corners[0], corners[5]),
+      midpoint(corners[1], corners[2]),
     )
 
   setup:
@@ -854,7 +862,7 @@ suite "Mesh":
 
   test "clearing drops every vertex":
     MESHES.addMarker(ORIGIN, Ink.Rose.colour)
-    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour, WIDTH_LINE_OBJECT, SCALE_TEST)
+    MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour, WIDTH_LINE_OBJECT)
     MESHES.clearMeshes
     for primitive in Primitive:
       check MESHES[primitive].count_vertices == 0
@@ -865,7 +873,7 @@ suite "Mesh":
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, POINTS[i], Ink.Rose.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Point].count_vertices == 1
-      check MESHES[Primitive.Ribbon].count_vertices == 0
+      check 6*MESHES.ribbons.count == 0
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
 
 
@@ -873,15 +881,15 @@ suite "Mesh":
     for line in LINES:
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
-      check MESHES[Primitive.Ribbon].count_vertices == 2*VERTICES_RIBBON
+      check 6*MESHES.ribbons.count == 2*VERTICES_RIBBON
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
       check MESHES[Primitive.Point].count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
       check anchor.isSome and axis.isSome
       let
-        (tail_first, head_first) = ribbonEnds(MESHES[Primitive.Ribbon], 0)
-        (tail_second, head_second) = ribbonEnds(MESHES[Primitive.Ribbon], 1)
+        (tail_first, head_first) = ribbonEnds(MESHES, 0)
+        (tail_second, head_second) = ribbonEnds(MESHES, 1)
       # Both halves start on the line, at its support, so they meet with no gap.
       check isNear(tail_first, anchor.get)
       check isNear(tail_second, anchor.get)
@@ -953,8 +961,8 @@ suite "Mesh":
 
       MESHES.clearMeshes
       discard MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST)
-      let (_, far_first) = ribbonEnds(MESHES[Primitive.Ribbon], 0)
-      let (_, far_second) = ribbonEnds(MESHES[Primitive.Ribbon], 1)
+      let (_, far_first) = ribbonEnds(MESHES, 0)
+      let (_, far_second) = ribbonEnds(MESHES, 1)
       # Whichever half runs toward the star has to land on it -- but only where the star
       #   itself stands in front of the near plane. A ribbon is clipped there (see
       #   `mesh.addSegment`), so a star behind the camera is met by a half that stops at
@@ -975,7 +983,7 @@ suite "Mesh":
       # The rim and nothing else. A plane used to add one ribbon more for a normal shaft
       #   out of its anchor; orientation now rides on the selection marker's own pulse,
       #   so an unselected plane draws no such thing.
-      check MESHES[Primitive.Ribbon].count_vertices == VERTICES_RIBBON*RIBBONS_RING
+      check 6*MESHES.ribbons.count == VERTICES_RIBBON*RIBBONS_RING
       # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
       #   plane never adds a scattered dot beyond what the fill and rim already draw.
       check MESHES[Primitive.Point].count_vertices == 0
@@ -997,7 +1005,7 @@ suite "Mesh":
       #   exactly on the plane, and at exactly the plane's own radius, is the segment each
       #   ribbon was built around; `ribbonEnds` recovers it.
       for i in 0 ..< RIBBONS_RING:
-        let (tail, head) = ribbonEnds(MESHES[Primitive.Ribbon], i)
+        let (tail, head) = ribbonEnds(MESHES, i)
         for place in [tail, head]:
           check isNear(dot(place - anchor.get, normal.get), 0)
           check isNear(norm(place - anchor.get), EXTENT_PLANE_F)
@@ -1006,7 +1014,7 @@ suite "Mesh":
         let bound = 0.5*float(WIDTH_LINE_OBJECT)*
           max(worldPerPixelAt(tail, SCALE_TEST), worldPerPixelAt(head, SCALE_TEST))
         for j in 0 ..< VERTICES_RIBBON:
-          let corner = MESHES[Primitive.Ribbon].vertices[VERTICES_RIBBON*i + j]
+          let corner = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_TEST))[j]
           check isNear(float(corner.alpha), Ink.Olive.colour.alpha)
           check abs(dot(corner.toPosition - anchor.get, normal.get)) <= bound + 1e-5
 
@@ -1058,12 +1066,14 @@ suite "Mesh":
       MESHES.clearMeshes
       let attitude = ⊖ plane
       check MESHES.addObject(SCRATCH, attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
-      # At most one ribbon per segment, and fewer in practice: a great circle is drawn
-      #   around the eye, so about half of it stands behind the camera and is clipped away
-      #   entirely rather than drawn inside out (see `mesh.addSegment`).
-      let count_ribbon = MESHES[Primitive.Ribbon].count_vertices div VERTICES_RIBBON
-      check MESHES[Primitive.Ribbon].count_vertices == VERTICES_RIBBON*count_ribbon
+      # One record per segment now, drawn or not: a segment wholly behind the camera is
+      #   the *shader's* to reject, and `expandRibbon` -- its reference -- reports it as
+      #   six coincident vertices. About half the circle stands behind the eye, so the
+      #   drawn count must fall well short of the full ring; both halves of that are held
+      #   below rather than assumed.
+      let count_ribbon = MESHES.ribbons.count
       check count_ribbon in 1 .. SEGMENTS_CIRCLE_HORIZON
+      var count_drawn = 0
       # `directionNormalHorizon` reads straight off the horizon line's own raw
       #   coefficients; confirm it agrees with the finite plane's own normal, read
       #   through a wholly different pair of library operators, before trusting either
@@ -1078,7 +1088,11 @@ suite "Mesh":
       #   the circle's own radius nor exactly in its plane. See the plane rim above.
       var count_at_radius = 0
       for i in 0 ..< count_ribbon:
-        let (tail, head) = ribbonEnds(MESHES[Primitive.Ribbon], i)
+        # Skip what the shader will not draw; coincident corners are its refusal.
+        let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_TEST))
+        if not isRibbonDrawn(corners): continue
+        count_drawn += 1
+        let (tail, head) = ribbonEnds(MESHES, i)
         for place in [tail, head]:
           let offset = place - SCALE_TEST.eye
           # In the circle's own plane exactly, clipped or not: the clip slides a point
@@ -1089,6 +1103,9 @@ suite "Mesh":
           check norm(offset) <= SCALE_TEST.radius_horizon*(1.0 + 1e-5)
           if isNear(norm(offset), SCALE_TEST.radius_horizon): inc count_at_radius
       check count_at_radius > 0
+      # The half-behind claim, held rather than assumed: some of the ring is drawn, and
+      #   well under all of it.
+      check count_drawn in 1 ..< SEGMENTS_CIRCLE_HORIZON
 
 
   test "plane at horizon becomes a dome over the whole sky around eye":
@@ -1148,7 +1165,7 @@ suite "Mesh":
       if MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite:
         inc built
     check built == ITEMS_MAX
-    check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+    check 6*MESHES.ribbons.count <= VERTICES_MAX
     check MESHES[Primitive.Triangle].count_vertices <= VERTICES_MAX
 
 
@@ -1184,13 +1201,15 @@ suite "Mesh":
     MESHES.clearMeshes
     MESHES.addAxes(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
     MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
-    check MESHES[Primitive.Ribbon].count_vertices > 0
+    check 6*MESHES.ribbons.count > 0
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
-    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-      # Slack of one unit for the ribbon's own half-width, which steps each corner off
-      #   the line it draws by half a pixel's worth of world at that depth.
-      check norm(at - SCALE_FOG.eye) <= fog.radius_gone + 1.0
+    for i in 0 ..< MESHES.ribbons.count:
+      # Expanded through the reference of the shader that now does the widening, with a
+      #   slack of one unit for the half-width it steps each corner off by.
+      let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_FOG))
+      if not isRibbonDrawn(corners): continue
+      for vertex in corners:
+        check norm(vertex.toPosition - SCALE_FOG.eye) <= fog.radius_gone + 1.0
 
 
   test "world furniture is fog about the camera, not a halo about the origin":
@@ -1200,12 +1219,14 @@ suite "Mesh":
     let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
     MESHES.clearMeshes
     MESHES.addGrid(SCRATCH, scale_afar.extent_furniture, scale_afar)
-    check MESHES[Primitive.Ribbon].count_vertices > 0
+    check 6*MESHES.ribbons.count > 0
     let fog = fogFurnitureFor(scale_afar.extent_furniture)
-    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-      check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
-      check norm(at - ORIGIN) > fog.radius_gone
+    for i in 0 ..< MESHES.ribbons.count:
+      let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_afar))
+      if not isRibbonDrawn(corners): continue
+      for vertex in corners:
+        check norm(vertex.toPosition - scale_afar.eye) <= fog.radius_gone + 1.0
+        check norm(vertex.toPosition - ORIGIN) > fog.radius_gone
 
 
   test "ground grid holds full alpha near the camera and fades to nothing at its reach":
@@ -1215,14 +1236,15 @@ suite "Mesh":
     var
       alpha_near_min = 1.0
       alpha_far_max = 0.0
-    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-      let
-        vertex = MESHES[Primitive.Ribbon].vertices[i]
-        radius = norm(vertex.toPosition - SCALE_FOG.eye)
-      if radius <= fog.radius_full:
-        alpha_near_min = min(alpha_near_min, float(vertex.alpha))
-      if radius >= fog.radius_gone - TOLERANCE_TEST:
-        alpha_far_max = max(alpha_far_max, float(vertex.alpha))
+    for i in 0 ..< MESHES.ribbons.count:
+      let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_FOG))
+      if not isRibbonDrawn(corners): continue
+      for vertex in corners:
+        let radius = norm(vertex.toPosition - SCALE_FOG.eye)
+        if radius <= fog.radius_full:
+          alpha_near_min = min(alpha_near_min, float(vertex.alpha))
+        if radius >= fog.radius_gone - TOLERANCE_TEST:
+          alpha_far_max = max(alpha_far_max, float(vertex.alpha))
     check isNear(alpha_near_min, Ink.Grid.colour.alpha*ALPHA_GRID)
     check alpha_far_max <= TOLERANCE_SINGLE
 
@@ -1294,13 +1316,16 @@ suite "Mesh":
         pieces = segmentsGridFadeFor(2*int(floor(radius/SIZE_CELL_GRID)) + 1)
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_above)
-      check MESHES[Primitive.Ribbon].count_vertices == lines*pieces*6
-      for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-        let
-          at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-          off_x = abs(at.x - SIZE_CELL_GRID*round(at.x/SIZE_CELL_GRID))
-          off_y = abs(at.y - SIZE_CELL_GRID*round(at.y/SIZE_CELL_GRID))
-        check min(off_x, off_y) <= 1.0
+      check 6*MESHES.ribbons.count == lines*pieces*6
+      for i in 0 ..< MESHES.ribbons.count:
+        let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_above))
+        if not isRibbonDrawn(corners): continue
+        for vertex in corners:
+          let
+            at = vertex.toPosition
+            off_x = abs(at.x - SIZE_CELL_GRID*round(at.x/SIZE_CELL_GRID))
+            off_y = abs(at.y - SIZE_CELL_GRID*round(at.y/SIZE_CELL_GRID))
+          check min(off_x, off_y) <= 1.0
 
 
   test "the grid's fade is cut as finely as its budget affords, and no finer":
@@ -1350,15 +1375,15 @@ suite "Mesh":
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_afar)
       # Six vertices a segment; see `addSegmentAcross`.
-      check MESHES[Primitive.Ribbon].count_vertices div 6 <= SEGMENTS_GRID_MAX
-      check MESHES[Primitive.Ribbon].count_vertices > 0
+      check 6*MESHES.ribbons.count div 6 <= SEGMENTS_GRID_MAX
+      check 6*MESHES.ribbons.count > 0
 
     # And the opening view never reaches the budget at all, which is what "the near view
     #   is untouched" means: nothing there is drawn more coarsely than it was.
     let scale_opening = scaleFurnitureAt(Position(x: 0, y: 0, z: 1.0e1), 2.0e2)
     MESHES.clearMeshes
     MESHES.addGrid(SCRATCH, 2.0e2, scale_opening)
-    check MESHES[Primitive.Ribbon].count_vertices div 6 < SEGMENTS_GRID_MAX div 2
+    check 6*MESHES.ribbons.count div 6 < SEGMENTS_GRID_MAX div 2
 
 
   test "a camera dollied far out still has ground under it, at a coarser cell":
@@ -1390,23 +1415,26 @@ suite "Mesh":
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_afar)
-      check MESHES[Primitive.Ribbon].count_vertices > 0
-      check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
+      check 6*MESHES.ribbons.count > 0
+      check 6*MESHES.ribbons.count <= VERTICES_MAX
       # Laid on world multiples of the cell this reach asked for, so the lattice is still
       #   the world's rather than one dragged along under the camera.
       let
         fog = fogFurnitureFor(extent)
         size_cell = sizeCellGridFor(sqrt(fog.radius_gone*fog.radius_gone - height*height))
-      for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-        let
-          at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-          off_x = abs(at.x - size_cell*round(at.x/size_cell))
-          off_y = abs(at.y - size_cell*round(at.y/size_cell))
-        # Within a fiftieth of a cell rather than exactly on it: a line is drawn as a
-        #   ribbon, so its vertices stand half its own screen width either side of the
-        #   lattice line, which in world units grows with the distance it is drawn at.
-        #   Measured at 0.005 of a cell across all three reaches.
-        check min(off_x, off_y) <= 0.02*size_cell
+      for i in 0 ..< MESHES.ribbons.count:
+        let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_afar))
+        if not isRibbonDrawn(corners): continue
+        for vertex in corners:
+          let
+            at = vertex.toPosition
+            off_x = abs(at.x - size_cell*round(at.x/size_cell))
+            off_y = abs(at.y - size_cell*round(at.y/size_cell))
+          # Within a fiftieth of a cell rather than exactly on it: a line is drawn as a
+          #   ribbon, so its vertices stand half its own screen width either side of the
+          #   lattice line, which in world units grows with the distance it is drawn at.
+          #   Measured at 0.005 of a cell across all three reaches.
+          check min(off_x, off_y) <= 0.02*size_cell
 
 
   test "the axes fog too: the one the camera stands by is drawn, the far ones are not":
@@ -1420,13 +1448,16 @@ suite "Mesh":
     check norm(scale_afar.eye - ORIGIN) > fog.radius_gone
     MESHES.clearMeshes
     MESHES.addAxes(SCRATCH, scale_afar.extent_furniture, scale_afar)
-    check MESHES[Primitive.Ribbon].count_vertices > 0
-    for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
-      let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
-      # Everything drawn lies on the x axis: the y and z axes are outside the fog, and
-      #   the stretch of the x axis that is drawn is the stretch inside it.
-      check abs(at.y) <= 1.0 and abs(at.z) <= 1.0
-      check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
+    check 6*MESHES.ribbons.count > 0
+    for i in 0 ..< MESHES.ribbons.count:
+      let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_afar))
+      if not isRibbonDrawn(corners): continue
+      for vertex in corners:
+        let at = vertex.toPosition
+        # Everything drawn lies on the x axis: the y and z axes are outside the fog, and
+        #   the stretch of the x axis that is drawn is the stretch inside it.
+        check abs(at.y) <= 1.0 and abs(at.z) <= 1.0
+        check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
 
 
   test "radiusHorizonFor scales with the camera's own far clip distance":
