@@ -2299,6 +2299,68 @@ exact per-end clip stays the shader's. Segment counts match the old pipeline exa
 from the enum entirely: ribbons are records beside the vertex meshes, not vertices
 pretending, and the dead 1.3 MB bucket went with it.
 
+**The plane fills and sky domes run in vertex shaders too, on both targets.** A finite
+plane's fill was a 288-vertex fan and a horizon plane's dome 1,728 vertices, both walked on
+the CPU per frame through per-angle trigonometry -- camera-independent geometry re-derived
+every frame because the meshes are immediate-mode. Each is one record now: a **13-float
+`DiscRecord`** (centre, two radius-scaled arms, fill tint) fanned over a static unit-circle
+corner buffer, and an **8-float `DomeRecord`** (centre, radius, tint) widened over a static
+unit sphere -- a full sphere has no orientation, so the record carries none. The static
+corner buffers come from one generator pair in `mesh` (`discCorners`/`domeCorners`), read by
+the desktop directly and by the browser through `nimDiscCorners`/`nimDomeCorners`, so
+neither target holds a table that could drift from the references (`expandDiscVertex`,
+`expandDomeVertex`), which the suite pins to the multivector sums as it pinned the CPU
+walks. The rim keeps its ribbon records -- their draw order among the other ribbons is
+load-bearing -- but steps off `UNIT_CIRCLE_RIM`, a fixed table of the ring's angles resolved
+once at start-up with the runtime's own `cos`/`sin` (not at compile time, whose evaluator
+need not agree with each backend's libm in the last bit), sharing each boundary with the
+next segment; the rim's per-frame trigonometry is gone.
+  **Wash order is kept, not assumed away**: discs and domes land in two record arrays, but
+two translucent washes still blend in scene order, so every append extends or opens a
+`WashRun` and both render paths walk the runs in sequence -- usually one run of one record
+per object -- rather than drawing one whole array after the other. `markOverlay` seals the
+current run, so a run never straddles the overlay mark. With the fills gone the Triangle
+mesh had no writers left: the `Primitive` enum is deleted outright, points are a plain
+`points: Mesh`, and `VERTICES_MAX` fell from 49,152 to 1,024 -- the binding case is a scene
+of selected points now, not plane rims.
+  Measured on the demo scene, still camera, medians: **build 11.7 → 3.2 ms**, sky
+**5.1 → 0.1**, flatten **2.35 → 0.6**, planes **1.0 → 0.5**, with 56 floats of wash records
+crossing the wire where 18,144 vertex floats did. Desktop A/B across all twelve storyboard
+frames under Xvfb: at most **38 of 1,296,000 pixels differ** per frame, channel delta ≤ 12
+-- edge-pixel flips where the record narrows its arm vectors to `float32` before the GPU's
+own arithmetic, against a CPU fan that computed in doubles; the ribbon move's zero-diff is
+not repeatable here because the numeric path genuinely changed width. Verified visually on
+the dome frame besides.
+  The storyboard capture path surfaced a real bug on the way: it never called
+`ARENA_SWAP.swap()`, so every captured sub-frame stacked another `DrawScratch` into the
+current half until the fifth overflowed the arena -- the pair's turn-over now lives in the
+capture loop's own `renderAt`, mirroring the interactive loop.
+
+**The overlay row's cost was copies, not markers -- and the DOM churn beside them.** With
+two objects selected the `overlay + menu` row cost more than the whole frame build, and
+none of it was the geometry:
+  - `markerFor` and its five shape procs returned `Option[Marker]`, and a `Marker`
+    reserves every kind's fixed arrays -- so on the JS backend each return, `get` and
+    assignment walked kilobytes through `nimCopy`. Measured at ~1 ms per shaped marker
+    **for six floats of ring**. The family fills a caller-supplied `var Marker` now and
+    reports a bool; the bridge shapes straight into the boxed marker its pulse cache
+    reuses, and nothing copies a `Marker` at all.
+  - The overlay view cache returned `(DrawExtent, Matrix4)` **by value** -- ~0.25 ms per
+    overlay call on a cache *hit*, since the tuple construction deep-copies an extent full
+    of multivectors. It is `ensureViewOverlay` now; callers read the shared globals.
+  - `nimAnchorScreen` and `nimDragComet` read `g_scene[slot]`, whose `Item` carries the
+    whole `Scene` by value -- the trap `nimBuildFrame`'s walk already documents, found
+    live again at 0.28 ms per anchor asked for. By-slot readers now; an anchor costs 8 µs.
+  - The SVG overlay cleared itself with `innerHTML = ''` and created every element afresh
+    each frame, and the choice menu ran a layout-forcing `getBBox` per wedge per frame for
+    label widths that cannot change between frames. Elements are pooled and re-staged with
+    one `replaceChildren` per frame -- z-order still reads straight down the staging
+    calls -- and label widths are measured once per label (cache emptied when
+    `document.fonts.ready` resolves, in case an early measure ran against a fallback face).
+  Net: the overlay row **7.45 → 3.97 ms** on the same two-selection scene. The menu itself
+cannot move to a shader -- its wedges are laid-out text, and text layout is the browser's --
+but nothing per-frame remains in it beyond class toggles and a handful of attributes.
+
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
 17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:

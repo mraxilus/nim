@@ -328,9 +328,10 @@ eye every frame so they have zero parallax on translation and turn only with rot
   eye's horizontal removes sky the camera can see. Every horizon plane is the same universal
   object and carries no orientation to render.
 
-**Draw-order invariant.** Translucent triangles share one unsorted bucket drawn with depth
-writes off, so among translucent draws whichever is appended last wins the blend. Both
-front-ends must therefore insert any visible horizon dome **first**, before every other
+**Draw-order invariant.** Translucent washes draw unsorted with depth writes off, in the
+order the scene emitted their records — the wash-run walk preserves it across the disc and
+dome record arrays — so among translucent draws whichever is appended last wins the blend.
+Both front-ends must therefore insert any visible horizon dome **first**, before every other
 visible object, so an ordinary plane's wash blends over it whatever slots they occupy. Two
 ordinary washes crossing still look order-dependent — a known, accepted limit.
 
@@ -1192,8 +1193,8 @@ because the core held a single scalar; that put pick order, the thing that names
 the wrong language.
 
 Draw order in the glue mirrors the native renderer and must be kept in sync by hand: furniture
-at furniture width with normal depth, then scene lines and points, then translucent triangles
-with depth writes off.
+at furniture width with normal depth, then scene lines and points, then the translucent wash
+runs with depth writes off.
 
 **Three gotchas that appear when compiling a systems language to JavaScript**, all confirmed
 empirically here and worth checking for in any equivalent toolchain:
