@@ -2302,6 +2302,9 @@ All figures are from the driving container, browser build.
 | 7 | Great circle assembled as 96      | inside rows 3 and   | table-stepped | hover_pick_ms  |
 |   | multivector sums per frame and    | the lines row       | arithmetic    |                |
 |   | per pick candidate                |                     |               |                |
+| 8 | Marker rings assembled per sample | 3.2 ms per marker   | 0.8 ms; the   | marker_pair_ms |
+|   | per frame; a ref Marker allocated | pair (horizon line);| row 1.93 ms   | (worst live    |
+|   | and zeroed per shaping            | the row 3.97 ms     |               | shape)         |
 |---|-----------------------------------|---------------------|---------------|----------------|
 
 Three root causes account for all of it, and each is now guarded: **JS-backend deep
@@ -2403,6 +2406,34 @@ none of it was the geometry:
   Net: the overlay row **7.45 → 3.97 ms** on the same two-selection scene. The menu itself
 cannot move to a shader -- its wedges are laid-out text, and text layout is the browser's --
 but nothing per-frame remains in it beyond class toggles and a handful of attributes.
+
+**The overlay row's last cost was marker geometry, not the menu it is named for.** With
+the copies and the DOM churn gone the row still read 3.97 ms, so the bracket was
+decomposed by temporary probes: **4.04 of 4.1 ms was `markerFor`**, the DOM commit 0.03,
+the menu positioning zero -- it was not even open. Timing the marker-and-pulse pair per
+shape then showed the fault the earlier microbench had hidden by happening to time a
+*point*: point 0.48 ms, plane 2.96, horizon line 3.21.
+  Two causes, both already-solved patterns living on in `marker.nim`. A plane's marker
+circle assembled **64 per-sample multivector sums every frame**, and a horizon line's
+bands two rings of 48 -- exactly what the disc rim and the great circle had retired --
+so both now step `euclid.unitRing`'s fixed table through `onCircleAt`, with the arms
+taken through the algebra once and the suite holding the stepped ring equal to the sums
+it replaced, point for point. And every shaping ran `new(Marker)`: a `Marker` reserves
+every kind's fixed arrays, so that was kilobytes allocated and zeroed per selected
+object per frame -- most of what a point's *four-float* answer cost. One box, allocated
+once, now serves both exports.
+  Pairs after: plane **2.96 → 0.79 ms**, horizon line **3.21 → 0.82**, line 2.93 → 1.21,
+point 0.48 → 0.21; the overlay row **3.97 → 1.93 ms** with two objects selected.
+  **Deferred, deliberately**: holding a shaped outline across frames and re-shaping only
+the travelling pulse. A marker's outline depends on object, camera and viewport alone,
+so the cache would be sound -- but a line's pulse rides a *walk* assembled locally
+during shaping and never stored on the `Marker`, so caching it means storing per-run
+ride outlines and their tracks. That is a real change to the type, not a hoist, and the
+remaining cost did not earn it; the residue is a variant construction per shaping plus
+the projections, which a future round can take together if the row rises again.
+  **The pin was rewritten with the fix**, because it would have passed through all of
+this: it timed slot zero, which was a point. It now times every live slot and reports
+the worst, naming the shape -- a cheap kind must never stand in for a dear one.
 
 **The picker copied the scene per slot per pointer move, and nothing measured it.** A
 systematic audit -- time every reachable export, grep every proc returning a large value
