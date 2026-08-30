@@ -6336,8 +6336,10 @@ when ITEMS_MAX >= ITEMS_ORRERY:
   suite "Orrery":
     ## The demo preset is the heaviest scene this build draws, and its whole value is that it
     ## is heavy in every dimension at once: every slot taken, every drawable kind present,
-    ## nothing silently drawing nothing. Each of those is a property a plausible edit to the
-    ## layout tables breaks quietly, so each is checked here rather than looked at.
+    ## nothing silently drawing nothing, and -- since the round that broke it into isolated
+    ## systems -- no point in it serving as a hub for half the scene. Each of those is a
+    ## property a plausible edit to the layout table breaks quietly, so each is checked here
+    ## rather than looked at.
 
     test "the orrery fills every slot the scene has":
       var scene = initScene()
@@ -6348,8 +6350,9 @@ when ITEMS_MAX >= ITEMS_ORRERY:
     test "every object it builds draws something":
       # The failure this exists for: three collinear points wedge to a multivector of no
       #   clean grade, which takes a slot and renders nothing. Six of the sixty-four did
-      #   exactly that -- every comet sheet, and the moon plane of each two-moon planet --
-      #   and the scene still reported sixty-four items, so only counting *shapes* finds it.
+      #   exactly that once, and the scene still reported sixty-four items, so only counting
+      #   *shapes* finds it. A seventh followed later, from the other way of getting it
+      #   wrong -- wedging a point with a plane it already lay on.
       var scene = initScene()
       constructOrrery(scene)
       var without: seq[string] = @[]
@@ -6378,48 +6381,106 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       check at_horizon[Shape.Line] >= 1
       check at_horizon[Shape.Plane] >= 1
 
-    test "its planets stand apart from each other, so the clusters read as clusters":
-      # Asked of the scene rather than of the layout tables: what has to hold is that the
-      #   objects end up separated, and a table read back only restates itself.
+    test "no point in it is a hub for the rest of the scene":
+      # **The fault this round exists to fix.** The arrangement before this one was a single
+      #   solar system, and every radius line, comet orbit and plane in it was joined through
+      #   the one star: twenty-two of its twenty-seven lines and planes contained that point,
+      #   so the scene drew as a starburst out of the middle of the frame. Counted rather
+      #   than looked at, because "it looks like a starburst" is not a thing a suite can see.
+      #   Lines through a system's *own* sun are wanted and are what makes a system read as
+      #   one, so the ceiling admits a handful rather than demanding none.
       var scene = initScene()
       constructOrrery(scene)
-      var planets: Table[string, Multivector]
-      var moons: seq[(string, Multivector)] = @[]
+      var worst = 0
+      var worst_label = ""
+      for slot in 0 ..< ITEMS_MAX:
+        let point = scene.geometryAt(slot)
+        if shape(point) != some(Shape.Point) or isHorizon(point): continue
+        let place = unitize(point)
+        var through = 0
+        for other in 0 ..< ITEMS_MAX:
+          let geometry = scene.geometryAt(other)
+          if isHorizon(geometry): continue
+          case shape(geometry).get(Shape.Point)
+          of Shape.Plane:
+            if abs(depthAgainst(unitize(geometry), place)) <= TOLERANCE_SINGLE:
+              inc through
+          of Shape.Line:
+            # A point lies on a line exactly when the plane they span vanishes.
+            var apart = 0.0
+            for b in Basis: apart = max(apart, abs(wedge(geometry, place)[b]))
+            if apart <= TOLERANCE_SINGLE: inc through
+          of Shape.Point: discard
+        if through > worst:
+          worst = through
+          worst_label = toText(scene.labelAt(slot))
+      checkpoint(&"worst point is `{worst_label}`, carrying {worst} lines and planes")
+      check worst <= 6
+
+    test "its systems stand clear of one another":
+      # Asked of the scene rather than of the layout table: what has to hold is that the
+      #   objects end up separated, and a table read back only restates itself. A system's
+      #   own reach is measured too -- how far its furthest body actually stands from its sun
+      #   -- so this cannot pass by the table claiming a radius the bodies do not use.
+      var scene = initScene()
+      constructOrrery(scene)
+      var suns: Table[string, Multivector]
+      var bodies: seq[(string, Multivector)] = @[]
       for slot in 0 ..< ITEMS_MAX:
         let label = toText(scene.labelAt(slot))
-        if label.startsWith("planet "):
-          planets[label[len("planet ") .. ^1]] = scene.geometryAt(slot)
-        elif label.startsWith("moon ") and '.' in label:
-          moons.add((label[len("moon ") ..< label.find('.')], scene.geometryAt(slot)))
-      check len(planets) >= 5
-      # Each planet's own reach is measured from the scene, not read off a table: how far
-      #   its furthest moon actually stands from it.
+        let geometry = scene.geometryAt(slot)
+        if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
+        if label.startsWith("sun "): suns[label[len("sun ") .. ^1]] = geometry
+        elif '.' in label: bodies.add((label[label.rfind(' ') + 1 ..< label.find('.')],
+          geometry))
+      check len(suns) >= 5
       var reaches: Table[string, float]
-      for (which, moon) in moons:
-        let apart = distanceBetween(moon, planets[which])
+      for (which, body) in bodies:
+        let apart = distanceBetween(body, suns[which])
         reaches[which] = max(reaches.getOrDefault(which, 0.0), apart)
-      # No two clusters may interleave, or neither can be told from the other.
-      for first, planet_first in planets:
-        for second, planet_second in planets:
+      for first, sun_first in suns:
+        for second, sun_second in suns:
           if first == second: continue
-          check distanceBetween(planet_first, planet_second) >
-            reaches[first] + reaches[second]
+          check distanceBetween(sun_first, sun_second) >
+            FACTOR_ISOLATION_ORRERY*(reaches[first] + reaches[second])
 
-    test "the framing radius bounds the planets, and the comets run past it":
+    test "every object wears its own type's colour, and no two types share one":
+      # The whole point of the palette re-cut: a moon and a comet are two identical dots and
+      #   hue is the only thing that separates them, so a role quietly collapsing onto
+      #   another's slot is a silent loss of the one signal they have.
+      var scene = initScene()
+      constructOrrery(scene)
+      var bodies: array[Role, int]
+      for role in Role.Sun .. Role.Comet:
+        for other in Role.Sun .. Role.Comet:
+          if role != other: check lut_role_to_ink[role] != lut_role_to_ink[other]
+      for slot in 0 ..< ITEMS_MAX:
+        let label = toText(scene.labelAt(slot))
+        let role =
+          if label.startsWith("sun "): Role.Sun
+          elif label.startsWith("planet "): Role.Planet
+          elif label.startsWith("moon ") and '.' in label: Role.Moon
+          elif label.startsWith("comet ") and '.' in label: Role.Comet
+          else: Role.Derived
+        check scene.inkAt(slot) == lut_role_to_ink[role]
+        inc bodies[role]
+      # And every role is actually present, or the check above passes vacuously on one.
+      for role in Role: check bodies[role] > 0
+
+    test "the framing radius holds the systems it claims, and the rest run past it":
       # `RADIUS_ORRERY` is what the demo's own camera is fitted to, and its whole claim is
-      #   that it holds the planet system and not the comets -- so a reader who pulls back
+      #   that it holds the nearer systems and not the far ones -- so a reader who pulls back
       #   finds something. Both halves are load-bearing and neither is visible in the number.
       var scene = initScene()
       constructOrrery(scene)
-      let star = toMultivector(POSITION_STAR)
-      var far_planets = 0.0
-      var far_comets = 0.0
+      let centre = toMultivector(POSITION_ORRERY)
+      var held = 0
+      var beyond = 0
       for slot in 0 ..< ITEMS_MAX:
         let geometry = scene.geometryAt(slot)
         if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
-        let apart = distanceBetween(geometry, star)
-        if toText(scene.labelAt(slot)).startsWith("comet"):
-          far_comets = max(far_comets, apart)
-        else: far_planets = max(far_planets, apart)
-      check far_planets <= RADIUS_ORRERY + TOLERANCE_SINGLE
-      check far_comets > RADIUS_ORRERY
+        if not toText(scene.labelAt(slot)).startsWith("sun "): continue
+        if distanceBetween(geometry, centre) <= RADIUS_ORRERY: inc held
+        else: inc beyond
+      check held >= 3
+      check beyond >= 1

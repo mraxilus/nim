@@ -2200,38 +2200,86 @@ the copy outliving the toast is lost. The data layer — `report_delivery`,
 `describeEnvironment`, `shareFile`, `deliverFile` — is untouched, `deliverFile` being the
 save path for both the image and the scene file.
 
-**The demo preset is the build's own worst case: 64 objects laid out as a solar system.**
+**The demo preset is the build's own worst case: 64 objects in seven isolated systems.**
 It replaced the eleven-step storyboard, which showed sixteen objects and could say nothing
 about how the build behaves under load — which is the one question a reader pressing *demo*
 on a visualiser with a diagnostics drawer is most likely to have. The storyboard itself is
 untouched and is still what `visualiser --storyboard` captures; the two had been the same
 thing only because nothing had yet asked them to differ.
   **Every item slot filled, and every drawable kind in it.** `orrery.constructOrrery` builds
-34 points, 16 lines, 11 planes and one of each object at horizon — a star, a great circle and
+35 points, 15 lines, 11 planes and one of each object at horizon — a star, a great circle and
 a sky dome — which is exactly `scene.ITEMS_MAX`, asserted rather than hoped for so a build
 compiled with a different capacity fails naming both numbers. Everything after the placed
-points is **derived**: every line and plane is a join of points already in the scene, and the
+bodies is **derived**: every line and plane is a join of points already in the scene, and the
 three at horizon are attitudes of objects already in it.
-  **A solar system is the arrangement, not the subject.** Clusters of small objects around
-larger ones, at radii spanning a wide range, is the distribution that makes culling, fading
-and extent decisions all matter at once — where `visualiser.fillSceneForBenchmark`'s flat
-helix, which `--timings` still uses, deliberately has no structure at all.
-  Three constants were settled by rendering rather than by reasoning. **Orbits are spaced
-evenly, not by the power law a real system follows**: at true spacing the inner four planets
-piled into one knot in the middle of the frame, which defeats laying a scene out in clusters
-so the clusters can be told apart. **Moon systems are a third of their orbit wide**, not the
-hundredth a real one is; only the ratio matters, since scaling every radius together moves
-the fitted camera with it and changes nothing on screen, and at a fifth every cluster still
-read as one dot with the whole arrangement in frame. **The comets run past the framed view**
-on purpose — a comet always on screen is not doing the job a comet is here to do.
+  **Nothing in it has a centre, and that is the whole shape of the arrangement.** The first
+version was *one* solar system: a star, its planets and its comets, with every radius line,
+every comet orbit and every plane joined *through* that one point — 22 of its 27 lines and
+planes contained it. Lines are infinite, so the scene drew as a starburst out of the middle
+of the frame and the clusters read as decoration on it. Seven self-contained systems replace
+it, each deriving only from its own bodies, and **no object stands at `POSITION_ORRERY`** at
+all: that constant is a coordinate the layout is measured from and the camera aims at.
+  Lines through a system's *own* sun are wanted — they are what makes a system read as one —
+so the rule is a ceiling rather than a prohibition. A driven suite case counts, for every
+point, how many lines and planes pass through it: the worst is now `sun 1` at **4** against a
+ceiling of 6, where a miniature of the old star-centred shape scores **11** and the full one
+scored 22. Counted rather than looked at, because "it draws as a starburst" is not something
+a suite can see.
+  **A solar system is the arrangement, not the subject.** Self-contained clusters scattered
+through a large volume is the distribution that makes culling, fading and extent decisions
+all matter at once — where `visualiser.fillSceneForBenchmark`'s flat helix, which `--timings`
+still uses, deliberately has no structure at all.
+  Constants settled by rendering rather than by reasoning. **Bearings step by the golden
+angle**, so seven systems land seven ways round and none hides behind another. **Reaches and
+radii are traded against each other**: what decides how big a system looks is its radius
+against the radius the camera is fitted to, so scaling the whole layout changes nothing on
+screen and only the ratio moves. A first table reached 140 units out with radii near 8, which
+put a system at a *ninth* of the framed radius and drew each as a speck; the reaches are
+compressed and the radii grown until the tightest pair sits at **2.20** times their combined
+reach, against a `FACTOR_ISOLATION_ORRERY` floor of 2.0 — pinned just under what the layout
+achieves, the same convention `check_palette` uses for its one declared exception. A system
+is now about a fifth of the framed radius.
+  **The isolation check measures reach, not the radius the table names**, and that caught a
+real mismatch: comets stand at `REACH_COMET` times the radius, so a system carrying one is
+half again as wide as its entry claims. It also caught **two direction vectors that were not
+unit** — the moon ring's tipped axis and the comet ring's steep one were each assembled by
+adding a component rather than by rotating, so bodies landed further out than any constant
+said. `normalOf` and `tipped` now rotate within the orthonormal pair `spanOf` returns.
   **The demo places its own camera**, which the storyboard preset never needed to: the
 opening camera was placed to show the *seed* scene whole and sits inside this one, nearly in
-its plane. It is pitched to `ELEVATION_ORRERY_SHOWN` = 0.95 rad first — at the opening 0.42
-the ecliptic is edge-on, every moon rosette collapses to a line and the arrangement reads as
-a starburst — and then pulled back by `camera.distanceFitting`, the same sphere-tangent solve
-a framed selection uses, so the demo cannot come to disagree with the rest of the build about
-what "whole" means. `RADIUS_ORRERY` bounds the **planets** and is folded from the layout
-tables rather than written down beside them. Azimuth is left where the reader had it.
+the plane the systems are spread through. It is pitched to `ELEVATION_ORRERY_SHOWN` = 0.95
+rad first — at the opening 0.42 every ring collapses to a line and every disc to a sliver —
+and then pulled back by `camera.distanceFitting`, the same sphere-tangent solve a framed
+selection uses, so the demo cannot come to disagree with the rest of the build about what
+"whole" means. `RADIUS_ORRERY` bounds the nearest `FRAMED_ORRERY` = 4 systems and is folded
+from the layout table; the other three stand beyond the opening frame on purpose, for a
+reader to find by pulling back. Azimuth is left where the reader had it.
+
+**Colour says what a thing is, not which system it belongs to.** The first version spent a
+hue per cluster, which meant a sun, its planets, its moons and its comets were all one colour
+— so a reader could see which cluster a dot belonged to, which its position already said, and
+could not tell a moon from a comet, which nothing else says at all. `lut_role_to_ink` now maps
+a `Role` to an `Ink`.
+  `mesh.Ink` offers exactly **five** assignable slots and records at length why widening that
+set failed twice, so five is the budget and the partition has to fit inside it: four kinds of
+body, and everything derived on the fifth. That collision is the deliberate one — a line and
+a disc are already told apart by shape, so a hue spent separating them says what a reader can
+see, while a moon and a comet are two identical dots. It is `Ink`'s own rule, applied here.
+  **Which body gets which slot is not free either, and was settled by rendering.** `Olive` is
+much the darkest slot, and on a *body* it disappears: built with the moons in it, a moon was a
+smudge that could not be found against the sky, while the same scene with `Olive` on the
+derived side showed all four kinds plainly. So `Olive` is forced onto the derived side, which
+forces the bodies onto `Rose`, `Copper`, `Jade` and `Cobalt` — and `Jade`/`Cobalt` is the one
+pair in the whole palette carrying a declared exception, converging to 3.7 under tritanopia
+(`check_palette` measures and prints it every run). That pair cannot be avoided; it can only
+be **placed**. It goes on planet and comet, which stand apart on screen — planets ring their
+sun in its own plane, comets sit a third again as far out and well off it — rather than on
+planet and moon, which sit beside each other and would have put the palette's weakest pair on
+its most adjacent one. The exception's own reasoning names screen position as part of what
+carries the pair, so where it lands is the thing this table gets to decide.
+  A suite case checks every object against the table and, separately, that the four body
+roles hold four *distinct* slots — the collapse that would silently cost the one signal a
+moon and a comet have.
   **Six of the sixty-four drew nothing, and counting found it where looking did not.** Three
 collinear points wedge to a multivector of no clean grade, which `objects.shape` reports as
 nothing to draw: the item holds a slot and never appears, while the scene still reports 64.

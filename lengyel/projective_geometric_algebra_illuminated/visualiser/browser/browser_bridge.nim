@@ -331,16 +331,17 @@ proc nimInit(now: cfloat) {.exportc.} =
 
 proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
   ## Replace the current scene with the orrery -- every item slot filled, every drawable
-  ## kind present, laid out as a solar system -- as ordinary live items: a one-click preset
-  ## rather than a scripted playback mode, so once loaded every one of its objects is
-  ## exactly as editable, removable and pickable as anything built by hand.
+  ## kind present, laid out as seven isolated solar systems scattered through a large
+  ## volume -- as ordinary live items: a one-click preset rather than a scripted playback
+  ## mode, so once loaded every one of its objects is exactly as editable, removable and
+  ## pickable as anything built by hand.
   ##   **The heaviest scene this build ever draws**, which is what a demo is for here: the
   ##   eleven-step storyboard it replaced showed sixteen objects and could not say anything
   ##   about how the build behaves under load. The storyboard itself is unchanged and is
   ##   still what `visualiser --storyboard` captures; see `orrery`'s own module comment for
   ##   the arrangement and `storyboard.STEPS` for the teaching sequence.
-  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the star
-  ##   appears first and then each cluster outward in turn, exactly as a loaded `.rgascene`
+  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the
+  ##   nearest system appears first and then each further one in turn, as a loaded `.rgascene`
   ##   file does. The same rule for all three because they are the same thing to a reader --
   ##   a construction handed over whole, played back in the order it was made -- and one
   ##   beat kept in one place cannot drift from the others.
@@ -352,13 +353,16 @@ proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
   g_scene.replayFrom(clock)
   for slot in 0 ..< g_scene.len: g_borns[slot] = g_scene.bornAt(slot)
   g_selection.clear()
-  # Stand back far enough to hold the planet system, look at the star, and pitch up over the
-  #   ecliptic. The opening camera was placed to show the *seed* scene whole: it sits inside
-  #   this one, and nearly in its plane. Solved rather than guessed -- `distanceFitting` is
-  #   the same sphere-tangent solve a framed selection uses, so the demo cannot come to
-  #   disagree with the rest of the build about what "whole" means -- and pitched first,
-  #   since the solve reads the camera it is handed. Azimuth is left where the reader had it.
-  g_camera.target = POSITION_STAR
+  # Stand back far enough to hold the nearer systems, aim at the arrangement's own centre,
+  #   and pitch up over it. The opening camera was placed to show the *seed* scene whole: it
+  #   sits inside this one, and nearly in the plane the systems are spread through. Solved
+  #   rather than guessed -- `distanceFitting` is the same sphere-tangent solve a framed
+  #   selection uses, so the demo cannot come to disagree with the rest of the build about
+  #   what "whole" means -- and pitched first, since the solve reads the camera it is handed.
+  #   Azimuth is left where the reader had it.
+  #   `POSITION_ORRERY` holds no object: it is where the systems are measured from, and the
+  #   middle of the frame is deliberately empty. See `orrery`'s own module comment.
+  g_camera.target = POSITION_ORRERY
   g_camera.elevation = ELEVATION_ORRERY_SHOWN
   g_camera.distance = distanceFitting(
     RADIUS_ORRERY, g_camera, int(width), int(height), INSET_ORRERY_SHOWN

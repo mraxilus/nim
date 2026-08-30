@@ -1058,7 +1058,27 @@ asking what this thing does under load, and sixteen objects cannot answer. It fi
 item slot** and carries **every drawable kind**, one of each object at horizon included, so
 that no drawing path goes unexercised.
 
-Three rules keep it honest.
+Its shape is **many isolated systems, not one**. A single arrangement with a centre puts every
+derived line and plane through one point, and since a line is infinite the whole scene then
+draws as a starburst out of the middle of the frame — with the clusters reading as decoration
+on it rather than as the subject. So each cluster derives **only from its own bodies**, no
+object stands at the coordinate the layout is measured from, and clusters stand a stated
+multiple of their own width apart. Local structure is not the fault: lines through a cluster's
+own centre are what make it read as one, so the rule is a **ceiling on how many objects may
+pass through any one point**, counted over the built scene — a starburst is not something a
+test can see, but a hub is something it can count.
+
+**Colour says what an object is**, not which cluster it belongs to. Which cluster a dot
+belongs to is already legible from where it sits; what it *is* — a sun, a planet, a moon, a
+comet — is legible from nothing else, since they are identical dots. The palette has a fixed
+number of assignable slots and may not be widened, so the partition must fit inside it: the
+kinds that are otherwise indistinguishable take their own slots first, and kinds already told
+apart by shape share what is left. Where a slot is too dark to carry a small mark, or where a
+pair is known to converge under a colour-vision deficiency, that is settled by **rendering and
+by the palette checker**, not by taste — and a known-weak pair is placed on the two kinds that
+stand furthest apart on screen.
+
+Three further rules keep it honest.
 
 - **Everything is derived.** After the placed points, every line and plane is a join of points
   already in the scene and every object at horizon is an attitude of one — the same rule §2.2
@@ -1078,7 +1098,11 @@ Three rules keep it honest.
 The arrangement is **clusters at a range of distances**, which is what makes culling, fading
 and extent decisions all matter in one frame. Its layout constants are chosen by rendering it
 and looking: a distribution that is physically faithful but collapses every cluster to a dot
-is the wrong one, and the reasoning belongs in `PROVENANCE.md` beside the numbers.
+is the wrong one, and the reasoning belongs in `PROVENANCE.md` beside the numbers. Only the
+*ratio* of a cluster's own width to the radius the camera is fitted to decides how big it
+looks, so scaling the whole layout is not a lever; the separation rule and the cluster size
+are traded against each other, and the floor is pinned just under what the layout achieves so
+that eating the margin fails the run.
 
 
 17. Desktop Front-End
