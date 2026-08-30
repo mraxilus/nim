@@ -712,6 +712,14 @@ func blend(first, second: Rgba; fraction: float): Rgba =
   )
 
 
+const POINTS_SCRATCH_MAX* = (LATITUDES_HORIZON + 1)*(LONGITUDES_HORIZON + 1)
+  ## Bound the places a tessellation step may assemble before emitting them.
+  ##   The sky's dome is the largest of them -- a lat/long grid with one extra row and
+  ##   column so its last quad closes on points computed at the same angles the loop would
+  ##   have used, rather than on a wrap that would land a hair off them. A horizon line's
+  ##   great circle needs `SEGMENTS_CIRCLE_HORIZON + 1`, comfortably fewer.
+
+
 type RibbonPiece* = object
   ## Hold one ribbon segment, fully resolved: where it runs, which way it steps off, and
   ## what colour each end is.
@@ -726,6 +734,18 @@ type RibbonPiece* = object
   tail*, head*: Position
   across*: Direction ## Which way the ribbon steps off; one per lattice line, not per piece.
   tint_tail*, tint_head*: Rgba
+
+
+type DrawScratch* = object
+  ## Hold the working space a tessellation step assembles into before it emits anything.
+  ##   **One object rather than a buffer per shape**, so a caller supplies scratch once and
+  ## every step that needs somewhere to work has it. The desktop carves this from the frame
+  ## arena and the browser holds one; neither allocates per frame, and the suite's copy is
+  ## the same shape as both.
+  ##   Both members are written and read within a single step, never across two, so they
+  ## carry nothing between callers and need no clearing.
+  ribbons*: array[SEGMENTS_GRID_MAX, RibbonPiece]
+  places*: array[POINTS_SCRATCH_MAX, Position]
 
 
 proc addSegmentAcross*(

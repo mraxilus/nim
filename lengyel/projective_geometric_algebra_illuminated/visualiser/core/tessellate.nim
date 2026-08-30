@@ -137,8 +137,9 @@ func anchorFor*(
 #[ Segments and Circles ]#
 
 proc addGreatCircle(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; scale: DrawExtent; segments: int = SEGMENTS_CIRCLE_HORIZON
+  meshes: var MeshSet; scratch: var DrawScratch; center: Position;
+  axis_first, axis_second: Direction; radius: float; tint: Rgba; scale: DrawExtent;
+  segments: int = SEGMENTS_CIRCLE_HORIZON
 ) =
   ## Append a closed ring of segments around `center`, in the plane `axis_first` and
   ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
@@ -147,15 +148,20 @@ proc addGreatCircle(
     centre_point = toMultivector(center)
     arm_first = wedge(radius, toMultivector(axis_first))
     arm_second = wedge(radius, toMultivector(axis_second))
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-      point_a = pointFrom(add(centre_point,
-        add(wedge(cos(angle_a), arm_first), wedge(sin(angle_a), arm_second))))
-      point_b = pointFrom(add(centre_point,
-        add(wedge(cos(angle_b), arm_first), wedge(sin(angle_b), arm_second))))
-    meshes.addSegment(point_a, point_b, tint, WIDTH_LINE_OBJECT, scale)
+  # The ring assembled once, then walked. Each place was previously worked out **twice** --
+  #   as one segment's far end and the next one's near end -- so this is the seam and a
+  #   halving of the algebra at once. `segments + 1` places rather than a wrap back to the
+  #   first: the closing segment then ends on a place stepped at the angle the loop would
+  #   have used, where `cos(2*PI)` and `cos(0)` differ in the last bits.
+  let count_places = min(segments + 1, len(scratch.places))
+  for i in 0 ..< count_places:
+    let angle = (2.0*PI * float(i)) / float(segments)
+    scratch.places[i] = pointFrom(add(centre_point,
+      add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
+  for i in 0 ..< count_places - 1:
+    meshes.addSegment(
+      scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, scale,
+    )
 
 
 func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
@@ -168,8 +174,8 @@ func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): P
 
 
 proc addDome(
-  meshes: var MeshSet; center: Position; radius: float; tint: Rgba;
-  latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
+  meshes: var MeshSet; scratch: var DrawScratch; center: Position; radius: float;
+  tint: Rgba; latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
 ) =
   ## Append a full sphere around `center` -- a plane at horizon is the unique universal
   ## "whole sky" object, the same regardless of which points produced it (see
@@ -184,19 +190,25 @@ proc addDome(
   ## translucent pass, only its write is off), same as any other drawn geometry --
   ## not something this proc's own shape needs to work around.
   let centre_point = toMultivector(center)
+  # The grid assembled once, then walked as quads. Every place was previously worked out
+  #   **four times**, once per quad naming it as a corner -- 1,152 calls for 325 places --
+  #   so this is the seam and a quartering of the algebra at once. One extra row and column
+  #   rather than a wrap, so the closing quads meet places stepped at the angles the loops
+  #   would have used.
+  let stride = longitudes + 1
+  if (latitudes + 1)*stride > len(scratch.places): return
+  for lat in 0 .. latitudes:
+    let theta = PI * float(lat) / float(latitudes)
+    for lon in 0 .. longitudes:
+      let phi = 2.0*PI * float(lon) / float(longitudes)
+      scratch.places[lat*stride + lon] = spherePoint(centre_point, radius, theta, phi)
   for lat in 0 ..< latitudes:
-    let
-      theta_a = PI * float(lat) / float(latitudes)
-      theta_b = PI * float(lat + 1) / float(latitudes)
     for lon in 0 ..< longitudes:
-      let
-        phi_a = 2.0*PI * float(lon) / float(longitudes)
-        phi_b = 2.0*PI * float(lon + 1) / float(longitudes)
       meshes.addQuad([
-        spherePoint(centre_point, radius, theta_a, phi_a),
-        spherePoint(centre_point, radius, theta_a, phi_b),
-        spherePoint(centre_point, radius, theta_b, phi_b),
-        spherePoint(centre_point, radius, theta_b, phi_a),
+        scratch.places[lat*stride + lon],
+        scratch.places[lat*stride + lon + 1],
+        scratch.places[(lat + 1)*stride + lon + 1],
+        scratch.places[(lat + 1)*stride + lon],
       ], tint)
 
 
@@ -215,7 +227,9 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
-proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
+proc addAxes*(
+  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
+) =
   ## Append world axes through origin, each in the standard convention: x red, y green,
   ## z blue, so orientation reads at a glance regardless of where the camera stands.
   ##   **Faded out and cut off in the ground grid's own fog**, rather than running the
@@ -236,6 +250,7 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     (Direction(x: 0, y: 0, z: 1), Ink.AxisZ),
   ]
   let fog = fogFurnitureFor(extent)
+  var count_assembled = 0
   for (axis, ink) in AXES_WORLD:
     # Chord of the fog sphere along this axis, about the eye's own perpendicular foot on
     #   it: the axis passes the eye at `separation`, so it is inside the fog for `half`
@@ -267,19 +282,30 @@ proc addAxes*(meshes: var MeshSet; extent: float; scale: DrawExtent) =
     # Cut into the same number of pieces the grid uses, each faded by its own endpoints'
     #   distance from the eye, so the cutoff never reads as a hard edge.
     for j in 0 ..< 2*SEGMENTS_GRID_FADE:
+      # Assembled rather than drawn, as the grid's pieces are and for the same reason;
+      #   all three axes go into the one run, each piece carrying its own axis's ink and
+      #   its own across, so the emit below needs to know nothing about which axis it is
+      #   walking. See `mesh.RibbonPiece`.
+      if count_assembled >= len(scratch.ribbons): break
       let
         end_tail = add(foot_point,
           wedge(half*(float(j)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
         end_head = add(foot_point,
           wedge(half*(float(j + 1)/float(SEGMENTS_GRID_FADE) - 1.0), axis_point))
-        tint_tail = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_tail, scale.eye_point), fog.radius_full, fog.radius_gone))
-        tint_head = tint.fade(tint.alpha * alphaGridFade(
-          distanceBetween(end_head, scale.eye_point), fog.radius_full, fog.radius_gone))
-      meshes.addSegmentAcross(
-        pointFrom(end_tail), pointFrom(end_head), across_axis.get, tint_tail, tint_head,
-        WIDTH_LINE_FURNITURE, scale,
+      scratch.ribbons[count_assembled] = RibbonPiece(
+        tail: pointFrom(end_tail),
+        head: pointFrom(end_head),
+        across: across_axis.get,
+        tint_tail: tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_tail, scale.eye_point), fog.radius_full, fog.radius_gone)),
+        tint_head: tint.fade(tint.alpha * alphaGridFade(
+          distanceBetween(end_head, scale.eye_point), fog.radius_full, fog.radius_gone)),
       )
+      count_assembled += 1
+
+  meshes.addRibbonPieces(
+    scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+  )
 
 
 func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Option[float] =
@@ -333,7 +359,7 @@ func segmentsGridFadeFor*(count_lines: int): int =
 
 
 proc addGridFamily*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; scale: DrawExtent; tint: Rgba;
+  meshes: var MeshSet; scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
   fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
   along, across: Direction; origin: Position = ORIGIN_WORLD
 ) =
@@ -398,13 +424,13 @@ proc addGridFamily*(
       #   Silently stops at the scratch's end rather than growing it: the caller sized it
       #   from `SEGMENTS_GRID_MAX`, which is the same budget `segmentsGridFadeFor` cuts
       #   the fade to, so a full buffer means that budget was raised and this was not.
-      if count_assembled >= len(scratch): break
+      if count_assembled >= len(scratch.ribbons): break
       let
         a = reach * (2.0*float(j)/float(segments_fade) - 1.0)
         b = reach * (2.0*float(j + 1)/float(segments_fade) - 1.0)
         end_a = add(base, wedge(a, along_point))
         end_b = add(base, wedge(b, along_point))
-      scratch[count_assembled] = RibbonPiece(
+      scratch.ribbons[count_assembled] = RibbonPiece(
         tail: pointFrom(end_a),
         head: pointFrom(end_b),
         across: across_line.get,
@@ -417,12 +443,12 @@ proc addGridFamily*(
 
   # And the picture, in one pass over what the algebra worked out.
   meshes.addRibbonPieces(
-    scratch.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+    scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
   )
 
 
 proc addGrid*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; extent: float; scale: DrawExtent
+  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
 ) =
   ## Append reference grid on the ground, so distance and direction stay judgeable, at
   ## `sizeCellGridFor` cells laid around wherever the camera is standing.
@@ -491,7 +517,8 @@ proc addPoint(
 
 
 proc addLine(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
+  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
+  progress: float; scale: DrawExtent
 ): Placement =
   ## Append grade-2 object as two segments meeting on the line at its support, each
   ## running out to one of the line's own two vanishing points, `scale.eye` plus and
@@ -537,15 +564,15 @@ proc addLine(
   if axes.isNone: return Placement.Empty
   let (axis_first, axis_second) = axes.get
   meshes.addGreatCircle(
-    scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
+    scratch, scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
     tint.fade(tint.alpha*progress), scale,
   )
   Placement.Horizon
 
 
 proc addPlane(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent;
-  anchor_override: Option[Position] = none(Position)
+  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
+  progress: float; scale: DrawExtent; anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
   ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
@@ -579,12 +606,15 @@ proc addPlane(
 
     return Placement.Finite
 
-  meshes.addDome(scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress))
+  meshes.addDome(
+    scratch, scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
+  )
   Placement.Horizon
 
 
 proc addObject*(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; scale: DrawExtent; progress: float = 1.0;
+  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
+  scale: DrawExtent; progress: float = 1.0;
   anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
@@ -598,5 +628,5 @@ proc addObject*(
   if shape.isNone: return Placement.Empty
   case shape.get
   of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
-  of Shape.Line: meshes.addLine(geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(geometry, tint, progress, scale, anchor_override)
+  of Shape.Line: meshes.addLine(scratch, geometry, tint, progress, scale)
+  of Shape.Plane: meshes.addPlane(scratch, geometry, tint, progress, scale, anchor_override)

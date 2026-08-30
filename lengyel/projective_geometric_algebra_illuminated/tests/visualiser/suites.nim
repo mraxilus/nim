@@ -114,7 +114,7 @@ var MESHES: MeshSet
 # Where a tessellation step assembles its ribbon pieces before emitting them. The
 #   application carves this from the frame arena on the desktop and holds a fixed buffer on
 #   the browser; a suite has neither, and one shared array is the same shape as both.
-var SCRATCH_RIBBON: array[SEGMENTS_GRID_MAX, RibbonPiece]
+var SCRATCH: DrawScratch
 
 
 func `=~`(a, b: float): bool =
@@ -863,7 +863,7 @@ suite "Mesh":
   test "point becomes one marker where it stands":
     for i in 0 ..< SAMPLES:
       MESHES.clearMeshes
-      check MESHES.addObject(POINTS[i], Ink.Rose.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(SCRATCH, POINTS[i], Ink.Rose.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Point].count_vertices == 1
       check MESHES[Primitive.Ribbon].count_vertices == 0
       check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
@@ -872,7 +872,7 @@ suite "Mesh":
   test "line becomes two segments, each running from support to a vanishing point":
     for line in LINES:
       MESHES.clearMeshes
-      check MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
       check MESHES[Primitive.Ribbon].count_vertices == 2*VERTICES_RIBBON
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
@@ -948,11 +948,11 @@ suite "Mesh":
     for line in LINES:
       let attitude = ⊖ line
       MESHES.clearMeshes
-      discard MESHES.addObject(attitude, Ink.Cobalt.colour, SCALE_TEST)
+      discard MESHES.addObject(SCRATCH, attitude, Ink.Cobalt.colour, SCALE_TEST)
       let star = MESHES[Primitive.Point].vertices[0].toPosition
 
       MESHES.clearMeshes
-      discard MESHES.addObject(line, Ink.Jade.colour, SCALE_TEST)
+      discard MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST)
       let (_, far_first) = ribbonEnds(MESHES[Primitive.Ribbon], 0)
       let (_, far_second) = ribbonEnds(MESHES[Primitive.Ribbon], 1)
       # Whichever half runs toward the star has to land on it -- but only where the star
@@ -967,7 +967,7 @@ suite "Mesh":
   test "plane becomes a flat filled disc and a rim, every vertex on it":
     for plane in PLANES:
       MESHES.clearMeshes
-      check MESHES.addObject(plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
+      check MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
       const
         VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
         RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
@@ -1044,7 +1044,7 @@ suite "Mesh":
     for line in LINES:
       MESHES.clearMeshes
       let attitude = ⊖ line
-      check MESHES.addObject(attitude, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES.addObject(SCRATCH, attitude, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
       check MESHES[Primitive.Point].count_vertices == 1
       let
         heading = directionHorizon(attitude)
@@ -1057,7 +1057,7 @@ suite "Mesh":
     for plane in PLANES:
       MESHES.clearMeshes
       let attitude = ⊖ plane
-      check MESHES.addObject(attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
+      check MESHES.addObject(SCRATCH, attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
       # At most one ribbon per segment, and fewer in practice: a great circle is drawn
       #   around the eye, so about half of it stands behind the camera and is clipped away
       #   entirely rather than drawn inside out (see `mesh.addSegment`).
@@ -1107,7 +1107,8 @@ suite "Mesh":
     check shape(attitude_first) == some(Shape.Plane) and isHorizon(attitude_first)
     check shape(attitude_second) == some(Shape.Plane) and isHorizon(attitude_second)
 
-    check MESHES.addObject(attitude_first, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES.addObject(SCRATCH, attitude_first, Ink.Cobalt.colour, SCALE_TEST) ==
+      Placement.Horizon
     check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     let vertices_first = MESHES[Primitive.Triangle].vertices
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
@@ -1115,7 +1116,8 @@ suite "Mesh":
       check isNear(norm(offset), SCALE_TEST.radius_horizon)
 
     MESHES.clearMeshes
-    check MESHES.addObject(attitude_second, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
+    check MESHES.addObject(SCRATCH, attitude_second, Ink.Cobalt.colour, SCALE_TEST) ==
+      Placement.Horizon
     check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     # Same dome, vertex for vertex, regardless of which unrelated volume produced it.
     for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
@@ -1125,7 +1127,7 @@ suite "Mesh":
   test "multivector of no geometry becomes nothing at all":
     for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
       MESHES.clearMeshes
-      check MESHES.addObject(empty, Ink.Rose.colour, SCALE_TEST) == Placement.Empty
+      check MESHES.addObject(SCRATCH, empty, Ink.Rose.colour, SCALE_TEST) == Placement.Empty
       for primitive in Primitive:
         check MESHES[primitive].count_vertices == 0
 
@@ -1143,7 +1145,7 @@ suite "Mesh":
         toMultivector(Position(x: 6.0*cos(angle), y: 6.0*sin(angle), z: 0.15*float(i))) ∧
         toMultivector(Position(x: 6.0*cos(angle + 0.4), y: 1.0, z: 2.0 + 0.1*float(i))) ∧
         toMultivector(Position(x: 1.0, y: 6.0*sin(angle + 0.9), z: -1.0))
-      if MESHES.addObject(plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite:
+      if MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite:
         inc built
     check built == ITEMS_MAX
     check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
@@ -1180,8 +1182,8 @@ suite "Mesh":
 
   test "world furniture stays inside the fog it is drawn in":
     MESHES.clearMeshes
-    MESHES.addAxes(SCALE_FOG.extent_furniture, SCALE_FOG)
-    MESHES.addGrid(SCRATCH_RIBBON, SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addAxes(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
     check MESHES[Primitive.Ribbon].count_vertices > 0
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
@@ -1197,7 +1199,7 @@ suite "Mesh":
     #   since either alone passes under the old behaviour.
     let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
     MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH_RIBBON, scale_afar.extent_furniture, scale_afar)
+    MESHES.addGrid(SCRATCH, scale_afar.extent_furniture, scale_afar)
     check MESHES[Primitive.Ribbon].count_vertices > 0
     let fog = fogFurnitureFor(scale_afar.extent_furniture)
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
@@ -1208,7 +1210,7 @@ suite "Mesh":
 
   test "ground grid holds full alpha near the camera and fades to nothing at its reach":
     MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH_RIBBON, SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     var
       alpha_near_min = 1.0
@@ -1291,7 +1293,7 @@ suite "Mesh":
         #   part of that arithmetic at the wider of these two reaches.
         pieces = segmentsGridFadeFor(2*int(floor(radius/SIZE_CELL_GRID)) + 1)
       MESHES.clearMeshes
-      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_above)
+      MESHES.addGrid(SCRATCH, extent, scale_above)
       check MESHES[Primitive.Ribbon].count_vertices == lines*pieces*6
       for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
         let
@@ -1346,7 +1348,7 @@ suite "Mesh":
     ]:
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
-      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_afar)
+      MESHES.addGrid(SCRATCH, extent, scale_afar)
       # Six vertices a segment; see `addSegmentAcross`.
       check MESHES[Primitive.Ribbon].count_vertices div 6 <= SEGMENTS_GRID_MAX
       check MESHES[Primitive.Ribbon].count_vertices > 0
@@ -1355,7 +1357,7 @@ suite "Mesh":
     #   is untouched" means: nothing there is drawn more coarsely than it was.
     let scale_opening = scaleFurnitureAt(Position(x: 0, y: 0, z: 1.0e1), 2.0e2)
     MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH_RIBBON, 2.0e2, scale_opening)
+    MESHES.addGrid(SCRATCH, 2.0e2, scale_opening)
     check MESHES[Primitive.Ribbon].count_vertices div 6 < SEGMENTS_GRID_MAX div 2
 
 
@@ -1387,7 +1389,7 @@ suite "Mesh":
     for (extent, height) in [(1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7)]:
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
-      MESHES.addGrid(SCRATCH_RIBBON, extent, scale_afar)
+      MESHES.addGrid(SCRATCH, extent, scale_afar)
       check MESHES[Primitive.Ribbon].count_vertices > 0
       check MESHES[Primitive.Ribbon].count_vertices <= VERTICES_MAX
       # Laid on world multiples of the cell this reach asked for, so the lattice is still
@@ -1417,7 +1419,7 @@ suite "Mesh":
       fog = fogFurnitureFor(scale_afar.extent_furniture)
     check norm(scale_afar.eye - ORIGIN) > fog.radius_gone
     MESHES.clearMeshes
-    MESHES.addAxes(scale_afar.extent_furniture, scale_afar)
+    MESHES.addAxes(SCRATCH, scale_afar.extent_furniture, scale_afar)
     check MESHES[Primitive.Ribbon].count_vertices > 0
     for i in 0 ..< MESHES[Primitive.Ribbon].count_vertices:
       let at = MESHES[Primitive.Ribbon].vertices[i].toPosition
@@ -4782,13 +4784,13 @@ suite "Interaction":
     var meshes: MeshSet
     clearMeshes(meshes)
     for primitive in Primitive: check meshes[primitive].index_overlay.isNone
-    discard meshes.addObject(GENERAL_POINTS[0], Ink.Rose.colour, scale)
+    discard meshes.addObject(SCRATCH, GENERAL_POINTS[0], Ink.Rose.colour, scale)
     let count_under = meshes[Primitive.Point].count_vertices
     check count_under > 0
     check meshes[Primitive.Point].index_overlay.isNone
 
     markOverlay(meshes)
-    discard meshes.addObject(GENERAL_POINTS[1], Ink.Jade.colour, scale)
+    discard meshes.addObject(SCRATCH, GENERAL_POINTS[1], Ink.Jade.colour, scale)
     check meshes[Primitive.Point].index_overlay == some(count_under)
     check meshes[Primitive.Point].count_vertices > count_under
     # A bucket nothing was added to after the mark still reports the mark, with an empty

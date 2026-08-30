@@ -56,7 +56,7 @@ import ../core/[
 #   `arena.nim` is desktop-only. Sized by the same budget that bounds the work:
 #   `SEGMENTS_GRID_MAX` is what `segmentsGridFadeFor` cuts the fade to, so a family cannot
 #   assemble more pieces than this holds.
-var g_scratch_ribbon: array[SEGMENTS_GRID_MAX, RibbonPiece]
+var g_scratch: DrawScratch
 
 
 proc performanceNow(): float {.importjs: "performance.now()".}
@@ -1806,12 +1806,13 @@ proc nimBuildFrame(
     #   could not say which of them rose without this.
     let ms_before_grid = performanceNow()
     if is_grid_shown:
-      addGrid(g_meshes_furniture, g_scratch_ribbon, scale.extent_furniture, scale)
+      addGrid(g_meshes_furniture, g_scratch, scale.extent_furniture, scale)
     # Counted here, between the two, so the figure is the grid's own and not the grid's
     #   plus the axes' fixed share; see `mesh.addSegmentAcross` for the six a segment is.
     g_count_grid_segments = g_meshes_furniture[Primitive.Ribbon].count_vertices div 6
     let ms_before_axes = performanceNow()
-    if is_axes_shown: addAxes(g_meshes_furniture, scale.extent_furniture, scale)
+    if is_axes_shown:
+      addAxes(g_meshes_furniture, g_scratch, scale.extent_furniture, scale)
     ms_grid = ms_before_axes - ms_before_grid
     ms_axes = performanceNow() - ms_before_axes
   let ms_after_furniture = performanceNow()
@@ -1842,7 +1843,8 @@ proc nimBuildFrame(
       if isHorizonPlane(geometry):
         let progress = animationProgress(float(now), g_borns[slot])
         discard g_meshes.addObject(
-          geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
+          g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
+          g_scene.anchorOverrideAt(slot),
         )
         cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
 
@@ -1853,7 +1855,8 @@ proc nimBuildFrame(
       if not isHorizonPlane(geometry):
         let progress = animationProgress(float(now), g_borns[slot])
         discard g_meshes.addObject(
-          geometry, g_scene.inkAt(slot).colour, scale, progress, g_scene.anchorOverrideAt(slot)
+          g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
+          g_scene.anchorOverrideAt(slot),
         )
         cost.chargeTally(geometry, is_sky = false, is_ghost = false, is_selected = false)
 
@@ -1864,7 +1867,7 @@ proc nimBuildFrame(
   let ghost = staged()
   if ghost.isSome:
     discard g_meshes.addObject(
-      ghost.get.geometry, INK_GHOST.colour.muted(), scale,
+      g_scratch, ghost.get.geometry, INK_GHOST.colour.muted(), scale,
       anchor_override = ghost.get.anchor,
     )
     cost.chargeTally(
@@ -1878,7 +1881,7 @@ proc nimBuildFrame(
   #   was ghosted instead of jumping the instant the release lands.
   if g_interaction.preview.isSome:
     discard g_meshes.addObject(
-      g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
+      g_scratch, g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
       anchor_override = g_interaction.preview.get.anchor,
     )
     cost.chargeTally(
@@ -1894,7 +1897,7 @@ proc nimBuildFrame(
     if not g_scene.isAlive(slot) or not g_scene.isVisible(slot): continue
     let progress = animationProgress(float(now), g_borns[slot])
     discard g_meshes.addObject(
-      g_scene.geometryAt(slot), g_scene.inkAt(slot).colour, scale, progress,
+      g_scratch, g_scene.geometryAt(slot), g_scene.inkAt(slot).colour, scale, progress,
       g_scene.anchorOverrideAt(slot),
     )
     cost.chargeTally(
@@ -1907,7 +1910,7 @@ proc nimBuildFrame(
   let ms_before_algebra = performanceNow()
   if is_algebra_shown:
     g_meshes.addFrameTrace(
-      g_scratch_ribbon, g_scene, g_camera, staged(), g_interaction.cursor, scale,
+      g_scratch, g_scene, g_camera, staged(), g_interaction.cursor, scale,
       width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
     )
   let ms_after_algebra = performanceNow()

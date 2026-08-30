@@ -360,12 +360,15 @@ proc assembleMeshes(
   # Where the grid assembles its pieces before emitting them, carved from the frame pair
   #   rather than reserved as another global: this is the per-frame scratch that arena was
   #   waiting for, and the swap hands it back clean at the top of every frame.
-  let scratch_ribbon = ARENA_SWAP.current.push[:RibbonPiece](SEGMENTS_GRID_MAX)
+  let scratch = ARENA_SWAP.current.push[:DrawScratch](1)
   if panel.is_grid_shown:
     MESHES_FURNITURE.addGrid(
-      scratch_ribbon.toOpenArray(0, SEGMENTS_GRID_MAX - 1), scale.extent_furniture, scale,
+      scratch[0], scale.extent_furniture, scale,
     )
-  if panel.is_axes_shown: MESHES_FURNITURE.addAxes(scale.extent_furniture, scale)
+  if panel.is_axes_shown:
+    MESHES_FURNITURE.addAxes(
+      scratch[0], scale.extent_furniture, scale,
+    )
 
   MESHES.clearMeshes
   # A horizon plane's own dome first, before anything else that might share its own
@@ -381,14 +384,14 @@ proc assembleMeshes(
       continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
-    discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+    discard MESHES.addObject(scratch[0], item.geometry, tint, scale, progress, item.anchorOverride)
 
   for slot, item in scene.pairs:
     if not item.isVisible or isHorizonPlane(item.geometry) or slot in panel.selection:
       continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
-    discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+    discard MESHES.addObject(scratch[0], item.geometry, tint, scale, progress, item.anchorOverride)
 
   # The open edit session's own staged multivector, drawn through the same dispatch a
   #   real object uses so composing or reshaping one shows exactly what saving it would
@@ -402,7 +405,7 @@ proc assembleMeshes(
   let staged = panel.staged
   if staged.isSome:
     discard MESHES.addObject(
-      staged.get.geometry, muted(INK_GHOST.colour), scale,
+      scratch[0], staged.get.geometry, muted(INK_GHOST.colour), scale,
       anchor_override = staged.get.anchor,
     )
 
@@ -414,7 +417,7 @@ proc assembleMeshes(
   #   was ghosted instead of jumping the instant the release lands.
   if interaction.preview.isSome:
     discard MESHES.addObject(
-      interaction.preview.get.geometry, muted(INK_GHOST.colour), scale,
+      scratch[0], interaction.preview.get.geometry, muted(INK_GHOST.colour), scale,
       anchor_override = interaction.preview.get.anchor,
     )
 
@@ -434,7 +437,7 @@ proc assembleMeshes(
     let item = scene[slot]
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
-    discard MESHES.addObject(item.geometry, tint, scale, progress, item.anchorOverride)
+    discard MESHES.addObject(scratch[0], item.geometry, tint, scale, progress, item.anchorOverride)
 
   # **The algebra's own layer**, over everything else: every multivector this frame
   #   computed, drawn as what it is rather than as the stand-in the picture uses -- a plane
@@ -443,8 +446,8 @@ proc assembleMeshes(
   #   cannot drift. See `algebra_trace`.
   if panel.is_algebra_shown:
     MESHES.addFrameTrace(
-      scratch_ribbon.toOpenArray(0, SEGMENTS_GRID_MAX - 1),
-      scene, camera, staged, interaction.cursor, scale, width = width, height = height,
+      scratch[0], scene, camera, staged, interaction.cursor, scale,
+      width = width, height = height,
     )
 
   panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0

@@ -73,7 +73,7 @@ func inkFor(role: TracedRole): Rgba =
 
 
 proc addLattice*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; plane: Multivector; tint: Rgba;
+  meshes: var MeshSet; scratch: var DrawScratch; plane: Multivector; tint: Rgba;
   scale: DrawExtent
 ) =
   ## Append a plane drawn as the infinite thing it is: a lattice laid across it, reaching as
@@ -108,7 +108,7 @@ proc addLattice*(
 
 
 proc addTraced*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; traced: Traced;
+  meshes: var MeshSet; scratch: var DrawScratch; traced: Traced;
   scale: DrawExtent
 ): Placement =
   ## Append one recorded multivector, in its true form.
@@ -123,11 +123,11 @@ proc addTraced*(
       scratch, traced.geometry, tint.fade(tint.alpha*ALPHA_ALGEBRA_LATTICE), scale,
     )
     return Placement.Finite
-  meshes.addObject(traced.geometry, tint, scale)
+  meshes.addObject(scratch, traced.geometry, tint, scale)
 
 
 proc addTrace*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; trace: AlgebraTrace;
+  meshes: var MeshSet; scratch: var DrawScratch; trace: AlgebraTrace;
   scale: DrawExtent
 ) =
   ## Append everything one frame recorded, in the order it was recorded.
@@ -135,7 +135,7 @@ proc addTrace*(
 
 
 proc addFrameTrace*(
-  meshes: var MeshSet; scratch: var openArray[RibbonPiece]; scene: Scene; camera: Camera;
+  meshes: var MeshSet; scratch: var DrawScratch; scene: Scene; camera: Camera;
   staged: Option[Preview]; cursor: ScreenPosition; scale: DrawExtent; width, height: int
 ) =
   ## Record everything this frame's geometry rests on, and draw it.
