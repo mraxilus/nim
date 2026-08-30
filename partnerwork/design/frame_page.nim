@@ -7,6 +7,13 @@
 ##     see `sign_page.nim`.
 ##   The body is a `{marker}` template and the fills close it, so the page
 ##     reads as the page it is and an unfilled hole refuses to build.
+##     Cost of keeping every claim's proof elsewhere: a figure's caption and
+##       the assert that backs it live in different files, held open
+##       together.  Accepted -- the page stays an argument, not a program.
+##   Lines inside the body template run past the hundred-column rule.
+##     A literal's bytes are the page's bytes, and cutting them with
+##     concatenation would leave the template unreadable as the markup it
+##     is.  Layout yields to exposition (precedence: IV > III > I > IX).
 
 {.experimental: "strictFuncs".}
 
@@ -16,6 +23,7 @@ import ./[page, parts, rules]
 
 
 const TITLE* = "The frame, so far"
+  ## What the page calls itself, in its tab and at its head.
 
 
 const BODY = """
@@ -421,9 +429,9 @@ func render*(P: Parts): string =
   grid.add "</table>"
 
   var fills = @[
-    ("sw_free", sw(Swatch.Free)), ("sw_none", sw(Swatch.Unsaid)),
-    ("sw_low", sw(Swatch.Low)), ("sw_high", sw(Swatch.High)),
-    ("sw_above", sw(Swatch.Above)),
+    ("sw_free", swatch(Swatch.Free)), ("sw_none", swatch(Swatch.Unsaid)),
+    ("sw_low", swatch(Swatch.Low)), ("sw_high", swatch(Swatch.High)),
+    ("sw_above", swatch(Swatch.Above)),
     ("settlings", settlings), ("grid", grid),
   ]
   # The turning figures swap in a `moving` class so reduced motion can swap

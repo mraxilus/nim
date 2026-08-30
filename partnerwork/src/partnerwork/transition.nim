@@ -182,8 +182,10 @@ func compound*(a, b: Frame): Option[Compound] =
   none(Compound)
 
 
-func actingSide*(a, b: Frame; helper: Helper): Side =
+func actingSide*(a, b: Frame): Side =
   ## Get the lead hand that carries a change of frame.
+  ##   The frames alone decide it; a caller used to pass the primitive too,
+  ##     and it was never read.
   if a.hold[Side.Left] != b.hold[Side.Left]: Side.Left else: Side.Right
 
 
@@ -210,7 +212,7 @@ func moves*(source: Frame): seq[Move] =
       continue
     result.add Move(
       helper: helper.get,
-      side: actingSide(source, destination, helper.get),
+      side: actingSide(source, destination),
       to: destination,
     )
   result.sort(compare)
@@ -231,7 +233,6 @@ func phrase*(source: Frame; move: Move): string =
         " the " & leadName(other(move.side)) & " arm"
   of Helper.Drop:
     result = "drop " & hand & " from " & followName(source.hold[move.side].get)
-
 
 
 func compoundSide*(source, destination: Frame): Option[Side] =

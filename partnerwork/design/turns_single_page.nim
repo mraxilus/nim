@@ -21,11 +21,11 @@ import ./[page, parts]
 
 
 const TITLE* = "Single-hand turns, so far"
+  ## What the page calls itself, in its tab and at its head.
 
 
 const QUARTER_NAMES = ["none", "&#188;", "&#189;", "&#190;"]
   ## How far round from the app's own frame, in quarters.
-
 
 
 func plates(P: Parts; way: TurnWay): string =

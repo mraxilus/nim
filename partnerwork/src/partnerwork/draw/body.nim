@@ -4,6 +4,9 @@
 ##   The boundary is one polar function, `outlineR`, shared by the drawing,
 ##     the hands and the routing -- so "on the border" is true by
 ##     construction rather than by two pieces of code agreeing.
+##     Cost of one polar boundary: every shape a dancer could take must be
+##       expressible as radius-by-bearing.  Accepted -- a dancer seen from
+##       above is round, and nothing on the bench has wanted otherwise.
 ##   The rim is drawn quiet and whole, broken only where a hand mark sits on
 ##     it: how far an arm has been carried round is said by the connection
 ##     wrapping the body, not by a second arc filling up around it.
@@ -12,8 +15,14 @@
 ##       a turn; the README keeps the question open.
 ##   Hands sit on the rim, each in its own side's colour, the lead's a shade
 ##     deeper than the follow's.
+##     Cost of hands on the rim: a hand cannot be drawn reaching across the
+##       body, so what an arm does is said entirely by its connection.
+##       Accepted -- rule 3 places hands at the rim's slots and nowhere else.
 ##   The six spots of rule 3 are bearings off the dancer's own facing, never
 ##     off the page: turn a dancer and their spots turn too.
+##     Cost of dancer-relative bearings: a reader comparing two dancers'
+##       spots must turn one in their head.  Accepted -- the rule is worded
+##       from the dancer's own front, and the drawing follows the rule.
 
 {.experimental: "strictFuncs".}
 
@@ -28,15 +37,15 @@ const
 
 const
   CHEV_OUT* = 7.0    ## How far the centred chevron reaches forward.
-  CHEV_BACK* = 1.0   ## And how little it reaches back.
-  CHEV_HALF* = 5.0   ## Half its width, well inside the rim.
-  CHEV_W* = 1.6      ## The width its two legs are drawn at.
+  CHEV_BACK = 1.0   ## And how little it reaches back.
+  CHEV_HALF = 5.0   ## Half its width, well inside the rim.
+  CHEV_W = 1.6      ## The width its two legs are drawn at.
 
 const
   RIM_STEP* = 3.0    ## Degrees between samples when a route walks the rim.
   ARM_REST* = 90.0   ## A resting hand, a quarter of the rim from the front.
-  R* = 6.0           ## A hand mark's radius, or half its side.
-  CAPTION_R* = BODY_R + R + 2   ## Just past the hand a caption names.
+  HAND_R* = 6.0      ## A hand mark's radius, or half its side.
+  CAPTION_R* = BODY_R + HAND_R + 2   ## Just past the hand a caption names.
   FREE_FADE* = 0.5   ## How far a hand nobody holds fades, keeping its hue.
 
 const SLOT_OFFSET* = 44.0
@@ -46,7 +55,7 @@ const SLOT_OFFSET* = 44.0
   ##     side.  A drawn convention, not something the dance says; the README
   ##     keeps it on the open list.
 
-const HAND_GAP* = radToDeg(arcsin((R + CAP) / BODY_R))
+const HAND_GAP* = radToDeg(arcsin((HAND_R + CAP) / BODY_R))
   ## The rim's clearance around a hand mark: the same reach the connection
   ## keeps, turned into arc, so boundary and reach stop at one border.
 
@@ -57,10 +66,10 @@ const
                        ## clear as the shape it is.
 
 const
-  LEAD_CLEAR* = R * sqrt(2.0) + MARK_STROKE / 2 + CAP + SEEN_GAP
+  LEAD_CLEAR* = HAND_R * sqrt(2.0) + MARK_STROKE / 2 + CAP + SEEN_GAP
     ## How far a settled reach stays off a lead's hand: their mark is a
     ## square, so its corner is the far part of it (rule 22).
-  FOLLOW_CLEAR* = R + MARK_STROKE / 2 + CAP + SEEN_GAP
+  FOLLOW_CLEAR* = HAND_R + MARK_STROKE / 2 + CAP + SEEN_GAP
     ## And off a follow's, whose mark is a circle.
   CHEVRON_CLEAR* = CHEV_W / 2 + CAP + SEEN_GAP
     ## And off a chevron's stroke.
@@ -74,6 +83,7 @@ const
 type Free* {.pure.} = enum ## Say how a hand nobody holds is drawn.
   Fade,                    ## Half strength, keeping its hue: a free hand.
   Grey                     ## Quiet outline: the ghost of a place a hand left.
+
 
 
 #[ The Six Spots ]#
@@ -138,6 +148,7 @@ func handsOf*(pose: Pose): array[Dancer, array[Arm, Point]] =
     for arm in Arm:
       result[who][arm] = handPoint(
         pose.place[who], pose.facing[who], arm, pose.wind[who][arm])
+
 
 
 #[ The Boundary ]#
@@ -224,6 +235,7 @@ func border*(pose: Pose; who: Dancer): string =
       result.add rim(centre, facing, facing + a, facing + b)
 
 
+
 #[ Hands and Furniture ]#
 
 func fillOf*(level: Option[Level]; arm: Arm; deep = false): string =
@@ -252,10 +264,11 @@ func hand*(cx, cy: float; leads: bool; arm: Arm; held = true;
     style = &"fill: {fill}; stroke: {stroke}; stroke-width: 1.5"
     shape =
       if leads:
-        &"""<rect x="{n(cx - R)}" y="{n(cy - R)}" width="{n(2 * R)}"""" &
-          &""" height="{n(2 * R)}" rx="1.5" style="{style}"{faded}/>"""
+        &"""<rect x="{n(cx - HAND_R)}" y="{n(cy - HAND_R)}"""" &
+          &""" width="{n(2 * HAND_R)}"""" &
+          &""" height="{n(2 * HAND_R)}" rx="1.5" style="{style}"{faded}/>"""
       else:
-        &"""<circle cx="{n(cx)}" cy="{n(cy)}" r="{n(R)}" style="{style}"""" &
+        &"""<circle cx="{n(cx)}" cy="{n(cy)}" r="{n(HAND_R)}" style="{style}"""" &
           &"{faded}/>"
   shape & dot
 

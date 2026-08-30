@@ -112,6 +112,7 @@ func word*(slot: Slot): string =
   of Slot.Default: "default"
   of Slot.Back: "back"
 
+
 func handName*(arm: Arm): string =
   ## Write the follow's hand the way a hold names it.
   ##   Lower case, because case carries meaning across the whole project: the

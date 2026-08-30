@@ -26,8 +26,9 @@ export About
 const
   TAN* = 0.25                    ## The sign's lean, across per down.
   THETA = arctan(TAN)
-  LEAN_SIN = sin(THETA)
-  LEAN_COS = cos(THETA)
+  LEAN_SIN* = sin(THETA)         ## The lean, as the sine every corner uses.
+  LEAN_COS* = cos(THETA)         ## And its cosine: a leaning height's drop.
+  PAD* = 5.0                     ## Margin a sign keeps inside its viewBox.
 
 const
   PIP* = 11.0                    ## Pip width, across the sign.
@@ -37,7 +38,7 @@ const
   HEIGHT* = float(QUARTERS) * PIP + float(QUARTERS + 1) * GAP_X
     ## So a full sign is exactly a full turn.
   OVER* = PIP                    ## How far an open end runs on.
-  INSET* = 0.76                  ## How far a dashed pip's fill pulls in.
+  INSET = 0.76                   ## How far a dashed pip's fill pulls in.
 
 
 type
@@ -55,7 +56,7 @@ type
     level: Option[Level]
   SignArms* = array[Arm, SignArm]
 
-const BOTH_UNSAID*: SignArms = [(true, none(Level)), (true, none(Level))]
+const BOTH_UNSAID: SignArms = [(true, none(Level)), (true, none(Level))]
   ## Both columns drawn, neither level said -- the default sign.
 
 
@@ -77,7 +78,7 @@ func scaled*(points: seq[Point]; factor: float): seq[Point] =
     result.add (cx + (p.x - cx) * factor, cy + (p.y - cy) * factor)
 
 
-func poly*(points: seq[Point]; close = true): string =
+func poly(points: seq[Point]; close = true): string =
   ## Write a polygon as path data.
   var joined: seq[string]
   for p in points:
@@ -151,7 +152,7 @@ func marker*(kind: Row; ax, ay, dxs, dys: float; arm: Arm): string =
         &""" fill="{ink}"/>"""
 
 
-func signBody*(slots: seq[Row]; lean: Lean; arms: SignArms; x0, y_foot: float;
+func signBody(slots: seq[Row]; lean: Lean; arms: SignArms; x0, y_foot: float;
     about: Option[About]; pip_about: seq[About]; ending: Option[Ending];
     packed = true): tuple[markup: string, box: tuple[x0, y0, x1, y1: float]] =
   ## Draw the sign at a place, returning markup and the box it fills.
@@ -261,12 +262,20 @@ func sign*(slots: seq[Row]; lean = Lean.Cw; arms = BOTH_UNSAID;
       # The pip cut by the missing lid repeats whoever the top quarter is.
       @[slots[0]] & slots
     else: slots
-  const pad = 5.0
   let
-    (markup, box) = signBody(rows, lean, arms, pad, pad + OVER, about,
-                             pip_about, ending, packed)
-    w = box.x1 - box.x0 + 2 * pad
-    h = box.y1 - box.y0 + 2 * pad
-  &"""<svg viewBox="{n(box.x0 - pad)} {n(box.y0 - pad)} {n(w)} {n(h)}"""" &
+    (markup, box) = signBody(
+      rows,
+      lean,
+      arms,
+      x0 = PAD,
+      y_foot = PAD + OVER,
+      about = about,
+      pip_about = pip_about,
+      ending = ending,
+      packed = packed,
+    )
+    w = box.x1 - box.x0 + 2 * PAD
+    h = box.y1 - box.y0 + 2 * PAD
+  &"""<svg viewBox="{n(box.x0 - PAD)} {n(box.y0 - PAD)} {n(w)} {n(h)}"""" &
     &""" width="{n(w * scale)}" height="{n(h * scale)}">""" &
     &"\n        {markup}\n      </svg>"

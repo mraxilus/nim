@@ -39,7 +39,7 @@ type
     Dance,  ## One frame at a time, and what can be done from it.
     Matrix  ## Every move there is, as one table.
 
-  Vis {.pure.} = enum ## Select how the frame is drawn while dancing.
+  Drawing {.pure.} = enum ## Select how the frame is drawn while dancing.
     Dynamic,  ## The frame in the middle and every way out of it.
     Overview  ## The whole ontology, with the couple somewhere in it.
 
@@ -68,8 +68,8 @@ var
   origin = startFrame()
   current = startFrame()
   view = View.Atlas
-  vis = Vis.Dynamic
-  vis_chosen = false        ## Whether the reader has picked a drawing themselves.
+  drawing = Drawing.Dynamic
+  drawing_chosen = false        ## Whether the reader has picked a drawing themselves.
   filter = Filter()
   history: seq[Step] = @[]
   motion = Motion.Still     ## What the drawings are doing at this instant.
@@ -78,7 +78,7 @@ var
   generation = 0            ## Which move is in flight, so an older one can be dropped.
 
 
-func tempoOf(vis: Vis): Tempo =
+func tempoOf(drawing: Drawing): Tempo =
   ## Get how long the drawing on show takes to say a move.
   ##   The page waits on whichever drawing the dancer is actually watching.
   ##   The close drawing has to clear its ways out and build the next lot; the
@@ -86,9 +86,9 @@ func tempoOf(vis: Vis): Tempo =
   ##   Making the map keep the close drawing's time would leave it finished and
   ##     waiting, which reads as the page having stopped rather than as a move
   ##     being made.
-  case vis
-  of Vis.Dynamic: CLOSE_TEMPO
-  of Vis.Overview: WIDE_TEMPO
+  case drawing
+  of Drawing.Dynamic: CLOSE_TEMPO
+  of Drawing.Overview: WIDE_TEMPO
 
 
 proc holding(): string =
@@ -180,22 +180,24 @@ proc centreOnHeld() =
   setScrollLeft(scroller, scroller.scrollLeft + int(off))
 
 
-proc suitVis() =
+proc suitDrawing() =
   ## Open in whichever drawing the screen has room for.
   ##   The map says more and only wants width; the close drawing is the one
   ##     that survives a phone.
   ##   So the page follows the screen -- and stops the moment the reader picks
   ##     a drawing, because a choice made is worth more than a default, and a
   ##     window dragged narrower should not take it back.
-  if not vis_chosen:
-    vis = if roomForMap(): Vis.Overview else: Vis.Dynamic
+  if not drawing_chosen:
+    drawing = if roomForMap(): Drawing.Overview else: Drawing.Dynamic
 
 
 
 #[ Markup ]#
 
 func esc(text: string): string =
-  ## Escape text for placement in markup.
+  ## Escape text for placement in markup, quotes included.
+  ##   Stricter than the review page's `escape`: this one also feeds
+  ##     attribute values, where a bare quote ends the attribute.
   text.multiReplace(("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;"))
 
 
@@ -333,12 +335,12 @@ func renderHistory(danced: seq[Step]): string =
     tag("ol", "class=\"history\" reversed", rows))
 
 
-func renderVisSwitch(vis: Vis): string =
+func renderDrawingSwitch(drawing: Drawing): string =
   ## Show the choice between the two drawings.
   var tabs = ""
-  for candidate in Vis:
-    let classes = if candidate == vis: "tab on" else: "tab"
-    tabs.add button("vis", $candidate, classes, esc($candidate))
+  for candidate in Drawing:
+    let classes = if candidate == drawing: "tab on" else: "tab"
+    tabs.add button("drawing", $candidate, classes, esc($candidate))
   tag("div", "class=\"tabs small\"", tabs)
 
 
@@ -422,28 +424,28 @@ func renderMapView(current: Frame; motion: Motion; taken: Option[Frame]): string
       "be clicked, and a compound dances its two moves in turn."))
 
 
-func renderStageBody(current: Frame; vis: Vis; motion: Motion;
+func renderStageBody(current: Frame; drawing: Drawing; motion: Motion;
     taken: Option[Frame]): string =
   ## Show the frame the couple hold, drawn the way the dancer has asked for.
   ##   The name shown is the frame being *left* until the move lands, because
   ##     the drawing is still showing that frame: a heading that changed before
   ##     the picture did would name something nobody can see.
-  let drawing =
-    case vis
-    of Vis.Dynamic: renderSpokesView(current, motion, taken)
-    of Vis.Overview: renderMapView(current, motion, taken)
+  let shown =
+    case drawing
+    of Drawing.Dynamic: renderSpokesView(current, motion, taken)
+    of Drawing.Overview: renderMapView(current, motion, taken)
   tag("div", "class=\"stage-head\"",
     tag("h3", "", "frame") & tag("h2", "", inked(current.describe)) &
-    renderVisSwitch(vis) & renderArms()) &
-    renderKey() & tag("div", "class=\"views\"", drawing)
+    renderDrawingSwitch(drawing) & renderArms()) &
+    renderKey() & tag("div", "class=\"views\"", shown)
 
 
-func renderDance(current: Frame; vis: Vis; motion: Motion;
+func renderDance(current: Frame; drawing: Drawing; motion: Motion;
     taken: Option[Frame]; danced: seq[Step]): string =
   ## Show the current frame, what it allows, and what it does not.
   tag("div", "class=\"stage\"",
     tag("section", "class=\"panel wide\" id=\"stage\" tabindex=\"-1\"",
-      renderStageBody(current, vis, motion, taken)) &
+      renderStageBody(current, drawing, motion, taken)) &
     renderMoves(current) & renderElsewhere(current) & renderHistory(danced))
 
 
@@ -472,16 +474,16 @@ func chip(action, value, label: string; chosen: bool): string =
 
 func renderFilters(narrowing: Filter): string =
   ## Ask the three questions that narrow the gallery: how many, whose, which.
-  var holds = chip("holds", "any", "any", narrowing.holds.isNone)
+  var holds = chip("holds", "any", "any", chosen = narrowing.holds.isNone)
   for count in 0 .. 2:
     holds.add chip("holds", $count, $count & (if count == 1: " hand" else: " hands"),
       narrowing.holds == some(count))
-  var lead = chip("lead", "any", "either", narrowing.lead.isNone)
+  var lead = chip("lead", "any", "either", chosen = narrowing.lead.isNone)
   for side in Side:
-    lead.add chip("lead", $side, leadName(side), narrowing.lead == some(side))
-  var follow = chip("follow", "any", "either", narrowing.follow.isNone)
+    lead.add chip("lead", $side, leadName(side), chosen = narrowing.lead == some(side))
+  var follow = chip("follow", "any", "either", chosen = narrowing.follow.isNone)
   for site in Site:
-    follow.add chip("follow", $site, followName(site), narrowing.follow == some(site))
+    follow.add chip("follow", $site, followName(site), chosen = narrowing.follow == some(site))
   tag("div", "class=\"filters\"",
     tag("div", "class=\"question\"", tag("span", "class=\"asks\"", "connections") & holds) &
     tag("div", "class=\"question\"",
@@ -517,6 +519,7 @@ func renderGallery(narrowing: Filter): string =
       tag("p", "class=\"note\"", "No frame holds all three of those at once.")
     else:
       tag("div", "class=\"gallery\"", cards))))
+
 
 
 #[ Matrix View ]#
@@ -660,7 +663,7 @@ func renderMatrix(): string =
           tag("span", "class=\"tile here\"", ""))
       elif helper.isSome:
         let move = Move(helper: helper.get, to: target,
-          side: actingSide(source, target, helper.get))
+          side: actingSide(source, target))
         row.add cell("one" & edge, toneOf(move.side), phrase(source, move),
           tag("span", "class=\"tile one\"", HELPER_GLYPHS[move.helper]))
       elif named.isSome:
@@ -712,7 +715,7 @@ proc paintStage() =
   if stage == nil:
     return
   let held = holding()
-  stage.innerHTML = cstring(renderStageBody(current, vis, motion, taken))
+  stage.innerHTML = cstring(renderStageBody(current, drawing, motion, taken))
   standAgain(held)
   centreOnHeld()
 
@@ -721,7 +724,7 @@ proc render() =
   ## Draw the whole page from the session state.
   let body =
     case view
-    of View.Dance: renderDance(current, vis, motion, taken, history)
+    of View.Dance: renderDance(current, drawing, motion, taken, history)
     of View.Atlas: renderGallery(filter)
     of View.Matrix: renderMatrix()
   let held = holding()
@@ -788,7 +791,7 @@ proc dance(key: string) =
   inc generation
   let
     mine = generation
-    tempo = tempoOf(vis)
+    tempo = tempoOf(drawing)
   motion = Motion.Leaving
   taken = target
   paintStage()
@@ -879,11 +882,11 @@ proc handle(event: Event) =
     for candidate in View:
       if $candidate == value:
         view = candidate
-  of "vis":
-    for candidate in Vis:
+  of "drawing":
+    for candidate in Drawing:
       if $candidate == value:
-        vis = candidate
-        vis_chosen = true
+        drawing = candidate
+        drawing_chosen = true
   of "holds":
     filter.holds = none(int)
     for count in 0 .. 2:
@@ -918,9 +921,9 @@ proc reflow(event: Event) =
   ##     The event arrives on every pixel of a drag, and rebuilding the page on
   ##       each one would take the focus ring off whatever the reader was
   ##       standing on and tear any move that was halfway through being told.
-  let showing = vis
-  suitVis()
-  if vis != showing:
+  let showing = drawing
+  suitDrawing()
+  if drawing != showing:
     rest()
     render()
 
@@ -928,5 +931,5 @@ proc reflow(event: Event) =
 when isMainModule:
   document.addEventListener("click", handle)
   window.addEventListener("resize", reflow)
-  suitVis()
+  suitDrawing()
   render()

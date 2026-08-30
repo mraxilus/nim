@@ -9,8 +9,14 @@
 ##       Accepted -- the room was never the subject.
 ##   A cycle is move, come home, move back, come home, so an animation
 ##     returns exactly to its start and loops without a snap.
+##     Cost of the palindrome: half of every cycle is the other half played
+##       backwards, so a move is only ever seen at the pace it can be
+##       unseen at.  Accepted -- a loop that snapped would say the move has
+##       an end, and no frame's hold does.
 ##   Dancers and arms index fixed arrays: the domain is closed and two wide,
 ##     so the storage is enum-indexed rather than keyed by name.
+##     Cost of fixed storage: a third dancer is a type change, not a datum.
+##       Accepted -- partner dance is a couple by definition.
 
 {.experimental: "strictFuncs".}
 
@@ -33,6 +39,9 @@ type
     wind*: Winds                  ## How far each arm is carried round.
     ring*: Option[Ring]           ## The orbit ring, where one is happening.
 
+
+
+#[ Standing and Turning ]#
 
 func rest*(wind: Winds = default(Winds)): Pose =
   ## Get the pose every picture is measured from: the lead facing up the page.
@@ -132,6 +141,9 @@ func relative*(pose: Pose): tuple[axis, facing: float] =
                   360.0), 6))
 
 
+
+#[ Moving on One Clock ]#
+
 func ease*(t: float): float =
   ## Slow both ends, so the two stages read as stages rather than as blur.
   (1 - cos(PI * t)) / 2
@@ -183,6 +195,9 @@ func cycle*(move: MoveApply; samples = 14): seq[Pose] =
       home.ring = none(Ring)
       result.add home
 
+
+
+#[ The Ways of Turning ]#
 
 type About* {.pure.} = enum ## What a dancer's turn goes round.
   Axis,                     ## Their own centre: they turn on the spot.

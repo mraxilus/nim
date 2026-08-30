@@ -51,6 +51,7 @@ const GRID_STATES* = [
 ] ## The grid rule 7 implies: which states exist in which orientation.
 
 const GRID_TURNS* = [0.0, 90.0, 180.0, 270.0]
+  ## The follow's four bearings the settling grid samples, a quarter apart.
 
 const CHART_FACING* = 40.0
   ## The chart's body is turned off the vertical, so the spots visibly
@@ -100,10 +101,11 @@ func slotChart*(arm = Arm.L): string =
         # In this hand's own ink wherever it sits, because that is the
         # point: a Left hand carried to the right side is still the Left.
         used = (place, slot) in lands
-      bits.add hand(p.x, p.y, true, arm, used, none(Level),
-                    if used: Free.Fade else: Free.Grey)
+      bits.add hand(p.x, p.y, leads = true, arm = arm, held = used,
+                    level = none(Level),
+                    free = (if used: Free.Fade else: Free.Grey))
       let
-        label = polar(0.0, 0.0, BODY_R + R + 13, aim)
+        label = polar(0.0, 0.0, BODY_R + HAND_R + 13, aim)
         anchor = if label.x < 0: "end" else: "start"
         text = if slot == Slot.Default: "side" else: word(slot)
       bits.add &"""<text x="{n(label.x)}" y="{n(label.y + 3)}"""" &
@@ -113,13 +115,16 @@ func slotChart*(arm = Arm.L): string =
   bits.join("") & "</svg>"
 
 
+
+#[ The Frame Page ]#
+
 func frameParts*(): Parts =
   ## Build every SVG the frame page places.
-  result["f_none"] = frame("f", HOLD)
-  result["f_low"] = frame("f", HOLD, said(some Level.Low))
-  result["f_high"] = frame("f", HOLD, said(some Level.High))
-  result["f_above"] = frame("f", HOLD, said(some Level.Above))
-  result["f_over"] = frame("f", [some Arm.L, some Arm.R],
+  result["f_none"] = renderFigure("f", HOLD)
+  result["f_low"] = renderFigure("f", HOLD, said(some Level.Low))
+  result["f_high"] = renderFigure("f", HOLD, said(some Level.High))
+  result["f_above"] = renderFigure("f", HOLD, said(some Level.Above))
+  result["f_over"] = renderFigure("f", [some Arm.L, some Arm.R],
                            [some Level.High, some Level.Low],
                            over = some Arm.L)
 
@@ -127,12 +132,12 @@ func frameParts*(): Parts =
   # and the chevrons can say it, and holding, where the line is there too.
   var seen: HashSet[string]
   for i, o in ORIENTATIONS:
-    result[&"or_free_{i}"] = frame("f", default(Holds),
+    result[&"or_free_{i}"] = renderFigure("f", default(Holds),
                                    lead_turn = o.lead_turn,
                                    follow_turn = o.follow_turn)
-    result[&"or_held_{i}"] = frame("f", HOLD, lead_turn = o.lead_turn,
+    result[&"or_held_{i}"] = renderFigure("f", HOLD, lead_turn = o.lead_turn,
                                    follow_turn = o.follow_turn)
-    result[&"or_tiny_{i}"] = frame("tiny", HOLD, lead_turn = o.lead_turn,
+    result[&"or_tiny_{i}"] = renderFigure("tiny", HOLD, lead_turn = o.lead_turn,
                                    follow_turn = o.follow_turn,
                                    captions = false)
     seen.incl result[&"or_free_{i}"]
@@ -140,25 +145,25 @@ func frameParts*(): Parts =
     &"Orientations collide; got `{seen.len}` distinct of `{ORIENTATIONS.len}`."
 
   # Free hands: keep the hue, or go grey and lose the orientation with it.
-  result["free_fade"] = frame("f", default(Holds), free = Free.Fade)
-  result["free_grey"] = frame("f", default(Holds), free = Free.Grey)
-  result["free_fade_tiny"] = frame("tiny", default(Holds), free = Free.Fade,
+  result["free_fade"] = renderFigure("f", default(Holds), free = Free.Fade)
+  result["free_grey"] = renderFigure("f", default(Holds), free = Free.Grey)
+  result["free_fade_tiny"] = renderFigure("tiny", default(Holds), free = Free.Fade,
                                    captions = false)
-  result["free_grey_tiny"] = frame("tiny", default(Holds), free = Free.Grey,
+  result["free_grey_tiny"] = renderFigure("tiny", default(Holds), free = Free.Grey,
                                    captions = false)
 
   # What the pair of colours at the two ends says.
-  result["pair_ll"] = frame("f", HOLD)
-  result["pair_ll_turned"] = frame("f", HOLD, follow_turn = 180)
-  result["pair_lr"] = frame("f", [some Arm.R, none Arm])
-  result["pair_lr_turned"] = frame("f", [some Arm.R, none Arm],
+  result["pair_ll"] = renderFigure("f", HOLD)
+  result["pair_ll_turned"] = renderFigure("f", HOLD, follow_turn = 180)
+  result["pair_lr"] = renderFigure("f", [some Arm.R, none Arm])
+  result["pair_lr_turned"] = renderFigure("f", [some Arm.R, none Arm],
                                    follow_turn = 180)
 
   # The six spots, and the five settlings that reach four of them.
   result["slot_chart"] = slotChart(Arm.L)
   var reached: seq[tuple[arm: Arm, slot: Slot]]
   for k, s in SETTLINGS:
-    result[&"settle_{k}"] = frame("f", HOLD, said(s.level),
+    result[&"settle_{k}"] = renderFigure("f", HOLD, said(s.level),
                                   ways = said(s.way),
                                   follow_turn = s.follow_turn,
                                   captions = false)
@@ -178,7 +183,7 @@ func frameParts*(): Parts =
                              ("route_low", Level.Low, Way.Lock),
                              ("route_high", Level.High, Way.Lock)]:
     let turn = if way == Way.Wrap: 180.0 else: 0.0
-    result[name] = frame("f", HOLD, said(some level), ways = said(some way),
+    result[name] = renderFigure("f", HOLD, said(some level), ways = said(some way),
                          follow_turn = turn, captions = false)
   doAssert toHashSet([result["route_wrap"], result["route_low"],
                       result["route_high"]]).len == 3,
@@ -193,7 +198,7 @@ func frameParts*(): Parts =
         key = &"grid_{word(s.level)}_{word(s.way)}_{int(turn)}"
         pose = canonicalise(spinAbout(rest(), Dancer.Follow, turn))
       if danceable(pose, HOLD, said(some s.level), said(some s.way)):
-        result[key] = frame("tiny", HOLD, said(some s.level),
+        result[key] = renderFigure("tiny", HOLD, said(some s.level),
                             ways = said(some s.way), follow_turn = turn,
                             captions = false)
         inc drawn
@@ -201,34 +206,11 @@ func frameParts*(): Parts =
         result[key] = ""             # an edge that is not drawn
   doAssert drawn > 0 and drawn < GRID_STATES.len * GRID_TURNS.len,
     &"The grid should be partial; got `{drawn}` cells drawn."
-  # The arcs this geometry actually makes, so the page quotes the
-  # measurement rather than a number somebody typed.
-  var arcs_seen: HashSet[int]
-  for s in GRID_STATES:
-    for lead_turn in [0.0, 90.0, 180.0, 270.0]:
-      for turn in GRID_TURNS:
-        let
-          pose = canonicalise(spinAbout(
-            spinAbout(rest(), Dancer.Lead, lead_turn), Dancer.Follow, turn))
-          q = settled(pose, HOLD, said(some s.level), said(some s.way))
-          h = handsOf(q)
-          ends: route.Ends = (h[Dancer.Lead][Arm.L],
-                              h[Dancer.Follow][Arm.L],
-                              (q.place[Dancer.Lead], q.facing[Dancer.Lead]),
-                              (q.place[Dancer.Follow],
-                               q.facing[Dancer.Follow]))
-          asked = wayFor(ends, some s.level, some s.way)
-        if asked.isNone:
-          continue
-        let arcs = wrapArc(ends, asked.get)
-        if arcs.isSome:
-          arcs_seen.incl int(max(arcs.get.a, arcs.get.b))
-  result["arc_set"] = arcs_seen.toSeq.sorted.mapIt(&"{it}°").join(", ")
 
   # `above` has no lock and no wrap, so it stays where the arm hangs.
-  result["above_plain"] = frame("f", HOLD, said(some Level.Above),
+  result["above_plain"] = renderFigure("f", HOLD, said(some Level.Above),
                                 captions = false)
-  result["above_asked"] = frame("f", HOLD, said(some Level.Above),
+  result["above_asked"] = renderFigure("f", HOLD, said(some Level.Above),
                                 ways = said(some Way.Wrap), captions = false)
   doAssert result["above_plain"] == result["above_asked"],
     "Above took a wrap; the two drawings differ."
@@ -249,7 +231,7 @@ func frameParts*(): Parts =
       walk = stage_one & stage_two
       half = walk.mapIt(extent(it, captions = false)).max
     for k, q in walk:
-      result[&"walk_{tag}_{k}"] = frame("wide", HOLD, pose = some q,
+      result[&"walk_{tag}_{k}"] = renderFigure("wide", HOLD, pose = some q,
                                         captions = false, half = some half)
 
   # What collapses, and what does not.  The compound -- an orbit walked
@@ -260,9 +242,9 @@ func frameParts*(): Parts =
   for who in Dancer:
     walked_by[who] = canonicalise(orbit(rest(), who, 90, locked = false))
     walked_by[who].ring = none(Ring)   # the move is over
-  result["collapse_follow_walked"] = frame("f", HOLD,
+  result["collapse_follow_walked"] = renderFigure("f", HOLD,
                                            pose = some walked_by[Dancer.Follow])
-  result["collapse_lead_walked"] = frame("f", HOLD,
+  result["collapse_lead_walked"] = renderFigure("f", HOLD,
                                          pose = some walked_by[Dancer.Lead])
   doAssert result["collapse_follow_walked"] == result["collapse_lead_walked"],
     "Two compounds draw two pictures; the drawing can say who walked."
@@ -272,8 +254,8 @@ func frameParts*(): Parts =
   # which is what the pair of figures is here to show.
   var orbited = canonicalise(orbit(rest(), Dancer.Follow, 90, locked = true))
   orbited.ring = none(Ring)
-  result["collapse_orbit"] = frame("f", HOLD, pose = some orbited)
-  result["collapse_axis"] = frame("f", HOLD, lead_turn = -90)
+  result["collapse_orbit"] = renderFigure("f", HOLD, pose = some orbited)
+  result["collapse_axis"] = renderFigure("f", HOLD, lead_turn = -90)
   doAssert relative(orbited) == relative(
     spinAbout(rest(), Dancer.Lead, -90)),
     "The orbit does not land on the axis turn's state."
@@ -284,23 +266,38 @@ func frameParts*(): Parts =
     "The compound lands on the axis turn, so the two are not two moves."
 
   # And the same four moves, running.
-  const PX = 1.3
+  const MOVE_PX = 1.3  ## Pixels a unit takes in the frame page's moving cells.
   for m in MOVES:
     let
       tag = m.name.replace(" ", "_").replace(",", "")
       half = cycle(m.apply).mapIt(extent(it, captions = false)).max
-      style = &"""class="mv" style="width: {n(2 * half * PX)}px;""" &
-        &""" height: {n(2 * half * PX)}px""""
+      style = &"""class="mv" style="width: {n(2 * half * MOVE_PX)}px;""" &
+        &""" height: {n(2 * half * MOVE_PX)}px""""
     result[&"mv_{tag}"] = animated("mv", HOLD, m.apply, some half)
       .replaceFirst("class=\"mv\"", style)
-    result[&"mv_{tag}_still"] = frame("mv still", HOLD, captions = false,
+    result[&"mv_{tag}_still"] = renderFigure("mv still", HOLD, captions = false,
                                       half = some half)
       .replaceFirst("class=\"mv still\"",
-        &"""class="mv still" style="width: {n(2 * half * PX)}px;""" &
-          &""" height: {n(2 * half * PX)}px"""")
+        &"""class="mv still" style="width: {n(2 * half * MOVE_PX)}px;""" &
+          &""" height: {n(2 * half * MOVE_PX)}px"""")
+
 
 
 #[ The Single-Hand Turns Page ]#
+
+const
+  PX = 1.0        ## Pixels a unit takes in a turn page's moving cell.
+  STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
+
+
+func sized(svg, cls: string; half, px: float): string =
+  ## Give a cell the room its row's box needs at its row's own scale.
+  ##   Shared by both turn pages -- it was defined twice, byte for byte,
+  ##     inside each builder before the pages were read side by side.
+  svg.replaceFirst(&"class=\"{cls}\"",
+    &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
+      &""" height: {n(2 * half * px)}px"""")
+
 
 const SINGLES*: array[4, tuple[holds: Holds, name: string]] = [
   ([some Arm.L, none Arm], "Left to left"),
@@ -311,10 +308,12 @@ const SINGLES*: array[4, tuple[holds: Holds, name: string]] = [
 
 const
   ABOVE_ONE*: Levels = [some Level.Above, none Level]
+    ## Rule 17's assumption made visible on the left arm: the held arm is
+    ## carried over the head, the one level with no lock and no wrap in it
+    ## (rule 8), and the one that draws its connection straight over
+    ## everything.
   ABOVE_OTHER*: Levels = [none Level, some Level.Above]
-    ## Rule 17's assumption made visible: the held arm is carried over the
-    ## head, which is the one level with no lock and no wrap in it (rule 8),
-    ## and the one that draws its connection straight over everything.
+    ## The same assumption, for a hold on the other arm.
 
 const
   QUARTERS_ROUND* = 4        ## Quarter turns in the round, and so positions.
@@ -328,20 +327,20 @@ type
     FollowAxis, LeadAxis, FollowOrbit, LeadOrbit
 
 const WAYS_OF_TURNING*: array[TurnWay, tuple[
-    tag, title, blurb: string; who: Dancer; about: About; family: Family]] = [
+    tag, title, blurb: string; who: Dancer; about: About]] = [
   (tag: "fa", title: "The follow turns on the spot",
    blurb: "The follow turns on their own axis and nobody travels. What " &
      "comes round is their <b>chevron</b>, and with it which of their " &
      "hands is nearer. The lead stands still, facing up, so there is " &
      "nothing to reorient afterwards: one stage, and it is over.",
-   who: Dancer.Follow, about: About.Axis, family: Family.FollowFacing),
+   who: Dancer.Follow, about: About.Axis),
   (tag: "la", title: "The lead turns on the spot",
    blurb: "The lead turns on their own axis, and this is where the two " &
      "stages matter. <b>Stage one</b>: the lead turns and the room holds " &
      "still, so the picture leans off upright. <b>Stage two</b>: the " &
      "picture turns back until the lead faces up, which swings the follow " &
      "round them. Same turn, told in the order it is danced.",
-   who: Dancer.Lead, about: About.Axis, family: Family.PairSwung),
+   who: Dancer.Lead, about: About.Axis),
   (tag: "fo", title: "The follow orbits the lead",
    blurb: "The follow walks the ring round the lead, who stands still — " &
      "the dashed ring says so, and says who is standing. <b>Whatever side " &
@@ -350,7 +349,7 @@ const WAYS_OF_TURNING*: array[TurnWay, tuple[
      "there is no second stage at all: what you see is the walk — and it " &
      "lands on the very pictures the <em>lead's own axis turn</em> lands " &
      "on, measured and asserted on every build.",
-   who: Dancer.Follow, about: About.Orbit, family: Family.PairSwung),
+   who: Dancer.Follow, about: About.Orbit),
   (tag: "lo", title: "The lead orbits the follow",
    blurb: "The lead walks the ring round the follow, facing the centre the " &
      "same way. It is the one way of the four that takes the lead off " &
@@ -358,8 +357,11 @@ const WAYS_OF_TURNING*: array[TurnWay, tuple[
      "It lands where the <em>follow's own axis turn</em> lands. Which " &
      "dancer walked is not something the drawing can say; only the path " &
      "can, which is why all four are animated.",
-   who: Dancer.Lead, about: About.Orbit, family: Family.FollowFacing),
-]
+   who: Dancer.Lead, about: About.Orbit),
+] ## What each way of turning is called on the pages, who dances it, and
+  ## about what.  Which round it walks is not restated here: `FAMILY_OF`
+  ## carries that, measured -- a second copy had crept into these rows and
+  ## been the one nothing read.
 
 const FAMILY_OF*: array[TurnWay, Family] = [
   Family.FollowFacing, Family.PairSwung, Family.PairSwung,
@@ -440,9 +442,6 @@ func singleTurnParts*(): Parts =
   ##     Each cell is then given what its box needs at the scale its own row
   ##       draws at, so the marks stay the size they were and it is the
   ##       cells that grow.
-  const
-    PX = 1.0        ## Pixels a unit takes in a moving cell.
-    STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
   var
     walks: array[TurnWay, array[QUARTERS_ROUND, Walk]]
     still_half = 0.0
@@ -457,12 +456,6 @@ func singleTurnParts*(): Parts =
       for put in walks[way][quarter].poses:
         walk_half[way] = max(walk_half[way], extent(put, captions = false))
 
-  func sized(svg, cls: string; half, px: float): string =
-    ## Give a cell the room its row's box needs at its row's own scale.
-    svg.replaceFirst(&"class=\"{cls}\"",
-      &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
-        &""" height: {n(2 * half * px)}px"""")
-
   for way in TurnWay:
     let w = WAYS_OF_TURNING[way]
     for c, single in SINGLES:
@@ -470,7 +463,7 @@ func singleTurnParts*(): Parts =
 
       # Every derived position of this way.
       for quarter in 0 ..< QUARTERS_ROUND:
-        result[&"st_{w.tag}_{c}_{quarter}"] = sized(frame("tiny",
+        result[&"st_{w.tag}_{c}_{quarter}"] = sized(renderFigure("tiny",
           single.holds, levels, captions = false,
           pose = some quarterPose(way, quarter), half = some still_half,
           clear_marks = true), "tiny", still_half, STILL_PX)
@@ -486,7 +479,7 @@ func singleTurnParts*(): Parts =
         # picture and bends by rule 22; the moving figure it replaces is the
         # rule's own exemption and stays straight.
         result[&"tr_{w.tag}_{c}_{quarter}_{to}_still"] = sized(
-          frame("mv still", single.holds, levels, captions = false,
+          renderFigure("mv still", single.holds, levels, captions = false,
                 pose = some quarterPose(way, quarter),
                 half = some walk_half[way], clear_marks = true),
           "mv still", walk_half[way], PX)
@@ -526,6 +519,7 @@ func singleTurnParts*(): Parts =
       if &"stroke-width=\"{LINK_W}\"" in piece:
         doAssert " A" notin piece,
           &"A reach walks round a body; got an arc in `{key}`."
+
 
 
 #[ The Hand-to-Hand Turns Page ]#
@@ -583,7 +577,7 @@ func phaseOf*(holds: Holds): float =
     let put = settled(posedAt(0.0, phase), holds, ABOVE_BOTH, default(Ways))
     if abs(windOf(put, holds, Arm.L).spread) < 1e-6:
       return phase
-  raise newException(Defect, "A hold runs parallel at neither phase.")
+  raise newException(Defect, &"A hold runs parallel at neither phase; got `{holds}`.")
 
 
 func chainFor*(holds: Holds): seq[Position] =
@@ -591,7 +585,9 @@ func chainFor*(holds: Holds): seq[Position] =
   ##   The names are preliminary and the user's: a position is called for
   ##     whichever of the lead's arms passes over the other at the lead's
   ##     own crossover, and for the shape the pair makes there.
-  let phase = phaseOf(holds)
+  # Asked for its refusal alone: a hold that runs parallel at neither
+  # phase cannot walk the chain, and dies here rather than mid-table.
+  discard phaseOf(holds)
   for wind in STEPS:
     let
       shape = case int(abs(wind) * 2)
@@ -677,9 +673,6 @@ func handTurnParts*(): Parts =
   ##     its side to the centre winds the pair as far as it carries the
   ##     walker.  Which is measured rather than claimed, as it was when the
   ##     answer was the other one.
-  const
-    PX = 1.0        ## Pixels a unit takes in a moving cell.
-    STILL_PX = 0.72 ## And in a still one, where the figures are smaller.
   var
     walks: array[TurnWay, array[CHAIN.len - 1, Walk]]
     still_half = 0.0
@@ -705,16 +698,10 @@ func handTurnParts*(): Parts =
       for put in walks[way][i].poses:
         walk_half[way] = max(walk_half[way], extent(put, captions = false))
 
-  func sized(svg, cls: string; half, px: float): string =
-    ## Give a cell the room its row's box needs at its row's own scale.
-    svg.replaceFirst(&"class=\"{cls}\"",
-      &"""class="{cls}" style="width: {n(2 * half * px)}px;""" &
-        &""" height: {n(2 * half * px)}px"""")
-
   # The chain, drawn once: all four ways reach these same seven (rule 32), so
   # drawing them per way would be the same picture over again.
   for i, position in CHAIN:
-    result[&"hh_{i}"] = sized(frame("tiny", HAND_TO_HAND, ABOVE_BOTH,
+    result[&"hh_{i}"] = sized(renderFigure("tiny", HAND_TO_HAND, ABOVE_BOTH,
       captions = false, pose = some handPose(position.wind),
       half = some still_half, twist = windTwist(position.wind),
       clear_marks = true), "tiny", still_half, STILL_PX)
@@ -729,7 +716,7 @@ func handTurnParts*(): Parts =
         "mv", walk_half[way], PX)
       # The still stands in where motion is turned off, so it is the
       # picture the move sets off from (rule 22's exemption again).
-      result[&"hw_{w.tag}_{i}_still"] = sized(frame("mv still",
+      result[&"hw_{w.tag}_{i}_still"] = sized(renderFigure("mv still",
         HAND_TO_HAND, ABOVE_BOTH, captions = false,
         pose = some handPose(CHAIN[i].wind), half = some walk_half[way],
         twist = windTwist(CHAIN[i].wind), clear_marks = true),
@@ -745,6 +732,9 @@ func handTurnParts*(): Parts =
       doAssert result[&"hh_{i}"] != result[&"hh_{j}"],
         &"Two positions draw alike; got `{i}` and `{j}`."
 
+
+
+#[ The Turn Sign Page ]#
 
 func signParts*(): Parts =
   ## Build every SVG the turn-sign page places.
@@ -820,4 +810,3 @@ func signParts*(): Parts =
                                        ending = some ending, scale = 0.72)
     result[&"any_{name}_foll"] = sign(foll, arms = low_arms,
                                       ending = some ending)
-

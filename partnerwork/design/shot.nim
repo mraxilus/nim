@@ -12,6 +12,8 @@
 ##   Chromium and playwright are pre-installed in the remote environment at
 ##     the paths below; elsewhere, point the two constants at your own.
 
+{.experimental: "strictFuncs".}
+
 import std/[asyncjs, jsffi]
 
 

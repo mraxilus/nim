@@ -43,6 +43,8 @@ import ./draw/[style, terms]
 
 const
   MAP_WIDTH* = 780
+    ## The width the map asks for; `--wide` in the app's stylesheet is
+    ## derived from it plus the page's margins.
   MAP_HEIGHT* = 570
     ## Measured, not chosen: the tallest the drawing gets in any of the
     ## states it can be read in.
@@ -55,6 +57,7 @@ const
     ##   Descending, because the tower is built upwards: hold nothing and
     ##     you are at the bottom, hold both hands and you are at the top.
   NODE_WIDTH* = 74
+    ## The width a frame's picture is drawn at on the map.
   NAME_RISE = 12 ## Distance from the top of a picture up to its name.
   ARC_DIP = 100  ## How far a compound curve hangs below the row it joins.
 
@@ -121,7 +124,7 @@ const
   COLOUR_INK = "var(--ink, #1a1f1e)"
   COLOUR_DIM = "var(--dim, #6b716e)"
   LABEL_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
-  LINE_HEIGHT = 12
+  LINE_HEIGHT* = 12 ## Height of one line of a stacked name.
   NAME_FONT = "font: 11px ui-sans-serif, system-ui, sans-serif"
 
 
@@ -186,20 +189,27 @@ func text(x, y: int; body, style: string; classes = "map-label"): string =
     "</text>"
 
 
-func widest(lines: seq[string]): int =
+func widest*(lines: seq[string]): int =
   ## Get the length of the longest line, in characters.
   for line in lines:
     result = max(result, line.len)
 
 
-func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
+func plateSpan*(lines: seq[string]): (int, int) =
+  ## Get the width and height of the plate a stacked label sits on.
+  ##   The one encoding of the plate rule.  This module and `spokes` each
+  ##     had a copy, character for character, which is the drift the shared
+  ##     palette was made to end for the inks.
+  (widest(lines) * 6 + 14, lines.len * LINE_HEIGHT + 4)
+
+
+func stack*(x, y: int; lines: seq[string]; style, plate_class: string): string =
   ## Draw a label of several short lines, centred on a point, over a plate.
   ##   Stacking is what lets a label sit beside a line without reaching
   ##     across the drawing: three short words are a third of the width of
   ##     one long phrase.
   let
-    height = lines.len * LINE_HEIGHT + 4
-    width = widest(lines) * 6 + 14
+    (width, height) = plateSpan(lines)
     top = y - height div 2
   result = "<rect class=\"" & plate_class & "\" x=\"" & $(x - width div 2) &
     "\" y=\"" & $top & "\" width=\"" & $width & "\" height=\"" & $height &
@@ -208,15 +218,15 @@ func stack(x, y: int; lines: seq[string]; style, plate_class: string): string =
     result.add text(x, top + LINE_HEIGHT * (index + 1) - 1, line, style)
 
 
-func waking(now, was, moving: bool): string =
+func waking(is_standing, was_standing, is_moving: bool): string =
   ## Say how something's standing is changing while the mark is on its way.
   ##   The map is drawn as the frame being reached will have it, and whatever
   ##     that changes is faded from how the frame being left had it.  What is
   ##     left when the mark lands is then already the drawing for where it
   ##     landed, so the page can replace one with the other and nothing
   ##     moves.
-  if not moving or now == was: ""
-  elif now: " waking"
+  if not is_moving or is_standing == was_standing: ""
+  elif is_standing: " waking"
   else: " dozing"
 
 
@@ -230,9 +240,7 @@ func overlaps*(a, b: Box): bool =
 
 func labelBox(x, y: int; lines: seq[string]): Box =
   ## Get the room a name takes up, centred on a point.
-  let
-    w = widest(lines) * 6 + 14
-    h = lines.len * LINE_HEIGHT + 4
+  let (w, h) = plateSpan(lines)
   (x - w div 2, y - h div 2, w, h)
 
 
@@ -285,11 +293,12 @@ const
     ## A dash longer than any line on the map, for the stretch after the gap.
 
 
-func gapAt(ax, ay, bx, by: int; box: Box): (int, int) =
+func gapAt(ax, ay, bx, by: int; box: Box): Option[(int, int)] =
   ## Get where a name's box crosses its own line: how far the line runs before
   ## the break, and how long the break is.
   ##   Nothing, where the name sits clear of the line -- which is what
-  ##     `placeLabel` arranges whenever it can find the room.
+  ##     `placeLabel` arranges whenever it can find the room -- and typed
+  ##     absence rather than a zero a reader must know to test for.
   ##   The box is clipped against the line rather than measured from its
   ##     middle, so the break is as wide as the name really is at the angle the
   ##     line really crosses it.  A name met corner-on cuts less than one met
@@ -299,7 +308,7 @@ func gapAt(ax, ay, bx, by: int; box: Box): (int, int) =
     rise = float(by - ay)
     length = sqrt(run * run + rise * rise)
   if length < 1:
-    return (0, 0)
+    return none((int, int))
   var
     lo = 0.0
     hi = 1.0
@@ -308,7 +317,7 @@ func gapAt(ax, ay, bx, by: int; box: Box): (int, int) =
       (float(ay), rise, float(box.y), float(box.y + box.h))]:
     if abs(delta) < 1e-9:
       if start < near or start > far:
-        return (0, 0)                  # runs parallel to the box and outside it
+        return none((int, int))        # runs parallel to the box and outside it
     else:
       var
         t0 = (near - start) / delta
@@ -318,13 +327,13 @@ func gapAt(ax, ay, bx, by: int; box: Box): (int, int) =
       lo = max(lo, t0)
       hi = min(hi, t1)
   if hi <= lo:
-    return (0, 0)                      # the name is not on this line at all
+    return none((int, int))            # the name is not on this line at all
   let
     opens = max(lo * length - float(LABEL_AIR), 1.0)
     shuts = min(hi * length + float(LABEL_AIR), length)
-  if shuts <= opens:
-    return (0, 0)
-  (int(opens), int(shuts - opens))
+  if shuts <= opens or int(shuts - opens) <= 0:
+    return none((int, int))
+  some((int(opens), int(shuts - opens)))
 
 
 func isClear(box: Box; used: seq[Box]): bool =
@@ -429,10 +438,10 @@ func edge(a, b: Frame; side: Side; standing, was, taken: Option[Frame];
   # pattern, because an element cut into pieces is a different number of
   # pieces -- and the round cap on each side says the ending was meant.
   let
-    (before, gap) = gapAt(ax, ay, bx, by, labelBox(nx, ny, naming))
-    broken = if gap <= 0: ""
-             else: "; stroke-dasharray: " & $before & " " & $gap & " " &
-               $LONG_ENOUGH
+    cut = gapAt(ax, ay, bx, by, labelBox(nx, ny, naming))
+    broken = if cut.isNone: ""
+             else: "; stroke-dasharray: " & $cut.get[0] & " " & $cut.get[1] &
+               " " & $LONG_ENOUGH
   # A line and the name of the line are one thing, and dim or come forward as
   # one: a name without its line to belong to says nothing.  So the two are put
   # in two groups wearing the same marks rather than in one group.
@@ -490,8 +499,9 @@ func arc(a, b: Frame; name: string; standing, was: Option[Frame];
     (fx, fy) = ((ax + px) div 2, (ay + py) div 2)
     (gx, gy) = ((px + bx) div 2, (py + by) div 2)
     (hx, hy) = ((fx + gx) div 2, (fy + gy) div 2)
-    ink = proc (side: Option[Side]): string =
-      if side.isSome: armColour(side.get) else: COLOUR_DIM
+  func ink(side: Option[Side]): string =
+    ## The half's own arm's ink, or the quiet ink where no arm acts.
+    if side.isSome: armColour(side.get) else: COLOUR_DIM
   var curve = "<g class=\"join" & lit & "\">" &
     "<path class=\"arc\" d=\"M" & $ax & " " & $ay & "Q" & $fx & " " & $fy &
     " " & $hx & " " & $hy & "\" style=\"stroke: " & ink(compoundSide(b, a)) &

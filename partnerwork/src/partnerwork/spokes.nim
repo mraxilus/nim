@@ -51,7 +51,6 @@ const
     ##     mark around it instead of by its size.
   SPOKE_RADIUS = 240 ## Length of a lone spoke; a crowded one reaches further.
   SPOKE_STEP = 40.0  ## Angle between two spokes of the same kind, in degrees.
-  LINE_HEIGHT = 12   ## Height of one line of a name.
   LABEL_SIZE* = 11   ## Size a name is drawn at, in the drawing's own units.
   LEAST_READABLE* = 8
     ## Smallest a name may end up on a screen, once the drawing has been
@@ -70,6 +69,7 @@ const
   UP = 270.0        ## Direction a collect points, in degrees clockwise from east.
   DOWN = 90.0       ## Direction a drop points.
   ASIDE = 0.0       ## Direction a compound points.
+
 
 
 #[ Tempo ]#
@@ -134,6 +134,8 @@ func closeStyle*(): string =
     "px"
 
 
+
+#[ Concepts ]#
 
 type
   Spoke* = object ## Hold one way out of the frame the couple are holding.
@@ -207,7 +209,7 @@ func labelAt*(spoke: Spoke): (int, int) =
   ## Get where the name of a spoke sits, under the frame it arrives in.
   let (x, y) = endOf(spoke)
   (x, y + frameHeight(NODE_WIDTH) div 2 + LABEL_DROP +
-    (spoke.lines.len * LINE_HEIGHT + 4) div 2)
+    plateSpan(spoke.lines)[1] div 2)
 
 
 
@@ -218,15 +220,11 @@ const
     ## Ink for a name whose line has no one ink of its own to lend it.
   LABEL_FONT = "font: " & $LABEL_SIZE & "px ui-sans-serif, system-ui, sans-serif"
 
-  ## The arm inks come from `map.armColour`, which this drawing shares rather
-  ## than repeats: the two views draw one ontology and a reader moves between
-  ## them, so a line that changed hue on the way would be saying something.
-
-
-func widest(lines: seq[string]): int =
-  ## Get the length of the longest line, in characters.
-  for line in lines:
-    result = max(result, line.len)
+  # The arm inks come from `map.armColour` and the label plates from
+  # `map.stack`, which this drawing shares rather than repeats: the two views
+  # draw one ontology and a reader moves between them, so a line that changed
+  # hue on the way, or a name that changed its plate, would be saying
+  # something.
 
 
 func textHalf(text: string): int = text.len * 3 + 7
@@ -235,17 +233,9 @@ func textHalf(text: string): int = text.len * 3 + 7
 
 func naming(x, y: int; lines: seq[string]; colour: string): string =
   ## Draw the name of a spoke, over a plate so that it reads across its line.
-  let
-    height = lines.len * LINE_HEIGHT + 4
-    width = widest(lines) * 6 + 14
-    top = y - height div 2
-  result = "<rect class=\"spoke-plate\" x=\"" & $(x - width div 2) & "\" y=\"" &
-    $top & "\" width=\"" & $width & "\" height=\"" & $height & "\" rx=\"3\"/>"
-  for index, line in lines:
-    result.add "<text class=\"map-label\" x=\"" & $x & "\" y=\"" &
-      $(top + LINE_HEIGHT * (index + 1) - 1) & "\" text-anchor=\"middle\"" &
-      " style=\"" & LABEL_FONT & "; fill: " & colour & "\">" & labelled(line) &
-      "</text>"
+  ##   `map.stack`, in this drawing's own font and ink: one plate rule, worn
+  ##     by both views.
+  stack(x, y, lines, LABEL_FONT & "; fill: " & colour, "spoke-plate")
 
 
 
@@ -276,7 +266,7 @@ func extentOf(here: Frame): (int, int, int, int) =
     left = min(left, x - half)
     right = max(right, x + half)
     top = min(top, y - frameHeight(NODE_WIDTH) div 2 - NAME_ROOM)
-    bottom = max(bottom, max(ly + (spoke.lines.len * LINE_HEIGHT + 4) div 2,
+    bottom = max(bottom, max(ly + plateSpan(spoke.lines)[1] div 2,
       y + frameHeight(NODE_WIDTH) div 2))
   (left - PAD, top - PAD, right - left + 2 * PAD, bottom - top + 2 * PAD)
 

@@ -21,7 +21,7 @@ suite "frames":
       check target.over.isSome == target.hasOverlap
       if target.hasOverlap:
         inc overlapping
-    check overlapping == 2 # Left over Right, and Right over Left.
+    check overlapping == 2  # Left over Right, and Right over Left.
 
   test "only the same-named hands cross the midline":
     check isCrossed(Side.Left, Site.LeftHand)

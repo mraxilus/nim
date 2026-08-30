@@ -173,7 +173,7 @@ type Swatch* {.pure.} = enum ## The five ways the key draws a pair of hands.
   Free, Unsaid, Low, High, Above
 
 
-func sw*(kind: Swatch): string =
+func swatch*(kind: Swatch): string =
   ## Draw a swatch pair: the lead's square in its side, the follow's circle
   ## in its.
   ##   The fills, the shades and the fade come from the same code the hands

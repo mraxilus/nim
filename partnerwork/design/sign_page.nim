@@ -6,6 +6,13 @@
 ##     what a *node* looks like.
 ##   The two meet only at the levels and the arm inks, which the shared
 ##     chrome keeps identical.
+##     Cost of the split: a reader meets the sign without the frames it
+##       will annotate.  Accepted -- an edge label and a node picture
+##       answer different questions, and the key joins them later.
+##   Lines inside the body template run past the hundred-column rule.
+##     A literal's bytes are the page's bytes, and cutting them with
+##     concatenation would leave the template unreadable as the markup it
+##     is.  Layout yields to exposition (precedence: IV > III > I > IX).
 
 {.experimental: "strictFuncs".}
 
@@ -15,6 +22,7 @@ import ./[page, parts]
 
 
 const TITLE* = "The turn sign, so far"
+  ## What the page calls itself, in its tab and at its head.
 
 
 const BODY = """
@@ -276,8 +284,8 @@ const BODY = """
 func render*(P: Parts): string =
   ## Lay the turn-sign page out around the given figures.
   var fills = @[
-    ("sw_none", sw(Swatch.Unsaid)), ("sw_low", sw(Swatch.Low)),
-    ("sw_high", sw(Swatch.High)), ("sw_above", sw(Swatch.Above)),
+    ("sw_none", swatch(Swatch.Unsaid)), ("sw_low", swatch(Swatch.Low)),
+    ("sw_high", swatch(Swatch.High)), ("sw_above", swatch(Swatch.Above)),
     # The comparison plate re-places two of the packed quarters, and a
     # marker can be filled once, so the seconds ride under their own names.
     ("q_lead_1_again", P["q_lead_1"]), ("q_lead_3_again", P["q_lead_3"]),

@@ -10,6 +10,8 @@
 ##   Which way round a whole move goes is settled once, before any of it is
 ##     drawn (`oneWayRound`), because rule 1 must hold at every instant a
 ##     browser blends, not merely at the frames the move is sampled at.
+##     Cost of settling once: a move that would genuinely change sides
+##       mid-flight cannot be drawn.  Accepted -- no rule asks for one.
 
 {.experimental: "strictFuncs".}
 
@@ -30,7 +32,7 @@ type
   Run* = seq[Point] ## One unbroken stretch of drawn reach.
   Ends* = tuple ## One connection, as the routing takes it.
     a, b: Point
-    A, B: Body
+    body_a, body_b: Body
 
 const WAYS*: array[4, WayRound] = [
   (1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0),
@@ -42,18 +44,18 @@ const BREAK* = 11.0   ## Length of the gap cut in an under reach at a crossing.
 const
   BOX_ROOM* = 24.0    ## How wide the diamond a wound pair holds opens at
                       ## its middle.
-  WIND_NIP* = 0.4     ## How far a wound pair draws together between its
+  WIND_NIP = 0.4     ## How far a wound pair draws together between its
                       ## hands.
     ## Two strands wound round each other pull in where they are wound and
     ##   are held apart only at their ends, so a pair nips in at its middle
     ##   -- which is also what turns a wide flat lens into a diamond.  At no
     ##   wind there is nothing to pull, so it comes on with the winding.
-  BAND_STEPS* = 120   ## Points along a reach relaxed past marks, before it.
+  BAND_STEPS = 120   ## Points along a reach relaxed past marks, before it.
 
 const
-  SWAN_FROM* = 1.0    ## Turns of wind past which a pair stops sharing its
+  SWAN_FROM = 1.0    ## Turns of wind past which a pair stops sharing its
                       ## swing evenly between the two connections.
-  SWAN_EASE* = 0.45   ## How quickly it hands over, as a power of the way
+  SWAN_EASE = 0.45   ## How quickly it hands over, as a power of the way
                       ## through.
     ## Under one, so the hand-over is quick at the start: the third crossing
     ##   arrives as soon as the pair is past a whole turn, and until one
@@ -70,15 +72,18 @@ const
     ##   inside its own figure.
 
 
+
+#[ The Swan Hand-Over ]#
+
 func overArm*(turns: float): Arm =
-  ## Which of the lead's arms a wound pair keeps on top at the first
+  ## Get which of the lead's arms a wound pair keeps on top at the first
   ## crossing, from the sign of the wind (rules 27, 29).
   if turns >= 0: Arm.L else: Arm.R
 
 
 func straightArm*(turns: float): Arm =
-  ## Which connection runs straight through the middle of a swan while the
-  ## other snakes round it (rule 31).
+  ## Get which connection runs straight through the middle of a swan while
+  ## the other snakes round it (rule 31).
   ##   The one on top at the first crossing, which by the alternation is
   ##     the one that dives only once -- so it is still visibly a straight
   ##     line, and the snake is the thing that goes behind it and out
@@ -88,13 +93,14 @@ func straightArm*(turns: float): Arm =
 
 
 func swanning*(turns: float): float =
-  ## How far a pair is through the hand-over to a swan: none up to a whole
-  ## turn, all of it at a turn and a half (rule 31).
+  ## Measure how far a pair is through the hand-over to a swan: none up to
+  ## a whole turn, all of it at a turn and a half (rule 31).
   pow(clamp((abs(turns) - SWAN_FROM) / 0.5, 0.0, 1.0), SWAN_EASE)
 
 
 func windShare*(turns: float; arm: Arm): float =
-  ## How much of a wound pair's swing this connection carries (rule 31).
+  ## Measure how much of a wound pair's swing this connection carries
+  ## (rule 31).
   ##   Evenly to a whole turn, so the frame, the X and the diamond are drawn
   ##     exactly as they were.  Past that the pair cannot keep swinging
   ##     symmetrically -- wind two strands far enough and one pulls taut
@@ -107,31 +113,31 @@ func windShare*(turns: float; arm: Arm): float =
   else: 1 + (SWAN_SWING - 1) * swanning(turns)
 
 const
-  BAND_PASSES* = 240    ## Turns of pulling tight and pushing clear.
+  BAND_PASSES = 240    ## Turns of pulling tight and pushing clear.
     ## Enough for a band round the marks a figure holds to stop moving: the
     ##   pull travels one point a pass, so a band of `BAND_STEPS` needs
     ##   several times its own length to settle end to end.
-  SHOVES* = 8           ## Shoves a point gets per pass to leave every mark.
-  BAND_PULL* = 0.5      ## How far a point goes towards its neighbours' middle.
+  SHOVES = 8           ## Shoves a point gets per pass to leave every mark.
+  BAND_PULL = 0.5      ## How far a point goes towards its neighbours' middle.
     ## Half way is the most that stays steady; further and the band shivers
     ##   instead of settling.
-  CLEAR_PASSES* = 12    ## Times a band may be widened to what it left clear.
+  CLEAR_PASSES = 12    ## Times a band may be widened to what it left clear.
     ## Widening a mark moves the band, which can hand the shortfall to the
     ##   mark next door, so the settling takes a few goes; `checks` measures
     ##   the line that comes out rather than trusting that it did.
-  CLEAR_ENOUGH* = 0.01  ## Shortfall small enough to stop widening at.
+  CLEAR_ENOUGH = 0.01  ## Shortfall small enough to stop widening at.
     ## A hundredth of a unit is a fiftieth of the thinnest thing drawn, so a
     ##   band that is this close is as clear as the picture can show.
 
 const
-  BOW_SWELL* = 2.0      ## Where a bezier's control point starts, in apexes.
+  BOW_SWELL = 2.0      ## Where a bezier's control point starts, in apexes.
     ## Twice the apex is what puts a bezier's own middle on it, so this is
     ##   the least swelling that could clear what the hull touched.
-  BOW_MORE* = 0.35      ## And how much further out each try reaches.
-  BOW_TRIES* = 12       ## Tries before the hull is kept after all.
+  BOW_MORE = 0.35      ## And how much further out each try reaches.
+  BOW_TRIES = 12       ## Tries before the hull is kept after all.
 
 const
-  BEND_MIN* = 12.0      ## Degrees a turn must add up to before it is a bend.
+  BEND_MIN = 12.0      ## Degrees a turn must add up to before it is a bend.
     ## Under this is the wander of a curve drawn as `ROUTE_N` straight bits,
     ##   which nobody reads as a change of direction.
   BEND_COST* = 14.0     ## Line a second bend must save to be worth making.
@@ -142,6 +148,9 @@ const
     ##   round it goes, so anything this sharp is a change of direction made
     ##   at a point -- which is what rule 24 rules out.
 
+
+
+#[ Taut Around the Bodies ]#
 
 func segHits*(p, q: Point; body: Body): bool =
   ## Test whether this straight stretch passes inside a body's outline.
@@ -164,16 +173,16 @@ func taut*(ends: Ends; way: WayRound; cap = 90): Option[tuple[pts: seq[Point],
   ##     so the reach hugs a rim exactly as far as it has to, and where the
   ##     straight way is already clear it never hugs at all.
   var
-    ta = bearing(ends.a.x - ends.A.centre.x, ends.a.y - ends.A.centre.y)
-    tb = bearing(ends.b.x - ends.B.centre.x, ends.b.y - ends.B.centre.y)
+    ta = bearing(ends.a.x - ends.body_a.centre.x, ends.a.y - ends.body_a.centre.y)
+    tb = bearing(ends.b.x - ends.body_b.centre.x, ends.b.y - ends.body_b.centre.y)
     arc_a = @[ends.a]
     arc_b = @[ends.b]
   for _ in 0 ..< cap:
     let
       pa = arc_a[^1]
       pb = arc_b[^1]
-      ha = segHits(pa, pb, ends.A)
-      hb = segHits(pa, pb, ends.B)
+      ha = segHits(pa, pb, ends.body_a)
+      hb = segHits(pa, pb, ends.body_b)
     if not ha and not hb:
       let
         step = degToRad(RIM_STEP) * BODY_R
@@ -184,10 +193,10 @@ func taut*(ends: Ends; way: WayRound; cap = 90): Option[tuple[pts: seq[Point],
       return some (pts, length)
     if ha:
       ta += way.a * RIM_STEP
-      arc_a.add outlinePoint(ends.A.centre, ends.A.facing, ta)
+      arc_a.add outlinePoint(ends.body_a.centre, ends.body_a.facing, ta)
     if hb:
       tb += way.b * RIM_STEP
-      arc_b.add outlinePoint(ends.B.centre, ends.B.facing, tb)
+      arc_b.add outlinePoint(ends.body_b.centre, ends.body_b.facing, tb)
   none(tuple[pts: seq[Point], length: float])
 
 
@@ -242,18 +251,22 @@ func resample*(pts: seq[Point]; count: int): seq[Point] =
     result.add (p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t)
 
 
-func frontOf*(hand: Point; body: Body): float =
+
+#[ Which Way Round ]#
+
+func frontOf*(hand: Point; body: Body): Option[float] =
   ## Get the way round the rim, from this hand, that heads for its own
   ## dancer's front.
   ##   A hand's own side turns "front" or "back" into a direction by itself,
   ##     so this is the whole of what a rule naming one has to work out.
-  ##   Zero where the hand is dead ahead or dead behind and neither way is
-  ##     more frontward than the other.
+  ##   Nothing where the hand is dead ahead or dead behind and neither way
+  ##     is more frontward than the other -- a typed absence, not a zero a
+  ##     caller must know to test for.
   let off = wrap180(
     bearing(hand.x - body.centre.x, hand.y - body.centre.y) - body.facing)
   if abs(off) < 1e-9 or abs(abs(off) - 180) < 1e-9:
-    return 0.0
-  if off > 0: -1.0 else: 1.0
+    return none(float)
+  some(if off > 0: -1.0 else: 1.0)
 
 
 func wayFor*(ends: Ends; level: Option[Level]; way: Option[Way]):
@@ -266,13 +279,13 @@ func wayFor*(ends: Ends; level: Option[Level]; way: Option[Way]):
   let sends = roundOf(level, way)
   if sends.isNone:
     return none(WayRound)
-  let sides = (a: frontOf(ends.a, ends.A), b: frontOf(ends.b, ends.B))
-  if sides.a == 0 or sides.b == 0:
+  let sides = (a: frontOf(ends.a, ends.body_a), b: frontOf(ends.b, ends.body_b))
+  if sides.a.isNone or sides.b.isNone:
     return none(WayRound)             # dead ahead or behind: neither way
   if sends.get == Sends.FrontWay:
-    some (sides.a, sides.b)
+    some (sides.a.get, sides.b.get)
   else:
-    some (-sides.a, -sides.b)
+    some (-sides.a.get, -sides.b.get)
 
 
 func wrapArc*(ends: Ends; way: WayRound): Option[tuple[a, b: float]] =
@@ -281,25 +294,25 @@ func wrapArc*(ends: Ends; way: WayRound): Option[tuple[a, b: float]] =
   ##     it, because a wrap that does not wrap is not a wrap (rule 7) and the
   ##     only way to know is to measure what was drawn.
   var
-    ta = bearing(ends.a.x - ends.A.centre.x, ends.a.y - ends.A.centre.y)
-    tb = bearing(ends.b.x - ends.B.centre.x, ends.b.y - ends.B.centre.y)
+    ta = bearing(ends.a.x - ends.body_a.centre.x, ends.a.y - ends.body_a.centre.y)
+    tb = bearing(ends.b.x - ends.body_b.centre.x, ends.b.y - ends.body_b.centre.y)
     pa = ends.a
     pb = ends.b
     na = 0
     nb = 0
   for _ in 0 ..< 240:
     let
-      ha = segHits(pa, pb, ends.A)
-      hb = segHits(pa, pb, ends.B)
+      ha = segHits(pa, pb, ends.body_a)
+      hb = segHits(pa, pb, ends.body_b)
     if not ha and not hb:
       return some (float(na) * RIM_STEP, float(nb) * RIM_STEP)
     if ha:
       ta += way.a * RIM_STEP
-      pa = outlinePoint(ends.A.centre, ends.A.facing, ta)
+      pa = outlinePoint(ends.body_a.centre, ends.body_a.facing, ta)
       inc na
     if hb:
       tb += way.b * RIM_STEP
-      pb = outlinePoint(ends.B.centre, ends.B.facing, tb)
+      pb = outlinePoint(ends.body_b.centre, ends.body_b.facing, tb)
       inc nb
   none(tuple[a, b: float])
 
@@ -321,11 +334,14 @@ func straightReach*(a, b: Point): seq[Point] =
   ##     across whatever it crosses (rule 1's one exception).
   ##   Trimmed and resampled like any other reach, so it has the same shape
   ##     and an animation can morph between it and a wrapping one.
-  let reach = min(R + CAP, dist(a, b) / 3)
+  let reach = min(HAND_R + CAP, dist(a, b) / 3)
   var pts = trimEnd(@[a, b], a, reach)
   pts = reversed(trimEnd(reversed(pts), b, reach))
   resample(pts, ROUTE_N)
 
+
+
+#[ Settling Past the Marks ]#
 
 type Mark* = tuple ## Something a settled reach must not run through.
   centre: Point
@@ -470,7 +486,7 @@ func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
     ## One way past the marks, cut back to the hands' own edges and sampled
     ## the way every reach is, so any two of them can be compared -- and so
     ## an animation can morph between one and a wrapping reach.
-    let reach = min(R + CAP, span / 3)
+    let reach = min(HAND_R + CAP, span / 3)
     var cut = trimEnd(pts, a, reach)
     cut = reversed(trimEnd(reversed(cut), b, reach))
     resample(cut, ROUTE_N)
@@ -614,7 +630,7 @@ func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
   var
     asked = marks
     length = span
-  for pass_no in 0 .. CLEAR_PASSES:
+  for _ in 0 .. CLEAR_PASSES:
     let grown = sagged(asked, length)
     result = asDrawn(
       if side == 0: drawnOver(grown) else: bowedPast(grown, side))
@@ -632,6 +648,9 @@ func letGo*(a, b: Point; marks: seq[Mark]; side: float): seq[Point] =
 const SIDES* = [0.0, 1.0, -1.0]
   ## Where a settled reach may be let go from, shortest first (rule 23).
 
+
+
+#[ Winding and Crossings ]#
 
 func wound*(a, b: Point; across: Point; phi_a, sweep: float;
     radius = BODY_R; share = 1.0): seq[Point] =
@@ -675,7 +694,7 @@ func wound*(a, b: Point; across: Point; phi_a, sweep: float;
               (off_a + (off_b - off_a) * t)
     pts.add (a.x + (b.x - a.x) * t + across.x * swung,
              a.y + (b.y - a.y) * t + across.y * swung)
-  let reach = min(R + CAP, dist(a, b) / 3)
+  let reach = min(HAND_R + CAP, dist(a, b) / 3)
   var cut = trimEnd(pts, a, reach)
   cut = reversed(trimEnd(reversed(cut), b, reach))
   resample(cut, ROUTE_N)
@@ -770,6 +789,9 @@ func cutGapsAt*(pts: seq[Point]; centres: seq[Point]): seq[Run] =
     result.add run
 
 
+
+#[ The Emitted Reach ]#
+
 func routed*(ends: Ends; way = none(WayRound)):
     Option[tuple[pts: seq[Point], way: WayRound]] =
   ## Route one reach: hand border to hand border, wrapping wherever it must.
@@ -783,7 +805,7 @@ func routed*(ends: Ends; way = none(WayRound)):
       best = some (pulled.get.pts, pulled.get.length, combo)
   if best.isNone:
     return none(tuple[pts: seq[Point], way: WayRound])
-  let reach = min(R + CAP, polylineLen(best.get.pts) / 3)
+  let reach = min(HAND_R + CAP, polylineLen(best.get.pts) / 3)
   var pts = trimEnd(best.get.pts, ends.a, reach)
   pts = reversed(trimEnd(reversed(pts), ends.b, reach))
   some (resample(pts, ROUTE_N), best.get.way)

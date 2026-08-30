@@ -39,13 +39,13 @@ const HOW_MANY = FRAMES.len * 2
   ##     only its parity, so half a turn and a turn and a half draw alike.
 
 
-func armOf(side: Side): Arm =
+func armOf(side: Side): Arm {.compileTime.} =
   ## Read a hand of the lead as a side of a body.
   case side
   of Side.Left: Arm.L
   of Side.Right: Arm.R
 
-func armOf(site: Site): Arm =
+func armOf(site: Site): Arm {.compileTime.} =
   ## Read a hand of the follow the same way.
   ##   The two are separate types in the model so that nothing can hold one
   ##     where it means the other; here they land on the one word, because a
@@ -55,14 +55,14 @@ func armOf(site: Site): Arm =
   of Site.RightHand: Arm.R
 
 
-func holdsOf(target: Frame): Holds =
+func holdsOf(target: Frame): Holds {.compileTime.} =
   ## Say what each of the lead's arms holds, as the drawing takes it.
   for side in Side:
     if target.hold[side].isSome:
       result[armOf(side)] = some armOf(target.hold[side].get)
 
 
-func poseFor(facing: bool): Pose =
+func poseFor(facing: bool): Pose {.compileTime.} =
   ## Stand the couple up: the lead facing up the page, the follow facing them
   ## or facing away.
   ##   Canonicalised like every other pose, though at rest it changes nothing,
@@ -71,7 +71,7 @@ func poseFor(facing: bool): Pose =
   canonicalise(spinAbout(rest(), Dancer.Follow, if facing: 0.0 else: 180.0))
 
 
-func sceneOf*(target: Frame; facing: bool): string =
+func sceneOf(target: Frame; facing: bool): string {.compileTime.} =
   ## Draw one frame: two bodies, their hands, and what joins them.
   ##   No level is said, because a `Frame` does not carry one -- levels live
   ##     in `rotation.Posture` and nothing hands them here yet.  So every
@@ -86,14 +86,14 @@ func sceneOf*(target: Frame; facing: bool): string =
                   else: none(Arm))).join("")
 
 
-func buildScenes(): array[HOW_MANY, string] =
+func buildScenes(): array[HOW_MANY, string] {.compileTime.} =
   ## Draw every frame the model has, both ways round, once and for all.
   for i, target in FRAMES:
     for k, facing in [true, false]:
       result[i * 2 + k] = sceneOf(target, facing)
 
 
-const SCENES* = buildScenes()
+const SCENES = buildScenes()
   ## Every frame picture, drawn in the compiler and shipped as text.
 
 

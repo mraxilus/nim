@@ -14,6 +14,9 @@
 ##     arm casts from above, so the crossings are what the wind makes rather
 ##     than something the page arranges: none at the frame, one at a half
 ##     turn, two at a whole one, three at the swan.
+##     Cost of presenting the chain as the single-hand page's dual: a
+##       reader who has not met that page reads these captions cold.
+##       Accepted -- the two pages are one argument and are read together.
 
 {.experimental: "strictFuncs".}
 
@@ -23,6 +26,7 @@ import ./[page, parts]
 
 
 const TITLE* = "Hand-to-hand turns, so far"
+  ## What the page calls itself, in its tab and at its head.
 
 
 const WINDING: array[TurnWay, string] = [

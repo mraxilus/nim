@@ -337,7 +337,7 @@ func auditEdges(): seq[Finding] =
           if helper.isSome:
             manner(helper.get) & ": " & phrase(source, Move(
               helper: helper.get,
-              side: actingSide(source, destination, helper.get),
+              side: actingSide(source, destination),
               to: destination,
             ))
           else:

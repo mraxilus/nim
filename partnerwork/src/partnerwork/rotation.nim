@@ -170,7 +170,6 @@ func armCapacity*(blocker: Option[Blocker]; level: Level): HalfTurns =
     CAPACITY_ARM
 
 
-
 func capacity*(posture: Posture): HalfTurns =
   ## Get how much twist a posture can store before the couple must change it.
   ##
@@ -329,6 +328,7 @@ func turn*(posture: Posture; motion: Turn): Option[Posture] =
   some(turned)
 
 
+
 #[ What There Is ]#
 
 const
@@ -430,6 +430,7 @@ func turnsOf*(posture: Posture): seq[Offer] =
           refused: posture.refusal(reached))
 
 
+
 #[ Naming ]#
 
 const TURN_NAMES* = ["", "half a turn", "one turn", "one and a half turns"]
@@ -461,6 +462,9 @@ func turnName*(amount: HalfTurns): string =
 
 func aboutName*(about: About): string =
   ## Name what a dancer turns around, as the vocabulary names it.
+  ##   No page speaks these words yet; the design workbench words its own
+  ##     captions.  Kept for the page that stands postures in links, which
+  ##     this module exists ahead of.
   case about
   of About.Axis: "on axis"
   of About.Orbit: "on orbit"
@@ -509,8 +513,10 @@ func key*(posture: Posture): string =
 func fromPostureKey*(key: string): Option[Posture] =
   ## Decode a posture identifier, rejecting anything the model does not derive.
   ##
-  ## Rejecting is the point, as it is for a frame: a posture the model does not
-  ## stand at cannot be arrived at by asking for it in a link.
+  ## Rejecting will be the point, as it is for a frame: a posture the model
+  ## does not stand at could not then be arrived at by asking for it in a
+  ## link.  No page decodes a posture key yet -- this is `key`'s inverse,
+  ## written with it so the two cannot drift before they are needed.
   let parts = key.split(':')
   if parts.len != 3 or parts[1].len != 2:
     return none(Posture)

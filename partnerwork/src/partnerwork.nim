@@ -8,7 +8,8 @@
 ## The notation gate was evaluated and closed: partner dance has no canonical
 ## symbolic notation, so plain names are the only spelling used.
 ##
-## The umbrella indexes and re-exports the nine modules rather than forwarding
+## The umbrella indexes and re-exports the model's modules rather than
+## forwarding
 ## each symbol through a documented one-liner.
 ##   Cost of re-exporting instead of forwarding: per-symbol docs live at the
 ##     definitions, one hop away.  Accepted -- the index comments below name
@@ -18,13 +19,19 @@
 ##   [frame, motion]
 ##   frame -> [transition, rotation]
 ##   [frame, transition] -> workbook
-##   [frame, rotation] -> diagram
-##   [diagram, frame, motion, transition] -> map
+##   draw/geometry -> draw/terms -> draw/style -> draw/[body, pose]
+##   draw/[body, pose] -> draw/route -> draw/figure -> draw/scene
+##   [draw/scene, frame, rotation] -> diagram
+##   [diagram, draw/[style, terms], frame, motion, transition] -> map
 ##   [diagram, frame, map, motion, transition] -> spokes
 ##   [diagram, map, motion, rotation] -> axle
+##   The draw/ chain is indexed by its own umbrella-less imports: it serves
+##     the pages and the app directly and is not re-exported here.
 
 {.experimental: "strictFuncs".}
 
+## Draw the rotation axis as one line, with the couple's postures along it.
+import ./partnerwork/axle
 ## Draw one frame from above, for every place that shows one.
 import ./partnerwork/diagram
 ## The state: `Frame`, its laws, the enumeration `FRAMES`, and its names.
@@ -33,8 +40,6 @@ import ./partnerwork/frame
 import ./partnerwork/map
 ## Say when a drawing moves, so the picture and the page agree about it.
 import ./partnerwork/motion
-## Draw the rotation axis as one line, with the couple's postures along it.
-import ./partnerwork/axle
 ## Model the unfinished rotation axis: twist, capacity, wraps and locks.
 import ./partnerwork/rotation
 ## Draw only where the couple are and where they can go next.

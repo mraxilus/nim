@@ -24,8 +24,11 @@ import ../src/partnerwork
 
 const
   TEMPLATE_PATH* = "doc/review.template.html"
+    ## The prose the page is filled into; `treview` reads it too.
   PAGE_PATH* = "doc/review.html"
+    ## The committed page, which `treview` holds to being regenerable.
   FRAME_DIRECTORY* = "doc/frames"
+    ## One SVG per frame, for anything that is not HTML.
   DISAGREEMENTS = {
     FindingKind.EdgeAbsent,
     FindingKind.ReverseAbsent,
@@ -81,6 +84,8 @@ proc countLaws(): int =
 
 func escape(text: string): string =
   ## Escape text for placement in markup.
+  ##   Looser than the app's `esc`: nothing here writes user text into
+  ##     an attribute, so quotes pass through.
   text.multiReplace(("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"))
 
 
@@ -285,8 +290,8 @@ proc renderReview*(): string =
     "primitives": renderPrimitives(),
     "compounds": renderCompounds(),
     "compound_count": $(ord(high(Compound)) + 1),
-    "primitive_cells": $countCells(false),
-    "compound_cells": $countCells(true),
+    "primitive_cells": $countCells(is_compound = false),
+    "compound_cells": $countCells(is_compound = true),
     "audit": renderAudit(),
     "legend": renderLegend(),
     "frames": $FRAMES.len,

@@ -1,16 +1,27 @@
 ## Hold every rule the mock-ups were given, in the words it arrived in.
 ##
-##   This module is the authority the workbench replicates: the wordings are
-##     data, so the checks, the pages and the README all quote one source and
-##     cannot drift apart.
+##   This module is the authority the workbench replicates: the ledger the
+##     README mirrors entry for entry, and the checks cite by number.
+##     Cost of keeping it as data nothing loads: the copies can drift, and
+##       only a reader diffing them would notice.  Accepted for now -- the
+##       checks' printed lines are worded for what was measured, not for
+##       the rule's own phrasing, and rewording them to quote this ledger
+##       would change what every build prints.
 ##   The vocabulary the rules speak in -- sides, levels, holds, the settle
 ##     table -- lives in `partnerwork/draw/terms` now, and this re-exports it
 ##     so a reader of the ledger still has the words in scope.  It moved
 ##     because the app draws these marks now: the words belong beside the
 ##     drawing, and the argument for them belongs here.
 ##   A rule that is only implemented and not asserted quietly stops being
-##     true; the checkers in `checks.nim` verify each one on every build and
-##     print one line per rule.
+##     true; the checkers in `checks.nim` verify the standing ones on every
+##     build -- twenty-nine lines for thirty-five rules, the superseded six
+##     living here with their corrections.
+
+# TODO: Make the ledger load-bearing.
+#   The checks could assert their rule numbers against `RULES`, or the
+#   README's ledger section could be generated from it.  Either buys
+#   drift-proofing at the cost of freezing wordings into the build's
+#   output; needs a decision on what the printed lines should say.
 
 {.experimental: "strictFuncs".}
 

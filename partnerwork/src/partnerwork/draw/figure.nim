@@ -4,6 +4,9 @@
 ##     a cycle of poses on one clock -- the bodies carried rigidly by
 ##     transforms, the reach re-routed each frame with one way round settled
 ##     for the whole move -- so everything stays in one piece.
+##     Cost of sampling: an animation is as smooth as its samples, and every
+##       sample is a full routing.  Accepted -- the routes are built once,
+##       into the markup, not per frame in the browser.
 ##   A state the rules say does not exist is refused, not drawn: `partsOf`
 ##     asserts `danceable`, so the build fails rather than publishing a wrap
 ##     that does not wrap (rule 7).
@@ -19,8 +22,8 @@ import ./[body, geometry, pose, route, style, terms]
 
 
 const
-  WIDE* = 160.0    ## The box a picture with captions needs.
-  SIZE* = 116.0    ## And the box it needs without them.
+  WIDE = 160.0     ## The box a picture with captions needs.
+  SIZE = 116.0     ## And the box it needs without them.
 
 type Twists* = array[Arm, float]
   ## How far each connection has wound, in turns: what the reach swings
@@ -36,7 +39,10 @@ const NO_TWIST*: Twists = [0.0, 0.0]
   ## Nothing wound: every figure but the turn pages'.
 
 
-func twoTone*(runs: seq[Run]; mid: Point; lead_side, foll_side: Arm):
+
+#[ The Still Figure ]#
+
+func twoTone*(runs: seq[Run]; mid: Point; lead_side, follow_side: Arm):
     seq[string] =
   ## Draw one reach in its two hands' own colours, meeting at its middle
   ## point (rule 9).
@@ -46,7 +52,7 @@ func twoTone*(runs: seq[Run]; mid: Point; lead_side, foll_side: Arm):
   ##     instead of leaving it to two marks that go too small to read; and
   ##     the shade still says which end is whose when both hands share a hue.
   let (near, far) = splitAt(runs, mid)
-  @[reachMarkup(near, DEEP[lead_side]), reachMarkup(far, INK[foll_side])]
+  @[reachMarkup(near, DEEP[lead_side]), reachMarkup(far, INK[follow_side])]
 
 
 func ghosts*(holds: Holds; levels: Levels; ways: Ways):
@@ -266,13 +272,15 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
       bits.add twoTone(runs, pts[pts.len div 2], arm, holds[arm].get)
   for arm in Arm:
     let q = p[Dancer.Lead][arm]
-    bits.add hand(q.x, q.y, true, arm, holds[arm].isSome, levels[arm], free)
+    bits.add hand(q.x, q.y, leads = true, arm = arm,
+                  held = holds[arm].isSome, level = levels[arm], free = free)
   for own in [Arm.R, Arm.L]:
     let
       q = p[Dancer.Follow][own]
       by = Arm.toSeq.filterIt(holds[it] == some(own))
       level = if by.len > 0: levels[by[0]] else: none(Level)
-    bits.add hand(q.x, q.y, false, own, by.len > 0, level, free)
+    bits.add hand(q.x, q.y, leads = false, arm = own, held = by.len > 0,
+                  level = level, free = free)
   if captions:
     for arm in Arm:
       bits.add caption(put.place[Dancer.Lead], put.facing[Dancer.Lead], arm,
@@ -288,7 +296,7 @@ func partsOf*(pose: Pose; holds: Holds; levels: Levels = default(Levels);
 func extent*(pose: Pose; captions = true): float =
   ## Measure how far this pose reaches from the origin, ring and captions
   ## included.
-  let edge = if captions: CAPTION_R + 20 else: BODY_R + R + 2
+  let edge = if captions: CAPTION_R + 20 else: BODY_R + HAND_R + 2
   for who in Dancer:
     result = max(result, hypot(pose.place[who].x, pose.place[who].y) + edge)
   if pose.ring.isSome:
@@ -301,10 +309,10 @@ func view*(half: float): string =
   &"""viewBox="{n(-half)} {n(-half)} {n(2 * half)} {n(2 * half)}""""
 
 
-func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
-    over = none(Arm); lead_turn = 0.0; follow_turn = 0.0; free = Free.Fade;
-    captions = true; pose = none(Pose); half = none(float);
-    ways: Ways = default(Ways); twist: Twists = NO_TWIST;
+func renderFigure*(classes: string; holds: Holds;
+    levels: Levels = default(Levels); over = none(Arm); lead_turn = 0.0;
+    follow_turn = 0.0; free = Free.Fade; captions = true; pose = none(Pose);
+    half = none(float); ways: Ways = default(Ways); twist: Twists = NO_TWIST;
     clear_marks = false): string =
   ## Draw one picture, canonical unless a pose is handed in already turned.
   let
@@ -314,11 +322,23 @@ func frame*(cls: string; holds: Holds; levels: Levels = default(Levels);
               Dancer.Follow, follow_turn))
     box = if half.isSome: half.get
           else: (if captions: WIDE else: SIZE) / 2
-    bits = partsOf(drawn, holds, levels, over, free, captions, ways, twist,
-                   clear_marks)
-  &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
+    bits = partsOf(
+      drawn,
+      holds,
+      levels = levels,
+      over = over,
+      free = free,
+      captions = captions,
+      ways = ways,
+      twist = twist,
+      clear_marks = clear_marks,
+    )
+  &"""<svg class="{classes}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
 
+
+
+#[ The Animated Figure ]#
 
 func series*(steps: seq[float]): string =
   ## Say one animated value's frames on one clock.
@@ -455,7 +475,7 @@ func facings*(poses: seq[Pose]; who: Dancer): seq[float] =
   continuous(poses.mapIt(it.facing[who]))
 
 
-func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
+func animatedPoses*(classes: string; holds: Holds; walk: seq[Pose];
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6;
     times: seq[float] = @[]; wound = 0.0): string =
@@ -649,23 +669,24 @@ func animatedPoses*(cls: string; holds: Holds; walk: seq[Pose];
       &""" values="{series(places)}"""" & keyed(times, pts.len) &
       &""" dur="{dur}s" repeatCount="indefinite"/>""" & mark & "</g>"
 
-  for sd in Arm:
-    bits.add carried(hand(0, 0, true, sd, holds[sd].isSome, levels[sd]),
-                     hands.mapIt(it[Dancer.Lead][sd]))
+  for arm in Arm:
+    bits.add carried(hand(0, 0, leads = true, arm = arm,
+                          held = holds[arm].isSome, level = levels[arm]),
+                     hands.mapIt(it[Dancer.Lead][arm]))
   for own in [Arm.R, Arm.L]:
     let
       by = Arm.toSeq.filterIt(holds[it] == some(own))
       held = by.len > 0
     bits.add carried(
-      hand(0, 0, false, own, held,
-           (if held: levels[by[0]] else: none(Level))),
+      hand(0, 0, leads = false, arm = own, held = held,
+           level = (if held: levels[by[0]] else: none(Level))),
       hands.mapIt(it[Dancer.Follow][own]))
-  &"""<svg class="{cls}" {view(box)}>""" & "\n        " &
+  &"""<svg class="{classes}" {view(box)}>""" & "\n        " &
     bits.join("\n        ") & "\n      </svg>"
 
 
-func animated*(cls: string; holds: Holds; move: MoveApply;
+func animated*(classes: string; holds: Holds; move: MoveApply;
     half = none(float); levels: Levels = default(Levels);
     ways: Ways = default(Ways); dur = 9.6; samples = 14): string =
   ## Draw the same picture, moving: stage one travels, stage two comes home.
-  animatedPoses(cls, holds, cycle(move, samples), half, levels, ways, dur)
+  animatedPoses(classes, holds, cycle(move, samples), half, levels, ways, dur)
