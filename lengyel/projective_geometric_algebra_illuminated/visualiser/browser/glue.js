@@ -1650,16 +1650,11 @@ function medianPhase(name) {
 //   reader opens the diagnostics panel to see whether a frame is slow, and goes looking for
 //   which step only once it is. A closed node's rows are skipped by `refreshDiagnostics`
 //   entirely, so a subtotal nobody is reading costs nothing to keep offering.
-const NODES_DIAGNOSTIC = {
-  build: ['camera', 'furniture', 'scene', 'algebra', 'matrix', 'flatten', 'unaccounted'],
-  furniture: ['grid', 'axes'],
-  scene: ['points', 'lines', 'planes', 'sky', 'ghost', 'selected'],
-};
-const element_node = {};
-for (const name in NODES_DIAGNOSTIC) {
-  const node = document.querySelector('.diag-node[data-node="' + name + '"]');
-  if (node === null) continue;
-  element_node[name] = node;
+//   The nesting is read off the markup itself rather than declared here a second time:
+//   the tree's shape used to live in both places, agreeing only by care, and a row moved
+//   in one without the other would silently stop hiding -- or stop updating -- with its
+//   branch. The DOM is the one copy now, and this file only asks it questions.
+for (const node of document.querySelectorAll('.diag-node')) {
   // The node's *own* parent row, not a descendant's: a nested branch puts another
   //   `.diag-parent` inside this one, and `querySelector` would find that one first.
   const header = node.querySelector(':scope > .diag-parent');
@@ -1670,18 +1665,18 @@ for (const name in NODES_DIAGNOSTIC) {
   header.setAttribute('aria-expanded', 'false');
 }
 function isPhaseShown(name) {
-  // Walk up: a row is shown only where every branch holding it is open. A closed branch
-  //   nested inside an open one hides its rows just as an outermost closed one does.
-  let child = name;
-  for (let depth = 0; depth < 8; depth += 1) {
-    let parent = null;
-    for (const above in NODES_DIAGNOSTIC) {
-      if (NODES_DIAGNOSTIC[above].includes(child)) { parent = above; break; }
-    }
-    if (parent === null) return true; // Reached a row nothing encloses.
-    const node = element_node[parent];
-    if (node !== undefined && !node.classList.contains('open')) return false;
-    child = parent;
+  // Walk up: a row is shown only where every branch holding it is open. A branch's own
+  //   header row starts the walk *above* its node -- the header is what a reader clicks
+  //   to open it, so it stays visible while its node is closed.
+  const row = element_row[name];
+  if (row === null) return false;
+  let node = row.closest('.diag-node');
+  if (node !== null && row.classList.contains('diag-parent')) {
+    node = node.parentElement.closest('.diag-node');
+  }
+  while (node !== null) {
+    if (!node.classList.contains('open')) return false;
+    node = node.parentElement.closest('.diag-node');
   }
   return true;
 }

@@ -209,6 +209,11 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet ## Every scene object, excluding world furniture below.
+var SETTINGS_FURNITURE_HELD = none(SettingsFurniture)
+  ## What `MESHES_FURNITURE` currently stands for, or none before the first frame. The
+  ## browser has held its furniture on unchanged frames since the grid gained its budget;
+  ## the desktop was still clearing and rebuilding both every frame, so a still camera
+  ## paid the whole grid for nothing and the furniture row could never read 0 here.
 var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn in their own pass
   ## before the scene's, so every object's translucent wash blends over the reference marks
   ## rather than under whichever of them happened to be emitted later. Their thinner width
@@ -358,19 +363,23 @@ proc assembleMeshes(
   ##   Assembles alone: where the camera should be looking is `offerCameraAim`'s own job,
   ##   called beside this one rather than from inside it.
   let ticks_start = getMonoTime().ticks
-  MESHES_FURNITURE.clearMeshes
   # Where the grid assembles its pieces before emitting them, carved from the frame pair
   #   rather than reserved as another global: this is the per-frame scratch that arena was
   #   waiting for, and the swap hands it back clean at the top of every frame.
   let scratch = ARENA_SWAP.current.push[:DrawScratch](1)
-  if panel.is_grid_shown:
-    MESHES_FURNITURE.addGrid(
-      scratch[0], scale.extent_furniture, scale,
-    )
-  if panel.is_axes_shown:
-    MESHES_FURNITURE.addAxes(
-      scratch[0], scale.extent_furniture, scale,
-    )
+  # Held on unchanged frames, by the same rule and the same tuple as the browser: the
+  #   furniture is a function of exactly these settings, so a frame matching the last is
+  #   drawing the very same vertices and may keep them.
+  let settings_furniture = settingsFurnitureFor(
+    camera, height, panel.is_axes_shown, panel.is_grid_shown,
+  )
+  if SETTINGS_FURNITURE_HELD.isNone or SETTINGS_FURNITURE_HELD.get != settings_furniture:
+    SETTINGS_FURNITURE_HELD = some(settings_furniture)
+    MESHES_FURNITURE.clearMeshes
+    if panel.is_grid_shown:
+      MESHES_FURNITURE.addGrid(scratch[0], scale.extent_furniture, scale)
+    if panel.is_axes_shown:
+      MESHES_FURNITURE.addAxes(scratch[0], scale.extent_furniture, scale)
 
   MESHES.clearMeshes
   # A horizon plane's own dome first, before anything else that might share its own

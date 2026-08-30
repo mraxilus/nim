@@ -396,6 +396,34 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
   )
 
 
+type SettingsFurniture* = tuple
+  ## Name everything the ground grid and the world axes are built from.
+  ##   `drawExtentFor` derives every field of the extent those two read from exactly
+  ## these, so two frames agreeing here draw the same furniture, vertex for vertex --
+  ## which is what lets a front-end keep last frame's meshes instead of rebuilding them.
+  ## A field added to `Camera` that `drawExtentFor` reads has to be added here too, or a
+  ## frame will hold furniture that no longer matches the view.
+  ##   Here rather than in each front-end: both hold furniture by the same rule, and two
+  ## private copies of this tuple would be the drift CLAUDE.md's sibling rule warns about.
+  target_x, target_y, target_z: float
+  distance, azimuth, elevation, degrees_field_of_view: float
+  height_pixels: int
+  is_axes_shown, is_grid_shown: bool
+
+
+func settingsFurnitureFor*(
+  camera: Camera; height_pixels: int; is_axes_shown, is_grid_shown: bool
+): SettingsFurniture =
+  ## Read the furniture's inputs off this camera and frame, for the hold comparison.
+  ##   Compared exactly rather than approximately by callers: the question is "did
+  ## anything move at all", not "did it move enough to see".
+  (
+    camera.target.x, camera.target.y, camera.target.z, camera.distance,
+    camera.azimuth, camera.elevation, camera.degrees_field_of_view,
+    height_pixels, is_axes_shown, is_grid_shown,
+  )
+
+
 func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
   ## Derive this frame's own draw scale from the camera: how far its geometry reaches,
   ## where from, and everything a ribbon needs to hold a constant width on screen.

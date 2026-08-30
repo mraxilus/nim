@@ -70,17 +70,7 @@ proc performanceNow(): float {.importjs: "performance.now()".}
 
 #[ Panel State ]#
 
-type SettingsFurniture = tuple
-  ## Name everything the ground grid and the world axes are built from.
-  ##   `mesh.addGrid` and `mesh.addAxes` read only a reach and a `DrawExtent`, and
-  ## `camera.drawExtentFor` derives every field of that from exactly these -- so two frames
-  ## agreeing here draw the same furniture, vertex for vertex. A field added to `Camera`
-  ## that `drawExtentFor` reads has to be added here too, or a frame will hold furniture
-  ## that no longer matches the view.
-  target_x, target_y, target_z: float
-  distance, azimuth, elevation, degrees_field_of_view: float
-  height_pixels: int
-  is_axes_shown, is_grid_shown: bool
+# `SettingsFurniture` lives in `camera` now, shared with the desktop's own hold.
 
 
 type SettingsOverlay = tuple
@@ -1833,11 +1823,8 @@ proc nimBuildFrame(
   #   exactly these, so a frame whose settings match the last one is drawing the very same
   #   vertices and may keep them. Compared exactly rather than approximately -- the
   #   question is "did anything move at all", not "did it move enough to see".
-  let settings_furniture = (
-    g_camera.target.x, g_camera.target.y, g_camera.target.z, g_camera.distance,
-    g_camera.azimuth, g_camera.elevation, g_camera.degrees_field_of_view,
-    int(height_pixels), is_axes_shown, is_grid_shown,
-  )
+  let settings_furniture =
+    settingsFurnitureFor(g_camera, int(height_pixels), is_axes_shown, is_grid_shown)
   let is_furniture_held =
     g_settings_furniture.isSome and g_settings_furniture.get == settings_furniture
   let ms_after_camera = performanceNow()
