@@ -41,21 +41,26 @@
 ##   Rebuilding beats tracking which object changed, while scene holds only tens of objects.
 ##   Cost is a few thousand vertices uploaded per frame, which is far below any budget.
 ##
-##   |-----------|--------------|--------------------------------------|
-##   | Primitive | OpenGL       | Carries                              |
-##   |-----------|--------------|--------------------------------------|
-##   | Triangle  | GL_TRIANGLES | Plane discs, whole-sky domes.        |
-##   | Ribbon    | GL_TRIANGLES | Lines, plane rims and normal shafts,  |
-##   |           |              | horizon circles, axes, ground grid.  |
-##   | Point     | GL_POINTS    | Points, stars.                       |
-##   |-----------|--------------|--------------------------------------|
+##   |--------|-----------------------|----------------------------------------------|
+##   | Kind   | Crosses the wire as   | Carries                                      |
+##   |--------|-----------------------|----------------------------------------------|
+##   | Ribbon | `RibbonRecord` x1     | Lines, plane rims, horizon circles, axes,    |
+##   |        |                       | ground grid.                                 |
+##   | Disc   | `DiscRecord` x1       | A finite plane's translucent fill.           |
+##   | Dome   | `DomeRecord` x1       | A horizon plane's whole-sky wash.            |
+##   | Point  | `Vertex` per point    | Points, stars.                               |
+##   |--------|-----------------------|----------------------------------------------|
+##
+## Every kind but the point is one compact record per shape, widened into triangles by
+## its own vertex shader; each record type's doc comment states the expansion, and an
+## `expand*` reference proc beside it is what the suite pins and the shaders are checked
+## against.
 ##
 ## A line is drawn as a **ribbon** -- a quad sized to a width in screen pixels -- and never
 ## as `GL_LINES`, because a line width is a hint a target may ignore: most WebGL
 ## implementations clamp it to one pixel outright, and core-profile OpenGL only ever
-## guaranteed one. See `addSegment`. Ribbons stay a primitive kind of their own rather than
-## joining `Triangle` because the two draw differently: a ribbon writes depth, a plane's
-## own translucent wash does not.
+## guaranteed one. See `addSegment`. Ribbons draw apart from the washes because the two
+## differ in state: a ribbon writes depth, a plane's own translucent wash does not.
 ##
 ## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
 ## render paths; see `visualiser.nim`'s own "Render Paths" table.
@@ -117,18 +122,22 @@ const
     ## drawing `SEGMENTS_CIRCLE_HORIZON` rim segments, 64 x 96 = 6,144 -- with the same
     ## third of headroom. One record here is what six vertices were before the widening
     ## moved to the vertex shader.
-  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 49152
-    ## Bound how many vertices one primitive's mesh holds, per frame.
-    ##   Tripled when lines became ribbons: a segment that was two vertices is now six.
-    ## The binding case is a scene filled to `scene.ITEMS_MAX` with planes, each drawing
-    ## `SEGMENTS_CIRCLE_HORIZON` rim ribbons -- 64 x 96 x 6, or 36,864, which the old
-    ## 16,384 would have asserted on. (It was 97 while every plane also drew a normal
-    ## shaft; that shaft is gone, replaced by the orientation pulse `marker.nim` runs
-    ## round a selected object's outline.) The suite fills a scene
-    ## exactly that way rather than leaving the arithmetic to be trusted.
-    ##   Costs `3 * VERTICES_MAX * sizeof(Vertex)` per `MeshSet` and there are two of them,
-    ## so this is the largest single reservation this build makes; the diagnostics panel
-    ## reports it alongside the rest rather than hiding it.
+  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 1024
+    ## Bound how many vertices the point mesh holds, per frame.
+    ##   Points are all that is left in vertex form: lines became ribbon records when the
+    ## widening moved to the vertex shader, and plane fills and sky domes became disc and
+    ## dome records when their fans followed it -- each of those is bounded by its own
+    ## record cap below. The binding case here is a scene filled to `scene.ITEMS_MAX`
+    ## with points, every one selected and so drawn twice, which is 128 against 1,024.
+  DISCS_MAX* {.define: "visualiser.discs_max".} = 192
+    ## Bound how many disc records one frame holds.
+    ##   The binding case is a scene filled to `scene.ITEMS_MAX` with finite planes,
+    ## every one selected and so drawn twice, plus a ghost -- 129, with headroom. One
+    ## record here is what a `3 * SEGMENTS_CIRCLE_HORIZON`-vertex fan cost before the
+    ## fan moved to the vertex shader.
+  DOMES_MAX* {.define: "visualiser.domes_max".} = 192
+    ## Bound how many dome records one frame holds, by the same worst case as
+    ## `DISCS_MAX` with every plane at horizon instead.
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long a freshly added object takes to grow and fade fully into view.
     ##   Held as milliseconds rather than seconds, as `.define` takes an integer.
@@ -353,13 +362,6 @@ type
     ##   sixteen-slot failure exactly -- see `lut_ink_to_rgba`'s own comment.
     Rose, Copper, Olive, Jade, Cobalt,
 
-  Primitive* {.pure.} = enum ## Name kind of OpenGL primitive vertices are assembled into.
-    ## Every kind is a triangle or a point on the wire. Ribbons are no longer one of
-    ## them: a line drawn as triangles crosses the wire as one **record per segment**
-    ## (`RibbonRecord`) and is widened by the vertex shader, so nothing CPU-side holds
-    ## its six vertices any more.
-    Triangle, Point
-
   Placement* {.pure.} = enum ## Report what became of object once drawn.
     Finite, ## Object had finite extent and was drawn where it stands.
     Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
@@ -372,21 +374,22 @@ type
     x*, y*, z*: float32
     red*, green*, blue*, alpha*: float32
 
-  Mesh* = object ## Hold vertices of one primitive kind, in storage fixed at compile time.
+  Mesh* = object ## Hold point vertices, in storage fixed at compile time.
+    ## The one shape still uploaded as vertices: every widened kind -- ribbons, disc
+    ## fans, sky domes -- crosses the wire as records for its own vertex shader instead.
     vertices*: array[VERTICES_MAX, Vertex]
     count_vertices*: int
     index_overlay*: Option[int] ## Where the overlay run begins, if this mesh has one.
       ## Vertices below it are drawn against the depth buffer as usual; the rest are drawn
       ## after them with the test off, so they land over whatever is already there.
       ## `markOverlay` is what sets it, and each render path draws the two runs as two
-      ## calls -- see `renderer.drawPrimitive`. None where nothing asked to be drawn over,
+      ## calls -- see `renderer.drawRun`. None where nothing asked to be drawn over,
       ## which is every furniture mesh and every frame with nothing selected; an index of
       ## zero says the opposite and means the whole mesh is the overlay.
-      ##   A watermark rather than a second `MeshSet`, because a set reserves `VERTICES_MAX`
-      ## per primitive up front and a third of them is the largest reservation this build
-      ## makes again, for a run that is usually one object. Order already decides what
-      ## these buckets look like (see `visualiser.assembleMeshes`), so an index into the
-      ## order costs nothing and states the same thing.
+      ##   A watermark rather than a second `MeshSet`, because a set reserves its whole
+      ## fixed storage up front, for a run that is usually one object. Order already
+      ## decides what these buckets look like (see `visualiser.assembleMeshes`), so an
+      ## index into the order costs nothing and states the same thing.
 
   RibbonRecord* = object ## Hold one line segment exactly as it is uploaded.
     ## **The vertex shader's input, not a vertex.** Each record is drawn as one instance
@@ -407,12 +410,68 @@ type
     index_overlay*: Option[int] ## Where the overlay run begins; `Mesh.index_overlay`'s
       ## own doc comment says what that means and why it is a watermark.
 
-  MeshSet* = object ## Hold one mesh per primitive kind, and the frame's ribbons.
-    ## An object rather than the bare array it was, so ribbons -- which are records now,
-    ## not vertices -- can live beside the vertex meshes without pretending to be one.
-    ## The `[]` accessors below keep every `meshes[primitive]` site reading as it did.
-    by_kind: array[Primitive, Mesh]
+  DiscRecord* = object ## Hold one filled disc exactly as it is uploaded.
+    ## **The disc-fill vertex shader's input, not a vertex.** Each record is drawn as one
+    ## instance of a static fan of `3 * SEGMENTS_CIRCLE_HORIZON` unit-circle corners; the
+    ## shader places every corner at `centre + cos*arm_first + sin*arm_second` -- the very
+    ## work `expandDiscVertex` below states in Nim, which is the reference the shaders are
+    ## held to. Thirteen floats a disc against the `3 * SEGMENTS_CIRCLE_HORIZON * 7` its
+    ## fanned vertices cost, and no per-frame trigonometry on a CPU.
+    ##   The arms arrive already scaled by the disc's radius, so the record needs no
+    ## radius of its own and the shader no multiply by one.
+    centre_x*, centre_y*, centre_z*: float32
+    arm_first_x*, arm_first_y*, arm_first_z*: float32
+    arm_second_x*, arm_second_y*, arm_second_z*: float32
+    fill_red*, fill_green*, fill_blue*, fill_alpha*: float32
+
+  DomeRecord* = object ## Hold one whole-sky sphere exactly as it is uploaded.
+    ## **The dome vertex shader's input, not a vertex.** Each record is drawn as one
+    ## instance of a static lat/long sphere of unit directions; the shader places every
+    ## corner at `centre + radius*direction` -- the very sum `spherePoint` used to walk
+    ## through the algebra per frame, now stated once in `expandDomeVertex` below as the
+    ## reference the shaders are held to. A dome's orientation is not a field because a
+    ## full sphere has none: which plane produced it never shaped it (see
+    ## `tessellate.addPlane`), so eight floats say everything the picture needs.
+    centre_x*, centre_y*, centre_z*, radius*: float32
+    red*, green*, blue*, alpha*: float32
+
+  DiscMesh* = object ## Hold every disc record of one frame, in fixed storage.
+    records*: array[DISCS_MAX, DiscRecord]
+    count*: int
+
+  DomeMesh* = object ## Hold every dome record of one frame, in fixed storage.
+    records*: array[DOMES_MAX, DomeRecord]
+    count*: int
+
+  WashKind* {.pure.} = enum ## Name which record array one wash run draws from.
+    Disc, Dome
+
+  WashRun* = object ## Hold one stretch of same-kind wash records, drawn as one call.
+    kind*: WashKind
+    first*: int32 ## Index of the run's first record, within its own kind's array.
+    count*: int32
+
+  WashRuns* = object ## Hold the frame's wash draw order, across both record kinds.
+    ## **The translucent pass's memory of scene order.** Discs and domes land in two
+    ## record arrays, but two washes crossing still blend in the order the scene emitted
+    ## them -- so each append extends the current run where it can and opens a new one
+    ## where the kind changes, and each render path walks the runs in sequence instead of
+    ## drawing one whole array after the other. Usually one run per object, of one record.
+    runs*: array[DISCS_MAX + DOMES_MAX, WashRun]
+    count*: int
+    index_overlay*: Option[int] ## Index of the first *run* of the overlay pass --
+      ## `Mesh.index_overlay`'s rule, at run rather than record grain, since a run never
+      ## straddles the mark: `markOverlay` seals the current run by setting this, and the
+      ## append test below refuses to extend across it.
+
+  MeshSet* = object ## Hold everything one frame draws: vertices and every record kind.
+    ## Points are the one shape still assembled as vertices; ribbons, discs and domes
+    ## cross the wire as records for their own vertex shaders.
+    points*: Mesh
     ribbons*: RibbonMesh
+    discs*: DiscMesh
+    domes*: DomeMesh
+    washes*: WashRuns
 
   DrawScale* = object ## Hold how far this frame's geometry reaches, and from where.
     ## **The Euclidean half of a frame's camera.** Everything a ribbon needs to hold a
@@ -437,15 +496,6 @@ type
       ## nearer is drawn, so nothing needs a width measured nearer -- and without the
       ## clamp a segment running past the eye reads a negative depth and turns its own
       ## ribbon inside out.
-
-
-func `[]`*(meshes: MeshSet; primitive: Primitive): lent Mesh = meshes.by_kind[primitive]
-  ## Reach one primitive's vertex mesh.
-
-func `[]`*(meshes: var MeshSet; primitive: Primitive): var Mesh = meshes.by_kind[primitive]
-  ## Reach one primitive's vertex mesh, writably.
-
-
 
 
 #[ Camera-Relative Scale ]#
@@ -700,12 +750,15 @@ func animationProgress*(now, born: float): float =
 #[ Vertex Assembly ]#
 
 proc clearMeshes*(meshes: var MeshSet) =
-  ## Drop every vertex and ribbon assembled so far, so frame may be rebuilt from scratch.
-  for primitive in Primitive:
-    meshes[primitive].count_vertices = 0
-    meshes[primitive].index_overlay = none(int)
+  ## Drop every vertex and record assembled so far, so frame may be rebuilt from scratch.
+  meshes.points.count_vertices = 0
+  meshes.points.index_overlay = none(int)
   meshes.ribbons.count = 0
   meshes.ribbons.index_overlay = none(int)
+  meshes.discs.count = 0
+  meshes.domes.count = 0
+  meshes.washes.count = 0
+  meshes.washes.index_overlay = none(int)
 
 
 proc markOverlay*(meshes: var MeshSet) =
@@ -714,28 +767,21 @@ proc markOverlay*(meshes: var MeshSet) =
   ##   `Mesh.count_vertices_tested`. Calling it twice would move the boundary rather than
   ##   add a second one, which is why the assembly order and not this decides what is
   ##   over what.
-  for primitive in Primitive:
-    meshes[primitive].index_overlay = some(meshes[primitive].count_vertices)
+  meshes.points.index_overlay = some(meshes.points.count_vertices)
   meshes.ribbons.index_overlay = some(meshes.ribbons.count)
-
-
-proc addVertex*(meshes: var MeshSet; primitive: Primitive; at: Position; tint: Rgba) =
-  ## Exported for `tessellate`, which fans a plane's fill straight into the triangle
-  ##   bucket rather than through a shape helper.
-  ## Append single vertex to mesh of given primitive kind.
-  let count = meshes[primitive].count_vertices
-  doAssert count < VERTICES_MAX,
-    &"Mesh holds at most {VERTICES_MAX} vertices; raise `--define:visualiser.vertices_max`."
-  meshes[primitive].vertices[count] = Vertex(
-    x: float32(at.x), y: float32(at.y), z: float32(at.z),
-    red: tint.red, green: tint.green, blue: tint.blue, alpha: tint.alpha,
-  )
-  meshes[primitive].count_vertices = count + 1
+  meshes.washes.index_overlay = some(meshes.washes.count)
 
 
 proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   ## Append point marking single position.
-  meshes.addVertex(Primitive.Point, at, tint)
+  let count = meshes.points.count_vertices
+  doAssert count < VERTICES_MAX,
+    &"Mesh holds at most {VERTICES_MAX} vertices; raise `--define:visualiser.vertices_max`."
+  meshes.points.vertices[count] = Vertex(
+    x: float32(at.x), y: float32(at.y), z: float32(at.z),
+    red: tint.red, green: tint.green, blue: tint.blue, alpha: tint.alpha,
+  )
+  meshes.points.count_vertices = count + 1
 
 
 func blend(first, second: Rgba; fraction: float): Rgba =
@@ -753,12 +799,12 @@ func blend(first, second: Rgba; fraction: float): Rgba =
   )
 
 
-const POINTS_SCRATCH_MAX* = (LATITUDES_HORIZON + 1)*(LONGITUDES_HORIZON + 1)
+const POINTS_SCRATCH_MAX* = SEGMENTS_CIRCLE_HORIZON + 1
   ## Bound the places a tessellation step may assemble before emitting them.
-  ##   The sky's dome is the largest of them -- a lat/long grid with one extra row and
-  ##   column so its last quad closes on points computed at the same angles the loop would
-  ##   have used, rather than on a wrap that would land a hair off them. A horizon line's
-  ##   great circle needs `SEGMENTS_CIRCLE_HORIZON + 1`, comfortably fewer.
+  ##   A horizon line's great circle is the largest of them now that the sky dome is one
+  ##   record widened over static geometry -- one extra boundary so its closing segment
+  ##   ends on a place stepped at the angle the loop would have used, rather than on a
+  ##   wrap that would land a hair off it.
 
 
 type RibbonPiece* = object
@@ -917,58 +963,212 @@ proc addSegment*(
   meshes.addRibbon(tail, head, tint, tint, width)
 
 
+let UNIT_CIRCLE_RIM: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]] =
+  block:
+    # One boundary past the wrap rather than a reuse of the first entry, so the closing
+    #   segment ends on the value `cos(2*PI)` actually takes, a hair off `cos(0)`'s --
+    #   exactly the rule `tessellate.addGreatCircle` states for its own ring.
+    var table: array[SEGMENTS_CIRCLE_HORIZON + 1, tuple[cos_angle, sin_angle: float]]
+    for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
+      let angle = (2.0*PI * float(i)) / float(SEGMENTS_CIRCLE_HORIZON)
+      table[i] = (cos_angle: cos(angle), sin_angle: sin(angle))
+    table
+  ## The rim's fixed ring of angles, resolved once at start-up with the same library
+  ## trigonometry `euclid.onCircle` uses -- at run time rather than compile time, since
+  ## the compile-time evaluator's `cos` need not agree with each backend's own in the
+  ## last bit, and the suite holds these points equal to the sums they replaced.
+
+
 proc addPlaneRing*(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; scale: DrawScale; segments: int = SEGMENTS_CIRCLE_HORIZON
+  radius: float; tint: Rgba
 ) =
   ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
   ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is drawn.
   ##   **A disc is not a plane.** A plane is infinite; this circle is the stand-in drawn
   ##   for one, sized for an eye and carrying no geometric meaning of its own, so it is
-  ##   stepped with `euclid.onCircle` rather than assembled as multivector sums. Which
-  ##   plane the two arms span is still the algebra's answer -- `boundary.frame` -- and
-  ##   `tessellate.addPlane` hands it down; only the walk around the rim is arithmetic.
-  ##   The suite holds each point equal to the multivector sum it replaced.
+  ##   stepped with `euclid.onCircleAt` off the fixed table above rather than assembled
+  ##   as multivector sums. Which plane the two arms span is still the algebra's answer
+  ##   -- `boundary.frame` -- and `tessellate.addPlane` hands it down; only the walk
+  ##   around the rim is arithmetic. The suite holds each point equal to the multivector
+  ##   sum it replaced.
+  ##   Each boundary is placed once and shared with the next segment, which with the
+  ##   table makes the whole rim a stretch of fused multiplies and no trigonometry.
   let
     arm_first = radius*axis_first
     arm_second = radius*axis_second
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-    meshes.addSegment(
-      onCircle(center, arm_first, arm_second, angle_a),
-      onCircle(center, arm_first, arm_second, angle_b),
-      tint, WIDTH_LINE_OBJECT,
+  var tail = onCircleAt(
+    center, arm_first, arm_second,
+    UNIT_CIRCLE_RIM[0].cos_angle, UNIT_CIRCLE_RIM[0].sin_angle,
+  )
+  for i in 1 .. SEGMENTS_CIRCLE_HORIZON:
+    let head = onCircleAt(
+      center, arm_first, arm_second,
+      UNIT_CIRCLE_RIM[i].cos_angle, UNIT_CIRCLE_RIM[i].sin_angle,
     )
+    meshes.addSegment(tail, head, tint, WIDTH_LINE_OBJECT)
+    tail = head
 
 
-proc addPlaneFill*(
+func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex =
+  ## Widen one disc record into the fan corner the given table entry stands for --
+  ## **the reference the disc-fill vertex shaders are held to**, beside `expandRibbon`;
+  ## a change to it, to the GLSL 3.30 source in `renderer.nim` or to the WebGL source in
+  ## `glue.js` is not finished until the other two are checked.
+  ##   One statement: the centre plus the two radius-scaled arms weighted by the
+  ##   corner's own cosine and sine -- `euclid.onCircleAt`, with the centre corner
+  ##   carrying zero for both weights. Flat tint across the fan; see `addDisc` for why.
+  let at = onCircleAt(
+    Position(
+      x: float(record.centre_x), y: float(record.centre_y), z: float(record.centre_z)
+    ),
+    Direction(
+      x: float(record.arm_first_x), y: float(record.arm_first_y),
+      z: float(record.arm_first_z),
+    ),
+    Direction(
+      x: float(record.arm_second_x), y: float(record.arm_second_y),
+      z: float(record.arm_second_z),
+    ),
+    cos_angle, sin_angle,
+  )
+  Vertex(
+    x: float32(at.x), y: float32(at.y), z: float32(at.z),
+    red: record.fill_red, green: record.fill_green,
+    blue: record.fill_blue, alpha: record.fill_alpha,
+  )
+
+
+func expandDomeVertex*(record: DomeRecord; unit: Direction): Vertex =
+  ## Widen one dome record into the sphere corner the given unit direction stands for --
+  ## **the reference the dome vertex shaders are held to**; the same three-way rule as
+  ## `expandDiscVertex` above.
+  ##   One statement: the centre plus the unit direction scaled by the radius -- the very
+  ##   sum `spherePoint` walked through the algebra before the sphere became static
+  ##   geometry, which the suite still holds it equal to.
+  Vertex(
+    x: float32(float(record.centre_x) + float(record.radius)*unit.x),
+    y: float32(float(record.centre_y) + float(record.radius)*unit.y),
+    z: float32(float(record.centre_z) + float(record.radius)*unit.z),
+    red: record.red, green: record.green, blue: record.blue, alpha: record.alpha,
+  )
+
+
+proc discCorners*(): seq[float32] =
+  ## Emit the disc fan's static corner buffer: `(cos, sin)` per corner, three corners
+  ## per rim segment, in the winding the CPU fan used -- centre, this segment's boundary,
+  ## the next one's. The centre corner is the pair `(0, 0)`, which
+  ## `expandDiscVertex`'s one statement lands on the centre exactly.
+  ##   **The one source for both render targets**: the desktop uploads this from Nim and
+  ##   the browser through `nimDiscCorners`, so neither carries a hand-copied table that
+  ##   could drift from the reference above.
+  result = newSeq[float32](2*3*SEGMENTS_CIRCLE_HORIZON)
+  for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+    let at = 6*i
+    result[at + 0] = 0.0
+    result[at + 1] = 0.0
+    result[at + 2] = float32(UNIT_CIRCLE_RIM[i].cos_angle)
+    result[at + 3] = float32(UNIT_CIRCLE_RIM[i].sin_angle)
+    result[at + 4] = float32(UNIT_CIRCLE_RIM[i + 1].cos_angle)
+    result[at + 5] = float32(UNIT_CIRCLE_RIM[i + 1].sin_angle)
+
+
+func domeCorners*(): seq[float32] =
+  ## Emit the dome's static corner buffer: one unit direction per corner, six corners
+  ## per lat/long quad, in the winding the CPU quads used. `expandDomeVertex` above says
+  ## what each corner becomes.
+  ##   The one source for both render targets, exactly as `discCorners` is.
+  result = newSeq[float32](3*6*LATITUDES_HORIZON*LONGITUDES_HORIZON)
+  var at = 0
+  for lat in 0 ..< LATITUDES_HORIZON:
+    for lon in 0 ..< LONGITUDES_HORIZON:
+      # The quad's four unit directions, wound [0, 1, 2, 0, 2, 3] as `addQuad` wound it.
+      var corners: array[4, tuple[theta, phi: float]]
+      corners[0] = (theta: PI*float(lat)/float(LATITUDES_HORIZON),
+        phi: 2.0*PI*float(lon)/float(LONGITUDES_HORIZON))
+      corners[1] = (theta: PI*float(lat)/float(LATITUDES_HORIZON),
+        phi: 2.0*PI*float(lon + 1)/float(LONGITUDES_HORIZON))
+      corners[2] = (theta: PI*float(lat + 1)/float(LATITUDES_HORIZON),
+        phi: 2.0*PI*float(lon + 1)/float(LONGITUDES_HORIZON))
+      corners[3] = (theta: PI*float(lat + 1)/float(LATITUDES_HORIZON),
+        phi: 2.0*PI*float(lon)/float(LONGITUDES_HORIZON))
+      for index in [0, 1, 2, 0, 2, 3]:
+        let (theta, phi) = corners[index]
+        result[at + 0] = float32(sin(theta)*cos(phi))
+        result[at + 1] = float32(sin(theta)*sin(phi))
+        result[at + 2] = float32(cos(theta))
+        at += 3
+
+
+proc appendWashRun(meshes: var MeshSet; kind: WashKind) =
+  ## Note one more record of `kind` in the wash draw order, extending the current run
+  ## where it is the same kind and this side of the overlay mark, opening a new one
+  ## otherwise. See `WashRuns` for why the order is kept at all.
+  let count = meshes.washes.count
+  if count > 0 and meshes.washes.runs[count - 1].kind == kind and
+      meshes.washes.index_overlay != some(count):
+    meshes.washes.runs[count - 1].count += 1
+    return
+  doAssert count < len(meshes.washes.runs),
+    &"Frame holds at most {len(meshes.washes.runs)} wash runs."
+  meshes.washes.runs[count] = WashRun(
+    kind: kind,
+    first: int32(if kind == WashKind.Disc: meshes.discs.count else: meshes.domes.count),
+    count: 1,
+  )
+  meshes.washes.count = count + 1
+
+
+proc addDisc*(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba; segments: int = SEGMENTS_CIRCLE_HORIZON
+  radius: float; tint: Rgba
 ) =
-  ## Append a flat, uniformly translucent fan filling the same circle `addPlaneRing`
-  ## outlines -- flat rather than faded toward the rim, since the rim itself already
-  ## marks the boundary crisply; a plane's own tilt still reads through the fan's own
-  ## foreshortened ellipse, and low, constant alpha keeps whatever sits behind it
-  ## legible through every one of its triangles alike.
-  ##   Stepped the same way the rim is, and for the same reason; see `addPlaneRing`.
+  ## Append a flat, uniformly translucent disc record filling the circle `addPlaneRing`
+  ## outlines, for the disc-fill vertex shader to fan out -- flat rather than faded
+  ## toward the rim, since the rim itself already marks the boundary crisply; a plane's
+  ## own tilt still reads through the fan's foreshortened ellipse, and low, constant
+  ## alpha keeps whatever sits behind it legible through every one of its triangles
+  ## alike.
+  let count = meshes.discs.count
+  doAssert count < DISCS_MAX,
+    &"Frame holds at most {DISCS_MAX} discs; raise `--define:visualiser.discs_max`."
+  meshes.appendWashRun(WashKind.Disc)
   let
     arm_first = radius*axis_first
     arm_second = radius*axis_second
-  for i in 0 ..< segments:
-    let
-      angle_a = (2.0*PI * float(i)) / float(segments)
-      angle_b = (2.0*PI * float(i + 1)) / float(segments)
-    meshes.addVertex(Primitive.Triangle, center, tint)
-    meshes.addVertex(Primitive.Triangle, onCircle(center, arm_first, arm_second, angle_a), tint)
-    meshes.addVertex(Primitive.Triangle, onCircle(center, arm_first, arm_second, angle_b), tint)
+  meshes.discs.records[count] = DiscRecord(
+    centre_x: float32(center.x), centre_y: float32(center.y), centre_z: float32(center.z),
+    arm_first_x: float32(arm_first.x), arm_first_y: float32(arm_first.y),
+    arm_first_z: float32(arm_first.z),
+    arm_second_x: float32(arm_second.x), arm_second_y: float32(arm_second.y),
+    arm_second_z: float32(arm_second.z),
+    fill_red: tint.red, fill_green: tint.green, fill_blue: tint.blue,
+    fill_alpha: tint.alpha,
+  )
+  meshes.discs.count = count + 1
 
 
-proc addQuad*(meshes: var MeshSet; corners: array[4, Position]; tint: Rgba) =
-  ## Append filled quadrilateral, wound as two triangles.
-  for index in [0, 1, 2, 0, 2, 3]:
-    meshes.addVertex(Primitive.Triangle, corners[index], tint)
+proc addDome*(meshes: var MeshSet; center: Position; radius: float; tint: Rgba) =
+  ## Append a whole-sky sphere record around `center`, for the dome vertex shader to
+  ## widen -- a plane at horizon is the unique universal "whole sky" object, the same
+  ## regardless of which points produced it (see `directionNormalHorizon`'s own doc
+  ## comment for why), so nothing about its own coefficients decides its shape here;
+  ## only `radius` and `tint` do. Every direction the camera can actually see sky in
+  ## should show it, including looking down across the ground grid toward the horizon
+  ## -- an earlier version stopped this dome at the eye's own horizontal, reverted on
+  ## explicit feedback that halving it cut off sky the camera genuinely can see.
+  ## Occlusion against anything nearer is the ordinary depth test's job, same as any
+  ## other drawn geometry.
+  let count = meshes.domes.count
+  doAssert count < DOMES_MAX,
+    &"Frame holds at most {DOMES_MAX} domes; raise `--define:visualiser.domes_max`."
+  meshes.appendWashRun(WashKind.Dome)
+  meshes.domes.records[count] = DomeRecord(
+    centre_x: float32(center.x), centre_y: float32(center.y), centre_z: float32(center.z),
+    radius: float32(radius),
+    red: tint.red, green: tint.green, blue: tint.blue, alpha: tint.alpha,
+  )
+  meshes.domes.count = count + 1
 
 
 

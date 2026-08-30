@@ -164,57 +164,6 @@ proc addGreatCircle(
       meshes.addSegment(scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT)
 
 
-func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
-  ## Place point on sphere around the centre point, at colatitude `theta`, longitude `phi`.
-  ##   The angles parametrise a unit direction -- ground-field trig -- and the point is
-  ##   the centre plus that direction scaled, assembled through the algebra.
-  pointFrom(add(centre_point, wedge(radius, toMultivector(Direction(
-    x: sin(theta)*cos(phi), y: sin(theta)*sin(phi), z: cos(theta)
-  )))))
-
-
-proc addDome(
-  meshes: var MeshSet; scratch: var DrawScratch; center: Position; radius: float;
-  tint: Rgba; latitudes: int = LATITUDES_HORIZON; longitudes: int = LONGITUDES_HORIZON
-) =
-  ## Append a full sphere around `center` -- a plane at horizon is the unique universal
-  ## "whole sky" object, the same regardless of which points produced it (see
-  ## `directionNormalHorizon`'s own doc comment for why), so nothing about its own
-  ## coefficients decides its shape here; only `radius` and `tint` do. Every direction
-  ## the camera can actually see sky in should show it, including looking down across
-  ## the ground grid toward the horizon, not only straight overhead -- an earlier
-  ## version stopped this dome at the eye's own horizontal, reasoning a full sphere
-  ## would bleed through the sparse ground grid's own gaps; reverted on explicit
-  ## feedback that halving it cut off sky the camera genuinely can see. Occlusion
-  ## against anything nearer is the ordinary depth test's job (still on for this
-  ## translucent pass, only its write is off), same as any other drawn geometry --
-  ## not something this proc's own shape needs to work around.
-  let centre_point = toMultivector(center)
-  # The grid assembled once, then walked as quads. Every place was previously worked out
-  #   **four times**, once per quad naming it as a corner -- 1,152 calls for 325 places --
-  #   so this is the seam and a quartering of the algebra at once. One extra row and column
-  #   rather than a wrap, so the closing quads meet places stepped at the angles the loops
-  #   would have used.
-  let stride = longitudes + 1
-  if (latitudes + 1)*stride > len(scratch.places): return
-  timed(Side.Placing):
-    for lat in 0 .. latitudes:
-      let theta = PI * float(lat) / float(latitudes)
-      for lon in 0 .. longitudes:
-        let phi = 2.0*PI * float(lon) / float(longitudes)
-        scratch.places[lat*stride + lon] = spherePoint(centre_point, radius, theta, phi)
-  timed(Side.Emitting):
-    for lat in 0 ..< latitudes:
-      for lon in 0 ..< longitudes:
-        meshes.addQuad([
-          scratch.places[lat*stride + lon],
-          scratch.places[lat*stride + lon + 1],
-          scratch.places[(lat + 1)*stride + lon + 1],
-          scratch.places[(lat + 1)*stride + lon],
-        ], tint)
-
-
-
 #[ World Furniture ]#
 
 func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
@@ -647,19 +596,23 @@ proc addPlane(
       tint_progress = tint.fade(tint.alpha*progress)
 
     # Fill first, so plane reads as a surface rather than a bare outline; flat, since
-    #   the rim drawn over it already marks the edge crisply on its own. Both are stepped
-    #   entirely in `euclid.onCircle`: a disc is not a plane, and none of this is algebra.
+    #   the rim drawn over it already marks the edge crisply on its own. The fill is one
+    #   disc record the vertex shader fans out; the rim is stepped off `mesh`'s own fixed
+    #   ring of angles: a disc is not a plane, and none of this is algebra.
     timed(Side.Emitting):
-      meshes.addPlaneFill(
+      meshes.addDisc(
         anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress),
       )
-      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
+      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress)
 
     return Placement.Finite
 
-  meshes.addDome(
-    scratch, scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
-  )
+  # One dome record the vertex shader widens over a static unit sphere; what the sphere
+  #   looks like and why a full one is drawn is `mesh.addDome`'s own story.
+  timed(Side.Emitting):
+    meshes.addDome(
+      scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
+    )
   Placement.Horizon
 
 

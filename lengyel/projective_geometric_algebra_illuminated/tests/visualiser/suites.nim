@@ -860,21 +860,29 @@ suite "Mesh":
   setup:
     MESHES.clearMeshes
 
-  test "clearing drops every vertex":
+  test "clearing drops every vertex and every record":
     MESHES.addMarker(ORIGIN, Ink.Rose.colour)
     MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour, WIDTH_LINE_OBJECT)
+    MESHES.addDisc(
+      ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
+      1.0, Ink.Olive.colour,
+    )
+    MESHES.addDome(ORIGIN, 5.0, Ink.Cobalt.colour)
     MESHES.clearMeshes
-    for primitive in Primitive:
-      check MESHES[primitive].count_vertices == 0
+    check MESHES.points.count_vertices == 0
+    check MESHES.ribbons.count == 0
+    check MESHES.discs.count == 0
+    check MESHES.domes.count == 0
+    check MESHES.washes.count == 0
 
 
   test "point becomes one marker where it stands":
     for i in 0 ..< SAMPLES:
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, POINTS[i], Ink.Rose.colour, SCALE_TEST) == Placement.Finite
-      check MESHES[Primitive.Point].count_vertices == 1
+      check MESHES.points.count_vertices == 1
       check 6*MESHES.ribbons.count == 0
-      check isNear(MESHES[Primitive.Point].vertices[0].toPosition, PLACES[i])
+      check isNear(MESHES.points.vertices[0].toPosition, PLACES[i])
 
 
   test "line becomes two segments, each running from support to a vanishing point":
@@ -884,7 +892,7 @@ suite "Mesh":
       check 6*MESHES.ribbons.count == 2*VERTICES_RIBBON
       # No point marker: a line's own segment already passes through its support, so
       #   marking that point again would only add a stray dot the segment does not need.
-      check MESHES[Primitive.Point].count_vertices == 0
+      check MESHES.points.count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
       check anchor.isSome and axis.isSome
       let
@@ -957,7 +965,7 @@ suite "Mesh":
       let attitude = ⊖ line
       MESHES.clearMeshes
       discard MESHES.addObject(SCRATCH, attitude, Ink.Cobalt.colour, SCALE_TEST)
-      let star = MESHES[Primitive.Point].vertices[0].toPosition
+      let star = MESHES.points.vertices[0].toPosition
 
       MESHES.clearMeshes
       discard MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST)
@@ -976,22 +984,27 @@ suite "Mesh":
     for plane in PLANES:
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
-      const
-        VERTICES_FILL = 3*SEGMENTS_CIRCLE_HORIZON ## Fan: centre, two rim points each.
-        RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
-      check MESHES[Primitive.Triangle].count_vertices == VERTICES_FILL
+      const RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
+      # One disc record in one wash run: the fan itself is the shader's now, and
+      #   `expandDiscVertex` -- its reference -- is what its corners are read through.
+      check MESHES.discs.count == 1
+      check MESHES.washes.count == 1
       # The rim and nothing else. A plane used to add one ribbon more for a normal shaft
       #   out of its anchor; orientation now rides on the selection marker's own pulse,
       #   so an unselected plane draws no such thing.
       check 6*MESHES.ribbons.count == VERTICES_RIBBON*RIBBONS_RING
       # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
       #   plane never adds a scattered dot beyond what the fill and rim already draw.
-      check MESHES[Primitive.Point].count_vertices == 0
+      check MESHES.points.count_vertices == 0
       # Vertex lies on plane exactly when its offset from support is normal to the normal.
       let (anchor, normal) = (positionAnchor(plane), directionNormal(plane))
       check anchor.isSome and normal.isSome
-      for i in 0 ..< VERTICES_FILL:
-        let vertex = MESHES[Primitive.Triangle].vertices[i]
+      let corners_disc = discCorners()
+      for i in 0 ..< 3*SEGMENTS_CIRCLE_HORIZON:
+        let vertex = expandDiscVertex(
+          MESHES.discs.records[0],
+          float(corners_disc[2*i]), float(corners_disc[2*i + 1]),
+        )
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
         check isNear(float(vertex.alpha), ALPHA_WASH)
         # Every fill vertex is either the fan's own centre or out at the plane's own
@@ -1038,6 +1051,13 @@ suite "Mesh":
         arm_second = radius*axes.get.axis_second
         arm_first_point = wedge(radius, toMultivector(axes.get.axis_first))
         arm_second_point = wedge(radius, toMultivector(axes.get.axis_second))
+      # The record's own expansion beside the plain stepping: `expandDiscVertex` is the
+      #   reference both disc-fill vertex shaders are held to, so it too must land on the
+      #   multivector sums, corner for corner, through the record's narrowed floats.
+      MESHES.clearMeshes
+      MESHES.addDisc(
+        anchor.get, axes.get.axis_first, axes.get.axis_second, radius, Ink.Olive.colour
+      )
       for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
         let
           angle = (2.0*PI * float(i)) / float(SEGMENTS_CIRCLE_HORIZON)
@@ -1045,7 +1065,9 @@ suite "Mesh":
           assembled = pointFrom(add(centre_point, add(
             wedge(cos(angle), arm_first_point), wedge(sin(angle), arm_second_point),
           )))
+          expanded = expandDiscVertex(MESHES.discs.records[0], cos(angle), sin(angle))
         check stepped =~ assembled
+        check isNear(expanded.toPosition, assembled)
 
 
   test "point at horizon becomes a star fixed at eye plus its own direction":
@@ -1053,10 +1075,10 @@ suite "Mesh":
       MESHES.clearMeshes
       let attitude = ⊖ line
       check MESHES.addObject(SCRATCH, attitude, Ink.Cobalt.colour, SCALE_TEST) == Placement.Horizon
-      check MESHES[Primitive.Point].count_vertices == 1
+      check MESHES.points.count_vertices == 1
       let
         heading = directionHorizon(attitude)
-        star = MESHES[Primitive.Point].vertices[0].toPosition
+        star = MESHES.points.vertices[0].toPosition
       check heading.isSome
       check isNear(star, SCALE_TEST.eye + SCALE_TEST.radius_horizon*heading.get)
 
@@ -1126,34 +1148,49 @@ suite "Mesh":
 
     check MESHES.addObject(SCRATCH, attitude_first, Ink.Cobalt.colour, SCALE_TEST) ==
       Placement.Horizon
-    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
-    let vertices_first = MESHES[Primitive.Triangle].vertices
-    for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
-      let offset = vertices_first[i].toPosition - SCALE_TEST.eye
+    # One dome record in one wash run: the sphere itself is static geometry the shader
+    #   widens, and `expandDomeVertex` -- its reference -- is what its corners are read
+    #   through.
+    check MESHES.domes.count == 1
+    check MESHES.washes.count == 1
+    let
+      record_first = MESHES.domes.records[0]
+      corners_dome = domeCorners()
+    for i in 0 ..< 6*LATITUDES_HORIZON*LONGITUDES_HORIZON:
+      let unit = Direction(
+        x: float(corners_dome[3*i]), y: float(corners_dome[3*i + 1]),
+        z: float(corners_dome[3*i + 2]),
+      )
+      let offset = expandDomeVertex(record_first, unit).toPosition - SCALE_TEST.eye
       check isNear(norm(offset), SCALE_TEST.radius_horizon)
 
     MESHES.clearMeshes
     check MESHES.addObject(SCRATCH, attitude_second, Ink.Cobalt.colour, SCALE_TEST) ==
       Placement.Horizon
-    check MESHES[Primitive.Triangle].count_vertices == 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
-    # Same dome, vertex for vertex, regardless of which unrelated volume produced it.
-    for i in 0 ..< MESHES[Primitive.Triangle].count_vertices:
-      check isNear(MESHES[Primitive.Triangle].vertices[i].toPosition, vertices_first[i].toPosition)
+    check MESHES.domes.count == 1
+    # Same dome, field for field, regardless of which unrelated volume produced it.
+    let record_second = MESHES.domes.records[0]
+    check isNear(float(record_second.centre_x), float(record_first.centre_x))
+    check isNear(float(record_second.centre_y), float(record_first.centre_y))
+    check isNear(float(record_second.centre_z), float(record_first.centre_z))
+    check isNear(float(record_second.radius), float(record_first.radius))
 
 
   test "multivector of no geometry becomes nothing at all":
     for empty in [1.0 ∧ initElement(Basis.scalar), 1.0 + POINTS[0]]:
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, empty, Ink.Rose.colour, SCALE_TEST) == Placement.Empty
-      for primitive in Primitive:
-        check MESHES[primitive].count_vertices == 0
+      check MESHES.points.count_vertices == 0
+      check MESHES.ribbons.count == 0
+      check MESHES.discs.count == 0
+      check MESHES.domes.count == 0
 
 
-  test "a scene filled with planes fits the vertex bound a ribbon mesh reserves":
-    # The binding case for `VERTICES_MAX`, and the reason it was tripled: a plane draws
-    #   the most ribbons of any object, and `addVertex` asserts rather than overflowing.
-    #   Built rather than calculated, so the bound is checked against what is actually
-    #   emitted rather than against arithmetic that could drift from it.
+  test "a scene filled with planes fits the bounds the record meshes reserve":
+    # The binding case for `RIBBONS_MAX` and `DISCS_MAX`: a plane draws the most ribbons
+    #   of any object and one disc besides, and every record append asserts rather than
+    #   overflowing. Built rather than calculated, so the bounds are checked against what
+    #   is actually emitted rather than against arithmetic that could drift from it.
     MESHES.clearMeshes
     var built = 0
     for i in 0 ..< ITEMS_MAX:
@@ -1165,8 +1202,9 @@ suite "Mesh":
       if MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite:
         inc built
     check built == ITEMS_MAX
-    check 6*MESHES.ribbons.count <= VERTICES_MAX
-    check MESHES[Primitive.Triangle].count_vertices <= VERTICES_MAX
+    check MESHES.ribbons.count <= RIBBONS_MAX
+    check MESHES.discs.count <= DISCS_MAX
+    check MESHES.washes.count <= len(MESHES.washes.runs)
 
 
   func scaleFurnitureAt(eye: Position; extent: float): DrawExtent =
@@ -1415,8 +1453,8 @@ suite "Mesh":
       let scale_afar = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
       MESHES.clearMeshes
       MESHES.addGrid(SCRATCH, extent, scale_afar)
-      check 6*MESHES.ribbons.count > 0
-      check 6*MESHES.ribbons.count <= VERTICES_MAX
+      check MESHES.ribbons.count > 0
+      check MESHES.ribbons.count <= RIBBONS_MAX
       # Laid on world multiples of the cell this reach asked for, so the lattice is still
       #   the world's rather than one dragged along under the camera.
       let
@@ -4868,25 +4906,52 @@ suite "Interaction":
     )))
     var meshes: MeshSet
     clearMeshes(meshes)
-    for primitive in Primitive: check meshes[primitive].index_overlay.isNone
+    check meshes.points.index_overlay.isNone
+    check meshes.ribbons.index_overlay.isNone
+    check meshes.washes.index_overlay.isNone
     discard meshes.addObject(SCRATCH, GENERAL_POINTS[0], Ink.Rose.colour, scale)
-    let count_under = meshes[Primitive.Point].count_vertices
+    let count_under = meshes.points.count_vertices
     check count_under > 0
-    check meshes[Primitive.Point].index_overlay.isNone
+    check meshes.points.index_overlay.isNone
 
     markOverlay(meshes)
     discard meshes.addObject(SCRATCH, GENERAL_POINTS[1], Ink.Jade.colour, scale)
-    check meshes[Primitive.Point].index_overlay == some(count_under)
-    check meshes[Primitive.Point].count_vertices > count_under
-    # A bucket nothing was added to after the mark still reports the mark, with an empty
+    check meshes.points.index_overlay == some(count_under)
+    check meshes.points.count_vertices > count_under
+    # A stream nothing was added to after the mark still reports the mark, with an empty
     #   overlay -- which is what makes "drawn over" a property of order rather than of
-    #   which primitive an object happens to tessellate into.
-    check meshes[Primitive.Triangle].index_overlay == some(0)
-    check meshes[Primitive.Triangle].count_vertices == 0
+    #   which stream an object happens to tessellate into.
+    check meshes.ribbons.index_overlay == some(0)
+    check meshes.ribbons.count == 0
+    check meshes.washes.index_overlay == some(0)
+    check meshes.washes.count == 0
+
+    # A wash run never straddles the mark: a disc laid on each side of it lands in two
+    #   runs of one record, and only the second is the overlay's.
+    meshes.addDisc(
+      ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
+      1.0, Ink.Olive.colour,
+    )
+    check meshes.washes.count == 1
+    clearMeshes(meshes)
+    meshes.addDisc(
+      ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
+      1.0, Ink.Olive.colour,
+    )
+    markOverlay(meshes)
+    meshes.addDisc(
+      ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
+      1.0, Ink.Jade.colour,
+    )
+    check meshes.washes.count == 2
+    check meshes.washes.index_overlay == some(1)
+    check meshes.washes.runs[0].count == 1 and meshes.washes.runs[1].count == 1
 
     # And clearing forgets it, so one frame's selection cannot outlive its own frame.
     clearMeshes(meshes)
-    for primitive in Primitive: check meshes[primitive].index_overlay.isNone
+    check meshes.points.index_overlay.isNone
+    check meshes.ribbons.index_overlay.isNone
+    check meshes.washes.index_overlay.isNone
 
 
   test "a mouse never waits: left decides, right asks, middle starts nothing":

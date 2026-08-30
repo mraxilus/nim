@@ -193,12 +193,13 @@ const
     ## either arena was carved to serve.
   BYTES_MEMORY_TOTAL* =
     CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME + 2*CAPACITY_ARENA_SWAP +
-    sizeof(MeshSet) + sizeof(Scene) + sizeof(Panel) + FRAMES_TIMING_MAX*sizeof(float32)
+    2*sizeof(MeshSet) + sizeof(Scene) + sizeof(Panel) + FRAMES_TIMING_MAX*sizeof(float32)
     ## Sum of every fixed-size reservation this binary makes for itself: both arenas at
     ## their full capacity, committed in the data segment regardless of use; tessellation
-    ## storage; the object pool; the panel's own state, frame-time ring buffer included;
-    ## and the `--timings` benchmark buffer. Excludes anything Dear ImGui, SDL, or the
-    ## graphics driver allocate on their own account, which this process cannot see.
+    ## storage for the scene set and the furniture set both; the object pool; the panel's
+    ## own state, frame-time ring buffer included; and the `--timings` benchmark buffer.
+    ## Excludes anything Dear ImGui, SDL, or the graphics driver allocate on their own
+    ## account, which this process cannot see.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
@@ -382,9 +383,9 @@ proc assembleMeshes(
       MESHES_FURNITURE.addAxes(scratch[0], scale.extent_furniture, scale)
 
   MESHES.clearMeshes
-  # A horizon plane's own dome first, before anything else that might share its own
-  #   translucent `Primitive.Triangle` bucket: that bucket draws in whatever order its
-  #   vertices were appended, unsorted by depth, so inserting the dome first guarantees
+  # A horizon plane's own dome first, before anything else that might share the
+  #   translucent wash pass: the wash runs draw in the order the records were appended,
+  #   unsorted by depth, so inserting the dome first guarantees
   #   every ordinary plane's own fill -- however near or far, whichever scene slot it
   #   occupies -- blends over it rather than risking the reverse should scene order
   #   alone have put the dome's own vertices later. Without this, a nearby plane could
@@ -462,13 +463,13 @@ proc assembleMeshes(
     )
 
   panel.microseconds_tessellate = float(getMonoTime().ticks - ticks_start) / 1000.0
-  panel.count_vertices = 0
-  for primitive in Primitive:
-    panel.count_vertices += MESHES[primitive].count_vertices +
-      MESHES_FURNITURE[primitive].count_vertices
-  # Six per record: what the ribbon shader will emit, which is what the figure has always
-  #   meant -- vertices drawn, not floats carried.
-  panel.count_vertices += 6*(MESHES.ribbons.count + MESHES_FURNITURE.ribbons.count)
+  # Per record, what its shader will emit: what the figure has always meant -- vertices
+  #   drawn, not floats carried. Six per ribbon, a whole fan per disc, a sphere per dome.
+  panel.count_vertices =
+    MESHES.points.count_vertices + MESHES_FURNITURE.points.count_vertices +
+    6*(MESHES.ribbons.count + MESHES_FURNITURE.ribbons.count) +
+    3*SEGMENTS_CIRCLE_HORIZON*(MESHES.discs.count + MESHES_FURNITURE.discs.count) +
+    6*LATITUDES_HORIZON*LONGITUDES_HORIZON*(MESHES.domes.count + MESHES_FURNITURE.domes.count)
 
 
 proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
@@ -1832,6 +1833,11 @@ proc runStoryboard(
       ## seeds-only frame captured below before any step has a rolling window to dim.
 
   template renderAt(now: float): (int, int) =
+    # The frame pair turns over here exactly as the interactive loop turns it at the top
+    #   of every frame: each render below carves its own `DrawScratch` from the pair, and
+    #   a capture run that never swapped stacked one scratch per sub-frame until the
+    #   fifth overflowed the arena -- which is how this line's absence was found.
+    ARENA_SWAP.swap()
     renderFrame(window, renderer, panel, scene, camera, interaction_disabled, now, are_dimmed)
 
   template captureGif(now: float) =

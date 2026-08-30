@@ -1,8 +1,9 @@
 ## Own OpenGL resources, and draw meshes through them.
 ##
-## One program serves every primitive: vertices carry their own colour, and only transform
-## from world to clip space is uniform.
-##   Keeps state changes per frame to three buffer uploads and three draw calls.
+## One program per record kind, and a plain one for points: each record type in `mesh`
+## has a vertex shader here that widens it over static corner geometry (see each
+## `SOURCE_VERTEX_*`'s own doc comment and the reference proc it names), so the CPU
+## hands over compact records and no per-frame expansion.
 ##
 ## Buffers are reuploaded whole each frame rather than tracked for changes.
 ##   Scene holds tens of objects, so upload is thousands of bytes, far below any budget.
@@ -129,20 +130,65 @@ const CORNERS_RIBBON: array[12, float32] = [
 ] ## The six (end, side) corners of one ribbon instance, in `expandRibbon`'s own winding.
 
 
+const SOURCE_VERTEX_DISC = """
+#version 330 core
+layout (location = 0) in vec2 in_corner;
+layout (location = 1) in vec3 in_centre;
+layout (location = 2) in vec3 in_arm_first;
+layout (location = 3) in vec3 in_arm_second;
+layout (location = 4) in vec4 in_fill;
+uniform mat4 view_projection;
+out vec4 vertex_colour;
+void main() {
+  vec3 at = in_centre + in_corner.x*in_arm_first + in_corner.y*in_arm_second;
+  gl_Position = view_projection*vec4(at, 1.0);
+  vertex_colour = in_fill;
+}
+""" ## Fan one disc record over the static corner buffer, on the GPU.
+  ##   **A sibling copy of `mesh.expandDiscVertex`, the reference the suite pins, and of
+  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
+  ## until the other two are checked.** Each corner is the centre plus the two
+  ## radius-scaled arms weighted by its own cosine and sine, with `(0, 0)` landing the
+  ## centre corner on the centre exactly.
+
+
+const SOURCE_VERTEX_DOME = """
+#version 330 core
+layout (location = 0) in vec3 in_unit;
+layout (location = 1) in vec4 in_centre_radius;
+layout (location = 2) in vec4 in_tint;
+uniform mat4 view_projection;
+out vec4 vertex_colour;
+void main() {
+  vec3 at = in_centre_radius.xyz + in_centre_radius.w*in_unit;
+  gl_Position = view_projection*vec4(at, 1.0);
+  vertex_colour = in_tint;
+}
+""" ## Widen one dome record over the static unit sphere, on the GPU.
+  ##   **A sibling copy of `mesh.expandDomeVertex`**, under the same three-way rule as
+  ## the disc source above: the centre plus the unit direction scaled by the radius.
+
+
+const
+  COUNT_CORNERS_DISC = 3*SEGMENTS_CIRCLE_HORIZON
+    ## How many corners the disc fan's static buffer holds; `mesh.discCorners` emits
+    ## exactly this many `(cos, sin)` pairs.
+  COUNT_CORNERS_DOME = 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
+    ## How many corners the dome's static buffer holds; `mesh.domeCorners` emits exactly
+    ## this many unit directions.
+
+
 
 #[ Type Definitions ]#
 
 type
-  Buffers = object ## Hold vertex array and buffer backing one primitive kind.
-    array_object: gl.Uint
-    buffer: gl.Uint
-
   Renderer* = object ## Hold every OpenGL name visualiser allocates.
     program: gl.Uint
     location_view_projection: gl.Int
     location_size_point: gl.Int
     location_as_point: gl.Int
-    buffers: array[Primitive, Buffers]
+    array_points: gl.Uint
+    buffer_points: gl.Uint
     program_ribbon: gl.Uint
     location_ribbon_view_projection: gl.Int
     location_ribbon_eye: gl.Int
@@ -153,13 +199,16 @@ type
     array_ribbon: gl.Uint
     buffer_ribbon_corners: gl.Uint
     buffer_ribbon_records: gl.Uint
-
-
-const lut_primitive_to_mode: array[Primitive, gl.Enum] = [
-  Primitive.Triangle: gl.TRIANGLES,
-  Primitive.Point: gl.POINTS,
-] ## Map primitive kind to OpenGL's own mode enumerant. Ribbons are not here: they draw
-  ## as instanced triangles through their own program; see `SOURCE_VERTEX_RIBBON`.
+    program_disc: gl.Uint
+    location_disc_view_projection: gl.Int
+    array_disc: gl.Uint
+    buffer_disc_corners: gl.Uint
+    buffer_disc_records: gl.Uint
+    program_dome: gl.Uint
+    location_dome_view_projection: gl.Int
+    array_dome: gl.Uint
+    buffer_dome_corners: gl.Uint
+    buffer_dome_records: gl.Uint
 
 
 
@@ -206,7 +255,8 @@ proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
 #[ Renderer Lifetime ]#
 
 proc initRenderer*(): Renderer =
-  ## Build program and one vertex buffer per primitive kind.
+  ## Build every program, the point vertex buffer, and each record kind's instanced
+  ## vertex array with its static corner geometry.
   ##   OpenGL context must already be current, as every call below needs it.
   result.program = linkProgram(SOURCE_VERTEX, SOURCE_FRAGMENT)
   result.location_view_projection =
@@ -217,17 +267,16 @@ proc initRenderer*(): Renderer =
   const
     STRIDE = gl.Sizei(sizeof(Vertex))
     OFFSET_COLOUR = 3*sizeof(float32)
-  for primitive in Primitive:
-    gl.genVertexArrays(1, addr result.buffers[primitive].array_object)
-    gl.genBuffers(1, addr result.buffers[primitive].buffer)
-    gl.bindVertexArray(result.buffers[primitive].array_object)
-    gl.bindBuffer(gl.ARRAY_BUFFER, result.buffers[primitive].buffer)
-    gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 3, gl.FLOAT_TYPE, gl.FALSE, STRIDE, cast[pointer](0))
-    gl.enableVertexAttribArray(1)
-    gl.vertexAttribPointer(
-      1, 4, gl.FLOAT_TYPE, gl.FALSE, STRIDE, cast[pointer](OFFSET_COLOUR)
-    )
+  gl.genVertexArrays(1, addr result.array_points)
+  gl.genBuffers(1, addr result.buffer_points)
+  gl.bindVertexArray(result.array_points)
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_points)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT_TYPE, gl.FALSE, STRIDE, cast[pointer](0))
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(
+    1, 4, gl.FLOAT_TYPE, gl.FALSE, STRIDE, cast[pointer](OFFSET_COLOUR)
+  )
   gl.bindVertexArray(0)
 
   result.program_ribbon = linkProgram(SOURCE_VERTEX_RIBBON, SOURCE_FRAGMENT)
@@ -271,6 +320,72 @@ proc initRenderer*(): Renderer =
     gl.vertexAttribDivisor(index, 1)
   gl.bindVertexArray(0)
 
+  # The two wash programs, each with its static corner geometry from mesh.nim's own
+  #   generators -- the same one source `glue.js` uploads through `nimDiscCorners` --
+  #   and one record buffer of divisor-one instance attributes beside it.
+  result.program_disc = linkProgram(SOURCE_VERTEX_DISC, SOURCE_FRAGMENT)
+  result.location_disc_view_projection =
+    gl.getUniformLocation(result.program_disc, "view_projection")
+  gl.useProgram(result.program_disc)
+  gl.uniform1f(gl.getUniformLocation(result.program_disc, "as_point"), 0.0)
+  gl.genVertexArrays(1, addr result.array_disc)
+  gl.genBuffers(1, addr result.buffer_disc_corners)
+  gl.genBuffers(1, addr result.buffer_disc_records)
+  gl.bindVertexArray(result.array_disc)
+  let corners_disc = discCorners()
+  doAssert len(corners_disc) == 2*COUNT_CORNERS_DISC,
+    &"Disc corner buffer holds {len(corners_disc)} floats, not {2*COUNT_CORNERS_DISC}."
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_disc_corners)
+  gl.bufferData(
+    gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_disc)*sizeof(float32)),
+    unsafeAddr corners_disc[0], gl.STATIC_DRAW,
+  )
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 2, gl.FLOAT_TYPE, gl.FALSE, gl.Sizei(2*sizeof(float32)),
+    cast[pointer](0))
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_disc_records)
+  const STRIDE_DISC = gl.Sizei(sizeof(DiscRecord))
+  # (attribute, floats, float offset) for each of the record's four views.
+  for (index, floats, offset) in [
+    (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(3), 6),
+    (gl.Uint(4), gl.Int(4), 9),
+  ]:
+    gl.enableVertexAttribArray(index)
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_DISC,
+      cast[pointer](offset*sizeof(float32)))
+    gl.vertexAttribDivisor(index, 1)
+  gl.bindVertexArray(0)
+
+  result.program_dome = linkProgram(SOURCE_VERTEX_DOME, SOURCE_FRAGMENT)
+  result.location_dome_view_projection =
+    gl.getUniformLocation(result.program_dome, "view_projection")
+  gl.useProgram(result.program_dome)
+  gl.uniform1f(gl.getUniformLocation(result.program_dome, "as_point"), 0.0)
+  gl.genVertexArrays(1, addr result.array_dome)
+  gl.genBuffers(1, addr result.buffer_dome_corners)
+  gl.genBuffers(1, addr result.buffer_dome_records)
+  gl.bindVertexArray(result.array_dome)
+  let corners_dome = domeCorners()
+  doAssert len(corners_dome) == 3*COUNT_CORNERS_DOME,
+    &"Dome corner buffer holds {len(corners_dome)} floats, not {3*COUNT_CORNERS_DOME}."
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_dome_corners)
+  gl.bufferData(
+    gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_dome)*sizeof(float32)),
+    unsafeAddr corners_dome[0], gl.STATIC_DRAW,
+  )
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT_TYPE, gl.FALSE, gl.Sizei(3*sizeof(float32)),
+    cast[pointer](0))
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_dome_records)
+  const STRIDE_DOME = gl.Sizei(sizeof(DomeRecord))
+  # (attribute, floats, float offset) for the record's two views.
+  for (index, floats, offset) in [(gl.Uint(1), gl.Int(4), 0), (gl.Uint(2), gl.Int(4), 4)]:
+    gl.enableVertexAttribArray(index)
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_DOME,
+      cast[pointer](offset*sizeof(float32)))
+    gl.vertexAttribDivisor(index, 1)
+  gl.bindVertexArray(0)
+
   gl.enable(gl.DEPTH_TEST)
   gl.depthFunc(gl.LESS)
   gl.enable(gl.BLEND)
@@ -297,19 +412,19 @@ proc clearFrame*(width, height: int) =
   gl.clear(gl.COLOR_BUFFER_BIT or gl.DEPTH_BUFFER_BIT)
 
 
-proc uploadPrimitive(renderer: Renderer; meshes: MeshSet; primitive: Primitive) =
-  ## Hand one mesh's vertices to the driver whole, ready to be drawn as one run or two.
+proc uploadPoints(renderer: Renderer; meshes: MeshSet) =
+  ## Hand the point vertices to the driver whole, ready to be drawn as one run or two.
   ##   Separate from drawing because the two runs are issued in different *passes* rather
   ##   than back to back -- see `drawMeshes` -- and a mesh uploaded twice a frame would be
   ##   the one real cost of that split.
-  let count = meshes[primitive].count_vertices
+  let count = meshes.points.count_vertices
   if count == 0: return
-  gl.bindVertexArray(renderer.buffers[primitive].array_object)
-  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffers[primitive].buffer)
+  gl.bindVertexArray(renderer.array_points)
+  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_points)
   gl.bufferData(
     gl.ARRAY_BUFFER,
     gl.Sizeiptr(count*sizeof(Vertex)),
-    unsafeAddr meshes[primitive].vertices[0],
+    unsafeAddr meshes.points.vertices[0],
     gl.DYNAMIC_DRAW,
   )
 
@@ -324,6 +439,26 @@ proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
     unsafeAddr meshes.ribbons.records[0],
     gl.DYNAMIC_DRAW,
   )
+
+
+proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
+  ## Hand this frame's disc and dome records to the driver whole; the shaders fan them.
+  if meshes.discs.count > 0:
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_disc_records)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      gl.Sizeiptr(meshes.discs.count*sizeof(DiscRecord)),
+      unsafeAddr meshes.discs.records[0],
+      gl.DYNAMIC_DRAW,
+    )
+  if meshes.domes.count > 0:
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_dome_records)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      gl.Sizeiptr(meshes.domes.count*sizeof(DomeRecord)),
+      unsafeAddr meshes.domes.records[0],
+      gl.DYNAMIC_DRAW,
+    )
 
 
 func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: int] =
@@ -365,22 +500,70 @@ func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
   else: (first: 0, count: split)
 
 
-proc drawRun(renderer: Renderer; meshes: MeshSet; primitive: Primitive; is_overlay: bool) =
-  ## Draw one run of one already-uploaded mesh, skipping an empty one.
-  let run = runOf(meshes[primitive], is_overlay)
+proc drawPointRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+  ## Draw one run of the already-uploaded point mesh, skipping an empty one.
+  let run = runOf(meshes.points, is_overlay)
   if run.count == 0: return
-  # Tell fragment stage whether it is shading point sprites, which are rounded off.
-  gl.uniform1f(renderer.location_as_point, if primitive == Primitive.Point: 1.0 else: 0.0)
-  gl.bindVertexArray(renderer.buffers[primitive].array_object)
-  gl.drawArrays(lut_primitive_to_mode[primitive], gl.Int(run.first), gl.Sizei(run.count))
+  # Tell fragment stage it is shading point sprites, which are rounded off.
+  gl.uniform1f(renderer.location_as_point, 1.0)
+  gl.bindVertexArray(renderer.array_points)
+  gl.drawArrays(gl.POINTS, gl.Int(run.first), gl.Sizei(run.count))
+
+
+func runsOfWashes(washes: WashRuns; is_overlay: bool): tuple[begin, until: int] =
+  ## Say which stretch of the wash runs belongs to which pass -- `runOf`'s rule, at run
+  ## grain: runs before the overlay index are the depth-tested pass, the rest land over
+  ## it. A run never straddles the mark; see `mesh.WashRuns`.
+  let split =
+    if washes.index_overlay.isSome: clamp(washes.index_overlay.get, 0, washes.count)
+    else: washes.count
+  if is_overlay: (begin: split, until: washes.count)
+  else: (begin: 0, until: split)
+
+
+proc drawWashRuns(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+  ## Walk one pass's stretch of the wash draw order, drawing each run through its own
+  ## kind's program so two washes still blend in the order the scene emitted them.
+  ##   GL 3.3 has no base instance, so a run that does not start at the first record
+  ##   re-points its instance attributes at its own first byte, exactly as
+  ##   `drawRibbonRun` does. Mirrors `glue.js`'s own `drawWashRuns`.
+  let (begin, until) = runsOfWashes(meshes.washes, is_overlay)
+  for i in begin ..< until:
+    let run = meshes.washes.runs[i]
+    case run.kind
+    of WashKind.Disc:
+      gl.useProgram(renderer.program_disc)
+      gl.bindVertexArray(renderer.array_disc)
+      gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_disc_records)
+      const STRIDE_DISC = gl.Sizei(sizeof(DiscRecord))
+      for (index, floats, offset) in [
+        (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3),
+        (gl.Uint(3), gl.Int(3), 6), (gl.Uint(4), gl.Int(4), 9),
+      ]:
+        gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_DISC,
+          cast[pointer]((int(run.first)*sizeof(DiscRecord)) + offset*sizeof(float32)))
+      gl.drawArraysInstanced(
+        gl.TRIANGLES, 0, gl.Sizei(COUNT_CORNERS_DISC), gl.Sizei(run.count)
+      )
+    of WashKind.Dome:
+      gl.useProgram(renderer.program_dome)
+      gl.bindVertexArray(renderer.array_dome)
+      gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_dome_records)
+      const STRIDE_DOME = gl.Sizei(sizeof(DomeRecord))
+      for (index, floats, offset) in [(gl.Uint(1), gl.Int(4), 0), (gl.Uint(2), gl.Int(4), 4)]:
+        gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_DOME,
+          cast[pointer]((int(run.first)*sizeof(DomeRecord)) + offset*sizeof(float32)))
+      gl.drawArraysInstanced(
+        gl.TRIANGLES, 0, gl.Sizei(COUNT_CORNERS_DOME), gl.Sizei(run.count)
+      )
 
 
 func hasOverlay(meshes: MeshSet): bool =
   ## Report whether anything in this set asked to be drawn over the rest of it.
   if runOfRibbons(meshes.ribbons, is_overlay = true).count > 0: return true
-  for primitive in Primitive:
-    if runOf(meshes[primitive], is_overlay = true).count > 0: return true
-  false
+  if runOf(meshes.points, is_overlay = true).count > 0: return true
+  let (begin, until) = runsOfWashes(meshes.washes, is_overlay = true)
+  until > begin
 
 
 proc drawMeshes*(
@@ -414,17 +597,29 @@ proc drawMeshes*(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
   gl.uniform1f(renderer.location_size_point, SIZE_POINT)
-  for primitive in Primitive: renderer.uploadPrimitive(meshes, primitive)
+  renderer.uploadPoints(meshes)
+
+  # Both wash programs get this frame's matrix before the run walk, which switches
+  #   between them per run.
+  gl.useProgram(renderer.program_disc)
+  gl.uniformMatrix4fv(
+    renderer.location_disc_view_projection, 1, gl.FALSE, view_projection.elementsAddress
+  )
+  gl.useProgram(renderer.program_dome)
+  gl.uniformMatrix4fv(
+    renderer.location_dome_view_projection, 1, gl.FALSE, view_projection.elementsAddress
+  )
+  renderer.uploadWashes(meshes)
 
   # Draw opaque kinds first, so they own depth buffer.
   gl.useProgram(renderer.program_ribbon)
   renderer.drawRibbonRun(meshes, is_overlay = false)
   gl.useProgram(renderer.program)
-  renderer.drawRun(meshes, Primitive.Point, is_overlay = false)
+  renderer.drawPointRun(meshes, is_overlay = false)
 
   # Draw washes without writing depth, so objects stay visible through them.
   gl.depthMask(gl.FALSE)
-  renderer.drawRun(meshes, Primitive.Triangle, is_overlay = false)
+  renderer.drawWashRuns(meshes, is_overlay = false)
   gl.depthMask(gl.TRUE)
 
   # And the overlay over all of it, with no depth test at all -- which turns writes off
@@ -435,8 +630,8 @@ proc drawMeshes*(
     gl.useProgram(renderer.program_ribbon)
     renderer.drawRibbonRun(meshes, is_overlay = true)
     gl.useProgram(renderer.program)
-    renderer.drawRun(meshes, Primitive.Point, is_overlay = true)
-    renderer.drawRun(meshes, Primitive.Triangle, is_overlay = true)
+    renderer.drawPointRun(meshes, is_overlay = true)
+    renderer.drawWashRuns(meshes, is_overlay = true)
     gl.enable(gl.DEPTH_TEST)
   gl.bindVertexArray(0)
 

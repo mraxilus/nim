@@ -163,12 +163,90 @@ gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ribbon_corners);
 gl.bufferData(gl.ARRAY_BUFFER,
   new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]), gl.STATIC_DRAW);
 
+// A sibling copy of `mesh.expandDiscVertex` -- the reference the suite pins -- and of the
+// GLSL 3.30 source in `renderer.nim`; a change to any one of the three is not finished
+// until the other two are checked. Fans one 13-float disc record over the static corner
+// buffer: each corner is the centre plus the two radius-scaled arms weighted by its own
+// cosine and sine, with `(0, 0)` landing the centre corner on the centre exactly.
+const SOURCE_VERTEX_DISC = `
+  attribute vec2 aCorner;
+  attribute vec3 aCentre;
+  attribute vec3 aArmFirst;
+  attribute vec3 aArmSecond;
+  attribute vec4 aFill;
+  uniform mat4 uMVP;
+  varying vec4 vColor;
+  void main() {
+    vec3 at = aCentre + aCorner.x*aArmFirst + aCorner.y*aArmSecond;
+    gl_Position = uMVP*vec4(at, 1.0);
+    vColor = aFill;
+  }
+`;
+// A sibling copy of `mesh.expandDomeVertex`, under the same three-way rule: each corner
+// is the centre plus its own unit direction scaled by the radius.
+const SOURCE_VERTEX_DOME = `
+  attribute vec3 aUnit;
+  attribute vec4 aCentreRadius;
+  attribute vec4 aTint;
+  uniform mat4 uMVP;
+  varying vec4 vColor;
+  void main() {
+    vec3 at = aCentreRadius.xyz + aCentreRadius.w*aUnit;
+    gl_Position = uMVP*vec4(at, 1.0);
+    vColor = aTint;
+  }
+`;
+function linkWashProgram(source_vertex) {
+  const handle = gl.createProgram();
+  gl.attachShader(handle, compileShader(gl.VERTEX_SHADER, source_vertex));
+  gl.attachShader(handle, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT));
+  gl.linkProgram(handle);
+  if (!gl.getProgramParameter(handle, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(handle));
+  }
+  // Shares the plain fragment stage, whose point-rounding is off unless asked.
+  gl.useProgram(handle);
+  gl.uniform1i(gl.getUniformLocation(handle, 'uRound'), 0);
+  return handle;
+}
+const program_disc = linkWashProgram(SOURCE_VERTEX_DISC);
+const program_dome = linkWashProgram(SOURCE_VERTEX_DOME);
+const disc_attribs = {
+  corner: gl.getAttribLocation(program_disc, 'aCorner'),
+  centre: gl.getAttribLocation(program_disc, 'aCentre'),
+  arm_first: gl.getAttribLocation(program_disc, 'aArmFirst'),
+  arm_second: gl.getAttribLocation(program_disc, 'aArmSecond'),
+  fill: gl.getAttribLocation(program_disc, 'aFill'),
+};
+const dome_attribs = {
+  unit: gl.getAttribLocation(program_dome, 'aUnit'),
+  centre_radius: gl.getAttribLocation(program_dome, 'aCentreRadius'),
+  tint: gl.getAttribLocation(program_dome, 'aTint'),
+};
+const uniform_disc_mvp = gl.getUniformLocation(program_disc, 'uMVP');
+const uniform_dome_mvp = gl.getUniformLocation(program_dome, 'uMVP');
+// The static corner geometry both wash shaders fan records over, read from mesh.nim's
+// own generators rather than a hand-copied table that could drift from the references.
+const CORNERS_DISC = new Float32Array(nimDiscCorners());
+const CORNERS_DOME = new Float32Array(nimDomeCorners());
+const COUNT_CORNERS_DISC = CORNERS_DISC.length / 2;
+const COUNT_CORNERS_DOME = CORNERS_DOME.length / 3;
+const buffer_disc_corners = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer_disc_corners);
+gl.bufferData(gl.ARRAY_BUFFER, CORNERS_DISC, gl.STATIC_DRAW);
+const buffer_dome_corners = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer_dome_corners);
+gl.bufferData(gl.ARRAY_BUFFER, CORNERS_DOME, gl.STATIC_DRAW);
+
 const vbo = {
-  tri: gl.createBuffer(), ribbon: gl.createBuffer(), point: gl.createBuffer(),
+  disc: gl.createBuffer(), dome: gl.createBuffer(),
+  ribbon: gl.createBuffer(), point: gl.createBuffer(),
   ribbon_furniture: gl.createBuffer(),
 };
 const STRIDE = 7 * 4;
 const STRIDE_RIBBON = 15 * 4;
+const STRIDE_DISC = 13 * 4;
+const STRIDE_DOME = 8 * 4;
 
 // How many furniture vertices its own buffer holds, carried between frames because the
 // bridge stops sending them once the camera is still; see `renderFrame`.
@@ -232,6 +310,62 @@ function drawRibbons(handle_buffer, count, count_over, is_overlay) {
     ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
     instanced.vertexAttribDivisorANGLE(attrib, 0);
     gl.disableVertexAttribArray(attrib);
+  }
+}
+
+// One instanced wash draw: `record_attribs` re-pointed at the run's first record (WebGL1
+// has no base instance), corner attrib from the static buffer, divisors reset after --
+// they are context state, and left at one they would corrupt the plain program's reads
+// of the same attribute indices. Shared by the disc and dome runs below.
+function drawWashInstances(
+  buffer_corners, floats_corner, count_corners, corner_attrib,
+  handle_records, stride, record_attribs, first, count
+) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer_corners);
+  gl.enableVertexAttribArray(corner_attrib);
+  gl.vertexAttribPointer(corner_attrib, floats_corner, gl.FLOAT, false,
+    floats_corner * 4, 0);
+  instanced.vertexAttribDivisorANGLE(corner_attrib, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, handle_records);
+  const base = first * stride;
+  for (const [attrib, floats, offset] of record_attribs) {
+    gl.enableVertexAttribArray(attrib);
+    gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, stride, base + offset);
+    instanced.vertexAttribDivisorANGLE(attrib, 1);
+  }
+  instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, count_corners, count);
+  for (const [attrib] of record_attribs) {
+    instanced.vertexAttribDivisorANGLE(attrib, 0);
+    gl.disableVertexAttribArray(attrib);
+  }
+}
+
+// Walk one pass's stretch of the wash draw order -- `wash_runs` is [kind, first, count]
+// per run, `count_runs_over` how many runs at the END are the overlay stretch -- drawing
+// each run through its own kind's program so two washes still blend in the order the
+// scene emitted them. Mirrors `renderer.drawWashRuns`.
+function drawWashRuns(wash_runs, count_runs_over, is_overlay) {
+  const count_runs = wash_runs.length / 3;
+  const split = count_runs - Math.min(count_runs_over || 0, count_runs);
+  const begin = is_overlay ? split : 0;
+  const end = is_overlay ? count_runs : split;
+  for (let i = begin; i < end; i += 1) {
+    const kind = wash_runs[3 * i], first = wash_runs[3 * i + 1];
+    const count = wash_runs[3 * i + 2];
+    if (kind === 0) {
+      gl.useProgram(program_disc);
+      drawWashInstances(buffer_disc_corners, 2, COUNT_CORNERS_DISC, disc_attribs.corner,
+        vbo.disc, STRIDE_DISC, [
+          [disc_attribs.centre, 3, 0], [disc_attribs.arm_first, 3, 12],
+          [disc_attribs.arm_second, 3, 24], [disc_attribs.fill, 4, 36],
+        ], first, count);
+    } else {
+      gl.useProgram(program_dome);
+      drawWashInstances(buffer_dome_corners, 3, COUNT_CORNERS_DOME, dome_attribs.unit,
+        vbo.dome, STRIDE_DOME, [
+          [dome_attribs.centre_radius, 4, 0], [dome_attribs.tint, 4, 16],
+        ], first, count);
+    }
   }
 }
 
@@ -3304,7 +3438,7 @@ function renderFrame(now_seconds) {
   }
   drawRibbons(vbo.ribbon_furniture, count_furniture_held, 0, false);
 
-  // Scene objects last; opaque kinds before plane washes (triangles), with depth writes
+  // Scene objects last; opaque kinds before the translucent washes, with depth writes
   // off for those, so a translucent plane never occludes a line or point that happens to
   // sit behind it -- it only tints over whatever was already drawn there. Mirrors
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
@@ -3314,23 +3448,31 @@ function renderFrame(now_seconds) {
   gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
   const count_point = uploadBuffer(data.point_verts, vbo.point, 7);
-  const count_tri = uploadBuffer(data.tri_verts, vbo.tri, 7);
   drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
+  // The washes: one record a disc or dome, fanned out by their own vertex shaders and
+  // walked in scene order through the run list. Both programs get this frame's matrix
+  // before the walk, which switches between them per run.
+  gl.useProgram(program_disc);
+  gl.uniformMatrix4fv(uniform_disc_mvp, false, data.view_projection);
+  gl.useProgram(program_dome);
+  gl.uniformMatrix4fv(uniform_dome_mvp, false, data.view_projection);
+  uploadBuffer(data.disc_records, vbo.disc, 13);
+  uploadBuffer(data.dome_records, vbo.dome, 8);
   gl.depthMask(false);
-  drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, false);
+  drawWashRuns(data.wash_runs, data.wash_run_over, false);
   gl.depthMask(true);
 
   // The overlay over all of it, with no depth test at all -- which turns writes off with
   // it, so nothing here occludes anything either. A second pass over every kind rather
   // than a tail on each: a selected line drawn only after the other lines is still tinted
   // by a plane's wash, which is a later kind. Mirrors `renderer.drawMeshes`.
-  if (data.ribbon_over + data.point_over + data.tri_over > 0) {
+  if (data.ribbon_over + data.point_over + data.wash_run_over > 0) {
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(program_ribbon);
     drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, true);
     gl.useProgram(program);
     drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, true);
-    drawRun(vbo.tri, count_tri, gl.TRIANGLES, false, data.tri_over, true);
+    drawWashRuns(data.wash_runs, data.wash_run_over, true);
     gl.enable(gl.DEPTH_TEST);
   }
   // Command submission only: GL runs asynchronously, so what a CPU clock can honestly

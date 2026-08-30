@@ -106,8 +106,8 @@ var
     ## backing storage) -- mirrors `visualiser.nim`'s own module-level
     ## `MESHES`/`MESHES_FURNITURE`. Declaring these as `nimBuildFrame`'s own locals
     ## instead, freshly on every call, was measured costing ~90ms/frame *regardless of
-    ## how many objects the scene actually held* -- a `MeshSet` reserves `VERTICES_MAX`
-    ## (16384) vertices per primitive up front, and the JS backend has no true stack
+    ## how many objects the scene actually held* -- a `MeshSet` reserves all its fixed
+    ## storage up front, and the JS backend has no true stack
     ## allocation the way re-declaring a fixed-size array inside a proc gets on the C
     ## backend: each call was reallocating and zero-filling ~1.3MB `MeshSet`s from
     ## scratch, whether the scene held nine objects or sixty-four. Fixed the same way
@@ -205,7 +205,8 @@ var
   #   the collector for data that lives exactly one frame. The consumer uploads or reads
   #   them within the same frame and holds nothing across two, which is what makes reuse
   #   sound; `setLen` on a sequence that has already grown adjusts length, not storage.
-  g_flat_tri, g_flat_ribbon, g_flat_point, g_flat_furniture: seq[float32]
+  g_flat_ribbon, g_flat_point, g_flat_furniture: seq[float32]
+  g_flat_disc, g_flat_dome, g_flat_runs: seq[float32]
   g_flat_view: seq[float32] = newSeq[float32](16)
 
 
@@ -231,6 +232,53 @@ proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var seq[float32]) =
     dest[15*i + 12] = r.head_green
     dest[15*i + 13] = r.head_blue
     dest[15*i + 14] = r.head_alpha
+
+
+proc flattenDiscsInto(discs: DiscMesh; dest: var seq[float32]) =
+  ## Interleave one frame's disc records for the instanced upload, thirteen floats each:
+  ## centre xyz, first arm xyz, second arm xyz, fill rgba -- `DiscRecord`'s own field
+  ## order, which the corner-and-divisor attribute setup in `glue.js` reads back apart.
+  dest.setLen(discs.count * 13)
+  for i in 0 ..< discs.count:
+    let r = discs.records[i]
+    dest[13*i + 0] = r.centre_x
+    dest[13*i + 1] = r.centre_y
+    dest[13*i + 2] = r.centre_z
+    dest[13*i + 3] = r.arm_first_x
+    dest[13*i + 4] = r.arm_first_y
+    dest[13*i + 5] = r.arm_first_z
+    dest[13*i + 6] = r.arm_second_x
+    dest[13*i + 7] = r.arm_second_y
+    dest[13*i + 8] = r.arm_second_z
+    dest[13*i + 9] = r.fill_red
+    dest[13*i + 10] = r.fill_green
+    dest[13*i + 11] = r.fill_blue
+    dest[13*i + 12] = r.fill_alpha
+
+
+proc flattenDomesInto(domes: DomeMesh; dest: var seq[float32]) =
+  ## Interleave one frame's dome records for the instanced upload, eight floats each:
+  ## centre xyz, radius, rgba -- `DomeRecord`'s own field order.
+  dest.setLen(domes.count * 8)
+  for i in 0 ..< domes.count:
+    let r = domes.records[i]
+    dest[8*i + 0] = r.centre_x
+    dest[8*i + 1] = r.centre_y
+    dest[8*i + 2] = r.centre_z
+    dest[8*i + 3] = r.radius
+    dest[8*i + 4] = r.red
+    dest[8*i + 5] = r.green
+    dest[8*i + 6] = r.blue
+    dest[8*i + 7] = r.alpha
+
+
+proc flattenWashRunsInto(washes: WashRuns; dest: var seq[float32]) =
+  ## Interleave the wash draw order, three floats a run: kind ordinal, first, count.
+  dest.setLen(washes.count * 3)
+  for i in 0 ..< washes.count:
+    dest[3*i + 0] = float32(ord(washes.runs[i].kind))
+    dest[3*i + 1] = float32(washes.runs[i].first)
+    dest[3*i + 2] = float32(washes.runs[i].count)
 
 
 proc flattenInto(mesh: Mesh; dest: var seq[float32]) =
@@ -663,6 +711,19 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
   ## own `gl.uniform1f`/`gl.lineWidth` calls draw at the same sizes the desktop build's
   ## `renderer.nim` does, without a hand-copied literal to drift out of sync with it.
   @[SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT]
+
+
+proc nimDiscCorners(): seq[float32] {.exportc.} =
+  ## Report the disc fan's static corner buffer, uploaded once at start-up -- built by
+  ## `mesh.discCorners`, the one source the desktop uploads from too, so the browser
+  ## carries no hand-copied table that could drift from `mesh.expandDiscVertex`.
+  discCorners()
+
+
+proc nimDomeCorners(): seq[float32] {.exportc.} =
+  ## Report the dome's static unit-sphere corner buffer, uploaded once at start-up; the
+  ## same one-source rule as `nimDiscCorners`, against `mesh.expandDomeVertex`.
+  domeCorners()
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
@@ -1652,7 +1713,15 @@ proc nimSceneAddRaw(
 type FrameData = object
   ## Hold one frame's worth of vertex data plus the transform it is drawn through --
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
-  tri_verts, ribbon_verts, point_verts: seq[float32]
+  ribbon_verts, point_verts: seq[float32]
+  disc_records: seq[float32] ## Thirteen floats a disc -- `mesh.DiscRecord`'s own field
+    ## order -- for the instanced fan draw; see that type for what the shader does.
+  dome_records: seq[float32] ## Eight floats a dome -- `mesh.DomeRecord`'s own field
+    ## order -- for the instanced sphere draw.
+  wash_runs: seq[float32] ## The translucent pass's draw order, three floats a run:
+    ## kind (`mesh.WashKind`'s ordinal), first record, record count. Walked in sequence
+    ## by the wash pass so two washes still blend in the order the scene emitted them;
+    ## see `mesh.WashRuns`.
   view_projection: seq[float32]
   furn_ribbon_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, and
     ## already built at their own thinner width (see `mesh.WIDTH_LINE_FURNITURE`), since a
@@ -1726,9 +1795,9 @@ type FrameData = object
     ## What each *kind* of scene object cost inside `ms_scene`, in milliseconds, with the
     ## counts below beside them. The phase total answered "the scene is slow"; a reader
     ## asking why needs to know which kind of object is slow, because the kinds differ by
-    ## two orders of magnitude -- a point is a single vertex, while a plane is a rim of
-    ## `mesh.SEGMENTS_CIRCLE_HORIZON` ribbons each carrying its own `directionAcross`
-    ## join, and the sky is a dome of `LATITUDES_HORIZON*LONGITUDES_HORIZON` quads.
+    ## an order of magnitude even now that every fan and dome is one record: a point is a
+    ## single vertex, while a plane still places a rim of
+    ## `mesh.SEGMENTS_CIRCLE_HORIZON` ribbon records.
     ##   `sky` is the horizon planes drawn first (their own pass, for the blend order);
     ## `ghost` is the staged edit and the drag preview together, both being the same
     ## uncommitted claim; `selected` is the overlay tail, which draws its objects a second
@@ -1742,12 +1811,14 @@ type FrameData = object
     ## How many objects of each kind the times above are for, so a reader can divide. The
     ## question this answers is "is one of these expensive, or are there simply many?", and
     ## a time without its count cannot tell those apart.
-  tri_over, ribbon_over, point_over: int ## How many vertices at the *end* of each of the
-    ## three above are the overlay run -- drawn after the rest with the depth test off, so
-    ## a selected object lands over whatever stands between it and the camera. A count of
-    ## the tail rather than the index it starts at, so the glue subtracts nothing: see
+  ribbon_over, point_over, wash_run_over: int ## How much of each stream's *end* is the
+    ## overlay run -- drawn after the rest with the depth test off, so a selected object
+    ## lands over whatever stands between it and the camera. A count of the tail rather
+    ## than the index it starts at, so the glue subtracts nothing: see
     ## `mesh.Mesh.index_overlay`, which is the same split stated from the other end, and
-    ## `renderer.drawPrimitive`, which is the desktop's own two-call draw.
+    ## `renderer.drawRun`, which is the desktop's own two-call draw. Vertices for points,
+    ## records for ribbons, whole *runs* for the washes -- `mesh.WashRuns` says why a run
+    ## never straddles the mark.
 
 
 type SceneCost = object
@@ -1884,12 +1955,12 @@ proc nimBuildFrame(
   clearMeshes(g_meshes)
   var cost: SceneCost
   cost.openTally()
-  # A horizon plane's own dome first, before anything else that might share its own
-  #   translucent `Primitive.Triangle` bucket -- see `visualiser.assembleMeshes`'s own
-  #   doc comment (mirrored here) for why draw order matters: that bucket draws in
-  #   whatever order its vertices were appended, unsorted by depth, so inserting the
-  #   dome first guarantees every ordinary plane's own fill blends over it rather than
-  #   the reverse, regardless of which scene slot either happens to occupy.
+  # A horizon plane's own dome first, before anything else that might share the
+  #   translucent wash pass -- see `visualiser.assembleMeshes`'s own doc comment
+  #   (mirrored here) for why draw order matters: the wash runs draw in the order the
+  #   records were appended, unsorted by depth, so inserting the dome first guarantees
+  #   every ordinary plane's own fill blends over it rather than the reverse, regardless
+  #   of which scene slot either happens to occupy.
   # Walks slots directly with the by-slot "At" accessors rather than through the `pairs`
   #   iterator: under the JS backend, `Item` holds `Scene` by value rather than by
   #   pointer (see `Item`'s own doc comment), so constructing one -- as `pairs` does,
@@ -1988,15 +2059,19 @@ proc nimBuildFrame(
   #   a start and an end a clock can bracket.
   let ms_after_matrix = performanceNow()
   let ms_before_flatten = ms_after_matrix
-  flattenInto(g_meshes[Primitive.Triangle], g_flat_tri)
+  flattenDiscsInto(g_meshes.discs, g_flat_disc)
+  flattenDomesInto(g_meshes.domes, g_flat_dome)
+  flattenWashRunsInto(g_meshes.washes, g_flat_runs)
   flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
-  flattenInto(g_meshes[Primitive.Point], g_flat_point)
+  flattenInto(g_meshes.points, g_flat_point)
   if is_furniture_held: g_flat_furniture.setLen(0)
   else: flattenRibbonsInto(g_meshes_furniture.ribbons, g_flat_furniture)
   let ms_done = performanceNow()
 
   var data = FrameData(
-    tri_verts: g_flat_tri,
+    disc_records: g_flat_disc,
+    dome_records: g_flat_dome,
+    wash_runs: g_flat_runs,
     ribbon_verts: g_flat_ribbon,
     point_verts: g_flat_point,
     view_projection: g_flat_view,
@@ -2043,12 +2118,13 @@ proc nimBuildFrame(
     ms_placing: float32(spentOn(Side.Placing)),
     ms_emitting: float32(spentOn(Side.Emitting)),
     ms_hover_pick: float32(recordLastFrame().ms_hover_pick),
-    tri_over: countOverlay(g_meshes[Primitive.Triangle]),
-    # For ribbons the split is in *records*: the instanced draw takes ranges of
-    #   instances, not of expanded vertices.
+    # For ribbons the split is in *records*, and for washes in whole runs: the instanced
+    #   draws take ranges of instances, not of expanded vertices.
     ribbon_over: (if g_meshes.ribbons.index_overlay.isSome:
       max(0, g_meshes.ribbons.count - g_meshes.ribbons.index_overlay.get) else: 0),
-    point_over: countOverlay(g_meshes[Primitive.Point]),
+    point_over: countOverlay(g_meshes.points),
+    wash_run_over: (if g_meshes.washes.index_overlay.isSome:
+      max(0, g_meshes.washes.count - g_meshes.washes.index_overlay.get) else: 0),
   )
   # The whole of the proc, stamped **after** the record is built: the three overlay scans
   #   and the record's own construction used to fall past `ms_done`, so `ms_build` closed

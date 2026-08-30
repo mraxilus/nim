@@ -121,6 +121,21 @@ func normalize*(d: Direction): Option[Direction] =
   some(Direction(x: d.x/magnitude, y: d.y/magnitude, z: d.z/magnitude))
 
 
+func onCircleAt*(
+  centre: Position; arm_first, arm_second: Direction; cos_angle, sin_angle: float
+): Position =
+  ## Step round a circle whose trigonometry the caller already holds: the centre, plus
+  ## the two radius-long arms weighted by the given cosine and sine.
+  ##   The trig-free core of `onCircle` below, split out for the callers that walk a
+  ##   fixed ring of angles -- a rim table, a shader's static corner buffer -- and so pay
+  ##   for each angle's trigonometry once rather than once per frame.
+  Position(
+    x: centre.x + cos_angle*arm_first.x + sin_angle*arm_second.x,
+    y: centre.y + cos_angle*arm_first.y + sin_angle*arm_second.y,
+    z: centre.z + cos_angle*arm_first.z + sin_angle*arm_second.z,
+  )
+
+
 func onCircle*(centre: Position; arm_first, arm_second: Direction; angle: float): Position =
   ## Step round a circle: the centre, plus the two radius-long arms weighted by the angle.
   ##   **The picture's own circle.** A disc is not a geometric object -- it is the stand-in
@@ -128,9 +143,4 @@ func onCircle*(centre: Position; arm_first, arm_second: Direction; angle: float)
   ##   rather than assembled as multivector sums. The arms are handed down already scaled;
   ##   which plane they span is `boundary.frame`'s answer, taken through the algebra.
   ##   Held equal to that multivector sum, point for point, by the suite.
-  let (across, along) = (cos(angle), sin(angle))
-  Position(
-    x: centre.x + across*arm_first.x + along*arm_second.x,
-    y: centre.y + across*arm_first.y + along*arm_second.y,
-    z: centre.z + across*arm_first.z + along*arm_second.z,
-  )
+  onCircleAt(centre, arm_first, arm_second, cos(angle), sin(angle))
