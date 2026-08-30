@@ -16,24 +16,25 @@ import std/[dom, math, options, strformat, strutils]
 import ./[draw, rope]
 
 
-type Dial = object ## One control, and where its value lives.
-  key: string
-  name: string
-  low, high, step: float
-  unit: string
+type
+  Knob {.pure.} = enum ## The controls, a closed set the arrays index by.
+    FollowTurn, LeadTurn, Apart, ArmLength, TorsoRadius
+
+  Dial = object ## What one control says and offers.
+    name: string
+    low, high, step: float
+    unit: string
 
 
-const DIALS = [
-  Dial(key: "turn2", name: "turn the follow", low: -2.0, high: 2.0,
-       step: 0.01, unit: " turns"),
-  Dial(key: "turn1", name: "turn the lead", low: -2.0, high: 2.0,
-       step: 0.01, unit: " turns"),
-  Dial(key: "apart", name: "stand apart", low: 0.32, high: 1.30,
-       step: 0.005, unit: " m"),
-  Dial(key: "arm", name: "arm", low: 0.45, high: 0.85, step: 0.005,
+const DIALS: array[Knob, Dial] = [
+  Dial(name: "turn the follow", low: -2.0, high: 2.0, step: 0.01,
+       unit: " turns"),
+  Dial(name: "turn the lead", low: -2.0, high: 2.0, step: 0.01,
+       unit: " turns"),
+  Dial(name: "stand apart", low: 0.32, high: 1.30, step: 0.005, unit: " m"),
+  Dial(name: "arm", low: 0.45, high: 0.85, step: 0.005, unit: " m"),
+  Dial(name: "torso, radius", low: 0.10, high: 0.26, step: 0.005,
        unit: " m"),
-  Dial(key: "torso", name: "torso, radius", low: 0.10, high: 0.26,
-       step: 0.005, unit: " m"),
 ] ## The rig's own measurements are controls too, deliberately: every answer
   ## this page gives is a fact about those numbers, and a reader who cannot
   ## move them has to take on trust that they matter.
@@ -49,15 +50,15 @@ const PAIRS = [
 
 
 const
-  HIGH_LOW = 1.40  ## The lowest a pair of joined hands is offered.
-  HIGH_HIGH = 2.05 ## And the highest, which is well over a crown.
-  HIGH_STEP = 0.005
+  HEIGHT_LOW = 1.40  ## The lowest a pair of joined hands is offered.
+  HEIGHT_HIGH = 2.05 ## And the highest, which is well over a crown.
+  HEIGHT_STEP = 0.005 ## Half-centimetre notches, matching the other lengths.
 
 
 var
-  dial: array[DIALS.len, float] = [0.0, 0.0, 0.40, 0.62, 0.16]
+  dial: array[Knob, float] = [0.0, 0.0, 0.40, 0.62, 0.16]
   joined: array[PAIRS.len, bool] = [true, true, false, false]
-  high: array[PAIRS.len, float] = [1.82, 1.82, 1.82, 1.82]
+  heights: array[PAIRS.len, float] = [1.82, 1.82, 1.82, 1.82]
     ## One height per connection, not one for all of them.
     ##   Two hands joined at one height and two at another is an ordinary
     ##     thing to do, and the model was always ready for it: `Link.height`
@@ -66,12 +67,6 @@ var
     ##     every link.
     ##   They start over both crowns, because that is where the braid has
     ##     nothing in the way of it and the twist can be looked at on its own.
-
-
-proc valueOf(key: string): float =
-  for i, d in DIALS:
-    if d.key == key: return dial[i]
-  0.0
 
 
 proc chosen(): seq[int] =
@@ -87,17 +82,17 @@ proc chosen(): seq[int] =
 proc built(): State =
   ## Build the whole world from where the controls stand.
   var rig = HUMAN
-  rig.arm = valueOf("arm")
-  rig.torso = valueOf("torso")
-  var base = facing(rig, max(valueOf("apart"), touching(rig)))
+  rig.arm = dial[Knob.ArmLength]
+  rig.torso = dial[Knob.TorsoRadius]
+  var base = facing(rig, max(dial[Knob.Apart], touching(rig)))
   for i, pair in PAIRS:
     if joined[i]:
       base.links.add Link(ends: [(Body.One, pair.a), (Body.Two, pair.b)],
-                          height: max(high[i], rig.shoulder))
+                          height: max(heights[i], rig.shoulder))
   # Replayed from rest, both turns, so the picture is a function of the
   # sliders and not of the order they were dragged in.
-  result = turned(settled(base), Body.One, valueOf("turn1") * 2.0 * PI)
-  result = turned(result, Body.Two, valueOf("turn2") * 2.0 * PI)
+  result = turned(settled(base), Body.One, dial[Knob.LeadTurn] * 2.0 * PI)
+  result = turned(result, Body.Two, dial[Knob.FollowTurn] * 2.0 * PI)
 
 
 func esc(text: string): string =
@@ -227,8 +222,8 @@ func readout(state: State; inks: seq[int]): string =
 
 
 var
-  limitFor = ""  ## The state the standing limit below was worked out for.
-  limitSaid = "" ## And what it came to, kept so a turn drag need not ask again.
+  limit_for = ""  ## The state the standing limit below was worked out for.
+  limit_said = "" ## And what it came to, kept so a drag need not ask again.
 
 
 proc limits(state: State): string =
@@ -249,13 +244,13 @@ proc limits(state: State): string =
   var key = &"{base.rig.arm}/{base.rig.torso}/{base.stance[Body.Two].centre.y}"
   for link in base.links:
     key.add &"/{ord(link.ends[0].arm)}{ord(link.ends[1].arm)}:{link.height}"
-  if key == limitFor:
-    return limitSaid
+  if key == limit_for:
+    return limit_said
   let
     rested = settled(base)
     got = windLimit(rested, Body.Two, most = 6.0 * PI, swan = false)
-  limitFor = key
-  limitSaid = &"""<p class="limit">From rest, and with the couple where they """ &
+  limit_for = key
+  limit_said = &"""<p class="limit">From rest, and with the couple where they """ &
     """stand, the follow can turn """ &
     &"""<b>{m(got / (2.0 * PI))} turns</b> ({m(got / PI)} half turns) """ &
     """before some rope runs out or two ropes meet. Nothing in the model """ &
@@ -273,7 +268,7 @@ proc limits(state: State): string =
           else:
             "Here the geometry falls short of it: lengthen the arm or " &
               "narrow the torso and watch where the two meet.") & "</p>")
-  limitSaid
+  limit_said
 
 
 proc mount() =
@@ -284,19 +279,19 @@ proc mount() =
   ##     while leaving the controls alone is the whole difference between a
   ##     slider that follows the finger and one that has to be nudged.
   var controls = ""
-  for i, d in DIALS:
+  for knob, d in DIALS:
     controls.add &"""<label class="dial"><span>{d.name}""" &
-      &"""<b id="dv{i}">{m(dial[i])}{d.unit}</b></span>""" &
-      &"""<input type="range" data-dial="{i}" min="{d.low}" max="{d.high}"""" &
-      &""" step="{d.step}" value="{dial[i]}"></label>"""
+      &"""<b id="dv{ord(knob)}">{m(dial[knob])}{d.unit}</b></span>""" &
+      &"""<input type="range" data-dial="{ord(knob)}" min="{d.low}"""" &
+      &""" max="{d.high}" step="{d.step}" value="{dial[knob]}"></label>"""
   # One height slider per connection, all four written once and then only
   # shown or hidden: rebuilding them would replace the very slider a pointer
   # is holding, and the drag would stop dead after its first event.
   for i, pair in PAIRS:
     controls.add &"""<label class="dial" id="hl{i}"><span>""" &
-      &"""{esc(pair.name)} hands at<b id="hv{i}">{m(high[i])} m</b></span>""" &
-      &"""<input type="range" data-high="{i}" min="{HIGH_LOW}"""" &
-      &""" max="{HIGH_HIGH}" step="{HIGH_STEP}" value="{high[i]}"></label>"""
+      &"""{esc(pair.name)} hands at<b id="hv{i}">{m(heights[i])} m</b></span>""" &
+      &"""<input type="range" data-high="{i}" min="{HEIGHT_LOW}"""" &
+      &""" max="{HEIGHT_HIGH}" step="{HEIGHT_STEP}" value="{heights[i]}"></label>"""
   var picks = ""
   for i, pair in PAIRS:
     picks.add &"""<button id="pk{i}" data-pair="{i}" class="pick"""" &
@@ -321,16 +316,16 @@ proc render() =
   let
     state = built()
     on = chosen()
-  for i, d in DIALS:
-    document.getElementById(cstring(&"dv{i}")).textContent =
-      cstring(&"{m(dial[i])}{d.unit}")
+  for knob, d in DIALS:
+    document.getElementById(cstring(&"dv{ord(knob)}")).textContent =
+      cstring(&"{m(dial[knob])}{d.unit}")
   for i, pair in PAIRS:
     document.getElementById(cstring(&"pk{i}")).className =
       cstring(if joined[i]: "pick on" else: "pick")
     document.getElementById(cstring(&"hl{i}")).className =
       cstring(if joined[i]: "dial" else: "dial off")
     document.getElementById(cstring(&"hv{i}")).textContent =
-      cstring(&"{m(high[i])} m")
+      cstring(&"{m(heights[i])} m")
   document.getElementById("stage").innerHTML =
     cstring(draw.plan(state, on) & draw.elevation(state, on))
   document.getElementById("says").innerHTML = cstring(readout(state, on))
@@ -385,11 +380,11 @@ proc slide(event: Event) =
   # leaves the `value=` it was written with exactly where it was, so reading
   # the attribute gives the starting number for ever.
   if target.getAttribute("data-high") != nil:
-    high[parseInt($target.getAttribute("data-high"))] =
+    heights[parseInt($target.getAttribute("data-high"))] =
       parseFloat($cast[InputElement](target).value)
     paint()
     return
-  let which = parseInt($target.getAttribute("data-dial"))
+  let which = Knob(parseInt($target.getAttribute("data-dial")))
   dial[which] = parseFloat($cast[InputElement](target).value)
   paint()
 

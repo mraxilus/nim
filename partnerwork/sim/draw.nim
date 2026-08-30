@@ -9,7 +9,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[math, options, strformat, strutils]
+import std/[algorithm, math, options, strformat, strutils]
 
 import ./rope
 
@@ -58,7 +58,7 @@ func reachOf*(state: State): float =
   for link in state.links:
     let laid = lay(state, link)
     if laid.isSome:
-      for at in trace(laid.get):
+      for at in traced(state, link, laid.get).at:
         result = max(result, dist(at, mid))
   result += 0.06
 
@@ -149,7 +149,7 @@ func plan*(state: State; inks: seq[int] = @[]): string =
       px: seq[(float, float)]
       run: seq[float]
     if got.isSome:
-      let at = trace(got.get)
+      let at = traced(state, link, got.get).at
       for i, p in at:
         px.add put(p)
         run.add (if i == 0: 0.0 else: run[i - 1] + dist(at[i - 1], p))
@@ -179,12 +179,9 @@ func plan*(state: State; inks: seq[int] = @[]): string =
   for index, link in state.links:
     if not shown[index]:
       continue
-    var order = cuts[index]
-    for a in 0 ..< order.len:
-      for b in a + 1 ..< order.len:
-        if order[b] < order[a]:
-          swap order[a], order[b]
-    let bad = faultOf(state, link).isSome
+    let
+      order = sorted(cuts[index])
+      bad = faultOf(state, link).isSome
     bits.add &"""<path d="{brokenPath(inked[index], along[index], order, BREAK)}"""" &
       &"""" class="rope{(if bad: " bad" else: "")}"""" &
       &""" style="stroke: {inkFor(inks, index)}"/>"""

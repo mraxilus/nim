@@ -116,7 +116,7 @@ type
     ##     it, and sampling is the one expensive thing here -- a rope wound
     ##     three times is some four hundred points, and the solver is asked
     ##     for a lie thousands of times a sweep while only one of them is
-    ##     ever drawn.  So a lie carries what it *is* and `trace` makes the
+    ##     ever drawn.  So a lie carries what it *is* and `traced` makes the
     ##     points, once, for whoever actually needs them.
     kind*: Kind
     a*, b*: Vec  ## Where the stretch starts and ends.
@@ -161,7 +161,7 @@ const HUMAN* = Rig(torso: 0.16, head: 0.09, arm: 0.62, limb: 0.04,
 
 
 
-#[ Plan arithmetic ]#
+#[ Plan Arithmetic ]#
 
 func `+`(a, b: Vec): Vec = (a.x + b.x, a.y + b.y)
 func `-`(a, b: Vec): Vec = (a.x - b.x, a.y - b.y)
@@ -239,10 +239,13 @@ func nearing(a, b, o: Vec): float =
   alongTo(a, b, o, clamp(nearOn(a, b, o), 0.0, 1.0))
 
 
+
+#[ The Rig ]#
+
 func budget*(rig: Rig): float = 2.0 * rig.arm
   ## Get the rope one connection has: two arms tied at the joined hands.
 
-func radiusOf*(rig: Rig; band: Band): float =
+func radiusOf(rig: Rig; band: Band): float =
   ## Get the radius a wind in this band turns at.
   if band == Band.Torso: rig.torso else: rig.head
 
@@ -259,7 +262,7 @@ func girth*(rig: Rig; height: float): float =
 func touching*(rig: Rig): float = 2.0 * rig.torso
   ## Get how close two bodies can stand, centre to centre: rims in contact.
 
-func tentAt*(rig: Rig; height, span, s: float): float =
+func tentAt(rig: Rig; height, span, s: float): float =
   ## Get how high a connection is carried, a plan distance along it.
   ##   The joined hands ride at the middle of the rope, so raising them is a
   ##     tent: up from one shoulder and down to the other.
@@ -268,7 +271,7 @@ func tentAt*(rig: Rig; height, span, s: float): float =
   let rise = max(0.0, height - rig.shoulder)
   rig.shoulder + rise * (1.0 - abs(2.0 * s / span - 1.0))
 
-func handAngle*(state: State; hand: Hand): float =
+func handAngle(state: State; hand: Hand): float =
   ## Get the angle on a body's rim that one of its hands is anchored at.
   ##   A body's left is a quarter turn anticlockwise of the way it faces, its
   ##     right a quarter turn clockwise.  Every consequence of two people
@@ -289,7 +292,7 @@ func facing*(rig: Rig; apart: float): State =
 
 
 
-#[ Tangents, in closed form ]#
+#[ Tangents, in Closed Form ]#
 
 func onto(p, centre: Vec; radius, way: float): Option[float] =
   ## Find the angle on a rim where a rope from `p` first touches it, hugging
@@ -359,7 +362,8 @@ func arcPoints(centre: Vec; radius, from_angle, turn: float): seq[Vec] =
       from_angle + turn * float(step) / float(steps))
 
 
-#[ Two ropes, braiding ]#
+
+#[ Two Ropes, Braiding ]#
 
 ## Two connections between the same pair of bodies are not strangers.  Turn one
 ## body and they wind about *each other* as surely as a rope winds about a
@@ -411,7 +415,7 @@ func restAngle(hand: Hand): float =
     (if hand.arm == Arm.Left: PI / 2 else: -PI / 2)
 
 
-func restLift(link: Link): float =
+func restTurn(link: Link): float =
   ## Get the turn a connection's braid already carries with the bodies square.
   ##   A hold that joins opposite hands lies flat: no turn.  One that joins
   ##     hands of the same name is already crossed over its partner, which is
@@ -422,13 +426,13 @@ func restLift(link: Link): float =
   PI - floorMod(PI - delta, 2.0 * PI)
 
 
-func sweepFor(state: State; link: Link): float =
+func braidTurn(state: State; link: Link): float =
   ## Get the angle a connection's braid turns through, end to end.
   (handAngle(state, link.ends[1]) - handAngle(state, link.ends[0])) -
-    (restAngle(link.ends[1]) - restAngle(link.ends[0])) + restLift(link)
+    (restAngle(link.ends[1]) - restAngle(link.ends[0])) + restTurn(link)
 
 
-func braidAt*(piece: Piece; t: float): Vec =
+func braidAt(piece: Piece; t: float): Vec =
   ## Get a plan point of a braid, a fraction of the way along the axis.
   ##   Along the axis by `d`, across it by the axis turned a quarter, which is
   ##     `(d.y, -d.x)`.  Spelt out in its parts for the reason `dist` is:
@@ -444,17 +448,10 @@ func braidAt*(piece: Piece; t: float): Vec =
    piece.centre.y + dy * along - dx * side)
 
 
-func braidLift*(piece: Piece; t: float): float =
-  ## Get how far above the rope's own tent a braid rides, at a fraction along.
+func braidLift(piece: Piece; t: float): float =
+  ## Get how far above or below the pair's height a braid rides, a fraction
+  ## of the way along the axis.
   piece.lift * sin(piece.start + piece.turn * t)
-
-
-const CROSS_SLIP = 1e-3
-  ## How much of the sampling's own error to forgive where two ropes cross.
-  ##   A crossing is found on a chord of the spiral rather than on the spiral
-  ##     itself, so the height read there is a shade low -- a fifth of a
-  ##     millimetre at the sampling below.  Refusing on that would refuse the
-  ##     very braid the geometry has just built to keep the two apart.
 
 
 func braidSteps(piece: Piece): int =
@@ -466,7 +463,7 @@ func braidSteps(piece: Piece): int =
   n + (n and 1)
 
 
-func braidHigh*(rig: Rig; piece: Piece; t: float): float =
+func braidHigh(rig: Rig; piece: Piece; t: float): float =
   ## Get how high a braid is carried, a fraction of the way along the axis.
   ##   The pair's height, not the rope's own, and read off the shared axis
   ##     rather than off either rope's length.  That is what makes the two
@@ -475,6 +472,8 @@ func braidHigh*(rig: Rig; piece: Piece; t: float): float =
   ##     pair's height and the other the same below.  Give each rope its own
   ##     tent instead, as an unbraided one has, and the two tents disagree by
   ##     more than the spiral separates by -- so the ropes meet.
+  ##   The tent profile is scale-free, so a span of one with `s = t` reads it
+  ##     by fraction.
   tentAt(rig, piece.paired, 1.0, t) + braidLift(piece, t)
 
 
@@ -493,16 +492,16 @@ func braiding*(state: State): bool =
 
 func braidOf(state: State; link: Link): Option[Piece] =
   ## Describe the braid one connection is in, if it is in one.
-  ##   Two connections, both running clear.  Once either has caught on a body
-  ##     the wind geometry governs that rope and this steps aside -- which is
-  ##     the seam in this model and is named as such in the README.
-  if state.links.len != 2 or link.winds.len > 0:
+  ##   Only a pair free to braid gets one.  Once either rope has caught on a
+  ##     body the wind geometry governs and this steps aside -- the seam in
+  ##     this model, named as such in the README.
+  if not braiding(state):
     return none(Piece)
   var mate = -1
   for i, other in state.links:
     if other.ends != link.ends:
       mate = i
-  if mate < 0 or state.links[mate].winds.len > 0:
+  if mate < 0:
     return none(Piece)
   let
     c1 = state.stance[link.ends[0].body].centre
@@ -523,7 +522,7 @@ func braidOf(state: State; link: Link): Option[Piece] =
     near = min(from_at, (from_at + to_at) / 2.0)
     far = max(to_at, (from_at + to_at) / 2.0)
     start = handAngle(state, link.ends[0])
-    turn = sweepFor(state, link)
+    turn = braidTurn(state, link)
     reach = state.rig.torso
   some(Piece(kind: Kind.Braid,
              a: c1 + d * near + n * (reach * cos(start)),
@@ -537,7 +536,8 @@ func braidOf(state: State; link: Link): Option[Piece] =
                        abs(link.height - other.height) / 2.0)))
 
 
-#[ Sampling a lie ]#
+
+#[ Sampling a Lie ]#
 
 func braidedLie*(lie: Lie): bool =
   ## Say whether a connection is lying in a braid.
@@ -547,34 +547,14 @@ func braidedLie*(lie: Lie): bool =
   false
 
 
-func trace*(lie: Lie): seq[Vec] =
-  ## Sample a lie as a polyline, for whatever only needs the plan of it.
-  ##   The one place arcs and spirals become points, and it is called once per
-  ##     rope per picture rather than thousands of times per sweep.
-  for piece in lie.pieces:
-    case piece.kind
-    of Kind.Reach:
-      if result.len == 0: result.add piece.a
-      result.add piece.b
-    of Kind.Hug:
-      for at in arcPoints(piece.centre, piece.radius, piece.start, piece.turn):
-        if result.len == 0 or dist(result[^1], at) > 1e-12:
-          result.add at
-    of Kind.Braid:
-      let steps = braidSteps(piece)
-      for i in 0 .. steps:
-        let at = braidAt(piece, float(i) / float(steps))
-        if result.len == 0 or dist(result[^1], at) > 1e-12:
-          result.add at
-
-
 func traced*(state: State; link: Link; lie: Lie):
     tuple[at: seq[Vec], high: seq[float]] =
   ## Sample a lie as a polyline, with the height each point is carried at.
-  ##   Walks the pieces exactly as `trace` does, so the two agree point for
-  ##     point.  Two ways of getting a height, and which applies is which kind
-  ##     of stretch it is: an ordinary run is tented over its own length, as
-  ##     it always was, while a braid is carried at the pair's height read off
+  ##   The one place arcs and spirals become points, and it is called once per
+  ##     rope per picture rather than thousands of times per sweep.
+  ##   Two ways of getting a height, and which applies is which kind of
+  ##     stretch it is: an ordinary run is tented over its own length, as it
+  ##     always was, while a braid is carried at the pair's height read off
   ##     the axis both ropes share.  The runs that join a braid to its hands
   ##     carry the heights `lay` worked out for their ends.
   let braided = braidedLie(lie)
@@ -609,7 +589,8 @@ func traced*(state: State; link: Link; lie: Lie):
     gone += piece.span
 
 
-#[ Laying a rope out ]#
+
+#[ Laying a Rope Out ]#
 
 func rimOf(state: State; wind: Wind): (Vec, float) =
   ## Get the centre and radius one wind turns on.
@@ -729,32 +710,13 @@ func lay*(state: State; link: Link): Option[Lie] =
         span: dist(stand, q))
     for piece in lie.pieces:
       lie.span += piece.span
-  if braid.isSome:
-    # A braided rope climbs twice -- the pair's tent up to the joined hands,
-    # and the spiral's own rise and fall about the axis -- so its length was
-    # measured above rather than reckoned here, and the rope the braid costs
-    # falls out of that instead of being priced.
-    discard
-  else:
+  if braid.isNone:
     # The joined hands ride at the middle of the rope, so raising them is a
-    # tent: up from one shoulder and down to the other.
+    # tent: up from one shoulder and down to the other.  A braided rope's
+    # length was measured in its own walk above, climb and all.
     let rise = max(0.0, link.height - state.rig.shoulder)
     lie.length = sqrt(lie.span * lie.span + 4.0 * rise * rise)
   some(lie)
-
-
-func heightAt*(state: State; link: Link; lie: Lie; s: float): float =
-  ## Get how high a lie's tent is carried, at a plan distance along it.
-  ##   The tent alone: a braid's own rise and fall is carried point by point
-  ##     in `traced`, because it is a function of where round the spiral the
-  ##     rope is and not of how far along it has got.
-  tentAt(state.rig, link.height, lie.span, s)
-
-
-func slack*(state: State; link: Link): float =
-  ## Get the rope a connection has left over, which is its room to move.
-  let laid = lay(state, link)
-  if laid.isNone: -Inf else: budget(state.rig) - laid.get.length
 
 
 func barFor(state: State; link: Link; lie: Lie; gone, span: float): float =
@@ -766,10 +728,8 @@ func barFor(state: State; link: Link; lie: Lie; gone, span: float): float =
   ##     judging each at its own height would have a rope carried over both
   ##     crowns catching on a chest at the very ends -- a difference made by
   ##     the sampling and not by the dance.
-  if braidedLie(lie):
-    girth(state.rig, heightAt(state, link, lie, lie.span / 2.0))
-  else:
-    girth(state.rig, heightAt(state, link, lie, gone + span / 2.0))
+  let mid = if braidedLie(lie): lie.span / 2.0 else: gone + span / 2.0
+  girth(state.rig, tentAt(state.rig, link.height, lie.span, mid))
 
 
 func clearance*(state: State; link: Link; lie: Lie): float =
@@ -807,7 +767,8 @@ func clearance*(state: State; link: Link; lie: Lie): float =
     gone += piece.span
 
 
-#[ Two ropes, and which of them is on top ]#
+
+#[ Two Ropes, and Which Is on Top ]#
 
 type Meeting* = object ## Where two ropes cross in plan, and how high each is.
   at*: Vec
@@ -837,11 +798,11 @@ func meetings*(state: State; a_link: Link; a: Lie;
       p2y = one.at[i + 1].y
       ex = p2x - p1x
       ey = p2y - p1y
-      aLo = min(p1x, p2x)
-      aHi = max(p1x, p2x)
-      aDown = min(p1y, p2y)
-      aUp = max(p1y, p2y)
-      stepA = sqrt(ex * ex + ey * ey)
+      a_lo = min(p1x, p2x)
+      a_hi = max(p1x, p2x)
+      a_down = min(p1y, p2y)
+      a_up = max(p1y, p2y)
+      step_a = sqrt(ex * ex + ey * ey)
     var gone_b = 0.0
     for j in 0 ..< two.at.high:
       let
@@ -851,9 +812,9 @@ func meetings*(state: State; a_link: Link; a: Lie;
         q2y = two.at[j + 1].y
         fx = q2x - q1x
         fy = q2y - q1y
-        stepB = sqrt(fx * fx + fy * fy)
-      if not (max(q1x, q2x) < aLo or min(q1x, q2x) > aHi or
-              max(q1y, q2y) < aDown or min(q1y, q2y) > aUp):
+        step_b = sqrt(fx * fx + fy * fy)
+      if not (max(q1x, q2x) < a_lo or min(q1x, q2x) > a_hi or
+              max(q1y, q2y) < a_down or min(q1y, q2y) > a_up):
         let
           d1 = fx * (p1y - q1y) - fy * (p1x - q1x)
           d2 = fx * (p2y - q1y) - fy * (p2x - q1x)
@@ -870,9 +831,17 @@ func meetings*(state: State; a_link: Link; a: Lie;
             ha = one.high[i] + (one.high[i + 1] - one.high[i]) * t
             hb = two.high[j] + (two.high[j + 1] - two.high[j]) * u
           result.add Meeting(at: (p1x + ex * t, p1y + ey * t),
-            along: [gone_a + stepA * t, gone_b + stepB * u], high: [ha, hb])
-      gone_b += stepB
-    gone_a += stepA
+            along: [gone_a + step_a * t, gone_b + step_b * u], high: [ha, hb])
+      gone_b += step_b
+    gone_a += step_a
+
+
+const CROSS_SLIP = 1e-3
+  ## How much of the sampling's own error to forgive where two ropes cross.
+  ##   A crossing is found on a chord of the spiral rather than on the spiral
+  ##     itself, so the height read there is a shade low -- a fifth of a
+  ##     millimetre at `braidSteps`'s sampling.  Refusing on that would refuse
+  ##     the very braid the geometry has just built to keep the two apart.
 
 
 func overOf*(rig: Rig; met: Meeting): Option[int] =
@@ -896,7 +865,7 @@ func overOf*(rig: Rig; met: Meeting): Option[int] =
   else: some(1)
 
 
-func pairFault*(state: State; swan = true): Option[Fault] =
+func pairFault(state: State; swan = true): Option[Fault] =
   ## Say what refuses a state for the sake of one rope against another.
   ##   Every other judgement in this module takes one connection and asks the
   ##     bodies about it.  This is the one that asks the connections about
@@ -953,7 +922,8 @@ func holds*(state: State; swan = true): bool =
   refusal(state, swan).isNone
 
 
-#[ Turning, and keeping count ]#
+
+#[ Turning, and Keeping Count ]#
 
 const
   BIRTH_BITE = 1e-6
@@ -1121,7 +1091,7 @@ func settled*(state: State): State =
       break
 
 
-func advance*(state: State; who: Body; by: float): State =
+func advance(state: State; who: Body; by: float): State =
   ## Turn one body a small step, carrying every rope's winding with it.
   result = state
   result.stance[who].facing += by

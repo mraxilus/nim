@@ -83,9 +83,9 @@ suite "a rope at rest":
     # from one shoulder and down to the other.
     let
       flat = oneLink(APART, Arm.Left, Arm.Right)
-      high = oneLink(APART, Arm.Left, Arm.Right, LOW + 0.2)
+      raised = oneLink(APART, Arm.Left, Arm.Right, LOW + 0.2)
       a = lay(flat, flat.links[0]).get
-      b = lay(high, high.links[0]).get
+      b = lay(raised, raised.links[0]).get
     check abs(a.span - b.span) < 1e-12
     check b.length > a.length
     check abs(b.length - sqrt(a.span * a.span + 4.0 * 0.2 * 0.2)) < 1e-12
