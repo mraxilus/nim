@@ -1503,19 +1503,26 @@ let is_strip_pool_built = false;
 // frame's reading flickers too fast to read, and a median is what a reader means by "how
 // long does this step take".
 const PHASES_DIAGNOSTIC = [
-  ['build', 'diag-build'], ['furniture', 'diag-furniture'],
+  ['build', 'diag-build'], ['camera', 'diag-camera'], ['furniture', 'diag-furniture'],
   ['grid', 'diag-grid'], ['axes', 'diag-axes'], ['scene', 'diag-scene'],
   ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
   ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
-  ['algebra', 'diag-algebra'],
-  ['flatten', 'diag-flatten'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
-  ['menu', 'diag-menu'], ['ui', 'diag-ui'], ['idle', 'diag-idle'],
+  ['algebra', 'diag-algebra'], ['matrix', 'diag-matrix'], ['flatten', 'diag-flatten'],
+  ['unaccounted', 'diag-unaccounted'],
+  // The second cut, not stages: these re-divide the very milliseconds above them.
+  ['placing', 'diag-placing'], ['emitting', 'diag-emitting'],
+  ['hover', 'diag-hover'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
+  ['ui', 'diag-ui'], ['idle', 'diag-idle'],
 ];
+// The rows that re-divide time already counted elsewhere. They must stay out of every sum
+//   -- the idle derivation below, and the cost tint's own denominator -- or the frame would
+//   appear to have spent its drawing twice.
+const PHASES_CUT_DIAGNOSTIC = ['placing', 'emitting'];
 // The phases nothing else contains: their sum is everything this page spent on a frame,
 //   and the rest of the frame is `idle` below. `build` holds the bridge's own three, and
 //   those hold the scenery halves and the object kinds, so counting any of them here would
 //   count the same milliseconds twice.
-const PHASES_TOP_DIAGNOSTIC = ['build', 'upload', 'overlay', 'menu', 'ui'];
+const PHASES_TOP_DIAGNOSTIC = ['build', 'hover', 'upload', 'overlay', 'ui'];
 // The rows that carry a count beside their time, and the ring each count is written to.
 //   A time alone cannot tell "one of these is expensive" from "there are many of them",
 //   which is the whole question a reader opens this branch to answer.
@@ -1629,7 +1636,7 @@ function medianPhase(name) {
 //   which step only once it is. A closed node's rows are skipped by `refreshDiagnostics`
 //   entirely, so a subtotal nobody is reading costs nothing to keep offering.
 const NODES_DIAGNOSTIC = {
-  build: ['furniture', 'scene', 'algebra', 'flatten'],
+  build: ['camera', 'furniture', 'scene', 'algebra', 'matrix', 'flatten', 'unaccounted'],
   furniture: ['grid', 'axes'],
   scene: ['points', 'lines', 'planes', 'sky', 'ghost', 'selected'],
 };
@@ -2174,6 +2181,8 @@ function refreshDiagnostics() {
   //   `SHARES_ROW_DIAGNOSTIC`. The top phases do not overlap, so their sum is the whole of
   //   the work and every row is some part of it.
   let work_recent = 0;
+  // `PHASES_TOP_DIAGNOSTIC` holds no cut row, so the work each share is taken against is
+  //   counted once; a row that re-divides time already in the total would inflate it.
   for (const name of PHASES_TOP_DIAGNOSTIC) {
     const spent = meanPhase(name, frames_recent);
     if (spent !== null) work_recent += spent;
@@ -3098,6 +3107,19 @@ function renderFrame(now_seconds) {
   // The bridge times its own three phases where only it can see them; this side just
   // records what came back, into the same rings its own phases use.
   recordPhaseTime('build', data.ms_build);
+  // The frame's prologue and its view matrix, which used to belong to no row, and the
+  //   residue the named phases still fail to cover -- so `build` now sums from what is
+  //   under it instead of merely being larger than the sum.
+  recordPhaseTime('camera', data.ms_camera);
+  recordPhaseTime('matrix', data.ms_matrix);
+  recordPhaseTime('unaccounted', data.ms_unaccounted);
+  // The second cut: the same milliseconds re-divided by which side of the algebra
+  //   boundary they fell on. Recorded like any other row and kept out of every sum by
+  //   `PHASES_CUT_DIAGNOSTIC`.
+  recordPhaseTime('placing', data.ms_placing);
+  recordPhaseTime('emitting', data.ms_emitting);
+  // Measured between frames and reported by this one; see the bridge's own note.
+  recordPhaseTime('hover', data.ms_hover_pick);
   recordPhaseTime('furniture', data.ms_furniture);
   // The scenery's own two halves, which the bridge has clocked apart since the grid's
   //   segment budget went in: the axes are three lines at any distance, the grid however
@@ -3216,10 +3238,12 @@ function frame() {
 
   const ms_before_overlay = performance.now();
   refreshOverlay(cursor_last);
-  const ms_before_menu = performance.now();
-  recordPhaseTime('overlay', ms_before_menu - ms_before_overlay);
   updateSelectionMenuPosition();
-  recordPhaseTime('menu', performance.now() - ms_before_menu);
+  // Menu placement folded in with the markers rather than kept as a row of its own: it is
+  //   one early-returning call reading 0.00 in every state but one, and its old bracket
+  //   enclosed the overlay's own `recordPhaseTime` -- so that row had been charging its
+  //   bookkeeping to itself.
+  recordPhaseTime('overlay', performance.now() - ms_before_overlay);
 
   // UI (camera fields, diagnostics) refresh at a lower cadence than the draw loop --
   // no visual harm in a number lagging a frame, and it keeps DOM writes off the hot path.

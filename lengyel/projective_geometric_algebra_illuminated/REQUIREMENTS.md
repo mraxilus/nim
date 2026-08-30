@@ -1251,6 +1251,33 @@ JS heap where available, live pool slots — rather than fabricating the native 
 allocator numbers, which describe that build's allocator and have no browser equivalent worth
 pretending to. Say so in the panel.
 
+**The frame-time breakdown is cut by the code's own boundary, and its parts sum.** The
+browser shows where a frame went as a collapsible tree ordered the way the frame actually
+happens — the bridge's build and its steps, then upload, overlay, the panel's own refresh,
+then the remainder. Three rules govern it, each paid for:
+
+- **Every span is named, the leftover included.** A breakdown whose parts quietly fail to
+  add up is worse than a coarser one that does: for a long time the frame's prologue and its
+  view matrix belonged to no row, so the total was simply larger than what it showed and no
+  reader could tell by how much. Where a residue remains it gets a row of its own rather
+  than being left to be inferred.
+- **A second cut says how much of it was the algebra.** Every step is either working out
+  where geometry goes or turning those places into vertices, and the panel reports both —
+  which is the question this project exists to ask and which no arrangement of the *stages*
+  could answer. This is a re-division of the same milliseconds, so it must read as one and
+  never be nested under the stages it cuts across, or it will be taken for double counting.
+  The emitting side is pure by construction, being reached only through the module that
+  cannot name a multivector; the placing side carries a little Euclidean arithmetic inside
+  its loops and **says so** rather than claiming a purity it does not have.
+- **A row names the module behind it**, so a reader who finds the expensive row knows which
+  file to open. That is the point of grouping by the code's own seams rather than by
+  whatever the panel happened to grow.
+
+Work that happens **between** frames — on the browser, picking under the cursor, which runs
+from event handlers — is measured where it happens and reported by the frame after, on a
+two-frame record. Left alone it lands in the frame's own leftover and reads as the browser's
+time rather than the page's.
+
 **The object-pool strip wears the scene's own colours**: an occupied cell in that object's
 colour, a free one in the recessive grid colour. It reads as the scene rather than as an
 anonymous occupancy count — which slot an object sits in, and how far the colour cycler has

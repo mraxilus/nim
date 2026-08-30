@@ -821,6 +821,29 @@
      one of them on screen, expanded, and showing an em dash. A node's own class must reach
      its own children and stop there. */
   .diag-node.open > .diag-parent .chev { transform: rotate(90deg); }
+  /* Which module to open when a row is the expensive one. Dim and small: it answers a
+     question a reader only asks once they have found the row, so it must not compete with
+     the row's own name for the first glance. `currentColor` so it takes the cost tint with
+     the rest of the row rather than staying grey against a red label. */
+  .diag-where {
+    margin-left: 6px;
+    font-size: 9.5px;
+    font-family: var(--mono);
+    opacity: 0.55;
+  }
+  /* The second cut through the same milliseconds. A rule and a word rather than a nested
+     node, because these are not children of anything above them -- indenting them under
+     `build` would read as double counting the very time they are re-dividing. */
+  .diag-cut {
+    margin: 10px 0 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .diag-cut-row { padding-left: 12px; }
   .diag-children { display: none; padding-left: 12px; }
   .diag-node.open > .diag-children { display: block; }
   .sparkline { width: 100%; height: 40px; display: block; }
@@ -1153,6 +1176,14 @@
             ><span><span class="chev">&#9654;</span>build (bridge)</span
             ><b id="diag-build">&mdash;</b></button>
           <div class="diag-children">
+            <!-- The frame's prologue: pruning focus, advancing the camera tween, deriving
+                 this frame's own DrawExtent, and framing.offerAim walking everything
+                 watched. Real work that belonged to no row until now, and worth its own:
+                 offerAim builds a *second* DrawExtent rather than taking the one made a
+                 moment earlier, which is the kind of thing a breakdown exists to show. -->
+            <div class="diag-line"><span>camera + framing<span
+              class="diag-where">camera, framing</span></span
+              ><b id="diag-camera">&mdash;</b></div>
             <div class="diag-node" data-node="furniture">
               <button class="diag-line diag-parent" type="button"
                 ><span><span class="chev">&#9654;</span>scenery</span
@@ -1198,21 +1229,62 @@
                   ><b id="diag-selected">&mdash;</b></div>
               </div>
             </div>
-            <!-- The algebra's own layer, when it is switched on: a lattice per plane is
-                 not cheap and the panel should say so rather than fold it into the scene
-                 it is drawn over. Zero while the layer is off. -->
-            <div class="diag-line"><span>algebra layer</span
+            <!-- The wireframe layer, when it is switched on: a lattice per plane is not
+                 cheap and the panel should say so rather than fold it into the scene it is
+                 drawn over. Zero while the layer is off.
+                 Named "debug overlay" and not "algebra": with the two sides of the
+                 boundary now reported below, a row called algebra that meant "the optional
+                 wireframe" would be read as the algebra's cost and is not. -->
+            <div class="diag-line"><span>debug overlay<span
+              class="diag-where">algebra_view</span></span
               ><b id="diag-algebra">&mdash;</b></div>
-            <div class="diag-line"><span>flatten + pack</span
+            <div class="diag-line"><span>view matrix<span
+              class="diag-where">camera</span></span
+              ><b id="diag-matrix">&mdash;</b></div>
+            <div class="diag-line"><span>flatten + pack<span
+              class="diag-where">mesh</span></span
               ><b id="diag-flatten">&mdash;</b></div>
+            <!-- Whatever the rows above still fail to cover. Shown rather than left to be
+                 inferred: a breakdown whose parts quietly do not sum is worse than a
+                 coarser one that does, and this one did not sum for a long time without
+                 ever saying so. -->
+            <div class="diag-line"><span>unaccounted</span
+              ><b id="diag-unaccounted">&mdash;</b></div>
           </div>
         </div>
-        <div class="diag-line"><span>upload + draw calls</span
+        <!-- A second cut through the very same milliseconds, not two more stages. Every
+             step above is either working out where geometry goes or turning those places
+             into vertices, and this is how the frame divided between them -- the question
+             this project exists to ask, which no arrangement of the stages could answer.
+             Emitting is pure by construction: it is reached through mesh, which imports
+             euclid alone and so cannot name a multivector. Placing is dominated by the
+             algebra but carries a little Euclidean arithmetic inside its loops; see
+             core/timings.nim for exactly what. -->
+        <div class="diag-cut">of which</div>
+        <div class="diag-line diag-cut-row"><span>placing<span
+          class="diag-where">pga, objects, boundary</span></span
+          ><b id="diag-placing">&mdash;</b></div>
+        <div class="diag-line diag-cut-row"><span>emitting<span
+          class="diag-where">mesh, euclid</span></span
+          ><b id="diag-emitting">&mdash;</b></div>
+        <!-- Picking under the cursor, which on this build runs from event handlers rather
+             than the frame loop -- so it is measured where it happens and reported by the
+             frame after, and until now was landing unnamed in the leftover below. -->
+        <div class="diag-line"><span>hover picking<span
+          class="diag-where">picking, interaction</span></span
+          ><b id="diag-hover">&mdash;</b></div>
+        <div class="diag-line"><span>upload + draw calls<span
+          class="diag-where">glue.js, WebGL</span></span
           ><b id="diag-upload">&mdash;</b></div>
-        <div class="diag-line"><span>overlay (markers)</span
+        <!-- The selection menu's own placement folded in here: it was one early-returning
+             call reading 0.00 in every state but one, and the overlay's own recording sat
+             inside its bracket, so it had been charging this row's bookkeeping to itself. -->
+        <div class="diag-line"><span>overlay + menu<span
+          class="diag-where">marker, browser_bridge</span></span
           ><b id="diag-overlay">&mdash;</b></div>
-        <div class="diag-line"><span>selection menu</span><b id="diag-menu">&mdash;</b></div>
-        <div class="diag-line"><span>ui refresh</span><b id="diag-ui">&mdash;</b></div>
+        <div class="diag-line"><span>ui refresh<span
+          class="diag-where">glue.js</span></span
+          ><b id="diag-ui">&mdash;</b></div>
         <!-- The remainder of the frame, so the rows above account for all of it rather
              than a fraction: time spent waiting on the display plus whatever the browser
              did for itself -- style, layout, paint, compositing, collection. On a page

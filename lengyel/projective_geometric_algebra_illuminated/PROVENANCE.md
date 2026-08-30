@@ -2166,6 +2166,71 @@ the copy outliving the toast is lost. The data layer — `report_delivery`,
 `describeEnvironment`, `shareFile`, `deliverFile` — is untouched, `deliverFile` being the
 save path for both the image and the scene file.
 
+**The breakdown is cut by the algebra boundary, and it sums.** Two faults were found while
+regrouping it, both older than the change. `build` did not sum from its rows: the frame's
+prologue — focus pruning, the camera tween, this frame's `DrawExtent`, and `framing.offerAim`
+walking everything watched — and the view-matrix build belonged to no row at all, so the
+total was simply larger than what it displayed. And the frame's leftover was not what it
+said: it absorbed `resize()`'s forced layout, the vertex marshalling, held-key motion and,
+above all, **hover picking**, which on the browser runs from event handlers rather than the
+frame loop, so no bracket inside the build could ever see it. Both are now rows.
+  A third finding the new rows made visible rather than caused: **`framing.offerAim` builds a
+second `DrawExtent` every frame** (`framing.nim:252`) instead of taking the one the bridge
+derived moments earlier — a whole extra `algebraFilled` and `camera.frame`. Recorded, not yet
+fixed.
+  The **`of which` pair** is a second cut through the same milliseconds and is drawn as one:
+a rule and a label rather than a nested node, since indenting it under `build` would read as
+double counting the very time it re-divides. It is excluded from `PHASES_TOP_DIAGNOSTIC`, so
+the leftover derivation and the cost tint's denominator each count the frame once.
+  `emitting` is pure **by construction**, not by assertion: it is reached only through `mesh`,
+which imports `euclid` alone and so cannot name a `Multivector`. `placing` is dominated by
+the algebra but carries a cross product per lattice line and two colour fades per piece,
+which sit inside its loops; `timings.nim` states that rather than claiming a purity the loops
+do not have.
+  Measured orbiting at distance 300: **placing 20.8 ms against emitting 6.3** — about
+three-quarters of the drawing work is the algebra, which is the number the panel existed to
+produce and could not. On this container `unaccounted` reads 0.00, so the named phases cover
+the build completely; the row stays because that is a measurement, not a guarantee.
+  Held by a driven check that `build` equals its rows within the clock's own resolution
+(worst of 30 frames: off by 0.000 ms). **Guard-running that check found the first guard
+vacuous** — zeroing `unaccounted` changed nothing precisely because it is already zero here —
+so the guard drops a row that does carry time, which leaves `build` 0.7 ms above its rows.
+
+**The tessellation assembles before it emits.** Four loops alternated multivector work with
+vertex emission, with the boundary read inside the emit call's own argument list, so no
+bracket could separate the two languages. Each now resolves its places through the algebra
+into a `DrawScratch` and emits the whole run afterwards; for the grid and the axes the seam is
+between two procs (`placeGridFamily`, `placeAxes` against `addRibbonPieces`), which is the
+strongest form of it — neither bracket can enclose any of the other's work.
+  Two of the loops were doing the work more than once, visible only once the phases were
+separated: the great circle derived every ring place **twice**, as one segment's far end and
+the next one's near end, and the dome called `spherePoint` **four times per quad — 1,152 calls
+for 325 distinct places**. Assembling once removed both: a scene holding a horizon line reads
+2.2 ms against 2.9 before. Both keep one extra row or column rather than wrapping the index,
+so the closing pieces meet places stepped at the angles the loops would have used —
+`cos(2*PI)` and `cos(0)` differ in the last bits.
+  **No regression in the hot path**, which was the risk: the ground grid orbiting at distance
+300 reads 28.9 ms against 28.9 before, and near 2.2–2.3 against 2.2. Vertex counts are
+identical in every bucket at both distances, which with the untouched suites is the evidence
+the reshape draws what it drew. The brackets themselves cost about 0.02 ms of a 32 ms frame —
+roughly 76 clock reads at the 0.27 us `SceneCost` already measured.
+
+**The draw loop has a frame arena that swaps.** Scratch a frame assembles is reclaimed on the
+*next* frame's swap rather than at the end of its own, so what one frame worked out stays
+readable through the frame after it while the block being moved to starts empty. Reclaiming on
+the way **in** is the whole mechanism; reclaiming on the way out would take last frame's bytes
+away while they were still wanted, and a suite case pins exactly that.
+  A separate pair rather than a larger `ARENA_FRAME`: an export's scratch is tens of megabytes
+on a keypress, a frame's is tens of kilobytes sixty times a second, and sizing one block for
+both would reserve the export's capacity twice over to buy the swap. 256 KiB each, from the
+budgets that bound the loops carving it.
+  **The browser cannot have it.** `arena.nim` casts a pointer over a global and carves typed
+slices from it, neither of which the JS backend can do — which is why it is desktop-only. So
+`tessellate` takes its scratch as a parameter: the desktop hands it arena memory, the browser
+a fixed buffer. Neither allocates per frame. The pair's *previous* half has no desktop
+consumer yet, because `updateHover` runs inside the frame there; the cross-frame need is
+browser-side, and rides `timings.FrameRecord` on the same two-frame lifetime.
+
 **On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
 the driving container, which is the wrong machine for the question — its median frame is
 17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:

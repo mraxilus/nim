@@ -990,7 +990,8 @@ await page.evaluate(() =>
   document.querySelector('.diag-node[data-node="build"] .diag-parent').click());
 await page.waitForTimeout(400);
 const row_texts = await page.evaluate(() => Object.fromEntries(
-  ['build', 'furniture', 'scene', 'flatten', 'upload', 'overlay', 'menu', 'ui']
+  ['build', 'camera', 'furniture', 'scene', 'matrix', 'flatten', 'unaccounted',
+    'placing', 'emitting', 'hover', 'upload', 'overlay', 'ui']
     .map((n) => [n, document.getElementById('diag-' + n).textContent])
 ));
 report(
@@ -1517,6 +1518,47 @@ report(
     capped_slow.ceiling > capped_fast.ceiling,
   `fast window: ceiling ${capped_fast.ceiling}, worst row ${capped_fast.worst}; ` +
     `slow window: ceiling ${capped_slow.ceiling}, worst row ${capped_slow.worst}`,
+);
+
+// **The breakdown adds up.** For a long time it did not, and nothing said so: the frame's
+// prologue and its view matrix belonged to no row, so `build` was simply larger than the
+// sum of what it showed and a reader had no way to know how much was missing. Every span is
+// now named, `unaccounted` included, and this is the check that keeps it that way.
+const summed = await page.evaluate(() => {
+  const runs = [];
+  for (let i = 0; i < 30; i += 1) {
+    nimSetCameraAzimuth(0.01 * i); // Rebuild the furniture, so the sum covers real work.
+    const f = nimBuildFrame(1200 / 900, performance.now() / 1000, 900, true, true, false);
+    const children = f.ms_camera + f.ms_furniture + f.ms_scene + f.ms_algebra +
+      f.ms_matrix + f.ms_flatten + f.ms_unaccounted;
+    runs.push({ build: f.ms_build, children, placing: f.ms_placing, emitting: f.ms_emitting });
+  }
+  const worst = runs.reduce((a, b) =>
+    (Math.abs(b.build - b.children) > Math.abs(a.build - a.children) ? b : a));
+  return {
+    n: runs.length, off: worst.build - worst.children,
+    build: worst.build, children: worst.children,
+    placing: Math.max(...runs.map((r) => r.placing)),
+    emitting: Math.max(...runs.map((r) => r.emitting)),
+  };
+});
+report(
+  "build accounts for itself: its rows sum to it, with the residue named",
+  // Exact but for the clock's own resolution -- these are all reads of the one timer, so
+  //   the only slack needed is the rounding it does, not a proportional tolerance.
+  Math.abs(summed.off) <= 0.05,
+  `worst of ${summed.n} frames: ${summed.build.toFixed(2)} against ` +
+    `${summed.children.toFixed(2)} from its rows, off by ${summed.off.toFixed(3)} ms`,
+);
+
+// **And the second cut says something.** Both sides of the algebra boundary must be
+// carrying real time on a frame that draws a scene -- a split that reads zero on one side
+// is a bracket that never ran, which is exactly the failure a cut like this hides.
+report(
+  'and both sides of the algebra boundary carry time on a frame that draws',
+  summed.placing > 0.01 && summed.emitting > 0.01,
+  `placing peaked at ${summed.placing.toFixed(2)} ms, emitting at ` +
+    `${summed.emitting.toFixed(2)} ms`,
 );
 
 // **The axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one

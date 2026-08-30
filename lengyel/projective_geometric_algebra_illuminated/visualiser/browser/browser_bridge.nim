@@ -1654,6 +1654,14 @@ type FrameData = object
     ## drawing process rather than one opaque frame time; the phases the bridge cannot
     ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
     ## A held furniture frame reports ~0 for its furniture phase, which is the point.
+  ms_camera, ms_matrix, ms_unaccounted: float32
+    ## The three spans of `nimBuildFrame` that used to belong to no row at all.
+    ##   `ms_camera` is the prologue: focus pruning, the camera tween, this frame's own
+    ## `DrawExtent`, and `framing.offerAim`'s walk of everything watched. `ms_matrix` is
+    ## the view-projection build, which runs `camera.frame`'s joins again. `ms_unaccounted`
+    ## is whatever the phases still fail to cover -- kept and shown rather than left to be
+    ## inferred, because a breakdown whose parts quietly do not sum is worse than a coarse
+    ## one that does, and this one did not sum for a long time without saying so.
   ms_placing, ms_emitting: float32
     ## **A second cut through the same milliseconds, not a stage of its own.** Every step
     ## above is either working out where geometry goes or turning those places into
@@ -1816,7 +1824,8 @@ proc nimBuildFrame(
   )
   let is_furniture_held =
     g_settings_furniture.isSome and g_settings_furniture.get == settings_furniture
-  let ms_before_furniture = performanceNow()
+  let ms_after_camera = performanceNow()
+  let ms_before_furniture = ms_after_camera
   var
     ms_grid = 0.0
     ms_axes = 0.0
@@ -1945,7 +1954,8 @@ proc nimBuildFrame(
 
   # Flattened into locals rather than in the constructor, so the pack-and-copy phase has
   #   a start and an end a clock can bracket.
-  let ms_before_flatten = performanceNow()
+  let ms_after_matrix = performanceNow()
+  let ms_before_flatten = ms_after_matrix
   let
     tri_verts = flatten(g_meshes[Primitive.Triangle])
     ribbon_verts = flatten(g_meshes[Primitive.Ribbon])
@@ -1984,6 +1994,15 @@ proc nimBuildFrame(
     ms_algebra: float32(ms_after_algebra - ms_before_algebra),
     ms_scene: float32(ms_before_algebra - ms_after_furniture),
     ms_flatten: float32(ms_done - ms_before_flatten),
+    ms_camera: float32(ms_after_camera - ms_entered),
+    ms_matrix: float32(ms_after_matrix - ms_after_algebra),
+    # What the named phases still do not cover. Never negative: a clock that went backwards
+    #   between two reads is a coarsened timer, not a phase that ran for less than nothing.
+    ms_unaccounted: float32(max(0.0,
+      (ms_done - ms_entered) - (ms_after_camera - ms_entered) -
+      (ms_after_furniture - ms_before_furniture) - (ms_before_algebra - ms_after_furniture) -
+      (ms_after_algebra - ms_before_algebra) - (ms_after_matrix - ms_after_algebra) -
+      (ms_done - ms_before_flatten))),
     ms_placing: float32(spentOn(Side.Placing)),
     ms_emitting: float32(spentOn(Side.Emitting)),
     ms_hover_pick: float32(recordLastFrame().ms_hover_pick),
