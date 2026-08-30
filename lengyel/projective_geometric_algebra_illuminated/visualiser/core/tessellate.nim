@@ -28,7 +28,7 @@
 import std/[math, options]
 
 import ../../pga
-import ./[boundary, mesh]
+import ./[boundary, mesh, timings]
 
 export mesh
 
@@ -154,14 +154,16 @@ proc addGreatCircle(
   #   first: the closing segment then ends on a place stepped at the angle the loop would
   #   have used, where `cos(2*PI)` and `cos(0)` differ in the last bits.
   let count_places = min(segments + 1, len(scratch.places))
-  for i in 0 ..< count_places:
-    let angle = (2.0*PI * float(i)) / float(segments)
-    scratch.places[i] = pointFrom(add(centre_point,
-      add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
-  for i in 0 ..< count_places - 1:
-    meshes.addSegment(
-      scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, scale,
-    )
+  timed(Side.Placing):
+    for i in 0 ..< count_places:
+      let angle = (2.0*PI * float(i)) / float(segments)
+      scratch.places[i] = pointFrom(add(centre_point,
+        add(wedge(cos(angle), arm_first), wedge(sin(angle), arm_second))))
+  timed(Side.Emitting):
+    for i in 0 ..< count_places - 1:
+      meshes.addSegment(
+        scratch.places[i], scratch.places[i + 1], tint, WIDTH_LINE_OBJECT, scale,
+      )
 
 
 func spherePoint(centre_point: Multivector; radius: float; theta, phi: float): Position =
@@ -197,19 +199,21 @@ proc addDome(
   #   would have used.
   let stride = longitudes + 1
   if (latitudes + 1)*stride > len(scratch.places): return
-  for lat in 0 .. latitudes:
-    let theta = PI * float(lat) / float(latitudes)
-    for lon in 0 .. longitudes:
-      let phi = 2.0*PI * float(lon) / float(longitudes)
-      scratch.places[lat*stride + lon] = spherePoint(centre_point, radius, theta, phi)
-  for lat in 0 ..< latitudes:
-    for lon in 0 ..< longitudes:
-      meshes.addQuad([
-        scratch.places[lat*stride + lon],
-        scratch.places[lat*stride + lon + 1],
-        scratch.places[(lat + 1)*stride + lon + 1],
-        scratch.places[(lat + 1)*stride + lon],
-      ], tint)
+  timed(Side.Placing):
+    for lat in 0 .. latitudes:
+      let theta = PI * float(lat) / float(latitudes)
+      for lon in 0 .. longitudes:
+        let phi = 2.0*PI * float(lon) / float(longitudes)
+        scratch.places[lat*stride + lon] = spherePoint(centre_point, radius, theta, phi)
+  timed(Side.Emitting):
+    for lat in 0 ..< latitudes:
+      for lon in 0 ..< longitudes:
+        meshes.addQuad([
+          scratch.places[lat*stride + lon],
+          scratch.places[lat*stride + lon + 1],
+          scratch.places[(lat + 1)*stride + lon + 1],
+          scratch.places[(lat + 1)*stride + lon],
+        ], tint)
 
 
 
@@ -227,11 +231,11 @@ func alphaGridFade(radius, radius_fade_start, radius_end: float): float =
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
-proc addAxes*(
-  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
-) =
-  ## Append world axes through origin, each in the standard convention: x red, y green,
-  ## z blue, so orientation reads at a glance regardless of where the camera stands.
+proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int =
+  ## Resolve the world axes into `scratch` and report how many pieces: one through the
+  ## origin along each of x, y and z, in the standard convention -- x red, y green, z
+  ## blue -- so orientation reads at a glance regardless of where the camera stands.
+  ##   **Draws nothing**; the algebra's half of the seam, as `placeGridFamily` is.
   ##   **Faded out and cut off in the ground grid's own fog**, rather than running the
   ## full furniture extent at flat alpha as they once did. An axis reaching the horizon at
   ## full strength is the longest, brightest mark in the frame, and readers were taking
@@ -303,9 +307,20 @@ proc addAxes*(
       )
       count_assembled += 1
 
-  meshes.addRibbonPieces(
-    scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
-  )
+  count_assembled
+
+
+proc addAxes*(
+  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
+) =
+  ## Append the world axes; `placeAxes` says what each is and how far it runs.
+  ##   Two calls, for the reason `addGridFamily`'s own note gives.
+  var count_assembled = 0
+  timed(Side.Placing): count_assembled = placeAxes(scratch, extent, scale)
+  timed(Side.Emitting):
+    meshes.addRibbonPieces(
+      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+    )
 
 
 func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Option[float] =
@@ -358,14 +373,19 @@ func segmentsGridFadeFor*(count_lines: int): int =
   max(SEGMENTS_GRID_FADE_MIN, min(SEGMENTS_GRID_FADE, allowed))
 
 
-proc addGridFamily*(
-  meshes: var MeshSet; scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
+proc placeGridFamily(
+  scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
   fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
-  along, across: Direction; origin: Position = ORIGIN_WORLD
-) =
-  ## Append one family of lattice lines: every line running along `along`, stepped by
-  ## `size_cell` along `across`, that falls within `radius_ground` of the eye's own foot on
-  ## the plane the two span.
+  along, across: Direction; origin: Position
+): int =
+  ## Resolve every piece of one family of lattice lines into `scratch`, and report how
+  ## many: every line running along `along`, stepped by `size_cell` along `across`, that
+  ## falls within `radius_ground` of the eye's own foot on the plane the two span.
+  ##   **Draws nothing.** This is the algebra's half of the seam. Almost all of it is
+  ## multivector work, with two Euclidean exceptions that ride along because they sit
+  ## inside the loop: a line's across-vector is one cross product, and each piece's two
+  ## fade colours are scalar. Both are named where they happen, and both are charged to
+  ## this side -- which is worth knowing when reading what the panel says it cost.
   ##   Exported for `algebra_view`, whose debug layer lays this same lattice on an
   ##   arbitrary plane to draw it as the infinite thing it is -- the ground is that case
   ##   with `origin` at the world origin and the two world axes for its span.
@@ -441,10 +461,28 @@ proc addGridFamily*(
       )
       count_assembled += 1
 
-  # And the picture, in one pass over what the algebra worked out.
-  meshes.addRibbonPieces(
-    scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
-  )
+  count_assembled
+
+
+proc addGridFamily*(
+  meshes: var MeshSet; scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
+  fog: tuple[radius_full, radius_gone: float]; radius_ground, size_cell: float;
+  along, across: Direction; origin: Position = ORIGIN_WORLD
+) =
+  ## Append one family of lattice lines; `placeGridFamily` says what a family is.
+  ##   **The seam, as two calls.** Where the pieces go is worked out by one proc and drawn
+  ##   by another, so the line between the algebra and the picture runs between two
+  ##   functions rather than through the middle of one -- and each side can be timed with
+  ##   a bracket that encloses none of the other's work. See `timings`.
+  var count_assembled = 0
+  timed(Side.Placing):
+    count_assembled = placeGridFamily(
+      scratch, scale, tint, fog, radius_ground, size_cell, along, across, origin,
+    )
+  timed(Side.Emitting):
+    meshes.addRibbonPieces(
+      scratch.ribbons.toOpenArray(0, count_assembled - 1), WIDTH_LINE_FURNITURE, scale,
+    )
 
 
 proc addGrid*(
@@ -501,18 +539,20 @@ proc addPoint(
   ## infinitely far away, staying in the same apparent direction as the camera pans or
   ## dollies, moving only as the eye itself does.
   ##   `progress` fades a marker in and, at horizon, also grows how far out it stands.
-  let place = position(geometry)
+  var place = none(Position)
+  timed(Side.Placing): place = position(geometry)
   if place.isSome:
-    meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
+    timed(Side.Emitting): meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
     return Placement.Finite
 
-  let heading = directionHorizon(geometry)
-  if heading.isNone: return Placement.Empty
-  meshes.addMarker(
-    pointFrom(add(scale.eye_point,
-      wedge(progress*scale.radius_horizon, toMultivector(heading.get)))),
-    tint.fade(tint.alpha*progress),
-  )
+  var star = none(Position)
+  timed(Side.Placing):
+    let heading = directionHorizon(geometry)
+    if heading.isSome:
+      star = some(pointFrom(add(scale.eye_point,
+        wedge(progress*scale.radius_horizon, toMultivector(heading.get)))))
+  if star.isNone: return Placement.Empty
+  timed(Side.Emitting): meshes.addMarker(star.get, tint.fade(tint.alpha*progress))
   Placement.Horizon
 
 
@@ -544,25 +584,35 @@ proc addLine(
   ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
   ##   fades it in alongside, so a freshly derived line visibly extends rather than
   ##   popping in.
-  let
+  var
+    anchor = none(Position)
+    axis = none(Direction)
+    far_ahead, far_behind = ORIGIN_WORLD
+  timed(Side.Placing):
     anchor = positionAnchor(geometry)
     axis = direction(geometry)
-  if anchor.isSome and axis.isSome:
-    let
-      reach = progress*scale.radius_horizon
-      tint_progress = tint.fade(tint.alpha*progress)
-      axis_point = toMultivector(axis.get)
+    if anchor.isSome and axis.isSome:
+      let
+        reach = progress*scale.radius_horizon
+        axis_point = toMultivector(axis.get)
       far_ahead = pointFrom(add(scale.eye_point, wedge(reach, axis_point)))
       far_behind = pointFrom(add(scale.eye_point, wedge(-reach, axis_point)))
-    meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, scale)
-    meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, scale)
+  if anchor.isSome and axis.isSome:
+    let tint_progress = tint.fade(tint.alpha*progress)
+    timed(Side.Emitting):
+      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT, scale)
+      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT, scale)
     return Placement.Finite
 
-  let normal = directionNormalHorizon(geometry)
-  if normal.isNone: return Placement.Empty
-  let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
+  var axes = none(tuple[first, second: Direction])
+  timed(Side.Placing):
+    let normal = directionNormalHorizon(geometry)
+    if normal.isSome:
+      let spanned = spanPerpendicular(ORIGIN_WORLD, normal.get)
+      if spanned.isSome:
+        axes = some((first: spanned.get[0], second: spanned.get[1]))
   if axes.isNone: return Placement.Empty
-  let (axis_first, axis_second) = axes.get
+  let (axis_first, axis_second) = (axes.get.first, axes.get.second)
   meshes.addGreatCircle(
     scratch, scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
     tint.fade(tint.alpha*progress), scale,
@@ -590,7 +640,10 @@ proc addPlane(
   ##   scene, permanently, to answer a question a reader asks about one object at a time.
   ##   Orientation now rides on the selection marker instead, as the direction a pulse
   ##   travels round it; see `marker.markerFor`.
-  let
+  var
+    anchor = none(Position)
+    axes = none(FramePlane)
+  timed(Side.Placing):
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
   if anchor.isSome and axes.isSome:
@@ -600,9 +653,13 @@ proc addPlane(
       tint_progress = tint.fade(tint.alpha*progress)
 
     # Fill first, so plane reads as a surface rather than a bare outline; flat, since
-    #   the rim drawn over it already marks the edge crisply on its own.
-    meshes.addPlaneFill(anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress))
-    meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
+    #   the rim drawn over it already marks the edge crisply on its own. Both are stepped
+    #   entirely in `euclid.onCircle`: a disc is not a plane, and none of this is algebra.
+    timed(Side.Emitting):
+      meshes.addPlaneFill(
+        anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress),
+      )
+      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress, scale)
 
     return Placement.Finite
 

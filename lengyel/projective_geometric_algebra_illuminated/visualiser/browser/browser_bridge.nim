@@ -45,7 +45,7 @@ import std/[options, strformat]
 import ../../pga
 import ../core/[
   algebra_view, boundary, camera, format, framing, help, history, interaction, marker,
-  picking, scene, selection, storyboard, tessellate,
+  picking, scene, selection, storyboard, tessellate, timings,
 ]
 
 
@@ -778,8 +778,13 @@ proc nimSetCameraDragging(is_dragging: bool) {.exportc.} =
 
 proc nimUpdateHover(width, height: cint) {.exportc.} =
   ## Forward to `interaction.updateHover`; see its own doc comment.
+  # Charged to the record rather than to a phase: this runs from an event handler, so the
+  #   frame that reports it is the next one. Accumulated rather than assigned -- a pointer
+  #   can move many times between two frames and every one of those picks is real work.
+  let ms_entered_hover = nowMilliseconds()
   let vp = g_camera.initMatrixViewProjection(float(width) / float(height))
   interaction.updateHover(g_interaction, g_scene, g_camera, vp, int(width), int(height))
+  recordThisFrame().ms_hover_pick += nowMilliseconds() - ms_entered_hover
 
 
 proc nimHoverSlot(): cint {.exportc.} =
@@ -1649,6 +1654,20 @@ type FrameData = object
     ## drawing process rather than one opaque frame time; the phases the bridge cannot
     ## see -- GL upload, the SVG overlay -- are timed by `glue.js` around its own calls.
     ## A held furniture frame reports ~0 for its furniture phase, which is the point.
+  ms_placing, ms_emitting: float32
+    ## **A second cut through the same milliseconds, not a stage of its own.** Every step
+    ## above is either working out where geometry goes or turning those places into
+    ## vertices, and these two say how the frame divided between them -- which is the
+    ## question this project exists to ask and no arrangement of the stages could answer.
+    ##   `ms_emitting` is pure by construction: it is reached through `mesh`, which imports
+    ## `euclid` alone and so cannot name a multivector. `ms_placing` is dominated by the
+    ## algebra but carries a little Euclidean arithmetic that sits inside its loops; see
+    ## `timings` for exactly what and why it is not worth separating.
+  ms_hover_pick: float32
+    ## What picking under the cursor cost, measured **between** frames and reported by the
+    ## one that follows. On the browser `updateHover` runs from event handlers rather than
+    ## the frame loop, so no bracket inside this proc can ever see it and it was landing,
+    ## unnamed, in the frame's own leftover. Carried on `timings.FrameRecord`.
   ms_grid, ms_axes: float32
     ## What the two halves of the scenery cost, in milliseconds, inside `ms_furniture`.
     ## The axes are three lines however far the camera stands; the grid is however many
@@ -1763,6 +1782,9 @@ proc nimBuildFrame(
   # One clock per phase boundary, so the diagnostics tab can show each step of the
   #   drawing process rather than one opaque build figure. `performanceNow` is timing-only.
   let ms_entered = performanceNow()
+  # Forget the last frame's two sides, and turn the record pair over so what was measured
+  #   between frames -- hover picking -- is readable while this frame reports it.
+  openFrameTimings()
   # A focus is a slot carried across frames like any other, so it needs the same liveness
   #   guard the selection keeps; mirrors `visualiser.renderFrame`.
   g_interaction.pruneFocus(g_scene)
@@ -1962,6 +1984,9 @@ proc nimBuildFrame(
     ms_algebra: float32(ms_after_algebra - ms_before_algebra),
     ms_scene: float32(ms_before_algebra - ms_after_furniture),
     ms_flatten: float32(ms_done - ms_before_flatten),
+    ms_placing: float32(spentOn(Side.Placing)),
+    ms_emitting: float32(spentOn(Side.Emitting)),
+    ms_hover_pick: float32(recordLastFrame().ms_hover_pick),
     tri_over: countOverlay(g_meshes[Primitive.Triangle]),
     ribbon_over: countOverlay(g_meshes[Primitive.Ribbon]),
     point_over: countOverlay(g_meshes[Primitive.Point]),

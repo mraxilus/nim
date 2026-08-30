@@ -108,7 +108,7 @@ import ./pga
 import ./visualiser/core/[
   algebra_view, boundary, camera, format, framing, help, history,
   interaction, marker, picking,
-  scene, selection, storyboard, tessellate,
+  scene, selection, storyboard, tessellate, timings,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
 import ./visualiser/desktop/opengl as gl
@@ -1655,6 +1655,9 @@ proc runInteractive(
     #   reclaimed here, while the block the *previous* frame carved stays whole and
     #   readable until the swap after this one comes back round to it.
     ARENA_SWAP.swap()
+    # And the frame's own measurements turn over with it, on the same two-frame lifetime:
+    #   both sides' totals are forgotten and the record pair is turned. See `timings`.
+    openFrameTimings()
 
     # One reading per frame, shared by every drag that completes this frame and by the
     #   frame's own render, so a completed drag and what gets drawn agree on "now".
