@@ -143,13 +143,13 @@ proc addGreatCircle(
   ## Append a closed ring of segments around `center`, in the plane `axis_first` and
   ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
   ## the sky, seen from any point, standing for the pencil of directions it names.
-  ##   The very walk `mesh.addPlaneRing` steps, delegated to it so the two circles cannot
+  ##   The very circle `mesh.addRing` describes, delegated to it so the two cannot
   ##   drift: which plane the arms span is still the algebra's answer
   ##   (`spanPerpendicular`, at the caller), and the ring itself is arithmetic off the
   ##   fixed table of angles -- it used to be assembled as per-angle multivector sums,
   ##   which the suite holds that arithmetic equal to, and `picking.pickNearest` samples
   ##   its own copy of this circle the same way so a hit still agrees with what is drawn.
-  meshes.addPlaneRing(center, axis_first, axis_second, radius, tint)
+  meshes.addRing(center, axis_first, axis_second, radius, tint, WIDTH_LINE_OBJECT)
 
 
 #[ World Furniture ]#
@@ -543,7 +543,8 @@ proc addPlane(
       meshes.addDisc(
         anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress),
       )
-      meshes.addPlaneRing(anchor.get, axis_first, axis_second, extent, tint_progress)
+      meshes.addRing(anchor.get, axis_first, axis_second, extent, tint_progress,
+        WIDTH_LINE_OBJECT)
 
     return Placement.Finite
 

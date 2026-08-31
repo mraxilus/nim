@@ -203,6 +203,64 @@ void main() {
   ## the disc source above: the centre plus the unit direction scaled by the radius.
 
 
+const SOURCE_VERTEX_RING = """
+#version 330 core
+layout (location = 0) in vec4 in_arc;
+layout (location = 1) in vec2 in_corner;
+layout (location = 2) in vec3 in_centre;
+layout (location = 3) in vec3 in_arm_first;
+layout (location = 4) in vec3 in_arm_second;
+layout (location = 5) in vec4 in_fill;
+layout (location = 6) in float in_width;
+uniform mat4 view_projection;
+uniform vec3 eye;
+uniform vec3 forward;
+uniform float depth_near;
+uniform float tangent_half_view;
+uniform float height_pixels;
+out vec4 vertex_colour;
+void main() {
+  vec3 tail = in_centre + in_arc.x*in_arm_first + in_arc.y*in_arm_second;
+  vec3 head = in_centre + in_arc.z*in_arm_first + in_arc.w*in_arm_second;
+  float depth_tail = dot(tail - eye, forward);
+  float depth_head = dot(head - eye, forward);
+  vec3 across_raw = cross(head - tail, eye - tail);
+  float across_length = length(across_raw);
+  if (max(depth_tail, depth_head) < depth_near || across_length < 1e-12) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    vertex_colour = vec4(0.0);
+    return;
+  }
+  vec3 near_end = tail;
+  vec3 far_end = head;
+  if (depth_tail < depth_near) {
+    float fraction = (depth_near - depth_tail)/(depth_head - depth_tail);
+    near_end = tail + fraction*(head - tail);
+  } else if (depth_head < depth_near) {
+    float fraction = (depth_near - depth_head)/(depth_tail - depth_head);
+    far_end = head + fraction*(tail - head);
+  }
+  vec3 across = across_raw/across_length;
+  vec3 at = mix(near_end, far_end, in_corner.x);
+  float depth_at = max(dot(at - eye, forward), depth_near);
+  float world_per_pixel = 2.0*depth_at*tangent_half_view/height_pixels;
+  at += in_corner.y*0.5*in_width*world_per_pixel*across;
+  gl_Position = view_projection*vec4(at, 1.0);
+  vertex_colour = in_fill;
+}
+""" ## Widen one ring record into a whole plane rim, on the GPU.
+  ##   **A sibling copy of `mesh.expandRingVertex`, the reference the suite pins, and of
+  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
+  ## until the other two are checked.** One instance is the entire circle: the static
+  ## corner buffer carries every segment of the closed walk, so `in_arc` names this
+  ## invocation's own segment as the two angles' `(cos, sin)` pairs.
+  ##   Two steps, and only the first is the ring's. Place the segment's ends exactly as
+  ## `SOURCE_VERTEX_DISC` places its fan corners, then widen the pair by *the ribbon
+  ## source's own body*, line for line -- a rim is a line, and how wide a line is drawn is
+  ## stated once. The tint is flat, so the ribbon's blend between two ends collapses to
+  ## `in_fill`, and the fog is always zero, so this shares the plain fragment stage.
+
+
 const
   COUNT_CORNERS_DISC = 3*SEGMENTS_CIRCLE_HORIZON
     ## How many corners the disc fan's static buffer holds; `mesh.discCorners` emits
@@ -210,6 +268,9 @@ const
   COUNT_CORNERS_DOME = 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
     ## How many corners the dome's static buffer holds; `mesh.domeCorners` emits exactly
     ## this many unit directions.
+  COUNT_CORNERS_RING = 6*SEGMENTS_CIRCLE_HORIZON
+    ## How many corners the ring's static buffer holds -- the whole rim, six corners a
+    ## segment; `mesh.ringCorners` emits exactly this many six-float entries.
 
 
 
@@ -245,6 +306,16 @@ type
     array_dome: gl.Uint
     buffer_dome_corners: gl.Uint
     buffer_dome_records: gl.Uint
+    program_ring: gl.Uint
+    location_ring_view_projection: gl.Int
+    location_ring_eye: gl.Int
+    location_ring_forward: gl.Int
+    location_ring_depth_near: gl.Int
+    location_ring_tangent: gl.Int
+    location_ring_height: gl.Int
+    array_ring: gl.Uint
+    buffer_ring_corners: gl.Uint
+    buffer_ring_records: gl.Uint
 
 
 
@@ -393,6 +464,54 @@ proc initRenderer*(): Renderer =
     gl.vertexAttribDivisor(index, 1)
   gl.bindVertexArray(0)
 
+  # The ring program, on the same shape: static corner geometry from `mesh.ringCorners`
+  #   -- the very buffer `glue.js` uploads through `nimRingCorners` -- and one record
+  #   buffer of divisor-one instance attributes. It takes the *ribbon* program's camera
+  #   uniforms too, because the widening it runs is the ribbon's.
+  result.program_ring = linkProgram(SOURCE_VERTEX_RING, SOURCE_FRAGMENT)
+  result.location_ring_view_projection =
+    gl.getUniformLocation(result.program_ring, "view_projection")
+  result.location_ring_eye = gl.getUniformLocation(result.program_ring, "eye")
+  result.location_ring_forward = gl.getUniformLocation(result.program_ring, "forward")
+  result.location_ring_depth_near =
+    gl.getUniformLocation(result.program_ring, "depth_near")
+  result.location_ring_tangent =
+    gl.getUniformLocation(result.program_ring, "tangent_half_view")
+  result.location_ring_height =
+    gl.getUniformLocation(result.program_ring, "height_pixels")
+  gl.useProgram(result.program_ring)
+  gl.uniform1f(gl.getUniformLocation(result.program_ring, "as_point"), 0.0)
+  gl.genVertexArrays(1, addr result.array_ring)
+  gl.genBuffers(1, addr result.buffer_ring_corners)
+  gl.genBuffers(1, addr result.buffer_ring_records)
+  gl.bindVertexArray(result.array_ring)
+  let corners_ring = ringCorners()
+  doAssert len(corners_ring) == 6*COUNT_CORNERS_RING,
+    &"Ring corner buffer holds {len(corners_ring)} floats, not {6*COUNT_CORNERS_RING}."
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ring_corners)
+  gl.bufferData(
+    gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_ring)*sizeof(float32)),
+    unsafeAddr corners_ring[0], gl.STATIC_DRAW,
+  )
+  # Two views on the one corner entry: the segment's two angles, then its (end, side).
+  const STRIDE_CORNER_RING = gl.Sizei(6*sizeof(float32))
+  for (index, floats, offset) in [(gl.Uint(0), gl.Int(4), 0), (gl.Uint(1), gl.Int(2), 4)]:
+    gl.enableVertexAttribArray(index)
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_CORNER_RING,
+      cast[pointer](offset*sizeof(float32)))
+  gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ring_records)
+  const STRIDE_RING = gl.Sizei(sizeof(RingRecord))
+  # (attribute, floats, float offset) for each of the record's five views.
+  for (index, floats, offset) in [
+    (gl.Uint(2), gl.Int(3), 0), (gl.Uint(3), gl.Int(3), 3), (gl.Uint(4), gl.Int(3), 6),
+    (gl.Uint(5), gl.Int(4), 9), (gl.Uint(6), gl.Int(1), 13),
+  ]:
+    gl.enableVertexAttribArray(index)
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RING,
+      cast[pointer](offset*sizeof(float32)))
+    gl.vertexAttribDivisor(index, 1)
+  gl.bindVertexArray(0)
+
   result.program_dome = linkProgram(SOURCE_VERTEX_DOME, SOURCE_FRAGMENT)
   result.location_dome_view_projection =
     gl.getUniformLocation(result.program_dome, "view_projection")
@@ -479,7 +598,17 @@ proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
 
 
 proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
-  ## Hand this frame's disc and dome records to the driver whole; the shaders fan them.
+  ## Hand this frame's disc, ring and dome records to the driver whole; the shaders fan
+  ## them. The rings ride along because they are uploaded on the same schedule, not
+  ## because a rim is a wash -- it is drawn opaque, with the lines.
+  if meshes.rings.count > 0:
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ring_records)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      gl.Sizeiptr(meshes.rings.count*sizeof(RingRecord)),
+      unsafeAddr meshes.rings.records[0],
+      gl.DYNAMIC_DRAW,
+    )
   if meshes.discs.count > 0:
     gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_disc_records)
     gl.bufferData(
@@ -524,6 +653,36 @@ proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
     gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RECORD,
       cast[pointer]((run.first*sizeof(RibbonRecord)) + offset*sizeof(float32)))
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, gl.Sizei(run.count))
+
+
+func runOfRings(rings: RingMesh; is_overlay: bool): tuple[first, count: int] =
+  ## Say which stretch of the ring records belongs to which pass; `runOf`'s own rule.
+  let split =
+    if rings.index_overlay.isSome: clamp(rings.index_overlay.get, 0, rings.count)
+    else: rings.count
+  if is_overlay: (first: split, count: rings.count - split)
+  else: (first: 0, count: split)
+
+
+proc drawRingRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+  ## Draw one run of the already-uploaded ring records, each instance a whole plane rim.
+  ##   GL 3.3 has no base instance, so a run that does not start at the first record
+  ##   re-points the five instance attributes at its own first byte -- `drawRibbonRun`'s
+  ##   rule exactly. Mirrors `glue.js`'s own `drawRings`.
+  let run = runOfRings(meshes.rings, is_overlay)
+  if run.count == 0: return
+  gl.bindVertexArray(renderer.array_ring)
+  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ring_records)
+  const STRIDE_RING = gl.Sizei(sizeof(RingRecord))
+  for (index, floats, offset) in [
+    (gl.Uint(2), gl.Int(3), 0), (gl.Uint(3), gl.Int(3), 3), (gl.Uint(4), gl.Int(3), 6),
+    (gl.Uint(5), gl.Int(4), 9), (gl.Uint(6), gl.Int(1), 13),
+  ]:
+    gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_RING,
+      cast[pointer]((run.first*sizeof(RingRecord)) + offset*sizeof(float32)))
+  gl.drawArraysInstanced(
+    gl.TRIANGLES, 0, gl.Sizei(COUNT_CORNERS_RING), gl.Sizei(run.count)
+  )
 
 
 func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
@@ -598,6 +757,7 @@ proc drawWashRuns(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
 func hasOverlay(meshes: MeshSet): bool =
   ## Report whether anything in this set asked to be drawn over the rest of it.
   if runOfRibbons(meshes.ribbons, is_overlay = true).count > 0: return true
+  if runOfRings(meshes.rings, is_overlay = true).count > 0: return true
   if runOf(meshes.points, is_overlay = true).count > 0: return true
   let (begin, until) = runsOfWashes(meshes.washes, is_overlay = true)
   until > begin
@@ -651,11 +811,26 @@ proc drawMeshes*(
   gl.uniformMatrix4fv(
     renderer.location_dome_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
+  # The ring program takes the ribbon program's whole camera, not just the matrix: the
+  #   rim is widened in screen space by the very rule a line is.
+  gl.useProgram(renderer.program_ring)
+  gl.uniformMatrix4fv(
+    renderer.location_ring_view_projection, 1, gl.FALSE, view_projection.elementsAddress
+  )
+  gl.uniform3f(renderer.location_ring_eye,
+    gl.Float(scale.eye.x), gl.Float(scale.eye.y), gl.Float(scale.eye.z))
+  gl.uniform3f(renderer.location_ring_forward,
+    gl.Float(scale.forward.x), gl.Float(scale.forward.y), gl.Float(scale.forward.z))
+  gl.uniform1f(renderer.location_ring_depth_near, gl.Float(scale.depth_near))
+  gl.uniform1f(renderer.location_ring_tangent, gl.Float(scale.tangent_half_view))
+  gl.uniform1f(renderer.location_ring_height, gl.Float(scale.height_pixels))
   renderer.uploadWashes(meshes)
 
   # Draw opaque kinds first, so they own depth buffer.
   gl.useProgram(renderer.program_ribbon)
   renderer.drawRibbonRun(meshes, is_overlay = false)
+  gl.useProgram(renderer.program_ring)
+  renderer.drawRingRun(meshes, is_overlay = false)
   gl.useProgram(renderer.program)
   renderer.drawPointRun(meshes, is_overlay = false)
 
@@ -671,6 +846,8 @@ proc drawMeshes*(
     gl.disable(gl.DEPTH_TEST)
     gl.useProgram(renderer.program_ribbon)
     renderer.drawRibbonRun(meshes, is_overlay = true)
+    gl.useProgram(renderer.program_ring)
+    renderer.drawRingRun(meshes, is_overlay = true)
     gl.useProgram(renderer.program)
     renderer.drawPointRun(meshes, is_overlay = true)
     renderer.drawWashRuns(meshes, is_overlay = true)

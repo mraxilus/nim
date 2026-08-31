@@ -346,6 +346,15 @@ not from orbit distance, so it reads as extending indefinitely however far the c
   capped instead, at 120 cells each way, which is what keeps a camera-following fog inside a
   fixed vertex budget. That cap must exceed the orbit distance a reader works at, or the
   ground stops reaching the content they are looking at.
+A **plane's fill and its rim are one record each**, and a horizon plane's dome one more:
+`DiscRecord`, `RingRecord`, `DomeRecord`, expanded over static corner buffers by their own
+vertex shaders. A rim in particular must be widened by the *same* screen-space rule an
+ordinary line is — one instance draws the whole circle, but each of its segments is the
+ribbon `mesh.ribbonOfRing` says it is, so there is one widening in the build and no second
+rule to keep in step. Neither render path may hold its own copy of the circle's angles or
+of a fan's corners: both read the generators in `mesh` (`ringCorners`, `discCorners`,
+`domeCorners`).
+
 - Each grid line is **one record** fading **per fragment** in the shaders, from full alpha at
   0.06 × extent to zero at 0.20 × extent, both measured from the eye — exact along a line of
   any length, where the retired per-piece cut sampled the fade at boundaries. The grid is
@@ -1413,6 +1422,11 @@ The rules that make the pins trustworthy on a shared, noisy runner:
 - **A failure just past a band on a slow run is a measurement first**: re-run against the
   previous commit on the same container before concluding either way, exactly as the
   frame-budget band's own note prescribes. A failure at multiples of the band is the fault.
+- **A pin must measure the thing it names.** The record-accounting pin under the demo
+  switches the debug layer off for its own window, because an earlier check leaves it on and
+  its lattice is ~1,650 ribbon records — which would have swamped the count the pin exists to
+  hold. Any pin taken after that check either accounts for the lattice or switches it off,
+  and says which.
 - **New per-frame or per-event work gets a pin when it ships**, measured before and after,
   with the numbers recorded in the ledger — the faults in it were invisible precisely
   because the paths they lived on (pointer events, the debug layer, per-call exports) had

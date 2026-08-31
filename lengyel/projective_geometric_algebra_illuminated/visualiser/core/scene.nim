@@ -74,10 +74,15 @@ static:
   doAssert DOMES_MAX >= 2*ITEMS_MAX + 1,
     &"`mesh.DOMES_MAX` must hold every plane at horizon drawn twice plus a ghost: " &
       &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{DOMES_MAX}`."
-  doAssert RIBBONS_MAX >= ITEMS_MAX*SEGMENTS_CIRCLE_HORIZON,
-    &"`mesh.RIBBONS_MAX` must hold a scene of planes, each a rim of " &
-      &"`{SEGMENTS_CIRCLE_HORIZON}`: `{ITEMS_MAX*SEGMENTS_CIRCLE_HORIZON}` at this " &
-      &"capacity, but it is `{RIBBONS_MAX}`."
+  doAssert RINGS_MAX >= 2*ITEMS_MAX + 1,
+    &"`mesh.RINGS_MAX` must hold every plane's rim drawn twice plus a ghost: " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{RINGS_MAX}`."
+  # A scene of *lines*, not of planes: a rim is one ring record now, so what fills this
+  #   mesh is the two segments `tessellate.addLine` steps out from each anchor, every one
+  #   drawn twice. `mesh.RIBBONS_MAX`'s own comment carries the arithmetic.
+  doAssert RIBBONS_MAX >= 4*ITEMS_MAX + 1,
+    &"`mesh.RIBBONS_MAX` must hold a scene of lines, each two segments drawn twice, " &
+      &"plus a ghost: `{4*ITEMS_MAX + 1}` at this capacity, but it is `{RIBBONS_MAX}`."
 
 
 

@@ -116,16 +116,19 @@ const
     ##   getting to it. 0.20 of the reach is 3.8 orbit distances, which puts the fog's
     ##   edge about 2.8 distances beyond what the camera is looking at -- close to the
     ##   ground the halo used to cover, and still a fifth of the far clip plane.
-  RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 131072
+  RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 8192
     ## Bound how many ribbon segments one frame holds.
-    ##   The binding case is a scene filled with planes, each drawing
-    ## `SEGMENTS_CIRCLE_HORIZON` rim segments: at `scene.ITEMS_MAX` = 1,024 that is
-    ## 1,024 x 96 = 98,304, with the same third of headroom. One record here is what six
-    ## vertices were before the widening moved to the vertex shader.
-    ##   **This is the cap with a price.** 131,072 records at sixteen floats is 8.4 MB, and
-    ## `visualiser.BYTES_MEMORY_TOTAL` counts two mesh sets, so it is about 17 MB of the
-    ## binary's reported reservation. That is the cost of being able to hold a thousand
-    ## objects and have any of them be a plane.
+    ##   The binding case is a scene filled to `scene.ITEMS_MAX` with *lines*, each drawing
+    ## the two segments `tessellate.addLine` steps out from its anchor, every one selected
+    ## and so drawn twice: 1,024 x 2 x 2 = 4,096, plus a ghost. The furniture set, which
+    ## shares this cap, wants `2*LINES_GRID_MAX` = 482 lattice lines and the axes. 8,192
+    ## clears both with a third of headroom. One record here is what six vertices were
+    ## before the widening moved to the vertex shader.
+    ##   **It was 131,072 until the rim became a ring.** A plane's rim used to arrive here
+    ## as `SEGMENTS_CIRCLE_HORIZON` separate records, which made a scene of planes -- not
+    ## of lines -- the binding case at 1,024 x 96, and cost about 17 MB of
+    ## `visualiser.BYTES_MEMORY_TOTAL` across the two mesh sets. `RingRecord` is that whole
+    ## rim in fourteen floats, so the case is gone and the storage with it.
     ##   `scene.nim` carries a `static` check tying this to `ITEMS_MAX`, because this module
     ## cannot see that constant: `scene` imports `tessellate` imports `mesh`, never back.
     ## Overflow here is a `doAssert`, so an undersized cap is a dead page rather than a
@@ -144,6 +147,9 @@ const
     ## every one selected and so drawn twice, plus a ghost -- 2,049, with headroom. One
     ## record here is what a `3 * SEGMENTS_CIRCLE_HORIZON`-vertex fan cost before the
     ## fan moved to the vertex shader.
+  RINGS_MAX* {.define: "visualiser.rings_max".} = 2176
+    ## Bound how many ring records one frame holds, by the same worst case as `DISCS_MAX`:
+    ## a plane draws a fill and a rim together, so the two caps move as a pair.
   DOMES_MAX* {.define: "visualiser.domes_max".} = 2176
     ## Bound how many dome records one frame holds, by the same worst case as
     ## `DISCS_MAX` with every plane at horizon instead.
@@ -434,6 +440,36 @@ type
     records*: array[DISCS_MAX, DiscRecord]
     count*: int
 
+  RingRecord* = object ## Hold one plane's own rim exactly as it is uploaded.
+    ## **The ring vertex shader's input, not a vertex.** A `DiscRecord` with a width: the
+    ## same centre and the same two radius-scaled arms, drawn as one instance of
+    ## `SEGMENTS_CIRCLE_HORIZON` quads rather than as a fan of triangles.
+    ##   **This is the record that took the rim off the CPU.** A plane's *fill* has been one
+    ## record since discs moved to the shader, but its rim went on being stepped here and
+    ## emitted as `SEGMENTS_CIRCLE_HORIZON` separate ribbons -- ninety-six records for a
+    ## circle already fully described by thirteen floats. Measured on a scene of 132 planes
+    ## that was 12,672 of the frame's 12,772 ribbon records, 99.2% of all ribbon traffic,
+    ## and 45 ms of a 53 ms frame. One record now, and the rim costs what the fill costs.
+    ##   The width is a *pixel* width like any other object line, so the shader widens each
+    ## segment in screen space exactly as a ribbon is widened -- which is not a second rule
+    ## but the same one: `ribbonOfRing` derives the very `RibbonRecord` a segment would have
+    ## been, and `expandRingVertex` is `expandRibbon` of it.
+    centre_x*, centre_y*, centre_z*: float32
+    arm_first_x*, arm_first_y*, arm_first_z*: float32
+    arm_second_x*, arm_second_y*, arm_second_z*: float32
+    red*, green*, blue*, alpha*: float32
+    width*: float32
+
+  RingMesh* = object ## Hold every ring record of one frame, in fixed storage.
+    records*: array[RINGS_MAX, RingRecord]
+    count*: int
+    index_overlay*: Option[int] ## Where the overlay run begins; `Mesh.index_overlay`'s
+      ## own doc comment says what that means and why it is a watermark.
+      ##   A rim needs its own split for the same reason a line does: a selected plane is
+      ## tessellated a second time after `markOverlay`, and without the mark that second
+      ## rim would be drawn against the depth buffer -- behind its own translucent fill,
+      ## which is exactly the highlight it exists to draw.
+
   DomeMesh* = object ## Hold every dome record of one frame, in fixed storage.
     records*: array[DOMES_MAX, DomeRecord]
     count*: int
@@ -465,6 +501,7 @@ type
     points*: Mesh
     ribbons*: RibbonMesh
     discs*: DiscMesh
+    rings*: RingMesh
     domes*: DomeMesh
     washes*: WashRuns
 
@@ -769,6 +806,8 @@ proc clearMeshes*(meshes: var MeshSet) =
   meshes.ribbons.count = 0
   meshes.ribbons.index_overlay = none(int)
   meshes.discs.count = 0
+  meshes.rings.count = 0
+  meshes.rings.index_overlay = none(int)
   meshes.domes.count = 0
   meshes.washes.count = 0
   meshes.washes.index_overlay = none(int)
@@ -782,6 +821,7 @@ proc markOverlay*(meshes: var MeshSet) =
   ##   over what.
   meshes.points.index_overlay = some(meshes.points.count_vertices)
   meshes.ribbons.index_overlay = some(meshes.ribbons.count)
+  meshes.rings.index_overlay = some(meshes.rings.count)
   meshes.washes.index_overlay = some(meshes.washes.count)
 
 
@@ -985,39 +1025,79 @@ let UNIT_CIRCLE_RIM* = unitRing[SEGMENTS_CIRCLE_HORIZON + 1](SEGMENTS_CIRCLE_HOR
   ## segment ends on the value `cos(2*PI)` actually takes, a hair off `cos(0)`'s --
   ## exactly the rule `tessellate.addGreatCircle` states for its own ring.
   ##   Exported for the other walkers of the same ring: a horizon line's great circle
-  ## (through `addPlaneRing` itself) and `picking`'s sampling of that circle, which must
+  ## (through `addRing` itself) and `picking`'s sampling of that circle, which must
   ## step the very angles the drawn one does for a hit to agree with what is drawn.
 
 
-proc addPlaneRing*(
-  meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
-  radius: float; tint: Rgba
+proc ribbonOfRing*(record: RingRecord; segment: int): RibbonRecord =
+  ## Report the ribbon one segment of a ring *is* -- **the one place a ring becomes a line.**
+  ##   A ring is a closed walk of `SEGMENTS_CIRCLE_HORIZON` segments around the circle its
+  ## centre and two arms describe, each segment an ordinary ribbon of the ring's own tint
+  ## and width. Stating it as a derivation rather than as a second widening rule is what
+  ## keeps the ring shader honest: `expandRingVertex` below is `expandRibbon` of this, so
+  ## there is exactly one screen-space widening in the build and the ring reuses it.
+  ##   A `proc` rather than a `func` only because it reads the module's own `UNIT_CIRCLE_RIM`
+  ## table, which `strictFuncs` counts as an effect; nothing here mutates anything.
+  ##   The two ends come off `UNIT_CIRCLE_RIM`, the same fixed table the rim was stepped
+  ## with when it was ninety-six records, so the circle is unchanged and the suite's own
+  ## comparison against the multivector sum still holds.
+  let
+    centre = Position(x: record.centre_x, y: record.centre_y, z: record.centre_z)
+    arm_first = Direction(x: record.arm_first_x, y: record.arm_first_y,
+      z: record.arm_first_z)
+    arm_second = Direction(x: record.arm_second_x, y: record.arm_second_y,
+      z: record.arm_second_z)
+    at_tail = UNIT_CIRCLE_RIM[segment]
+    at_head = UNIT_CIRCLE_RIM[segment + 1]
+    tail = onCircleAt(centre, arm_first, arm_second, at_tail.cos_angle, at_tail.sin_angle)
+    head = onCircleAt(centre, arm_first, arm_second, at_head.cos_angle, at_head.sin_angle)
+  RibbonRecord(
+    tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
+    head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
+    width: record.width, fog: 0.0,
+    tail_red: record.red, tail_green: record.green, tail_blue: record.blue,
+    tail_alpha: record.alpha,
+    head_red: record.red, head_green: record.green, head_blue: record.blue,
+    head_alpha: record.alpha,
+  )
+
+
+proc expandRingVertex*(
+  record: RingRecord; segment: int; scale: DrawScale
+): array[6, Vertex] =
+  ## Expand one segment of a ring into the six vertices the shader will make of it -- **the
+  ## reference implementation of the ring vertex shader, and nothing else runs it.**
+  ##   Both render targets carry this same arithmetic in GLSL (`renderer.nim`'s ring vertex
+  ## shader and `glue.js`'s -- the sibling copies; a change to any one of the three is not
+  ## finished until the other two are checked), exactly as `expandRibbon` and
+  ## `expandDiscVertex` are.
+  ##   It is `expandRibbon` of `ribbonOfRing`, and deliberately nothing more: the ring adds
+  ## *where* the segment is, and adds nothing at all to how a line is widened.
+  expandRibbon(ribbonOfRing(record, segment), scale)
+
+
+proc addRing*(
+  meshes: var MeshSet; centre: Position; axis_first, axis_second: Direction;
+  radius: float; tint: Rgba; width: float
 ) =
-  ## Append a plain circle of segments at `radius`, in the plane `axis_first` and
-  ## `axis_second` span -- a finite plane's own rim, marking exactly how far it is drawn.
-  ##   **A disc is not a plane.** A plane is infinite; this circle is the stand-in drawn
-  ##   for one, sized for an eye and carrying no geometric meaning of its own, so it is
-  ##   stepped with `euclid.onCircleAt` off the fixed table above rather than assembled
-  ##   as multivector sums. Which plane the two arms span is still the algebra's answer
-  ##   -- `boundary.frame` -- and `tessellate.addPlane` hands it down; only the walk
-  ##   around the rim is arithmetic. The suite holds each point equal to the multivector
-  ##   sum it replaced.
-  ##   Each boundary is placed once and shared with the next segment, which with the
-  ##   table makes the whole rim a stretch of fused multiplies and no trigonometry.
+  ## Append one plane's own rim as a single record -- the circle `addDisc` fills, outlined.
+  ##   The arms arrive already scaled by the radius, as `addDisc`'s do, so the shader needs
+  ## no radius of its own and the record no field for one.
+  doAssert meshes.rings.count < RINGS_MAX,
+    &"Ring storage holds {RINGS_MAX} records; raise `--define:visualiser.rings_max`."
   let
     arm_first = radius*axis_first
     arm_second = radius*axis_second
-  var tail = onCircleAt(
-    center, arm_first, arm_second,
-    UNIT_CIRCLE_RIM[0].cos_angle, UNIT_CIRCLE_RIM[0].sin_angle,
+  meshes.rings.records[meshes.rings.count] = RingRecord(
+    centre_x: float32(centre.x), centre_y: float32(centre.y), centre_z: float32(centre.z),
+    arm_first_x: float32(arm_first.x), arm_first_y: float32(arm_first.y),
+    arm_first_z: float32(arm_first.z),
+    arm_second_x: float32(arm_second.x), arm_second_y: float32(arm_second.y),
+    arm_second_z: float32(arm_second.z),
+    red: float32(tint.red), green: float32(tint.green), blue: float32(tint.blue),
+    alpha: float32(tint.alpha), width: float32(width),
   )
-  for i in 1 .. SEGMENTS_CIRCLE_HORIZON:
-    let head = onCircleAt(
-      center, arm_first, arm_second,
-      UNIT_CIRCLE_RIM[i].cos_angle, UNIT_CIRCLE_RIM[i].sin_angle,
-    )
-    meshes.addSegment(tail, head, tint, WIDTH_LINE_OBJECT)
-    tail = head
+  inc meshes.rings.count
 
 
 func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex =
@@ -1083,6 +1163,39 @@ proc discCorners*(): seq[float32] =
     result[at + 5] = float32(UNIT_CIRCLE_RIM[i + 1].sin_angle)
 
 
+proc ringCorners*(): seq[float32] =
+  ## Emit the ring's static corner buffer: six floats per corner -- the tail angle's
+  ## `(cos, sin)`, the head angle's `(cos, sin)`, then the `(end, side)` pair
+  ## `expandRibbon`'s own six corners are wound in -- six corners per rim segment, all
+  ## `SEGMENTS_CIRCLE_HORIZON` segments of the closed walk laid end to end.
+  ##   Every ring instance draws this whole buffer, so one `RingRecord` becomes the entire
+  ## rim in one draw: the shader reads its segment's two angles from here, places both ends
+  ## at `centre + cos*arm_first + sin*arm_second`, and then widens them exactly as a ribbon
+  ## is widened. `expandRingVertex` states that, and this table is only *where* on the
+  ## circle each corner sits.
+  ##   The angles come off `UNIT_CIRCLE_RIM`, the same table the rim was stepped with when
+  ## it was ninety-six records, so the drawn circle is unchanged.
+  ##   **The one source for both render targets**, exactly as `discCorners` is: the desktop
+  ## uploads this from Nim and the browser through `nimRingCorners`, so neither carries a
+  ## hand-copied table that could drift from the reference above.
+  const WINDING = [(0.0'f32, -1.0'f32), (1.0'f32, -1.0'f32), (1.0'f32, 1.0'f32),
+    (0.0'f32, -1.0'f32), (1.0'f32, 1.0'f32), (0.0'f32, 1.0'f32)]
+  result = newSeq[float32](6*6*SEGMENTS_CIRCLE_HORIZON)
+  var at = 0
+  for segment in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+    let
+      tail = UNIT_CIRCLE_RIM[segment]
+      head = UNIT_CIRCLE_RIM[segment + 1]
+    for (which_end, side) in WINDING:
+      result[at + 0] = float32(tail.cos_angle)
+      result[at + 1] = float32(tail.sin_angle)
+      result[at + 2] = float32(head.cos_angle)
+      result[at + 3] = float32(head.sin_angle)
+      result[at + 4] = which_end
+      result[at + 5] = side
+      at += 6
+
+
 func domeCorners*(): seq[float32] =
   ## Emit the dome's static corner buffer: one unit direction per corner, six corners
   ## per lat/long quad, in the winding the CPU quads used. `expandDomeVertex` above says
@@ -1133,7 +1246,7 @@ proc addDisc*(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba
 ) =
-  ## Append a flat, uniformly translucent disc record filling the circle `addPlaneRing`
+  ## Append a flat, uniformly translucent disc record filling the circle `addRing`
   ## outlines, for the disc-fill vertex shader to fan out -- flat rather than faded
   ## toward the rim, since the rim itself already marks the boundary crisply; a plane's
   ## own tilt still reads through the fan's foreshortened ellipse, and low, constant

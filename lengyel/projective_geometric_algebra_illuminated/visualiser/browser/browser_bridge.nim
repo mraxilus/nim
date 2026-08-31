@@ -211,7 +211,7 @@ var
   #   the collector for data that lives exactly one frame. The consumer uploads or reads
   #   them within the same frame and holds nothing across two, which is what makes reuse
   #   sound; `setLen` on a sequence that has already grown adjusts length, not storage.
-  g_flat_ribbon, g_flat_point, g_flat_furniture: seq[float32]
+  g_flat_ribbon, g_flat_point, g_flat_furniture, g_flat_ring: seq[float32]
   g_flat_disc, g_flat_dome, g_flat_runs: seq[float32]
   g_flat_view: seq[float32] = newSeq[float32](16)
 
@@ -261,6 +261,29 @@ proc flattenDiscsInto(discs: DiscMesh; dest: var seq[float32]) =
     dest[13*i + 10] = r.fill_green
     dest[13*i + 11] = r.fill_blue
     dest[13*i + 12] = r.fill_alpha
+
+
+proc flattenRingsInto(rings: RingMesh; dest: var seq[float32]) =
+  ## Interleave one frame's ring records for the instanced upload, fourteen floats each:
+  ## `DiscRecord`'s own thirteen in the same order, then the width -- so the ring and disc
+  ## attribute setups in `glue.js` differ by exactly one trailing attribute.
+  dest.setLen(rings.count * 14)
+  for i in 0 ..< rings.count:
+    let r = rings.records[i]
+    dest[14*i + 0] = r.centre_x
+    dest[14*i + 1] = r.centre_y
+    dest[14*i + 2] = r.centre_z
+    dest[14*i + 3] = r.arm_first_x
+    dest[14*i + 4] = r.arm_first_y
+    dest[14*i + 5] = r.arm_first_z
+    dest[14*i + 6] = r.arm_second_x
+    dest[14*i + 7] = r.arm_second_y
+    dest[14*i + 8] = r.arm_second_z
+    dest[14*i + 9] = r.red
+    dest[14*i + 10] = r.green
+    dest[14*i + 11] = r.blue
+    dest[14*i + 12] = r.alpha
+    dest[14*i + 13] = r.width
 
 
 proc flattenDomesInto(domes: DomeMesh; dest: var seq[float32]) =
@@ -768,6 +791,12 @@ proc nimDiscCorners(): seq[float32] {.exportc.} =
   ## `mesh.discCorners`, the one source the desktop uploads from too, so the browser
   ## carries no hand-copied table that could drift from `mesh.expandDiscVertex`.
   discCorners()
+
+
+proc nimRingCorners(): seq[float32] {.exportc.} =
+  ## Report the ring's static corner buffer, uploaded once at start-up; the same
+  ## one-source rule as `nimDiscCorners`, against `mesh.expandRingVertex`.
+  ringCorners()
 
 
 proc nimDomeCorners(): seq[float32] {.exportc.} =
@@ -1779,6 +1808,10 @@ type FrameData = object
   ## Hold one frame's worth of vertex data plus the transform it is drawn through --
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
   ribbon_verts, point_verts: seq[float32]
+  ring_records: seq[float32] ## Fourteen floats a ring -- `mesh.RingRecord`'s own field
+    ## order: a disc's thirteen, then the width. **A plane's rim used to arrive here as
+    ## `SEGMENTS_CIRCLE_HORIZON` ribbon records**, which on a scene of 132 planes was 99.2%
+    ## of all ribbon traffic and 45 ms of a 53 ms frame; it is one record now.
   disc_records: seq[float32] ## Thirteen floats a disc -- `mesh.DiscRecord`'s own field
     ## order -- for the instanced fan draw; see that type for what the shader does.
   dome_records: seq[float32] ## Eight floats a dome -- `mesh.DomeRecord`'s own field
@@ -1880,14 +1913,14 @@ type FrameData = object
     ## How many objects of each kind the times above are for, so a reader can divide. The
     ## question this answers is "is one of these expensive, or are there simply many?", and
     ## a time without its count cannot tell those apart.
-  ribbon_over, point_over, wash_run_over: int ## How much of each stream's *end* is the
+  ribbon_over, ring_over, point_over, wash_run_over: int ## How much of each stream's *end* is the
     ## overlay run -- drawn after the rest with the depth test off, so a selected object
     ## lands over whatever stands between it and the camera. A count of the tail rather
     ## than the index it starts at, so the glue subtracts nothing: see
     ## `mesh.Mesh.index_overlay`, which is the same split stated from the other end, and
     ## `renderer.drawRun`, which is the desktop's own two-call draw. Vertices for points,
-    ## records for ribbons, whole *runs* for the washes -- `mesh.WashRuns` says why a run
-    ## never straddles the mark.
+    ## records for ribbons and rings, whole *runs* for the washes -- `mesh.WashRuns` says
+    ## why a run never straddles the mark.
 
 
 type SceneCost = object
@@ -2134,6 +2167,7 @@ proc nimBuildFrame(
   let ms_after_matrix = performanceNow()
   let ms_before_flatten = ms_after_matrix
   flattenDiscsInto(g_meshes.discs, g_flat_disc)
+  flattenRingsInto(g_meshes.rings, g_flat_ring)
   flattenDomesInto(g_meshes.domes, g_flat_dome)
   flattenWashRunsInto(g_meshes.washes, g_flat_runs)
   flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
@@ -2143,6 +2177,7 @@ proc nimBuildFrame(
   let ms_done = performanceNow()
 
   var data = FrameData(
+    ring_records: g_flat_ring,
     disc_records: g_flat_disc,
     dome_records: g_flat_dome,
     wash_runs: g_flat_runs,
@@ -2198,6 +2233,8 @@ proc nimBuildFrame(
     #   draws take ranges of instances, not of expanded vertices.
     ribbon_over: (if g_meshes.ribbons.index_overlay.isSome:
       max(0, g_meshes.ribbons.count - g_meshes.ribbons.index_overlay.get) else: 0),
+    ring_over: (if g_meshes.rings.index_overlay.isSome:
+      max(0, g_meshes.rings.count - g_meshes.rings.index_overlay.get) else: 0),
     point_over: countOverlay(g_meshes.points),
     wash_run_over: (if g_meshes.washes.index_overlay.isSome:
       max(0, g_meshes.washes.count - g_meshes.washes.index_overlay.get) else: 0),

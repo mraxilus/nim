@@ -225,6 +225,64 @@ const SOURCE_VERTEX_DOME = `
     vColor = aTint;
   }
 `;
+// A sibling copy of `mesh.expandRingVertex` -- the reference the suite pins -- and of the
+// GLSL 3.30 source in `renderer.nim`; a change to any one of the three is not finished
+// until the other two are checked. One 14-float ring record is a plane's whole rim: the
+// static corner buffer carries every segment of the closed walk, so this one instance
+// draws all `SEGMENTS_CIRCLE_HORIZON` of them.
+//   Two steps, and the second is not new. Place the segment's ends on the circle exactly
+// as the disc source places its fan corners -- `centre + cos*arm_first + sin*arm_second`
+// -- and then widen that pair by *the ribbon source's own body*, verbatim: the near clip,
+// the across the join reduces to, and half a width of this end's world-per-pixel. A rim
+// is a line, and there is one rule for how wide a line is drawn.
+//   The tint is flat, so the ribbon's blend between two ends collapses to `aFill`, and the
+// fog is always zero, so this shares the plain fragment stage rather than the ribbon's
+// fading one.
+const SOURCE_VERTEX_RING = `
+  attribute vec4 aArc;
+  attribute vec2 aCorner;
+  attribute vec3 aCentre;
+  attribute vec3 aArmFirst;
+  attribute vec3 aArmSecond;
+  attribute vec4 aFill;
+  attribute float aWidth;
+  uniform mat4 uMVP;
+  uniform vec3 uEye;
+  uniform vec3 uForward;
+  uniform float uDepthNear;
+  uniform float uTangentHalfView;
+  uniform float uHeightPixels;
+  varying vec4 vColor;
+  void main() {
+    vec3 tail = aCentre + aArc.x*aArmFirst + aArc.y*aArmSecond;
+    vec3 head = aCentre + aArc.z*aArmFirst + aArc.w*aArmSecond;
+    float depth_tail = dot(tail - uEye, uForward);
+    float depth_head = dot(head - uEye, uForward);
+    vec3 across_raw = cross(head - tail, uEye - tail);
+    float across_length = length(across_raw);
+    if (max(depth_tail, depth_head) < uDepthNear || across_length < 1e-12) {
+      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      vColor = vec4(0.0);
+      return;
+    }
+    vec3 near_end = tail;
+    vec3 far_end = head;
+    if (depth_tail < uDepthNear) {
+      float fraction = (uDepthNear - depth_tail)/(depth_head - depth_tail);
+      near_end = tail + fraction*(head - tail);
+    } else if (depth_head < uDepthNear) {
+      float fraction = (uDepthNear - depth_head)/(depth_tail - depth_head);
+      far_end = head + fraction*(tail - head);
+    }
+    vec3 across = across_raw/across_length;
+    vec3 at = mix(near_end, far_end, aCorner.x);
+    float depth_at = max(dot(at - uEye, uForward), uDepthNear);
+    float world_per_pixel = 2.0*depth_at*uTangentHalfView/uHeightPixels;
+    at += aCorner.y*0.5*aWidth*world_per_pixel*across;
+    gl_Position = uMVP*vec4(at, 1.0);
+    vColor = aFill;
+  }
+`;
 function linkWashProgram(source_vertex) {
   const handle = gl.createProgram();
   gl.attachShader(handle, compileShader(gl.VERTEX_SHADER, source_vertex));
@@ -252,6 +310,25 @@ const dome_attribs = {
   centre_radius: gl.getAttribLocation(program_dome, 'aCentreRadius'),
   tint: gl.getAttribLocation(program_dome, 'aTint'),
 };
+const program_ring = linkWashProgram(SOURCE_VERTEX_RING);
+const ring_attribs = {
+  arc: gl.getAttribLocation(program_ring, 'aArc'),
+  corner: gl.getAttribLocation(program_ring, 'aCorner'),
+  centre: gl.getAttribLocation(program_ring, 'aCentre'),
+  arm_first: gl.getAttribLocation(program_ring, 'aArmFirst'),
+  arm_second: gl.getAttribLocation(program_ring, 'aArmSecond'),
+  fill: gl.getAttribLocation(program_ring, 'aFill'),
+  width: gl.getAttribLocation(program_ring, 'aWidth'),
+};
+// The very six the ribbon program takes, since the widening is the ribbon's own.
+const ring_uniforms = {
+  mvp: gl.getUniformLocation(program_ring, 'uMVP'),
+  eye: gl.getUniformLocation(program_ring, 'uEye'),
+  forward: gl.getUniformLocation(program_ring, 'uForward'),
+  depth_near: gl.getUniformLocation(program_ring, 'uDepthNear'),
+  tangent: gl.getUniformLocation(program_ring, 'uTangentHalfView'),
+  height: gl.getUniformLocation(program_ring, 'uHeightPixels'),
+};
 const uniform_disc_mvp = gl.getUniformLocation(program_disc, 'uMVP');
 const uniform_dome_mvp = gl.getUniformLocation(program_dome, 'uMVP');
 // The static corner geometry both wash shaders fan records over, read from mesh.nim's
@@ -266,9 +343,15 @@ gl.bufferData(gl.ARRAY_BUFFER, CORNERS_DISC, gl.STATIC_DRAW);
 const buffer_dome_corners = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, buffer_dome_corners);
 gl.bufferData(gl.ARRAY_BUFFER, CORNERS_DOME, gl.STATIC_DRAW);
+// Every segment of the rim, six corners each, so one ring record draws the whole circle.
+const CORNERS_RING = new Float32Array(nimRingCorners());
+const COUNT_CORNERS_RING = CORNERS_RING.length / 6;
+const buffer_ring_corners = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ring_corners);
+gl.bufferData(gl.ARRAY_BUFFER, CORNERS_RING, gl.STATIC_DRAW);
 
 const vbo = {
-  disc: gl.createBuffer(), dome: gl.createBuffer(),
+  disc: gl.createBuffer(), dome: gl.createBuffer(), ring: gl.createBuffer(),
   ribbon: gl.createBuffer(), point: gl.createBuffer(),
   ribbon_furniture: gl.createBuffer(),
 };
@@ -276,6 +359,7 @@ const STRIDE = 7 * 4;
 const STRIDE_RIBBON = 16 * 4;
 const STRIDE_DISC = 13 * 4;
 const STRIDE_DOME = 8 * 4;
+const STRIDE_RING = 14 * 4;
 
 // How many furniture vertices its own buffer holds, carried between frames because the
 // bridge stops sending them once the camera is still; see `renderFrame`.
@@ -338,6 +422,48 @@ function drawRibbons(handle_buffer, count, count_over, is_overlay) {
   for (const attrib of [ribbon_attribs.tail, ribbon_attribs.head, ribbon_attribs.width,
     ribbon_attribs.fog, ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
     instanced.vertexAttribDivisorANGLE(attrib, 0);
+    gl.disableVertexAttribArray(attrib);
+  }
+}
+
+// One run of the uploaded ring buffer, drawn as instanced rims: each instance is a whole
+// plane's circle, `COUNT_CORNERS_RING` corners of it. Splits its two runs exactly as
+// `drawRibbons` does, and re-points the five instance attributes at the run's own first
+// byte for the same reason -- WebGL1 has no base instance. Mirrors `renderer.drawRingRun`.
+function drawRings(count, count_over, is_overlay) {
+  if (!count) return;
+  const split = Math.max(0, count - Math.min(count_over || 0, count));
+  const first = is_overlay ? split : 0;
+  const span = is_overlay ? count - split : split;
+  if (span === 0) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ring_corners);
+  for (const [attrib, floats, offset] of [
+    [ring_attribs.arc, 4, 0], [ring_attribs.corner, 2, 16],
+  ]) {
+    gl.enableVertexAttribArray(attrib);
+    gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, 24, offset);
+    instanced.vertexAttribDivisorANGLE(attrib, 0);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo.ring);
+  const base = first * STRIDE_RING;
+  const records = [
+    [ring_attribs.centre, 3, 0], [ring_attribs.arm_first, 3, 12],
+    [ring_attribs.arm_second, 3, 24], [ring_attribs.fill, 4, 36],
+    [ring_attribs.width, 1, 52],
+  ];
+  for (const [attrib, floats, offset] of records) {
+    gl.enableVertexAttribArray(attrib);
+    gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, STRIDE_RING, base + offset);
+    instanced.vertexAttribDivisorANGLE(attrib, 1);
+  }
+  instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, COUNT_CORNERS_RING, span);
+  // Divisors are context state, not program state: left at one they would corrupt the
+  //   plain program's reads of these same attribute indices next draw.
+  for (const [attrib] of records) {
+    instanced.vertexAttribDivisorANGLE(attrib, 0);
+    gl.disableVertexAttribArray(attrib);
+  }
+  for (const [attrib] of [[ring_attribs.arc], [ring_attribs.corner]]) {
     gl.disableVertexAttribArray(attrib);
   }
 }
@@ -3552,6 +3678,19 @@ function renderFrame(now_seconds) {
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
   const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon, 16);
   drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, false);
+  // The plane rims, one record each, straight after the lines they are drawn like -- the
+  // widening is the ribbon program's own, so this program takes the same six camera
+  // uniforms and the same pass.
+  gl.useProgram(program_ring);
+  gl.uniformMatrix4fv(ring_uniforms.mvp, false, data.view_projection);
+  gl.uniform3f(ring_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
+  gl.uniform3f(ring_uniforms.forward,
+    data.cam_forward_x, data.cam_forward_y, data.cam_forward_z);
+  gl.uniform1f(ring_uniforms.depth_near, data.cam_depth_near);
+  gl.uniform1f(ring_uniforms.tangent, data.cam_tangent_half_view);
+  gl.uniform1f(ring_uniforms.height, data.cam_height_pixels);
+  const count_ring = uploadBuffer(data.ring_records, vbo.ring, 14);
+  drawRings(count_ring, data.ring_over, false);
   gl.useProgram(program);
   gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
@@ -3574,10 +3713,12 @@ function renderFrame(now_seconds) {
   // it, so nothing here occludes anything either. A second pass over every kind rather
   // than a tail on each: a selected line drawn only after the other lines is still tinted
   // by a plane's wash, which is a later kind. Mirrors `renderer.drawMeshes`.
-  if (data.ribbon_over + data.point_over + data.wash_run_over > 0) {
+  if (data.ribbon_over + data.ring_over + data.point_over + data.wash_run_over > 0) {
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(program_ribbon);
     drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, true);
+    gl.useProgram(program_ring);
+    drawRings(count_ring, data.ring_over, true);
     gl.useProgram(program);
     drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, true);
     drawWashRuns(data.wash_runs, data.wash_run_over, true);

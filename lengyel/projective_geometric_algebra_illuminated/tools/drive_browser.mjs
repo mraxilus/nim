@@ -930,6 +930,12 @@ await page.evaluate(() => {
       count_points: data.count_points, count_lines: data.count_lines,
       count_planes: data.count_planes, count_sky: data.count_sky,
       count_ghost: data.count_ghost, count_selected: data.count_selected,
+      // What crossed the wire, by record kind. A plane's rim is one ring record; it used
+      //   to be `SEGMENTS_CIRCLE_HORIZON` ribbons, and the check under the demo below is
+      //   what would notice it silently becoming so again.
+      records_ribbon: data.ribbon_verts.length / 16,
+      records_ring: data.ring_records.length / 14,
+      records_disc: data.disc_records.length / 13,
       wall: window.__work_frame[window.__work_frame.length - 1],
     });
     return data;
@@ -2562,6 +2568,15 @@ report(
 // walks of all 64 slots, marking the overlay, packing the view-projection -- belongs to no
 // kind and gets *larger* with 64 objects, not smaller. Measured over three runs, the worst
 // excess on this side was 0.00 ms; the lower bound is the one that occasionally moves.
+// The debug layer has been on since the check that switched it on, some way above, and
+//   the lattice it draws is ribbons -- about 1,650 records of them, which would drown the
+//   record accounting below in geometry that has nothing to do with a plane's rim. Off for
+//   this window, since what is measured here is the ordinary picture.
+await page.evaluate(() => {
+  const chip = document.getElementById('toggle-algebra');
+  if (chip.classList.contains('on')) chip.click();
+});
+await page.waitForTimeout(200);
 await page.evaluate(() => { window.__phase_frame = []; });
 // The drag is also the check below it: a construction gesture released on a **full** scene
 //   used to reach `scene.addItem` through shared code with no `isFull` between, and take
@@ -2582,6 +2597,10 @@ const loaded = await page.evaluate(() => window.__phase_frame.slice(2).map((p) =
   scene: p.scene,
   parts: p.points + p.lines + p.planes + p.sky + p.ghost + p.selected,
 })));
+const loaded_records = await page.evaluate(() => window.__phase_frame.slice(2).map((p) => ({
+  records_ribbon: p.records_ribbon, records_ring: p.records_ring,
+  records_disc: p.records_disc,
+})));
 const heavy = loaded.filter((k) => k.scene >= 2.0);
 const heavy_sane = heavy.filter((k) =>
   k.parts <= k.scene + 0.6 && k.parts >= k.scene - Math.max(3.0, 0.3*k.scene));
@@ -2590,6 +2609,27 @@ report(
   heavy.length > 20 && heavy_sane.length >= FRACTION_KINDS_ACCOUNT*heavy.length,
   `${heavy_sane.length} of ${heavy.length} frames over 2 ms account, ` +
     `worst scene phase ${Math.max(0, ...heavy.map((k) => k.scene)).toFixed(2)} ms`,
+);
+
+// **The rim is on the GPU, and this is the number that says so.** A plane's rim used to
+// arrive as `SEGMENTS_CIRCLE_HORIZON` ribbon records: on this scene of ~132 planes that was
+// 12,672 of the frame's 12,772 records, 99% of all ribbon traffic, and the largest single
+// cost in the frame. It is one ring record a plane now. What makes this a real pin rather
+// than a restatement is that the ceiling is *far* below the old figure -- a regression that
+// put the rim back on the CPU could not creep past it, it would blow through by two orders
+// of magnitude. The three finite lines are what is left, at two records each.
+const records = loaded_records.length === 0 ? null : {
+  ribbon: Math.max(...loaded_records.map((r) => r.records_ribbon)),
+  ring: Math.max(...loaded_records.map((r) => r.records_ring)),
+  disc: Math.max(...loaded_records.map((r) => r.records_disc)),
+};
+report(
+  'a plane rim crosses the wire as one ring record, not ninety-six ribbons',
+  records !== null && records.ribbon <= 64 && records.ring >= 120 &&
+    records.ring >= records.disc,
+  records === null
+    ? 'no frames recorded'
+    : `${records.ribbon} ribbon, ${records.ring} ring, ${records.disc} disc records`,
 );
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));

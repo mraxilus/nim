@@ -841,6 +841,23 @@ suite "Mesh":
     corners[0].x != corners[1].x or corners[0].y != corners[1].y or
       corners[0].z != corners[1].z
 
+  proc ringEnds(meshes: MeshSet; index, segment: int): (Position, Position) =
+    ## Recover the segment the `segment`-th piece of the `index`-th ring was built around,
+    ## by `ribbonEnds`'s own midpoint argument -- through `expandRingVertex`, the reference
+    ## of the shader that widens it, so what is read back is what is drawn.
+    proc midpoint(a, b: Vertex): Position =
+      Position(
+        x: 0.5*(float(a.x) + float(b.x)),
+        y: 0.5*(float(a.y) + float(b.y)),
+        z: 0.5*(float(a.z) + float(b.z)),
+      )
+    let corners = expandRingVertex(meshes.rings.records[index], segment, toScale(SCALE_TEST))
+    (
+      midpoint(corners[0], corners[5]),
+      midpoint(corners[1], corners[2]),
+    )
+
+
   proc ribbonEnds(meshes: MeshSet; index: int): (Position, Position) =
     ## Recover the segment the `index`-th ribbon was built around.
     ##   Each end's own two corners sit an equal step either side of it, so their midpoint
@@ -988,15 +1005,17 @@ suite "Mesh":
     for plane in PLANES:
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
-      const RIBBONS_RING = SEGMENTS_CIRCLE_HORIZON
+      const SEGMENTS_RING = SEGMENTS_CIRCLE_HORIZON
       # One disc record in one wash run: the fan itself is the shader's now, and
       #   `expandDiscVertex` -- its reference -- is what its corners are read through.
       check MESHES.discs.count == 1
       check MESHES.washes.count == 1
-      # The rim and nothing else. A plane used to add one ribbon more for a normal shaft
-      #   out of its anchor; orientation now rides on the selection marker's own pulse,
-      #   so an unselected plane draws no such thing.
-      check 6*MESHES.ribbons.count == VERTICES_RIBBON*RIBBONS_RING
+      # The rim and nothing else, and the rim is **one record**: a ring, not
+      #   `SEGMENTS_CIRCLE_HORIZON` ribbons. A plane used to add one ribbon more for a
+      #   normal shaft out of its anchor; orientation now rides on the selection marker's
+      #   own pulse, so an unselected plane draws no such thing -- and no ribbon at all.
+      check MESHES.rings.count == 1
+      check MESHES.ribbons.count == 0
       # No point marker at all: neither an anchor marker nor a normal arrowhead, so a
       #   plane never adds a scattered dot beyond what the fill and rim already draw.
       check MESHES.points.count_vertices == 0
@@ -1016,13 +1035,15 @@ suite "Mesh":
         #   is no band strictly between the two to rule out.
         let radius_vertex = norm(vertex.toPosition - anchor.get)
         check isNear(radius_vertex, 0) or isNear(radius_vertex, EXTENT_PLANE_F)
-      # The rim is drawn as ribbons, so its own *corners* stand half a line width off the
-      #   plane -- the step sideways is perpendicular to the segment and to the sight ray,
-      #   which is only in the plane when the eye happens to lie in it. What is still
+      # The rim is drawn as a line is, so its own *corners* stand half a line width off
+      #   the plane -- the step sideways is perpendicular to the segment and to the sight
+      #   ray, which is only in the plane when the eye happens to lie in it. What is still
       #   exactly on the plane, and at exactly the plane's own radius, is the segment each
-      #   ribbon was built around; `ribbonEnds` recovers it.
-      for i in 0 ..< RIBBONS_RING:
-        let (tail, head) = ribbonEnds(MESHES, i)
+      #   piece was built around; `ringEnds` recovers it.
+      #   Every segment of the one record is walked, which is what makes the record's
+      #   fourteen floats provably the same circle the ninety-six ribbons drew.
+      for i in 0 ..< SEGMENTS_RING:
+        let (tail, head) = ringEnds(MESHES, 0, i)
         for place in [tail, head]:
           check isNear(dot(place - anchor.get, normal.get), 0)
           check isNear(norm(place - anchor.get), EXTENT_PLANE_F)
@@ -1031,9 +1052,54 @@ suite "Mesh":
         let bound = 0.5*float(WIDTH_LINE_OBJECT)*
           max(worldPerPixelAt(tail, SCALE_TEST), worldPerPixelAt(head, SCALE_TEST))
         for j in 0 ..< VERTICES_RIBBON:
-          let corner = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_TEST))[j]
+          let corner = expandRingVertex(MESHES.rings.records[0], i, toScale(SCALE_TEST))[j]
           check isNear(float(corner.alpha), Ink.Olive.colour.alpha)
           check abs(dot(corner.toPosition - anchor.get, normal.get)) <= bound + 1e-5
+
+
+  test "the ring's static corners are the circle's own angles, in the ribbon's winding":
+    # **The one table both ring shaders read, and the only part of the rim they are not
+    #   handed.** A shader reads a segment's two angles from here and the record supplies
+    #   everything else, so a table that drifted would move the drawn circle with nothing
+    #   else changing -- exactly the failure `mesh.ringCorners` exists in Nim to prevent.
+    #   What it must be is stated twice over: the angles are `UNIT_CIRCLE_RIM`'s own
+    #   consecutive pairs, and the `(end, side)` half is `expandRibbon`'s own winding,
+    #   which is what makes a rim widen like every other line.
+    const WINDING = [(0.0, -1.0), (1.0, -1.0), (1.0, 1.0), (0.0, -1.0), (1.0, 1.0),
+      (0.0, 1.0)]
+    let corners = ringCorners()
+    check len(corners) == 6*6*SEGMENTS_CIRCLE_HORIZON
+    for segment in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+      for corner in 0 ..< 6:
+        let at = 6*(6*segment + corner)
+        check isNear(float(corners[at + 0]), UNIT_CIRCLE_RIM[segment].cos_angle)
+        check isNear(float(corners[at + 1]), UNIT_CIRCLE_RIM[segment].sin_angle)
+        check isNear(float(corners[at + 2]), UNIT_CIRCLE_RIM[segment + 1].cos_angle)
+        check isNear(float(corners[at + 3]), UNIT_CIRCLE_RIM[segment + 1].sin_angle)
+        check float(corners[at + 4]) == WINDING[corner][0]
+        check float(corners[at + 5]) == WINDING[corner][1]
+    # And the ends those angles name are the very ends `ribbonOfRing` derives, which is
+    #   the join between this table and the reference the shaders expand: place a ring
+    #   whose arms are the world's own axes and check every segment against it.
+    MESHES.clearMeshes
+    MESHES.addRing(
+      ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
+      2.0, Ink.Olive.colour, float(WIDTH_LINE_OBJECT),
+    )
+    for segment in 0 ..< SEGMENTS_CIRCLE_HORIZON:
+      let
+        at = 6*6*segment
+        record = ribbonOfRing(MESHES.rings.records[0], segment)
+      check isNear(float(record.tail_x), 2.0*float(corners[at + 0]))
+      check isNear(float(record.tail_y), 2.0*float(corners[at + 1]))
+      check isNear(float(record.head_x), 2.0*float(corners[at + 2]))
+      check isNear(float(record.head_y), 2.0*float(corners[at + 3]))
+      # The ring's tint and width reach both ends of every segment, flat: it is what lets
+      #   the shaders drop the ribbon's two-end blend and read one `fill`.
+      check isNear(float(record.width), float(WIDTH_LINE_OBJECT))
+      check isNear(float(record.tail_alpha), Ink.Olive.colour.alpha)
+      check isNear(float(record.head_alpha), Ink.Olive.colour.alpha)
+      check record.tail_red == record.head_red and record.tail_blue == record.head_blue
 
 
   test "the disc is stepped in arithmetic, and lands where the algebra says":
@@ -1092,13 +1158,14 @@ suite "Mesh":
       MESHES.clearMeshes
       let attitude = ⊖ plane
       check MESHES.addObject(SCRATCH, attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
-      # One record per segment now, drawn or not: a segment wholly behind the camera is
-      #   the *shader's* to reject, and `expandRibbon` -- its reference -- reports it as
-      #   six coincident vertices. About half the circle stands behind the eye, so the
-      #   drawn count must fall well short of the full ring; both halves of that are held
-      #   below rather than assumed.
-      let count_ribbon = MESHES.ribbons.count
-      check count_ribbon in 1 .. SEGMENTS_CIRCLE_HORIZON
+      # One record for the whole circle now, drawn or not: a segment wholly behind the
+      #   camera is the *shader's* to reject, and `expandRingVertex` -- its reference --
+      #   reports it as six coincident vertices. About half the circle stands behind the
+      #   eye, so the drawn count must fall well short of the full ring; both halves of
+      #   that are held below rather than assumed.
+      check MESHES.rings.count == 1
+      check MESHES.ribbons.count == 0
+      const SEGMENTS_RING = SEGMENTS_CIRCLE_HORIZON
       var count_drawn = 0
       # `directionNormalHorizon` reads straight off the horizon line's own raw
       #   coefficients; confirm it agrees with the finite plane's own normal, read
@@ -1109,16 +1176,16 @@ suite "Mesh":
         normal_from_horizon = directionNormalHorizon(attitude)
       check normal_from_plane.isSome and normal_from_horizon.isSome
       check normal_from_plane.get =~ normal_from_horizon.get
-      # Checked on the segment each ribbon was built around rather than on its corners:
+      # Checked on the segment each piece was built around rather than on its corners:
       #   a corner stands half a line width off that segment, so it is neither exactly on
       #   the circle's own radius nor exactly in its plane. See the plane rim above.
       var count_at_radius = 0
-      for i in 0 ..< count_ribbon:
+      for i in 0 ..< SEGMENTS_RING:
         # Skip what the shader will not draw; coincident corners are its refusal.
-        let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_TEST))
+        let corners = expandRingVertex(MESHES.rings.records[0], i, toScale(SCALE_TEST))
         if not isRibbonDrawn(corners): continue
         count_drawn += 1
-        let (tail, head) = ribbonEnds(MESHES, i)
+        let (tail, head) = ringEnds(MESHES, 0, i)
         for place in [tail, head]:
           let offset = place - SCALE_TEST.eye
           # In the circle's own plane exactly, clipped or not: the clip slides a point
@@ -1131,7 +1198,7 @@ suite "Mesh":
       check count_at_radius > 0
       # The half-behind claim, held rather than assumed: some of the ring is drawn, and
       #   well under all of it.
-      check count_drawn in 1 ..< SEGMENTS_CIRCLE_HORIZON
+      check count_drawn in 1 ..< SEGMENTS_RING
 
 
   test "plane at horizon becomes a dome over the whole sky around eye":
@@ -4909,6 +4976,7 @@ suite "Interaction":
     clearMeshes(meshes)
     check meshes.points.index_overlay.isNone
     check meshes.ribbons.index_overlay.isNone
+    check meshes.rings.index_overlay.isNone
     check meshes.washes.index_overlay.isNone
     discard meshes.addObject(SCRATCH, GENERAL_POINTS[0], Ink.Rose.colour, scale)
     let count_under = meshes.points.count_vertices
@@ -4924,6 +4992,8 @@ suite "Interaction":
     #   which stream an object happens to tessellate into.
     check meshes.ribbons.index_overlay == some(0)
     check meshes.ribbons.count == 0
+    check meshes.rings.index_overlay == some(0)
+    check meshes.rings.count == 0
     check meshes.washes.index_overlay == some(0)
     check meshes.washes.count == 0
 
@@ -4948,10 +5018,25 @@ suite "Interaction":
     check meshes.washes.index_overlay == some(1)
     check meshes.washes.runs[0].count == 1 and meshes.washes.runs[1].count == 1
 
+    # **A plane's rim needs its own mark.** Its fill and its rim are two streams now, and
+    #   a selected plane is tessellated a second time after the mark; without this split
+    #   the second rim would be drawn depth-tested -- behind the very translucent fill it
+    #   is the highlight for. Held on a whole object rather than on `addRing` directly,
+    #   since what must land on the right side of the mark is what `addObject` emits.
+    clearMeshes(meshes)
+    discard meshes.addObject(SCRATCH, PLANES[0], Ink.Olive.colour, scale)
+    let count_rim_under = meshes.rings.count
+    check count_rim_under == 1
+    markOverlay(meshes)
+    discard meshes.addObject(SCRATCH, PLANES[0], Ink.Jade.colour, scale)
+    check meshes.rings.index_overlay == some(count_rim_under)
+    check meshes.rings.count == count_rim_under + 1
+
     # And clearing forgets it, so one frame's selection cannot outlive its own frame.
     clearMeshes(meshes)
     check meshes.points.index_overlay.isNone
     check meshes.ribbons.index_overlay.isNone
+    check meshes.rings.index_overlay.isNone
     check meshes.washes.index_overlay.isNone
 
 

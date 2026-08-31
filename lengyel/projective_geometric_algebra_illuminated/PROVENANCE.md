@@ -2618,11 +2618,10 @@ corner buffers come from one generator pair in `mesh` (`discCorners`/`domeCorner
 the desktop directly and by the browser through `nimDiscCorners`/`nimDomeCorners`, so
 neither target holds a table that could drift from the references (`expandDiscVertex`,
 `expandDomeVertex`), which the suite pins to the multivector sums as it pinned the CPU
-walks. The rim keeps its ribbon records -- their draw order among the other ribbons is
-load-bearing -- but steps off `UNIT_CIRCLE_RIM`, a fixed table of the ring's angles resolved
+walks. The rim steps off `UNIT_CIRCLE_RIM`, a fixed table of the ring's angles resolved
 once at start-up with the runtime's own `cos`/`sin` (not at compile time, whose evaluator
-need not agree with each backend's libm in the last bit), sharing each boundary with the
-next segment; the rim's per-frame trigonometry is gone.
+need not agree with each backend's libm in the last bit); the rim's per-frame trigonometry
+is gone, and the rim itself followed the fill onto the GPU in the pass below.
   **Wash order is kept, not assumed away**: discs and domes land in two record arrays, but
 two translucent washes still blend in scene order, so every append extends or opens a
 `WashRun` and both render paths walk the runs in sequence -- usually one run of one record
@@ -2643,6 +2642,54 @@ the dome frame besides.
 `ARENA_SWAP.swap()`, so every captured sub-frame stacked another `DrawScratch` into the
 current half until the fifth overflowed the arena -- the pair's turn-over now lives in the
 capture loop's own `renderAt`, mirroring the interactive loop.
+
+**A plane's rim is one record too, and it was 85% of the frame.** The fill became a
+`DiscRecord` in the pass above; the rim did not, and it was left being stepped in
+`addPlaneRing` and emitted as `SEGMENTS_CIRCLE_HORIZON` separate ribbons -- ninety-six
+records for a circle already fully described by thirteen floats, on a claim ("their draw
+order among the other ribbons is load-bearing") that was true of the old interleaved buffer
+and stopped mattering once the rim had a program of its own. On the 1,024-object demo, which
+holds ~132 planes, that was **12,672 of the frame's 12,772 ribbon records -- 99.2% of all
+ribbon traffic** -- 204,352 floats, 811 KB walked four times a frame (flatten, FFI, staging
+copy, upload).
+  It is a **14-float `RingRecord`** now: a `DiscRecord`'s own thirteen plus a width. One
+instance draws the whole circle, over a static corner buffer from `mesh.ringCorners` --
+`(cos, sin)` of each segment's two angles plus its `(end, side)` -- read by the desktop
+directly and by the browser through `nimRingCorners`, the one-source rule
+`discCorners` already set.
+  **The rim reuses the line-widening rule rather than restating it.** `ribbonOfRing` derives
+the very `RibbonRecord` a segment would have been, and `expandRingVertex` is `expandRibbon`
+of it; both GLSL copies place the two ends exactly as the disc source places its fan corners
+and then run the ribbon source's body verbatim. So a rim is still widened in screen space by
+the one rule every line is, and the three-way sibling check has one reference to hold, not
+two. The suite walks all ninety-six segments of the one record and holds each end on the
+plane and at its radius -- the very assertions the ninety-six ribbons carried.
+  `RingMesh` carries its own `index_overlay`: a selected plane is tessellated again after
+`markOverlay`, and without the split that second rim would draw depth-tested, behind the
+translucent fill it is the highlight for.
+  **Measured, browser, SwiftShader at 1200x900, the demo scene, same probe both sides:
+median frame 239 ms -> 84 ms**, p90 240 -> 95. Ribbon records 12,772 -> 4 (the three finite
+lines, at two segments each); the seed scene's 96 -> 0. A driven check pins the demo's
+ribbon records under 64 against a ring count over 120 -- a ceiling two orders of magnitude
+below the old figure, which a regression could not creep past.
+  **`RIBBONS_MAX` fell from 131,072 back to 8,192 with it.** That cap existed only for the
+rim case; the binding case is now a scene of *lines*, each two segments, every one selected:
+4,096 at `ITEMS_MAX` = 1,024, against the furniture set's 482 lattice lines. `scene.nim`'s
+`static: doAssert` block states both, and gained a `RINGS_MAX` line. The reservation
+`visualiser.BYTES_MEMORY_TOTAL` reports is **about 15.7 MB smaller** across the two mesh
+sets.
+  One thing the rim's own pass does change: rims used to be interleaved with object lines in
+one buffer and are now drawn straight after them. The depth test still decides occlusion, so
+the only difference is blend order where two *translucent* strokes overlap -- during a
+plane's fade-in progress.
+
+**The driven checks measure the debug lattice from one check onward.** The check that proves
+the debug layer draws more than the picture switches it on with `chip.click()` and never
+switches it back, so every later frame drawn through the real loop carries ~1,650 lattice
+ribbon records. The record accounting under the demo switches it off for its own window and
+says so; the *other* measurements taken after that point have been including the lattice all
+along. Not changed here, because moving them is a band change under `REQUIREMENTS.md` §20 --
+recorded so the next reading of those numbers knows what is in them.
 
 **The overlay row's cost was copies, not markers -- and the DOM churn beside them.** With
 two objects selected the `overlay + menu` row cost more than the whole frame build, and

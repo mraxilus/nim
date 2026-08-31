@@ -78,7 +78,7 @@ const INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
   ## Shrink the **frame** by this many pixels when asking whether a *plane* is in view, so
   ## a rim resting on the very edge has its whole stroke drawn rather than half of it
   ## clipped away.
-  ##   Half of what `tessellate.addPlaneRing` strokes the rim at, which is the same relationship
+  ##   Half of what `mesh.addRing` strokes the rim at, which is the same relationship
   ##   `INSET_POINT_SHOWN` has to the dot it keeps whole -- and, at 1.25 px, the entire
   ##   price of letting a disc reach the edge instead of stopping short of it.
 
@@ -325,7 +325,7 @@ func rayPlaneHit(
   let distance = depthAgainst(plane_eye, hit)
   if distance <= 1.0e-6: return
 
-  # Bound is circular, matching `tessellate.addPlaneRing` exactly: a plane's own hit test
+  # Bound is circular, matching `mesh.addRing` exactly: a plane's own hit test
   #   should agree with what is drawn, not with a square the render no longer produces.
   #   Distance between the hit and the disc's own centre, through the algebra.
   if distanceBetween(hit, toMultivector(anchor)) > extent: return
