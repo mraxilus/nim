@@ -2207,7 +2207,7 @@ on a visualiser with a diagnostics drawer is most likely to have. The storyboard
 untouched and is still what `visualiser --storyboard` captures; the two had been the same
 thing only because nothing had yet asked them to differ.
   **Every item slot filled, and every drawable kind in it.** `orrery.constructOrrery` builds
-35 points, 15 lines, 11 planes and one of each object at horizon — a star, a great circle and
+44 points, 4 lines, 13 planes and one of each object at horizon — a star, a great circle and
 a sky dome — which is exactly `scene.ITEMS_MAX`, asserted rather than hoped for so a build
 compiled with a different capacity fails naming both numbers. Everything after the placed
 bodies is **derived**: every line and plane is a join of points already in the scene, and the
@@ -2254,6 +2254,48 @@ selection uses, so the demo cannot come to disagree with the rest of the build a
 "whole" means. `RADIUS_ORRERY` bounds the nearest `FRAMED_ORRERY` = 4 systems and is folded
 from the layout table; the other three stand beyond the opening frame on purpose, for a
 reader to find by pulling back. Azimuth is left where the reader had it.
+**Lines are scarce, and the slots they gave up bought a system and nine more bodies.** A
+line in this algebra is *infinite*: it is drawn out to the whole draw extent whatever two
+points made it, so fifteen of them crossed the entire frame at once and the scene read as line
+traffic with the systems behind it. They also cost fifteen of sixty-four item slots to do it.
+Four are left — one in Sol and three planet-to-moon joins — plus the one at horizon.
+  The exchange is stated because it went the right way: **35 points, 15 lines, 11 planes**
+became **44 points, 4 lines, 13 planes**. Planes *rose*. A plane is a disc fan and much the
+most expensive kind, so cutting lines made the stress case heavier rather than lighter, which
+is the opposite of what "remove things" usually does and the reason it was worth measuring
+rather than assuming.
+  The line kind now carries a **ceiling as well as a floor** — the only kind that does, in
+both the suite and the driven check. A floor alone would let lines creep back one edit at a
+time, and the intent here is a maximum, not a minimum. The plane floor rose from 8 to 10 in
+the same move, free, because discs are what the slots bought.
+  **No sun is joined to a planet anywhere but in Sol.** The one orbit line in the scene is
+`sol ∧ earth`, held by a suite case that asks *geometrically* — which lines pass through both
+a sun and a planet — rather than by reading labels, so renaming something cannot make it pass.
+
+**One of the eight systems is ours, not to scale.** `SOL` names its eleven bodies and carries
+each one's real distance in astronomical units; `radiusOfSolBody` is the single place those
+are turned into world radii. The compression is a **logarithm**, lifted by `SHIFT_SOL` so
+Mercury stands clear of Sol and normalised so Neptune sits at the system's own radius: it
+keeps the real order and the shape of the real spacing — inner planets crowd, outer ones
+spread — while squashing a 77× range to about 5×. At true scale Neptune sets the system's size
+and the four inner planets share the innermost fiftieth of it as one dot. The real numbers are
+kept in the table rather than pre-squashed ones, because they are the thing worth being able
+to check, and because the compression is then one function rather than eleven constants.
+  **All three objects at horizon are attitudes of Sol's own objects** — the direction Earth
+lies in from its star, the attitude of Sol's ecliptic disc, and that ecliptic wedged with
+Halley. Halley and not a planet, because a planet lies on the very ecliptic it rings and a
+point wedged with a plane it lies on gives zero; `addHorizon` refuses that case, which is how
+the same mistake was caught the first time it was made.
+  Three suite cases hold what a model of a real system has to get right and nothing else would
+notice: the planets run strictly outward in the table's order, measured from the built scene;
+the squash is real (outermost under ten times the innermost, where the truth is 77); and the
+line at horizon is proportional to `attitude` of the scene's own `ecliptic sol` — proportional,
+not equal, since an attitude is a direction and carries no scale.
+  Sol's bodies are **named**, which broke the suite's habit of recovering an object's role
+from a label prefix. The `SOL` table is exported carrying each body's role, and the suite reads
+roles from it — one source, and the check still measures the scene against the table rather
+than restating a second set of prefixes.
+
 
 **Colour says what a thing is, not which system it belongs to.** The first version spent a
 hue per cluster, which meant a sun, its planets, its moons and its comets were all one colour

@@ -1068,6 +1068,20 @@ own centre are what make it read as one, so the rule is a **ceiling on how many 
 pass through any one point**, counted over the built scene — a starburst is not something a
 test can see, but a hub is something it can count.
 
+**A line is infinite, so lines are spent, not scattered.** Whatever two points make it, a line
+is drawn out to the whole extent and crosses the entire frame; a scene with many of them reads
+as line traffic with its subject behind it, and each one costs an item slot that could hold a
+body or a disc. So the count is held from **both** sides — a floor, so the kind stays
+exercised, and a **ceiling**, so it cannot creep back one edit at a time. Cutting them is not
+a weakening of the stress case: the slots go into discs, which are the most expensive kind, and
+the plane floor rises to say so.
+
+**One cluster models a real arrangement**, named and recognisable, so the scene is not
+seven variations on an abstraction. Real quantities are kept as they are and compressed by a
+**stated function** where they must be — a faithful layout is not automatically a legible one —
+and what the model has to get right (the order of its bodies, that the compression is real)
+is asserted, since nothing else in the suite would notice it being wrong.
+
 **Colour says what an object is**, not which cluster it belongs to. Which cluster a dot
 belongs to is already legible from where it sits; what it *is* — a sun, a planet, a moon, a
 comet — is legible from nothing else, since they are identical dots. The palette has a fixed

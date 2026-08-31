@@ -6375,8 +6375,16 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       #   plane count is the one that matters most, each plane being a disc fan, and the
       #   three at horizon are the three special paths -- a star, a great circle, a sky dome.
       check tally[Shape.Point] >= 30
-      check tally[Shape.Line] >= 12
-      check tally[Shape.Plane] >= 8
+      # **A ceiling as well as a floor, and this is the only kind that has one.** Lines were
+      #   cut from fifteen to four because a line is infinite and every one of them crosses
+      #   the whole frame whatever it joins; the slots bought a system and nine more bodies.
+      #   A floor alone would let them creep back one edit at a time, so the intent is
+      #   pinned from both sides. The floor keeps the kind exercised by more than the single
+      #   line at horizon.
+      check tally[Shape.Line] in 3 .. 6
+      # Raised from 8, free, because the slots the lines gave up went partly into discs --
+      #   the expensive kind, so cutting lines made the stress case heavier, not lighter.
+      check tally[Shape.Plane] >= 10
       check at_horizon[Shape.Point] >= 1
       check at_horizon[Shape.Line] >= 1
       check at_horizon[Shape.Plane] >= 1
@@ -6430,9 +6438,14 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         let label = toText(scene.labelAt(slot))
         let geometry = scene.geometryAt(slot)
         if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
-        if label.startsWith("sun "): suns[label[len("sun ") .. ^1]] = geometry
+        if label == SOL[0].name: suns["sol"] = geometry
+        elif label.startsWith("sun "): suns[label[len("sun ") .. ^1]] = geometry
         elif '.' in label: bodies.add((label[label.rfind(' ') + 1 ..< label.find('.')],
           geometry))
+        else:
+          # Sol's bodies are named, so they are recognised by the table that placed them.
+          for body in SOL:
+            if body.name == label and body.role != Role.Sun: bodies.add(("sol", geometry))
       check len(suns) >= 5
       var reaches: Table[string, float]
       for (which, body) in bodies:
@@ -6456,16 +6469,120 @@ when ITEMS_MAX >= ITEMS_ORRERY:
           if role != other: check lut_role_to_ink[role] != lut_role_to_ink[other]
       for slot in 0 ..< ITEMS_MAX:
         let label = toText(scene.labelAt(slot))
-        let role =
-          if label.startsWith("sun "): Role.Sun
-          elif label.startsWith("planet "): Role.Planet
-          elif label.startsWith("moon ") and '.' in label: Role.Moon
-          elif label.startsWith("comet ") and '.' in label: Role.Comet
-          else: Role.Derived
+        # Sol's bodies are named rather than numbered, so their roles come from the very
+        #   table that placed them -- one source, and the check still measures the scene
+        #   against it rather than restating a second set of prefixes.
+        var role = Role.Derived
+        var named = false
+        for body in SOL:
+          if body.name == label:
+            role = body.role
+            named = true
+        if not named:
+          role =
+            if label.startsWith("sun "): Role.Sun
+            elif label.startsWith("planet "): Role.Planet
+            elif label.startsWith("moon ") and '.' in label: Role.Moon
+            elif label.startsWith("comet ") and '.' in label: Role.Comet
+            else: Role.Derived
         check scene.inkAt(slot) == lut_role_to_ink[role]
         inc bodies[role]
       # And every role is actually present, or the check above passes vacuously on one.
       for role in Role: check bodies[role] > 0
+
+    test "Sol models our own system: its planets run outward in the right order":
+      # A model of a real arrangement has exactly one thing it has to get right, and nothing
+      #   else in the suite would notice it being wrong. Measured from the built scene, not
+      #   from the table: `radiusOfSolBody` squashes the real distances through a logarithm,
+      #   and a compression that inverted or flattened the order would still fill 64 slots
+      #   and still pass every other case here.
+      var scene = initScene()
+      constructOrrery(scene)
+      var placed: Table[string, Multivector]
+      for slot in 0 ..< ITEMS_MAX:
+        placed[toText(scene.labelAt(slot))] = scene.geometryAt(slot)
+      let sol = placed[SOL[0].name]
+      var apart_last = 0.0
+      var apart_first = 0.0
+      for body in SOL:
+        if body.role != Role.Planet: continue
+        let apart = distanceBetween(placed[body.name], sol)
+        checkpoint(&"{body.name} at {body.distance} au stands {apart:.2f} out")
+        check apart > apart_last # Strictly outward, in the order the table lists them.
+        if apart_first == 0.0: apart_first = apart
+        apart_last = apart
+      # And genuinely **not** to scale: faithfully, Neptune stands 77 times further out
+      #   than Mercury and the inner planets are one dot. The squash has to be real.
+      check apart_first > 0.0
+      check apart_last/apart_first < 10.0
+
+    test "one line joins a sun to a planet in the whole scene, and it is Sol to Earth":
+      # The instruction this round was given, stated as an assertion: every other sun-to-
+      #   planet line was cut, and a later edit must not put them back one system at a time.
+      #   Asked geometrically -- a line through both a sun and a planet -- rather than by
+      #   reading labels, so renaming something cannot make it pass.
+      var scene = initScene()
+      constructOrrery(scene)
+      var suns: seq[(string, Multivector)] = @[]
+      var planets: seq[Multivector] = @[]
+      var lines: seq[(string, Multivector)] = @[]
+      for slot in 0 ..< ITEMS_MAX:
+        let label = toText(scene.labelAt(slot))
+        let geometry = scene.geometryAt(slot)
+        if isHorizon(geometry): continue
+        case shape(geometry).get(Shape.Point)
+        of Shape.Line: lines.add((label, geometry))
+        of Shape.Point:
+          var role = Role.Derived
+          for body in SOL:
+            if body.name == label: role = body.role
+          if role == Role.Sun or label.startsWith("sun "): suns.add((label, geometry))
+          elif role == Role.Planet or label.startsWith("planet "):
+            planets.add(geometry)
+        of Shape.Plane: discard
+      proc lies(line, point: Multivector): bool =
+        let place = unitize(point)
+        for b in Basis:
+          if abs(wedge(line, place)[b]) > TOLERANCE_SINGLE: return false
+        true
+      var joining: seq[string] = @[]
+      for (label, line) in lines:
+        for (name, sun) in suns:
+          if not lies(line, sun): continue
+          for planet in planets:
+            if lies(line, planet): joining.add(&"{label} through {name}")
+      check joining == @["sol ∧ earth through " & SOL[0].name]
+
+    test "the line at horizon is the attitude of Sol's own ecliptic disc":
+      # Taken from the scene's own `ecliptic sol` rather than from a plane recomputed here,
+      #   so this checks the wiring and not a second statement of the same construction.
+      var scene = initScene()
+      constructOrrery(scene)
+      var ecliptic, at_horizon: Multivector
+      for slot in 0 ..< ITEMS_MAX:
+        let geometry = scene.geometryAt(slot)
+        if toText(scene.labelAt(slot)) == "ecliptic sol": ecliptic = geometry
+        elif isHorizon(geometry) and shape(geometry) == some(Shape.Line):
+          at_horizon = geometry
+      check shape(ecliptic) == some(Shape.Plane)
+      check shape(at_horizon) == some(Shape.Line)
+      # **Proportional, not equal.** An attitude is a direction, and a direction carries no
+      #   scale: the scene's own object and a freshly taken attitude agree up to a factor,
+      #   so comparing coefficients outright would fail on a true wiring. Cross-multiplied
+      #   over every pair of basis slots, which is proportionality without having to pick a
+      #   normalisation -- and a horizon object has no weight to unitize by.
+      let taken = attitude(ecliptic)
+      var worst = 0.0
+      for first in Basis:
+        for second in Basis:
+          worst = max(worst,
+            abs(at_horizon[first]*taken[second] - at_horizon[second]*taken[first]))
+      checkpoint(&"worst cross term {worst:.9f}")
+      check worst <= TOLERANCE_SINGLE
+      # And not both zero, which would satisfy proportionality vacuously.
+      var largest = 0.0
+      for b in Basis: largest = max(largest, abs(at_horizon[b]))
+      check largest > TOLERANCE_SINGLE
 
     test "the framing radius holds the systems it claims, and the rest run past it":
       # `RADIUS_ORRERY` is what the demo's own camera is fitted to, and its whole claim is
@@ -6479,7 +6596,8 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       for slot in 0 ..< ITEMS_MAX:
         let geometry = scene.geometryAt(slot)
         if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
-        if not toText(scene.labelAt(slot)).startsWith("sun "): continue
+        let label = toText(scene.labelAt(slot))
+        if not (label.startsWith("sun ") or label == SOL[0].name): continue
         if distanceBetween(geometry, centre) <= RADIUS_ORRERY: inc held
         else: inc beyond
       check held >= 3

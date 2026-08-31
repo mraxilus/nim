@@ -2524,13 +2524,19 @@ report(
 // Every kind, and nothing that draws nothing. The mixed-grade case is the one worth naming:
 //   three collinear points wedge to no clean grade, and such an item holds a slot while
 //   drawing nothing at all -- six of the sixty-four did, and the scene still counted 64.
+//   Lines carry a **ceiling** as well as a floor, alone among the kinds: they were cut from
+//   fifteen to four because a line is infinite and every one crosses the whole frame
+//   whatever it joins, and the slots that freed went into a system and nine more bodies. A
+//   floor alone would let them creep back. The plane floor rose with them for the same
+//   reason -- discs are what the slots bought.
 const drawing = ['point', 'line', 'plane', 'point at horizon', 'line at horizon',
   'plane at horizon'];
 const undrawn = Object.keys(demo.tally).filter((word) => !drawing.includes(word));
 report(
   'it carries every drawable kind, including one of each at horizon, and nothing blank',
   drawing.every((word) => (demo.tally[word] || 0) >= 1) && undrawn.length === 0 &&
-    demo.tally.plane >= 8 && demo.tally.line >= 12 && demo.tally.point >= 30,
+    demo.tally.plane >= 10 && demo.tally.line >= 3 && demo.tally.line <= 6 &&
+    demo.tally.point >= 30,
   Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
 );
 // And the camera it leaves is standing back far enough to see what it just built: on the
