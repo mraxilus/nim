@@ -2790,8 +2790,9 @@ bucket. It takes the kind the placement already decided.
 bridge's whole build **21.3 -> 7.1 ms**. What is left is the ground grid, which follows the
 camera and is meant to be rebuilt when it moves.
 
-**The 68 ms that remains is SwiftShader, not this page.** Worth stating plainly, because it
-is the difference between a bottleneck and a driver. Measured on the demo after both passes:
+**The 68 ms that remains is SwiftShader, not this page** -- on *this container*, and the
+distinction turned out to matter more than the figure. Worth stating plainly, because it is
+the difference between a bottleneck and a driver. Measured on the demo after both passes:
 `renderFrame` -- every upload and every draw call issued -- takes 0.9 ms, and the same call
 followed by a `readPixels` that forces the GPU to finish takes **88.9 ms**. The page's own
 JavaScript is under a millisecond a frame; the rest is a CPU rasteriser blending 132
@@ -2799,6 +2800,63 @@ overlapping translucent discs across 1,200x900 pixels. Every figure in this file
 software-rendered (see the verification note at the top), and no measurement here has ever
 run on real GPU hardware. What that means for the numbers above: the CPU-side wins are real
 and carry over, and the fill-rate cost does not -- it is this container's, not the design's.
+
+**The fill-rate attribution above is a container artefact, and on hardware it is wrong.**
+Reported from a real device -- an Android tablet, real GPU -- the demo showed `display wait +
+browser` at a recent mean of 49.22 ms against a **median of 14.50**, and the ordinary scene at
+16.60 ms with `ui refresh` its largest row at 3.80 (4.00) ms. A median of 14.5 ms is plain
+vsync: that is a *fast* frame with severe periodic spikes, not a slow one, so the demo was
+never throughput-bound there. Measured directly: at the demo's opening camera **98 of 132
+discs are entirely off-screen**, and the 34 that are visible cover **0.12 of one screen**
+between them. Fill rate is not the problem on a GPU and never was; under SwiftShader, a CPU
+rasteriser, it genuinely was, and reading that measurement as a property of the design rather
+than of the container is the mistake. **No figure in this file has ever been taken on real
+GPU hardware** -- the note at the top says so, and this is what that warning is for.
+
+**The spikes were the drawer's DOM, and one hidden multiplier made them enormous.** The
+objects list builds a row per object, and every row built its whole edit form -- a label
+field, an ink picker with an option per choosable slot, and a grid with an input per basis
+element -- which CSS then hid. Nothing in there was even reachable: every field writes into
+`session_edit`, which is null unless a session is open. Measured on the 1,024-object demo:
+**76 elements a row and 80,325 on the page**, against 843 on the opening scene; one
+`refreshObjectsUI()` cost **570 ms of JavaScript plus 164 ms of layout**, and there are a
+dozen callers, so **a tap on `hide` froze the page for 736 ms**. Building the form only for
+the open row -- there is at most one -- takes a row to **9 elements** and the page to 11,717.
+  **The list reconciles now rather than rebuilding**, against a previous snapshot of what each
+row is a picture of, keyed so a row survives. This is the shape of `timings.RECORDS_FRAME`'s
+this-frame/last-frame pair and of the swap arena, one side of the FFI over: the buffers
+themselves are Nim's and this code is `glue.js`, so what carries across is the pattern.
+  **It is a diff rather than a narrower call for the callers that matter**, and that choice is
+the point: a list of "the cheap callers" is a contract a thirteenth caller breaks in silence,
+which is exactly what `CLAUDE.md` warns about. A diff has no such list. An unchanged refresh
+keeps every element; a hide rebuilds one row of a thousand; both are pinned on element
+identity, which a rebuilt row fails however fast it was built.
+  The costly half of a signature is the geometry line: `nimFormatMultivector` is **11.8 ms**
+across 1,024 rows and `nimItemShapeWord` 2.9, against 0.8 ms for every other field together.
+It is a function of the geometry alone, so it is held against `scene.revision` -- the counter
+the frame hold and the placement cache already rest on. **Tap costs: 736 ms -> 19 ms; an
+unchanged refresh 570 -> 3.7 ms; a selection change -> 4.3 ms.** A visibility toggle still
+pays about 24 ms, because `setVisible` bumps the revision and re-derives every row's geometry
+text though no geometry moved; a second, geometry-only counter would remove it, and is not
+worth the contract for 20 ms on a deliberate tap.
+
+**A row that reports only its JavaScript reports about half of what it costs.** `ui refresh`
+measured 1.0 ms and forced a further **0.8 ms of style and layout** -- work the browser does
+after the callback returns, so it lands in `display wait + browser` and not in the row that
+caused it. That is why a 4 ms burst five times a second looked affordable. The cause is gone
+rather than the reporting patched: the tick wrote **every** row's text and both its colours
+unconditionally while only about **10 of 29 rows** actually change, so two thirds of the writes
+were dirtying layout to set the string already there. Writing only what moved takes the tick
+to **0.7 ms of JavaScript and 0.0 ms of forced layout**, and a driven check counts the writes
+rather than clocking them. No meter was added for the residue: it is now 0.0-0.2 ms, and a row
+reporting nothing is machinery for nothing. The trap is recorded here instead, because the
+next thing to hide will hide the same way.
+
+**And the GPU work was left alone, on purpose.** The obvious next move was to stop emitting
+the 74% of records that are off-screen. It was not made: overdraw is 0.12 screens, the
+device's own display-wait median is plain vsync, and a cull trades an object-vanishes bug for
+a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
+rather than done because it was available.
 
 **The driven checks measure the debug lattice from one check onward.** The check that proves
 the debug layer draws more than the picture switches it on with `chip.click()` and never

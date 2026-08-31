@@ -2776,7 +2776,22 @@ await page.waitForTimeout(700);
 //   there is nothing there to divide. What this check is about is the cost of drawing while
 //   the view moves, which is the case a reader actually waits on; orbiting produces it.
 await page.evaluate(() => document.getElementById('gl').focus());
-await holdKeys(['ArrowRight'], 1400);
+// **Orbited until the sample is big enough, not for a fixed time.** The floor below wants
+//   frames whose scene phase clears 2 ms, and a fixed window kept finding fewer of them:
+//   the placement cache took that phase from about 17 ms to under 4, so the check was
+//   failing *because* the thing it guards got faster, and on a loaded runner it failed at a
+//   different count each time. A window is the wrong instrument for a sample size. This
+//   collects until it has one, and gives up rather than hanging if the frames never come.
+await page.evaluate(() => document.getElementById('gl').focus());
+await page.keyboard.down('ArrowRight');
+let count_heavy_seen = 0;
+for (let round = 0; round < 20 && count_heavy_seen < 25; round += 1) {
+  await page.waitForTimeout(400);
+  count_heavy_seen = await page.evaluate(
+    () => window.__phase_frame.slice(2).filter((p) => p.scene >= 2.0).length);
+}
+await page.keyboard.up('ArrowRight');
+await page.waitForTimeout(120);
 const after_drag = await page.evaluate(() => nimSceneCount());
 report(
   'a construction gesture on a full scene is refused, not crashed through',
@@ -2821,6 +2836,120 @@ report(
     ? 'no frames recorded'
     : `${records.ribbon} ribbon, ${records.ring} ring, ${records.disc} disc records`,
 );
+
+/* ---- What the drawer costs to keep up to date ---- */
+
+// **A row a reader cannot see does not build the form it would edit with.** Every row used
+// to build the whole edit form -- a label field, an ink picker, and a grid with an input per
+// basis element -- and let CSS hide it. At 1,024 objects that was 76 elements a row and
+// 80,325 on the page, one rebuild cost 570 ms of JavaScript and 164 ms of layout, and a tap
+// on `hide` froze the page for three quarters of a second. Counted structurally, since an
+// element that is not there cannot cost anything.
+const drawer_dom = await page.evaluate(() => ({
+  elements: document.querySelectorAll('*').length,
+  rows: document.querySelectorAll('#objects-list > *').length,
+  forms: document.querySelectorAll('#objects-list .item-edit').length,
+}));
+report(
+  'a closed row builds no edit form, so the page holds thousands of elements and not tens',
+  drawer_dom.rows >= 1024 && drawer_dom.forms === 0 && drawer_dom.elements < 20000,
+  `${drawer_dom.elements} elements over ${drawer_dom.rows} rows, ${drawer_dom.forms} edit forms`,
+);
+
+// And opening one row builds exactly one form -- the check that keeps the guard above from
+// being a way to break editing rather than a way to make it cheap.
+const drawer_open_row = await page.evaluate(() => {
+  document.querySelector('.section[data-section="objects"]').classList.add('open');
+  document.querySelector('#objects-list .item-edit-toggle').click();
+  const open = document.querySelector('#objects-list .item-edit.open');
+  return {
+    forms: document.querySelectorAll('#objects-list .item-edit').length,
+    inputs: open === null ? 0 : open.querySelectorAll('input').length,
+  };
+});
+report(
+  'and opening a row builds one, with its coefficient grid intact',
+  drawer_open_row.forms === 1 && drawer_open_row.inputs >= 16,
+  `${drawer_open_row.forms} form, ${drawer_open_row.inputs} inputs in it`,
+);
+await page.evaluate(() => {
+  const cancel = document.querySelector('#objects-list .item-edit-cancel');
+  if (cancel !== null) cancel.click();
+});
+await page.waitForTimeout(200);
+
+// **The list reconciles against what is standing rather than rebuilding.** Two properties,
+// and the first is what makes the second safe to rely on: a refresh that changes nothing
+// keeps the very same elements, and a refresh that changes one row keeps every other one.
+// Held on element identity rather than on a clock, so it cannot flake -- and identity is
+// exactly the claim, since a rebuilt row is a different object however fast it was made.
+const reconciled = await page.evaluate(() => {
+  const rowsNow = () => Array.from(document.querySelectorAll('#objects-list > *'));
+  const same = (a, b) => a.length === b.length && a.every((n, i) => n === b[i]);
+  const before_idle = rowsNow();
+  refreshObjectsUI();
+  const after_idle = rowsNow();
+  const slot = nimSceneSlots()[0];
+  const before_hide = rowsNow();
+  nimSetVisible(slot, false);
+  refreshObjectsUI();
+  const after_hide = rowsNow();
+  let moved = 0;
+  for (let i = 0; i < after_hide.length; i += 1) if (after_hide[i] !== before_hide[i]) moved += 1;
+  nimSetVisible(slot, true);
+  refreshObjectsUI();
+  return { idle_kept: same(before_idle, after_idle), rows_touched_by_a_hide: moved,
+    rows: after_hide.length };
+});
+report(
+  'an unchanged refresh writes nothing, and a hide rebuilds one row of a thousand',
+  reconciled.idle_kept && reconciled.rows_touched_by_a_hide === 1,
+  `idle kept every element: ${reconciled.idle_kept}; a hide rebuilt ` +
+    `${reconciled.rows_touched_by_a_hide} of ${reconciled.rows} rows`,
+);
+
+// **The diagnostics tick writes the rows that changed and no others.** Every one of those
+// writes is a text node the browser must re-style and re-lay out afterwards, and that work
+// lands in `display wait + browser` rather than in the `ui` row -- so a tick that looked
+// like 4 ms of JavaScript was closer to 8 ms of frame, five times a second, which is what a
+// reader saw as a stutter. About ten of the twenty-nine rows actually move on a tick.
+const tick_writes = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  if (!document.getElementById('drawer').classList.contains('open')) {
+    document.getElementById('btn-drawer').click();
+  }
+  for (const n of document.querySelectorAll('.diag-node')) n.classList.add('open');
+  await wait(400);
+  const descriptor = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+  let writes = 0;
+  Object.defineProperty(Node.prototype, 'textContent', {
+    ...descriptor, set(v) { writes += 1; descriptor.set.call(this, v); },
+  });
+  const original = globalThis.refreshDiagnostics;
+  const per_tick = [];
+  globalThis.refreshDiagnostics = function (...a) {
+    writes = 0;
+    const out = original.apply(this, a);
+    per_tick.push(writes);
+    return out;
+  };
+  await wait(1600);
+  globalThis.refreshDiagnostics = original;
+  Object.defineProperty(Node.prototype, 'textContent', descriptor);
+  return { ticks: per_tick.length, worst: Math.max(0, ...per_tick),
+    rows: document.querySelectorAll('[id^="diag-"]').length };
+});
+report(
+  'the diagnostics tick writes only the rows that moved',
+  tick_writes.ticks > 2 && tick_writes.worst > 0 && tick_writes.worst <= 20,
+  `${tick_writes.worst} text writes at worst over ${tick_writes.ticks} ticks, ` +
+    `${tick_writes.rows} rows on the tree`,
+);
+await page.evaluate(() => {
+  if (document.getElementById('drawer').classList.contains('open')) {
+    document.getElementById('btn-drawer').click();
+  }
+});
 
 report('the page raised no errors', errors_page.length === 0, errors_page.join('; '));
 

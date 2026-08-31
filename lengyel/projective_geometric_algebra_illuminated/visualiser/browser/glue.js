@@ -1493,23 +1493,115 @@ function endEditSession() {
   nimClearGhost();
 }
 
-function refreshObjectsUI() {
-  const slots = nimSceneSlots()
-    .slice()
-    .sort((a, b) => nimItemBorn(b) - nimItemBorn(a)); // Most recently added first.
-  count_objects.textContent = '(' + slots.length + ' of ' + nimSceneCapacity() + ')';
-  list_objects.innerHTML = '';
-  if (slots.length === 0 && !isComposing()) {
+// The two rows that are not an object: the note shown to an empty list, and the row a
+//   composing session heads it with. Keys rather than positions, so the reconcile below can
+//   talk about every row the same way.
+const KEY_ROW_EMPTY = 'empty';
+const KEY_ROW_PENDING = 'pending';
+// What each key's row was a picture of when it was last built. Compared, never ordered.
+let signatures_row = new Map();
+
+// The geometry line a row shows, held per slot against the scene's own revision.
+//   **The costly half of a signature, and a function of the geometry alone.** Measured at
+//   1,024 objects, `nimFormatMultivector` is 11.8 ms of a walk and `nimItemShapeWord` 2.9,
+//   against 0.8 ms for every other field a row draws put together. Geometry changes only
+//   when `scene.revision` does -- every writer bumps it, which is what the frame hold and
+//   the placement cache already rest on -- so the text is re-derived when the revision moves
+//   and reused otherwise. A selection change, which is what most refreshes are, moves no
+//   revision and re-derives nothing.
+//   Cleared whole rather than per slot: the revision is the scene's, not a slot's, so an
+//   edit re-derives every row. That is the same over-approximation `g_placed` makes, and it
+//   costs one deliberate action the walk it would have paid anyway.
+let text_geometry_row = new Map();
+let revision_geometry_row = -1;
+
+function geometryTextFor(slot) {
+  const revision = nimSceneRevision();
+  if (revision_geometry_row !== revision) {
+    revision_geometry_row = revision;
+    text_geometry_row = new Map();
+  }
+  let held = text_geometry_row.get(slot);
+  if (held === undefined) {
+    held = nimItemShapeWord(slot) + ': ' + nimFormatMultivector(slot);
+    text_geometry_row.set(slot, held);
+  }
+  return held;
+}
+
+function signatureOfItemRow(key) {
+  // **Everything the row draws, and nothing else.** Two equal signatures mean the same
+  //   picture, so the element standing there is already right and is left alone.
+  if (key === KEY_ROW_EMPTY || key === KEY_ROW_PENDING) return key;
+  const slot = parseInt(key, 10);
+  // An open row is keyed by being open rather than described. Its fields preview
+  //   `session_edit` and its own handlers keep them current as the reader types; rebuilding
+  //   it on some unrelated refresh would take the caret out of whatever field they were in.
+  if (isEditing(slot)) return 'open:' + slot;
+  return [
+    nimItemLabel(slot), nimItemInk(slot), nimItemVisible(slot) ? 1 : 0,
+    slots_selection.includes(slot) ? 1 : 0, geometryTextFor(slot),
+  ].join('\u0001');
+}
+
+function buildRowFor(key) {
+  if (key === KEY_ROW_EMPTY) {
     const p = document.createElement('div');
     p.className = 'help-text';
     p.style.margin = '8px 0 0';
     p.textContent = 'Nothing here yet -- press `add` above, or drag between two objects.';
-    list_objects.appendChild(p);
+    return p;
   }
+  return buildItemRow(key === KEY_ROW_PENDING ? null : parseInt(key, 10));
+}
+
+function refreshObjectsUI() {
+  // **Reconciled against the rows already standing, not rebuilt.** This used to empty the
+  //   list and build every row again, which on the 1,024-object demo was 570 ms of
+  //   JavaScript and 164 ms of layout -- and there are a dozen callers, so a tap on `hide`
+  //   paid all of it to change one checkbox.
+  //   Built as a diff rather than by making the tap-driven callers call something narrower:
+  //   a list of "the cheap callers" is a contract a thirteenth caller breaks silently, and
+  //   this way every caller is cheap, including ones not yet written. A refresh that
+  //   changes nothing writes nothing. The same shape as `timings.RECORDS_FRAME`'s
+  //   this-frame/last-frame pair and the swap arena, one side of the wire over.
+  const slots = nimSceneSlots()
+    .slice()
+    .sort((a, b) => nimItemBorn(b) - nimItemBorn(a)); // Most recently added first.
+  count_objects.textContent = '(' + slots.length + ' of ' + nimSceneCapacity() + ')';
+
+  const keys = [];
+  if (slots.length === 0 && !isComposing()) keys.push(KEY_ROW_EMPTY);
   // A composing session heads the list: it is the newest thing here, and it has no
   //   `born` reading to sort by since nothing backs it in the scene yet.
-  if (isComposing()) list_objects.appendChild(buildItemRow(null));
-  for (const slot of slots) list_objects.appendChild(buildItemRow(slot));
+  if (isComposing()) keys.push(KEY_ROW_PENDING);
+  for (const slot of slots) keys.push(String(slot));
+
+  // Snapshotted, not walked live: the loop below inserts into this very collection.
+  const standing = new Map();
+  for (const node of Array.from(list_objects.children)) standing.set(node.dataset.key, node);
+
+  const signatures = new Map();
+  let at = 0;
+  for (const key of keys) {
+    const signature = signatureOfItemRow(key);
+    signatures.set(key, signature);
+    let node = standing.get(key);
+    if (node === undefined || signatures_row.get(key) !== signature) {
+      if (node !== undefined) node.remove();
+      node = buildRowFor(key);
+      node.dataset.key = key;
+    }
+    // Already in the right place is the common case; otherwise this moves it there.
+    if (list_objects.children[at] !== node) {
+      list_objects.insertBefore(node, list_objects.children[at] || null);
+    }
+    at += 1;
+  }
+  // Whatever is left past the wanted rows is gone from the scene.
+  while (list_objects.children.length > keys.length) list_objects.lastElementChild.remove();
+  signatures_row = signatures;
+
   refreshOperandOptions();
   refreshAddButton();
 }
@@ -1646,85 +1738,98 @@ function buildItemRow(slot) {
   line_coefficient.className = 'item-coeff';
   const describeStaged = () =>
     is_open ? nimDescribeCoefficients(session_edit.coefficients)
-           : nimItemShapeWord(slot) + ': ' + nimFormatMultivector(slot);
+           : geometryTextFor(slot);
   line_coefficient.textContent = describeStaged();
   row.appendChild(line_coefficient);
 
-  const box_edit = document.createElement('div');
-  box_edit.className = 'item-edit' + (is_open ? ' open' : '');
+  // **Built only for the row that is open, which is at most one of them.** Everything
+  //   below is the edit form, and a closed row used to build the whole of it -- a label
+  //   field, an ink picker with an option per choosable slot, and a grid with an input per
+  //   basis element -- and then let CSS hide it. Measured on the 1,024-object demo that was
+  //   **76 elements per collapsed row and 80,325 on the page**, against 843 on the opening
+  //   scene; one rebuild of the list cost 570 ms of JavaScript and 164 ms of layout, so a
+  //   tap on `hide` froze the page for three quarters of a second. It also meant an
+  //   `nimItemCoefficients` call across the FFI for every row of every rebuild, to fill
+  //   inputs nobody could see.
+  //   Nothing was reachable in there anyway: every field writes into `session_edit`, which
+  //   is null unless a session is open, so a hidden form could only have thrown.
+  if (is_open) {
+    const box_edit = document.createElement('div');
+    box_edit.className = 'item-edit' + (is_open ? ' open' : '');
 
-  const field_label = document.createElement('div');
-  field_label.className = 'field';
-  field_label.innerHTML = '<label>label</label>';
-  // Every field below writes into the session, never the scene: the row's own swatch,
-  //   label and coefficient line preview the change, the ghost previews the geometry,
-  //   and only `save` above reaches `g_scene`.
-  const input_label = document.createElement('input');
-  input_label.type = 'text';
-  input_label.value = labelOf();
-  input_label.maxLength = 39;
-  input_label.addEventListener('input', () => {
-    session_edit.label = input_label.value;
-    label.textContent = input_label.value;
-  });
-  field_label.appendChild(input_label);
-  box_edit.appendChild(field_label);
-
-  const field_ink = document.createElement('div');
-  field_ink.className = 'field';
-  field_ink.innerHTML = '<label>colour</label>';
-  const picker_ink = document.createElement('select');
-  // Only the categorical slots are offerable; `nimInkChoosableSlots` decides which those
-  //   are, so no palette rule lives out here. Its entries stay whole-palette ordinals,
-  //   the same ones `nimItemInk` reports and `nimInkName`/`nimInkColor` accept.
-  for (const ink of nimInkChoosableSlots()) {
-    const option = document.createElement('option');
-    option.value = ink;
-    option.textContent = nimInkName(ink);
-    picker_ink.appendChild(option);
-  }
-  picker_ink.value = inkOf();
-  picker_ink.addEventListener('change', () => {
-    session_edit.ink = parseInt(picker_ink.value, 10);
-    const rgb = nimInkColor(session_edit.ink);
-    swatch.style.background = rgbToCss(rgb);
-    label.style.color = rgbToCss(rgb);
-  });
-  field_ink.appendChild(picker_ink);
-  box_edit.appendChild(field_ink);
-
-  const note_coefficient = document.createElement('div');
-  note_coefficient.className = 'help-text';
-  note_coefficient.style.margin = '6px 0';
-  note_coefficient.textContent = is_pending
-    ? 'The 16 numbers of the new multivector, in the library’s basis order. ' +
-      'A live preview draws as soon as any goes non-zero.'
-    : 'The 16 numbers of this object’s own multivector, in the library’s basis ' +
-      'order. The object itself only moves when you save.';
-  box_edit.appendChild(note_coefficient);
-
-  const grid = document.createElement('div');
-  grid.className = 'coeff-grid';
-  // `nimFormatNumber`, not a `toFixed` here: how many digits a coefficient is worth
-  //   is a decision about this project's numbers, and the desktop's own cells make it the
-  //   same way.
-  const inputs_coefficient = buildGradedCoefficientGrid(
-    grid,
-    (b) =>
-      nimFormatNumber(is_open ? session_edit.coefficients[b] : nimItemCoefficients(slot)[b]),
-  );
-  inputs_coefficient.forEach((input, b) => {
-    // `input`, not `change`: the ghost tracks a keystroke rather than waiting for the
-    //   field to blur, which is what makes the preview feel live.
-    input.addEventListener('input', () => {
-      session_edit.coefficients[b] = parseFloat(input.value) || 0;
-      nimSetGhost(session_edit.coefficients);
-      line_coefficient.textContent = describeStaged();
+    const field_label = document.createElement('div');
+    field_label.className = 'field';
+    field_label.innerHTML = '<label>label</label>';
+    // Every field below writes into the session, never the scene: the row's own swatch,
+    //   label and coefficient line preview the change, the ghost previews the geometry,
+    //   and only `save` above reaches `g_scene`.
+    const input_label = document.createElement('input');
+    input_label.type = 'text';
+    input_label.value = labelOf();
+    input_label.maxLength = 39;
+    input_label.addEventListener('input', () => {
+      session_edit.label = input_label.value;
+      label.textContent = input_label.value;
     });
-  });
-  box_edit.appendChild(grid);
+    field_label.appendChild(input_label);
+    box_edit.appendChild(field_label);
 
-  row.appendChild(box_edit);
+    const field_ink = document.createElement('div');
+    field_ink.className = 'field';
+    field_ink.innerHTML = '<label>colour</label>';
+    const picker_ink = document.createElement('select');
+    // Only the categorical slots are offerable; `nimInkChoosableSlots` decides which those
+    //   are, so no palette rule lives out here. Its entries stay whole-palette ordinals,
+    //   the same ones `nimItemInk` reports and `nimInkName`/`nimInkColor` accept.
+    for (const ink of nimInkChoosableSlots()) {
+      const option = document.createElement('option');
+      option.value = ink;
+      option.textContent = nimInkName(ink);
+      picker_ink.appendChild(option);
+    }
+    picker_ink.value = inkOf();
+    picker_ink.addEventListener('change', () => {
+      session_edit.ink = parseInt(picker_ink.value, 10);
+      const rgb = nimInkColor(session_edit.ink);
+      swatch.style.background = rgbToCss(rgb);
+      label.style.color = rgbToCss(rgb);
+    });
+    field_ink.appendChild(picker_ink);
+    box_edit.appendChild(field_ink);
+
+    const note_coefficient = document.createElement('div');
+    note_coefficient.className = 'help-text';
+    note_coefficient.style.margin = '6px 0';
+    note_coefficient.textContent = is_pending
+      ? 'The 16 numbers of the new multivector, in the library’s basis order. ' +
+        'A live preview draws as soon as any goes non-zero.'
+      : 'The 16 numbers of this object’s own multivector, in the library’s basis ' +
+        'order. The object itself only moves when you save.';
+    box_edit.appendChild(note_coefficient);
+
+    const grid = document.createElement('div');
+    grid.className = 'coeff-grid';
+    // `nimFormatNumber`, not a `toFixed` here: how many digits a coefficient is worth
+    //   is a decision about this project's numbers, and the desktop's own cells make it the
+    //   same way.
+    const inputs_coefficient = buildGradedCoefficientGrid(
+      grid,
+      (b) =>
+        nimFormatNumber(is_open ? session_edit.coefficients[b] : nimItemCoefficients(slot)[b]),
+    );
+    inputs_coefficient.forEach((input, b) => {
+      // `input`, not `change`: the ghost tracks a keystroke rather than waiting for the
+      //   field to blur, which is what makes the preview feel live.
+      input.addEventListener('input', () => {
+        session_edit.coefficients[b] = parseFloat(input.value) || 0;
+        nimSetGhost(session_edit.coefficients);
+        line_coefficient.textContent = describeStaged();
+      });
+    });
+    box_edit.appendChild(grid);
+
+    row.appendChild(box_edit);
+  }
   return row;
 }
 
@@ -2604,6 +2709,30 @@ function refreshRuler() {
     : written(span) + ' units \u00b7 grid ' + written(size_cell);
 }
 
+// **Write only where the value moved.** Every one of these is a text node or an inline
+//   style the browser must re-style and re-lay out afterwards, and measured on a full tree
+//   only about **10 of 29 rows actually change** -- so two thirds of the writes were
+//   dirtying layout to set the string that was already there. The same rule the pool strip
+//   and the objects list already follow, at the grain of a single element.
+//   `WeakMap` rather than a table keyed by row name: a row's element can be replaced, and a
+//   stale entry keyed by name would then suppress the first write to its successor.
+const text_written = new WeakMap();
+const colour_written = new WeakMap();
+
+function writeText(element, value) {
+  if (element === null || element === undefined) return;
+  if (text_written.get(element) === value) return;
+  text_written.set(element, value);
+  element.textContent = value;
+}
+
+function writeColour(element, value) {
+  if (element === null || element === undefined) return;
+  if (colour_written.get(element) === value) return;
+  colour_written.set(element, value);
+  element.style.color = value;
+}
+
 function refreshDiagnostics() {
   // **Nothing here is worth a millisecond while the drawer is shut.** Every figure this
   //   writes is inside it, and with the drawer closed the whole refresh was still running
@@ -2649,8 +2778,8 @@ function refreshDiagnostics() {
   //   the tree was capped at whatever band that curve was drawing. The ramp is absolute --
   //   a row's share of the *frame*, over the whole of it -- so it says the same thing
   //   whatever the curve happens to show, and there is nothing left to contradict.
-  diagnostic_frame_time.textContent =
-    mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)';
+  writeText(diagnostic_frame_time,
+    mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)');
 
   // Each step of the drawing process, as `mean over 200 ms (median over the ring)`: the
   // short mean is what a reader watches while changing something, the long median is the
@@ -2663,14 +2792,11 @@ function refreshDiagnostics() {
     //   that runs, and "0.00" would claim it had run for free this window.
     const recent = meanPhase(name, frames_recent);
     const shown = recent === null ? median : recent;
-    element_phase[name].textContent =
-      shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms';
+    writeText(element_phase[name], shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms');
     // The count beside the row's own name, so **every** value ends in `ms` and the times
     //   down the tree finish in one column. A zero is shown rather than left off: a kind
     //   present but empty says something a kind that is absent does not.
-    if (element_tally[name] !== null) {
-      element_tally[name].textContent = ' (' + count_phase[name] + ')';
-    }
+    writeText(element_tally[name], ' (' + count_phase[name] + ')');
     // And what that number is worth, in the curve's own colours.
     if (element_row[name] === null) continue;
     // Some rows keep the neutral ink instead. **`idle` always**: it is the frame's
@@ -2678,8 +2804,8 @@ function refreshDiagnostics() {
     //   all and tinting it would paint the best case in the ramp's loudest colour. And
     //   where nothing has been measured yet there is no share to take.
     if (name === 'idle' || !(mean_frame > 0)) {
-      element_row[name].style.color = '';
-      element_phase[name].style.color = '';
+      writeColour(element_row[name], '');
+      writeColour(element_phase[name], '');
       continue;
     }
     // **Against the whole frame, not against the work in it.** A row's colour answers
@@ -2688,18 +2814,18 @@ function refreshDiagnostics() {
     //   a share of a total that shrinks as the page gets faster and repaints every row
     //   louder for it.
     const tint = rampTreeAt(shown / mean_frame);
-    element_row[name].style.color = tint.label;
-    element_phase[name].style.color = tint.value;
+    writeColour(element_row[name], tint.label);
+    writeColour(element_phase[name], tint.value);
   }
 
   if (performance.memory) {
-    diagnostic_heap.textContent =
+    writeText(diagnostic_heap,
       (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1) + ' / ' +
-      (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB';
+      (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB');
   }
 
   const count = nimSceneCount(), capacity = nimSceneCapacity();
-  diagnostic_pool.textContent = count + ' / ' + capacity;
+  writeText(diagnostic_pool, count + ' / ' + capacity);
   if (!is_strip_pool_built) {
     for (let i = 0; i < capacity; i++) strip_pool.appendChild(document.createElement('span'));
     colours_pool_last = new Float32Array(capacity * 3).fill(-1); // No colour is negative.

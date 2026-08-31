@@ -1450,6 +1450,21 @@ The rules that make the pins trustworthy on a shared, noisy runner:
   read percentiles: a p95 and a worst case, not a median. The two faults this rule found --
   a diagnostics refresh running with nobody able to see it, and placement recomputed every
   frame of every orbit -- were both invisible to a median.
+- **A panel row costs what its writes cost, not what its JavaScript costs.** A DOM write is
+  paid twice: once running, and again as the style, layout and paint the browser does after
+  the callback returns, which lands in the frame's leftover rather than in the row that
+  caused it. So a cheap-looking `ui` row is not evidence of a cheap tick, and the rule that
+  follows is a write rule rather than a timing one: **write only what changed** — every row
+  of the tree, every cell of the pool strip, every row of the objects list. Pinned by
+  counting writes, which cannot flake the way a clock can.
+- **The drawer holds elements for what a reader can see, not for what they might do.** A
+  control that only makes sense inside an open editing session is built when the session
+  opens. At a thousand objects the difference between building a row's edit form and not was
+  80,325 page elements against 11,717, and a 736 ms freeze on one tap against 19 ms.
+- **A list that can hold a thousand rows reconciles; it does not rebuild.** Diff against a
+  snapshot of what each row draws, keyed so an unchanged row keeps its element. Not by
+  routing the callers that happen to matter today through something narrower — that is a
+  list of exceptions the next caller silently misses.
 - **Nothing in the drawer is computed while the drawer is shut.** The panel's own figures,
   its two canvases and its object-pool strip are all inside it; a canvas that falls back to
   a made-up width rather than skipping is the specific way this rule was broken. A driven
@@ -1459,6 +1474,11 @@ The rules that make the pins trustworthy on a shared, noisy runner:
   fault they can produce is a picture that no longer matches the scene -- which a flag check
   cannot see. Every edit path must be driven and the canvas compared before and after,
   sampled from inside the frame that drew it.
+- **A sample size is not a time window.** A check that wants N frames over some cost floor
+  must collect until it has them, not run for a fixed span and hope. The per-kind accounting
+  check failed twice for the opposite of the reason a pin should fail: the work it guards got
+  four times cheaper, so fewer frames cleared its floor, and on a loaded runner the count
+  varied per run. A pin that goes red *because the code got faster* is measuring the runner.
 - **A pin must measure the thing it names.** The record-accounting pin under the demo
   switches the debug layer off for its own window, because an earlier check leaves it on and
   its lattice is ~1,650 ribbon records — which would have swamped the count the pin exists to
