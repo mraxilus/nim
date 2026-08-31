@@ -1015,6 +1015,26 @@ function openApplyPickerOnOperands(position_local) {
   if (menu_selection_apply.style.display !== 'none') openSelectionMenuOp();
 }
 
+// **A settled scroll, not a single jump.** A row outside the viewport is a placeholder
+//   rather than a laid-out row -- see `.item-row`'s `content-visibility` in `shell.html` --
+//   so the offset of a row a thousand places down the list is an estimate until the rows
+//   above it have actually been measured. One `scrollIntoView` lands on the estimate:
+//   measured on slot 900 of the demo, the row arrived 428px lower than it should have,
+//   leaving the edit form it was opening off the bottom of the screen. Each pass lays out
+//   the rows it scrolls past, so the estimate is exact where it matters by the next one.
+//   Stops as soon as the row holds still, which on a list short enough to be laid out
+//   whole is immediately.
+const PASSES_SCROLL_SETTLE = 4;
+function scrollRowIntoView(row, passes = PASSES_SCROLL_SETTLE) {
+  row.scrollIntoView({ block: 'nearest' }); // A long list can open past it.
+  if (passes <= 1) return;
+  const settled = row.getBoundingClientRect().top;
+  requestAnimationFrame(() => {
+    if (Math.abs(row.getBoundingClientRect().top - settled) < 1) return;
+    scrollRowIntoView(row, passes - 1);
+  });
+}
+
 function openPanelTo(slot) {
   // Open an edit session on `slot` (or a composing one where null) and bring the drawer
   //   and the Objects section far enough open to see it -- shared by the top bar's `add`
@@ -1026,7 +1046,7 @@ function openPanelTo(slot) {
   refreshObjectsUI();
   const row = list_objects.querySelector(
     slot === null ? '.item-row.pending-item' : '.item-row[data-slot="' + slot + '"]');
-  if (row) row.scrollIntoView({ block: 'nearest' }); // A long list can open past it.
+  if (row) scrollRowIntoView(row);
 }
 
 button_add.addEventListener('click', () => {
@@ -1625,7 +1645,12 @@ function buildItemRow(slot) {
 
   const row = document.createElement('div');
   if (!is_pending) row.dataset.slot = slot; // Lets a caller find one row again by slot.
+  // The open row says so on itself: it is the one row whose real height the panel has to
+  //   know -- `scrollRowIntoView` scrolls to bring its edit form into view, and a form
+  //   standing behind a 42px placeholder scrolls to the placeholder. `shell.html` reads
+  //   this class to keep the open row out of the containment the other thousand are in.
   row.className = 'item-row'
+    + (is_open ? ' editing-item' : '')
     + (is_pending ? ' pending-item' : '')
     + (!is_pending && slots_selection.includes(slot) ? ' selected' : '')
     + (!is_pending && !nimItemVisible(slot) ? ' hidden-item' : '');
@@ -2116,6 +2141,17 @@ function recordPhaseTime(name, delta_milliseconds) {
 //   the number for the interval since the last one -- not an average over one window
 //   sampled on the cadence of another.
 const MILLISECONDS_WINDOW_READING = 200;
+// **A figure is redrawn on the cadence of the window it is averaged over, not on the
+//   panel's.** The rows above are 200 ms readings and belong at 200 ms. Three of the things
+//   this panel shows are not: the sparkline holds four seconds, the ring medians four, and
+//   the exceedance curve seventeen. None of them can visibly change in a fifth of a second,
+//   and redrawing them at that rate was the single most expensive thing the page did --
+//   measured at 0.31 ms for the curve and 0.27 for the medians out of a 1.17 ms tick, half
+//   of it, five times a second, on the one row (`ui refresh`) that reads three to five times
+//   the cost of building the whole frame. A slow pass carries them instead.
+//   Not slower still: a second is the longest a reader will watch a curve without deciding
+//   it has stopped, and the sparkline has to scroll rather than jump.
+const MILLISECONDS_WINDOW_DISTRIBUTION = 1000;
 // How many frames back that span reaches, measured in the frames' own durations rather
 //   than assumed from a frame rate: at 60 fps it is a dozen, on a labouring phone it is
 //   two, and either way it is the last 200 ms.
@@ -2166,6 +2202,18 @@ function medianPhase(name) {
     scratch_median[j + 1] = value;
   }
   return scratch_median[count >> 1];
+}
+// Each row's last median, so the 200 ms rows can state one without re-sorting a ring that
+//   is four seconds long. Refreshed on the slow pass; `undefined` means never computed,
+//   which is not the same as `null` -- that is a phase which has genuinely never run, and
+//   the row is left as an em dash for it. A row that becomes shown between slow passes
+//   computes its own on the spot rather than reading an em dash for up to a second.
+const median_phase_last = {};
+function medianPhaseHeld(name, is_recomputing) {
+  if (is_recomputing || median_phase_last[name] === undefined) {
+    median_phase_last[name] = medianPhase(name);
+  }
+  return median_phase_last[name];
 }
 
 // The rows that have children, and whether each is open. **Every one starts closed**: a
@@ -2733,6 +2781,11 @@ function writeColour(element, value) {
   element.style.color = value;
 }
 
+// The panel's own collapsible section, read by the guard below rather than by a class on
+//   the drawer: the drawer holds several sections and only this one owns these figures.
+const section_diagnostics = document.querySelector('.section[data-section="diagnostics"]');
+let ms_refresh_distribution = 0; // Last slow pass; zero, so the first tick draws everything.
+
 function refreshDiagnostics() {
   // **Nothing here is worth a millisecond while the drawer is shut.** Every figure this
   //   writes is inside it, and with the drawer closed the whole refresh was still running
@@ -2745,24 +2798,39 @@ function refreshDiagnostics() {
   //   width where its own was zero, so a canvas nobody could see was drawn at a made-up
   //   size. That fallback is for a canvas that has not been laid out yet, not for one
   //   inside a closed drawer, and this guard is what tells the two apart.
+  //   **And the same argument one level down**: the diagnostics section is collapsible
+  //   inside an open drawer, and a collapsed one gave both canvases a zero width again --
+  //   so they fell back to 300 pixels and drew, five times a second, for a reader looking
+  //   at the objects list. The drawer guard above did not catch it because the drawer is
+  //   genuinely open.
   if (!drawer.classList.contains('open')) return;
-  drawExceedance();
-  const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
-  if (sparkline.width !== w) sparkline.width = w;
-  if (sparkline.height !== h) sparkline.height = h;
-  let highest = 16.6;
-  for (const v of history_frame) if (v > highest) highest = v;
-  context_sparkline.clearRect(0, 0, w, h);
-  context_sparkline.strokeStyle = '#00a7a5';
-  context_sparkline.lineWidth = 1.5;
-  context_sparkline.beginPath();
-  for (let i = 0; i < FRAMES_HISTORY; i++) {
-    const v = history_frame[(index_history_frame + i) % FRAMES_HISTORY];
-    const x = (i / (FRAMES_HISTORY - 1)) * w;
-    const y = h - (Math.min(v, highest) / highest) * h;
-    if (i === 0) context_sparkline.moveTo(x, y); else context_sparkline.lineTo(x, y);
+  if (!section_diagnostics.classList.contains('open')) return;
+  // Whether the four- and seventeen-second figures are due; see
+  //   `MILLISECONDS_WINDOW_DISTRIBUTION`. The numeric rows below run either way.
+  const ms_now_distribution = performance.now();
+  const is_redrawing_distribution =
+    ms_now_distribution - ms_refresh_distribution >= MILLISECONDS_WINDOW_DISTRIBUTION;
+  if (is_redrawing_distribution) ms_refresh_distribution = ms_now_distribution;
+
+  if (is_redrawing_distribution) {
+    drawExceedance();
+    const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
+    if (sparkline.width !== w) sparkline.width = w;
+    if (sparkline.height !== h) sparkline.height = h;
+    let highest = 16.6;
+    for (const v of history_frame) if (v > highest) highest = v;
+    context_sparkline.clearRect(0, 0, w, h);
+    context_sparkline.strokeStyle = '#00a7a5';
+    context_sparkline.lineWidth = 1.5;
+    context_sparkline.beginPath();
+    for (let i = 0; i < FRAMES_HISTORY; i++) {
+      const v = history_frame[(index_history_frame + i) % FRAMES_HISTORY];
+      const x = (i / (FRAMES_HISTORY - 1)) * w;
+      const y = h - (Math.min(v, highest) / highest) * h;
+      if (i === 0) context_sparkline.moveTo(x, y); else context_sparkline.lineTo(x, y);
+    }
+    context_sparkline.stroke();
   }
-  context_sparkline.stroke();
 
   // Averaged over the last 200 ms rather than taken from the newest frame: a per-frame
   //   reading changes several times faster than it can be read, and a frame rate quoted
@@ -2786,7 +2854,7 @@ function refreshDiagnostics() {
   // settled figure to act on. A phase that has not run at all stays an em dash.
   for (const [name] of PHASES_DIAGNOSTIC) {
     if (!isPhaseShown(name)) continue; // Inside a closed node; nobody is reading it.
-    const median = medianPhase(name);
+    const median = medianPhaseHeld(name, is_redrawing_distribution);
     if (median === null) continue;
     // A phase idle for the whole window shows its median rather than nothing: it is a step
     //   that runs, and "0.00" would claim it had run for free this window.

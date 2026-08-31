@@ -718,7 +718,28 @@
   .item-row {
     border-top: 1px solid var(--border);
     padding: 9px 0;
+    /* **A row nobody can see is not laid out.** At a capacity of 1,024 the list holds about
+       eleven thousand of the page's twelve and a half thousand elements, and although the
+       diagnostics tick never writes into any of them, every write it makes elsewhere in the
+       drawer sent the browser back over all of them. Measured on the demo, still, drawer
+       open: the frame after a tick cost 5.2 ms more than a plain frame, and 2.8 ms of that
+       was these rows -- deleting the list outright reached the same 2.4 ms floor this rule
+       does, so it buys what virtualising the list would buy without a virtualised list.
+       `auto` on the intrinsic size, not a bare length: the browser then remembers each
+       row's real height once it has laid it out, and only a row never yet scrolled past
+       uses the fallback. **The fallback is a content-box height**, so it excludes this
+       rule's own 18px of padding and 1px of border -- a border-box figure here makes every
+       skipped row 19px too tall, which measured as a list 27% longer than it is. A modal
+       collapsed row is 61px overall (930 of the demo's 1,024; 93 wrap their coefficients to
+       a second line at 76px, and an open row is taller still), so 42px is the content
+       inside it and a fresh list's extent starts within a couple of percent. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 42px;
   }
+  /* The one row a reader is editing is exempt: it is several times taller than a collapsed
+     one, and `scrollRowIntoView` has to scroll its whole form into view rather than the
+     placeholder standing in for it. One row of a thousand, so the saving is untouched. */
+  .item-row.editing-item { content-visibility: visible; contain-intrinsic-size: none; }
   .item-row:first-of-type { border-top: none; }
   .item-row.selected {
     background: rgba(0, 167, 165, 0.10);
