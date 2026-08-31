@@ -3258,6 +3258,11 @@ let pan_last = null;
 // Button held for camera orbit/pan fallback, while no operation drag is active.
 let button_mouse_drag = null;
 let cursor_last = null;
+// **What the pointer asked for, for the frame loop to answer once.** A pick and a dolly
+//   both walk the whole scene, and a pointer or trackpad reports several times between two
+//   frames; see the frame loop, which is where each of these is spent.
+let is_hover_stale = false;
+let deltas_wheel = 0; // Summed wheel travel awaiting one dolly; `wheel` says why.
 
 // Touch long-press-to-select / tap-to-toggle / drag-to-construct state.
 let touch_down_at = null, position_touch_down = null, has_touch_moved = false;
@@ -3382,8 +3387,9 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'mouse') {
     nimUpdateCursor(cursor_last.x, cursor_last.y);
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
-      // Re-check hover for the drag's own destination preview.
-      nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+      // Re-check hover for the drag's own destination preview -- next frame, not now; see
+      //   `is_hover_stale`.
+      is_hover_stale = true;
       return;
     }
     if (!pointers.has(e.pointerId)) return;
@@ -3407,7 +3413,7 @@ canvas.addEventListener('pointermove', (e) => {
         canvas.clientWidth, canvas.clientHeight,
       );
     }
-    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+    is_hover_stale = true;
     return;
   }
 
@@ -3438,7 +3444,7 @@ canvas.addEventListener('pointermove', (e) => {
     //   preview, the dwell, and the menu are all already driven from there. Returning
     //   here is what keeps a construction drag from also orbiting the camera under it.
     nimUpdateCursor(cursor_last.x, cursor_last.y);
-    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+    is_hover_stale = true;
     return;
   }
 
@@ -3569,9 +3575,13 @@ canvas.addEventListener('wheel', (e) => {
   // cursor this build already tracks, so the wheel says it the same way picking does.
   const rect = canvas.getBoundingClientRect();
   nimUpdateCursor(e.clientX - rect.left, e.clientY - rect.top);
-  nimCameraDollyAt(
-    Math.exp(e.deltaY * 0.0012), canvas.clientWidth, canvas.clientHeight,
-  );
+  // **Summed here, applied once by the frame loop.** A trackpad reports several notches
+  //   between two frames, and each dolly runs `picking.anchorZoomAt` to find what the
+  //   cursor is over -- a full pick over every live slot, 11.4 ms on the 1,024-object demo.
+  //   Six notches a frame measured 83.8 ms of picking on a frame, for a 136 ms gap, and
+  //   every answer but the last was thrown away. The factor is `exp(k*delta)`, so summing
+  //   the deltas and exponentiating once is the same zoom, not an approximation of it.
+  deltas_wheel += e.deltaY;
 }, { passive: false });
 
 /* ---- Touch tap-to-toggle / mouse click-to-select ---- */
@@ -3993,6 +4003,28 @@ function frame() {
   // before the frame that ghosts the answer is assembled. Runs every frame rather than on
   // pointermove alone: a dwell is time passing over a cursor that is deliberately still,
   // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
+  // **One dolly and one pick a frame, whatever the pointer reported.** Both used to run
+  //   from the event handlers, so a device reporting faster than the display paid for
+  //   answers nobody read: `picking.pickNearest` walks every live slot, and on the
+  //   1,024-object demo that is 11.4 ms each. Coalesced here instead, after `nimDriveHeld`
+  //   so the camera is where this frame will draw it, and before the drag update and the
+  //   build so both read the answer this frame's cursor deserves.
+  //   The presses do not come through here: `pointerdown`, a touch-down and `handleTap`
+  //   each need a hover reading before their own handler returns -- it is what
+  //   `nimBeginDrag`, `slot_touch_down` and selection are decided from -- so they pick on
+  //   the spot and are the only paths that still do.
+  if (deltas_wheel !== 0) {
+    nimCameraDollyAt(
+      Math.exp(deltas_wheel * 0.0012), canvas.clientWidth, canvas.clientHeight,
+    );
+    deltas_wheel = 0;
+    is_hover_stale = true; // The camera moved under a cursor that did not.
+  }
+  if (is_hover_stale) {
+    is_hover_stale = false;
+    nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+  }
+
   if (nimDragActive()) nimUpdateDrag(now_seconds);
 
   renderFrame(now_seconds);
