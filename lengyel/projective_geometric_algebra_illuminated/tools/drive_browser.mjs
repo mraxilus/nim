@@ -986,6 +986,24 @@ report(
   phases.length > 30 && sane.length === phases.length,
   `${sane.length} of ${phases.length} frames consistent`,
 );
+// **Opened for real before any of it.** Two reasons, and the second is newer: a chevron's
+// rotation is only resolvable on a rendered element -- inside a `display: none` subtree
+// `getComputedStyle().transform` answers `none` whatever the rule says -- and the rows
+// themselves are now written only while the drawer is open. That gate is what stopped the
+// whole diagnostics refresh costing 2.8 ms five times a second with nobody reading it, and
+// it means these checks have to reach the panel the way a reader does: a tree node inside a
+// shut drawer is not a state anyone can put the page into. Both are put back at the end.
+const glass_before = await page.evaluate(() => {
+  const drawer = document.querySelector('.drawer');
+  const section = document.querySelector('.section[data-section="diagnostics"]');
+  const was = { drawer: drawer.classList.contains('open'),
+    section: section.classList.contains('open') };
+  if (!was.drawer) document.getElementById('btn-drawer').click();
+  if (!was.section) section.querySelector('.section-header').click();
+  return was;
+});
+await page.waitForTimeout(500);
+
 // And the drawer's rows actually render them, so a reader can see each step live. The
 // **tree starts wholly closed** -- a reader opens this panel to learn whether a frame is
 // slow, and goes looking for which step only once it is -- so the subtotals under `build`
@@ -1024,20 +1042,6 @@ report(
 // never wrote their rows. Every deeper row then sat on screen, apparently expanded, showing
 // an em dash for good. Driving every branch open hid it: only opening the outermost one
 // does.
-// Opened for real first: a chevron's rotation is only resolvable on a rendered element --
-//   inside a `display: none` subtree `getComputedStyle().transform` answers `none` whatever
-//   the rule says -- and the rows this check is about are written whether or not anyone can
-//   see them. Both are put back at the end.
-const glass_before = await page.evaluate(() => {
-  const drawer = document.querySelector('.drawer');
-  const section = document.querySelector('.section[data-section="diagnostics"]');
-  const was = { drawer: drawer.classList.contains('open'),
-    section: section.classList.contains('open') };
-  if (!was.drawer) document.getElementById('btn-drawer').click();
-  if (!was.section) section.querySelector('.section-header').click();
-  return was;
-});
-await page.waitForTimeout(500);
 const nested = await page.evaluate(() => {
   // Asked of the row's own branch container, not of `offsetParent`: everything in the
   //   drawer sits inside a `position: fixed` ancestor, which makes `offsetParent` null
@@ -2587,6 +2591,96 @@ report(
 );
 await page.evaluate(() => { nimSelectClear(); });
 await page.waitForTimeout(200);
+
+/* ---- What a still frame and a moving one are allowed to cost ---- */
+
+// **The drawer's own work does not happen while the drawer is shut.** Every figure the
+// diagnostics refresh writes is inside it, and it used to run five times a second
+// regardless: 2.8 ms typical and 5.7 ms worst on this scene, landing on one frame in twelve
+// against a frame that the scene hold had taken down to about a millisecond. That is what a
+// stutter is made of. Counted structurally rather than clocked -- `nimPoolCellColors` is
+// the expensive half and a call to it is a call nobody asked for.
+await page.evaluate(() => {
+  if (document.getElementById('drawer').classList.contains('open')) {
+    document.getElementById('btn-drawer').click();
+  }
+  window.__cells = 0;
+  const original = globalThis.nimPoolCellColors;
+  globalThis.nimPoolCellColors = function (...a) {
+    window.__cells += 1;
+    return original.apply(this, a);
+  };
+});
+await page.waitForTimeout(1500);
+const cells_shut = await page.evaluate(() => window.__cells);
+report(
+  'a shut drawer costs nothing to keep up to date',
+  cells_shut === 0,
+  `${cells_shut} pool-strip rebuilds over ~1.5 s with the drawer shut`,
+);
+
+// And with it open the strip is rebuilt when the scene changes and not on every tick: at a
+// capacity of 1,024 that walk is about a millisecond, five times a second, for a picture
+// that moves when an object is added or removed and at no other time.
+await page.evaluate(() => {
+  document.getElementById('btn-drawer').click();
+  window.__cells = 0;
+});
+await page.waitForTimeout(1500);
+const cells_open = await page.evaluate(() => window.__cells);
+report(
+  'and an open one rebuilds the pool strip on a scene change, not on a clock',
+  cells_open <= 2,
+  `${cells_open} pool-strip rebuilds over ~1.5 s with the drawer open`,
+);
+await page.evaluate(() => {
+  if (document.getElementById('drawer').classList.contains('open')) {
+    document.getElementById('btn-drawer').click();
+  }
+});
+await page.waitForTimeout(200);
+
+// **A held placement draws what a fresh one draws.** Where an object stands is a question
+// about the object, so the browser asks the algebra once per edit and reuses the answer
+// while the camera orbits -- which is 12 ms of a 17 ms frame on this scene. The fault that
+// buys is a stale placement: an object drawn where it used to be, or drawn as the wrong
+// shape, with nothing to say so. Checked by driving the camera a long way, then bumping the
+// scene's revision **without changing anything a reader could see** -- recolouring an item
+// to the ink it already wears -- which forces every placement to be derived again. The two
+// frames must be pixel-identical; if the cached one had gone stale, they could not be.
+await page.evaluate(() => {
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl');
+  const px = new Uint8Array(canvas.width * canvas.height * 4);
+  const drawn = globalThis.renderFrame;
+  globalThis.renderFrame = function (...a) {
+    const out = drawn.apply(this, a);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let hash = 2166136261;
+    for (let i = 0; i < px.length; i += 4 * 17) {
+      hash = Math.imul(hash ^ px[i], 16777619) ^ px[i + 1] ^ (px[i + 2] << 8);
+    }
+    window.__drawn_placed = hash | 0;
+    return out;
+  };
+  document.getElementById('gl').focus();
+});
+await holdKeys(['ArrowRight'], 900);
+await page.waitForTimeout(400);
+const drawn_held = await page.evaluate(() => window.__drawn_placed);
+await page.evaluate(() => {
+  // The scene's revision moves; not one pixel of the scene does.
+  for (const slot of nimSceneSlots()) nimSetInk(slot, nimItemInk(slot));
+});
+await page.waitForTimeout(400);
+const drawn_fresh = await page.evaluate(() => window.__drawn_placed);
+report(
+  'a placement held across a camera move draws what a fresh one draws',
+  drawn_held !== undefined && drawn_held === drawn_fresh,
+  `held ${drawn_held}, re-placed ${drawn_fresh}`,
+);
+await page.keyboard.press('Home');
+await page.waitForTimeout(400);
 
 /* ---- The demo preset ---- */
 

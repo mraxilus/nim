@@ -1921,6 +1921,10 @@ const diagnostic_pool = document.getElementById('diag-pool');
 const strip_pool = document.getElementById('pool-strip');
 let is_strip_pool_built = false;
 let colours_pool_last = new Float32Array(0); // Per-cell colour last written to the strip.
+// The scene revision the strip was last filled at; -1 until it has been filled once. The
+//   strip is a picture of which slots are occupied and in what ink, so it changes exactly
+//   when the scene does -- see `scene.revision`, the same counter the frame hold reads.
+let revision_pool_last = -1;
 
 // One ring per step of the drawing process, so the diagnostics tab can show where a frame
 // actually went rather than one opaque total. The bridge reports its own three phases on
@@ -2601,6 +2605,18 @@ function refreshRuler() {
 }
 
 function refreshDiagnostics() {
+  // **Nothing here is worth a millisecond while the drawer is shut.** Every figure this
+  //   writes is inside it, and with the drawer closed the whole refresh was still running
+  //   five times a second: measured on the 1,024-object demo at 2.8 ms typical and 5.7 ms
+  //   worst, landing on one frame in twelve. On a frame that otherwise costs about a
+  //   millisecond -- which is what the scene hold made the still case -- that is not
+  //   overhead, it is a stutter a reader can see, and it was the largest single source of
+  //   frame-time variance left in the build.
+  //   The two canvases could not skip themselves either: each fell back to a 300-pixel
+  //   width where its own was zero, so a canvas nobody could see was drawn at a made-up
+  //   size. That fallback is for a canvas that has not been laid out yet, not for one
+  //   inside a closed drawer, and this guard is what tells the two apart.
+  if (!drawer.classList.contains('open')) return;
   drawExceedance();
   const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
   if (sparkline.width !== w) sparkline.width = w;
@@ -2699,16 +2715,25 @@ function refreshDiagnostics() {
   //   for a strip that changes when an object is added or removed and at no other time. The
   //   previous triple is remembered per cell and compared; the steady state writes nothing.
   //   Same reasoning as the overlay's element pooling, and the same measured fault.
-  const cells = nimPoolCellColors();
-  const children = strip_pool.children;
-  for (let i = 0; i < children.length; i += 1) {
-    const at = i * 3;
-    if (colours_pool_last[at] === cells[at] && colours_pool_last[at + 1] === cells[at + 1] &&
-        colours_pool_last[at + 2] === cells[at + 2]) continue;
-    colours_pool_last[at] = cells[at];
-    colours_pool_last[at + 1] = cells[at + 1];
-    colours_pool_last[at + 2] = cells[at + 2];
-    children[i].style.background = rgbToCss([cells[at], cells[at + 1], cells[at + 2]]);
+  //   **And the whole walk is skipped where the scene has not changed at all.** Comparing
+  //   per cell already stopped the style writes, but it did not stop `nimPoolCellColors`
+  //   walking a thousand slots to fill its buffer, nor the thousand comparisons after it --
+  //   about a millisecond of the refresh, five times a second, to redraw a strip that moves
+  //   when an object is added or removed and at no other time. The scene's own revision is
+  //   exactly that question, and it is the same counter the frame hold is keyed on.
+  if (revision_pool_last !== nimSceneRevision()) {
+    revision_pool_last = nimSceneRevision();
+    const cells = nimPoolCellColors();
+    const children = strip_pool.children;
+    for (let i = 0; i < children.length; i += 1) {
+      const at = i * 3;
+      if (colours_pool_last[at] === cells[at] && colours_pool_last[at + 1] === cells[at + 1] &&
+          colours_pool_last[at + 2] === cells[at + 2]) continue;
+      colours_pool_last[at] = cells[at];
+      colours_pool_last[at + 1] = cells[at + 1];
+      colours_pool_last[at + 2] = cells[at + 2];
+      children[i].style.background = rgbToCss([cells[at], cells[at + 1], cells[at + 2]]);
+    }
   }
 }
 

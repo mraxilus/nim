@@ -413,148 +413,196 @@ proc addGrid*(
 
 #[ Object Tessellation ]#
 
-proc addPoint(
-  meshes: var MeshSet; geometry: Multivector; tint: Rgba; progress: float; scale: DrawExtent
-): Placement =
-  ## Append grade-1 object as marker, or, at horizon, as a marker fixed at `scale.eye`
-  ## plus its own direction scaled out to `scale.radius_horizon` -- a star effectively
-  ## infinitely far away, staying in the same apparent direction as the camera pans or
-  ## dollies, moving only as the eye itself does.
-  ##   `progress` fades a marker in and, at horizon, also grows how far out it stands.
-  var place = none(Position)
-  timed(Side.Placing): place = position(geometry)
-  if place.isSome:
-    timed(Side.Emitting): meshes.addMarker(place.get, tint.fade(tint.alpha*progress))
-    return Placement.Finite
+type
+  PlacedKind* = enum ## Which drawable the algebra found, and in which of its two placements.
+    Nothing ## No drawable geometry at all; nothing is emitted.
+    PointAt ## A point standing somewhere in the finite world.
+    PointToward ## A point at horizon: a direction, drawn as a star on the sky.
+    LineThrough ## A line through a support, running along an attitude.
+    LineAcross ## A line at horizon: the pencil of directions its two axes span.
+    PlaneOn ## A plane anchored somewhere, its disc spanned by two arms.
+    PlaneEverywhere ## A plane at horizon: the whole sky, carrying no orientation.
 
-  var star = none(Position)
+  Placed* = object ## Everything the *algebra* says about one object, and nothing else.
+    ## **The camera is not in it, and that is the whole point.** Every reader here --
+    ## `position`, `positionAnchor`, `direction`, `directionHorizon`, `frame`,
+    ## `spanPerpendicular` -- is a pure function of the multivector, so what this holds is
+    ## a function of the object alone. It stays true while the camera orbits, and a caller
+    ## that can say when an object last changed can therefore place it once and emit it
+    ## every frame. `browser_bridge` is that caller; on the 1,024-object demo the placing
+    ## side was 12 ms of a 17 ms frame, recomputed on every frame of every orbit for
+    ## objects nobody had touched.
+    ##   Flat rather than a variant object: it is copied per slot into a
+    ## `array[ITEMS_MAX, Placed]`, and a case object's tag would buy nothing but a
+    ## narrower read. Which fields carry meaning is `kind`'s to say, field by field below.
+    kind*: PlacedKind
+    at*: Position ## Where it stands: a point's own place, a line's support, a plane's
+      ## disc centre. Meaningless for the two horizon kinds and for `Nothing`.
+    toward*: Direction ## The direction it names: a horizon point's heading, a line's
+      ## attitude. Meaningless for either plane kind and for `Nothing`.
+    axes*: FramePlane ## The two arms a disc or a great circle is spanned by, and their
+      ## normal. Carried by `PlaneOn` and by `LineAcross`, and by nothing else.
+
+
+proc placeObject*(
+  geometry: Multivector; anchor_override: Option[Position] = none(Position)
+): Placed =
+  ## Ask the algebra what an object is and where -- **the whole placing side of the cut**,
+  ## and none of the emitting side.
+  ##   Split out from `addObject` so a caller may keep the answer: nothing here reads the
+  ## camera, so the answer changes only when the object does. See `Placed`.
+  ##   `anchor_override` centres a plane's own disc there instead of on its own support;
+  ## ignored for a point or a line, neither of which is drawn centred on anything else.
+  ##   A plane whose support or frame the algebra cannot give lands on `PlaneEverywhere`,
+  ## which is what an infinite plane is: the sky. That is the same fall-through the one
+  ## proc had, stated as a kind rather than as a branch not taken.
   timed(Side.Placing):
-    let heading = directionHorizon(geometry)
-    if heading.isSome:
-      star = some(pointFrom(add(scale.eye_point,
-        wedge(progress*scale.radius_horizon, toMultivector(heading.get)))))
-  if star.isNone: return Placement.Empty
-  timed(Side.Emitting): meshes.addMarker(star.get, tint.fade(tint.alpha*progress))
-  Placement.Horizon
+    let shape = shape(geometry)
+    if shape.isNone: return Placed(kind: PlacedKind.Nothing)
+    case shape.get
+    of Shape.Point:
+      let place = position(geometry)
+      if place.isSome: return Placed(kind: PlacedKind.PointAt, at: place.get)
+      let heading = directionHorizon(geometry)
+      if heading.isSome: return Placed(kind: PlacedKind.PointToward, toward: heading.get)
+    of Shape.Line:
+      let
+        anchor = positionAnchor(geometry)
+        axis = direction(geometry)
+      if anchor.isSome and axis.isSome:
+        return Placed(kind: PlacedKind.LineThrough, at: anchor.get, toward: axis.get)
+      let normal = directionNormalHorizon(geometry)
+      if normal.isSome:
+        # The great circle's own plane, spanned at the origin: which plane it is depends
+        #   on the line and not on where the eye happens to stand, so the circle is
+        #   centred on the eye when it is drawn rather than when it is placed.
+        let spanned = spanPerpendicular(ORIGIN_WORLD, normal.get)
+        if spanned.isSome:
+          return Placed(kind: PlacedKind.LineAcross, axes: FramePlane(
+            axis_first: spanned.get[0], axis_second: spanned.get[1], normal: normal.get,
+          ))
+    of Shape.Plane:
+      let
+        anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
+        axes = frame(geometry)
+      if anchor.isSome and axes.isSome:
+        return Placed(kind: PlacedKind.PlaneOn, at: anchor.get, axes: axes.get)
+      return Placed(kind: PlacedKind.PlaneEverywhere)
+  Placed(kind: PlacedKind.Nothing)
 
 
-proc addLine(
-  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
-  progress: float; scale: DrawExtent
+proc emitObject*(
+  meshes: var MeshSet; placed: var Placed; tint: Rgba; scale: DrawExtent;
+  progress: float = 1.0
 ): Placement =
-  ## Append grade-2 object as two segments meeting on the line at its support, each
-  ## running out to one of the line's own two vanishing points, `scale.eye` plus and
-  ## minus `scale.radius_horizon` along its attitude. The forward one is exactly where
-  ## `addPoint` draws this line's attitude as a horizon marker, so the drawn line
-  ## reaches its own attitude with no gap.
-  ##   Two segments rather than one because a vanishing point is a property of the
-  ## *eye*, not of the line: an end anchored a fixed reach from the support instead
-  ## stops short of it by roughly the eye-to-line separation over that reach, which is
-  ## a visible gap as soon as the line's support is not close to the camera. Anchoring
-  ## both ends to the eye is what closes it at both, and a single segment cannot -- one
-  ## running eye-to-eye passes through the eye and projects to a point.
-  ##   Each segment has one end on the true line and one at `eye ± radius*axis`, so both
-  ## lie in the plane through the eye containing the line. That plane projects to a
-  ## single screen line, so the pair draws exactly over the true line's own projection
-  ## however far the far ends sit from it in world space -- verified as zero screen skew
-  ## to floating-point precision, not argued. What it costs is depth: the far ends are
-  ## displaced along the view ray, so occlusion against other objects is approximate
-  ## there. Rebuilt every frame against the current eye, so this holds as the camera
-  ## orbits.
-  ##   Or, at horizon, as a great circle around `scale.eye` -- the pencil of directions
-  ##   the line stands for, traced across the sky at `scale.radius_horizon`.
-  ##   `progress` grows the segment, or the circle's own radius, out from nothing, and
-  ##   fades it in alongside, so a freshly derived line visibly extends rather than
-  ##   popping in.
-  var
-    anchor = none(Position)
-    axis = none(Direction)
-    far_ahead, far_behind = ORIGIN_WORLD
-  timed(Side.Placing):
-    anchor = positionAnchor(geometry)
-    axis = direction(geometry)
-    if anchor.isSome and axis.isSome:
+  ## Turn one placed object into this frame's records, at this frame's camera.
+  ##   The other half of `placeObject`: it takes no multivector, so what an object *is* was
+  ## settled before this ran and cannot be re-decided here.
+  ##   `progress` is how much of its appear animation the object has completed, from
+  ## `mesh.animationProgress`; it fades every kind in, grows a plane's disc out from
+  ## nothing, and pushes a horizon object out to its full reach.
+  ##   **`placed` is `var` because nothing here writes it.** That reads backwards and is
+  ## nonetheless the point: under the JS backend a value parameter is deep-copied at every
+  ## call, and a caller emitting a thousand held placements a frame would copy a thousand
+  ## nested objects for values it only reads. The same `nimCopy` trap `PROVENANCE.md`
+  ## already lists four earlier catches of, and it is invisible to an allocation grep
+  ## because a parameter looks like a read. Passed as `var`, the caller's own storage is
+  ## used in place. Nothing in this proc assigns to it, and nothing may.
+  ##   **Two steps here are still charged to the placing side**, and deliberately: a
+  ## horizon marker's stand-off and a line's two vanishing points are multivector
+  ## arithmetic about where the eye is, so they are placing work that happens to depend on
+  ## the camera and so cannot be cached. The cut the diagnostics report is by *kind of
+  ## work*, not by which proc it sits in, and moving them silently into the emitting row
+  ## would make that row claim a purity it did not have.
+  case placed.kind
+  of PlacedKind.Nothing:
+    Placement.Empty
+
+  of PlacedKind.PointAt:
+    timed(Side.Emitting):
+      meshes.addMarker(placed.at, tint.fade(tint.alpha*progress))
+    Placement.Finite
+
+  of PlacedKind.PointToward:
+    # A star effectively infinitely far away, staying in the same apparent direction as
+    #   the camera pans or dollies and moving only as the eye itself does.
+    var star = ORIGIN_WORLD
+    timed(Side.Placing):
+      star = pointFrom(add(scale.eye_point,
+        wedge(progress*scale.radius_horizon, toMultivector(placed.toward))))
+    timed(Side.Emitting):
+      meshes.addMarker(star, tint.fade(tint.alpha*progress))
+    Placement.Horizon
+
+  of PlacedKind.LineThrough:
+    # Two segments meeting on the line at its support, each running out to one of the
+    #   line's own two vanishing points -- `scale.eye` plus and minus
+    #   `scale.radius_horizon` along its attitude. The forward one is exactly where a
+    #   horizon marker draws this line's attitude, so the drawn line reaches its own
+    #   attitude with no gap.
+    #   Two rather than one because a vanishing point is a property of the *eye*, not of
+    #   the line: an end anchored a fixed reach from the support instead stops short of
+    #   it by roughly the eye-to-line separation over that reach, a visible gap as soon
+    #   as the support is not close to the camera. A single segment cannot close it at
+    #   both ends -- one running eye-to-eye passes through the eye and projects to a point.
+    #   Each segment has one end on the true line and one at `eye +- radius*axis`, so both
+    #   lie in the plane through the eye containing the line. That plane projects to a
+    #   single screen line, so the pair draws exactly over the true line's own projection
+    #   however far the far ends sit from it in world space -- verified as zero screen skew
+    #   to floating-point precision, not argued. What it costs is depth: the far ends are
+    #   displaced along the view ray, so occlusion against other objects is approximate
+    #   there. Rebuilt against the current eye every frame, so this holds as the camera
+    #   orbits -- which is why these two points are not part of `Placed`.
+    var far_ahead, far_behind = ORIGIN_WORLD
+    timed(Side.Placing):
       let
         reach = progress*scale.radius_horizon
-        axis_point = toMultivector(axis.get)
+        axis_point = toMultivector(placed.toward)
       far_ahead = pointFrom(add(scale.eye_point, wedge(reach, axis_point)))
       far_behind = pointFrom(add(scale.eye_point, wedge(-reach, axis_point)))
-  if anchor.isSome and axis.isSome:
     let tint_progress = tint.fade(tint.alpha*progress)
     timed(Side.Emitting):
-      meshes.addSegment(anchor.get, far_ahead, tint_progress, WIDTH_LINE_OBJECT)
-      meshes.addSegment(anchor.get, far_behind, tint_progress, WIDTH_LINE_OBJECT)
-    return Placement.Finite
+      meshes.addSegment(placed.at, far_ahead, tint_progress, WIDTH_LINE_OBJECT)
+      meshes.addSegment(placed.at, far_behind, tint_progress, WIDTH_LINE_OBJECT)
+    Placement.Finite
 
-  var axes = none(tuple[first, second: Direction])
-  timed(Side.Placing):
-    let normal = directionNormalHorizon(geometry)
-    if normal.isSome:
-      let spanned = spanPerpendicular(ORIGIN_WORLD, normal.get)
-      if spanned.isSome:
-        axes = some((first: spanned.get[0], second: spanned.get[1]))
-  if axes.isNone: return Placement.Empty
-  let (axis_first, axis_second) = (axes.get.first, axes.get.second)
-  timed(Side.Emitting):
-    meshes.addGreatCircle(
-      scale.eye, axis_first, axis_second, progress*scale.radius_horizon,
-      tint.fade(tint.alpha*progress),
-    )
-  Placement.Horizon
+  of PlacedKind.LineAcross:
+    # The pencil of directions the line stands for, traced across the sky as a great
+    #   circle around the eye at `scale.radius_horizon`.
+    timed(Side.Emitting):
+      meshes.addGreatCircle(
+        scale.eye, placed.axes.axis_first, placed.axes.axis_second,
+        progress*scale.radius_horizon, tint.fade(tint.alpha*progress),
+      )
+    Placement.Horizon
 
-
-proc addPlane(
-  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
-  progress: float; scale: DrawExtent; anchor_override: Option[Position] = none(Position)
-): Placement =
-  ## Append grade-3 object as a filled disc and rim about its support point, at a fixed
-  ## radius (`EXTENT_PLANE`) independent of the camera, or, at horizon, as a dome
-  ## filling the whole sky around `scale.eye` -- the unique universal object every
-  ## plane at horizon stands for, regardless of which points produced it.
-  ##   `anchor_override`, if given, centres the disc there instead -- some point the
-  ##   plane's own construction fixed more specifically than its closest-to-origin
-  ##   support does; see `scene.creationAnchor`. `frame`'s own axes do not depend on
-  ##   which point anchors the plane (see `spanPerpendicular`'s own doc comment), so
-  ##   only where the disc is drawn changes, never how it is oriented.
-  ##   `progress` grows the disc and its rim out from nothing, and fades both in
-  ##   alongside.
-  ##   **No normal is drawn.** A bare shaft out of the anchor used to mark one, which told
-  ##   a plane apart from its own reflection -- but it did so on *every* plane in the
-  ##   scene, permanently, to answer a question a reader asks about one object at a time.
-  ##   Orientation now rides on the selection marker instead, as the direction a pulse
-  ##   travels round it; see `marker.markerFor`.
-  var
-    anchor = none(Position)
-    axes = none(FramePlane)
-  timed(Side.Placing):
-    anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
-    axes = frame(geometry)
-  if anchor.isSome and axes.isSome:
+  of PlacedKind.PlaneOn:
+    # Fill first, so the plane reads as a surface rather than a bare outline; flat, since
+    #   the rim drawn over it already marks the edge crisply on its own. The fill is one
+    #   disc record and the rim one ring record, both fanned out by their own vertex
+    #   shaders: a disc is not a plane, and none of this is algebra.
     let
-      (axis_first, axis_second) = (axes.get.axis_first, axes.get.axis_second)
       extent = progress*EXTENT_PLANE_F
       tint_progress = tint.fade(tint.alpha*progress)
-
-    # Fill first, so plane reads as a surface rather than a bare outline; flat, since
-    #   the rim drawn over it already marks the edge crisply on its own. The fill is one
-    #   disc record the vertex shader fans out; the rim is stepped off `mesh`'s own fixed
-    #   ring of angles: a disc is not a plane, and none of this is algebra.
     timed(Side.Emitting):
       meshes.addDisc(
-        anchor.get, axis_first, axis_second, extent, tint.fade(ALPHA_WASH*progress),
+        placed.at, placed.axes.axis_first, placed.axes.axis_second, extent,
+        tint.fade(ALPHA_WASH*progress),
       )
-      meshes.addRing(anchor.get, axis_first, axis_second, extent, tint_progress,
-        WIDTH_LINE_OBJECT)
+      meshes.addRing(
+        placed.at, placed.axes.axis_first, placed.axes.axis_second, extent, tint_progress,
+        WIDTH_LINE_OBJECT,
+      )
+    Placement.Finite
 
-    return Placement.Finite
-
-  # One dome record the vertex shader widens over a static unit sphere; what the sphere
-  #   looks like and why a full one is drawn is `mesh.addDome`'s own story.
-  timed(Side.Emitting):
-    meshes.addDome(
-      scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
-    )
-  Placement.Horizon
+  of PlacedKind.PlaneEverywhere:
+    # One dome record the vertex shader widens over a static unit sphere; what the sphere
+    #   looks like and why a full one is drawn is `mesh.addDome`'s own story.
+    timed(Side.Emitting):
+      meshes.addDome(
+        scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
+      )
+    Placement.Horizon
 
 
 proc addObject*(
@@ -562,16 +610,19 @@ proc addObject*(
   scale: DrawExtent; progress: float = 1.0;
   anchor_override: Option[Position] = none(Position)
 ): Placement =
-  ## Append object, dispatching on geometry its grade stands for.
-  ##   Empty where multivector carries no drawable geometry at all.
+  ## Append object, dispatching on the geometry its grade stands for.
+  ##   Place it, then emit it, in one call -- for every caller with nothing to gain by
+  ##   keeping the placement: the desktop path, the storyboard, and the suite. A caller
+  ##   that draws the same unchanged object frame after frame should hold a `Placed`
+  ##   instead and call `emitObject` alone; see `placeObject`.
+  ##   Empty where the multivector carries no drawable geometry at all.
   ##   `progress` is how much of its appear animation the object has completed, from
   ##   `mesh.animationProgress`; defaults to fully appeared, for a caller with nothing
   ##   to animate against.
   ##   `anchor_override` centres a plane's own disc there instead of its own support;
   ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  let shape = shape(geometry)
-  if shape.isNone: return Placement.Empty
-  case shape.get
-  of Shape.Point: meshes.addPoint(geometry, tint, progress, scale)
-  of Shape.Line: meshes.addLine(scratch, geometry, tint, progress, scale)
-  of Shape.Plane: meshes.addPlane(scratch, geometry, tint, progress, scale, anchor_override)
+  ##   `scratch` is taken for the shape every other tessellation entry point has, and so
+  ##   that a caller need not know which shapes happen to want it today.
+  discard scratch
+  var placed = placeObject(geometry, anchor_override)
+  meshes.emitObject(placed, tint, scale, progress)

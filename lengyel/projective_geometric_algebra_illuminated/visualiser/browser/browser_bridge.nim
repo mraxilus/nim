@@ -215,6 +215,17 @@ var
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
+  g_placed: array[ITEMS_MAX, Placed] ## What the algebra says about each live slot.
+    ## **Placed once per edit, emitted every frame.** Nothing in `tessellate.Placed` reads
+    ## the camera, so an object's placement stays true while the view orbits -- and on the
+    ## 1,024-object demo the placing side was 12 ms of a 17 ms frame, recomputed on every
+    ## frame of every orbit for objects nobody had touched. Held for the scene's own slots
+    ## only: the ghost and the drag preview are not slots and move with the pointer, so
+    ## both are placed where they are drawn.
+    ##   Dead slots hold whatever their last occupant left; every walk skips them.
+  g_placed_revision = -1 ## The scene revision `g_placed` was filled at; -1 before the
+    ## first fill. Compared for equality only, exactly as the frame hold compares its own
+    ## copy -- see `scene.revision` for why every way to change a scene bumps it.
   g_born_last = 0.0 ## The latest birth stamp `stampBorn` has ever written.
     ## **What says the scene has stopped animating.** Every item fades in over
     ## `mesh.ANIMATION_SECONDS` from its own stamp, so a frame past this plus that window
@@ -490,6 +501,14 @@ proc nimSceneCount(): cint {.exportc.} = cint(g_scene.len)
 
 proc nimSceneCapacity(): cint {.exportc.} = cint(ITEMS_MAX)
   ## Report the fixed number of item slots this build reserves.
+
+
+proc nimSceneRevision(): cint {.exportc.} =
+  ## Report how many times the scene's drawn content has changed; see `scene.revision`.
+  ##   For a presentation layer holding something derived from the scene, exactly as the
+  ## frame hold holds its meshes: the object-pool strip in the diagnostics drawer redraws a
+  ## thousand cells, and it needs to do that when this number moves and at no other time.
+  cint(g_scene.revision)
 
 
 proc nimSceneSlots(): seq[cint] {.exportc.} =
@@ -2045,11 +2064,12 @@ proc openTally(cost: var SceneCost) =
   cost.mark = performanceNow()
 
 
-proc chargeTally(cost: var SceneCost; geometry: Multivector; is_sky, is_ghost, is_selected: bool) =
+proc chargeTally(cost: var SceneCost; kind: PlacedKind; is_sky, is_ghost, is_selected: bool) =
   ## Charge whatever has been drawn since the last mark to the kind it belongs to.
-  ##   Reads the shape rather than being told it, so a caller cannot file a plane under
-  ##   lines; `shape` is the same reader `mesh.addObject` dispatches on, so the bucket and
-  ##   the work charged to it are decided by one answer rather than two.
+  ##   Takes the kind the *placement* settled on rather than reading the shape again: the
+  ##   two are the same answer -- `tessellate.placeObject` dispatches on `shape` and this
+  ##   buckets what it decided -- and reading it twice meant a second multivector walk per
+  ##   object per frame, on the path this tally exists to measure.
   let
     now_mark = performanceNow()
     spent = now_mark - cost.mark
@@ -2066,16 +2086,15 @@ proc chargeTally(cost: var SceneCost; geometry: Multivector; is_sky, is_ghost, i
     cost.ms_sky += spent
     cost.count_sky += 1
     return
-  let shaped = shape(geometry)
-  if shaped.isNone: return # Nothing drawable was drawn, so there is nothing to charge.
-  case shaped.get
-  of Shape.Point:
+  case kind
+  of PlacedKind.Nothing: discard # Nothing drawable was drawn, so nothing to charge.
+  of PlacedKind.PointAt, PlacedKind.PointToward:
     cost.ms_points += spent
     cost.count_points += 1
-  of Shape.Line:
+  of PlacedKind.LineThrough, PlacedKind.LineAcross:
     cost.ms_lines += spent
     cost.count_lines += 1
-  of Shape.Plane:
+  of PlacedKind.PlaneOn, PlacedKind.PlaneEverywhere:
     cost.ms_planes += spent
     cost.count_planes += 1
 
@@ -2200,6 +2219,18 @@ proc nimBuildFrame(
     cost.count_sky = g_counts_scene.count_sky
     cost.count_ghost = g_counts_scene.count_ghost
     cost.count_selected = g_counts_scene.count_selected
+  # **The placement cache, refreshed only where the scene itself moved.** This is the whole
+  #   placing side for every slot, and it is what a camera move no longer pays for. An edit
+  #   re-places every live slot rather than just the one that changed -- the revision is the
+  #   scene's, not a slot's -- which costs one frame what every frame used to cost.
+  if g_placed_revision != g_scene.revision:
+    g_placed_revision = g_scene.revision
+    for slot in 0 ..< g_scene.bound:
+      if g_scene.isAlive(slot):
+        g_placed[slot] = placeObject(
+          g_scene.geometryOf(slot), g_scene.anchorOverrideAt(slot),
+        )
+
   if not is_scene_held:
     clearMeshes(g_meshes)
     cost.openTally()
@@ -2224,29 +2255,35 @@ proc nimBuildFrame(
     #   thousand slots every frame to draw the five a fresh scene holds. `scene.bound` is the
     #   high-water mark, which only rises, so walking to it is safe and costs the ordinary
     #   scene nothing. Its sibling walk below takes the same bound.
+    #   **Placed once, emitted every frame.** Which slot is a sky and which is not used to
+    #   be asked with `isHorizonPlane`, a multivector read per slot per walk; the placement
+    #   already answered it, so the two walks now sort on `g_placed[slot].kind` and touch no
+    #   geometry at all.
     for slot in 0 ..< g_scene.bound:
       if not g_scene.isAlive(slot) or slot in g_selection: continue
       if g_scene.isVisible(slot):
-        let geometry = g_scene.geometryOf(slot)
-        if isHorizonPlane(geometry):
+        # Indexed in place, never bound to a local: `let placed = g_placed[slot]` is a
+        #   deep copy under the JS backend, once per object per frame. See `emitObject`.
+        if g_placed[slot].kind == PlacedKind.PlaneEverywhere:
           let progress = animationProgress(float(now), g_borns[slot])
-          discard g_meshes.addObject(
-            g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
-            g_scene.anchorOverrideAt(slot),
+          discard g_meshes.emitObject(
+            g_placed[slot], g_scene.inkAt(slot).colour, scale, progress,
           )
-          cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
+          cost.chargeTally(
+            g_placed[slot].kind, is_sky = true, is_ghost = false, is_selected = false,
+          )
 
     for slot in 0 ..< g_scene.bound:
       if not g_scene.isAlive(slot) or slot in g_selection: continue
       if g_scene.isVisible(slot):
-        let geometry = g_scene.geometryOf(slot)
-        if not isHorizonPlane(geometry):
+        if g_placed[slot].kind != PlacedKind.PlaneEverywhere:
           let progress = animationProgress(float(now), g_borns[slot])
-          discard g_meshes.addObject(
-            g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
-            g_scene.anchorOverrideAt(slot),
+          discard g_meshes.emitObject(
+            g_placed[slot], g_scene.inkAt(slot).colour, scale, progress,
           )
-          cost.chargeTally(geometry, is_sky = false, is_ghost = false, is_selected = false)
+          cost.chargeTally(
+            g_placed[slot].kind, is_sky = false, is_ghost = false, is_selected = false,
+          )
 
     # An open session's staged geometry, or an apply control's own preview where none is --
     #   one ghost for both, since they are the same "not committed yet" claim about one
@@ -2254,12 +2291,12 @@ proc nimBuildFrame(
     #   will store, so a previewed plane stays where it was ghosted.
     # `ghost` read once in the prologue; nothing since has touched the session.
     if ghost.isSome:
-      discard g_meshes.addObject(
-        g_scratch, ghost.get.geometry, INK_GHOST.colour.muted(), scale,
-        anchor_override = ghost.get.anchor,
-      )
+      # Placed here rather than cached: a ghost is not a slot and its geometry moves with
+      #   the pointer, so there is nothing to hold between frames.
+      var placed_ghost = placeObject(ghost.get.geometry, ghost.get.anchor)
+      discard g_meshes.emitObject(placed_ghost, INK_GHOST.colour.muted(), scale)
       cost.chargeTally(
-        ghost.get.geometry, is_sky = false, is_ghost = true, is_selected = false
+        placed_ghost.kind, is_sky = false, is_ghost = true, is_selected = false
       )
 
     # What the drag in progress would build, in that same ghost ink, so a reader learns one
@@ -2268,12 +2305,12 @@ proc nimBuildFrame(
     # Centred on the anchor the commit itself will store, so a ghosted plane stays where it
     #   was ghosted instead of jumping the instant the release lands.
     if g_interaction.preview.isSome:
-      discard g_meshes.addObject(
-        g_scratch, g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
-        anchor_override = g_interaction.preview.get.anchor,
+      var placed_preview = placeObject(
+        g_interaction.preview.get.geometry, g_interaction.preview.get.anchor,
       )
+      discard g_meshes.emitObject(placed_preview, INK_GHOST.colour.muted(), scale)
       cost.chargeTally(
-        g_interaction.preview.get.geometry, is_sky = false, is_ghost = true, is_selected = false
+        placed_preview.kind, is_sky = false, is_ghost = true, is_selected = false
       )
 
     # Everything selected, held back to here and drawn with the depth test off, so a picked
@@ -2284,12 +2321,11 @@ proc nimBuildFrame(
       let slot = g_selection.at(position)
       if not g_scene.isAlive(slot) or not g_scene.isVisible(slot): continue
       let progress = animationProgress(float(now), g_borns[slot])
-      discard g_meshes.addObject(
-        g_scratch, g_scene.geometryOf(slot), g_scene.inkAt(slot).colour, scale, progress,
-        g_scene.anchorOverrideAt(slot),
+      discard g_meshes.emitObject(
+        g_placed[slot], g_scene.inkAt(slot).colour, scale, progress,
       )
       cost.chargeTally(
-        g_scene.geometryOf(slot), is_sky = false, is_ghost = false, is_selected = true
+        g_placed[slot].kind, is_sky = false, is_ghost = false, is_selected = true
       )
 
     # **The algebra's own layer**, drawn over the scene it explains: every multivector this

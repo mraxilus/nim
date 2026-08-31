@@ -2740,6 +2740,56 @@ ring record landed first and took the conversion's input from 204,352 floats a f
 milliseconds but the class: the conversion scaled with the scene, so it would have come back
 linearly with the next rise in `ITEMS_MAX`, and now there is nothing to come back.
 
+**Making the mean small made the *distribution* worse, and pacing is a distribution.** The
+scene hold took a still frame's own work to nothing, which turned two costs that had been
+hiding inside a uniformly slow frame into visible stutters against a frame that now cost
+about a millisecond. Both were found by looking at percentiles rather than medians -- the
+median said everything was fine.
+
+  **The diagnostics refresh ran five times a second whether or not anyone could see it.**
+Measured on the demo with the drawer *shut*: 2.8 ms typical, 5.7 ms worst, landing on one
+frame in twelve, which was the largest single source of frame-time variance left in the
+build. Two faults under it. The refresh had no visibility guard at all, and the two canvases
+could not supply one for themselves: each fell back to a 300-pixel width where its own was
+zero, so a canvas nobody could see was drawn at a made-up size -- a fallback meant for a
+canvas not yet laid out, silently covering one inside a closed drawer. And the object-pool
+strip rewalked all 1,024 cells every tick: comparing per cell had already stopped the style
+writes, but not `nimPoolCellColors` filling its buffer nor the thousand comparisons after
+it, for a strip that changes when an object is added or removed and at no other time. The
+refresh now returns immediately unless the drawer is open, and the strip is gated on
+`scene.revision` -- the same counter the frame hold reads. **Still frame, drawer shut: the
+refresh 2.8 -> 0.0 ms, the frame's whole JavaScript p95 4.7 -> 1.4 ms and worst 8.5 -> 3.3.**
+With the drawer open, where a reader is actually watching, 2.8 -> 1.0 ms.
+  This moved a driven check: it used to open a node in the frame-time tree while the drawer
+was shut, which nobody can do, and read rows that were being written to a panel nobody could
+see. It opens the drawer first now, as a reader does.
+
+  **Placement is a pure function of the object, and it was being recomputed every frame of
+every orbit.** The tree's own second cut said so and nobody had read it that way: orbiting
+the demo cost 17.1 ms of scene phase, of which **placing was 12.0 and emitting 1.6**. Every
+reader on the placing side -- `position`, `positionAnchor`, `direction`, `directionHorizon`,
+`frame`, `spanPerpendicular` -- takes a multivector and nothing else, so what they answer
+stays true while the camera moves.
+  `addObject` is now `emitObject(placeObject(...))`, split along the very boundary the
+diagnostics already reported, with `tessellate.Placed` as the seam: which drawable the
+algebra found, where it stands, what it points along, and which arms span it. The browser
+holds one per slot, refreshed only when `scene.revision` moves; the desktop, the storyboard
+and the suite keep calling `addObject` and are untouched. Two steps stay charged to the
+placing side inside `emitObject` -- a horizon marker's stand-off and a line's two vanishing
+points, both multivector arithmetic *about where the eye is* -- because the cut the panel
+reports is by kind of work, not by which proc it sits in.
+  **A fifth sighting of the `nimCopy` trap came with it, and the measurement caught it.**
+Binding `let placed = g_placed[slot]` deep-copies the object under the JS backend, once per
+object per frame, and passing it as a value parameter copies it again: the scene phase sat
+at 4.9 ms with the cache in place until the generated JavaScript was read and the copies
+found. The slot is indexed where it is used and `emitObject` takes `var Placed` -- **`var`
+because nothing writes it**, which reads backwards and is exactly the point.
+  Also gone: `chargeTally` read the shape off the multivector a second time to pick its
+bucket. It takes the kind the placement already decided.
+  **Measured, orbiting the demo:** scene phase **17.1 -> 2.6 ms**, planes 9.2 -> 0.6, the
+bridge's whole build **21.3 -> 7.1 ms**. What is left is the ground grid, which follows the
+camera and is meant to be rebuilt when it moves.
+
 **The 68 ms that remains is SwiftShader, not this page.** Worth stating plainly, because it
 is the difference between a bottleneck and a driver. Measured on the demo after both passes:
 `renderFrame` -- every upload and every draw call issued -- takes 0.9 ms, and the same call

@@ -346,6 +346,16 @@ not from orbit distance, so it reads as extending indefinitely however far the c
   capped instead, at 120 cells each way, which is what keeps a camera-following fog inside a
   fixed vertex budget. That cap must exceed the orbit distance a reader works at, or the
   ground stops reaching the content they are looking at.
+**Where an object is, is a question about the object and not about the camera.** Asking the
+algebra where something stands -- its support, its attitude, the frame its disc is spanned by
+-- reads the multivector alone, so the answer survives a camera move and a front-end drawing
+the same unchanged objects every frame must not ask again. The tessellation is split along
+that seam (`placeObject` / `emitObject`), and the browser holds one placement per slot against
+the scene's own revision. The few steps that *are* about the eye -- a horizon marker's
+stand-off, a line's two vanishing points -- stay outside the cache and stay charged to the
+placing side of the panel's second cut, because that cut is by kind of work rather than by
+which proc the work sits in.
+
 **Nothing is rebuilt, reflattened or re-uploaded on a frame that would draw what the last one
 drew.** The camera, the scene's own revision and the selection decide that together; a ghost
 or drag preview standing, the debug layer being on, or an appear animation still running each
@@ -1434,6 +1444,16 @@ The rules that make the pins trustworthy on a shared, noisy runner:
 - **A failure just past a band on a slow run is a measurement first**: re-run against the
   previous commit on the same container before concluding either way, exactly as the
   frame-budget band's own note prescribes. A failure at multiples of the band is the fault.
+- **A frame budget is a distribution, not a mean.** Every hold and every cache makes the
+  cheap case cheaper and leaves the expensive one where it was, so the same work that hid
+  inside a uniformly slow frame becomes a visible stutter against a fast one. Pins therefore
+  read percentiles: a p95 and a worst case, not a median. The two faults this rule found --
+  a diagnostics refresh running with nobody able to see it, and placement recomputed every
+  frame of every orbit -- were both invisible to a median.
+- **Nothing in the drawer is computed while the drawer is shut.** The panel's own figures,
+  its two canvases and its object-pool strip are all inside it; a canvas that falls back to
+  a made-up width rather than skipping is the specific way this rule was broken. A driven
+  check that wants to read those rows opens the drawer first, the way a reader does.
 - **A hold is checked through the drawn pixels, never through its own flag.** Both the
   furniture hold and the scene hold skip work on a frame that matches the last one, and the
   fault they can produce is a picture that no longer matches the scene -- which a flag check
