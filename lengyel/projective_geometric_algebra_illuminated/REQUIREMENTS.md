@@ -346,6 +346,18 @@ not from orbit distance, so it reads as extending indefinitely however far the c
   capped instead, at 120 cells each way, which is what keeps a camera-following fog inside a
   fixed vertex budget. That cap must exceed the orbit distance a reader works at, or the
   ground stops reaching the content they are looking at.
+**Nothing is rebuilt, reflattened or re-uploaded on a frame that would draw what the last one
+drew.** The camera, the scene's own revision and the selection decide that together; a ghost
+or drag preview standing, the debug layer being on, or an appear animation still running each
+refuse the hold outright, since all three change the picture with nothing in the scene
+changing. The three are held as one: skipping the rebuild while re-uploading identical bytes
+buys nothing.
+  **What makes the revision trustworthy is that the writes are closed.** Every way to change
+what a scene draws is a proc in `scene.nim`, where the fields are private, and each records
+the edit; there is no `var`-returning accessor to write a geometry through. A whole-scene
+assignment -- undo and redo -- says so itself. Adding a way to change a scene without
+recording it is the one change this rule forbids.
+
 A **plane's fill and its rim are one record each**, and a horizon plane's dome one more:
 `DiscRecord`, `RingRecord`, `DomeRecord`, expanded over static corner buffers by their own
 vertex shaders. A rim in particular must be widened by the *same* screen-space rule an
@@ -1422,6 +1434,11 @@ The rules that make the pins trustworthy on a shared, noisy runner:
 - **A failure just past a band on a slow run is a measurement first**: re-run against the
   previous commit on the same container before concluding either way, exactly as the
   frame-budget band's own note prescribes. A failure at multiples of the band is the fault.
+- **A hold is checked through the drawn pixels, never through its own flag.** Both the
+  furniture hold and the scene hold skip work on a frame that matches the last one, and the
+  fault they can produce is a picture that no longer matches the scene -- which a flag check
+  cannot see. Every edit path must be driven and the canvas compared before and after,
+  sampled from inside the frame that drew it.
 - **A pin must measure the thing it names.** The record-accounting pin under the demo
   switches the debug layer off for its own window, because an earlier check leaves it on and
   its lattice is ~1,650 ribbon records — which would have swamped the count the pin exists to

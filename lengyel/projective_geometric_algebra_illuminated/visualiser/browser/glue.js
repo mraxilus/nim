@@ -364,6 +364,13 @@ const STRIDE_RING = 14 * 4;
 // How many furniture vertices its own buffer holds, carried between frames because the
 // bridge stops sending them once the camera is still; see `renderFrame`.
 let count_furniture_held = null;
+// And the same for the scene's own buffers, carried for the same reason one layer out: a
+// frame the bridge reports as held has uploaded nothing, so what stands in each buffer is
+// the last frame's -- correct, since the bridge only says held when it would have written
+// the very same bytes. See `FrameData.is_scene_held`.
+let count_ribbon_held = null;
+let count_ring_held = null;
+let count_point_held = null;
 
 // One mesh handed to the driver whole, ready to be drawn as one run or two. Separate
 // from drawing because the two runs go out in different passes (see the draw loop below),
@@ -3676,7 +3683,11 @@ function renderFrame(now_seconds) {
   // off for those, so a translucent plane never occludes a line or point that happens to
   // sit behind it -- it only tints over whatever was already drawn there. Mirrors
   // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
-  const count_ribbon = uploadBuffer(data.ribbon_verts, vbo.ribbon, 16);
+  // Uploaded only where the bridge rebuilt: a held frame's buffers already hold this
+  //   frame's records, and re-uploading identical bytes is the copy the hold exists to
+  //   skip. The draws below still run -- the framebuffer is cleared every frame.
+  if (!data.is_scene_held) count_ribbon_held = uploadBuffer(data.ribbon_verts, vbo.ribbon, 16);
+  const count_ribbon = count_ribbon_held;
   drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, false);
   // The plane rims, one record each, straight after the lines they are drawn like -- the
   // widening is the ribbon program's own, so this program takes the same six camera
@@ -3689,12 +3700,14 @@ function renderFrame(now_seconds) {
   gl.uniform1f(ring_uniforms.depth_near, data.cam_depth_near);
   gl.uniform1f(ring_uniforms.tangent, data.cam_tangent_half_view);
   gl.uniform1f(ring_uniforms.height, data.cam_height_pixels);
-  const count_ring = uploadBuffer(data.ring_records, vbo.ring, 14);
+  if (!data.is_scene_held) count_ring_held = uploadBuffer(data.ring_records, vbo.ring, 14);
+  const count_ring = count_ring_held;
   drawRings(count_ring, data.ring_over, false);
   gl.useProgram(program);
   gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
   gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
-  const count_point = uploadBuffer(data.point_verts, vbo.point, 7);
+  if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 7);
+  const count_point = count_point_held;
   drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
   // The washes: one record a disc or dome, fanned out by their own vertex shaders and
   // walked in scene order through the run list. Both programs get this frame's matrix
@@ -3703,8 +3716,10 @@ function renderFrame(now_seconds) {
   gl.uniformMatrix4fv(uniform_disc_mvp, false, data.view_projection);
   gl.useProgram(program_dome);
   gl.uniformMatrix4fv(uniform_dome_mvp, false, data.view_projection);
-  uploadBuffer(data.disc_records, vbo.disc, 13);
-  uploadBuffer(data.dome_records, vbo.dome, 8);
+  if (!data.is_scene_held) {
+    uploadBuffer(data.disc_records, vbo.disc, 13);
+    uploadBuffer(data.dome_records, vbo.dome, 8);
+  }
   gl.depthMask(false);
   drawWashRuns(data.wash_runs, data.wash_run_over, false);
   gl.depthMask(true);

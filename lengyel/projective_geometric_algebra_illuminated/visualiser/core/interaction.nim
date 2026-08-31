@@ -1303,8 +1303,8 @@ proc commitChoice*(
   let
     label_source = toText(scene.labelAt(interaction.index_source))
     label_destination = toText(scene.labelAt(over.get))
-    m = scene.geometryAt(interaction.index_source)
-    n = scene.geometryAt(over.get)
+    m = scene.geometryOf(interaction.index_source)
+    n = scene.geometryOf(over.get)
     operands = some((source: interaction.index_source, destination: over.get))
   if choice == DragChoice.More:
     return DragOutcome(

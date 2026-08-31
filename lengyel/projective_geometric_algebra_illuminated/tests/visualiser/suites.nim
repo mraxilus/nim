@@ -6438,7 +6438,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var without: seq[string] = @[]
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        if shape(scene.geometryAt(slot)).isNone: without.add(toText(scene.labelAt(slot)))
+        if shape(scene.geometryOf(slot)).isNone: without.add(toText(scene.labelAt(slot)))
       check without == newSeq[string]()
 
     test "it carries every drawable kind, at horizon as well as in the finite world":
@@ -6448,7 +6448,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var at_horizon: array[Shape, int]
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        let geometry = scene.geometryAt(slot)
+        let geometry = scene.geometryOf(slot)
         let kind = shape(geometry)
         if kind.isNone: continue
         inc tally[kind.get]
@@ -6477,7 +6477,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var placed: Table[string, Multivector]
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        placed[toText(scene.labelAt(slot))] = scene.geometryAt(slot)
+        placed[toText(scene.labelAt(slot))] = scene.geometryOf(slot)
       let sol = placed[SOL[0].name]
       var worst = 0.0
       var worst_name = ""
@@ -6506,13 +6506,13 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var worst_label = ""
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        let point = scene.geometryAt(slot)
+        let point = scene.geometryOf(slot)
         if shape(point) != some(Shape.Point) or isHorizon(point): continue
         let place = unitize(point)
         var through = 0
         for other in 0 ..< scene.bound:
           if not scene.isAlive(other): continue
-          let geometry = scene.geometryAt(other)
+          let geometry = scene.geometryOf(other)
           if isHorizon(geometry): continue
           case shape(geometry).get(Shape.Point)
           of Shape.Plane:
@@ -6568,7 +6568,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         if not scene.isAlive(slot): continue
         let
           label = toText(scene.labelAt(slot))
-          geometry = scene.geometryAt(slot)
+          geometry = scene.geometryOf(slot)
         if isHorizon(geometry): continue
         case shape(geometry).get(Shape.Point)
         of Shape.Line: lines.add(label)
@@ -6587,7 +6587,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var joining = 0
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        let geometry = scene.geometryAt(slot)
+        let geometry = scene.geometryOf(slot)
         if isHorizon(geometry) or shape(geometry) != some(Shape.Line): continue
         for sun in suns:
           if not lies(geometry, sun): continue
@@ -6606,7 +6606,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var at_horizon: Table[string, Multivector]
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
-        let geometry = scene.geometryAt(slot)
+        let geometry = scene.geometryOf(slot)
         if isHorizon(geometry): at_horizon[toText(scene.labelAt(slot))] = geometry
       let
         line = at_horizon["att(ecliptic sol)"]

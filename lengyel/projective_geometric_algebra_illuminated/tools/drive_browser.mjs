@@ -2499,6 +2499,95 @@ report(
     `layer ${covered.ruler} under the drawer's ${covered.drawer}`,
 );
 
+/* ---- The scene hold ---- */
+
+// **A still camera over a still scene rebuilds nothing, and every edit releases that.**
+// The scene phase was the whole of the frame's own work on a large scene; a frame matching
+// the last one now skips the tessellation, the flattens and every upload together. The
+// danger of a hold is not that it fails to engage -- that costs milliseconds -- but that it
+// engages when it should not, and shows a picture that no longer matches the scene. So both
+// halves are held here, and the second is checked through the **drawn pixels** rather than
+// through the flag: a hold that released but drew the old records would pass a flag check.
+await page.evaluate(() => {
+  // The debug layer refuses the hold outright (it draws the cursor's own ray), and an
+  //   earlier check left it on.
+  const chip = document.getElementById('toggle-algebra');
+  if (chip.classList.contains('on')) chip.click();
+  nimSelectClear();
+  document.getElementById('gl').focus();
+  window.__hold = { held: 0, built: 0 };
+  const built = globalThis.nimBuildFrame;
+  globalThis.nimBuildFrame = function (...a) {
+    const d = built.apply(this, a);
+    if (d.is_scene_held) window.__hold.held += 1; else window.__hold.built += 1;
+    return d;
+  };
+  // The drawn pixels have to be sampled from **inside** the frame that drew them: the
+  //   context asks for no `preserveDrawingBuffer` (see `glue.js`'s own note at the top),
+  //   so a read from a later task finds a buffer the compositor has already taken. Hooked
+  //   onto the end of `renderFrame`, where the draw has just been issued.
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl');
+  const px = new Uint8Array(canvas.width * canvas.height * 4);
+  const drawn = globalThis.renderFrame;
+  globalThis.renderFrame = function (...a) {
+    const out = drawn.apply(this, a);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let hash = 2166136261;
+    for (let i = 0; i < px.length; i += 4 * 37) {
+      hash = Math.imul(hash ^ px[i], 16777619) ^ px[i + 1] ^ (px[i + 2] << 8);
+    }
+    window.__drawn = hash | 0;
+    return out;
+  };
+});
+await page.waitForTimeout(1200);
+const idle = await page.evaluate(() => ({ ...window.__hold }));
+report(
+  'a still camera over a still scene holds its records instead of rebuilding them',
+  idle.held > 0.5*(idle.held + idle.built) && idle.built > 0,
+  `${idle.held} held, ${idle.built} rebuilt over ~1.2 s`,
+);
+
+// What the frame loop last drew, hashed on a coarse pixel grid: enough to notice an object
+//   appearing, vanishing, moving or changing colour.
+const drawnSignature = () => page.evaluate(() => window.__drawn);
+// Each edit path in turn, through the very export the page's own controls call. What is
+//   asserted after each: the next frames were rebuilt, not held, **and the canvas changed**.
+const edits = [
+  ['hiding an item', () => nimSetVisible(nimSceneSlots()[1], false)],
+  ['showing it again', () => nimSetVisible(nimSceneSlots()[1], true)],
+  ['recolouring an item', () => nimSetInk(nimSceneSlots()[1], 4)],
+  ['moving a coefficient', () => nimSetCoefficient(nimSceneSlots()[1], 1, 4.5)],
+  ['selecting an item', () => nimSelectOnly(nimSceneSlots()[1])],
+  ['removing an item', () => nimRemoveItem(nimSceneSlots()[1])],
+  ['undoing that removal', () => nimUndo()],
+  ['redoing it', () => nimRedo()],
+];
+let count_released = 0;
+let count_redrawn = 0;
+for (const [what, run] of edits) {
+  const before = await drawnSignature();
+  await page.evaluate(() => { window.__hold = { held: 0, built: 0 }; });
+  await page.evaluate(`(${run.toString()})()`);
+  await page.waitForTimeout(500);
+  const after = await drawnSignature();
+  const seen = await page.evaluate(() => ({ ...window.__hold }));
+  if (seen.built > 0) count_released += 1;
+  if (after !== before) count_redrawn += 1;
+  if (seen.built === 0 || after === before) {
+    console.log(`      ${what}: ${seen.built} rebuilt, canvas ` +
+      `${after === before ? 'UNCHANGED' : 'changed'}`);
+  }
+}
+report(
+  'and every edit releases the hold and reaches the canvas',
+  count_released === edits.length && count_redrawn === edits.length,
+  `${count_released} of ${edits.length} released, ${count_redrawn} of ${edits.length} redrawn`,
+);
+await page.evaluate(() => { nimSelectClear(); });
+await page.waitForTimeout(200);
+
 /* ---- The demo preset ---- */
 
 // **The demo is the build's own stress case**, and its whole value is that it is heavy in
@@ -2587,6 +2676,13 @@ await page.mouse.down();
 for (let i = 0; i < 20; i += 1) await page.mouse.move(720 + 8*i, 450 + 3*i);
 await page.mouse.up();
 await page.waitForTimeout(700);
+// **And then orbit, because a still camera over a still scene is now a held frame.** The
+//   scene hold skips the tessellation, the flatten and the uploads together where nothing
+//   has moved, so an idle window records frames whose scene phase is legitimately zero and
+//   there is nothing there to divide. What this check is about is the cost of drawing while
+//   the view moves, which is the case a reader actually waits on; orbiting produces it.
+await page.evaluate(() => document.getElementById('gl').focus());
+await holdKeys(['ArrowRight'], 1400);
 const after_drag = await page.evaluate(() => nimSceneCount());
 report(
   'a construction gesture on a full scene is refused, not crashed through',

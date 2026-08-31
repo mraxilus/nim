@@ -98,6 +98,32 @@ type ShapedMarker = tuple
     ## ref there is one copy at the store and none at the read.
 
 
+type SettingsScene = tuple
+  ## Name everything the scene's own meshes are built from.
+  ##   `SettingsFurniture`'s rule, one layer out: two frames agreeing here draw the same
+  ## scene records, vertex for vertex, so the second may keep the first's. The furniture
+  ## tuple is carried whole rather than restated, since it already names the camera, the
+  ## framebuffer height and the field of view -- everything `drawExtentFor` reads and so
+  ## everything a placed object is placed against. It also names the two furniture toggles,
+  ## which the scene does not read: an over-approximation that costs one rebuilt frame when
+  ## a reader switches the grid off, and is worth not having a second camera tuple.
+  ##   `aspect` is here and not there because the furniture does not read it and the
+  ## view-projection matrix does.
+  ##   `revision` is the scene's own; see `scene.revision` for what bumps it and why the
+  ## ways to change a scene without bumping it are closed. `selection` is compared whole --
+  ## it is a count and a short slot array, and what it decides is which objects land in the
+  ## overlay run.
+  ##   **Three things are not in it, and are guards instead**: a ghost or drag preview
+  ## standing (its geometry moves with the pointer, frame to frame), the debug layer being
+  ## on (it draws the cursor's own ray), and an appear animation still running. See
+  ## `isSceneHeld`.
+  furniture: SettingsFurniture
+  aspect: float
+  revision: int
+  selection: Selection
+  is_algebra_shown: bool
+
+
 var
   g_scene: Scene
   g_camera: Camera
@@ -113,6 +139,10 @@ var
     ## scratch, whether the scene held nine objects or sixty-four. Fixed the same way
     ## the desktop build already avoids this: allocate once, clear (not reallocate)
     ## every frame.
+  g_settings_scene = none(SettingsScene) ## What the scene meshes standing in `g_meshes`
+    ## were built from, or none where none have been built yet.
+    ##   The furniture's hold, one layer out; see `SettingsScene` and
+    ## `FrameData.is_scene_held`.
   g_settings_furniture = none(SettingsFurniture) ## What the furniture standing in
     ## `g_meshes_furniture` was built from, or none where none has been built yet.
     ##   Kept so a frame whose settings match can skip the rebuild entirely; see
@@ -147,6 +177,12 @@ var
   g_interaction = Interaction(is_enabled: true) ## Picking and drag are always live here --
     ## there is no storyboard-capture mode to switch them off for, unlike the desktop
     ## build's own `runStoryboard`.
+  g_born_last = 0.0 ## The latest birth stamp `stampBorn` has ever written.
+    ## **What says the scene has stopped animating.** Every item fades in over
+    ## `mesh.ANIMATION_SECONDS` from its own stamp, so a frame past this plus that window
+    ## draws every item at full progress and the next one draws it identically -- which is
+    ## exactly the condition the scene hold needs and cannot get from the scene itself. A
+    ## watermark rather than a scan of all `ITEMS_MAX` stamps every frame; it only rises.
   g_borns: array[ITEMS_MAX, float] ## Stamped once per slot, the moment an item is added
     ## (by point, by operation, or by drag) -- read back by `nimBuildFrame` so it animates
     ## in exactly as the desktop build's own newly-added item does.
@@ -311,6 +347,15 @@ proc flattenWashRunsInto(washes: WashRuns; dest: var seq[float32]) =
     dest[3*i + 2] = float32(washes.runs[i].count)
 
 
+proc stampBorn(slot: int; born: float) =
+  ## Record when the item in `slot` arrived, and carry the watermark with it.
+  ##   **The one door birth stamps go through**, so `g_born_last` cannot fall behind a
+  ## stamp somebody wrote directly -- which would let the scene hold engage over an item
+  ## still fading in and freeze it half-drawn.
+  g_borns[slot] = born
+  g_born_last = max(g_born_last, born)
+
+
 proc flattenInto(mesh: Mesh; dest: var seq[float32]) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`,
   ## ready for a caller to hand straight to `gl.bufferData`.
@@ -340,7 +385,7 @@ proc placeSeeds(now: float) =
   g_scene = initScene()
   constructSeeds(g_scene, now)
   g_scene.replayFrom(now)
-  for slot in 0 ..< g_scene.len: g_borns[slot] = g_scene.bornAt(slot)
+  for slot in 0 ..< g_scene.len: stampBorn(slot, g_scene.bornAt(slot))
 
 
 proc nimInit(now: cfloat) {.exportc.} =
@@ -374,7 +419,7 @@ proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
   let clock = float(now)
   constructOrrery(g_scene, clock)
   g_scene.replayFrom(clock)
-  for slot in 0 ..< g_scene.len: g_borns[slot] = g_scene.bornAt(slot)
+  for slot in 0 ..< g_scene.len: stampBorn(slot, g_scene.bornAt(slot))
   g_selection.clear()
   # Stand back far enough to hold the nearer systems, aim at the arrangement's own centre,
   #   and pitch up over it. The opening camera was placed to show the *seed* scene whole: it
@@ -452,14 +497,14 @@ proc nimItemBorn(slot: cint): cfloat {.exportc.} = cfloat(g_borns[int(slot)])
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
   ## Report item's shape, by slot, in the words `scene.shapeText` names it -- the same
   ## words the desktop status line uses, because it is the same call.
-  cstring(shapeText(g_scene.geometryAt(int(slot))))
+  cstring(shapeText(g_scene.geometryOf(int(slot))))
 
 
 proc nimItemCoefficients(slot: cint): seq[float] {.exportc.} =
   ## Report all sixteen basis coefficients of an item's own multivector, in the library's
   ## own `Basis` order -- the same order `scene.saveScene`/`loadScene` read and write, and
   ## the same order `panel.layoutCoefficients` lays its sixteen drag widgets out in.
-  let geometry = g_scene.geometryAt(int(slot))
+  let geometry = g_scene.geometryOf(int(slot))
   result = newSeq[float](ord(Basis.high) + 1)
   for b in Basis: result[ord(b)] = geometry[b]
 
@@ -485,7 +530,7 @@ proc nimFormatMultivector(slot: cint): cstring {.exportc.} =
   ##   This used the library's own `$` until the suite began running on this backend too:
   ##   `$` writes magnitudes at the library's `%G`, not at this project's four significant
   ##   digits, so the same object printed differently in the two UIs.
-  cstring(multivectorText(g_scene.geometryAt(int(slot))))
+  cstring(multivectorText(g_scene.geometryOf(int(slot))))
 
 
 
@@ -515,7 +560,7 @@ proc nimAddItem(
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   result = cint(g_scene.addItem(geometry, $label, Ink(ink_ordinal), float(now)))
-  g_borns[int(result)] = float(now)
+  stampBorn(int(result), float(now))
   g_selection.selectOnly(int(result))
   g_history.record(g_scene, g_camera)
 
@@ -530,7 +575,9 @@ proc nimCommitItem(
   ##   scene at all, so the timeline gains one entry per save rather than one per frame of
   ##   input, and coefficient/label/colour edits are undoable for the first time.
   let index = int(slot)
-  for b in Basis: g_scene.geometryAt(index)[b] = coefficients[ord(b)]
+  var geometry = g_scene.geometryOf(index)
+  for b in Basis: geometry[b] = coefficients[ord(b)]
+  g_scene.setGeometryAt(index, geometry)
   toChars($label, g_scene.labelAt(index))
   g_scene.setInk(index, Ink(ink_ordinal))
   g_history.record(g_scene, g_camera)
@@ -549,8 +596,8 @@ proc nimApplyOperation(
   ## exactly as `panel.layoutOperation`'s own apply button does.
   let
     operation = Operation(operation_ordinal)
-    operand_first = g_scene.geometryAt(int(slot_first))
-    operand_second = g_scene.geometryAt(int(slot_second))
+    operand_first = g_scene.geometryOf(int(slot_first))
+    operand_second = g_scene.geometryOf(int(slot_second))
     derived = applyOperation(operation, operand_first, operand_second)
     anchor = creationAnchor(operation, operand_first, operand_second, derived)
     name_first = toText(g_scene.labelAt(int(slot_first)))
@@ -560,7 +607,7 @@ proc nimApplyOperation(
       g_scene.addItem(derived, label, g_scene.takeInk(), float(now), anchor)
   g_operations.remember(operation)
   g_clock_pulse.forget(slot_created) # A fresh object starts its comet at the head.
-  g_borns[slot_created] = float(now)
+  stampBorn(slot_created, float(now))
   g_selection.selectOnly(slot_created)
   g_history.record(g_scene, g_camera)
   let shape_word = shapeText(derived)
@@ -634,7 +681,9 @@ proc nimSetInk(slot: cint; ink_ordinal: cint) {.exportc.} =
 
 proc nimSetCoefficient(slot, basis_index: cint; value: cfloat) {.exportc.} =
   ## Rewrite one basis coefficient of item's own multivector, by slot.
-  g_scene.geometryAt(int(slot))[Basis(basis_index)] = float(value)
+  var geometry = g_scene.geometryOf(int(slot))
+  geometry[Basis(basis_index)] = float(value)
+  g_scene.setGeometryAt(int(slot), geometry)
 
 
 proc nimRemoveItem(slot: cint) {.exportc.} =
@@ -1381,7 +1430,7 @@ proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
   #   `g_scene[slot]`, each time.
   ensureViewOverlay(int(width), int(height))
   let anchor = anchorFor(
-    g_scene.geometryAt(g_interaction.index_source),
+    g_scene.geometryOf(g_interaction.index_source),
     g_scene.anchorOverrideAt(g_interaction.index_source), g_scale_overlay,
   )
   if anchor.isNone: return
@@ -1490,7 +1539,7 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     )
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
-    g_borns[slot] = float(now)
+    stampBorn(slot, float(now))
     g_selection.selectOnly(slot)
     g_history.record(g_scene, g_camera)
     return DragResult(
@@ -1559,7 +1608,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ##   **Duplicated by constraint** in `visualiser.anchorOfSelection`, which answers the
   ##   same question for the same menu on the other front-end; fix both or neither.
   if not g_scene.isAlive(int(slot)): return @[0.0'f32, 0.0'f32, 0.0'f32]
-  if g_scene.geometryAt(int(slot)).isHorizonPlane:
+  if g_scene.geometryOf(int(slot)).isHorizonPlane:
     return @[0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32]
   ensureViewOverlay(int(width), int(height))
   # By-slot readers, never `g_scene[slot]`: an `Item` holds its `Scene` by value on the
@@ -1567,7 +1616,7 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   #   `nimBuildFrame`'s own walk documents, found again here costing a quarter of a
   #   millisecond per anchor asked for.
   let anchor = anchorFor(
-    g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay
+    g_scene.geometryOf(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay
   )
   if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
   let screen = projectToScreen(g_vp_overlay, int(width), int(height), anchor.get)
@@ -1619,7 +1668,7 @@ proc nimSelectionMarker(
   # Shaped straight into the shared box the pulse call reads back: `markerFor` fills
   #   caller storage, so nothing here allocates or copies a `Marker` at all.
   if not markerFor(
-    g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
+    g_scene.geometryOf(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
     g_camera, g_vp_overlay, int(width), int(height), g_box_marker[], float(progress),
     is_touch, travel = some(travel), swell = float(swell),
   ):
@@ -1713,7 +1762,7 @@ proc nimSelectionPulse(
     g_shaped_marker = none(ShapedMarker)
     held = g_box_marker
     if not markerFor(
-      g_scene.geometryAt(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
+      g_scene.geometryOf(int(slot)), g_scene.anchorOverrideAt(int(slot)), g_scale_overlay,
       g_camera, g_vp_overlay, int(width), int(height), held[], float(progress), is_touch,
       travel = some(travel), swell = float(swell),
     ): return
@@ -1797,7 +1846,7 @@ proc nimSceneAddRaw(
   g_scene.setVisible(slot, carried.get.is_visible)
   # Stamped rather than left alone: the slot could otherwise still hold a stale reading
   #   from whatever occupied it earlier this session, misranking a just-loaded item.
-  g_borns[slot] = born
+  stampBorn(slot, born)
   cint(slot)
 
 
@@ -1826,6 +1875,10 @@ type FrameData = object
     ## ribbon carries its width as geometry rather than as a draw-call setting.
     ## **Empty where `is_furniture_held` is set**, which is not "no furniture" but "the
     ## furniture you already have"; see that field.
+  is_scene_held: bool ## Whether the scene records are unchanged from the last frame, so
+    ## every buffer below already holds what it should and none needs re-uploading. The
+    ## furniture's own flag one layer out; see `SettingsScene` for what has to match, and
+    ## for the three states that refuse the hold outright.
   is_furniture_held: bool ## Whether the furniture above is unchanged from the last frame,
     ## so a caller should keep the buffer it already uploaded rather than read an empty
     ## `furn_ribbon_verts` as an empty world.
@@ -1933,6 +1986,15 @@ type SceneCost = object
   ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float
   count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
   mark: float ## When the object now being drawn started, on `performanceNow`'s own clock.
+
+
+var g_counts_scene: SceneCost ## What the scene meshes standing in `g_meshes` are made of.
+  ## Only the counts are read back, on a held frame; the times belong to the frame that did
+  ## the work and a held frame's own are zero. Kept for the reason `g_count_grid_segments`
+  ## is: a held frame draws what it already had and should say what that is rather than
+  ## report an empty scene.
+  ##   Here rather than in the module's own `var` block because `SceneCost` is declared
+  ## just above and this module does not reorder its declarations.
 
 
 proc openTally(cost: var SceneCost) =
@@ -2054,108 +2116,150 @@ proc nimBuildFrame(
     ms_axes = performanceNow() - ms_before_axes
   let ms_after_furniture = performanceNow()
 
-  clearMeshes(g_meshes)
+  # **The scene's own hold, one layer out from the furniture's.** A frame whose settings
+  #   match the last one is tessellating the very same records, so it may keep them --
+  #   which on the 1,024-object demo is the whole scene phase, the flattens under it and
+  #   every upload, together. Skipping the rebuild while still re-uploading identical bytes
+  #   would buy nothing, so the three are held as one; `glue.js` keeps the counts.
+  #   Three conditions sit outside the settings tuple because they are not settings but
+  #   states, and each is a way the picture changes with nothing in the scene changing:
+  #   a ghost or drag preview follows the pointer; the debug layer draws the cursor's own
+  #   ray; and an item still inside its appear animation is drawn differently every frame.
+  #   All three refuse the hold outright rather than being encoded, which is the
+  #   conservative direction: the cost of refusing is one rebuilt frame, the cost of
+  #   holding wrongly is a frozen picture.
+  let settings_scene: SettingsScene = (
+    furniture: settings_furniture,
+    aspect: float(aspect),
+    revision: g_scene.revision,
+    selection: g_selection,
+    is_algebra_shown: is_algebra_shown,
+  )
+  let is_scene_settled =
+    ghost.isNone and g_interaction.preview.isNone and not is_algebra_shown and
+      float(now) >= g_born_last + ANIMATION_SECONDS
+  let is_scene_held =
+    is_scene_settled and g_settings_scene.isSome and g_settings_scene.get == settings_scene
+  if not is_scene_held:
+    g_settings_scene = (if is_scene_settled: some(settings_scene) else: none(SettingsScene))
+
+  # Declared out here because the frame reports them either way: on a held frame the times
+  #   are genuinely zero and the *counts* are last frame's, which are still what the scene
+  #   holds -- a count is a property of the scene, not of the work skipped.
   var cost: SceneCost
-  cost.openTally()
-  # A horizon plane's own dome first, before anything else that might share the
-  #   translucent wash pass -- see `visualiser.assembleMeshes`'s own doc comment
-  #   (mirrored here) for why draw order matters: the wash runs draw in the order the
-  #   records were appended, unsorted by depth, so inserting the dome first guarantees
-  #   every ordinary plane's own fill blends over it rather than the reverse, regardless
-  #   of which scene slot either happens to occupy.
-  # Walks slots directly with the by-slot "At" accessors rather than through the `pairs`
-  #   iterator: under the JS backend, `Item` holds `Scene` by value rather than by
-  #   pointer (see `Item`'s own doc comment), so constructing one -- as `pairs` does,
-  #   once per live slot, twice over below -- copies the *entire* scene just to read a
-  #   handful of that one slot's own fields. Measured directly: at a full 64-item scene
-  #   this cost alone was ~150ms/frame, worse than useless for a 60fps draw loop: fixed
-  #   by adding `inkAt`/`anchorOverrideAt` beside the geometry/label/visibility "At"
-  #   readers `scene.nim` already had (purely additive there, native-inert, mirroring
-  #   the existing `geometryAt`/`isVisible` pattern) and reading every field here by
-  #   slot instead.
-  # **To the watermark, not to capacity.** Slots are stable addresses, so this has to sweep a
-  #   range rather than a dense list -- and with `ITEMS_MAX` at 1,024 that meant testing a
-  #   thousand slots every frame to draw the five a fresh scene holds. `scene.bound` is the
-  #   high-water mark, which only rises, so walking to it is safe and costs the ordinary
-  #   scene nothing. Its sibling walk below takes the same bound.
-  for slot in 0 ..< g_scene.bound:
-    if not g_scene.isAlive(slot) or slot in g_selection: continue
-    if g_scene.isVisible(slot):
-      let geometry = g_scene.geometryAt(slot)
-      if isHorizonPlane(geometry):
-        let progress = animationProgress(float(now), g_borns[slot])
-        discard g_meshes.addObject(
-          g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
-          g_scene.anchorOverrideAt(slot),
-        )
-        cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
+  var
+    ms_before_algebra = ms_after_furniture
+    ms_after_algebra = ms_after_furniture
+  if is_scene_held:
+    cost.count_points = g_counts_scene.count_points
+    cost.count_lines = g_counts_scene.count_lines
+    cost.count_planes = g_counts_scene.count_planes
+    cost.count_sky = g_counts_scene.count_sky
+    cost.count_ghost = g_counts_scene.count_ghost
+    cost.count_selected = g_counts_scene.count_selected
+  if not is_scene_held:
+    clearMeshes(g_meshes)
+    cost.openTally()
+    # A horizon plane's own dome first, before anything else that might share the
+    #   translucent wash pass -- see `visualiser.assembleMeshes`'s own doc comment
+    #   (mirrored here) for why draw order matters: the wash runs draw in the order the
+    #   records were appended, unsorted by depth, so inserting the dome first guarantees
+    #   every ordinary plane's own fill blends over it rather than the reverse, regardless
+    #   of which scene slot either happens to occupy.
+    # Walks slots directly with the by-slot "At" accessors rather than through the `pairs`
+    #   iterator: under the JS backend, `Item` holds `Scene` by value rather than by
+    #   pointer (see `Item`'s own doc comment), so constructing one -- as `pairs` does,
+    #   once per live slot, twice over below -- copies the *entire* scene just to read a
+    #   handful of that one slot's own fields. Measured directly: at a full 64-item scene
+    #   this cost alone was ~150ms/frame, worse than useless for a 60fps draw loop: fixed
+    #   by adding `inkAt`/`anchorOverrideAt` beside the geometry/label/visibility "At"
+    #   readers `scene.nim` already had (purely additive there, native-inert, mirroring
+    #   the existing `geometryAt`/`isVisible` pattern) and reading every field here by
+    #   slot instead.
+    # **To the watermark, not to capacity.** Slots are stable addresses, so this has to sweep a
+    #   range rather than a dense list -- and with `ITEMS_MAX` at 1,024 that meant testing a
+    #   thousand slots every frame to draw the five a fresh scene holds. `scene.bound` is the
+    #   high-water mark, which only rises, so walking to it is safe and costs the ordinary
+    #   scene nothing. Its sibling walk below takes the same bound.
+    for slot in 0 ..< g_scene.bound:
+      if not g_scene.isAlive(slot) or slot in g_selection: continue
+      if g_scene.isVisible(slot):
+        let geometry = g_scene.geometryOf(slot)
+        if isHorizonPlane(geometry):
+          let progress = animationProgress(float(now), g_borns[slot])
+          discard g_meshes.addObject(
+            g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
+            g_scene.anchorOverrideAt(slot),
+          )
+          cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
 
-  for slot in 0 ..< g_scene.bound:
-    if not g_scene.isAlive(slot) or slot in g_selection: continue
-    if g_scene.isVisible(slot):
-      let geometry = g_scene.geometryAt(slot)
-      if not isHorizonPlane(geometry):
-        let progress = animationProgress(float(now), g_borns[slot])
-        discard g_meshes.addObject(
-          g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
-          g_scene.anchorOverrideAt(slot),
-        )
-        cost.chargeTally(geometry, is_sky = false, is_ghost = false, is_selected = false)
+    for slot in 0 ..< g_scene.bound:
+      if not g_scene.isAlive(slot) or slot in g_selection: continue
+      if g_scene.isVisible(slot):
+        let geometry = g_scene.geometryOf(slot)
+        if not isHorizonPlane(geometry):
+          let progress = animationProgress(float(now), g_borns[slot])
+          discard g_meshes.addObject(
+            g_scratch, geometry, g_scene.inkAt(slot).colour, scale, progress,
+            g_scene.anchorOverrideAt(slot),
+          )
+          cost.chargeTally(geometry, is_sky = false, is_ghost = false, is_selected = false)
 
-  # An open session's staged geometry, or an apply control's own preview where none is --
-  #   one ghost for both, since they are the same "not committed yet" claim about one
-  #   object; `staged` is where that order is decided. Centred on the anchor the commit
-  #   will store, so a previewed plane stays where it was ghosted.
-  # `ghost` read once in the prologue; nothing since has touched the session.
-  if ghost.isSome:
-    discard g_meshes.addObject(
-      g_scratch, ghost.get.geometry, INK_GHOST.colour.muted(), scale,
-      anchor_override = ghost.get.anchor,
-    )
-    cost.chargeTally(
-      ghost.get.geometry, is_sky = false, is_ghost = true, is_selected = false
-    )
+    # An open session's staged geometry, or an apply control's own preview where none is --
+    #   one ghost for both, since they are the same "not committed yet" claim about one
+    #   object; `staged` is where that order is decided. Centred on the anchor the commit
+    #   will store, so a previewed plane stays where it was ghosted.
+    # `ghost` read once in the prologue; nothing since has touched the session.
+    if ghost.isSome:
+      discard g_meshes.addObject(
+        g_scratch, ghost.get.geometry, INK_GHOST.colour.muted(), scale,
+        anchor_override = ghost.get.anchor,
+      )
+      cost.chargeTally(
+        ghost.get.geometry, is_sky = false, is_ghost = true, is_selected = false
+      )
 
-  # What the drag in progress would build, in that same ghost ink, so a reader learns one
-  #   "this is not committed yet" appearance rather than two. Mirrors
-  #   `visualiser.assembleMeshes`.
-  # Centred on the anchor the commit itself will store, so a ghosted plane stays where it
-  #   was ghosted instead of jumping the instant the release lands.
-  if g_interaction.preview.isSome:
-    discard g_meshes.addObject(
-      g_scratch, g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
-      anchor_override = g_interaction.preview.get.anchor,
-    )
-    cost.chargeTally(
-      g_interaction.preview.get.geometry, is_sky = false, is_ghost = true, is_selected = false
-    )
+    # What the drag in progress would build, in that same ghost ink, so a reader learns one
+    #   "this is not committed yet" appearance rather than two. Mirrors
+    #   `visualiser.assembleMeshes`.
+    # Centred on the anchor the commit itself will store, so a ghosted plane stays where it
+    #   was ghosted instead of jumping the instant the release lands.
+    if g_interaction.preview.isSome:
+      discard g_meshes.addObject(
+        g_scratch, g_interaction.preview.get.geometry, INK_GHOST.colour.muted(), scale,
+        anchor_override = g_interaction.preview.get.anchor,
+      )
+      cost.chargeTally(
+        g_interaction.preview.get.geometry, is_sky = false, is_ghost = true, is_selected = false
+      )
 
-  # Everything selected, held back to here and drawn with the depth test off, so a picked
-  #   object is never buried by whatever stands between it and the camera. Mirrors
-  #   `visualiser.assembleMeshes`, which carries the reasoning.
-  markOverlay(g_meshes)
-  for position in 0 ..< g_selection.len:
-    let slot = g_selection.at(position)
-    if not g_scene.isAlive(slot) or not g_scene.isVisible(slot): continue
-    let progress = animationProgress(float(now), g_borns[slot])
-    discard g_meshes.addObject(
-      g_scratch, g_scene.geometryAt(slot), g_scene.inkAt(slot).colour, scale, progress,
-      g_scene.anchorOverrideAt(slot),
-    )
-    cost.chargeTally(
-      g_scene.geometryAt(slot), is_sky = false, is_ghost = false, is_selected = true
-    )
+    # Everything selected, held back to here and drawn with the depth test off, so a picked
+    #   object is never buried by whatever stands between it and the camera. Mirrors
+    #   `visualiser.assembleMeshes`, which carries the reasoning.
+    markOverlay(g_meshes)
+    for position in 0 ..< g_selection.len:
+      let slot = g_selection.at(position)
+      if not g_scene.isAlive(slot) or not g_scene.isVisible(slot): continue
+      let progress = animationProgress(float(now), g_borns[slot])
+      discard g_meshes.addObject(
+        g_scratch, g_scene.geometryOf(slot), g_scene.inkAt(slot).colour, scale, progress,
+        g_scene.anchorOverrideAt(slot),
+      )
+      cost.chargeTally(
+        g_scene.geometryOf(slot), is_sky = false, is_ghost = false, is_selected = true
+      )
 
-  # **The algebra's own layer**, drawn over the scene it explains: every multivector this
-  #   frame derived, in its true form. What lands in it is `algebra_view.addFrameTrace`'s
-  #   answer, shared with the desktop path so the two cannot drift.
-  let ms_before_algebra = performanceNow()
-  if is_algebra_shown:
-    g_meshes.addFrameTrace(
-      g_scratch, g_scene, g_camera, ghost, g_interaction.cursor, scale,
-      width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
-    )
-  let ms_after_algebra = performanceNow()
+    # **The algebra's own layer**, drawn over the scene it explains: every multivector this
+    #   frame derived, in its true form. What lands in it is `algebra_view.addFrameTrace`'s
+    #   answer, shared with the desktop path so the two cannot drift.
+    ms_before_algebra = performanceNow()
+    if is_algebra_shown:
+      g_meshes.addFrameTrace(
+        g_scratch, g_scene, g_camera, ghost, g_interaction.cursor, scale,
+        width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
+      )
+    ms_after_algebra = performanceNow()
+    g_counts_scene = cost
 
   let vp = g_camera.initMatrixViewProjection(float(aspect))
   for row in 0 .. 3:
@@ -2166,12 +2270,17 @@ proc nimBuildFrame(
   #   a start and an end a clock can bracket.
   let ms_after_matrix = performanceNow()
   let ms_before_flatten = ms_after_matrix
-  flattenDiscsInto(g_meshes.discs, g_flat_disc)
-  flattenRingsInto(g_meshes.rings, g_flat_ring)
-  flattenDomesInto(g_meshes.domes, g_flat_dome)
-  flattenWashRunsInto(g_meshes.washes, g_flat_runs)
-  flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
-  flattenInto(g_meshes.points, g_flat_point)
+  # Held with the tessellation, not separately: the records did not change, so the flat
+  #   buffers already hold exactly what a rerun would write into them. `glue.js` skips the
+  #   uploads on the same flag, since a buffer re-uploaded unchanged is the same copy again
+  #   one layer further down.
+  if not is_scene_held:
+    flattenDiscsInto(g_meshes.discs, g_flat_disc)
+    flattenRingsInto(g_meshes.rings, g_flat_ring)
+    flattenDomesInto(g_meshes.domes, g_flat_dome)
+    flattenWashRunsInto(g_meshes.washes, g_flat_runs)
+    flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
+    flattenInto(g_meshes.points, g_flat_point)
   if is_furniture_held: g_flat_furniture.setLen(0)
   else: flattenRibbonsInto(g_meshes_furniture.ribbons, g_flat_furniture)
   let ms_done = performanceNow()
@@ -2185,6 +2294,7 @@ proc nimBuildFrame(
     point_verts: g_flat_point,
     view_projection: g_flat_view,
     furn_ribbon_verts: g_flat_furniture,
+    is_scene_held: is_scene_held,
     is_furniture_held: is_furniture_held,
     cam_eye_x: float32(scale.eye.x), cam_eye_y: float32(scale.eye.y),
     cam_eye_z: float32(scale.eye.z),

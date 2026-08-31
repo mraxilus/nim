@@ -131,6 +131,9 @@ proc undo*(history: var History; scene: var Scene; camera: var Camera): bool
   camera = history.entries[history.cursor].camera
   history.cursor.dec
   scene = history.entries[history.cursor].scene
+  # A whole-scene assignment, which restores that entry's own revision rather than
+  #   advancing this one's; see `scene.revision` for why the rule is stated as a bump.
+  scene.markEdited()
   true
 
 
@@ -144,4 +147,6 @@ proc redo*(history: var History; scene: var Scene; camera: var Camera): bool
   history.cursor.inc
   scene = history.entries[history.cursor].scene
   camera = history.entries[history.cursor].camera
+  # See `undo` above: a whole-scene assignment says so itself.
+  scene.markEdited()
   true

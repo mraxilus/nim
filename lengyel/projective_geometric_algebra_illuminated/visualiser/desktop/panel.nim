@@ -365,7 +365,7 @@ proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
   ##   tween every frame by `layoutObjects` below, which covers the moment it opens too.
   var session = EditSession(slot: slot)
   if slot.isSome:
-    session.stage(scene.geometryAt(slot.get))
+    session.stage(scene.geometryOf(slot.get))
     session.label = scene.labelAt(slot.get)
     session.index_ink = cint(scene.inkAt(slot.get))
   else:
@@ -464,7 +464,7 @@ proc layoutItemButtons(
           scene.addItem(geometry, toText(session.label), Ink(session.index_ink), now)
         panel.selection.selectOnly(slot_added)
       else:
-        scene.geometryAt(row.slot.get) = geometry
+        scene.setGeometryAt(row.slot.get, geometry)
         scene.labelAt(row.slot.get) = session.label
         scene.setInk(row.slot.get, Ink(session.index_ink))
       history.record(scene, camera)
@@ -508,7 +508,7 @@ proc layoutItemDescription(panel: Panel; scene: var Scene; row: ItemRow) =
   ##   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
   ##   that reads as a prefix to the equation anyway.
   let geometry_shown =
-    if row.is_open: panel.session.get.geometry else: scene.geometryAt(row.slot.get)
+    if row.is_open: panel.session.get.geometry else: scene.geometryOf(row.slot.get)
   var line: array[WIDTH_ITEM_LINE, char]
   let description = buildChars(line):
     appendChars(line, cursor, "  ")

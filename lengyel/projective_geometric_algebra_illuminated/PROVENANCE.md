@@ -2683,6 +2683,57 @@ one buffer and are now drawn straight after them. The depth test still decides o
 the only difference is blend order where two *translucent* strokes overlap -- during a
 plane's fade-in progress.
 
+**A still frame rebuilds nothing, and the ways to change a scene without saying so are
+closed.** The furniture has had a hold since it became a function of the camera alone; the
+scene had none, so a still camera over a still scene re-tessellated every object, re-flattened
+every record and re-uploaded every buffer, sixty times a second, to draw the identical
+picture. On the demo that was the whole of the frame's own work.
+  `SettingsScene` is `SettingsFurniture`'s rule one layer out -- it carries the furniture
+tuple whole rather than restating the camera, plus the aspect, the scene's own revision, the
+selection and the debug-layer flag -- and where it matches the last frame's, the bridge skips
+the tessellation, **the flattens and the uploads together**. Held separately they would buy
+nothing: a buffer re-uploaded unchanged is the same copy again one layer down. `glue.js`
+carries the three buffer counts across frames exactly as it already carried the furniture's.
+  **Three states refuse the hold outright rather than being encoded**, because each is a way
+the picture changes with nothing in the scene changing: a ghost or drag preview follows the
+pointer; the debug layer draws the cursor's own ray; and an item still inside its appear
+animation is drawn differently every frame. The last is read off `g_born_last`, a watermark
+carried by `stampBorn` -- the one door birth stamps go through -- rather than by scanning
+1,024 stamps a frame. Refusing costs one rebuilt frame; holding wrongly freezes the picture,
+so the asymmetry decides the direction.
+  **The revision is only trustworthy because the writes are closed.** `scene.revision` counts
+edits, and every writer is in `scene.nim`, where the fields are private: `addItem`,
+`removeItem`, `setInk`, `setVisible`, `replayFrom`, and a new `setGeometryAt`. That last one
+replaces the `var Multivector`-returning `geometryAt`, which was the hole -- a caller could
+write a geometry through it with nothing recorded, and twenty-six of its twenty-nine callers
+were *reading* through it anyway, which is the JS-backend miscompile pattern `geometryOf`'s
+own doc comment was written about. Those readers now call `geometryOf`; the three writers
+call `setGeometryAt`; the accessor is gone. The one contract left outside the module is a
+whole-scene assignment, which is `history.undo` and `history.redo`, and both call
+`markEdited`. Restoring an older revision is safe on its own -- two distinct states cannot
+share one, since every edit advances it -- and the call makes the rule hold without a caveat.
+  **Checked through the drawn pixels, not the flag.** A hold that released but drew the old
+records would pass a flag check, so the driven check hashes the canvas from inside the frame
+that drew it (the context keeps no drawing buffer afterwards) and walks eight edit paths --
+hide, show, recolour, move a coefficient, select, remove, undo, redo -- asserting after each
+that frames were rebuilt **and** that the canvas changed. All eight, both halves.
+  **Measured, browser, SwiftShader at 1200x900, the demo scene, still camera:** the bridge's
+own build **18.2 ms -> 0.6 ms** median; scene 16.9 -> 0, flatten 0.6 -> 0. Frame 84.9 -> 68
+ms. The driven per-kind accounting under the demo now orbits during its measurement window,
+because a still window records frames whose scene phase is legitimately zero and there is
+nothing there to divide -- the cost of drawing *while the view moves* is the case a reader
+waits on, and is what that check measures now.
+
+**The 68 ms that remains is SwiftShader, not this page.** Worth stating plainly, because it
+is the difference between a bottleneck and a driver. Measured on the demo after both passes:
+`renderFrame` -- every upload and every draw call issued -- takes 0.9 ms, and the same call
+followed by a `readPixels` that forces the GPU to finish takes **88.9 ms**. The page's own
+JavaScript is under a millisecond a frame; the rest is a CPU rasteriser blending 132
+overlapping translucent discs across 1,200x900 pixels. Every figure in this file is
+software-rendered (see the verification note at the top), and no measurement here has ever
+run on real GPU hardware. What that means for the numbers above: the CPU-side wins are real
+and carry over, and the fill-rate cost does not -- it is this container's, not the design's.
+
 **The driven checks measure the debug lattice from one check onward.** The check that proves
 the debug layer draws more than the picture switches it on with `chip.click()` and never
 switches it back, so every later frame drawn through the real loop carries ~1,650 lattice

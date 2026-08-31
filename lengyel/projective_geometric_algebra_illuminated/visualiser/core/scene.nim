@@ -142,6 +142,7 @@ type
     count_created: uint32 ## Ordinals handed out so far, and the next one to hand out.
       ## Counts additions over the scene's whole life, never removals, so it is not
       ## `count_live` and cannot be derived from it.
+    count_edits: int ## How many times this scene's *drawn* content has changed; see `revision`.
     index_ink: int ## How far the categorical cycle has been walked; the next hue to hand out.
       ## Its own counter rather than `len`, because a **drag that built nothing still steps
       ## the palette** -- the reader watched a colour on the band and it should not be
@@ -560,6 +561,34 @@ func bound*(scene: Scene): int = scene.slot_live_last
   ##   Not `len`: `len` counts the living, and the living are not packed at the bottom.
 
 
+func revision*(scene: Scene): int = scene.count_edits
+  ## Report how many times this scene's drawn content has changed.
+  ##   Named apart from its own field, as `len` and `bound` are from theirs: a reader named
+  ## for the field it reads recurses into itself under this module's own scoping.
+  ##   **For holding last frame's meshes, and for nothing else.** A front-end compares this
+  ## against what it saw last frame -- equality only, never order -- and rebuilds where it
+  ## differs; the browser bridge's `SettingsScene` is the one reader. It is not a version
+  ## number a user sees, it is not saved, and it says nothing about *what* changed.
+  ##   **Everything that changes what is drawn bumps it, and the ways to do that are
+  ## closed.** Geometry goes through `setGeometryAt`, ink through `setInk`, visibility
+  ## through `setVisible`, existence through `addItem`/`removeItem`, birth stamps through
+  ## `replayFrom` -- every one of them in this module, because the fields are private and
+  ## there is no `var`-returning accessor left to write through. A label is deliberately not
+  ## among them: labels are drawn by the panel and the overlay, never tessellated.
+  ##   The one contract outside this module is a **whole-scene assignment**: `history.undo`
+  ## and `history.redo` copy an entry's scene back over the live one, which restores that
+  ## entry's own revision, and both call `markEdited` after doing so. Restoring an older
+  ## revision is safe on its own -- two distinct states cannot share a revision, since every
+  ## edit advances it -- but the call makes the rule "any write bumps" hold without a caveat.
+
+proc markEdited*(scene: var Scene) =
+  ## Say that this scene's drawn content just changed; see `revision`.
+  ##   Called by every writer in this module, and by the two whole-scene restores in
+  ## `history`. A caller that finds itself wanting this for anything else is writing to the
+  ## scene by some route that ought to be a proc here instead.
+  inc scene.count_edits
+
+
 func isFull*(scene: Scene): bool = scene.count_live >= ITEMS_MAX
   ## Report whether scene has no room for another item.
 
@@ -634,10 +663,16 @@ func geometryOf*(scene: Scene; slot: int): Multivector =
   scene.geometries[slot]
 
 
-proc geometryAt*(scene: var Scene; slot: int): var Multivector =
-  ## Reach item's geometry for editing, by slot.
+proc setGeometryAt*(scene: var Scene; slot: int; geometry: Multivector) =
+  ## Write item's geometry, by slot -- **the only way a live item's geometry changes.**
+  ##   A setter rather than the `var Multivector` this used to hand back, for the reason
+  ##   `geometryOf` above already gives (a `var`-returning accessor read rather than
+  ##   written miscompiled under the JS backend once), and for a second one: a front-end
+  ##   holding last frame's meshes needs to know the scene changed, and it can only know
+  ##   that if every write passes one door. See `revision`.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
-  scene.geometries[slot]
+  scene.geometries[slot] = geometry
+  scene.markEdited()
 
 
 proc labelAt*(scene: var Scene; slot: int): var Label =
@@ -770,6 +805,7 @@ proc setInk*(scene: var Scene; slot: int; ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.inks[slot] = ink
+  scene.markEdited()
 
 
 proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
@@ -779,6 +815,7 @@ proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
   ## copied primitive rather than the backing array -- see `isVisible` above.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.are_visible[slot] = is_visible
+  scene.markEdited()
 
 
 iterator items*(scene: Scene): Item =
@@ -826,6 +863,7 @@ proc addItem*(
   inc scene.count_created
   inc scene.count_live
   scene.slot_live_last = max(scene.slot_live_last, result + 1)
+  scene.markEdited()
 
 
 proc removeItem*(scene: var Scene; slot: int) =
@@ -835,6 +873,7 @@ proc removeItem*(scene: var Scene; slot: int) =
   scene.next_free[slot] = scene.slot_free_first
   scene.slot_free_first = some(slot)
   dec scene.count_live
+  scene.markEdited()
 
 
 
@@ -1086,6 +1125,7 @@ proc replayFrom*(scene: var Scene; now: float) =
   let count = scene.slotsCreated(slots)
   for position in 0 ..< count:
     scene.borns[slots[position]] = bornReplaying(position, count, now)
+  scene.markEdited()
 
 
 ## The constants above sit **outside** the desktop-only guard below, and are exported,
