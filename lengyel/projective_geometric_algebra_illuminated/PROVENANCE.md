@@ -2299,6 +2299,16 @@ and cannot name `ITEMS_MAX`, so the four caps were correct only because someone 
 arithmetic by hand. `scene.nim` now carries a `static: doAssert` per cap, in the one module
 that can see both sides: raising the capacity again fails to *compile*.
 
+  **What it costs, measured.** Under the demo the scene phase peaks at **83 ms** a frame,
+against 7–14 ms for the eight-system arrangement it replaced -- 132 discs and 886 markers
+where there were 13 and 44. That is the stress case doing its job rather than a regression to
+tune away: every driven performance pin measures the *opening* scene, not the demo, and none
+of them moved. The one check that runs under the demo -- that the per-kind accounting still
+sums -- holds on all 65 frames over 2 ms.
+  A bucketing difference bit once while pinning this: `nimItemShapeWord` reports a line at
+horizon as its own kind, so the driven tally counts two finite lines where the suite's version
+counts all three together. The two floors differ by one on purpose, and both say so.
+
   **The watermark, so the ordinary scene pays nothing for the bigger one.** Slots are stable
 addresses, so anything reading by slot must sweep a range — and at 1,024 the frame's object
 walks tested a thousand slots to draw the five a fresh scene holds. `Scene.bound` is the

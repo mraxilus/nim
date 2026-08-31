@@ -2529,13 +2529,17 @@ report(
 //   whatever it joins, and the slots that freed went into a system and nine more bodies. A
 //   floor alone would let them creep back. The plane floor rose with them for the same
 //   reason -- discs are what the slots bought.
+//   **Two, not three, and the difference is this tally's own bucketing**: `nimItemShapeWord`
+//   reports a line at horizon as its own kind, so `line` here counts only the finite ones --
+//   `sol ∧ earth` and `earth ∧ luna`. The suite's own version of this check counts all three
+//   together, which is why the two floors differ by one and why neither is a typo.
 const drawing = ['point', 'line', 'plane', 'point at horizon', 'line at horizon',
   'plane at horizon'];
 const undrawn = Object.keys(demo.tally).filter((word) => !drawing.includes(word));
 report(
   'it carries every drawable kind, including one of each at horizon, and nothing blank',
   drawing.every((word) => (demo.tally[word] || 0) >= 1) && undrawn.length === 0 &&
-    demo.tally.plane >= 120 && demo.tally.line >= 3 && demo.tally.line <= 4 &&
+    demo.tally.plane >= 120 && demo.tally.line >= 2 && demo.tally.line <= 3 &&
     demo.tally.point >= 500,
   Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
 );
