@@ -1465,15 +1465,41 @@ The rules that make the pins trustworthy on a shared, noisy runner:
   snapshot of what each row draws, keyed so an unchanged row keeps its element. Not by
   routing the callers that happen to matter today through something narrower — that is a
   list of exceptions the next caller silently misses.
-- **Nothing in the drawer is computed while the drawer is shut.** The panel's own figures,
-  its two canvases and its object-pool strip are all inside it; a canvas that falls back to
-  a made-up width rather than skipping is the specific way this rule was broken. A driven
-  check that wants to read those rows opens the drawer first, the way a reader does.
+- **Nothing in the drawer is computed while the drawer is shut** — nor while the section
+  holding it is collapsed. The panel's own figures, its two canvases and its object-pool
+  strip are all inside it; a canvas that falls back to a made-up width rather than skipping
+  is the specific way this rule was broken, twice, once at each level. A driven check that
+  wants to read those rows opens the drawer *and* the section first, the way a reader does.
+- **A figure is redrawn on the cadence of the window it is averaged over.** A 200 ms reading
+  belongs on the 200 ms tick; a curve over seventeen seconds and a median over four do not,
+  and putting them there was half the cost of the panel's whole refresh. Where a figure is
+  held between passes, a row that becomes visible between them computes its own rather than
+  showing an em dash until the next one.
+- **Elements a reader cannot see are kept out of layout, not merely out of sight.** A
+  thousand rows nothing writes to still cost the browser a layout pass every time anything
+  else in their scroller changes. `content-visibility` is how that is said; its placeholder
+  is a **content**-box height, so padding and borders must be subtracted or every skipped row
+  renders too tall. Anything whose true size a scroll depends on is exempted by name.
 - **A hold is checked through the drawn pixels, never through its own flag.** Both the
   furniture hold and the scene hold skip work on a frame that matches the last one, and the
   fault they can produce is a picture that no longer matches the scene -- which a flag check
   cannot see. Every edit path must be driven and the canvas compared before and after,
   sampled from inside the frame that drew it.
+- **An answer computed per input event is computed several times a frame.** Pointers,
+  trackpads and touchscreens all report faster than the display refreshes, so anything that
+  walks the scene — a pick above all — is coalesced onto the frame loop and spent once. Only
+  a handler that must answer before it returns keeps its own call, and each such handler says
+  which decision needs it. Pinned by counting calls per frame, not by clocking them.
+- **`lent` removes a copy only where the result is never bound.** The JS backend copies a
+  returned object into a fresh one; `lent` hands back the field itself, and a `let` binding
+  puts the copy straight back. So a borrowing reader must be read *inline*, in the expression
+  that uses it, and a walk that needs it several times uses an alias rather than a local.
+  Confirmed by compiling a reduced case and reading the output, which is the only way this
+  is ever confirmed.
+- **A change to what is picked is checked slot for slot, not by looking.** A pick returns an
+  identity, and a wrong identity looks exactly like a right one in a screenshot. A grid of
+  cursor positions across several camera placements, compared entry by entry before and
+  after, is the check.
 - **A sample size is not a time window.** A check that wants N frames over some cost floor
   must collect until it has them, not run for a fixed span and hope. The per-kind accounting
   check failed twice for the opposite of the reason a pin should fail: the work it guards got

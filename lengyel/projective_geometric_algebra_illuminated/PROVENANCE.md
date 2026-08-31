@@ -2858,6 +2858,137 @@ device's own display-wait median is plain vsync, and a cull trades an object-van
 a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
 rather than done because it was available.
 
+**The spike that survived all of that was the panel itself, on a still frame.** Reported from
+the device with nothing moving, and the sparkline's spikes evenly spaced, which is the 5 Hz
+tick's signature. Two readings of the two captures, and the first has to be got out of the way
+before the second means anything.
+
+  **The seed-versus-demo inversion is the device, not the code.** The seed scene showed
+`ui refresh` at 6.90 ms against the demo's 3.70, which looks like a cost that *falls* as the
+scene grows and sent one round of analysis chasing a mechanism that could do that. There is
+none: every row on that capture is about 2x the demo's, `camera + framing` (0.90 against 0.70)
+and `view matrix` (0.50 against 0.40) included, and neither touches scene contents at all. The
+device was simply slower a minute earlier. Divide that factor out and one row is left --
+`ui refresh` is three to five times the cost of building the whole frame, on both scenes, and
+nothing else is over 1.4 ms.
+
+  **A tick costs the frame after it, where no row can name the cost.** The `ui` bracket closes
+at `refreshDiagnostics`'s last statement; the browser's style, layout and paint pass over what
+was just written happens after the callback returns and lands in `display wait + browser`.
+Measured on the demo, still, drawer and diagnostics open, as the median gap of the frame *after*
+a tick against a plain frame:
+
+| | penalty on the next frame |
+|---|---|
+| as built (12,741 elements) | **+5.2 to +6.3 ms** |
+| objects section collapsed | +2.6 |
+| objects list emptied (3,525 elements) | +2.5 |
+| `content-visibility: auto` on each row | **+2.4** |
+
+The tick's own JavaScript is 1.7 ms of that, so **over half the cost was the browser and over
+half of *that* was the 1,024 objects rows** -- rows the tick never writes to and only has to lay
+out again. It fires five times a second, so on a 60 Hz display it lands on one frame in twelve;
+at the device's roughly 4x that is 20-25 ms added to one frame in twelve, which is the 33 ms
+1-in-100 on the seed and, with the rows on top, the 58.5 ms on the demo.
+
+  **A figure is redrawn on the cadence of the window it is averaged over.** The 200 ms tick was
+chosen so a *reading* settles and the numeric rows keep it, but two of the three things riding
+it are not 200 ms readings: the exceedance curve covers 1,024 frames (~17 s) and the sparkline
+and ring medians four seconds. Measured, `drawExceedance` was 0.31 ms and `medianPhase` 0.27 of
+a 1.17 ms tick -- half of it -- to redraw figures that cannot visibly change in a fifth of a
+second. They moved to a one-second pass. A median is held between passes rather than recomputed,
+and a row that becomes shown between them computes its own on the spot, so opening a branch of
+the tree never shows an em dash for a second; checked across all 23 rows, 22 return a value
+identical to a fresh one and `idle` differs by 0.2 ms on 36, which is one second of staleness
+and exactly the design. The `log` toggle and the axis glide stay immediate, both being
+answers to something a reader just did.
+
+  **`content-visibility` buys what virtualising the list would, and its trap is the box model.**
+`contain-intrinsic-size` sizes the **content** box; the placeholder was first written as a
+border-box 61px, which is the row's real height, and every skipped row then rendered 19px too
+tall -- the rule's own padding and border added on top -- making the list 81,303px against a
+true 63,858. The content inside a 61px row is 42px. With `auto` in front of it the browser
+remembers each row's real height once laid out, so the extent is 62,493px fresh (2.1% short) and
+exactly 63,858 after one scroll through.
+  **And it broke a scroll, which only looking caught.** `openPanelTo` ends in
+`scrollIntoView({block: 'nearest'})`, and `nearest` scrolls the minimum to bring the box into
+view -- so with the target row a 42px placeholder rather than the 489px form it was about to
+become, opening slot 900 left the row's top at 839 in a 900px viewport with its whole form below
+the fold. Re-scrolling does not fix it: once the row is partially visible `nearest` is satisfied.
+The open row is exempt from the containment instead -- it is one row of a thousand and the only
+one whose true height anything depends on -- and the scroll settles over a few frames rather than
+jumping once, for the rows *above* it that are still estimates. Slot 900 lands at 421 against 411
+with no containment at all.
+  The section-level guard came from the same pass: the tick's guard asked whether the *drawer*
+was open, and a collapsed diagnostics section inside an open drawer put both canvases back on
+their made-up 300-pixel fallback, drawing five times a second for a reader looking at the
+objects list. Exactly the fault recorded two rounds above, one level down.
+
+  **Measured, demo, still, drawer and diagnostics open: the frame after a tick 5.2-6.3 -> 2.1 ms
+over a plain frame, the tick's own JavaScript 1.7 -> 1.0, and the tick at the median 1.1 -> 0.3.**
+
+  **One hypothesis was tested and rejected, which is worth as much as the one that held.**
+`drawExceedance` ends with two *unguarded* `textContent` writes and the very next statement in
+`refreshDiagnostics` read `sparkline.clientWidth` -- a textbook write-then-read forcing a
+synchronous relayout of a 12,741-element document, five times a second. It looked certain. It
+costs **0.2 ms**, and suppressing both writes changed the tick's percentiles not at all. The
+reflux was real and the amount was nothing.
+
+**Picking ran once per input event, and a pick walks the whole scene.** Not the reported symptom
+-- both device captures are still and `hover picking` reads 0.00 on each -- but it was the
+largest cost in the build by a wide margin and it is what a reader meets the moment they touch
+anything. `pickNearest` walks every live slot doing full multivector geometry: **11.4 ms p50 over
+1,024 objects against 0.2 ms over five**, so it is linear in what the scene holds. It was called
+from the event handlers, and a pointer or trackpad reports faster than the display refreshes.
+
+  The wheel was the worst of it, because the cost is not obvious from the call: each notch
+dollies, `dollyAtCursor` asks `anchorZoomAt` what the cursor is over, and that is a full pick.
+Six notches in a frame -- an ordinary trackpad -- measured **83.8 ms of picking on one frame**,
+for a 136 ms gap. The handler sums its travel now and the frame loop applies one dolly, which is
+the *same* zoom rather than an approximation: the factor is `exp(k·Σdelta)`, so the product of
+the notches and the exponential of their sum are the same number, confirmed to four decimals and
+on the round trip back out. Pointer motion marks hover stale and the frame loop picks once, after
+`nimDriveHeld` so the camera is where the frame will draw it. Three paths still pick inside their
+own handler because they must answer before it returns: `pointerdown`, a touch-down and
+`handleTap` are what `nimBeginDrag`, `slot_touch_down` and selection are decided from.
+
+  **Then the pick stopped placing objects in order to rank them.** `placeObject` already answers
+what an object is and where, from the algebra alone, and the browser holds a frame's worth on
+`scene.revision`; the pick was asking `position`, `positionAnchor`, `direction`, `frame` and
+`spanPerpendicular` all over again, per live slot, per event. It takes the placements now and
+dispatches on `Placed.kind`, so it ranks what was drawn off one derivation rather than two that
+agreed only by care. The parameter is optional and empty means derive per slot, which is the
+desktop path and every case in the suite. Two semantics the kinds do not carry alone are kept
+explicitly: a finite plane the algebra can span no frame for shares `PlaneEverywhere` with the
+sky and is still not pickable, and a direction point is still picked out at the horizon, where
+the eye rather than the algebra puts it.
+
+  **A sixth sighting of the `nimCopy` trap, and this one produced a rule.**
+`scene.geometryOf` returned by value, so on the JS backend every call allocated a
+`Float64Array(16)` and `nimCopy`d the field into it -- once per live slot per pick, which put
+`nimCopy` and `nimCopyAux` at **19.8%** of the pick's profile. It hands back a `lent` view now.
+The rule the experiment produced, confirmed by compiling a reduced case and reading the output:
+**`lent` removes the copy only where the result is never bound** -- `let g = scene.geometryOf(s)`
+puts the `nimCopy` straight back, so a caller wanting the saving must read the call inline. The
+walk uses aliases for both the geometry and the placement for that reason, and the conditional
+alias choosing between a held placement and a derived one was checked in the generated JavaScript
+too: it compiles to a reference, not a copy. Removing that one copy alone moved nothing
+measurable -- the algebra's own copies dominate -- and it is the placement cache above that took
+the time out.
+
+  **The pick answers identically**: 4,914 cursor positions across three camera placements over
+the 1,024-object demo, not one slot different, before and after both changes. A screenshot would
+not have caught a wrong answer; a slot-for-slot map does.
+
+  **Measured on the demo, 1,024 objects:**
+
+| | before | after |
+|---|---|---|
+| one pick | 11.4 ms p50, 28.3 p95 | **3.9**, 10.4 |
+| wheel zoom, six notches a frame | 83.8 ms/frame, 136 ms gap | **4.4**, 55 ms |
+| a drag's hover, two moves a frame | 25.8 ms/frame | **4.2** |
+| frame while orbiting, median | 62.5 ms | **54.4** |
+
 **The driven checks measure the debug lattice from one check onward.** The check that proves
 the debug layer draws more than the picture switches it on with `chip.click()` and never
 switches it back, so every later frame drawn through the real loop carries ~1,650 lattice
