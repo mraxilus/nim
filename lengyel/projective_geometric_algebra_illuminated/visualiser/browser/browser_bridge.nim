@@ -929,6 +929,25 @@ proc nimOverlayMetrics(): seq[float32] {.exportc.} =
 
 
 
+proc ensurePlaced() =
+  ## Refresh `g_placed` -- the whole placing side for every live slot -- where the scene
+  ## itself has moved since it was last filled.
+  ##   **The placing side reads no camera**, so a camera move never reaches this; only an
+  ## edit does. An edit re-places every live slot rather than just the one that changed,
+  ## the revision being the scene's rather than a slot's, which costs one frame what every
+  ## frame used to cost.
+  ##   Called by the frame build and by the hover pick, which since the pick moved into the
+  ## frame loop can run before the build on a frame where the scene has just changed --
+  ## so whichever of the two comes first fills it and the other finds it ready.
+  if g_placed_revision == g_scene.revision: return
+  g_placed_revision = g_scene.revision
+  for slot in 0 ..< g_scene.bound:
+    if g_scene.isAlive(slot):
+      g_placed[slot] = placeObject(
+        g_scene.geometryOf(slot), g_scene.anchorOverrideAt(slot),
+      )
+
+
 proc ensureViewOverlay(width, height: int) =
   ## Refresh the draw extent and view-projection the overlay calls share --
   ## `g_scale_overlay` and `g_vp_overlay` -- deriving them only when the camera or the
@@ -977,9 +996,12 @@ proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
   # Through the overlay cache: a wheel arrives in bursts, and each notch was deriving a
   #   fresh extent and matrix for a camera that only changes as a *result* of the notch.
   ensureViewOverlay(int(width), int(height))
+  # And through the frame's own placements, for the same reason: `dollyAtCursor` asks
+  #   `anchorZoomAt` what the cursor is over, which is a full pick.
+  ensurePlaced()
   g_interaction.dollyAtCursor(
     g_camera, g_scene, float(factor), g_scale_overlay, g_vp_overlay,
-    int(width), int(height),
+    int(width), int(height), g_placed,
   )
 
 
@@ -1091,9 +1113,14 @@ proc nimUpdateHover(width, height: cint) {.exportc.} =
   #   while the camera moves. The cache's key is the placement and viewport, exactly the
   #   inputs a pick depends on.
   ensureViewOverlay(int(width), int(height))
+  # Through the frame's own placements, so the pick ranks what was drawn rather than a
+  #   second derivation of it -- and stops running the placing side per live slot per
+  #   pick; see `picking.pickNearest`. `ensurePlaced` first, because since the pick moved
+  #   into the frame loop it can be the first of the two to run after an edit.
+  ensurePlaced()
   interaction.updateHover(
     g_interaction, g_scene, g_camera, g_scale_overlay, g_vp_overlay,
-    int(width), int(height),
+    int(width), int(height), g_placed,
   )
   recordThisFrame().ms_hover_pick += nowMilliseconds() - ms_entered_hover
 
@@ -2219,17 +2246,9 @@ proc nimBuildFrame(
     cost.count_sky = g_counts_scene.count_sky
     cost.count_ghost = g_counts_scene.count_ghost
     cost.count_selected = g_counts_scene.count_selected
-  # **The placement cache, refreshed only where the scene itself moved.** This is the whole
-  #   placing side for every slot, and it is what a camera move no longer pays for. An edit
-  #   re-places every live slot rather than just the one that changed -- the revision is the
-  #   scene's, not a slot's -- which costs one frame what every frame used to cost.
-  if g_placed_revision != g_scene.revision:
-    g_placed_revision = g_scene.revision
-    for slot in 0 ..< g_scene.bound:
-      if g_scene.isAlive(slot):
-        g_placed[slot] = placeObject(
-          g_scene.geometryOf(slot), g_scene.anchorOverrideAt(slot),
-        )
+  # The placement cache, refreshed only where the scene itself moved; see `ensurePlaced`.
+  #   It is what a camera move no longer pays for, here or in the pick.
+  ensurePlaced()
 
   if not is_scene_held:
     clearMeshes(g_meshes)

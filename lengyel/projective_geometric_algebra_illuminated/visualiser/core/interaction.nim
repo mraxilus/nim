@@ -755,7 +755,7 @@ func isMovingCamera*(interaction: Interaction): bool =
 
 proc updateHover*(
   interaction: var Interaction; scene: Scene; camera: Camera; scale: DrawExtent;
-  view_projection: Matrix4; width, height: int
+  view_projection: Matrix4; width, height: int; placed: openArray[Placed] = []
 ) =
   ## Recompute item nearest cursor, so overlay and drag-start agree on what stands under it.
   ##   **Nothing is hovered while the camera is moving.** Hover is recomputed from the cursor
@@ -765,7 +765,9 @@ proc updateHover*(
   ##   comes back the frame it ends.
   interaction.index_hover =
     if interaction.is_enabled and not interaction.isMovingCamera:
-      pickNearest(scene, camera, scale, view_projection, width, height, interaction.cursor)
+      pickNearest(
+        scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
+      )
     else:
       none(int)
   # Noted here because this is where the scene is in hand; see `is_hover_backdrop`.
@@ -779,7 +781,8 @@ proc updateHover*(
 
 proc dollyAtCursor*(
   interaction: Interaction; camera: var Camera; scene: Scene; factor: float;
-  scale: DrawExtent; view_projection: Matrix4; width, height: int
+  scale: DrawExtent; view_projection: Matrix4; width, height: int;
+  placed: openArray[Placed] = []
 ) =
   ## Zoom the camera by `factor`, toward whatever the cursor is over.
   ##   The one statement of what a wheel notch does, so both front-ends and a pinch all
@@ -793,7 +796,7 @@ proc dollyAtCursor*(
   # The caller's extent and matrix, not fresh derivations per wheel notch; see
   #   `picking.anchorZoomAt`'s own note.
   let anchor = anchorZoomAt(
-    scene, camera, scale, view_projection, width, height, interaction.cursor,
+    scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
   )
   if anchor.isNone: camera.dolly(factor)
   else: camera.dollyToward(factor, anchor.get)

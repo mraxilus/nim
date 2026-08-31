@@ -2945,6 +2945,99 @@ report(
   `${tick_writes.worst} text writes at worst over ${tick_writes.ticks} ticks, ` +
     `${tick_writes.rows} rows on the tree`,
 );
+// **The figures on the slow pass are redrawn once a second, not five times.** The
+// exceedance curve covers 1,024 frames and the sparkline and ring medians four seconds:
+// none of them can change in a fifth of a second, and redrawing them at the panel's own
+// rate was half the tick. Counted rather than timed -- a call count cannot flake.
+const cadence_tick = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  const original_curve = globalThis.drawExceedance;
+  let curves = 0;
+  globalThis.drawExceedance = function (...a) {
+    curves += 1; return original_curve.apply(this, a);
+  };
+  const original_tick = globalThis.refreshDiagnostics;
+  let ticks = 0;
+  globalThis.refreshDiagnostics = function (...a) {
+    ticks += 1; return original_tick.apply(this, a);
+  };
+  await wait(3000);
+  const open = { ticks, curves };
+  // And with the section collapsed inside an open drawer, the whole tick is skipped: both
+  //   canvases used to fall back to a made-up 300-pixel width and draw for nobody.
+  document.querySelector('.section[data-section="diagnostics"]').classList.remove('open');
+  ticks = 0; curves = 0;
+  await wait(1500);
+  const collapsed = { ticks, curves };
+  document.querySelector('.section[data-section="diagnostics"]').classList.add('open');
+  globalThis.drawExceedance = original_curve;
+  globalThis.refreshDiagnostics = original_tick;
+  return { open, collapsed };
+});
+report(
+  'the panel redraws its four- and seventeen-second figures on their own slower clock',
+  cadence_tick.open.ticks >= 8 && cadence_tick.open.curves > 0 &&
+    cadence_tick.open.curves * 3 <= cadence_tick.open.ticks,
+  `${cadence_tick.open.curves} curve redraws over ${cadence_tick.open.ticks} ticks`,
+);
+report(
+  'and a collapsed diagnostics section costs the tick nothing at all',
+  cadence_tick.collapsed.curves === 0,
+  `${cadence_tick.collapsed.curves} curve redraws over ` +
+    `${cadence_tick.collapsed.ticks} ticks with the section shut`,
+);
+
+// **One pick and one dolly a frame, whatever the pointer reported.** `pickNearest` walks
+// every live slot, so an answer computed per input event and thrown away is the most
+// expensive thing a pointer can ask for; a trackpad reports several wheel notches between
+// two frames and a mouse several moves.
+const per_frame = await page.evaluate(async () => {
+  const gl = document.getElementById('gl');
+  const r = gl.getBoundingClientRect();
+  const cx = r.left + r.width * 0.5, cy = r.top + r.height * 0.5;
+  let picks = 0, dollies = 0;
+  const original_hover = globalThis.nimUpdateHover;
+  globalThis.nimUpdateHover = function (...a) {
+    picks += 1; return original_hover.apply(this, a);
+  };
+  const original_dolly = globalThis.nimCameraDollyAt;
+  globalThis.nimCameraDollyAt = function (...a) {
+    dollies += 1; return original_dolly.apply(this, a);
+  };
+  const send = (type, x, y, buttons) => gl.dispatchEvent(new PointerEvent(type, {
+    pointerId: 1, pointerType: 'mouse', isPrimary: true, bubbles: true, cancelable: true,
+    clientX: x, clientY: y, buttons, button: buttons === 0 ? -1 : 0 }));
+  send('pointerdown', cx, cy, 1);
+  picks = 0; dollies = 0; // The press picks inside its own handler, by design.
+  let frames = 0;
+  await new Promise((resolve) => {
+    const step = () => {
+      // Six of each a frame, which is an ordinary trackpad against a 60 Hz display.
+      //   All the notches one way: a frame's travel that sums to nothing is no zoom, and
+      //   the frame loop rightly does not spend a pick on it.
+      for (let k = 0; k < 6; k += 1) {
+        send('pointermove', cx + k * 3, cy + k * 2, 1);
+        gl.dispatchEvent(new WheelEvent('wheel', { deltaY: frames % 2 ? 6 : -6,
+          clientX: cx, clientY: cy, bubbles: true, cancelable: true }));
+      }
+      frames += 1;
+      if (frames < 30) requestAnimationFrame(step); else requestAnimationFrame(resolve);
+    };
+    requestAnimationFrame(step);
+  });
+  send('pointerup', cx, cy, 0);
+  globalThis.nimUpdateHover = original_hover;
+  globalThis.nimCameraDollyAt = original_dolly;
+  return { frames, picks, dollies, events: frames * 6 };
+});
+report(
+  'a burst of pointer and wheel events costs one pick and one dolly a frame, not one each',
+  per_frame.picks <= per_frame.frames + 2 && per_frame.dollies <= per_frame.frames + 2 &&
+    per_frame.picks > 0 && per_frame.dollies > 0,
+  `${per_frame.events} moves and ${per_frame.events} notches over ${per_frame.frames} ` +
+    `frames drew ${per_frame.picks} picks and ${per_frame.dollies} dollies`,
+);
+
 await page.evaluate(() => {
   if (document.getElementById('drawer').classList.contains('open')) {
     document.getElementById('btn-drawer').click();

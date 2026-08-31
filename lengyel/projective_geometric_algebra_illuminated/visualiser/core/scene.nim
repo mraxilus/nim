@@ -653,12 +653,23 @@ func anchorOverride*(item: Item): Option[Position] = item.scene.anchor_overrides
   ## specifically than its own support does; see `creationAnchor`.
 
 
-func geometryOf*(scene: Scene; slot: int): Multivector =
-  ## Read item's geometry by value, by slot, without needing a mutable scene.
+func geometryOf*(scene: Scene; slot: int): lent Multivector =
+  ## Read item's geometry in place, by slot, without needing a mutable scene.
   ##   Beside `geometryAt` below for the same reason `isVisible` sits beside `setVisible`:
   ##   a reader that only wants to look at an item should not have to hold it mutably, and
   ##   a `var`-returning accessor used for reading is the pattern that miscompiled under
-  ##   the JS backend once already.
+  ##   the JS backend once already. `lent` is the read-only half of that pair and is safe
+  ##   where `var` was not: a borrow cannot be written through.
+  ##   **`lent` only pays where the result is never bound.** Returning by value made this
+  ##   allocate a fresh `Multivector` and `nimCopy` the field into it on the JS backend,
+  ##   once per call -- and `picking.pickNearest` calls it once per live slot, which put
+  ##   `nimCopy` and `nimCopyAux` at a fifth of a hover pick's whole profile. Confirmed in
+  ##   the generated JavaScript that `lent` removes that copy **and that binding the result
+  ##   to a `let` puts it straight back**, so a caller that wants the saving must use the
+  ##   call inline, in the expression that reads it. A caller that genuinely wants its own
+  ##   copy binds it and gets one, exactly as before.
+  ##   The borrow lives only as long as the scene is unchanged, which the compiler enforces
+  ##   for what it can see; do not hold one across an edit.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.geometries[slot]
 

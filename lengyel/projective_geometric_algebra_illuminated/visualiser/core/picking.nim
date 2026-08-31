@@ -337,9 +337,21 @@ func rayPlaneHit(
 
 proc pickNearest*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
-  width, height: int; cursor: ScreenPosition
+  width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
+  ##   **`placed` is the frame's own placements, where the caller kept them.**
+  ##   `tessellate.placeObject` already answers what an object is and where, from the
+  ##   algebra and nothing else, and a front-end holding a frame's worth of those answers
+  ##   -- `browser_bridge.g_placed`, kept on the scene's revision -- can hand them over
+  ##   instead of having this walk ask the same questions again. Two things come of that.
+  ##   The pick then ranks *what was drawn*, off one derivation rather than two that agree
+  ##   only by care; and it stops running `position`, `positionAnchor`, `direction`,
+  ##   `frame` and `spanPerpendicular` once per live slot per pointer event, which is what
+  ##   made a pick over a thousand objects cost 11 ms.
+  ##   Pass nothing and every slot is placed here instead, exactly as before -- which is
+  ##   the desktop path and every case in the suite. A partial array is treated as none:
+  ##   a cache is a frame's whole answer or it is not one.
   ##   None where nothing visible falls within its shape's pick radius.
   ##   **Every drawn shape is pickable, horizon or not**, ranked point, finite line,
   ##   horizon line, finite plane, horizon plane. Thin things beat wide ones, and the sky
@@ -382,66 +394,83 @@ proc pickNearest*(
   #   backend an `Item` holds its `Scene` by value, so `pairs` copies the whole scene
   #   once per live slot -- the trap `nimBuildFrame`'s walk documents, found again here
   #   costing most of each hover pick, on a proc that runs per pointer move.
+  # Whether the caller brought a whole frame's placements; see the doc comment. Asked once,
+  #   because it cannot change part-way down a walk.
+  let is_placed_held = placed.len >= ITEMS_MAX
+  var placed_here: Placed # Filled per slot only where the caller brought none.
+
   for slot in 0 ..< ITEMS_MAX:
     if not scene.isAlive(slot) or not scene.isVisible(slot): continue
-    let geometry = scene.geometryOf(slot)
-    let shape = shape(geometry)
-    if shape.isNone: continue
+    if not is_placed_held:
+      placed_here = placeObject(scene.geometryOf(slot), scene.anchorOverrideAt(slot))
+    # **Read in place, never bound.** A `Placed` holds five multivectors and a
+    #   `Multivector` sixteen floats, and binding either to a `let` deep-copies it under
+    #   the JS backend -- the trap `emitObject`'s `var` parameter documents, and the reason
+    #   `scene.geometryOf` hands back a borrow rather than a value. Both aliases expand to
+    #   the read at each use, so the branches below say what they always said and build
+    #   nothing; confirmed in the generated JavaScript that neither copies.
+    template place: untyped = (if is_placed_held: placed[slot] else: placed_here)
+    template geometry: untyped = scene.geometryOf(slot)
 
-    case shape.get
-    of Shape.Point:
-      let anchor = anchorFor(geometry, scale)
-      if anchor.isNone: continue
-      let screen = projectToScreen(view_projection, width, height, anchor.get)
+    case place.kind
+    of PlacedKind.Nothing: continue
+
+    of PlacedKind.PointAt:
+      let screen = projectToScreen(view_projection, width, height, place.at)
       if not screen.isInFront: continue
       let distance = hypot(cursor.x - screen.x, cursor.y - screen.y)
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
-    of Shape.Line:
-      if geometry.isHorizon:
-        # Drawn as a great circle on the sky, so tested against that circle -- sampled the
-        #   way `tessellate.addGreatCircle` samples it, so a hit agrees with what is drawn, the
-        #   rule this module already follows for a finite line's two halves.
-        let normal = directionNormalHorizon(geometry)
-        if normal.isNone: continue
-        let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
-        if axes.isNone: continue
-        # Stepped off the same fixed table the drawn circle walks (see
-        #   `tessellate.addGreatCircle`): which plane the arms span is still the
-        #   algebra's answer above, and the ring itself is arithmetic -- it used to be
-        #   ninety-seven multivector sums per horizon candidate per pointer move, the
-        #   bulk of what a hover pick cost once the scene copies were gone.
-        let
-          (axis_first, axis_second) = axes.get
-          arm_first = scale.radius_horizon*axis_first
-          arm_second = scale.radius_horizon*axis_second
-        var
-          distance_nearest = Inf
-          previous = none(ScreenPosition)
-        for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
-          let entry = UNIT_CIRCLE_RIM[i mod SEGMENTS_CIRCLE_HORIZON]
-          let here = projectToScreen(
-            view_projection, width, height,
-            onCircleAt(scale.eye, arm_first, arm_second, entry.cos_angle, entry.sin_angle),
-          )
-          if here.isInFront and previous.isSome:
-            distance_nearest = min(
-              distance_nearest, distanceToSegment(cursor, previous.get, here)
-            )
-          previous = if here.isInFront: some(here) else: none(ScreenPosition)
-        if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
-        continue
+    of PlacedKind.PointToward:
+      # A direction point is drawn as a star out at the horizon, so it is picked there --
+      #   the one part of a point's anchor that depends on the eye, which is why it is not
+      #   in the placement. Matches `tessellate.anchorFor`'s own second branch exactly.
+      let star = position(add(
+        scale.eye_point, wedge(scale.radius_horizon, toMultivector(place.toward)),
+      ))
+      if star.isNone: continue
+      let screen = projectToScreen(view_projection, width, height, star.get)
+      if not screen.isInFront: continue
+      let distance = hypot(cursor.x - screen.x, cursor.y - screen.y)
+      if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
+    of PlacedKind.LineAcross:
+      # Drawn as a great circle on the sky, so tested against that circle -- sampled the
+      #   way `tessellate.addGreatCircle` samples it, so a hit agrees with what is drawn,
+      #   the rule this module already follows for a finite line's two halves.
+      #   Stepped off the same fixed table the drawn circle walks: which plane the arms
+      #   span is the placement's answer -- `placeObject` ran `spanPerpendicular` for it --
+      #   and the ring itself is arithmetic. It used to be ninety-seven multivector sums
+      #   per horizon candidate per pointer move, the bulk of what a hover pick cost once
+      #   the scene copies were gone.
+      let
+        arm_first = scale.radius_horizon*place.axes.axis_first
+        arm_second = scale.radius_horizon*place.axes.axis_second
+      var
+        distance_nearest = Inf
+        previous = none(ScreenPosition)
+      for i in 0 .. SEGMENTS_CIRCLE_HORIZON:
+        let entry = UNIT_CIRCLE_RIM[i mod SEGMENTS_CIRCLE_HORIZON]
+        let here = projectToScreen(
+          view_projection, width, height,
+          onCircleAt(scale.eye, arm_first, arm_second, entry.cos_angle, entry.sin_angle),
+        )
+        if here.isInFront and previous.isSome:
+          distance_nearest = min(
+            distance_nearest, distanceToSegment(cursor, previous.get, here)
+          )
+        previous = if here.isInFront: some(here) else: none(ScreenPosition)
+      if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
+
+    of PlacedKind.LineThrough:
       # Test both halves `tessellate.addLine` draws -- support out to each of the line's own
       #   two vanishing points. Testing one would leave the other half of a line on
       #   screen unpickable, and which half that is changes as the camera orbits.
-      let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
-      if anchor.isNone or axis.isNone: continue
       var distance_nearest = Inf
       for reach in [scale.radius_horizon, -scale.radius_horizon]:
         let clipped = clipToEyeSide(
-          anchor.get,
-          pointFrom(add(scale.eye_point, wedge(reach, toMultivector(axis.get)))),
+          place.at,
+          pointFrom(add(scale.eye_point, wedge(reach, toMultivector(place.toward)))),
           scale.plane_near,
         )
         if clipped.isNone: continue
@@ -453,29 +482,30 @@ proc pickNearest*(
         distance_nearest = min(distance_nearest, distanceToSegment(cursor, tail, head))
       if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
 
-    of Shape.Plane:
-      if geometry.isHorizon:
-        # The whole sky, drawn as a dome filling every direction, so every ray meets it and
-        #   there is no distance to measure -- only a rank. Last of all, so anything else
-        #   under the cursor wins and this is what a cursor over nothing else finds.
-        consider(4, 0.0)
-        continue
-
-      let
-        override = scene.anchorOverrideAt(slot)
-        anchor = if override.isSome: override else: positionAnchor(geometry)
+    of PlacedKind.PlaneOn:
       # The frame guard survives the hit test no longer taking the axes: a plane the
-      #   algebra can span no frame for is one the disc was never drawn for either.
-      if anchor.isNone or frame(geometry).isNone: continue
-      let hit = rayPlaneHit(ray, scale.plane_eye, geometry, anchor.get, EXTENT_PLANE_F)
+      #   algebra can span no frame for is one the disc was never drawn for either -- and
+      #   that is now said by the kind, since `placeObject` only reaches `PlaneOn` with
+      #   both an anchor and a frame in hand. The anchor carries the override with it,
+      #   which is where a plane's disc is actually centred.
+      let hit = rayPlaneHit(ray, scale.plane_eye, geometry, place.at, EXTENT_PLANE_F)
       if hit.isSome: consider(3, hit.get)
+
+    of PlacedKind.PlaneEverywhere:
+      # The whole sky, drawn as a dome filling every direction, so every ray meets it and
+      #   there is no distance to measure -- only a rank. Last of all, so anything else
+      #   under the cursor wins and this is what a cursor over nothing else finds.
+      #   **Asked of the geometry, not of the kind**: a finite plane whose support or frame
+      #   the algebra cannot give lands on this same kind, and it is not the sky -- it was
+      #   never drawn, so it is not pickable either.
+      if geometry.isHorizon: consider(4, 0.0)
 
   slot_best
 
 
 proc anchorZoomAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
-  width, height: int; cursor: ScreenPosition
+  width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
 ): Option[Position] =
   ## Solve the world point a zoom aimed at `cursor` should hold still: whatever finite
   ## object the cursor is over, else the ground under it, else the level the target sits
@@ -496,7 +526,9 @@ proc anchorZoomAt*(
   # The caller's own extent, not a derivation of this proc's: on the browser the wheel
   #   handler holds the overlay cache's extent for exactly this camera, and deriving a
   #   fresh one here ran `algebraFilled` and `camera.frame`'s joins per wheel notch.
-  let slot = pickNearest(scene, camera, scale, view_projection, width, height, cursor)
+  let slot = pickNearest(
+    scene, camera, scale, view_projection, width, height, cursor, placed,
+  )
   if slot.isSome:
     let
       frame_camera = camera.frame(scale.eye)
