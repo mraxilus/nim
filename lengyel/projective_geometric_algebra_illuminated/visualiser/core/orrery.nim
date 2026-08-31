@@ -10,7 +10,7 @@
 ## it really has at their real relative distances. Those come from `neighbourhood.nim`, a
 ## shipped snapshot of the NASA Exoplanet Archive; `PROVENANCE.md` records the query, the date
 ## and the acknowledgement, and says plainly what is checked and what is not.
-##   `{SOL}` is our own, hand-written and modelled the same way, at the origin the rest are
+##   `SOL` is our own, hand-written and modelled the same way, at the origin the rest are
 ## measured from. Nothing stands at `POSITION_ORRERY`'s coordinate but Sol itself.
 ##
 ##   |------------------|-------------------------------------|--------------------------|
@@ -31,7 +31,7 @@
 ## ecliptic gives; Luna's ring is tipped out of it, so `att(earth ∧ luna)` sits off that line
 ## and spans the plane at horizon with it. See the horizon block in `constructOrrery`.
 ##
-## `{ITEMS_ORRERY}` items on the nose: **886 points, 2 lines, 132 planes and 4 at horizon.**
+## `ITEMS_ORRERY` items on the nose: **886 points, 2 lines, 132 planes and 4 at horizon.**
 ## The total is folded from the tables and asserted, not hoped for.
 ##
 ## **Colour says what a thing is**, not which system it belongs to -- see `lut_role_to_ink`.
