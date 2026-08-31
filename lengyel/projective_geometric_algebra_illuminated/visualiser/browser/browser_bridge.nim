@@ -60,6 +60,44 @@ var g_scratch: DrawScratch
 
 
 proc performanceNow(): float {.importjs: "performance.now()".}
+
+
+type
+  FlatBuffer = ref object of RootObj
+    ## Opaque handle on a JS `Float32Array`, never constructed in Nim.
+    ##   **The page's own memory, filled from here.** A `seq[float32]` on this backend is a
+    ## plain JS `Array` of boxed doubles, so every flat buffer had to be converted element by
+    ## element on its way into the staging `Float32Array` that `gl.bufferData` actually
+    ## wants -- measured at 1.84 ms a frame purely as representation, for bytes nothing else
+    ## read. Written straight into the typed array, that pass is gone: `uploadBuffer` sees a
+    ## `Float32Array` and hands it to the driver untouched.
+    ##   The narrowing to `float32` moves from the upload to the fill and the uploaded bytes
+    ## are identical; nothing else about the arithmetic changes.
+
+  FlatFloats = object
+    ## A flat buffer at its full capacity, and how much of it this frame filled.
+    ##   Allocated once at the cap the matching mesh is bounded by and never grown, which is
+    ## the fixed-capacity rule `mesh.nim`'s own caps already state; `setLen` on a sequence
+    ## was doing the same thing one indirection away.
+    values: FlatBuffer
+    used: int
+
+proc newFlatBuffer(count: int): FlatBuffer {.importjs: "new Float32Array(#)".}
+proc `[]=`(buffer: FlatBuffer; index: int; value: float32) {.importjs: "#[#] = #".}
+proc prefix(buffer: FlatBuffer; count: int): FlatBuffer {.importjs: "#.subarray(0, #)".}
+  ## Report the first `count` entries as a view -- no copy, and `instanceof Float32Array`
+  ## still holds of it, which is what lets `glue.js` upload it with nothing in between.
+
+proc initFlatFloats(capacity: int): FlatFloats =
+  ## Reserve a flat buffer of `capacity` floats, empty.
+  FlatFloats(values: newFlatBuffer(capacity), used: 0)
+
+proc view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
+  ## Report just the part this frame filled, for the upload.
+  ##   One small view object a buffer a frame -- seven of them -- against the 811 KB of
+  ## element-by-element conversion it replaces.
+
+proc `[]=`(flat: var FlatFloats; index: int; value: float32) = flat.values[index] = value
   ## Read the page's own monotonic clock, in milliseconds.
   ##   The bridge's one piece of interop beyond its exports: everything else takes the
   ##   frame's `now` as a parameter, but the per-phase draw timings the diagnostics tab
@@ -247,16 +285,21 @@ var
   #   the collector for data that lives exactly one frame. The consumer uploads or reads
   #   them within the same frame and holds nothing across two, which is what makes reuse
   #   sound; `setLen` on a sequence that has already grown adjusts length, not storage.
-  g_flat_ribbon, g_flat_point, g_flat_furniture, g_flat_ring: seq[float32]
-  g_flat_disc, g_flat_dome, g_flat_runs: seq[float32]
+  g_flat_ribbon = initFlatFloats(RIBBONS_MAX*16)
+  g_flat_furniture = initFlatFloats(RIBBONS_MAX*16)
+  g_flat_point = initFlatFloats(VERTICES_MAX*7)
+  g_flat_ring = initFlatFloats(RINGS_MAX*14)
+  g_flat_disc = initFlatFloats(DISCS_MAX*13)
+  g_flat_dome = initFlatFloats(DOMES_MAX*8)
+  g_flat_runs = initFlatFloats((DISCS_MAX + DOMES_MAX)*3)
   g_flat_view: seq[float32] = newSeq[float32](16)
 
 
-proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var seq[float32]) =
+proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var FlatFloats) =
   ## Interleave one frame's ribbon records for the instanced upload, sixteen floats each:
   ## tail xyz, head xyz, width, fog, tail rgba, head rgba -- `RibbonRecord`'s own field
   ## order, which the corner-and-divisor attribute setup in `glue.js` reads back apart.
-  dest.setLen(ribbons.count * 16)
+  dest.used = ribbons.count * 16
   for i in 0 ..< ribbons.count:
     let r = ribbons.records[i]
     dest[16*i + 0] = r.tail_x
@@ -277,11 +320,11 @@ proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var seq[float32]) =
     dest[16*i + 15] = r.head_alpha
 
 
-proc flattenDiscsInto(discs: DiscMesh; dest: var seq[float32]) =
+proc flattenDiscsInto(discs: DiscMesh; dest: var FlatFloats) =
   ## Interleave one frame's disc records for the instanced upload, thirteen floats each:
   ## centre xyz, first arm xyz, second arm xyz, fill rgba -- `DiscRecord`'s own field
   ## order, which the corner-and-divisor attribute setup in `glue.js` reads back apart.
-  dest.setLen(discs.count * 13)
+  dest.used = discs.count * 13
   for i in 0 ..< discs.count:
     let r = discs.records[i]
     dest[13*i + 0] = r.centre_x
@@ -299,11 +342,11 @@ proc flattenDiscsInto(discs: DiscMesh; dest: var seq[float32]) =
     dest[13*i + 12] = r.fill_alpha
 
 
-proc flattenRingsInto(rings: RingMesh; dest: var seq[float32]) =
+proc flattenRingsInto(rings: RingMesh; dest: var FlatFloats) =
   ## Interleave one frame's ring records for the instanced upload, fourteen floats each:
   ## `DiscRecord`'s own thirteen in the same order, then the width -- so the ring and disc
   ## attribute setups in `glue.js` differ by exactly one trailing attribute.
-  dest.setLen(rings.count * 14)
+  dest.used = rings.count * 14
   for i in 0 ..< rings.count:
     let r = rings.records[i]
     dest[14*i + 0] = r.centre_x
@@ -322,10 +365,10 @@ proc flattenRingsInto(rings: RingMesh; dest: var seq[float32]) =
     dest[14*i + 13] = r.width
 
 
-proc flattenDomesInto(domes: DomeMesh; dest: var seq[float32]) =
+proc flattenDomesInto(domes: DomeMesh; dest: var FlatFloats) =
   ## Interleave one frame's dome records for the instanced upload, eight floats each:
   ## centre xyz, radius, rgba -- `DomeRecord`'s own field order.
-  dest.setLen(domes.count * 8)
+  dest.used = domes.count * 8
   for i in 0 ..< domes.count:
     let r = domes.records[i]
     dest[8*i + 0] = r.centre_x
@@ -338,9 +381,9 @@ proc flattenDomesInto(domes: DomeMesh; dest: var seq[float32]) =
     dest[8*i + 7] = r.alpha
 
 
-proc flattenWashRunsInto(washes: WashRuns; dest: var seq[float32]) =
+proc flattenWashRunsInto(washes: WashRuns; dest: var FlatFloats) =
   ## Interleave the wash draw order, three floats a run: kind ordinal, first, count.
-  dest.setLen(washes.count * 3)
+  dest.used = washes.count * 3
   for i in 0 ..< washes.count:
     dest[3*i + 0] = float32(ord(washes.runs[i].kind))
     dest[3*i + 1] = float32(washes.runs[i].first)
@@ -356,10 +399,10 @@ proc stampBorn(slot: int; born: float) =
   g_born_last = max(g_born_last, born)
 
 
-proc flattenInto(mesh: Mesh; dest: var seq[float32]) =
+proc flattenInto(mesh: Mesh; dest: var FlatFloats) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`,
   ## ready for a caller to hand straight to `gl.bufferData`.
-  dest.setLen(mesh.count_vertices * 7)
+  dest.used = mesh.count_vertices * 7
   for i in 0 ..< mesh.count_vertices:
     let v = mesh.vertices[i]
     dest[7*i + 0] = v.x
@@ -1856,21 +1899,21 @@ proc nimSceneAddRaw(
 type FrameData = object
   ## Hold one frame's worth of vertex data plus the transform it is drawn through --
   ## everything a caller needs to issue this frame's `gl.drawArrays` calls.
-  ribbon_verts, point_verts: seq[float32]
-  ring_records: seq[float32] ## Fourteen floats a ring -- `mesh.RingRecord`'s own field
+  ribbon_verts, point_verts: FlatBuffer
+  ring_records: FlatBuffer ## Fourteen floats a ring -- `mesh.RingRecord`'s own field
     ## order: a disc's thirteen, then the width. **A plane's rim used to arrive here as
     ## `SEGMENTS_CIRCLE_HORIZON` ribbon records**, which on a scene of 132 planes was 99.2%
     ## of all ribbon traffic and 45 ms of a 53 ms frame; it is one record now.
-  disc_records: seq[float32] ## Thirteen floats a disc -- `mesh.DiscRecord`'s own field
+  disc_records: FlatBuffer ## Thirteen floats a disc -- `mesh.DiscRecord`'s own field
     ## order -- for the instanced fan draw; see that type for what the shader does.
-  dome_records: seq[float32] ## Eight floats a dome -- `mesh.DomeRecord`'s own field
+  dome_records: FlatBuffer ## Eight floats a dome -- `mesh.DomeRecord`'s own field
     ## order -- for the instanced sphere draw.
-  wash_runs: seq[float32] ## The translucent pass's draw order, three floats a run:
+  wash_runs: FlatBuffer ## The translucent pass's draw order, three floats a run:
     ## kind (`mesh.WashKind`'s ordinal), first record, record count. Walked in sequence
     ## by the wash pass so two washes still blend in the order the scene emitted them;
     ## see `mesh.WashRuns`.
   view_projection: seq[float32]
-  furn_ribbon_verts: seq[float32] ## Ground grid and world axes alone -- drawn first, and
+  furn_ribbon_verts: FlatBuffer ## Ground grid and world axes alone -- drawn first, and
     ## already built at their own thinner width (see `mesh.WIDTH_LINE_FURNITURE`), since a
     ## ribbon carries its width as geometry rather than as a draw-call setting.
     ## **Empty where `is_furniture_held` is set**, which is not "no furniture" but "the
@@ -2281,19 +2324,19 @@ proc nimBuildFrame(
     flattenWashRunsInto(g_meshes.washes, g_flat_runs)
     flattenRibbonsInto(g_meshes.ribbons, g_flat_ribbon)
     flattenInto(g_meshes.points, g_flat_point)
-  if is_furniture_held: g_flat_furniture.setLen(0)
+  if is_furniture_held: g_flat_furniture.used = 0
   else: flattenRibbonsInto(g_meshes_furniture.ribbons, g_flat_furniture)
   let ms_done = performanceNow()
 
   var data = FrameData(
-    ring_records: g_flat_ring,
-    disc_records: g_flat_disc,
-    dome_records: g_flat_dome,
-    wash_runs: g_flat_runs,
-    ribbon_verts: g_flat_ribbon,
-    point_verts: g_flat_point,
+    ring_records: g_flat_ring.view,
+    disc_records: g_flat_disc.view,
+    dome_records: g_flat_dome.view,
+    wash_runs: g_flat_runs.view,
+    ribbon_verts: g_flat_ribbon.view,
+    point_verts: g_flat_point.view,
     view_projection: g_flat_view,
-    furn_ribbon_verts: g_flat_furniture,
+    furn_ribbon_verts: g_flat_furniture.view,
     is_scene_held: is_scene_held,
     is_furniture_held: is_furniture_held,
     cam_eye_x: float32(scale.eye.x), cam_eye_y: float32(scale.eye.y),

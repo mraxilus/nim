@@ -2724,6 +2724,22 @@ because a still window records frames whose scene phase is legitimately zero and
 nothing there to divide -- the cost of drawing *while the view moves* is the case a reader
 waits on, and is what that check measures now.
 
+**The flat buffers are the page's own typed arrays, filled in place.** A `seq[float32]` on
+the JS backend is a plain `Array` of boxed doubles, so every buffer had to be converted
+element by element into the staging `Float32Array` that `gl.bufferData` wants -- a fourth
+pass over bytes nothing else read. `FlatBuffer` is a `Float32Array` behind three `importjs`
+lines, allocated once at the cap its mesh is bounded by and never grown; `flatten*Into` write
+into it unchanged (`dest[i] = v` compiles to the same indexed store), and each frame hands
+back a `subarray` view -- one small object a buffer, no copy. `uploadBuffer` lost its staging
+map and now refuses anything that is not a `Float32Array` rather than quietly copying it.
+About 1.4 MB of typed arrays, reserved the way every mesh cap in this project is; the boxed
+arrays they replace grew to their own high-water mark and cost more per element than that.
+  **Measured at 0.1 ms a frame, not the 1.84 ms the report attributed to it** -- because the
+ring record landed first and took the conversion's input from 204,352 floats a frame to about
+9,000. Recorded as measured rather than as predicted. What it buys at that size is not
+milliseconds but the class: the conversion scaled with the scene, so it would have come back
+linearly with the next rise in `ITEMS_MAX`, and now there is nothing to come back.
+
 **The 68 ms that remains is SwiftShader, not this page.** Worth stating plainly, because it
 is the difference between a bottleneck and a driver. Measured on the demo after both passes:
 `renderFrame` -- every upload and every draw call issued -- takes 0.9 ms, and the same call

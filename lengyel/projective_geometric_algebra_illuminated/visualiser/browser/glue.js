@@ -375,27 +375,20 @@ let count_point_held = null;
 // One mesh handed to the driver whole, ready to be drawn as one run or two. Separate
 // from drawing because the two runs go out in different passes (see the draw loop below),
 // and a mesh uploaded twice a frame would be the one real cost of that split.
-// One typed staging array per GL buffer, grown to its high-water mark and refilled in
-//   place: wrapping the bridge's array in a fresh Float32Array was an allocation per
-//   buffer per frame, for bytes that live exactly as long as the bufferData call.
-const staging_upload = new Map();
+// The bridge fills `Float32Array`s the page owns and hands back views on them, so there is
+//   nothing to convert here and nothing to stage: the driver reads the very memory the
+//   flatten wrote. A staging array used to sit here, refilled element by element from the
+//   boxed `Array` a `seq[float32]` is on the JS backend -- see `browser_bridge.FlatBuffer`
+//   for what that cost and why it is gone. Anything else reaching this is a mistake worth
+//   hearing about rather than silently copying around.
 function uploadBuffer(data, handle_buffer, floats_each) {
-  if (data.length === 0) return null;
-  let entries;
-  if (data instanceof Float32Array) {
-    entries = data;
-  } else {
-    let held = staging_upload.get(handle_buffer);
-    if (held === undefined || held.length < data.length) {
-      held = new Float32Array(data.length);
-      staging_upload.set(handle_buffer, held);
-    }
-    held.set(data);
-    entries = held.subarray(0, data.length);
+  if (!(data instanceof Float32Array)) {
+    throw new Error('uploadBuffer wants a Float32Array from the bridge, not ' + typeof data);
   }
+  if (data.length === 0) return null;
   gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, entries, gl.DYNAMIC_DRAW);
-  return entries.length / floats_each;
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  return data.length / floats_each;
 }
 
 // One run of an uploaded record buffer, drawn as instanced triangle pairs. `count_over`
