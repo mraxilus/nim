@@ -2254,6 +2254,61 @@ selection uses, so the demo cannot come to disagree with the rest of the build a
 "whole" means. `RADIUS_ORRERY` bounds the nearest `FRAMED_ORRERY` = 4 systems and is folded
 from the layout table; the other three stand beyond the opening frame on purpose, for a
 reader to find by pulling back. Azimuth is left where the reader had it.
+**The scene holds 1,024 objects, and the demo fills it with the real solar neighbourhood.**
+`scene.ITEMS_MAX` rose from 64. Every system in the demo but ours is a real star known to
+carry planets, standing at its real distance in its real direction, with the planets it really
+has — 331 systems out to **31.5 parsecs**, which is where the slots run out. It comes to
+exactly 1,024: **886 points, 2 lines, 132 planes, 4 at horizon.**
+
+  **Source, and what is and is not checked.** The table in `visualiser/core/neighbourhood.nim`
+is a snapshot of the **NASA Exoplanet Archive**, taken 2026-08-31 from its TAP service —
+`select hostname, pl_name, sy_dist, ra, dec, pl_orbsmax from ps where sy_dist < 35 and
+default_flag = 1`, fetched in distance bands because a single response was cut mid-stream. This
+research has made use of the NASA Exoplanet Archive, which is operated by the California
+Institute of Technology under contract with NASA under the Exoplanet Exploration Program.
+  Fetched once and shipped, the way `ramp.nim` ships a snapshot of a published colour map. A
+suite case checks that every star is drawn at the distance the table gives it — worst error
+under `TOLERANCE_SINGLE` — and that the table is ordered outward. **What is not checked is the
+table against the archive**: unlike `check_ramp`, no tool re-derives it, so a hand edit to
+`neighbourhood.nim` would pass. That gap is real and is stated rather than papered over; the
+tool that would close it is not written.
+
+  **Placement is a coordinate conversion, not a layout.** Right ascension and declination are
+a real direction and distance is a real length, which is exactly the `bearing`/`rise`/`reach`
+triple `sunOf` already took. `PARSECS_PER_UNIT` = 0.055 is the one number that turns the
+neighbourhood into a scene: Proxima lands 24 units from Sol, the outermost system 573.
+  Two things here are **not** claimed as data, and are marked as such at the code. Each
+neighbour's plane orientation (`lean`, `spin`) is spread from its own coordinates so the discs
+do not stack, and no orientation is being asserted. And a planet whose semi-major axis the
+archive does not carry — 49 of 544 — is placed by its order among its siblings; the table
+stores those as `0.0` rather than as a guess, so which they are is visible.
+
+  **Planet radii use the same logarithm Sol's do**, over a wider range: real semi-major axes in
+this table run from under a hundredth of an astronomical unit to tens, so `AU_NEIGHBOUR_NEAREST`
+starts the scale far below Mercury's and the result is clamped rather than extended, which is
+honest about the drawing being unable to separate a very close planet from its star.
+
+  **The capacity raise was not one constant.** Four capacities in `mesh.nim` are sized against
+`ITEMS_MAX`, each documenting its binding case as "a scene filled to `scene.ITEMS_MAX` with…",
+and every one of them was undersized at 1,024 — where overflow is a `doAssert`, so a dead page
+rather than a dropped triangle. `VERTICES_MAX` 1024 → 2048, `DISCS_MAX` and `DOMES_MAX` 192 →
+2176, `RIBBONS_MAX` 8192 → **131,072**. The last is the one with a price: 8.4 MB a mesh set,
+and `BYTES_MEMORY_TOTAL` counts two, so the binary's reported reservation grows about 17 MB.
+  **The prose link became a compile-time one.** `mesh` sits below `scene` in the import order
+and cannot name `ITEMS_MAX`, so the four caps were correct only because someone did the
+arithmetic by hand. `scene.nim` now carries a `static: doAssert` per cap, in the one module
+that can see both sides: raising the capacity again fails to *compile*.
+
+  **The watermark, so the ordinary scene pays nothing for the bigger one.** Slots are stable
+addresses, so anything reading by slot must sweep a range — and at 1,024 the frame's object
+walks tested a thousand slots to draw the five a fresh scene holds. `Scene.bound` is the
+highest slot ever occupied; it only rises, so walking to it is safe. The browser's two frame
+walks and its slot listing take it, and `scene.pairs` takes it too, which is the single edit
+that makes every desktop consumer cheap at once.
+  Two allocations went with it: `nimPoolCellColors` grew a 3,072-float sequence on a per-frame
+path and now fills a buffer it keeps, and the pool strip's 1,024 cells were re-styled every
+frame — each with its own `slice` — and now write only the cells whose colour changed.
+
 **Lines are scarce, and the slots they gave up bought a system and nine more bodies.** A
 line in this algebra is *infinite*: it is drawn out to the whole draw extent whatever two
 points made it, so fifteen of them crossed the entire frame at once and the scene read as line

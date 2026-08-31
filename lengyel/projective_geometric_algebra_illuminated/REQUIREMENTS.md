@@ -1076,6 +1076,22 @@ exercised, and a **ceiling**, so it cannot creep back one edit at a time. Cuttin
 a weakening of the stress case: the slots go into discs, which are the most expensive kind, and
 the plane floor rises to say so.
 
+**The demo models the real thing, and says what it does not know.** Its systems are real stars
+at real distances in real directions carrying their real planets, from a **named, dated,
+acknowledged source** shipped as a snapshot rather than fetched at run time. Where a quantity
+the source does not carry is nonetheless needed to draw something, it is **supplied visibly** —
+recorded in the table as absent and filled by a stated rule — never guessed into the data. What
+is verified and what is not is stated: a scene that asserts things about the world has to be
+honest about which of its assertions are checked.
+
+**Capacity is a number many things are sized against.** The drawing buffers are bounded by the
+worst case a full scene can produce, and overflowing one is fatal rather than degrading, so the
+link between the scene's capacity and those bounds must be **enforced by the compiler**, not by
+a comment — a module that cannot see the constant it is sized against cannot be trusted to stay
+sized against it. And capacity must not cost the ordinary case: anything that sweeps slots runs
+to the **highest slot ever used**, not to the ceiling, so a five-object scene stays a
+five-object scene however much room there is.
+
 **One cluster models a real arrangement**, named and recognisable, so the scene is not
 seven variations on an abstraction. Real quantities are kept as they are and compressed by a
 **stated function** where they must be — a faithful layout is not automatically a legible one —

@@ -2518,7 +2518,7 @@ const demo = await page.evaluate(() => {
 });
 report(
   'the demo button fills every slot the scene has',
-  demo.count === demo.capacity && demo.capacity >= 64,
+  demo.count === demo.capacity && demo.capacity >= 1024,
   `${demo.count} of ${demo.capacity} slots`,
 );
 // Every kind, and nothing that draws nothing. The mixed-grade case is the one worth naming:
@@ -2535,8 +2535,8 @@ const undrawn = Object.keys(demo.tally).filter((word) => !drawing.includes(word)
 report(
   'it carries every drawable kind, including one of each at horizon, and nothing blank',
   drawing.every((word) => (demo.tally[word] || 0) >= 1) && undrawn.length === 0 &&
-    demo.tally.plane >= 10 && demo.tally.line >= 3 && demo.tally.line <= 6 &&
-    demo.tally.point >= 30,
+    demo.tally.plane >= 120 && demo.tally.line >= 3 && demo.tally.line <= 4 &&
+    demo.tally.point >= 500,
   Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
 );
 // And the camera it leaves is standing back far enough to see what it just built: on the

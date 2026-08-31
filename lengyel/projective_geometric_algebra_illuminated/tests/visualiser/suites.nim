@@ -19,8 +19,8 @@ import std/[math, options, os, random, strformat, strutils, tables, unicode, uni
 
 import ../../pga
 import ../../visualiser/core/[
-  boundary, camera, format, framing, help, history, interaction, objects, orrery, picking,
-  scene, selection, storyboard, tessellate,
+  boundary, camera, format, framing, help, history, interaction, neighbourhood, objects,
+  orrery, picking, scene, selection, storyboard, tessellate,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -6330,16 +6330,13 @@ suite "Marker":
 
 # The orrery needs the full item capacity, and one configuration here deliberately compiles a
 #   much smaller scene to exercise the pool's own limits. Guarded rather than shrunk: an
-#   arrangement scaled down to twelve objects would no longer be the stress case these cases
-#   exist to check.
+#   arrangement scaled down would no longer be the stress case these cases exist to check.
 when ITEMS_MAX >= ITEMS_ORRERY:
   suite "Orrery":
-    ## The demo preset is the heaviest scene this build draws, and its whole value is that it
-    ## is heavy in every dimension at once: every slot taken, every drawable kind present,
-    ## nothing silently drawing nothing, and -- since the round that broke it into isolated
-    ## systems -- no point in it serving as a hub for half the scene. Each of those is a
-    ## property a plausible edit to the layout table breaks quietly, so each is checked here
-    ## rather than looked at.
+    ## The demo preset is the heaviest scene this build draws, and since the round that made
+    ## it the real solar neighbourhood it also makes a **claim about the world**: these stars
+    ## stand where they really stand. That claim needs checking as much as the counting does,
+    ## and it is the one thing no amount of looking at the picture would catch.
 
     test "the orrery fills every slot the scene has":
       var scene = initScene()
@@ -6348,15 +6345,14 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       check scene.isFull
 
     test "every object it builds draws something":
-      # The failure this exists for: three collinear points wedge to a multivector of no
-      #   clean grade, which takes a slot and renders nothing. Six of the sixty-four did
-      #   exactly that once, and the scene still reported sixty-four items, so only counting
-      #   *shapes* finds it. A seventh followed later, from the other way of getting it
-      #   wrong -- wedging a point with a plane it already lay on.
+      # Three collinear points wedge to a multivector of no clean grade, which takes a slot
+      #   and renders nothing while the scene still counts it. Seven objects did that across
+      #   two earlier rounds, so this counts *shapes* rather than items.
       var scene = initScene()
       constructOrrery(scene)
       var without: seq[string] = @[]
-      for slot in 0 ..< ITEMS_MAX:
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
         if shape(scene.geometryAt(slot)).isNone: without.add(toText(scene.labelAt(slot)))
       check without == newSeq[string]()
 
@@ -6365,56 +6361,78 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       constructOrrery(scene)
       var tally: array[Shape, int]
       var at_horizon: array[Shape, int]
-      for slot in 0 ..< ITEMS_MAX:
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
         let geometry = scene.geometryAt(slot)
         let kind = shape(geometry)
         if kind.isNone: continue
         inc tally[kind.get]
         if isHorizon(geometry): inc at_horizon[kind.get]
-      # A stress scene is only a stress scene if the expensive kinds are actually in it: the
-      #   plane count is the one that matters most, each plane being a disc fan, and the
-      #   three at horizon are the three special paths -- a star, a great circle, a sky dome.
-      check tally[Shape.Point] >= 30
-      # **A ceiling as well as a floor, and this is the only kind that has one.** Lines were
-      #   cut from fifteen to four because a line is infinite and every one of them crosses
-      #   the whole frame whatever it joins; the slots bought a system and nine more bodies.
-      #   A floor alone would let them creep back one edit at a time, so the intent is
-      #   pinned from both sides. The floor keeps the kind exercised by more than the single
-      #   line at horizon.
-      check tally[Shape.Line] in 3 .. 6
-      # Raised from 8, free, because the slots the lines gave up went partly into discs --
-      #   the expensive kind, so cutting lines made the stress case heavier, not lighter.
-      check tally[Shape.Plane] >= 10
-      check at_horizon[Shape.Point] >= 1
+      check tally[Shape.Point] >= 500
+      # **A ceiling as well as a floor, and lines are the only kind with one.** They are cut
+      #   to the three that mean something -- two in Sol and the one at horizon -- because a
+      #   line is infinite and crosses the whole frame whatever it joins. A floor alone would
+      #   let them creep back one edit at a time.
+      check tally[Shape.Line] in 3 .. 4
+      # Raised from 10 with the neighbourhood: a real system earns an ecliptic wherever it
+      #   has two known planets, and 130 of them do. Discs are the expensive kind, so this is
+      #   where the stress in the stress case now lives.
+      check tally[Shape.Plane] >= 120
+      check at_horizon[Shape.Point] == 2 # Two, and only one of them can make the plane.
       check at_horizon[Shape.Line] >= 1
       check at_horizon[Shape.Plane] >= 1
 
+    test "the stars stand where the catalogue says they stand":
+      # **The claim this arrangement makes about the world.** Every system after Sol is a real
+      #   star placed from its real right ascension, declination and distance, so the thing
+      #   worth checking is the conversion -- not that a layout looks spread out. Measured
+      #   against `neighbourhood.NEIGHBOURS` itself, which is the shipped snapshot.
+      var scene = initScene()
+      constructOrrery(scene)
+      var placed: Table[string, Multivector]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
+        placed[toText(scene.labelAt(slot))] = scene.geometryAt(slot)
+      let sol = placed[SOL[0].name]
+      var worst = 0.0
+      var worst_name = ""
+      for neighbour in NEIGHBOURS:
+        check neighbour.name in placed
+        let
+          drawn = distanceBetween(placed[neighbour.name], sol)
+          wanted = neighbour.parsecs/PARSECS_PER_UNIT
+          off = abs(drawn - wanted)
+        if off > worst:
+          worst = off
+          worst_name = neighbour.name
+      checkpoint(&"worst star is `{worst_name}`, off by {worst:.6f} world units")
+      check worst <= TOLERANCE_SINGLE
+      # And they really are ordered outward, which is what `RADIUS_ORRERY` relies on.
+      for index in 1 ..< len(NEIGHBOURS):
+        check NEIGHBOURS[index].parsecs >= NEIGHBOURS[index - 1].parsecs
+
     test "no point in it is a hub for the rest of the scene":
-      # **The fault this round exists to fix.** The arrangement before this one was a single
-      #   solar system, and every radius line, comet orbit and plane in it was joined through
-      #   the one star: twenty-two of its twenty-seven lines and planes contained that point,
-      #   so the scene drew as a starburst out of the middle of the frame. Counted rather
-      #   than looked at, because "it looks like a starburst" is not a thing a suite can see.
-      #   Lines through a system's *own* sun are wanted and are what makes a system read as
-      #   one, so the ceiling admits a handful rather than demanding none.
+      # The fault that broke the arrangement before this one: every line and plane joined
+      #   through a single star, so the scene drew as a starburst. Counted, because "it looks
+      #   like a starburst" is not something a suite can see.
       var scene = initScene()
       constructOrrery(scene)
       var worst = 0
       var worst_label = ""
-      for slot in 0 ..< ITEMS_MAX:
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
         let point = scene.geometryAt(slot)
         if shape(point) != some(Shape.Point) or isHorizon(point): continue
         let place = unitize(point)
         var through = 0
-        for other in 0 ..< ITEMS_MAX:
+        for other in 0 ..< scene.bound:
+          if not scene.isAlive(other): continue
           let geometry = scene.geometryAt(other)
           if isHorizon(geometry): continue
           case shape(geometry).get(Shape.Point)
           of Shape.Plane:
-            if abs(depthAgainst(unitize(geometry), place)) <= TOLERANCE_SINGLE:
-              inc through
+            if abs(depthAgainst(unitize(geometry), place)) <= TOLERANCE_SINGLE: inc through
           of Shape.Line:
-            # A point lies on a line exactly when the plane they span vanishes.
             var apart = 0.0
             for b in Basis: apart = max(apart, abs(wedge(geometry, place)[b]))
             if apart <= TOLERANCE_SINGLE: inc through
@@ -6425,180 +6443,111 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       checkpoint(&"worst point is `{worst_label}`, carrying {worst} lines and planes")
       check worst <= 6
 
-    test "its systems stand clear of one another":
-      # Asked of the scene rather than of the layout table: what has to hold is that the
-      #   objects end up separated, and a table read back only restates itself. A system's
-      #   own reach is measured too -- how far its furthest body actually stands from its sun
-      #   -- so this cannot pass by the table claiming a radius the bodies do not use.
-      var scene = initScene()
-      constructOrrery(scene)
-      var suns: Table[string, Multivector]
-      var bodies: seq[(string, Multivector)] = @[]
-      for slot in 0 ..< ITEMS_MAX:
-        let label = toText(scene.labelAt(slot))
-        let geometry = scene.geometryAt(slot)
-        if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
-        if label == SOL[0].name: suns["sol"] = geometry
-        elif label.startsWith("sun "): suns[label[len("sun ") .. ^1]] = geometry
-        elif '.' in label: bodies.add((label[label.rfind(' ') + 1 ..< label.find('.')],
-          geometry))
-        else:
-          # Sol's bodies are named, so they are recognised by the table that placed them.
-          for body in SOL:
-            if body.name == label and body.role != Role.Sun: bodies.add(("sol", geometry))
-      check len(suns) >= 5
-      var reaches: Table[string, float]
-      for (which, body) in bodies:
-        let apart = distanceBetween(body, suns[which])
-        reaches[which] = max(reaches.getOrDefault(which, 0.0), apart)
-      for first, sun_first in suns:
-        for second, sun_second in suns:
-          if first == second: continue
-          check distanceBetween(sun_first, sun_second) >
-            FACTOR_ISOLATION_ORRERY*(reaches[first] + reaches[second])
-
     test "every object wears its own type's colour, and no two types share one":
-      # The whole point of the palette re-cut: a moon and a comet are two identical dots and
-      #   hue is the only thing that separates them, so a role quietly collapsing onto
-      #   another's slot is a silent loss of the one signal they have.
+      # A moon and a comet are two identical dots and hue is the only thing separating them,
+      #   so a role collapsing onto another's slot is a silent loss of their one signal.
       var scene = initScene()
       constructOrrery(scene)
-      var bodies: array[Role, int]
       for role in Role.Sun .. Role.Comet:
         for other in Role.Sun .. Role.Comet:
           if role != other: check lut_role_to_ink[role] != lut_role_to_ink[other]
-      for slot in 0 ..< ITEMS_MAX:
+      # Roles come from the tables that placed the objects -- `SOL` for our own system and
+      #   `NEIGHBOURS`/`PLANETS` for the real ones -- rather than from a second set of name
+      #   rules that could drift from them.
+      var roles: Table[string, Role]
+      for body in SOL: roles[body.name] = body.role
+      for neighbour in NEIGHBOURS: roles[neighbour.name] = Role.Sun
+      for planet in PLANETS: roles[planet.name] = Role.Planet
+      var bodies: array[Role, int]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
         let label = toText(scene.labelAt(slot))
-        # Sol's bodies are named rather than numbered, so their roles come from the very
-        #   table that placed them -- one source, and the check still measures the scene
-        #   against it rather than restating a second set of prefixes.
-        var role = Role.Derived
-        var named = false
-        for body in SOL:
-          if body.name == label:
-            role = body.role
-            named = true
-        if not named:
-          role =
-            if label.startsWith("sun "): Role.Sun
-            elif label.startsWith("planet "): Role.Planet
-            elif label.startsWith("moon ") and '.' in label: Role.Moon
-            elif label.startsWith("comet ") and '.' in label: Role.Comet
-            else: Role.Derived
+        let role = roles.getOrDefault(label, Role.Derived)
         check scene.inkAt(slot) == lut_role_to_ink[role]
         inc bodies[role]
-      # And every role is actually present, or the check above passes vacuously on one.
-      for role in Role: check bodies[role] > 0
+      for role in [Role.Sun, Role.Planet, Role.Moon, Role.Comet, Role.Derived]:
+        check bodies[role] > 0
 
-    test "Sol models our own system: its planets run outward in the right order":
-      # A model of a real arrangement has exactly one thing it has to get right, and nothing
-      #   else in the suite would notice it being wrong. Measured from the built scene, not
-      #   from the table: `radiusOfSolBody` squashes the real distances through a logarithm,
-      #   and a compression that inverted or flattened the order would still fill 64 slots
-      #   and still pass every other case here.
+    test "two finite lines in the whole scene, and only one joins a star to a planet":
+      # The instruction this round was given, stated as an assertion. Asked geometrically --
+      #   which lines pass through which bodies -- so renaming something cannot make it pass.
       var scene = initScene()
       constructOrrery(scene)
-      var placed: Table[string, Multivector]
-      for slot in 0 ..< ITEMS_MAX:
-        placed[toText(scene.labelAt(slot))] = scene.geometryAt(slot)
-      let sol = placed[SOL[0].name]
-      var apart_last = 0.0
-      var apart_first = 0.0
-      for body in SOL:
-        if body.role != Role.Planet: continue
-        let apart = distanceBetween(placed[body.name], sol)
-        checkpoint(&"{body.name} at {body.distance} au stands {apart:.2f} out")
-        check apart > apart_last # Strictly outward, in the order the table lists them.
-        if apart_first == 0.0: apart_first = apart
-        apart_last = apart
-      # And genuinely **not** to scale: faithfully, Neptune stands 77 times further out
-      #   than Mercury and the inner planets are one dot. The squash has to be real.
-      check apart_first > 0.0
-      check apart_last/apart_first < 10.0
-
-    test "one line joins a sun to a planet in the whole scene, and it is Sol to Earth":
-      # The instruction this round was given, stated as an assertion: every other sun-to-
-      #   planet line was cut, and a later edit must not put them back one system at a time.
-      #   Asked geometrically -- a line through both a sun and a planet -- rather than by
-      #   reading labels, so renaming something cannot make it pass.
-      var scene = initScene()
-      constructOrrery(scene)
-      var suns: seq[(string, Multivector)] = @[]
-      var planets: seq[Multivector] = @[]
-      var lines: seq[(string, Multivector)] = @[]
-      for slot in 0 ..< ITEMS_MAX:
-        let label = toText(scene.labelAt(slot))
-        let geometry = scene.geometryAt(slot)
+      var roles: Table[string, Role]
+      for body in SOL: roles[body.name] = body.role
+      for neighbour in NEIGHBOURS: roles[neighbour.name] = Role.Sun
+      for planet in PLANETS: roles[planet.name] = Role.Planet
+      var suns, planets: seq[Multivector] = @[]
+      var lines: seq[string] = @[]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
+        let
+          label = toText(scene.labelAt(slot))
+          geometry = scene.geometryAt(slot)
         if isHorizon(geometry): continue
         case shape(geometry).get(Shape.Point)
-        of Shape.Line: lines.add((label, geometry))
+        of Shape.Line: lines.add(label)
         of Shape.Point:
-          var role = Role.Derived
-          for body in SOL:
-            if body.name == label: role = body.role
-          if role == Role.Sun or label.startsWith("sun "): suns.add((label, geometry))
-          elif role == Role.Planet or label.startsWith("planet "):
-            planets.add(geometry)
+          case roles.getOrDefault(label, Role.Derived)
+          of Role.Sun: suns.add(geometry)
+          of Role.Planet: planets.add(geometry)
+          else: discard
         of Shape.Plane: discard
+      check lines == @["sol ∧ earth", "earth ∧ luna"]
       proc lies(line, point: Multivector): bool =
         let place = unitize(point)
         for b in Basis:
           if abs(wedge(line, place)[b]) > TOLERANCE_SINGLE: return false
         true
-      var joining: seq[string] = @[]
-      for (label, line) in lines:
-        for (name, sun) in suns:
-          if not lies(line, sun): continue
+      var joining = 0
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
+        let geometry = scene.geometryAt(slot)
+        if isHorizon(geometry) or shape(geometry) != some(Shape.Line): continue
+        for sun in suns:
+          if not lies(geometry, sun): continue
           for planet in planets:
-            if lies(line, planet): joining.add(&"{label} through {name}")
-      check joining == @["sol ∧ earth through " & SOL[0].name]
+            if lies(geometry, planet): inc joining
+      check joining == 1
 
-    test "the line at horizon is the attitude of Sol's own ecliptic disc":
-      # Taken from the scene's own `ecliptic sol` rather than from a plane recomputed here,
-      #   so this checks the wiring and not a second statement of the same construction.
+    test "of the two points at horizon, only the one off the ecliptic makes the plane":
+      # **Why there are two.** Earth lies in Sol's ecliptic, so the direction Sol-to-Earth
+      #   lies along that plane and therefore *on* the line at horizon it gives -- wedging it
+      #   back with that line adds nothing. Luna's ring is tipped out, so its direction is off
+      #   the line and spans the plane with it. Both halves are checked, because the whole
+      #   construction turns on the difference between them.
       var scene = initScene()
       constructOrrery(scene)
-      var ecliptic, at_horizon: Multivector
-      for slot in 0 ..< ITEMS_MAX:
+      var at_horizon: Table[string, Multivector]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
         let geometry = scene.geometryAt(slot)
-        if toText(scene.labelAt(slot)) == "ecliptic sol": ecliptic = geometry
-        elif isHorizon(geometry) and shape(geometry) == some(Shape.Line):
-          at_horizon = geometry
-      check shape(ecliptic) == some(Shape.Plane)
-      check shape(at_horizon) == some(Shape.Line)
-      # **Proportional, not equal.** An attitude is a direction, and a direction carries no
-      #   scale: the scene's own object and a freshly taken attitude agree up to a factor,
-      #   so comparing coefficients outright would fail on a true wiring. Cross-multiplied
-      #   over every pair of basis slots, which is proportionality without having to pick a
-      #   normalisation -- and a horizon object has no weight to unitize by.
-      let taken = attitude(ecliptic)
-      var worst = 0.0
-      for first in Basis:
-        for second in Basis:
-          worst = max(worst,
-            abs(at_horizon[first]*taken[second] - at_horizon[second]*taken[first]))
-      checkpoint(&"worst cross term {worst:.9f}")
-      check worst <= TOLERANCE_SINGLE
-      # And not both zero, which would satisfy proportionality vacuously.
-      var largest = 0.0
-      for b in Basis: largest = max(largest, abs(at_horizon[b]))
-      check largest > TOLERANCE_SINGLE
+        if isHorizon(geometry): at_horizon[toText(scene.labelAt(slot))] = geometry
+      let
+        line = at_horizon["att(ecliptic sol)"]
+        on_it = at_horizon["att(sol ∧ earth)"]
+        off_it = at_horizon["att(earth ∧ luna)"]
+      var along, across = 0.0
+      for b in Basis:
+        along = max(along, abs(wedge(line, on_it)[b]))
+        across = max(across, abs(wedge(line, off_it)[b]))
+      checkpoint(&"earth's direction spans {along:.9f} with the line, luna's {across:.9f}")
+      check along <= TOLERANCE_SINGLE # On the line: it adds nothing.
+      check across > TOLERANCE_SINGLE # Off it: it spans the plane.
+      check shape(line ∧ off_it) == some(Shape.Plane)
+      check isHorizon(line ∧ off_it)
 
     test "the framing radius holds the systems it claims, and the rest run past it":
-      # `RADIUS_ORRERY` is what the demo's own camera is fitted to, and its whole claim is
-      #   that it holds the nearer systems and not the far ones -- so a reader who pulls back
-      #   finds something. Both halves are load-bearing and neither is visible in the number.
       var scene = initScene()
       constructOrrery(scene)
-      let centre = toMultivector(POSITION_ORRERY)
-      var held = 0
-      var beyond = 0
-      for slot in 0 ..< ITEMS_MAX:
-        let geometry = scene.geometryAt(slot)
-        if shape(geometry) != some(Shape.Point) or isHorizon(geometry): continue
-        let label = toText(scene.labelAt(slot))
-        if not (label.startsWith("sun ") or label == SOL[0].name): continue
-        if distanceBetween(geometry, centre) <= RADIUS_ORRERY: inc held
-        else: inc beyond
-      check held >= 3
-      check beyond >= 1
+      # `RADIUS_ORRERY` is fitted to Sol and the nearest few, and the claim worth checking
+      #   is not an exact count -- a handful of real stars happen to fall inside a radius
+      #   fitted to their neighbours -- but that the overwhelming majority lie *beyond* it.
+      #   That is what makes crossing the neighbourhood a journey rather than a nudge.
+      var held, beyond = 0
+      for neighbour in NEIGHBOURS:
+        if neighbour.parsecs/PARSECS_PER_UNIT > RADIUS_ORRERY: inc beyond else: inc held
+      checkpoint(&"{held} systems inside the opening frame, {beyond} beyond it")
+      check held >= FRAMED_ORRERY - 1 # Sol is framed too, and is not in this table.
+      check beyond >= 9*len(NEIGHBOURS) div 10
+      check RADIUS_ORRERY > 0.0

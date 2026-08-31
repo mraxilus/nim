@@ -1794,6 +1794,7 @@ const diagnostic_heap = document.getElementById('diag-heap');
 const diagnostic_pool = document.getElementById('diag-pool');
 const strip_pool = document.getElementById('pool-strip');
 let is_strip_pool_built = false;
+let colours_pool_last = new Float32Array(0); // Per-cell colour last written to the strip.
 
 // One ring per step of the drawing process, so the diagnostics tab can show where a frame
 // actually went rather than one opaque total. The bridge reports its own three phases on
@@ -2559,16 +2560,30 @@ function refreshDiagnostics() {
   diagnostic_pool.textContent = count + ' / ' + capacity;
   if (!is_strip_pool_built) {
     for (let i = 0; i < capacity; i++) strip_pool.appendChild(document.createElement('span'));
+    colours_pool_last = new Float32Array(capacity * 3).fill(-1); // No colour is negative.
     is_strip_pool_built = true;
   }
   // An occupied cell wears its own object's ink, so the strip reads as the scene rather
   //   than as an anonymous occupancy count. `nimPoolCellColors` decides every cell's
   //   colour, free ones included, so no palette rule lives out here -- it returns one
   //   [r, g, b] triple per slot, in slot order.
+  //   **Only the cells that changed are written.** At a capacity of 1,024 this refresh runs
+  //   every frame the drawer is open, and restyling a thousand elements -- each with its own
+  //   `slice` to build the argument -- is a thousand allocations and a thousand style writes
+  //   for a strip that changes when an object is added or removed and at no other time. The
+  //   previous triple is remembered per cell and compared; the steady state writes nothing.
+  //   Same reasoning as the overlay's element pooling, and the same measured fault.
   const cells = nimPoolCellColors();
-  Array.from(strip_pool.children).forEach((element, i) => {
-    element.style.background = rgbToCss(cells.slice(i * 3, i * 3 + 3));
-  });
+  const children = strip_pool.children;
+  for (let i = 0; i < children.length; i += 1) {
+    const at = i * 3;
+    if (colours_pool_last[at] === cells[at] && colours_pool_last[at + 1] === cells[at + 1] &&
+        colours_pool_last[at + 2] === cells[at + 2]) continue;
+    colours_pool_last[at] = cells[at];
+    colours_pool_last[at + 1] = cells[at + 1];
+    colours_pool_last[at + 2] = cells[at + 2];
+    children[i].style.background = rgbToCss([cells[at], cells[at + 1], cells[at + 2]]);
+  }
 }
 
 /* ---------------------------------------------------------------------- */

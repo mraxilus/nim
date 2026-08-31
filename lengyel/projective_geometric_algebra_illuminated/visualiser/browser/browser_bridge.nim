@@ -388,7 +388,7 @@ proc nimSceneSlots(): seq[cint] {.exportc.} =
   ##   yields an `Item` per live slot purely to hand back the slot number here, and
   ##   under the JS backend constructing an `Item` copies the whole `Scene` by value
   ##   (see `Item`'s own doc comment) -- wasted for a caller that only wants the number.
-  for slot in 0 ..< ITEMS_MAX:
+  for slot in 0 ..< g_scene.bound:
     if g_scene.isAlive(slot): result.add(cint(slot))
 
 
@@ -715,18 +715,27 @@ const INK_POOL_FREE = Ink.Grid
   ##   recessive furniture colour, which is what a free object-pool slot is.
 
 
+var g_flat_pool: seq[float32] = newSeq[float32](ITEMS_MAX*3)
+  ## Where `nimPoolCellColors` writes, kept across calls so it never allocates.
+
+
 proc nimPoolCellColors(): seq[float32] {.exportc.} =
   ## Report the object-pool strip's own colours, one `[r, g, b]` triple per slot in slot
   ##   order, so a cell wears the ink of whatever object holds it and a free one stays
   ##   recessive. Mirrors `panel.layoutDiagnosticsObjectPool`'s own cell loop; the caller
   ##   walks the result in threes and needs to know no palette rule of its own.
-  result = newSeqOfCap[float32](ITEMS_MAX * 3)
+  ##   **Capacity, not the watermark**: a strip whose whole subject is how much room is left
+  ##   has to show the room. It fills a buffer it keeps rather than growing a fresh sequence,
+  ##   because this runs inside the panel's own per-frame refresh and at `ITEMS_MAX` = 1,024
+  ##   that would be a three-thousand-float allocation every frame -- the same fault `G7`
+  ##   took out of the marker exports.
   for slot in 0 ..< ITEMS_MAX:
     let colour =
       if g_scene.isAlive(slot): g_scene.inkAt(slot).colour else: INK_POOL_FREE.colour
-    result.add(colour.red)
-    result.add(colour.green)
-    result.add(colour.blue)
+    g_flat_pool[3*slot] = colour.red
+    g_flat_pool[3*slot + 1] = colour.green
+    g_flat_pool[3*slot + 2] = colour.blue
+  g_flat_pool
 
 
 
@@ -2031,7 +2040,12 @@ proc nimBuildFrame(
   #   readers `scene.nim` already had (purely additive there, native-inert, mirroring
   #   the existing `geometryAt`/`isVisible` pattern) and reading every field here by
   #   slot instead.
-  for slot in 0 ..< ITEMS_MAX:
+  # **To the watermark, not to capacity.** Slots are stable addresses, so this has to sweep a
+  #   range rather than a dense list -- and with `ITEMS_MAX` at 1,024 that meant testing a
+  #   thousand slots every frame to draw the five a fresh scene holds. `scene.bound` is the
+  #   high-water mark, which only rises, so walking to it is safe and costs the ordinary
+  #   scene nothing. Its sibling walk below takes the same bound.
+  for slot in 0 ..< g_scene.bound:
     if not g_scene.isAlive(slot) or slot in g_selection: continue
     if g_scene.isVisible(slot):
       let geometry = g_scene.geometryAt(slot)
@@ -2043,7 +2057,7 @@ proc nimBuildFrame(
         )
         cost.chargeTally(geometry, is_sky = true, is_ghost = false, is_selected = false)
 
-  for slot in 0 ..< ITEMS_MAX:
+  for slot in 0 ..< g_scene.bound:
     if not g_scene.isAlive(slot) or slot in g_selection: continue
     if g_scene.isVisible(slot):
       let geometry = g_scene.geometryAt(slot)

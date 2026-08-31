@@ -1,51 +1,38 @@
-## Build a scene of isolated solar systems, filled to the last slot, for stress testing.
+## Build the real solar neighbourhood, filled to the last slot, for stress testing.
 ##
-## Orrery exists so the build can be looked at under its own worst case. The scene it makes
-## occupies **every** item slot, carries every drawable kind including one of each object at
-## horizon, and scatters its objects through a large volume as self-contained systems -- so
-## one camera move swings the tessellation load by an order of magnitude, which the flat
-## helix `visualiser.fillSceneForBenchmark` builds for `--timings` deliberately does not.
+## Orrery exists so the build can be looked at under its own worst case: **every** item slot
+## occupied, every drawable kind present, and the objects scattered through a volume so large
+## that one camera move swings the tessellation load by an order of magnitude -- which the
+## flat helix `visualiser.fillSceneForBenchmark` builds for `--timings` deliberately does not.
 ##
-## **Nothing here has a centre.** An earlier arrangement was one solar system: a single star,
-## its planets and its comets, with every radius line, every comet orbit and every plane
-## joined *through* that one point -- 22 of its 27 lines and planes contained it. Lines are
-## infinite, so the scene drew as a starburst out of the middle of the frame and the clusters
-## read as decoration on it. Each system now derives **only from its own points**, and no
-## object stands at `POSITION_ORRERY` at all: that constant is a coordinate the layout is
-## measured from and the camera aims at, not a thing in the scene.
-##   Lines through a system's *own* sun are wanted and are what makes a system read as one.
-## The rule broken before was a single global hub, not local structure.
+## **It is also a claim about the world.** Every system but ours is a real star that is known
+## to carry planets, standing at its real distance in its real direction, carrying the planets
+## it really has at their real relative distances. Those come from `neighbourhood.nim`, a
+## shipped snapshot of the NASA Exoplanet Archive; `PROVENANCE.md` records the query, the date
+## and the acknowledgement, and says plainly what is checked and what is not.
+##   `{SOL}` is our own, hand-written and modelled the same way, at the origin the rest are
+## measured from. Nothing stands at `POSITION_ORRERY`'s coordinate but Sol itself.
 ##
-## Everything after the placed bodies is **derived**: every line and plane is a join of points
-## already in the scene, and the three objects at horizon are attitudes of objects already in
-## it. Placing a plane by writing its coefficients would be shorter and would say nothing.
+##   |------------------|-------------------------------------|--------------------------|
+##   | Item             | Built from                          | Present when             |
+##   |------------------|-------------------------------------|--------------------------|
+##   | star             | placed at its real position         | always                   |
+##   | planets          | placed, ringing it at real radii    | as many as it has        |
+##   | ecliptic plane   | `star ∧ planet[0] ∧ planet[1]`      | it has two planets       |
+##   |------------------|-------------------------------------|--------------------------|
 ##
-##   |-------------------|--------------------------------|-----------------------------|
-##   | Item              | Built from                     | Present when                |
-##   |-------------------|--------------------------------|-----------------------------|
-##   | sun               | placed                         | always                      |
-##   | planets           | placed, ringing the sun        | always, two or three        |
-##   | moons             | placed, ringing planet one     | none, one or two            |
-##   | comets            | placed, off the system's plane | none, one or two            |
-##   | moon line         | `planet[0] ∧ moon[0]`          | the few that ask for one    |
-##   | ecliptic plane    | `sun ∧ planet[0] ∧ planet[1]`  | always                      |
-##   | comet sheet       | `sun ∧ comet[0] ∧ planet[0]`   | the system carries a comet  |
-##   |-------------------|--------------------------------|-----------------------------|
+## Sol alone also carries Luna, Halley, Halley's sheet, and the **only two finite lines in the
+## whole scene**: `sol ∧ earth` and `earth ∧ luna`. A line is infinite, so each one crosses the
+## entire frame whatever it joins; an earlier arrangement spent fifteen slots on them and read
+## as line traffic with the systems behind it.
 ##
-## **`SOL` is the exception, and is the one system a reader will recognise**: our own, not to
-## scale, with its eight planets in the right order, the Moon around Earth and Halley off the
-## ecliptic. It is the nearest system, it carries the only line in the arrangement that joins
-## a sun to a planet -- `sol ∧ earth` -- and all three objects at horizon are attitudes of its
-## own objects. See `SOL` and `constructSol`.
+## **Four objects at horizon, and two of them are points because only one can make the plane.**
+## Earth lies in Sol's ecliptic, so `att(sol ∧ earth)` sits *on* the line at horizon that
+## ecliptic gives; Luna's ring is tipped out of it, so `att(earth ∧ luna)` sits off that line
+## and spans the plane at horizon with it. See the horizon block in `constructOrrery`.
 ##
-## **Lines are scarce on purpose.** A line is infinite, so every one of them crosses the whole
-## frame whatever it joins. An earlier arrangement spent fifteen slots on them and read as
-## line traffic with the systems behind it; four are left, and the slots bought a system and
-## nine more bodies. No sun is joined to a planet anywhere but in Sol.
-##
-## Sol and seven systems by that template, then one object of each shape at horizon, comes to
-## `scene.ITEMS_MAX` -- 44 points, 4 lines, 13 planes and 3 at horizon. The total is folded
-## from the tables and asserted, not hoped for.
+## `{ITEMS_ORRERY}` items on the nose: **886 points, 2 lines, 132 planes and 4 at horizon.**
+## The total is folded from the tables and asserted, not hoped for.
 ##
 ## **Colour says what a thing is**, not which system it belongs to -- see `lut_role_to_ink`.
 ##
@@ -56,7 +43,7 @@
 
 import std/[math, options, strformat]
 import ../../pga
-import ./[boundary, euclid, objects, scene, tessellate]
+import ./[boundary, euclid, neighbourhood, objects, scene, tessellate]
 
 
 
@@ -75,21 +62,13 @@ type
     role*: Role ## What kind of body it is, so nothing has to read that back off the name.
     distance*: float ## How far it really stands from Sol, in astronomical units.
 
-  System* = object ## Describe one isolated solar system and where it stands.
+  System* = object ## Describe where one system stands and how wide it is drawn.
     reach*: float ## How far its sun stands from `POSITION_ORRERY`, in world units.
     bearing*: float ## Which way it lies from that centre, in radians about the vertical.
     rise*: float ## How far it stands above or below that centre's own level, in radians.
-    radius*: float ## How far its planets ring its sun, in world units.
+    radius*: float ## How far its outermost planet rings its sun, in world units.
     lean*: float ## How far its own plane leans out of the horizontal, in radians.
     spin*: float ## Where its first planet stands on its ring, in radians.
-    planets*: int ## How many planets it carries; two or three, since its plane needs two.
-    moons*: int ## How many moons ring its first planet; none, one or two.
-    comets*: int ## How many comets it carries; none, one or two.
-    line*: bool ## Whether it also joins its first planet to its first moon.
-      ## Few do. A line is infinite, so every one of them crosses the whole frame whatever
-      ## it joins, and fifteen of them made the scene read as line traffic with the systems
-      ## behind it. Kept on a handful so the kind is exercised by more than the one line
-      ## Sol carries, and so the ribbon path is not a single object's curiosity.
 
 
 
@@ -140,53 +119,30 @@ const
     ## load-bearing in three places and a search that quietly found nothing would be silent.
     ## Held to `SOL`'s own name by a compile-time check below.
 
-  SYSTEM_SOL = System(reach: 26.0, bearing: 0.00, rise: 0.26, radius: 12.0, lean: 0.30,
-    spin: 0.4, planets: 0, moons: 0, comets: 0)
-    ## Where Sol stands, and how wide it is.
-    ##   The body counts are zero because `constructSol` reads `SOL` instead; only the
-    ## placement fields are its own. **Nearest of them all** on purpose: it is the system a
-    ## reader recognises, it is inside the opening frame, and every object at horizon is an
-    ## attitude of one of its objects.
+  SYSTEM_SOL = System(reach: 0.0, bearing: 0.0, rise: 0.0, radius: 12.0, lean: 0.30,
+    spin: 0.4)
+    ## Where Sol stands, and how wide it is drawn.
+    ##   **At `POSITION_ORRERY` itself**, reach zero, because the arrangement is now the real
+    ## solar neighbourhood and everything in it is placed by where it really stands *from
+    ## Sol*. Sol is therefore the one system that is not placed at all -- it is the origin
+    ## the other three hundred are measured from.
 
-  SYSTEMS: array[7, System] = [
-    System(reach: 44.0, bearing: 2.40, rise: -0.38, radius: 11.0, lean: 0.85, spin: 2.1,
-      planets: 3, moons: 1, comets: 1, line: true),
-    System(reach: 58.0, bearing: 4.79, rise: 0.18, radius: 11.0, lean: 0.12, spin: 3.9,
-      planets: 2, moons: 0, comets: 0, line: false),
-    System(reach: 72.0, bearing: 1.02, rise: -0.52, radius: 12.0, lean: 0.62, spin: 5.2,
-      planets: 3, moons: 0, comets: 1, line: false),
-    System(reach: 86.0, bearing: 3.42, rise: 0.44, radius: 13.0, lean: 0.20, spin: 0.9,
-      planets: 2, moons: 2, comets: 0, line: true),
-    System(reach: 100.0, bearing: 5.81, rise: -0.22, radius: 15.0, lean: 1.05, spin: 2.7,
-      planets: 2, moons: 0, comets: 1, line: false),
-    System(reach: 114.0, bearing: 2.04, rise: 0.56, radius: 16.0, lean: 0.45, spin: 4.4,
-      planets: 3, moons: 1, comets: 0, line: false),
-    System(reach: 128.0, bearing: 4.44, rise: -0.30, radius: 17.0, lean: 0.72, spin: 1.5,
-      planets: 2, moons: 1, comets: 1, line: true),
-  ] ## Place the other seven systems, nearest first.
-    ##   **Bearings step by 2.4 radians**, a little over three eighths of a turn, so seven
-    ## systems land seven different ways round and none is hidden behind another from the
-    ## opening camera. An even step would have put systems 1 and 7 nearly in line.
-    ##   Rises alternate in sign so the systems sit above and below the centre's level
-    ## rather than on one shell, which is what makes a camera move change which of them
-    ## overlap.
-    ##   **Reaches and radii are traded against each other, and the trade was measured.**
-    ## What decides how big a system looks is its radius against the radius the camera is
-    ## fitted to, so scaling the whole layout changes nothing on screen -- only the ratio
-    ## moves. A first table reached 140 units out with radii near 8, which put a system at
-    ## a *ninth* of the framed radius and drew each one as a speck. These reaches are
-    ## compressed and these radii are grown until the tightest pair of systems sits at 2.20
-    ## times their combined **reach** -- their furthest body, not the radius named here,
-    ## which for a system with comets is `REACH_COMET` times wider -- just clear of the
-    ## `FACTOR_ISOLATION_ORRERY` floor, which is as far as the trade goes. A system is now
-    ## about a fifth of the framed radius.
-    ##   Casts vary rather than repeating: three systems have no comet and three no moon, so
-    ## a reader who looks at two of them sees two different things. The counts are also what
-    ## fills the last slot -- `ITEMS_ORRERY` is folded from this table and from `SOL`.
-    ##   **None of them joins its sun to a planet, and only three carry a line at all.** The
-    ## arrangement this replaced spent fifteen slots on lines; every one of them ran clear
-    ## across the frame, because a line is infinite whatever it joins. Four are left in the
-    ## whole scene, and the slots that bought back a system and nine more bodies.
+  PARSECS_PER_UNIT* = 0.055
+    ## How much of a parsec one world unit stands for.
+    ##   The single number that turns the real neighbourhood into a scene. At this scale
+    ## Proxima, 1.30 parsecs out, stands about 24 units from Sol -- a little further than a
+    ## system is wide, so the nearest neighbour is already a journey -- and the outermost
+    ## system in the table, at 31.5 parsecs, stands about 573 units out.
+    ##   Chosen rather than derived: it is the knob for "how far apart", and it is what makes
+    ## crossing the neighbourhood a real camera move rather than a nudge.
+
+  RADIUS_NEIGHBOUR* = 9.0
+    ## How wide a neighbour system is drawn, in world units.
+    ##   One width for all of them. Real stars differ enormously in the extent of their
+    ## planetary systems, but at this scale the difference is invisible and pretending to it
+    ## would be a fiction dressed as data -- the *positions* are real, and that is the claim
+    ## being made. Sol is drawn wider (`SYSTEM_SOL.radius`) because it is the one system a
+    ## reader is meant to look into.
 
   FACTOR_ISOLATION_ORRERY* = 2.0
     ## How many times their combined width two systems' suns must stand apart.
@@ -203,17 +159,22 @@ const
     ## declared exception: an edit that eats a tenth of the margin fails the run rather than
     ## quietly interleaving two systems.
 
-  FRAMED_ORRERY = 4
-    ## How many systems, nearest first, the demo's opening camera holds -- Sol and the three
-    ## nearest of the rest.
-    ##   Not all eight. A view fitted to the outermost would shrink every system to a speck
-    ## to hold the ones furthest out; the ones past the frame are what a reader finds by
-    ## pulling back, and that is the intended reading -- the same rule the previous
-    ## arrangement's far comets followed.
+  FRAMED_ORRERY* = 2
+    ## How many systems, nearest first, the demo's opening camera is fitted to -- Sol and
+    ## Proxima, its actual nearest neighbour.
+    ##   Two out of three hundred and thirty-two. Fitted to more, the opening view holds so
+    ## much of the neighbourhood that there is nothing left to go and find, which is the
+    ## whole point of placing the systems at their real distances: measured at four, the
+    ## camera stood 273 units off and a hundred and fifty systems were on screen at once.
+    ##   Distant stars stay *visible* whatever this is -- a point is drawn at a fixed pixel
+    ## size, so a star at 500 units is still a dot -- and that is right for a star field.
+    ## What this controls is how much of it is close enough to read.
 
 const
-  COUNT_ITEM_HORIZON = 3
-    ## How many items the closing block comes to: one object of each shape, at horizon.
+  COUNT_ITEM_HORIZON = 4
+    ## How many items the closing block comes to.
+    ##   Four, not three: **two** points at horizon, because one of them cannot make the
+    ## plane. See the horizon block in `constructOrrery`.
 
   REACH_MOON = 0.32
     ## How far a moon rings its planet, as a multiple of the system's own radius.
@@ -248,6 +209,18 @@ const
     ##   Without it Mercury, being the nearest, lands at radius zero and stands *inside*
     ## Sol. One is chosen so the tightest pair -- Venus and Earth -- still stand about a
     ## sixteenth of the system's radius apart, which is two clear dots at the framed camera.
+
+  AU_NEIGHBOUR_NEAREST = 0.01
+    ## The nearest semi-major axis the neighbour ring's own logarithm is scaled from.
+    ##   Real planets come far closer to their stars than Mercury does to Sol -- the archive
+    ## carries several under a hundredth of an astronomical unit -- so the scale that squashes
+    ## them cannot start where Sol's does. Clamped rather than extended further down: below
+    ## this a planet is drawn at the ring's inner limit, which is honest about the drawing
+    ## being unable to separate it from its star.
+
+  AU_NEIGHBOUR_FURTHEST = 30.0
+    ## The furthest semi-major axis that scale runs to, Neptune's own, so a neighbour's ring
+    ## and Sol's are read on the same scale.
 
   REACH_HALLEY = 1.25
     ## How far Halley stands from Sol, as a multiple of Sol's own radius.
@@ -385,6 +358,23 @@ func radiusOfSolBody(body: SolBody): float =
   SYSTEM_SOL.radius*(ln(body.distance) - nearest + SHIFT_SOL)/span
 
 
+func radiusOfNeighbourPlanet(planet: NeighbourPlanet; which, count: int): float =
+  ## Report how far a real planet rings its star in the scene, in world units.
+  ##   The same logarithm `radiusOfSolBody` squashes Sol's own distances by, for the same
+  ## reason: real semi-major axes in one system span three orders of magnitude, and drawn
+  ## faithfully the inner planets are one dot on the star.
+  ##   **Where the archive carries no semi-major axis, the planet is placed by its order
+  ## among its siblings instead**, spread evenly over the ring. That is the one place a
+  ## number is supplied rather than read, it is confined to the planets `neighbourhood.nim`
+  ## stores as `0.0`, and it is visible in the table rather than hidden here.
+  if planet.au <= 0.0:
+    return RADIUS_NEIGHBOUR*(0.35 + 0.65*float(which + 1)/float(max(count, 1)))
+  let
+    nearest = ln(AU_NEIGHBOUR_NEAREST)
+    span = ln(AU_NEIGHBOUR_FURTHEST) - nearest + SHIFT_SOL
+  RADIUS_NEIGHBOUR*clamp((ln(planet.au) - nearest + SHIFT_SOL)/span, 0.12, 1.0)
+
+
 static:
   doAssert SOL[INDEX_SOL_EARTH].name == "earth",
     "`INDEX_SOL_EARTH` must name Earth: the arrangement's one orbit line joins it to Sol, " &
@@ -420,21 +410,42 @@ proc addPlane(
   ## reintroduce it; `angleRing` says what the edit to avoid is.
   doAssert shape(geometry) == some(Shape.Plane),
     &"Orrery derives `{label}` from three points that do not span a plane; " &
-      "check `SYSTEMS` for a collinear triple."
+      "check the layout for a collinear triple."
   scene.addItem(geometry, label, lut_role_to_ink[Role.Derived], now, some(anchor))
 
 
-func itemsOf(system: System): int =
-  ## Report how many scene items one generic system comes to.
-  ##   Its sun, its bodies, the ecliptic plane every system has, the sheet a comet earns,
-  ## and the moon line the few that ask for one carry.
-  1 + system.planets + system.moons + system.comets + 1 +
-    (if system.comets >= 1: 1 else: 0) + (if system.line: 1 else: 0)
+func itemsOf(neighbour: Neighbour): int =
+  ## Report how many scene items one real system comes to.
+  ##   Its star, its planets, and the ecliptic plane it earns when it has two of them to
+  ## span one. Nothing else: a real system is placed and its planets are placed, and every
+  ## further object would be an invention.
+  1 + neighbour.planets + (if neighbour.planets >= 2: 1 else: 0)
 
 
-const ITEMS_SOL* = len(SOL) + 3
+func systemAt(neighbour: Neighbour): System =
+  ## Report where a real star stands and how wide its system is drawn.
+  ##   **Right ascension and declination are a real direction**, and distance is a real
+  ## length: the placement here is a coordinate conversion, not a layout. Declination
+  ## measures up from the celestial equator and ascension around it, which is exactly the
+  ## `rise`/`bearing` pair `sunOf` already takes, so the conversion is two conversions to
+  ## radians and one scale.
+  ##   `lean` and `spin` are the one thing here that is *not* real: no orientation for these
+  ## systems' planes is being claimed. They are spread by the star's own coordinates so that
+  ## no two systems lie parallel and the arrangement does not read as a stack of discs -- a
+  ## deterministic spread, stated as arbitrary rather than dressed up as data.
+  System(
+    reach: neighbour.parsecs/PARSECS_PER_UNIT,
+    bearing: degToRad(neighbour.ascension),
+    rise: degToRad(neighbour.declination),
+    radius: RADIUS_NEIGHBOUR,
+    lean: 0.25 + 0.9*abs(sin(neighbour.ascension)),
+    spin: neighbour.declination,
+  )
+
+
+const ITEMS_SOL* = len(SOL) + 4
   ## How many scene items Sol comes to: its bodies, its ecliptic, Halley's sheet, and the
-  ## one line in the arrangement that joins a sun to a planet.
+  ## two lines that are the only finite lines in the whole arrangement.
 
 
 const ITEMS_ORRERY* = block:
@@ -446,7 +457,7 @@ const ITEMS_ORRERY* = block:
   ## point -- but a build compiled with a smaller one is a real case (the suite runs one),
   ## so the two are compared where the scene is filled rather than assumed equal here.
   var total = COUNT_ITEM_HORIZON + ITEMS_SOL
-  for system in SYSTEMS: total += itemsOf(system)
+  for neighbour in NEIGHBOURS: total += itemsOf(neighbour)
   total
 
 const RADIUS_ORRERY* = block:
@@ -457,8 +468,9 @@ const RADIUS_ORRERY* = block:
   ##   Only the nearest `FRAMED_ORRERY` are folded in. See that constant for why the rest
   ## are deliberately left outside the opening frame.
   var far = SYSTEM_SOL.reach + REACH_HALLEY*SYSTEM_SOL.radius
-  for index, system in SYSTEMS:
-    if index + 1 < FRAMED_ORRERY: far = max(far, system.reach + system.radius)
+  for index, neighbour in NEIGHBOURS:
+    if index + 1 < FRAMED_ORRERY:
+      far = max(far, neighbour.parsecs/PARSECS_PER_UNIT + RADIUS_NEIGHBOUR)
   far
 
 const ELEVATION_ORRERY_SHOWN* = 0.95
@@ -482,7 +494,7 @@ const INSET_ORRERY_SHOWN* = 24.0
 
 
 proc constructSol(
-  scene: var Scene; now: float; ecliptic, orbit, halley: var Multivector
+  scene: var Scene; now: float; ecliptic, orbit, tether: var Multivector
 ) =
   ## Build the modelled solar system, and hand back the three objects the horizon block
   ## takes attitudes of.
@@ -518,11 +530,17 @@ proc constructSol(
   #   which pair is used changes nothing but the arithmetic.
   ecliptic = sol ∧ placed[len(SOL) - 3] ∧ placed[len(SOL) - 4]
   orbit = sol ∧ placed[INDEX_SOL_EARTH]
-  halley = placed[len(SOL) - 1]
+  # **The two lines in the whole arrangement**, and the two the horizon block is built from.
+  #   Earth lies *in* the ecliptic, so `sol ∧ earth` points along it; Luna's ring is tipped
+  #   out of it, so `earth ∧ luna` points off it. That difference is the entire reason there
+  #   are two, and it is what makes the plane at horizon constructible -- see the horizon
+  #   block in `constructOrrery`.
+  tether = placed[INDEX_SOL_EARTH] ∧ placed[len(SOL) - 2]
   scene.addItem(orbit, "sol ∧ earth", lut_role_to_ink[Role.Derived], now)
+  scene.addItem(tether, "earth ∧ luna", lut_role_to_ink[Role.Derived], now)
   addPlane(scene, ecliptic, "ecliptic sol", now, place_sol)
-  addPlane(scene, sol ∧ halley ∧ placed[INDEX_SOL_EARTH], "halley sheet", now,
-    position(halley).get(place_sol))
+  addPlane(scene, sol ∧ placed[len(SOL) - 1] ∧ placed[INDEX_SOL_EARTH], "halley sheet", now,
+    position(placed[len(SOL) - 1]).get(place_sol))
 
 
 proc constructOrrery*(scene: var Scene; now: float = 0.0) =
@@ -539,86 +557,62 @@ proc constructOrrery*(scene: var Scene; now: float = 0.0) =
 
   # Sol first: it is the nearest system, and the horizon block below takes the attitude of
   #   its objects rather than of anything global -- there is nothing global left to take.
-  var ecliptic_sol, orbit_sol, halley: Multivector
-  constructSol(scene, now, ecliptic_sol, orbit_sol, halley)
+  var ecliptic_sol, orbit_sol, tether_sol: Multivector
+  constructSol(scene, now, ecliptic_sol, orbit_sol, tether_sol)
 
-  for index, system in SYSTEMS:
-    doAssert system.planets in 2 .. PLANETS_MAX,
-      &"A system rings its sun with two or three planets; got `{system.planets}`."
-    doAssert system.moons in 0 .. MOONS_MAX,
-      &"A system rings its first planet with at most {MOONS_MAX} moons; got `{system.moons}`."
-    doAssert system.comets in 0 .. COMETS_MAX,
-      &"A system carries at most {COMETS_MAX} comets; got `{system.comets}`."
+  # Every other system is a real star, placed where it really stands and carrying the
+  #   planets it really has. Nothing is added to them: no moons, because none of these
+  #   planets has a confirmed one; no comets, for the same reason. A system earns an
+  #   ecliptic when it has two planets to span one, and that is all.
+  for neighbour in NEIGHBOURS:
     let
-      name = index + 2 # Sol is the first system; these are numbered after it.
+      system = systemAt(neighbour)
       place_sun = sunOf(system)
       (along, across) = spanOf(system)
       sun = toMultivector(place_sun)
-    scene.addItem(sun, &"sun {name}", lut_role_to_ink[Role.Sun], now)
+    scene.addItem(sun, neighbour.name, lut_role_to_ink[Role.Sun], now)
 
-    # The planets, ringing their sun on the system's own plane.
-    var planets: array[PLANETS_MAX, Multivector]
-    var place_planets: array[PLANETS_MAX, Position]
-    for which in 0 ..< system.planets:
-      place_planets[which] = ringed(place_sun, along, across, system.radius,
-        angleRing(system.spin, which, system.planets))
-      planets[which] = toMultivector(place_planets[which])
-      scene.addItem(planets[which], &"planet {name}.{which + 1}",
-        lut_role_to_ink[Role.Planet], now)
+    var first_planet, second_planet: Multivector
+    for which in 0 ..< neighbour.planets:
+      let
+        planet = PLANETS[neighbour.first + which]
+        place = ringed(place_sun, along, across,
+          radiusOfNeighbourPlanet(planet, which, neighbour.planets),
+          angleRing(system.spin, which, neighbour.planets))
+        body = toMultivector(place)
+      if which == 0: first_planet = body
+      elif which == 1: second_planet = body
+      scene.addItem(body, planet.name, lut_role_to_ink[Role.Planet], now)
 
-    # The moons, ringing the first planet on a ring tipped out of the system's own plane by
-    #   its lean again -- so a moon never lies on the ecliptic its planet rings in, and the
-    #   moon line it earns crosses that plane rather than lying in it.
-    var moons: array[MOONS_MAX, Multivector]
-    let leaned = tipped(along, normalOf(system), system.lean)
-    for which in 0 ..< system.moons:
-      moons[which] = toMultivector(ringed(place_planets[0], leaned, across,
-        REACH_MOON*system.radius, angleRing(system.spin, which, system.moons)))
-      scene.addItem(moons[which], &"moon {name}.{which + 1}",
-        lut_role_to_ink[Role.Moon], now)
+    # Two planets span the plane they both ring in; one cannot, and a system with a single
+    #   known planet is left as a star and a planet rather than given an invented second.
+    if neighbour.planets >= 2:
+      addPlane(scene, sun ∧ first_planet ∧ second_planet,
+        "ecliptic " & neighbour.name, now, place_sun)
 
-    # The comets, standing well off the system's own plane and further out than its planets
-    #   -- which is what makes their sheets cut across every ecliptic rather than lie in it.
-    var comets: array[COMETS_MAX, Multivector]
-    var place_comets: array[COMETS_MAX, Position]
-    let steep = tipped(across, normalOf(system), TILT_COMET)
-    for which in 0 ..< system.comets:
-      place_comets[which] = ringed(place_sun, steep, across, REACH_COMET*system.radius,
-        angleRing(system.spin + 0.7, which, system.comets))
-      comets[which] = toMultivector(place_comets[which])
-      scene.addItem(comets[which], &"comet {name}.{which + 1}",
-        lut_role_to_ink[Role.Comet], now)
-
-    # The lines and the planes, every one joined from this system's own bodies alone.
-    #   **No sun is joined to anything.** Sol carries the one orbit line in the scene, and
-    #   these systems carry only what a moon earns -- see `System.line` for why so few.
-    if system.line:
-      doAssert system.moons >= 1,
-        &"System {name} asks for a moon line and carries no moon."
-      scene.addItem(planets[0] ∧ moons[0], &"moon orbit {name}",
-        lut_role_to_ink[Role.Derived], now)
-    addPlane(scene, sun ∧ planets[0] ∧ planets[1], &"ecliptic {name}", now, place_sun)
-    if system.comets >= 1:
-      addPlane(scene, sun ∧ comets[0] ∧ planets[0], &"comet sheet {name}", now,
-        place_comets[0])
-
-  # Close with one object of each kind at horizon, each the attitude of something standing
-  #   in the first system already. Attitude always drops one grade and always lands at
-  #   horizon, so a line gives a point there, a plane gives a line, and a grade-4 volume
-  #   gives a plane -- see `storyboard.STEPS`' own steps 09 and 11, which say the same thing
-  #   at length. The volume is wedged here rather than added as an item: it is grade 4,
-  #   which draws nothing at all, and a stress scene has no slot to spend on an invisible
-  #   object.
-  #   **All three come from Sol**, which is the system a reader recognises: the direction
-  #   Earth lies in from its star, the attitude of Sol's own ecliptic disc, and the plane
-  #   that ecliptic gives when wedged with a body standing off it.
-  #   The volume is wedged from **Halley** and not from one of Sol's planets: a planet lies
-  #   on the very ecliptic it rings, and a point wedged with a plane it lies on gives zero.
-  #   They wear the derived hue because that is what they are -- three attitudes.
-  addHorizon(scene, attitude(orbit_sol), "att(sol ∧ earth)", Shape.Point, now)
-  addHorizon(scene, attitude(ecliptic_sol), "att(ecliptic sol)", Shape.Line, now)
-  addHorizon(scene, attitude(halley ∧ ecliptic_sol), "att(halley ∧ ecliptic sol)",
-    Shape.Plane, now)
+  # Close at horizon, every one of them an attitude of one of Sol's own objects -- the
+  #   system a reader recognises, and the only one carrying lines to take attitudes of.
+  #   Attitude always drops one grade and always lands at horizon: a line gives a point
+  #   there, a plane gives a line. They wear the derived hue because that is what they are.
+  #
+  #   **Two points, and only the second can make the plane.** Earth lies *in* Sol's ecliptic,
+  #   so `att(sol ∧ earth)` is a direction lying along that plane -- and therefore a point
+  #   sitting *on* the line at horizon the ecliptic gives. Wedging it back with that line
+  #   adds nothing and yields nothing to draw. Luna's ring is tipped out of the ecliptic, so
+  #   `att(earth ∧ luna)` points off it, and wedging *that* with the line at horizon spans
+  #   the plane at horizon. So both points are here because they differ, not for symmetry,
+  #   and which of them makes the plane is the fact the arrangement turns on.
+  #   `addHorizon` refuses a pair that spans nothing, which is how the two earlier versions
+  #   of this same mistake were caught.
+  let
+    at_horizon_earth = attitude(orbit_sol)
+    at_horizon_luna = attitude(tether_sol)
+    at_horizon_ecliptic = attitude(ecliptic_sol)
+  addHorizon(scene, at_horizon_earth, "att(sol ∧ earth)", Shape.Point, now)
+  addHorizon(scene, at_horizon_luna, "att(earth ∧ luna)", Shape.Point, now)
+  addHorizon(scene, at_horizon_ecliptic, "att(ecliptic sol)", Shape.Line, now)
+  addHorizon(scene, at_horizon_ecliptic ∧ at_horizon_luna,
+    "att(ecliptic sol) ∧ att(earth ∧ luna)", Shape.Plane, now)
 
   doAssert scene.len == ITEMS_ORRERY,
     &"Orrery built `{scene.len}` items where its own table comes to `{ITEMS_ORRERY}`. " &

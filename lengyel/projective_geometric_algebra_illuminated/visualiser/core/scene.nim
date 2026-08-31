@@ -46,14 +46,38 @@ import ./[boundary, format, tessellate]
 # Allow caller to resize scene without editing source.
 #   E.g. `--define:visualiser.items_max=128 --define:visualiser.label_max=48`.
 const
-  ITEMS_MAX* {.define: "visualiser.items_max".} = 64
+  ITEMS_MAX* {.define: "visualiser.items_max".} = 1024
     ## Max items scene may hold at once.
+    ##   Raised from 64 so the demo can hold the real solar neighbourhood -- see `orrery`.
+    ## Four capacities in `mesh` are sized against this constant and are checked against it
+    ## below, since `mesh` cannot see it from where it sits in the import order.
   LABEL_MAX* {.define: "visualiser.label_max".} = 40
     ## Max characters a label may hold.
 
 static:
   doAssert ITEMS_MAX > 0, &"Scene capacity must be positive; got `{ITEMS_MAX}`."
   doAssert LABEL_MAX >= 8, &"Label must hold 8 characters; got `{LABEL_MAX}`."
+
+  # **The mesh's capacities are sized against this one, and nothing could say so until now.**
+  #   Each of them documents its binding case as "a scene filled to `scene.ITEMS_MAX` with
+  #   ...", but `mesh` sits below `scene` in the import order and cannot name the constant,
+  #   so the link was prose and the numbers were right only because someone did the
+  #   arithmetic by hand. Overflowing any of them is a `doAssert` at draw time -- a dead page
+  #   -- so getting this wrong is not a small mistake. Stated here, in the one module that
+  #   can see both sides, so raising `ITEMS_MAX` again fails to *compile*.
+  doAssert VERTICES_MAX >= 2*ITEMS_MAX,
+    &"`mesh.VERTICES_MAX` must hold every point drawn twice: `{2*ITEMS_MAX}` at this " &
+      &"capacity, but it is `{VERTICES_MAX}`."
+  doAssert DISCS_MAX >= 2*ITEMS_MAX + 1,
+    &"`mesh.DISCS_MAX` must hold every plane drawn twice plus a ghost: " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{DISCS_MAX}`."
+  doAssert DOMES_MAX >= 2*ITEMS_MAX + 1,
+    &"`mesh.DOMES_MAX` must hold every plane at horizon drawn twice plus a ghost: " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{DOMES_MAX}`."
+  doAssert RIBBONS_MAX >= ITEMS_MAX*SEGMENTS_CIRCLE_HORIZON,
+    &"`mesh.RIBBONS_MAX` must hold a scene of planes, each a rim of " &
+      &"`{SEGMENTS_CIRCLE_HORIZON}`: `{ITEMS_MAX*SEGMENTS_CIRCLE_HORIZON}` at this " &
+      &"capacity, but it is `{RIBBONS_MAX}`."
 
 
 
@@ -109,6 +133,7 @@ type
     next_free: array[ITEMS_MAX, Option[int]] ## Link to next free slot; intrusive free list.
     slot_free_first: Option[int] ## Head of free list; none where scene is full.
     count_live: int ## Number of occupied slots, so `len` need not rescan `are_alive`.
+    slot_live_last: int ## One past the highest slot ever occupied; see `bound`.
     count_created: uint32 ## Ordinals handed out so far, and the next one to hand out.
       ## Counts additions over the scene's whole life, never removals, so it is not
       ## `count_live` and cannot be derived from it.
@@ -519,6 +544,17 @@ func len*(scene: Scene): int = scene.count_live
   ## Count live items held by scene.
 
 
+func bound*(scene: Scene): int = scene.slot_live_last
+  ## Report one past the highest slot this scene has ever occupied.
+  ##   **What a walk over "every slot" should actually run to.** Slots are stable addresses,
+  ## so anything that reads by slot has to sweep the range rather than a dense list -- and
+  ## with capacity at `ITEMS_MAX` = 1,024 that meant every frame testing a thousand slots to
+  ## draw five. This is the high-water mark rather than the live count, because a freed slot
+  ## in the middle leaves the ones above it occupied; it only ever rises, which is what makes
+  ## it safe to walk to.
+  ##   Not `len`: `len` counts the living, and the living are not packed at the bottom.
+
+
 func isFull*(scene: Scene): bool = scene.count_live >= ITEMS_MAX
   ## Report whether scene has no room for another item.
 
@@ -748,7 +784,10 @@ iterator items*(scene: Scene): Item =
 
 iterator pairs*(scene: Scene): (int, Item) =
   ## Yield each live item together with the slot it stands at, in slot order.
-  for slot in 0 ..< ITEMS_MAX:
+  ##   Walks to `bound` rather than to capacity, which is the one edit that makes every
+  ## desktop consumer of this iterator cheap at once: with `ITEMS_MAX` at 1,024 a scene of
+  ## five items was otherwise testing a thousand slots per pass, several passes a frame.
+  for slot in 0 ..< scene.bound:
     if scene.are_alive[slot]: yield (slot, scene[slot])
 
 
@@ -781,6 +820,7 @@ proc addItem*(
   scene.orders[result] = scene.count_created
   inc scene.count_created
   inc scene.count_live
+  scene.slot_live_last = max(scene.slot_live_last, result + 1)
 
 
 proc removeItem*(scene: var Scene; slot: int) =
