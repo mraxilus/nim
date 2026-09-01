@@ -68,7 +68,7 @@ that holds the drawing to it.  The wordings live as data in `rules.nim`, the
 ledger this list mirrors entry for entry — mirrors by hand: nothing loads the
 ledger yet, and `rules.nim` records making it load-bearing as an open
 question.  The checkers run on every build and print one line per standing
-rule, twenty-nine lines for the thirty-five entries here.  A rule that is only
+rule, twenty-nine lines for the forty entries here.  A rule that is only
 implemented and not asserted is a rule that quietly stops being true, which
 has happened here more than once.
 
@@ -507,6 +507,38 @@ has happened here more than once.
     ever has.  The check on it stays a backstop — that the snake goes round
     something and stays inside its own figure — because what it is set to is
     the author's call and not the checker's.
+36. **"above: connection held above head. high: connection held above
+    shoulder level (about neck). low: connection held below shoulder level
+    (about torso)."**  Every level is a height.  This corrects a reading the
+    codebase had held — low and high documented as which arm lies over which
+    — which was never the level's business: the over-under of two arms is
+    part of what a *wrap* is (rule 38).  The legends and the term docs say
+    heights now.
+37. **"lock: where a lead/follow's arm is bent behind their back (low) or
+    bent to the shoulder of the same arm.  To get into low lock, the form
+    must enter from a low position only due to physical/safety
+    limitations."**  The high lock and rule 6 are one shape — round the back
+    up to the arm's own shoulder, a hammerlock — so the settle table stands.
+    The entry note is the ledger's first transition-safety fact; the sim
+    reads it geometrically in `sim/verdicts.md`.
+38. **"wrap: where a lead/follow's arm is crossed around the front of their
+    body under (low) or over (high) their other arm."**  The under-or-over
+    mark is one no drawing here makes yet: a settled reach bends around the
+    hands it does not join (rule 22), so the crossing a wrap makes with its
+    dancer's *other* arm is exactly what the routing avoids.  Open, not
+    patched — see the open questions.
+39. **"generated two hand combinations for up to 1 modifier per lead/follow
+    (maximum 2 total across all 4 hands); permutations with 2 modifiers for
+    a single person are excluded, until deemed necessary."**  Modifiers are
+    per-arm, for either dancer.  The drawing model holds one level and one
+    way per connection and settles only the follow; widening it is a
+    restructure, held in the open questions rather than done quietly.
+40. **"half-closed, Left to left held low: wrap at left@0.5, lock at
+    right@1."**  The sheet's one filled rotation row, and the sim derives it
+    independently (`sim/verdicts.md`): half a turn one way lies the arm
+    across the front — the wrap — while the lock takes a *whole* turn the
+    other way, the rope merely leading the hand behind the back at its half.
+    Neither the row nor the rope was told the other's answer.
 
 ## What is settled
 
@@ -537,9 +569,11 @@ page and this list together.
   half still says which end is the lead's when both hands share a hue.  Its
   geometry says whether the hold is crossed *now*.
 - **Level is a fill** on both ends of a connection: hollow = unsaid, solid =
-  low (under the other arm), centre dot = high (over it), hatched = above (over
-  the head — the only level that names a height).  The under-arm's drawn break
-  stays: it reinforces the fill and survives node size.
+  low (below the shoulder, about the torso), centre dot = high (above the
+  shoulder, about the neck), hatched = above (over the head).  Every level is
+  a height (rule 36); which arm passes over which is the wrap's business, not
+  the level's (rule 38).  A crossed hold's drawn break stays: it reinforces
+  the geometry and survives node size.
 - A hand nobody holds **fades to half strength but keeps its hue**, because the
   `free` frame is four free hands — which is where its name comes from — and
   greying them would erase orientation exactly where nothing else can say it.
@@ -642,6 +676,17 @@ The user's side of the table, as of the last iteration:
   nothing on the rim counts and the quantity lives in where the hand sits.
 - The **bow** for contact with the body, the **staff** for sequences, what an
   orbit stores, and when an arm above the head blocks.
+- How a wrap's **under-or-over the other arm** (rule 38) gets drawn: it is a
+  crossing with the dancer's *other* arm, and rule 22 keeps a settled reach
+  away from exactly that hand.  Saying it needs the other arm in the picture
+  and a decision about rule 22's scope — until then a low wrap and a high one
+  differ only by their fill.
+- Whether the model goes **per-arm on modifiers** (rule 39): the sheet gives
+  either dancer up to one modified arm, while the drawing holds one level and
+  one way per connection and settles only the follow.  A restructure, waiting
+  on whether the sheet's enumeration is the shape wanted — the same open
+  question as whether `Left-to-left and Right-to-right`'s over-variants merge
+  (the sheet leans to one hold; the app draws eight frames).
 
 
 ## Layout

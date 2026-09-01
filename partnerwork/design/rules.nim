@@ -14,8 +14,9 @@
 ##     drawing, and the argument for them belongs here.
 ##   A rule that is only implemented and not asserted quietly stops being
 ##     true; the checkers in `checks.nim` verify the standing ones on every
-##     build -- twenty-nine lines for thirty-five rules, the superseded six
-##     living here with their corrections.
+##     build -- twenty-nine lines for forty rules, the superseded six living
+##     here with their corrections and the sheet's five (36 to 40) checked
+##     by the sim's instrument rather than the workbench's.
 
 # TODO: Make the ledger load-bearing.
 #   The checks could assert their rule numbers against `RULES`, or the
@@ -131,6 +132,18 @@ const RULES* = [
   "they both have the same issue, go back to the tighter version try to " &
     "make the swan arm, even tighter to the straighter arm, but make it " &
     "smoother (a simpler curved, right now it looks jagged/sharp)",
+  "above: connection held above head. high: connection held above shoulder " &
+    "level (about neck). low: connection held below shoulder level (about " &
+    "torso)",
+  "lock: where a lead/follow's arm is bent behind their back (low) or bent " &
+    "to the shoulder of the same arm. To get into low lock, the form must " &
+    "enter from a low position only due to physical/safety limitations",
+  "wrap: where a lead/follow's arm is crossed around the front of their " &
+    "body under (low) or over (high) their other arm",
+  "generated two hand combinations for up to 1 modifier per lead/follow " &
+    "(maximum 2 total across all 4 hands); permutations with 2 modifiers " &
+    "for a single person are excluded, until deemed necessary",
+  "half-closed, Left to left held low: wrap at left@0.5, lock at right@1",
 ] ## Each rule verbatim, one-indexed in prose as `RULES[i - 1]`.
   ##   Rules 10 to 14 govern the rotation page: rotation as edges over the
   ##     app's eight frames, everything held high.
@@ -399,6 +412,40 @@ const RULES* = [
   ##       and the snake keeps in closer to the straight connection than any
   ##       version before it.  What it is set to remains the author's call
   ##       and not the checker's (rule 34); the check is only the backstop.
+  ##   Rules 36 to 40 arrive from the ontology sheet's own vocabulary and
+  ##     rotation tables, and 36 corrects a reading this codebase had held:
+  ##     **every level is a height**.  Low and high were documented here as
+  ##     relative -- which arm lies over which -- and that was wrong: the
+  ##     over-under of two arms is part of what a *wrap* is (rule 38, under
+  ##     the other arm low, over it high), while the level says only where
+  ##     on the body the connection rides.
+  ##   Rule 37 settles what a high lock is: the arm bent to the shoulder of
+  ##     the *same* arm.  Rule 6 said its line goes around the back of the
+  ##     modified body, and the two are one shape -- the hand comes round
+  ##     the back up to its own shoulder, a hammerlock -- so the settle
+  ##     table's `(Own, Back)` stands.  The entry note is a transition
+  ##     fact, the first the ledger has that is about safety rather than
+  ##     shape; the sim reads it geometrically in `sim/verdicts.md` and
+  ##     finds the wound low lock holds at the height it is formed at.
+  ##   Rule 38's under-or-over the *other* arm is a mark no drawing here
+  ##     makes yet: a settled reach bends around the hands it does not join
+  ##     (rule 22), so the crossing a wrap makes with its dancer's other
+  ##     arm -- the very thing that tells a low wrap from a high one -- is
+  ##     exactly what the routing avoids drawing.  Recorded as open rather
+  ##     than patched: saying it needs the other arm in the picture, and a
+  ##     decision about rule 22's scope.
+  ##   Rule 39 makes the modifiers per-arm for either dancer, up to one
+  ##     each.  The drawing model holds a level and a way per *connection*
+  ##     and settles only the follow, which covers the sheet's validated
+  ##     rows but not its enumeration; widening it is a restructure, noted
+  ##     in the README's open questions rather than done quietly here.
+  ##   Rule 40 is the sheet's one filled rotation row, and the sim derives
+  ##     it independently (`sim/verdicts.md`): from Left to left held low,
+  ##     half a turn one way lies the arm across the front -- the wrap --
+  ##     while the lock takes a *whole* turn the other way, the rope
+  ##     merely leading the hand behind the back at its half.  The row and
+  ##     the rope agree, laps and all, and neither was told the other's
+  ##     answer.
 
 
 const FROM_ABOVE*: array[2, tuple[level: Option[Level], way: Option[Way]]] = [

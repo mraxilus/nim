@@ -53,9 +53,9 @@ const BODY = """
       {sw_none}
       <span><b>hollow</b> — level unsaid</span>
       {sw_low}
-      <span><b>solid</b> — low, under the other arm</span>
+      <span><b>solid</b> — low, below the shoulder</span>
       {sw_high}
-      <span><b>dot</b> — high, over the other arm</span>
+      <span><b>dot</b> — high, above the shoulder</span>
       {sw_above}
       <span><b>hatched</b> — above, over the head</span>
     </div>

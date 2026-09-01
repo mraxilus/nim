@@ -27,11 +27,16 @@ type
   Arm* {.pure.} = enum ## Name a side of a body, and so one hand of a dancer.
     L, R               ## The letter is the markup's own key.
   Level* {.pure.} = enum ## Name the height a connection is held at.
-    Low,               ## Under the other arm.
-    High,              ## Over the other arm.
-    Above              ## Over the head -- the only level that names a height.
+    ## Every level is a height (rule 36); which arm passes over which is the
+    ##   wrap's business, not the level's (rule 38).
+    Low,               ## Below the shoulder, about the torso.
+    High,              ## Above the shoulder, about the neck.
+    Above              ## Above the head.
   Way* {.pure.} = enum ## Name what a held arm does at its level.
-    Lock, Wrap
+    Lock, ## The arm bent behind the back (low), or bent to the shoulder of
+          ## the same arm (high) -- round the back either way (rule 37).
+    Wrap  ## The arm crossed round the front of the body, under (low) or
+          ## over (high) the dancer's other arm (rule 38).
   Slot* {.pure.} = enum ## Name one of the three spots a hand can settle on a side.
     Front,             ## A little towards the dancer's own front.
     Default,           ## Where the arm hangs.
