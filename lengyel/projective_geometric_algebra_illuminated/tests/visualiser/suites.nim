@@ -6708,3 +6708,30 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       check held >= FRAMED_ORRERY - 1 # Sol is framed too, and is not in this table.
       check beyond >= 9*len(STARS) div 10
       check RADIUS_ORRERY > 0.0
+
+
+    test "the preset both front-ends open on is one preset":
+      # `showOrrery` is the whole thing a demo button loads -- the arrangement, its replayed
+      #   arrival and the camera that holds it -- and the browser's bridge and the desktop's
+      #   `--demo` both call it. It used to live inline in the bridge, where the desktop
+      #   could not reach it and nothing could check it, so the camera half of the preset
+      #   was untested on either side.
+      var scene = initScene()
+      var camera = initCameraDefault()
+      camera.azimuth = 1.25 # Left alone by the preset, so it has to survive it.
+      showOrrery(scene, camera, 1440, 900)
+      check scene.len == ITEMS_ORRERY
+      check camera.target =~ POSITION_ORRERY
+      check camera.elevation =~ ELEVATION_ORRERY_SHOWN
+      check camera.azimuth =~ 1.25
+      # Standing back far enough to hold the arrangement is the point of the solve, and
+      #   standing *inside* it is the failure it exists to prevent -- the opening camera,
+      #   placed for the seed scene, sits within this one.
+      check camera.distance > RADIUS_ORRERY
+      check camera.distance =~
+        distanceFitting(RADIUS_ORRERY, camera, 1440, 900, INSET_ORRERY_SHOWN)
+      # A narrower window has to stand further back, since the fit is bounded by whichever
+      #   of the two axes runs out first.
+      var camera_narrow = initCameraDefault()
+      showOrrery(scene, camera_narrow, 640, 900)
+      check camera_narrow.distance > camera.distance

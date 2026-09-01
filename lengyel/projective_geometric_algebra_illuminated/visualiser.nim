@@ -106,8 +106,8 @@ import std/[algorithm, math, monotimes, options, os, parseopt, strformat, struti
 
 import ./pga
 import ./visualiser/core/[
-  algebra_view, boundary, camera, format, framing, help, history,
-  interaction, marker, picking,
+  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  interaction, marker, orrery, picking,
   scene, selection, storyboard, tessellate, timings,
 ]
 import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
@@ -216,6 +216,9 @@ static:
 
 # Hold vertex storage at module scope, as it is far too large to sit on a stack frame.
 var MESHES: MeshSet ## Every scene object, excluding world furniture below.
+var TRACE: AlgebraTrace ## Scratch the debug layer records into, reused every frame rather
+  ## than declared per call: it is `ITEMS_MAX` entries long, and far too large for a stack
+  ## frame for the same reason the mesh sets are. See `algebra_view.addFrameTrace`.
 var SETTINGS_FURNITURE_HELD = none(SettingsFurniture)
   ## What `MESHES_FURNITURE` currently stands for, or none before the first frame. The
   ## browser has held its furniture on unchanged frames since the grid gained its budget;
@@ -277,6 +280,10 @@ type Options = object ## Hold what command line asked of this run.
   is_novsync: bool ## Whether to disable vsync from startup, for uncapped timing runs.
   is_filled: bool ## Whether to top scene up to capacity with synthetic items, for
     ## timing the heaviest tessellation and draw load rather than the demo's own light one.
+  is_demo: bool ## Whether to open on the orrery preset instead of the storyboard's seeds --
+    ## the same arrangement the browser's own demo button loads, through the same
+    ## `orrery.showOrrery`. Here because the desktop had no way to reach it at all, so the
+    ## heaviest scene the shared core builds could be looked at on one front-end only.
   is_asserted: bool ## Whether a driven run ends in a verdict rather than a report, and
     ## exits non-zero where it fails. See `verdictDriven`.
   is_drag_driven: bool ## Whether to script a construction drag through the event queue,
@@ -308,6 +315,7 @@ proc parseOptions(): Options =
       of "timings": result.is_timed = true
       of "novsync": result.is_novsync = true
       of "fill": result.is_filled = true
+      of "demo": result.is_demo = true
       of "drive-assert": result.is_asserted = true
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
@@ -322,7 +330,7 @@ proc parseOptions(): Options =
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, drive-assert, drive-drag, " &
+          "frames, hidden, timings, novsync, fill, demo, drive-assert, drive-drag, " &
           "drive-keys, drive-select, drive-undo, drive-sky or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
@@ -464,7 +472,7 @@ proc assembleMeshes(
   #   cannot drift. See `algebra_trace`.
   if panel.is_algebra_shown:
     MESHES.addFrameTrace(
-      scratch[0], scene, camera, staged, interaction.cursor, scale,
+      scratch[0], TRACE, scene, camera, staged, interaction.cursor, scale,
       width = width, height = height,
     )
 
@@ -1477,7 +1485,7 @@ proc driveSky(
   #   said anything when somebody happened to build a horizon plane by hand first.
   if count_drawn == FRAME_FIRST - 1:
     var has_sky = false
-    for slot in 0 ..< ITEMS_MAX:
+    for slot in 0 ..< scene.bound:
       if scene.isAlive(slot) and scene.geometryOf(slot).isHorizonPlane: has_sky = true
     if not has_sky:
       discard scene.addItem(
@@ -2054,7 +2062,13 @@ proc main() =
   #   construction starts, unless a saved scene was asked for instead, which replaces
   #   the demo entirely.
   let now_startup = secondsNow()
-  if len(options.path_load_scene) > 0:
+  doAssert not (options.is_demo and len(options.path_load_scene) > 0),
+    "`--demo` and `--load-scene` each replace the opening scene; ask for one of them."
+  if options.is_demo:
+    # Framed for the window this run opens at, which is the size it is about to be given;
+    #   a reader who then resizes reframes by looking, exactly as on the browser side.
+    showOrrery(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, now_startup)
+  elif len(options.path_load_scene) > 0:
     echo loadScene(scene, options.path_load_scene, now_startup)
   else:
     # Replayed rather than placed whole, the same as a loaded scene and as the browser

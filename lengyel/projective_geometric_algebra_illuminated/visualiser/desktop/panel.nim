@@ -1097,14 +1097,16 @@ proc layoutDiagnosticsTotal(panel: Panel) =
     appendFixed(total, cursor, float(panel.bytes_memory_total) / (1024.0*1024.0), 1)
     appendChars(total, cursor, " MB")
   gui.text(text_total)
-  gui.tooltip(
+  # Folded to one literal rather than concatenated at the call, so the depth is still read
+  #   from `CAPACITY_HISTORY` and the tooltip is still a `cstring` pointing at static text.
+  const TEXT_TOTAL =
     "Every fixed reservation this binary makes for itself, added up: both arenas at " &
     "their full capacity (committed whether or not they're ever filled), the object " &
     "pool above, the undo timeline -- which is " & $CAPACITY_HISTORY & " more whole " &
     "copies of that pool, and the largest single entry here -- tessellation storage, " &
     "and the panel's own state. Excludes whatever Dear ImGui, SDL, or the graphics " &
     "driver allocate on their own account, which this process cannot see or account for."
-  )
+  gui.tooltip(TEXT_TOTAL)
 
 
 proc layoutDiagnostics*(panel: var Panel; scene: Scene) =

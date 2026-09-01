@@ -2959,10 +2959,38 @@ the system radius its own scale claims. The moons hold their order against the r
 axes -- Phobos 0.080, Triton 0.217, Luna 0.219, Io 0.223, Titan 0.263, Callisto 0.279 -- and
 Phobos lands precisely on `RADIUS_MOON_NEAREST`. `ecliptic sol` is `-89.11 𝐞₄₁₂` and nothing
 else, which is the z = 0 plane and no other.
-  **There is no desktop demo to look at, and that is not an omission.** `constructOrrery` is
-reached only from `browser_bridge`; the desktop opens on the storyboard's seeds. What the
-desktop was checked for instead is the capacity itself -- `--fill` at 10080 renders and the
-panel reports "objects (10080 of 10080)".
+  **The desktop had no demo, so it was given one.** `constructOrrery` was reached only from
+`browser_bridge`, which meant the heaviest scene the shared core builds could be looked at on
+one front-end only -- a gap in the build rather than a fact about it. What a demo button loads
+is now `orrery.showOrrery`: the arrangement, its replayed arrival and the camera solve that
+holds it, one copy, called by the bridge and by the desktop's new `--demo` alike. The camera
+half of the preset had lived inline in the bridge where nothing could reach it; a suite case
+now checks it -- target at the origin, the pitch the constant names, azimuth left where the
+reader had it, standing further back than the arrangement's own radius, and further back again
+in a narrower window.
+  Looked at on both: the desktop opens on the same neighbourhood, panel reading "objects
+(10000 of 10080)" with real catalogue names down the list. It draws at roughly five seconds a
+frame under `llvmpipe`, which says nothing about hardware and everything about software
+rasterisation of ten thousand objects.
+
+  **The debug layer cost thirteen milliseconds a frame, and the walk was not why.** Its driven
+pin had crept 2.5 -> 8.8 -> 13.3 ms across the runs since the capacity rose, on the *opening*
+scene of five objects -- so the cost was in the capacity, not the content. Two faults, and only
+the second was the one that mattered.
+  `addFrameTrace` walked `0 ..< ITEMS_MAX`. `scene.bound` exists precisely to stop that and
+its own doc says so, yet the conversion had reached `pairs` and not its sibling `items`, nor
+`pickNearest`, nor this. All are on the watermark now; the three walks that legitimately run to
+capacity -- the free list and the two object-pool strips, whose whole subject is how much room
+is left -- stay, and `bound`'s doc now names them so the next reader does not have to work out
+which kind each one is.
+  That fixed nothing measurable, which is what pointed at the real cause: `var trace:
+AlgebraTrace` was a *stack local* of `TRACED_MAX` = `ITEMS_MAX` + 16 entries, so the layer
+built **ten thousand `Traced` objects every frame** before recording five. It is caller-owned
+scratch now, exactly as `tessellate`'s is and for exactly the same reason. **13.3 ms to 4.1**,
+measured on the same probe minutes apart.
+  Worth keeping as a rule: a pin that drifts upward while the thing it guards is untouched is
+reporting on its *surroundings*. This one had been quietly reporting the capacity change for
+four runs before it finally crossed its own ceiling.
 
   **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
 reasoned about: a `Scene` at 10080 slots is **2.22 MiB** as a C struct and **6.56 MB** as JS

@@ -554,10 +554,14 @@ func bound*(scene: Scene): int = scene.slot_live_last
   ## Report one past the highest slot this scene has ever occupied.
   ##   **What a walk over "every slot" should actually run to.** Slots are stable addresses,
   ## so anything that reads by slot has to sweep the range rather than a dense list -- and
-  ## with capacity at `ITEMS_MAX` = 1,024 that meant every frame testing a thousand slots to
-  ## draw five. This is the high-water mark rather than the live count, because a freed slot
-  ## in the middle leaves the ones above it occupied; it only ever rises, which is what makes
-  ## it safe to walk to.
+  ## with capacity at `ITEMS_MAX` = 10,080 that means every frame testing ten thousand slots
+  ## to draw five.
+  ## This is the high-water mark rather than the live count, because a freed slot in the
+  ## middle leaves the ones above it occupied; it only ever rises, which is what makes it
+  ## safe to walk to.
+  ##   Three walks are *not* faults and stay at capacity, each saying so where it stands:
+  ## the free list `initScene` threads, and the two object-pool strips, whose whole subject
+  ## is how much room is left and which therefore have to show the room.
   ##   Not `len`: `len` counts the living, and the living are not packed at the bottom.
 
 
@@ -740,8 +744,9 @@ func slotsCreated*(scene: Scene; slots: var array[ITEMS_MAX, int]): int =
   ##   written out here is one nobody has to go and find.
   ##   Walks slots directly rather than through `pairs`, for the reason `inkAt` gives:
   ##   that iterator builds an `Item` per live slot, which under the JS backend copies the
-  ##   whole scene to hand back a slot number this already has.
-  for slot in 0 ..< ITEMS_MAX:
+  ##   whole scene to hand back a slot number this already has -- but to `bound`, as that
+  ##   iterator does, since no slot above the watermark has ever held anything.
+  for slot in 0 ..< scene.bound:
     if not scene.are_alive[slot]: continue
     var position = result
     while position > 0 and scene.orders[slots[position - 1]] > scene.orders[slot]:
@@ -831,7 +836,10 @@ proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
 
 iterator items*(scene: Scene): Item =
   ## Yield each live item, in slot order.
-  for slot in 0 ..< ITEMS_MAX:
+  ##   Walks to `bound`, as its sibling `pairs` does. It was left at capacity when `pairs`
+  ## was converted, which is the whole reason that rule is written down: a fix to one copy
+  ## of a walk is not finished until the others are checked.
+  for slot in 0 ..< scene.bound:
     if scene.are_alive[slot]: yield scene[slot]
 
 

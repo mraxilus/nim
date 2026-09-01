@@ -134,8 +134,9 @@ proc addTrace*(
 
 
 proc addFrameTrace*(
-  meshes: var MeshSet; scratch: var DrawScratch; scene: Scene; camera: Camera;
-  staged: Option[Preview]; cursor: ScreenPosition; scale: DrawExtent; width, height: int
+  meshes: var MeshSet; scratch: var DrawScratch; trace: var AlgebraTrace; scene: Scene;
+  camera: Camera; staged: Option[Preview]; cursor: ScreenPosition; scale: DrawExtent;
+  width, height: int
 ) =
   ## Record everything this frame's geometry rests on, and draw it.
   ##   **Both render paths call this one proc**, rather than each assembling its own list:
@@ -146,12 +147,20 @@ proc addFrameTrace*(
   ##   re-derived by a second spelling that could disagree with the first.
   ##   What it does not reach is the per-candidate meets `picking.rayPlaneHit` forms
   ##   inside `pickNearest`; see `PROVENANCE.md`'s debug-layer note for why.
-  var trace: AlgebraTrace
+  ## `trace` is scratch the caller owns, for the same reason `tessellate` takes its own:
+  ## an `AlgebraTrace` holds `TRACED_MAX` = `ITEMS_MAX` + 16 entries, so declaring one here
+  ## built **ten thousand `Traced` objects every frame** the layer was on -- 13.3 ms of a
+  ## frame on the JS backend, against 2.5 ms when the pool was 1,024, for a scene of five
+  ## objects. Caller-owned and reused, it is cleared rather than constructed.
   trace.clear()
   # By-slot readers, never `pairs`: an `Item` holds its `Scene` by value on the JS
   #   backend, so `pairs` copies the whole scene once per live slot -- see
   #   `picking.pickNearest`'s own note on the same walk.
-  for slot in 0 ..< ITEMS_MAX:
+  #   And to `bound` rather than to capacity. This layer redraws every frame it is on, so
+  #   the walk is paid per frame whatever the scene holds: at 10,080 slots over the opening
+  #   five objects it measured **13.3 ms**, against 2.5 ms when the pool was 1,024. The
+  #   driven pin on this phase is what caught it.
+  for slot in 0 ..< scene.bound:
     if scene.isAlive(slot) and scene.isVisible(slot):
       trace.record(TracedRole.SceneObject, scene.geometryOf(slot))
   if staged.isSome: trace.record(TracedRole.Ghost, staged.get.geometry)

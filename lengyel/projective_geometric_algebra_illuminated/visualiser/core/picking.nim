@@ -440,7 +440,10 @@ proc pickNearest*(
   let is_placed_held = placed.len >= ITEMS_MAX
   var placed_here: Placed # Filled per slot only where the caller brought none.
 
-  for slot in 0 ..< ITEMS_MAX:
+  # To `bound`, not to capacity: this runs per pointer move, and a pool of 10,080 slots
+  #   holding five objects would otherwise test ten thousand of them to rank five.
+  #   `placed` stays indexed by slot and sized to capacity -- a slot is an address.
+  for slot in 0 ..< scene.bound:
     if not scene.isAlive(slot) or not scene.isVisible(slot): continue
     if not is_placed_held:
       placed_here = placeObject(scene.geometryOf(slot), scene.anchorOverrideAt(slot))

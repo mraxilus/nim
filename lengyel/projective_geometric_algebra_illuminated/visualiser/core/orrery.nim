@@ -43,7 +43,8 @@
 
 import std/[math, options, strformat]
 import ../../pga
-import ./[boundary, euclid, neighbourhood, objects, scene, starfield, tessellate]
+import ./[boundary, camera, euclid, neighbourhood, objects, scene, starfield,
+  tessellate]
 
 
 
@@ -707,3 +708,35 @@ proc constructOrrery*(scene: var Scene; now: float = 0.0) =
     &"Orrery built `{scene.len}` items where it fills `{ITEMS_ORRERY}`. The walk stops on " &
       "the count, so it can only fall short by running out of catalogue -- check that " &
       "`starfield.STARS` still carries more stars than the scene has room for."
+
+
+proc showOrrery*(
+  scene: var Scene; camera: var Camera; width, height: int; now: float = 0.0
+) =
+  ## Replace the scene with the arrangement and stand the camera back to hold it: the whole
+  ## preset, in one place, because both front-ends open on it and a preset that differs
+  ## between them is not a preset.
+  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the
+  ## nearest system appears first and then each further one in turn, as a loaded `.rgascene`
+  ## file does. The same rule for all three because they are the same thing to a reader --
+  ## a construction handed over whole, played back in the order it was made -- and one beat
+  ## kept in one place cannot drift from the others. Restamped after the fact rather than as
+  ## each object is placed, so the beat is fitted to the whole arrival without this having
+  ## to count it out in advance.
+  ##   The camera stands back far enough to hold the nearer systems, aims at the
+  ## arrangement's own centre, and pitches up over it. Solved rather than guessed:
+  ## `distanceFitting` is the same sphere-tangent solve a framed selection uses, so the
+  ## preset cannot come to disagree with the rest of the build about what "whole" means.
+  ## Pitched first, since the solve reads the camera it is handed; azimuth is left where the
+  ## reader had it. `POSITION_ORRERY` holds no object -- it is where the systems are measured
+  ## from, and the middle of the frame is deliberately empty. See this module's own header.
+  ##   What is *not* here is anything either front-end keeps of its own: the browser's born
+  ## stamps, selection and undo timeline, and the desktop's equivalents, all of which are
+  ## that side's bookkeeping about a scene rather than part of the scene.
+  scene = initScene()
+  constructOrrery(scene, now)
+  scene.replayFrom(now)
+  camera.target = POSITION_ORRERY
+  camera.elevation = ELEVATION_ORRERY_SHOWN
+  camera.distance =
+    distanceFitting(RADIUS_ORRERY, camera, width, height, INSET_ORRERY_SHOWN)

@@ -44,8 +44,9 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
-  algebra_view, boundary, camera, format, framing, help, history, interaction, marker,
-  orrery, picking, ramp, scene, selection, storyboard, tessellate, timings,
+  algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
+  interaction, marker, orrery, picking, ramp, scene, selection, storyboard, tessellate,
+  timings,
 ]
 
 
@@ -165,6 +166,9 @@ type SettingsScene = tuple
 var
   g_scene: Scene
   g_camera: Camera
+  g_trace: AlgebraTrace ## Scratch the debug layer records into; held here and reused
+    ## rather than declared per frame, because it is `ITEMS_MAX` entries long. See
+    ## `algebra_view.addFrameTrace`.
   g_meshes_furniture, g_meshes: MeshSet ## Held at module scope and reused every frame
     ## via `clearMeshes` (which only resets each mesh's own `count_vertices`, not its
     ## backing storage) -- mirrors `visualiser.nim`'s own module-level
@@ -452,43 +456,24 @@ proc nimInit(now: cfloat) {.exportc.} =
 
 
 proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
-  ## Replace the current scene with the orrery -- every item slot filled, every drawable
-  ## kind present, laid out as seven isolated solar systems scattered through a large
-  ## volume -- as ordinary live items: a one-click preset rather than a scripted playback
-  ## mode, so once loaded every one of its objects is exactly as editable, removable and
-  ## pickable as anything built by hand.
+  ## Replace the current scene with the orrery -- the real solar neighbourhood, every
+  ## drawable kind present, Sol at the origin and ten thousand of the pool's slots taken --
+  ## as ordinary live items: a one-click preset rather than a scripted playback mode, so
+  ## once loaded every one of its objects is exactly as editable, removable and pickable as
+  ## anything built by hand, and the eighty slots it leaves free are there to build in.
   ##   **The heaviest scene this build ever draws**, which is what a demo is for here: the
   ##   eleven-step storyboard it replaced showed sixteen objects and could not say anything
   ##   about how the build behaves under load. The storyboard itself is unchanged and is
   ##   still what `visualiser --storyboard` captures; see `orrery`'s own module comment for
   ##   the arrangement and `storyboard.STEPS` for the teaching sequence.
-  ##   Arrives as a replay: `scene.replayFrom` restamps the whole construction, so the
-  ##   nearest system appears first and then each further one in turn, as a loaded `.rgascene`
-  ##   file does. The same rule for all three because they are the same thing to a reader --
-  ##   a construction handed over whole, played back in the order it was made -- and one
-  ##   beat kept in one place cannot drift from the others.
-  ##   Restamped after the fact rather than as each object is placed, so the beat is fitted
-  ##   to the whole arrival without this proc having to count it out in advance.
-  g_scene = initScene()
+  ##   The scene and the camera come from `orrery.showOrrery`, which the desktop's own
+  ##   `--demo` calls too: what the preset *is* -- the arrangement, its replayed arrival and
+  ##   the camera that holds it -- is one copy shared by both front-ends. What is left here
+  ##   is only what this side keeps of its own about a scene.
   let clock = float(now)
-  constructOrrery(g_scene, clock)
-  g_scene.replayFrom(clock)
+  showOrrery(g_scene, g_camera, int(width), int(height), clock)
   for slot in 0 ..< g_scene.len: stampBorn(slot, g_scene.bornAt(slot))
   g_selection.clear()
-  # Stand back far enough to hold the nearer systems, aim at the arrangement's own centre,
-  #   and pitch up over it. The opening camera was placed to show the *seed* scene whole: it
-  #   sits inside this one, and nearly in the plane the systems are spread through. Solved
-  #   rather than guessed -- `distanceFitting` is the same sphere-tangent solve a framed
-  #   selection uses, so the demo cannot come to disagree with the rest of the build about
-  #   what "whole" means -- and pitched first, since the solve reads the camera it is handed.
-  #   Azimuth is left where the reader had it.
-  #   `POSITION_ORRERY` holds no object: it is where the systems are measured from, and the
-  #   middle of the frame is deliberately empty. See `orrery`'s own module comment.
-  g_camera.target = POSITION_ORRERY
-  g_camera.elevation = ELEVATION_ORRERY_SHOWN
-  g_camera.distance = distanceFitting(
-    RADIUS_ORRERY, g_camera, int(width), int(height), INSET_ORRERY_SHOWN
-  )
   g_history = initHistory(g_scene, g_camera)
 
 
@@ -2353,7 +2338,7 @@ proc nimBuildFrame(
     ms_before_algebra = performanceNow()
     if is_algebra_shown:
       g_meshes.addFrameTrace(
-        g_scratch, g_scene, g_camera, ghost, g_interaction.cursor, scale,
+        g_scratch, g_trace, g_scene, g_camera, ghost, g_interaction.cursor, scale,
         width = int(float(aspect)*float(height_pixels)), height = int(height_pixels),
       )
     ms_after_algebra = performanceNow()
