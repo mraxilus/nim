@@ -1490,6 +1490,17 @@ The rules that make the pins trustworthy on a shared, noisy runner:
   walks the scene — a pick above all — is coalesced onto the frame loop and spent once. Only
   a handler that must answer before it returns keeps its own call, and each such handler says
   which decision needs it. Pinned by counting calls per frame, not by clocking them.
+- **A proc the frame calls per slot allocates nothing.** On the JS backend an array literal,
+  a returned object, an `Option` and a tuple are each a heap allocation, and at ten thousand
+  slots one of them per slot is ten thousand allocations for one answer — measured at 43% of
+  a whole hover pick, against 14% for the arithmetic it was there to do. Write the loop out
+  in locals, and where a caller wants only a number, return the number: a distance is a float
+  and `Inf` is a perfectly good "no".
+- **Where two shipped snapshots overlap, exactly one of them owns each fact.** They will
+  disagree — the exoplanet archive puts GJ 411 at 5.676 parsecs where SIMBAD and the truth say
+  2.55 — so which layer is authoritative for which column is a decision to make and write
+  down, not something to average or to leave to whichever loop runs last. Cross-match on the
+  field they agree about, never on the field they are being asked about.
 - **`lent` removes a copy only where the result is never bound.** The JS backend copies a
   returned object into a fresh one; `lent` hands back the field itself, and a `let` binding
   puts the copy straight back. So a borrowing reader must be read *inline*, in the expression

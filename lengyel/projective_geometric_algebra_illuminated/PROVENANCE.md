@@ -2858,6 +2858,94 @@ device's own display-wait median is plain vsync, and a cull trades an object-van
 a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
 rather than done because it was available.
 
+**The demo is the real solar neighbourhood at ten thousand objects, and Sol stands at the
+origin.** Four changes were asked for and all four are in: Sol at the world origin, its
+ecliptic lying flat *in* the ground grid's own plane, no comets, and every star, known planet
+and major moon that fits, filled to 10,000 with 80 slots left free.
+  Confirmed by reading the built scene rather than by looking at it: `sol` is `1 𝐞₄`, the
+point at the origin; `ecliptic sol` is `- 89.11 𝐞₄₁₂`, a plane with no other component at all
+-- normal along z, through the origin, which *is* the z = 0 plane the grid is ruled on; Earth
+carries no z component either. The scene holds **9,868 points, 2 lines, 126 planes and 4 at
+horizon**, 21 moons, and no object whose name contains "halley" or "comet". Eighty slots free.
+  **`POSITION_ORRERY` used to sit 18 units up** so that systems with a southern declination
+were not drawn through the ground. They are now, which is where they are: the grid is the
+plane of Sol's own ecliptic and half the sky is under it.
+
+  **Two positional traps, both of which would have been a dead assert at demo load rather
+than a wrong picture.** `SYSTEM_SOL.lean` did double duty -- it tilted the system's plane
+*and*, through `leaned`, tilted Luna's ring out of that plane -- and the plane at horizon is
+`att(ecliptic) ∧ att(earth ∧ luna)`, which exists only because the two differ. Zeroing the
+lean to lay the ecliptic flat would have made Luna coplanar and collapsed that plane to
+nothing. The tilts are separate now, and `TILT_MOON` carries Luna's real 5.14° inclination,
+which turns out to be well enough conditioned that `addHorizon` accepts it.
+  And Sol's tail indices were positional: `placed[len(SOL) - 2]` was Luna only because Halley
+sat last, and `- 3`/`- 4` were the two outermost planets for the same reason. Dropping the
+comet slid the tether onto Neptune and the ecliptic onto Saturn and Uranus, silently.
+`radiusOfSolBody` had the same fault already and nobody had noticed: it took its furthest
+distance from `SOL[len - 1]`, which was **Halley at 17.8 AU, not Neptune at 30.05**, so its own
+doc comment -- "scaled so Neptune sits at exactly the system's own radius" -- was describing
+something the code did not do. All four are named constants now, each held to the body it
+names by a compile-time check.
+  Removing comets also retires the palette's one declared exception from this scene: `Jade`
+was on comets and `Jade`/`Cobalt` is the pair that converges to 3.7 under tritanopia. Four
+roles, four inks, no exception.
+
+  **A second shipped catalogue, and it corrects the first.** `starfield.nim` is a snapshot of
+SIMBAD -- every star within the same 31.53 parsecs `neighbourhood.nim` reaches -- taken with
+the query that file records, on the same "data only, and generated" terms as the exoplanet
+archive and `ramp.nim`. The query returned **11,432**; 180 of those are composite entries
+whose own components are separately listed (`alf Cen` beside `alf Cen A` and `alf Cen B`) and
+are dropped in favour of the components, leaving **11,252**.
+  Each of the 331 planet hosts was matched to exactly one star **by sky position alone**,
+worst separation 161 arcseconds. That is not slack: the two archives are at different epochs
+and these are the nearest, fastest-moving stars in the sky, so Barnard's star and Kapteyn's
+star -- the two highest proper motions known -- are exactly the two worst matches, which is
+the mechanism confirming itself. Distance is deliberately *not* used to match, because it is
+the thing the two archives disagree about: **the exoplanet archive puts GJ 411 at 5.676
+parsecs where the true figure is 2.55**, and GJ 273 and Gl 725 B are wrong by more than a
+factor of two as well. So the star layer supplies every position and distance and the archive
+supplies only which planets exist, which fixes three real placements as a side effect.
+  **Nothing is generated.** A star with no known planet is a star and nothing else, which is
+what the great majority of those 9,868 points are; the fill to 10,000 is done with more real
+stars, never with invented planets or invented systems. The 49 archive planets with no
+recorded semi-major axis are still placed by their order among their siblings, and that stays
+the one drawn distance in the arrangement that is not a real one.
+  Scales are each left on the footing they were already on: **star distance stays linear**
+(`parsecs/PARSECS_PER_UNIT`), planet orbital radii stay logarithmic. The one new scale is
+moons, which had a single shared `REACH_MOON` when there was one moon and now map their real
+semi-major axes -- Phobos at 9,376 km to Nereid at 5.5 million, a range of 588 -- onto 0.08 to
+0.32 world units by the same logarithm. Small, and necessarily: Sol's tightest planet pair,
+Venus and Earth, stands 0.74 units apart, so a wider moon ring would reach into the next
+orbit. A moon is a dot beside its planet at the opening camera and a body of its own once a
+reader goes and looks.
+
+  **The capacity is 10080 and the pick got faster than it was at 1024.** `ITEMS_MAX` rose
+tenfold and the `static: doAssert` block in `scene.nim` did exactly what it was built for --
+it refused to compile until `VERTICES_MAX`, `DISCS_MAX`, `DOMES_MAX`, `RINGS_MAX` and
+`RIBBONS_MAX` followed, and it reported each required figure rather than leaving them to be
+worked out.
+  A pick over 10,000 slots measured **15.4 ms**, which is a whole frame. The profile named the
+cause, and it was not the walk: **43%** of it was inside `projectToScreen` -- `28.9%` in the
+accumulate of its 4×4 multiply and the rest in the two typed arrays it allocated *per call*,
+which is twenty thousand allocations for one hover. (The profiler labels that accumulate
+`strutils.+=`, which is Nim's `+=` mangled onto the `strutils` symbol; it is float arithmetic,
+not a string, and it cost half an hour to stop believing the name.) Writing the multiply out
+as three dot products in local floats took the pick to **6.4 ms**; giving the point branch a
+`pixelsFromCursor` that returns a distance instead of building a `ScreenPosition` per slot took
+it to **4.7 ms**. Ten times the objects for 1.2 times what 1,024 cost before this round.
+
+  **The pool grid's cell size stopped being a constant.** Six pixels over 10,080 slots is 191
+rows and more than 1,300px -- not a block, a page. Both front-ends now pick the largest cell
+whose wrapped grid still fits a 150px budget, and the gap goes before the cell does, because
+below four pixels a one-pixel gap is half the strip. At 10,080 in a 371px drawer that lands on
+**2px cells, 185 columns by 55 rows, 110px tall**: a density map, which is the honest reading
+at ten thousand. The desktop derives the same way from `gui.contentWidth`.
+
+  **What it costs, stated plainly.** The page goes from **2.17 MB to 3.64 MB** -- the star
+catalogue is 11,252 entries and most of that is names -- and the demo takes about **8 seconds**
+to build on this container. Both are the price of the count and both are worth knowing before
+raising it again.
+
 **The object pool strip had been drawing nothing at all, and every check passed it.**
 Reported by a reader, found by measuring the rendered box rather than the code: 1,024 cells,
 all present, all correctly coloured, **every one of them 0px wide**. `.pool-strip` was a flex

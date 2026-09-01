@@ -46,7 +46,7 @@ import ./[boundary, format, tessellate]
 # Allow caller to resize scene without editing source.
 #   E.g. `--define:visualiser.items_max=128 --define:visualiser.label_max=48`.
 const
-  ITEMS_MAX* {.define: "visualiser.items_max".} = 1024
+  ITEMS_MAX* {.define: "visualiser.items_max".} = 10080
     ## Max items scene may hold at once.
     ##   Raised from 64 so the demo can hold the real solar neighbourhood -- see `orrery`.
     ## Four capacities in `mesh` are sized against this constant and are checked against it

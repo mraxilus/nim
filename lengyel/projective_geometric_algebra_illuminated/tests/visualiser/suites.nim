@@ -15,12 +15,14 @@
 when compileOption("profiler"):
   import std/nimprof
 
-import std/[math, options, os, random, strformat, strutils, tables, unicode, unittest]
+import std/[
+  math, options, os, random, sets, strformat, strutils, tables, unicode, unittest,
+]
 
 import ../../pga
 import ../../visualiser/core/[
   boundary, camera, format, framing, help, history, interaction, neighbourhood, objects,
-  orrery, picking, scene, selection, storyboard, tessellate,
+  orrery, picking, scene, selection, starfield, storyboard, tessellate,
 ]
 # The arena, the PNG encoder and the GIF encoder are desktop-only: each binds a C entry
 #   point the JS backend has none of. Their own suites are guarded to match, below.
@@ -6423,11 +6425,17 @@ when ITEMS_MAX >= ITEMS_ORRERY:
     ## stand where they really stand. That claim needs checking as much as the counting does,
     ## and it is the one thing no amount of looking at the picture would catch.
 
-    test "the orrery fills every slot the scene has":
+    test "the orrery fills its own target and leaves the rest of the pool free":
+      # **It used to fill the pool exactly**, back when the tables were the arrangement. The
+      #   star catalogue now carries far more stars than any scene has room for, so what
+      #   fills the scene is a target and the slots above it are deliberate headroom -- a
+      #   reader can still build on top of a loaded demo rather than meeting a refusal, and
+      #   the pool strip shows a real margin instead of a solid block.
       var scene = initScene()
       constructOrrery(scene)
       check scene.len == ITEMS_ORRERY
-      check scene.isFull
+      check not scene.isFull
+      check ITEMS_MAX - scene.len == 80
 
     test "every object it builds draws something":
       # Three collinear points wedge to a multivector of no clean grade, which takes a slot
@@ -6468,10 +6476,11 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       check at_horizon[Shape.Plane] >= 1
 
     test "the stars stand where the catalogue says they stand":
-      # **The claim this arrangement makes about the world.** Every system after Sol is a real
+      # **The claim this arrangement makes about the world.** Every object after Sol is a real
       #   star placed from its real right ascension, declination and distance, so the thing
       #   worth checking is the conversion -- not that a layout looks spread out. Measured
-      #   against `neighbourhood.NEIGHBOURS` itself, which is the shipped snapshot.
+      #   against `starfield.STARS` itself, which is the shipped snapshot and the one layer
+      #   that says where anything is.
       var scene = initScene()
       constructOrrery(scene)
       var placed: Table[string, Multivector]
@@ -6481,20 +6490,57 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       let sol = placed[SOL[0].name]
       var worst = 0.0
       var worst_name = ""
-      for neighbour in NEIGHBOURS:
-        check neighbour.name in placed
+      var seen = 0
+      # The catalogue carries more stars than the scene has room for, so what is checked is
+      #   every star that *was* placed -- and, below, that the ones placed are the nearest.
+      for star in STARS:
+        if star.name notin placed: continue
+        inc seen
         let
-          drawn = distanceBetween(placed[neighbour.name], sol)
-          wanted = neighbour.parsecs/PARSECS_PER_UNIT
+          drawn = distanceBetween(placed[star.name], sol)
+          wanted = star.parsecs/PARSECS_PER_UNIT
           off = abs(drawn - wanted)
         if off > worst:
           worst = off
-          worst_name = neighbour.name
-      checkpoint(&"worst star is `{worst_name}`, off by {worst:.6f} world units")
+          worst_name = star.name
+      checkpoint(&"{seen} stars placed; worst is `{worst_name}`, off by {worst:.6f} units")
+      check seen > 9_000
       check worst <= TOLERANCE_SINGLE
-      # And they really are ordered outward, which is what `RADIUS_ORRERY` relies on.
-      for index in 1 ..< len(NEIGHBOURS):
-        check NEIGHBOURS[index].parsecs >= NEIGHBOURS[index - 1].parsecs
+      # And they really are ordered outward, which is what both `RADIUS_ORRERY` and the
+      #   nearest-first fill rely on.
+      for index in 1 ..< len(STARS):
+        check STARS[index].parsecs >= STARS[index - 1].parsecs
+      # The fill takes a prefix: once one star is missing, every star beyond it is too.
+      var missing_from = len(STARS)
+      for index, star in STARS:
+        if star.name notin placed:
+          missing_from = index
+          break
+      for index in missing_from ..< len(STARS):
+        check STARS[index].name notin placed
+
+    test "the star catalogue is a snapshot, and holds together as one":
+      # Everything about the shipped table that can be checked without the network. It is
+      #   generated, so what is worth asserting is that the generator's own claims survive:
+      #   the bound it queried to, the order the fill relies on, no star listed twice, and
+      #   every planet range landing inside `neighbourhood.PLANETS` exactly once.
+      var names = initHashSet[string]()
+      var carried, planets_claimed = 0
+      var covered = newSeq[int](len(PLANETS))
+      for star in STARS:
+        check star.name notin names
+        names.incl(star.name)
+        check star.parsecs > 0.0 and star.parsecs <= 31.53
+        if star.planets == 0: continue
+        inc carried
+        planets_claimed += star.planets
+        check star.first >= 0 and star.first + star.planets <= len(PLANETS)
+        for which in star.first ..< star.first + star.planets: inc covered[which]
+      checkpoint(&"{len(STARS)} stars, {carried} carrying {planets_claimed} planets")
+      # The planet hosts are all here, and between them they claim every archive planet once.
+      check carried == len(NEIGHBOURS)
+      check planets_claimed == len(PLANETS)
+      for which, times in covered: check times == 1
 
     test "no point in it is a hub for the rest of the scene":
       # The fault that broke the arrangement before this one: every line and plane joined
@@ -6529,19 +6575,20 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       check worst <= 6
 
     test "every object wears its own type's colour, and no two types share one":
-      # A moon and a comet are two identical dots and hue is the only thing separating them,
-      #   so a role collapsing onto another's slot is a silent loss of their one signal.
+      # A moon and a planet are two identical dots and hue is the only thing separating
+      #   them, so a role collapsing onto another's slot is a silent loss of their one signal.
       var scene = initScene()
       constructOrrery(scene)
-      for role in Role.Sun .. Role.Comet:
-        for other in Role.Sun .. Role.Comet:
+      for role in Role.Sun .. Role.Derived:
+        for other in Role.Sun .. Role.Derived:
           if role != other: check lut_role_to_ink[role] != lut_role_to_ink[other]
       # Roles come from the tables that placed the objects -- `SOL` for our own system and
       #   `NEIGHBOURS`/`PLANETS` for the real ones -- rather than from a second set of name
       #   rules that could drift from them.
       var roles: Table[string, Role]
       for body in SOL: roles[body.name] = body.role
-      for neighbour in NEIGHBOURS: roles[neighbour.name] = Role.Sun
+      for moon in MOONS: roles[moon.name] = Role.Moon
+      for star in STARS: roles[star.name] = Role.Sun
       for planet in PLANETS: roles[planet.name] = Role.Planet
       var bodies: array[Role, int]
       for slot in 0 ..< scene.bound:
@@ -6550,7 +6597,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         let role = roles.getOrDefault(label, Role.Derived)
         check scene.inkAt(slot) == lut_role_to_ink[role]
         inc bodies[role]
-      for role in [Role.Sun, Role.Planet, Role.Moon, Role.Comet, Role.Derived]:
+      for role in [Role.Sun, Role.Planet, Role.Moon, Role.Derived]:
         check bodies[role] > 0
 
     test "two finite lines in the whole scene, and only one joins a star to a planet":
@@ -6560,7 +6607,8 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       constructOrrery(scene)
       var roles: Table[string, Role]
       for body in SOL: roles[body.name] = body.role
-      for neighbour in NEIGHBOURS: roles[neighbour.name] = Role.Sun
+      for moon in MOONS: roles[moon.name] = Role.Moon
+      for star in STARS: roles[star.name] = Role.Sun
       for planet in PLANETS: roles[planet.name] = Role.Planet
       var suns, planets: seq[Multivector] = @[]
       var lines: seq[string] = @[]
@@ -6630,9 +6678,9 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       #   fitted to their neighbours -- but that the overwhelming majority lie *beyond* it.
       #   That is what makes crossing the neighbourhood a journey rather than a nudge.
       var held, beyond = 0
-      for neighbour in NEIGHBOURS:
-        if neighbour.parsecs/PARSECS_PER_UNIT > RADIUS_ORRERY: inc beyond else: inc held
-      checkpoint(&"{held} systems inside the opening frame, {beyond} beyond it")
+      for star in STARS:
+        if star.parsecs/PARSECS_PER_UNIT > RADIUS_ORRERY: inc beyond else: inc held
+      checkpoint(&"{held} stars inside the opening frame, {beyond} beyond it")
       check held >= FRAMED_ORRERY - 1 # Sol is framed too, and is not in this table.
-      check beyond >= 9*len(NEIGHBOURS) div 10
+      check beyond >= 9*len(STARS) div 10
       check RADIUS_ORRERY > 0.0

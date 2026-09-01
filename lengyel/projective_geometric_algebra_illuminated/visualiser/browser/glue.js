@@ -2064,12 +2064,21 @@ let ratio_pool_last = 0;
 //   answers the same question for nothing, and fires once when it starts watching, which is
 //   what makes the first draw happen.
 let is_pool_stale = true;
-// **One square per slot, wrapped**, at a size this drawer's width can actually show: at
-//   371px and 1,024 slots that is 53 columns of 20 rows, 139px tall. The desktop's own
-//   cells are 14px because its panel has the width for them; what the two have to agree on
-//   is the colour rule and the reading, not the pixel size.
-const SIZE_CELL_POOL = 6;
-const GAP_CELL_POOL = 1;
+// What the last draw actually chose, for a check to read rather than re-derive. The
+//   derivation is the thing being checked, so a test that repeated it would agree with
+//   itself no matter what reached the canvas.
+let geometry_pool_drawn = { cell: 0, gap: 0, columns: 0, rows: 0, height: 0 };
+// **One square per slot, wrapped**, at the largest size that keeps the whole grid inside a
+//   block rather than a page. The cell cannot be a constant: at 1,024 slots six pixels with
+//   a gap is 53 columns of 20 rows and 139px tall, and at 10,080 the same cell is 191 rows
+//   and over 1,300px -- which is not a grid a reader scans, it is a scroll. So the size is
+//   chosen against the capacity and the measured width, largest first, and the gap goes
+//   before the cell does: below four pixels a one-pixel gap is half the strip.
+//   At 10,080 slots in a 371px drawer this lands on 2px cells, 185 columns by 55 rows and
+//   110px tall -- a density map rather than a set of squares, which is the honest reading at
+//   ten thousand.
+const CELLS_POOL = [[6, 1], [5, 1], [4, 1], [3, 0], [2, 0], [1, 0]];
+const HEIGHT_POOL_MAX = 150;
 // A CSS colour per packed triple, so a palette that cycles is converted a dozen times
 //   rather than a thousand. Cleared with nothing: the palette is fixed, so it converges.
 const css_pool = new Map();
@@ -2945,13 +2954,24 @@ function drawPoolGrid(count, capacity) {
   ratio_pool_last = ratio;
   is_pool_stale = false;
 
-  const pitch = SIZE_CELL_POOL + GAP_CELL_POOL;
-  const columns = Math.max(1, Math.floor((width + GAP_CELL_POOL) / pitch));
-  const rows = Math.ceil(capacity / columns);
-  const height = rows * pitch - GAP_CELL_POOL;
+  // The first size whose grid fits the budget, or the smallest offered where none does.
+  let [cell, gap] = CELLS_POOL[CELLS_POOL.length - 1];
+  let columns = 1, rows = capacity, height = 0;
+  for (const [side, between] of CELLS_POOL) {
+    const pitch_try = side + between;
+    const columns_try = Math.max(1, Math.floor((width + between) / pitch_try));
+    const rows_try = Math.ceil(capacity / columns_try);
+    const height_try = rows_try * pitch_try - between;
+    if (height_try > HEIGHT_POOL_MAX && side !== CELLS_POOL[CELLS_POOL.length - 1][0]) continue;
+    cell = side; gap = between;
+    columns = columns_try; rows = rows_try; height = height_try;
+    break;
+  }
+  const pitch = cell + gap;
   // **Drawn at device resolution, unlike its two neighbours.** The curve and the sparkline
   //   are 1.5px strokes and lose nothing to a doubled display; a grid of hard-edged squares
   //   this small does, and every cell edge would be soft on the tablet this is read on.
+  geometry_pool_drawn = { cell, gap, columns, rows, height };
   grid_pool.style.height = height + 'px';
   grid_pool.width = Math.round(width * ratio);
   grid_pool.height = Math.round(height * ratio);
@@ -2971,8 +2991,7 @@ function drawPoolGrid(count, capacity) {
     }
     context_pool.fillStyle = colour;
     context_pool.fillRect(
-      (slot % columns) * pitch, Math.floor(slot / columns) * pitch,
-      SIZE_CELL_POOL, SIZE_CELL_POOL,
+      (slot % columns) * pitch, Math.floor(slot / columns) * pitch, cell, cell,
     );
   }
   // What the picture says, for a reader who cannot see it. The `title` beside it in the

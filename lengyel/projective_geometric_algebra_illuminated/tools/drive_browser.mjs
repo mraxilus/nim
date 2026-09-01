@@ -2660,9 +2660,10 @@ report(
 // right. This asks the two questions that would have.
 const pool_grid = await page.evaluate(() => {
   const grid = document.getElementById('pool-grid');
-  const pitch = SIZE_CELL_POOL + GAP_CELL_POOL;
-  const columns = Math.max(1, Math.floor((grid.clientWidth + GAP_CELL_POOL) / pitch));
-  const rows = Math.ceil(nimSceneCapacity() / columns);
+  // Read from the draw itself rather than re-derived here: the choice of cell size is the
+  //   thing being checked, and a check that repeats the derivation agrees with itself
+  //   whatever reached the canvas.
+  const { cell, columns, rows } = geometry_pool_drawn;
   const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
   // What actually reached the canvas, rather than what the arithmetic hoped for.
   const data = grid.getContext('2d')
@@ -2670,7 +2671,7 @@ const pool_grid = await page.evaluate(() => {
   let lit = 0;
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) lit += 1;
   return { columns, rows, addressable: columns * rows, capacity: nimSceneCapacity(),
-    cell_device_px: SIZE_CELL_POOL * ratio, height: Math.round(grid.clientHeight),
+    cell_device_px: cell * ratio, height: Math.round(grid.clientHeight),
     share_painted: lit / Math.max(1, grid.width * grid.height) };
 });
 report(

@@ -97,15 +97,25 @@ const
     ## Separate the segments of a segmented control, matching the gap `sameLine` leaves.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
-  SIZE_POOL_CELL = 6.0'f32
-    ## Set the side of one object-pool cell, in pixels -- large enough that a categorical
-    ## ink is recognisable in it, small enough that every slot fits a readable block.
-    ##   Was 14, chosen when the pool held 64 slots and the whole grid was three rows. At
-    ## `ITEMS_MAX` = 1,024 that same cell wraps to about 37 rows and 555px, which ran off
-    ## the bottom of the panel and pushed the byte accounting under it out of reach --
-    ## checked by rendering it, not inferred from the constant. Six matches the browser's
-    ## own `SIZE_CELL_POOL`, so the two front-ends read alike and differ only in how many
-    ## columns each panel's width affords.
+  SIZES_POOL_CELL = [14.0'f32, 10.0'f32, 6.0'f32, 4.0'f32, 3.0'f32, 2.0'f32]
+    ## Offer the sides one object-pool cell may take, in pixels, largest first.
+    ##   **Chosen against the capacity, not fixed.** It was 14, which was right when the pool
+    ## held 64 slots and the whole grid was three rows. At `ITEMS_MAX` = 1,024 that cell
+    ## wraps to about 37 rows and 555px, which ran off the bottom of the panel and pushed the
+    ## byte accounting under it out of reach; at 10,080 it is ten times worse. So
+    ## `sizePoolCell` picks the largest that still fits `HEIGHT_POOL_MAX`, which is the same
+    ## rule and the same reading the browser's `CELLS_POOL` follows -- what the two front-ends
+    ## agree on is the colour rule and the reading, not the number.
+    ##   Checked by rendering it, not inferred from the constant: at 14 the grid genuinely
+    ## did run off the panel, which is how this stopped being a constant at all.
+
+  SPACING_POOL_CELL = 1.0'f32
+    ## How much `gui.poolBar` leaves between two cells, in pixels; see its own shim.
+
+  HEIGHT_POOL_MAX = 150.0'f32
+    ## Bound how tall the object-pool grid may be, in pixels.
+    ##   A block a reader takes in at a glance, beside the memory bars it belongs with,
+    ## rather than a page they have to scroll past to reach the accounting under it.
   CHANNELS_POOL_CELL = 3
     ## Count the floats one pool cell contributes to `gui.poolBar`'s own buffer: red,
     ## green and blue, with no alpha, since every cell is drawn opaque.
@@ -1021,6 +1031,19 @@ proc layoutDiagnosticsMemory(panel: Panel) =
     )
 
 
+func sizePoolCell(width: cfloat): cfloat =
+  ## Report the side to draw one object-pool cell at, for a panel this wide.
+  ##   The largest offered whose wrapped grid still fits `HEIGHT_POOL_MAX`, or the smallest
+  ## offered where none does -- every slot keeps a cell either way, which is the property
+  ## that matters, and only how big it is gives.
+  for side in SIZES_POOL_CELL:
+    let
+      columns = max(1, int(width/(side + SPACING_POOL_CELL)))
+      rows = (ITEMS_MAX + columns - 1) div columns
+    if float32(rows)*(side + SPACING_POOL_CELL) <= HEIGHT_POOL_MAX: return side
+  SIZES_POOL_CELL[len(SIZES_POOL_CELL) - 1]
+
+
 proc layoutDiagnosticsObjectPool(scene: Scene) =
   ## Lay out the "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
@@ -1033,7 +1056,7 @@ proc layoutDiagnosticsObjectPool(scene: Scene) =
     cells[slot*CHANNELS_POOL_CELL + 0] = cfloat(colour.red)
     cells[slot*CHANNELS_POOL_CELL + 1] = cfloat(colour.green)
     cells[slot*CHANNELS_POOL_CELL + 2] = cfloat(colour.blue)
-  gui.poolBar(addr cells[0], cint(ITEMS_MAX), SIZE_POOL_CELL)
+  gui.poolBar(addr cells[0], cint(ITEMS_MAX), sizePoolCell(gui.contentWidth()))
   gui.tooltip(
     "One cell per object slot, in the colour of whatever object holds it; dark means " &
     "it's free and will be handed to the next one you add, most recently freed first."
