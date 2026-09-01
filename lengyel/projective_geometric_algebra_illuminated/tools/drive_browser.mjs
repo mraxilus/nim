@@ -2755,9 +2755,13 @@ const demo = await page.evaluate(() => {
   };
 });
 report(
-  'the demo button fills every slot the scene has',
-  demo.count === demo.capacity && demo.capacity >= 1024,
-  `${demo.count} of ${demo.capacity} slots`,
+  // **It used to fill the pool exactly**, back when the arrangement's own tables were the
+  // whole of it. The star catalogue carries far more stars than any scene has room for, so
+  // what fills the scene is a target and the slots above it are deliberate headroom: a
+  // reader can build on top of a loaded demo rather than meeting a refusal.
+  'the demo button fills its target and leaves the rest of the pool free',
+  demo.count === 10_000 && demo.capacity - demo.count === 80,
+  `${demo.count} of ${demo.capacity} slots, ${demo.capacity - demo.count} free`,
 );
 // Every kind, and nothing that draws nothing. The mixed-grade case is the one worth naming:
 //   three collinear points wedge to no clean grade, and such an item holds a slot while
@@ -2900,9 +2904,15 @@ const drawer_dom = await page.evaluate(() => ({
   forms: document.querySelectorAll('#objects-list .item-edit').length,
 }));
 report(
+  // Bounded per row rather than outright: the row count is the scene's, and a check written
+  // against a fixed ceiling stops meaning anything the moment the capacity moves. Nine
+  // elements a row is what a collapsed row costs; the slack covers the rest of the page.
   'a closed row builds no edit form, so the page holds thousands of elements and not tens',
-  drawer_dom.rows >= 1024 && drawer_dom.forms === 0 && drawer_dom.elements < 20000,
-  `${drawer_dom.elements} elements over ${drawer_dom.rows} rows, ${drawer_dom.forms} edit forms`,
+  drawer_dom.rows >= 10_000 && drawer_dom.forms === 0 &&
+    drawer_dom.elements < 12 * drawer_dom.rows,
+  `${drawer_dom.elements} elements over ${drawer_dom.rows} rows ` +
+    `(${(drawer_dom.elements / drawer_dom.rows).toFixed(1)} each), ` +
+    `${drawer_dom.forms} edit forms`,
 );
 
 // And opening one row builds exactly one form -- the check that keeps the guard above from
