@@ -104,19 +104,27 @@ const
   CAPACITY_CONTACT* = 0 ## Hold nothing while a hand rests on the partner's body.
   CAPACITY_WRAP_LOW* = 1
     ## Hold half a turn while the arm is wrapped low.  Measured, not derived.
-    ##   A body sim briefly claimed to derive this and did not: it priced a
+    ##   An earlier body sim claimed to derive this and did not: it priced a
     ##     wound half turn at half a torso's girth by assumption, so the
-    ##     arithmetic only returned the measurement it was fitted to -- and
-    ##     the two modules were not independent witnesses anyway, since the
-    ##     sim took its grip ceiling from `CAPACITY_SINGLE` here.  The claim
-    ##     is withdrawn until a model that actually turns a body earns it.
+    ##     arithmetic only returned the measurement it was fitted to.  The
+    ##     sim that actually turns a body now agrees from its own geometry
+    ##     (`sim/verdicts.md`: the low wrap holds at half a turn and runs
+    ##     out of rope at a whole one) -- an independent witness, not a
+    ##     derivation; the constant stays the dance's own measurement.
   CAPACITY_ARM* = 2
     ## Hold a full turn while the arm is anywhere else.  Measured for a low
     ## lock; assumed for the two high ones, which is the next thing to dance.
+    ##   The sim agrees on all three from its own geometry
+    ##     (`sim/verdicts.md`): the wound low lock arrives at exactly a full
+    ##     turn, and at the neck both wrap and lock still hold there.
   ABOVE_BLOCKS* = false
     ## Whether an arm over the head blocks a turn.  It does in some cases and
-    ## nobody has said which, so the model turns freely there and says here that
-    ## it is doing so on no authority.
+    ## nobody has said which, so the model turns freely there.
+    ##   No longer on no authority for a single connection: the sim finds an
+    ##     arm above the crown winds nothing and holds through two whole
+    ##     turns either way (`sim/verdicts.md`).  Two connections above are
+    ##     another matter -- they braid -- and rule 13's swan is their
+    ##     asserted ceiling, so the flag stays a flag.
 
 
 
