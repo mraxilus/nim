@@ -93,16 +93,23 @@ republishing `sim/artifact.html` to that URL is the whole release step.
 ## Reading it
 
 ```
-rope.nim    the model: bodies, ropes, the taut lie, and turning
-draw.nim    a state as two pictures: from above, and from the side
-page.nim    the browser page, compiled to JS
-laws.nim    what the model is held to, all of it about bodies and rope
-index.html  the page's shell and its style
+rope.nim     the model: bodies, ropes, the taut lie, and turning
+draw.nim     a state as two pictures: from above, and from the side
+page.nim     the browser page, compiled to JS
+laws.nim     what the model is held to, all of it about bodies and rope
+verdicts.nim the sim run as an instrument against the ontology's sheet
+verdicts.md  what it said, translated once and generated, not edited
+index.html   the page's shell and its style
 ```
 
 ```
 nimble sim          # the laws, then the page
+nimble verdicts     # rewrite verdicts.md from the current model
 ```
+
+`verdicts.nim` is the one place the sim's answers meet the ontology's words —
+wrap, lock, low, high — and the translation happens in its report, in one
+visible table, so the model itself stays vocabulary-free.
 
 The laws run first and the build stops if any fails: a page drawing a model
 that has stopped holding is worse than no page.

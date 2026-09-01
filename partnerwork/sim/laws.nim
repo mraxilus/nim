@@ -429,3 +429,39 @@ suite "two ropes braid":
         two = windLimit(settled(overhead(Arm.Left, Arm.Right, Arm.Right,
           Arm.Left, height, height)), Body.Two, most = 8.0 * PI, swan = false)
       check two < one
+
+
+suite "where a wind lies":
+  # `lyingOn` is what the verdicts report is built on, so its own facts are
+  # pinned here, still in the sim's words: a rope lies fore or aft of a body,
+  # on a band, wound onto it or merely led there.
+
+  test "half a turn lays the arm fore one way and aft the other":
+    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
+    let fore = turned(base, Body.Two, PI)
+    let aft = turned(base, Body.Two, -PI)
+    check lyingOn(fore, fore.links[0], Body.Two).get.aspect == Aspect.Fore
+    check lyingOn(aft, aft.links[0], Body.Two).get.aspect == Aspect.Aft
+
+  test "a led arm is told apart from a wound one":
+    # Half a turn the aft way leaves the rope clear of the body: the hand is
+    # led behind the back, and the reading says so rather than claiming a
+    # press that is not there.  A whole turn the same way winds it on.
+    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
+    let led = turned(base, Body.Two, -PI)
+    let round = turned(base, Body.Two, -2.0 * PI)
+    check not lyingOn(led, led.links[0], Body.Two).get.wound
+    check lyingOn(round, round.links[0], Body.Two).get.wound
+
+  test "over the crown, an arm lies nowhere":
+    # A rope carried above the crown clears the body on every side at once,
+    # so there is no fact of fore-or-aft for a reading to report.
+    let up = settled(oneLink(APART, Arm.Left, Arm.Left, HIGH))
+    for way in [1.0, -1.0]:
+      let spun = turned(up, Body.Two, way * PI)
+      check lyingOn(spun, spun.links[0], Body.Two).isNone
+
+  test "laps past the part-turn are counted, not wrapped away":
+    let base = settled(oneLink(APART, Arm.Left, Arm.Left))
+    let spun = turned(base, Body.Two, 2.0 * PI)
+    check lyingOn(spun, spun.links[0], Body.Two).get.laps == 1

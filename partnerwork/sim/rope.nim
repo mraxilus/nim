@@ -923,6 +923,104 @@ func holds*(state: State; swan = true): bool =
 
 
 
+#[ Where a Wind Lies ]#
+
+type
+  Aspect* {.pure.} = enum ## Which face of a body a wound rope lies across.
+    Fore, ## Across the front: the hug's middle is within a quarter turn of
+          ## the way the body faces.
+    Aft   ## Behind the back.
+
+  Lying* = object ## Where one connection's rope lies on one body.
+    aspect*: Aspect ## Across the front, or behind the back.
+    band*: Band     ## Which cylinder it lies on.
+    laps*: int      ## Whole laps past the part-turn the aspect reads.
+    wound*: bool    ## Whether the rope actually presses the body, or the
+                    ## arm is merely *led* there, clear of it.
+
+
+func lyingOn*(state: State; link: Link; who: Body): Option[Lying] =
+  ## Say where a connection holds one body's arm, if it holds it anywhere
+  ## but out in front.
+  ##   The reading the rotation vocabulary wants from the physics: an arm
+  ##     carried across the front of its own body is one thing, an arm
+  ##     carried behind its back another, and which one a turn produced is
+  ##     a fact about the geometry, not a naming choice.
+  ##   Two ways an arm can be somewhere.  A *wound* rope presses the body,
+  ##     and the hug's own arc says which face it lies across.  But a hand
+  ##     can also be merely *led* behind the back or across the front
+  ##     without the rope touching anything -- half a turn does exactly
+  ##     that -- so where the joined hands ride is read too: behind the
+  ##     shoulder line is behind, ahead of it and pulled across the arm's
+  ##     own midline is across the front.
+  ##     Cost of reading the hand as the rope's middle: the joined hands
+  ##       ride there by the model's own convention, so a led reading is
+  ##       only as good as that convention.  The wound reading does not
+  ##       depend on it.
+  let laid = lay(state, link)
+  if laid.isNone:
+    return none(Lying)
+  # The wound reading: the hug's middle is on the face most of the rope is.
+  for index, wind in link.winds:
+    if wind.body != who:
+      continue
+    for piece in laid.get.pieces:
+      if piece.kind != Kind.Hug:
+        continue
+      if dist(piece.centre, state.stance[who].centre) > 1e-9:
+        continue
+      let
+        middle = piece.start + piece.turn / 2.0
+        off = floorMod(middle - state.stance[who].facing + PI, 2.0 * PI) - PI
+      return some(Lying(
+        aspect: (if abs(off) <= PI / 2.0: Aspect.Fore else: Aspect.Aft),
+        band: wind.band,
+        laps: wind.turns,
+        wound: true))
+  # The led reading: where the joined hands ride, in the body's own frame.
+  # Only below the crown.  A hand carried over the crown clears the body on
+  # every side at once, so front-or-back is not a fact about it; the plan
+  # position of such a hand says where the arm points, not what it lies
+  # across.
+  if link.height > state.rig.crown:
+    return none(Lying)
+  var arm = none(Arm)
+  for hand in link.ends:
+    if hand.body == who:
+      arm = some(hand.arm)
+  if arm.isNone:
+    return none(Lying)
+  let walk = traced(state, link, laid.get).at
+  var
+    hand = walk[^1]
+    gone = 0.0
+  for i in 1 ..< walk.len:
+    let step = dist(walk[i - 1], walk[i])
+    if gone + step >= laid.get.span / 2.0:
+      let f = (laid.get.span / 2.0 - gone) / max(step, 1e-12)
+      hand = (walk[i - 1].x + (walk[i].x - walk[i - 1].x) * f,
+              walk[i - 1].y + (walk[i].y - walk[i - 1].y) * f)
+      break
+    gone += step
+  let
+    stood = state.stance[who]
+    ahead = (cos(stood.facing), sin(stood.facing))
+    leftward = (-sin(stood.facing), cos(stood.facing))
+    fore = (hand.x - stood.centre.x) * ahead[0] +
+      (hand.y - stood.centre.y) * ahead[1]
+    side = (hand.x - stood.centre.x) * leftward[0] +
+      (hand.y - stood.centre.y) * leftward[1]
+    own = if arm.get == Arm.Left: 1.0 else: -1.0
+    band = if link.height > state.rig.shoulder and
+              link.height <= state.rig.crown: Band.Head else: Band.Torso
+  if fore < -1e-2:
+    return some(Lying(aspect: Aspect.Aft, band: band, laps: 0, wound: false))
+  if side * own < -1e-2 and fore < state.rig.torso + 4.0 * state.rig.limb:
+    return some(Lying(aspect: Aspect.Fore, band: band, laps: 0, wound: false))
+  none(Lying)
+
+
+
 #[ Turning, and Keeping Count ]#
 
 const

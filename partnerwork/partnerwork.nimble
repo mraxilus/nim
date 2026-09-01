@@ -60,5 +60,9 @@ task sim, "Check the body sim's laws, then build its page":
   exec "nim js -d:release --hints:off -o:sim/sim.js sim/page.nim"
   bundleOne("sim")
 
+task verdicts, "Ask the sim which of the sheet's modifier states hold":
+  # An instrument run, not a build: the answers land in sim/verdicts.md.
+  exec "nim c -r --hints:off sim/verdicts.nim"
+
 task shot, "Build the workbench's screenshot helper for node":
   exec "nim js --hints:off -d:nodejs -o:design/shot.js design/shot.nim"
