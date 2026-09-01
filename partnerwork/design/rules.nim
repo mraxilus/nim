@@ -455,3 +455,6 @@ const FROM_ABOVE*: array[2, tuple[level: Option[Level], way: Option[Way]]] = [
   ## to default.
   ##   *Upper wrap* is read as the high wrap; that reading is the
   ##     implementer's, not the rule's, and the page flags it as such.
+  ##   Ledger data like `RULES`: nothing loads it yet.  A check used to
+  ##     doAssert it against its own spelled-out copy, which checked
+  ##     nothing and is gone; making it load-bearing is the same open TODO.

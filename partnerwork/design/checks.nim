@@ -21,6 +21,10 @@ import std/[algorithm, math, options, sequtils, sets, strformat, strutils,
 
 import ./[parts, rules, sign]
 import ../src/partnerwork/draw/[body, figure, geometry, pose, route, style]
+# Qualified, and only here: rule 11 claims the turn pages add no frame the
+# app does not have, and the one way to check *that* is to ask the app's
+# own model rather than a list this file could let drift.
+from ../src/partnerwork/frame import nil
 
 
 func decimal(x: float; places: int): string =
@@ -369,9 +373,10 @@ proc checkRules*() =
       &"Above settled away from home; got way `{way}`."
     doAssert roundOf(some Level.Above, way).isNone,
       &"Above sent its line round; got way `{way}`."
-  doAssert FROM_ABOVE[0] == (some Level.High, some Way.Wrap) and
-    FROM_ABOVE[1] == (none Level, none Way),
-    &"The transitions out of above drifted; got `{FROM_ABOVE}`."
+  # The "leads only to" half rests on `FROM_ABOVE`, which is ledger data
+  # nothing loads yet -- see the TODO in `rules.nim`.  A doAssert used to
+  # compare it to its own spelled-out copy here, which checked nothing;
+  # what the drawing can actually be held to is the half above.
   told.add "`above` takes no lock or wrap, and leads only to high wrap " &
     "or default"
 
@@ -418,13 +423,25 @@ proc checkSingleTurns*() =
     "one level that cannot lock or wrap whichever way the couple turns"
 
   # RULE 11.  "no additional frame positions, just the addition of
-  # rotations that let us travel between them."
-  const APP_SINGLES: array[4, Holds] = [
-    [some Arm.L, none Arm], [some Arm.R, none Arm],
-    [none Arm, some Arm.L], [none Arm, some Arm.R],
-  ]
+  # rotations that let us travel between them."  Measured against the app's
+  # own model: the single-hold frames are read out of `frame.FRAMES` rather
+  # than from a list this file used to keep, which asserted a copy against
+  # itself and would have missed the app changing.
+  var app_singles: seq[Holds]
+  for laid in frame.FRAMES:
+    if frame.countHolds(laid) != 1:
+      continue
+    var holds: Holds
+    for side in frame.Side:
+      if laid.hold[side].isSome:
+        holds[if side == frame.Side.Left: Arm.L else: Arm.R] =
+          some (if laid.hold[side].get == frame.Site.LeftHand: Arm.L
+                else: Arm.R)
+    app_singles.add holds
+  doAssert app_singles.len == SINGLES.len,
+    &"The app's single-hold frames moved; got `{app_singles.len}`."
   for single in SINGLES:
-    doAssert single.holds in APP_SINGLES,
+    doAssert single.holds in app_singles,
       &"A hold outside the app's four appears; got `{single.name}`."
   told.add &"every position is one of the app's {SINGLES.len} single-hand " &
     "frames, turned; nothing new is drawn"
@@ -1083,8 +1100,9 @@ proc checkHandTurns*() =
       &"A way of turning did not wind a half turn; got " &
         &"`{decimal(spun, 1)}` for {way}."
     winders.add w.title.toLowerAscii
-  doAssert winders.len == TurnWay.toSeq.len,
-    &"Every way should wind; got `{winders.len}`."
+  # No count assert: `winders` gains one entry per way unconditionally, so
+  # counting it against `TurnWay` could never fail.  The doAssert in the
+  # loop is the check -- a way that does not wind stops the build there.
   told.add &"all {winders.len} ways wind the pair a half turn and so walk " &
     "the chain, orbits as much as axis turns -- because an orbit that keeps " &
     "its side to the centre turns the walker relative to their partner, " &
