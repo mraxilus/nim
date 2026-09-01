@@ -2420,7 +2420,8 @@ suite "History":
   test "undo and redo retrace every recorded state exactly, and canUndo/canRedo agree":
     var scene = initScene()
     var camera = initCameraDefault()
-    var history = initHistory(scene, camera)
+    var history: History
+    history.initHistory(scene, camera)
     var snapshots = @[scene] # Index 0 is the seeded initial state.
     for i in 0 ..< CAPACITY_HISTORY - 1:
       scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
@@ -2454,7 +2455,8 @@ suite "History":
   test "recording past capacity drops the oldest entry instead of growing":
     var scene = initScene()
     var camera = initCameraDefault()
-    var history = initHistory(scene, camera)
+    var history: History
+    history.initHistory(scene, camera)
     var snapshots = @[scene]
     for i in 0 ..< CAPACITY_HISTORY + 4: # Four states past what the timeline retains.
       scene.addItem(POINTS[i mod SAMPLES], "p" & $i, inkCycled(i))
@@ -2488,7 +2490,8 @@ suite "History":
   test "a fresh record after undo truncates the redo-able future":
     var scene = initScene()
     var camera = initCameraDefault()
-    var history = initHistory(scene, camera)
+    var history: History
+    history.initHistory(scene, camera)
     scene.addItem(POINTS[0], "a", Ink.Rose)
     history.record(scene, camera)
     let state_a = scene
@@ -2522,7 +2525,8 @@ suite "History":
 
     var scene = initScene()
     var camera = initCameraDefault()
-    var history = initHistory(scene, camera)
+    var history: History
+    history.initHistory(scene, camera)
 
     # Two edits, each made from its own distinctly different viewpoint.
     camera.azimuth = 0.25

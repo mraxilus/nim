@@ -2096,7 +2096,7 @@ proc main() =
     constructSeeds(scene, now_startup)
     scene.replayFrom(now_startup)
   if options.is_filled: fillSceneForBenchmark(scene, now_startup)
-  HISTORY = initHistory(scene, camera)
+  HISTORY.initHistory(scene, camera)
 
   if len(options.path_storyboard) > 0:
     runStoryboard(window, renderer, options.path_storyboard, panel, scene, camera)

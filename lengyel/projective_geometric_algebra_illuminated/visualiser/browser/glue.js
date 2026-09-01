@@ -865,6 +865,9 @@ const button_drawer = document.getElementById('btn-drawer');
 button_drawer.addEventListener('click', () => {
   const open = drawer.classList.toggle('open');
   button_drawer.classList.toggle('on', open);
+  // Everything inside it that skips its work while out of sight catches up now: the rows,
+  // the operand pickers. Both are no-ops when their own section is still collapsed.
+  refreshObjectsUI();
 });
 
 // Top menu: one popover holding every top-bar action (undo/redo, axes/grid, save/load
@@ -886,6 +889,10 @@ document.querySelectorAll('.section-header').forEach((header) => {
     // than only that one: the check reads the section's own class either way, and a
     // handler that knew which section it was would be a second place to keep in step.
     ghostDrawerOperation();
+    // And the objects list catches up on whatever it skipped while it was closed; see
+    // `refreshObjectsUI`. Same shape, same reason, and asked of every section for the same
+    // reason as above -- the call is a no-op unless it is the objects section that opened.
+    refreshObjectsUI();
   });
 });
 document.getElementById('toggle-axes').addEventListener('click', (e) => {
@@ -1353,6 +1360,61 @@ function ghostDrawerOperation() {
   nimGhostOperation(parseInt(picker_operation.value, 10), first, second);
 }
 
+// How long one slice of row building may take before it yields the frame. Under a third of
+//   a 60 fps frame: long enough that a few dozen rows land per slice, short enough that the
+//   frame it is spending is still a frame that draws.
+const MILLISECONDS_ROWS_SLICE = 5;
+// What is left of a reconcile that has not finished building its rows, or null. Drained by
+//   the frame loop rather than by a `requestAnimationFrame` of its own, for one reason:
+//   `recordPhaseTime` *overwrites* a phase's reading for the frame rather than adding to it,
+//   so work done in a callback beside the loop is either unmeasured or clobbers what the
+//   loop measured. Cost inside the frame belongs to a phase of that frame -- the same rule
+//   the `ui refresh` row was fixed under once already.
+let rows_pending = null;
+
+function sliceObjectRows() {
+  // One slice of the pending reconcile, bounded by time rather than by a row count: a row
+  //   that is already standing and unchanged costs almost nothing, and one that has to be
+  //   built costs far more, so a fixed count would be a different budget on every pass.
+  if (rows_pending === null) return;
+  const { keys, standing, signatures } = rows_pending;
+  const until = performance.now() + MILLISECONDS_ROWS_SLICE;
+  while (rows_pending.at < keys.length) {
+    const at = rows_pending.at;
+    const key = keys[at];
+    const signature = signatureOfItemRow(key);
+    signatures.set(key, signature);
+    let node = standing.get(key);
+    const is_building = node === undefined || signatures_row.get(key) !== signature;
+    if (is_building) {
+      if (node !== undefined) node.remove();
+      node = buildRowFor(key);
+      node.dataset.key = key;
+    }
+    // Already in the right place is the common case; otherwise this moves it there.
+    if (list_objects.children[at] !== node) {
+      list_objects.insertBefore(node, list_objects.children[at] || null);
+    }
+    rows_pending.at = at + 1;
+    // Checked only where a row was actually built, so a pass that changes nothing runs to
+    //   the end without ever reading the clock -- a tap on `hide` stays immediate.
+    if (is_building && performance.now() >= until) return;
+  }
+  // Whatever is left past the wanted rows is gone from the scene.
+  while (list_objects.children.length > keys.length) list_objects.lastElementChild.remove();
+  signatures_row = signatures;
+  rows_pending = null;
+}
+
+function isDrawerObjectsOpen() {
+  // A collapsed section shows no rows, so there are none to keep current. The drawer is
+  // asked as well as the section: a section marked open inside a closed drawer is still
+  // not on screen, and the load happens either way.
+  const section = document.querySelector('.section[data-section="objects"]');
+  return section !== null && section.classList.contains('open') &&
+    drawer.classList.contains('open');
+}
+
 function isDrawerApplyOpen() {
   // A collapsed section previews nothing: the ghost belongs to a control on screen, and
   // one left standing after its section closed names nothing a reader can see.
@@ -1435,8 +1497,16 @@ let key_operand_options_last = ''; // Slot list + labels last used to rebuild op
 
 function refreshOperandOptions() {
   const slots = nimSceneSlots();
-  const key = slots.map((slot) => slot + ':' + nimItemLabel(slot)).join(',');
-  if (key !== key_operand_options_last) {
+  // **Keyed on the scene's own revision, not on a roll-call of every label.** The key used
+  //   to be `slot:label` joined over the whole scene, which is one FFI call per object and
+  //   a string the length of the list -- 5,038 calls to decide whether two pickers needed
+  //   rebuilding, on a path every scene change runs through. `scene.revision` moves on
+  //   exactly the edits that can change a label, and the count catches nothing else moving.
+  const key = nimSceneRevision() + ':' + slots.length;
+  // A collapsed section has no pickers to fill: rebuilding them is one `<option>` per
+  //   object per picker, ten thousand elements at the largest size, for a control that is
+  //   not on screen. The section header and the drawer button both refresh on opening.
+  if (key !== key_operand_options_last && isDrawerApplyOpen()) {
     key_operand_options_last = key;
     for (const selection_target of [picker_operand_first, picker_operand_second]) {
       const prev = selection_target.value;
@@ -1595,6 +1665,23 @@ function buildRowFor(key) {
 }
 
 function refreshObjectsUI() {
+  // **A closed section builds nothing, and catches up when it opens.** Loading the largest
+  //   size with this section collapsed built 5,038 rows for a list nobody could see: 790 ms
+  //   of a 1,496 ms load, half of it, spent on a picture that was not on screen. The count
+  //   in the header is written either way -- it is one string, it is visible while the
+  //   section is shut, and it is the only part of this a reader can see from there.
+  //   The same shape as the pool grid's `is_pool_stale` and the diagnostics tick's own
+  //   `open` check; the section handler above is what redeems the flag.
+  count_objects.textContent =
+    '(' + nimSceneCount() + ' of ' + nimSceneCapacity() + ')';
+  // These two belong to the *apply* section and to the button above the list, not to the
+  //   rows -- they are refreshed here only because every caller that changes the scene
+  //   already calls this. So they run whether or not the rows do: gating them behind the
+  //   objects section left the operand pickers empty for a reader who had collapsed it.
+  refreshOperandOptions();
+  refreshAddButton();
+  if (!isDrawerObjectsOpen()) return;
+
   // **Reconciled against the rows already standing, not rebuilt.** This used to empty the
   //   list and build every row again, which on the 1,024-object demo was 570 ms of
   //   JavaScript and 164 ms of layout -- and there are a dozen callers, so a tap on `hide`
@@ -1604,11 +1691,13 @@ function refreshObjectsUI() {
   //   this way every caller is cheap, including ones not yet written. A refresh that
   //   changes nothing writes nothing. The same shape as `timings.RECORDS_FRAME`'s
   //   this-frame/last-frame pair and the swap arena, one side of the wire over.
-  const slots = nimSceneSlots()
-    .slice()
-    .sort((a, b) => nimItemBorn(b) - nimItemBorn(a)); // Most recently added first.
-  count_objects.textContent = '(' + slots.length + ' of ' + nimSceneCapacity() + ')';
-
+  // **Ordered by the bridge, not by a comparator that calls it.** This used to sort by
+  //   `nimItemBorn`, which is two calls across the FFI per comparison -- about 124,000 of
+  //   them over 5,038 slots, and 165 ms of a load, to reach an order Nim can hand over.
+  //   `nimSceneSlotsCreated` is that order already: `scene.slotsCreated` walks by the
+  //   creation ordinal, and a replayed load stamps `born` in creation order, so reversing
+  //   it is the same "most recently added first" for one pass and no comparator at all.
+  const slots = Array.from(nimSceneSlotsCreated()).reverse();
   const keys = [];
   if (slots.length === 0 && !isComposing()) keys.push(KEY_ROW_EMPTY);
   // A composing session heads the list: it is the newest thing here, and it has no
@@ -1620,29 +1709,17 @@ function refreshObjectsUI() {
   const standing = new Map();
   for (const node of Array.from(list_objects.children)) standing.set(node.dataset.key, node);
 
-  const signatures = new Map();
-  let at = 0;
-  for (const key of keys) {
-    const signature = signatureOfItemRow(key);
-    signatures.set(key, signature);
-    let node = standing.get(key);
-    if (node === undefined || signatures_row.get(key) !== signature) {
-      if (node !== undefined) node.remove();
-      node = buildRowFor(key);
-      node.dataset.key = key;
-    }
-    // Already in the right place is the common case; otherwise this moves it there.
-    if (list_objects.children[at] !== node) {
-      list_objects.insertBefore(node, list_objects.children[at] || null);
-    }
-    at += 1;
-  }
-  // Whatever is left past the wanted rows is gone from the scene.
-  while (list_objects.children.length > keys.length) list_objects.lastElementChild.remove();
-  signatures_row = signatures;
-
-  refreshOperandOptions();
-  refreshAddButton();
+  // **Built in slices, so a long list cannot freeze the page.** Five thousand rows is 820 ms
+  //   of element construction in one block -- the whole of the load, once the bridge stopped
+  //   deep-copying the timeline -- and there is no version of that a reader does not feel.
+  //   The diff itself stays whole and synchronous: it is the *building* that costs, and a
+  //   half-applied diff is only ever a list that has not finished filling, never a wrong one.
+  //   The rows appear top-down as the scene's own objects animate in, which is the order
+  //   they arrive in anyway.
+  //   A refresh that finds everything already standing does no building and so never yields
+  //   -- the common case, a tap on `hide`, stays exactly as immediate as it was.
+  rows_pending = { keys, standing, signatures: new Map(), at: 0 };
+  sliceObjectRows();
 }
 
 function isComposing() { return session_edit !== null && session_edit.slot === null; }
@@ -2316,7 +2393,17 @@ function isPhaseShown(name) {
 //   suffix scan over the buckets, done only when the panel is actually open.
 const FRAMES_EXCEEDANCE = 1024;
 const MILLISECONDS_BUCKET = 0.5; // Fine enough to separate a 16.7 ms frame from a 17.2.
-const BUCKETS_EXCEEDANCE = 256; // Up to 128 ms; everything slower lands in the last one.
+// **The slowest budget the chart marks**, in frames per second, and the reach of the
+//   histogram folded from it. The two have to agree or the mark is unreachable: the axis
+//   only ever runs as far as the slowest bucket holding a frame, so a mark past the last
+//   bucket is skipped by `drawExceedance` on every draw and simply never appears. Adding
+//   the 1 fps line to `BUDGETS_EXCEEDANCE` alone did exactly that, silently, against a
+//   histogram that stopped at 128 ms. Folded here so the next mark cannot repeat it.
+//   The extra bucket is what puts the mark *inside* the reachable range rather than exactly
+//   at its edge.
+const RATE_BUDGET_SLOWEST = 1;
+const BUCKETS_EXCEEDANCE =
+  Math.ceil((1000 / RATE_BUDGET_SLOWEST) / MILLISECONDS_BUCKET) + 1;
 const history_exceedance = new Float32Array(FRAMES_EXCEEDANCE);
 const buckets_exceedance = new Int32Array(BUCKETS_EXCEEDANCE);
 let index_exceedance = 0;
@@ -2430,12 +2517,21 @@ const MILLISECONDS_AXIS_LEAST = (1000 / 30) / SHARE_MARK_LEAST;
 //   own token* on purpose -- it is a mark a reader asked for, not a fifth band. Anything
 //   past 33.3 ms is poor whichever side of 66.7 it falls, so the curve merely splits into
 //   two runs there and strokes them the same colour. **Do not tidy the repeated token
-//   away**: dropping it would either lose the mark or invent a band.
+//   away**: dropping it would either lose the mark or invent a band. The 1 fps entry below is
+//   the same case a second time, and is there for the same reason: loading the largest size
+//   is a frame of *seconds*, and a chart whose slowest mark is 66.7 ms cannot say how bad
+//   that is -- it can only say "past the end". A mark at 1,000 ms gives the spike a ruler.
+//   Its own consequence, stated rather than discovered: a window holding a one-second frame
+//   stretches the axis until 8.3, 16.7 and 33.3 crowd into its leftmost tenth. That is
+//   self-limiting, since the axis eases back as the spike ages out of the 1,024-frame
+//   window, and it is the honest picture of a window that really did hold such a frame.
 const BUDGETS_EXCEEDANCE = [
   { milliseconds: 1000 / 120, label: '120', token: '--speed-fast' },
   { milliseconds: 1000 / 60, label: '60', token: '--speed-good' },
   { milliseconds: 1000 / 30, label: '30', token: '--speed-fair' },
   { milliseconds: 1000 / 15, label: '15', token: '--speed-poor' },
+  { milliseconds: 1000 / RATE_BUDGET_SLOWEST, label: String(RATE_BUDGET_SLOWEST),
+    token: '--speed-poor' },
   { milliseconds: Infinity, label: '', token: '--speed-poor' },
 ];
 // Read once from the stylesheet, which is where they are set and tuned; see the tokens'
@@ -4143,17 +4239,25 @@ function frame() {
   //   closed section reports no width.
   if (is_axis_gliding && exceedance !== null && exceedance.clientWidth > 0) drawExceedance();
   const ms_now_ui = performance.now();
-  if (ms_now_ui - ms_refresh_ui >= MILLISECONDS_WINDOW_READING) {
-    ms_refresh_ui = ms_now_ui;
+  // One reading for every kind of UI work this frame did, since `recordPhaseTime` writes
+  //   the phase rather than adding to it. The row build runs every frame while it has rows
+  //   left; the rest runs on its own five-a-second cadence; a frame doing neither leaves
+  //   the slot unwritten, exactly as before.
+  const is_ticking_ui = ms_now_ui - ms_refresh_ui >= MILLISECONDS_WINDOW_READING;
+  if (is_ticking_ui || rows_pending !== null) {
     const ms_before_ui = performance.now();
-    refreshCameraFields();
-    refreshRuler();
-    refreshDiagnostics();
-    refreshUndoRedoButtons(); // catches every history-touching path this tick's own
-      // click handlers above don't reach directly (add, apply, remove, load demo,
-      // scene load/clear).
-    syncOperandsToSelection(); // catches selection changes from tap-to-select too.
-    refreshAddButton(); // catches paths that fill or empty the scene without a click here.
+    sliceObjectRows();
+    if (is_ticking_ui) {
+      ms_refresh_ui = ms_now_ui;
+      refreshCameraFields();
+      refreshRuler();
+      refreshDiagnostics();
+      refreshUndoRedoButtons(); // catches every history-touching path this tick's own
+        // click handlers above don't reach directly (add, apply, remove, load demo,
+        // scene load/clear).
+      syncOperandsToSelection(); // catches selection changes from tap-to-select too.
+      refreshAddButton(); // catches paths that fill or empty the scene without a click.
+    }
     recordPhaseTime('ui', performance.now() - ms_before_ui);
   }
 

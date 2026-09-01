@@ -3034,6 +3034,60 @@ measured on the same probe minutes apart.
 reporting on its *surroundings*. This one had been quietly reporting the capacity change for
 four runs before it finally crossed its own ceiling.
 
+  **Loading the largest size was 1,496 ms of frozen page, and almost none of it was the
+arrangement.** Split by hand and then profiled: 706 ms in the bridge, 790 ms in the drawer.
+Four costs, none of them the algebra:
+  - **`initHistory` returned a `History` by value.** `g_history = initHistory(...)` compiles
+    to `nimCopy(g_history, initHistory(...))` on the JS backend, and a `History` is
+    `CAPACITY_HISTORY` **Steps** -- so seeding a *one-entry* timeline deep-copied thirty-two
+    whole scenes, about 106 MB at 5,038 slots. `nimCopy` plus `nimCopyAux` was 65% of the
+    load. It fills a timeline the caller owns now, which is what `STYLE.md` asks for anyway
+    and what `MeshSet` and `DrawScratch` already do. Bridge: **706 -> 95 ms**.
+  - **The objects list built every row for a section nobody had open.** `refreshObjectsUI`
+    has thirteen callers and no gate; 5,038 rows were built whether or not the section was
+    expanded. Gated on the section *and* the drawer, with the header and the drawer button
+    both redeeming it -- the same shape as `is_pool_stale` and the diagnostics tick.
+  - **The operand pickers rebuilt an `<option>` per object per picker**, and spent 5,038 FFI
+    calls building a `slot:label` roll-call *just to decide whether to*. Keyed on
+    `scene.revision` and the count now, and gated on the apply section, which is collapsed by
+    default. That alone was 119 ms.
+  - **The row sort crossed the FFI about 124,000 times.** `sort((a, b) => nimItemBorn(b) -
+    nimItemBorn(a))` is two calls per comparison; `nimSceneSlotsCreated` is that order
+    already, reversed in one pass.
+  The rows that remain are built **in slices bounded by time**, drained from the frame loop
+rather than from a `requestAnimationFrame` of their own -- because `recordPhaseTime`
+*overwrites* a phase's reading rather than adding to it, so work done in a callback beside
+the loop is either unmeasured or clobbers what the loop measured. Cost inside a frame belongs
+to a phase of that frame; the `ui refresh` row had to be fixed under that same rule once
+before, and the driven check on it caught this attempt too.
+  **1,496 ms to 101 ms**, of which 95 is now the arrangement itself, and the list fills
+progressively behind it instead of blocking. A pass that changes nothing never reads the
+clock, so a tap on `hide` is as immediate as it was.
+  Two driven checks had to change with it, and neither was weakened: the operand-picker check
+opens the apply section, because that is the only route by which a reader sees a picker at
+all -- and then closes it again, since an open apply section keeps a **ghost** standing and a
+standing ghost is one of the three things that stops a frame holding, which is exactly how it
+broke the frame-hold checks further down the file the first time. The row-count check opens
+the drawer and waits for the fill, against `nimSceneCount()` rather than the size loaded,
+since the refusal check above it fills the free slots first.
+
+  **A 1 fps mark on the exceedance curve, and the histogram had to be told about it.**
+Loading the largest size is a frame of *seconds*; a chart whose slowest mark was 66.7 ms
+could only say "past the end". Adding the mark to `BUDGETS_EXCEEDANCE` alone did nothing at
+all, silently: the axis only ever runs as far as the slowest bucket holding a frame, and the
+histogram stopped at **128 ms**, so `drawExceedance` skipped the new mark on every draw. The
+bucket count is folded from the slowest mark now, so the next one cannot repeat it. The scan
+at 2,001 buckets measures 0 ms and the whole redraw 0.5 ms, and the curve loop already walked
+only the populated span rather than the array.
+
+  **What could not be measured here, stated rather than guessed at.** The remaining complaint
+is the *tail* -- 1 frame in 100 at 25 ms against a 16.63 ms body -- and this container cannot
+see it. Under SwiftShader a frame is 70-100 ms and a CPU profile is **98% `(program)`**, the
+rasteriser itself; every named function in the build is under 0.2%. A promising hypothesis
+(that the diagnostics' own once-a-second redraw authors the tail it displays) was tested and
+**killed**: the redraw is 0.5 ms. So the load was fixed, because the load is CPU work and is
+measurable; the tail is not diagnosable on this hardware and no claim is made about it.
+
   **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
 reasoned about: a `Scene` at 5040 slots is **1.11 MiB** as a C struct and about 3.3 MB as JS
 objects, and a `Step` is a whole `Scene` beside a five-float `Camera`. So the undo timeline at

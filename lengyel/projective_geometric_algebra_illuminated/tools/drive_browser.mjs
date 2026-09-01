@@ -461,6 +461,17 @@ report(
 );
 
 await page.click('#btn-drawer');
+// **And the apply section, because that is where the pickers are.** They are filled when
+//   their own section opens rather than on every scene change: one `<option>` per object per
+//   picker is ten thousand elements at the largest size, and building them for a collapsed
+//   control was 119 ms of a demo load. So the route a reader takes to *see* a picker is the
+//   route this has to take to check one -- opening the drawer alone no longer fills them,
+//   and a check that stopped at the drawer would be asserting against a control nobody
+//   could have looked at.
+await page.evaluate(() => {
+  const section = document.querySelector('.section[data-section="apply"]');
+  if (!section.classList.contains('open')) section.querySelector('.section-header').click();
+});
 await page.waitForTimeout(300);
 report(
   'the operand pickers follow a scene the reader has just changed',
@@ -470,6 +481,16 @@ report(
   `${await page.evaluate(() => document.getElementById('op-first').options.length)} options, ` +
     `${await page.evaluate(() => nimSceneCount())} items`,
 );
+// Shut again, because an open apply section keeps a **ghost** standing -- that is the whole
+//   point of `ghostDrawerOperation` running on a section toggle -- and a standing ghost is
+//   one of the three things `is_scene_settled` refuses to hold a frame over. Left open, this
+//   check would quietly break the frame-hold checks further down, which is exactly what it
+//   did the first time.
+await page.evaluate(() => {
+  const section = document.querySelector('.section[data-section="apply"]');
+  if (section.classList.contains('open')) section.querySelector('.section-header').click();
+});
+await page.waitForTimeout(200);
 const count_before_apply = await page.evaluate(() => nimSceneCount());
 // Applied twice over: once through the picker, which names *positions*, and once straight
 //   through the bridge with the slots those positions stand for. The two build the same
@@ -2971,6 +2992,23 @@ report(
 // 80,325 on the page, one rebuild cost 570 ms of JavaScript and 164 ms of layout, and a tap
 // on `hide` froze the page for three quarters of a second. Counted structurally, since an
 // element that is not there cannot cost anything.
+// **Opened first, because a list nobody is looking at now builds nothing.** That is the
+//   point of the gate this check exists on the other side of: rows are built when the
+//   drawer and the objects section are both open, and the cost below is what a reader who
+//   *is* looking pays. Then waited for, since the list fills across frames rather than in
+//   one block -- see `refreshObjectsUI`'s own slicing -- which is also what a reader sees.
+await page.evaluate(() => {
+  const drawer = document.getElementById('drawer');
+  const section = document.querySelector('.section[data-section="objects"]');
+  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  if (!section.classList.contains('open')) section.querySelector('.section-header').click();
+});
+//   Waited against the scene's own count rather than the size that was loaded: the refusal
+//   check above filled the free slots, so the list is one row per *live object*, which is
+//   the invariant either way.
+await page.waitForFunction(
+  () => document.getElementById('objects-list').children.length === nimSceneCount(),
+  null, { timeout: 120000 });
 const drawer_dom = await page.evaluate(() => ({
   elements: document.querySelectorAll('*').length,
   rows: document.querySelectorAll('#objects-list > *').length,
@@ -2981,7 +3019,7 @@ report(
   // against a fixed ceiling stops meaning anything the moment the capacity moves. Nine
   // elements a row is what a collapsed row costs; the slack covers the rest of the page.
   'a closed row builds no edit form, so the page holds thousands of elements and not tens',
-  drawer_dom.rows === ITEMS_DEMO_LOAD && drawer_dom.forms === 0 &&
+  drawer_dom.rows >= ITEMS_DEMO_LOAD && drawer_dom.forms === 0 &&
     drawer_dom.elements < 12 * drawer_dom.rows,
   `${drawer_dom.elements} elements over ${drawer_dom.rows} rows ` +
     `(${(drawer_dom.elements / drawer_dom.rows).toFixed(1)} each), ` +

@@ -116,16 +116,30 @@ func slotOf(history: History; position: int): int =
 
 #[ History Editing ]#
 
-proc initHistory*(scene: Scene; camera: Camera): History =
+proc initHistory*(history: var History; scene: Scene; camera: Camera) =
   ## Start a fresh one-entry timeline anchored at the current state -- call whenever the
   ## scene itself is reset (program start, load, clear), so undo never reaches earlier
   ## than the moment tracking began.
+  ##   Fills the timeline the caller already holds rather than returning one; see below.
   ##   `camera` completes the entry rather than being read back: nothing undoes past the
   ##   first step, so no traversal ever restores it. See `Step.camera`.
-  result.entries[0] = Step(scene: scene, camera: camera)
-  result.first = 0
-  result.count = 1
-  result.cursor = 0
+  # **Filled in place, and field by field.** Two separate copies were hiding here, both of
+  #   them whole-`Scene` deep copies on the JS backend, and together they were **65% of a
+  #   5,038-object demo load**:
+  #     - *Returning a `History`.* `g_history = initHistory(...)` compiled to
+  #       `nimCopy(g_history, initHistory(...))`, and a `History` is `CAPACITY_HISTORY`
+  #       Steps -- so seeding a one-entry timeline deep-copied **thirty-two** scenes, about
+  #       106 MB at that size. Taking the timeline as `var` and filling it removes all of it.
+  #     - *Building a `Step` literal.* Constructing one copies the scene into the temporary
+  #       and assigning it copies that temporary into the array, where one copy was needed.
+  #   `record` below carries the second fix for the same reason. The caller owning the
+  #   storage is also what `STYLE.md` asks for, and what `MeshSet` and `DrawScratch` already
+  #   do on the same grounds.
+  history.entries[0].scene = scene
+  history.entries[0].camera = camera
+  history.first = 0
+  history.count = 1
+  history.cursor = 0
 
 
 proc record*(history: var History; scene: Scene; camera: Camera) =
@@ -146,7 +160,11 @@ proc record*(history: var History; scene: Scene; camera: Camera) =
     # steps deep the old shift cost 26.4 ms and the ring costs 10.7.
     history.first = (history.first + 1) mod CAPACITY_HISTORY
     history.cursor = CAPACITY_HISTORY - 1
-  history.entries[history.slotOf(history.cursor)] = Step(scene: scene, camera: camera)
+  # One copy of the scene, not two; see `initHistory`. This runs on every committed edit, so
+  #   the second copy was being paid over and over rather than once at startup.
+  let slot = history.slotOf(history.cursor)
+  history.entries[slot].scene = scene
+  history.entries[slot].camera = camera
   history.count = history.cursor + 1
 
 

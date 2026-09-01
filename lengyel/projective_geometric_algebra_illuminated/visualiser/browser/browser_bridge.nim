@@ -452,7 +452,7 @@ proc nimInit(now: cfloat) {.exportc.} =
   placeSeeds(float(now))
   g_camera = initCameraDefault()
   g_selection.clear()
-  g_history = initHistory(g_scene, g_camera)
+  g_history.initHistory(g_scene, g_camera)
 
 
 proc nimLoadDemo(scale_ordinal: cint; now: cfloat; width, height: cint) {.exportc.} =
@@ -476,7 +476,7 @@ proc nimLoadDemo(scale_ordinal: cint; now: cfloat; width, height: cint) {.export
   showOrrery(g_scene, g_camera, int(width), int(height), ScaleOrrery(scale_ordinal), clock)
   for slot in 0 ..< g_scene.len: stampBorn(slot, g_scene.bornAt(slot))
   g_selection.clear()
-  g_history = initHistory(g_scene, g_camera)
+  g_history.initHistory(g_scene, g_camera)
 
 
 proc nimDemoScales(): seq[cint] {.exportc.} =
@@ -1900,7 +1900,7 @@ proc nimSceneClear() {.exportc.} =
   ## Discard the live scene and start a fresh empty one.
   g_scene = initScene()
   g_selection.clear()
-  g_history = initHistory(g_scene, g_camera)
+  g_history.initHistory(g_scene, g_camera)
 
 
 proc nimSceneAddRaw(
