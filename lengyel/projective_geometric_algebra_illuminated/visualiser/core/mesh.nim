@@ -830,10 +830,20 @@ proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba) =
   let count = meshes.points.count_vertices
   doAssert count < VERTICES_MAX,
     &"Mesh holds at most {VERTICES_MAX} vertices; raise `--define:visualiser.vertices_max`."
-  meshes.points.vertices[count] = Vertex(
-    x: float32(at.x), y: float32(at.y), z: float32(at.z),
-    red: tint.red, green: tint.green, blue: tint.blue, alpha: tint.alpha,
-  )
+  # **Field by field, not through a `Vertex` literal.** Constructing one and assigning it
+  #   compiles to a `nimCopy` of the whole object on the JS backend -- see `history.record`,
+  #   which carried the same fix for the same reason. It costs nothing anywhere else and it
+  #   is the difference between one write and a deep copy on the one proc that runs once per
+  #   *point*, which at the largest size is 4,938 times a frame: `nimCopy` and `nimCopyAux`
+  #   together were 41% of a moving frame's whole profile.
+  template vertex: untyped = meshes.points.vertices[count]
+  vertex.x = float32(at.x)
+  vertex.y = float32(at.y)
+  vertex.z = float32(at.z)
+  vertex.red = tint.red
+  vertex.green = tint.green
+  vertex.blue = tint.blue
+  vertex.alpha = tint.alpha
   meshes.points.count_vertices = count + 1
 
 

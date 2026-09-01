@@ -3071,7 +3071,7 @@ broke the frame-hold checks further down the file the first time. The row-count 
 the drawer and waits for the fill, against `nimSceneCount()` rather than the size loaded,
 since the refusal check above it fills the free slots first.
 
-  **A 1 fps mark on the exceedance curve, and the histogram had to be told about it.**
+  **Marks at 10, 5 and 1 fps, and the histogram had to be told about the slowest.**
 Loading the largest size is a frame of *seconds*; a chart whose slowest mark was 66.7 ms
 could only say "past the end". Adding the mark to `BUDGETS_EXCEEDANCE` alone did nothing at
 all, silently: the axis only ever runs as far as the slowest bucket holding a frame, and the
@@ -3079,6 +3079,39 @@ histogram stopped at **128 ms**, so `drawExceedance` skipped the new mark on eve
 bucket count is folded from the slowest mark now, so the next one cannot repeat it. The scan
 at 2,001 buckets measures 0 ms and the whole redraw 0.5 ms, and the curve loop already walked
 only the populated span rather than the array.
+
+  **Points are not missing an optimisation the other kinds have; they are 98% of the
+objects.** The question was whether points ever got the treatment planes and lines did, since
+they are now the bottleneck. Half of the premise is right. Planes cross the wire as a
+`DiscRecord` plus a `RingRecord`, lines as `RibbonRecord`s, the sky as a `DomeRecord` -- each
+one record standing in for a fan or a quad strip that used to be dozens of vertices, expanded
+by its own instanced vertex shader. **A point is one vertex** (two when selected), in one
+`Mesh`, drawn in one call. There is no fan to collapse: a point is already the minimum the
+wire can carry, which is why it was left behind when the others moved. What points carry is
+the *per-object* cost, and they carry 4,938 of the 5,038 shares of it.
+  Two of those costs were real, and both were found by profiling a **moving** camera -- the
+frame hold makes a still one free, so a still measurement says nothing about this at all.
+  **`addMarker` deep-copied a `Vertex` per point per frame.** Assigning a `Vertex` literal
+into the array compiles to a `nimCopy` of the whole object on the JS backend; writing the
+seven fields does not. `nimCopy` and `nimCopyAux` together were 41% of a moving frame's
+profile. The points row went **9.1 -> 7.1 ms**. The same fix `history.record` took, for the
+same reason, in the one proc that runs once per point.
+  **The instrument was a third of the frame it measured.** `timed` brackets the placing and
+emitting halves of *one object* and `chargeTally` reads the clock once more each, so a
+5,038-object scene made about fifteen thousand `performance.now()` calls a frame -- measured
+at 2.8 ms on their own. Gated on the drawer *and* the diagnostics section being open, as the
+pool grid, the objects list and the operand pickers now are: **14.5 ms watched, 9.2 ms
+unwatched**, a third of the moving frame returned to anyone not staring at the breakdown. The
+per-kind **counts** are not gated -- they are one increment each, and how many points were
+drawn is true whether or not anyone was watching.
+  **The flag is spelled `is_tally_skipped`, and the polarity is not a slip.** A Nim default
+argument does not survive into the generated JS signature: the function simply takes the
+parameter, so a JS caller that omits it passes `undefined`, which is falsy. Written the
+natural way round, every existing caller would have silently turned the measurement *off* and
+the per-kind rows would have read zero. Written inverted, omitting it measures everything.
+  The driven check that the kinds account for the scene phase now runs with the section open,
+because that is the only state in which the breakdown exists; collapsed, its rows are
+legitimately absent rather than wrong, and the check was summing zeros against a real phase.
 
   **What could not be measured here, stated rather than guessed at.** The remaining complaint
 is the *tail* -- 1 frame in 100 at 25 ms against a 16.63 ms body -- and this container cannot

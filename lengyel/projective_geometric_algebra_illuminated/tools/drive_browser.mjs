@@ -2897,6 +2897,19 @@ await page.evaluate(() => {
   nimSelectClear(); // Each add selects what it added; leave nothing standing behind.
 });
 await page.waitForTimeout(300);
+// **The breakdown only exists while it is being read**, so the check that it adds up has to
+//   run in that state. The bridge times the placing and emitting halves of every object,
+//   which at five thousand points is three clock reads each and 5 ms of a 14 ms frame, so it
+//   is gathered only where the drawer and the diagnostics section are both open. Collapsed,
+//   the per-kind rows are legitimately absent rather than wrong -- and this check would be
+//   summing zeros against a real scene phase, which is how it first failed.
+await page.evaluate(() => {
+  const drawer = document.getElementById('drawer');
+  const section = document.querySelector('.section[data-section="diagnostics"]');
+  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  if (!section.classList.contains('open')) section.querySelector('.section-header').click();
+});
+await page.waitForTimeout(300);
 // Only now start the window the accounting below reads: the fill is eighty committed edits
 //   back to back, which is not the ordinary picture this measures.
 await page.evaluate(() => { window.__phase_frame = []; });

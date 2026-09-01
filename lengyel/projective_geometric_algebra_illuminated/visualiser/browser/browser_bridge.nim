@@ -2091,7 +2091,8 @@ var g_counts_scene: SceneCost ## What the scene meshes standing in `g_meshes` ar
 
 proc openTally(cost: var SceneCost) =
   ## Start the tally's clock, so the first object measures from here rather than from zero.
-  cost.mark = performanceNow()
+  ##   Only where the breakdown is being read; see `timings.IS_TALLYING`.
+  if isTallying(): cost.mark = performanceNow()
 
 
 proc chargeTally(cost: var SceneCost; kind: PlacedKind; is_sky, is_ghost, is_selected: bool) =
@@ -2100,10 +2101,15 @@ proc chargeTally(cost: var SceneCost; kind: PlacedKind; is_sky, is_ghost, is_sel
   ##   two are the same answer -- `tessellate.placeObject` dispatches on `shape` and this
   ##   buckets what it decided -- and reading it twice meant a second multivector walk per
   ##   object per frame, on the path this tally exists to measure.
-  let
-    now_mark = performanceNow()
+  ##   **The counts are gathered either way; only the times are gated.** A count is one
+  ##   increment and says something true about the scene whether or not anyone is watching;
+  ##   a time is a clock read per object, which at five thousand points is a sixth of the
+  ##   frame. See `timings.IS_TALLYING`.
+  var spent = 0.0
+  if isTallying():
+    let now_mark = performanceNow()
     spent = now_mark - cost.mark
-  cost.mark = now_mark
+    cost.mark = now_mark
   if is_ghost:
     cost.ms_ghost += spent
     cost.count_ghost += 1
@@ -2131,7 +2137,7 @@ proc chargeTally(cost: var SceneCost; kind: PlacedKind; is_sky, is_ghost, is_sel
 
 proc nimBuildFrame(
   aspect, now: cfloat; height_pixels: cint;
-  is_axes_shown, is_grid_shown, is_algebra_shown: bool
+  is_axes_shown, is_grid_shown, is_algebra_shown: bool; is_tally_skipped: bool = false
 ): FrameData {.exportc.} =
   ## Tessellate every visible object in the live scene, at the camera's current
   ## placement, through the same `mesh.addObject` dispatch and `camera` transforms the
@@ -2154,6 +2160,16 @@ proc nimBuildFrame(
   let ms_entered = performanceNow()
   # Forget the last frame's two sides, and turn the record pair over so what was measured
   #   between frames -- hover picking -- is readable while this frame reports it.
+  # **Said once, at the top, so the whole frame agrees.** A flag read part-way through would
+  #   let one object be measured and the next not, and the totals would be a mixture of two
+  #   different frames' worth of instrumentation.
+  #   **Stated as "skipped" on purpose, and the polarity is not a slip.** A Nim default does
+  #   not survive into the JS signature -- the generated function simply takes the parameter,
+  #   so a caller that omits it passes `undefined`, which is falsy. Written the natural way
+  #   round, every existing JS caller would have silently turned the measurement *off* and
+  #   the per-kind rows would have read zero; written this way, omitting it measures
+  #   everything, which is what a caller that has not thought about it should get.
+  setTallying(not is_tally_skipped)
   openFrameTimings()
   # A focus is a slot carried across frames like any other, so it needs the same liveness
   #   guard the selection keeps; mirrors `visualiser.renderFrame`.

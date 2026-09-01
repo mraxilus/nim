@@ -2525,11 +2525,19 @@ const MILLISECONDS_AXIS_LEAST = (1000 / 30) / SHARE_MARK_LEAST;
 //   stretches the axis until 8.3, 16.7 and 33.3 crowd into its leftmost tenth. That is
 //   self-limiting, since the axis eases back as the spike ages out of the 1,024-frame
 //   window, and it is the honest picture of a window that really did hold such a frame.
+//   The 10 and 5 fps marks fill the stretch between 15 and 1, which is where a labouring
+//   frame actually lands and where the axis otherwise ran a decade unlabelled. They need no
+//   room the histogram does not already have: at 100 ms and 200 ms they sit well inside the
+//   reach `RATE_BUDGET_SLOWEST` folds. **Kept in ascending order of duration** --
+//   `bandOfExceedance` returns the first entry a reading falls under, so an entry out of
+//   order would silently mis-band every frame past it.
 const BUDGETS_EXCEEDANCE = [
   { milliseconds: 1000 / 120, label: '120', token: '--speed-fast' },
   { milliseconds: 1000 / 60, label: '60', token: '--speed-good' },
   { milliseconds: 1000 / 30, label: '30', token: '--speed-fair' },
   { milliseconds: 1000 / 15, label: '15', token: '--speed-poor' },
+  { milliseconds: 1000 / 10, label: '10', token: '--speed-poor' },
+  { milliseconds: 1000 / 5, label: '5', token: '--speed-poor' },
   { milliseconds: 1000 / RATE_BUDGET_SLOWEST, label: String(RATE_BUDGET_SLOWEST),
     token: '--speed-poor' },
   { milliseconds: Infinity, label: '', token: '--speed-poor' },
@@ -4016,8 +4024,15 @@ function renderFrame(now_seconds) {
   resize();
   const aspect = canvas.width / canvas.height;
 
+  // **The fine breakdown is gathered only where it is being read.** The bridge times the
+  //   placing and emitting halves of *every object*, so a five-thousand-point scene reads
+  //   the clock three times per object per frame -- measured at 2.8 ms of a 16 ms build,
+  //   for rows that are not on screen unless this section is expanded. The per-kind
+  //   *counts* still come back either way; only the times are skipped. Same argument as the
+  //   pool grid, the objects list and the operand pickers.
   const data = nimBuildFrame(
     aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown, is_algebra_shown,
+    !(drawer.classList.contains('open') && section_diagnostics.classList.contains('open')),
   );
   // The bridge times its own three phases where only it can see them; this side just
   // records what came back, into the same rings its own phases use.

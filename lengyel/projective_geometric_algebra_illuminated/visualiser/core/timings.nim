@@ -77,14 +77,40 @@ proc openFrameTimings*() =
   RECORDS_FRAME[INDEX_RECORD_CURRENT] = FrameRecord()
 
 
+var IS_TALLYING = true
+  ## Whether anyone is reading the per-side and per-kind breakdowns right now.
+  ##   **Instrumentation this fine has to be switchable, because it runs per object.**
+  ## `timed` brackets the placing and emitting halves of *one object*, so a scene of five
+  ## thousand points reads the clock ten thousand times a frame before `chargeTally` reads
+  ## it once more each. Measured on the JS backend: fifteen thousand `performance.now()`
+  ## calls cost **2.8 ms**, against a whole moving frame's build of 16 -- so a reader with
+  ## the drawer shut was paying a sixth of the frame for numbers nothing displayed.
+  ##   The *counts* are not gated: they are an increment each, and a row that says how many
+  ## points were drawn should not depend on whether anyone was watching.
+  ##   Defaults on, so a front-end that never says otherwise measures everything, which is
+  ## what the desktop build and every suite case want.
+
+proc setTallying*(is_wanted: bool) =
+  ## Say whether the per-side and per-kind breakdowns are being read.
+  ##   Call once a frame, before `openFrameTimings`; see `IS_TALLYING`.
+  IS_TALLYING = is_wanted
+
+
+proc isTallying*(): bool = IS_TALLYING
+  ## Report whether the fine breakdowns are being gathered this frame.
+
+
 template timed*(side: Side; body: untyped) =
   ## Charge whatever `body` does to one side of the boundary.
   ##   **Never nest two of these**: the inner stretch would be counted by both, and
   ##   nothing here can detect that. The call sites bracket disjoint halves of one proc,
   ##   which is the shape the seam was made to have.
-  let ms_entered_timed = nowMilliseconds()
+  ##   The body runs either way; only the two clock reads are skipped. Written as one body
+  ##   with a guarded pair rather than two branches, so there is exactly one copy of the
+  ##   drawing code and no way for the measured and unmeasured paths to differ.
+  let ms_entered_timed = (if IS_TALLYING: nowMilliseconds() else: 0.0)
   body
-  SPENT_SIDE[side] += nowMilliseconds() - ms_entered_timed
+  if IS_TALLYING: SPENT_SIDE[side] += nowMilliseconds() - ms_entered_timed
 
 
 proc spentOn*(side: Side): float = SPENT_SIDE[side]
