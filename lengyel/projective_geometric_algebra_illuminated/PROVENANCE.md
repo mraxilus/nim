@@ -2946,6 +2946,24 @@ catalogue is 11,252 entries and most of that is names -- and the demo takes **4.
 build on an otherwise idle container, against 2.1 seconds for the page itself to become ready.
 Both are the price of the count and both are worth knowing before raising it again.
 
+  **Looked at, at the angle where it could have gone wrong.** The ecliptic disc and the
+ground grid are now *exactly* the same plane, which is the one thing in this round that could
+have looked wrong rather than been wrong: coplanar surfaces stipple. Driven to three shallow
+elevations -- 0.10, 0.25 and 0.45 radians, where depth fighting shows if it is going to -- the
+grid reads cleanly through the disc at every one of them, continuous lines, no shimmer, and
+the disc's own two rims sit above and below the grid's horizon as separate clean arcs. Nothing
+to fix, so nothing was lifted off the plane the request asked for.
+  Read back rather than judged by eye, since a picture cannot be measured: `sol` stands at the
+origin and **every one of the nine planets has z exactly 0**, Neptune at 12.000 units which is
+the system radius its own scale claims. The moons hold their order against the real semi-major
+axes -- Phobos 0.080, Triton 0.217, Luna 0.219, Io 0.223, Titan 0.263, Callisto 0.279 -- and
+Phobos lands precisely on `RADIUS_MOON_NEAREST`. `ecliptic sol` is `-89.11 𝐞₄₁₂` and nothing
+else, which is the z = 0 plane and no other.
+  **There is no desktop demo to look at, and that is not an omission.** `constructOrrery` is
+reached only from `browser_bridge`; the desktop opens on the storyboard's seeds. What the
+desktop was checked for instead is the capacity itself -- `--fill` at 10080 renders and the
+panel reports "objects (10080 of 10080)".
+
   **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
 reasoned about: a `Scene` at 10080 slots is **2.22 MiB** as a C struct and **6.56 MB** as JS
 objects, and a `Step` is a whole `Scene` beside a five-float `Camera`. So the undo timeline at
