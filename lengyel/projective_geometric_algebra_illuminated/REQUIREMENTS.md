@@ -1496,6 +1496,17 @@ The rules that make the pins trustworthy on a shared, noisy runner:
   that uses it, and a walk that needs it several times uses an alias rather than a local.
   Confirmed by compiling a reduced case and reading the output, which is the only way this
   is ever confirmed.
+- **A picture is checked as pixels, not as elements.** Element counts, colour values and
+  refresh gates can all be right while nothing reaches the screen: the object pool strip had
+  1,024 correctly coloured cells, every one of them zero pixels wide, and stayed that way for
+  a whole capacity increase. A visual widget's pin asks whether its cells cover what they
+  claim to and whether one is at least a device pixel across.
+- **A layout read costs what the writes before it cost.** Reading `clientWidth` and friends
+  flushes pending layout, so the same read is free at the top of a callback and expensive
+  after it has written to the DOM — measured at 0.2 ms in the first position and 0.9 ms in
+  the second, on the same document. A gate must therefore be *ordered* before any measuring,
+  and a widget that needs its own box size takes it from a `ResizeObserver` rather than
+  asking for it every tick.
 - **A change to what is picked is checked slot for slot, not by looking.** A pick returns an
   identity, and a wrong identity looks exactly like a right one in a screenshot. A grid of
   cursor positions across several camera placements, compared entry by entry before and

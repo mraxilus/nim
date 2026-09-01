@@ -2048,13 +2048,36 @@ const context_sparkline = sparkline.getContext('2d');
 const diagnostic_frame_time = document.getElementById('diag-frametime');
 const diagnostic_heap = document.getElementById('diag-heap');
 const diagnostic_pool = document.getElementById('diag-pool');
-const strip_pool = document.getElementById('pool-strip');
-let is_strip_pool_built = false;
-let colours_pool_last = new Float32Array(0); // Per-cell colour last written to the strip.
-// The scene revision the strip was last filled at; -1 until it has been filled once. The
-//   strip is a picture of which slots are occupied and in what ink, so it changes exactly
-//   when the scene does -- see `scene.revision`, the same counter the frame hold reads.
+const grid_pool = document.getElementById('pool-grid');
+const context_pool = grid_pool === null ? null : grid_pool.getContext('2d');
+// The scene revision the grid was last drawn at; -1 until it has been drawn once. The grid
+//   is a picture of which slots are occupied and in what ink, so it changes exactly when the
+//   scene does -- see `scene.revision`, the same counter the frame hold reads. Its own
+//   geometry joins the key because a canvas cleared by a resize has to be redrawn whatever
+//   the scene did, and because the section opens onto a canvas that had no size at all.
 let revision_pool_last = -1;
+let ratio_pool_last = 0;
+// **Set by a `ResizeObserver`, never by measuring.** The gate below has to run before
+//   anything reads the canvas's width, because a layout read *after* the tick's own row
+//   writes forces the browser to lay the drawer out there and then -- measured at 0.9 ms of
+//   a 1.3 ms tick, five times a second, for a picture that had not changed. An observer
+//   answers the same question for nothing, and fires once when it starts watching, which is
+//   what makes the first draw happen.
+let is_pool_stale = true;
+// **One square per slot, wrapped**, at a size this drawer's width can actually show: at
+//   371px and 1,024 slots that is 53 columns of 20 rows, 139px tall. The desktop's own
+//   cells are 14px because its panel has the width for them; what the two have to agree on
+//   is the colour rule and the reading, not the pixel size.
+const SIZE_CELL_POOL = 6;
+const GAP_CELL_POOL = 1;
+// A CSS colour per packed triple, so a palette that cycles is converted a dozen times
+//   rather than a thousand. Cleared with nothing: the palette is fixed, so it converges.
+const css_pool = new Map();
+if (grid_pool !== null && typeof ResizeObserver === 'function') {
+  // Its own box, not the window's: the drawer is a fixed-width panel on a wide screen and a
+  //   full-width sheet on a narrow one, and either can change without the window doing so.
+  new ResizeObserver(() => { is_pool_stale = true; }).observe(grid_pool);
+}
 
 // One ring per step of the drawing process, so the diagnostics tab can show where a frame
 // actually went rather than one opaque total. The bridge reports its own three phases on
@@ -2894,41 +2917,69 @@ function refreshDiagnostics() {
 
   const count = nimSceneCount(), capacity = nimSceneCapacity();
   writeText(diagnostic_pool, count + ' / ' + capacity);
-  if (!is_strip_pool_built) {
-    for (let i = 0; i < capacity; i++) strip_pool.appendChild(document.createElement('span'));
-    colours_pool_last = new Float32Array(capacity * 3).fill(-1); // No colour is negative.
-    is_strip_pool_built = true;
-  }
-  // An occupied cell wears its own object's ink, so the strip reads as the scene rather
-  //   than as an anonymous occupancy count. `nimPoolCellColors` decides every cell's
-  //   colour, free ones included, so no palette rule lives out here -- it returns one
-  //   [r, g, b] triple per slot, in slot order.
-  //   **Only the cells that changed are written.** At a capacity of 1,024 this refresh runs
-  //   every frame the drawer is open, and restyling a thousand elements -- each with its own
-  //   `slice` to build the argument -- is a thousand allocations and a thousand style writes
-  //   for a strip that changes when an object is added or removed and at no other time. The
-  //   previous triple is remembered per cell and compared; the steady state writes nothing.
-  //   Same reasoning as the overlay's element pooling, and the same measured fault.
-  //   **And the whole walk is skipped where the scene has not changed at all.** Comparing
-  //   per cell already stopped the style writes, but it did not stop `nimPoolCellColors`
-  //   walking a thousand slots to fill its buffer, nor the thousand comparisons after it --
-  //   about a millisecond of the refresh, five times a second, to redraw a strip that moves
-  //   when an object is added or removed and at no other time. The scene's own revision is
-  //   exactly that question, and it is the same counter the frame hold is keyed on.
-  if (revision_pool_last !== nimSceneRevision()) {
-    revision_pool_last = nimSceneRevision();
-    const cells = nimPoolCellColors();
-    const children = strip_pool.children;
-    for (let i = 0; i < children.length; i += 1) {
-      const at = i * 3;
-      if (colours_pool_last[at] === cells[at] && colours_pool_last[at + 1] === cells[at + 1] &&
-          colours_pool_last[at + 2] === cells[at + 2]) continue;
-      colours_pool_last[at] = cells[at];
-      colours_pool_last[at + 1] = cells[at + 1];
-      colours_pool_last[at + 2] = cells[at + 2];
-      children[i].style.background = rgbToCss([cells[at], cells[at + 1], cells[at + 2]]);
+  drawPoolGrid(count, capacity);
+}
+
+// The object pool, one square per slot in the ink of whatever object holds it.
+//   `nimPoolCellColors` decides every cell's colour, free ones included, so no palette rule
+//   lives out here -- it returns one [r, g, b] triple per slot, in slot order, and this only
+//   arranges them.
+//   **Drawn when the scene changes and at no other time.** At a capacity of 1,024 the walk
+//   that fills that buffer is about a millisecond, and this refresh runs five times a second
+//   for a picture that moves when an object is added or removed. The scene's own revision is
+//   exactly that question, and it is the same counter the frame hold is keyed on. The
+//   canvas's own geometry is part of the key as well, because a resize clears what was drawn
+//   and because the section opens onto a canvas that had no size until it did.
+function drawPoolGrid(count, capacity) {
+  if (context_pool === null) return;
+  // **The gate runs before anything measures.** `devicePixelRatio` and the revision are
+  //   plain reads; the canvas's width is not, and asking for it here -- after the rows above
+  //   have been written -- is what makes the browser lay the drawer out there and then.
+  const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
+  if (revision_pool_last === nimSceneRevision() && ratio_pool_last === ratio &&
+      !is_pool_stale) return;
+
+  const width = grid_pool.clientWidth;
+  if (!(width > 0)) return; // Laid out inside something closed; nothing to draw on.
+  revision_pool_last = nimSceneRevision();
+  ratio_pool_last = ratio;
+  is_pool_stale = false;
+
+  const pitch = SIZE_CELL_POOL + GAP_CELL_POOL;
+  const columns = Math.max(1, Math.floor((width + GAP_CELL_POOL) / pitch));
+  const rows = Math.ceil(capacity / columns);
+  const height = rows * pitch - GAP_CELL_POOL;
+  // **Drawn at device resolution, unlike its two neighbours.** The curve and the sparkline
+  //   are 1.5px strokes and lose nothing to a doubled display; a grid of hard-edged squares
+  //   this small does, and every cell edge would be soft on the tablet this is read on.
+  grid_pool.style.height = height + 'px';
+  grid_pool.width = Math.round(width * ratio);
+  grid_pool.height = Math.round(height * ratio);
+  context_pool.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context_pool.clearRect(0, 0, width, height);
+  const cells = nimPoolCellColors();
+  for (let slot = 0; slot < capacity; slot += 1) {
+    const at = slot * 3;
+    // Keyed on the bytes rather than the floats, so a triple that rounds to the same colour
+    //   is the same entry; `rgbToCss` rounds to bytes anyway.
+    const key = (Math.round(cells[at] * 255) << 16) | (Math.round(cells[at + 1] * 255) << 8) |
+      Math.round(cells[at + 2] * 255);
+    let colour = css_pool.get(key);
+    if (colour === undefined) {
+      colour = rgbToCss([cells[at], cells[at + 1], cells[at + 2]]);
+      css_pool.set(key, colour);
     }
+    context_pool.fillStyle = colour;
+    context_pool.fillRect(
+      (slot % columns) * pitch, Math.floor(slot / columns) * pitch,
+      SIZE_CELL_POOL, SIZE_CELL_POOL,
+    );
   }
+  // What the picture says, for a reader who cannot see it. The `title` beside it in the
+  //   markup carries the legend, which does not change.
+  grid_pool.setAttribute(
+    'aria-label', count + ' of ' + capacity + ' object slots in use, one cell each',
+  );
 }
 
 /* ---------------------------------------------------------------------- */

@@ -97,9 +97,15 @@ const
     ## Separate the segments of a segmented control, matching the gap `sameLine` leaves.
   WIDTH_OVERLAY_TEXT = 48
     ## Bound length of a bar or graph's own overlay text, redrawn every frame.
-  SIZE_POOL_CELL = 14.0'f32
+  SIZE_POOL_CELL = 6.0'f32
     ## Set the side of one object-pool cell, in pixels -- large enough that a categorical
-    ## ink is recognisable in it, small enough that all 64 slots fit a few panel rows.
+    ## ink is recognisable in it, small enough that every slot fits a readable block.
+    ##   Was 14, chosen when the pool held 64 slots and the whole grid was three rows. At
+    ## `ITEMS_MAX` = 1,024 that same cell wraps to about 37 rows and 555px, which ran off
+    ## the bottom of the panel and pushed the byte accounting under it out of reach --
+    ## checked by rendering it, not inferred from the constant. Six matches the browser's
+    ## own `SIZE_CELL_POOL`, so the two front-ends read alike and differ only in how many
+    ## columns each panel's width affords.
   CHANNELS_POOL_CELL = 3
     ## Count the floats one pool cell contributes to `gui.poolBar`'s own buffer: red,
     ## green and blue, with no alpha, since every cell is drawn opaque.
@@ -1053,7 +1059,7 @@ proc layoutDiagnosticsObjectPool(scene: Scene) =
     appendChars(pool_memory, cursor, " B/slot")
   gui.text(text_pool)
   gui.tooltip(
-    "Scene is one fixed block sized for all 64 slots up front, not allocated one " &
+    "Scene is one fixed block sized for every slot up front, not allocated one " &
     "object at a time: `allocated` is that whole block, `used` is however many slots " &
     "are actually alive right now times the per-slot figure, and `B/slot` is roughly " &
     "what one object's own slot costs -- not a measurement of any single object."

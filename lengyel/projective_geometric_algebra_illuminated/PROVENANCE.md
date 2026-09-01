@@ -2858,6 +2858,44 @@ device's own display-wait median is plain vsync, and a cull trades an object-van
 a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
 rather than done because it was available.
 
+**The object pool strip had been drawing nothing at all, and every check passed it.**
+Reported by a reader, found by measuring the rendered box rather than the code: 1,024 cells,
+all present, all correctly coloured, **every one of them 0px wide**. `.pool-strip` was a flex
+row with `gap: 1px`, so at a capacity of 1,024 the gaps alone demand 1,023px inside a 371px
+strip; flex shrinks the cells to nothing and the whole thing draws as gap. Invisible since
+capacity went from 64 to 1,024 -- the markup's own placeholder still read `0 / 64`, and so did
+the objects count and the desktop's memory tooltip.
+  Nothing could have caught it as written. The element count was right, the colours were
+right, the refresh was correctly gated, and a clock cannot see a picture. The check that
+exists now asks the two questions that would have: does `columns x rows` cover the capacity,
+and is a cell at least one device pixel wide.
+  **The browser had drifted from a sibling it says it mirrors.** `gui.poolBar` is documented
+as drawing "one square cell per pool slot, wrapped to the panel's width", and the browser's
+block says it mirrors `panel.layoutDiagnosticsObjectPool` -- it mirrored the colour loop and
+not the layout. So the fix is the desktop's own reading, not a new design: one square per
+slot, wrapped, occupied cells in their object's ink and free ones recessive. Columns come from
+the measured width, rows from the capacity, so a narrower drawer grows rows instead of
+starving cells: 53x20 and 139px tall at 371px, 30x35 at 211px, 70x15 at 491px.
+  Drawn on **one canvas rather than 1,024 spans**, which is the lesson of the round above
+applied before it could bite: a thousand boxes in that drawer cost a layout pass every time
+anything else in it is written. The page falls from 12,755 elements to 11,731. It is also the
+one canvas here scaled by `devicePixelRatio` -- its two neighbours are 1.5px strokes that lose
+nothing to a doubled display, and a grid of hard-edged 6px squares does.
+  The desktop needed the same look: `SIZE_POOL_CELL` was 14, chosen when 64 slots made three
+rows, and at 1,024 it wraps to about 37 rows and 555px -- which ran off the bottom of the
+panel and pushed the byte accounting under it out of reach. Rendered and looked at rather than
+inferred from the constant, then brought to the browser's own 6px, so the two front-ends read
+alike and differ only in how many columns each panel's width affords.
+  **And the fix regressed the tick, in the exact way this file had just recorded as harmless.**
+`drawPoolGrid` read `clientWidth` to work out its columns -- *after* the tick's row writes --
+which forces the browser to lay the drawer out mid-callback: **0.9 ms of a 1.3 ms tick**, five
+times a second, for a picture that had not changed. The earlier round measured a `clientWidth`
+read at 0.2 ms and dismissed the mechanism; that read sat *before* the writes, and the position
+is the whole cost. A `ResizeObserver` answers "has the box changed" for nothing, so the gate --
+revision, ratio, observer flag -- now runs before anything measures. `drawPoolGrid` 0.9 ->
+**0.0 ms**, the whole tick 1.3 -> **0.3**, and the 0.9 reappears in a probe's own read outside
+the tick, which is what confirms it was the relayout and not the drawing.
+
 **The spike that survived all of that was the panel itself, on a still frame.** Reported from
 the device with nothing moving, and the sparkline's spikes evenly spaced, which is the 5 Hz
 tick's signature. Two readings of the two captures, and the first has to be got out of the way

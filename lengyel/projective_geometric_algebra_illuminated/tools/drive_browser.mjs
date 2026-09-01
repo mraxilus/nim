@@ -2619,19 +2619,67 @@ report(
   `${cells_shut} pool-strip rebuilds over ~1.5 s with the drawer shut`,
 );
 
-// And with it open the strip is rebuilt when the scene changes and not on every tick: at a
-// capacity of 1,024 that walk is about a millisecond, five times a second, for a picture
-// that moves when an object is added or removed and at no other time.
+// And with the drawer *and its diagnostics section* open, the grid is drawn when the scene
+// changes and not on every tick: at a capacity of 1,024 that walk is about a millisecond,
+// five times a second, for a picture that moves when an object is added or removed and at no
+// other time. **The section has to be opened too**: the tick returns immediately while it is
+// collapsed, so a check that only opens the drawer proves nothing about the gate it names --
+// it was passing against a refresh that never ran.
 await page.evaluate(() => {
   document.getElementById('btn-drawer').click();
+  document.querySelector('.section[data-section="diagnostics"]').classList.add('open');
   window.__cells = 0;
 });
 await page.waitForTimeout(1500);
 const cells_open = await page.evaluate(() => window.__cells);
 report(
-  'and an open one rebuilds the pool strip on a scene change, not on a clock',
+  'and an open one draws the pool grid on a scene change, not on a clock',
   cells_open <= 2,
-  `${cells_open} pool-strip rebuilds over ~1.5 s with the drawer open`,
+  `${cells_open} pool-grid draws over ~1.5 s with the drawer and section open`,
+);
+
+// A remove is a scene change, so it must reach the picture -- the other half of the same
+// gate, and the half a "costs nothing" check can never fail.
+const pool_edit = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  window.__cells = 0;
+  nimRemoveItem(nimSceneSlots()[0]);
+  await wait(600);
+  return window.__cells;
+});
+report(
+  'and an edit reaches it',
+  pool_edit >= 1,
+  `${pool_edit} pool-grid draws after removing one object`,
+);
+
+// **Every slot has a cell, and every cell has a pixel.** The strip this replaced was a flex
+// row of 1,024 spans with a 1px gap: 1,023px of gap inside a 371px strip, so flex shrank
+// every cell to zero and the whole thing drew as gap, correctly coloured and completely
+// invisible. Nothing caught it -- the elements were all there and the colours were all
+// right. This asks the two questions that would have.
+const pool_grid = await page.evaluate(() => {
+  const grid = document.getElementById('pool-grid');
+  const pitch = SIZE_CELL_POOL + GAP_CELL_POOL;
+  const columns = Math.max(1, Math.floor((grid.clientWidth + GAP_CELL_POOL) / pitch));
+  const rows = Math.ceil(nimSceneCapacity() / columns);
+  const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
+  // What actually reached the canvas, rather than what the arithmetic hoped for.
+  const data = grid.getContext('2d')
+    .getImageData(0, 0, grid.width, grid.height).data;
+  let lit = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) lit += 1;
+  return { columns, rows, addressable: columns * rows, capacity: nimSceneCapacity(),
+    cell_device_px: SIZE_CELL_POOL * ratio, height: Math.round(grid.clientHeight),
+    share_painted: lit / Math.max(1, grid.width * grid.height) };
+});
+report(
+  'every pool slot has a cell, and every cell has a pixel',
+  pool_grid.addressable >= pool_grid.capacity && pool_grid.cell_device_px >= 1 &&
+    pool_grid.height > 0 && pool_grid.share_painted > 0.5,
+  `${pool_grid.columns}x${pool_grid.rows} cells for ${pool_grid.capacity} slots, ` +
+    `${pool_grid.cell_device_px}px a side, ${pool_grid.height}px tall, ` +
+    `${(pool_grid.share_painted * 100).toFixed(0)}% of the canvas painted`,
 );
 await page.evaluate(() => {
   if (document.getElementById('drawer').classList.contains('open')) {
