@@ -6430,27 +6430,41 @@ suite "Marker":
 
 
 
-# The orrery needs the full item capacity, and one configuration here deliberately compiles a
-#   much smaller scene to exercise the pool's own limits. Guarded rather than shrunk: an
+# The orrery needs room for its default size, and one configuration here deliberately compiles
+#   a much smaller pool to exercise the pool's own limits. Guarded rather than shrunk: an
 #   arrangement scaled down would no longer be the stress case these cases exist to check.
-when ITEMS_MAX >= ITEMS_ORRERY:
+when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
   suite "Orrery":
     ## The demo preset is the heaviest scene this build draws, and since the round that made
     ## it the real solar neighbourhood it also makes a **claim about the world**: these stars
     ## stand where they really stand. That claim needs checking as much as the counting does,
     ## and it is the one thing no amount of looking at the picture would catch.
 
-    test "the orrery fills its own target and leaves the rest of the pool free":
-      # **It used to fill the pool exactly**, back when the tables were the arrangement. The
-      #   star catalogue now carries far more stars than any scene has room for, so what
-      #   fills the scene is a target and the slots above it are deliberate headroom -- a
-      #   reader can still build on top of a loaded demo rather than meeting a refusal, and
-      #   the pool strip shows a real margin instead of a solid block.
-      var scene = initScene()
-      constructOrrery(scene)
-      check scene.len == ITEMS_ORRERY
-      check not scene.isFull
-      check ITEMS_MAX - scene.len == 80
+    const SCALES_HELD = block:
+      ## Which sizes this build's pool can actually hold.
+      ##   Every size at the shipped capacity; at a reduced one the suite is skipped whole by
+      ## the guard above, so this only ever narrows for a capacity between the two.
+      var held: seq[ScaleOrrery]
+      for scale in ScaleOrrery:
+        if ITEMS_MAX >= itemsOf(scale): held.add(scale)
+      held
+
+    test "every size fills its own target exactly, and the largest leaves two slots":
+      # **The walk lands on the count rather than near it.** It passes over a system too
+      #   large for the room left instead of stopping on it, which is the only reason three
+      #   unrelated targets can each come out exact; when it stopped, a size hit its target
+      #   only where the item counts happened to sum to it. Checked at every size, because
+      #   one size landing exactly says nothing about another.
+      #   The slots above the largest size are deliberate headroom -- a reader can still
+      #   build on top of a loaded demo rather than meeting a refusal, and two is the
+      #   shortest construction there is: add a point, then join it to something.
+      for scale in SCALES_HELD:
+        var scene = initScene()
+        constructOrrery(scene, scale)
+        checkpoint(&"{scale}: {scene.len} items, {ITEMS_MAX - scene.len} free")
+        check scene.len == itemsOf(scale)
+        check not scene.isFull
+        if scale == ScaleOrrery.high: check ITEMS_MAX - scene.len == 2
 
     test "every object it builds draws something":
       # Three collinear points wedge to a multivector of no clean grade, which takes a slot
@@ -6464,31 +6478,48 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         if shape(scene.geometryOf(slot)).isNone: without.add(toText(scene.labelAt(slot)))
       check without == newSeq[string]()
 
-    test "it carries every drawable kind, at horizon as well as in the finite world":
-      var scene = initScene()
-      constructOrrery(scene)
-      var tally: array[Shape, int]
-      var at_horizon: array[Shape, int]
-      for slot in 0 ..< scene.bound:
-        if not scene.isAlive(slot): continue
-        let geometry = scene.geometryOf(slot)
-        let kind = shape(geometry)
-        if kind.isNone: continue
-        inc tally[kind.get]
-        if isHorizon(geometry): inc at_horizon[kind.get]
-      check tally[Shape.Point] >= 500
-      # **A ceiling as well as a floor, and lines are the only kind with one.** They are cut
-      #   to the three that mean something -- two in Sol and the one at horizon -- because a
-      #   line is infinite and crosses the whole frame whatever it joins. A floor alone would
-      #   let them creep back one edit at a time.
-      check tally[Shape.Line] in 3 .. 4
-      # Raised from 10 with the neighbourhood: a real system earns an ecliptic wherever it
-      #   has two known planets, and 130 of them do. Discs are the expensive kind, so this is
-      #   where the stress in the stress case now lives.
-      check tally[Shape.Plane] >= 120
-      check at_horizon[Shape.Point] == 2 # Two, and only one of them can make the plane.
-      check at_horizon[Shape.Line] >= 1
-      check at_horizon[Shape.Plane] >= 1
+    test "every size carries every drawable kind, at horizon as well as in the finite world":
+      # **The property that makes the smallest size a usable check at all.** A quick pass
+      #   over 60 objects is only worth running if it exercises what the big one does, and
+      #   the block at horizon is the fragile part -- it is built from attitudes of Sol's own
+      #   objects and `addHorizon` refuses a pair spanning nothing, so a size too small to
+      #   carry the arrangement fails here rather than quietly drawing less.
+      var counted: array[ScaleOrrery, tuple[points, planes: int]]
+      for scale in SCALES_HELD:
+        var scene = initScene()
+        constructOrrery(scene, scale)
+        var tally: array[Shape, int]
+        var at_horizon: array[Shape, int]
+        for slot in 0 ..< scene.bound:
+          if not scene.isAlive(slot): continue
+          let geometry = scene.geometryOf(slot)
+          let kind = shape(geometry)
+          if kind.isNone: continue
+          inc tally[kind.get]
+          if isHorizon(geometry): inc at_horizon[kind.get]
+        checkpoint(&"{scale}: {tally[Shape.Point]} points, {tally[Shape.Line]} lines, " &
+          &"{tally[Shape.Plane]} planes")
+        for kind in Shape: check tally[kind] > 0
+        # **A ceiling as well as a floor, and lines are the only kind with one.** They are cut
+        #   to the three that mean something -- two in Sol and the one at horizon -- because a
+        #   line is infinite and crosses the whole frame whatever it joins. A floor alone
+        #   would let them creep back one edit at a time. The same three at every size, since
+        #   only Sol carries finite lines.
+        check tally[Shape.Line] in 3 .. 4
+        check at_horizon[Shape.Point] == 2 # Two, and only one of them can make the plane.
+        check at_horizon[Shape.Line] == 1
+        check at_horizon[Shape.Plane] == 1
+        counted[scale] = (tally[Shape.Point], tally[Shape.Plane])
+      # Points and planes are what a bigger size buys, so both have to rise with it. Stated
+      #   as a slope rather than as a floor per size: three sets of magic numbers would be
+      #   three things to keep true, and what is actually being claimed is that reaching
+      #   further into the catalogue reaches more stars and more of the systems that earn a
+      #   plane. Discs are the expensive kind, so the second half is where the stress in the
+      #   stress case lives.
+      for index in 1 ..< len(SCALES_HELD):
+        let (smaller, larger) = (SCALES_HELD[index - 1], SCALES_HELD[index])
+        check counted[larger].points > counted[smaller].points
+        check counted[larger].planes > counted[smaller].planes
 
     test "the stars stand where the catalogue says they stand":
       # **The claim this arrangement makes about the world.** Every object after Sol is a real
@@ -6496,8 +6527,11 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       #   worth checking is the conversion -- not that a layout looks spread out. Measured
       #   against `starfield.STARS` itself, which is the shipped snapshot and the one layer
       #   that says where anything is.
+      #   Run at the largest size this build holds, which is the only one that reaches far
+      #   enough into the catalogue for the claim to be worth much.
+      let scale = SCALES_HELD[^1]
       var scene = initScene()
-      constructOrrery(scene)
+      constructOrrery(scene, scale)
       var placed: Table[string, Multivector]
       for slot in 0 ..< scene.bound:
         if not scene.isAlive(slot): continue
@@ -6513,26 +6547,41 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         inc seen
         let
           drawn = distanceBetween(placed[star.name], sol)
-          wanted = star.parsecs/PARSECS_PER_UNIT
+          wanted = star.parsecs*UNITS_PER_PARSEC
           off = abs(drawn - wanted)
         if off > worst:
           worst = off
           worst_name = star.name
-      checkpoint(&"{seen} stars placed; worst is `{worst_name}`, off by {worst:.6f} units")
-      check seen > 9_000
+      checkpoint(&"{scale}: {seen} stars placed; worst is `{worst_name}`, " &
+        &"off by {worst:.6f} units")
+      # Most of what the size spends goes on stars, so most of what it holds should be one.
+      #   Folded from the size rather than written down, so it survives the next one.
+      check seen > (itemsOf(scale) - ITEMS_FIXED_ORRERY) div 2
       check worst <= TOLERANCE_SINGLE
       # And they really are ordered outward, which is what both `RADIUS_ORRERY` and the
       #   nearest-first fill rely on.
       for index in 1 ..< len(STARS):
         check STARS[index].parsecs >= STARS[index - 1].parsecs
-      # The fill takes a prefix: once one star is missing, every star beyond it is too.
+      # **Nearest-first, and no longer a strict prefix -- by a bounded amount.** The walk
+      #   passes over a system too large for the room left rather than stopping on it, which
+      #   is the only reason three unrelated sizes can each land on their count exactly. The
+      #   price is that right at the end a nearer multi-item system can give way to a further
+      #   single star. The slack is bounded and the bound is derived: once a system needing
+      #   `k` items is passed over there are fewer than `k` slots left, and every star costs
+      #   at least one, so at most `k - 1` stars can follow it in.
       var missing_from = len(STARS)
       for index, star in STARS:
         if star.name notin placed:
           missing_from = index
           break
+      var slack = 0
       for index in missing_from ..< len(STARS):
-        check STARS[index].name notin placed
+        if STARS[index].name in placed: inc slack
+      var widest = 0
+      for star in STARS: widest = max(widest, itemsOf(star))
+      checkpoint(&"{slack} stars placed beyond the first gap; the widest system is " &
+        &"{widest} items, so at most {widest - 1} can be")
+      check slack <= widest - 1
 
     test "the star catalogue is a snapshot, and holds together as one":
       # Everything about the shipped table that can be checked without the network. It is
@@ -6703,7 +6752,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       #   That is what makes crossing the neighbourhood a journey rather than a nudge.
       var held, beyond = 0
       for star in STARS:
-        if star.parsecs/PARSECS_PER_UNIT > RADIUS_ORRERY: inc beyond else: inc held
+        if star.parsecs*UNITS_PER_PARSEC > RADIUS_ORRERY: inc beyond else: inc held
       checkpoint(&"{held} stars inside the opening frame, {beyond} beyond it")
       check held >= FRAMED_ORRERY - 1 # Sol is framed too, and is not in this table.
       check beyond >= 9*len(STARS) div 10
@@ -6720,7 +6769,7 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       var camera = initCameraDefault()
       camera.azimuth = 1.25 # Left alone by the preset, so it has to survive it.
       showOrrery(scene, camera, 1440, 900)
-      check scene.len == ITEMS_ORRERY
+      check scene.len == itemsOf(SCALE_ORRERY_DEFAULT)
       check camera.target =~ POSITION_ORRERY
       check camera.elevation =~ ELEVATION_ORRERY_SHOWN
       check camera.azimuth =~ 1.25

@@ -1089,13 +1089,17 @@
       type="button"
       title="Load a .rgascene file, replacing this scene."
     >scene</button>
-    <button
-      class="btn"
-      id="btn-load-demo"
-      type="button"
-      title="Load the orrery: a solar system filling every slot, the heaviest scene drawn."
-    >demo</button>
   </div>
+  <!-- One button per size the arrangement comes in, filled from `nimDemoScales` rather than
+       written out here: the sizes are `orrery.ScaleOrrery`'s business, and a second copy of
+       them in markup is a second thing to keep true. -->
+  <div class="top-menu-title">demo</div>
+  <div
+    class="top-menu-group"
+    id="btn-demo-scales"
+    role="group"
+    aria-label="load the orrery, at one of three sizes"
+  ></div>
 </div>
 
 <div class="toast" id="toast"></div>

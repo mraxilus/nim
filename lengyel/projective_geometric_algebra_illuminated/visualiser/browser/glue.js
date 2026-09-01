@@ -1265,11 +1265,30 @@ function captureFrameIfAsked() {
   }, 'image/png');
 }
 
-document.getElementById('btn-load-demo').addEventListener('click', () => {
-  nimLoadDemo(now(), canvas.width, canvas.height);
-  toast(`Loaded the orrery: ${nimSceneCount()} objects, every slot filled.`);
-  adoptConstructionSelection();
-});
+// **One button per size, built from what the bridge reports.** The counts are
+// `orrery.ScaleOrrery`'s and nothing here knows them: a size added or renamed there shows up
+// as a button without this file or the markup being touched. The button is labelled with the
+// count because a count is what a reader picking between benchmark scenes is choosing.
+for (const scale of nimDemoScales()) {
+  const items = nimDemoItems(scale);
+  const button = document.createElement('button');
+  button.className = 'btn';
+  button.type = 'button';
+  button.id = `btn-load-demo-${items}`;
+  button.textContent = String(items);
+  button.title =
+    `Load the orrery at ${items} objects: the real solar neighbourhood, Sol at the origin, ` +
+    'every drawable kind present. The same arrangement at every size, reaching further into ' +
+    'the star catalogue as it grows.' +
+    (scale === nimDemoScaleDefault() ? ' The size everything opens on.' : '');
+  button.addEventListener('click', () => {
+    nimLoadDemo(scale, now(), canvas.width, canvas.height);
+    toast(`Loaded the orrery: ${nimSceneCount()} objects, ` +
+      `${nimSceneCapacity() - nimSceneCount()} slots free.`);
+    adoptConstructionSelection();
+  });
+  document.getElementById('btn-demo-scales').appendChild(button);
+}
 
 /* ---------------------------------------------------------------------- */
 /* Construct panel: add point, apply operation -- mirrors                 */

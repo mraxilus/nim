@@ -455,26 +455,44 @@ proc nimInit(now: cfloat) {.exportc.} =
   g_history = initHistory(g_scene, g_camera)
 
 
-proc nimLoadDemo(now: cfloat; width, height: cint) {.exportc.} =
+proc nimLoadDemo(scale_ordinal: cint; now: cfloat; width, height: cint) {.exportc.} =
   ## Replace the current scene with the orrery -- the real solar neighbourhood, every
-  ## drawable kind present, Sol at the origin and ten thousand of the pool's slots taken --
-  ## as ordinary live items: a one-click preset rather than a scripted playback mode, so
-  ## once loaded every one of its objects is exactly as editable, removable and pickable as
-  ## anything built by hand, and the eighty slots it leaves free are there to build in.
-  ##   **The heaviest scene this build ever draws**, which is what a demo is for here: the
-  ##   eleven-step storyboard it replaced showed sixteen objects and could not say anything
-  ##   about how the build behaves under load. The storyboard itself is unchanged and is
-  ##   still what `visualiser --storyboard` captures; see `orrery`'s own module comment for
-  ##   the arrangement and `storyboard.STEPS` for the teaching sequence.
+  ## drawable kind present, Sol at the origin -- as ordinary live items: a one-click preset
+  ## rather than a scripted playback mode, so once loaded every one of its objects is exactly
+  ## as editable, removable and pickable as anything built by hand, and the slots it leaves
+  ## free are there to build in.
+  ##   **The heaviest scene this build draws**, at its largest size, which is what a demo is
+  ##   for here: the eleven-step storyboard it replaced showed sixteen objects and could not
+  ##   say anything about how the build behaves under load. The storyboard itself is
+  ##   unchanged and is still what `visualiser --storyboard` captures; see `orrery`'s own
+  ##   module comment for the arrangement and `storyboard.STEPS` for the teaching sequence.
   ##   The scene and the camera come from `orrery.showOrrery`, which the desktop's own
   ##   `--demo` calls too: what the preset *is* -- the arrangement, its replayed arrival and
   ##   the camera that holds it -- is one copy shared by both front-ends. What is left here
   ##   is only what this side keeps of its own about a scene.
+  ##   `scale_ordinal` names one of `orrery.ScaleOrrery`'s three sizes; see `nimDemoItems`,
+  ##   which is what the page labels its buttons from rather than writing the counts out.
   let clock = float(now)
-  showOrrery(g_scene, g_camera, int(width), int(height), clock)
+  showOrrery(g_scene, g_camera, int(width), int(height), ScaleOrrery(scale_ordinal), clock)
   for slot in 0 ..< g_scene.len: stampBorn(slot, g_scene.bornAt(slot))
   g_selection.clear()
   g_history = initHistory(g_scene, g_camera)
+
+
+proc nimDemoScales(): seq[cint] {.exportc.} =
+  ## Report every size the demo can be loaded at, smallest first, as `nimLoadDemo` ordinals.
+  ##   The page builds one button per entry rather than carrying its own list: the sizes are
+  ## the arrangement's business, and a second copy in markup is a second thing to keep true.
+  for scale in ScaleOrrery: result.add(cint(ord(scale)))
+
+
+proc nimDemoItems(scale_ordinal: cint): cint {.exportc.} =
+  ## Report how many items the demo comes to at one size, for the button that loads it.
+  cint(itemsOf(ScaleOrrery(scale_ordinal)))
+
+
+proc nimDemoScaleDefault(): cint {.exportc.} = cint(ord(SCALE_ORRERY_DEFAULT))
+  ## Report which size the demo opens on when nobody has asked for another.
 
 
 

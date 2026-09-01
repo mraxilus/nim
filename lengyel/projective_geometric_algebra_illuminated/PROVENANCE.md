@@ -2858,15 +2858,36 @@ device's own display-wait median is plain vsync, and a cull trades an object-van
 a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
 rather than done because it was available.
 
-**The demo is the real solar neighbourhood at ten thousand objects, and Sol stands at the
-origin.** Four changes were asked for and all four are in: Sol at the world origin, its
-ecliptic lying flat *in* the ground grid's own plane, no comets, and every star, known planet
-and major moon that fits, filled to 10,000 with 80 slots left free.
+**The demo is the real solar neighbourhood, in three sizes, with Sol at the origin.** Sol
+stands at the world origin, its ecliptic lies flat *in* the ground grid's own plane, there are
+no comets, and every star, known planet and major moon that fits is placed at its real
+distance.
   Confirmed by reading the built scene rather than by looking at it: `sol` is `1 𝐞₄`, the
 point at the origin; `ecliptic sol` is `- 89.11 𝐞₄₁₂`, a plane with no other component at all
 -- normal along z, through the origin, which *is* the z = 0 plane the grid is ruled on; Earth
-carries no z component either. The scene holds **9,868 points, 2 lines, 126 planes and 4 at
-horizon**, 21 moons, and no object whose name contains "halley" or "comet". Eighty slots free.
+carries no z component either. No object anywhere is named "halley" or "comet".
+
+  **Three sizes of one arrangement, so a cost can be read as a slope.** `ScaleOrrery` is
+`Nearest` (60), `Neighbourhood` (360, the default everywhere) and `Catalogue` (5038). Every
+one is the same construction -- Sol entire, then real stars outward, then the four objects at
+horizon -- truncated at a different depth; nothing about *what* is built changes with the
+size, which is what makes the three comparable. Measured on one page, at 1400x900 under
+SwiftShader: **60 / 360 / 5038 objects cost 1.3 / 1.7 / 3.0 s to build, a hover pick 0.7 / 1.6
+/ 3.5 ms, a frame build 3.1 / 4.6 / 12.8 ms**, and an edit 9.1 / 8.5 / 8.0 ms -- flat, which
+is the ring timeline doing its job.
+  The working rule they exist for: `Nearest` for a quick check, `Neighbourhood` for a final
+one, `Catalogue` when the change could cost performance. Prefer the smaller for work unlikely
+to touch the frame, the larger for anything that could regress it.
+  **Each size lands on its count exactly, and that had to be made true.** The star walk used
+to `break` on the first system too large for the room left, so a scene reached its target only
+where the item counts happened to sum to it -- true at the single size that then existed, and
+luck rather than design. It passes over such a system now and keeps walking, so a nearer
+four-item system can give way to a further single star. The suite bounds that slack rather
+than waving at it: once a system needing `k` items is passed over there are fewer than `k`
+slots left and every star costs at least one, so at most `k - 1` stars can follow it in.
+  `Catalogue` stops two short of the pool rather than filling it. Two is the smallest margin
+that still proves the point of leaving one -- add a point, then join it to something is the
+shortest construction this build has.
   **`POSITION_ORRERY` used to sit 18 units up** so that systems with a southern declination
 were not drawn through the ground. They are now, which is where they are: the grid is the
 plane of Sol's own ecliptic and half the sky is under it.
@@ -2910,7 +2931,27 @@ what the great majority of those 9,868 points are; the fill to 10,000 is done wi
 stars, never with invented planets or invented systems. The 49 archive planets with no
 recorded semi-major axis are still placed by their order among their siblings, and that stays
 the one drawn distance in the arrangement that is not a real one.
-  Scales are each left on the footing they were already on: **star distance stays linear**
+  **A parsec is 100 world units, and the field stopped reading as a clump.** It was 18 --
+written as its own reciprocal, `PARSECS_PER_UNIT` = 0.055, which answered "how far is a
+parsec" in the wrong direction and is now `UNITS_PER_PARSEC` for that reason alone. At 18 the
+nearest neighbour stood 24 units out against systems drawn 9 units wide, barely two
+system-widths, so thousands of them piled into one frame with no space between. Proxima now
+stands **130 units** out and the outermost catalogue star **3,153**.
+  `RADIUS_NEIGHBOUR` and `SYSTEM_SOL.radius` deliberately did *not* move with it: what reads
+as clustered is the ratio of spacing to system size, and scaling those too would be a pure
+zoom that changed nothing.
+  **The price lands on the opening camera, and is stated rather than absorbed.**
+`RADIUS_ORRERY` fits the view to Sol and `FRAMED_ORRERY - 1` = 1 nearest neighbour, which now
+comes to 139 units against Sol's own 12 -- so the system a reader is meant to look into is
+under a tenth of the opening frame's radius, where at the old spacing it was over a third.
+Looked at: the field itself is right at every size, stars legible and separate, no clumping;
+Sol is a twenty-pixel smudge until a reader dollies in, and reads perfectly at a distance of
+48. So the arrangement is right and the *opening frame* is the thing that got worse.
+`FRAMED_ORRERY` is the knob -- fitting to Sol alone would open on the system and leave the
+neighbourhood to be found -- and it is left at 2 because nobody has asked for that.
+
+  Scales are otherwise each left on the footing they were already on: **star distance is
+linear**
 (`parsecs/PARSECS_PER_UNIT`), planet orbital radii stay logarithmic. The one new scale is
 moons, which had a single shared `REACH_MOON` when there was one moon and now map their real
 semi-major axes -- Phobos at 9,376 km to Nereid at 5.5 million, a range of 588 -- onto 0.08 to
@@ -2919,8 +2960,9 @@ Venus and Earth, stands 0.74 units apart, so a wider moon ring would reach into 
 orbit. A moon is a dot beside its planet at the opening camera and a body of its own once a
 reader goes and looks.
 
-  **The capacity is 10080 and the pick got faster than it was at 1024.** `ITEMS_MAX` rose
-tenfold and the `static: doAssert` block in `scene.nim` did exactly what it was built for --
+  **The capacity is 5040 and the pick got faster than it was at 1024.** `ITEMS_MAX` has been
+both raised tenfold and halved again since, and the `static: doAssert` block in `scene.nim`
+did exactly what it was built for each time --
 it refused to compile until `VERTICES_MAX`, `DISCS_MAX`, `DOMES_MAX`, `RINGS_MAX` and
 `RIBBONS_MAX` followed, and it reported each required figure rather than leaving them to be
 worked out.
@@ -2934,12 +2976,12 @@ as three dot products in local floats took the pick to **6.4 ms**; giving the po
 `pixelsFromCursor` that returns a distance instead of building a `ScreenPosition` per slot took
 it to **4.7 ms**. Ten times the objects for 1.2 times what 1,024 cost before this round.
 
-  **The pool grid's cell size stopped being a constant.** Six pixels over 10,080 slots is 191
-rows and more than 1,300px -- not a block, a page. Both front-ends now pick the largest cell
-whose wrapped grid still fits a 150px budget, and the gap goes before the cell does, because
-below four pixels a one-pixel gap is half the strip. At 10,080 in a 371px drawer that lands on
-**2px cells, 185 columns by 55 rows, 110px tall**: a density map, which is the honest reading
-at ten thousand. The desktop derives the same way from `gui.contentWidth`.
+  **The pool grid's cell size stopped being a constant.** Six pixels over ten thousand slots
+is 191 rows and more than 1,300px -- not a block, a page. Both front-ends now pick the largest
+cell whose wrapped grid still fits a 150px budget, and the gap goes before the cell does,
+because below four pixels a one-pixel gap is half the strip. At five thousand slots in a 371px
+drawer that is a dense block of small cells rather than a page of them, and it is derived
+either way. The desktop derives the same way from `gui.contentWidth`.
 
   **What it costs, stated plainly.** The page goes from **2.17 MB to 3.64 MB** -- the star
 catalogue is 11,252 entries and most of that is names -- and the demo takes **4.1 seconds** to
@@ -2968,10 +3010,10 @@ half of the preset had lived inline in the bridge where nothing could reach it; 
 now checks it -- target at the origin, the pitch the constant names, azimuth left where the
 reader had it, standing further back than the arrangement's own radius, and further back again
 in a narrower window.
-  Looked at on both: the desktop opens on the same neighbourhood, panel reading "objects
-(10000 of 10080)" with real catalogue names down the list. It draws at roughly five seconds a
-frame under `llvmpipe`, which says nothing about hardware and everything about software
-rasterisation of ten thousand objects.
+  Looked at on both: the desktop opens on the same neighbourhood at the same size, with real
+catalogue names down the objects list. Under `llvmpipe` it draws the largest size at seconds
+a frame, which says nothing about hardware and everything about software rasterisation of
+thousands of objects -- which is most of why the smaller sizes exist.
 
   **The debug layer cost thirteen milliseconds a frame, and the walk was not why.** Its driven
 pin had crept 2.5 -> 8.8 -> 13.3 ms across the runs since the capacity rose, on the *opening*
@@ -2993,27 +3035,30 @@ reporting on its *surroundings*. This one had been quietly reporting the capacit
 four runs before it finally crossed its own ceiling.
 
   **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
-reasoned about: a `Scene` at 10080 slots is **2.22 MiB** as a C struct and **6.56 MB** as JS
+reasoned about: a `Scene` at 5040 slots is **1.11 MiB** as a C struct and about 3.3 MB as JS
 objects, and a `Step` is a whole `Scene` beside a five-float `Camera`. So the undo timeline at
-`CAPACITY_HISTORY` = 32 reserves **71.1 MiB** natively -- the largest single reservation the
-binary makes, against 12.3 MiB for both mesh sets together -- and **209 MB of JS heap** in the
-browser, where the live page measures 164 MB at load and 175 MB with the demo in it. The
-timeline is essentially the entire heap of that page; everything else in it is about ten.
+`CAPACITY_HISTORY` = 32 reserves **35.5 MiB** natively -- the largest single reservation the
+binary makes, against 6.2 MiB for both mesh sets together -- and roughly 105 MB of JS heap in
+the browser, where the live page measures **85 MB at load** and 92 MB with the largest size in
+it. The timeline is essentially the entire heap of that page; everything else in it is single
+digits.
+  Those figures are half what they were: the pool held 10080 slots for a single
+ten-thousand-object scene, and holds 5040 now that the largest is 5038.
   `BYTES_MEMORY_TOTAL` was not counting the timeline at all. It claims to be "every fixed
 reservation this binary makes for itself" and it omitted its own largest term, which is worse
 than reporting nothing; it counts it now, and `CAPACITY_HISTORY`'s own doc comment -- which
 until this round said the cost was cheap because "a Scene is already small" -- carries the
 per-step price so the lever is visible.
-  **The depth was left at 32.** Lowering it to 8 would return about 157 MB of browser heap,
+  **The depth was left at 32.** Lowering it to 8 would return about 79 MB of browser heap,
 and was not taken: since the fix below the depth costs nothing per edit, so what is left is a
 flat reservation nothing has yet run out of, and the thing being spent is a reader's undo. The
-figure is stated and the lever is linear -- 6.5 MB of JS heap and 2.22 MiB of address space a
-step -- so the trade can be made by whoever needs a lighter page.
+figure is stated and the lever is linear -- about 3.3 MB of JS heap and 1.11 MiB of address
+space a step -- so the trade can be made by whoever needs a lighter page.
 
   **One edit cost 153 ms, and the cause was a loop with no reason to be looked at.** `record`
 dropped its oldest step by shifting every later entry down one place. That is a fair way to
-retire an entry when a `Step` is a 1,024-slot scene; at 10,080 slots it is **31 whole scene
-copies for every edit past the thirty-second**. Measured on the JS backend at steady state:
+retire an entry when a `Step` is a 1,024-slot scene; at five and ten thousand it is **31 whole
+scene copies for every edit past the thirty-second**. Measured on the JS backend at steady state:
 **153.5 ms** to toggle one object's visibility -- nine dropped frames -- and it scaled with the
 *capacity*, 26.4 ms at four steps deep and 39.9 at eight, which is the signature that says the
 cost is the shift and not the copy.

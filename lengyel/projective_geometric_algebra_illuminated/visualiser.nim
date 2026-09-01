@@ -280,10 +280,14 @@ type Options = object ## Hold what command line asked of this run.
   is_novsync: bool ## Whether to disable vsync from startup, for uncapped timing runs.
   is_filled: bool ## Whether to top scene up to capacity with synthetic items, for
     ## timing the heaviest tessellation and draw load rather than the demo's own light one.
-  is_demo: bool ## Whether to open on the orrery preset instead of the storyboard's seeds --
-    ## the same arrangement the browser's own demo button loads, through the same
-    ## `orrery.showOrrery`. Here because the desktop had no way to reach it at all, so the
-    ## heaviest scene the shared core builds could be looked at on one front-end only.
+  scale_demo: Option[ScaleOrrery] ## Which size of the orrery preset to open on instead of
+    ## the storyboard's seeds, if any -- the same arrangement the browser's own demo buttons
+    ## load, through the same `orrery.showOrrery`. Here because the desktop had no way to
+    ## reach it at all, so the heaviest scene the shared core builds could be looked at on
+    ## one front-end only.
+    ##   An `Option`, not a `bool` and a size beside it: "no demo asked for" and "the demo at
+    ## the default size" are different things, and a sentinel size standing for the first
+    ## would put absence inside a value's own range.
   is_asserted: bool ## Whether a driven run ends in a verdict rather than a report, and
     ## exits non-zero where it fails. See `verdictDriven`.
   is_drag_driven: bool ## Whether to script a construction drag through the event queue,
@@ -315,7 +319,20 @@ proc parseOptions(): Options =
       of "timings": result.is_timed = true
       of "novsync": result.is_novsync = true
       of "fill": result.is_filled = true
-      of "demo": result.is_demo = true
+      of "demo":
+        # Named by item count, because that is what the sizes are picked between on -- and
+        #   the counts come from `itemsOf` rather than being listed here, so a size added or
+        #   changed in `orrery` is accepted here without this line being touched.
+        if len(value) == 0:
+          result.scale_demo = some(SCALE_ORRERY_DEFAULT)
+        else:
+          for scale in ScaleOrrery:
+            if $itemsOf(scale) == value: result.scale_demo = some(scale)
+          var counts: seq[string]
+          for scale in ScaleOrrery: counts.add($itemsOf(scale))
+          doAssert result.scale_demo.isSome,
+            &"Unknown demo size `{value}`; expected " & counts.join(", ") &
+              ", or `--demo` on its own for the default."
       of "drive-assert": result.is_asserted = true
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
@@ -330,7 +347,8 @@ proc parseOptions(): Options =
       else:
         doAssert false,
           &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, demo, drive-assert, drive-drag, " &
+          "frames, hidden, timings, novsync, fill, demo[:<items>], drive-assert, " &
+          "drive-drag, " &
           "drive-keys, drive-select, drive-undo, drive-sky or drive-help."
     of cmdArgument:
       doAssert false, &"Unexpected argument `{key}`; every input is a named option."
@@ -2062,12 +2080,12 @@ proc main() =
   #   construction starts, unless a saved scene was asked for instead, which replaces
   #   the demo entirely.
   let now_startup = secondsNow()
-  doAssert not (options.is_demo and len(options.path_load_scene) > 0),
+  doAssert not (options.scale_demo.isSome and len(options.path_load_scene) > 0),
     "`--demo` and `--load-scene` each replace the opening scene; ask for one of them."
-  if options.is_demo:
+  if options.scale_demo.isSome:
     # Framed for the window this run opens at, which is the size it is about to be given;
     #   a reader who then resizes reframes by looking, exactly as on the browser side.
-    showOrrery(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, now_startup)
+    showOrrery(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, options.scale_demo.get, now_startup)
   elif len(options.path_load_scene) > 0:
     echo loadScene(scene, options.path_load_scene, now_startup)
   else:

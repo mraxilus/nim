@@ -1083,11 +1083,19 @@ field-of-view widening: reorienting suffices, and no FOV can fix content behind 
 16b. The Demo Preset
 ---
 
-The preset behind the browser's *demo* button is the **heaviest scene the build ever draws**,
-not a teaching sequence. A reader pressing it on a tool that ships a diagnostics drawer is
-asking what this thing does under load, and sixteen objects cannot answer. It fills **every
-item slot** and carries **every drawable kind**, one of each object at horizon included, so
-that no drawing path goes unexercised.
+The preset behind the browser's *demo* buttons is the **heaviest scene the build draws**, not
+a teaching sequence. A reader pressing it on a tool that ships a diagnostics drawer is asking
+what this thing does under load, and sixteen objects cannot answer. It carries **every
+drawable kind**, one of each object at horizon included, so that no drawing path goes
+unexercised.
+
+It comes in **three sizes of one arrangement** — the same construction truncated at different
+depths, so nothing about what is built changes with the size and a cost can be read as a slope
+across them rather than as a single number. Every size **lands on its stated count exactly**,
+which the fill is written to guarantee rather than to approximate. The largest stops a little
+short of the pool on purpose, so a reader can still build on top of a loaded demo rather than
+meeting a refusal. Both front-ends offer the same sizes, from one definition, and open on the
+same default.
 
 Its shape is **many isolated systems, not one**. A single arrangement with a centre puts every
 derived line and plane through one point, and since a line is infinite the whole scene then

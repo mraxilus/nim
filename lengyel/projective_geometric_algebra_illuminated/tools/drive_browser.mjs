@@ -2739,10 +2739,24 @@ await page.waitForTimeout(400);
 //   The Nim suite already checks what the *scene* contains; what only this can check is that
 // pressing the button gets that scene onto the page, and that the camera it leaves behind
 // actually holds the arrangement.
-await page.click('#btn-menu');
-await page.click('#btn-load-demo');
-await page.click('#btn-menu'); // Shut the popover again, as a reader would.
-await page.waitForTimeout(600);
+//   **Which size.** The arrangement comes in three, and this runs at the default -- what a
+// reader gets when they press the button without thinking about it. The performance pins
+// further down re-load at the largest, because a band that only ever runs at the default
+// cannot see a regression that shows under load. `VISUALISER_DEMO_ITEMS` overrides the
+// default for a run driven by hand.
+const ITEMS_DEMO = Number(process.env.VISUALISER_DEMO_ITEMS ?? 0) ||
+  await page.evaluate(() => nimDemoItems(nimDemoScaleDefault()));
+const ITEMS_DEMO_LOAD = await page.evaluate(
+  () => nimDemoItems(nimDemoScales()[nimDemoScales().length - 1]));
+// One button per size, so the size asked for names the button that loads it.
+const loadDemo = async (items) => {
+  await page.click('#btn-menu');
+  await page.click(`#btn-load-demo-${items}`);
+  await page.click('#btn-menu'); // Shut the popover again, as a reader would.
+  await page.waitForFunction((n) => nimSceneCount() === n, items, { timeout: 120000 });
+  await page.waitForTimeout(600);
+};
+await loadDemo(ITEMS_DEMO);
 const demo = await page.evaluate(() => {
   const tally = {};
   for (const slot of nimSceneSlots()) {
@@ -2759,30 +2773,35 @@ report(
   // whole of it. The star catalogue carries far more stars than any scene has room for, so
   // what fills the scene is a target and the slots above it are deliberate headroom: a
   // reader can build on top of a loaded demo rather than meeting a refusal.
+  //   The count comes from the bridge rather than being written here, so the sizes stay
+  // `orrery.ScaleOrrery`'s to change; what this pins is that pressing that button gets
+  // exactly that many objects onto the page.
   'the demo button fills its target and leaves the rest of the pool free',
-  demo.count === 10_000 && demo.capacity - demo.count === 80,
+  demo.count === ITEMS_DEMO && demo.capacity > demo.count,
   `${demo.count} of ${demo.capacity} slots, ${demo.capacity - demo.count} free`,
 );
 // Every kind, and nothing that draws nothing. The mixed-grade case is the one worth naming:
 //   three collinear points wedge to no clean grade, and such an item holds a slot while
 //   drawing nothing at all -- six of the sixty-four did, and the scene still counted 64.
-//   Lines carry a **ceiling** as well as a floor, alone among the kinds: they were cut from
-//   fifteen to four because a line is infinite and every one crosses the whole frame
-//   whatever it joins, and the slots that freed went into a system and nine more bodies. A
-//   floor alone would let them creep back. The plane floor rose with them for the same
-//   reason -- discs are what the slots bought.
+//   Lines carry a **ceiling**, alone among the kinds: they were cut from fifteen to the
+//   three that mean something, because a line is infinite and every one crosses the whole
+//   frame whatever it joins, and the slots that freed went into a system and nine more
+//   bodies. Presence alone would let them creep back.
 //   **Two, not three, and the difference is this tally's own bucketing**: `nimItemShapeWord`
 //   reports a line at horizon as its own kind, so `line` here counts only the finite ones --
 //   `sol ∧ earth` and `earth ∧ luna`. The suite's own version of this check counts all three
-//   together, which is why the two floors differ by one and why neither is a typo.
+//   together, which is why the two figures differ by one and why neither is a typo.
+//   **Presence, not proportions.** The counts each size comes to, and that they rise with
+//   the size, are the Nim suite's to check at all three; what only this can see is that
+//   pressing the button put every kind on the page. Floors written here would be a second
+//   copy of the arrangement's tally, pinned to whichever size this happens to run at.
 const drawing = ['point', 'line', 'plane', 'point at horizon', 'line at horizon',
   'plane at horizon'];
 const undrawn = Object.keys(demo.tally).filter((word) => !drawing.includes(word));
 report(
   'it carries every drawable kind, including one of each at horizon, and nothing blank',
   drawing.every((word) => (demo.tally[word] || 0) >= 1) && undrawn.length === 0 &&
-    demo.tally.plane >= 120 && demo.tally.line >= 2 && demo.tally.line <= 3 &&
-    demo.tally.point >= 500,
+    demo.tally.line >= 2 && demo.tally.line <= 3,
   Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
 );
 // And the camera it leaves is standing back far enough to see what it just built: on the
@@ -2793,13 +2812,19 @@ report(
   `camera at ${demo.distance.toFixed(1)}, opening distance is 19`,
 );
 
+// **From here on, under load.** Everything above is what pressing the button does; what
+// follows measures what the build costs, and a band that only ever ran at the default size
+// could not see a regression that shows at the largest. Reloaded rather than reasoned about.
+await loadDemo(ITEMS_DEMO_LOAD);
+
 // **Retiring the oldest undo step used to move the whole timeline.** A `Step` is a whole
-// scene, so once the timeline is full that was thirty-one 10,080-slot scene copies for one
-// visibility toggle -- 153 ms, nine dropped frames, on an edit a reader makes without
-// thinking about it. It is a ring now and costs one scene copy at any depth. Measured *past*
-// the capacity on purpose: under it the old shape and the new one cost the same, so a check
-// that edits a fresh timeline would pass either way. The bound is far above the 11 ms this
-// measures and far below the 153 it is here to catch, so a slow container never decides it.
+// scene, so once the timeline is full that was thirty-one whole-scene copies for one
+// visibility toggle -- 153 ms at the capacity of the time, nine dropped frames, on an edit a
+// reader makes without thinking about it. It is a ring now and costs one scene copy at any
+// depth. Measured *past* the capacity on purpose: under it the old shape and the new one cost
+// the same, so a check that edits a fresh timeline would pass either way. The bound is far
+// above what this measures and far below the fault it is here to catch, so a slow container
+// never decides it.
 const ms_edit = await page.evaluate(() => {
   const slot = nimSceneSlots()[0];
   const was_visible = nimItemVisible(slot);
@@ -2813,7 +2838,7 @@ const ms_edit = await page.evaluate(() => {
 report(
   'an edit past the timeline capacity copies one scene, not the whole timeline',
   ms_edit < 40,
-  `${ms_edit.toFixed(1)} ms an edit over ${demo.count} objects`,
+  `${ms_edit.toFixed(1)} ms an edit over ${ITEMS_DEMO_LOAD} objects`,
 );
 
 // **The per-kind accounting, asked again where the numbers mean something.** The same check
@@ -2840,11 +2865,11 @@ await page.waitForTimeout(200);
 //   used to reach `scene.addItem` through shared code with no `isFull` between, and take
 //   the whole page down with an assertion. Every panel path guarded it; the gesture did
 //   not, and nothing could reach a full scene in one step until this preset existed.
-//   **The preset stopped being full when it grew.** It fills a target of 10,000 and leaves
-//   the rest of the pool free on purpose, so a reader can build on top of a loaded demo --
-//   which means the gesture below now legitimately succeeds and this check silently stopped
-//   checking anything. Take the free slots first. Copying a point the demo already placed,
-//   rather than composing one here, because what is under test is the gesture's own guard.
+//   **The preset stopped being full when it grew.** It fills a target and leaves the rest of
+//   the pool free on purpose, so a reader can build on top of a loaded demo -- which means
+//   the gesture below now legitimately succeeds and this check silently stopped checking
+//   anything. Take the free slots first. Copying a point the demo already placed, rather than
+//   composing one here, because what is under test is the gesture's own guard.
 await page.evaluate(() => {
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   while (nimSceneCount() < nimSceneCapacity()) nimAddItem(model, 'filler', nimDefaultInk(), 0);
@@ -2906,12 +2931,23 @@ report(
 );
 
 // **The rim is on the GPU, and this is the number that says so.** A plane's rim used to
-// arrive as `SEGMENTS_CIRCLE_HORIZON` ribbon records: on this scene of ~132 planes that was
-// 12,672 of the frame's 12,772 records, 99% of all ribbon traffic, and the largest single
-// cost in the frame. It is one ring record a plane now. What makes this a real pin rather
-// than a restatement is that the ceiling is *far* below the old figure -- a regression that
-// put the rim back on the CPU could not creep past it, it would blow through by two orders
-// of magnitude. The three finite lines are what is left, at two records each.
+// arrive as `SEGMENTS_CIRCLE_HORIZON` ribbon records: on a scene of this many planes that
+// was ninety-six records each, 99% of all ribbon traffic, and the largest single cost in the
+// frame. It is one ring record a plane now. What makes this a real pin rather than a
+// restatement is that the ceiling is *far* below the old figure -- a regression that put the
+// rim back on the CPU could not creep past it, it would blow through by two orders of
+// magnitude. The three finite lines are what is left, at two records each.
+//   The floor is the planes actually loaded, read from the scene rather than written down:
+// it is what makes the ceiling mean something (with no planes drawn, "few ribbons" is
+// vacuous), and a figure pinned to whichever size this runs at would have to move with it.
+const planes_loaded = await page.evaluate(() => {
+  let counted = 0;
+  for (const slot of nimSceneSlots()) {
+    const word = nimItemShapeWord(slot);
+    if (word === 'plane' || word === 'plane at horizon') counted += 1;
+  }
+  return counted;
+});
 const records = loaded_records.length === 0 ? null : {
   ribbon: Math.max(...loaded_records.map((r) => r.records_ribbon)),
   ring: Math.max(...loaded_records.map((r) => r.records_ring)),
@@ -2919,11 +2955,12 @@ const records = loaded_records.length === 0 ? null : {
 };
 report(
   'a plane rim crosses the wire as one ring record, not ninety-six ribbons',
-  records !== null && records.ribbon <= 64 && records.ring >= 120 &&
+  records !== null && records.ribbon <= 64 && records.ring >= planes_loaded &&
     records.ring >= records.disc,
   records === null
     ? 'no frames recorded'
-    : `${records.ribbon} ribbon, ${records.ring} ring, ${records.disc} disc records`,
+    : `${records.ribbon} ribbon, ${records.ring} ring, ${records.disc} disc records ` +
+      `over ${planes_loaded} planes`,
 );
 
 /* ---- What the drawer costs to keep up to date ---- */
@@ -2944,7 +2981,7 @@ report(
   // against a fixed ceiling stops meaning anything the moment the capacity moves. Nine
   // elements a row is what a collapsed row costs; the slack covers the rest of the page.
   'a closed row builds no edit form, so the page holds thousands of elements and not tens',
-  drawer_dom.rows >= 10_000 && drawer_dom.forms === 0 &&
+  drawer_dom.rows === ITEMS_DEMO_LOAD && drawer_dom.forms === 0 &&
     drawer_dom.elements < 12 * drawer_dom.rows,
   `${drawer_dom.elements} elements over ${drawer_dom.rows} rows ` +
     `(${(drawer_dom.elements / drawer_dom.rows).toFixed(1)} each), ` +

@@ -116,7 +116,7 @@ const
     ##   getting to it. 0.20 of the reach is 3.8 orbit distances, which puts the fog's
     ##   edge about 2.8 distances beyond what the camera is looking at -- close to the
     ##   ground the halo used to cover, and still a fifth of the far clip plane.
-  RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 40321
+  RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 20161
     ## Bound how many ribbon segments one frame holds.
     ##   The binding case is a scene filled to `scene.ITEMS_MAX` with *lines*, each drawing
     ## the two segments `tessellate.addLine` steps out from its anchor, every one selected
@@ -134,23 +134,23 @@ const
     ## Overflow here is a `doAssert`, so an undersized cap is a dead page rather than a
     ## dropped triangle -- which is exactly what raising `ITEMS_MAX` from 64 would have
     ## caused, on all four caps at once, had the check not been added with it.
-  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 20160
+  VERTICES_MAX* {.define: "visualiser.vertices_max".} = 10080
     ## Bound how many vertices the point mesh holds, per frame.
     ##   Points are all that is left in vertex form: lines became ribbon records when the
     ## widening moved to the vertex shader, and plane fills and sky domes became disc and
     ## dome records when their fans followed it -- each of those is bounded by its own
     ## record cap below. The binding case here is a scene filled to `scene.ITEMS_MAX`
     ## with points, every one selected and so drawn twice: 2,048 at `ITEMS_MAX` = 1,024.
-  DISCS_MAX* {.define: "visualiser.discs_max".} = 20161
+  DISCS_MAX* {.define: "visualiser.discs_max".} = 10081
     ## Bound how many disc records one frame holds.
     ##   The binding case is a scene filled to `scene.ITEMS_MAX` with finite planes,
     ## every one selected and so drawn twice, plus a ghost -- 2,049, with headroom. One
     ## record here is what a `3 * SEGMENTS_CIRCLE_HORIZON`-vertex fan cost before the
     ## fan moved to the vertex shader.
-  RINGS_MAX* {.define: "visualiser.rings_max".} = 20161
+  RINGS_MAX* {.define: "visualiser.rings_max".} = 10081
     ## Bound how many ring records one frame holds, by the same worst case as `DISCS_MAX`:
     ## a plane draws a fill and a rim together, so the two caps move as a pair.
-  DOMES_MAX* {.define: "visualiser.domes_max".} = 20161
+  DOMES_MAX* {.define: "visualiser.domes_max".} = 10081
     ## Bound how many dome records one frame holds, by the same worst case as
     ## `DISCS_MAX` with every plane at horizon instead.
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350

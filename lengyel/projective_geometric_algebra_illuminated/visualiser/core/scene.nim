@@ -46,7 +46,7 @@ import ./[boundary, format, tessellate]
 # Allow caller to resize scene without editing source.
 #   E.g. `--define:visualiser.items_max=128 --define:visualiser.label_max=48`.
 const
-  ITEMS_MAX* {.define: "visualiser.items_max".} = 10080
+  ITEMS_MAX* {.define: "visualiser.items_max".} = 5040
     ## Max items scene may hold at once.
     ##   Raised from 64 so the demo can hold the real solar neighbourhood -- see `orrery`.
     ## Four capacities in `mesh` are sized against this constant and are checked against it
@@ -554,7 +554,7 @@ func bound*(scene: Scene): int = scene.slot_live_last
   ## Report one past the highest slot this scene has ever occupied.
   ##   **What a walk over "every slot" should actually run to.** Slots are stable addresses,
   ## so anything that reads by slot has to sweep the range rather than a dense list -- and
-  ## with capacity at `ITEMS_MAX` = 10,080 that means every frame testing ten thousand slots
+  ## with capacity at `ITEMS_MAX` = 5,040 that means every frame testing five thousand slots
   ## to draw five.
   ## This is the high-water mark rather than the live count, because a freed slot in the
   ## middle leaves the ones above it occupied; it only ever rises, which is what makes it

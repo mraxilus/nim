@@ -1,9 +1,14 @@
-## Build the real solar neighbourhood, filled to the last slot, for stress testing.
+## Build the real solar neighbourhood, at one of three sizes, for stress testing.
 ##
-## Orrery exists so the build can be looked at under its own worst case: **every** item slot
-## occupied, every drawable kind present, and the objects scattered through a volume so large
-## that one camera move swings the tessellation load by an order of magnitude -- which the
-## flat helix `visualiser.fillSceneForBenchmark` builds for `--timings` deliberately does not.
+## Orrery exists so the build can be looked at under load: every drawable kind present, and
+## the objects scattered through a volume so large that one camera move swings the
+## tessellation load by an order of magnitude -- which the flat helix
+## `visualiser.fillSceneForBenchmark` builds for `--timings` deliberately does not.
+##
+## **Three sizes of one arrangement**, so a cost can be read as a slope rather than as a
+## single number: `ScaleOrrery.Nearest` (60), `Neighbourhood` (360, the default) and
+## `Catalogue` (5038, two slots short of the pool). Every one is this same construction
+## truncated at a different depth -- nothing about *what* is built changes with the size.
 ##
 ## **It is also a claim about the world.** Every system but ours is a real star that is known
 ## to carry planets, standing at its real distance in its real direction, carrying the planets
@@ -21,18 +26,20 @@
 ##   | ecliptic plane   | `star ∧ planet[0] ∧ planet[1]`      | it has two planets       |
 ##   |------------------|-------------------------------------|--------------------------|
 ##
-## Sol alone also carries Luna, Halley, Halley's sheet, and the **only two finite lines in the
-## whole scene**: `sol ∧ earth` and `earth ∧ luna`. A line is infinite, so each one crosses the
-## entire frame whatever it joins; an earlier arrangement spent fifteen slots on them and read
-## as line traffic with the systems behind it.
+## Sol alone also carries its moons and the **only two finite lines in the whole scene**:
+## `sol ∧ earth` and `earth ∧ luna`. A line is infinite, so each one crosses the entire frame
+## whatever it joins; an earlier arrangement spent fifteen slots on them and read as line
+## traffic with the systems behind it.
 ##
 ## **Four objects at horizon, and two of them are points because only one can make the plane.**
 ## Earth lies in Sol's ecliptic, so `att(sol ∧ earth)` sits *on* the line at horizon that
 ## ecliptic gives; Luna's ring is tipped out of it, so `att(earth ∧ luna)` sits off that line
 ## and spans the plane at horizon with it. See the horizon block in `constructOrrery`.
 ##
-## `ITEMS_ORRERY` items on the nose: **886 points, 2 lines, 132 planes and 4 at horizon.**
-## The total is folded from the tables and asserted, not hoped for.
+## `itemsOf(scale)` items on the nose at every size, asserted rather than hoped for: the walk
+## passes over a system too large for the room left rather than stopping on it, which is what
+## lets three unrelated targets each land exactly. Only Sol's own block and the four at
+## horizon are fixed; everything between them is however many real stars fit.
 ##
 ## **Colour says what a thing is**, not which system it belongs to -- see `lut_role_to_ink`.
 ##
@@ -186,14 +193,22 @@ const
     ## built from the difference between them. Zeroing one without separating the other
     ## collapses that plane to nothing.
 
-  PARSECS_PER_UNIT* = 0.055
-    ## How much of a parsec one world unit stands for.
+  UNITS_PER_PARSEC* = 100.0
+    ## How many world units one parsec stands for.
     ##   The single number that turns the real neighbourhood into a scene. At this scale
-    ## Proxima, 1.30 parsecs out, stands about 24 units from Sol -- a little further than a
-    ## system is wide, so the nearest neighbour is already a journey -- and the outermost
-    ## system in the table, at 31.5 parsecs, stands about 573 units out.
+    ## Proxima, 1.30 parsecs out, stands **130 units** from Sol -- fourteen times the width a
+    ## neighbour system is drawn, so the nearest one is a real journey -- and the outermost
+    ## star in the catalogue, at 31.5 parsecs, stands about **3,153 units** out.
     ##   Chosen rather than derived: it is the knob for "how far apart", and it is what makes
     ## crossing the neighbourhood a real camera move rather than a nudge.
+    ##   **It was 18 units a parsec** (written as its own reciprocal, `PARSECS_PER_UNIT` =
+    ## 0.055) and the field read as a clump: a neighbour stood two system-widths away, so
+    ## thousands of them piled into one frame with no space between. What reads as clustered
+    ## is the *ratio* of spacing to system size, which is why `RADIUS_NEIGHBOUR` and
+    ## `SYSTEM_SOL.radius` did not move with it -- scaling those too would be a pure zoom and
+    ## would change nothing. The cost is stated where it lands: `RADIUS_ORRERY` below.
+    ##   Stated as units-per-parsec rather than its reciprocal because that is the question
+    ## anyone asks of it. The old spelling answered "how far is a parsec" with 0.055.
 
   RADIUS_NEIGHBOUR* = 9.0
     ## How wide a neighbour system is drawn, in world units.
@@ -483,8 +498,10 @@ proc addPlane(
   scene.addItem(geometry, label, lut_role_to_ink[Role.Derived], now, some(anchor))
 
 
-func itemsOf(star: Star): int =
+func itemsOf*(star: Star): int =
   ## Report how many scene items one real star comes to.
+  ##   Exported because the suite bounds how far the fill may depart from nearest-first with
+  ## it, and the rule for what a star costs belongs here rather than in a second copy there.
   ##   Itself, its known planets, and the ecliptic plane it earns when it has two of them to
   ## span one. Nothing else: a real star is placed and the planets the archive records for it
   ## are placed, and every further object would be an invention. The great majority carry no
@@ -504,7 +521,7 @@ func systemAt(star: Star): System =
   ## no two systems lie parallel and the arrangement does not read as a stack of discs -- a
   ## deterministic spread, stated as arbitrary rather than dressed up as data.
   System(
-    reach: star.parsecs/PARSECS_PER_UNIT,
+    reach: star.parsecs*UNITS_PER_PARSEC,
     bearing: degToRad(star.ascension),
     rise: degToRad(star.declination),
     radius: RADIUS_NEIGHBOUR,
@@ -518,17 +535,41 @@ const ITEMS_SOL* = len(SOL) + len(MOONS) + 3
   ## the two lines that are the only finite lines in the whole arrangement.
 
 
-const ITEMS_ORRERY* {.define: "visualiser.items_orrery".} = 10_000
-  ## How many items the arrangement fills, out of the capacity the build was compiled with.
-  ##   **Stated rather than folded, and deliberately short of `scene.ITEMS_MAX`.** It used to
-  ## be folded from the tables and to come to the capacity exactly, which was the point when
-  ## the tables *were* the arrangement. They no longer are: the star catalogue holds far more
-  ## stars than any scene has room for, so what fills the scene is a target and what the
-  ## tables supply is a reserve. `constructOrrery` walks the catalogue outward and stops
-  ## here.
-  ##   The eighty slots between this and the capacity are left free on purpose, so the pool
-  ## strip shows a real margin and a reader can still build something on top of a full scene
-  ## rather than meeting a refusal.
+type ScaleOrrery* = enum
+  ## How deep into the catalogue one build of the arrangement reaches.
+  ##   **Three sizes of the same scene, not three scenes.** Every one of them is the same
+  ## construction -- Sol entire, then real stars outward, then the four objects at horizon --
+  ## truncated at a different depth. Nothing about what is built changes with the size; only
+  ## how far the star walk gets, which is what makes the three comparable to each other.
+  ##   They exist to be *benchmarked against each other*: one build holds all three, so the
+  ## cost of a change can be read as a slope across them rather than as one number.
+  Nearest       ## Sol entire, and about a dozen of its nearest real neighbours.
+  Neighbourhood ## The default everywhere: a scene worth looking at, quick to build.
+  Catalogue     ## The load case, two slots short of the pool.
+
+
+func itemsOf*(scale: ScaleOrrery): int =
+  ## Report how many items the arrangement fills at this size.
+  ##   **Which size to use is a working rule, not a build setting.** `Nearest` for a quick
+  ## check, `Neighbourhood` for a final one, `Catalogue` when the change could cost
+  ## performance: prefer the smaller for work unlikely to touch the frame, the larger for
+  ## anything that could regress it. Everything that does not say otherwise takes
+  ## `SCALE_ORRERY_DEFAULT`.
+  ##   `Catalogue` stops two short of `scene.ITEMS_MAX` rather than filling it. Two is the
+  ## smallest margin that still proves the point of leaving one: a reader can add a point and
+  ## then join it to something, which is the shortest construction this build has, so a full
+  ## scene is still one to build on rather than one that refuses.
+  case scale
+  of Nearest: 60
+  of Neighbourhood: 360
+  of Catalogue: 5038
+
+
+const SCALE_ORRERY_DEFAULT* = ScaleOrrery.Neighbourhood
+  ## Which size everything opens on unless it was asked for another.
+  ##   Both demo buttons, the desktop's `--demo`, and every suite case that does not name a
+  ## size of its own. One default, in one place, so the two front-ends cannot disagree about
+  ## what "the demo" means.
 
 
 const ITEMS_FIXED_ORRERY* = COUNT_ITEM_HORIZON + ITEMS_SOL
@@ -537,17 +578,43 @@ const ITEMS_FIXED_ORRERY* = COUNT_ITEM_HORIZON + ITEMS_SOL
   ## `RADIUS_ORRERY` below is: a second statement of a number derived from a table is a
   ## second thing to keep true, and editing `MOONS` is exactly when it would be forgotten.
 
+const ITEMS_ORRERY_MIN* = ITEMS_FIXED_ORRERY + itemsOf(STARS[0])
+  ## The smallest arrangement there is: Sol entire, the block at horizon, and the one
+  ## neighbour the opening camera is fitted to.
+  ##   **A floor rather than a preference.** Below `ITEMS_FIXED_ORRERY` the scene cannot hold
+  ## Sol, and the block at horizon takes attitudes of Sol's own objects, so there would be no
+  ## arrangement left. One neighbour beyond that is what `RADIUS_ORRERY` needs to be true:
+  ## it fits the opening camera to Sol and `FRAMED_ORRERY - 1` nearest stars, and a scene too
+  ## small to hold them would be framed for a neighbour that is not in it.
+  ##   Folded, so it moves when `SOL`, `MOONS` or the catalogue's nearest entry does.
+
+static:
+  for scale in ScaleOrrery:
+    doAssert itemsOf(scale) >= ITEMS_ORRERY_MIN,
+      &"`ScaleOrrery.{scale}` asks for `{itemsOf(scale)}` items where the smallest " &
+        &"arrangement is `{ITEMS_ORRERY_MIN}`: Sol, the block at horizon, and the one " &
+        "neighbour the opening camera is fitted to."
+  doAssert FRAMED_ORRERY == 2,
+    &"`ITEMS_ORRERY_MIN` folds in one neighbour because `FRAMED_ORRERY` is 2; it is now " &
+      &"`{FRAMED_ORRERY}`, so the floor has to fold in that many less one."
+
 const RADIUS_ORRERY* = block:
   ## Report how far out the demo's own camera has to stand back to hold the systems it is
   ## meant to hold, so a caller can frame the arrangement without knowing what is in it.
   ##   Folded from the table itself rather than written down beside it, for the reason
-  ## `ITEMS_ORRERY` above is.
+  ## `ITEMS_FIXED_ORRERY` above is.
   ##   Only the nearest `FRAMED_ORRERY` are folded in. See that constant for why the rest
-  ## are deliberately left outside the opening frame.
+  ## are deliberately left outside the opening frame. One figure for every size, because
+  ## every size holds those systems -- which is what `ITEMS_ORRERY_MIN` is there to keep true.
+  ##   **At 100 units a parsec this comes to about 139**, against Sol's own 12: the system a
+  ## reader is meant to look into is now under a tenth of the opening frame's radius, where
+  ## at the old spacing it was over a third. That is the price of a field that does not read
+  ## as a clump, and it is paid on purpose -- `FRAMED_ORRERY` is the knob if it is ever too
+  ## much, not the spacing.
   var far = SYSTEM_SOL.reach + SYSTEM_SOL.radius
   for index, star in STARS:
     if index + 1 < FRAMED_ORRERY:
-      far = max(far, star.parsecs/PARSECS_PER_UNIT + RADIUS_NEIGHBOUR)
+      far = max(far, star.parsecs*UNITS_PER_PARSEC + RADIUS_NEIGHBOUR)
   far
 
 const ELEVATION_ORRERY_SHOWN* = 0.95
@@ -624,17 +691,22 @@ proc constructSol(
   addPlane(scene, ecliptic, "ecliptic sol", now, place_sol)
 
 
-proc constructOrrery*(scene: var Scene; now: float = 0.0) =
-  ## Fill scene with every system in turn, then the three objects at horizon.
+proc constructOrrery*(
+  scene: var Scene; scale: ScaleOrrery = SCALE_ORRERY_DEFAULT; now: float = 0.0
+) =
+  ## Fill scene with every system in turn, then the four objects at horizon.
+  ##   `scale` says how deep into the catalogue to reach; see `ScaleOrrery`. Every size runs
+  ##   this same code, so what is built never differs between them -- only how far.
   ##   `now` is forwarded to `addItem` untouched, so every object animates in exactly as one
   ##   added by hand does where a caller passes a real clock reading.
-  ##   Asserts the scene it was handed is empty and that it leaves it exactly full, since
-  ##   both are properties the caller is relying on and neither is visible in the result.
+  ##   Asserts the scene it was handed is empty and that it leaves it holding exactly the
+  ##   size asked for, since both are properties the caller is relying on and neither is
+  ##   visible in the result.
   doAssert scene.len == 0,
-    &"Orrery fills a scene to capacity, so it must start empty; got `{scene.len}` items."
-  doAssert ITEMS_MAX >= ITEMS_ORRERY,
-    &"Orrery needs `{ITEMS_ORRERY}` item slots; this build was compiled with " &
-      &"`{ITEMS_MAX}`. Raise `--define:visualiser.items_max`."
+    &"Orrery fills a scene to a stated size, so it must start empty; got `{scene.len}`."
+  doAssert ITEMS_MAX >= itemsOf(scale),
+    &"Orrery at `{scale}` needs `{itemsOf(scale)}` item slots; this build was compiled " &
+      &"with `{ITEMS_MAX}`. Raise `--define:visualiser.items_max`, or ask for a smaller size."
 
   # Sol first: it is the nearest system, and the horizon block below takes the attitude of
   #   its objects rather than of anything global -- there is nothing global left to take.
@@ -647,13 +719,21 @@ proc constructOrrery*(scene: var Scene; now: float = 0.0) =
   #   star earns an ecliptic when it has two known planets to span one, and that is all --
   #   which means the great majority of what follows is a single point, a star and nothing
   #   else, because that is all anyone knows about it.
-  #   **Walked outward until the scene holds `ITEMS_ORRERY`.** The catalogue carries far more
-  #   stars than any scene has room for, so the loop stops on the count rather than on the
-  #   table, and the nearest are the ones that get in.
+  #   **Walked outward until the scene holds what the size asks for.** The catalogue carries
+  #   far more stars than any scene has room for, so the loop stops on the count rather than
+  #   on the table, and the nearest are the ones that get in.
   #   The room left is the target less the horizon block, which is added *after* this loop
   #   and so is not there to be counted while it runs.
+  #   **A system too large for the room left is passed over, not stopped on.** This used to
+  #   `break`, which meant the scene reached its target only where the item counts happened
+  #   to sum to it exactly -- true at the one size that then existed, and luck rather than
+  #   design. Skipping lets a nearer four-item system give way to a further one-item star, so
+  #   the count lands exactly at any size; the great majority of stars are one item, so the
+  #   tail always has something to fill it with. The cost is that the last few systems in are
+  #   not strictly the nearest ones left, which is invisible in a field of thousands and is
+  #   the price of the closing assert being an equality.
   for star in STARS:
-    if scene.len + itemsOf(star) > ITEMS_ORRERY - COUNT_ITEM_HORIZON: break
+    if scene.len + itemsOf(star) > itemsOf(scale) - COUNT_ITEM_HORIZON: continue
     let
       system = systemAt(star)
       place_sun = sunOf(system)
@@ -704,14 +784,16 @@ proc constructOrrery*(scene: var Scene; now: float = 0.0) =
   addHorizon(scene, at_horizon_ecliptic ∧ at_horizon_luna,
     "att(ecliptic sol) ∧ att(earth ∧ luna)", Shape.Plane, now)
 
-  doAssert scene.len == ITEMS_ORRERY,
-    &"Orrery built `{scene.len}` items where it fills `{ITEMS_ORRERY}`. The walk stops on " &
-      "the count, so it can only fall short by running out of catalogue -- check that " &
-      "`starfield.STARS` still carries more stars than the scene has room for."
+  doAssert scene.len == itemsOf(scale),
+    &"Orrery at `{scale}` built `{scene.len}` items where it fills `{itemsOf(scale)}`. The " &
+      "walk passes over what will not fit rather than stopping, so it can only fall short " &
+      "by running out of catalogue -- check that `starfield.STARS` still carries more " &
+      "stars than the scene has room for."
 
 
 proc showOrrery*(
-  scene: var Scene; camera: var Camera; width, height: int; now: float = 0.0
+  scene: var Scene; camera: var Camera; width, height: int;
+  scale: ScaleOrrery = SCALE_ORRERY_DEFAULT; now: float = 0.0
 ) =
   ## Replace the scene with the arrangement and stand the camera back to hold it: the whole
   ## preset, in one place, because both front-ends open on it and a preset that differs
@@ -734,7 +816,7 @@ proc showOrrery*(
   ## stamps, selection and undo timeline, and the desktop's equivalents, all of which are
   ## that side's bookkeeping about a scene rather than part of the scene.
   scene = initScene()
-  constructOrrery(scene, now)
+  constructOrrery(scene, scale, now)
   scene.replayFrom(now)
   camera.target = POSITION_ORRERY
   camera.elevation = ELEVATION_ORRERY_SHOWN
