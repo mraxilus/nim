@@ -1100,9 +1100,10 @@ proc layoutDiagnosticsTotal(panel: Panel) =
   gui.tooltip(
     "Every fixed reservation this binary makes for itself, added up: both arenas at " &
     "their full capacity (committed whether or not they're ever filled), the object " &
-    "pool above, tessellation storage, and the panel's own state. Excludes whatever " &
-    "Dear ImGui, SDL, or the graphics driver allocate on their own account, which " &
-    "this process cannot see or account for."
+    "pool above, the undo timeline -- which is " & $CAPACITY_HISTORY & " more whole " &
+    "copies of that pool, and the largest single entry here -- tessellation storage, " &
+    "and the panel's own state. Excludes whatever Dear ImGui, SDL, or the graphics " &
+    "driver allocate on their own account, which this process cannot see or account for."
   )
 
 

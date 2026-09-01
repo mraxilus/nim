@@ -2793,6 +2793,29 @@ report(
   `camera at ${demo.distance.toFixed(1)}, opening distance is 19`,
 );
 
+// **Retiring the oldest undo step used to move the whole timeline.** A `Step` is a whole
+// scene, so once the timeline is full that was thirty-one 10,080-slot scene copies for one
+// visibility toggle -- 153 ms, nine dropped frames, on an edit a reader makes without
+// thinking about it. It is a ring now and costs one scene copy at any depth. Measured *past*
+// the capacity on purpose: under it the old shape and the new one cost the same, so a check
+// that edits a fresh timeline would pass either way. The bound is far above the 11 ms this
+// measures and far below the 153 it is here to catch, so a slow container never decides it.
+const ms_edit = await page.evaluate(() => {
+  const slot = nimSceneSlots()[0];
+  const was_visible = nimItemVisible(slot);
+  for (let i = 0; i < 40; i += 1) nimSetVisible(slot, i % 2 === 0); // Fill the timeline.
+  const started = performance.now();
+  for (let i = 0; i < 20; i += 1) nimSetVisible(slot, i % 2 === 0);
+  const each = (performance.now() - started) / 20;
+  nimSetVisible(slot, was_visible); // Leave the scene as the demo built it.
+  return each;
+});
+report(
+  'an edit past the timeline capacity copies one scene, not the whole timeline',
+  ms_edit < 40,
+  `${ms_edit.toFixed(1)} ms an edit over ${demo.count} objects`,
+);
+
 // **The per-kind accounting, asked again where the numbers mean something.** The same check
 // runs far above on the opening scene, and on a fast container that scene's whole phase is
 // around half a millisecond -- every reading is quantised to a tenth, so the lower bound is
@@ -2813,11 +2836,24 @@ await page.evaluate(() => {
   if (chip.classList.contains('on')) chip.click();
 });
 await page.waitForTimeout(200);
-await page.evaluate(() => { window.__phase_frame = []; });
 // The drag is also the check below it: a construction gesture released on a **full** scene
 //   used to reach `scene.addItem` through shared code with no `isFull` between, and take
 //   the whole page down with an assertion. Every panel path guarded it; the gesture did
 //   not, and nothing could reach a full scene in one step until this preset existed.
+//   **The preset stopped being full when it grew.** It fills a target of 10,000 and leaves
+//   the rest of the pool free on purpose, so a reader can build on top of a loaded demo --
+//   which means the gesture below now legitimately succeeds and this check silently stopped
+//   checking anything. Take the free slots first. Copying a point the demo already placed,
+//   rather than composing one here, because what is under test is the gesture's own guard.
+await page.evaluate(() => {
+  const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
+  while (nimSceneCount() < nimSceneCapacity()) nimAddItem(model, 'filler', nimDefaultInk(), 0);
+  nimSelectClear(); // Each add selects what it added; leave nothing standing behind.
+});
+await page.waitForTimeout(300);
+// Only now start the window the accounting below reads: the fill is eighty committed edits
+//   back to back, which is not the ordinary picture this measures.
+await page.evaluate(() => { window.__phase_frame = []; });
 await page.mouse.move(720, 450);
 await page.mouse.down();
 for (let i = 0; i < 20; i += 1) await page.mouse.move(720 + 8*i, 450 + 3*i);

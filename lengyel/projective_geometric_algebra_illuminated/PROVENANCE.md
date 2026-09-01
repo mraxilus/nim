@@ -7,7 +7,7 @@ _Who made this, from what, and how far it has been checked._
 |--------|-------|
 | Agent  | Claude Code |
 | Author | Claude Opus 5 and Claude Sonnet 5 |
-| Date   | 2026-08-01 |
+| Date   | 2026-09-01 |
 | Style  | `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 
@@ -2942,9 +2942,54 @@ below four pixels a one-pixel gap is half the strip. At 10,080 in a 371px drawer
 at ten thousand. The desktop derives the same way from `gui.contentWidth`.
 
   **What it costs, stated plainly.** The page goes from **2.17 MB to 3.64 MB** -- the star
-catalogue is 11,252 entries and most of that is names -- and the demo takes about **8 seconds**
-to build on this container. Both are the price of the count and both are worth knowing before
-raising it again.
+catalogue is 11,252 entries and most of that is names -- and the demo takes **4.1 seconds** to
+build on an otherwise idle container, against 2.1 seconds for the page itself to become ready.
+Both are the price of the count and both are worth knowing before raising it again.
+
+  **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
+reasoned about: a `Scene` at 10080 slots is **2.22 MiB** as a C struct and **6.56 MB** as JS
+objects, and a `Step` is a whole `Scene` beside a five-float `Camera`. So the undo timeline at
+`CAPACITY_HISTORY` = 32 reserves **71.1 MiB** natively -- the largest single reservation the
+binary makes, against 12.3 MiB for both mesh sets together -- and **209 MB of JS heap** in the
+browser, where the live page measures 164 MB at load and 175 MB with the demo in it. The
+timeline is essentially the entire heap of that page; everything else in it is about ten.
+  `BYTES_MEMORY_TOTAL` was not counting the timeline at all. It claims to be "every fixed
+reservation this binary makes for itself" and it omitted its own largest term, which is worse
+than reporting nothing; it counts it now, and `CAPACITY_HISTORY`'s own doc comment -- which
+until this round said the cost was cheap because "a Scene is already small" -- carries the
+per-step price so the lever is visible.
+  **The depth was left at 32.** Lowering it to 8 would return about 157 MB of browser heap,
+and was not taken: since the fix below the depth costs nothing per edit, so what is left is a
+flat reservation nothing has yet run out of, and the thing being spent is a reader's undo. The
+figure is stated and the lever is linear -- 6.5 MB of JS heap and 2.22 MiB of address space a
+step -- so the trade can be made by whoever needs a lighter page.
+
+  **One edit cost 153 ms, and the cause was a loop with no reason to be looked at.** `record`
+dropped its oldest step by shifting every later entry down one place. That is a fair way to
+retire an entry when a `Step` is a 1,024-slot scene; at 10,080 slots it is **31 whole scene
+copies for every edit past the thirty-second**. Measured on the JS backend at steady state:
+**153.5 ms** to toggle one object's visibility -- nine dropped frames -- and it scaled with the
+*capacity*, 26.4 ms at four steps deep and 39.9 at eight, which is the signature that says the
+cost is the shift and not the copy.
+  The array is a ring now: `first` names the slot holding the oldest step, `slotOf` is the one
+place a timeline position becomes an array index, and retiring the oldest entry moves one
+integer. One edit costs **11.3 ms** and no longer moves with the depth at all (10.7 at four,
+11.7 at eight). Nothing else in the module changed; `count` and `cursor` still mean what they
+meant.
+  **The case that already overflowed the timeline could not have caught it, and now could.**
+It recorded four steps past capacity, undid all the way back, and checked the count and the
+state it landed on. Both of those survive an index that forgets the wrap -- what does not is
+the order of everything in between, so the case now retraces every retained step forward and
+back and checks each one.
+
+  **A suite case stopped finishing, and it was the case rather than the build.** "no point in
+it is a hub for the rest of the scene" walked every pair of slots to count how many lines and
+planes pass through each point. At 1,024 objects that is a million cheap reads; at 10,000 it is
+a hundred million, and on the JS backend each one copies a `Multivector` out of the pool. The
+run sat at 126% CPU and 3.6 GB of resident memory for ten minutes without emitting a line and
+was killed. The scene holds 9,868 points and 128 lines and planes, so the inner walk was
+reading ten thousand things to find a hundred: it gathers the joiners once now, unitising each
+plane a single time, and the JS suite runs in **127 seconds** end to end.
 
 **The object pool strip had been drawing nothing at all, and every check passed it.**
 Reported by a reader, found by measuring the rendered box rather than the code: 1,024 cells,

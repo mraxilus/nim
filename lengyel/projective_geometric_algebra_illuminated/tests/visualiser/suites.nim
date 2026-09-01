@@ -2469,6 +2469,21 @@ suite "History":
     check count_undone == CAPACITY_HISTORY - 1
     check scenesEqual(scene, snapshots[^CAPACITY_HISTORY])
 
+    # Every retained step in turn, not just the far end of the walk. The timeline is a
+    #   ring, so a wrapped one has its oldest step somewhere in the middle of the array
+    #   and its newest just behind it; an index that forgets the wrap still lands the
+    #   count and can still land the two ends, and misorders everything between them.
+    for i in 1 ..< CAPACITY_HISTORY:
+      check history.canRedo
+      check history.redo(scene, camera)
+      check scenesEqual(scene, snapshots[len(snapshots) - CAPACITY_HISTORY + i])
+    check not history.canRedo
+    for i in countdown(CAPACITY_HISTORY - 2, 0):
+      check history.canUndo
+      check history.undo(scene, camera)
+      check scenesEqual(scene, snapshots[len(snapshots) - CAPACITY_HISTORY + i])
+    check not history.canUndo
+
 
   test "a fresh record after undo truncates the redo-able future":
     var scene = initScene()
@@ -6546,8 +6561,22 @@ when ITEMS_MAX >= ITEMS_ORRERY:
       # The fault that broke the arrangement before this one: every line and plane joined
       #   through a single star, so the scene drew as a starburst. Counted, because "it looks
       #   like a starburst" is not something a suite can see.
+      #   Gather the joiners once instead of re-reading the whole pool for every point. Ten
+      #   thousand objects of which barely a hundred are lines or planes made this a hundred
+      #   million slot reads for the same answer, and on the JS backend each of those reads
+      #   copies a `Multivector` -- the case stopped finishing at all.
       var scene = initScene()
       constructOrrery(scene)
+      var planes: seq[Multivector]
+      var lines: seq[Multivector]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
+        let geometry = scene.geometryOf(slot)
+        if isHorizon(geometry): continue
+        case shape(geometry).get(Shape.Point)
+        of Shape.Plane: planes.add(unitize(geometry))
+        of Shape.Line: lines.add(geometry)
+        of Shape.Point: discard
       var worst = 0
       var worst_label = ""
       for slot in 0 ..< scene.bound:
@@ -6556,18 +6585,13 @@ when ITEMS_MAX >= ITEMS_ORRERY:
         if shape(point) != some(Shape.Point) or isHorizon(point): continue
         let place = unitize(point)
         var through = 0
-        for other in 0 ..< scene.bound:
-          if not scene.isAlive(other): continue
-          let geometry = scene.geometryOf(other)
-          if isHorizon(geometry): continue
-          case shape(geometry).get(Shape.Point)
-          of Shape.Plane:
-            if abs(depthAgainst(unitize(geometry), place)) <= TOLERANCE_SINGLE: inc through
-          of Shape.Line:
-            var apart = 0.0
-            for b in Basis: apart = max(apart, abs(wedge(geometry, place)[b]))
-            if apart <= TOLERANCE_SINGLE: inc through
-          of Shape.Point: discard
+        for plane in planes:
+          if abs(depthAgainst(plane, place)) <= TOLERANCE_SINGLE: inc through
+        for line in lines:
+          let spanned = wedge(line, place)
+          var apart = 0.0
+          for b in Basis: apart = max(apart, abs(spanned[b]))
+          if apart <= TOLERANCE_SINGLE: inc through
         if through > worst:
           worst = through
           worst_label = toText(scene.labelAt(slot))

@@ -4,10 +4,12 @@
 ## `Label`/`Ink`/`bool`/`float`/`Option` and five floats, no pointers or refs -- so
 ## recording a step is a plain value copy, not a diff or an inverse-operation log. Undo and
 ## redo do not need separate stacks either: one fixed-size array holding the whole edit
-## timeline, plus one cursor into it, does both jobs. `entries[cursor]` is always exactly
-## equal to the live state; undo/redo just move the cursor and copy that entry back out; a
-## fresh edit truncates anything past the cursor (the redo-able future a new edit
-## invalidates) before appending.
+## timeline, plus one cursor into it, does both jobs. The entry at the cursor is always
+## exactly equal to the live state; undo/redo just move the cursor and copy that entry back
+## out; a fresh edit truncates anything past the cursor (the redo-able future a new edit
+## invalidates) before appending. The array is a ring, so retiring the oldest step to make
+## room costs one integer rather than a copy of everything after it -- `slotOf` is the only
+## place a position along the timeline becomes an index into that array.
 ##
 ## **The camera rides along, but never moves the timeline by itself.** Each step records
 ## where the camera stood when that step's own edit was made, so undoing a construction puts
@@ -48,9 +50,21 @@ import ./[camera, scene]
 
 const CAPACITY_HISTORY* {.define: "visualiser.history_capacity".} = 32
   ## Steps of timeline retained; a round number past what one editing session
-  ## plausibly needs. Costs CAPACITY_HISTORY * sizeof(Step) of fixed reservation --
-  ## a Scene is already small and fixed-size and a Camera is five floats beside it, so
-  ## this is cheap; see panel.layoutDiagnosticsObjectPool's own BYTES_SCENE figure.
+  ## plausibly needs. Costs CAPACITY_HISTORY * sizeof(Step) of fixed reservation, and a
+  ## Step is a whole Scene beside a Camera of five floats, so this scales with
+  ## `scene.ITEMS_MAX` rather than with anything about editing. It is **not** cheap and
+  ## the comment here once said it was: at 10080 slots a Scene measures 2.22 MiB, so
+  ## thirty-two of them reserve **71.1 MiB** -- the largest single reservation this
+  ## binary makes, four times both mesh sets together, and counted as such by
+  ## `visualiser.BYTES_MEMORY_TOTAL`. On the browser build the same thirty-two steps
+  ## measure **209 MB of JS heap**, since every slot there is a boxed object rather than
+  ## a machine word; the whole rest of that page is about ten.
+  ##   Kept at 32 anyway, with the figure stated rather than the depth quietly cut. Since
+  ## the timeline became a ring the depth costs nothing per edit -- see `record` -- so
+  ## what remains is a flat reservation, and the alternative on the table was taking a
+  ## reader's undo from thirty-two steps to eight to save memory nothing has yet run out
+  ## of. This is the one lever to pull if a page ever has to be lighter, and it is linear:
+  ## 6.5 MB of JS heap and 2.22 MiB of address space per step.
   ##   Settable alongside `visualiser.items_max` and `visualiser.label_max`, so the suite
   ## can run once at these defaults and once at capacities small enough that a test
   ## reaches them, e.g. `--define:visualiser.history_capacity=8`.
@@ -74,9 +88,29 @@ type
 
   History* = object ## Fixed-capacity timeline of steps, plus a cursor onto the one equal
     ## to the live scene right now.
-    entries: array[CAPACITY_HISTORY, Step] ## Snapshot recorded at each committed edit.
+    ##   The array is a **ring**: `count` and `cursor` are positions along the timeline,
+    ## `first` says which array slot the oldest of them lives in, and `slotOf` is the only
+    ## place the two are related. Dropping the oldest step therefore moves one integer.
+    ## It used to move the whole array -- see `record` for what that cost once a Step
+## became a ten-thousand-slot scene.
+    entries: array[CAPACITY_HISTORY, Step] ## Snapshot recorded at each committed edit,
+      ## in ring order rather than timeline order; reach one through `slotOf`, never by
+      ## indexing this directly.
+    first: int    ## Array slot holding the oldest step, which is timeline position 0.
     count: int    ## Valid timeline entries so far, <= CAPACITY_HISTORY.
-    cursor: int   ## Index of the entry equal to the live scene right now.
+    cursor: int   ## Timeline position of the entry equal to the live scene right now.
+
+
+
+#[ Ring Indexing ]#
+
+func slotOf(history: History; position: int): int =
+  ## Report which array slot holds the step at `position` along the timeline, where 0 is
+  ## the oldest step retained and `count - 1` the newest.
+  ##   Every read and write of `entries` goes through here. The ring's whole point is that
+  ## `first` moves instead of the steps, so a position is not an array index and the two
+  ## must never be spelled the same way.
+  (history.first + position) mod CAPACITY_HISTORY
 
 
 
@@ -89,6 +123,7 @@ proc initHistory*(scene: Scene; camera: Camera): History =
   ##   `camera` completes the entry rather than being read back: nothing undoes past the
   ##   first step, so no traversal ever restores it. See `Step.camera`.
   result.entries[0] = Step(scene: scene, camera: camera)
+  result.first = 0
   result.count = 1
   result.cursor = 0
 
@@ -102,11 +137,16 @@ proc record*(history: var History; scene: Scene; camera: Camera) =
   history.cursor.inc
   if history.cursor >= CAPACITY_HISTORY:
     # Oldest entry drops off the front rather than the array growing, to keep history
-    # within its fixed capacity.
-    for index in 0 ..< CAPACITY_HISTORY - 1:
-      history.entries[index] = history.entries[index + 1]
+    # within its fixed capacity. Advancing `first` retires it and hands its slot straight
+    # back to the step about to be written, which is why the ring exists: this used to
+    # shift every entry down one place, and a Step is a whole Scene. At 10080 slots that
+    # was 31 scene copies for every edit past the thirty-second -- measured at **153.5 ms**
+    # on the JS backend against **11.3 ms** now, so an ordinary edit dropped nine frames.
+    # The new figure is one scene copy and no longer moves with the capacity: at four
+    # steps deep the old shift cost 26.4 ms and the ring costs 10.7.
+    history.first = (history.first + 1) mod CAPACITY_HISTORY
     history.cursor = CAPACITY_HISTORY - 1
-  history.entries[history.cursor] = Step(scene: scene, camera: camera)
+  history.entries[history.slotOf(history.cursor)] = Step(scene: scene, camera: camera)
   history.count = history.cursor + 1
 
 
@@ -128,9 +168,9 @@ proc undo*(history: var History; scene: var Scene; camera: var Camera): bool
   ##   A caller holding a camera tween has to abandon it after this, or the standing aim
   ##   carries the view straight back off the restored placement.
   if not history.canUndo: return false
-  camera = history.entries[history.cursor].camera
+  camera = history.entries[history.slotOf(history.cursor)].camera
   history.cursor.dec
-  scene = history.entries[history.cursor].scene
+  scene = history.entries[history.slotOf(history.cursor)].scene
   # A whole-scene assignment, which restores that entry's own revision rather than
   #   advancing this one's; see `scene.revision` for why the rule is stated as a bump.
   scene.markEdited()
@@ -145,8 +185,8 @@ proc redo*(history: var History; scene: var Scene; camera: var Camera): bool
   ##   from -- so crossing one step either way puts the view in the same place.
   if not history.canRedo: return false
   history.cursor.inc
-  scene = history.entries[history.cursor].scene
-  camera = history.entries[history.cursor].camera
+  scene = history.entries[history.slotOf(history.cursor)].scene
+  camera = history.entries[history.slotOf(history.cursor)].camera
   # See `undo` above: a whole-scene assignment says so itself.
   scene.markEdited()
   true

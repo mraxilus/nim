@@ -194,13 +194,18 @@ const
     ## either arena was carved to serve.
   BYTES_MEMORY_TOTAL* =
     CAPACITY_ARENA_PERMANENT + CAPACITY_ARENA_FRAME + 2*CAPACITY_ARENA_SWAP +
-    2*sizeof(MeshSet) + sizeof(Scene) + sizeof(Panel) + FRAMES_TIMING_MAX*sizeof(float32)
+    2*sizeof(MeshSet) + sizeof(Scene) + sizeof(History) + sizeof(Panel) +
+    FRAMES_TIMING_MAX*sizeof(float32)
     ## Sum of every fixed-size reservation this binary makes for itself: both arenas at
     ## their full capacity, committed in the data segment regardless of use; tessellation
-    ## storage for the scene set and the furniture set both; the object pool; the panel's
-    ## own state, frame-time ring buffer included; and the `--timings` benchmark buffer.
-    ## Excludes anything Dear ImGui, SDL, or the graphics driver allocate on their own
-    ## account, which this process cannot see.
+    ## storage for the scene set and the furniture set both; the object pool; the undo
+    ## timeline, which holds `history.CAPACITY_HISTORY` whole copies of that pool; the
+    ## panel's own state, frame-time ring buffer included; and the `--timings` benchmark
+    ## buffer. Excludes anything Dear ImGui, SDL, or the graphics driver allocate on their
+    ## own account, which this process cannot see.
+    ##   The timeline was missing from this sum until the pool reached 10080 slots made it
+    ## the largest term in it -- 71.1 MiB of the total, against 12.3 for both mesh sets.
+    ## A figure that omits its own biggest entry is worse than no figure.
 
 static:
   doAssert PIXELS_WIDTH >= 640 and PIXELS_HEIGHT >= 480,
