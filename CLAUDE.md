@@ -36,11 +36,12 @@ root. One directory, self-contained, with its own tests and its own documents.
 
 ## Scaffold, in this order
 
-1. **`STYLE.md`** — copy `lengyel/projective_geometric_algebra_illuminated/STYLE.md`
-   verbatim. It is deliberately domain-agnostic: a systems-programmer stance, four naming
-   cases, doc-comment rules, design rules, and a Nim appendix. It is the contract for every
-   line you write. Read it fully before writing code, not after. Adapt only if the new
-   project's language or domain genuinely demands it, and say so in `PROVENANCE.md`.
+1. **`CONSTITUTION.md` and `STYLE.md`** — copy both verbatim from
+   `lengyel/projective_geometric_algebra_illuminated/`. The constitution is the rule of law:
+   design, naming, documentation, cost, tests, form, record. `STYLE.md` is the Nim expression
+   guide: how each rule is spelled in Nim, and what each backend does with a value. Read both
+   fully before writing code, not after; every decision below cites an article. Adapt only if
+   the new project's language genuinely demands it, and say so in `PROVENANCE.md`.
 
 2. **`PROVENANCE.md`** — see below. Create it at the start with the header table and grow
    it as decisions are made; do not leave it until the end.
@@ -77,13 +78,14 @@ root. One directory, self-contained, with its own tests and its own documents.
 
 6. **`bin/`** for build output. Not committed.
 
-## The two documents
+## The three documents
 
-**`STYLE.md`** governs code. Follow it exactly; it is not advisory. The rules most often
-violated in practice: every declaration gets a doc comment; body comments name a step's
-*goal*, never its mechanism; no sentinel value smuggling absence into a value's own range
-(`Option[T]`, not `-1`); the hard 100-column limit is measured in *characters*, so a
-byte-counting checker will lie to you about any line containing non-ASCII.
+**`CONSTITUTION.md`** governs every decision and **`STYLE.md`** its Nim spelling. Follow
+both exactly; neither is advisory. The rules most often violated in practice: every
+declaration gets a doc comment (Art. VI.1); a stage comment names a step's *goal*, never its
+mechanism (VI.4); no sentinel smuggling absence into a value's own range (IV.4); a binding
+in a hot path is a copy until the generated output says otherwise (VII.1); the 100-column
+limit is measured in *characters*, so a byte-counting checker lies about non-ASCII (X.1).
 
 **`PROVENANCE.md`** records who made this, from what, and how far it has been checked.
 Open it with a table:
@@ -94,7 +96,7 @@ Open it with a table:
 | Agent  | Claude Code |
 | Author | <model> |
 | Date   | <date> |
-| Style  | `STYLE.md`, supplied with the prompt; followed for all code. |
+| Style  | `CONSTITUTION.md` and `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 ```
 
@@ -115,45 +117,26 @@ how you got there does not. Prune the file whenever it starts reading as a diary
 
 ## Working practices
 
-These come from real failures on the existing project. They cost more to relearn than to
-follow.
+Each of these is now an article of the constitution, listed here because every one came
+from a real failure on the existing project and cost more to relearn than to follow.
 
-- **Verify by running, not by reasoning.** Compiling is not evidence the thing works.
-  Render the output and look at it; drive the UI with real synthetic events; read the
-  bytes back. Several bugs here survived review and passed tests because a test called a
-  handler directly and bypassed the event wiring that was actually broken.
-- **A declaration's own doc comment outranks any summary table**, including one in the same
-  library's module header. Summary tables drift. This exact trap produced wrong operator
-  notation twice.
-- **When one language compiles to another, write the source language.** The existing
-  project compiles Nim to JavaScript; hand-written JS is a last resort for genuinely
-  JS-only concerns (DOM, WebGL, event wiring). Any derived value, lookup or domain rule
-  belongs behind an export. Audits keep finding drift here.
-- **Never depend on what the project exists to understand.** Derive it. Dependencies are
-  for genuinely external concerns, and each is justified where it is imported.
-- **Check the sibling when you fix a duplicated copy.** Where a real constraint forces
-  duplication, mark each copy with a comment naming the others; a fix to one is not
-  finished until the rest are checked.
-- **Compare floats through an approximate operator** with configurable tolerance, and make
-  exact equality a compile error on those types.
-- **Read the generated output before believing a cost.** On the JS backend a `let` of an
-  object, a by-value parameter and a by-value return each deep-copy. Six separate rounds on
-  the existing project each found this again in a new place. Alias, `lent`, `var`, and read
-  the call inline; then check one instance in the emitted JavaScript.
-- **Rebuild before you drive.** A driver run against a page built from an older tree reports
-  that tree's bugs and hides yours. `tools/verify.sh` builds then drives, in that order; an
-  ad-hoc run must do the same or its result is not evidence.
-- **Instruments are gated on their reader.** Per-object clock reads, tallies and breakdowns
-  run only while the panel that shows them is open. One round here measured a frame whose
-  largest cost was measuring it.
-- **A restore issues a fresh revision.** Undo, redo, clear and load go through one
-  procedure that hands out a revision newer than any ever issued. Reusing the snapshot's own
-  counter aliased a cache keyed on it and drew a previous scene over the current one.
-- **Say "unmeasured" rather than repeat a figure.** A performance claim carried in
-  `PROVENANCE.md` without its before-and-after pair is a story, not a record.
-- **Every comment is telegraphic, and a checker says so.** `STYLE.md`'s article rule covers
-  headers, body comments and glue in other languages; `tools/check_prose.nim` enforces it, so
-  a review never has to.
+- **Verify by running, not by reasoning** (IX.5, IX.6). Render the output and look at it;
+  drive the UI with real events; read the bytes back; rebuild before you drive.
+- **A declaration's own doc outranks any summary table** (I.4). This trap produced wrong
+  operator notation twice.
+- **When one language compiles to another, write the source language** (II.1). Hand-written
+  JS only for DOM, WebGL and event wiring; every derived value sits behind an export.
+- **Never depend on what the project exists to understand** (II.1); justify each external
+  dependency where it is imported.
+- **Check the sibling when you fix a duplicated copy** (II.1); each copy names the others.
+- **Read the generated output before believing a cost** (VII.1). Seven rounds here each
+  found the JS backend's deep copy again in a new place.
+- **Instruments are gated on their reader** (VII.4). One round measured a frame whose largest
+  cost was measuring it.
+- **A restore issues a fresh revision** (II.6). Reusing the snapshot's own counter drew a
+  previous scene over the current one.
+- **Say "unmeasured" rather than repeat a figure** (VII.5, VII.6).
+- **Every comment is telegraphic, and a checker says so** (VI.5): `tools/check_prose.nim`.
 
 ## Dependencies and vendoring
 
@@ -165,7 +148,7 @@ Check `git status` before every commit.
 ## Committing
 
 Conventional Commits with a fixed scope, lowercase imperative summary, no trailing period;
-join related clauses with `;`. Use `refactor(scope):` freely.
+one intention per commit (Art. XI); join related clauses with `;`.
 
 ```
 feat(visualiser): add undo/redo over scene-content edits
