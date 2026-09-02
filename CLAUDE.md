@@ -124,11 +124,11 @@ from a real failure on the existing project and cost more to relearn than to fol
   drive the UI with real events; read the bytes back; rebuild before you drive.
 - **A declaration's own doc outranks any summary table** (I.4). This trap produced wrong
   operator notation twice.
-- **When one language compiles to another, write the source language** (II.1). Hand-written
+- **When one language compiles to another, write the source language** (II.9). Hand-written
   JS only for DOM, WebGL and event wiring; every derived value sits behind an export.
-- **Never depend on what the project exists to understand** (II.1); justify each external
+- **Never depend on what the project exists to understand** (II.8); justify each external
   dependency where it is imported.
-- **Check the sibling when you fix a duplicated copy** (II.1); each copy names the others.
+- **Check the sibling when you fix a duplicated copy** (II.9); each copy names the others.
 - **Read the generated output before believing a cost** (VII.1). Seven rounds here each
   found the JS backend's deep copy again in a new place.
 - **Instruments are gated on their reader** (VII.4). One round measured a frame whose largest
