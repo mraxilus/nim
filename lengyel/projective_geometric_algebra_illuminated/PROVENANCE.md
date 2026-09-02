@@ -7,7 +7,7 @@ _Who made this, from what, and how far it has been checked._
 |--------|-------|
 | Agent  | Claude Code |
 | Author | Claude Opus 5 and Claude Sonnet 5 |
-| Date   | 2026-09-01 |
+| Date   | 2026-09-02 |
 | Style  | `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 
@@ -2709,9 +2709,13 @@ write a geometry through it with nothing recorded, and twenty-six of its twenty-
 were *reading* through it anyway, which is the JS-backend miscompile pattern `geometryOf`'s
 own doc comment was written about. Those readers now call `geometryOf`; the three writers
 call `setGeometryAt`; the accessor is gone. The one contract left outside the module is a
-whole-scene assignment, which is `history.undo` and `history.redo`, and both call
-`markEdited`. Restoring an older revision is safe on its own -- two distinct states cannot
-share one, since every edit advances it -- and the call makes the rule hold without a caveat.
+whole-scene assignment, which is `history.undo`, `history.redo`, the clear and every load,
+and all of them go through `scene.restoreFrom`. **A restored revision is newer than every
+revision ever handed out**, `max(live, snapshot) + 1`: the earlier design copied the snapshot
+and called `markEdited`, which handed back the snapshot's own count plus one -- a number a
+state between the two had already worn, so the placement cache keyed on it believed itself
+current and drew six objects of the previous demo over the new one. Caught by a driven check
+(undo while the frame is held), not by the suite, which never keys a cache on the counter.
   **Checked through the drawn pixels, not the flag.** A hold that released but drew the old
 records would pass a flag check, so the driven check hashes the canvas from inside the frame
 that drew it (the context keeps no drawing buffer afterwards) and walks eight edit paths --
@@ -3122,13 +3126,15 @@ rasteriser itself; every named function in the build is under 0.2%. A promising 
 measurable; the tail is not diagnosable on this hardware and no claim is made about it.
 
   **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
-reasoned about: a `Scene` at 5040 slots is **1.11 MiB** as a C struct and about 3.3 MB as JS
-objects, and a `Step` is a whole `Scene` beside a five-float `Camera`. So the undo timeline at
-`CAPACITY_HISTORY` = 32 reserves **35.5 MiB** natively -- the largest single reservation the
-binary makes, against 6.2 MiB for both mesh sets together -- and roughly 105 MB of JS heap in
-the browser, where the live page measures **85 MB at load** and 92 MB with the largest size in
-it. The timeline is essentially the entire heap of that page; everything else in it is single
-digits.
+reasoned about: a `Scene` at 5040 slots is **1.15 MiB** (1,204,616 bytes, `sizeof` on the
+release compiler; 1.11 before the per-slot placing stamps below) as a C struct and was measured
+at about 3.3 MB as JS objects before those stamps, and a `Step` is a whole `Scene` beside a
+five-float `Camera`. So the undo timeline at `CAPACITY_HISTORY` = 32 reserves **36.8 MiB**
+natively (38,549,528 bytes) -- the largest single reservation the binary makes, against 6.2
+MiB for both mesh sets together -- and roughly 105 MB of JS heap in the browser, where the
+live page measured **85 MB at load** and 92 MB with the largest size in it before the stamps
+were added; the JS figures have not been re-measured since. The timeline is essentially the
+entire heap of that page; everything else in it is single digits.
   Those figures are half what they were: the pool held 10080 slots for a single
 ten-thousand-object scene, and holds 5040 now that the largest is 5038.
   `BYTES_MEMORY_TOTAL` was not counting the timeline at all. It claims to be "every fixed
@@ -3656,6 +3662,43 @@ fine in a browser; the ImGui font atlas is what cannot render it.
 Draw order in `glue.js` mirrors `renderer.nim` and must be kept in sync by hand: furniture
 ribbons with normal depth, then scene ribbons and points, then translucent triangles with
 `depthMask(false)`. No line width is set on either side any more; see Ribbons below.
+
+**Per-object costs at 5,038, as they stand.** Every object pays these per frame the scene is
+not held, and each of them was found by reading the generated JavaScript rather than by a
+profile row, which is why the list is kept here with the mechanism named:
+- **Flatten loops alias, never bind.** `template r: untyped = records[i]` in every flatten and
+  vertex walk; a `let` there is a `nimCopy` per record per frame. `Ink.colour` returns `lent`,
+  and a marker's fade is passed as an alpha rather than through `fade`, which returned a copy.
+- **`isAlive` compares, it does not slice.** `slot in 0 ..< ITEMS_MAX` allocates a slice object
+  on the JS backend, once per call; it is two comparisons now.
+- **The selection carries a revision.** `Selection.revision` counts real changes (a clear of an
+  empty selection and a re-select of the same single slot are not changes), so the frame
+  record and the desktop panel compare one integer instead of copying and comparing a
+  5,040-slot array every frame.
+- **Placement is invalidated per slot, not per scene.** `Scene.revisions_placing` stamps each
+  slot at the edit that last changed it; `ensurePlaced` re-places only slots stamped after the
+  revision it last filled at. `restoreFrom` (undo, redo, clear, load) stamps every live slot
+  of the snapshot, so a restore re-places the whole scene: correct, and at 5,038 a whole
+  placement pass per undo. A per-slot diff against the live scene would cut that and was not
+  done.
+- **Creation order is a heap sort, cached per revision.** `slotsCreated` was an insertion
+  sort, quadratic at 5,038; it is O(n log n) now, and the desktop panel keeps the result
+  against `scene.revision` instead of sorting every frame.
+- **The pick rejects a plane before meeting it.** `isBeyondDisc` bounds the disc's screen
+  extent by the silhouette of the sphere that contains it, conservative in the depth term and
+  in the off-axis term. Checked numerically in this audit: 20,000 random configurations, the
+  centre up to three view-widths off screen, 300 surface samples each, no silhouette point
+  outside the bound. The suite samples the same property from inside the view.
+Not done, and known: the walk still sweeps `scene.bound` twice (sky, then everything else);
+every edit copies a whole `Scene` into the timeline, which is a 1.15 MiB `nimCopy` on the JS
+backend per edit; and the timeline holds 32 of them. None of these is per frame.
+  **Verification status of this round.** The suite at every size and every driven check pass
+on a page built from this tree. The frame-time gains attributed to the fixes above were read
+off the diagnostics panel during the work and are not re-measured here; treat them as
+unrecorded rather than as figures. One driven check failed during the audit against a page
+built *before* `showOrrery` went through `restoreFrom`, and passed on a rebuild: a driven
+check is evidence only for the page just built, which `verify.sh` guarantees by ordering and
+an ad-hoc driver run does not.
 
 
 Browser UI
@@ -4872,6 +4915,7 @@ run of all of it, so the script closes by saying so.
 | Check | What it holds | Reads from |
 |-------|---------------|------------|
 | `check_columns` | Line width, trailing whitespace, tabs, final newline | The filesystem |
+| `check_prose` | No article in any comment, in any authored language | The filesystem |
 | `check_palette` | Palette separation floors | `mesh.lut_ink_to_rgba` |
 | `check_atlas` | Every drawable codepoint has a glyph range | `lut_*` and `gui_shim.cpp` |
 | Suite ×3 | Every invariant, on both backends and two capacities | `tests/visualiser/` |
@@ -4884,7 +4928,20 @@ words and the formatter — 62 printable codepoints today, all covered. `check_c
 counts **characters, not bytes**, which is why it exists as a tool at all: a `wc -L` reports
 a compliant line full of `∧`, `⟑` and `𝐦` as eleven columns too long, and gets ignored
 within a day. It skips the testament spec block a test file opens with, whose `matrix` line
-is one line by testament's own rules with nowhere to wrap to.
+is one line by testament's own rules with nowhere to wrap to. It counted the file's lines
+once *per line* until this audit, which made it quadratic — forty seconds on the star
+catalogue, for a check that runs first because it is the cheapest — and nobody noticed
+because nothing times the checks. It runs in under a tenth of a second now.
+
+`check_prose` holds every comment to `STYLE.md`'s article rule, which had been stated for
+doc comments and honoured nowhere else: module headers, body comments, shell and JavaScript
+glue had all drifted back to ordinary prose, and each cleanup had to be ordered by hand.
+It reads comments out of each language's own syntax (`#` outside strings and the testament
+block; `//`, `/* */`, `<!-- -->` outside strings and template literals), masks code spans
+and quoted titles, and treats a bare `a` before `and`, `or`, an operator or a single letter
+as an operand name. Prose files are deliberately not read: `PROVENANCE.md` is prose on
+purpose. It has a self-test like `check_columns`, and it reuses that tool's file walk
+rather than carrying a second copy of the skip list.
 
 `check_palette` measures under **Machado, Oliveira and Fernandes (2009) at severity 1.0**,
 because that is the model every floor quoted in `REQUIREMENTS.md` was calibrated against.
