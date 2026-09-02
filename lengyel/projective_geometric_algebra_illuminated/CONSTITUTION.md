@@ -35,7 +35,8 @@ cult.
 6. Provide a façade of documented one-line forwarders: the API reference that is also
    source, and the source of truth for public names.
 7. A comment states the decision and its cost, never the path to it. Superseded designs,
-   old figures and fixed bugs go to the record (Article XI); a live trap earns one line.
+   old figures and fixed bugs go to the log (XI) and the provenance file (VIII.6); a live
+   trap earns one line.
 
 ```nim
 ## Construct specific PGA's `Basis` enum and related types/procedures.
@@ -74,6 +75,14 @@ cult.
    key that can alias is a sentinel (IV.4).
 7. Retreat from abstraction when it damages understanding. Removing a generator to regain
    comprehension, then restoring a smaller one, is progress.
+8. Never depend on what the project exists to understand; derive it. External concerns
+   (windowing, drivers, codecs, protocols) may be dependencies, each justified where it is
+   imported.
+9. Duplicate only what a real constraint forces: a target that cannot share the original's
+   dependencies, a boundary that cannot be crossed. Each copy names its siblings, and a fix
+   to one is finished only when every sibling is checked. When one language compiles to
+   another, write the source language; hand-written target code only for what the target
+   alone can do, with every derived value behind an export.
 
 ```nim
 type
@@ -88,6 +97,7 @@ defineOperator(symbols = "∧", docs = "...", cayley = CAYLEYS_WEDGE.base)
 
 proc restoreFrom*(scene: var Scene; snapshot: Scene) =
   ## Replace scene with snapshot under revision newer than any issued.
+  let revision_live = scene.count_edits
   scene = snapshot
   scene.count_edits = max(revision_live, snapshot.count_edits) + 1
 ```
@@ -137,8 +147,8 @@ func wedge*(m, n: Multivector): Multivector {.inline.} = m ∧ n
 5. Decide boundary and numeric policy in writing: zero, empty, NaN, overflow, normalising a
    zero norm. Returning the input unchanged on degenerate input wears the type of success;
    where chosen, the doc says so and a caller can detect it. Compare computed floats only
-   through `abs(a - b) <= TOL * max(1, abs(a), abs(b))`, with `TOL` a build-configurable
-   count of decimal places, and poison exact equality on those types.
+   through `abs(a - b) <= TOL * max(1, abs(a), abs(b))`, with `TOL` derived from a
+   build-configurable count of decimal places, and poison exact equality on those types.
 6. **Storage gate.** Small, closed, statically known domains get fixed enum-indexed storage
    carrying a live bound; genuinely dynamic data gets dynamic structures. Every walk runs to
    the bound, never the capacity. Prefer flat values over references so the caller controls
@@ -223,9 +233,12 @@ func unitize*(m: Multivector): Multivector {.inline.} = ^m
   ##   Projects higher-dimensional representation of object into Euclidean space.
   ##     By scaling weight of 𝐦 to unit magnitude.
 
-  # Determine parity relative to canonical ordering.
+func multiplyExterior(a, b: BasisSigned): ... =
+  ## Perform exterior product of two bases, reducing to standard basis form.
+
+  # Degenerate in presence of duplicate vectors.
   ...
-  # Construct resulting signed basis.
+  # Determine parity in parts.
   ...
 ```
 
@@ -307,7 +320,7 @@ if is_tallying: cost.mark = performanceNow()  # instrument runs only while panel
 7. Parameterised configurations run as a matrix; per-configuration files are minimal stubs
    including one shared suite.
 8. A checker is tested against fixtures it writes itself, and its own cost is bounded: a
-   check that takes forty seconds gets skipped.
+   check slow enough to be skipped is a check that does not run.
 
 ```nim
 suite "Chapter 2":
