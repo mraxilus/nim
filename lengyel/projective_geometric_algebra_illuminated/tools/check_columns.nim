@@ -1,16 +1,15 @@
-## Hold every source file to the layout rules `STYLE.md` states: line width, trailing
-## whitespace, tabs, and a final newline.
+## Hold every source file to layout rules `STYLE.md` states: line width, trailing
+## whitespace, tabs, final newline.
 ##
-## Width is counted in **characters, not bytes**. The distinction is the whole reason this
-## exists as a tool rather than as a shell one-liner: a `wc -L` or an `awk length($0)`
-## counts bytes, and this project's sources are full of multi-byte operators (`∧`, `⟑`,
-## `𝐦`) and box-drawing table borders. A byte counter reports a compliant line as eleven
-## columns too long and is ignored within a day.
+## Width is counted in **characters, not bytes**, whole reason this is tool rather than
+## shell one-liner: `wc -L` or `awk length($0)` counts bytes, and sources are full of
+## multi-byte operators (`∧`, `⟑`, `𝐦`) and box-drawing table borders. Byte counter
+## reports compliant line as eleven columns too long and is ignored within day.
 ##
-## Reads the paths it checks from the filesystem rather than from a list kept here, so a
-## new module is covered the moment it exists.
+## Reads paths it checks from filesystem rather than list kept here, so new module is
+## covered moment it exists.
 ##
-## Build and run from the project root:
+## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_columns tools/check_columns.nim && bin/check_columns
 
 import std/[algorithm, os, strformat, strutils, unicode]
@@ -21,34 +20,32 @@ import std/[algorithm, os, strformat, strutils, unicode]
 
 const
   COLUMNS_MAX = 100
-    ## Hard limit on a line's width, in characters. `STYLE.md` states it as hard: not a
-    ## guideline, and not a limit a comment may exceed.
+    ## Hard limit on line's width, in characters. `STYLE.md` states it as hard: not
+    ## guideline, and not limit comment may exceed.
   PATHS_SKIPPED = ["bin", "deps", "fonts", "node_modules", "out", "pga", "pga.nim"]
     ## Files and directories holding nothing this project wrote: build output, and
-    ## vendored source kept locally but never committed. Checking vendored code would
-    ## report failures nobody here may fix. Matched against each path component, so a
-    ## directory name here skips everything beneath it.
-  EXTENSIONS_CHECKED = [
+    ## vendored source kept locally but never committed. Matched against each path
+    ## component, so directory name here skips everything beneath it.
+  EXTENSIONS_CHECKED* = [
     ".nim", ".nims", ".cfg", ".cpp", ".h", ".js", ".mjs", ".html", ".css", ".sh", ".md",
     ".list",
-  ] ## Every file kind this project authors. A file kind absent here is not exempt; it is
-    ## a file kind that does not exist yet, and adding one means adding it here.
+  ] ## Every file kind this project authors. File kind absent here is not exempt; it is
+    ## file kind that does not exist yet.
 
 
 
 #[ Findings ]#
 
 type Complaint = object ## Hold one line that breaks one rule.
-  path*: string ## Where, relative to the project root.
-  line*: int ## Which line, counting from one, as an editor numbers them.
+  path*: string ## Where, relative to project root.
+  line*: int ## Which line, counting from one, as editor numbers them.
   rule*: string ## Which rule, named as `STYLE.md` names it.
-  detail*: string ## What was measured, where a number makes the complaint actionable.
+  detail*: string ## What was measured, where number makes complaint actionable.
 
 
-iterator sourcesUnder(root: string): string =
-  ## Walk every file this project authors, under `root`, in a stable order.
-  ##   Sorted rather than left to directory order, so two runs on the same tree report in
-  ##   the same sequence and a diff of two reports means something.
+iterator sourcesUnder*(root: string): string =
+  ## Walk every file this project authors, under `root`, in stable order.
+  ##   Sorted rather than left to directory order, so diff of two reports means something.
   var found: seq[string]
   for path in walkDirRec(root, relative = true):
     var is_skipped = false
@@ -69,10 +66,11 @@ proc complaintsIn(path: string): seq[Complaint] =
       path: path, line: countLines(content), rule: "final newline",
       detail: "file does not end in a newline",
     ))
-  # A testament spec is written in testament's format, not this project's: `cmd` and
-  #   `matrix` are each one line by that format's own rules, with nowhere to wrap a long
-  #   set of defines to. The spec is the block a test file opens with, and nothing else in
-  #   the file is exempt.
+  # Testament spec is written in testament's format: `cmd` and `matrix` are each one line
+  #   by that format's rules, with nowhere to wrap. Spec is block test file opens with, and
+  #   nothing else is exempt.
+  # Counted once: counting per line made checker quadratic, forty seconds on star catalogue.
+  let count_lines = countLines(content)
   var
     number = 0
     is_inside_spec = false
@@ -84,9 +82,8 @@ proc complaintsIn(path: string): seq[Complaint] =
     if is_inside_spec:
       if line.startsWith("\"\"\""): is_inside_spec = false
       continue
-    # A trailing newline splits into a final empty field, which is not a line anyone
-    #   wrote; counting it would report a phantom complaint on every well-formed file.
-    if number == countLines(content) + 1 and len(line) == 0: break
+    # Trailing newline splits into final empty field, not line anyone wrote.
+    if number == count_lines + 1 and len(line) == 0: break
     let columns = runeLen(line)
     if columns > COLUMNS_MAX:
       result.add(Complaint(
@@ -105,13 +102,11 @@ proc complaintsIn(path: string): seq[Complaint] =
 #[ Self-Test ]#
 
 proc selfTest(): int =
-  ## Check the checker against fixtures it writes itself, and report each case pass or fail.
-  ## Answers with the number that failed, for `main` to exit on.
-  ##   **The rule this exists for**: the column limit is measured in *characters*, and a
-  ##   checker counting bytes lies about every line holding non-ASCII -- which this project's
-  ##   sources are full of (`∧`, `☆`, `𝐦`, an em dash in every other comment). A checker
-  ##   nobody checks is a checker that can quietly start passing everything, and this one
-  ##   gates every commit.
+  ## Check checker against fixtures it writes itself, and report each case pass or fail.
+  ## Answers with number that failed, for `main` to exit on.
+  ##   **Rule this exists for**: column limit is measured in *characters*, and checker
+  ## counting bytes lies about every line holding non-ASCII. Checker nobody checks can
+  ## quietly start passing everything, and this one gates every commit.
   let directory = getTempDir() / "check_columns_self_test"
   createDir(directory)
   defer: removeDir(directory)
@@ -151,7 +146,7 @@ proc selfTest(): int =
 
 proc main() =
   ## Check every source file and report, exiting non-zero on any complaint.
-  ##   `--self-test` checks the checker against its own fixtures instead; see `selfTest`.
+  ##   `--self-test` checks checker against its own fixtures instead; see `selfTest`.
   if paramCount() >= 1 and paramStr(1) == "--self-test":
     let count_failed = selfTest()
     echo &"\n{count_failed} self-test(s) failed."
@@ -170,4 +165,4 @@ proc main() =
   if len(complaints) > 0: quit(1)
 
 
-main()
+when isMainModule: main()
