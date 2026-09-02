@@ -8,7 +8,7 @@ _Who made this, from what, and how far it has been checked._
 | Agent  | Claude Code |
 | Author | Claude Opus 5 and Claude Sonnet 5 |
 | Date   | 2026-09-02 |
-| Style  | `STYLE.md`, supplied with the prompt; followed for all code. |
+| Style  | `CONSTITUTION.md` and `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 
 An interactive PGA (rigid metric) object visualiser, built over many turns as a testbed
@@ -4462,15 +4462,18 @@ reads zero in every storyboard-exported PNG.
 
 Style Guide
 ---
-`STYLE.md` at the project root: a systems-programmer stance (caller owns memory,
-least-powerful construct first, dependencies justified individually, duplicate only what a
-real constraint forces), four naming cases applied without exception, a doc-comment
-convention (every declaration documented, telegraphic, first line imperative, body comments
-naming a step's goal not its mechanism, a summary index never a source of truth), a design
-section (no sentinels smuggling absence into a value's own range, no silent identity on
-degenerate input, enumerate old behaviour before merging states), and a Nim appendix pinning
-existing conventions (`strictFuncs`, `array[EnumType, T]` at runtime, `Option[T]` over
-sentinels) as explicit rules.
+Two documents at the project root. `CONSTITUTION.md` is the rule of law: eleven articles
+over exposition, derivation, notation, build-time safety, naming, documentation, cost,
+honesty, tests, form and the record, with a precedence clause and three gated mechanisms.
+`STYLE.md` is the Nim expression guide: construct selection, pragma discipline, compile-time
+and gated idioms, types, signatures, the test harness, and what each backend does with a
+value. Both were rewritten in this audit from the author's originals, folding in the rules
+that the performance work had to be told by hand (Articles II.6, VII, IX.4–6, VI.5) and the
+project's own presentation rules (X.8); the earlier merged `STYLE.md` that duplicated the
+constitution in different words is gone.
+  **Unverified:** the codebase has not yet been re-read against the rewritten pair; the
+comment rework that follows this audit is where that happens, and the outcomes below are
+from the two earlier audits against the merged guide.
 
 The codebase was brought into compliance across two audits. Notable outcomes still in force:
 
