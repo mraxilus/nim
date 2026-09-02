@@ -121,7 +121,12 @@ language community differs — a mixed scheme destroys the signal.
 - A DOC COMMENT ASSERTING A GLOBAL PROPERTY — no allocation, no exceptions, thread safety, a
   complexity bound — NAMES WHAT ENFORCES IT: a test, a pragma, a compile-time check. Where
   nothing does, mark it unverified. A guarantee stated as fact that nothing checks is a claim
-  the reader cannot act on.
+  the reader cannot act on. A COST CLAIM IS SUCH A PROPERTY: "runs once per save", "no copy",
+  "O(n log n)" each name the test or the generated output that showed it, or say unverified.
+- TELEGRAPHIC APPLIES TO EVERY COMMENT, not only declaration docs: module headers, body
+  comments, section banners, test names' comments, hand-written glue in a second language.
+  A checker over every authored file enforces the article rule; a file kind the checker does
+  not read is a file kind that does not exist yet.
 - TODOs are a design journal: multi-line, indented, exploratory, honest about uncertainty
   including doubt about your own claims. Keep substantial commented-out work in place.
 
@@ -161,6 +166,33 @@ language community differs — a mixed scheme destroys the signal.
   down; a transition with a hand-picked duration is a claim that this one motion is special,
   and it needs a comment saying why.
 
+## PERFORMANCE
+
+- A HOT PATH IS NAMED AND CARRIES ITS COST MODEL. Anything run once per frame or once per
+  pool slot says so in its doc, with what is O(1), what is O(n) and what allocates; a change
+  to the path re-derives the model in the same comment.
+- KNOW WHAT AN ASSIGNMENT COSTS ON EVERY TARGET. Where a backend copies by value — the JS
+  backend deep-copies any object or array bound by `let`, passed by value or returned by
+  value — a binding in a hot loop is a copy until the generated output shows otherwise.
+  Alias through `template`, return `lent`, take `var`, read the call inline; a `lent` result
+  bound to a `let` copies again. Read the generated code for one instance of every new
+  binding shape before trusting it, and say in the comment that you did.
+- AN INSTRUMENT MAY NOT COST MORE THAN WHAT IT MEASURES. Clock reads, tallies and
+  per-object accounting run only while something reads them; gate them on the reader being
+  open, and measure at least once per round with the instrument compiled out.
+- WORK FOR NOBODY IS A BUG. A view that is closed, off screen or unchanged is not derived
+  for. Key derived state on a revision counter the writers own — every writer inside one
+  module, every whole-value restore through one procedure — and a restore hands out a
+  revision newer than any ever issued, never the snapshot's own.
+- WALK TO THE BOUND, NEVER TO THE CAPACITY, and never sweep twice what one ordered walk
+  covers. A membership test spelled as a slice or range is an allocation on some targets;
+  in a hot path write the comparisons.
+- AN OPTIMISATION IS A MEASUREMENT PAIR: the same probe before and after, on the frame and
+  not only on the row that reports it — a cheaper instrument showing a smaller number is a
+  lie. The pair goes in `PROVENANCE.md`; where it was not taken, the word is "unmeasured".
+- A DRIVEN CHECK IS EVIDENCE ONLY FOR THE BUILD IT DROVE. Rebuild, then drive; a run that
+  did not rebuild first proves nothing about the source in front of you.
+
 ## TESTING
 
 - Test properties and invariants, not examples: exhaustively enumerate small domains, sample a
@@ -170,6 +202,9 @@ language community differs — a mixed scheme destroys the signal.
   uncovered chapters as empty placeholder suites so coverage stays visible.
 - Compare floats through an approximate operator with configurable tolerance; make exact
   equality a compile error on those types.
+- A BROAD PHASE OR A BOUND IS CHECKED OUTSIDE ITS COMFORT ZONE: sample configurations beyond
+  the view, near the singularity, at the extremes of every parameter, and record the sample
+  count beside the claim. A sampled property is only as strong as where it was sampled.
 - Test entry points are a minimal spec header plus an include of a shared suite, parameterised
   over configurations by the test runner's matrix mechanism.
 
