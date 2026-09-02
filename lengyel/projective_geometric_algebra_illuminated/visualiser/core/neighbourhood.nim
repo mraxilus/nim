@@ -1,22 +1,21 @@
-## Hold the real solar neighbourhood: every star within 31.53 parsecs that is known to
-## carry a planet, and every planet it carries.
+## Hold real solar neighbourhood: every star within 31.53 parsecs known to carry planet,
+## and every planet it carries.
 ##
-## **Data only, and generated.** Nothing here is chosen; it is a snapshot of the NASA Exoplanet
-## Archive, taken once and shipped, exactly as `ramp.nim` ships a snapshot of a published colour
-## map. `tools/check_neighbourhood.nim` states the query it came from and checks what can be
-## checked without the network; `PROVENANCE.md` carries the source, the date and the
-## acknowledgement the archive asks for.
+## **Data only, and generated.** Nothing here is chosen; it is snapshot of NASA Exoplanet
+## Archive, taken once and shipped, as `ramp.nim` ships snapshot of published colour map.
+## `PROVENANCE.md` carries source, date and acknowledgement archive asks for; suite's
+## "Orrery" cases check what can be checked without network.
 ##
-## `331` systems and `544` planets, ordered outward from Sol. Each system names the
-## range of `PLANETS` that belongs to it rather than holding them, so both are flat arrays and
-## neither needs a nested sequence -- which the JS backend would copy by value.
+## `331` systems and `544` planets, ordered outward from Sol. Each system names range of
+## `PLANETS` belonging to it rather than holding them, so both are flat arrays and neither
+## needs nested sequence, which JS backend would copy by value.
 ##
-## A planet whose semi-major axis the archive does not carry is stored as `0.0` rather than as a
-## guess, and `orrery` places it by its order among its siblings instead. 49 of these are.
+## Planet whose semi-major axis archive lacks is stored as `0.0`, not guess; `orrery`
+## places it by order among siblings instead. 49 such.
 
 type
   Neighbour* = object ## Describe one real star known to carry planets.
-    name*: string ## What the archive calls it.
+    name*: string ## What archive calls it.
     parsecs*: float ## How far it stands from Sol.
     ascension*: float ## Its right ascension, in degrees.
     declination*: float ## Its declination, in degrees.
@@ -24,7 +23,7 @@ type
     first*: int ## Where those entries begin.
 
   NeighbourPlanet* = object ## Describe one real planet.
-    name*: string ## What the archive calls it.
+    name*: string ## What archive calls it.
     au*: float ## Its semi-major axis in astronomical units; `0.0` where none is known.
 
 
@@ -1239,4 +1238,4 @@ const PLANETS*: array[544, NeighbourPlanet] = [
   NeighbourPlanet(name: "TOI-6086 b", au: 0.015410),
   NeighbourPlanet(name: "HR 5183 b", au: 18.000000),
   NeighbourPlanet(name: "HD 64114 b", au: 0.246000),
-] ## Every planet, grouped by the system that owns it.
+] ## Every planet, grouped by system that owns it.

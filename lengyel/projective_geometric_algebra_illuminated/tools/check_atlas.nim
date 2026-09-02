@@ -1,20 +1,18 @@
-## Hold the desktop font atlas to the text the visualiser can actually put on screen.
+## Hold desktop font atlas to text visualiser can put on screen.
 ##
-## Enumerates every codepoint reachable in UI text from the tables that produce it -- the
-## operation notation, the basis element names, the shape words -- then reads the glyph
-## ranges `gui_shim.cpp` builds the atlas from and reports any codepoint no range covers.
-## A codepoint outside every range renders as a tofu box, which is what shipped for the
-## geometric product and antiproduct until a check like this one was run by hand.
+## Enumerates every codepoint reachable in UI text from tables that produce it (operation
+## notation, basis element names, shape words), then reads glyph ranges `gui_shim.cpp`
+## builds atlas from and reports any codepoint no range covers. Codepoint outside every
+## range renders as tofu box, which shipped for geometric product and antiproduct.
 ##
-## Both sides are read from source rather than transcribed. The codepoints come from the
-## same `lut_*` tables the panel draws, so adding an operation whose symbol falls outside
-## the atlas fails here; the ranges come from `gui_shim.cpp` itself, so narrowing one fails
-## here too. Neither can drift from what is compiled without this noticing.
+## Both sides are read from source rather than transcribed: codepoints from same `lut_*`
+## tables panel draws, ranges from `gui_shim.cpp` itself. Neither can drift from what is
+## compiled without this noticing.
 ##
-## Covers the desktop atlas only. The browser has no atlas: it embeds whole faces, and its
-## own coverage is a question about those font files rather than about ranges.
+## Covers desktop atlas only. Browser embeds whole faces; its coverage is question about
+## font files rather than ranges.
 ##
-## Build and run from the project root:
+## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_atlas tools/check_atlas.nim && bin/check_atlas
 
 import std/[algorithm, os, sequtils, sets, strformat, strutils, unicode]
@@ -27,30 +25,28 @@ import ../visualiser/core/[boundary, scene]
 #[ Source Locations ]#
 
 const PATH_SHIM = "visualiser/desktop/gui_shim.cpp"
-  ## Where the atlas ranges are declared, relative to the project root this is run from.
+  ## Where atlas ranges are declared, relative to project root this is run from.
 
 
 
 #[ Reachable Codepoints ]#
 
 proc codepointsReachable(): HashSet[Rune] =
-  ## Collect every codepoint the desktop UI can draw as part of an item's own text.
-  ##   Drawn from the tables themselves, so this grows with them. What it deliberately
-  ##   does not cover is text written literally at a call site -- a button caption, a
-  ##   section heading -- which is plain Latin the base range covers wholesale.
-  # Each table entry is bound to a local before being walked: `runes` takes an open array
-  #   over its argument, and over a temporary read straight out of a `const` array that
-  #   open array outlives what it points at -- measured here as a segfault on the first
-  #   entry, not a subtle wrong answer.
+  ## Collect every codepoint desktop UI can draw as part of item's text.
+  ##   Drawn from tables themselves, so this grows with them. Not covered: text written
+  ## literally at call site (button caption, section heading), plain Latin base range
+  ## covers wholesale.
+  # Each table entry is bound to local before being walked: `runes` takes open array over
+  #   its argument, and over temporary read from `const` array that open array outlives
+  #   what it points at; measured as segfault on first entry.
   for operation in Operation:
     let notation = $lut_operation_to_notation[operation]
     for rune in runes(notation): result.incl(rune)
   for b in Basis:
     let name = lut_basis_to_name[b]
     for rune in runes(name): result.incl(rune)
-  # Every shape word, taken from the writer rather than by listing them: a point, a line
-  #   and a plane, each finite and each at the horizon, plus a mixed grade that is none of
-  #   them, is every branch `describeShape` has.
+  # Every shape word, taken from writer rather than by listing: point, line and plane,
+  #   each finite and at horizon, plus mixed grade, is every branch `describeShape` has.
   let
     place = toMultivector(Position(x: 1.0, y: 2.0, z: 3.0))
     other = toMultivector(Position(x: -2.0, y: 1.0, z: 4.0))
@@ -60,8 +56,8 @@ proc codepointsReachable(): HashSet[Rune] =
   for m in [place, line, plane, ⊖ place, ⊖ line, ⊖ plane, 1.0 + place]:
     let word = shapeText(m)
     for rune in runes(word): result.incl(rune)
-  # A magnitude contributes digits, a sign, a point and an exponent marker; take them from
-  #   the formatter rather than assuming which characters it reaches for.
+  # Magnitude contributes digits, sign, point and exponent marker; taken from formatter
+  #   rather than assumed.
   for value in [0.0, -1.5, 6.02e23, 1.0e-7]:
     let printed = multivectorText(initElement(Basis.scalar, value))
     for rune in runes(printed): result.incl(rune)
@@ -70,15 +66,14 @@ proc codepointsReachable(): HashSet[Rune] =
 
 #[ Declared Ranges ]#
 
-type Range = object ## Hold one inclusive span of codepoints the atlas builds glyphs for.
+type Range = object ## Hold one inclusive span of codepoints atlas builds glyphs for.
   first*, last*: int
 
 proc rangesDeclared(path: string): seq[Range] =
-  ## Read every glyph range `gui_shim.cpp` declares, from the file itself.
-  ##   Parsed rather than mirrored: a mirror of a C++ array in Nim is a second copy of the
-  ##   thing being checked, and would pass happily while the compiled atlas disagreed.
-  ##   Looks only at lines inside an `ImWchar RANGES...[] = {` block, so a hex literal
-  ##   anywhere else in the file cannot widen what this believes is covered.
+  ## Read every glyph range `gui_shim.cpp` declares, from file itself.
+  ##   Parsed rather than mirrored: mirror of C++ array in Nim is second copy of thing
+  ## being checked. Looks only at lines inside `ImWchar RANGES...[] = {` block, so hex
+  ## literal elsewhere cannot widen what this believes is covered.
   var is_inside = false
   for line in lines(path):
     let trimmed = line.strip()
@@ -121,8 +116,7 @@ proc main() =
 
   var missing: seq[Rune]
   for rune in reachable:
-    # Space and the control range below it are never drawn as a glyph, so a font that has
-    #   no glyph for them is not a gap; every printable codepoint is.
+    # Space and control range below it are never drawn as glyph, so no gap there.
     if int(rune) <= 0x20: continue
     if not ranges.covers(rune): missing.add(rune)
 

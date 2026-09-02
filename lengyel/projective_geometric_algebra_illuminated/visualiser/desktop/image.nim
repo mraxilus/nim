@@ -1,9 +1,8 @@
 ## Encode framebuffer readback as PNG file.
 ##
-## PNG is written out by hand rather than pulled in as image library, since format below
-## the compression is four length-tagged chunks and nothing more.
-##   Deflate and CRC come from zlib, which is a codec: exactly the kind of external
-##   concern worth depending on, and already present wherever OpenGL is.
+## PNG is written out by hand rather than pulled in as image library: format below
+## compression is four length-tagged chunks. Deflate and CRC come from zlib, codec worth
+## depending on, already present wherever OpenGL is.
 ##
 ##   |----------|---------------------------------------------------------------|
 ##   | Chunk    | Carries                                                       |
@@ -13,19 +12,14 @@
 ##   | IEND     | Nothing; marks end of file.                                   |
 ##   |----------|---------------------------------------------------------------|
 ##
-## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being filtered,
-## so no separate copy of image exists.
+## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being filtered, so
+## no separate copy of image exists.
 ##
 ## Two buffers proportional to image are carved from caller's frame arena per call,
-## reclaimed the moment it is next reset.
-##   Used to be two fresh `seq` allocations instead, on the reasoning that export happens
-##   on keypress, never in the draw loop, so sizing buffers at compile time would only fix
-##   a maximum window size for no real benefit. Arena carving costs the same fixed bound
-##   -- `writePng` now asserts instead of growing past it -- but pays it in one place
-##   the caller already owns, rather than in a second, independent allocator call.
+## reclaimed when it is next reset. Were two fresh `seq` allocations; arena carving costs
+## same fixed bound (`writePng` asserts instead of growing) in one place caller owns.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -40,7 +34,7 @@ import ./arena
 const HEADER_ZLIB = "<zlib.h>"
   ## Name header compression and checksum are imported through.
 
-# Link zlib here rather than in a project config, so every binary importing this module
+# Link zlib here rather than in project config, so every binary importing this module
 # links it, tests included.
 {.passL: "-lz".}
 
@@ -80,7 +74,7 @@ static:
 #[ Chunk Assembly ]#
 
 func toBigEndian(value: uint32): array[4, uint8] =
-  ## Split unsigned integer into PNG's own byte order, most significant first.
+  ## Split unsigned integer into PNG's byte order, most significant first.
   [uint8(value shr 24), uint8(value shr 16), uint8(value shr 8), uint8(value)]
 
 
@@ -92,7 +86,7 @@ proc writeChunk(file: File; name: string; payload: openArray[uint8]) =
   if len(payload) > 0:
     discard file.writeBytes(payload, 0, len(payload))
 
-  # Checksum covers name and payload together, but never length.
+  # Checksum covers name and payload together, never length.
   var checksum = crc32(0, nil, 0)
   checksum = crc32(checksum, cast[ptr Byte](unsafeAddr name[0]), 4)
   if len(payload) > 0:
@@ -107,15 +101,15 @@ proc writePng*(
   arena: var Arena; path: string; width, height: int; rows_bottom_up: openArray[uint8]
 ) =
   ## Write pixels as PNG file, flipping rows so image reads top-down.
-  ##   `rows_bottom_up` holds tightly packed RGB triples, first row nearest bottom of image.
-  ##   Both scratch buffers come from `arena`; caller resets it once this returns.
+  ##   `rows_bottom_up` holds tightly packed RGB triples, first row nearest bottom. Both
+  ## scratch buffers come from `arena`; caller resets it once this returns.
   doAssert width > 0 and height > 0,
     &"Image must have positive extent; got `{width}x{height}`."
   doAssert len(rows_bottom_up) >= width*height*CHANNELS,
     &"Readback holds {len(rows_bottom_up)} bytes, short of {width*height*CHANNELS}."
 
-  # Filter every scanline with filter 0, which stores bytes as they stand.
-  #   Cheapest filter, and deflate still finds most of redundancy in flat-shaded frame.
+  # Filter every scanline with filter 0, which stores bytes as they stand: cheapest, and
+  #   deflate still finds most redundancy in flat-shaded frame.
   let
     stride = width*CHANNELS
     count_filtered = (stride + 1)*height
@@ -127,7 +121,7 @@ proc writePng*(
     for i in 0 ..< stride:
       filtered[destination + i] = rows_bottom_up[source + i]
 
-  # Deflate whole filtered image in one call, since it is already wholly in memory.
+  # Deflate whole filtered image in one call, since it is wholly in memory.
   let
     count_compressed_max = int(compressBound(Ulong(count_filtered)))
     compressed = push[uint8](arena, count_compressed_max)

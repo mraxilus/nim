@@ -1,17 +1,15 @@
-## Bind subset of SDL3 that visualiser uses.
+## Bind subset of SDL3 visualiser uses.
 ##
-## SDL3 is depended on rather than derived, as windowing and input are external concerns
-## this project exists to look past, not to understand.
-##   Only symbols actually called are declared, so binding stays readable in one sitting.
-##   Declarations import through header, so C compiler owns every struct layout and offset.
-##   Cost of that choice is that SDL3 development headers must be present to compile.
+## SDL3 is depended on rather than derived: windowing and input are external concerns
+## this project exists to look past. Only symbols called are declared, so binding stays
+## readable in one sitting. Declarations import through header, so C compiler owns every
+## struct layout; cost is that SDL3 development headers must be present to compile.
 ##
-## Event kinds and flags are mirrored as Nim constants so `case` can bind them.
-##   Mirroring risks silent drift, so every value is checked against the header's own by a
-##   generated static assertion, and a stale binding fails to compile rather than to work.
+## Event kinds and flags are mirrored as Nim constants so `case` can bind them. Every
+## value is checked against header's own by generated static assertion, so stale binding
+## fails to compile rather than to work.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -22,7 +20,7 @@
 const HEADER = "<SDL3/SDL.h>"
   ## Name header every declaration below imports through.
 
-# Link SDL3 here rather than in a project config, so every binary importing this module
+# Link SDL3 here rather than in project config, so every binary importing this module
 # links it without extra flags.
 {.passL: "-lSDL3".}
 
@@ -39,7 +37,7 @@ type
     WindowResized = 0x206,
     WindowFocusLost = 0x20f,
       ## Watched so held keys can be let go of: their releases go to whichever window took
-      ## the focus, and a key left held would move the camera forever. See
+      ## focus, and key left held would move camera forever. See
       ## `interaction.releaseKeysAll`.
     KeyDown = 0x300,
     KeyUp = 0x301,
@@ -49,9 +47,8 @@ type
     MouseWheel = 0x403,
 
   Scancode* {.pure.} = enum ## Name physical keys visualiser reacts to.
-    ## USB HID usage IDs, which is what an SDL scancode is; every one below is checked
-    ## against the header's own macro at compile time by `CHECKS_MIRROR`, so a wrong
-    ## number fails the build rather than binding a key nobody pressed.
+    ## USB HID usage IDs, which is what SDL scancode is; every one is checked against
+    ## header's macro at compile time by `CHECKS_MIRROR`.
     A = 4,
     D = 7,
     E = 8,
@@ -64,9 +61,9 @@ type
     Return = 40,
     Escape = 41,
     Tab = 43,
-      ## Never bound by this application: Dear ImGui's own keyboard navigation owns it,
-      ## and rebinding it inside the view would risk the keyboard trap WCAG 2.1.2 rules
-      ## out. Declared so `--drive-keys` can synthesise one and prove nav really has it.
+      ## Never bound by this application: Dear ImGui's keyboard navigation owns it, and
+      ## rebinding it inside view would risk keyboard trap WCAG 2.1.2 rules out. Declared
+      ## so `--drive-keys` can synthesise one and prove nav has it.
     Minus = 45,
     Equals = 46,
     BracketLeft = 47,
@@ -78,10 +75,9 @@ type
     Up = 82,
     ShiftLeft = 225,
     ShiftRight = 229,
-      ## Both shift keys are bound, and to the same thing: a reader holds whichever one
-      ## their other hand is nearer. The modifier bitmask (`MODIFIER_SHIFT`) cannot serve
-      ## here, since what is wanted is shift's own press and release, not its state at
-      ## some other key's event.
+      ## Both shift keys are bound to same thing: reader holds whichever their other hand
+      ## is nearer. Modifier bitmask cannot serve: what is wanted is shift's own press and
+      ## release, not its state at some other key's event.
 
   MouseButton* {.pure.} = enum ## Name mouse buttons visualiser reacts to.
     Left = 1,
@@ -90,16 +86,16 @@ type
 
   KeyboardEvent* {.importc: "SDL_KeyboardEvent", header: HEADER, bycopy.} = object
     scancode* {.importc.}: uint32 ## Physical key, independent of layout.
-    keycode* {.importc: "key".}: uint32 ## Key as the *layout* names it. Never read by this
-      ## application, which binds physical keys throughout; Dear ImGui's own SDL3 backend
-      ## reads it, so a synthesised event that leaves it zero is one Dear ImGui does not
-      ## recognise -- which is how `--drive-keys` first failed to prove anything about nav.
+    keycode* {.importc: "key".}: uint32 ## Key as *layout* names it. Never read by this
+      ## application; Dear ImGui's SDL3 backend reads it, so synthesised event leaving it
+      ## zero is one Dear ImGui does not recognise, which is how `--drive-keys` first
+      ## failed to prove anything about nav.
     is_down* {.importc: "down".}: bool ## Whether key is pressed rather than released.
     modifiers* {.importc: "mod".}: uint16 ## Modifier keys held as this one went down.
 
   MouseMotionEvent* {.importc: "SDL_MouseMotionEvent", header: HEADER, bycopy.} = object
-    x* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.
-    y* {.importc.}: cfloat ## Position in window, in pixels, measured from top-left.
+    x* {.importc.}: cfloat ## Position in window, in pixels, from top-left.
+    y* {.importc.}: cfloat ## Position in window, in pixels, from top-left.
     xrel* {.importc.}: cfloat ## Motion since previous event, in pixels.
     yrel* {.importc.}: cfloat ## Motion since previous event, in pixels.
 
@@ -119,27 +115,27 @@ type
 
 const
   MODIFIER_CONTROL* = 0x00C0'u16
-    ## Test a key event's own modifiers for either control key.
+    ## Test key event's modifiers for either control key.
   MODIFIER_SHIFT* = 0x0003'u16
-    ## Test a key event's own modifiers for either shift key.
+    ## Test key event's modifiers for either shift key.
   MODIFIER_COMMAND* = 0x0C00'u16
-    ## Test a key event's own modifiers for either command key, which is what a reader on
-    ## macOS presses where everyone else presses control.
+    ## Test key event's modifiers for either command key, what reader on macOS presses
+    ## where everyone else presses control.
   INIT_VIDEO* = 0x20'u32
     ## Ask `init` for video and event subsystems.
   WINDOW_OPENGL* = 0x02'u64
-    ## Ask `createWindow` for window an OpenGL context can be bound to.
+    ## Ask `createWindow` for window OpenGL context can be bound to.
   WINDOW_RESIZABLE* = 0x20'u64
     ## Ask `createWindow` for window user may resize.
   WINDOW_HIDDEN* = 0x08'u64
-    ## Ask `createWindow` for window that is never mapped, as headless render needs no view.
+    ## Ask `createWindow` for window never mapped, as headless render needs no view.
   GL_CONTEXT_MAJOR_VERSION* = 17'u32
   GL_CONTEXT_MINOR_VERSION* = 18'u32
   GL_CONTEXT_PROFILE_MASK* = 20'u32
   GL_DOUBLEBUFFER* = 5'u32
   GL_DEPTH_SIZE* = 6'u32
   GL_MULTISAMPLEBUFFERS* = 13'u32
-    ## Ask `glSetAttribute` for a multisampled framebuffer at all: 1 for yes, 0 for none.
+    ## Ask `glSetAttribute` for multisampled framebuffer at all: 1 for yes, 0 for none.
   GL_MULTISAMPLESAMPLES* = 14'u32
     ## Ask for this many samples per pixel in it.
   GL_CONTEXT_PROFILE_CORE* = 0x0001'i32
@@ -170,19 +166,18 @@ proc glSetSwapInterval*(interval: cint): bool
 proc glSwapWindow*(window: Window): bool
   {.importc: "SDL_GL_SwapWindow", header: HEADER, discardable.}
 proc getModState*(): uint16 {.importc: "SDL_GetModState", header: HEADER.}
-  ## Read which modifier keys are held right now, testable against the `MODIFIER_` masks.
-  ## A mouse-button event carries no modifiers of its own, so shift-clicking has to ask.
+  ## Read which modifier keys are held right now, testable against `MODIFIER_` masks.
+  ## Mouse-button event carries no modifiers, so shift-clicking has to ask.
 proc setModState*(modifiers: uint16) {.importc: "SDL_SetModState", header: HEADER.}
-  ## Say which modifiers are held, for a scripted gesture that has no real keyboard behind
-  ## it -- `SDL_PushEvent` only enqueues, and never touches the state `getModState` reads.
-  ## See `visualiser.driveSelect`, which is the only caller.
+  ## Say which modifiers are held, for scripted gesture with no real keyboard behind it:
+  ## `SDL_PushEvent` only enqueues, never touching state `getModState` reads. See
+  ## `visualiser.driveSelect`, only caller.
 proc pollEvent*(event: ptr Event): bool {.importc: "SDL_PollEvent", header: HEADER.}
 proc pushEvent*(event: ptr Event): bool
   {.importc: "SDL_PushEvent", header: HEADER, discardable.}
-  ## Put an event on the same queue `pollEvent` drains, so a scripted gesture reaches the
-  ## application through the identical path a real one does -- see `visualiser.driveDrag`.
-  ## Posting one straight to the handler instead would prove nothing about the wiring
-  ## between them, which is exactly where bugs here have hidden before.
+  ## Put event on same queue `pollEvent` drains, so scripted gesture reaches application
+  ## through identical path real one does; see `visualiser.driveDrag`. Posting straight to
+  ## handler would prove nothing about wiring between them, where bugs have hidden.
 
 
 
@@ -239,15 +234,14 @@ const lut_mirror_to_symbol = [
   (int(GL_MULTISAMPLEBUFFERS), "SDL_GL_MULTISAMPLEBUFFERS"),
   (int(GL_MULTISAMPLESAMPLES), "SDL_GL_MULTISAMPLESAMPLES"),
   (int(GL_CONTEXT_PROFILE_CORE), "SDL_GL_CONTEXT_PROFILE_CORE"),
-] ## Pair every mirrored value with header's own name for it.
+] ## Pair every mirrored value with header's name for it.
 
 
 const CHECKS_MIRROR = block:
   ## Generate one static assertion per mirrored value, from table above.
-  ##   Table is written once, and both sides of each check are read from it, so a mirror
-  ##   cannot drift from the assertion that guards it.
-  ##   Assertions are C++ rather than Nim because only the C++ compiler can see the
-  ##   header's own values; that is also why they cost nothing at run time.
+  ##   Both sides of each check are read from one table, so mirror cannot drift from
+  ## assertion guarding it. Assertions are C++ because only C++ compiler sees header's
+  ## values; they cost nothing at run time.
   var text = "#include " & HEADER & "\n"
   for (mirrored, symbol) in lut_mirror_to_symbol:
     text &= "static_assert((long long)(" & symbol & ") == " & $mirrored &

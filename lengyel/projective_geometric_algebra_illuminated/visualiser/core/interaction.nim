@@ -1,37 +1,32 @@
-## Track a drag gesture from one scene item to another, and apply the operation it makes.
+## Track drag gesture from one scene item to another, and apply operation it makes.
 ##
-## **The press target chooses the scheme; the button chooses whether you are asked.** A drag
-## begins only when the press lands on a pickable item — press on empty space is left for
-## camera orbit or pan instead, so the two schemes never compete for one click. The left
-## button then decides for you and the right asks, over the *same* set of choices; neither
-## reaches anything the other cannot.
+## **Press target chooses scheme; button chooses whether reader is asked.** Drag begins
+## only when press lands on pickable item; press on empty space is left for camera orbit
+## or pan, so two schemes never compete for one click. Left button decides, right asks,
+## over *same* set of choices; neither reaches anything other cannot.
 ##
-## What a drag applies is decided at release, from the operands, not from the button that
-## started it. A button naming an operation is what this used to do, and it put a third of
-## the vocabulary behind a middle button most trackpads lack while leaving the whole
-## vocabulary invisible: nothing on screen said what right-drag meant. So the operands say
-## instead — `proposalFor` reads the two grades — and the drag *shows* its answer as a ghost
-## before committing it, which is the self-revelation the gesture had none of.
+## What drag applies is decided at release, from operands, not from button that started
+## it: `proposalFor` reads two grades, and drag *shows* its answer as ghost before
+## committing it. Button naming operation put third of vocabulary behind middle button
+## most trackpads lack, and nothing on screen said what right-drag meant.
 ##
-## What is ghosted is always **what letting go right now would commit**: the wedge the cursor
-## stands in once a wheel is open and entered, and `proposalFor`'s own answer where none is —
-## under a dwell wheel nobody has entered included; see `endDrag` on why that wheel may not
-## veto the release. `Interaction.proposal` holds that one answer, `endDrag` obeys it, and
-## `ReleaseEffect` names the three things it can amount to — nothing, a refusal, an object —
-## which is what the rubber-band is tinted from.
+## Ghost is always **what letting go right now would commit**: wedge cursor stands in once
+## wheel is open and entered, `proposalFor`'s answer where none is -- under dwell wheel
+## nobody has entered included; see `endDrag` on why that wheel may not veto release.
+## `Interaction.proposal` holds that one answer, `endDrag` obeys it, `ReleaseEffect` names
+## three things it can amount to -- nothing, refusal, object -- which tints rubber-band.
 ##
-## Hover is tracked independently of dragging, every frame, purely so the item a drag would
-## start from can be shown before any button is pressed.
+## Hover is tracked independently of dragging, every frame, so item drag would start from
+## shows before any button is pressed.
 ##
-## A *hold* is the touch counterpart, where there are no buttons to name an operation with:
-## press an item and keep still, and once the press has lasted `SECONDS_LONG_PRESS` it
-## selects that item. The elapsed fraction lives here rather than in either presentation
-## layer, because how long a hold takes and whether one is due are rules about this gesture,
-## not about a timer -- and because both are what the item's own marker is drawn part-built
-## from, which is the only reason a half-second wait is bearable.
+## *Hold* is touch counterpart, with no buttons to name operation: press item, keep still,
+## and once press has lasted `SECONDS_LONG_PRESS` it selects item. Elapsed fraction lives
+## here rather than in either presentation layer: how long hold takes and whether one is
+## due are rules about gesture, and both drive item's marker drawn part-built, which is
+## what makes half-second wait bearable.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
-## render paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared between desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
+## paths; see `visualiser.nim`'s "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 
@@ -44,372 +39,282 @@ import ./[boundary, camera, format, tessellate, picking, scene]
 
 #[ Gesture Configuration ]#
 
-# Every `now` this module takes is **seconds**, on whatever monotonic clock the caller
-#   owns, and it is the same clock `scene.addItem` records a birth on -- one reading
-#   threaded through a whole release rather than two that could disagree. Named in the
-#   constants below rather than left to a comment: the browser's own clock reads in
-#   milliseconds, and while the durations here were named for those, the desktop passed
-#   seconds against them and its dwell menu quietly needed 450 seconds to open.
+# Every `now` this module takes is **seconds**, on whatever monotonic clock caller owns,
+#   same clock `scene.addItem` records birth on: one reading threaded through whole
+#   release rather than two that could disagree. Named in constants below: browser's
+#   clock reads milliseconds, and while durations were named for those, desktop passed
+#   seconds and its dwell menu needed 450 seconds to open.
 
 const SECONDS_DWELL_MENU* = 0.75
-  ## Hold a drag **still** over its target this long and the choice menu opens, on a
-  ## pointer armed `MenuArming.OnDwell` -- which now means touch alone.
-  ##   Still, not merely present: the clock restarts whenever the cursor moves further than
-  ##   `PIXELS_TAP_SLOP` from where it last settled, so time spent crossing a target does
-  ##   not count toward opening a menu over it. This was measured, not supposed -- while
-  ##   the clock ran on presence alone, a slow finger crossing the ground plane tripped it
-  ##   mid-drag and the construction it was in the middle of ended up building nothing.
-  ##   Longer than a threshold triggered on its own would dare be, and deliberately so:
-  ##   it only has to be slow enough never to fire on a hesitation. The usual failure of
-  ##   a dwell menu is popping up at someone who was still moving.
-  ##   **Was 0.45, while a mouse could trip it too.** That number was a compromise: short
-  ##   enough not to feel like a wait for a reader who had no other way to reach the menu.
-  ##   A mouse now decides by which button went down and never waits at all, so the only
-  ##   requirement left is that a finger which paused mid-drag is not answered with a menu
-  ##   -- and a finger pauses far more readily than a mouse does. It also sat *under*
-  ##   `SECONDS_LONG_PRESS` (0.50), so the two thresholds a stationary finger races were in
-  ##   the wrong order; it now stands clear of it.
+  ## Hold drag **still** over target this long and choice menu opens, on pointer armed
+  ## `MenuArming.OnDwell`, which means touch alone.
+  ##   Still, not merely present: clock restarts whenever cursor moves further than
+  ## `PIXELS_TAP_SLOP` from where it last settled. Measured: while clock ran on presence
+  ## alone, slow finger crossing ground plane tripped it mid-drag and construction built
+  ## nothing.
+  ##   Longer than threshold triggered on its own would dare be: only has to be slow enough
+  ## never to fire on hesitation. Usual failure of dwell menu is popping up at someone still
+  ## moving.
+  ##   Was 0.45 while mouse could trip it too, and sat *under* `SECONDS_LONG_PRESS` (0.50),
+  ## so two thresholds stationary finger races were in wrong order. Mouse never waits now;
+  ## only requirement left is that finger pausing mid-drag is not answered with menu.
 
 const SECONDS_LONG_PRESS* = 0.50
-  ## Hold a touch this long on an item to select it.
-  ##   Long enough that a tap, or the first instant of a drag meant to orbit the camera,
-  ##   never matures into one; short enough that a deliberate hold does not feel stuck.
-  ##   The wait is only tolerable because it is *shown* -- `progressHold` below drives the
-  ##   item's own marker being drawn part-built, so a hold reads as filling rather than as
-  ##   nothing happening. A hold with no feedback at this duration reads as a broken tap.
+  ## Hold touch this long on item to select it.
+  ##   Long enough that tap, or first instant of drag meant to orbit camera, never matures;
+  ## short enough that deliberate hold does not feel stuck. Tolerable only because it is
+  ## *shown*: `progressHold` drives item's marker drawn part-built, so hold reads as filling
+  ## rather than as nothing happening.
 
 const SECONDS_SWELL_GROW* = 0.12
-  ## Take this long to swell a touched item's marker clear of the finger, before its own
-  ## fill begins.
-  ##   Its own phase ahead of the fill rather than folded into it, so the marker is
-  ##   already at the size it will fill at when it starts filling -- a bar that grows and
-  ##   fills at once is two motions saying one thing, and the growing wins. Quick enough
-  ##   to read as the marker getting out of the way rather than as a delay before anything
-  ##   happens, which is what a press must never feel like.
-  ##   It does lengthen a press end to end, to `SECONDS_SWELL_GROW + SECONDS_LONG_PRESS`;
-  ##   the fill keeps its whole duration, so the part a reader watches is unchanged.
+  ## Take this long to swell touched item's marker clear of finger, before its fill begins.
+  ##   Own phase ahead of fill, so marker is already at size it fills at: bar that grows
+  ## and fills at once is two motions saying one thing, and growing wins. Quick enough to
+  ## read as marker getting out of way rather than delay.
+  ##   Lengthens press end to end, to `SECONDS_SWELL_GROW + SECONDS_LONG_PRESS`; fill keeps
+  ## whole duration, so part reader watches is unchanged.
 
 const SECONDS_SWELL_SHRINK* = 0.15
-  ## Take this long to settle a swollen marker back to its true size after the finger
-  ## lifts.
-  ##   Slower than the grow: the grow is getting out of the way and wants to be over, while
-  ##   this is the marker arriving at what it will stay as, and an outline that snaps to its
-  ##   final size reads as a second marker replacing the first.
+  ## Take this long to settle swollen marker back to true size after finger lifts.
+  ##   Slower than grow: grow is getting out of way, this is marker arriving at what it
+  ## stays as, and outline that snaps reads as second marker replacing first.
 
 const FACTOR_PAN_REACH_MAX* = 4.0
-  ## Bound how far out along its own sight ray a pan may take hold, as a multiple of the
-  ## orbit distance.
-  ##   **Why a grab needs a bound at all**: the level a pan grabs is horizontal, so a ray
-  ##   aimed near the horizon meets it a very long way off, and one pixel of drag there is
-  ##   hundreds of world units. Ungoverned, a drag beginning high in the frame threw the
-  ##   view across the scene -- driven, a 200-pixel drag from a fifth of the way down the
-  ##   window carried the view three times as far as the same drag through the middle.
-  ##   The *hold point* is clamped rather than the movement, so the rule stays continuous:
-  ##   `min(reach, bound)` moves smoothly as the cursor crosses the bound, where switching
-  ##   to a different rule there would jolt mid-drag.
-  ##   Four rather than two: at the opening placement a ray a fifth of the way down the
-  ##   window already reaches 2.7 distances, and that is an ordinary place to start a drag
-  ##   from. Bounding it below what a reader routinely grabs would make the common case
-  ##   the governed one.
+  ## Bound how far out along its sight ray pan may take hold, as multiple of orbit distance.
+  ##   Level pan grabs is horizontal, so ray aimed near horizon meets it very far off, and
+  ## one pixel of drag there is hundreds of world units. Driven ungoverned, 200-pixel drag
+  ## from fifth of way down window carried view three times as far as same drag through
+  ## middle.
+  ##   *Hold point* is clamped rather than movement, so rule stays continuous:
+  ## `min(reach, bound)` moves smoothly as cursor crosses bound; switching rule there would
+  ## jolt mid-drag.
+  ##   Four rather than two: at opening placement, ray fifth of way down window already
+  ## reaches 2.7 distances, ordinary place to start drag from.
 
 const FRACTION_PAN_PIXEL* = 0.0016
-  ## Slide the target this fraction of the orbit distance per dragged pixel, where a pan
-  ## has no surface to grab.
-  ##   The rate a drag *used* to move at everywhere, and now only the fallback for a drag
-  ##   whose sight ray never meets the level it would otherwise grab -- see `panAcross`.
-  ##   Both presentation layers spelled it separately, the desktop as this number per pixel
-  ##   and the browser as 1.4 across the canvas, which over a 900-pixel window is 0.00156:
-  ##   the same rate said twice and free to drift. Said once here.
+  ## Slide target this fraction of orbit distance per dragged pixel, where pan has no
+  ## surface to grab.
+  ##   Rate drag *used* to move at everywhere; now only fallback for drag whose sight ray
+  ## never meets level it would grab; see `panAcross`. Both presentation layers spelled it
+  ## separately (desktop per pixel, browser 1.4 across canvas, 0.00156 over 900 pixels).
 
 const PIXELS_TAP_SLOP* = 12.0
-  ## Move a press further than this and it stops being a press.
-  ##   **Which scheme the gesture enters**, not merely whether it was a tap: a press that
-  ##   stays inside this matures into a selection, and one that leaves it becomes a
-  ##   construction drag where it landed on an item and a camera move where it did not.
-  ##   That is why it sits beside the two durations above rather than in either
-  ##   presentation layer -- it decides the same kind of thing they do. It lived in
-  ##   `glue.js` while it only meant "tap or orbit"; deciding the scheme is a rule about
-  ##   the gesture.
-  ##   Sized for a fingertip rather than a mouse: a finger rolls a few pixels on contact
-  ##   even when its owner meant to hold perfectly still, and a threshold tight enough for
-  ##   a mouse would make long-press unreachable on a touchscreen.
+  ## Move press further than this and it stops being press.
+  ##   **Which scheme gesture enters**: press staying inside matures into selection; press
+  ## leaving becomes construction drag where it landed on item, camera move where it did
+  ## not. Lived in `glue.js` while it only meant "tap or orbit"; deciding scheme is rule
+  ## about gesture.
+  ##   Sized for fingertip: finger rolls few pixels on contact even held still, and
+  ## threshold tight enough for mouse makes long-press unreachable on touchscreen.
 
 const PIXELS_CLICK_SLOP* = 6.0
-  ## Move a *pointer* press further than this and it stops being a click.
-  ##   Deliberately not `PIXELS_TAP_SLOP`, which is sized for a fingertip: a mouse resting
-  ##   on a desk does not roll, so a pointer that wandered six pixels was being moved on
-  ##   purpose, and a fingertip's allowance here would swallow the short deliberate drags
-  ##   between two objects that happen to overlap on screen.
-  ##   Lived in `glue.js` as `MOUSE_CLICK_MAX_MOVE` while only the browser had a click to
-  ##   disambiguate; deciding whether a press was a click is a rule about the gesture, and
-  ##   the desktop needs the same answer.
+  ## Move *pointer* press further than this and it stops being click.
+  ##   Not `PIXELS_TAP_SLOP`: mouse resting on desk does not roll, so pointer that wandered
+  ## six pixels was moved on purpose, and fingertip's allowance would swallow short
+  ## deliberate drags between two objects overlapping on screen.
+  ##   Lived in `glue.js` as `MOUSE_CLICK_MAX_MOVE`; desktop needs same answer.
 
-# **There is deliberately no time bound on a click.** One stood here at 0.35 s, to separate
-#   a click from a press held to open the dwell menu; the dwell became touch-only and the
-#   bound became a way to lose clicks. See `isClick` for what it cost and how that was
-#   measured.
+# **Deliberately no time bound on click.** One stood at 0.35 s to separate click from press
+#   held to open dwell menu; dwell became touch-only and bound became way to lose clicks.
+#   See `isClick`.
 
 const PIXELS_MENU_REACH* = 76.0
-  ## Distance from the menu's centre to the centre of each of its four wedges.
-  ##   Wide enough that a wedge clears the cursor and the object under it, and that each
-  ##   is comfortably past WCAG 2.5.8's 24-pixel target once `PIXELS_MENU_DEADZONE` is
-  ##   subtracted; short enough to stay one wrist movement, since the menu opens mid-drag
-  ##   and the hand is already committed.
+  ## Distance from menu's centre to centre of each of its four wedges.
+  ##   Wide enough that wedge clears cursor and object under it, and each is past WCAG
+  ## 2.5.8's 24-pixel target once `PIXELS_MENU_DEADZONE` is subtracted; short enough to
+  ## stay one wrist movement, since menu opens mid-drag.
 
 const PIXELS_MENU_DEADZONE* = 26.0
-  ## Inside this distance of the menu's centre, the cursor has chosen nothing.
-  ##   The way out of an opened menu without committing anything, and the reason a dwell
-  ##   menu is safe to open unasked: it opens *centred on the cursor*, so the reader who
-  ##   did not want it is already in the deadzone and releasing costs them nothing.
+  ## Inside this distance of menu's centre, cursor has chosen nothing.
+  ##   Way out of opened menu without committing, and reason dwell menu is safe to open
+  ## unasked: it opens *centred on cursor*, so reader who did not want it is already in
+  ## deadzone.
 
 const PIXELS_MENU_CORNER_FURTHEST* = 103.9
-  ## Furthest any wedge's own outer corner sits from the menu centre, **measured**.
-  ##   Not derivable here: a wedge is as wide as the label it carries, and only a render path
-  ##   knows what its own face laid that out as. Read off the drawn rects in the browser
-  ##   build over six different pairs, which all gave the same number -- the four labels are
-  ##   fixed, so the widest is too.
-  ##   Kept beside the constant it justifies so the next reader can check the slack rather
-  ##   than trust it, and so a wider label or a longer reach surfaces here as a number that
-  ##   no longer clears `PIXELS_MENU_DISENGAGE` rather than as a menu closing on a wedge.
+  ## Furthest any wedge's outer corner sits from menu centre, **measured**.
+  ##   Not derivable here: wedge is as wide as its label, and only render path knows what
+  ## its face laid that out as. Read off drawn rects in browser build over six pairs, all
+  ## same number, since four labels are fixed.
+  ##   Kept beside constant it justifies so wider label or longer reach surfaces as number
+  ## no longer clearing `PIXELS_MENU_DISENGAGE`, not as menu closing on wedge.
 
 const PIXELS_MENU_DISENGAGE* = 150.0
-  ## Past this distance from its centre, an open menu lets go of the drag entirely.
-  ##   What makes a wheel opened on the wrong object recoverable: it closes, the drag stops
-  ##   being latched to that destination, and travelling on to another object opens it there
-  ##   for the new pair. The source is never touched, so the pair re-aims rather than chains.
-  ##   **This bounds `choiceAt`'s overshoot, which was unbounded on purpose** -- "overshooting
-  ##   a wedge still picks it, which is what makes a fast confident throw work". Both cannot
-  ##   hold at once, and being able to re-aim was chosen over an unbounded throw.
-  ##   Sited off `PIXELS_MENU_CORNER_FURTHEST` rather than off the reach, leaving **46 px** of
-  ##   clear air past the furthest point a throw could be aiming at: far enough that no
-  ##   ordinary overshoot lets go, near enough that re-aiming is one short movement.
+  ## Past this distance from its centre, open menu lets go of drag entirely.
+  ##   Makes wheel opened on wrong object recoverable: it closes, drag stops being latched
+  ## to that destination, and travelling on to another object opens it there. Source is
+  ## never touched, so pair re-aims rather than chains.
+  ##   **Bounds `choiceAt`'s overshoot, unbounded on purpose for fast throw.** Both cannot
+  ## hold; re-aiming was chosen. Sited off `PIXELS_MENU_CORNER_FURTHEST`, leaving **46 px**
+  ## clear past furthest point throw could aim at.
 
 const
   HEIGHT_MENU_WEDGE* = 30.0
-    ## Height of one wedge. Past WCAG 2.5.8's 24-pixel target on its short axis, which is
-    ## the axis that binds; the long one comes from the label the wedge holds, measured by
-    ## whichever render path is drawing it rather than guessed at from a character count.
+    ## Height of one wedge. Past WCAG 2.5.8's 24-pixel target on short axis, which binds;
+    ## long axis comes from label, measured by render path drawing it.
   PADDING_MENU_WEDGE* = 22.0
-    ## Slack around a wedge's label, so a short name still reads as a button rather than
-    ## as text lying loose on the scene.
+    ## Slack around wedge's label, so short name still reads as button.
   ROUNDING_MENU_WEDGE* = 8.0
-    ## Corner radius of a wedge. The selection menu's own button radius: **this menu and
-    ## that one are the same control in two postures**, one reached by dragging and one by
-    ## picking, so a reader should not have to learn two appearances for it. Was 6 while
-    ## the wedges were solid slabs of their own hue.
+    ## Corner radius of wedge: selection menu's own button radius, since **this menu and
+    ## that one are same control in two postures**. Was 6 while wedges were solid slabs.
   WIDTH_MENU_WEDGE_BORDER* = 1.0
-    ## Thickness of the hairline round a wedge, matching the selection menu's own buttons.
+    ## Thickness of hairline round wedge, matching selection menu's buttons.
   RADIUS_MENU_CENTRE* = 5.0
-    ## Dot marking the menu's own centre, where nothing is chosen. Drawn well inside
-    ## `PIXELS_MENU_DEADZONE` so it reads as a mark rather than as the boundary itself.
+    ## Dot marking menu's centre, where nothing is chosen. Well inside
+    ## `PIXELS_MENU_DEADZONE`, so it reads as mark rather than boundary.
   ALPHA_MENU_WEDGE* = 0.96
-    ## Opacity of a wedge that can be chosen. Near-solid, since the surface behind it is
-    ## now the popover tone rather than the choice's own hue and needs to read as a chip
-    ## standing on the scene rather than as a tint over it.
+    ## Opacity of choosable wedge. Near-solid: surface behind is popover tone, and chip
+    ## must read as standing on scene rather than tint over it.
   ALPHA_MENU_UNOFFERED* = 0.45
-    ## Opacity of one that makes nothing, which is drawn rather than dropped: a gap where
-    ## a wedge should be is unreadable, and the point of a fixed compass is that a choice
-    ## never moves. Higher than the 0.30 the coloured slabs wore: a dark chip at 0.30 all
-    ## but disappears against a dark scene, and an unreachable choice still has to be
-    ## legible enough to say what it would have been.
+    ## Opacity of wedge that makes nothing, drawn rather than dropped: gap is unreadable,
+    ## and point of fixed compass is that choice never moves. Higher than 0.30 slabs wore:
+    ## dark chip at 0.30 disappears against dark scene.
 
 
 
 #[ Type Definitions ]#
 
 type
-  DragOperation* {.pure.} = enum ## Name an operation a released drag may apply.
-    Join, ## Wedge: the object through both operands.
-    Meet, ## Antiwedge: where the two operands cross.
-    Project, ## Orthogonal projection of the object dragged from onto the one dragged to.
+  DragOperation* {.pure.} = enum ## Name operation released drag may apply.
+    Join, ## Wedge: object through both operands.
+    Meet, ## Antiwedge: where two operands cross.
+    Project, ## Orthogonal projection of object dragged from onto one dragged to.
 
-  DragChoice* {.pure.} = enum ## Name everything a released drag may resolve to.
-    ## The three operations plus the way out to the rest of the catalogue. Separate from
-    ## `DragOperation` because `More` applies nothing itself -- it hands both operands to
-    ## the apply section, which is what turns this gesture from a dead end into a ramp.
+  DragChoice* {.pure.} = enum ## Name everything released drag may resolve to.
+    ## Three operations plus way out to rest of catalogue. Separate from `DragOperation`
+    ## because `More` applies nothing itself: hands both operands to apply section.
     Join, Meet, Project, More
 
-  MenuArming* {.pure.} = enum ## Say how a drag in progress may come to open its menu.
-    ## What a pointer chose at the press, held for that drag's whole life. Three states
-    ## rather than a "forced" flag, because the flag could only say *now* or *after a
-    ## wait* -- and a mouse wants neither: its left button should take the pair's own
-    ## answer and never be interrupted by a menu, while its right button asks. Only a
-    ## finger, which has no second button to ask with, still waits.
-    Never, ## Take the proposal on release; no menu, however long the drag stands still.
-    OnDwell, ## Open after `SECONDS_DWELL_MENU` of standing still over the target.
-      ## This wheel invites itself -- under a finger pausing to aim, which also covers
-      ## it -- so until it is first entered it may not veto the release; see `endDrag`.
-    Always ## Open the moment the drag arrives over a target.
+  MenuArming* {.pure.} = enum ## Say how drag in progress may come to open its menu.
+    ## What pointer chose at press, held for drag's whole life. Three states rather than
+    ## "forced" flag: mouse's left button takes pair's answer and is never interrupted by
+    ## menu, right button asks; only finger, with no second button, waits.
+    Never, ## Take proposal on release; no menu, however long drag stands still.
+    OnDwell, ## Open after `SECONDS_DWELL_MENU` of standing still over target.
+      ## Wheel invites itself under finger pausing to aim, which also covers it, so until
+      ## first entered it may not veto release; see `endDrag`.
+    Always ## Open moment drag arrives over target.
 
-  Compass* {.pure.} = enum ## Name where a choice sits in the menu, always.
-    ## A fixed position per choice, with unoffered ones left as gaps rather than packed
-    ## out. Packing would move a choice from pair to pair, and a menu whose items move is
-    ## one nobody ever learns to reach without reading it.
+  Compass* {.pure.} = enum ## Name where choice sits in menu, always.
+    ## Fixed position per choice; unoffered ones are gaps, never packed out. Menu whose
+    ## items move is one nobody learns to reach without reading.
     North, East, South, West
 
-  Key* {.pure.} = enum ## Name a key the 3D view itself reacts to, in neither backend's naming.
-    ## Both render paths name the **physical** key: SDL by scancode, the DOM by
-    ## `KeyboardEvent.code`. Each translates its own into this and asks `motionFor` or
-    ## `actionFor` below, exactly as each translates its own mouse-button numbering into
-    ## `PointerButton`. Physical on both sides so that W is the same key under the hand on
-    ## every layout -- the browser used to read `KeyboardEvent.key`, which on AZERTY names
-    ## the key the desktop calls Z.
-    ##   Only keys the *view* reacts to are here -- the accelerators that reach the timeline
-    ## and the panels stay where they already are, since those are reached from anywhere
-    ## rather than from the canvas.
-    ##   `Shift` is a key here rather than a flag threaded through every call, because it
-    ## is held exactly as the movement keys are: one mechanism then carries both which way
-    ## the camera goes and how fast, and letting go of shift mid-movement is just another
-    ## key release.
+  Key* {.pure.} = enum ## Name key 3D view itself reacts to, in neither backend's naming.
+    ## Both render paths name **physical** key (SDL scancode, DOM `KeyboardEvent.code`),
+    ## translate into this and ask `motionFor` or `actionFor`, as each translates its
+    ## mouse-button numbering into `PointerButton`. Physical so W is same key under hand on
+    ## every layout; browser read `KeyboardEvent.key`, which on AZERTY names desktop's Z.
+    ##   Only keys *view* reacts to; accelerators reaching timeline and panels stay where
+    ## they are, reached from anywhere.
+    ##   `Shift` is key rather than flag threaded through every call: held exactly as
+    ## movement keys are, so one mechanism carries direction and speed.
     W, A, S, D, Q, E, F,
     Left, Right, Up, Down, BracketLeft, BracketRight, Minus, Plus, Enter, Home, Shift
 
-  Motion* {.pure.} = enum ## Name a way the view keeps moving while a key is held.
-    ## Separate from `KeyAction` because the two are answered at different times: a motion
-    ## is applied every frame its key is down, by `driveHeld`, and an action happens once,
-    ## at the press. A single enum would have left every caller asking which kind it had.
+  Motion* {.pure.} = enum ## Name way view keeps moving while key is held.
+    ## Separate from `KeyAction`: motion is applied every frame its key is down, by
+    ## `driveHeld`; action happens once, at press.
     Forward, Back, Left, Right, Down, Up,
     OrbitLeft, OrbitRight, OrbitUp, OrbitDown,
     DollyIn, DollyOut
 
-  KeyAction* {.pure.} = enum ## Name what one press of a key does to the view.
+  KeyAction* {.pure.} = enum ## Name what one press of key does to view.
     FocusPrevious, FocusNext,
-    SelectFocused, ## Alone, or added to the selection where shift is held.
-    FrameSelection, ## Bring whatever is selected into view, through the framing rule.
-    ViewHome ## Return the camera to the placement both builds open at.
+    SelectFocused, ## Alone, or added to selection where shift is held.
+    FrameSelection, ## Bring selection into view, through framing rule.
+    ViewHome ## Return camera to placement both builds open at.
 
-  Hold* = object ## Hold a press that will select its item once it has lasted long enough.
-    slot*: int ## Item pressed, and the one whose marker fills as the press matures.
-    started*: float ## When the press landed, on the same clock every caller passes as `now`.
-    is_taken*: bool ## Whether this hold's maturity has already been acted on.
-      ## The one-shot lives here rather than beside the caller, because a hold now
-      ## outlives its own release: a flag the release handler resets goes stale while the
-      ## hold is still settling, the maturity test is still true, and the selection fires
-      ## a *second* time and undoes itself. Measured -- a hold of 1.62 s selected its item
-      ## and then lost it within 50 ms of the lift. Whether a hold is *due* was already
-      ## this module's to say; whether anyone has done anything about it belongs with it.
-    released*: Option[float] ## When the finger lifted, if it has.
-      ## A hold outlives its own maturity: the marker stays swollen for as long as the
-      ## finger is down, however long that is, and only settles once this says it may.
-      ## Without it the swell had to be a function of the fill and was therefore back to
-      ## its true size at exactly the moment the selection landed -- shrinking while the
-      ## reader was still deciding, and gone when it mattered.
+  Hold* = object ## Hold press that selects its item once it has lasted long enough.
+    slot*: int ## Item pressed, whose marker fills as press matures.
+    started*: float ## When press landed, on clock every caller passes as `now`.
+    is_taken*: bool ## Whether this hold's maturity has been acted on.
+      ## One-shot lives here because hold outlives its release: flag release handler
+      ## resets goes stale while hold settles, maturity test stays true, and selection
+      ## fires *second* time and undoes itself. Measured: 1.62 s hold selected item and
+      ## lost it within 50 ms of lift.
+    released*: Option[float] ## When finger lifted, if it has.
+      ## Marker stays swollen while finger is down, and settles only once this says it
+      ## may. Swell as function of fill was back to true size exactly when selection landed.
 
   Interaction* = object ## Hold cursor, drag and press state between frames.
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
-    is_hover_backdrop*: bool ## Whether what is hovered is a plane at horizon -- the whole
-      ## sky, which every ray meets, so this is true wherever nothing else is under the
-      ## cursor and a sky is in the scene.
-      ##   Recorded at `updateHover`, where the scene is already in hand, so that
-      ## `beginDrag` and `endDrag` can refuse it without being handed the scene as well.
-      ## **Refusing it is what keeps the camera working**: a press on empty space becomes
-      ## an orbit precisely because `beginDrag` fails when nothing is hovered, and a sky
-      ## is hovered everywhere. See `beginDrag`.
-    index_focus*: Option[int] ## Item the **keyboard** stands on, which each render path
-      ## draws with the same marker hover uses -- so a reader who has never touched a
-      ## pointer can still see where they are, and the focus indicator is machinery that
-      ## was already built and tested rather than a second one invented for it.
-      ##   Separate from `index_hover` rather than sharing it: `updateHover` recomputes
-      ## hover from the cursor every single frame, so a keyboard focus stored there would
-      ## be erased before it could be drawn once.
-    is_dragging*: bool ## Whether a construction drag is in progress. Not an
-      ## `Option[DragOperation]` as it once was: what a drag applies is decided at release
-      ## from the operands, so a field holding an operation could only have held a
-      ## placeholder -- a sentinel smuggled into a value's own range.
+    is_hover_backdrop*: bool ## Whether hovered item is plane at horizon: whole sky, which
+      ## every ray meets, so true wherever nothing else is under cursor and sky is in scene.
+      ##   Recorded at `updateHover`, where scene is in hand, so `beginDrag` and `endDrag`
+      ## refuse it without being handed scene. **Refusing keeps camera working**: press on
+      ## empty space becomes orbit because `beginDrag` fails when nothing is hovered, and
+      ## sky is hovered everywhere.
+    index_focus*: Option[int] ## Item **keyboard** stands on, drawn with hover's marker so
+      ## reader without pointer sees where they are.
+      ##   Separate from `index_hover`: `updateHover` recomputes hover every frame, so focus
+      ## stored there would be erased before drawn once.
+    is_dragging*: bool ## Whether construction drag is in progress. Not
+      ## `Option[DragOperation]`: what drag applies is decided at release, so field holding
+      ## operation could only hold placeholder, sentinel smuggled into value's range.
     index_source*: int ## Item drag started from; meaningful only while `is_dragging`.
-    index_destination*: Option[int] ## Item the drag points at, latched the moment its menu
-      ## opens; see `destinationOf`, which is what every reader of this should ask instead.
-    pressed*: ScreenPosition ## Where the last pointer press landed, whatever it became.
-    started*: float ## When that press landed, on the same clock every caller passes as
-      ## `now`. Read only through `isClick`.
-    is_press_still*: bool ## Whether the last press has stayed inside `PIXELS_CLICK_SLOP`
-      ## of where it landed. Latched rather than recomputed from the cursor each time it
-      ## is asked: a pointer that swung out and came back was still dragged, and a reading
-      ## taken at release alone would call that a click.
-      ##   Stated as *still* rather than as *moved* so that the default is false: a press
-      ## that never went through `beginPress` -- a caller that forgot, a drag a test drives
-      ## by hand -- is then never mistaken for a click, whatever the clock happens to read.
-    hold*: Option[Hold] ## Press maturing into a selection, if one is in progress.
-    is_over_target*: bool ## Whether the drag currently points at an item that is not its
-      ## own source. Distinct from `proposal` being none, which it also is over a pair
-      ## that makes nothing -- and those two want opposite feedback, one neutral and one
-      ## a warning, so the rubber-band's own tint needs to tell them apart.
-    proposal*: Option[DragChoice] ## What a release **right now** would commit.
-      ## The wedge the cursor stands in while a menu is open, and `proposalFor`'s own answer
-      ## where none is -- resolved in the very order `endDrag` resolves it, so what is
-      ## previewed and what is committed cannot come apart. None where a release would
-      ## commit nothing at all: over no target, or back at the centre of a menu that may
-      ## veto the release -- an unentered dwell wheel may not, so under one the pair's
-      ## own answer stands here; see `endDrag`.
-    preview*: Option[Preview] ## What that proposal would make, for each render path to
-      ## ghost -- `scene.Preview`, the same construction both apply pickers offer, rather
-      ## than a second one written out here.
-      ## None where the drag is over nothing, over its own source, over a pair that
-      ## makes nothing -- and *that* is the case worth drawing nothing for, since it is the
-      ## only warning before a refused release -- and over `More`, which builds nothing
-      ## itself and hands the pair to the apply picker instead.
-    arming*: MenuArming ## How this drag may come to open its menu, as its own pointer
-      ## chose at the press. Set at `beginDrag` and read every frame after.
-    entered*: float ## When the cursor last settled over a target, for the dwell to run
-      ## from. Restarted both when the hovered item changes and when the cursor moves
-      ## away from `settled`, so the dwell measures being still rather than being present.
-    settled*: ScreenPosition ## Where the cursor was when `entered` was last restarted;
-      ## what movement is measured against to decide the dwell has been interrupted.
-    menu*: Option[ScreenPosition] ## Where the choice menu is open, if it is.
-    is_menu_entered*: bool ## Whether the cursor has stood in any wedge of the open menu
-      ## since it opened, offered or not. What separates "lifted at the centre without
-      ## ever engaging the wheel" from "walked into a wedge and came back to cancel": the
-      ## first may not veto a dwell wheel's release, the second always does -- see
-      ## `endDrag`. Reset each time a menu opens.
-    is_dragging_camera*: bool ## Whether a pointer gesture is moving the *camera* right now
-      ## -- an orbit or a pan drag, or two fingers on the canvas. Each render path owns its
-      ## own drag state and says so here; what it means for hover is `updateHover`'s to say.
-      ## Distinct from `is_dragging`, which is a *construction* drag and must keep hovering:
-      ## the whole point of that gesture is what it is pointing at.
-    keys_held*: set[Key] ## Physical keys down right now, which `driveHeld` moves the camera
-      ## by once a frame. A set rather than a per-key flag, so two keys held together
-      ## compose without anything having to enumerate the pairs.
-      ##   Emptied by `releaseKeysAll` whenever the view stops receiving key releases --
-      ## the window losing focus, the reader tabbing into a panel. Not a nicety: the
-      ## release for a key held at that moment is delivered to somebody else, and a key
-      ## left in here moves the camera forever.
-    index_disengaged*: Option[int] ## Target a menu was let go of, while the cursor is still
-      ## over it. Without this the wheel would re-open on that same object the very next
-      ## frame -- `MenuArming.Always` is due on every frame over a target -- and disengaging
-      ## would do nothing but move the menu. Cleared the moment hover reports anything else,
-      ## including nothing, so coming back to that object later opens it again.
+    index_destination*: Option[int] ## Item drag points at, latched moment its menu opens;
+      ## readers ask `destinationOf` instead.
+    pressed*: ScreenPosition ## Where last pointer press landed, whatever it became.
+    started*: float ## When that press landed, on clock every caller passes as `now`. Read
+      ## only through `isClick`.
+    is_press_still*: bool ## Whether last press has stayed inside `PIXELS_CLICK_SLOP` of
+      ## where it landed. Latched rather than recomputed: pointer that swung out and came
+      ## back was still dragged.
+      ##   Stated as *still* so default is false: press that never went through
+      ## `beginPress` is never mistaken for click.
+    hold*: Option[Hold] ## Press maturing into selection, if one is in progress.
+    is_over_target*: bool ## Whether drag points at item that is not its source. Distinct
+      ## from `proposal` being none, which it also is over pair making nothing; those two
+      ## want opposite feedback, neutral versus warning.
+    proposal*: Option[DragChoice] ## What release **right now** would commit.
+      ## Wedge cursor stands in while menu is open, `proposalFor`'s answer where none is,
+      ## resolved in order `endDrag` resolves it, so preview and commit cannot come apart.
+      ## None where release commits nothing: over no target, or at centre of menu that may
+      ## veto; unentered dwell wheel may not, so pair's answer stands; see `endDrag`.
+    preview*: Option[Preview] ## What proposal would make, for each render path to ghost:
+      ## `scene.Preview`, same construction both apply pickers offer.
+      ## None over nothing, over own source, over pair making nothing (only warning before
+      ## refused release), and over `More`, which builds nothing itself.
+    arming*: MenuArming ## How this drag may open its menu, as pointer chose at press.
+    entered*: float ## When cursor last settled over target, for dwell to run from.
+      ## Restarted when hovered item changes and when cursor moves away from `settled`.
+    settled*: ScreenPosition ## Where cursor was when `entered` was last restarted.
+    menu*: Option[ScreenPosition] ## Where choice menu is open, if it is.
+    is_menu_entered*: bool ## Whether cursor has stood in any wedge of open menu since it
+      ## opened, offered or not. Separates "lifted at centre without engaging wheel" from
+      ## "walked into wedge and came back to cancel": first may not veto dwell wheel's
+      ## release, second always does; see `endDrag`. Reset each time menu opens.
+    is_dragging_camera*: bool ## Whether pointer gesture is moving *camera* right now: orbit
+      ## or pan drag, or two fingers on canvas. Each render path owns its drag state and
+      ## says so here. Distinct from `is_dragging`, construction drag that keeps hovering.
+    keys_held*: set[Key] ## Physical keys down right now, which `driveHeld` moves camera by
+      ## once per frame. Set so two keys held together compose without enumerating pairs.
+      ##   Emptied by `releaseKeysAll` whenever view stops receiving key releases; key left
+      ## here moves camera forever.
+    index_disengaged*: Option[int] ## Target menu was let go of, while cursor is still over
+      ## it. Without it wheel re-opens on same object next frame (`MenuArming.Always` is due
+      ## every frame over target). Cleared moment hover reports anything else.
 
 
 
 #[ Operation Vocabulary ]#
 
-type PointerButton* {.pure.} = enum ## Name a physical mouse button, however numbered.
-  ## Neither backend's own numbering: SDL and the DOM count the three buttons
-  ## differently (SDL 1/2/3 left/middle/right, the DOM 0/1/2 left/middle/right), so each
-  ## render path translates its own numbers into this and asks `armingOf` below.
-  ## That keeps *which button does what* stated once, while leaving each path the
-  ## translation only it can do.
+type PointerButton* {.pure.} = enum ## Name physical mouse button, however numbered.
+  ## SDL counts 1/2/3 and DOM 0/1/2 for left/middle/right; each render path translates
+  ## into this and asks `armingOf`, so *which button does what* is stated once.
   Left, Middle, Right
 
 
 func motionFor*(key: Key): Option[Motion] =
-  ## Say which way one key keeps moving the view while it is held, or none where it moves
-  ## nothing.
-  ##   **Half the binding table**, stated once; `actionFor` below is the other half and
-  ##   `help.nim` renders its keyboard rows out of both rather than transcribing them, so
-  ##   rebinding a key rewrites the help with it -- the same arrangement that has kept the
-  ##   drag rows honest across two rebindings.
-  ##   **WASD slides the view across the ground and the arrows orbit it**, which is the
-  ##   pairing a reader arrives with: every editor that binds WASD at all (Unity, Unreal,
-  ##   Godot, Blender's fly mode) means "move" by it, and every map does. Q and E lower and
-  ##   raise, which those same four editors agree on. Shift is not here because it changes
-  ##   no key's direction -- it multiplies every rate by `FACTOR_HASTE`; see `driveHeld`.
-  ##   It used to turn an arrow's orbit into a pan, so shift meant one thing on the arrows
-  ##   and nothing anywhere else.
-  ##   Total by construction: every key answers, so no caller has an unhandled case and the
-  ##   suite can walk the whole table.
+  ## Say which way one key keeps moving view while held, or none where it moves nothing.
+  ##   **Half of binding table**; `actionFor` is other half, and `help.nim` renders
+  ## keyboard rows out of both, so rebinding key rewrites help.
+  ##   **WASD slides across ground, arrows orbit**: every editor binding WASD (Unity,
+  ## Unreal, Godot, Blender fly mode) means "move" by it. Q and E lower and raise. Shift
+  ## changes no direction; it multiplies every rate by `FACTOR_HASTE`; see `driveHeld`.
+  ##   Total by construction: every key answers, so suite can walk whole table.
   case key
   of Key.W: some(Motion.Forward)
   of Key.S: some(Motion.Back)
@@ -428,15 +333,12 @@ func motionFor*(key: Key): Option[Motion] =
 
 
 func actionFor*(key: Key): Option[KeyAction] =
-  ## Say what one press of a key does to the view, or none where it does nothing at a press
-  ## -- which is every key that moves the view instead; see `motionFor`.
-  ##   **Tab is deliberately absent**: cycling objects with it while the view has focus is
-  ##   the tempting binding, and it risks a keyboard trap -- WCAG 2.1.2, also Level A -- so
-  ##   traversal took the brackets instead and Tab keeps meaning "next control" everywhere.
-  ##   Fixing 2.1.1 by breaking 2.1.2 is not a fix.
-  ##   **F frames the selection**, which Unity, Godot and Blender (on numpad `.`) all bind;
-  ##   Home stays what it was, the placement both builds open at, and the two are different
-  ##   enough to deserve different keys.
+  ## Say what one press of key does to view, or none where it does nothing at press --
+  ## every key that moves view instead; see `motionFor`.
+  ##   **Tab is absent**: cycling objects with it risks keyboard trap (WCAG 2.1.2), so
+  ## traversal took brackets and Tab keeps meaning "next control".
+  ##   **F frames selection**, as Unity, Godot and Blender (numpad `.`) bind; Home stays
+  ## placement both builds open at.
   case key
   of Key.BracketLeft: some(KeyAction.FocusPrevious)
   of Key.BracketRight: some(KeyAction.FocusNext)
@@ -449,7 +351,7 @@ func actionFor*(key: Key): Option[KeyAction] =
 
 
 func nameOf*(key: Key): string =
-  ## Name a key as a reader would say it, for the help table to print.
+  ## Name key as reader would say it, for help table.
   case key
   of Key.W: "w"
   of Key.A: "a"
@@ -472,16 +374,13 @@ func nameOf*(key: Key): string =
 
 
 func armingOf*(button: PointerButton): Option[MenuArming] =
-  ## Say whether a button starts a construction drag, and how that drag reaches its menu.
-  ##   None for a button that starts no drag at all. Middle is now such a button: `project`
-  ##   used to live there, which put a third of the vocabulary behind hardware most
-  ##   trackpads do not have. It lives in the menu instead, so nothing is unreachable.
-  ##   **A mouse never waits.** Left takes whatever the pair makes and is never interrupted
-  ##   by a menu opening under a hand that paused mid-gesture; right asks, from the moment
-  ##   it arrives. The two run the same operations and differ only in whether the reader is
-  ##   asked -- redundancy for different expertise, not a mode split, which is exactly why
-  ##   it is safe where a button-per-operation mapping was not. `MenuArming.OnDwell` is
-  ##   reachable from no button at all, and belongs to touch alone; see `MenuArming`.
+  ## Say whether button starts construction drag, and how that drag reaches its menu.
+  ##   None for button starting no drag. Middle is such button: `project` lived there, behind
+  ## hardware most trackpads lack; it lives in menu instead.
+  ##   **Mouse never waits.** Left takes whatever pair makes; right asks from moment it
+  ## arrives. Same operations, differing only in whether reader is asked: redundancy for
+  ## different expertise, not mode split. `MenuArming.OnDwell` is reachable from no button;
+  ## touch alone; see `MenuArming`.
   case button
   of PointerButton.Left: some(MenuArming.Never)
   of PointerButton.Right: some(MenuArming.Always)
@@ -489,32 +388,25 @@ func armingOf*(button: PointerButton): Option[MenuArming] =
 
 
 func revealsMenuOn*(button: PointerButton): bool =
-  ## Say whether a click of this button brings up the selection menu on what it picked.
-  ##   **The left button selects and nothing more.** It used to do both jobs at once --
-  ##   select *and* open the menu -- which left a reader who only wanted to pick something
-  ##   dismissing a menu they never asked for, and put the menu behind the same button that
-  ##   builds. The right button carries it instead, matching where every other tool a reader
-  ##   has met keeps a context menu.
-  ##   Stated here for the same reason `armingOf` is: both render paths and the help panel
-  ##   answer from one rule, so rebinding it rewrites the help with it.
+  ## Say whether click of this button brings up selection menu on what it picked.
+  ##   **Left selects and nothing more.** Doing both left reader who only wanted to pick
+  ## dismissing menu they never asked for. Right carries it, where every other tool keeps
+  ## context menu. Stated here so both render paths and help answer from one rule.
   button == PointerButton.Right
 
 
 func revealsWithoutPicking*(has_selection, is_menu_shown: bool): bool =
-  ## Say whether a menu-revealing click should only reveal, leaving the selection alone.
-  ##   A selection already standing with its menu dismissed is a reader who wants that menu
-  ##   back, not one who wants to throw the selection away and start again -- so the click
-  ##   reveals and picks nothing. With the menu already up there is nothing to reveal, so the
-  ##   same click means what it plainly says and picks what it landed on. That pair is also
-  ##   the way out: right-click once to get the menu, again to retarget it.
-  ##   **Shift never comes here.** Shift means "change the selection", so a shifted click
-  ##   always adds or drops and only then reveals; the caller applies that, since only it
-  ##   knows the modifier.
+  ## Say whether menu-revealing click should only reveal, leaving selection alone.
+  ##   Selection standing with menu dismissed is reader who wants menu back, so click
+  ## reveals and picks nothing. With menu already up, same click picks what it landed on.
+  ## Right-click once for menu, again to retarget.
+  ##   **Shift never comes here.** Shifted click always adds or drops, then reveals;
+  ## caller applies that, knowing modifier.
   has_selection and not is_menu_shown
 
 
 func toDrag*(choice: DragChoice): Option[DragOperation] =
-  ## Read a choice as the operation it applies, if it applies one.
+  ## Read choice as operation it applies, if it applies one.
   case choice
   of DragChoice.Join: some(DragOperation.Join)
   of DragChoice.Meet: some(DragOperation.Meet)
@@ -523,7 +415,7 @@ func toDrag*(choice: DragChoice): Option[DragOperation] =
 
 
 func toOperation*(drag: DragOperation): Operation =
-  ## Translate drag's own vocabulary to library's operation catalogue.
+  ## Translate drag's vocabulary to library's operation catalogue.
   case drag
   of DragOperation.Join: Operation.Wedge
   of DragOperation.Meet: Operation.WedgeAnti
@@ -531,9 +423,8 @@ func toOperation*(drag: DragOperation): Operation =
 
 
 func compassOf*(choice: DragChoice): Compass =
-  ## Place a choice in the menu. Fixed for the life of the program; see `Compass`.
-  ##   North is the default a plain release takes most often, so the commonest choice is
-  ##   also the one nearest the cursor's own resting direction.
+  ## Place choice in menu. Fixed for life of program; see `Compass`.
+  ##   North is default plain release takes most often, nearest cursor's resting direction.
   case choice
   of DragChoice.Join: Compass.North
   of DragChoice.Meet: Compass.East
@@ -542,21 +433,15 @@ func compassOf*(choice: DragChoice): Compass =
 
 
 proc labelOf*(choice: DragChoice): string =
-  ## Name a choice as its wedge says it, in the catalogue's own symbols.
-  ##   **The very text the apply picker offers**, through `scene.notationSymbolic`, because
-  ##   the wheel and that picker are the same control in two postures and a reader should
-  ##   not have to learn `join` on one and `𝐦 ∧ 𝐧` on the other. Whichever they meet first
-  ##   teaches the other. The words are still taught, once, in the drawer's own intro line,
-  ##   which now names each symbol beside its word.
-  ##   The projection's notation (`𝐧 ∨ (𝐦 ∧ 𝐧☆)`) is the wide one, near twice the width of
-  ##   the word it replaces -- affordable only because it sits at `Compass.South`, clear of
-  ##   the two wedges the width could have collided with. Moving a choice to a different
-  ##   compass point is therefore a decision about this label too; see `Compass`.
-  ##   `More` takes a bare ellipsis rather than "more…": beside three pieces of notation a
-  ##   word is the odd one out, and the ellipsis is the one mark that already means
-  ##   "and the rest" without being an operation.
-  ##   A `proc` rather than a `func` for the reason `scene.notationSymbolic` is one: the
-  ##   table it reads is a `let`, since a picker needs the address of its first entry.
+  ## Name choice as its wedge says it, in catalogue's symbols.
+  ##   **Very text apply picker offers**, through `scene.notationSymbolic`: wheel and picker
+  ## are same control in two postures, so whichever reader meets first teaches other.
+  ## Words are taught once, in drawer's intro line.
+  ##   Projection's notation (`𝐧 ∨ (𝐦 ∧ 𝐧☆)`) is near twice width of word it replaces,
+  ## affordable only at `Compass.South`, clear of two wedges it could collide with. Moving
+  ## choice to different compass point is decision about this label too.
+  ##   `More` takes bare ellipsis: beside three pieces of notation word is odd one out.
+  ##   `proc` for reason `scene.notationSymbolic` is one: table it reads is `let`.
   case choice
   of DragChoice.Join, DragChoice.Meet, DragChoice.Project:
     notationSymbolic(toOperation(toDrag(choice).get))
@@ -564,11 +449,9 @@ proc labelOf*(choice: DragChoice): string =
 
 
 func wordOf*(choice: DragChoice): string =
-  ## Name a choice in words, for the one place each is *taught* rather than offered.
-  ##   The wedge itself says `𝐦 ∧ 𝐧` -- see `labelOf` -- which is only readable by someone
-  ##   who has been told once that it is `join`. That telling is the drawer's own legend
-  ##   line and nowhere else, so this exists to keep the legend and the help table naming
-  ##   the three the same way.
+  ## Name choice in words, for one place each is *taught* rather than offered.
+  ##   Wedge says `𝐦 ∧ 𝐧` (see `labelOf`), readable only once told it is `join`. Telling is
+  ## drawer's legend line; this keeps legend and help table naming three same way.
   case choice
   of DragChoice.Join: "join"
   of DragChoice.Meet: "meet"
@@ -577,9 +460,8 @@ func wordOf*(choice: DragChoice): string =
 
 
 func inkOf*(choice: DragChoice): Ink =
-  ## Tint a choice, for its wedge and for the rubber-band pointing at it.
-  ##   Named here rather than in either render path, which each kept their own copy of
-  ##   this table with a comment telling the next reader to check the other one.
+  ## Tint choice, for its wedge and for rubber-band pointing at it.
+  ##   Here rather than in either render path, which each kept copy of this table.
   case choice
   of DragChoice.Join: Ink.Jade
   of DragChoice.Meet: Ink.Rose
@@ -588,7 +470,7 @@ func inkOf*(choice: DragChoice): Ink =
 
 
 func offsetOf(compass: Compass): tuple[x, y: float] =
-  ## Point from the menu's centre toward one wedge, one reach away, in screen pixels.
+  ## Point from menu's centre toward one wedge, one reach away, in screen pixels.
   ##   Screen y grows downward, so south is positive.
   case compass
   of Compass.North: (0.0, -PIXELS_MENU_REACH)
@@ -604,11 +486,10 @@ func anchorOf*(centre: ScreenPosition; choice: DragChoice): ScreenPosition =
 
 
 func choiceAt*(centre, cursor: ScreenPosition): Option[DragChoice] =
-  ## Say which wedge of a menu opened at `centre` the cursor stands in, if any.
-  ##   Wedges are quadrants rather than discs, so every direction outside the deadzone
-  ##   belongs to exactly one of them and there is no gap between two to release into by
-  ##   accident. Distance past the deadzone is not bounded either: overshooting a wedge
-  ##   still picks it, which is what makes a fast confident throw work.
+  ## Say which wedge of menu opened at `centre` cursor stands in, if any.
+  ##   Wedges are quadrants rather than discs: every direction outside deadzone belongs to
+  ## exactly one, with no gap to release into by accident. Distance is unbounded, so
+  ## overshooting wedge still picks it, which makes fast confident throw work.
   let
     dx = cursor.x - centre.x
     dy = cursor.y - centre.y
@@ -622,14 +503,11 @@ func choiceAt*(centre, cursor: ScreenPosition): Option[DragChoice] =
 
 
 func resultOf*(choice: DragChoice; m, n: Multivector): Option[Multivector] =
-  ## Work out what a choice would make of these two operands, if it makes anything.
-  ##   None for `More`, which applies nothing itself, and none wherever the result has no
-  ##   drawable shape. That one test covers both ways a construction comes to nothing: a
-  ##   pair of the wrong grades, whose join or meet lands on a scalar or antiscalar, and a
-  ##   pair already lying on each other, whose result is zero. Measured rather than
-  ##   assumed: `objects.shape` reads `grade`, which already tolerances a near-zero away,
-  ##   so a line of magnitude 1e-14 reports no grade and no shape without a second test
-  ##   here to catch it.
+  ## Work out what choice would make of these two operands, if it makes anything.
+  ##   None for `More`, and none wherever result has no drawable shape. One test covers
+  ## both ways construction comes to nothing: wrong grades landing on scalar or antiscalar,
+  ## and pair lying on each other giving zero. `objects.shape` reads `grade`, which already
+  ## tolerances near-zero away, so line of magnitude 1e-14 reports no shape.
   let drag = toDrag(choice)
   if drag.isNone: return
   let derived = applyOperation(drag.get.toOperation, m, n)
@@ -638,62 +516,52 @@ func resultOf*(choice: DragChoice; m, n: Multivector): Option[Multivector] =
 
 
 func isOffered*(choice: DragChoice; m, n: Multivector): bool =
-  ## Report whether a choice would make something of these two operands.
-  ##   `More` is always offered: handing a pair to the apply section is worth doing
-  ##   whatever the three named operations make of them, and it is the only route from
-  ##   this gesture to the rest of the catalogue.
+  ## Report whether choice would make something of these two operands.
+  ##   `More` is always offered: only route from this gesture to rest of catalogue.
   choice == DragChoice.More or resultOf(choice, m, n).isSome
 
 
 func proposalFor*(m, n: Multivector): Option[DragChoice] =
-  ## Choose what a plain release should make of these two operands, if anything.
-  ##   A plain order, not a ranking: measured over every ordered pair of point, line and
-  ##   plane, **at most one of join and meet is ever drawable**, so there is never a tie
-  ##   between them to arbitrate, and `project` picks up the pairs where neither is. The
-  ##   suite pins that, because it is the whole reason this can be an order rather than a
-  ##   table of nine cases.
-  ##   None for a pair that makes nothing at all -- a plane dragged onto a point is one --
-  ##   which is why this is an `Option` and why a release on such a pair refuses rather
-  ##   than inventing something to add.
+  ## Choose what plain release should make of these two operands, if anything.
+  ##   Order, not ranking: measured over every ordered pair of point, line and plane,
+  ## **at most one of join and meet is ever drawable**, so there is never tie, and `project`
+  ## picks up pairs where neither is. Suite pins that; it is whole reason this is order
+  ## rather than table of nine cases.
+  ##   None for pair making nothing (plane dragged onto point), so release refuses rather
+  ## than inventing something to add.
   for choice in [DragChoice.Join, DragChoice.Meet, DragChoice.Project]:
     if isOffered(choice, m, n): return some(choice)
   none(DragChoice)
 
 
 func choosing*(interaction: Interaction): Option[DragChoice] =
-  ## Say which wedge of the open menu the cursor stands in, or none where no menu is open
-  ## at all and none where the cursor has come back to an open one's centre.
-  ##   **The one statement of which wedge**, so the highlight each front-end draws, the
-  ##   ghost `updateDrag` shapes and the object `endDrag` commits are never three opinions
-  ##   about where the cursor is. Each of those asked `choiceAt` separately before.
+  ## Say which wedge of open menu cursor stands in; none where no menu is open and none
+  ## where cursor has come back to open one's centre.
+  ##   **One statement of which wedge**, so highlight each front-end draws, ghost
+  ## `updateDrag` shapes and object `endDrag` commits are never three opinions.
   if interaction.menu.isNone: return none(DragChoice)
   choiceAt(interaction.menu.get, interaction.cursor)
 
 
 type ReleaseEffect* {.pure.} = enum ## Name what letting go right now would do.
-  ## Three outcomes and not two, because a release that quietly does nothing and one that
-  ## refuses want opposite feedback -- and once a menu is open both are reachable over the
-  ## very same pair, depending only on where in the wheel the cursor is resting.
-  Nothing, ## End the gesture and build nothing, with nothing to warn about: over empty
-    ## space, over the drag's own source, or back at an open menu's own centre.
-  Refused, ## Reach a pair that makes nothing drawable, and say so.
-  Builds, ## Add an object -- or, for `More`, hand the pair to the apply picker, which
-    ## takes the very hue the wheel has been showing.
+  ## Three outcomes, not two: release that quietly does nothing and one that refuses want
+  ## opposite feedback, and once menu is open both are reachable over same pair.
+  Nothing, ## End gesture and build nothing, with nothing to warn about: over empty
+    ## space, over drag's own source, or back at open menu's centre.
+  Refused, ## Reach pair that makes nothing drawable, and say so.
+  Builds, ## Add object; or, for `More`, hand pair to apply picker, which takes very hue
+    ## wheel has been showing.
 
 
 func effectOf*(interaction: Interaction): ReleaseEffect =
-  ## Resolve what letting go right now would do, from the drag's own state.
-  ##   Reads `proposal` and `preview`, which `updateDrag` has already resolved in `endDrag`'s
-  ##   own order, rather than re-deriving either: this is the one place the three outcomes
-  ##   are told apart, and a second derivation is a second answer waiting to disagree.
+  ## Resolve what letting go right now would do, from drag's own state.
+  ##   Reads `proposal` and `preview`, which `updateDrag` resolved in `endDrag`'s order,
+  ## rather than re-deriving: second derivation is second answer waiting to disagree.
   if not interaction.is_over_target: return ReleaseEffect.Nothing
   if interaction.proposal.isNone:
-    # Two ways to have no answer, and they are not the same event. At the centre of a
-    #   wheel that may veto -- one the reader summoned, or one they walked into and left
-    #   -- the gesture is being called off; everywhere else `proposalFor` found nothing
-    #   this pair makes, which is a refusal to warn about. An unentered dwell wheel is
-    #   the second kind: `updateDrag` already gave it the pair's own answer, so a none
-    #   here means the pair itself makes nothing.
+    # Two ways to have no answer: at centre of wheel that may veto, gesture is being called
+    #   off; everywhere else pair makes nothing, refusal to warn about. Unentered dwell
+    #   wheel already carries pair's answer, so none there means pair makes nothing.
     return
       if interaction.menu.isSome and
           (interaction.is_menu_entered or interaction.arming != MenuArming.OnDwell):
@@ -704,22 +572,15 @@ func effectOf*(interaction: Interaction): ReleaseEffect =
 
 
 func inkOfDrag*(interaction: Interaction; ink_next: Ink): Ink =
-  ## Tint the rubber-band of the drag in progress by what releasing it would do.
-  ##   Three states, one per `ReleaseEffect`, and the middle one is the reason this is not
-  ##   just `ink_next`: a release that builds nothing and warns about nothing is neutral, one
-  ##   that would be refused wears the reserved `Ink.Invalid` magenta, and one that builds
-  ##   wears **the hue the new object will actually be**. The warning arrives *before* the
-  ##   release rather than as a message after it, which is the whole point of previewing at
-  ##   all -- and it is never colour alone, since the ghost simultaneously fails to appear.
-  ##   With the wheel open all three are reachable without leaving the target: the centre is
-  ##   neutral where the wheel may veto -- an unentered dwell wheel's centre keeps the
-  ##   build hue instead, since lifting there builds; see `endDrag` -- a greyed wedge is
-  ##   magenta, an offered one is the new object's hue.
-  ##   `ink_next` is `scene.inkNext`, passed in because this has no scene to ask. It used to
-  ##   be the *operation's* own colour, which told a reader which of join/meet/project they
-  ##   were about to get but nothing about the object they were about to have -- and the
-  ##   operation is already named on the wedge and in the label, while the colour is the only
-  ##   place the answer could have been shown.
+  ## Tint rubber-band of drag in progress by what releasing it would do.
+  ##   One state per `ReleaseEffect`: neutral, reserved `Ink.Invalid` magenta for refusal,
+  ## and **hue new object will actually be** for build. Warning arrives *before* release,
+  ## and never by colour alone, since ghost simultaneously fails to appear.
+  ##   With wheel open all three are reachable without leaving target: centre is neutral
+  ## where wheel may veto (unentered dwell wheel's centre keeps build hue, since lifting
+  ## there builds; see `endDrag`), greyed wedge magenta, offered wedge new object's hue.
+  ##   `ink_next` is `scene.inkNext`, passed in since this has no scene. Was operation's
+  ## own colour, which said nothing about object reader was about to have.
   case interaction.effectOf
   of ReleaseEffect.Nothing: Ink.Guide
   of ReleaseEffect.Refused: Ink.Invalid
@@ -732,7 +593,7 @@ func inkOfDrag*(interaction: Interaction; ink_next: Ink): Ink =
 #[ Cursor And Hover ]#
 
 proc updateCursor*(interaction: var Interaction; x, y: float) =
-  ## Record cursor's latest window position, and note whether a press has become a drag.
+  ## Record cursor's latest window position, and note whether press has become drag.
   interaction.cursor = ScreenPosition(x: x, y: y, depth: 0.0)
   if interaction.is_press_still:
     let
@@ -743,10 +604,9 @@ proc updateCursor*(interaction: var Interaction; x, y: float) =
 
 
 func isMovingCamera*(interaction: Interaction): bool =
-  ## Report whether the camera is being moved right now, by pointer or by key.
-  ##   The key half is answered here rather than by each front-end, since `keys_held` is
-  ##   already this module's; `Key.Shift` alone is not movement, which is why this asks
-  ##   `motionFor` rather than counting keys.
+  ## Report whether camera is being moved right now, by pointer or by key.
+  ##   Key half answered here since `keys_held` is this module's; `Key.Shift` alone is not
+  ## movement, so this asks `motionFor` rather than counting keys.
   if interaction.is_dragging_camera: return true
   for key in interaction.keys_held:
     if motionFor(key).isSome: return true
@@ -758,11 +618,9 @@ proc updateHover*(
   view_projection: Matrix4; width, height: int; placed: openArray[Placed] = []
 ) =
   ## Recompute item nearest cursor, so overlay and drag-start agree on what stands under it.
-  ##   **Nothing is hovered while the camera is moving.** Hover is recomputed from the cursor
-  ##   every frame, so a pan drags the highlight across every object it sweeps past and a
-  ##   held W lights up whatever slides under a cursor standing still -- a rash of rings for
-  ##   a gesture that is not pointing at anything. A camera move is not a hover, and the ring
-  ##   comes back the frame it ends.
+  ##   **Nothing is hovered while camera is moving.** Hover is recomputed every frame, so
+  ## pan drags highlight across every object it sweeps and held W lights up whatever
+  ## slides under still cursor. Ring comes back frame move ends.
   interaction.index_hover =
     if interaction.is_enabled and not interaction.isMovingCamera:
       pickNearest(
@@ -770,7 +628,7 @@ proc updateHover*(
       )
     else:
       none(int)
-  # Noted here because this is where the scene is in hand; see `is_hover_backdrop`.
+  # Noted here because scene is in hand; see `is_hover_backdrop`.
   interaction.is_hover_backdrop =
     interaction.index_hover.isSome and
     scene.geometryOf(interaction.index_hover.get).isHorizonPlane
@@ -784,17 +642,12 @@ proc dollyAtCursor*(
   scale: DrawExtent; view_projection: Matrix4; width, height: int;
   placed: openArray[Placed] = []
 ) =
-  ## Zoom the camera by `factor`, toward whatever the cursor is over.
-  ##   The one statement of what a wheel notch does, so both front-ends and a pinch all
-  ## zoom the same way; each of them only has to say where the cursor is.
-  ##   `picking.anchorZoomAt` decides what "over" means -- the object under the cursor, the
-  ## ground under it, or the level the target sits on, in that order. The scene is a
-  ## parameter for that first answer, and is the whole reason this takes one.
-  ##   Falls back to a plain `dolly` where none of the three answers, which is a cursor on
-  ## empty sky above the horizon. Zooming toward the middle of the frame is what a wheel
-  ## did before any of this and is still the sensible answer there.
-  # The caller's extent and matrix, not fresh derivations per wheel notch; see
-  #   `picking.anchorZoomAt`'s own note.
+  ## Zoom camera by `factor`, toward whatever cursor is over.
+  ##   One statement of what wheel notch does, so both front-ends and pinch zoom same way.
+  ##   `picking.anchorZoomAt` decides what "over" means: object under cursor, ground under
+  ## it, or level target sits on, in that order. Falls back to plain `dolly` where none
+  ## answers, cursor on empty sky above horizon.
+  # Caller's extent and matrix, not fresh derivations per notch; see `picking.anchorZoomAt`.
   let anchor = anchorZoomAt(
     scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
   )
@@ -805,36 +658,27 @@ proc dollyAtCursor*(
 proc panAcross*(
   camera: var Camera; before, after: ScreenPosition; width, height: int
 ) =
-  ## Slide the view so the world point under `before` comes to lie under `after`.
-  ##   **A grab, not a rate**, and that is the whole change. A pan of so many hundredths of
-  ## the orbit distance per dragged pixel is right at exactly one depth and one tilt, and
-  ## wrong everywhere else: driven through real drags in the shipped browser, a 200-pixel
-  ## drag carried the scene **288 pixels**, so a reader dragging a thing to the middle of
-  ## the frame overshot it by nearly half and dragged back.
-  ##   Worse, `camera.pan` slides the target within the plane *facing the eye*, which is
-  ## tilted, so a vertical drag lifts the target off the ground: the same driven 200-pixel
-  ## drag took it from z **1.00 to 6.40**, and a drag the other way to **-2.24**. The orbit
-  ## centre ends up in mid-air, every later orbit swings about a point that is not on
-  ## anything, and a later zoom is scaled by a distance measured to nowhere. That is what
-  ## "the target gets away from what I'm looking at" is.
-  ##   Both rays meet the **horizontal plane through the target** -- `positionUnderCursor`'s
-  ## own surface -- so the translation between their hits is horizontal by construction and
-  ## the target's height cannot drift at all. It is a plane rather than the object under the
-  ## pointer because a drag needs one surface for its whole length: an anchor that changed
-  ## depth as the pointer crossed things would slide the world under the finger holding it.
-  ##   Falls back to the rate where either ray misses that plane -- a drag beginning or
-  ## ending on sky above the horizon -- which is the gesture as it stood and the only thing
-  ## left to do there.
+  ## Slide view so world point under `before` comes to lie under `after`.
+  ##   **Grab, not rate.** Rate per dragged pixel is right at one depth and tilt and wrong
+  ## everywhere else: driven in shipped browser, 200-pixel drag carried scene **288
+  ## pixels**. Worse, `camera.pan` slides target within plane *facing eye*, which is
+  ## tilted, so vertical drag lifted target off ground (z **1.00 to 6.40**; other way
+  ## **-2.24**), every later orbit swung about point on nothing, and later zoom scaled by
+  ## distance to nowhere.
+  ##   Both rays meet **horizontal plane through target**, `positionUnderCursor`'s surface,
+  ## so translation between hits is horizontal by construction. Plane rather than object
+  ## under pointer because drag needs one surface for its whole length.
+  ##   Falls back to rate where either ray misses that plane: drag beginning or ending on
+  ## sky above horizon.
   let
     eye_point = toMultivector(camera.eye)
     target_point = toMultivector(camera.target)
     level = levelPlaneThrough(target_point)
     reach_max = FACTOR_PAN_REACH_MAX*camera.distance
   func heldFoot(hit: Option[Position]): Option[Multivector] =
-    ## Draw a hold point no further out than the bound along its own ray, then take its
-    ## foot on the level -- the algebra's own statement of "the horizontal part": both
-    ## feet share the level by construction, so the step between them cannot carry any
-    ## of the clamp's vertical artefact.
+    ## Draw hold point no further out than bound along its ray, then take its foot on
+    ## level: both feet share level by construction, so step between them carries none of
+    ## clamp's vertical artefact.
     if hit.isNone: return
     var held = toMultivector(hit.get)
     let reach = distanceBetween(held, eye_point)
@@ -857,36 +701,34 @@ proc panAcross*(
 
 
 proc holdKey*(interaction: var Interaction; key: Key) =
-  ## Note a key as held, so `driveHeld` moves the camera by it every frame until it is
-  ## released. Harmless on a key already held, which is what an auto-repeat sends.
+  ## Note key as held, so `driveHeld` moves camera by it every frame until released.
+  ## Harmless on key already held, which is what auto-repeat sends.
   interaction.keys_held.incl(key)
 
 
 proc releaseKey*(interaction: var Interaction; key: Key) =
-  ## Note a key as let go of. Harmless on a key not held, which is what a release arriving
-  ## after `releaseKeysAll` is.
+  ## Note key as let go of. Harmless on key not held, which is what release arriving after
+  ## `releaseKeysAll` is.
   interaction.keys_held.excl(key)
 
 
 proc releaseKeysAll*(interaction: var Interaction) =
-  ## Let go of every held key at once, for a view that has stopped being told about
-  ## releases: the window losing focus, or the reader tabbing into a panel.
-  ##   **Not a nicety.** The release of a key held at that moment is delivered somewhere
-  ## else, so without this the camera moves forever and no key press stops it.
+  ## Let go of every held key at once, for view that has stopped being told about
+  ## releases: window losing focus, reader tabbing into panel.
+  ##   **Not nicety.** Release of key held at that moment is delivered elsewhere, so without
+  ## this camera moves forever.
   interaction.keys_held = {}
 
 
 proc driveHeld*(interaction: Interaction; camera: var Camera; seconds: float) =
-  ## Move the camera by every key currently held, for one frame of `seconds`.
-  ##   Called once a frame by both render paths rather than at each key event, which is
-  ## what makes a hold read as continuous movement instead of as the operating system's own
-  ## auto-repeat: a delay, then stutters. It also makes two keys held together compose --
-  ## W and D slide diagonally -- with nothing here enumerating the pairs.
-  ##   Every rate is per second (`TURN_SECOND` and its neighbours) and multiplied by
-  ## `seconds` here, so how far a hold travels depends on how long it was held rather than
-  ## on how fast the machine draws. The dolly is the one that cannot be a multiplication:
-  ## it compounds, so it takes `FACTOR_DOLLY_SECOND` to the power of the elapsed seconds.
-  ##   Shift multiplies every rate by `FACTOR_HASTE` rather than changing any direction.
+  ## Move camera by every key currently held, for one frame of `seconds`.
+  ##   Called once per frame by both render paths rather than at each key event, which
+  ## makes hold read as continuous movement rather than OS auto-repeat, and lets two keys
+  ## held together compose without enumerating pairs.
+  ##   Every rate is per second, multiplied by `seconds`, so travel depends on how long key
+  ## was held rather than how fast machine draws. Dolly compounds, so it takes
+  ## `FACTOR_DOLLY_SECOND` to power of elapsed seconds. Shift multiplies every rate by
+  ## `FACTOR_HASTE`.
   if interaction.keys_held.len == 0: return
   let
     haste = if Key.Shift in interaction.keys_held: FACTOR_HASTE else: 1.0
@@ -915,20 +757,14 @@ proc driveHeld*(interaction: Interaction; camera: var Camera; seconds: float) =
 proc applyAction*(
   interaction: var Interaction; camera: var Camera; scene: Scene; action: KeyAction
 ): Option[int] =
-  ## Carry out one keyboard action, and report which item the caller should select.
-  ##   Moves the camera and the focus itself, because both are its own state; **does not
-  ##   touch the selection**, which each render path owns differently (a `Panel` field
-  ##   on one, a module global on the other). Reporting a slot rather than selecting it
-  ##   also leaves the caller to read its own shift state and decide between replacing the
-  ##   selection and adding to it -- see `KeyAction.SelectFocused`.
-  ##   None for every action but a select, and for a select with nothing focused, which is
-  ##   what a reader gets for pressing enter before walking anywhere.
-  ##   **`FrameSelection` does nothing here**, deliberately: framing reads the selection,
-  ##   which this module does not own, and both paths already offer the camera an aim over
-  ##   that selection once a frame (`framing.offerAim`). All the key has to do is clear the
-  ##   goal that offer is holding, so the next frame aims afresh -- `CameraTween.release`,
-  ##   which each path calls on its own tween. Doing it any other way would mean a second
-  ##   statement of what "in view" means.
+  ## Carry out one keyboard action, and report which item caller should select.
+  ##   Moves camera and focus, both its own state; **does not touch selection**, which
+  ## each render path owns differently. Reporting slot leaves caller to read shift state
+  ## and decide between replacing selection and adding; see `KeyAction.SelectFocused`.
+  ##   None for every action but select, and for select with nothing focused.
+  ##   **`FrameSelection` does nothing here**: framing reads selection, and both paths
+  ## already offer camera aim over it once per frame (`framing.offerAim`). Key only clears
+  ## goal that offer holds, via `CameraTween.release` on each path's tween.
   case action
   of KeyAction.FocusPrevious: interaction.index_focus = scene.slotStepped(
     interaction.index_focus, -1
@@ -941,15 +777,15 @@ proc applyAction*(
       return interaction.index_focus
   of KeyAction.FrameSelection: discard
   of KeyAction.ViewHome:
-    # The placement both builds open at, so "home" means the same thing as starting again.
+    # Placement both builds open at, so "home" means same as starting again.
     camera = initCameraDefault()
   none(int)
 
 
 proc pruneFocus*(interaction: var Interaction; scene: Scene) =
-  ## Drop a keyboard focus whose item has gone, the same guard the selection already keeps.
-  ##   A slot carried across frames may be freed by any other input path between them, and
-  ##   a focus left pointing at a dead one would have its marker drawn off freed storage.
+  ## Drop keyboard focus whose item has gone, same guard selection keeps.
+  ##   Slot carried across frames may be freed by any other input path, and focus left
+  ## pointing at dead one would have marker drawn off freed storage.
   if interaction.index_focus.isSome and not scene.isAlive(interaction.index_focus.get):
     interaction.index_focus = none(int)
 
@@ -958,67 +794,57 @@ proc pruneFocus*(interaction: var Interaction; scene: Scene) =
 #[ Hold Lifecycle ]#
 
 proc beginHold*(interaction: var Interaction; slot: int; now: float) =
-  ## Start a press on `slot` that will select it once it has lasted long enough.
+  ## Start press on `slot` that selects it once it has lasted long enough.
   interaction.hold = some(
     Hold(slot: slot, started: now, is_taken: false, released: none(float))
   )
 
 
 proc releaseHold*(interaction: var Interaction; now: float) =
-  ## Note that the finger has lifted, starting the marker's settle back to its true size.
-  ##   Distinct from `cancelHold` on purpose. This is a press ending the way a press is
-  ##   meant to, so its marker settles; cancelling is a press that stopped being one --
-  ##   moved into a camera gesture, interrupted by a second finger, escaped -- and that
-  ##   snaps away, because there is nothing left for a settle to be about.
-  ##   Recording the moment rather than clearing the hold outright: the swell still has a
-  ##   phase left to run, and `swellHold` retires the hold once it is spent.
+  ## Note that finger has lifted, starting marker's settle back to true size.
+  ##   Distinct from `cancelHold`: press ending as press is meant to settles; press that
+  ## stopped being one (moved into camera gesture, second finger, escape) snaps away.
+  ##   Records moment rather than clearing hold: swell still has phase to run, and
+  ## `swellHold` retires hold once spent.
   if interaction.hold.isNone or interaction.hold.get.released.isSome: return
   interaction.hold.get.released = some(now)
 
 
 proc cancelHold*(interaction: var Interaction) =
-  ## Abandon a press in progress, selecting nothing.
-  ##   What the caller reaches for when the finger moved into a camera gesture, a second
-  ##   finger landed, the press was released early, or the user pressed escape.
+  ## Abandon press in progress, selecting nothing.
+  ##   For finger moved into camera gesture, second finger landing, early release, escape.
   interaction.hold = none(Hold)
 
 
 func progressHold*(interaction: Interaction; now: float): float =
-  ## Report how far a press in progress has matured, from 0 at the press to 1 once it is
-  ## due; 0 where no press is in progress.
-  ##   Clamped at both ends, so a caller may keep asking after the press is due and after
-  ##   the clock has jumped, and still get something it can draw.
-  ##   Linear, deliberately, and not through `tessellate.easeOutCubic` as every other animation
-  ##   here is: this is a clock being shown rather than a transition being softened, and an
-  ##   eased clock reads as stalling just before it fires -- exactly where a user is
-  ##   deciding whether the hold is working.
-  ##   Starts only once `SECONDS_SWELL_GROW` has passed, so the marker is already at the
-  ##   size it will fill at before it begins filling; see `swellHold`.
+  ## Report how far press in progress has matured, 0 at press to 1 once due; 0 with no
+  ## press.
+  ##   Clamped at both ends, so caller may keep asking after due and after clock jumps.
+  ##   Linear, not through `tessellate.easeOutCubic`: this is clock being shown, and eased
+  ## clock reads as stalling just before it fires, where reader decides whether hold works.
+  ##   Starts only once `SECONDS_SWELL_GROW` has passed, so marker is at size it fills at
+  ## before filling; see `swellHold`.
   if interaction.hold.isNone: return 0.0
   let elapsed = now - interaction.hold.get.started - SECONDS_SWELL_GROW
   max(0.0, min(1.0, elapsed/SECONDS_LONG_PRESS))
 
 
 func swellHold*(interaction: Interaction; now: float): float =
-  ## Report how far a touched item's marker is swollen clear of the finger, from 0 at its
-  ## true size to 1 fully out; 0 where no press is in progress.
-  ##   **On its own clock, not on the fill's.** Four phases, and only the middle two are
-  ## about the fill at all:
+  ## Report how far touched item's marker is swollen clear of finger, 0 at true size to 1
+  ## fully out; 0 with no press.
+  ##   **Own clock, not fill's.** Four phases:
   ##
   ##   | Phase | While | Swell |
   ##   |-------|-------|-------|
-  ##   | grow | the first `SECONDS_SWELL_GROW` | 0 rising to 1 |
-  ##   | fill | the `SECONDS_LONG_PRESS` after that | 1 |
-  ##   | held | however long the finger stays down past maturity | 1 |
-  ##   | settle | `SECONDS_SWELL_SHRINK` after the lift | 1 falling to 0 |
+  ##   | grow | first `SECONDS_SWELL_GROW` | 0 rising to 1 |
+  ##   | fill | `SECONDS_LONG_PRESS` after that | 1 |
+  ##   | held | however long finger stays down past maturity | 1 |
+  ##   | settle | `SECONDS_SWELL_SHRINK` after lift | 1 falling to 0 |
   ##
-  ##   The *held* phase is the point of the whole arrangement. The swell used to be a half
-  ## sine over the fill, which put the marker back at its true size at exactly the moment
-  ## the selection landed -- shrinking while the reader was still deciding, and gone when
-  ## it mattered. It now stays out until the finger says otherwise, for as long as that
-  ## takes.
-  ##   Eased at both ends through `tessellate.easeOutCubic`, unlike `progressHold` beside it:
-  ## these are transitions being softened, where that is a clock being shown.
+  ##   *Held* phase is point of arrangement: swell as half sine over fill put marker back
+  ## at true size exactly when selection landed. It stays out until finger says otherwise.
+  ##   Eased at both ends through `tessellate.easeOutCubic`, unlike `progressHold`: these
+  ## are transitions, that is clock.
   if interaction.hold.isNone: return 0.0
   let hold = interaction.hold.get
   if hold.released.isSome:
@@ -1028,38 +854,32 @@ func swellHold*(interaction: Interaction; now: float): float =
 
 
 func isHoldSpent*(interaction: Interaction; now: float): bool =
-  ## Report whether a released hold has finished settling and may be forgotten.
-  ##   Asked by the caller that owns the frame loop, so a hold retires on a frame boundary
-  ## rather than inside whichever query happened to be asked last. A hold still under a
-  ## finger is never spent, however long it has been held.
-  ##   Stated against `swellHold` rather than against `SECONDS_SWELL_SHRINK` a second time,
-  ## which is `isHoldMature`'s rule and for the same reason: two comparisons against one
-  ## duration are two chances to disagree, and here they genuinely would -- subtracting two
-  ## large timestamps loses enough precision that a hold released at 1005.62 and asked at
-  ## 1005.77 measures 0.14999999999997 against a 0.15 shrink.
+  ## Report whether released hold has finished settling and may be forgotten.
+  ##   Asked by caller owning frame loop, so hold retires on frame boundary. Hold under
+  ## finger is never spent.
+  ##   Stated against `swellHold` rather than against `SECONDS_SWELL_SHRINK` again, as
+  ## `isHoldMature` does: two comparisons against one duration are two chances to
+  ## disagree, and here they would: subtracting two large timestamps loses precision, so
+  ## hold released at 1005.62 and asked at 1005.77 measures 0.14999999999997 against 0.15.
   interaction.hold.isSome and interaction.hold.get.released.isSome and
     swellHold(interaction, now) <= 0.0
 
 
 func isHoldMature*(interaction: Interaction; now: float): bool =
-  ## Report whether a press in progress has lasted long enough to select its item.
-  ##   Stated against `progressHold` rather than against the elapsed time again, so the
-  ##   moment the marker finishes filling is the same moment the selection lands. Two
-  ##   comparisons against the same duration would be two chances to disagree.
+  ## Report whether press in progress has lasted long enough to select its item.
+  ##   Stated against `progressHold`, so moment marker finishes filling is moment
+  ## selection lands.
   interaction.hold.isSome and progressHold(interaction, now) >= 1.0
 
 
 proc takeHold*(interaction: var Interaction; now: float): Option[int] =
-  ## Report the slot a matured hold selects, **exactly once**, and nothing on any later
-  ## call; none while the hold is still filling, and none where there is no hold at all.
-  ##   The one call a frame loop needs, replacing "is it mature" asked beside a flag the
-  ## caller kept for "have I already acted on that". Those two facts have to agree, and
-  ## they stopped agreeing the moment a hold began outliving its own release: the caller
-  ## cleared its flag on the lift while the hold was still settling and still mature, so
-  ## the next frame selected the item a second time and toggled it straight back off. A
-  ## 1.62-second hold selected its item and lost it within 50 ms of the finger leaving.
-  ##   Taking it does not end it. The hold stays for its swell to settle out of -- what is
-  ## spent is the *selection*, not the gesture.
+  ## Report slot matured hold selects, **exactly once**, and nothing on later calls; none
+  ## while hold is filling, none with no hold.
+  ##   Replaces "is it mature" beside caller's "have I acted" flag. Those stopped agreeing
+  ## once hold outlived its release: caller cleared flag on lift while hold was settling
+  ## and still mature, so next frame selected item again and toggled it off. 1.62-second
+  ## hold lost its item within 50 ms of finger leaving.
+  ##   Taking does not end hold; what is spent is *selection*, not gesture.
   if interaction.hold.isNone or interaction.hold.get.is_taken: return
   if not isHoldMature(interaction, now): return
   interaction.hold.get.is_taken = true
@@ -1070,69 +890,52 @@ proc takeHold*(interaction: var Interaction; now: float): Option[int] =
 #[ Drag Lifecycle ]#
 
 func destinationOf*(interaction: Interaction): Option[int] =
-  ## Say which item the drag in progress points at, for its release to build with.
-  ##   Hover while no menu is open, and the item the menu opened over once one is. That
-  ##   second case is not a refinement: a menu opens *centred on the cursor*, so reaching
-  ##   out to a wedge necessarily takes the cursor off the item, and a destination read
-  ##   from hover would go none at exactly the moment the release needs it.
-  ##   None over the sky, the same refusal `beginDrag` makes at the other end of the
-  ##   gesture: a release over the backdrop stays "released over empty space; nothing
-  ##   done" rather than quietly taking the whole sky as an operand.
+  ## Say which item drag in progress points at, for its release to build with.
+  ##   Hover while no menu is open; item menu opened over once one is. Menu opens
+  ## *centred on cursor*, so reaching wedge takes cursor off item, and destination read
+  ## from hover would go none exactly when release needs it.
+  ##   None over sky, same refusal `beginDrag` makes: release over backdrop stays "nothing
+  ## done" rather than taking whole sky as operand.
   if interaction.menu.isSome: interaction.index_destination
   elif interaction.is_hover_backdrop: none(int)
   else: interaction.index_hover
 
 
 proc beginPress*(interaction: var Interaction; now: float) =
-  ## Note where and when a pointer press landed, whatever that press turns out to be.
-  ##   Every press goes through this -- the ones that start a construction drag and the
-  ##   ones that fall through to the camera alike -- because `isClick` below answers the
-  ##   same question about both: a click on an object selects it and a click on empty
-  ##   space clears the selection, and neither is a drag.
-  ##   Call it **at the press**, before `beginDrag` -- not from inside `beginDrag`, which
-  ##   a touch path only reaches once the finger has already travelled far enough to stop
-  ##   being a tap, and which would then re-anchor the press mid-gesture and let a short
-  ##   deliberate drag report itself as a click.
-  ##   Forgetting it fails safe: `is_press_still` is false until this raises it, so the
-  ##   gesture behaves exactly as it did before clicks existed rather than reporting one.
+  ## Note where and when pointer press landed, whatever that press turns out to be.
+  ##   Every press goes through this, because `isClick` answers same question about all:
+  ## click on object selects, click on empty space clears, neither is drag.
+  ##   Call **at press**, before `beginDrag`, not from inside it: touch path reaches
+  ## `beginDrag` once finger has travelled past tap, and re-anchoring there would let
+  ## short deliberate drag report itself as click.
+  ##   Forgetting fails safe: `is_press_still` is false until this raises it.
   interaction.pressed = interaction.cursor
   interaction.started = now
   interaction.is_press_still = true
 
 
 func isClick*(interaction: Interaction; now: float): bool =
-  ## Report whether the press in progress is still a click rather than a drag.
-  ##   **Distance alone decides**: a press that has not left `PIXELS_CLICK_SLOP` of where it
-  ##   landed is a click however long it was held. Asked at the release, by whichever path is
-  ##   resolving the press -- `endDrag` for one that started over an object, the render path
-  ##   itself for one that started over empty space, which begins no drag to end.
-  ##   **There was a 0.35 s deadline here and it was a bug.** It was meant to separate a
-  ##   click from a press held to open the dwell menu, but the dwell belongs to touch alone
-  ##   (`MenuArming.OnDwell`, reachable from no button) and a mouse's wheel opens on arriving
-  ##   over *another* object, never on time -- so nothing was left for it to separate, and
-  ##   what it actually did was drop any click a hand lingered on. Measured on the shipped
-  ##   build: shift-clicking three objects with each press held 600 ms picked **none** of
-  ##   them, every release answering "Released on its own source; nothing done", while the
-  ##   same three at 80 ms picked all three and a fourth click dropped one back out. `now` is
-  ##   still taken, since a caller should not have to know that the answer stopped needing it.
+  ## Report whether press in progress is still click rather than drag.
+  ##   **Distance alone decides**: press within `PIXELS_CLICK_SLOP` of where it landed is
+  ## click however long held. Asked at release by whichever path resolves press.
+  ##   **0.35 s deadline stood here and was bug.** Meant to separate click from press held
+  ## for dwell menu; dwell is touch-only and mouse wheel opens on arriving over *another*
+  ## object, so all it did was drop clicks hand lingered on. Measured: shift-clicking
+  ## three objects with presses held 600 ms picked **none**. `now` still taken, so caller
+  ## need not know answer stopped needing it.
   discard now
   interaction.is_press_still
 
 
 proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): bool =
-  ## Start a construction drag from the item currently hovered.
-  ##   Reports whether one actually started, so a caller knows whether to fall back to
-  ##   camera orbit or pan instead.
-  ##   `arming` is what the pointer chose: see `MenuArming`, and `armingOf` for what each
-  ##   mouse button picks. Every arming reaches the same choices; they differ only in what
-  ##   the reader has to do to be asked.
-  ##   Expects `beginPress` to have run for this same press; see its own doc.
-  ##   **A plane at horizon is a click and hold target, never a drag handle.** It is drawn
-  ##   as a dome over every direction, so it is hovered wherever nothing else is, and a
-  ##   press on it starting a construction drag would mean a press on empty space no longer
-  ##   falls through to the camera -- orbit and pan would stop working outright the moment
-  ##   a sky joined the scene. Refusing it here keeps that fall-through, and costs nothing
-  ##   a reader would want: dragging the backdrop *is* moving the view.
+  ## Start construction drag from item currently hovered.
+  ##   Reports whether one started, so caller knows whether to fall back to camera.
+  ##   `arming` is what pointer chose; see `MenuArming` and `armingOf`. Expects
+  ## `beginPress` to have run for same press.
+  ##   **Plane at horizon is click and hold target, never drag handle.** Drawn as dome
+  ## over every direction, it is hovered wherever nothing else is; press on it starting
+  ## drag would stop press on empty space falling through to camera. Dragging backdrop
+  ## *is* moving view.
   if interaction.index_hover.isNone or interaction.is_hover_backdrop: return false
   interaction.is_dragging = true
   interaction.index_source = interaction.index_hover.get
@@ -1142,7 +945,7 @@ proc beginDrag*(interaction: var Interaction; arming: MenuArming; now: float): b
   interaction.settled = interaction.cursor
   interaction.menu = none(ScreenPosition)
   interaction.is_menu_entered = false
-  interaction.index_disengaged = none(int) # A fresh drag holds nothing at arm's length.
+  interaction.index_disengaged = none(int) # Fresh drag holds nothing at arm's length.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Preview)
@@ -1154,7 +957,7 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.is_dragging = false
   interaction.menu = none(ScreenPosition)
   interaction.is_menu_entered = false
-  interaction.index_disengaged = none(int) # Or the next drag opens no menu over that object.
+  interaction.index_disengaged = none(int) # Or next drag opens no menu over that object.
   interaction.is_over_target = false
   interaction.proposal = none(DragChoice)
   interaction.preview = none(Preview)
@@ -1163,14 +966,13 @@ proc cancelDrag*(interaction: var Interaction) =
 proc updateDrag*(
   interaction: var Interaction; scene: Scene; now: float
 ) =
-  ## Recompute, for the frame just about to draw, what the drag in progress would make and
-  ## whether its menu should be open.
-  ##   Called after `updateHover`, which is what decides where the drag currently points.
-  ##   The preview is whatever a release would commit, applied -- the wedge the cursor
-  ##   stands in while a menu is open, and `proposalFor`'s own answer where none is. One
-  ##   rule, drawn and then obeyed, rather than a preview computed one way and a commit
-  ##   another; ghosting the plain-release answer under an open wheel was exactly that
-  ##   split, and a reader aiming at `meet` watched a ghost of `join`.
+  ## Recompute, for frame about to draw, what drag in progress would make and whether its
+  ## menu should be open.
+  ##   Called after `updateHover`, which decides where drag points.
+  ##   Preview is whatever release would commit: wedge cursor stands in while menu is
+  ## open, `proposalFor`'s answer where none is. One rule, drawn then obeyed; ghosting
+  ## plain-release answer under open wheel had reader aiming at `meet` watch ghost of
+  ## `join`.
   if not interaction.is_dragging:
     interaction.is_over_target = false
     interaction.proposal = none(DragChoice)
@@ -1178,11 +980,9 @@ proc updateDrag*(
     interaction.menu = none(ScreenPosition)
     return
 
-  # Let go of a menu the cursor has left, so a wheel opened on the wrong object costs a
-  #   movement rather than the whole gesture. Everything after this reads `menu` again, so
-  #   clearing it here is the whole of the re-aiming: the latch below starts following hover,
-  #   `index_source` is never touched, and the pair becomes the original source with whatever
-  #   the drag travels to next. See `PIXELS_MENU_DISENGAGE` on what this costs a throw.
+  # Let go of menu cursor has left, so wheel opened on wrong object costs movement rather
+  #   than whole gesture. Everything after reads `menu` again, so clearing it is whole of
+  #   re-aiming; `index_source` is never touched. See `PIXELS_MENU_DISENGAGE`.
   if interaction.menu.isSome:
     let
       dx_menu = interaction.cursor.x - interaction.menu.get.x
@@ -1194,11 +994,10 @@ proc updateDrag*(
       interaction.entered = now
       interaction.settled = interaction.cursor
 
-  # Latch what the drag points at while no menu is open, so the one that opens is the one
-  #   whose destination the wedges will act on.
+  # Latch what drag points at while no menu is open, so one that opens acts on it.
   if interaction.menu.isNone: interaction.index_destination = interaction.index_hover
 
-  # ...and stop holding a target at arm's length once the drag has actually left it.
+  # Stop holding target at arm's length once drag has left it.
   if interaction.index_disengaged.isSome and
       interaction.index_hover != interaction.index_disengaged:
     interaction.index_disengaged = none(int)
@@ -1208,18 +1007,15 @@ proc updateDrag*(
     over.isSome and over.get != interaction.index_source and
     scene.isAlive(over.get) and scene.isAlive(interaction.index_source)
   if not interaction.is_over_target:
-    # Left the target: the dwell starts again from wherever it next arrives, so pausing
-    #   on the way across never counts toward opening a menu somewhere else.
+    # Left target: dwell starts again wherever it next arrives.
     interaction.proposal = none(DragChoice)
     interaction.preview = none(Preview)
     interaction.entered = now
     interaction.settled = interaction.cursor
     return
 
-  # Moving restarts the dwell, so what it measures is being *still* rather than being over
-  #   something. Without this the clock ran on presence alone, and a slow drag that stayed
-  #   over one large object -- a plane's disc spans most of a phone screen -- had the menu
-  #   open on it mid-gesture and built nothing on release. Measured on a real finger.
+  # Moving restarts dwell, so it measures being *still*. On presence alone, slow drag over
+  #   plane's disc spanning phone screen opened menu mid-gesture and built nothing.
   let
     dx = interaction.cursor.x - interaction.settled.x
     dy = interaction.cursor.y - interaction.settled.y
@@ -1227,10 +1023,9 @@ proc updateDrag*(
     interaction.entered = now
     interaction.settled = interaction.cursor
 
-  # Open the menu **before** resolving what a release would do, since with one open that
-  #   answer is the wedge the cursor stands in. Resolved after instead, the frame a wheel
-  #   opens on would ghost the plain-release answer while the wheel already stood over the
-  #   cursor's own centre, which chooses nothing.
+  # Open menu **before** resolving release, since with one open answer is wedge cursor
+  #   stands in; resolved after, opening frame ghosted plain-release answer under wheel
+  #   already standing over centre, which chooses nothing.
   let is_menu_due = case interaction.arming
     of MenuArming.Never: false
     of MenuArming.OnDwell: now - interaction.entered >= SECONDS_DWELL_MENU
@@ -1242,10 +1037,8 @@ proc updateDrag*(
   let
     m = scene.geometryOf(interaction.index_source)
     n = scene.geometryOf(over.get)
-  # `endDrag`'s own order: the wheel answers where one is open, `proposalFor` where none
-  #   is -- except that a dwell wheel nobody has entered yet answers nothing at its
-  #   centre, so there the pair's own answer keeps standing, ghost and all. See `endDrag`
-  #   for why that wheel may not veto the release it interrupted.
+  # `endDrag`'s order: wheel answers where open, `proposalFor` where none, except dwell
+  #   wheel nobody has entered answers nothing at centre, so pair's answer stands.
   if interaction.menu.isSome and interaction.choosing.isSome:
     interaction.is_menu_entered = true
   interaction.proposal =
@@ -1254,11 +1047,8 @@ proc updateDrag*(
         interaction.arming == MenuArming.OnDwell:
       proposalFor(m, n)
     else: interaction.choosing
-  # Through `scene.previewApplying`, the same call both apply pickers offer their own answer
-  #   from -- so the ghost this gesture draws and the ghost a picker draws are one thing,
-  #   anchor included, rather than two constructions that happen to agree.
-  #   `More` names no operation and so previews nothing, which is right: it builds nothing
-  #   itself and hands the pair on.
+  # Through `scene.previewApplying`, same call both apply pickers offer from, so gesture's
+  #   ghost and picker's ghost are one thing, anchor included. `More` previews nothing.
   let drag = if interaction.proposal.isSome: toDrag(interaction.proposal.get)
     else: none(DragOperation)
   interaction.preview =
@@ -1269,34 +1059,29 @@ proc updateDrag*(
     else: none(Preview)
 
 
-type DragOutcome* = object ## Report everything a released drag did, for the caller to act on.
+type DragOutcome* = object ## Report everything released drag did, for caller to act on.
   message*: string ## What to say happened, whether or not anything was built.
-  index_created*: Option[int] ## Item added, where one was; none for every refusal, for a
-    ## release that chose nothing, and for `More`, which builds nothing itself.
-  choice*: Option[DragChoice] ## What the release resolved to, so a caller can recognise
-    ## `More` -- which is otherwise indistinguishable from a refusal, both adding no item.
-  operands*: Option[tuple[source, destination: int]] ## The two items, where both were
-    ## alive and distinct. What `More` hands to the apply section, and the only reason it
-    ## is reported: the drag's own state is cleared by the time a caller reads this.
-  index_clicked*: Option[int] ## Item a press that never became a drag came down on, for
-    ## the caller to select. None for every actual drag, so a caller may branch on this
-    ## alone rather than re-deriving what kind of gesture it just ended.
+  index_created*: Option[int] ## Item added, where one was; none for refusal, for release
+    ## choosing nothing, and for `More`.
+  choice*: Option[DragChoice] ## What release resolved to, so caller recognises `More`,
+    ## otherwise indistinguishable from refusal.
+  operands*: Option[tuple[source, destination: int]] ## Two items, where both were alive
+    ## and distinct. What `More` hands to apply section; drag's state is cleared by time
+    ## caller reads this.
+  index_clicked*: Option[int] ## Item press that never became drag came down on, for
+    ## caller to select. None for every actual drag.
 
 
 proc commitChoice*(
   interaction: var Interaction; scene: var Scene; choice: DragChoice; now: float
 ): DragOutcome =
-  ## Apply one choice between the drag's own source and whatever it points at.
-  ##   Split out of `endDrag` so a choice picked from the menu and a proposal taken by a
-  ##   plain release reach the scene through the identical path.
-  ##   Refuses rather than adding an object that draws nothing: a pair whose result has no
-  ##   shape produces a message and no item. That is the one outcome a caller has to be
-  ##   ready for, and it is why `index_created` is an `Option`. The menu greys the wedges
-  ##   this would refuse, so the menu path reaches that refusal only by insisting.
+  ## Apply one choice between drag's source and whatever it points at.
+  ##   Split out of `endDrag` so menu choice and plain-release proposal reach scene through
+  ## identical path.
+  ##   Refuses rather than adding object that draws nothing: message and no item, which is
+  ## why `index_created` is `Option`. Menu greys wedges this would refuse.
   let over = destinationOf(interaction)
-  # Silent for the same reason `endDrag` is: a choice committed over nothing built nothing,
-  #   and the reader can see that. Reachable here only through a menu whose target went away
-  #   under it.
+  # Silent as `endDrag` is: reachable only through menu whose target went away under it.
   if over.isNone: return DragOutcome()
   if over.get == interaction.index_source:
     return DragOutcome(message: "Released on its own source; nothing done.")
@@ -1315,9 +1100,8 @@ proc commitChoice*(
       choice: some(choice), operands: operands,
     )
 
-  # Named through the catalogue's own notation, exactly as the panel's apply button names
-  #   the same pair -- so a drag and a panel apply produce byte-identical labels, and the
-  #   library's real symbols reach the object list rather than an ASCII stand-in for them.
+  # Named through catalogue's notation, as panel's apply button names same pair, so drag
+  #   and panel apply produce byte-identical labels.
   let
     operation = toDrag(choice).get.toOperation
     label = notationSubstituted(operation, label_source, label_destination)
@@ -1328,13 +1112,9 @@ proc commitChoice*(
       choice: some(choice), operands: operands,
     )
 
-  # **A full scene refuses the gesture rather than asserting through it.** Every *panel*
-  #   path already checks `isFull` before committing -- the desktop greys its apply and add
-  #   controls, the browser toasts -- but the drag gesture commits here, in shared code, and
-  #   had no check at all, so a release on a full scene crashed both front-ends alike. It
-  #   was unreachable until a preset arrived that fills the scene in one click. Refused in
-  #   the same shape as the "makes nothing drawable" case above, so a reader who cannot
-  #   build gets a sentence saying why rather than a dead gesture or a dead page.
+  # **Full scene refuses gesture rather than asserting through it.** Every *panel* path
+  #   checks `isFull`; drag commits here in shared code and had no check, so release on
+  #   full scene crashed both front-ends once preset could fill scene in one click.
   if scene.isFull:
     return DragOutcome(
       message: &"The scene holds all {ITEMS_MAX} objects it can; {label} was not added.",
@@ -1354,71 +1134,57 @@ proc commitChoice*(
 proc endDrag*(
   interaction: var Interaction; scene: var Scene; now: float = 0.0
 ): DragOutcome =
-  ## End the drag in progress, applying whatever the release resolved to.
-  ##   **One release rule: a release commits whatever is under the cursor.** With a menu
-  ##   open that is the wedge the cursor stands in, and nothing where it went back to the
-  ##   centre -- unless the menu is a dwell wheel nobody ever entered, which may not veto:
-  ##   there the release takes `proposalFor`'s own answer, exactly as if the wheel had
-  ##   never opened. With no menu it is `proposalFor`'s own answer. Either way it is what
-  ##   `interaction.proposal` holds and what the preview has been ghosting all along -- one
-  ##   rule, drawn and then obeyed, rather than a preview computed one way and a commit
-  ##   another. `updateDrag` resolves it in this same order, off `choosing`.
-  ##   Resolving the wedge here rather than in each render path is deliberate: the cursor
-  ##   and the menu's centre are both already known, so neither path gets a chance to
-  ##   disagree about which wedge a release landed in.
-  ##   Always clears drag state; the message names the outcome even where nothing was done.
+  ## End drag in progress, applying whatever release resolved to.
+  ##   **One release rule: release commits whatever is under cursor.** With menu open, wedge
+  ## cursor stands in, nothing at centre, unless menu is dwell wheel nobody entered, which
+  ## may not veto: there release takes `proposalFor`'s answer as if wheel never opened.
+  ## With no menu, `proposalFor`'s answer. Either way what `interaction.proposal` holds and
+  ## what preview has ghosted; `updateDrag` resolves in same order, off `choosing`.
+  ##   Wedge resolved here rather than in each render path, so neither can disagree about
+  ## which wedge release landed in.
+  ##   Always clears drag state; message names outcome even where nothing was done.
   let was_dragging = interaction.is_dragging
   defer:
-    # **A construction gesture steps the palette whether or not it built anything.** The
-    #   reader watched a colour on the band for the whole drag; offering that same colour
-    #   again to the next attempt reads as the gesture having never registered. A release
-    #   that *did* build already took its hue through `takeInk`, and a click is excluded --
-    #   selecting is not constructing. `More` is excluded too: the construction is still in
-    #   flight, and the apply picker it opens will take the hue the wheel just previewed.
+    # **Construction gesture steps palette whether or not it built.** Offering same colour
+    #   to next attempt reads as gesture never registering. Release that built took hue
+    #   through `takeInk`; click is excluded (selecting is not constructing); `More` is
+    #   excluded, since apply picker it opens takes hue wheel previewed.
     if was_dragging and result.index_clicked.isNone and result.index_created.isNone and
         result.choice != some(DragChoice.More):
       scene.skipInk()
     interaction.cancelDrag()
   if not interaction.is_dragging: return DragOutcome()
 
-  # A press that never moved is a click, not a drag, and a click selects what it came down
-  #   on. Answered here rather than in each render path because the drag it abandons was
-  #   begun here: the press target chooses the scheme, so the press over an object has to
-  #   start a drag eagerly, and *whether it was one* is only knowable at the release.
-  #   **The open menu is what excludes a click, not the arming.** A right press once could
-  #   never be a click at all, on the reasoning that it had asked for the wheel and being
-  #   quietly answered with a selection would make the button unreliable. But the wheel only
-  #   opens over a target *other* than the source, so a right press that never left its own
-  #   object never opened one and there is no offer to withdraw -- and refusing it left the
-  #   right button doing nothing whatsoever on a plain click.
+  # Press that never moved is click, and click selects what it came down on. Answered here
+  #   because drag it abandons was begun here: press over object starts drag eagerly, and
+  #   *whether it was one* is knowable only at release.
+  #   **Open menu excludes click, not arming.** Wheel opens only over target *other* than
+  #   source, so right press that never left its object opened none, and refusing it left
+  #   right button doing nothing on plain click.
   if interaction.menu.isNone and interaction.isClick(now):
     return
       if scene.isAlive(interaction.index_source):
         DragOutcome(index_clicked: some(interaction.index_source))
       else:
-        DragOutcome() # Removed under the press; nothing to select and nothing to say.
+        DragOutcome() # Removed under press; nothing to select and nothing to say.
 
   if interaction.menu.isSome:
     let choice = interaction.choosing
     if choice.isSome: return commitChoice(interaction, scene, choice.get, now)
-    # **A wheel the reader summoned may veto the release; one that invited itself may
-    #   not.** A right press asked for the wheel, so lifting back at its centre withdraws
-    #   the gesture -- and so does lifting there after walking into a wedge and thinking
-    #   better of it, on any wheel. The dwell wheel alone arrives unasked, under a finger
-    #   pausing over its target to aim -- covered by that very finger -- and before it is
-    #   first entered, reading the release as "chose nothing" eats the build the ghost
-    #   promised the whole way over. Measured on a phone: pausing before lifting is the
-    #   common touch release, not the rare one, and it built nothing every time.
+    # **Wheel reader summoned may veto release; one that invited itself may not.** Right
+    #   press asked for wheel, so lifting at centre withdraws, as does lifting there after
+    #   walking into wedge on any wheel. Dwell wheel arrives unasked under finger pausing
+    #   to aim, covered by that finger; reading release as "chose nothing" before first
+    #   entry eats build ghost promised. Measured on phone: pausing before lifting is
+    #   common touch release, and it built nothing every time.
     if interaction.is_menu_entered or interaction.arming != MenuArming.OnDwell:
       return DragOutcome(message: "Released without choosing; nothing done.")
 
   let over = destinationOf(interaction)
-  # **Nothing to say about a release over nothing.** The reader dragged a line into empty
-  #   space and let go; they can see that no object arrived, and a status line telling them
-  #   so is a message that fires on every abandoned gesture -- the commonest thing a reader
-  #   does with a drag they thought better of. The refusals below do earn their messages:
-  #   each one is a release that landed *on something* and still built nothing, which is
-  #   the case a reader cannot read off the screen.
+  # **Nothing to say about release over nothing.** Reader can see no object arrived, and
+  #   message on every abandoned gesture fires on commonest thing reader does. Refusals
+  #   below landed *on something* and still built nothing, which reader cannot read off
+  #   screen.
   if over.isNone: return DragOutcome()
   if over.get == interaction.index_source:
     return DragOutcome(message: "Released on its own source; nothing done.")

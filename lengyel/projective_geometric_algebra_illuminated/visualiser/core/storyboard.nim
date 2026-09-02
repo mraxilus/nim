@@ -1,27 +1,24 @@
-## Script a construction, one operation at a time, for capture without a hand on the mouse.
+## Script construction, one operation per step, for capture without hand on mouse.
 ##
-## Storyboard exists so a build can be checked by looking at it: each step goes through the
-## same `applyOperation` and `addItem` the GUI's apply button calls, so what a reader sees
-## in the exported frames is what clicking would have produced.
-##   Doubles as a visual regression harness: the frames are comparable between builds.
+## Each step goes through same `applyOperation` and `addItem` GUI's apply button calls, so
+## exported frames show what clicking would have produced.
+##   Doubles as visual regression harness: frames are comparable between builds.
 ##
-## Steps name their operands by index into the scene, which is dense and grows by one per
-## step, so an index is stable once written.
-##   Seeds occupy indices 0 to 4; every later index is the step that produced it.
+## Steps name operands by index into scene, which is dense and grows by one per step, so
+## index is stable once written.
+##   Seeds occupy indices 0 to 4; every later index is step that produced it.
 ##
 ##   |-------|-------------------|--------------------------------------------------|
 ##   | Index | Object            | Origin                                           |
 ##   |-------|-------------------|--------------------------------------------------|
 ##   | 0,1,2 | a, b, c           | Seed points, placed by hand.                     |
-##   | 3     | o                 | The world origin, placed by hand -- kept off `G` |
-##   |       |                   |   (see step 08's own comment) purely so it has   |
-##   |       |                   |   something non-trivial to project onto it.      |
+##   | 3     | o                 | World origin, placed by hand -- kept off `G` (see |
+##   |       |                   |   step 08) so it has something to project onto.  |
 ##   | 4     | ground            | Seed plane, joined from three points at z = 0.   |
-##   | 5+    | one per step      | Result of the step's own operation.              |
+##   | 5+    | one per step      | Result of step's own operation.                  |
 ##   |-------|-------------------|--------------------------------------------------|
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
-## render paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
 {.experimental: "strictFuncs".}
 
@@ -33,12 +30,12 @@ import ./[boundary, tessellate, scene]
 #[ Type Definitions ]#
 
 type Step* = object ## Hold one scripted construction step.
-  stem*: string ## File name stem the frame after this step is written under.
-  label*: string ## Name the derived object carries in the scene.
-  operation*: Operation ## Operation applied to the operands below.
+  stem*: string ## File name stem frame after this step is written under.
+  label*: string ## Name derived object carries in scene.
+  operation*: Operation ## Operation applied to operands below.
   index_first*: int ## Scene index of left operand.
   index_second*: int ## Scene index of right operand; ignored where operation is unary.
-  ink*: Ink ## Palette slot the derived object is drawn with.
+  ink*: Ink ## Palette slot derived object is drawn with.
 
 
 
@@ -59,46 +56,37 @@ const STEPS*: array[11, Step] = [
     operation: Operation.Attitude, index_first: 5, index_second: 0, ink: Ink.Cobalt),
   Step(stem: "07_expand_weight", label: "a ∧ L☆  perp plane",
     operation: Operation.ExpandWeight, index_first: 0, index_second: 5, ink: Ink.Olive),
-  # `a` (and `b`, and `c`) already lie on `G` by construction -- `G` is joined from a
-  #   line through `a` and `b`, plus `c` -- so projecting any of them onto `G` is a
-  #   no-op with nothing new to show. `o`, the world origin, is the one seed placed
-  #   specifically to sit off `G` (see the module doc comment's own table), so its
-  #   projection actually lands somewhere else, visibly.
+  # Project `o`, only seed off `G`: `a`, `b`, `c` lie on `G` by construction, so their
+  #   projection would show nothing.
   Step(stem: "08_project", label: "o onto G",
     operation: Operation.ProjectOrthogonal, index_first: 3, index_second: 6, ink: Ink.Rose),
-  # Attitude always drops one grade and always lands at horizon (see
-  #   `objects.directionNormalHorizon`'s own doc comment): applied to a line it gave a
-  #   point at horizon above (06); applied to a plane it gives a line at horizon; applied
-  #   to a grade-4 volume (built here from a point wedged with a plane it does not lie
-  #   on) it gives a plane at horizon -- the unique universal object every plane at
-  #   horizon is, regardless of which points produced it.
+  # Take attitude down grade by grade: line gave point at horizon (06), plane gives line
+  #   at horizon, grade-4 volume gives plane at horizon -- one universal object every
+  #   plane at horizon is. See `objects.directionNormalHorizon`.
   Step(stem: "09_attitude_line_horizon", label: "Lh = att(G)",
     operation: Operation.Attitude, index_first: 6, index_second: 0, ink: Ink.Jade),
   Step(stem: "10_wedge_volume", label: "a ∧ ground",
     operation: Operation.Wedge, index_first: 0, index_second: 4, ink: Ink.Copper),
   Step(stem: "11_attitude_plane_horizon", label: "Ph = att(a ∧ ground)",
     operation: Operation.Attitude, index_first: 14, index_second: 0, ink: Ink.Cobalt),
-] ## Build a line from two points, a plane from that line, then meet, measure and
-  ## project; close with attitude taken down to a line, then a plane, at horizon.
+] ## Build line from two points, plane from that line, then meet, measure and project;
+  ## close with attitude taken down to line, then plane, at horizon.
 
 
 const INK_SEED_GROUND* = Ink.Olive
-  ## Colour the startup scene's own ground plane wears.
-  ##   Reserved by hand rather than taken from the cycle, because `ground` is the one seed
-  ## every later step is derived against and a reader learns to find it by colour.
+  ## Colour startup scene's ground plane wears.
+  ##   Reserved rather than cycled: `ground` is seed every later step derives against, and
+  ## reader learns to find it by colour.
 
 const INK_SEED_ORIGIN* = Ink.Copper
-  ## Colour the startup scene's own origin point wears.
-  ##   Reserved for the same reason `INK_SEED_GROUND` is: the origin is the one point in
-  ## the scene that is not arbitrary, so it is worth being able to recognise it without
-  ## reading its label. `a`, `b` and `c` step over both reserved hues, which leaves them
-  ## exactly the three the categorical run has left and no two seeds collide.
+  ## Colour startup scene's origin point wears.
+  ##   Reserved as `INK_SEED_GROUND` is: origin is one point not arbitrary. `a`, `b` and
+  ## `c` step over both reserved hues, leaving them exactly three categorical run has left.
 
 
 proc constructSeeds*(scene: var Scene; now: float = 0.0) =
-  ## Place the three points and the ground plane every later step is derived from.
-  ##   `now` is forwarded to `addItem` untouched, so seeds animate in exactly as any
-  ##   other item does where a caller passes a real clock reading.
+  ## Place three points and ground plane every later step derives from.
+  ##   `now` is forwarded to `addItem` untouched, so seeds animate in as any item does.
   let
     point_a = toMultivector(Position(x: 3.0, y: -2.0, z: 2.5))
     point_b = toMultivector(Position(x: -2.5, y: 2.0, z: 5.5))
@@ -107,19 +95,13 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
     point_x = toMultivector(Position(x: 1, y: 0, z: 0))
     point_y = toMultivector(Position(x: 0, y: 1, z: 0))
     ground = point_origin ∧ point_x ∧ point_y
-    # Centre ground's own circle on the three points that built it, not on its own
-    #   closest-to-origin support -- the same reasoning `creationAnchor` gives every
-    #   later plane, applied here by hand since a plane built from three points at once
-    #   goes through no single `Operation` a generic dispatch could recognise. Each
-    #   point unitized first, so the sum's own weight is exactly three and reading its
-    #   position back out (which divides by weight) gives the plain centroid.
+    # Centre ground's circle on three points that built it, as `creationAnchor` does for
+    #   every later plane; plane built from three points at once goes through no single
+    #   `Operation`. Each point unitized so sum's weight is three and position is centroid.
     anchor_ground = position(
       add(add(unitize(point_origin), unitize(point_x)), unitize(point_y))
     )
-  # A hue each, as adding them by hand would give them: four objects wearing one colour
-  #   say they are one kind of thing, which is the opposite of what a categorical palette
-  #   is for. `ground` and `o` keep their own reserved hues, so the three arbitrary points
-  #   take the three slots that are neither and nothing collides.
+  # Give each seed own hue, skipping two reserved ones, so nothing collides.
   var index_ink = 0
   proc inkNext(): Ink =
     while inkCycled(index_ink) in [INK_SEED_GROUND, INK_SEED_ORIGIN]: inc index_ink
@@ -133,9 +115,9 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
 
 
 proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =
-  ## Apply one step, appending its result exactly as the GUI's apply button would.
-  ##   Reports the derived geometry directly, since a caller wanting to name what this
-  ##   step produced can no longer assume it landed in the last slot of a dense array.
+  ## Apply one step, appending its result exactly as GUI's apply button would.
+  ##   Reports derived geometry directly: caller naming what step produced cannot assume it
+  ## landed in last slot of dense array.
   doAssert scene.isAlive(step.index_first) and scene.isAlive(step.index_second),
     "Storyboard step names an operand the scene has not built yet."
   let

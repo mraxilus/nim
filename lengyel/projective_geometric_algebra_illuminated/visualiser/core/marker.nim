@@ -1,42 +1,37 @@
-## Shape a selection or hover marker to the object it marks, in screen pixels.
+## Shape selection or hover marker to object it marks, in screen pixels.
 ##
-## A marker says "this one", and it says it best when its own outline echoes the thing it
-## surrounds: a ring reads as *that point*, a pair of rails as *that line*, a circle lying
-## on the plane as *that plane*. One screen-space circle for all three said only "something
-## here", and on a plane it said it in the wrong place -- centred on a support the disc is
-## not even drawn around.
+## Marker says "this one", and says it best when its outline echoes thing it surrounds:
+## ring reads as *that point*, pair of rails as *that line*, circle lying on plane as
+## *that plane*. One screen-space circle for all three said only "something here", and on
+## plane said it in wrong place -- centred on support disc is not drawn around.
 ##
-## Every marker keeps the same clear space, `GAP_MARKER` pixels, between the object's own
-## drawn edge and its own outline, so the three read as one family at one weight rather
-## than three unrelated decorations. That gap is measured out from the sizes the object is
-## actually drawn at (`tessellate.SIZE_POINT`, `mesh.WIDTH_LINE_OBJECT`, `mesh.EXTENT_PLANE_F`),
-## so changing a draw size moves its marker with it.
+## Every marker keeps same clear space, `GAP_MARKER` pixels, between object's drawn edge
+## and its outline, so three read as one family. Gap is measured from sizes object is
+## drawn at (`tessellate.SIZE_POINT`, `mesh.WIDTH_LINE_OBJECT`, `mesh.EXTENT_PLANE_F`),
+## so changing draw size moves marker with it.
 ##
 ##   |------------------|---------------------------------------------------------------|
 ##   | Shape            | Marker                                                        |
 ##   |------------------|---------------------------------------------------------------|
-##   | Point            | `Ring`  -- circle in screen space, about the drawn point.     |
+##   | Point            | `Ring`  -- circle in screen space, about drawn point.         |
 ##   | Line             | `Rails` -- two screen-space segments flanking its projection. |
-##   | Plane            | `Loop`  -- circle lying *on the plane*, outside its own rim.  |
-##   | Line at horizon  | `Bands` -- two small circles on the sky flanking the great    |
-##   |                  |   circle the line itself is drawn as.                         |
-##   | Plane at horizon | `Frame` -- boundary around the whole viewport, since the      |
-##   |                  |   object it marks is the whole sky.                           |
-##   | Point at horizon | `Ring`, about the star it is drawn as.                        |
+##   | Plane            | `Loop`  -- circle lying *on plane*, outside its own rim.      |
+##   | Line at horizon  | `Bands` -- two small circles on sky flanking great circle     |
+##   |                  |   line itself is drawn as.                                    |
+##   | Plane at horizon | `Frame` -- boundary around whole viewport, since object it    |
+##   |                  |   marks is whole sky.                                         |
+##   | Point at horizon | `Ring`, about star it is drawn as.                            |
 ##   |------------------|---------------------------------------------------------------|
 ##
-## The last two shapes had no marker at all until this round: both draw fixed to the eye
-## rather than around a point in the scene, so neither offered anything to surround. The
-## answer is that what a marker surrounds is *whatever is drawn*, and both are drawn --
-## a great circle and a whole sky -- so a marker wraps each exactly as it is drawn.
+## Last two draw fixed to eye rather than around point in scene; what marker surrounds is
+## *whatever is drawn*, and both are drawn -- great circle and whole sky.
 ##
-## Markers are described here and drawn by each render path's own foreground layer
-## (`visualiser.drawSelectionMarker`, `glue.js`'s SVG overlay), never as scene geometry: a
-## loop lying exactly on a plane would z-fight with that plane's own fill, and a marker
-## that can be occluded by the object it marks is not a marker.
+## Markers are described here and drawn by each render path's foreground layer
+## (`visualiser.drawSelectionMarker`, `glue.js`'s SVG overlay), never as scene geometry:
+## loop lying exactly on plane would z-fight with its fill, and marker occluded by object
+## it marks is not marker.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
-## paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
 {.experimental: "strictFuncs".}
 
@@ -51,199 +46,139 @@ import ./[boundary, camera, tessellate, picking]
 
 const
   GAP_MARKER* = 6.0
-    ## Set clear space between an object's own drawn edge and its marker, in pixels.
-    ##   One number for all three shapes: what makes a selection legible is a consistent
-    ##   band of untouched background around whatever is selected, and a marker that
-    ##   hugged a point more tightly than it hugged a line would read as two mechanisms.
-    ##   Held deliberately tight. A wide band reads as a second object rather than as an
-    ##   annotation of the first, and on a scene of several selected items the bands
-    ##   themselves become the busiest thing on screen.
+    ## Set clear space between object's drawn edge and its marker, in pixels.
+    ##   One number for all three shapes: consistent band of untouched background is what
+    ## makes selection legible. Held tight: wide band reads as second object, and on
+    ## several selected items bands become busiest thing on screen.
   WIDTH_MARKER_COMET* = 3.5'f32
-    ## Swell a comet to this thickness at its head, in pixels, tapering back to
-    ## `WIDTH_MARKER` below at its tail.
-    ##   Thicker than `WIDTH_MARKER`, which is the whole of how it reads: a comet is a line
-    ##   swelling along a stretch of itself, so weight is what separates the lit part from
-    ##   the rest. Colour would not do it -- the marker is already pure white at the top of
-    ##   this palette, with nowhere brighter to go.
-    ##   The tail meets its line at *exactly* that line's width, so the run has no visible
-    ##   back end to read as a second mark; only the head is an edge.
-    ##   One width for the orientation pulse and the drag band alike. They are the same
-    ##   mark saying the same thing, and two constants a tenth of a pixel apart would read
-    ##   as an accident rather than as a distinction.
+    ## Swell comet to this thickness at head, in pixels, tapering to `WIDTH_MARKER` at
+    ## tail.
+    ##   Thicker than `WIDTH_MARKER`, whole of how it reads: weight separates lit part from
+    ## rest, since marker is already pure white with nowhere brighter to go. Tail meets
+    ## line at *exactly* its width, so only head is edge.
+    ##   One width for orientation pulse and drag band alike: same mark saying same thing.
   WIDTH_MARKER* = 1.5'f32
-    ## Set thickness of every marker outline, and of the drag rubber-band beside it, in
-    ## pixels.
-    ##   Thinner than the object it marks (`WIDTH_LINE_OBJECT`), so the marker reads as
-    ##   an annotation drawn over the scene rather than as heavier geometry added to it.
+    ## Set thickness of every marker outline, and of drag rubber-band, in pixels.
+    ##   Thinner than object it marks (`WIDTH_LINE_OBJECT`), so marker reads as annotation
+    ## rather than heavier geometry.
   ALPHA_MARKER_SELECTED* = 0.9'f32
-    ## Draw a selection's own marker this much of full opacity.
-    ##   Short of full: pure white at full strength is the brightest thing this palette
-    ##   can produce, brighter than any object it surrounds, which inverts the emphasis
-    ##   it exists to give. A hair of transparency lets the backdrop through and settles
-    ##   it behind the geometry without weakening the outline.
+    ## Draw selection's marker this much of full opacity.
+    ##   Short of full: pure white at full strength is brighter than any object it
+    ## surrounds, inverting emphasis. Hair of transparency settles it behind geometry.
   ALPHA_MARKER_HOVER* = 0.6'f32
-    ## Draw hover's own marker this much of full opacity.
-    ##   Hover wears the same outline a selection does rather than one of its own, so
-    ##   hovering a line previews exactly the rails selecting it would draw; weight is
-    ##   what tells the two apart, and it is the only thing that does.
+    ## Draw hover's marker this much of full opacity.
+    ##   Hover wears same outline selection does, so hovering line previews exactly rails
+    ## selecting it would draw; weight alone tells two apart.
   SEGMENTS_MARKER_LOOP* = 64
-    ## Cut a plane's own marker circle into this many pieces before projecting.
-    ##   Fewer than the rim's own `SEGMENTS_CIRCLE_HORIZON`: the rim is scene geometry
-    ##   drawn at any size, while this is a thin overlay whose polygon corners fall below
-    ##   a pixel well before they are visible.
+    ## Cut plane's marker circle into this many pieces before projecting.
+    ##   Fewer than rim's `SEGMENTS_CIRCLE_HORIZON`: thin overlay whose corners fall below
+    ## pixel well before visible.
 
 const
   SEGMENTS_MARKER_RAILS* = 4
-    ## Bound how many segments a line's own rails come to: one each side, each cut into
-    ## the two halves `tessellate.addLine` draws the line itself as.
+    ## Bound how many segments line's rails come to: one each side, each cut into two
+    ## halves `tessellate.addLine` draws line as.
   RADIUS_MARKER_POINT* = 0.5*float(SIZE_POINT) + GAP_MARKER
-    ## Place a point's own ring this far from the point, in pixels.
+    ## Place point's ring this far from point, in pixels.
   OFFSET_MARKER_RAIL* = 0.5*float(WIDTH_LINE_OBJECT) + GAP_MARKER
-    ## Place each of a line's own rails this far from the line, in pixels -- **exactly,
-    ## everywhere along it, at every orientation and distance**, because the offset is
-    ## applied in screen space rather than as a world step. See `markerRails`.
-    ##   A world offset was the first design and read well in the common case: parallel
-    ## lines share a vanishing point, so rails offset in world space converge on the same
-    ## one the line runs to. What it cost was the *rate* of that convergence, which is
-    ## perspective's and not the reader's to choose -- and along the half of a line whose
-    ## far point lies behind the eye it is not convergence at all but a flare. Measured on
-    ## the demo's own `a ∧ b`, gap from the support out to each drawn end:
+    ## Place each of line's rails this far from line, in pixels -- **exactly, everywhere
+    ## along it, at every orientation and distance**, since offset is applied in screen
+    ## space rather than as world step. See `markerRails`.
+    ##   World offset read well in common case -- parallel lines share vanishing point --
+    ## but *rate* of convergence was perspective's, and along half whose far point lies
+    ## behind eye it was flare, not convergence. Measured on demo's `a ∧ b`, gap from
+    ## support out to each drawn end:
     ##
-    ##   | camera (azimuth, elevation, distance) | one half | the other |
+    ##   | camera (azimuth, elevation, distance) | one half | other half |
     ##   |---|---|---|
     ##   | 0.6, 0.2, 19 | 14.8 → 12.9 px | 14.8 → 16.5 px |
     ##   | 1.6, 0.9, 19 | 14.7 → **23.7 px** | 14.7 → 7.9 px |
     ##   | 2.4, 0.4, 30 | 14.5 → **45.6 px** | 14.5 → 0 px |
     ##
-    ##   Against a stated pair separation of `2*OFFSET_MARKER_RAIL` = 14.5 px, that is a
-    ## flare to three times the gap over 333 px of rail. Re-measured at the same five
-    ## cameras once the offset moved into screen space, every flat half reads **14.5 px at
-    ## every sample** -- exactly, since a screen offset carries none of the tilt a world
-    ## step out of the projection plane did -- and the converging halves still close on
-    ## their own vanishing point.
-    ##   A ceiling on the gap *at the support* was tried against that and is gone: it left
-    ## the flare along a half untouched, and the table that justified it swept only camera
-    ## distance at one orientation, which is the one axis the flare does not lie along.
+    ##   Against stated separation `2*OFFSET_MARKER_RAIL` = 14.5 px, flare to three times
+    ## gap over 333 px of rail. Re-measured with screen offset, every flat half reads
+    ## **14.5 px at every sample**, and converging halves still close on vanishing point.
+    ##   Ceiling on gap *at support* was tried and is gone: it left flare along half
+    ## untouched.
   PASSES_MARKER_RAIL* = 4
-    ## Times to settle a line's rails toward the gap they are allowed to read.
-    ##   Each pass narrows the offset by exactly the factor the last reading was over by,
-    ## which would land it in one were the drawn extent fixed -- but narrowing the pair
-    ## moves where each rail leaves the viewport, so the extent shifts under the answer.
-    ## Measured on the suite's own fixture over a 45-camera sweep: one pass leaves 15.2 px
-    ## against a ceiling of 14.5, and two settle every camera in it exactly. Four rather
-    ## than two because the loop stops the moment a reading is inside the ceiling, so the
-    ## two it does not need cost nothing and are there for the orientations the sweep does
-    ## not name.
+    ## Times to settle line's rails toward gap they may read.
+    ##   Each pass narrows offset by factor last reading was over by; narrowing moves where
+    ## each rail leaves viewport, so extent shifts under answer. Measured over 45-camera
+    ## sweep: one pass leaves 15.2 px against ceiling of 14.5, two settle every camera
+    ## exactly. Four because loop stops when reading is inside ceiling, so spare passes
+    ## cost nothing.
   CLEARANCE_MARKER_TOUCH* = 54.5
-    ## Push every marker outward by up to this many pixels partway through a **touch**
-    ## hold, settling back to its true size as the hold completes.
-    ##   A fingertip covers what it presses, so a marker that fills underneath one says
-    ##   nothing to the person filling it -- the whole point of drawing a hold's progress
-    ##   is lost to the hand doing it. Sized from the far end: a point's ring should reach
-    ##   a **130-pixel diameter** at the peak, which is 65 of radius less
-    ##   `RADIUS_MARKER_POINT`'s own 10.5. That is about twice a thumb's contact patch, so
-    ##   the halo stands outside the hand rather than at its edge.
-    ##   Was 24, sized against a 44-pixel *minimum* touch target and reported as clearing a
-    ##   fingertip. It did not: the measurement compared framebuffer pixels against a
-    ##   CSS-pixel target, and the answer came back from a real thumb rather than from the
-    ##   suite. Both units now mean the same thing -- see `glue.js`'s own note on the two
-    ##   layers -- so this number is what a reader actually sees.
-    ##   Added in pixels rather than multiplied, so it means one thing on a point's 10.5-px
-    ##   ring and on a plane's rim hundreds of pixels across; each shape converts it into
-    ##   its own units. Mouse gestures never see it -- a cursor hides nothing.
+    ## Push every marker outward by up to this many pixels partway through **touch** hold,
+    ## settling back as hold completes.
+    ##   Fingertip covers what it presses, so marker filling underneath says nothing to
+    ## person filling it. Sized from far end: point's ring reaches **130-pixel diameter**
+    ## at peak, about twice thumb's contact patch.
+    ##   Was 24, sized against 44-pixel *minimum* touch target: measurement compared
+    ## framebuffer pixels against CSS-pixel target. Both units now mean same thing -- see
+    ## `glue.js` on two layers.
+    ##   Added in pixels rather than multiplied, so it means one thing on 10.5-px ring and
+    ## on rim hundreds of pixels across. Mouse never sees it: cursor hides nothing.
   SEGMENTS_MARKER_BANDS* = 48
-    ## Cut each of a horizon line's own two flanking circles into this many pieces.
-    ##   Fewer than the `SEGMENTS_CIRCLE_HORIZON` the drawn great circle uses, for the
-    ##   reason `SEGMENTS_MARKER_LOOP` gives: this is a thin overlay, not scene geometry.
+    ## Cut each of horizon line's two flanking circles into this many pieces.
+    ##   Fewer than `SEGMENTS_CIRCLE_HORIZON`, for reason `SEGMENTS_MARKER_LOOP` gives.
   POINTS_MARKER_BAND* = SEGMENTS_MARKER_BANDS + 2
-    ## Bound the points one band is drawn through, its sampling and its cut ends together.
-    ##   Two past the sampling: a band the edge of the view cuts carries the crossing point
-    ##   at each of its two ends, which is where its outline actually stops.
+    ## Bound points one band is drawn through, sampling and cut ends together.
+    ##   Two past sampling: band edge of view cuts carries crossing point at each end.
   SEGMENTS_MARKER_FRAME* = 64
-    ## Cut a horizon plane's own boundary into this many even angular steps, before the
-    ## four corner directions are merged in.
-    ##   A multiple of four, so the four edge midpoints -- the first places the expanding
-    ##   circle meets the screen -- are sampled exactly rather than straddled. The rest of
-    ##   `SEGMENTS_MARKER_LOOP`'s reasoning applies unchanged: a thin overlay, not scene
-    ##   geometry, whose polygon corners fall below a pixel long before they are visible.
+    ## Cut horizon plane's boundary into this many even angular steps, before four corner
+    ## directions are merged in.
+    ##   Multiple of four, so four edge midpoints -- first places expanding circle meets
+    ## screen -- are sampled exactly rather than straddled.
   CORNERS_MARKER_FRAME* = 4
-    ## Sample this many corner directions on top of the even steps above.
-    ##   A rectangle has four, and they are the one place an even sampling cannot be
-    ##   trusted to land: a corner missed by a fraction of a step is a corner visibly cut
-    ##   off the finished frame. Points on a straight edge lie *on* that edge by
-    ##   construction, so nothing else needs extra sampling.
+    ## Sample this many corner directions on top of even steps.
+    ##   Corner missed by fraction of step is corner visibly cut off finished frame.
+    ## Points on straight edge lie *on* it by construction.
   SEGMENTS_MARKER_PULSE* = 16
-    ## Cut the travelling pulse's spine into this many points.
-    ##   Enough for the run to bend with a curved outline it is riding; it is a short arc,
-    ##   not a shape of its own, and it lies on points already sampled from the outline
-    ##   rather than on a curve of its own. Doubled from eight when the run gained a taper:
-    ##   the width now changes from point to point, so a coarse spine reads as a run of
-    ##   steps rather than as a thinning, and the run itself covers more of the outline.
+    ## Cut travelling pulse's spine into this many points.
+    ##   Enough for run to bend with curved outline. Doubled from eight when run gained
+    ## taper: coarse spine reads as steps rather than thinning.
   SEGMENTS_MARKER_CAP* = 3
-    ## Round the pulse's head with this many points between its two sides.
-    ##   The head is the one end that is an edge, and a flat cut across the outline at
-    ##   `WIDTH_MARKER_COMET` reads as the run having been chopped. Three points is enough
-    ##   at that width for the cap to read as round rather than as a bevel; the tail needs
-    ##   none, because it ends at the outline's own width and merges into it.
+    ## Round pulse's head with this many points between its two sides.
+    ##   Head is one end that is edge, and flat cut at `WIDTH_MARKER_COMET` reads as run
+    ## chopped. Tail needs none: it ends at outline's own width.
   POINTS_MARKER_PULSE* = 2*SEGMENTS_MARKER_PULSE + SEGMENTS_MARKER_CAP
-    ## Bound the points in one run's finished outline: both sides of the spine, plus the
-    ## head's cap.
+    ## Bound points in one run's finished outline: both sides of spine, plus head's cap.
   SEGMENTS_MARKER_OUTLINE* = SEGMENTS_MARKER_LOOP
-    ## Bound the segments of any outline a pulse may be laid along.
-    ##   A plane's loop is the longest of them; a horizon line's bands are shorter and a
-    ## rail is a single segment. Sized here rather than per kind because `samplePulse`
-    ## measures whatever it is handed, and the assertion below is what keeps that true.
+    ## Bound segments of any outline pulse may be laid along.
+    ##   Plane's loop is longest. Sized here because `samplePulse` measures whatever it is
+    ## handed; assertion below keeps that true.
   RUNS_MARKER_PULSE* = 2
     ## Bound how many separate runs one marker's pulse comes in.
-    ##   Two, because the shapes drawn in pieces are drawn in two of them: a line's pair of
-    ##   rails, and a horizon line's pair of bands. Both pieces have to pulse, or the one
-    ##   that stays still reads as the marker having broken rather than as one signal.
-    ##   Was four, when each rail's two halves pulsed separately -- so a selected line wore
-    ##   four comets at four unrelated places, which reads as four signals rather than as
-    ##   one line with a direction. A rail's halves are now walked as one path.
+    ##   Two, because shapes drawn in pieces are drawn in two: line's pair of rails,
+    ## horizon line's pair of bands. Both pieces pulse, or still one reads as broken.
+    ##   Was four, when each rail's halves pulsed separately -- four comets at four
+    ## unrelated places. Rail's halves are walked as one path.
   LENGTH_MARKER_COMET* = 64.0
-    ## Light this much of a line into its head, in pixels, measured back from the point the
-    ## head sits at.
-    ##   **Pixels rather than a share of whatever it runs along**, and that is the whole
-    ##   point of the number. A share makes the mark's size a property of the thing it
-    ##   annotates: the drag band's head would grow as the drag went further, and the
-    ##   orientation pulse came out 96 px along a line's rail against 334 px round a
-    ##   plane's circle seen close up -- a compact comet on one shape and a long gradient
-    ##   on another, from one constant. Both were measured before this was a length.
-    ##   A line shorter than this lights all of itself; see `FRACTION_MARKER_PULSE`.
+    ## Light this much of line into head, in pixels, measured back from head.
+    ##   **Pixels rather than share of what it runs along.** Share made mark's size
+    ## property of thing it annotates: 96 px along rail against 334 px round plane's circle
+    ## seen close, from one constant.
+    ##   Line shorter than this lights all of itself; see `FRACTION_MARKER_PULSE`.
   FRACTION_MARKER_PULSE* = 0.35
-    ## Never let the pulse cover more than this much of the outline it rides, whatever
-    ## `LENGTH_MARKER_COMET` asks for.
-    ##   A cap, not the size: on a marker smaller than the run, a fixed length would light
-    ##   most of the outline and leave nothing plain for the lit part to be read against,
-    ##   and a run that laps its own tail states no direction at all. Around a third leaves
-    ##   two thirds of the outline plain, which is enough for the head to be found.
+    ## Never let pulse cover more than this much of outline it rides.
+    ##   Cap, not size: on marker smaller than run, fixed length lights most of outline
+    ## with nothing plain to read against, and run lapping own tail states no direction.
   FALLOFF_MARKER_COMET* = 1.2
-    ## Thin a comet down its own tail on this power of the distance from the head.
-    ##   Above 1, so the run loses width slowly near the head and quickly at the tail,
-    ##   which is what makes the head read as the front rather than the run reading as a
-    ##   bar. Chosen against 1.6 and 2.4: the sharper two put nearly all the width in the
-    ##   first fifth of the run, leaving the rest indistinguishable from the line under it
-    ##   and the run itself looking shorter than it is.
+    ## Thin comet down its tail on this power of distance from head.
+    ##   Above 1, so run loses width slowly near head and quickly at tail, making head read
+    ## as front. Against 1.6 and 2.4: sharper two put nearly all width in first fifth.
   SPEED_MARKER_PULSE* = 60.0
-    ## Carry the pulse along its outline at this many pixels a second.
-    ##   **A speed, not a lap time**, for the reason the run is a length and not a share:
-    ##   one lap per fixed time makes how fast the mark *moves* a property of the outline
-    ##   it rides. Measured, at the 4.8 s lap this replaces: 156 px/s along a line's rail
-    ##   against 348 px/s round a plane's circle seen close up, so the same signal read as
-    ##   a drift on one shape and a scurry on another.
-    ##   Sixty is the speed the lap was chosen at -- the specimens it was judged on were
-    ##   about 300 px around, one lap of which in 4.8 s is 62 px/s. Slow enough to read as
-    ##   circulation rather than as a spinner, and slow enough that several selected
-    ##   objects pulsing at once do not add up to a busy screen. Its *direction* is the
-    ##   whole message, and direction needs time to be read.
+    ## Carry pulse along its outline at this many pixels per second.
+    ##   **Speed, not lap time**: one lap per fixed time makes how fast mark *moves*
+    ## property of outline. Measured at 4.8 s lap: 156 px/s along rail against 348 round
+    ## circle seen close, drift on one shape and scurry on another.
+    ##   Sixty is speed lap was chosen at over 300 px specimens. Slow enough to read as
+    ## circulation rather than spinner; *direction* is whole message.
   ANGLE_MARKER_BANDS_OPEN* = 0.5*PI
-    ## Start a horizon line's own bands this far off it, in radians, at zero progress.
-    ##   A quarter turn is the pole of the very sphere the line's great circle runs
-    ##   around: as far from it as the sky goes, and so reliably outside any field of view
-    ##   this camera offers. The bands are single points there and open into rings as they
-    ##   close, which is what makes them read as arriving from outside rather than growing
-    ##   in place -- a line at horizon has no support to grow out from, unlike a finite one.
+    ## Start horizon line's bands this far off it, in radians, at zero progress.
+    ##   Quarter turn is pole of sphere line's great circle runs around, reliably outside
+    ## any field of view. Bands are single points there and open into rings as they close,
+    ## reading as arriving from outside -- horizon line has no support to grow from.
 
 static:
   doAssert GAP_MARKER > 0, &"Marker clearance must be positive; got `{GAP_MARKER}`."
@@ -271,82 +206,70 @@ static:
 #[ Type Definitions ]#
 
 type
-  MarkerKind* {.pure.} = enum ## Name which outline a marker is drawn as.
-    Ring, ## Circle in screen space, for a point.
-    Rails, ## Pair of world-space lines flanking a line, converging as it does.
-    Loop, ## Polyline lying on a plane in world space, projected, for a plane.
-    Bands, ## Pair of circles on the sky flanking a horizon line's own great circle.
-    Frame, ## Boundary around the whole viewport, for the whole sky a horizon plane is:
-      ## a circle while it expands, the viewport's own rectangle once it arrives.
+  MarkerKind* {.pure.} = enum ## Name which outline marker is drawn as.
+    Ring, ## Circle in screen space, for point.
+    Rails, ## Pair of world-space lines flanking line, converging as it does.
+    Loop, ## Polyline lying on plane in world space, projected, for plane.
+    Bands, ## Pair of circles on sky flanking horizon line's great circle.
+    Frame, ## Boundary around whole viewport, for whole sky horizon plane is: circle while
+      ## it expands, viewport's rectangle once it arrives.
 
-  Marker* = object ## Hold one object's marker, ready to draw on the foreground layer.
+  Marker* = object ## Hold one object's marker, ready to draw on foreground layer.
     anchors_pulse*: array[RUNS_MARKER_PULSE, ScreenPosition] ## Where each run below
       ## measured its travel from, in screen space.
-      ##   Reported for the same reason `lap` is: it is a fact about the marker that only
-      ## the shaping knew, and the one that decides whether the comet holds still under
-      ## a moving camera. Without it that property cannot be asserted from outside this
-      ## module, and it going unasserted is precisely how a sliding comet shipped twice.
-    lap*: float ## Distance a pulse on this marker travels before it is back where it
+      ##   Reported as `lap` is: fact about marker only shaping knew, and one deciding
+      ## whether comet holds still under moving camera. Unasserted from outside is how
+      ## sliding comet shipped twice.
+    lap*: float ## Distance pulse on this marker travels before it is back where it
       ## began, in screen pixels; 0 where nothing pulses.
-      ##   Not "the length of the outline": a rail's drawn length is a viewport-clip
-      ## artefact, and a line's two rails are clipped to lengths that have been measured
-      ## hundreds to one apart. What this reports is the stretch both of them lap against,
-      ## which is the shorter -- and reporting it is what lets `selection.PulseClock` reduce
-      ## a travel it cannot measure for itself, since only the shaping knows what this
-      ## marker actually came out as.
+      ##   Not "length of outline": rail's drawn length is viewport-clip artefact, and
+      ## line's two rails are clipped hundreds to one apart. This is stretch both lap
+      ## against, shorter one, which lets `selection.PulseClock` reduce travel it cannot
+      ## measure itself.
     count_run_pulse*: int ## Runs used of `pulses` below; 0 where nothing pulses.
     counts_pulse*: array[RUNS_MARKER_PULSE, int] ## Outline points used of each run.
     pulses*: array[
       RUNS_MARKER_PULSE, array[POINTS_MARKER_PULSE, ScreenPosition]
-    ] ## Short runs travelling along this marker's own outline, in screen space, for the
-      ## render paths to **fill** over it. **Which way they travel is the object's
-      ## orientation** -- the thing a plane's normal shaft used to say, said only about the
-      ## object being asked about rather than about every plane in the scene at once.
-      ## Each run is one closed outline, not a spine: a run tapers from head to tail, and a
-      ## stroke carries one width for its whole length. Shaped here rather than in each
-      ## render path, because a ribbon worked out twice is a ribbon that drifts -- and
-      ## because neither Dear ImGui nor SVG offers a varying-width stroke to hand it to.
-      ## Points rather than a span of indices into the outline, because `Rails` is
-      ## segments while `Loop`, `Bands` and `Frame` are polylines, and an index range would
-      ## leave each render path re-deriving the walk in its own language.
-      ## Common to every kind rather than per-variant: what pulses varies, that a marker
-      ## may pulse does not, and a renderer fills these without asking which kind it has.
+    ] ## Short runs travelling along marker's outline, in screen space, for render paths to
+      ## **fill** over it. **Which way they travel is object's orientation** -- what plane's
+      ## normal shaft used to say, said only about object asked about.
+      ## Each run is one closed outline, not spine: run tapers, and stroke carries one width.
+      ## Shaped here because ribbon worked out twice drifts, and neither Dear ImGui nor SVG
+      ## offers varying-width stroke.
+      ## Points rather than index span into outline, because `Rails` is segments while
+      ## `Loop`, `Bands` and `Frame` are polylines.
+      ## Common to every kind: what pulses varies, that marker may pulse does not.
     case kind*: MarkerKind
     of MarkerKind.Ring:
-      centre*: ScreenPosition ## Where the point itself projects.
+      centre*: ScreenPosition ## Where point itself projects.
       radius*: float ## Ring radius, in pixels.
-      fraction*: float ## How much of the circle to stroke, clockwise from twelve o'clock,
-        ## in 0 .. 1. A whole ring at 1, which is what every finished marker is; less only
-        ## while a hold is filling it. Clockwise and from the top because that is how every
-        ## other progress dial a reader has met is drawn, and this one is read the same way.
+      fraction*: float ## How much of circle to stroke, clockwise from twelve o'clock, in
+        ## 0 .. 1. Whole ring at 1; less only while hold is filling it. Clockwise from top
+        ## because that is how every other progress dial is drawn.
     of MarkerKind.Rails:
       count_segment*: int ## Segments used of `segments` below.
       segments*: array[SEGMENTS_MARKER_RAILS, array[2, ScreenPosition]]
-        ## Endpoints of each drawn piece: one rail each side, each in up to the two
-        ## halves the line itself is drawn as. Fewer where a half was clipped away.
+        ## Endpoints of each drawn piece: one rail each side, each in up to two halves
+        ## line itself is drawn as. Fewer where half was clipped away.
     of MarkerKind.Loop:
       count_point*: int ## Points used of `points` below.
       is_closed*: bool ## Whether last point joins back to first.
-        ## False where part of the circle fell behind the eye and was cut away, leaving
-        ## an arc; a closed loop drawn through a cut would run straight across the view.
+        ## False where part of circle fell behind eye and was cut away; closed loop drawn
+        ## through cut would run straight across view.
       points*: array[SEGMENTS_MARKER_LOOP, ScreenPosition]
-        ## Circle's own points, in order around the plane, already projected.
+        ## Circle's points, in order around plane, already projected.
     of MarkerKind.Bands:
       counts_band*: array[2, int] ## Points used of each band below.
-      are_closed_band*: array[2, bool] ## Whether each band joins back to its own first
-        ## point, false where the eye or the edge of the view cut it into an arc --
-        ## `Loop`'s own rule, twice, and one cut further.
+      are_closed_band*: array[2, bool] ## Whether each band joins back to own first point,
+        ## false where eye or edge of view cut it into arc -- `Loop`'s rule, one cut further.
       points_band*: array[2, array[POINTS_MARKER_BAND, ScreenPosition]]
-        ## Each band's own points, in order around the sky, already projected, and only
-        ## the stretch of it standing inside the viewport.
+        ## Each band's points, in order around sky, projected, only stretch inside viewport.
     of MarkerKind.Frame:
       count_frame*: int ## Points used of `points_frame` below.
       points_frame*: array[
         SEGMENTS_MARKER_FRAME + CORNERS_MARKER_FRAME, ScreenPosition
-      ] ## Boundary's own points, in order around the centre of the view. Screen space
-        ## throughout, and the one marker that is: the sky has no place in the scene to
-        ## surround, so its marker surrounds the view instead. Always closed -- nothing in
-        ## screen space can be cut away by the eye, unlike `Loop` and `Bands`.
+      ] ## Boundary's points, in order around centre of view. Screen space throughout: sky
+        ## has no place in scene to surround, so marker surrounds view. Always closed.
 
 
 
@@ -355,12 +278,10 @@ type
 func lengthOfOutline*(
   points: openArray[ScreenPosition]; count: int; is_closed: bool
 ): float =
-  ## Measure an outline right round, in screen pixels.
-  ##   The primitive `trackAlong` below is built from, and what a caller needs to know how
-  ##   far a pulse may run before it laps. `samplePulse` walks the same points again for its
-  ##   own table of where each segment starts, which is the price of the lap being the
-  ##   caller's to say -- and it has to be, or a line's two rails would each keep their own
-  ##   clock and drift apart.
+  ## Measure outline right round, in screen pixels.
+  ##   Primitive `trackAlong` is built from, and what caller needs for how far pulse may
+  ## run before it laps. `samplePulse` walks same points again for its own table, price
+  ## of lap being caller's to say -- or line's two rails would keep own clocks.
   if count < 2: return
   let last = if is_closed: count else: count - 1
   for i in 0 ..< last:
@@ -368,29 +289,27 @@ func lengthOfOutline*(
     result += hypot(after.x - points[i].x, after.y - points[i].y)
 
 
-type PulseTrack* = object ## Say where a pulse's travel is measured from along one outline,
+type PulseTrack* = object ## Say where pulse's travel is measured from along one outline,
   ## and how far it may run either way before it laps.
-  ##   The whole point of the type is that `origin` names a **view-independent** feature of
-  ## the object -- a line's own support, a circle's own angle zero -- rather than whichever
-  ## point of the outline happened to be emitted first. An outline's first point is a cut:
-  ## a rail's is where it crosses the edge of the window, and a cut ring's is wherever the
-  ## eye plane sliced it. Measuring travel from a cut means the camera decides where the
-  ## comet is, which is the fault this type exists to remove.
-  origin*: int ## Index of the point travel is measured from.
+  ##   `origin` names **view-independent** feature of object -- line's support, circle's
+  ## angle zero -- rather than whichever point was emitted first. Outline's first point is
+  ## cut: rail's is where it crosses window edge, cut ring's wherever eye plane sliced it.
+  ## Measuring from cut lets camera decide where comet is, fault this type removes.
+  origin*: int ## Index of point travel is measured from.
   behind*: float ## Outline available before that point, in pixels.
   ahead*: float ## Outline available after it, in pixels.
 
 
 func lap*(track: PulseTrack): float = track.behind + track.ahead
-  ## Report the distance after which a pulse on this track is back where it started.
+  ## Report distance after which pulse on this track is back where it started.
 
 
 func trackAlong*(
   points: openArray[ScreenPosition]; count: int; is_closed: bool; origin: int = 0
 ): PulseTrack =
-  ## Measure an outline either side of the point travel is anchored at, in screen pixels.
-  ##   A closed outline laps on itself, so all of it lies `ahead` and the origin decides
-  ##   only where lap zero begins; an open one is a cut arc with a genuine before and after.
+  ## Measure outline either side of point travel is anchored at, in screen pixels.
+  ##   Closed outline laps on itself, so all of it lies `ahead` and origin decides only
+  ## where lap zero begins; open one is cut arc with genuine before and after.
   if count < 2 or origin < 0 or origin >= count: return
   result.origin = origin
   if is_closed:
@@ -402,20 +321,16 @@ func trackAlong*(
 
 
 func originAfterCut*(count_ring, start, count_emitted: int; count_before: int = 0): int =
-  ## Say where a ring's own angle-zero point sits in the arc that survived a cut.
-  ##   A cut ring is emitted from `start`, the first point whose predecessor was cut, so
-  ##   emitted index zero is wherever the eye happened to slice it -- a camera's answer, and
-  ##   the same fault a rail's clipped end carries. Angle zero is generated from the
-  ##   object's own frame and is the anchor the pulse must measure from, so this walks it
-  ##   back to where it landed in the emitted run.
-  ##   Falls back to the arc's own start where angle zero is itself behind the eye, which is
-  ##   the one case with no view-independent point left on screen to measure from. The comet
-  ##   is then anchored to the cut for as long as that lasts; there is nothing better, and
-  ##   the alternative is refusing to draw a pulse at all on a plane seen edge on.
-  ##   `count_before` counts points placed ahead of the surviving samples -- a band's own
-  ##   crossing point at the edge it enters through -- which shift every sample one along
-  ##   without being samples themselves. `count_emitted` stays the count of samples, since
-  ##   that is what decides whether angle zero is among them.
+  ## Say where ring's angle-zero point sits in arc that survived cut.
+  ##   Cut ring is emitted from `start`, first point whose predecessor was cut, so emitted
+  ## index zero is wherever eye sliced it -- camera's answer. Angle zero is generated from
+  ## object's own frame and is anchor pulse measures from, so this walks it back.
+  ##   Falls back to arc's start where angle zero is itself behind eye, one case with no
+  ## view-independent point left on screen; comet is anchored to cut for as long as that
+  ## lasts.
+  ##   `count_before` counts points placed ahead of surviving samples -- band's crossing
+  ## point at edge it enters through -- shifting every sample along without being
+  ## samples. `count_emitted` stays count of samples.
   if count_ring <= 0 or count_emitted <= 0: return
   result = (count_ring - start) mod count_ring
   if result >= count_emitted: return 0
@@ -423,37 +338,28 @@ func originAfterCut*(count_ring, start, count_emitted: int; count_before: int = 
 
 
 func shared*(track: PulseTrack; behind, ahead: float): PulseTrack =
-  ## Put a track on extents shared with another piece of the same marker.
-  ##   A line is drawn as two rails, each clipped to the window on its own, so their lengths
-  ##   can differ by hundreds to one. Lapping each against its own would put the two heads
-  ##   at different places along one line, so both take one reach either way.
-  ##   **The shorter of the two**, so neither rail is ever asked for outline it does not
-  ##   have and both always draw their run. Taking the longer instead was tried, on the
-  ##   theory that a rail near the edge of view shrinks the shared lap and makes the comet
-  ##   wrap too often; measured over four orbit rates it changed nothing at all, so the
-  ##   theory was wrong and the simpler rule stands.
+  ## Put track on extents shared with another piece of same marker.
+  ##   Line's two rails are clipped to window on own, lengths differing hundreds to one;
+  ## lapping each against own puts two heads at different places, so both take one reach.
+  ##   **Shorter of two**, so neither rail is asked for outline it lacks. Longer was tried
+  ## on theory that rail near edge shrinks shared lap; measured over four orbit rates it
+  ## changed nothing.
   PulseTrack(
     origin: track.origin, behind: min(track.behind, behind), ahead: min(track.ahead, ahead)
   )
 
 
 func travelAdvanced*(travelled, lap, seconds: float): float =
-  ## Carry a pulse's travel forward by `seconds`, reduced into a lap `lap` pixels long.
-  ##   **An advance, not a position, and a step in pixels rather than in laps.** Two faults
-  ##   were fixed here in turn and the second is why this counts pixels:
-  ##   a position read straight off the clock is `frac(now·speed ÷ around)`, whose answer a
-  ##   one-percent change in the outline's length throws most of a lap -- measured at a
-  ##   median **11.15 px a frame against the 1.0 it should be** while orbiting; and a
-  ##   carried *fraction* still had to be multiplied back by a view-dependent length to
-  ##   become a place, which slid the head under the camera for a second time.
-  ##   `seconds*SPEED_MARKER_PULSE` mentions no camera quantity at all, so the screen pace
-  ##   is exact by construction. `lap` enters only the reduction.
-  ##   **Reducing every step, rather than letting the travel accumulate**, is what keeps
-  ##   this from being the first fault again: an unbounded travel taken modulo the lap
-  ##   amplifies a change in that lap by however many laps have gone by, where a travel
-  ##   already below one lap amplifies it by exactly one.
-  ##   Unchanged for an outline of no length, which has nowhere to travel.
-  ##   `selection.PulseClock` owns the travel this returns; nothing else may.
+  ## Carry pulse's travel forward by `seconds`, reduced into lap `lap` pixels long.
+  ##   **Advance, not position, and step in pixels rather than laps.** Position read off
+  ## clock, `frac(now·speed ÷ around)`, is thrown most of lap by one-percent change in
+  ## outline length -- measured 11.15 px per frame against 1.0 while orbiting; carried
+  ## *fraction* still had to be multiplied by view-dependent length, sliding head again.
+  ## `seconds*SPEED_MARKER_PULSE` mentions no camera quantity, so screen pace is exact.
+  ##   **Reducing every step** keeps this from being first fault again: unbounded travel
+  ## modulo lap amplifies change in lap by laps gone by; travel below one lap by one.
+  ##   Unchanged for outline of no length. `selection.PulseClock` owns travel this
+  ## returns.
   if lap <= 0.0: return travelled
   let carried = travelled + seconds*SPEED_MARKER_PULSE
   carried - floor(carried/lap)*lap
@@ -463,15 +369,15 @@ func ribbonAlong(
   spine: openArray[ScreenPosition]; count: int; width_head, width_tail: float;
   outline: var openArray[ScreenPosition]
 ): int =
-  ## Wrap `count` points of a run's spine in one closed outline, tapering from
-  ## `width_head` at `spine[0]` to `width_tail` at its last point, and report how many
-  ## points of `outline` were filled.
-  ##   A ribbon rather than a stroke because the width changes along the run, and no stroke
-  ##   either render path offers does that. Shaped once here for both of them.
-  ##   The taper is spread over whatever length the run actually came out at, so a run cut
-  ##   short by the end of an arc is a shorter comet rather than the front half of one.
-  ##   Each point's normal comes from its own neighbours on the spine, not from a second
-  ##   sample a guessed step away, which at either end would fall off the run entirely.
+  ## Wrap `count` points of run's spine in one closed outline, tapering from `width_head`
+  ## at `spine[0]` to `width_tail` at last point; report how many points of `outline`
+  ## were filled.
+  ##   Ribbon rather than stroke because width changes along run, and no stroke either
+  ## render path offers does that.
+  ##   Taper is spread over whatever length run came out at, so run cut short is shorter
+  ## comet rather than front half of one.
+  ##   Each point's normal comes from own neighbours on spine, not second sample guessed
+  ## step away, which at either end falls off run.
   if count < 2 or outline.len < 2*count + SEGMENTS_MARKER_CAP: return
   var
     normal_x = 0.0
@@ -489,8 +395,8 @@ func ribbonAlong(
     let
       falling = pow(1.0 - float(i)/float(count - 1), FALLOFF_MARKER_COMET)
       half = 0.5*(width_tail + (width_head - width_tail)*falling)
-    # Both sides at once, the far one filled from the back so the outline closes as one
-    #   loop rather than crossing itself at the tail.
+    # Fill both sides at once, far one from back, so outline closes as one loop rather
+    #   than crossing itself at tail.
     outline[i] = ScreenPosition(
       x: spine[i].x + normal_x*half, y: spine[i].y + normal_y*half, depth: spine[i].depth,
     )
@@ -499,7 +405,7 @@ func ribbonAlong(
     )
   result = 2*count
 
-  # Round the head, sweeping from its far side through straight ahead to its near one.
+  # Round head, sweeping from far side through straight ahead to near one.
   let
     dx = spine[0].x - spine[1].x
     dy = spine[0].y - spine[1].y
@@ -511,8 +417,7 @@ func ribbonAlong(
     forward_x = dx/ahead
     forward_y = dy/ahead
   let half_head = 0.5*width_head
-  # The head normal, which the loop above left behind at `i` of `count - 1`, recovered from
-  #   the outline's own first point rather than kept in a variable across the whole walk.
+  # Recover head normal from outline's first point rather than variable kept across walk.
   let
     head_x = (outline[0].x - spine[0].x)/half_head
     head_y = (outline[0].y - spine[0].y)/half_head
@@ -532,35 +437,24 @@ func samplePulse(
   points: openArray[ScreenPosition]; count: int; is_closed: bool; track: PulseTrack;
   travelled: float; run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
 ): int =
-  ## Lay a pulse along `count` points of an outline, `travelled` pixels from `track`'s own
-  ## anchor, filling `run` and reporting how many of it were used.
-  ##   Walks the stored order, which is the whole mechanism: a plane's loop is generated
-  ##   around its own frame, so *the projection decides* whether that order comes out
-  ##   clockwise or anticlockwise on screen, and the pulse reverses of its own accord as
-  ##   the camera crosses the plane. Nothing here computes a sense; it inherits one.
-  ##   The run trails *behind* the leading point, so the outline it has just covered is
-  ##   what is lit -- a head with a tail reads as travel, where an even band reads as a
-  ##   gap in the outline.
-  ##   **Measured from `track.origin`, not from the outline's first point.** The first point
-  ##   is wherever this outline happened to be cut -- the edge of the window for a rail, the
-  ##   eye plane for a sliced ring -- so measuring from it hands the camera the comet's
-  ##   position. The anchor is a feature of the object instead, and this is the whole of the
-  ##   fix; see `PulseTrack`.
-  ##   **The head wraps and the tail clamps.** Wrapping the tail too would put spine points
-  ##   at both ends of an open arc, and `ribbonAlong` joins consecutive points, so the mark
-  ##   would draw a chord straight across the view -- the very thing an arc's own cut-start
-  ##   rule exists to prevent. Clamping shortens the run to nothing as the head crosses the
-  ##   wrap and grows it back over the next `LENGTH_MARKER_COMET`, which reads as a comet
-  ##   leaving one edge and re-entering at the other.
-  ##   Reports 0 where too little of it survives to draw.
-  ##   Walked **by pixels along the outline, not by index into it**. Stepping by index
-  ##   would make the run's length a share of the outline -- so a plane's circle seen close
-  ##   up would wear a long gradient where a line's rail wore a compact comet -- and would
-  ##   stretch it further wherever perspective bunches the points, which is on the far side
-  ##   of every tilted circle.
+  ## Lay pulse along `count` points of outline, `travelled` pixels from `track`'s anchor,
+  ## filling `run` and reporting how many of it were used.
+  ##   Walks stored order, whole mechanism: plane's loop is generated around own frame, so
+  ## *projection decides* whether order comes out clockwise on screen, and pulse reverses
+  ## of own accord as camera crosses plane. Nothing here computes sense.
+  ##   Run trails *behind* leading point, so outline it just covered is lit -- head with
+  ## tail reads as travel, even band as gap.
+  ##   **Measured from `track.origin`, not outline's first point**; see `PulseTrack`.
+  ##   **Head wraps and tail clamps.** Wrapping tail too puts spine points at both ends of
+  ## open arc, and `ribbonAlong` joins consecutive points, drawing chord across view.
+  ## Clamping shortens run to nothing as head crosses wrap and grows it back, reading as
+  ## comet leaving one edge and re-entering at other.
+  ##   Reports 0 where too little survives to draw.
+  ##   Walked **by pixels along outline, not by index**: stepping by index makes run's
+  ## length share of outline, stretched wherever perspective bunches points.
   if count < 2 or count > SEGMENTS_MARKER_OUTLINE: return
 
-  # Where each segment starts, measured along the outline, with the whole length last.
+  # Tabulate where each segment starts, measured along outline, whole length last.
   var starts: array[SEGMENTS_MARKER_OUTLINE + 1, float]
   let last = if is_closed: count else: count - 1
   for i in 0 ..< last:
@@ -569,9 +463,8 @@ func samplePulse(
   let total = starts[last]
   if total <= 0.0: return
 
-  # The stretch actually available to travel on, which is the track's rather than the whole
-  #   outline's: a ring the eye has cut carries a near-plane segment of enormous projected
-  #   length, and sizing the run against that would light almost none of what is on screen.
+  # Size run against track's stretch, not whole outline: ring eye has cut carries
+  #   near-plane segment of enormous projected length.
   let window = track.lap
   if window <= 0.0 or track.origin < 0 or track.origin >= count: return
   let
@@ -582,7 +475,7 @@ func samplePulse(
   for i in 0 ..< SEGMENTS_MARKER_PULSE:
     var along = head - reach*(float(i)/float(SEGMENTS_MARKER_PULSE - 1))
     if is_closed: along = along - floor(along/total)*total
-    # `along` only decreases, so nothing behind a sample off the run can be back on it.
+    # Stop at first sample off run: `along` only decreases.
     elif along < begin or along > total: break
     var segment = last - 1
     for j in 0 ..< last:
@@ -601,10 +494,9 @@ func addPulse(
   marker: var Marker; points: openArray[ScreenPosition]; count: int; is_closed: bool;
   track: PulseTrack; travelled: float
 ) =
-  ## Add one run of the pulse to `marker`, taken along `count` points of one outline.
-  ##   Silently adds nothing where the run came out too short to draw or where the marker
-  ##   already holds every run it has room for -- both are "there is no more to say here",
-  ##   not failures a caller could act on.
+  ## Add one run of pulse to `marker`, taken along `count` points of one outline.
+  ##   Silently adds nothing where run came out too short or marker holds every run it
+  ## has room for -- "no more to say here", not failures.
   if marker.count_run_pulse >= RUNS_MARKER_PULSE: return
   var spine: array[SEGMENTS_MARKER_PULSE, ScreenPosition]
   let sampled = samplePulse(points, count, is_closed, track, travelled, spine)
@@ -625,24 +517,19 @@ func addPulse(
 func cometFor*(
   tail, head: ScreenPosition
 ): Option[array[POINTS_MARKER_PULSE, ScreenPosition]] =
-  ## Shape the head of the drag band running `tail` -> `head` as a closed outline, in
-  ## screen pixels, for a render path to fill over the band itself.
-  ##   A drag is not symmetric: `a ∨ b` and `b ∨ a` are different operations, and a bare
-  ##   line between two objects draws identically for either. The head is what says which
-  ##   way round the pair is being taken, at the end where the answer lands.
-  ##   The band swelling into its own last stretch rather than a barbed head sitting at the
-  ##   end of it: the same shape the orientation pulse wears, through the same
-  ##   `ribbonAlong`, so a reader meets one vocabulary for direction instead of two.
-  ##   None where the two coincide, which has no direction to point in. That is an
-  ##   ordinary moment in a drag -- the cursor resting on its own source -- rather than an
-  ##   error, so it draws nothing and the band, itself zero length, draws nothing either.
+  ## Shape head of drag band running `tail` -> `head` as closed outline, in screen
+  ## pixels, for render path to fill over band.
+  ##   Drag is not symmetric: `a ∨ b` and `b ∨ a` differ, and bare line draws identically
+  ## for either. Head says which way round pair is taken, at end where answer lands.
+  ##   Band swelling into own last stretch, same shape orientation pulse wears through
+  ## same `ribbonAlong`, so reader meets one vocabulary for direction.
+  ##   None where two coincide -- cursor resting on own source, ordinary moment.
   let
     dx = head.x - tail.x
     dy = head.y - tail.y
     length = hypot(dx, dy)
   if length <= 0.0: return
-  # A band shorter than the comet lights all of itself rather than reaching past its own
-  #   source, which would leave the head hanging off the object the drag started on.
+  # Light all of band shorter than comet, rather than reaching past its source.
   let reach = min(LENGTH_MARKER_COMET, length)
   var spine: array[SEGMENTS_MARKER_PULSE, ScreenPosition]
   for i in 0 ..< SEGMENTS_MARKER_PULSE:
@@ -662,14 +549,11 @@ func cometFor*(
 #[ Touch Clearance ]#
 
 func clearanceTouch*(swell: float; is_touch: bool): float =
-  ## Measure how far outward to push a marker, in pixels, at this much of a swell.
-  ##   A plain scaling of `CLEARANCE_MARKER_TOUCH`, because the *shape* of the swell is
-  ##   the caller's to say -- `interaction.swellHold` runs it through four phases, of
-  ##   which only two have anything to do with how far the hold has filled. This was a
-  ##   half sine over the fill, which meant the marker was back to its true size at exactly
-  ##   the moment the selection landed: shrinking while the reader was still deciding.
-  ##   Zero throughout for a mouse: a cursor hides nothing, and swelling under one would
-  ##   be motion with nothing to say.
+  ## Measure how far outward to push marker, in pixels, at this much of swell.
+  ##   Plain scaling of `CLEARANCE_MARKER_TOUCH`; *shape* of swell is caller's
+  ## (`interaction.swellHold`, four phases). Half sine over fill had marker back to true
+  ## size exactly as selection landed.
+  ##   Zero for mouse: cursor hides nothing.
   if not is_touch: return 0.0
   CLEARANCE_MARKER_TOUCH*clamp(swell, 0.0, 1.0)
 
@@ -681,16 +565,12 @@ func markerRing(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
   progress, clearance: float; marker: var Marker
 ): bool =
-  ## Build a point's own ring, about wherever that point is drawn.
-  ##   Fills the caller's `marker` and reports whether one was shaped -- the shape the
-  ##   whole family takes; see `markerFor` for why it is not a returned `Option[Marker]`.
-  ##   Screen-space rather than a world-space circle facing the camera, because a point
-  ##   has no orientation to echo: any world circle would have to pick a facing, and
-  ##   every choice looks the same from the one angle it is seen from anyway.
-  ##   `progress` sweeps the ring rather than growing it: a point is drawn at one fixed
-  ##   size, so a ring that grew outward would read as the point itself swelling, and one
-  ##   that grew inward would collide with it. A sweep leaves the geometry alone and says
-  ##   the one thing a hold needs to say, which is how much of it is left.
+  ## Build point's ring, about wherever that point is drawn.
+  ##   Fills caller's `marker` and reports whether one was shaped; see `markerFor`.
+  ##   Screen-space rather than world circle facing camera: point has no orientation to
+  ## echo, and every facing looks same from one angle it is seen from.
+  ##   `progress` sweeps ring rather than growing it: point is drawn at fixed size, so
+  ## ring growing outward reads as point swelling, inward collides with it.
   let anchor = anchorFor(geometry, scale)
   if anchor.isNone: return
   let centre = projectToScreen(view_projection, width, height, anchor.get)
@@ -703,42 +583,33 @@ func markerRing(
 
 
 func offsetMarkerRail(anchor: Position; scale: DrawExtent; clearance: float = 0.0): float =
-  ## Size how far to each side of a line its rails stand, in world units.
-  ##   A *world* offset, so the two rails are lines genuinely parallel to the one they
-  ##   flank: they share its vanishing points, converge on them exactly as it does, and
-  ##   each is one straight line rather than something assembled per half. A screen offset
-  ##   was tried instead and bought a flat gap at the price of a bend where a rail's own
-  ##   halves met -- see `markerRails`.
-  ##   What it reads as in pixels is `OFFSET_MARKER_RAIL` at the support and less further
-  ##   off, and how much less is perspective's to say. Which is why the caller does not
-  ##   take this figure as final: see `apartWidest`.
-  ##   `clearance` widens the pair by that many further pixels, for a touch hold.
+  ## Size how far to each side of line its rails stand, in world units.
+  ##   *World* offset, so rails are lines genuinely parallel to one they flank, sharing
+  ## its vanishing points, each one straight line. Screen offset bought flat gap at price
+  ## of bend where rail's halves met -- see `markerRails`.
+  ##   Reads as `OFFSET_MARKER_RAIL` pixels at support and less further off; caller does
+  ## not take figure as final, see `apartWidest`.
+  ##   `clearance` widens pair by that many further pixels, for touch hold.
   (OFFSET_MARKER_RAIL + clearance)*worldPerPixelAt(anchor, scale)
 
 
 func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
-  ## Resolve which way to step off a line so its rails land either side of it on screen.
-  ##   Joining the line with the eye gives the one plane containing both; that plane's
-  ##   own normal is perpendicular to the line and to every sight ray reaching it, which
-  ##   is exactly the direction that shows as sideways from where the camera stands.
-  ##   Perpendicular to the sight ray reaching the line rather than to the camera's own
-  ##   axis, so the rails straddle the very plane the line's screen projection is: the
-  ##   pair reads symmetric about it from any angle. The cost is that the step tilts a
-  ##   hair out of the plane perspective divides by, leaving the stated gap a fraction
-  ##   of a percent wide -- well under a pixel.
-  ##   None where the eye lies on the line itself, which has no such plane -- and no
-  ##   side to flank from, since the line is then edge-on to a viewer inside it.
+  ## Resolve which way to step off line so rails land either side on screen.
+  ##   Join of line with eye is one plane containing both; its normal is perpendicular to
+  ## line and to every sight ray reaching it -- direction that shows as sideways.
+  ##   Perpendicular to sight ray reaching line rather than camera's axis, so rails
+  ## straddle plane line's projection is, symmetric from any angle. Cost is step tilting
+  ## hair out of plane perspective divides by -- under pixel.
+  ##   None where eye lies on line itself, edge-on with no side to flank.
   directionNormal(geometry ∧ toMultivector(eye))
 
 
 func awayFromScreen*(point, first, second: ScreenPosition): float =
-  ## Perpendicular distance from a screen point to the infinite line through two others.
-  ##   The gap at that point, when the two others are the line's own projection: a
-  ##   straight world line projects to a straight screen line, so its distance is defined
-  ##   wherever the rail's endpoint happens to have been cut to. **Never the distance
-  ##   between the two rails' own drawn endpoints** -- `fractionLeavingView` cuts each at
-  ##   its own fraction, so those are not at the same place along the line and the
-  ##   distance between them measures nothing.
+  ## Measure perpendicular distance from screen point to infinite line through two others.
+  ##   Gap at that point, when two others are line's projection: straight world line
+  ## projects to straight screen line. **Never distance between two rails' drawn
+  ## endpoints** -- `fractionLeavingView` cuts each at own fraction, so those measure
+  ## nothing.
   let (dx, dy) = (second.x - first.x, second.y - first.y)
   let length = hypot(dx, dy)
   if length <= 0.0: return hypot(point.x - first.x, point.y - first.y)
@@ -746,22 +617,17 @@ func awayFromScreen*(point, first, second: ScreenPosition): float =
 
 
 func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float =
-  ## Say how far along `tail` -> `head` the segment is still inside the viewport, as a
-  ## fraction in 0 .. 1, taking 1 where it ends inside.
-  ##   What a growing marker should measure itself against. A rail runs to one of its
-  ##   line's vanishing points, which is *not* a screen distance in any useful sense --
-  ##   measured on the demo's own `L = a ^ b`, one half's projected length came to
-  ##   1,140,706 pixels and the other's to 3,634, a ratio of 314. Growing each by a
-  ##   fraction of its own length made one half finish 314 times sooner than the other,
-  ##   and put both wholly off a 900-pixel screen within the first percent of the hold.
-  ##   Bounding the reach at the edge of the view fixes both at once: the two halves come
-  ##   out comparable because the viewport bounds them, and the whole growth is visible
-  ##   because none of it happens past the edge.
-  ##   Zero where the segment is heading away from a viewport it already left, which draws
-  ##   nothing -- correct, since none of it could be seen.
+  ## Say how far along `tail` -> `head` segment is still inside viewport, as fraction in
+  ## 0 .. 1, taking 1 where it ends inside.
+  ##   What growing marker measures itself against. Rail runs to vanishing point, not
+  ## useful screen distance: on demo's `L = a ^ b` one half's projected length came to
+  ## 1,140,706 pixels and other's to 3,634, ratio of 314, so growing each by fraction of
+  ## own length finished one 314 times sooner and put both off screen in first percent.
+  ## Bounding reach at edge makes halves comparable and whole growth visible.
+  ##   Zero where segment heads away from viewport it already left.
   result = 1.0
   let (dx, dy) = (head.x - tail.x, head.y - tail.y)
-  # Each edge bounds the parameter only when the segment is crossing it *outward*.
+  # Bound parameter at each edge only where segment crosses it *outward*.
   template limit(rate, room: float) =
     if rate > 0.0: result = min(result, room/rate)
   limit(-dx, tail.x)
@@ -772,12 +638,10 @@ func fractionLeavingView*(tail, head: ScreenPosition; width, height: int): float
 
 
 func isWithinView*(point: ScreenPosition; width, height: int): bool =
-  ## Say whether a projected point stands inside the viewport it was projected for.
-  ##   In front of the eye as well as within both bounds: a point behind the eye projects
-  ##   through a negative divide, so where its coordinates land in the rectangle says
-  ##   nothing at all about where it would be seen.
-  ##   Bounds taken closed, which matches `fractionLeavingView` -- a point exactly on the
-  ##   edge is the last one still drawn, not the first one cut.
+  ## Say whether projected point stands inside viewport it was projected for.
+  ##   In front of eye as well as within bounds: point behind eye projects through
+  ## negative divide, and where it lands says nothing about where it would be seen.
+  ##   Bounds closed, matching `fractionLeavingView`.
   point.isInFront and
     point.x >= 0.0 and point.x <= float(width) and
     point.y >= 0.0 and point.y <= float(height)
@@ -789,18 +653,15 @@ func railsAt(
   progress: float; marker: var Marker;
   walks: var array[2, array[3, Option[ScreenPosition]]]
 ) =
-  ## Lay both rails out at one world offset: the drawn screen segments, and the walk each
-  ## rail is read along for its own pulse.
-  ##   Its own routine because `markerRails` runs it twice -- once to find out how wide the
-  ##   pair actually comes out on screen, and once at the offset that answer asks for.
-  ##   Each rail is **one straight world line**: its two halves start from the same offset
-  ##   support and run to the two vanishing points the line shares with it, so they are two
-  ##   parts of one line and meet at no angle at all.
+  ## Lay both rails out at one world offset: drawn screen segments, and walk each rail is
+  ## read along for its pulse.
+  ##   Own routine because `markerRails` runs it twice -- once to find how wide pair comes
+  ## out on screen, once at offset that answer asks for.
+  ##   Each rail is **one straight world line**: halves start from same offset support and
+  ## run to two vanishing points, meeting at no angle.
   marker.count_segment = 0
   walks = default(array[2, array[3, Option[ScreenPosition]]])
-  # The rail frame hoisted: the anchor point, the across arm and the axis arm as
-  #   multivectors, one assembly per call; each rail end is then one scaled arm on its
-  #   own base point.
+  # Hoist rail frame: anchor point, across arm and axis arm as multivectors, once per call.
   let
     anchor_point = toMultivector(anchor)
     across_point = toMultivector(across)
@@ -822,21 +683,19 @@ func railsAt(
         [tail, tail.towards(head, progress*fractionLeavingView(tail, head, width, height))]
       marker.segments[marker.count_segment] = drawn
       inc marker.count_segment
-      # Ordered along the line: the `-axis` end, the support, then the `+axis` end.
-      walks[index_side][1] = some(drawn[0]) # The same point for either half.
+      # Order along line: `-axis` end, support, then `+axis` end.
+      walks[index_side][1] = some(drawn[0]) # Same point for either half.
       walks[index_side][if index_half == 0: 2 else: 0] = some(drawn[1])
 
 
 func apartWidest(walks: array[2, array[3, Option[ScreenPosition]]]): float =
-  ## Report the widest the pair reads apart anywhere a reader can see it, in pixels.
-  ##   **One rail against the other**, which is the gap a reader actually sees, rather than
-  ##   either rail against the line between them: all three screen lines meet at the same
-  ##   vanishing point, so the foot of a perpendicular dropped from one rail lands further
-  ##   along the other and the two measures differ by a few percent where they converge
-  ##   hardest. Bounding the one that is looked at is the point.
-  ##   Each rail's own drawn points against the infinite line through the other's. Distance
-  ##   between two straight screen lines is linear along either, so its greatest value over
-  ##   a drawn stretch is at one of that stretch's own ends and the walk points settle it.
+  ## Report widest pair reads apart anywhere reader can see it, in pixels.
+  ##   **One rail against other**, gap reader sees, rather than either against line
+  ## between: all three meet at same vanishing point, so measures differ by few percent
+  ## where they converge hardest.
+  ##   Each rail's drawn points against infinite line through other's. Distance between
+  ## two straight screen lines is linear along either, so its greatest value over drawn
+  ## stretch is at one of that stretch's ends.
   var
     points: array[2, array[3, ScreenPosition]]
     counts: array[2, int]
@@ -859,49 +718,25 @@ func markerRails(
   view_projection: Matrix4; width, height: int; progress, clearance: float;
   travel: Option[float]; marker: var Marker
 ): bool =
-  ## Build a line's own pair of rails: two straight screen lines flanking it, one to each
-  ## side, holding `OFFSET_MARKER_RAIL` pixels of clear space and closing only on a
-  ## vanishing point a reader can actually see.
-  ##   **Offset in screen pixels, not in world units.** The pair is a marker rather than
-  ##   geometry: what it has to say is "this line is selected", and it says that by
-  ##   flanking the line at a legible distance. A world offset instead hands the *rate* of
-  ##   convergence to perspective, which stretches it to nothing at one end and flares it
-  ##   at the other -- see `OFFSET_MARKER_RAIL` for the measurements. So the gap is stated
-  ##   in the units it is read in, and holds at every orientation and every distance.
-  ##   **It still meets the vanishing point, where there is one to meet.** Each half of
-  ##   the line runs to `eye ± radius_horizon*axis`, and exactly one of those two points
-  ##   lies in front of the eye unless the line is square on to the camera, when neither
-  ##   does. The half that has one sheds its offset at the head and closes on it; the half
-  ##   whose head is only a near-plane cut keeps its offset and stays dead parallel, since
-  ##   there is nothing that way for a reader to watch it converge on. A line square on to
-  ##   the camera therefore stays parallel both ways, which is correct: it has no visible
-  ##   vanishing point at all.
-  ##   `progress` runs both rails out from the line's own support toward each horizon, and
-  ##   **measures that reach against the edge of the view** rather than against each rail's
-  ##   own projected length -- see `fractionLeavingView` for the 314-to-1 ratio that fixes,
-  ##   and why growing toward a vanishing point is growing into nothing.
-  ##   Shortened *after* projection, along the screen segment, rather than by scaling the
-  ##   world reach: the far end is a point one horizon radius from the *eye* along the
-  ##   axis, so scaling that reach walks the head back to the camera rather than in toward
-  ##   the support. Interpolating on screen still keeps every partial rail exactly on the
-  ##   rail it will become -- both endpoints lie on it and a straight segment is straight.
-  ##   `travel` places **one** pulse along each rail, **in the line's own direction**, which
-  ##   is what a line has instead of a face to be on. Each rail is *drawn* as two halves,
-  ##   outward from the support toward either horizon, but it is *walked* as one path from
-  ##   the far horizon through the support to the near one -- so a selected line wears one
-  ##   comet travelling its length rather than four at four unrelated places, and the
-  ##   direction falls out of the walk instead of needing the `-axis` half mirrored back.
-  ##   **Measured from the support, and lapped against the shorter of the two rails.** The
-  ##   travel is a distance from a point on the line itself, so the camera can restretch the
-  ##   rails without moving the comet along them; measuring from a rail's end instead would
-  ##   measure from wherever the window cut it, which is the camera's answer and not the
-  ##   line's. Both rails take the one travel they are handed and one shared lap, so the
-  ##   pair cannot drift apart even though the window clips them to wildly different
-  ##   lengths.
-  ##   None leaves the rails still.
-  ##   None at horizon, where a line draws as a great circle fixed to the eye, and none
-  ##   where the line collapses to a point on screen, which is the eye standing on it: a
-  ##   line seen end on has no side to be flanked from.
+  ## Build line's pair of rails: two straight screen lines flanking it, holding
+  ## `OFFSET_MARKER_RAIL` pixels of clear space and closing only on vanishing point reader
+  ## can see.
+  ##   **Offset in screen pixels, not world units.** World offset hands *rate* of
+  ## convergence to perspective, stretching it to nothing at one end and flaring at other
+  ## -- see `OFFSET_MARKER_RAIL`. Gap is stated in units it is read in.
+  ##   **Still meets vanishing point, where there is one.** Each half runs to `eye ±
+  ## radius_horizon*axis`, and exactly one lies in front of eye unless line is square on.
+  ## Half that has one sheds offset at head; half whose head is near-plane cut stays dead
+  ## parallel. Line square on stays parallel both ways: no visible vanishing point.
+  ##   `progress` runs both rails out from support toward each horizon, **measured against
+  ## edge of view** -- see `fractionLeavingView`. Shortened *after* projection, along
+  ## screen segment, since scaling world reach walks head back to camera.
+  ##   `travel` places **one** pulse along each rail, **in line's direction**: each rail is
+  ## *drawn* as two halves but *walked* as one path from far horizon through support to
+  ## near one, so line wears one comet rather than four.
+  ##   **Measured from support, lapped against shorter rail**, so camera restretching
+  ## rails does not move comet, and pair cannot drift apart. None leaves rails still.
+  ##   None at horizon, and none where line collapses to point on screen.
   let
     anchor = positionAnchor(geometry)
     axis = direction(geometry)
@@ -913,46 +748,22 @@ func markerRails(
     walks: array[2, array[3, Option[ScreenPosition]]]
     rails: array[2, array[3, ScreenPosition]] ## Each side compacted to what survived.
     counts: array[2, int] ## How many of each side's three points that was.
-    origins: array[2, int] ## Where the support landed in each, for the pulse to measure on.
-    tracks: array[2, PulseTrack] ## Each side's own reach either way from that support.
+    origins: array[2, int] ## Where support landed in each, for pulse to measure on.
+    tracks: array[2, PulseTrack] ## Each side's reach either way from that support.
   let offset_stated = offsetMarkerRail(anchor.get, scale, clearance)
-  # **Settled against the finished rail, then drawn at the progress asked for.** How far
-  #   apart the pair stands is a fact about this line under this camera, not about how far
-  #   a hold has got growing it -- so the passes below run at full reach and the caller's
-  #   own `progress` is applied once, after. Settling against the partial rail instead made
-  #   the gap widen as the hold filled: the drawn extent is what the widest reading is taken
-  #   over, so a quarter-grown rail settled on a different offset from a whole one and the
-  #   pair breathed sideways while it grew. Caught by the case pinning that a growing rail
-  #   starts where the finished one does.
+  # Settle against finished rail, then draw at progress asked for: settling against
+  #   partial rail made gap widen as hold filled, pair breathing sideways.
   railsAt(
     anchor.get, axis.get, across.get, offset_stated, scale,
     view_projection, width, height, 1.0, marker, walks,
   )
   if marker.count_segment == 0: return
 
-  # **Sized by the widest the pair will actually read, not by the gap at its support.**
-  #   `offsetMarkerRail` states a figure at the support and leaves the rest to perspective,
-  #   which along a half whose far point lies behind the eye is not convergence but a
-  #   flare -- measured at 45.6 px against a stated 14.5. So the stated figure becomes the
-  #   ceiling on what a reader ever sees, and the offset is scaled until the widest reading
-  #   meets it. The rails stay world-parallel and straight; only how far apart they start
-  #   changes, so the more obliquely a line is viewed the closer to it they run, which is
-  #   exactly the distortion being spent down.
-  #   Only ever narrows: a pair already inside its ceiling is left alone, so a line viewed
-  #   square on is drawn precisely as it always was.
-  #   **No floor under the narrowing, and none needed.** A floor was tried, at four tenths,
-  #   on the worry that an extreme view would close the pair onto its own line and leave
-  #   nothing to see -- and it let a 437-pixel splay through at a camera eight units out
-  #   looking steeply along the line, which is the very thing being prevented. The worry was
-  #   unfounded: a ceiling on the *widest* reading is itself the guarantee of visibility,
-  #   since the pair is that many pixels apart somewhere by construction. What an extreme
-  #   view costs is the gap at the narrow end, which is the honest thing for perspective to
-  #   take.
-  #   **Settled rather than solved in one step.** Narrowing the pair moves where each rail
-  #   leaves the viewport, so `fractionLeavingView` hands back a different drawn extent and
-  #   the widest reading moves with it -- one scale lands about five per cent over. The gap
-  #   falls monotonically as the offset does, so repeating converges: measured, the second
-  #   pass settles every camera of a 45-strong sweep exactly. See `PASSES_MARKER_RAIL`.
+  # Size by widest pair reads, not gap at support: stated figure becomes ceiling, and
+  #   offset is scaled until widest reading meets it. Only ever narrows. No floor under
+  #   narrowing: floor at four tenths let 437-pixel splay through, and ceiling on
+  #   *widest* reading is itself guarantee of visibility. Settled over passes because
+  #   narrowing moves where rail leaves viewport; see `PASSES_MARKER_RAIL`.
   let ceiling = 2.0*(OFFSET_MARKER_RAIL + clearance)
   var offset = offset_stated
   for _ in 0 ..< PASSES_MARKER_RAIL:
@@ -975,12 +786,9 @@ func markerRails(
   for index_side in 0 .. 1:
     let (end_before, support, end_after) =
       (walks[index_side][0], walks[index_side][1], walks[index_side][2])
-    # The rail as one walk ordered along the line, from its `-axis` end through the
-    #   support to its `+axis` end. Either end may be missing, clipped away by the eye.
-    #   The support's own position in that walk is recorded as it goes in -- by its place in
-    #   the source triple, never by comparing points, since two of them can coincide -- and
-    #   that is where the pulse measures from: the support is the line's own point, where
-    #   both ends are wherever the window happened to cut the rail.
+    # Walk rail as one path ordered along line, from `-axis` end through support to
+    #   `+axis` end; either end may be clipped away. Support's position is recorded by
+    #   place in source triple, never by comparing points, since two can coincide.
     for index_source, point in [end_before, support, end_after]:
       if point.isNone: continue
       if index_source == 1: origins[index_side] = counts[index_side]
@@ -992,9 +800,7 @@ func markerRails(
       )
 
   if travel.isSome:
-    # Both rails lap against one shared reach either way, so a line's pair travels as one
-    #   mark rather than each rail keeping its own clock; see `shared` for which reach and
-    #   for the measurement that settled it.
+    # Lap both rails against one shared reach either way; see `shared`.
     var (behind, ahead) = (Inf, Inf)
     for index_side in 0 .. 1:
       if counts[index_side] < 2: continue
@@ -1018,44 +824,32 @@ func radiusMarkerLoop*(
   centre: Position; scale: DrawExtent; placement: Camera; height: int;
   clearance: float = 0.0
 ): float =
-  ## Size a plane's own marker circle so its gap reads as `GAP_MARKER` pixels at the
-  ## disc's own depth.
-  ##   The circle lies on the plane, so its clearance has to be a world distance; that
-  ##   distance is only worth one fixed pixel count at one depth, and the disc's centre
-  ##   is the depth a reader judges the gap at. Everywhere else around the ellipse the
-  ##   gap foreshortens exactly as the disc does, which is the point -- a constant pixel
-  ##   ring would sit off the plane and read as floating above it.
-  ##   `clearance` widens that gap by that many further pixels, for a touch hold, through
-  ##   the same conversion so the swollen circle still lies on the plane.
+  ## Size plane's marker circle so gap reads as `GAP_MARKER` pixels at disc's depth.
+  ##   Circle lies on plane, so clearance is world distance worth one pixel count at one
+  ## depth, disc's centre. Elsewhere gap foreshortens as disc does -- constant pixel ring
+  ## would sit off plane and read as floating.
+  ##   `clearance` widens gap through same conversion, so swollen circle still lies on
+  ## plane.
   EXTENT_PLANE_F + (GAP_MARKER + clearance)*worldPerPixelAt(centre, scale)
 
 
 let
   UNIT_RING_LOOP* = unitRing[SEGMENTS_MARKER_LOOP](SEGMENTS_MARKER_LOOP)
-    ## A plane's marker circle's fixed ring of angles, from `euclid.unitRing` -- the one
-    ## generator every fixed ring in this project walks; see it for why the table is
-    ## built at run time and what the suites hold it to. No entry past the wrap: a
-    ## marker's outline closes on its own first point rather than emitting a last
-    ## segment, unlike the drawn rim's.
+    ## Plane's marker circle's fixed ring of angles, from `euclid.unitRing`. No entry past
+    ## wrap: marker's outline closes on own first point rather than emitting last segment.
   UNIT_RING_BANDS* = unitRing[SEGMENTS_MARKER_BANDS](SEGMENTS_MARKER_BANDS)
-    ## A horizon line's marker bands' own ring, by the same rule.
+    ## Horizon line's marker bands' ring, by same rule.
 
 
 proc positionsMarkerLoop*(
   centre: Position; axes: FramePlane; radius: float
 ): array[SEGMENTS_MARKER_LOOP, Position] =
-  ## Trace a plane's own marker circle in world space, in order around it.
-  ##   Every point is `centre` plus a combination of the two axes spanning the plane, so
-  ##   the whole circle lies *on* the plane by construction rather than by adjustment --
-  ##   which is what makes the marker read as painted onto the surface rather than as a
-  ##   hoop floating near it. Asserted directly in the suite, point by point.
-  # The circle's frame hoisted once -- centre and two radius-long arms -- then stepped
-  #   off the fixed table, which is arithmetic: a marker circle is a stand-in drawn for
-  #   the eye, exactly as the disc rim it is concentric with, and which plane the two
-  #   arms span is still the algebra's answer (`boundary.frame`, at the caller). It was
-  #   sixty-four multivector sums per marker per frame, which is most of what a selected
-  #   plane cost the overlay; the suite holds this arithmetic equal to those sums, point
-  #   for point, as it does for the rim.
+  ## Trace plane's marker circle in world space, in order around it.
+  ##   Every point is `centre` plus combination of two axes spanning plane, so whole circle
+  ## lies *on* plane by construction. Asserted in suite, point by point.
+  # Hoist circle's frame once, then step off fixed table: arithmetic, as disc rim it is
+  #   concentric with. Was sixty-four multivector sums per marker per frame; suite holds
+  #   this equal to those sums.
   let
     arm_first = radius*axes.axis_first
     arm_second = radius*axes.axis_second
@@ -1071,28 +865,17 @@ proc markerLoop(
   placement: Camera; view_projection: Matrix4; width, height: int;
   progress, clearance: float; travel: Option[float]; marker: var Marker
 ): bool =
-  ## Build a plane's own marker circle, concentric with the disc actually drawn.
-  ##   Reads `anchor_override` exactly as `tessellate.addPlane` does, so the marker is
-  ##   concentric with the drawn disc rather than with the plane's own support -- for a
-  ##   plane built from operands that do not straddle the origin those are different
-  ##   points, and a marker around the wrong one names nothing.
-  ##   Cuts the circle to whatever stays in front of the eye and reports the remainder as
-  ##   an arc, rather than dropping the marker outright: a camera close to a large plane
-  ##   puts part of its rim behind the eye, which is exactly when the selection still
-  ##   needs saying.
-  ##   `progress` scales the circle's own radius, so a filling hold opens it outward from
-  ##   the disc's centre until it reaches the rim it will finally stand outside. In world
-  ##   units on the plane, which keeps every intermediate circle lying on that plane as
-  ##   exactly as the finished one does -- growing it on screen instead would lift it off
-  ##   the surface for the whole of the animation and only settle at the end.
-  ##   `travel` places a pulse round the circle, **anticlockwise on screen exactly when
-  ##   the plane's normal points at the eye**. Nothing here computes that sense: the points
-  ##   are generated around the plane's own frame, and which way that order comes out on
-  ##   screen is the projection's answer, so the pulse reverses of its own accord as the
-  ##   camera crosses the plane. This is what a plane's normal shaft used to say, said
-  ##   about the object being asked about rather than about every plane at once. None
-  ##   leaves the circle still.
-  ##   None at horizon, where a plane draws as a dome fixed to the eye.
+  ## Build plane's marker circle, concentric with disc actually drawn.
+  ##   Reads `anchor_override` as `tessellate.addPlane` does, so marker is concentric with
+  ## drawn disc rather than plane's support.
+  ##   Cuts circle to what stays in front of eye and reports remainder as arc: camera close
+  ## to large plane puts part of rim behind eye, exactly when selection needs saying.
+  ##   `progress` scales circle's radius, in world units on plane, so filling hold opens it
+  ## outward from disc's centre while every intermediate circle lies on plane.
+  ##   `travel` places pulse round circle, **anticlockwise on screen exactly when plane's
+  ## normal points at eye**: points are generated around plane's frame, and projection
+  ## answers which way that order reads. None leaves circle still.
+  ##   None at horizon, where plane draws as dome fixed to eye.
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(geometry)
     axes = frame(geometry)
@@ -1115,8 +898,8 @@ proc markerLoop(
   marker = Marker(
     kind: MarkerKind.Loop, is_closed: count_in_front == SEGMENTS_MARKER_LOOP
   )
-  # Start the arc at the first point whose predecessor was cut, so the surviving run is
-  #   emitted unbroken instead of wrapping the cut and drawing a chord across the view.
+  # Start arc at first point whose predecessor was cut, so surviving run is emitted
+  #   unbroken instead of wrapping cut and drawing chord across view.
   var start = 0
   if not marker.is_closed:
     for i in 0 ..< SEGMENTS_MARKER_LOOP:
@@ -1130,8 +913,7 @@ proc markerLoop(
     marker.points[marker.count_point] = ring[i]
     inc marker.count_point
   if travel.isSome:
-    # Anchored at the circle's own angle zero, walked back through the cut; see
-    #   `originAfterCut` for why the emitted run's first point will not do.
+    # Anchor at circle's angle zero, walked back through cut; see `originAfterCut`.
     let track = trackAlong(
       marker.points, marker.count_point, marker.is_closed,
       originAfterCut(SEGMENTS_MARKER_LOOP, start, marker.count_point),
@@ -1147,16 +929,12 @@ proc markerLoop(
 #[ Horizon ]#
 
 func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
-  ## Size how far off a horizon line its two bands stand, in radians, at this progress.
-  ##   Closes from `ANGLE_MARKER_BANDS_OPEN` -- the pole of the sky the line's own great
-  ##   circle runs around, and so outside any view of it -- in to the separation that
-  ##   reads as `OFFSET_MARKER_RAIL` pixels, the very gap a *finite* line's rails keep. So
-  ##   the two kinds of line wear the same marker at the same weight, and only the way it
-  ##   arrives differs: a finite line's rails run outward from a support, and a horizon
-  ##   line, having none, is enclosed from outside instead.
-  ##   An angle rather than a screen offset because horizon geometry is placed by
-  ##   direction: `radiansPerPixel` is what converts the pixel gap the rest of the family
-  ##   is specified in, and it holds under any camera rather than at one distance.
+  ## Size how far off horizon line its two bands stand, in radians, at this progress.
+  ##   Closes from `ANGLE_MARKER_BANDS_OPEN` -- pole of sky, outside any view -- in to
+  ## separation reading as `OFFSET_MARKER_RAIL` pixels, gap *finite* line's rails keep, so
+  ## two kinds of line wear same marker; only arrival differs.
+  ##   Angle rather than screen offset because horizon geometry is placed by direction:
+  ## `radiansPerPixel` converts pixel gap, holding under any camera.
   let angle_closed = (OFFSET_MARKER_RAIL + clearance)*radiansPerPixel(scale)
   angle_closed + (1.0 - clamp(progress, 0.0, 1.0))*(ANGLE_MARKER_BANDS_OPEN - angle_closed)
 
@@ -1164,21 +942,16 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 func runShownLongest*(
   ring: openArray[ScreenPosition]; are_shown: openArray[bool]
 ): (int, int) =
-  ## Find the longest unbroken stretch of a sampled ring that is shown, as the index it
-  ## starts at and how many samples it runs for.
-  ##   Cyclic, so a stretch straddling sample zero counts as one rather than two: where a
-  ##   ring's sampling happens to start is an artefact of how it was generated and means
-  ##   nothing to a reader.
-  ##   **The longest, not the first**, because a ring can cross the viewport more than
-  ##   once -- a band seen nearly end on is a circle about the line's own vanishing point,
-  ##   which enters and leaves the screen twice. One outline per band is what
-  ##   `points_band` holds and what an unbroken pulse can ride, so the largest piece is
-  ##   the one drawn and the rest are dropped.
-  ##   Longest **in screen pixels**, not in samples. The samples are even in angle around
-  ##   the sky and wildly uneven once projected -- measured at 160 px a step across the
-  ##   middle of the view against 200,000 near a vanishing point -- so counting them
-  ##   would rank a bunched corner above the stretch spanning the whole window.
-  ##   `(0, 0)` where nothing is shown, and the whole ring where all of it is.
+  ## Find longest unbroken stretch of sampled ring that is shown, as index it starts at
+  ## and how many samples it runs for.
+  ##   Cyclic, so stretch straddling sample zero counts as one.
+  ##   **Longest, not first**: ring can cross viewport more than once -- band seen nearly
+  ## end on enters and leaves screen twice -- and one outline per band is what
+  ## `points_band` holds.
+  ##   Longest **in screen pixels**, not samples: samples are even in angle and wildly
+  ## uneven projected -- 160 px per step across middle against 200,000 near vanishing
+  ## point.
+  ##   `(0, 0)` where nothing is shown, whole ring where all of it is.
   let count = are_shown.len
   var count_shown = 0
   for shown in are_shown:
@@ -1187,7 +960,7 @@ func runShownLongest*(
   if count_shown == count: return (0, count)
   var length_best = -1.0
   for start in 0 ..< count:
-    # Each stretch is found once, from the sample whose predecessor was cut.
+    # Find each stretch once, from sample whose predecessor was cut.
     if not are_shown[start] or are_shown[(start + count - 1) mod count]: continue
     var
       length = 0.0
@@ -1208,30 +981,19 @@ proc markerBands(
   geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
   progress, clearance: float; travel: Option[float]; marker: var Marker
 ): bool =
-  ## Build a horizon line's own pair of bands: two circles on the sky, one each side of
-  ## the great circle the line itself is drawn as.
-  ##   Each band is a *small* circle of the same sphere -- centre stepped along the great
-  ##   circle's own normal, radius shrunk to stay on that sphere -- which is what parallel
-  ##   to a great circle means there. Built from `directionNormalHorizon` and
-  ##   `spanPerpendicular`, the same pair `tessellate.addLine` builds its great circle from, so
-  ##   the three wrap the sky as one family rather than merely near one another.
-  ##   Cuts each band to whatever stays in front of the eye **and inside the viewport**,
-  ##   reporting the remainder as an arc the way `markerLoop` does -- half the sky is
-  ##   behind the camera at all times, so a cut is the common case here rather than an
-  ##   edge one.
-  ##   The second cut is what `fractionLeavingView` already does for a rail, and for the
-  ##   same reason: these circles run out to the line's own vanishing points, so an
-  ##   uncut band is mostly outline no camera can see. Measured on a horizon line held
-  ##   across the middle of the view, the full ring laps in **396,102 pixels against the
-  ##   1,490 of it on screen** -- a comet at a fixed screen pace is then visible for four
-  ##   frames in a thousand, which is what "the pulse does not work on horizon lines"
-  ##   turned out to mean. Cut to the view, the lap is a finite line's rails' own 1,045
-  ##   within a factor of two, and the two kinds of line pulse alike.
-  ##   `travel` places a pulse round both bands, taking its sense from the great
-  ##   circle's own normal the way `markerLoop`'s takes it from a plane's: the points are
-  ##   laid out around that normal's frame, so the projection answers which way they read.
-  ##   Both bands rather than one -- an outline drawn in pieces that pulses in only some of
-  ##   them reads as the marker having broken. None leaves them still.
+  ## Build horizon line's pair of bands: two circles on sky, one each side of great
+  ## circle line is drawn as.
+  ##   Each band is *small* circle of same sphere -- centre stepped along great circle's
+  ## normal, radius shrunk to stay on sphere -- what parallel to great circle means there.
+  ## Built from `directionNormalHorizon` and `spanPerpendicular`, same pair
+  ## `tessellate.addLine` builds great circle from.
+  ##   Cuts each band to what stays in front of eye **and inside viewport**, reporting
+  ## remainder as arc: half sky is behind camera at all times. Second cut is what
+  ## `fractionLeavingView` does for rail: uncut band laps in **396,102 pixels against
+  ## 1,490 on screen**, comet visible four frames in thousand. Cut to view, lap is within
+  ## factor of two of rails' 1,045.
+  ##   `travel` places pulse round both bands, sense from great circle's normal as
+  ## `markerLoop`'s from plane's. Both bands, or one still reads as broken.
   let normal = directionNormalHorizon(geometry)
   if normal.isNone: return
   let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
@@ -1243,10 +1005,8 @@ proc markerBands(
     offset = scale.radius_horizon*sin(angle)
 
   marker = Marker(kind: MarkerKind.Bands)
-  # Where each band's centre stands is the algebra's -- the eye stepped along the great
-  #   circle's own normal -- and the ring around that centre is arithmetic off the fixed
-  #   table, for the reason `positionsMarkerLoop` gives. Two rings of forty-eight sums
-  #   apiece per frame is what a selected horizon line used to cost.
+  # Place each band's centre through algebra -- eye stepped along normal -- and ring
+  #   around it off fixed table; two rings of forty-eight sums per frame was cost before.
   let
     normal_point = toMultivector(normal.get)
     arm_first = radius*axis_first
@@ -1267,16 +1027,13 @@ proc markerBands(
         ),
       )
       are_shown[i] = ring[i].isWithinView(width, height)
-    # One unbroken stretch, so an arc is emitted whole rather than wrapping a cut and
-    #   drawing a chord across the view -- `markerLoop`'s rule, over both cuts at once.
+    # Emit one unbroken stretch, so arc does not wrap cut and draw chord across view.
     let (start, count_shown) = runShownLongest(ring, are_shown)
     if count_shown == 0: continue
 
     marker.are_closed_band[side] = count_shown == SEGMENTS_MARKER_BANDS
-    # Reach the edge the band leaves through, rather than stopping at the last sample
-    #   still inside it, which is up to a whole step short of it -- and a step here spans
-    #   a good part of the window. Only where the sample past the edge is in front of the
-    #   eye: one behind it has no meaningful screen position to aim at.
+    # Reach edge band leaves through, rather than stopping up to whole step short of it;
+    #   only where sample past edge is in front of eye.
     template placeCrossing(inside, outside: int) =
       if ring[outside].isInFront:
         marker.points_band[side][marker.counts_band[side]] = ring[inside].towards(
@@ -1296,9 +1053,8 @@ proc markerBands(
         (start + count_shown) mod SEGMENTS_MARKER_BANDS,
       )
     if travel.isSome:
-      # Each band is anchored at its own angle zero, which `spanPerpendicular` fixes from
-      #   the geometry alone, so the two bands stay in step through a cut. Lapped against
-      #   the first band that produced one, for the reason a line's rails share theirs.
+      # Anchor each band at own angle zero, fixed from geometry alone, so bands stay in
+      #   step through cut; lap against first band that produced one.
       let track = trackAlong(
         marker.points_band[side], marker.counts_band[side], marker.are_closed_band[side],
         originAfterCut(SEGMENTS_MARKER_BANDS, start, count_shown, count_before),
@@ -1313,11 +1069,9 @@ proc markerBands(
 
 
 func radiusToEdge(half_width, half_height, angle: float): float =
-  ## Measure how far the edge of an axis-aligned rectangle stands from its own centre
-  ## along `angle`, in the same units its half-extents are given in.
-  ##   Which of the two edge pairs is met first is whichever bound the ray reaches
-  ##   sooner. A ray straight along an axis never reaches the pair parallel to it, so
-  ##   that term is dropped rather than divided by zero.
+  ## Measure how far edge of axis-aligned rectangle stands from its centre along `angle`.
+  ##   Whichever bound ray reaches sooner. Ray straight along axis never reaches pair
+  ## parallel to it, so that term is dropped rather than divided by zero.
   let (across, down) = (abs(cos(angle)), abs(sin(angle)))
   if across <= 0.0: return half_height/down
   if down <= 0.0: return half_width/across
@@ -1325,32 +1079,19 @@ func radiusToEdge(half_width, half_height, angle: float): float =
 
 
 func markerFrame(width, height: int; progress, clearance: float; marker: var Marker): bool =
-  ## Build a horizon plane's own frame: a boundary around the viewport itself, expanding
-  ## from the centre of the view as a circle and settling as the viewport's own rectangle.
-  ##   A plane at horizon is the whole sky, the same universal object however it was
-  ##   built, and it is drawn as a dome filling every direction -- so there is no place in
-  ##   the scene for an outline to surround, and the honest marker surrounds the view. It
-  ##   does not move with the camera, which is right rather than a shortcut: what it marks
-  ##   does not either.
+  ## Build horizon plane's frame: boundary around viewport, expanding from centre as
+  ## circle and settling as viewport's rectangle.
+  ##   Plane at horizon is whole sky, drawn as dome filling every direction, so honest
+  ## marker surrounds view. It does not move with camera; what it marks does not either.
   ##   `progress` sets one reach in pixels, and each direction's boundary point stands at
-  ##   that reach *or* at the screen edge, whichever is nearer. So the marker is a circle
-  ##   for as long as the circle fits, and then *becomes* the edge piece by piece as the
-  ##   circle passes each part of it -- the four edge midpoints first, the corners last.
-  ##   A rectangle scaled about the centre instead reached every edge at once, which read
-  ##   as a shrunken copy of the screen rather than as something opening out into it.
-  ##   Full reach is the half-diagonal, which is the corners' own distance and so the
-  ##   largest `radiusToEdge` can return: at `progress` 1 no direction is still bounded by
-  ##   the circle and the whole boundary is the rectangle, to the pixel.
-  ##   `clearance` pushes it outward past the inset, which on this shape means past the
-  ##   edge of the screen: a frame is never under a finger, and shrinking the inset would
-  ##   read as the marker retreating rather than swelling.
-  ##   **No pulse, unlike every other shape's marker.** The pulse's whole message is
-  ##   orientation, and a plane at horizon has none to read: probed directly, `frame`,
-  ##   `directionNormal` and `direction` all report nothing for one, and *negating it
-  ##   changes none of that*. So there is no sense to travel in, and a pulse here would be
-  ##   motion asserting something the object does not carry.
-  ##   None only for a viewport too small to hold the inset at all, which has no room to
-  ##   draw a frame in.
+  ## that reach *or* screen edge, whichever is nearer: circle while it fits, then edge
+  ## piece by piece -- midpoints first, corners last. Rectangle scaled about centre read
+  ## as shrunken copy of screen. Full reach is half-diagonal, corners' distance.
+  ##   `clearance` pushes it outward past inset: frame is never under finger, and
+  ## shrinking would read as retreating.
+  ##   **No pulse.** Pulse's message is orientation, and plane at horizon has none:
+  ## `frame`, `directionNormal` and `direction` all report nothing, negated or not.
+  ##   None only for viewport too small to hold inset.
   let
     inset = GAP_MARKER - clearance
     (centre_x, centre_y) = (0.5*float(width), 0.5*float(height))
@@ -1359,8 +1100,7 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
   let
     reach = clamp(progress, 0.0, 1.0)*hypot(half_width, half_height)
     turn_corner = arctan2(half_height, half_width)
-    # Ascending, and the corners are the only directions an even sampling cannot be
-    #   trusted to land on -- see `CORNERS_MARKER_FRAME`.
+    # Ascending; corners are only directions even sampling cannot be trusted to land on.
     turns_corner = [
       turn_corner, PI - turn_corner, PI + turn_corner, 2.0*PI - turn_corner
     ]
@@ -1371,14 +1111,13 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
       x: centre_x + radius*cos(angle), y: centre_y + radius*sin(angle), depth: 1.0,
     )
     inc marker.count_frame
-  # Merge the two ascending runs of angles into one, so the boundary comes out in order
-  #   around the centre and strokes as a simple closed outline.
+  # Merge two ascending runs of angles into one, so boundary strokes as simple closed
+  #   outline.
   var next_corner = 0
   for step in 0 ..< SEGMENTS_MARKER_FRAME:
     let angle = (2.0*PI*float(step))/float(SEGMENTS_MARKER_FRAME)
     while next_corner < CORNERS_MARKER_FRAME and turns_corner[next_corner] <= angle:
-      # A corner landing exactly on a step is emitted by the step itself; emitting it
-      #   here as well would leave a repeated point in the outline.
+      # Skip corner landing exactly on step, which step itself emits.
       if turns_corner[next_corner] < angle: emit(turns_corner[next_corner])
       inc next_corner
     emit(angle)
@@ -1397,49 +1136,33 @@ proc markerFor*(
   progress: float = 1.0;
   is_touch: bool = false; travel: Option[float] = none(float); swell: float = 0.0
 ): bool =
-  ## Shape the marker for one object, dispatching on the geometry its grade stands for
-  ## and on whether that geometry stands at horizon.
-  ##   **Fills the caller's `marker` and reports whether one was shaped**, rather than
-  ##   returning an `Option[Marker]`: a `Marker` reserves every kind's fixed arrays, and
-  ##   on the JS backend each return, `get` and assignment of one walked all of it
-  ##   through `nimCopy` -- measured at most of a millisecond per shaped marker, for six
-  ##   floats of ring. The caller's storage is written once instead; on `false` it holds
-  ##   nothing readable.
-  ##   `anchor_override` is the item's own stored creation anchor, used for a plane and
-  ##   ignored for a point or line, matching `tessellate.addObject`'s own treatment of it.
-  ##   `progress` draws the marker part-built, for a press maturing into a selection: 1
-  ##   is the finished marker and is what every caller not animating a hold wants, which
-  ##   is why it is the default. How a partial marker is shaped is each outline's own
-  ##   business -- a ring sweeps, rails run outward, a circle opens, bands close inward,
-  ##   a frame opens from the middle -- because what reads as *filling* differs by shape
-  ##   as much as what reads as *surrounding* does.
-  ##   `is_touch` says the hold is a finger's, and `swell` how far clear of it every
-  ##   outline is pushed right now; see `clearanceTouch`, and `interaction.swellHold` for
-  ##   the four phases that number comes from. One flag rather than a per-shape rule,
-  ##   because what it compensates for -- a fingertip over the thing being marked -- does
-  ##   not vary by what is under it.
-  ##   `travel` places the orientation pulse round the outline, and **is what a caller
-  ##   passes to say this object is selected**: hover and keyboard focus wear the same
-  ##   marker and pass none, so motion means "selected" rather than "went past". It is a
-  ##   *distance in screen pixels from the outline's own anchor*, not a time and not a
-  ##   fraction, and it comes from `selection.PulseClock` -- see there for why a comet's
-  ##   place cannot be a pure function of the clock and the camera together, and why a
-  ##   fraction of the outline was not far enough from one either. Its
-  ##   direction carries the orientation a plane's normal shaft used to -- see
-  ##   `markerLoop` for why the projection, not this module, decides which way that reads.
-  ##   None where an object has no orientation to state: a point either way, and a plane
-  ##   at horizon, which carries no normal at all (see `markerFrame`).
-  ##   None only where the object has no drawable geometry at all. Every shape that *is*
-  ##   drawn now has a marker, horizon or not.
+  ## Shape marker for one object, dispatching on geometry its grade stands for and on
+  ## whether it stands at horizon.
+  ##   **Fills caller's `marker` and reports whether one was shaped**, not
+  ## `Option[Marker]`: `Marker` reserves every kind's fixed arrays, and on JS backend each
+  ## return, `get` and assignment walked all of it through `nimCopy` -- most of
+  ## millisecond per marker, for six floats of ring. On `false` storage holds nothing
+  ## readable.
+  ##   `anchor_override` is item's stored creation anchor, used for plane and ignored
+  ## otherwise, as `tessellate.addObject` treats it.
+  ##   `progress` draws marker part-built, for press maturing into selection; 1 is
+  ## finished marker. How partial marker is shaped is each outline's business -- ring
+  ## sweeps, rails run outward, circle opens, bands close inward, frame opens from middle.
+  ##   `is_touch` says hold is finger's, and `swell` how far clear every outline is
+  ## pushed; see `clearanceTouch` and `interaction.swellHold`.
+  ##   `travel` places orientation pulse round outline, and **is what caller passes to
+  ## say object is selected**: hover and keyboard focus pass none. Distance in screen
+  ## pixels from outline's anchor, from `selection.PulseClock`. None where object has no
+  ## orientation: point, and plane at horizon (see `markerFrame`).
+  ##   None only where object has no drawable geometry. Every drawn shape has marker.
   let shape = shape(geometry)
   if shape.isNone: return
   let
     is_horizon = geometry.isHorizon
     clearance = clearanceTouch(swell, is_touch)
   case shape.get
-  # A point at horizon is drawn as a fixed star, which `anchorFor` already places, so its
-  #   ring needs no horizon branch of its own -- unlike the two below, which are drawn as
-  #   a great circle and a whole sky and have no anchor at all.
+  # Point at horizon is drawn as fixed star `anchorFor` places, so its ring needs no
+  #   horizon branch; two below are drawn as great circle and whole sky with no anchor.
   of Shape.Point:
     markerRing(geometry, scale, view_projection, width, height, progress, clearance, marker)
   of Shape.Line:

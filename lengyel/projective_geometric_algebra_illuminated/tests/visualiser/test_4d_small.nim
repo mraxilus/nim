@@ -5,17 +5,13 @@ matrix: "-d:pga.dimensions=4 -d:pga.is_conformal=false -d:visualiser.items_max=1
 batchable: true
 joinable: true
 """
-## Run the shared suite at capacities small enough that its own tests reach them.
+## Run shared suite at capacities small enough that its tests reach them.
 ##
-## Every capacity here is a `.define`, so a caller may raise it; at the defaults the suite
-## exercises the limits only where a test spells the limit out, and a test that fills the
-## scene to `ITEMS_MAX` or the timeline to `CAPACITY_HISTORY` writes sixty-four or thirty-two
-## entries to prove one boundary. Shrinking them makes those boundaries cheap to reach and,
-## more to the point, makes any constant tuned to the *default* rather than derived from the
-## define fail here rather than in a build somebody configured. `LABEL_MAX` at 12 is the
-## sharpest of the three: it is under the length of several labels the suite constructs, so
-## truncation happens for real rather than only in the one test that asks for it.
+## Every capacity is `.define`; at defaults suite reaches limits only where test spells
+## limit out. Shrinking them makes boundaries cheap to reach and makes any constant tuned
+## to *default* rather than derived from define fail here. `LABEL_MAX` at 12 is sharpest:
+## under length of several labels suite constructs, so truncation happens for real.
 ##
-## Backend is C, matching the desktop entry point beside this one: what varies here is
-## capacity, not the render path -- see `test_4d_browser.nim` for the other axis.
+## Backend is C, matching desktop entry point: what varies is capacity, not render path;
+## see `test_4d_browser.nim` for other axis.
 include "./suites.nim"

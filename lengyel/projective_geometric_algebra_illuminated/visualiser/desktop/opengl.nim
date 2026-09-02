@@ -1,21 +1,19 @@
-## Bind subset of OpenGL 3.3 core that visualiser uses.
+## Bind subset of OpenGL 3.3 core visualiser uses.
 ##
-## Driver is depended on rather than derived, for same reason as windowing: it is external.
-##   Only entry points actually called are declared, so binding stays readable in one sitting.
-##   Declarations import through header, so C compiler resolves every prototype and enum.
+## Driver is depended on rather than derived, as windowing is: external. Only entry
+## points called are declared; declarations import through header, so C compiler
+## resolves every prototype and enum.
 ##
-## Prototypes come from `GL_GLEXT_PROTOTYPES`, which links entry points directly.
-##   Holds on Linux, where libGL exports every core symbol.
-##   TODO: Elsewhere, entry points must be fetched one at a time through
-##           `SDL_GL_GetProcAddress`, which would turn each declaration below into
-##           a loaded function pointer. Deferred until visualiser needs to leave Linux;
-##           doing it early would cost a loader nobody has asked to read yet.
+## Prototypes come from `GL_GLEXT_PROTOTYPES`, which links entry points directly. Holds
+## on Linux, where libGL exports every core symbol.
+##   TODO: Elsewhere, entry points must be fetched through `SDL_GL_GetProcAddress`, which
+##         would turn each declaration into loaded function pointer. Deferred until
+##         visualiser needs to leave Linux.
 ##
-## Enumerants are written as literals rather than imported, since their values are fixed
-## by OpenGL specification and never renumbered.
+## Enumerants are written as literals rather than imported: values are fixed by OpenGL
+## specification and never renumbered.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -26,7 +24,7 @@
 const HEADER = "<GL/gl.h>"
   ## Name header every declaration below imports through.
 
-# Ask header for prototypes above OpenGL 1.1, and link the loader, here rather than in a
+# Ask header for prototypes above OpenGL 1.1, and link loader, here rather than in
 # project config, so every binary importing this module builds without extra flags.
 {.passC: "-DGL_GLEXT_PROTOTYPES".}
 {.passL: "-lGL".}

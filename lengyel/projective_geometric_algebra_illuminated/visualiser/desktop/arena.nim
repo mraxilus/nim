@@ -1,38 +1,34 @@
-## Bump-allocate scratch memory from a fixed block, so a short-lived buffer costs an
-## offset bump instead of a call to the allocator, and the whole block is reclaimed at
-## once by resetting the offset rather than freeing anything individually -- the style
-## Casey Muratori and Ryan Fleury both write about.
+## Bump-allocate scratch memory from fixed block, so short-lived buffer costs offset bump
+## instead of allocator call, and whole block is reclaimed at once by resetting offset;
+## style Casey Muratori and Ryan Fleury both write about.
 ##
 ## Three lifetimes cover everything this project still allocates dynamically:
 ##
 ##   |-----------|---------------------------------|--------------------------------------|
 ##   | Arena     | Reset                           | Backs                                |
 ##   |-----------|---------------------------------|--------------------------------------|
-##   | Permanent | Never; lives until process exit | The pixel readback buffer, sized     |
-##   |           |                                 | once and reused for every export.    |
+##   | Permanent | Never; lives until process exit | Pixel readback buffer, sized once    |
+##   |           |                                 | and reused for every export.         |
 ##   | Export    | After each throwaway unit of    | PNG's filtered/compressed scanlines, |
 ##   |           | work: one PNG write, one GIF    | GIF's quantized indices and LZW      |
-##   |           | sub-frame.                      | output -- built once, read once.     |
-##   | Frame     | On the *next* frame's swap, so  | The draw loop's own scratch: the     |
-##   | swap pair | last frame's bytes survive this | points a tessellation step           |
-##   |           | one. See `ArenaSwap`.           | assembles before emitting them.      |
+##   |           | sub-frame.                      | output; built once, read once.       |
+##   | Frame     | On *next* frame's swap, so last | Draw loop's scratch: points          |
+##   | swap pair | frame's bytes survive this one. | tessellation step assembles before   |
+##   |           | See `ArenaSwap`.                | emitting them.                       |
 ##   |-----------|---------------------------------|--------------------------------------|
 ##
-## `Scene` and `MeshSet` are on none of them: both are fixed arrays with their own lifetime,
-## permanent and cleared-in-place respectively, and the loop's text formatting writes into
-## stack buffers (`format.nim`) that the call stack reclaims on its own.
+## `Scene` and `MeshSet` are on none of them: fixed arrays with own lifetime, permanent
+## and cleared-in-place; loop's text formatting writes into stack buffers (`format.nim`).
 ##
-## The export arena and the frame pair are kept apart deliberately, though both are "per
-## unit of work": an export's scratch is measured in tens of megabytes and happens once on
-## a keypress, a frame's in tens of kilobytes and happens sixty times a second. Sizing one
-## block for both would reserve the export's capacity twice over to buy the frame's swap.
+## Export arena and frame pair are kept apart deliberately: export's scratch is tens of
+## megabytes once per keypress, frame's tens of kilobytes sixty times per second. Sizing
+## one block for both would reserve export's capacity twice to buy frame's swap.
 ##
-## Backing storage is a plain global array, not a runtime allocation: reserving the block
-## costs one line in the binary's own data segment, never a call to the allocator, and
-## every arena described above is exhausted by that same `doAssert` rather than by growing.
+## Backing storage is plain global array, not runtime allocation: reserving block costs
+## one line in binary's data segment, and every arena is exhausted by `doAssert` rather
+## than by growing.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -42,23 +38,21 @@ import std/strformat
 
 #[ Type Definitions ]#
 
-type Arena* = object ## Hold a fixed block of bytes and how much of it is in use.
+type Arena* = object ## Hold fixed block of bytes and how much of it is in use.
   buffer: ptr UncheckedArray[byte]
   capacity: int
   used: int
   peak_used: int ## Highest `used` has ever reached; never falls back on `reset`.
-    ## Exists so a live display can show what an arena's activity actually looks like:
-    ## `used` alone reads near zero almost anywhere it would be sampled, since carving
-    ## and reset both happen well within one frame, before anything outside this module
-    ## gets a chance to look.
+    ## Lets live display show what arena's activity looks like: `used` alone reads near
+    ## zero wherever sampled, since carving and reset both happen within one frame.
 
 
 
 #[ Arena Lifetime ]#
 
 proc initArena*(backing: var openArray[byte]): Arena =
-  ## Wrap caller-owned backing storage as an arena; nothing is allocated here, as
-  ## `backing` is expected to already be a fixed global array.
+  ## Wrap caller-owned backing storage as arena; nothing is allocated, as `backing` is
+  ## expected to be fixed global array.
   Arena(
     buffer: cast[ptr UncheckedArray[byte]](addr backing[0]),
     capacity: len(backing),
@@ -69,9 +63,8 @@ proc initArena*(backing: var openArray[byte]): Arena =
 
 proc reset*(arena: var Arena) =
   ## Reclaim everything carved from `arena` so far, in one step; nothing is freed
-  ## individually, since nothing carved from an arena is ever freed individually.
-  ##   `peak_used` is deliberately untouched: it tracks the arena's own high-water mark
-  ##   across its whole lifetime, not since the last reset.
+  ## individually.
+  ##   `peak_used` is untouched: it tracks high-water mark across whole lifetime.
   arena.used = 0
 
 
@@ -80,7 +73,7 @@ proc reset*(arena: var Arena) =
 
 proc push*[T](arena: var Arena; count: int): ptr UncheckedArray[T] =
   ## Carve `count` elements of `T` from `arena`, uninitialised.
-  ##   Never freed on its own; reclaimed only when `reset` reclaims the whole arena.
+  ##   Never freed on its own; reclaimed only when `reset` reclaims whole arena.
   let bytes_needed = count * sizeof(T)
   doAssert arena.used + bytes_needed <= arena.capacity,
     &"Arena holds {arena.capacity} bytes; {arena.used + bytes_needed} asked for. " &
@@ -94,22 +87,20 @@ proc push*[T](arena: var Arena; count: int): ptr UncheckedArray[T] =
 #[ Frame Swap Pair ]#
 
 type ArenaSwap* = object ## Hold two frame arenas and which of them this frame is writing.
-  ## **A two-frame lifetime.** What a frame carves stays readable through the next frame as
-  ## `previous`, and is reclaimed only when its block comes round again -- so a frame can
-  ## read what the one before it worked out without either copying the answer somewhere
-  ## safer or keeping it alive forever.
-  ##   The swap is what makes that true, and it is the whole mechanism: `swap` moves the
-  ## write cursor to the other block **and resets it**, so a frame always begins with an
-  ## arena holding nothing. Reclaiming on the way in rather than on the way out is what
-  ## leaves the block written last frame intact until the moment it is needed again.
+  ## **Two-frame lifetime.** What frame carves stays readable through next frame as
+  ## `previous`, reclaimed only when its block comes round again, so frame can read what
+  ## one before it worked out without copying or keeping it alive forever.
+  ##   `swap` moves write cursor to other block **and resets it**, so frame always begins
+  ## with arena holding nothing. Reclaiming on way in leaves block written last frame
+  ## intact until needed again.
   arenas: array[2, Arena]
-  index_current: int ## Which of `arenas` this frame carves from; the other is last frame's.
+  index_current: int ## Which of `arenas` this frame carves from; other is last frame's.
 
 
 proc initArenaSwap*(backing_first, backing_second: var openArray[byte]): ArenaSwap =
-  ## Wrap two caller-owned blocks as a swap pair, the first of them current.
-  ##   Two blocks rather than one twice the size: the point is that last frame's bytes are
-  ##   still *there*, which a single arena reset in place cannot promise.
+  ## Wrap two caller-owned blocks as swap pair, first of them current.
+  ##   Two blocks rather than one twice size: point is that last frame's bytes are still
+  ## *there*, which single arena reset in place cannot promise.
   ArenaSwap(
     arenas: [initArena(backing_first), initArena(backing_second)],
     index_current: 0,
@@ -117,30 +108,29 @@ proc initArenaSwap*(backing_first, backing_second: var openArray[byte]): ArenaSw
 
 
 proc swap*(pair: var ArenaSwap) =
-  ## Begin a new frame: what was current becomes readable as `previous`, and the block
-  ## being moved to is reclaimed so this frame starts clean.
+  ## Begin new frame: what was current becomes readable as `previous`, and block moved to
+  ## is reclaimed so this frame starts clean.
   pair.index_current = 1 - pair.index_current
   pair.arenas[pair.index_current].reset()
 
 
 proc current*(pair: var ArenaSwap): var Arena = pair.arenas[pair.index_current]
-  ## Reach the arena this frame carves from.
+  ## Reach arena this frame carves from.
 
 proc previous*(pair: var ArenaSwap): var Arena = pair.arenas[1 - pair.index_current]
-  ## Reach the arena the *previous* frame carved from, still holding what it wrote.
-  ##   Read-only in spirit: carving from it would take memory this frame's `swap` is about
-  ##   to reclaim, and nothing here stops that -- the discipline is the caller's.
+  ## Reach arena *previous* frame carved from, still holding what it wrote.
+  ##   Read-only in spirit: carving from it takes memory this frame's `swap` is about to
+  ## reclaim, and nothing stops that; discipline is caller's.
 
 func usedSwap*(pair: ArenaSwap): int = pair.arenas[pair.index_current].used
   ## Report bytes carved this frame.
 
 func capacitySwap*(pair: ArenaSwap): int = pair.arenas[0].capacity + pair.arenas[1].capacity
-  ## Report both blocks together, which is what the pair actually reserves.
+  ## Report both blocks together, which is what pair reserves.
 
 func peakUsedSwap*(pair: ArenaSwap): int =
-  ## Report the most either block has ever held at once.
-  ##   The larger of the two rather than their sum: they hold one frame's work each, not
-  ##   halves of one, so a sum would name a quantity no single frame ever reached.
+  ## Report most either block has ever held at once.
+  ##   Larger of two rather than sum: they hold one frame's work each, not halves of one.
   max(pair.arenas[0].peak_used, pair.arenas[1].peak_used)
 
 
@@ -148,10 +138,10 @@ func peakUsedSwap*(pair: ArenaSwap): int =
 #[ Arena Introspection ]#
 
 func used*(arena: Arena): int = arena.used
-  ## Report bytes carved from `arena` and not yet reclaimed by a `reset`.
+  ## Report bytes carved from `arena` and not yet reclaimed by `reset`.
 
 func capacity*(arena: Arena): int = arena.capacity
-  ## Report the fixed size `arena` was constructed with.
+  ## Report fixed size `arena` was constructed with.
 
 func peakUsed*(arena: Arena): int = arena.peak_used
-  ## Report the most `arena` has ever held at once, across every `reset` so far.
+  ## Report most `arena` has ever held at once, across every `reset`.

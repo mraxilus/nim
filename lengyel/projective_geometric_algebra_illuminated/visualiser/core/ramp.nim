@@ -1,30 +1,25 @@
-## Hold the diagnostics tree's own colour ramp, as it ships.
+## Hold diagnostics tree's colour ramp, as shipped.
 ##
-## The tree tints each row by how much of the frame that row costs: a continuous ramp from
-## cyan at nothing to orange at half the frame or more, rather than the four bands it
-## replaced. What the ramp *is* -- **CET-I1**, re-lit to this drawer's own text tones -- and
-## why, is `tools/check_ramp.nim`'s doc comment; that tool regenerates every entry below
-## from the published map and the stylesheet's own tokens and fails if the two disagree, so
-## this table cannot drift from what it claims to be. It is data here and nothing else.
+## Tree tints each row by its share of frame: continuous ramp from cyan at nothing to
+## orange at half frame or more. Ramp is **CET-I1**, re-lit to drawer's own text tones;
+## `tools/check_ramp.nim` regenerates every entry from published map and stylesheet tokens
+## and fails where two disagree, so table cannot drift from what it claims.
 ##
-## Two ramps because a row is two pieces of text at two weights: its label, and its value.
-## Both take hue and chroma from the map and lightness from the tone the untinted text
-## already wears, so tinting a row never disturbs the type hierarchy the tree reads by.
+## Two ramps because row is two pieces of text at two weights: label and value. Both take
+## hue and chroma from map and lightness from tone untinted text wears, so tinting never
+## disturbs type hierarchy.
 ##
-## A `core` module rather than one inside `browser/` because the tool that verifies it is
-## native and must not import the browser bridge; nothing here draws, and nothing here
-## depends on anything at all.
+## `core` module rather than `browser/` one because verifying tool is native and must not
+## import browser bridge; nothing here draws.
 
 const STEPS_RAMP_TREE* = 17
-  ## How many samples of the map the ramp ships. The presentation layer interpolates
-  ## between them, and `check_ramp` measures what that interpolation costs against the
-  ## map's full 256 entries rather than assuming it is free.
+  ## Samples of map ramp ships. Presentation layer interpolates between them; `check_ramp`
+  ## measures that interpolation against map's full 256 entries.
 
 
 const LIFT_VALUE_RAMP* = 0.15
-  ## How far a row's value is lifted from its label's lightness toward `--ink`'s.
-  ##   Small on purpose, and unchanged from the banded ramp this replaced: lifting the
-  ##   whole way desaturates the number, which is the half of the row a reader looks at.
+  ## How far row's value is lifted from label's lightness toward `--ink`'s.
+  ##   Small on purpose: lifting whole way desaturates number, half of row reader reads.
 
 
 const RAMP_TREE_LABEL*: array[STEPS_RAMP_TREE, (float, float, float)] = [
@@ -46,7 +41,7 @@ const RAMP_TREE_LABEL*: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.81370, 0.48972, 0.30279),
   (0.84972, 0.45984, 0.32453),
 ]
-  ## A row's label, at `--ink-muted`'s own lightness.
+  ## Row's label, at `--ink-muted`'s lightness.
 
 
 const RAMP_TREE_VALUE*: array[STEPS_RAMP_TREE, (float, float, float)] = [
@@ -68,4 +63,4 @@ const RAMP_TREE_VALUE*: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.86772, 0.53902, 0.35173),
   (0.90479, 0.50942, 0.37277),
 ]
-  ## A row's value, one `LIFT_VALUE_RAMP` step brighter.
+  ## Row's value, one `LIFT_VALUE_RAMP` step brighter.

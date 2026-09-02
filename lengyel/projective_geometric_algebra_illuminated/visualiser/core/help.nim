@@ -1,38 +1,31 @@
 ## Say what every gesture, button and key in this visualiser does, once, for both UIs.
 ##
-## The desktop wrote this out in its panel and the browser wrote it out in a hint that
-## disappeared after four seconds; the two had already drifted, and only one of them could
-## be got back. Both now render this table, so a control that gains a binding is described
-## in one place or in neither.
+## Desktop wrote this in its panel and browser in hint that vanished after four seconds;
+## two had drifted. Both render this table, so control gaining binding is described in one
+## place or in neither.
 ##
-## Entries name the *user's* action and its outcome, in the words a reader would use, not
-## the handler that implements it -- "drag one object onto another", not "pointerdown then
-## pointermove". Where a binding is derived from a rule stated elsewhere, it is read from
-## there rather than transcribed: `lut_help_entries` builds its construct rows out of
-## `interaction.armingOf`, so rebinding a button rewrites the help with it.
+## Entries name *user's* action and its outcome, in reader's words, not handler: "drag one
+## object onto another", not "pointerdown then pointermove". Binding derived from rule
+## stated elsewhere is read from there: `lut_help_entries` builds construct rows out of
+## `interaction.armingOf`, so rebinding button rewrites help.
 ##
-## **Every row has to make sense with the rows above it covered up**, because that is how
-## this is read: a reader opens one tab, finds the line they need, and leaves. Three ways a
-## row failed that, all of them found by reading the rendered panel cold rather than by any
-## test -- circular ("drag one object onto another" → "make whatever the two of them
-## make"), leaning on its neighbour ("hold still over the target" → "the same choice,
-## without needing the other button"), and naming internals a reader has never met ("more…
-## in that choice", "the apply section", "dolly in and out"). What a row genuinely cannot
-## carry -- which menu this is, what a wedge is -- goes in `descriptionOf` instead.
+## **Every row has to make sense with rows above it covered up**: reader opens one tab,
+## finds line they need, leaves. Three failures, found by reading rendered panel cold:
+## circular ("drag one object onto another" → "make whatever the two of them make"),
+## leaning on neighbour ("the same choice, without needing the other button"), naming
+## internals reader never met ("the apply section", "dolly"). What row cannot carry (which
+## menu, what wedge is) goes in `descriptionOf`.
 ##
-## One word, one meaning: objects are **selected**, operations are **chosen**. "Choose" used
-## to do both jobs, which left it saying nothing about which was meant.
+## One word, one meaning: objects are **selected**, operations are **chosen**.
 ##
-## **Cut by how you are working, not by what the control is.** A reader opens this in the
-## middle of one thing -- dragging, or selecting, or moving the camera -- and only that
-## thing's rows are of any use to them right then. So `HelpPath` is the axis, one tab per
-## path, and `ENTRIES_MAX_PATH` holds each tab to what fits a phone without scrolling. The
-## table as a whole is under no such bound and no longer pretends to be: it grew from 18
-## entries to 39 across four rounds while its own header once still claimed everything here
-## fit one popup, which is exactly the drift a compile-time cap now fails the build over.
+## **Cut by how reader is working, not by what control is.** Reader opens this mid-task,
+## and only that task's rows are of use. `HelpPath` is axis, one tab per path, and
+## `ENTRIES_MAX_PATH` holds each tab to what fits phone without scrolling. Table grew from
+## 18 entries to 39 while its header claimed everything fit one popup; compile-time cap now
+## fails build over that drift.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
-## paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared between desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
+## paths; see `visualiser.nim`'s "Render Paths" table.
 
 {.experimental: "strictFuncs".}
 
@@ -45,28 +38,23 @@ import ./[interaction, scene]
 #[ Type Definitions ]#
 
 const ENTRIES_MAX_PATH_CATALOGUE* = COUNT_OPERATION
-  ## Bound the `operations` path at exactly the size of the catalogue it lists.
-  ##   Not a height at all, unlike the two bounds below: this tab *is* the catalogue, one
-  ##   row per operation, so the only bound worth checking is that it holds every one of
-  ##   them and nothing else. It scrolls on any screen and is meant to -- a reference list
-  ##   read by looking something up, not by taking it in at a glance.
+  ## Bound `operations` path at exactly size of catalogue it lists.
+  ##   Not height: this tab *is* catalogue, one row per operation, and only bound worth
+  ## checking is that it holds every one. It scrolls on any screen; reference list read by
+  ## lookup.
 
 const ENTRIES_MAX_PATH_KEYS* = 12
-  ## Bound how many entries the `keys` path may hold, checked at compile time.
-  ##   Its own bound, larger than every other path's, because the measurement below already
-  ##   found this the one tab not worth fitting a 320-pixel viewport: it describes a
-  ##   keyboard, and a viewport that size is a phone. The bound is still here so the tab
-  ##   cannot grow without anyone noticing -- it went from 8 rows to 11 when the movement
-  ##   keys arrived, and that was a deliberate raise rather than a silent one.
+  ## Bound how many entries `keys` path may hold, checked at compile time.
+  ##   Larger than other paths': measurement below found this one tab not worth fitting
+  ## 320-pixel viewport, since it describes keyboard and viewport that size is phone.
+  ## Bound stays so tab cannot grow unnoticed; 8 rows to 11 with movement keys was
+  ## deliberate raise.
 
 const ENTRIES_MAX_PATH* = 8
   ## Bound how many entries any other path may hold, checked at compile time.
-  ##   A proxy, and named as one: the real constraint is *rendered height*, and a count is
-  ##   what compile time can check. **Measured, not estimated**: the built page is driven
-  ##   at 320x568 -- an iPhone SE, the tightest phone worth supporting -- and each tab is
-  ##   asked how far its own rows overflow the box they are given, with that tab's
-  ##   description above them. Re-measured after every row was rewritten to stand on its
-  ##   own and a `descriptionOf` line was added above each tab:
+  ##   Proxy: real constraint is *rendered height*, and count is what compile time checks.
+  ## **Measured**: built page driven at 320x568 (iPhone SE), each tab asked how far its
+  ## rows overflow box given, with description above them:
   ##
   ##   | Path | Rows | Rows box | Overflow |
   ##   |------|------|----------|----------|
@@ -77,60 +65,44 @@ const ENTRIES_MAX_PATH* = 8
   ##   | `camera` | 6 | 314 px | 0 |
   ##   | `keys` | 11 | 320 px | **scrolls; see below** |
   ##
-  ##   **`select` now scrolls too, by one row, and that is the trade taken.** Moving the
-  ##   menu onto the right button gave it two more rows to carry -- which button reveals,
-  ##   and what a right click does with a selection already standing -- and each teaches a
-  ##   binding a reader cannot discover any other way. Shortening was tried first: spelling
-  ##   shift out per button cost 125 px, folding it into one row recovered 77 of that, and
-  ##   trimming the three longest outcomes recovered nothing further, none of them having
-  ##   crossed a wrap boundary. What is left is one row of height against one row of
-  ##   teaching, on the tightest phone alone.
-  ##   `drag`'s 4 px is new since these numbers were first taken while its rows are
-  ##   untouched, so it is drift in the measuring environment rather than a change here.
-  ##   **`keys` is the other tab that scrolls there, and it is left scrolling.** Its rows
-  ##   came to 449 px against a 320 px box when there were eight of them, and there are
-  ##   eleven now that the movement keys are bound. Fitting them means every outcome
-  ##   under about 39 characters, which costs real bindings -- `enter`'s "hold shift to add
-  ##   it" and `escape`'s "one step at a time" are exactly the things a reader cannot
-  ##   discover any other way. Paying that on every screen to serve a 320-pixel one is the
-  ##   wrong trade for a tab describing a keyboard, since a viewport that size is a phone.
-  ##   The other five fit *exactly*, and two of them only after their descriptions were cut
-  ##   to fewer wrapped lines: `drag`'s went from four lines to two and `panel`'s from two
-  ##   to one, each worth about 17 px. **A count of rows is not a count of lines**, and a
-  ##   description is worth a row or two of height -- so a path nearing this cap is a
-  ##   prompt to re-run the measurement, never to trust the number.
-  ##   What the cap is *not* any more is a promise that nothing scrolls; it is the bound
-  ##   that forces the question to be asked again. Raising it is a decision about the
-  ##   smallest screen this help still works on, and splitting the path is nearly always
-  ##   the better answer -- though not here: regrouping the keyboard rows onto the tabs
-  ##   whose work they do was tried and measured, and left `camera` 133 px over and
-  ##   `select` 66 px over, which is worse than what it fixed.
+  ##   **`select` scrolls by one row; trade taken.** Menu on right button gave it two rows
+  ## teaching bindings reader cannot discover otherwise. Shortening tried first: shift per
+  ## button cost 125 px, folding into one row recovered 77, trimming outcomes recovered
+  ## nothing.
+  ##   `drag`'s 4 px is drift in measuring environment; rows untouched.
+  ##   **`keys` scrolls and is left scrolling.** Fitting eleven rows means every outcome
+  ## under ~39 characters, which costs real bindings (`enter`'s "hold shift to add it").
+  ## Wrong trade for keyboard tab serving phone.
+  ##   Other five fit *exactly*, two only after descriptions were cut (`drag` four lines to
+  ## two, `panel` two to one, ~17 px each). **Count of rows is not count of lines**; path
+  ## nearing cap prompts re-measurement, never trust in number.
+  ##   Cap is bound that forces question to be asked again, not promise nothing scrolls.
+  ## Splitting path is nearly always better than raising; not here: regrouping keyboard
+  ## rows onto tabs whose work they do left `camera` 133 px over and `select` 66 px over.
 
 type
   HelpPath* {.pure.} = enum ## Group entries by which way of working they belong to.
-    ## What a reader is in the middle of when they open the help, rather than what kind of
-    ## control it is. Ordered as a reader meets them: the drag is what the visualiser is
-    ## for, and the keys are the accelerator rather than the way in.
+    ## What reader is in middle of when opening help. Ordered as reader meets them: drag is
+    ## what visualiser is for, keys are accelerator.
     Drag, ## Building one object out of two by dragging between them.
     Select, ## Saying which objects to work on.
-    Menu, ## What the menu beside the selection offers.
-    Panel, ## The panel and the buttons above it.
-    Camera, ## Moving the view.
+    Menu, ## What menu beside selection offers.
+    Panel, ## Panel and buttons above it.
+    Camera, ## Moving view.
     Keys, ## Keyboard.
-    Operations, ## What every operation in the catalogue is called.
+    Operations, ## What every operation in catalogue is called.
 
-  HelpEntry* = object ## Hold one thing a reader can do and what it does.
-    path*: HelpPath ## Way of working it belongs to, and so the tab it appears under.
-    action*: string ## What the reader does.
+  HelpEntry* = object ## Hold one thing reader can do and what it does.
+    path*: HelpPath ## Way of working it belongs to, and so tab it appears under.
+    action*: string ## What reader does.
     outcome*: string ## What happens when they do it.
-    is_touch*: bool ## Whether this is the touch way of doing it rather than the pointer
-      ## way. Both are always listed: a laptop with a touchscreen is one device, and
-      ## hiding either set behind a guess about the hardware is how a reader ends up
-      ## believing a gesture does not exist.
+    is_touch*: bool ## Whether this is touch way rather than pointer way. Both always
+      ## listed: laptop with touchscreen is one device, and hiding either behind guess
+      ## about hardware leaves reader believing gesture does not exist.
 
 
 func titleOf*(path: HelpPath): string =
-  ## Name one tab as a reader would say what they are doing.
+  ## Name one tab as reader would say what they are doing.
   case path
   of HelpPath.Drag: "drag"
   of HelpPath.Select: "select"
@@ -142,14 +114,10 @@ func titleOf*(path: HelpPath): string =
 
 
 func descriptionOf*(path: HelpPath): string =
-  ## Say in one sentence what a tab is about, for the line above its rows.
-  ##   A row can only stand on its own so far. "the … wedge" and "the apply section"
-  ##   name things a reader meets *inside* one way of working, and the `menu` rows name
-  ##   five buttons without ever saying which menu they are on or how one gets it -- all
-  ##   answerable in a sentence, and unanswerable in a two-column row. So the context that
-  ##   would otherwise have to be repeated into every row is stated once, above them.
-  ##   Written for a reader who has just opened this tab and nothing else, which is the
-  ##   only state this text is ever read in.
+  ## Say in one sentence what tab is about, for line above its rows.
+  ##   Row stands on its own only so far: "the … wedge" and "the apply section" name things
+  ## met *inside* one way of working, and `menu` rows name five buttons without saying
+  ## which menu. Context stated once, above rows, for reader who has just opened this tab.
   case path
   of HelpPath.Drag:
     "Drag one object onto another to build a new one. Some pairs open a wheel of choices."
@@ -169,22 +137,20 @@ func descriptionOf*(path: HelpPath): string =
 
 
 
-#[ The Table ]#
+#[ Entry Table ]#
 
 func nameOf(button: PointerButton): string =
-  ## Name a mouse button as a reader would say it.
+  ## Name mouse button as reader would say it.
   toLowerAscii($button)
 
 
 const lut_help_entries* = block:
-  ## Every entry the two UIs render, grouped by path and in the order a reader meets them.
-  ##   A fixed array rather than a `seq`, with `count` asserted against its length at
-  ## compile time, so adding an entry without resizing fails the build rather than leaving
-  ## a blank row at the bottom of the panel. Its size is the hand-written rows plus the
-  ## catalogue, which is generated: adding an operation resizes this on its own.
-  ##   Entries of one path are written together, and the assertion below insists they stay
-  ## that way: both front-ends walk this once in order, so a path split across two runs
-  ## would render as two tabs of the same name.
+  ## Every entry two UIs render, grouped by path and in order reader meets them.
+  ##   Fixed array with `count` asserted against length at compile time, so adding entry
+  ## without resizing fails build rather than leaving blank row. Size is hand-written rows
+  ## plus catalogue, which is generated.
+  ##   Entries of one path are written together, asserted below: both front-ends walk this
+  ## once in order, so split path renders as two tabs of same name.
   var lut: array[39 + COUNT_OPERATION, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
@@ -193,10 +159,8 @@ const lut_help_entries* = block:
     )
     inc count
 
-  # Which button asks and which decides is `interaction.armingOf`'s to say, so rebinding
-  #   one rewrites its line here rather than leaving this text quietly wrong.
-  #   Walked in reading order rather than in `PointerButton`'s own, which runs left, middle,
-  #   right by physical position.
+  # Which button asks and which decides is `interaction.armingOf`'s to say. Walked in
+  #   reading order rather than `PointerButton`'s physical left, middle, right.
   for button in [PointerButton.Left, PointerButton.Right, PointerButton.Middle]:
     let arming = armingOf(button)
     if arming.isNone: continue
@@ -211,7 +175,7 @@ const lut_help_entries* = block:
     HelpPath.Drag, "drag one object onto another",
     "build the one object those two define", is_touch = true,
   )
-  # Touch alone, now that a mouse decides by which button went down; see `MenuArming`.
+  # Touch alone, now that mouse decides by button; see `MenuArming`.
   add(
     HelpPath.Drag, "pause on the target mid-drag",
     "open the wheel without needing a second button", is_touch = true,
@@ -221,13 +185,10 @@ const lut_help_entries* = block:
     "hand both objects to the apply picker, which lists every operation",
   )
 
-  # Which button brings the menu with it is `interaction.revealsMenuOn`'s to say, exactly as
-  #   the drag rows above read `armingOf`, so moving the menu to another button rewrites
-  #   these lines rather than leaving them quietly wrong.
-  #   **Shift gets one row, not one per button.** Spelling out all four combinations was
-  #   measured at 125 px over the box a 320-pixel phone gives this tab -- and shift means
-  #   the same thing whichever button it is held with, so four rows were saying one rule
-  #   twice. See `ENTRIES_MAX_PATH` on why the answer is fewer rows, not a bigger cap.
+  # Which button brings menu is `interaction.revealsMenuOn`'s to say, as drag rows read
+  #   `armingOf`.
+  #   **Shift gets one row, not one per button.** All four combinations measured 125 px
+  #   over box 320-pixel phone gives this tab, and shift means same thing whichever button.
   for button in [PointerButton.Left, PointerButton.Right]:
     add(
       HelpPath.Select, nameOf(button) & "-click an object",
@@ -254,19 +215,16 @@ const lut_help_entries* = block:
     HelpPath.Select, "tap another object while one is selected",
     "add it to the selection", is_touch = true,
   )
-  # The menu beside the selection. Undocumented in either build until recently, on the
-  #   grounds that it was obvious once you saw it -- but nothing said it was there.
-  #   A tab of its own rather than the tail of `select`: ten rows on a phone wrap their
-  #   outcomes onto second lines and scroll, which is what the tab split undid.
+  # Menu beside selection. Own tab rather than tail of `select`: ten rows on phone wrap
+  #   and scroll.
   add(HelpPath.Menu, "apply", "run any operation on what you selected")
   add(HelpPath.Menu, "edit", "change the selected object's name, colour or coordinates")
   add(HelpPath.Menu, "hide", "keep the selection but stop drawing it")
   add(HelpPath.Menu, "delete", "remove the selection from the scene")
   add(HelpPath.Menu, "✕", "clear the selection and close this menu")
 
-  # Named by button rather than by where the button sits: `add` and the axes/grid toggles
-  #   are in the desktop's top bar and the browser's chip row, so a row naming a place
-  #   would be false on one of the two builds.
+  # Named by button rather than by where it sits: `add` and toggles are in desktop's top
+  #   bar and browser's chip row, so row naming place is false on one build.
   add(HelpPath.Panel, "add", "create a point by typing its coordinates")
   add(
     HelpPath.Panel, "the apply section",
@@ -288,8 +246,7 @@ const lut_help_entries* = block:
   add(HelpPath.Camera, "drag empty space", "orbit the view around what you are looking at")
   add(HelpPath.Camera, "right-drag empty space", "slide the view sideways and up or down")
   add(HelpPath.Camera, "wheel", "move toward or away from whatever you point at")
-  # "empty space", not just "with one finger": a finger that starts on an *object* builds
-  #   something now, so the unqualified row would send a reader to the wrong gesture.
+  # "empty space", not just "with one finger": finger starting on *object* builds now.
   add(
     HelpPath.Camera, "drag empty space with one finger",
     "orbit the view around what you are looking at", is_touch = true,
@@ -305,10 +262,9 @@ const lut_help_entries* = block:
   )
   add(HelpPath.Keys, "ctrl+z, ctrl+shift+z", "undo, then redo, the last change to the scene")
   add(HelpPath.Keys, "tab", "move focus between the controls and the 3D view")
-  # Read out of `interaction.motionFor` and `interaction.actionFor` rather than written
-  #   here, so rebinding a key rewrites its own row. Grouped by what they do because a
-  #   reader looks for the job first and the key second; the names still come from
-  #   `nameOf`, one per key.
+  # Read out of `interaction.motionFor` and `interaction.actionFor`, so rebinding key
+  #   rewrites its row. Grouped by job, since reader looks for job first; names come from
+  #   `nameOf`.
   add(
     HelpPath.Keys,
     nameOf(Key.W) & ", " & nameOf(Key.A) & ", " & nameOf(Key.S) & ", " & nameOf(Key.D),
@@ -335,10 +291,8 @@ const lut_help_entries* = block:
     "select the highlighted object; hold shift to add it",
   )
   add(HelpPath.Keys, nameOf(Key.Home), "put the camera back where it started")
-  # The whole catalogue, generated rather than transcribed: a row per operation, each
-  #   naming it exactly as every picker in both builds offers it (`scene.notationSymbolic`
-  #   and `scene.notationNamed`, the two halves of one split). A hand-written list would
-  #   fall behind the catalogue the first time one was added, and nothing would say so.
+  # Whole catalogue, generated: row per operation, named as every picker offers it
+  #   (`scene.notationSymbolic`, `scene.notationNamed`). Hand-written list falls behind.
   for operation in Operation:
     add(HelpPath.Operations, notationSymbolic(operation), notationNamed(operation))
 
@@ -347,13 +301,13 @@ const lut_help_entries* = block:
 
 
 func countOf*(path: HelpPath): int =
-  ## Count the entries one tab holds, for a caller sizing or checking one.
+  ## Count entries one tab holds, for caller sizing or checking one.
   for entry in lut_help_entries:
     if entry.path == path: inc result
 
 
 static:
-  # Two properties the front-ends rely on and neither can check for itself.
+  # Two properties front-ends rely on and neither can check for itself.
   var seen: set[HelpPath]
   var path_last = none(HelpPath)
   for entry in lut_help_entries:

@@ -1,13 +1,13 @@
-// Expose the slice of Dear ImGui that the visualiser calls, as flat C entry points.
+// Expose slice of Dear ImGui that visualiser calls, as flat C entry points.
 //
 // Dear ImGui's own interface is C++ with default arguments, overloads and namespaces,
-// none of which Nim can import. A facade is cheaper than a generated binding: it declares
-// exactly the widgets used, and every default the visualiser relies on is written here
+// none of which Nim can import. Facade is cheaper than generated binding: it declares
+// exactly widgets used, and every default visualiser relies on is written here
 // once rather than repeated at each call site.
 //
 // Backends are Dear ImGui's own for SDL3 and OpenGL 3, used unmodified.
 //
-// Desktop-only; unreachable from the browser build. See visualiser.nim's own "Render
+// Desktop-only; unreachable from browser build. See visualiser.nim's own "Render
 // Paths" table.
 
 #include "imgui.h"
@@ -18,37 +18,37 @@
 
 #include <utility>
 
-// No single face covers what this GUI writes, so the atlas is built from three, merged in
+// No single face covers what this GUI writes, so atlas is built from three, merged in
 // order of decreasing generality. Each range list names only what its own face is here to
-// supply, so a glyph is never taken from a face that merely happens to have it too.
-//   Verified by rendering every non-ASCII codepoint the source actually uses against all
+// supply, so glyph is never taken from face that merely happens to have it too.
+//   Verified by rendering every non-ASCII codepoint source actually uses against all
 //   three faces: 36 distinct codepoints, none missing. Re-run that check before narrowing
 //   any range below.
 static const ImWchar RANGES_TEXT[] = {
   0x0020, 0x00FF, // Latin and supplement.
-  0x02B0, 0x02FF, // Spacing modifiers, which the notation accents its operands with.
+  0x02B0, 0x02FF, // Spacing modifiers, which notation accents its operands with.
   0x2010, 0x205F, // Punctuation, superscripts and subscripts.
   0x2080, 0x209F, // Subscript digits, used by basis element names.
   0,
 };
 static const ImWchar RANGES_MATH[] = {
   0x2190, 0x21FF, // Arrows.
-  0x2200, 0x22FF, // Mathematical operators: the wedge, antiwedge, dots and complements.
+  0x2200, 0x22FF, // Mathematical operators: wedge, antiwedge, dots and complements.
   0x2300, 0x23FF, // Miscellaneous technical.
-  0x27C0, 0x27EF, // Supplemental mathematical operators A: the geometric (anti)product.
+  0x27C0, 0x27EF, // Supplemental mathematical operators A: geometric (anti)product.
   0x2A00, 0x2AFF, // Supplemental mathematical operators B.
   0x1D400, 0x1D7FF, // Mathematical alphanumerics: Lengyel's own bold operands.
   0,
 };
 static const ImWchar RANGES_SYMBOL[] = {
   0x25A0, 0x25FF, // Geometric shapes.
-  0x2600, 0x26FF, // Miscellaneous symbols: the bulk and weight dual stars.
-  0x2700, 0x27BF, // Dingbats: the abandon button's own cross.
+  0x2600, 0x26FF, // Miscellaneous symbols: bulk and weight dual stars.
+  0x2700, 0x27BF, // Dingbats: abandon button's own cross.
   0,
 };
 
-// Remember whether the requested face was accepted, since Dear ImGui reports that only
-// at the moment of loading and the caller wants to say so once, at startup.
+// Remember whether requested face was accepted, since Dear ImGui reports that only
+// at moment of loading and caller wants to say so once, at startup.
 static bool is_font_loaded = false;
 
 extern "C" {
@@ -58,12 +58,12 @@ bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
   IMGUI_CHECKVERSION();
   if (ImGui::CreateContext() == nullptr) return false;
   ImGui::StyleColorsDark();
-  // Let the keyboard reach the panels at all. Without this every button, combo and field
-  // here is pointer-only -- a total WCAG 2.1.1 Level A failure that this one line caused,
-  // and that no amount of binding keys in the application itself could have fixed, since
-  // the widgets are Dear ImGui's and only its own navigation can move between them.
+  // Let keyboard reach panels at all. Without this every button, combo and field
+  // here is pointer-only -- total WCAG 2.1.1 Level Failure that this one line caused,
+  // and that no amount of binding keys in application itself could have fixed, since
+  // widgets are Dear ImGui's and only its own navigation can move between them.
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-  // Keep panel layout in memory only, so running the visualiser leaves no file behind.
+  // Keep panel layout in memory only, so running visualiser leaves no file behind.
   ImGui::GetIO().IniFilename = nullptr;
   ImGui::GetStyle().WindowRounding = 4.0f;
   ImGui::GetStyle().FrameRounding = 3.0f;
@@ -73,8 +73,8 @@ bool guiInit(SDL_Window* window, SDL_GLContext context, const char* path_font,
     ImFontAtlas* atlas = ImGui::GetIO().Fonts;
     is_font_loaded =
         atlas->AddFontFromFileTTF(path_font, size_font, nullptr, RANGES_TEXT) != nullptr;
-    // Merge the two supplementary faces into that same font rather than adding separate
-    // fonts: a merged range is drawn without the caller having to push a font around
+    // Merge two supplementary faces into that same font rather than adding separate
+    // fonts: merged range is drawn without caller having to push font around
     // whichever character happens to need it, which no caller could do mid-string anyway.
     ImFontConfig merge;
     merge.MergeMode = true;
@@ -102,23 +102,23 @@ bool guiWantsMouse() { return ImGui::GetIO().WantCaptureMouse; }
 
 bool guiWantsKeyboard() { return ImGui::GetIO().WantCaptureKeyboard; }
 
-// Report whether keyboard navigation is actually in force, for a headless run to check
-//   the configuration it cannot check the behaviour of: a window that never takes focus
-//   never gives Dear ImGui the focus its navigation needs, so a scripted Tab demonstrates
-//   nothing there, while this at least demonstrates the flag is set.
+// Report whether keyboard navigation is actually in force, for headless run to check
+//   configuration it cannot check behaviour of: window that never takes focus
+//   never gives Dear ImGui focus its navigation needs, so scripted Tab demonstrates
+//   nothing there, while this at least demonstrates flag is set.
 bool guiIsNavEnabled() {
   return (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
 }
 
-// Report whether Dear ImGui should get a key rather than the 3D view behind it.
+// Report whether Dear ImGui should get key rather than 3D view behind it.
 //   Not `WantCaptureKeyboard`, which is what this looked like it should be and is wrong
-//   here: enabling keyboard navigation makes that flag true from the very first frame,
+//   here: enabling keyboard navigation makes that flag true from very first frame,
 //   with nothing focused and nobody having pressed Tab, so using it swallowed every view
-//   key outright. Measured, not guessed -- `--drive-keys` reported the camera still at its
-//   opening placement with the flag reading true.
-//   The two things that genuinely mean "these keys are ImGui's": a text field is taking
-//   input, or navigation has actually landed on a widget. Neither is true while the
-//   reader is simply looking at the scene, which is when the view wants its own keys.
+//   key outright. Measured, not guessed -- `--drive-keys` reported camera still at its
+//   opening placement with flag reading true.
+//   Two things that genuinely mean "these keys are ImGui's": text field is taking
+//   input, or navigation has actually landed on widget. Neither is true while
+//   reader is simply looking at scene, which is when view wants its own keys.
 bool guiWantsKeys() {
   return ImGui::GetIO().WantTextInput || ImGui::IsAnyItemFocused();
 }
@@ -141,16 +141,16 @@ void guiWindowPlace(float x, float y, float width, float height) {
   ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
 }
 
-// Report the drawable area, so a caller can anchor something to a corner of it rather
-//   than to a coordinate it guessed. Changes with the window, which is the point.
+// Report drawable area, so caller can anchor something to corner of it rather
+//   than to coordinate it guessed. Changes with window, which is point.
 float guiViewportWidth() { return ImGui::GetIO().DisplaySize.x; }
 float guiViewportHeight() { return ImGui::GetIO().DisplaySize.y; }
 
-// Begin a window pinned where it is put, with nothing a reader could grab: no title bar,
+// Begin window pinned where it is put, with nothing reader could grab: no title bar,
 //   no resize corner, no scrollbar, and sized to whatever it ends up holding. `pivot` is
-//   which of the window's own corners `x`/`y` names -- (1, 1) anchors its bottom-right,
-//   which is what a corner affordance wants and what a caller would otherwise have to
-//   compute by laying the window out once and measuring it.
+//   which of window's own corners `x`/`y` names -- (1, 1) anchors its bottom-right,
+//   which is what corner affordance wants and what caller would otherwise have to
+//   compute by laying window out once and measuring it.
 bool guiWindowBeginPinned(const char *name, float x, float y, float pivot_x,
                           float pivot_y) {
   ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(pivot_x, pivot_y));
@@ -173,19 +173,19 @@ void guiChildEnd() { ImGui::EndChild(); }
 
 void guiText(const char* text) { ImGui::TextUnformatted(text); }
 
-// Wrap at the panel's own right edge instead of clipping, for a line whose length is the
-// data's to decide -- a full multivector runs past any width worth reserving for it.
+// Wrap at panel's own right edge instead of clipping, for line whose length is
+// data's to decide -- full multivector runs past any width worth reserving for it.
 void guiTextWrapped(const char* text) {
   ImGui::PushTextWrapPos(0.0f);
   ImGui::TextUnformatted(text);
   ImGui::PopTextWrapPos();
 }
 
-// Wrap at a width the caller states, for a window that sizes itself to its contents. Zero
-// -- what `guiTextWrapped` passes -- means "the content region's right edge", which in an
-// auto-sizing window is decided by the widest item in it; a wrapped paragraph is then both
-// an input to that width and a consequence of it, and settles wherever the circularity
-// leaves it. The help panel already knows the width it wants, so it says so.
+// Wrap at width caller states, for window that sizes itself to its contents. Zero
+// -- what `guiTextWrapped` passes -- means "the content region's right edge", which in
+// auto-sizing window is decided by widest item in it; wrapped paragraph is then both
+// input to that width and consequence of it, and settles wherever circularity
+// leaves it. Help panel already knows width it wants, so it says so.
 void guiTextWrappedAt(const char* text, float width) {
   ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
   ImGui::TextUnformatted(text);
@@ -198,10 +198,10 @@ void guiTextTinted(const char* text, float red, float green, float blue) {
   ImGui::PopStyleColor();
 }
 
-// Section headers carry the browser's own weight rather than Dear ImGui's default, which
-// is a saturated blue bar per section -- five of them stacked read as the loudest thing in
-// a panel whose job is to sit over a 3D scene. Tones are the browser's `--surface-raised`
-// and `--border`, so a header is legible as a header and no louder than that.
+// Section headers carry browser's own weight rather than Dear ImGui's default, which
+// is saturated blue bar per section -- five of them stacked read as loudest thing in
+// panel whose job is to sit over 3D scene. Tones are browser's `--surface-raised`
+// and `--border`, so header is legible as header and no louder than that.
 bool guiHeader(const char* label, bool is_open_first) {
   ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.106f, 0.129f, 0.169f, 1.0f));
   ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.165f, 0.196f, 0.239f, 1.0f));
@@ -216,11 +216,11 @@ bool guiButton(const char* label) { return ImGui::Button(label); }
 
 bool guiButtonSmall(const char* label) { return ImGui::SmallButton(label); }
 
-// One segment of a segmented control: a button that shows whether it is the option in
-// force, so both choices stay visible and switching costs one click rather than opening a
-// list. Both states are styled explicitly, from the browser's own `.toggles button` rules
-// -- the segment not in force must be *recessive*, and Dear ImGui's default button is a
-// prominent blue that would otherwise make it read as the selected one.
+// One segment of segmented control: button that shows whether it is option in
+// force, so both choices stay visible and switching costs one click rather than opening
+// list. Both states are styled explicitly, from browser's own `.toggles button` rules
+// -- segment not in force must be *recessive*, and Dear ImGui's default button is
+// prominent blue that would otherwise make it read as selected one.
 bool guiButtonToggle(const char* label, bool is_on, float width) {
   if (is_on) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.655f, 0.647f, 0.22f));
@@ -229,10 +229,10 @@ bool guiButtonToggle(const char* label, bool is_on, float width) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.741f, 0.953f, 0.941f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.655f, 0.647f, 1.0f));
   } else {
-    // Filled and bordered rather than transparent, unlike the browser's own segment: there
-    // the pill's track is what makes an unselected segment visible, and a panel drawn
-    // straight onto the scene has no track to sit on. Tones are the browser's `--surface`
-    // and `--border` so the two controls still read as the same thing.
+    // Filled and bordered rather than transparent, unlike browser's own segment: there
+    // pill's track is what makes unselected segment visible, and panel drawn
+    // straight onto scene has no track to sit on. Tones are browser's `--surface`
+    // and `--border` so two controls still read as same thing.
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.086f, 0.106f, 0.133f, 0.82f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.12f));
@@ -246,8 +246,8 @@ bool guiButtonToggle(const char* label, bool is_on, float width) {
   return pressed;
 }
 
-// A button that fills a width the caller names, for one that leads its own section the way
-// the browser's `.btn.primary` does -- Dear ImGui's plain button is only as wide as its
+// Button that fills width caller names, for one that leads its own section way
+// browser's `.btn.primary` does -- Dear ImGui's plain button is only as wide as its
 // own label.
 bool guiButtonWide(const char* label, float width) {
   return ImGui::Button(label, ImVec2(width, 0.0f));
@@ -257,7 +257,7 @@ bool guiCheckbox(const char* label, bool* value) { return ImGui::Checkbox(label,
 
 bool guiDragFloat(const char* label, float* value, float speed, float lowest,
                   float highest) {
-  // Four significant digits, not four decimal places: a coefficient of 3.5 should read
+  // Four significant digits, not four decimal places: coefficient of 3.5 should read
   // "3.5", not "3.5000", and one of 1664 should not lose its integer part to padding.
   return ImGui::DragFloat(label, value, speed, lowest, highest, "%.4g");
 }
@@ -280,17 +280,17 @@ bool guiColorEdit3(const char* label, float* values) {
 
 void guiSeparator() { ImGui::Separator(); }
 
-// One row of tabs, and one tab in it. Split into four calls because Nim cannot import a
-// C++ scope guard, so the caller pairs begin with end exactly as it does for a window.
-// `BeginTabItem` takes no open flag: every tab here is permanent, and a closable tab draws
-// an X the caller has nothing to do about.
+// One row of tabs, and one tab in it. Split into four calls because Nim cannot import
+// C++ scope guard, so caller pairs begin with end exactly as it does for window.
+// `BeginTabItem` takes no open flag: every tab here is permanent, and closable tab draws
+// X caller has nothing to do about.
 bool guiTabBarBegin(const char *name) { return ImGui::BeginTabBar(name); }
 
 void guiTabBarEnd() { ImGui::EndTabBar(); }
 
-// `is_forced` opens this tab whatever the reader last left open, which is how a headless
-// run reaches a tab it cannot click -- see `visualiser.Options.index_help_driven`. Passed
-// every frame while it is set, so nothing else can take the selection back.
+// `is_forced` opens this tab whatever reader last left open, which is how headless
+// run reaches tab it cannot click -- see `visualiser.Options.index_help_driven`. Passed
+// every frame while it is set, so nothing else can take selection back.
 bool guiTabBegin(const char *label, bool is_forced) {
   return ImGui::BeginTabItem(label, nullptr,
                              is_forced ? ImGuiTabItemFlags_SetSelected : 0);
@@ -298,11 +298,11 @@ bool guiTabBegin(const char *label, bool is_forced) {
 
 void guiTabEnd() { ImGui::EndTabItem(); }
 
-// Report how tall a bordered child region holding `count` lines of plain text has to be,
-// so a caller sizing one does not have to restate Dear ImGui's own line spacing, window
+// Report how tall bordered child region holding `count` lines of plain text has to be,
+// so caller sizing one does not have to restate Dear ImGui's own line spacing, window
 // padding and border width -- three numbers it would have to guess at and then re-guess
-// whenever the loaded font changes. `count` lines stack as count*line - one spacing, since
-// the spacing sits between lines rather than after each.
+// whenever loaded font changes. `count` lines stack as count*line - one spacing, since
+// spacing sits between lines rather than after each.
 float guiChildHeightForRows(int count) {
   const ImGuiStyle &style = ImGui::GetStyle();
   return count * ImGui::GetTextLineHeightWithSpacing() - style.ItemSpacing.y +
@@ -313,22 +313,22 @@ void guiSeparatorText(const char* label) { ImGui::SeparatorText(label); }
 
 void guiSameLine() { ImGui::SameLine(); }
 
-// Continue the current line at a fixed distance from its start, so a column of controls
+// Continue current line at fixed distance from its start, so column of controls
 // lines up under one another regardless of how long each one's own name is. Dear ImGui
-// draws a widget's label to its right; this is what lets a caller put it on the left.
+// draws widget's label to its right; this is what lets caller put it on left.
 void guiSameLineAt(float offset) { ImGui::SameLine(offset); }
 
-// Treat everything between the two as one item, so a name stacked over its own control
-// still advances `guiSameLine` by the width of the pair. Dear ImGui lays widgets out one
-// per line unless told otherwise, and has no notion of a labelled cell.
+// Treat everything between two as one item, so name stacked over its own control
+// still advances `guiSameLine` by width of pair. Dear ImGui lays widgets out one
+// per line unless told otherwise, and has no notion of labelled cell.
 void guiGroupBegin() { ImGui::BeginGroup(); }
 
 void guiGroupEnd() { ImGui::EndGroup(); }
 
-// Width `guiButtonSmall` would draw this label at, for a caller lining a run of them up
-// against the right edge rather than letting whatever precedes them decide where they sit.
-// Measure text as it will be drawn, so a caller laying out a column can size it from what
-//   actually goes in the column rather than from a number tuned by eye against today's
+// Width `guiButtonSmall` would draw this label at, for caller lining run of them up
+// against right edge rather than letting whatever precedes them decide where they sit.
+// Measure text as it will be drawn, so caller laying out column can size it from what
+//   actually goes in column rather than from number tuned by eye against today's
 //   longest entry.
 float guiTextWidth(const char *text) { return ImGui::CalcTextSize(text).x; }
 
@@ -336,7 +336,7 @@ float guiButtonSmallWidth(const char* label) {
   return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
 }
 
-// Continue the current line with `width` of it reserved against the right edge, so a run
+// Continue current line with `width` of it reserved against right edge, so run
 // of controls ends flush there whatever sits to its left.
 void guiAlignRight(float width) {
   ImGui::SameLine(0.0f, 0.0f);
@@ -347,8 +347,8 @@ void guiIdPush(int id) { ImGui::PushID(id); }
 
 void guiIdPop() { ImGui::PopID(); }
 
-// Width still free on the current line, so a caller laying widgets out with `sameLine`
-// can decide for itself where to wrap -- Dear ImGui runs them off the edge otherwise.
+// Width still free on current line, so caller laying widgets out with `sameLine`
+// can decide for itself where to wrap -- Dear ImGui runs them off edge otherwise.
 float guiContentWidth() { return ImGui::GetContentRegionAvail().x; }
 
 void guiWidthPush(float width) { ImGui::PushItemWidth(width); }
@@ -359,39 +359,39 @@ void guiDisabledPush(bool is_disabled) { ImGui::BeginDisabled(is_disabled); }
 
 void guiDisabledPop() { ImGui::EndDisabled(); }
 
-// Row that draws its own selected-state highlight, for a list where one entry is current.
-// Sized explicitly so following widgets share the line rather than being pushed below by
-// a selectable's own default full-remaining-width.
+// Row that draws its own selected-state highlight, for list where one entry is current.
+// Sized explicitly so following widgets share line rather than being pushed below by
+// selectable's own default full-remaining-width.
 bool guiSelectable(const char* label, bool is_selected, float width) {
   return ImGui::Selectable(label, is_selected, 0, ImVec2(width, 0.0f));
 }
 
-// Scale everything drawn until the matching pop, for content that should read as present
-// but out of focus. Multiplies rather than replaces, so nesting inside a disabled block
+// Scale everything drawn until matching pop, for content that should read as present
+// but out of focus. Multiplies rather than replaces, so nesting inside disabled block
 // keeps that block's own dimming too. Unlike `guiDisabledPush` this leaves widgets live:
-// a hidden object's own row must stay clickable in order to unhide it.
+// hidden object's own row must stay clickable in order to unhide it.
 void guiAlphaPush(float alpha) {
   ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * alpha);
 }
 
 void guiAlphaPop() { ImGui::PopStyleVar(); }
 
-// Tint every widget's text until the matching pop, for a run of widgets that share one
-// item's colour. `guiTextTinted` covers the single-label case; this covers a whole row.
+// Tint every widget's text until matching pop, for run of widgets that share one
+// item's colour. `guiTextTinted` covers single-label case; this covers whole row.
 void guiTextColorPush(float red, float green, float blue) {
   ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(red, green, blue, 1.0f));
 }
 
 void guiTextColorPop() { ImGui::PopStyleColor(); }
 
-// Attach to whatever widget was laid out immediately before this call, so a control
-// gains an on-hover explanation without a separate marker glyph competing for space.
+// Attach to whatever widget was laid out immediately before this call, so control
+// gains on-hover explanation without separate marker glyph competing for space.
 void guiTooltip(const char* text) {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) ImGui::SetTooltip("%s", text);
 }
 
-// Draw a standalone "(?)" for a concept with no single widget to hang an explanation
-// off, wrapped to a readable width rather than one unbroken line.
+// Draw standalone "(?)" for concept with no single widget to hang explanation
+// off, wrapped to readable width rather than one unbroken line.
 void guiHelpMarker(const char* text) {
   ImGui::TextDisabled("(?)");
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) {
@@ -404,7 +404,7 @@ void guiHelpMarker(const char* text) {
 }
 
 // Fraction filled in one colour, remainder in another, so caller can mean "active" and
-// "free" rather than accept the theme's own default progress-bar colours.
+// "free" rather than accept theme's own default progress-bar colours.
 void guiProgressBar(float fraction, const char* overlay, float width, float height,
                      float r_fill, float g_fill, float b_fill,
                      float r_track, float g_track, float b_track) {
@@ -423,10 +423,10 @@ void guiPlotLines(const char* label, const float* values, int count, int offset,
                     ImVec2(width, height));
 }
 
-// One small filled cell per pool slot, wrapped to the panel's own width rather than
+// One small filled cell per pool slot, wrapped to panel's own width rather than
 // assuming any fixed row length. `colours` holds three floats per cell, red then green
-// then blue: the caller alone decides what a slot's colour means, so nothing here has to
-// know which slots are occupied or which palette a live one is drawn in.
+// then blue: caller alone decides what slot's colour means, so nothing here has to
+// know which slots are occupied or which palette live one is drawn in.
 void guiPoolBar(const float* colours, int count, float cell_size) {
   const float spacing = 2.0f;
   const float avail = ImGui::GetContentRegionAvail().x;
@@ -449,23 +449,23 @@ void guiPoolBar(const float* colours, int count, float cell_size) {
   ImGui::Dummy(ImVec2(avail, rows * (cell_size + spacing)));
 }
 
-// Which layer an overlay draw lands on. Two, and the difference matters: Dear ImGui draws
-//   the background list beneath every window and the foreground list above them all, and
-//   both sit above the 3D scene, which OpenGL has already rasterised by the time any of
+// Which layer overlay draw lands on. Two, and difference matters: Dear ImGui draws
+//   background list beneath every window and foreground list above them all, and
+//   both sit above 3D scene, which OpenGL has already rasterised by time any of
 //   this runs.
-//   **A mark on an object goes beneath the windows.** It annotates scene geometry that the
-//   panel itself occludes, so drawing it above the panel puts a selection ring over a
-//   panel that is covering the very object it rings -- which is what this did until it was
-//   reported. Only the drag menu draws above: it is a control being steered, not a mark on
-//   anything, and a wedge the reader is reaching for should not slide under chrome.
+//   **Mark on object goes beneath windows.** It annotates scene geometry that
+//   panel itself occludes, so drawing it above panel puts selection ring over
+//   panel that is covering very object it rings -- which is what this did until it was
+//   reported. Only drag menu draws above: it is control being steered, not mark on
+//   anything, and wedge reader is reaching for should not slide under chrome.
 static ImDrawList *overlayList(bool is_over_windows) {
   return is_over_windows ? ImGui::GetForegroundDrawList()
                          : ImGui::GetBackgroundDrawList();
 }
 
-// Draw onto the overlay layer for cursor and selection feedback that belongs to the 3D
-// view rather than to any panel: a rubber-band line while dragging, a ring around whatever
-// the cursor is over. Screen space only; caller does the projection.
+// Draw onto overlay layer for cursor and selection feedback that belongs to 3D
+// view rather than to any panel: rubber-band line while dragging, ring around whatever
+// cursor is over. Screen space only; caller does projection.
 void guiOverlayLine(float x1, float y1, float x2, float y2, float red, float green,
                      float blue, float alpha, float thickness) {
   overlayList(false)->AddLine(
@@ -473,10 +473,10 @@ void guiOverlayLine(float x1, float y1, float x2, float y2, float red, float gre
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), thickness);
 }
 
-// `is_over_windows` because this one serves both layers: a marker's full ring (through
-//   `guiOverlayArc` below, which is beneath the panels with every other mark) and the drag
-//   menu's own centre dot (above them, with the rest of that menu). The only overlay call
-//   with a foot in both, so the choice is a parameter here and settled by what each of the
+// `is_over_windows` because this one serves both layers: marker's full ring (through
+//   `guiOverlayArc` below, which is beneath panels with every other mark) and drag
+//   menu's own centre dot (above them, with rest of that menu). Only overlay call
+//   with foot in both, so choice is parameter here and settled by what each of
 //   others draws everywhere else.
 void guiOverlayCircle(float cx, float cy, float radius, float red, float green, float blue,
                        float alpha, float thickness, int is_over_windows) {
@@ -485,13 +485,13 @@ void guiOverlayCircle(float cx, float cy, float radius, float red, float green, 
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), 0, thickness);
 }
 
-// Draw part of a circle, clockwise from twelve o'clock, for a press filling its own marker
-//   as it matures into a selection. `fraction` is how much of the turn to stroke, in 0 .. 1.
-//   A whole turn is handed to AddCircle above rather than traced here, so a marker that is
-//   not animating draws through exactly the call it drew through before this existed and
-//   lands on exactly the same pixels.
-//   Clockwise in *screen* terms, which is why the angle subtracts: y runs downward here, so
-//   the sense that reads as clockwise to a viewer is the one that decreases the angle.
+// Draw part of circle, clockwise from twelve o'clock, for press filling its own marker
+//   as it matures into selection. `fraction` is how much of turn to stroke, in 0 .. 1.
+//   Whole turn is handed to AddCircle above rather than traced here, so marker that is
+//   not animating draws through exactly call it drew through before this existed and
+//   lands on exactly same pixels.
+//   Clockwise in *screen* terms, which is why angle subtracts: y runs downward here, so
+//   sense that reads as clockwise to viewer is one that decreases angle.
 void guiOverlayArc(float cx, float cy, float radius, float fraction, float red, float green,
                    float blue, float alpha, float thickness) {
   if (fraction <= 0.0f) return;
@@ -507,9 +507,9 @@ void guiOverlayArc(float cx, float cy, float radius, float fraction, float red, 
                    ImDrawFlags_None, thickness);
 }
 
-// Draw a marker's own polyline as one path rather than a run of separate line calls, so
-//   Dear ImGui joins its corners instead of leaving a nick at each one -- visible on a
-//   thin overlay stroke, and the whole reason a plane's marker is a path at all. `points`
+// Draw marker's own polyline as one path rather than run of separate line calls, so
+//   Dear ImGui joins its corners instead of leaving nick at each one -- visible on
+//   thin overlay stroke, and whole reason plane's marker is path at all. `points`
 //   addresses `count` pairs of floats, x then y.
 void guiOverlayPolyline(const float *points, int count, float red, float green, float blue,
                         float alpha, float thickness, int is_closed) {
@@ -522,20 +522,20 @@ void guiOverlayPolyline(const float *points, int count, float red, float green, 
                    is_closed ? ImDrawFlags_Closed : ImDrawFlags_None, thickness);
 }
 
-// Fill a marker's own closed outline, for a shape whose width varies along its length and
-//   so cannot be a stroke: the orientation pulse tapering down its tail, and the drag
+// Fill marker's own closed outline, for shape whose width varies along its length and
+//   so cannot be stroke: orientation pulse tapering down its tail, and drag
 //   band's head. `points` addresses `count` pairs of floats, x then y, already closed --
-//   the caller shapes the ribbon (`marker.ribbonAlong`), this only fills it.
-//   Concave rather than convex: a ribbon following a curved outline bends away from
-//   straight, and the convex fill would bridge that bend with a chord across the marker.
-//   Wound to a fixed handedness here rather than by the caller, because it is Dear ImGui
-//   that cares and no one else: its antialiased fill offsets each edge by the normal
-//   `(dy, -dx)`, which points out of the shape for one winding and into it for the other.
-//   Handed a ribbon wound the wrong way it pushes the whole transparent fringe *inward*,
-//   under the fill, and the mark comes out with hard aliased edges -- measurably so: a
+//   caller shapes ribbon (`marker.ribbonAlong`), this only fills it.
+//   Concave rather than convex: ribbon following curved outline bends away from
+//   straight, and convex fill would bridge that bend with chord across marker.
+//   Wound to fixed handedness here rather than by caller, because it is Dear ImGui
+//   that cares and no one else: its antialiased fill offsets each edge by normal
+//   `(dy, -dx)`, which points out of shape for one winding and into it for other.
+//   Handed ribbon wound wrong way it pushes whole transparent fringe *inward*,
+//   under fill, and mark comes out with hard aliased edges -- measurably so:
 //   column across it steps 16 to 248 with nothing between, where every other overlay
-//   stroke ramps through it. The pulse's own winding flips with the orientation it
-//   reports, so this cannot be settled once at the call site.
+//   stroke ramps through it. Pulse's own winding flips with orientation it
+//   reports, so this cannot be settled once at call site.
 void guiOverlayRibbon(const float *points, int count, float red, float green, float blue,
                       float alpha) {
   if (count < 3) return;
@@ -551,10 +551,10 @@ void guiOverlayRibbon(const float *points, int count, float red, float green, fl
   list->PathFillConcave(ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)));
 }
 
-// Fill a rounded rectangle centred on `cx`/`cy` onto the layer above every window, for
-//   one wedge of the drag menu -- see `overlayList` for why the menu alone draws there.
-//   Centred rather than placed from a corner because every caller of it knows where the
-//   wedge's middle goes and nothing else about its size -- which comes from the label it
+// Fill rounded rectangle centred on `cx`/`cy` onto layer above every window, for
+//   one wedge of drag menu -- see `overlayList` for why menu alone draws there.
+//   Centred rather than placed from corner because every caller of it knows where
+//   wedge's middle goes and nothing else about its size -- which comes from label it
 //   has to hold.
 void guiOverlayChip(float cx, float cy, float width, float height, float red, float green,
                     float blue, float alpha, float rounding) {
@@ -564,11 +564,11 @@ void guiOverlayChip(float cx, float cy, float width, float height, float red, fl
       ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, alpha)), rounding);
 }
 
-// Write text centred on `cx`/`cy` onto the drag menu's own layer, above every window, in
-//   the font already loaded.
-//   Centred here rather than by the caller so the measurement and the placement use the
-//   same font metrics; a caller offsetting by its own guess drifts as soon as the face
-//   loaded is not the one it guessed against.
+// Write text centred on `cx`/`cy` onto drag menu's own layer, above every window, in
+//   font already loaded.
+//   Centred here rather than by caller so measurement and placement use
+//   same font metrics; caller offsetting by its own guess drifts as soon as face
+//   loaded is not one it guessed against.
 void guiOverlayText(float cx, float cy, float red, float green, float blue, float alpha,
                     const char *text) {
   const ImVec2 size = ImGui::CalcTextSize(text);

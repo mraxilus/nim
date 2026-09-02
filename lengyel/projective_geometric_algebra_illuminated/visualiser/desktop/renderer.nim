@@ -1,21 +1,19 @@
 ## Own OpenGL resources, and draw meshes through them.
 ##
-## One program per record kind, and a plain one for points: each record type in `mesh`
-## has a vertex shader here that widens it over static corner geometry (see each
-## `SOURCE_VERTEX_*`'s own doc comment and the reference proc it names), so the CPU
-## hands over compact records and no per-frame expansion.
+## One program per record kind, and plain one for points: each record type in `mesh` has
+## vertex shader here that widens it over static corner geometry (see each
+## `SOURCE_VERTEX_*` and reference proc it names), so CPU hands over compact records and
+## no per-frame expansion.
 ##
-## Buffers are reuploaded whole each frame rather than tracked for changes.
-##   Scene holds tens of objects, so upload is thousands of bytes, far below any budget.
-##   Buys correctness for free: nothing can be stale after user edits a coefficient.
+## Buffers are reuploaded whole each frame rather than tracked for changes: upload is far
+## below any budget, and nothing can be stale after user edits coefficient.
 ##
 ## Draw order is opaque first, translucent second, with depth writes off for translucent:
-##   Ribbons and points therefore occlude correctly against each other.
-##   Plane washes never occlude anything, so objects stay visible through them, which is
-##   what a geometry viewer wants. Cost is that two washes crossing look order-dependent.
+## ribbons and points occlude correctly against each other; plane washes never occlude
+## anything, so objects stay visible through them. Cost is that two washes crossing look
+## order-dependent.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -29,10 +27,8 @@ import ./opengl as gl
 #[ Renderer Configuration ]#
 
 # `SIZE_POINT`, `WIDTH_LINE_FURNITURE` and `WIDTH_LINE_OBJECT` are declared in `mesh`
-#   rather than here, though this module is their only OpenGL consumer: `marker` derives
-#   a selection marker's own clearance from them and cannot import this module, which
-#   binds straight to OpenGL. One home, read by both render paths, instead of the copy
-#   `browser_bridge` used to carry.
+#   rather than here: `marker` derives selection marker's clearance from them and cannot
+#   import module binding straight to OpenGL. One home, read by both render paths.
 const LOG_MAX = 1024
   ## Bound how much of driver's compile log is reported.
 
@@ -65,7 +61,7 @@ void main() {
   out_colour = vertex_colour;
 }
 """ ## Write interpolated vertex colour, rounding off point sprites into discs.
-  ##   Nothing here is lit or textured, so colour passes straight through otherwise.
+  ##   Nothing is lit or textured, so colour passes straight through otherwise.
 
 
 const SOURCE_VERTEX_RIBBON = """
@@ -120,16 +116,14 @@ void main() {
   vertex_world = at;
   vertex_colour = mix(tint_near, tint_far, in_corner.x);
 }
-""" ## Widen one ribbon record into the corner this invocation is, on the GPU.
-  ##   **A sibling copy of `mesh.expandRibbon`, the reference the suite pins to the
-  ## algebra, and of the WebGL source in `glue.js` -- a change to any one of the three is
-  ## not finished until the other two are checked.** Line for line: reject a segment
-  ## wholly behind the near plane (six coincident clipped corners), clip an end that
-  ## crosses it and blend its tint by the same fraction, derive the across as the cross
-  ## the join reduces to, and step this corner off by half a width of its own end's
-  ## world-per-pixel. `in_corner` is (end, side): which end of the segment, and which
-  ## side of it, this invocation stands for. `in_fog` and the world position pass
-  ## through untouched for the fragment stage's fog; see `SOURCE_FRAGMENT_RIBBON`.
+""" ## Widen one ribbon record into corner this invocation is, on GPU.
+  ##   **Sibling copy of `mesh.expandRibbon`, reference suite pins to algebra, and of
+  ## WebGL source in `glue.js`; change to any one is not finished until other two are
+  ## checked.** Line for line: reject segment wholly behind near plane (six coincident
+  ## clipped corners), clip end crossing it and blend tint by same fraction, derive across
+  ## as cross join reduces to, step corner off by half width of its end's world-per-pixel.
+  ## `in_corner` is (end, side). `in_fog` and world position pass through for fragment
+  ## stage's fog; see `SOURCE_FRAGMENT_RIBBON`.
 
 
 const SOURCE_FRAGMENT_RIBBON = """
@@ -150,18 +144,16 @@ void main() {
     vertex_colour.rgb, vertex_colour.a*mix(1.0, fade, clamp(vertex_fog, 0.0, 1.0))
   );
 }
-""" ## Shade one ribbon fragment, fading a fogged record by its own distance from the eye.
-  ##   **A sibling copy of `mesh.alphaGridFade`, the reference the fog is held to, and of
-  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
-  ## until the other two are checked.** Per fragment rather than per vertex, so the fade
-  ## is exact along a record of any length -- which is what lets a lattice line be one
-  ## record instead of a chain of fade pieces. A record with `fog` zero passes through
-  ## untouched, which is every scene ribbon.
+""" ## Shade one ribbon fragment, fading fogged record by its distance from eye.
+  ##   **Sibling copy of `mesh.alphaGridFade` and of WebGL source in `glue.js`; change to
+  ## any one is not finished until other two are checked.** Per fragment rather than per
+  ## vertex, so fade is exact along record of any length, which lets lattice line be one
+  ## record. Record with `fog` zero passes through untouched, which is every scene ribbon.
 
 
 const CORNERS_RIBBON: array[12, float32] = [
   0.0'f32, -1.0, 1.0, -1.0, 1.0, 1.0, 0.0, -1.0, 1.0, 1.0, 0.0, 1.0,
-] ## The six (end, side) corners of one ribbon instance, in `expandRibbon`'s own winding.
+] ## Six (end, side) corners of one ribbon instance, in `expandRibbon`'s winding.
 
 
 const SOURCE_VERTEX_DISC = """
@@ -178,12 +170,11 @@ void main() {
   gl_Position = view_projection*vec4(at, 1.0);
   vertex_colour = in_fill;
 }
-""" ## Fan one disc record over the static corner buffer, on the GPU.
-  ##   **A sibling copy of `mesh.expandDiscVertex`, the reference the suite pins, and of
-  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
-  ## until the other two are checked.** Each corner is the centre plus the two
-  ## radius-scaled arms weighted by its own cosine and sine, with `(0, 0)` landing the
-  ## centre corner on the centre exactly.
+""" ## Fan one disc record over static corner buffer, on GPU.
+  ##   **Sibling copy of `mesh.expandDiscVertex` and of WebGL source in `glue.js`; change
+  ## to any one is not finished until other two are checked.** Each corner is centre plus
+  ## two radius-scaled arms weighted by its cosine and sine; `(0, 0)` lands centre corner
+  ## on centre exactly.
 
 
 const SOURCE_VERTEX_DOME = """
@@ -198,9 +189,9 @@ void main() {
   gl_Position = view_projection*vec4(at, 1.0);
   vertex_colour = in_tint;
 }
-""" ## Widen one dome record over the static unit sphere, on the GPU.
-  ##   **A sibling copy of `mesh.expandDomeVertex`**, under the same three-way rule as
-  ## the disc source above: the centre plus the unit direction scaled by the radius.
+""" ## Widen one dome record over static unit sphere, on GPU.
+  ##   **Sibling copy of `mesh.expandDomeVertex`**, under same three-way rule as disc
+  ## source: centre plus unit direction scaled by radius.
 
 
 const SOURCE_VERTEX_RING = """
@@ -248,29 +239,27 @@ void main() {
   gl_Position = view_projection*vec4(at, 1.0);
   vertex_colour = in_fill;
 }
-""" ## Widen one ring record into a whole plane rim, on the GPU.
-  ##   **A sibling copy of `mesh.expandRingVertex`, the reference the suite pins, and of
-  ## the WebGL source in `glue.js` -- a change to any one of the three is not finished
-  ## until the other two are checked.** One instance is the entire circle: the static
-  ## corner buffer carries every segment of the closed walk, so `in_arc` names this
-  ## invocation's own segment as the two angles' `(cos, sin)` pairs.
-  ##   Two steps, and only the first is the ring's. Place the segment's ends exactly as
-  ## `SOURCE_VERTEX_DISC` places its fan corners, then widen the pair by *the ribbon
-  ## source's own body*, line for line -- a rim is a line, and how wide a line is drawn is
-  ## stated once. The tint is flat, so the ribbon's blend between two ends collapses to
-  ## `in_fill`, and the fog is always zero, so this shares the plain fragment stage.
+""" ## Widen one ring record into whole plane rim, on GPU.
+  ##   **Sibling copy of `mesh.expandRingVertex` and of WebGL source in `glue.js`; change
+  ## to any one is not finished until other two are checked.** One instance is entire
+  ## circle: static corner buffer carries every segment of closed walk, and `in_arc` names
+  ## this invocation's segment as two angles' `(cos, sin)` pairs.
+  ##   Two steps, only first ring's: place segment's ends as `SOURCE_VERTEX_DISC` places
+  ## fan corners, then widen pair by *ribbon source's body*, line for line, since rim is
+  ## line. Tint is flat, so ribbon's blend collapses to `in_fill`; fog is zero, so this
+  ## shares plain fragment stage.
 
 
 const
   COUNT_CORNERS_DISC = 3*SEGMENTS_CIRCLE_HORIZON
-    ## How many corners the disc fan's static buffer holds; `mesh.discCorners` emits
-    ## exactly this many `(cos, sin)` pairs.
+    ## How many corners disc fan's static buffer holds; `mesh.discCorners` emits exactly
+    ## this many `(cos, sin)` pairs.
   COUNT_CORNERS_DOME = 6*LATITUDES_HORIZON*LONGITUDES_HORIZON
-    ## How many corners the dome's static buffer holds; `mesh.domeCorners` emits exactly
-    ## this many unit directions.
+    ## How many corners dome's static buffer holds; `mesh.domeCorners` emits exactly this
+    ## many unit directions.
   COUNT_CORNERS_RING = 6*SEGMENTS_CIRCLE_HORIZON
-    ## How many corners the ring's static buffer holds -- the whole rim, six corners a
-    ## segment; `mesh.ringCorners` emits exactly this many six-float entries.
+    ## How many corners ring's static buffer holds, whole rim at six per segment;
+    ## `mesh.ringCorners` emits exactly this many six-float entries.
 
 
 
@@ -322,7 +311,7 @@ type
 #[ Program Construction ]#
 
 proc compileShader(kind: gl.Enum; source: string): gl.Uint =
-  ## Compile one shader stage, reporting driver's own diagnosis on failure.
+  ## Compile one shader stage, reporting driver's diagnosis on failure.
   result = gl.createShader(kind)
   var text = cstring(source)
   gl.shaderSource(result, 1, addr text, nil)
@@ -338,7 +327,7 @@ proc compileShader(kind: gl.Enum; source: string): gl.Uint =
 
 
 proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
-  ## Link vertex and fragment stages into program, reporting failure the same way.
+  ## Link vertex and fragment stages into program, reporting failure same way.
   let
     shader_vertex = compileShader(gl.VERTEX_SHADER, source_vertex)
     shader_fragment = compileShader(gl.FRAGMENT_SHADER, source_fragment)
@@ -362,9 +351,9 @@ proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
 #[ Renderer Lifetime ]#
 
 proc initRenderer*(): Renderer =
-  ## Build every program, the point vertex buffer, and each record kind's instanced
-  ## vertex array with its static corner geometry.
-  ##   OpenGL context must already be current, as every call below needs it.
+  ## Build every program, point vertex buffer, and each record kind's instanced vertex
+  ## array with its static corner geometry.
+  ##   OpenGL context must already be current.
   result.program = linkProgram(SOURCE_VERTEX, SOURCE_FRAGMENT)
   result.location_view_projection =
     gl.getUniformLocation(result.program, "view_projection")
@@ -417,7 +406,7 @@ proc initRenderer*(): Renderer =
     cast[pointer](0))
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ribbon_records)
   const STRIDE_RECORD = gl.Sizei(sizeof(RibbonRecord))
-  # (attribute, floats, float offset) for each of the record's six views.
+  # (attribute, floats, float offset) for each of record's six views.
   for (index, floats, offset) in [
     (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(1), 6),
     (gl.Uint(4), gl.Int(1), 7), (gl.Uint(5), gl.Int(4), 8), (gl.Uint(6), gl.Int(4), 12),
@@ -428,9 +417,9 @@ proc initRenderer*(): Renderer =
     gl.vertexAttribDivisor(index, 1)
   gl.bindVertexArray(0)
 
-  # The two wash programs, each with its static corner geometry from mesh.nim's own
-  #   generators -- the same one source `glue.js` uploads through `nimDiscCorners` --
-  #   and one record buffer of divisor-one instance attributes beside it.
+  # Two wash programs, each with static corner geometry from mesh.nim's generators, same
+  #   source `glue.js` uploads through `nimDiscCorners`, and one record buffer of
+  #   divisor-one instance attributes beside it.
   result.program_disc = linkProgram(SOURCE_VERTEX_DISC, SOURCE_FRAGMENT)
   result.location_disc_view_projection =
     gl.getUniformLocation(result.program_disc, "view_projection")
@@ -453,7 +442,7 @@ proc initRenderer*(): Renderer =
     cast[pointer](0))
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_disc_records)
   const STRIDE_DISC = gl.Sizei(sizeof(DiscRecord))
-  # (attribute, floats, float offset) for each of the record's four views.
+  # (attribute, floats, float offset) for each of record's four views.
   for (index, floats, offset) in [
     (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(3), 3), (gl.Uint(3), gl.Int(3), 6),
     (gl.Uint(4), gl.Int(4), 9),
@@ -464,10 +453,10 @@ proc initRenderer*(): Renderer =
     gl.vertexAttribDivisor(index, 1)
   gl.bindVertexArray(0)
 
-  # The ring program, on the same shape: static corner geometry from `mesh.ringCorners`
-  #   -- the very buffer `glue.js` uploads through `nimRingCorners` -- and one record
-  #   buffer of divisor-one instance attributes. It takes the *ribbon* program's camera
-  #   uniforms too, because the widening it runs is the ribbon's.
+  # Ring program, on same shape: static corner geometry from `mesh.ringCorners`, buffer
+  #   `glue.js` uploads through `nimRingCorners`, and one record buffer of divisor-one
+  #   instance attributes. Takes *ribbon* program's camera uniforms too, because widening
+  #   it runs is ribbon's.
   result.program_ring = linkProgram(SOURCE_VERTEX_RING, SOURCE_FRAGMENT)
   result.location_ring_view_projection =
     gl.getUniformLocation(result.program_ring, "view_projection")
@@ -493,7 +482,7 @@ proc initRenderer*(): Renderer =
     gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_ring)*sizeof(float32)),
     unsafeAddr corners_ring[0], gl.STATIC_DRAW,
   )
-  # Two views on the one corner entry: the segment's two angles, then its (end, side).
+  # Two views on one corner entry: segment's two angles, then its (end, side).
   const STRIDE_CORNER_RING = gl.Sizei(6*sizeof(float32))
   for (index, floats, offset) in [(gl.Uint(0), gl.Int(4), 0), (gl.Uint(1), gl.Int(2), 4)]:
     gl.enableVertexAttribArray(index)
@@ -501,7 +490,7 @@ proc initRenderer*(): Renderer =
       cast[pointer](offset*sizeof(float32)))
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ring_records)
   const STRIDE_RING = gl.Sizei(sizeof(RingRecord))
-  # (attribute, floats, float offset) for each of the record's five views.
+  # (attribute, floats, float offset) for each of record's five views.
   for (index, floats, offset) in [
     (gl.Uint(2), gl.Int(3), 0), (gl.Uint(3), gl.Int(3), 3), (gl.Uint(4), gl.Int(3), 6),
     (gl.Uint(5), gl.Int(4), 9), (gl.Uint(6), gl.Int(1), 13),
@@ -534,7 +523,7 @@ proc initRenderer*(): Renderer =
     cast[pointer](0))
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_dome_records)
   const STRIDE_DOME = gl.Sizei(sizeof(DomeRecord))
-  # (attribute, floats, float offset) for the record's two views.
+  # (attribute, floats, float offset) for record's two views.
   for (index, floats, offset) in [(gl.Uint(1), gl.Int(4), 0), (gl.Uint(2), gl.Int(4), 4)]:
     gl.enableVertexAttribArray(index)
     gl.vertexAttribPointer(index, floats, gl.FLOAT_TYPE, gl.FALSE, STRIDE_DOME,
@@ -547,13 +536,10 @@ proc initRenderer*(): Renderer =
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
   gl.enable(gl.PROGRAM_POINT_SIZE)
-  # A ribbon is an ordinary triangle pair, so nothing smooths its edges the way
-  #   `GL_LINE_SMOOTH` once smoothed a line's. Without this a 1.5-pixel grid ribbon is
-  #   rasterised only where it covers a pixel centre and the whole ground grid reads as
-  #   dotted -- which is exactly what the first capture after the change showed. The
-  #   context is asked for a multisampled framebuffer in `visualiser.main`; this is what
-  #   turns it on. The browser's own context asks for `antialias: true` and needs no
-  #   equivalent line.
+  # Ribbon is ordinary triangle pair, so nothing smooths its edges as `GL_LINE_SMOOTH`
+  #   smoothed line's. Without this 1.5-pixel grid ribbon rasterises only where it covers
+  #   pixel centre, and whole grid reads as dotted. Context asks for multisampled
+  #   framebuffer in `visualiser.main`; this turns it on. Browser asks `antialias: true`.
   gl.enable(gl.MULTISAMPLE)
 
 
@@ -569,10 +555,9 @@ proc clearFrame*(width, height: int) =
 
 
 proc uploadPoints(renderer: Renderer; meshes: MeshSet) =
-  ## Hand the point vertices to the driver whole, ready to be drawn as one run or two.
-  ##   Separate from drawing because the two runs are issued in different *passes* rather
-  ##   than back to back -- see `drawMeshes` -- and a mesh uploaded twice a frame would be
-  ##   the one real cost of that split.
+  ## Hand point vertices to driver whole, ready to be drawn as one run or two.
+  ##   Separate from drawing because two runs are issued in different *passes*; see
+  ## `drawMeshes`. Mesh uploaded twice per frame would be one real cost of that split.
   let count = meshes.points.count_vertices
   if count == 0: return
   gl.bindVertexArray(renderer.array_points)
@@ -586,7 +571,7 @@ proc uploadPoints(renderer: Renderer; meshes: MeshSet) =
 
 
 proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
-  ## Hand this frame's ribbon records to the driver whole; the shader does the rest.
+  ## Hand this frame's ribbon records to driver whole; shader does rest.
   if meshes.ribbons.count == 0: return
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ribbon_records)
   gl.bufferData(
@@ -598,9 +583,9 @@ proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
 
 
 proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
-  ## Hand this frame's disc, ring and dome records to the driver whole; the shaders fan
-  ## them. The rings ride along because they are uploaded on the same schedule, not
-  ## because a rim is a wash -- it is drawn opaque, with the lines.
+  ## Hand this frame's disc, ring and dome records to driver whole; shaders fan them.
+  ## Rings ride along on same upload schedule, not because rim is wash: it is drawn
+  ## opaque, with lines.
   if meshes.rings.count > 0:
     gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ring_records)
     gl.bufferData(
@@ -628,7 +613,7 @@ proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
 
 
 func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: int] =
-  ## Say which stretch of the ribbon records belongs to which pass; `runOf`'s own rule.
+  ## Say which stretch of ribbon records belongs to which pass; `runOf`'s rule.
   let split =
     if ribbons.index_overlay.isSome: clamp(ribbons.index_overlay.get, 0, ribbons.count)
     else: ribbons.count
@@ -637,10 +622,10 @@ func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: in
 
 
 proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
-  ## Draw one run of the already-uploaded ribbon records as instanced triangle pairs.
-  ##   GL 3.3 has no base instance, so a run that does not start at the first record
-  ##   re-points the five instance attributes at its own first byte instead -- the same
-  ##   pointers `initRenderer` set, offset by the run's start.
+  ## Draw one run of already-uploaded ribbon records as instanced triangle pairs.
+  ##   GL 3.3 has no base instance, so run not starting at first record re-points five
+  ## instance attributes at its first byte: same pointers `initRenderer` set, offset by
+  ## run's start.
   let run = runOfRibbons(meshes.ribbons, is_overlay)
   if run.count == 0: return
   gl.bindVertexArray(renderer.array_ribbon)
@@ -656,7 +641,7 @@ proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
 
 
 func runOfRings(rings: RingMesh; is_overlay: bool): tuple[first, count: int] =
-  ## Say which stretch of the ring records belongs to which pass; `runOf`'s own rule.
+  ## Say which stretch of ring records belongs to which pass; `runOf`'s rule.
   let split =
     if rings.index_overlay.isSome: clamp(rings.index_overlay.get, 0, rings.count)
     else: rings.count
@@ -665,10 +650,9 @@ func runOfRings(rings: RingMesh; is_overlay: bool): tuple[first, count: int] =
 
 
 proc drawRingRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
-  ## Draw one run of the already-uploaded ring records, each instance a whole plane rim.
-  ##   GL 3.3 has no base instance, so a run that does not start at the first record
-  ##   re-points the five instance attributes at its own first byte -- `drawRibbonRun`'s
-  ##   rule exactly. Mirrors `glue.js`'s own `drawRings`.
+  ## Draw one run of already-uploaded ring records, each instance whole plane rim.
+  ##   Re-points instance attributes at run's first byte, `drawRibbonRun`'s rule. Mirrors
+  ## `glue.js`'s `drawRings`.
   let run = runOfRings(meshes.rings, is_overlay)
   if run.count == 0: return
   gl.bindVertexArray(renderer.array_ring)
@@ -686,9 +670,9 @@ proc drawRingRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
 
 
 func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
-  ## Say which stretch of one mesh belongs to the depth-tested run or to the overlay run.
-  ##   Empty where the mesh has no such run, which is the ordinary case for the overlay:
-  ##   nothing is selected on most frames. See `mesh.Mesh.index_overlay`.
+  ## Say which stretch of one mesh belongs to depth-tested run or to overlay run.
+  ##   Empty where mesh has no such run, ordinary case for overlay. See
+  ## `mesh.Mesh.index_overlay`.
   let split =
     if mesh.index_overlay.isSome: clamp(mesh.index_overlay.get, 0, mesh.count_vertices)
     else: mesh.count_vertices
@@ -697,7 +681,7 @@ func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
 
 
 proc drawPointRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
-  ## Draw one run of the already-uploaded point mesh, skipping an empty one.
+  ## Draw one run of already-uploaded point mesh, skipping empty one.
   let run = runOf(meshes.points, is_overlay)
   if run.count == 0: return
   # Tell fragment stage it is shading point sprites, which are rounded off.
@@ -707,9 +691,8 @@ proc drawPointRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
 
 
 func runsOfWashes(washes: WashRuns; is_overlay: bool): tuple[begin, until: int] =
-  ## Say which stretch of the wash runs belongs to which pass -- `runOf`'s rule, at run
-  ## grain: runs before the overlay index are the depth-tested pass, the rest land over
-  ## it. A run never straddles the mark; see `mesh.WashRuns`.
+  ## Say which stretch of wash runs belongs to which pass: `runOf`'s rule at run grain.
+  ## Run never straddles mark; see `mesh.WashRuns`.
   let split =
     if washes.index_overlay.isSome: clamp(washes.index_overlay.get, 0, washes.count)
     else: washes.count
@@ -718,11 +701,10 @@ func runsOfWashes(washes: WashRuns; is_overlay: bool): tuple[begin, until: int] 
 
 
 proc drawWashRuns(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
-  ## Walk one pass's stretch of the wash draw order, drawing each run through its own
-  ## kind's program so two washes still blend in the order the scene emitted them.
-  ##   GL 3.3 has no base instance, so a run that does not start at the first record
-  ##   re-points its instance attributes at its own first byte, exactly as
-  ##   `drawRibbonRun` does. Mirrors `glue.js`'s own `drawWashRuns`.
+  ## Walk one pass's stretch of wash draw order, drawing each run through its kind's
+  ## program so two washes blend in order scene emitted them.
+  ##   Re-points instance attributes at run's first byte, as `drawRibbonRun` does.
+  ## Mirrors `glue.js`'s `drawWashRuns`.
   let (begin, until) = runsOfWashes(meshes.washes, is_overlay)
   for i in begin ..< until:
     let run = meshes.washes.runs[i]
@@ -755,7 +737,7 @@ proc drawWashRuns(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
 
 
 func hasOverlay(meshes: MeshSet): bool =
-  ## Report whether anything in this set asked to be drawn over the rest of it.
+  ## Report whether anything in this set asked to be drawn over rest of it.
   if runOfRibbons(meshes.ribbons, is_overlay = true).count > 0: return true
   if runOfRings(meshes.rings, is_overlay = true).count > 0: return true
   if runOf(meshes.points, is_overlay = true).count > 0: return true
@@ -766,16 +748,13 @@ func hasOverlay(meshes: MeshSet): bool =
 proc drawMeshes*(
   renderer: Renderer; meshes: MeshSet; view_projection: Matrix4; scale: DrawScale
 ) =
-  ## Draw every mesh, opaque kinds before translucent ones, then the overlay over both.
-  ##   Takes the frame's own `DrawScale` because the ribbon program needs the camera: the
-  ##   widening, the near clip and the screen-constant width all run in its vertex shader
-  ##   now, fed by exactly the fields `mesh.expandRibbon` reads.
-  ##   **The overlay is a second pass over every kind, not a tail on each one.** A tail was
-  ##   tried and measured: a selected line came out over the other lines and still tinted
-  ##   by a plane's wash, because the wash is a later kind and the overlay run, having no
-  ##   depth test, writes no depth for that wash to be rejected against. A wash over the
-  ##   object you just picked is exactly the complaint this answers, so the whole ordinary
-  ##   set goes down before any of the overlay goes on top.
+  ## Draw every mesh, opaque kinds before translucent ones, then overlay over both.
+  ##   Takes frame's `DrawScale` because ribbon program needs camera: widening, near clip
+  ## and screen-constant width run in its vertex shader, fed by fields
+  ## `mesh.expandRibbon` reads.
+  ##   **Overlay is second pass over every kind, not tail on each one.** Tail was tried:
+  ## selected line came out over other lines and still tinted by plane's wash, because
+  ## wash is later kind and overlay run writes no depth for it to be rejected against.
   gl.useProgram(renderer.program_ribbon)
   gl.uniformMatrix4fv(
     renderer.location_ribbon_view_projection, 1, gl.FALSE, view_projection.elementsAddress
@@ -787,8 +766,8 @@ proc drawMeshes*(
   gl.uniform1f(renderer.location_ribbon_depth_near, gl.Float(scale.depth_near))
   gl.uniform1f(renderer.location_ribbon_tangent, gl.Float(scale.tangent_half_view))
   gl.uniform1f(renderer.location_ribbon_height, gl.Float(scale.height_pixels))
-  # The furniture fog's two radii, for the fragment stage's fade of fogged records; one
-  #   schedule per frame, from the same rule the placement cuts the chords with.
+  # Furniture fog's two radii, for fragment stage's fade; one schedule per frame, from
+  #   same rule placement cuts chords with.
   let fog = fogFurnitureFor(scale.extent_furniture)
   gl.uniform1f(renderer.location_ribbon_fog_full, gl.Float(fog.radius_full))
   gl.uniform1f(renderer.location_ribbon_fog_gone, gl.Float(fog.radius_gone))
@@ -801,8 +780,8 @@ proc drawMeshes*(
   gl.uniform1f(renderer.location_size_point, SIZE_POINT)
   renderer.uploadPoints(meshes)
 
-  # Both wash programs get this frame's matrix before the run walk, which switches
-  #   between them per run.
+  # Both wash programs get this frame's matrix before run walk, which switches between
+  #   them per run.
   gl.useProgram(renderer.program_disc)
   gl.uniformMatrix4fv(
     renderer.location_disc_view_projection, 1, gl.FALSE, view_projection.elementsAddress
@@ -811,8 +790,8 @@ proc drawMeshes*(
   gl.uniformMatrix4fv(
     renderer.location_dome_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
-  # The ring program takes the ribbon program's whole camera, not just the matrix: the
-  #   rim is widened in screen space by the very rule a line is.
+  # Ring program takes ribbon program's whole camera: rim is widened in screen space by
+  #   very rule line is.
   gl.useProgram(renderer.program_ring)
   gl.uniformMatrix4fv(
     renderer.location_ring_view_projection, 1, gl.FALSE, view_projection.elementsAddress
@@ -839,9 +818,8 @@ proc drawMeshes*(
   renderer.drawWashRuns(meshes, is_overlay = false)
   gl.depthMask(gl.TRUE)
 
-  # And the overlay over all of it, with no depth test at all -- which turns writes off
-  #   with it, so nothing here occludes anything either, and the same kind order decides
-  #   what is over what among the selected objects themselves.
+  # Overlay over all of it, with no depth test, which turns writes off with it, so same
+  #   kind order decides what is over what among selected objects.
   if meshes.hasOverlay:
     gl.disable(gl.DEPTH_TEST)
     gl.useProgram(renderer.program_ribbon)
@@ -860,9 +838,8 @@ proc drawMeshes*(
 
 proc capturePixels*(width, height: int; pixels: var openArray[uint8]) =
   ## Read framebuffer back as tightly packed RGB triples, first row nearest bottom.
-  ##   Caller owns fixed storage, sized to the largest export this build allows; nothing
-  ##   is grown here, so a window resized past that bound fails loudly rather than
-  ##   silently reallocating in what is meant to be a fixed-memory path.
+  ##   Caller owns fixed storage, sized to largest export this build allows; window
+  ## resized past that bound fails loudly rather than silently reallocating.
   let count = width*height*3
   doAssert len(pixels) >= count,
     &"Readback buffer holds {len(pixels)} bytes, short of {count}."

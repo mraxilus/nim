@@ -1,12 +1,12 @@
-## Hold the palette to the separation floors `REQUIREMENTS.md` states for it.
+## Hold palette to separation floors `REQUIREMENTS.md` states for it.
 ##
-## Reads `mesh.lut_ink_to_rgba` itself rather than a transcription of it, so this cannot
-## pass against a table the visualiser no longer draws from. Reports every measurement it
-## makes, pass or fail, and exits non-zero on any failure, so it can gate a commit.
+## Reads `mesh.lut_ink_to_rgba` itself rather than transcription, so this cannot pass
+## against table visualiser no longer draws from. Reports every measurement, pass or fail,
+## and exits non-zero on any failure, so it can gate commit.
 ##
-## The floors are not invented here. Each is quoted from `REQUIREMENTS.md`'s own palette
-## section beside the check that enforces it; changing one means changing both, and saying
-## in `PROVENANCE.md` what was measured to justify it.
+## Floors are not invented here: each is quoted from `REQUIREMENTS.md`'s palette section
+## beside check enforcing it; changing one means changing both, and saying in
+## `PROVENANCE.md` what was measured to justify it.
 ##
 ## Build and run:
 ##   ../../bin/nim c --hints:off -o:../bin/check_palette check_palette.nim && ../bin/check_palette
@@ -23,34 +23,28 @@ import ./colour
 const
   SEPARATION_ASSIGNABLE_NORMAL = 15.0
     ## Floor every pair of assignable hues clears to typical vision, so lightness can
-    ## never stand in for a hue difference.
+    ## never stand in for hue difference.
   DEGREES_ASSIGNABLE = 20.0
-    ## Hue-angle floor the same pairs clear, for the same reason.
+    ## Hue-angle floor same pairs clear, for same reason.
   SEPARATION_ASSIGNABLE_CVD = 6.0
-    ## Floor every pair of assignable hues clears under red-green deficiency. The band
-    ## 6 .. 8 is legal only where a secondary encoding carries identity too; here shape and
-    ## screen position do, since two objects are never the same shape in the same place.
+    ## Floor every pair of assignable hues clears under red-green deficiency. Band 6 .. 8
+    ## is legal only where secondary encoding carries identity too; here shape and screen
+    ## position do.
   SEPARATION_ASSIGNABLE_TRITAN = 6.0
-    ## Same floor under tritanopia, measured separately rather than folded into the
-    ## red-green minimum; see `colour.separationRedGreen` for why.
+    ## Same floor under tritanopia, measured separately; see `colour.separationRedGreen`.
   SEPARATION_INVALID_CVD = 13.0
-    ## Floor every assignable hue clears against the reserved magenta under red-green
-    ## deficiency -- higher than the assignable-to-assignable floor because magenta means
-    ## *wrong*, and reading an ordinary object as an invalid one is a worse error than
-    ## confusing two ordinary objects.
+    ## Floor every assignable hue clears against reserved magenta under red-green
+    ## deficiency: higher, because magenta means *wrong*, and reading ordinary object as
+    ## invalid is worse error than confusing two ordinary objects.
   SEPARATION_FURNITURE_BACKDROP = 8.0
-    ## Floor every piece of world furniture clears against the backdrop it is drawn on,
-    ## under typical vision.
-    ##   Nothing checked this until the axes were deliberately dimmed to stop them being
-    ## mistaken for drawn lines, and dimming has an obvious other end: furniture nobody can
-    ## see is not subtle, it is missing. Typical vision rather than a deficient simulation,
-    ## because this is a legibility floor rather than a discrimination one -- the question
-    ## is whether the mark is there at all, not whether two marks can be told apart.
+    ## Floor every piece of world furniture clears against backdrop, under typical vision.
+    ##   Nothing checked this until axes were dimmed to stop them being mistaken for drawn
+    ## lines; furniture nobody can see is missing. Legibility floor, not discrimination
+    ## one: question is whether mark is there at all.
   SEPARATION_AXIS_CVD = 4.0
     ## Floor every assignable hue clears against each world axis under red-green
-    ## deficiency. Deliberately looser than the object-to-object floors: an axis is a thin
-    ## fixed line through the origin, never a fill, and tightening this is what once
-    ## crushed the whole palette into a single teal-blue arc.
+    ## deficiency. Looser than object-to-object floors: axis is thin fixed line, never
+    ## fill, and tightening this once crushed whole palette into single teal-blue arc.
 
 
 
@@ -59,10 +53,10 @@ const
 #[ Declared Exceptions ]#
 
 type Exception = object ## Hold one measurement allowed to sit below its stated floor.
-  description*: string ## The measurement excused, spelled exactly as `record` names it.
+  description*: string ## Measurement excused, spelled exactly as `record` names it.
   floor*: float ## What it must still clear, pinned just under where it measures today so
-    ## that drifting further fails the run rather than widening the excuse.
-  reason*: string ## Why it is tolerable, in the terms the palette's own rules are in.
+    ## drifting further fails run rather than widening excuse.
+  reason*: string ## Why it is tolerable, in terms palette's rules are in.
 
 const EXCEPTIONS = [
   Exception(
@@ -74,14 +68,13 @@ const EXCEPTIONS = [
       "15.8 to typical vision, and every object also carries its own shape, screen " &
       "position and written label",
   ),
-] ## Every measurement knowingly below its floor. An exception is a decision recorded in
-  ## source, not a floor quietly lowered: the floor still applies to every other pair, the
-  ## excused pair still has a floor of its own, and the reason is printed on every run so
-  ## it stays argued rather than inherited.
+] ## Every measurement knowingly below its floor. Exception is decision recorded in
+  ## source, not floor quietly lowered: excused pair still has floor of its own, and
+  ## reason is printed on every run so it stays argued rather than inherited.
 
 
 func exceptionFor(description: string): Option[Exception] =
-  ## Find the declared exception covering a measurement, if one is declared.
+  ## Find declared exception covering measurement, if one is declared.
   for excused in EXCEPTIONS:
     if excused.description == description: return some(excused)
   none(Exception)
@@ -91,15 +84,15 @@ func exceptionFor(description: string): Option[Exception] =
 #[ Measurement ]#
 
 type Finding = object ## Hold one measurement and whether it cleared its floor.
-  description: string ## What was measured, named as a reader would name it.
+  description: string ## What was measured, named as reader would name it.
   measured: float ## What it came to.
   floor: float ## What it had to clear.
-  units: string ## What the two numbers are in, for the report.
+  units: string ## What two numbers are in, for report.
 
 var findings: seq[Finding]
-  ## Every measurement made, in the order made. A `seq` rather than a fixed array
-  ## because this is a tool run once from a shell, not the visualiser's own hot path --
-  ## `STYLE.md`'s ban on runtime `seq` is about the frame loop, and is noted as such.
+  ## Every measurement made, in order made. `seq` rather than fixed array because this is
+  ## tool run once from shell, not visualiser's hot path; `STYLE.md`'s ban on runtime
+  ## `seq` is about frame loop.
 
 proc record(description: string; measured, floor: float; units = "ΔE") =
   ## Record one measurement against its floor.
@@ -109,7 +102,7 @@ proc record(description: string; measured, floor: float; units = "ΔE") =
 
 
 func linearOf(ink: Ink): Linear =
-  ## Read one palette slot as linear light, from the visualiser's own table.
+  ## Read one palette slot as linear light, from visualiser's table.
   let rgba = ink.colour
   toLinear(float(rgba.red), float(rgba.green), float(rgba.blue))
 
@@ -134,17 +127,15 @@ proc main() =
       record(&"{pair}, tritanopia",
         separationDeficient(a, b, Deficiency.Tritanopia), SEPARATION_ASSIGNABLE_TRITAN)
 
-  # Furniture has to stay visible on its own ground, which is the price of dimming it.
-  #   `Algebra` joins them: the debug layer draws over the same backdrop, and a reader who
-  #   cannot see it there cannot use it.
+  # Furniture has to stay visible on its ground, price of dimming it. `Algebra` joins
+  #   them: debug layer draws over same backdrop.
   for ink in [Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid, Ink.Algebra]:
     record(&"{ink} / Backdrop, typical vision",
       separation(ink.linearOf.toOklab, Ink.Backdrop.linearOf.toOklab),
       SEPARATION_FURNITURE_BACKDROP)
 
-  # The debug layer must not be mistaken for an object a reader built, nor for the warning
-  #   ink -- so it is screened against every assignable slot and against `Invalid`, at the
-  #   same floors an assignable pair is held to.
+  # Debug layer must not be mistaken for object reader built, nor for warning ink, so it
+  #   is screened against every assignable slot and `Invalid` at assignable floors.
   for ink in [Ink.Rose, Ink.Copper, Ink.Olive, Ink.Jade, Ink.Cobalt, Ink.Invalid]:
     record(&"Algebra / {ink}, red-green deficiency",
       separationRedGreen(Ink.Algebra.linearOf, ink.linearOf), SEPARATION_ASSIGNABLE_CVD)

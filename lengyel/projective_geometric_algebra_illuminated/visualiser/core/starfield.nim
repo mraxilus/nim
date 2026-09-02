@@ -1,10 +1,10 @@
-## Hold every star in the real solar neighbourhood, out to the same 31.53 parsecs
-## `neighbourhood.nim` reaches, and say which of them carry known planets.
+## Hold every star in real solar neighbourhood, out to same 31.53 parsecs
+## `neighbourhood.nim` reaches, and say which carry known planets.
 ##
-## **Data only, and generated.** Nothing here is chosen; it is a snapshot of SIMBAD, taken once
-## and shipped, exactly as `neighbourhood.nim` ships one of the NASA Exoplanet Archive and
-## `ramp.nim` ships one of a published colour map. `PROVENANCE.md` carries the source, the date
-## and the acknowledgement SIMBAD asks for, and the query is:
+## **Data only, and generated.** Nothing here is chosen; it is snapshot of SIMBAD, taken
+## once and shipped, as `neighbourhood.nim` ships one of NASA Exoplanet Archive and
+## `ramp.nim` one of published colour map. `PROVENANCE.md` carries source, date and
+## acknowledgement SIMBAD asks for. Query:
 ##
 ## ```sql
 ## SELECT main_id, plx_value, ra, dec FROM basic
@@ -12,36 +12,32 @@
 ## ORDER BY plx_value DESC
 ## ```
 ##
-## Every claim below that can be checked without the network is checked by the suite's own
-## "Orrery" cases -- the ordering, the distance bound, the absence of duplicates, and that each
-## planet range indexes `neighbourhood.PLANETS` exactly once. (`neighbourhood.nim`'s header
-## names a `tools/check_neighbourhood.nim` for the same job; **that file does not exist**, and
-## saying so here is worth more than quietly adding a second reference to it.)
+## Every claim below checkable without network is checked by suite's "Orrery" cases:
+## ordering, distance bound, absence of duplicates, and that each planet range indexes
+## `neighbourhood.PLANETS` exactly once.
 ##
-## `otype = '*..'` is SIMBAD's own star hierarchy, so it takes in brown and white dwarfs along
-## with main-sequence stars. That is the census of the neighbourhood rather than a cut of it,
-## and the filter is named here rather than described so it can be re-run.
+## `otype = '*..'` is SIMBAD's star hierarchy, so brown and white dwarfs are included with
+## main-sequence stars: census of neighbourhood, not cut of it. Filter is named so it can
+## be re-run.
 ##
-## `11252` stars, ordered outward from Sol, of the `11252` the query returned. The rest are dropped
-## for one reason only -- the scene has no room for them -- and the query that restores them is
-## recorded, so this is a truncation rather than a selection.
+## `11252` stars, ordered outward from Sol, of `11252` query returned.
 ##
-## **This is the one layer that says where anything is.** `neighbourhood.nim` carries its own
-## coordinates and distances, and where the two disagree this one is right: the archive puts
-## GJ 411 at 5.676 parsecs against SIMBAD's 2.546, and two more differ by more than a factor
-## of two. So a star carries its own geometry here and names the archive's planets by range;
-## the archive is the source of *which planets exist*, and of nothing else.
+## **This is one layer that says where anything is.** `neighbourhood.nim` carries its own
+## coordinates and distances; where two disagree this one is right (archive puts GJ 411 at
+## 5.676 parsecs against SIMBAD's 2.546, and two more differ by over factor of two). Star
+## carries its geometry here and names archive's planets by range; archive is source of
+## *which planets exist*, nothing else.
 ##
-## `planets` and `first` index `neighbourhood.PLANETS`, and are zero for the great majority --
-## `331` of these stars carry a known planet. The match was made **by sky position alone**,
-## every host to exactly one star, worst separation `161` arcseconds. That is not slack: the
-## two archives are at different epochs and these are the nearest, fastest-moving stars in the
-## sky, so Barnard's star and Kapteyn's star really do stand about two arcminutes apart
-## between them. Distance is not used to match, because it is the thing they disagree about.
+## `planets` and `first` index `neighbourhood.PLANETS`, zero for great majority: `331` of
+## these stars carry known planet. Match was made **by sky position alone**, every host to
+## exactly one star, worst separation `161` arcseconds. Not slack: archives sit at
+## different epochs and these are nearest, fastest-moving stars, so Barnard's star and
+## Kapteyn's star really do stand about two arcminutes apart between them. Distance is
+## not used to match, because distance is what they disagree about.
 
 
 type
-  Star* = object ## Describe one real star in the neighbourhood.
+  Star* = object ## Describe one real star in neighbourhood.
     name*: string ## What SIMBAD calls it.
     parsecs*: float ## How far it stands from Sol.
     ascension*: float ## Its right ascension, in degrees.

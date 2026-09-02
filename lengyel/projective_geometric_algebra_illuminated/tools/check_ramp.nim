@@ -1,24 +1,20 @@
-## Build the diagnostics tree's own colour ramp, and hold the shipped table to it.
+## Build diagnostics tree's colour ramp, and hold shipped table to it.
 ##
-## The tree tints each row by **how much of the frame that row costs**, on a continuous
-## ramp rather than in bands: cyan where a row is a sliver of the frame, orange where it
-## is half of it or more. The ramp is **CET-I1** (Peter Kovesi, "Good Colour Maps: How to
-## Design Them", arXiv:1509.03700; the map named `isoluminant_cgo_70_c39`, cyan-grey-orange
-## at CIELAB lightness 70, chroma 39), transcribed below at seventeen samples of its 256.
-## It is an *isoluminant* map by construction, which is exactly what a ramp painted onto
-## text wants: the reader's eye is not asked to read lightness as meaning, so the tree's
-## own type hierarchy -- a row's label against its value -- survives the tint.
+## Tree tints each row by **how much of frame that row costs**, on continuous ramp: cyan
+## where row is sliver of frame, orange where half or more. Ramp is **CET-I1** (Peter
+## Kovesi, "Good Colour Maps: How to Design Them", arXiv:1509.03700; map named
+## `isoluminant_cgo_70_c39`, cyan-grey-orange at CIELAB lightness 70, chroma 39),
+## transcribed at seventeen samples of its 256. *Isoluminant* by construction, which is
+## what ramp painted onto text wants: reader's eye is not asked to read lightness as
+## meaning, so tree's type hierarchy survives tint.
 ##
-## Kovesi's own lightness is not this drawer's, though, so each sample is **re-lit** to the
-## lightness the untinted text already carries: a row's label to `--ink-muted`'s, its value
-## to the same small step toward `--ink` the untinted rows take. Hue and chroma come from
-## the map, lightness from this project's own tokens. That is the whole construction.
+## Kovesi's lightness is not this drawer's, so each sample is **re-lit** to lightness
+## untinted text carries: row's label to `--ink-muted`'s, its value to same small step
+## toward `--ink` untinted rows take. Hue and chroma from map, lightness from tokens.
 ##
-## This tool is the generator *and* the check. It reads the two lightness tokens out of
-## `shell.html` and the shipped table out of `ramp.nim`, regenerates every entry, and
-## reports any disagreement -- so the shipped table cannot drift from the map it claims to
-## be, from the tokens it was lit against, or from a hand edit. `--emit` prints the table
-## for pasting into `ramp.nim` when a token legitimately changes.
+## This tool is generator *and* check: reads two lightness tokens out of `shell.html` and
+## shipped table out of `ramp.nim`, regenerates every entry, and reports any
+## disagreement. `--emit` prints table for pasting into `ramp.nim` when token changes.
 ##
 ## Build and run:
 ##   ../../bin/nim c --hints:off -o:../bin/check_ramp check_ramp.nim && ../bin/check_ramp
@@ -30,7 +26,7 @@ import ./colour
 
 
 
-#[ The Published Map ]#
+#[ Published Map ]#
 
 const SAMPLES_CET_I1: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.21566, 0.71777, 0.92594),
@@ -51,10 +47,9 @@ const SAMPLES_CET_I1: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.92406, 0.59059, 0.40246),
   (0.96644, 0.56505, 0.42674),
 ] ## CET-I1 at seventeen even samples of its 256 entries, sRGB-encoded in 0 .. 1.
-  ##   Transcribed, not derived -- like the OKLab matrices and the Machado model in
-  ##   `colour.nim`, this is published data and there is nothing here to derive it from.
-  ##   Seventeen rather than all 256 because the shipped ramp is interpolated between
-  ##   them and the error that costs is measured below, not assumed.
+  ##   Transcribed, not derived, like OKLab matrices in `colour.nim`: published data.
+  ## Seventeen rather than 256 because shipped ramp is interpolated between them, and
+  ## error that costs is measured below.
 
 
 const MAP_CET_I1: array[256, (float, float, float)] = [
@@ -315,22 +310,19 @@ const MAP_CET_I1: array[256, (float, float, float)] = [
   (0.96388, 0.56671, 0.42511),
   (0.96644, 0.56505, 0.42674),
 ] ## CET-I1 whole, all 256 entries, for measuring what sampling it seventeen ways costs.
-  ##   Transcribed for the same reason the samples above are, and kept in this tool alone:
-  ##   nothing ships it, and nothing but this measurement needs it.
+  ##   Kept in this tool alone: nothing ships it.
 
 const
   TOLERANCE_CHANNEL = 0.5/255.0
-    ## How far a regenerated channel may sit from the shipped one: half a display step,
-    ## which is the most a correct table can differ by through rounding to eight bits.
+    ## How far regenerated channel may sit from shipped one: half display step, most
+    ## correct table can differ by through rounding to eight bits.
   SEPARATION_INTERPOLATED_MAX = 1.5
-    ## How far the interpolated ramp may stray from the full 256-entry map between two
-    ## samples, in the OKLab distance `colour.separation` reports. Under 2 is below the
-    ## threshold at which a difference is noticeable at all, which is what makes
-    ## seventeen samples enough to stand for the whole map.
+    ## How far interpolated ramp may stray from full 256-entry map between two samples, in
+    ## OKLab distance `colour.separation` reports. Under 2 is below threshold at which
+    ## difference is noticeable, which makes seventeen samples enough.
   SEPARATION_ENDS_MIN = 25.0
-    ## How far apart the ramp's two ends must read, so "a sliver of the frame" and "half
-    ## the frame" are never mistaken for each other. The map's own ends measure well past
-    ## this; the floor exists to catch a re-lighting that flattened them.
+    ## How far apart ramp's two ends must read, so "sliver of frame" and "half frame" are
+    ## never mistaken. Floor catches re-lighting that flattened them.
 
 
 
@@ -342,11 +334,10 @@ func lightnessOf(colour: (float, float, float)): float =
 
 
 func relit(sample: (float, float, float); lightness: float): (float, float, float) =
-  ## Rebuild one CET-I1 sample at the given OKLab lightness, keeping its hue and as much
-  ## of its chroma as sRGB can show there.
-  ##   Chroma is reduced rather than clamped per channel: clamping bends the hue, and the
-  ##   hue is the whole signal here. The search is a plain bisection on a scale factor,
-  ##   which is exact enough at eight bits and needs no gamut model.
+  ## Rebuild one CET-I1 sample at given OKLab lightness, keeping its hue and as much of
+  ## its chroma as sRGB shows there.
+  ##   Chroma is reduced rather than clamped per channel: clamping bends hue, whole signal
+  ## here. Search is bisection on scale factor, exact enough at eight bits.
   let source = toOklab(toLinear(sample[0], sample[1], sample[2]))
   func fits(scale: float): bool =
     let candidate = toLinear(Oklab(
@@ -376,9 +367,8 @@ func relit(sample: (float, float, float); lightness: float): (float, float, floa
 
 proc lightnessToken(name: string): float =
   ## Read one CSS custom property out of `shell.html` and report its OKLab lightness.
-  ##   Read rather than transcribed: the ramp is lit to the very tones the untinted rows
-  ##   wear, so a token edited in the stylesheet must either move the ramp with it or
-  ##   fail this tool -- never silently leave the two disagreeing.
+  ##   Read rather than transcribed: token edited in stylesheet must move ramp with it or
+  ## fail this tool.
   let source = readFile(currentSourcePath().parentDir / ".." /
     "visualiser" / "browser" / "shell.html")
   for line in source.splitLines():
@@ -396,13 +386,12 @@ proc lightnessToken(name: string): float =
 
 
 proc main() =
-  ## Regenerate the ramp, compare it to what ships, and report every measurement.
+  ## Regenerate ramp, compare it to what ships, and report every measurement.
   let
     lightness_label = lightnessToken("--ink-muted")
     lightness_ink = lightnessToken("--ink")
-    # A row's value is drawn one small step brighter than its label, which is the step the
-    #   untinted rows already take between `--ink-muted` and `--ink`. Lifting the whole way
-    #   to `--ink` would wash the hue out of the number, which is the half a reader looks at.
+    # Row's value is drawn one small step brighter than its label, step untinted rows take
+    #   between `--ink-muted` and `--ink`. Lifting whole way would wash hue out of number.
     lightness_value = lightness_label + LIFT_VALUE_RAMP*(lightness_ink - lightness_label)
   var failures = 0
 
@@ -414,7 +403,7 @@ proc main() =
     &"(--ink {lightness_ink:.4f}, lift {LIFT_VALUE_RAMP})."
 
   if paramCount() >= 1 and paramStr(1) == "--emit":
-    # The table as `ramp.nim` wants it, for the one case a token legitimately moves.
+    # Table as `ramp.nim` wants it, for one case token legitimately moves.
     for (lightness, name) in [(lightness_label, "label"), (lightness_value, "value")]:
       echo &"# {name}"
       for i in 0 ..< STEPS_RAMP_TREE:
@@ -422,8 +411,8 @@ proc main() =
         echo &"  ({red:.5f}, {green:.5f}, {blue:.5f}),"
     return
 
-  # **The shipped table is this tool's own answer, or it fails.** Nothing here trusts the
-  #   table; every entry is rebuilt from the map and the tokens and compared.
+  # **Shipped table is this tool's answer, or it fails.** Every entry is rebuilt from map
+  #   and tokens and compared.
   var worst_channel = 0.0
   for i in 0 ..< STEPS_RAMP_TREE:
     for (shipped, lightness) in [
@@ -439,8 +428,8 @@ proc main() =
       &"-- worst channel differs by {worst_channel*255.0:.3f} of a display step",
   )
 
-  # Seventeen samples stand for 256 only if what lies between them is the same colour.
-  #   Measured against the full map at every entry it does not sample.
+  # Seventeen samples stand for 256 only if what lies between them is same colour.
+  #   Measured against full map at every entry it does not sample.
   var worst_interpolated = 0.0
   for entry in 0 ..< 256:
     let
@@ -465,7 +454,7 @@ proc main() =
       &"-- worst {worst_interpolated:.2f}, floor {SEPARATION_INTERPOLATED_MAX}",
   )
 
-  # And the two ends must still read as different things after re-lighting.
+  # Two ends must still read as different things after re-lighting.
   for (name, ramp) in [("label", RAMP_TREE_LABEL), ("value", RAMP_TREE_VALUE)]:
     let apart = separation(
       toOklab(toLinear(ramp[0][0], ramp[0][1], ramp[0][2])),

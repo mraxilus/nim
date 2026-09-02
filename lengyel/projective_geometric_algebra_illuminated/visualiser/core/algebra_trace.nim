@@ -1,25 +1,19 @@
-## Collect the multivectors a frame actually computed, so they can be drawn.
+## Collect multivectors frame computed, so they can be drawn.
 ##
-## The picture a reader sees is no longer the algebra's own statement: a plane is drawn as
-## a disc and a line as a ribbon, both stand-ins built out of ordinary arithmetic because
-## neither is a geometric object (see `euclid.nim`'s header for the split). That is right
-## for a picture and wrong for a reader trying to see what the library did, so the algebra
-## gets its own layer to be seen in -- the same thing a game engine offers when it draws a
-## physics world in wireframe over the art.
+## Ordinary picture draws stand-ins: plane as disc, line as ribbon, built from plain
+## arithmetic (see `euclid.nim` header). Right for picture, wrong for reader trying to see
+## what library did, so algebra gets own layer -- as game engine draws physics world in
+## wireframe over art.
 ##
-## What lands here is not only the scene. A frame computes geometry a reader never sees:
-## the line joining eye to target, the plane the near clip really is, the ray a cursor casts
-## and where it meets the level the camera works at. Each is a multivector, each is drawn by
-## `algebra_view` in its true form -- and a plane drawn there is drawn *infinite*, since
-## that is what a plane is.
+## Frame also computes geometry reader never sees: line joining eye to target, plane near
+## clip really is, ray cursor casts and where it meets camera's level. Each is multivector;
+## `algebra_view` draws each in true form, plane *infinite*.
 ##
-## **Fixed capacity, cleared per frame, allocating nothing.** This is filled on every frame
-## the layer is switched on, so a growing sequence would put the debug layer's own garbage
-## into the frame times it exists to explain. A role rather than a label for the same
-## reason: `$role` names an entry for a legend without building a string per frame.
+## **Fixed capacity, cleared per frame, allocating nothing.** Filled every frame layer is
+## on; growing sequence would put layer's own garbage into frame times it explains. Role
+## rather than label so `$role` names entry without building string per frame.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
-## render paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
 {.experimental: "strictFuncs".}
 
@@ -32,55 +26,49 @@ import ./scene
 
 const
   TRACED_MAX* = ITEMS_MAX + 16
-    ## How many multivectors one frame may record. The scene's own items, plus the dozen
-    ## or so a frame derives around them; a trace that filled would silently drop the
-    ## derived ones, which are the whole reason this exists, so the headroom sits above
-    ## the scene rather than inside it.
+    ## Multivectors one frame may record: scene's items plus dozen or so derived around
+    ## them. Full trace silently drops derived ones, whole reason layer exists, so headroom
+    ## sits above scene.
 
 
 
 #[ Type Definitions ]#
 
 type
-  TracedRole* {.pure.} = enum ## Name what a recorded multivector is, and how to draw it.
-    ## Doubles as the legend: `$role` is what the drawer shows beside the debug ink, so a
-    ## reader can tell the camera's own near plane from a plane they built.
-    SceneObject, ## An item the scene holds -- drawn in its true form, not its stand-in.
-    Ghost, ## The staged edit or drag preview, uncommitted.
-    EyePoint, ## Where the camera stands, as a unit-weight point.
-    SightAxis, ## The line joining eye to target: `camera.frame`'s own first join.
-    PlaneEye, ## The plane through the eye perpendicular to the sight; depth is measured
-      ## against it, and its sign is "in front".
-    PlaneNear, ## The same plane pushed forward to the near clip -- what the clip *is*,
-      ## as the algebra states it rather than as a number in a matrix.
-    GroundPlane, ## `objects.groundPlane`, the level everything is placed over.
-    CursorRay, ## The sight ray the cursor casts into the world.
-    CursorHit, ## Where that ray meets the level the camera is working at.
+  TracedRole* {.pure.} = enum ## Name what recorded multivector is, and how to draw it.
+    ## Doubles as legend: `$role` is shown beside debug ink.
+    SceneObject, ## Item scene holds, in true form.
+    Ghost, ## Staged edit or drag preview, uncommitted.
+    EyePoint, ## Where camera stands, as unit-weight point.
+    SightAxis, ## Line joining eye to target: `camera.frame`'s first join.
+    PlaneEye, ## Plane through eye perpendicular to sight; depth is measured against it.
+    PlaneNear, ## Same plane pushed to near clip -- what clip *is*, as algebra states it.
+    GroundPlane, ## `objects.groundPlane`, level everything is placed over.
+    CursorRay, ## Sight ray cursor casts into world.
+    CursorHit, ## Where that ray meets level camera works at.
 
-  Traced* = object ## One multivector a frame computed, and what it was.
+  Traced* = object ## Hold one multivector frame computed, and what it was.
     role*: TracedRole
     geometry*: Multivector
 
-  AlgebraTrace* = object ## Everything one frame computed, in the order it was recorded.
+  AlgebraTrace* = object ## Hold everything one frame computed, in recording order.
     entries*: array[TRACED_MAX, Traced]
-    count*: int ## How much of `entries` is meaningful; never past `TRACED_MAX`.
+    count*: int ## Meaningful prefix of `entries`; never past `TRACED_MAX`.
 
 
 
 #[ Recording ]#
 
 proc clear*(trace: var AlgebraTrace) =
-  ## Forget the last frame's geometry.
-  ##   Only the count is reset: the entries themselves are overwritten as they are
-  ##   recorded, and clearing storage nobody will read costs a frame for nothing.
+  ## Forget last frame's geometry.
+  ##   Count alone resets; entries are overwritten as recorded.
   trace.count = 0
 
 
 proc record*(trace: var AlgebraTrace; role: TracedRole; geometry: Multivector) =
   ## Note one multivector this frame derived.
-  ##   Silently drops anything past `TRACED_MAX` rather than failing: a debug layer that
-  ##   crashed the frame it is meant to explain would be worse than one that shows a
-  ##   little less of an over-full scene.
+  ##   Silently drops anything past `TRACED_MAX`: debug layer crashing frame it explains
+  ## would be worse than showing less of over-full scene.
   if trace.count >= TRACED_MAX: return
   trace.entries[trace.count] = Traced(role: role, geometry: geometry)
   trace.count += 1
