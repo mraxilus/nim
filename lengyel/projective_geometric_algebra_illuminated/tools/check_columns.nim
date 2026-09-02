@@ -1,4 +1,4 @@
-## Hold every source file to layout rules `STYLE.md` states: line width, trailing
+## Hold every source file to layout rules `CONSTITUTION.md` states (Art. X.1): line width, trailing
 ## whitespace, tabs, final newline.
 ##
 ## Width is counted in **characters, not bytes**, whole reason this is tool rather than
@@ -20,7 +20,7 @@ import std/[algorithm, os, strformat, strutils, unicode]
 
 const
   COLUMNS_MAX = 100
-    ## Hard limit on line's width, in characters. `STYLE.md` states it as hard: not
+    ## Hard limit on line's width, in characters. Art. X.1 states it as hard: not
     ## guideline, and not limit comment may exceed.
   PATHS_SKIPPED = ["bin", "deps", "fonts", "node_modules", "out", "pga", "pga.nim"]
     ## Files and directories holding nothing this project wrote: build output, and
@@ -39,7 +39,7 @@ const
 type Complaint = object ## Hold one line that breaks one rule.
   path*: string ## Where, relative to project root.
   line*: int ## Which line, counting from one, as editor numbers them.
-  rule*: string ## Which rule, named as `STYLE.md` names it.
+  rule*: string ## Which rule, named as Art. X names it.
   detail*: string ## What was measured, where number makes complaint actionable.
 
 

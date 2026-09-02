@@ -1,4 +1,4 @@
-## Hold every comment in every authored file to `STYLE.md`'s article rule.
+## Hold every comment in every authored file to Art. VI.5 of `CONSTITUTION.md`.
 ##
 ## Rule is stated for doc comments and was honoured nowhere else until this checked it:
 ## module headers, body comments, shell and JavaScript glue all drifted back to ordinary

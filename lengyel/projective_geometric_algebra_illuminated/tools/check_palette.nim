@@ -91,7 +91,7 @@ type Finding = object ## Hold one measurement and whether it cleared its floor.
 
 var findings: seq[Finding]
   ## Every measurement made, in order made. `seq` rather than fixed array because this is
-  ## tool run once from shell, not visualiser's hot path; `STYLE.md`'s ban on runtime
+  ## tool run once from shell, not visualiser's hot path; Art. IV.6's ban on runtime
   ## `seq` is about frame loop.
 
 proc record(description: string; measured, floor: float; units = "ΔE") =
