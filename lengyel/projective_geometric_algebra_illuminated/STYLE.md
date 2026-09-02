@@ -15,8 +15,8 @@ escalating only on need.
   both matter, define the overload pair:
 
   ```nim
-  proc `[]`*(m: var Multivector, b: Basis): var float {.inline.} = m.elements[b]
-  func `[]`*(m: Multivector, b: Basis): float {.inline.} = m.elements[b]
+  proc `[]`*(m: var Multivector; b: Basis): var float {.inline.} = m.elements[b]
+  func `[]`*(m: Multivector; b: Basis): float {.inline.} = m.elements[b]
   ```
 
 - `iterator` only when lazy enumeration is the exposed concept; yield `lent` from a stored
@@ -25,7 +25,7 @@ escalating only on need.
   typedesc aliases, and an alias to an element inside a loop where a `let` would copy (§7):
 
   ```nim
-  template `+`*(m: Multivector, s: float): Multivector = s + m
+  template `+`*(m: Multivector; s: float): Multivector = s + m
   template scalar*[I: Basis | Grade | GradeAnti](t: typedesc[I]): I = I.low
   template r: untyped = records[i]  # alias, never `let r = records[i]` in a hot loop
   ```
