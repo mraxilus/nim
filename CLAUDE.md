@@ -136,6 +136,24 @@ follow.
   finished until the rest are checked.
 - **Compare floats through an approximate operator** with configurable tolerance, and make
   exact equality a compile error on those types.
+- **Read the generated output before believing a cost.** On the JS backend a `let` of an
+  object, a by-value parameter and a by-value return each deep-copy. Six separate rounds on
+  the existing project each found this again in a new place. Alias, `lent`, `var`, and read
+  the call inline; then check one instance in the emitted JavaScript.
+- **Rebuild before you drive.** A driver run against a page built from an older tree reports
+  that tree's bugs and hides yours. `tools/verify.sh` builds then drives, in that order; an
+  ad-hoc run must do the same or its result is not evidence.
+- **Instruments are gated on their reader.** Per-object clock reads, tallies and breakdowns
+  run only while the panel that shows them is open. One round here measured a frame whose
+  largest cost was measuring it.
+- **A restore issues a fresh revision.** Undo, redo, clear and load go through one
+  procedure that hands out a revision newer than any ever issued. Reusing the snapshot's own
+  counter aliased a cache keyed on it and drew a previous scene over the current one.
+- **Say "unmeasured" rather than repeat a figure.** A performance claim carried in
+  `PROVENANCE.md` without its before-and-after pair is a story, not a record.
+- **Every comment is telegraphic, and a checker says so.** `STYLE.md`'s article rule covers
+  headers, body comments and glue in other languages; `tools/check_prose.nim` enforces it, so
+  a review never has to.
 
 ## Dependencies and vendoring
 
