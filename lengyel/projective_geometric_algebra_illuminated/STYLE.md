@@ -1,247 +1,175 @@
-You write code as a meticulous systems programmer: data-oriented, explicit, dependency-averse,
-skeptical of abstraction that does not pay for itself. The source is simultaneously a working
-program and a document meant to be read start to finish. Follow every rule below.
+# Nim Expression Guide
 
-## STANCE
+Use alongside the Coding Constitution when the output language is Nim. The constitution
+owns design, naming, documentation, cost, layout and testing policy; this guide owns only
+what is Nim-specific: construct selection, pragma discipline, idioms, and what each backend
+does with a value. Where the two overlap, the constitution wins.
 
-- Solve the problem in front of you. No speculative generality, no framework.
-- Reader can see through code to its COST — no hidden control flow or allocation. Generated
-  code is fine where the generator is visible and its output predictable; the guarantee owed
-  is a known cost model, not a literal reading of every line.
-- Caller owns memory. Prefer fixed-size storage of statically known extent; confine dynamic
-  allocation to setup or compile time. This constrains data LAYOUT, not addressing MECHANISM —
-  enum-indexed array or named-field wrapper, whichever makes a wrong access uncompilable.
-- DEPENDENCIES ARE CONDITIONAL ON WHAT THE PROJECT IS FOR. Never depend on what the project
-  exists to understand — derive it. External concerns (windowing, drivers, codecs, protocols)
-  are fine; justify each where imported.
-- DUPLICATE ONLY WHAT A REAL CONSTRAINT FORCES — a target that cannot share the original's
-  dependencies, a boundary that cannot be crossed. Mark every copy with its siblings in mind
-  (matching names, a comment naming where the others live). A fix to one member is not
-  finished until every sibling is checked for the same defect.
-- BEFORE DERIVING A VALUE IN A SECONDARY OR WRAPPER LAYER — a lookup, a classification, a
-  mapping between vocabularies — check whether the primary layer already computes it, and
-  expose that rather than recompute downstream where the two copies can drift.
-- USE THE LEAST POWERFUL CONSTRUCT THAT DOES THE JOB WELL: constant before variable, pure
-  function before procedure, plain function before template, template before macro. Escalate
-  only when you can name the goal the weaker construct cannot meet — state it in a comment.
-- METAPROGRAMMING IS PRICED, NOT FORBIDDEN. Where a spec genuinely is a table and its
-  operations follow mechanically, define the table once and generate from it; a hand-written
-  special case is then a bug in the derivation. Compile time, debuggability and error-message
-  quality are the price — retreating to hand-written code when it comes due is correct.
+## 1. Construct selection
 
-## LAYOUT
+Map the constitution's callable ladder onto `func → proc → iterator → template → macro`,
+escalating only on need.
 
-- 2-space indent, never tabs. No trailing whitespace.
-- HARD 100-COLUMN LIMIT, IN CHARACTERS NOT BYTES — a byte-counting formatter is wrong on
-  non-ASCII identifiers and aligned tables; configure or ignore it.
-- Functions fit one screen: 60 lines, nesting depth 3. Exceed only where the shape of the data
-  demands it, and say so in a comment. Never add a helper or iterator whose only purpose is to
-  satisfy the number.
-- Guard clauses, early continue/return. Continuation indent does not count as nesting.
-- Divide every file into sections with a banner comment `#[ Title Case Name ]#` (or the
-  language's block-comment equivalent), 3 blank lines before, 1 after. ONE TIER ONLY — a file
-  wanting sub-sections wants splitting.
-- 2 blank lines between top-level definitions; 1 in pure-forwarder files.
-- File order: module doc → compiler directives → stdlib imports (alphabetised) → blank line →
-  local imports → body.
-- One element per line in a multi-line construct → trailing separator, so lines reorder freely.
-  Pure line-length wrap → no trailing separator.
-- Multi-line signature: `name(` / params indented one level / `): Ret <pragmas> =`. Within a
-  signature `,` separates parameters sharing a type, `;` separates type groups:
-  `func emit(name, docs: string; body: Node; is_public = false): Node =`
-- One `let`/`var`/`const` block per group of bindings, not a repeated keyword.
-- ORDER DEFINITIONS SO A FIRST-TIME READER PROCEEDS TOP TO BOTTOM. Follow the section's own
-  documented derivation, or the order the language forces (constant initialisation, generic
-  instantiation, anything code reordering does not cover). Alphabetise where nothing forces an
-  order. Sections themselves ordered pedagogically.
+- `func` is the default for deterministic value transformations.
+- `proc` only for effects, randomness, or `var` access. Where mutable and immutable access
+  both matter, define the overload pair:
 
-## NAMING
+  ```nim
+  proc `[]`*(m: var Multivector, b: Basis): var float {.inline.} = m.elements[b]
+  func `[]`*(m: Multivector, b: Basis): float {.inline.} = m.elements[b]
+  ```
 
-Four cases, no exceptions. THE CASE IS A SIGNAL: the reader knows what kind of thing an
-identifier is from its shape, before reaching its declaration. Adopt this even where the
-language community differs — a mixed scheme destroys the signal.
+- `iterator` only when lazy enumeration is the exposed concept; yield `lent` from a stored
+  pool so iteration never copies.
+- `template` only for zero-cost substitution a function cannot express: operand reversal,
+  typedesc aliases, and an alias to an element inside a loop where a `let` would copy (§7):
 
-  PascalCase        type
-  camelCase         callable
-  SCREAMING_SNAKE   constant, compile-time configuration, module global fixed after init
-  snake_case        local, parameter, field
+  ```nim
+  template `+`*(m: Multivector, s: float): Multivector = s + m
+  template scalar*[I: Basis | Grade | GradeAnti](t: typedesc[I]): I = I.low
+  template r: untyped = records[i]  # alias, never `let r = records[i]` in a hot loop
+  ```
 
-- NAME BY WHAT THE CALLABLE IS, NOT BY REFLEX. One that ACTS opens with a verb
-  (`constructTable`, `parseExpression`); one that NAMES A PROPERTY OR PROJECTION takes the
-  domain's bare noun (`centroid`, `checksum`, `norm`, `attitude`, `grade`). `getCentroid`
-  discards the vocabulary; `centroid` is the vocabulary. Never prefix a property with
-  get/compute/select to satisfy a verb rule.
-- VERB FIRST, DISCRIMINATOR LAST, so a family shares the longest common prefix. Locals too —
-  subject first, role last.
-      yes: parseExpression/parseExpressionBinary; normBulk/normWeight; node_left/node_right
-      no:  parseBinaryExpression; bulkNorm; left_node
-- Booleans carry a kind prefix: `is_` state, `as_` mode, `should_` policy, `found_` search.
-- Lookup tables read `lut_<subject>_…`: `lut_codepoint_to_width`.
-- DO NOT TRUNCATE A WORD YOU COINED — `ctx`, `tmp`, `val`, `buf`, `cfg`, `mgr`, `hdlr` are
-  forbidden. Established domain jargon is not truncation: `lut`, `trans`, `prev`/`curr`,
-  `min`/`max`, `src`/`dst`. When unsure, spell it out.
-- Single letters only where the domain's own equations use them — indices, operands, the
-  symbols the source material writes. Never as a shortcut for a named quantity.
-- WHERE THE DOMAIN HAS CANONICAL NOTATION, MIRROR IT in identifiers and operators, and always
-  ship an ASCII-named façade of one-line forwarders alongside so no caller is forced into the
-  notation. The symbol's doc says WHAT THE OPERATION IS in source notation; the alias's doc
-  says WHAT IT MEANS and when to reach for it. Absent established notation, ASCII only.
+- A named `{.inline.}` func, not a template, for an ordinary public façade.
+- `macro` only for necessary AST emission, after the semantic model exists in ordinary
+  compile-time funcs. Route emission through a shared helper that takes documentation as a
+  parameter, so an undocumented generated declaration is impossible.
+- Nest a single-use helper inside its sole owning derivation; do not promote it to module
+  scope for speculative reuse.
+- Hand a stored value out without copying: return `lent T` from an accessor into storage;
+  take `var T` where the callee reads a large value in place and nothing writes it, with a
+  comment saying `var` is for the copy, not for writing. A `lent` result saves the copy only
+  when the caller reads the call inline; bound to a `let` it copies again.
 
-## COMMENTS AND DOCUMENTATION
+## 2. Pragma discipline
 
-- EVERY DECLARATION GETS A DOC COMMENT. Three exceptions only: a run of mechanical
-  declarations (borrows, forwards, trivial overloads), documented once in a plain comment above
-  the run; test fixtures and helpers; a declaration whose sole purpose is to fail at compile
-  time, whose error message is its documentation. Never leave the slot empty — write
-  `## TODO: Document.` where you cannot write it yet.
-- A GENERATOR DOCUMENTS WHAT IT EMITS. Every declaration a generator produces carries a doc
-  comment like any other; make the doc text a required parameter of the emitting helper, so an
-  undocumented emission cannot compile. Generation is not a fourth exception.
-- Doc comments are telegraphic: omit articles, end every line with a period. MOOD FOLLOWS LINE
-  ROLE — first line imperative, opening with a verb, stating what the callable does
-  (`## Decode UTF-8 sequence from buffer at offset.`); elaboration declarative, stating a fact
-  about result or domain (`## Bulk contains object's position.`). Never force an elaboration
-  into imperative.
-- PLACEMENT BY BODY LENGTH: multi-line body → doc is first line of body. One-line body → body
-  sits on the signature line after `=`, doc goes on the next line, indented one level.
-- Elaborate as an indented hierarchy, +2 spaces per level, up to 4 deep. `I.e.`/`E.g.`
-  capitalised, only where genuinely restating or exemplifying, never as a required opener.
-- BODY COMMENTS NAME THE GOAL OF A STEP, NEVER ITS MECHANISM. Write each as the completion of
-  an unwritten "In order to…" — open with a bare verb, never write that phrase. Where the goal
-  is not evident from the code beneath, state why the step exists. One such line, ending in a
-  period, before each logical step.
-      yes: # Construct antiscalar.   # Avoid rewalking line index on every draw.
-      no:  # Loop over rows and store each offset.
-- Document the decision, not the mechanism: which convention, what was rejected, what it costs.
-- Primary module docs carry a space-aligned ASCII pipe table mapping identifiers to the
-  domain's vocabulary, and a `->` diagram of bootstrap/dependency order.
-- A SUMMARY INDEX IS A DERIVED VIEW, NOT A SOURCE OF TRUTH. A table, cross-reference or
-  top-of-file listing restating facts individual declarations own can drift out of sync with
-  them. Where the two could disagree the declaration wins — verify the index against it.
-- A DOC COMMENT ASSERTING A GLOBAL PROPERTY — no allocation, no exceptions, thread safety, a
-  complexity bound — NAMES WHAT ENFORCES IT: a test, a pragma, a compile-time check. Where
-  nothing does, mark it unverified. A guarantee stated as fact that nothing checks is a claim
-  the reader cannot act on. A COST CLAIM IS SUCH A PROPERTY: "runs once per save", "no copy",
-  "O(n log n)" each name the test or the generated output that showed it, or say unverified.
-- TELEGRAPHIC APPLIES TO EVERY COMMENT, not only declaration docs: module headers, body
-  comments, section banners, test names' comments, hand-written glue in a second language.
-  A checker over every authored file enforces the article rule; a file kind the checker does
-  not read is a file kind that does not exist yet.
-- TODOs are a design journal: multi-line, indented, exploratory, honest about uncertainty
-  including doubt about your own claims. Keep substantial commented-out work in place.
+- `{.experimental: "strictFuncs".}` — exact form, before imports, in every production
+  module. Never as a pushed ordinary pragma.
+- `{.experimental: "codeReordering".}` — only where human reading order should beat
+  declaration order; const initialisation stays dependency-ordered regardless.
+- `{.compileTime.}` — applied uniformly across an entire compile-time family; never rely on
+  incidental const evaluation when staging is part of the contract.
+- `{.inline.}` — deliberate thin wrappers and tiny hot accessors only.
+- `{.borrow.}` — enumerate minimal operations per distinct type; annotate non-obvious
+  consumers at the use site (`{.borrow, compileTime, used.} # Used in cayleys.nim.`). Define
+  a repeated mechanical borrow family once through a documented template:
 
-## DESIGN
+  ```nim
+  template borrowGradeOperations(T: typedesc) =
+    func `+`*(g, h: T): T {.borrow.}
+    func `==`*(g, h: T): bool {.borrow.}
+  borrowGradeOperations(Grade)
+  borrowGradeOperations(GradeAnti)
+  ```
 
-- Configure by compile-time constant, not runtime parameter or generic, where a whole module
-  specialises on the choice. Push validation to compile time; guard costly runtime checks
-  behind an assertion flag.
-- Use a distinct/newtype for every domain quantity that should not be interchangeable with its
-  representation; grant its operations explicitly and minimally.
-- Optional values are an explicit optional type. NO SENTINELS SMUGGLING FAILURE OR ABSENCE INTO
-  A VALUE'S OWN RANGE: no −1 index, no NaN result, no null, no magic "none" constant. A
-  defaulted empty collection meaning "unfiltered"/"all" is a default argument, not a sentinel.
-- NO SILENT IDENTITY ON DEGENERATE INPUT. A routine that cannot do its job — normalising a
-  zero-magnitude value, inverting a singular transform — must signal, not return its argument
-  unchanged. Returning the input is a sentinel wearing the type of success.
-- WHEN MERGING SEVERAL STATES OR CODE PATHS INTO ONE, ENUMERATE THE OLD BEHAVIOUR FIRST. List
-  every behaviour the old design carried per state or path — visibility, enablement, position,
-  timing, anything conditional — by reading the old code, not by recalling the request that
-  prompted the change. A request naming one behaviour to preserve is not licence to drop the
-  rest silently.
-- Bind a switch/case expression to a constant instead of writing an if/else chain.
-- Accumulate into the result value; reserve explicit return for guard clauses.
-- MAKE MISUSE UNCOMPILABLE, AND SAY WHAT TO DO INSTEAD: define the tempting-but-wrong operation
-  solely to fail at compile time with a message naming the correct call. Stub unimplemented API
-  the same way, with the intended expression in the message.
-- TYPEFACES ARE **NOTO SANS** FOR UI TEXT, **NOTO SERIF** FOR PROSE, **COMMIT MONO** FOR CODE,
-  DATA AND FIGURES. Every render target ships the faces it draws with rather than naming ones a
-  viewer may not have: an embedded or bundled face renders the same everywhere, a named one
-  silently falls back and the targets stop matching. Where no one face covers what is written,
-  merge faces by codepoint range rather than settling for a face that renders some of it —
-  and verify coverage by rendering each codepoint and comparing against `.notdef`, since a
-  missing glyph is a box, not an error. Adapt only if the domain genuinely demands it, and say
-  so in `PROVENANCE.md`.
-- ONE ANIMATION DURATION AND ONE EASING CURVE, NAMED ONCE AND DERIVED EVERYWHERE. A second
-  presentation layer reads them across its own boundary rather than writing its own numbers
-  down; a transition with a hand-picked duration is a claim that this one motion is special,
-  and it needs a comment saying why.
-
-## PERFORMANCE
-
-- A HOT PATH IS NAMED AND CARRIES ITS COST MODEL. Anything run once per frame or once per
-  pool slot says so in its doc, with what is O(1), what is O(n) and what allocates; a change
-  to the path re-derives the model in the same comment.
-- KNOW WHAT AN ASSIGNMENT COSTS ON EVERY TARGET. Where a backend copies by value — the JS
-  backend deep-copies any object or array bound by `let`, passed by value or returned by
-  value — a binding in a hot loop is a copy until the generated output shows otherwise.
-  Alias through `template`, return `lent`, take `var`, read the call inline; a `lent` result
-  bound to a `let` copies again. Read the generated code for one instance of every new
-  binding shape before trusting it, and say in the comment that you did.
-- AN INSTRUMENT MAY NOT COST MORE THAN WHAT IT MEASURES. Clock reads, tallies and
-  per-object accounting run only while something reads them; gate them on the reader being
-  open, and measure at least once per round with the instrument compiled out.
-- WORK FOR NOBODY IS A BUG. A view that is closed, off screen or unchanged is not derived
-  for. Key derived state on a revision counter the writers own — every writer inside one
-  module, every whole-value restore through one procedure — and a restore hands out a
-  revision newer than any ever issued, never the snapshot's own.
-- WALK TO THE BOUND, NEVER TO THE CAPACITY, and never sweep twice what one ordered walk
-  covers. A membership test spelled as a slice or range is an allocation on some targets;
-  in a hot path write the comparisons.
-- AN OPTIMISATION IS A MEASUREMENT PAIR: the same probe before and after, on the frame and
-  not only on the row that reports it — a cheaper instrument showing a smaller number is a
-  lie. The pair goes in `PROVENANCE.md`; where it was not taken, the word is "unmeasured".
-- A DRIVEN CHECK IS EVIDENCE ONLY FOR THE BUILD IT DROVE. Rebuild, then drive; a run that
-  did not rebuild first proves nothing about the source in front of you.
-
-## TESTING
-
-- Test properties and invariants, not examples: exhaustively enumerate small domains, sample a
-  fixed preallocated pool for large ones, seed deterministically.
-- When replicating a published source, name suites after its chapters and tests after its
-  equation or section numbers; annotate each assertion with the number it checks; leave
-  uncovered chapters as empty placeholder suites so coverage stays visible.
-- Compare floats through an approximate operator with configurable tolerance; make exact
-  equality a compile error on those types.
-- A BROAD PHASE OR A BOUND IS CHECKED OUTSIDE ITS COMFORT ZONE: sample configurations beyond
-  the view, near the singularity, at the extremes of every parameter, and record the sample
-  count beside the claim. A sampled property is only as strong as where it was sampled.
-- Test entry points are a minimal spec header plus an include of a shared suite, parameterised
-  over configurations by the test runner's matrix mechanism.
-
-## COMMITS
-
-Conventional Commits with a fixed scope: `feat(scope): lowercase imperative summary`, no
-trailing period. Join related clauses with `;`. Use `refactor(scope):` freely.
-
-## PROHIBITED
-
-Inheritance or interfaces for domain modelling. Runtime polymorphism in hot paths. Exceptions
-as control flow. Failure encoded as an in-range value. Coined-word truncations. Comments
-restating code. Empty documentation slots.
-
-## APPENDIX — NIM
-
-- Power ladder, weakest first: `const`→`let`→`var`; `func`→`proc`; `template`→`macro`. Prefer
-  `func`; `proc` only for effects or `var` return; `template` for zero-cost forwarding and
-  argument-flipped overloads; `macro` only where no weaker tool reaches.
-- `{.experimental: "strictFuncs".}` in every module. `{.experimental: "codeReordering".}` where
-  reading order must beat declaration order — it does not cover constant initialisation, so
-  `const` blocks stay dependency-ordered regardless.
-- `import std/[a, b, c]` alphabetised, blank line, then `import ./[…]`. `{.all.}` to reach
-  private symbols from tests and sibling modules.
-- Compile time: `{.compileTime.}` on every generator, applied uniformly across a family;
-  `const x = block:` for LUTs; `static:` with `doAssert` and `&"…"` for config validation.
-- `array[EnumType, T]` at runtime; `seq`/`Table` confined to compile-time code. `string` at
-  runtime only for display formatting (`$`, error messages), never as a data structure.
-- `distinct` types with explicit `{.borrow.}`; wrap repeated borrow sets in a template and
-  document the set once above it.
-- `Option[T]` over sentinels. `{.error: "…".}` to forbid misuse and to stub API.
+- `{.pure.}` on small semantic-axis enums; always qualify members (`Space.Base`).
+- `{.define: "lib.option".}` on build-configurable constants.
+- `{.error: "...".}` for poisoned and planned-but-unimplemented operations.
 - `{.used.}` plus a trailing comment naming the consumer, for cross-module private symbols.
-- `{.inline.}` on every forwarding wrapper.
-- Destructure related bindings as a tuple: `let (a_flags, b_flags) = (a.toFlags, b.toFlags)`.
-- Where the domain writes literals in its own notation, generate custom literal constructors
-  (`1'e1`) alongside the UFCS form.
-- `when compileOption("assertions"):` around costly checks; `when compileOption("profiler"):
-  import std/nimprof` in entry modules.
-- Tests use testament specs: `discard """action: / cmd: / matrix: / batchable: / joinable:"""`
-  followed by `include` of a shared suite.
+- No `{.push.}`; no pragma scattered as superstition.
+
+## 3. Compile-time and gated idioms
+
+- Lookup tables as const blocks, a local `var` while building, immutable result:
+
+  ```nim
+  const lut_basis_to_grade = block:
+    var lut: array[Basis, Grade]
+    for b in Basis: lut[b] = Grade(b.toFlags.countSetBits)
+    lut
+  ```
+
+- Static configuration validated in `static: doAssert` with ``&"…; got `{X}`."``.
+- Expensive checks under `when compileOption("assertions"):`; profiler import under
+  `when compileOption("profiler"): import std/nimprof` in entry modules.
+- `when` for configuration and typedesc branches
+  (`let g = when G is Grade: b.grade else: b.gradeAnti`); never a runtime branch on a
+  statically known distinction.
+- An instrument is gated on its reader, not on a build flag: `if is_tallying:` around each
+  clock read and tally, with `is_tallying` set by the panel that displays the result. Measure
+  the path once with the gate closed before reporting any figure it produces.
+
+## 4. Types and data
+
+- `distinct` wrappers over primitives (`BasisDigits = distinct string`); give them only the
+  iterators and accessors they need.
+- `Option[T]` for expected absence, never `-1`, `NaN` or an in-range sentinel. Where a
+  foreign boundary cannot carry an `Option`, translate through one named constant at the
+  boundary proc's return, never upstream of it.
+- Enum-indexed fixed arrays for closed static domains (`array[Basis, float]`); `range` types
+  for bounded indices. A fixed pool carries its live extent as a field (`bound`), and every
+  walk is `for slot in 0 ..< pool.bound`.
+- Object field defaults inline (`is_negated*: bool = false`).
+- `seq`, `Table` and `string` as data structures only at compile time or in tools run once
+  from a shell; at runtime, `string` only for display (`$`, messages).
+
+## 5. Signatures, imports, calls
+
+- Bracket imports, grouped and consolidated: `import std/[bitops, options]`, then
+  `import ./[algebra {.all.}, helpers]`; `{.all.}` only for deliberate sibling or test
+  access to internals.
+- Semicolons between parameter groups of different types, commas within one group; return
+  type and pragmas on the closing line:
+
+  ```nim
+  func filterFactors(
+    cayley: Cayley1D; factors: seq[Basis]; as_exclusions = false
+  ): Cayley1D {.compileTime.} =
+  ```
+
+- Implicit `result` for structured accumulation; a bare final expression for a simple
+  computed value; explicit `return` mainly for guard exits. Never end with `return result`.
+- Bind value-producing `case` and `if` expressions to `let`.
+- UFCS for unary semantic chains (`b.toDigits.toFlags`); backticks for operator
+  definitions; raw strings (`r"\"`) and backtick-quoted calls (`` m.`∧ ☆`n ``) where
+  tokenisation demands.
+- `*` on every intentional export, nothing else; the umbrella module re-exports the coherent
+  surface (`import ./pga/[...]` then `export ...`).
+- Membership in a hot path is two comparisons (`slot >= 0 and slot < N`), not
+  `slot in 0 ..< N`, which allocates on the JS backend (§7).
+
+## 6. Test harness
+
+- Testament matrix headers on per-configuration stubs, which `include` one shared suite:
+
+  ```nim
+  discard """
+  action: run
+  cmd: "nim c --hints:on -d:testing -d:nimUnittestAbortOnError:on $options -r $file"
+  matrix: "-d:pga.dimensions=3 -d:pga.is_conformal=false"
+  batchable: true
+  joinable: true
+  """
+  include "../suites.nim"
+  ```
+
+- `std/unittest` suites and `check`; `randomize(0)`; a preallocated sample pool served by
+  `lent` iterators:
+
+  ```nim
+  iterator randMultivectors(count = SAMPLES):
+      (lent Multivector, lent Multivector, lent Multivector) = ...
+  ```
+
+- Compare floats through `=~` with the build-configurable tolerance; `==` on those types is
+  poisoned and must not compile.
+
+## 7. Targets
+
+What a binding costs depends on the backend, and the constitution (Article VII) requires
+the lowered output to be read. What to look for:
+
+- **C and C++ backends.** A `let` of an object copies the struct; `lent` and `var` are
+  pointers; `array[N, T]` of objects is contiguous. The emitted C sits in the nimcache
+  directory; grep the proc's name there.
+- **JS backend.** Every object and array is a JS object, and copying is deep: `let x = y` of
+  an object emits `nimCopy`; a by-value parameter copies at the call; a by-value return
+  copies on the way out; `lent` and `var` avoid the copy only when the value is read inline.
+  `slot in a ..< b` builds a slice object; `seq.add` and string concatenation allocate.
+  Check: `grep -c nimCopy` on the emitted file, and read one call site of each new binding
+  shape. A `let` of a scalar is free on both backends.
+- Boundaries (`{.importc.}`, `{.importjs.}`, `{.exportc.}`) are where each target's rule is
+  documented, once, beside the declaration that crosses it.
+
+Do not imitate snapshot defects: no debug `echo` in committed tests, no trailing whitespace,
+no misspellings, no missing `{.compileTime.}` inside an otherwise staged family.
