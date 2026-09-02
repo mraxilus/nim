@@ -1,35 +1,30 @@
-## Hit-test scene items against the cursor, so a mouse action knows which object it touched.
+## Hit-test scene items against cursor, so mouse action knows which object it touched.
 ##
-## Every world-space derivation here goes through the algebra -- rays as joins, hits as
-## meets, depths as `depthAgainst`, nearest points and clips by the library's own
-## operators -- and only the *pixel* half of a test is screen math: a point or line is
-## judged by pixel distance to its projection, which answers where a pixel is, a
-## rasterisation question. A line's own endpoints are assembled the same way
-## `tessellate.addLine` draws them -- `radius_horizon` along its attitude from the eye's own
-## point -- so a hit always agrees with what is drawn.
+## Every world-space derivation goes through algebra -- rays as joins, hits as meets,
+## depths as `depthAgainst`, nearest points and clips by library's operators -- and only
+## *pixel* half of test is screen math: point or line is judged by pixel distance to its
+## projection, rasterisation question. Line's endpoints are assembled as
+## `tessellate.addLine` draws them, so hit agrees with what is drawn.
 ##
-## Plane is tested differently, through the algebra rather than around it: cursor's own
-## sight ray is built as an RGA line (eye ∧ heading) and met with the plane directly,
-## `ray ∨ plane`, giving the exact point struck. Screen-space quad-projection was tried first
-## and discarded — a corner near the eye sends its projected position to infinity, and the
-## point-in-polygon test on that blown-up quad can then accept a cursor nowhere near the
-## plane at all. Meeting in 3D has no such singularity nearby: it fails cleanly (ray parallel
-## to plane, or the hit behind the eye) instead of failing wrongly.
+## Plane is tested through algebra rather than around it: cursor's sight ray is RGA line
+## (eye ∧ heading) met with plane directly, `ray ∨ plane`, giving exact point struck.
+## Screen-space quad projection was tried and discarded: corner near eye sends its
+## projection to infinity, and point-in-polygon on blown-up quad accepts cursor nowhere
+## near plane. Meet in 3D fails cleanly (ray parallel, hit behind eye) instead of wrongly.
 ##
 ##   |------------|-------------------------------------------------------------------|
 ##   | Shape      | Tested against                                                    |
 ##   |------------|-------------------------------------------------------------------|
 ##   | Point      | Projected marker, by pixel distance.                              |
 ##   | Line       | Projected drawn segment, by distance to its nearest point.        |
-##   | Plane      | Sight ray met with the plane, by whether that point falls inside  |
-##   |            |   the drawn quad, and by distance from eye if it does.            |
+##   | Plane      | Sight ray met with plane, by whether that point falls inside      |
+##   |            |   drawn disc, and by distance from eye if it does.                |
 ##   |------------|-------------------------------------------------------------------|
 ##
-## A point wins a tie over a line, and a line over a plane: the smaller target should not
-## be swallowed by a larger one drawn behind or through it.
+## Point wins tie over line, and line over plane: smaller target should not be swallowed
+## by larger one drawn behind or through it.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
-## render paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
 {.experimental: "strictFuncs".}
 
@@ -44,43 +39,32 @@ import ./[boundary, camera, euclid, tessellate, scene]
 
 const
   RADIUS_PICK_POINT* = 34.0
-    ## Bound how far, in pixels, cursor may sit from a point's marker and still hit it.
-    ##   Raised 14 -> 20 -> 34 across two rounds on reported difficulty selecting points
-    ##   and lines -- both drawn thin (a marker a few pixels across, a one-pixel-wide
-    ##   segment), so a pick radius close to the mark itself left little room for cursor
-    ##   imprecision or a fingertip's own contact area on touch (a real fingertip's
-    ##   contact patch is roughly this wide at typical phone screen density, well past
-    ##   what the first widening left room for). The shape priority below (point beats
-    ##   line beats plane) is what keeps a more generous radius from misfiring where
-    ##   targets overlap on screen, rather than a tight radius doing that job instead --
-    ##   confirmed still exactly in effect (`consider`'s own priority-then-distance
-    ##   ordering, untouched) before widening further a second time.
+    ## Bound how far, in pixels, cursor may sit from point's marker and still hit it.
+    ##   Raised 14 -> 20 -> 34 on reported difficulty selecting points and lines, both
+    ## drawn thin: fingertip's contact patch is roughly this wide at phone density. Shape
+    ## priority (point beats line beats plane) keeps generous radius from misfiring where
+    ## targets overlap.
   RADIUS_PICK_LINE* = 24.0
-    ## Bound how far, in pixels, cursor may sit from a line's drawn segment and still hit
-    ## it; see `RADIUS_PICK_POINT`'s own doc comment for why both were widened together,
-    ## twice now (9 -> 14 -> 24).
+    ## Bound how far, in pixels, cursor may sit from line's drawn segment and still hit
+    ## it; widened with `RADIUS_PICK_POINT`, 9 -> 14 -> 24.
 
 
 #[ In-View Configuration ]#
 
 const INSET_POINT_SHOWN* = 0.5*float(SIZE_POINT)
-  ## Shrink the centred box by this many pixels when asking whether a *point* is in view,
-  ## so its drawn dot fits inside rather than only its middle.
-  ##   Half of what `tessellate.addPoint` draws, which is the dot's own radius.
-  ##   Deliberately **not** the selection marker's own radius, which would be the wider
-  ##   reading of "fits": that ring swells while a touch hold fills (see
-  ##   `marker.clearanceTouch`), and a box that breathed with a gesture would re-frame the
-  ##   view mid-hold.
-  ##   Nothing equivalent for a line, which has only to cross; `INSET_RIM_SHOWN` is the
-  ##   plane's own, against a different bound.
+  ## Shrink centred box by this many pixels when asking whether *point* is in view, so its
+  ## drawn dot fits inside rather than only its middle.
+  ##   Half of what `tessellate.addPoint` draws, dot's radius.
+  ##   Deliberately **not** selection marker's radius: that ring swells while touch hold
+  ## fills (see `marker.clearanceTouch`), and box breathing with gesture would re-frame
+  ## view mid-hold.
+  ##   Nothing equivalent for line, which has only to cross; `INSET_RIM_SHOWN` is plane's.
 
 const INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
-  ## Shrink the **frame** by this many pixels when asking whether a *plane* is in view, so
-  ## a rim resting on the very edge has its whole stroke drawn rather than half of it
-  ## clipped away.
-  ##   Half of what `mesh.addRing` strokes the rim at, which is the same relationship
-  ##   `INSET_POINT_SHOWN` has to the dot it keeps whole -- and, at 1.25 px, the entire
-  ##   price of letting a disc reach the edge instead of stopping short of it.
+  ## Shrink **frame** by this many pixels when asking whether *plane* is in view, so rim
+  ## resting on edge has whole stroke drawn rather than half clipped.
+  ##   Half of what `mesh.addRing` strokes rim at, same relationship `INSET_POINT_SHOWN`
+  ## has to dot -- and, at 1.25 px, entire price of letting disc reach edge.
 
 
 
@@ -88,16 +72,14 @@ const INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
 
 type ScreenPosition* = object ## Hold projected position, in window pixels, y downward.
   x*, y*: float ## Pixel coordinates.
-  depth*: float ## View-space depth; positive and smaller is nearer the eye.
+  depth*: float ## View-space depth; positive and smaller is nearer eye.
 
 
 func towards*(start, finish: ScreenPosition; fraction: float): ScreenPosition =
-  ## Step `fraction` of the way from `start` to `finish`, along the screen.
-  ##   Returns `finish` itself at a fraction of 1 rather than computing
-  ##   `start + 1.0*(finish - start)`, which is the same point in arithmetic and not
-  ##   always the same bits: an overlay that shortens a segment for an animation has to
-  ##   land on exactly the segment it drew before the animation existed, or every frame
-  ##   the animation is *not* running moves by a rounding step.
+  ## Step `fraction` of way from `start` to `finish`, along screen.
+  ##   Returns `finish` itself at fraction 1 rather than `start + 1.0*(finish - start)`,
+  ## same point in arithmetic and not always same bits: overlay shortening segment for
+  ## animation has to land exactly on segment it drew before animation existed.
   if fraction >= 1.0: return finish
   ScreenPosition(
     x: start.x + fraction*(finish.x - start.x),
@@ -113,16 +95,10 @@ func projectToScreen*(
   view_projection: Matrix4; width, height: int; position: Position
 ): ScreenPosition =
   ## Project world position through clip space onto window pixels.
-  ##   **Written out rather than looped, and this is a hot proc.** The two nested loops it
-  ## replaces read the same sixteen matrix entries, but on the JS backend each call also
-  ## allocated the two four-element arrays they walked -- and a pick over a full scene calls
-  ## this once per live slot, so a scene of ten thousand paid twenty thousand typed-array
-  ## allocations for one hover. Measured on the 10,000-object demo, the accumulate and the
-  ## copies it caused were **43%** of a pick's whole profile, against 14% for the arithmetic
-  ## itself. Four dot products in local floats allocate nothing.
-  ##   Only the three rows that are read are computed: the z row of clip space is never used
-  ## here -- depth is taken from w, which is what `isInFront` tests -- so the fourth of the
-  ## multiply that was being done is simply dropped.
+  ##   **Written out rather than looped; hot proc.** Nested loops allocated two
+  ## four-element arrays per call on JS backend, once per live slot per pick: at 10,000
+  ## objects accumulate and copies were 43% of pick's profile, against 14% for arithmetic.
+  ##   Only three rows read are computed: depth is taken from w, which `isInFront` tests.
   let
     x = position.x
     y = position.y
@@ -144,18 +120,16 @@ func pixelsFromCursor*(
   view_projection: Matrix4; width, height: int; position: Position; cursor: ScreenPosition
 ): float =
   ## Report how many pixels `position` projects from `cursor`, or `Inf` where it projects
-  ## behind the eye.
-  ##   The same projection as `projectToScreen`, answering the only question a point's hit
-  ## test asks and **building nothing to answer it**. That is the whole reason it exists: the
-  ## pick walks every live slot, and on the JS backend the `ScreenPosition` it was
-  ## constructing per slot is an allocation per slot -- ten thousand of them for one hover on
-  ## a full scene. A distance is a float, and a float is free.
-  ##   `Inf` rather than `Option[float]` for the same reason: an option is an object too, and
-  ## no real pixel distance is infinite, so the sentinel cannot collide with an answer.
+  ## behind eye.
+  ##   Same projection as `projectToScreen`, answering only question point's hit test
+  ## asks and **building nothing**: `ScreenPosition` per slot was allocation per slot,
+  ## ten thousand per hover on full scene. Distance is float, and float is free.
+  ##   `Inf` rather than `Option[float]` for same reason: option is object too, and no
+  ## real pixel distance is infinite, so sentinel cannot collide with answer.
   let clip_w = float(view_projection.at(3, 0))*position.x +
     float(view_projection.at(3, 1))*position.y +
     float(view_projection.at(3, 2))*position.z + float(view_projection.at(3, 3))
-  if clip_w <= 1.0e-6: return Inf # Behind the eye; `isInFront`'s own test.
+  if clip_w <= 1.0e-6: return Inf # Behind eye; `isInFront`'s test.
   let
     clip_x = float(view_projection.at(0, 0))*position.x +
       float(view_projection.at(0, 1))*position.y +
@@ -170,7 +144,7 @@ func pixelsFromCursor*(
 
 func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
   ## Report whether projected position stands in front of eye, where perspective divide
-  ## and every pixel distance measured from it are meaningful.
+  ## and every pixel distance from it are meaningful.
 
 
 
@@ -179,20 +153,16 @@ func isInFront*(screen: ScreenPosition): bool = screen.depth > 1.0e-6
 func clipToEyeSide*(
   tail, head: Position; plane_near: Multivector
 ): Option[(Position, Position)] =
-  ## Clip segment `tail`-`head` to the near side of `plane_near` -- the camera's own near
-  ## plane, `DrawExtent.plane_near` -- the same near-side clip the GPU performs when
-  ## actually drawing the segment, needed here since a screen-space hit test divides by
-  ## each endpoint's own depth, which the far reach `tessellate.addLine` gives a line can put
-  ## at or behind the eye even while the near half of the same segment fills the screen.
-  ##   The crossing is the meet of the segment's own line with the plane -- the algebra's
-  ##   statement of the clip -- and each end's side is its `depthAgainst` sign. Held equal
-  ##   to the componentwise interpolation `tessellate.addSegment`'s packing still performs (that
-  ##   copy is the GPU boundary and is licensed to stay plain) by a suite case, so the
-  ##   two clips cannot drift apart.
-  ##   Exported for `marker.markerRails`, which flanks exactly the run this clips and
-  ##   therefore has to clip it the same way; a marker drawn past the eye plane wraps to
-  ##   the opposite side of the screen.
-  ##   None where the whole segment lies behind the plane.
+  ## Clip segment `tail`-`head` to near side of `plane_near` -- camera's near plane,
+  ## `DrawExtent.plane_near` -- same clip GPU performs when drawing it. Needed since
+  ## screen-space hit test divides by each endpoint's depth, which `tessellate.addLine`'s
+  ## far reach can put at or behind eye while near half fills screen.
+  ##   Crossing is meet of segment's line with plane, and each end's side is its
+  ## `depthAgainst` sign. Held equal to componentwise interpolation `tessellate.addSegment`
+  ## still performs by suite case.
+  ##   Exported for `marker.markerRails`, which flanks exactly this run: marker drawn past
+  ## eye plane wraps to opposite side of screen.
+  ##   None where whole segment lies behind plane.
   let
     depth_tail = depthAgainst(plane_near, toMultivector(tail))
     depth_head = depthAgainst(plane_near, toMultivector(head))
@@ -201,7 +171,7 @@ func clipToEyeSide*(
   let crossing = position(wedgeAnti(
     wedge(toMultivector(tail), toMultivector(head)), plane_near
   ))
-  if crossing.isNone: return # Unreachable with straddling signs; stated for the reader.
+  if crossing.isNone: return # Unreachable with straddling signs; stated for reader.
   if depth_tail > 0.0: some((tail, crossing.get)) else: some((crossing.get, head))
 
 
@@ -222,12 +192,11 @@ func distanceToSegment(point, tail, head: ScreenPosition): float =
 func castRay*(
   camera: Camera; eye: Position; frame: FrameCamera; width, height: int; cursor: ScreenPosition
 ): Multivector =
-  ## Build RGA line running from eye through cursor's own pixel, into the scene.
-  ##   Undoes `initMatrixProjection`'s own construction: cursor becomes NDC again, scaled
-  ##   by the same field-of-view tangent, and composed from camera's own right/up/forward.
-  ##   Takes eye and frame precomputed, since a cursor position tests against every item
-  ##   in the scene with the very same ray; recomputing it per item would repeat the same
-  ##   two RGA joins and antiduals up to `ITEMS_MAX` times for one cursor position.
+  ## Build RGA line running from eye through cursor's pixel, into scene.
+  ##   Undoes `initMatrixProjection`'s construction: cursor becomes NDC again, scaled by
+  ## same field-of-view tangent, composed from camera's right/up/forward.
+  ##   Takes eye and frame precomputed: one cursor tests against every item with same
+  ## ray, and recomputing per item repeats two joins and antiduals up to `ITEMS_MAX` times.
   let
     half_height = tan(0.5 * degToRad(camera.degrees_field_of_view))
     half_width = half_height * (float(width) / float(height))
@@ -241,28 +210,24 @@ func castRay*(
 func positionUnderCursor*(
   camera: Camera; width, height: int; cursor: ScreenPosition
 ): Option[Position] =
-  ## Solve the world point the cursor is over: where its sight ray meets the **horizontal
-  ## plane through the camera's own target**. None where the ray never meets it -- looking
-  ## along that plane, or away from it at the sky.
-  ##   That plane rather than the ground at `z = 0`, for two reasons. It always sits at the
-  ## height the reader is actually working at, which is what they mean by "there" when they
-  ## point at something; and it keeps the hit at a sane distance, where a ground plane far
-  ## below a raised target puts it wildly far off at a shallow angle.
-  ##   Meant for a zoom that keeps what is under the cursor under the cursor
-  ## (`camera.dollyToward`), which is what every map and most strategy games do with a
-  ## wheel. Lives here rather than in `camera` because it needs the sight ray, and `camera`
-  ## is what this module imports rather than the other way round.
+  ## Solve world point cursor is over: where its sight ray meets **horizontal plane
+  ## through camera's target**. None where ray never meets it -- looking along it, or
+  ## away at sky.
+  ##   That plane rather than ground at `z = 0`: it sits at height reader works at, what
+  ## they mean by "there", and keeps hit at sane distance where ground far below raised
+  ## target puts it wildly far off.
+  ##   For zoom keeping what is under cursor under cursor (`camera.dollyToward`). Here
+  ## rather than `camera` because it needs sight ray, and `camera` is what this imports.
   let
     eye = camera.eye
     frame_camera = camera.frame(eye)
     ray = castRay(camera, eye, frame_camera, width, height, cursor)
-    # The horizontal plane through the target -- `objects.levelPlaneThrough`, the one
-    #   spelling of what a level means to the algebra.
+    # Meet horizontal plane through target: `objects.levelPlaneThrough`, one spelling of
+    #   what level means to algebra.
     hit = position(ray ∨ levelPlaneThrough(toMultivector(camera.target)))
   if hit.isNone: return
-  # Behind the eye is not under the cursor: a ray aimed at the sky meets the plane on the
-  #   far side of the reader, and zooming toward that point would fly the camera
-  #   backwards. Depth read against the eye's own plane.
+  # Refuse hit behind eye: ray aimed at sky meets plane on far side of reader, and zoom
+  #   toward it would fly camera backwards.
   let plane_eye = planeThrough(toMultivector(eye), toMultivector(frame_camera.forward))
   if depthAgainst(plane_eye, toMultivector(hit.get)) <= 1.0e-6: return
   hit
@@ -271,21 +236,18 @@ func positionUnderCursor*(
 func positionOnLineNearest*(
   anchor: Position; axis: Direction; ray_from: Position; ray_along: Direction
 ): Option[Position] =
-  ## Find the point of the line through `anchor` along `axis` standing nearest the ray from
+  ## Find point of line through `anchor` along `axis` standing nearest ray from
   ## `ray_from` along `ray_along`.
-  ##   What "the line, where the cursor is over it" has to mean: a cursor is a ray, a line
-  ##   is a line, and in three dimensions the two miss each other. The point of the line
-  ##   nearest the ray is the only answer that is on the line and under the cursor at once.
-  ##   None where the two run parallel, which has no one nearest point but a whole shared
-  ##   direction of them; a caller then has nothing on this line to aim at and says so.
-  ##   **The algebra's own answer, in three moves.** The join of the two lines' attitudes
-  ##   is the horizon line through both directions, whose normal is their common
-  ##   perpendicular -- the very reading `directionNormalHorizon` documents, and it
-  ##   vanishes exactly where the lines run parallel, which is the refusal. The plane
-  ##   `ray ∧ commonPerpendicular` contains the ray and the segment realising the nearest
-  ##   approach, so its meet with the line is that approach's foot on the line. Held
-  ##   equal to the classical two-dot closed form -- which lives in the suite, where
-  ##   checking the algebra is the point -- over a scatter of line/ray pairs.
+  ##   What "line, where cursor is over it" means: cursor is ray, line is line, and in
+  ## three dimensions two miss each other. Point of line nearest ray is only answer on
+  ## line and under cursor at once.
+  ##   None where two run parallel, which has no one nearest point.
+  ##   **Algebra's answer, in three moves.** Join of two lines' attitudes is horizon line
+  ## through both directions, whose normal is their common perpendicular --
+  ## `directionNormalHorizon`'s reading, vanishing where lines run parallel. Plane
+  ## `ray ∧ commonPerpendicular` contains ray and segment realising nearest approach, so
+  ## its meet with line is that approach's foot. Held equal to classical two-dot closed
+  ## form in suite over scatter of line/ray pairs.
   let
     line = wedge(toMultivector(anchor), toMultivector(axis))
     ray = wedge(toMultivector(ray_from), toMultivector(ray_along))
@@ -297,13 +259,13 @@ func positionOnLineNearest*(
 func positionOnItemUnder(
   geometry: Multivector; ray: Multivector; plane_eye: Multivector
 ): Option[Position] =
-  ## Solve the world point of one item that the cursor's own sight `ray` is over.
-  ##   A point stands where it stands, a plane is met where the ray crosses it, and a line
-  ##   is read at its nearest point to the ray -- see `positionOnLineNearest`.
-  ##   **Finite shapes only.** An object at horizon is drawn at `radius_horizon` about the
-  ##   eye and is not *at* any place in the world, so there is nothing there to fly toward.
-  ##   None also for a hit behind the eye -- read as its depth against the eye's own
-  ##   plane, `plane_eye` -- and none for a ray with no direction to read.
+  ## Solve world point of one item cursor's sight `ray` is over.
+  ##   Point stands where it stands, plane is met where ray crosses it, line is read at
+  ## nearest point to ray -- see `positionOnLineNearest`.
+  ##   **Finite shapes only.** Object at horizon is drawn at `radius_horizon` about eye
+  ## and is not *at* any place, so nothing there to fly toward.
+  ##   None also for hit behind eye -- depth against `plane_eye` -- and for ray with no
+  ## direction.
   if geometry.isHorizon: return
   let
     shaped = shape(geometry)
@@ -315,8 +277,8 @@ func positionOnItemUnder(
   of Shape.Line:
     let (anchor, axis) = (positionAnchor(geometry), direction(geometry))
     if anchor.isSome and axis.isSome:
-      # The ray's own two defining elements are read back off the ray multivector, so the
-      #   nearest-point question is asked of exactly the ray that was cast.
+      # Read ray's two defining elements off ray multivector, so nearest-point question
+      #   is asked of exactly ray that was cast.
       let ray_from = positionSupport(ray)
       if ray_from.isSome:
         found = positionOnLineNearest(anchor.get, axis.get, ray_from.get, heading.get)
@@ -329,9 +291,9 @@ func positionOnItemUnder(
 func positionOnGround*(
   camera: Camera; width, height: int; cursor: ScreenPosition
 ): Option[Position] =
-  ## Solve where the cursor's own sight ray meets the ground plane, `z = 0`.
-  ##   None where the ray never reaches it: running along the ground, or aimed above the
-  ## horizon at the sky, where the meet lands behind the reader.
+  ## Solve where cursor's sight ray meets ground plane, `z = 0`.
+  ##   None where ray never reaches it: running along ground, or aimed above horizon
+  ## where meet lands behind reader.
   let
     eye = camera.eye
     frame_camera = camera.frame(eye)
@@ -343,21 +305,50 @@ func positionOnGround*(
   hit
 
 
+func isBeyondDisc(
+  view_projection: Matrix4; width, height: int; tangent_half_view: float;
+  centre: Position; radius: float; cursor: ScreenPosition
+): bool =
+  ## Report whether cursor lies outside every pixel disc of `radius` about `centre` could
+  ## cover, so its meet may be skipped.
+  ##   Broad phase only: what it lets through, algebra decides. Bound is sphere about
+  ## centre: point `c + r*u` projects within `f*r*(1 + |c_xy|/d)/(d - r)` pixels of
+  ## centre's projection, `d` being centre's depth and `f` focal length in pixels. Never
+  ## true with eye inside that sphere. Loose off-axis, which broad phase may be.
+  ##   At 5,038 objects 96 planes' meets were half of every hover pick, for cursor nowhere
+  ## near their discs.
+  let depth = float(view_projection.at(3, 0))*centre.x +
+    float(view_projection.at(3, 1))*centre.y +
+    float(view_projection.at(3, 2))*centre.z + float(view_projection.at(3, 3))
+  if depth <= radius: return false
+  let
+    clip_x = float(view_projection.at(0, 0))*centre.x +
+      float(view_projection.at(0, 1))*centre.y +
+      float(view_projection.at(0, 2))*centre.z + float(view_projection.at(0, 3))
+    clip_y = float(view_projection.at(1, 0))*centre.x +
+      float(view_projection.at(1, 1))*centre.y +
+      float(view_projection.at(1, 2))*centre.z + float(view_projection.at(1, 3))
+    x = ((clip_x/depth)*0.5 + 0.5)*float(width)
+    y = (1.0 - ((clip_y/depth)*0.5 + 0.5))*float(height)
+    lateral = tangent_half_view*hypot(clip_x/depth*float(width)/float(height), clip_y/depth)
+    focal = float(height)/(2.0*tangent_half_view)
+    bound = focal*radius*(1.0 + lateral)/(depth - radius)
+  hypot(cursor.x - x, cursor.y - y) > bound
+
+
 func rayPlaneHit(
   ray, plane_eye: Multivector; plane: Multivector; anchor: Position; extent: float
 ): Option[float] =
-  ## Meet cursor's sight ray with `plane`; report view depth where it lands inside the
-  ## drawn disc, so a nearer plane can be preferred over a farther one behind it.
-  ##   None where the ray misses the plane, the hit falls behind the eye -- its depth
-  ##   against `plane_eye` -- or it lands outside the drawn disc.
-  ##   **The meet is read back as the point it names before anything signed is asked of
-  ##   it.** A meet's weight carries the orientation of the crossing -- which side of the
-  ##   plane the ray came from -- and `unitize` divides by the weight's *norm*, so that
-  ##   sign survives it. `depthAgainst` is linear in its point, so a meet left as it came
-  ##   reports the distance ahead of the eye negated on every plane the ray meets from
-  ##   behind its normal, and this refused each such plane at every pixel of its own disc.
-  ##   `position` divides by the signed weight and `toMultivector` restates the answer at
-  ##   weight one, which is the form every other `depthAgainst` in this module passes.
+  ## Meet cursor's sight ray with `plane`; report view depth where it lands inside drawn
+  ## disc, so nearer plane can be preferred over farther one behind it.
+  ##   None where ray misses plane, hit falls behind eye -- depth against `plane_eye` --
+  ## or lands outside drawn disc.
+  ##   **Meet is read back as point it names before anything signed is asked of it.**
+  ## Meet's weight carries orientation of crossing, and `unitize` divides by weight's
+  ## *norm*, so sign survives it; `depthAgainst` is linear in its point, so meet left as
+  ## it came reported distance negated on every plane met from behind its normal, and
+  ## refused each such plane at every pixel of its disc. `position` divides by signed
+  ## weight and `toMultivector` restates answer at weight one.
   let met = wedgeAnti(ray, plane)
   let where = position(met)
   if where.isNone: return
@@ -366,9 +357,7 @@ func rayPlaneHit(
   let distance = depthAgainst(plane_eye, hit)
   if distance <= 1.0e-6: return
 
-  # Bound is circular, matching `mesh.addRing` exactly: a plane's own hit test
-  #   should agree with what is drawn, not with a square the render no longer produces.
-  #   Distance between the hit and the disc's own centre, through the algebra.
+  # Bound circularly, matching `mesh.addRing`: hit test agrees with what is drawn.
   if distanceBetween(hit, toMultivector(anchor)) > extent: return
   some(distance)
 
@@ -381,40 +370,28 @@ proc pickNearest*(
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
 ): Option[int] =
   ## Find visible item nearest cursor, preferring points over lines over planes.
-  ##   **`placed` is the frame's own placements, where the caller kept them.**
-  ##   `tessellate.placeObject` already answers what an object is and where, from the
-  ##   algebra and nothing else, and a front-end holding a frame's worth of those answers
-  ##   -- `browser_bridge.g_placed`, kept on the scene's revision -- can hand them over
-  ##   instead of having this walk ask the same questions again. Two things come of that.
-  ##   The pick then ranks *what was drawn*, off one derivation rather than two that agree
-  ##   only by care; and it stops running `position`, `positionAnchor`, `direction`,
-  ##   `frame` and `spanPerpendicular` once per live slot per pointer event, which is what
-  ##   made a pick over a thousand objects cost 11 ms.
-  ##   Pass nothing and every slot is placed here instead, exactly as before -- which is
-  ##   the desktop path and every case in the suite. A partial array is treated as none:
-  ##   a cache is a frame's whole answer or it is not one.
+  ##   **`placed` is frame's own placements, where caller kept them.**
+  ## `tessellate.placeObject` already answers what object is and where, and front-end
+  ## holding frame's worth of answers -- `browser_bridge.g_placed` -- hands them over
+  ## instead of having walk ask again. Pick then ranks *what was drawn*, off one
+  ## derivation, and stops running placing side per live slot per pointer event, which
+  ## made pick over thousand objects cost 11 ms.
+  ##   Pass nothing and every slot is placed here instead -- desktop path and every suite
+  ## case. Partial array is treated as none: cache is frame's whole answer or not one.
   ##   None where nothing visible falls within its shape's pick radius.
   ##   **Every drawn shape is pickable, horizon or not**, ranked point, finite line,
-  ##   horizon line, finite plane, horizon plane. Thin things beat wide ones, and the sky
-  ##   comes last of all: it is drawn as a dome filling every direction, so it matches
-  ##   every ray and would swallow the scene from any other rank.
-  ##   A horizon plane being pickable at all has one consequence worth stating here,
-  ##   because it is easy to reach this proc while chasing it: **the cursor is now over
-  ##   *something* almost everywhere.** `interaction.beginDrag` refuses to start a drag on
-  ##   it for exactly that reason -- a press on empty space has to keep falling through to
-  ##   the camera, or orbit and pan stop working the moment a sky is in the scene.
-  ##   Exceeds the working 60-line default: the three shape branches below are
-  ##   irreducibly different geometry (point/line/plane hit-testing), each already
-  ##   minimal, and all three share the `eye`/`frame_camera`/`ray`/`scale` setup computed
-  ##   once above rather than per-candidate -- extracting a branch into its own proc
-  ##   would mean threading all four back in as parameters for no simplification.
+  ## horizon line, finite plane, horizon plane. Thin things beat wide ones, and sky comes
+  ## last: drawn as dome filling every direction, it matches every ray and would swallow
+  ## scene from any other rank.
+  ##   Horizon plane being pickable means **cursor is over *something* almost
+  ## everywhere.** `interaction.beginDrag` refuses to start drag on it for exactly that
+  ## reason, or orbit and pan stop working moment sky is in scene.
+  ##   Exceeds 60-line default: three shape branches are irreducibly different geometry,
+  ## each minimal, sharing `eye`/`frame_camera`/`ray`/`scale` setup computed once.
 
-  # Eye, camera frame and sight ray depend only on camera and cursor, not on which item is
-  #   being tested, so each is built once here rather than once per plane candidate below.
-  # `scale` must be this camera's own extent, as `drawExtentFor` built it this frame --
-  #   the branches below read the eye and its planes off it, and an extent from another
-  #   camera would rank items against a view nobody is looking through. Taking it beats
-  #   deriving a fresh one here, which ran `algebraFilled` a third time per frame.
+  # Build eye, camera frame and sight ray once: they depend on camera and cursor alone.
+  # Take `scale` as this camera's own extent, built by `drawExtentFor` this frame:
+  #   deriving fresh one here ran `algebraFilled` third time per frame.
   let
     eye = scale.eye
     frame_camera = camera.frame(eye)
@@ -431,28 +408,21 @@ proc pickNearest*(
       distance_best = distance
       slot_best = some(slot)
 
-  # Walks slots with the by-slot readers rather than through `pairs`: under the JS
-  #   backend an `Item` holds its `Scene` by value, so `pairs` copies the whole scene
-  #   once per live slot -- the trap `nimBuildFrame`'s walk documents, found again here
-  #   costing most of each hover pick, on a proc that runs per pointer move.
-  # Whether the caller brought a whole frame's placements; see the doc comment. Asked once,
-  #   because it cannot change part-way down a walk.
+  # Ask once whether caller brought whole frame's placements; cannot change mid-walk.
   let is_placed_held = placed.len >= ITEMS_MAX
-  var placed_here: Placed # Filled per slot only where the caller brought none.
+  var placed_here: Placed # Filled per slot only where caller brought none.
 
-  # To `bound`, not to capacity: this runs per pointer move, and a pool of 10,080 slots
-  #   holding five objects would otherwise test ten thousand of them to rank five.
-  #   `placed` stays indexed by slot and sized to capacity -- a slot is an address.
+  # Walk by slot to `bound`, not to capacity: runs per pointer move, and pool of 10,080
+  #   slots holding five objects tested ten thousand to rank five. `placed` stays indexed
+  #   by slot and sized to capacity -- slot is address. By-slot readers, never `pairs`,
+  #   which copies whole scene per live slot on JS backend.
   for slot in 0 ..< scene.bound:
     if not scene.isAlive(slot) or not scene.isVisible(slot): continue
     if not is_placed_held:
       placed_here = placeObject(scene.geometryOf(slot), scene.anchorOverrideAt(slot))
-    # **Read in place, never bound.** A `Placed` holds five multivectors and a
-    #   `Multivector` sixteen floats, and binding either to a `let` deep-copies it under
-    #   the JS backend -- the trap `emitObject`'s `var` parameter documents, and the reason
-    #   `scene.geometryOf` hands back a borrow rather than a value. Both aliases expand to
-    #   the read at each use, so the branches below say what they always said and build
-    #   nothing; confirmed in the generated JavaScript that neither copies.
+    # Read in place, never bound: `Placed` holds five multivectors, and binding to `let`
+    #   deep-copies on JS backend. Both aliases expand to read at each use; confirmed in
+    #   generated JavaScript that neither copies.
     template place: untyped = (if is_placed_held: placed[slot] else: placed_here)
     template geometry: untyped = scene.geometryOf(slot)
 
@@ -460,16 +430,14 @@ proc pickNearest*(
     of PlacedKind.Nothing: continue
 
     of PlacedKind.PointAt:
-      # Through `pixelsFromCursor` rather than `projectToScreen`: this is the branch almost
-      #   every slot takes -- a scene of ten thousand is nine thousand eight hundred points
-      #   -- and it wants a distance, not a projected position to measure one from.
+      # Measure through `pixelsFromCursor`, not `projectToScreen`: branch almost every
+      #   slot takes wants distance, not projected position to measure one from.
       let distance = pixelsFromCursor(view_projection, width, height, place.at, cursor)
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
     of PlacedKind.PointToward:
-      # A direction point is drawn as a star out at the horizon, so it is picked there --
-      #   the one part of a point's anchor that depends on the eye, which is why it is not
-      #   in the placement. Matches `tessellate.anchorFor`'s own second branch exactly.
+      # Pick direction point where its star is drawn -- one part of point's anchor
+      #   depending on eye, so not in placement. Matches `tessellate.anchorFor`.
       let star = position(add(
         scale.eye_point, wedge(scale.radius_horizon, toMultivector(place.toward)),
       ))
@@ -478,14 +446,10 @@ proc pickNearest*(
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
 
     of PlacedKind.LineAcross:
-      # Drawn as a great circle on the sky, so tested against that circle -- sampled the
-      #   way `tessellate.addGreatCircle` samples it, so a hit agrees with what is drawn,
-      #   the rule this module already follows for a finite line's two halves.
-      #   Stepped off the same fixed table the drawn circle walks: which plane the arms
-      #   span is the placement's answer -- `placeObject` ran `spanPerpendicular` for it --
-      #   and the ring itself is arithmetic. It used to be ninety-seven multivector sums
-      #   per horizon candidate per pointer move, the bulk of what a hover pick cost once
-      #   the scene copies were gone.
+      # Test against great circle it is drawn as, sampled as `tessellate.addGreatCircle`
+      #   samples it, so hit agrees with what is drawn. Stepped off same fixed table:
+      #   which plane arms span is placement's answer, ring itself is arithmetic. Was
+      #   ninety-seven multivector sums per horizon candidate per pointer move.
       let
         arm_first = scale.radius_horizon*place.axes.axis_first
         arm_second = scale.radius_horizon*place.axes.axis_second
@@ -506,9 +470,8 @@ proc pickNearest*(
       if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
 
     of PlacedKind.LineThrough:
-      # Test both halves `tessellate.addLine` draws -- support out to each of the line's own
-      #   two vanishing points. Testing one would leave the other half of a line on
-      #   screen unpickable, and which half that is changes as the camera orbits.
+      # Test both halves `tessellate.addLine` draws -- support out to each vanishing
+      #   point; which half is on screen changes as camera orbits.
       var distance_nearest = Inf
       for reach in [scale.radius_horizon, -scale.radius_horizon]:
         let clipped = clipToEyeSide(
@@ -526,21 +489,20 @@ proc pickNearest*(
       if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
 
     of PlacedKind.PlaneOn:
-      # The frame guard survives the hit test no longer taking the axes: a plane the
-      #   algebra can span no frame for is one the disc was never drawn for either -- and
-      #   that is now said by the kind, since `placeObject` only reaches `PlaneOn` with
-      #   both an anchor and a frame in hand. The anchor carries the override with it,
-      #   which is where a plane's disc is actually centred.
+      # Frame guard is kind's to say: `placeObject` reaches `PlaneOn` only with anchor and
+      #   frame in hand, anchor carrying override where disc is actually centred.
+      # Meet only where disc could reach cursor at all; see `isBeyondDisc`.
+      if isBeyondDisc(
+        view_projection, width, height, scale.tangent_half_view, place.at, EXTENT_PLANE_F,
+        cursor,
+      ): continue
       let hit = rayPlaneHit(ray, scale.plane_eye, geometry, place.at, EXTENT_PLANE_F)
       if hit.isSome: consider(3, hit.get)
 
     of PlacedKind.PlaneEverywhere:
-      # The whole sky, drawn as a dome filling every direction, so every ray meets it and
-      #   there is no distance to measure -- only a rank. Last of all, so anything else
-      #   under the cursor wins and this is what a cursor over nothing else finds.
-      #   **Asked of the geometry, not of the kind**: a finite plane whose support or frame
-      #   the algebra cannot give lands on this same kind, and it is not the sky -- it was
-      #   never drawn, so it is not pickable either.
+      # Match whole sky last of all, with no distance to measure -- only rank -- so
+      #   anything else under cursor wins. Asked of geometry, not kind: finite plane whose
+      #   frame algebra cannot give lands on this kind, and it was never drawn.
       if geometry.isHorizon: consider(4, 0.0)
 
   slot_best
@@ -550,25 +512,18 @@ proc anchorZoomAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
 ): Option[Position] =
-  ## Solve the world point a zoom aimed at `cursor` should hold still: whatever finite
-  ## object the cursor is over, else the ground under it, else the level the target sits
-  ## on.
-  ##   **In that order, and the order is the rule.** A reader pointing at an object means
-  ## that object, at the depth it actually stands at; a zoom anchored instead on a plane
-  ## through the target crept past or short of it, and what was under the cursor slid away
-  ## as the wheel turned. Failing an object, the ground is what a reader means by "there"
-  ## -- the surface the scene is laid out over, and the one every map zooms against.
-  ##   The level through the target survives as the last answer rather than the first, for
-  ## the case the other two miss: a cursor on empty sky above the horizon, where there is
-  ## no ground ahead to meet and the reader has turned the wheel anyway.
-  ##   `pickNearest` ranks a horizon plane last and matches it everywhere, so the sky is
-  ## "under the cursor" almost always; `positionOnItemUnder` refuses horizon shapes for
-  ## exactly that reason, and the fall-through does the work.
-  ##   None where none of the three answers, which leaves a caller to zoom at the middle of
-  ## the frame.
-  # The caller's own extent, not a derivation of this proc's: on the browser the wheel
-  #   handler holds the overlay cache's extent for exactly this camera, and deriving a
-  #   fresh one here ran `algebraFilled` and `camera.frame`'s joins per wheel notch.
+  ## Solve world point zoom aimed at `cursor` should hold still: whatever finite object
+  ## cursor is over, else ground under it, else level target sits on.
+  ##   **In that order, and order is rule.** Reader pointing at object means that object
+  ## at depth it stands at; zoom anchored on plane through target crept past or short of
+  ## it. Failing object, ground is what reader means by "there", what every map zooms
+  ## against. Level through target survives as last answer, for cursor on empty sky.
+  ##   `pickNearest` ranks horizon plane last and matches it everywhere, so sky is "under
+  ## cursor" almost always; `positionOnItemUnder` refuses horizon shapes for exactly that
+  ## reason, and fall-through does work.
+  ##   None where none of three answers, leaving caller to zoom at middle of frame.
+  # Take caller's extent: wheel handler holds overlay cache's extent for exactly this
+  #   camera, and deriving fresh one ran `algebraFilled` and joins per wheel notch.
   let slot = pickNearest(
     scene, camera, scale, view_projection, width, height, cursor, placed,
   )
@@ -587,18 +542,16 @@ proc anchorZoomAt*(
 #[ In View ]#
 
 func marginCentred(width, height: int; inset: float): (float, float) =
-  ## Measure how far in, across and down, the centred box begins.
-  ##   `inset` pulls both margins further in by that many pixels, for a caller asking
-  ##   whether something of its own size fits rather than whether a bare position lands.
-  ##   The box itself is `camera.reachCentred`'s to shape -- including why it is not simply
-  ##   the same fraction of each dimension -- so that the pixel test here and the cone
-  ##   `camera.distanceFitting` solves cannot come to disagree about what "in view" means.
+  ## Measure how far in, across and down, centred box begins.
+  ##   `inset` pulls both margins further in, for caller asking whether something of its
+  ## own size fits. Box itself is `camera.reachCentred`'s to shape, so pixel test here and
+  ## cone `camera.distanceFitting` solves cannot disagree about "in view".
   let (reach_across, reach_down) = reachCentred(width, height, inset)
   (0.5*(float(width) - reach_across), 0.5*(float(height) - reach_down))
 
 
 func isWithinCentre(screen: ScreenPosition; width, height: int; inset: float): bool =
-  ## Report whether a projected point falls inside the centred box, in front of the eye.
+  ## Report whether projected point falls inside centred box, in front of eye.
   if not screen.isInFront: return false
   let (margin_x, margin_y) = marginCentred(width, height, inset)
   screen.x >= margin_x and screen.x <= float(width) - margin_x and
@@ -606,31 +559,28 @@ func isWithinCentre(screen: ScreenPosition; width, height: int; inset: float): b
 
 
 func isWithinFrame(screen: ScreenPosition; width, height: int; inset: float): bool =
-  ## Report whether a projected point falls on screen at all, in front of the eye.
-  ##   The looser of the two bounds this module tests against, and the one a plane's rim
-  ##   answers to: a disc reaching the edge is still wholly *visible*, which is all its rim
-  ##   has to be. What makes the plane the thing being looked at is its centre, which is
-  ##   held to `isWithinCentre` like anything else.
+  ## Report whether projected point falls on screen at all, in front of eye.
+  ##   Looser of two bounds, one plane's rim answers to: disc reaching edge is still
+  ## wholly *visible*. What makes plane thing being looked at is its centre, held to
+  ## `isWithinCentre`.
   if not screen.isInFront: return false
   screen.x >= inset and screen.x <= float(width) - inset and
     screen.y >= inset and screen.y <= float(height) - inset
 
 
 func isCrossingCentre(tail, head: ScreenPosition; width, height: int): bool =
-  ## Report whether any part of screen segment `tail`-`head` falls inside the centred box.
-  ##   Both ends are taken as already in front of the eye, since a projected position
-  ##   behind it is not a screen position at all; callers clip first.
-  ##   Clipped rather than sampled: a straight screen segment either crosses an
-  ##   axis-aligned box or it does not, and asking that exactly costs less than asking it
-  ##   approximately at enough points to be sure of a thin near-miss.
-  # No inset: a line and a plane have only to cross the box, never to fit inside it.
+  ## Report whether any part of screen segment `tail`-`head` falls inside centred box.
+  ##   Both ends are taken as already in front of eye; callers clip first.
+  ##   Clipped rather than sampled: straight segment either crosses axis-aligned box or
+  ## not, asked exactly for less than sampling enough points to be sure of near-miss.
+  # Use no inset: line and plane have only to cross box, never fit inside it.
   let
     (margin_x, margin_y) = marginCentred(width, height, 0.0)
     (dx, dy) = (head.x - tail.x, head.y - tail.y)
   var (enter, leave) = (0.0, 1.0)
-  # Liang-Barsky: each of the box's four edges cuts back the run of the segment that could
-  #   still be inside -- entering where the segment heads into that edge, leaving where it
-  #   heads back out. An edge the segment runs parallel to admits or rejects it outright.
+  # Cut back run that could still be inside against each edge, Liang-Barsky: entering
+  #   where segment heads into edge, leaving where it heads out; parallel edge admits or
+  #   rejects outright.
   for (rate, room) in [
     (-dx, tail.x - margin_x), (dx, float(width) - margin_x - tail.x),
     (-dy, tail.y - margin_y), (dy, float(height) - margin_y - tail.y),
@@ -651,8 +601,8 @@ func isRingCrossingCentre(
   centre: Position; axis_first, axis_second: Direction; radius: float;
   view_projection: Matrix4; width, height: int
 ): bool =
-  ## Report whether a world circle, sampled the way this project draws one, crosses the
-  ## centred box anywhere.
+  ## Report whether world circle, sampled as project draws one, crosses centred box
+  ## anywhere.
   let
     centre_point = toMultivector(centre)
     arm_first = wedge(radius, toMultivector(axis_first))
@@ -677,13 +627,12 @@ func isRingWithinFrame(
   centre: Position; axis_first, axis_second: Direction; radius: float;
   view_projection: Matrix4; width, height: int
 ): bool =
-  ## Report whether every point of a world circle, sampled the way this project draws one,
-  ## falls on screen.
-  ##   The rim alone answers for the disc it bounds: the disc is flat and the frame is
-  ##   convex, so a rim wholly inside carries its own interior in with it.
-  ##   False the moment any sample falls behind the eye. A disc reaching past the eye has
-  ##   no screen extent to fit, and no distance the camera could stand at would give it
-  ##   one without first turning to face the thing.
+  ## Report whether every point of world circle, sampled as project draws one, falls on
+  ## screen.
+  ##   Rim alone answers for disc it bounds: disc is flat and frame convex, so rim wholly
+  ## inside carries interior with it.
+  ##   False moment any sample falls behind eye: disc reaching past eye has no screen
+  ## extent to fit at any distance without first turning to face it.
   let
     centre_point = toMultivector(centre)
     arm_first = wedge(radius, toMultivector(axis_first))
@@ -702,7 +651,7 @@ func isRingWithinFrame(
 func isLineShownCentrally(
   m: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int
 ): bool =
-  ## Report whether a grade-2 object reaches the centred box, at horizon or finite.
+  ## Report whether grade-2 object reaches centred box, at horizon or finite.
   if m.isHorizon:
     let normal = directionNormalHorizon(m)
     if normal.isNone: return false
@@ -713,8 +662,8 @@ func isLineShownCentrally(
       view_projection, width, height,
     )
 
-  # Both halves `tessellate.addLine` draws, clipped to the eye side exactly as `pickNearest`
-  #   clips them: half a line can sit behind the eye while the other half fills the frame.
+  # Test both halves `tessellate.addLine` draws, clipped to eye side as `pickNearest`
+  #   clips them: half can sit behind eye while other half fills frame.
   let (anchor, axis) = (positionAnchor(m), direction(m))
   if anchor.isNone or axis.isNone: return false
   for reach in [scale.radius_horizon, -scale.radius_horizon]:
@@ -736,29 +685,23 @@ func isPlaneShownCentrally(
   m: Multivector; anchor_override: Option[Position];
   view_projection: Matrix4; width, height: int
 ): bool =
-  ## Report whether a grade-3 object is in view: its drawn disc **centred** in the centred
-  ## box, and the **whole of its rim** on screen.
-  ##   Two bounds and not one, because a disc has a middle and an extent and they answer
-  ##   different questions. Its centre says whether the plane is what the view is about, so
-  ##   it is held to the same box every other object's position is. Its rim says only
-  ##   whether the reader can see the whole circle, so it is held to the frame -- a disc
-  ##   made to fit the *centred box* has to be pushed a full half again further away than
-  ##   one made to fit the frame, and it was: picking the demo's ground plane threw the
-  ##   camera from 19 out to 29.9 where 19 already showed the whole circle. An edge resting
-  ##   near the edge of the screen is a plane a reader can read.
-  ##   A plane at horizon is the whole sky, drawn as a dome around the eye, so it is in
-  ##   view from every camera there is.
-  ##   `anchor_override` centres the disc there instead of on the plane's own support, read
-  ##   exactly as `tessellate.addPlane` reads it, so what is judged is the circle a reader can
-  ##   actually see: the two stand as far as 3.7 units apart on the demo scene's own planes,
-  ##   against a disc of radius 8.
+  ## Report whether grade-3 object is in view: drawn disc **centred** in centred box, and
+  ## **whole rim** on screen.
+  ##   Two bounds, because disc has middle and extent answering different questions.
+  ## Centre says whether plane is what view is about, so it is held to same box as every
+  ## position. Rim says only whether reader sees whole circle, so it is held to frame:
+  ## disc made to fit *centred box* had to be pushed half again further away -- picking
+  ## demo's ground plane threw camera from 19 to 29.9 where 19 showed whole circle.
+  ##   Plane at horizon is whole sky, in view from every camera.
+  ##   `anchor_override` centres disc there instead of support, as `tessellate.addPlane`
+  ## reads it: two stand as far as 3.7 units apart on demo's planes, against disc of
+  ## radius 8.
   if m.isHorizon: return true
   let
     anchor = if anchor_override.isSome: anchor_override else: positionAnchor(m)
     axes = frame(m)
   if anchor.isNone or axes.isNone: return false
-  # No inset on the centre: nothing is drawn there. A plane's disc carries no anchor marker
-  #   and no crosshair -- the rim alone marks it -- so there is no dot needing room.
+  # Use no inset on centre: nothing is drawn there -- rim alone marks disc.
   if not isWithinCentre(
     projectToScreen(view_projection, width, height, anchor.get), width, height, 0.0
   ):
@@ -773,30 +716,24 @@ func isShownCentrally*(
   m: Multivector; camera: Camera; width, height: int;
   anchor_override: Option[Position] = none(Position)
 ): bool =
-  ## Report whether `m` is in view, in the sense a camera framing a selection has to
-  ## satisfy, over a `width` x `height` frame seen from `camera`:
+  ## Report whether `m` is in view, in sense camera framing selection has to satisfy,
+  ## over `width` x `height` frame seen from `camera`:
   ##
   ##   |--------|---------------------------------------------------------------------|
-  ##   | Point  | Its dot fits inside the centred box.                                 |
-  ##   | Line   | It merely crosses the centred box.                                   |
-  ##   | Plane  | Its disc is centred in the centred box, and its rim is on screen.    |
+  ##   | Point  | Its dot fits inside centred box.                                     |
+  ##   | Line   | It merely crosses centred box.                                       |
+  ##   | Plane  | Its disc is centred in centred box, and its rim is on screen.        |
   ##   |--------|---------------------------------------------------------------------|
   ##
-  ##   Three readings and not one, and the split follows what each shape is drawn at rather
-  ##   than its grade. A point's dot and a plane's disc are both drawn at a fixed size the
-  ##   camera does not set, so each is a bounded thing a frame can hold, and holding it
-  ##   whole is what "you can see it" means. A line is drawn out to the horizon, which
-  ##   moves with the camera, so it has no size to fit: demanding it fit would demand a
-  ##   camera pulled back until it was a speck, and crossing the middle of the frame is
-  ##   what seeing it means instead. A plane splits the question in two, since its disc is
-  ##   the one drawn thing wide enough that "fits" and "is what the view is about" want
-  ##   different bounds; see `isPlaneShownCentrally`.
-  ##   Each shape is tested against exactly what `tessellate.addObject` puts on screen for it,
-  ##   `anchor_override` included, the rule `pickNearest` already follows and for the same
-  ##   reason: what counts as in view has to agree with what a reader can actually see.
-  ##   Only the *ratio* of `width` to `height` matters -- projection and box scale with
-  ##   them alike -- so a caller holding an aspect and one dimension may pass any pair in
-  ##   that ratio.
+  ##   Three readings, following what each shape is drawn at rather than grade. Point's
+  ## dot and plane's disc are drawn at fixed size camera does not set, so each is bounded
+  ## thing frame can hold. Line is drawn out to horizon, which moves with camera, so it
+  ## has no size to fit; crossing middle of frame is what seeing it means. Plane splits
+  ## question in two; see `isPlaneShownCentrally`.
+  ##   Each shape is tested against exactly what `tessellate.addObject` puts on screen,
+  ## `anchor_override` included, rule `pickNearest` follows for same reason.
+  ##   Only *ratio* of `width` to `height` matters, so caller holding aspect and one
+  ## dimension may pass any pair in that ratio.
   ##   False where `m` draws nothing at all.
   let shape_m = shape(m)
   if shape_m.isNone: return false

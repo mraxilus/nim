@@ -1,26 +1,21 @@
-## Turn geometry into a picture: read what an object is through the algebra, place every
-## point of its drawing through the algebra, and hand plain places down to `mesh` to be
-## packed into vertices.
+## Turn geometry into picture: read what object is through algebra, place every point of
+## its drawing through algebra, and hand plain places down to `mesh` to pack into vertices.
 ##
-## **This module is the geometry side of drawing.** It owns what a thing is and where it
-## stands -- a scene object, a lattice line of the ground grid, a world axis, and everything
-## at the horizon, where a point becomes a star, a line becomes the great circle of the
-## directions it stands for, and a plane becomes the whole sky. Those are geometric objects
-## and they are placed through the library, which is what this project exists to exercise.
+## **Geometry side of drawing.** Owns what thing is and where it stands -- scene object,
+## lattice line of ground grid, world axis, and everything at horizon, where point becomes
+## star, line becomes great circle of directions it stands for, and plane becomes whole
+## sky. Those are geometric objects placed through library, which project exists to
+## exercise.
 ##
-## What it does *not* own is the picture drawn to stand for them. A disc is not a plane and
-## a ribbon is not a line: both are stand-ins sized for an eye, carrying no geometric
-## meaning of their own, and both are built in `mesh` out of ordinary arithmetic. See
-## `euclid.nim`'s header for the split, and `boundary.nim` for the one place the two
-## languages meet.
+## Does *not* own picture drawn to stand for them. Disc is not plane and ribbon is not
+## line: both are stand-ins sized for eye, built in `mesh` out of ordinary arithmetic. See
+## `euclid.nim` header for split, and `boundary.nim` for one place two languages meet.
 ##
-## Finite objects are tessellated about their support point, i.e. point nearest origin;
-## objects at the horizon are drawn fixed to `DrawExtent.eye` instead, at
-## `DrawExtent.radius_horizon`, so orbiting or dollying leaves each in the same apparent
-## direction exactly as a real star at effectively infinite distance would.
+## Finite objects are tessellated about support point, i.e. point nearest origin; objects
+## at horizon are drawn fixed to `DrawExtent.eye` at `DrawExtent.radius_horizon`, so
+## orbiting or dollying leaves each in same apparent direction, as real star would.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`)
-## render paths; see `visualiser.nim`'s own "Render Paths" table.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
 {.experimental: "codeReordering".}
 {.experimental: "strictFuncs".}
@@ -37,24 +32,22 @@ export mesh
 #[ Type Definitions ]#
 
 type
-  DrawExtent* = object ## Hold a frame's camera in both languages at once.
-    ## The Euclidean half is `mesh.DrawScale`, carried whole so a caller holding an extent
-    ## still says `scale.eye`; the four multivector twins beside it are the algebra's own
-    ## reading of the very same camera, derived once per frame in `camera.drawExtentFor` so
-    ## nothing downstream rebuilds `toMultivector(eye)` -- or worse, a whole plane -- per
-    ## segment.
-    scale*: DrawScale ## Everything the picture is measured against; see `mesh.DrawScale`.
-    eye_point*: Multivector ## The eye as a unit-weight point.
-    forward_point*: Multivector ## The sight direction as a point at the horizon.
-    plane_eye*: Multivector ## The unitized plane through the eye perpendicular to the
-      ## sight direction: `depthAgainst` it is view depth, and its sign is "in front".
-    plane_near*: Multivector ## The same plane pushed `depth_near` forward: the near clip
-      ## as the algebra states it, for `clipToEyeSide`'s own meet.
+  DrawExtent* = object ## Hold frame's camera in both languages at once.
+    ## Euclidean half is `mesh.DrawScale`, carried whole so caller holding extent still
+    ## says `scale.eye`; four multivector twins beside it are algebra's reading of same
+    ## camera, derived once per frame in `camera.drawExtentFor` so nothing downstream
+    ## rebuilds `toMultivector(eye)` per segment.
+    scale*: DrawScale ## Everything picture is measured against; see `mesh.DrawScale`.
+    eye_point*: Multivector ## Eye as unit-weight point.
+    forward_point*: Multivector ## Sight direction as point at horizon.
+    plane_eye*: Multivector ## Unitized plane through eye perpendicular to sight:
+      ## `depthAgainst` it is view depth, sign "in front".
+    plane_near*: Multivector ## Same plane pushed `depth_near` forward: near clip as
+      ## algebra states it, for `clipToEyeSide`'s meet.
 
 
-# Read-through to the Euclidean half, so a caller holding a whole extent writes `scale.eye`
-#   rather than `scale.scale.eye`. The split is about which module may *name* a multivector,
-#   not about making every site spell out which half a field sits in.
+# Read through to Euclidean half, so caller holding whole extent writes `scale.eye` rather
+#   than `scale.scale.eye`. Split is about which module may *name* multivector.
 func extent_furniture*(d: DrawExtent): float = d.scale.extent_furniture
 func eye*(d: DrawExtent): Position = d.scale.eye
 func radius_horizon*(d: DrawExtent): float = d.scale.radius_horizon
@@ -63,21 +56,19 @@ func tangent_half_view*(d: DrawExtent): float = d.scale.tangent_half_view
 func height_pixels*(d: DrawExtent): int = d.scale.height_pixels
 func depth_near*(d: DrawExtent): float = d.scale.depth_near
 
-# And the whole half, implicitly, so an extent can be handed to any of `mesh`'s own procs
-#   without every call site unwrapping it. Deliberate rather than incidental: an extent
-#   *is* a scale with the algebra's reading of the same camera beside it, the conversion
-#   only ever runs one way, and there is no second type it could be confused for.
+# Convert whole half implicitly, so extent can be handed to any of `mesh`'s procs without
+#   unwrapping. Extent *is* scale with algebra's reading beside it, conversion runs one
+#   way, and no second type could be confused for it.
 converter toScale*(d: DrawExtent): DrawScale = d.scale
 
 
 
 func algebraFilled*(scale: DrawExtent): DrawExtent =
-  ## Return the extent with its four multivector twins derived from its own plain fields.
-  ##   The one derivation point: `camera.drawExtentFor` goes through here, and so must any
-  ##   hand-built extent -- a test fixture, a partial one -- or its twins are zero
-  ##   multivectors and everything algebraic downstream silently draws nothing. Found
-  ##   exactly that way: the suite's own fixtures built extents fieldwise and the ground
-  ##   grid vanished from every one of them.
+  ## Return extent with its four multivector twins derived from its plain fields.
+  ##   One derivation point: `camera.drawExtentFor` goes through here, and so must any
+  ## hand-built extent -- test fixture, partial one -- or twins are zero multivectors and
+  ## everything algebraic downstream silently draws nothing. Suite's fixtures built extents
+  ## fieldwise once and ground grid vanished from every one.
   result = scale
   result.eye_point = toMultivector(scale.eye)
   result.forward_point = toMultivector(scale.forward)
@@ -92,15 +83,12 @@ func algebraFilled*(scale: DrawExtent): DrawExtent =
 #[ Representative Point ]#
 
 func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
-  ## Resolve one point standing for `m`, for picking a point and for cursor feedback.
-  ##   Point uses its own place, or its own star position at horizon where it has none,
-  ##   matching exactly where `mesh.addPoint` draws it.
-  ##   Line and plane use their support point, matching what mesh actually anchors on.
-  ##   Neither needs a horizon anchor: `pickNearest` tests a horizon line against the great
-  ##   circle it is drawn as and matches a horizon plane outright, so both are pickable
-  ##   without ever asking for one representative point -- which is just as well, since
-  ##   neither has one.
-  ##   None where `m` carries no drawable geometry at all.
+  ## Resolve one point standing for `m`, for picking point and for cursor feedback.
+  ##   Point uses own place, or own star position at horizon, matching where `mesh.addPoint`
+  ## draws it. Line and plane use support point, what mesh anchors on.
+  ##   Neither needs horizon anchor: `pickNearest` tests horizon line against great circle
+  ## it is drawn as and matches horizon plane outright.
+  ##   None where `m` carries no drawable geometry.
   let shape = shape(m)
   if shape.isNone: return
   case shape.get
@@ -119,16 +107,13 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
 func anchorFor*(
   m: Multivector; anchor_override: Option[Position]; scale: DrawExtent
 ): Option[Position] =
-  ## Resolve one point standing for `m` **as it is actually drawn**, for anything that has
-  ## to meet an object on screen: a rubber-band leaving it, a comet aimed from it, a menu
-  ## hanging off it.
-  ##   Reads `anchor_override` exactly as `addPlane` and `marker.markerFor` read it, so a
-  ##   plane's disc has one centre and not two. It matters: on this project's own demo scene
-  ##   the stored creation anchor stands 0.5, 2.7 and 3.7 units from the support, against a
-  ##   disc of radius 8, so a band drawn from the support leaves from a point nowhere on the
-  ##   circle a reader can see.
-  ##   Ignored for every other shape, as `addObject` ignores it: a point and a line are
-  ##   drawn about their own places whatever an item happens to carry.
+  ## Resolve one point standing for `m` **as it is drawn**, for anything meeting object on
+  ## screen: rubber-band leaving it, comet aimed from it, menu hanging off it.
+  ##   Reads `anchor_override` as `addPlane` and `marker.markerFor` do, so plane's disc has
+  ## one centre. On demo scene stored creation anchor stands 0.5, 2.7 and 3.7 units from
+  ## support, against disc of radius 8, so band from support left from point nowhere on
+  ## visible circle.
+  ##   Ignored for every other shape, as `addObject` ignores it.
   if anchor_override.isSome and shape(m) == some(Shape.Plane): return anchor_override
   anchorFor(m, scale)
 
@@ -140,15 +125,12 @@ proc addGreatCircle(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba
 ) =
-  ## Append a closed ring of segments around `center`, in the plane `axis_first` and
-  ## `axis_second` span, at `radius` -- the great circle a horizon line traces across
-  ## the sky, seen from any point, standing for the pencil of directions it names.
-  ##   The very circle `mesh.addRing` describes, delegated to it so the two cannot
-  ##   drift: which plane the arms span is still the algebra's answer
-  ##   (`spanPerpendicular`, at the caller), and the ring itself is arithmetic off the
-  ##   fixed table of angles -- it used to be assembled as per-angle multivector sums,
-  ##   which the suite holds that arithmetic equal to, and `picking.pickNearest` samples
-  ##   its own copy of this circle the same way so a hit still agrees with what is drawn.
+  ## Append closed ring of segments around `center`, in plane `axis_first` and
+  ## `axis_second` span, at `radius` -- great circle horizon line traces across sky,
+  ## standing for pencil of directions it names.
+  ##   Very circle `mesh.addRing` describes, delegated so two cannot drift: which plane
+  ## arms span is algebra's answer (`spanPerpendicular`, at caller), ring itself is
+  ## arithmetic off fixed angle table, and `picking.pickNearest` samples its copy same way.
   meshes.addRing(center, axis_first, axis_second, radius, tint, WIDTH_LINE_OBJECT)
 
 
@@ -158,17 +140,13 @@ proc placeChord(
   scratch: var DrawScratch; count_assembled: var int; centre, axis_point: Multivector;
   span: float; tint: Rgba; scale: DrawExtent
 ) =
-  ## Resolve one furniture line into `scratch.ribbons` as a single piece running `span`
-  ## either side of `centre` along `axis_point`, at its full tint -- the fog fade that
-  ## used to be sampled here piece by piece runs per fragment in the shaders now, against
-  ## `mesh.alphaGridFade`. Silently stops at the scratch's end, for the reason
-  ## `placeGridFamily` gives. Shared by the grid, the axes and the debug layer's
-  ## lattices, so all the furniture is placed by one rule.
-  ##   **A whole line behind the eye is culled here, not carried.** The shader refuses it
-  ##   anyway, but a record it refuses still crossed the wire and still counted against
-  ##   the grid's own record count. Depth along the sight axis is linear along a straight
-  ##   segment, so two behind-eye endpoints put all of it behind; the exact per-end clip
-  ##   stays the shader's.
+  ## Resolve one furniture line into `scratch.ribbons` as single piece running `span`
+  ## either side of `centre` along `axis_point`, at full tint -- fog fade runs per
+  ## fragment in shaders, against `mesh.alphaGridFade`. Silently stops at scratch's end,
+  ## for reason `placeGridFamily` gives. Shared by grid, axes and debug layer's lattices.
+  ##   **Whole line behind eye is culled here, not carried.** Shader refuses it anyway, but
+  ## refused record still crossed wire and counted. Depth along sight axis is linear along
+  ## segment, so two behind-eye endpoints put all of it behind.
   if count_assembled >= len(scratch.ribbons): return
   let
     tail = pointFrom(add(centre, wedge(-span, axis_point)))
@@ -183,22 +161,16 @@ proc placeChord(
 
 
 proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int =
-  ## Resolve the world axes into `scratch` and report how many pieces: one through the
-  ## origin along each of x, y and z, in the standard convention -- x red, y green, z
-  ## blue -- so orientation reads at a glance regardless of where the camera stands.
-  ##   **Draws nothing**; the algebra's half of the seam, as `placeGridFamily` is.
-  ##   **Faded out and cut off in the ground grid's own fog**, rather than running the
-  ## full furniture extent at flat alpha as they once did. An axis reaching the horizon at
-  ## full strength is the longest, brightest mark in the frame, and readers were taking
-  ## them for drawn lines -- width alone (`WIDTH_LINE_FURNITURE` against
-  ## `WIDTH_LINE_OBJECT`) was never going to carry that on its own. Sharing the grid's own
-  ## fog rather than taking radii of their own puts all the furniture inside one horizon,
-  ## so reference reads as a neighbourhood around the *reader* and anything outside it is
-  ## content.
-  ##   Each axis is drawn only over the stretch of it lying inside that fog: a chord of
-  ## the sphere of radius `radius_gone` about the eye, solved below. An axis the eye has
-  ## flown clear of contributes nothing at all, which is what fog means -- the origin is
-  ## a place in the world rather than a place the reader is tied to.
+  ## Resolve world axes into `scratch` and report how many pieces: one through origin
+  ## along each of x, y and z -- x red, y green, z blue -- so orientation reads at glance.
+  ##   **Draws nothing**; algebra's half of seam, as `placeGridFamily` is.
+  ##   **Faded out and cut off in ground grid's own fog**, rather than running full
+  ## furniture extent at flat alpha: axis reaching horizon at full strength was longest,
+  ## brightest mark in frame, and readers took them for drawn lines. Sharing grid's fog
+  ## puts all furniture inside one horizon, so reference reads as neighbourhood around
+  ## *reader*.
+  ##   Each axis is drawn only over stretch inside fog: chord of sphere of radius
+  ## `radius_gone` about eye. Axis eye has flown clear of contributes nothing.
   const AXES_WORLD = [
     (Direction(x: 1, y: 0, z: 0), Ink.AxisX),
     (Direction(x: 0, y: 1, z: 0), Ink.AxisY),
@@ -207,12 +179,10 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
   let fog = fogFurnitureFor(extent)
   var count_assembled = 0
   for (axis, ink) in AXES_WORLD:
-    # Chord of the fog sphere along this axis, about the eye's own perpendicular foot on
-    #   it: the axis passes the eye at `separation`, so it is inside the fog for `half`
-    #   either side of the foot and nowhere else. The foot is the algebra's orthogonal
-    #   projection of the eye onto the axis line; the chord half-length stays a scalar
-    #   solve, since a sphere has no representative in the rigid algebra -- the one
-    #   documented exception, and the incidence feeding it is the library's own.
+    # Solve chord of fog sphere along this axis, about eye's perpendicular foot on it:
+    #   foot is algebra's orthogonal projection of eye onto axis line; chord half-length
+    #   stays scalar solve, since sphere has no representative in rigid algebra -- one
+    #   documented exception.
     let
       axis_line = wedge(toMultivector(ORIGIN_WORLD), toMultivector(axis))
       foot_raw = projectOrthogonal(scale.eye_point, axis_line)
@@ -227,9 +197,8 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
       tint = ink.colour
       foot_point = unitize(foot_raw)
       axis_point = toMultivector(axis)
-    # One piece for the whole chord: the fade that used to demand cutting it runs per
-    #   fragment now, and no across is taken either -- both moved to the shaders with
-    #   the widening itself; see `mesh.expandRibbon` and `mesh.alphaGridFade`.
+    # Place one piece for whole chord: fade and across both run in shaders; see
+    #   `mesh.expandRibbon` and `mesh.alphaGridFade`.
     scratch.placeChord(count_assembled, foot_point, axis_point, half, tint, scale)
 
   count_assembled
@@ -238,8 +207,8 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
 proc addAxes*(
   meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
 ) =
-  ## Append the world axes; `placeAxes` says what each is and how far it runs.
-  ##   Two calls, for the reason `addGridFamily`'s own note gives.
+  ## Append world axes; `placeAxes` says what each is and how far it runs.
+  ##   Two calls, for reason `addGridFamily` gives.
   var count_assembled = 0
   timed(Side.Placing): count_assembled = placeAxes(scratch, extent, scale)
   timed(Side.Emitting):
@@ -250,12 +219,11 @@ proc addAxes*(
 
 
 func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Option[float] =
-  ## Solve how far a lattice laid on `plane` reaches from the eye's own foot on it.
-  ##   The fog is a sphere about the eye, so what it leaves on any plane is a disc about
-  ## that foot, of radius `sqrt(radius_gone^2 - height^2)` -- the height being the eye's
-  ## depth against the plane, which is the algebra's own answer for any plane and not the
-  ## ground's alone. None where the eye stands further off than the fog reaches, and there
-  ## is nothing of that plane to draw.
+  ## Solve how far lattice laid on `plane` reaches from eye's foot on it.
+  ##   Fog is sphere about eye, so what it leaves on any plane is disc about that foot, of
+  ## radius `sqrt(radius_gone^2 - height^2)`, height being eye's depth against plane --
+  ## algebra's answer for any plane, not ground's alone. None where eye stands further off
+  ## than fog reaches.
   let
     fog = fogFurnitureFor(extent)
     height = abs(depthAgainst(plane, scale.eye_point))
@@ -265,22 +233,18 @@ func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Op
 
 
 func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
-  ## Solve how far the ground grid reaches from the point directly below the eye, in world
-  ## units, for a camera whose furniture extends `extent`.
-  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about that
-  ## point, of radius `sqrt(radius_gone^2 - height^2)`, the height read as the eye's own
-  ## depth against `objects.groundPlane`. None where the eye stands higher than the fog
-  ## reaches and there is no ground to draw at all.
-  ##   Stated here rather than inside `addGrid` because the cell size a reader is shown on
-  ## the scale bar has to be the cell the grid was drawn with, and two derivations of the
-  ## same disc are two chances to disagree -- the argument `algebraFilled` and
-  ## `extentViewOverlay` already make for their own shared answers.
+  ## Solve how far ground grid reaches from point directly below eye, in world units, for
+  ## camera whose furniture extends `extent`.
+  ##   Disc fog sphere leaves on ground, height read as eye's depth against
+  ## `objects.groundPlane`. None where eye stands higher than fog reaches.
+  ##   Stated here rather than inside `addGrid` because cell size shown on scale bar has to
+  ## be cell grid was drawn with; two derivations of same disc are two chances to disagree.
   radiusOnPlaneFor(extent, scale, groundPlane())
 
 
 func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
-  ## Report the cell size the ground grid is laid on for this camera, in world units, or
-  ## none where no ground is drawn. The one answer both the grid and the scale bar read.
+  ## Report cell size ground grid is laid on for this camera, in world units, or none
+  ## where no ground is drawn. One answer both grid and scale bar read.
   let radius_ground = radiusGroundFor(extent, scale)
   if radius_ground.isNone: return
   some(sizeCellGridFor(radius_ground.get))
@@ -292,28 +256,18 @@ proc placeGridFamily(
 ): int =
   ## Resolve one family of lattice lines into `scratch` -- **one piece per line** -- and
   ## report how many: every line running along `along`, stepped by `size_cell` along
-  ## `across`, that falls within `radius_ground` of the eye's own foot on the plane the
-  ## two span.
-  ##   **Draws nothing.** This is the algebra's half of the seam, and it is all
-  ## multivector work now: the per-piece fade colours that used to ride along moved to
-  ## the fragment shader with the fog itself (`mesh.alphaGridFade`), which is what took
-  ## this family from a boundary sum per fade piece to two per line.
-  ##   Exported for `algebra_view`, whose debug layer lays this same lattice on an
-  ##   arbitrary plane to draw it as the infinite thing it is -- the ground is that case
-  ##   with `origin` at the world origin and the two world axes for its span.
-  ##   The cell is passed in rather than read from `SIZE_CELL_GRID` so that both families
-  ## are laid on the one `sizeCellGridFor` answered for this frame's disc; two calls could
-  ## not disagree, but a reader of one family should not have to prove that.
-  ##   The two families are laid separately, unlike the single origin-centred loop this
-  ## replaced, because each is now centred on a different one of the eye's own ground
-  ## coordinates and no longer shares the other's offsets.
-  ##   Lines still sit on **world** multiples of the cell size rather than on offsets from
-  ## the camera, so what the reader sees slide past as they move is the world going by,
-  ## not a grid dragged along with them -- and a line stays where it was when they come
-  ## back to it.
-  # The eye resolved onto the two lattice axes: its depth against the plane through the
-  #   origin perpendicular to each -- the algebra's statement of a coordinate. One plane
-  #   per family per frame, hoisted here rather than rebuilt per lattice line.
+  ## `across`, within `radius_ground` of eye's foot on plane two span.
+  ##   **Draws nothing.** Algebra's half of seam, all multivector work: per-piece fade
+  ## colours moved to fragment shader with fog (`mesh.alphaGridFade`), taking family from
+  ## boundary sum per fade piece to two per line.
+  ##   Serves `algebra_view` too, whose debug layer lays same lattice on arbitrary plane;
+  ## ground is that case with `origin` at world origin and two world axes for span.
+  ##   Cell is passed in rather than read from `SIZE_CELL_GRID`, so both families lie on
+  ## one `sizeCellGridFor` answered for this frame's disc.
+  ##   Lines sit on **world** multiples of cell size, not offsets from camera, so what
+  ## slides past as reader moves is world going by, and line stays where it was.
+  # Resolve eye onto two lattice axes: depth against plane through origin perpendicular
+  #   to each -- algebra's statement of coordinate. One plane per family per frame.
   let
     origin_point = toMultivector(origin)
     along_point = toMultivector(along)
@@ -324,9 +278,8 @@ proc placeGridFamily(
     last = int(floor((centre_across + radius_ground)/size_cell))
   var count_assembled = 0
   for i in first .. last:
-    # Skips the lattice line through the world origin: it coincides exactly with a world
-    #   axis, and would either fight it for the same depth or hide its colour under plain
-    #   grid grey, depending on which happened to draw last.
+    # Skip lattice line through world origin: it coincides with world axis, and would
+    #   fight it for depth or hide its colour under grid grey.
     if i == 0: continue
     let
       offset = float(i)*size_cell
@@ -337,10 +290,9 @@ proc placeGridFamily(
       reach = sqrt(reach_squared)
       base = add(origin_point,
         add(wedge(offset, across_point), wedge(centre_along, along_point)))
-    # Assembled, not drawn -- see `placeChord`, which also stops silently at the
-    #   scratch's end: `mesh.LINES_GRID_MAX` sizes it from the very bound
-    #   `CELLS_GRID_HALF_MAX` puts on `first .. last`, so a full buffer means that bound
-    #   was raised and this was not.
+    # Assemble, not draw -- see `placeChord`, which stops silently at scratch's end:
+    #   `mesh.LINES_GRID_MAX` sizes it from bound `CELLS_GRID_HALF_MAX` puts on
+    #   `first .. last`, so full buffer means bound was raised and this was not.
     scratch.placeChord(count_assembled, base, along_point, reach, tint, scale)
 
   count_assembled
@@ -351,11 +303,10 @@ proc addGridFamily*(
   radius_ground, size_cell: float; along, across: Direction;
   origin: Position = ORIGIN_WORLD
 ) =
-  ## Append one family of lattice lines; `placeGridFamily` says what a family is.
-  ##   **The seam, as two calls.** Where the pieces go is worked out by one proc and drawn
-  ##   by another, so the line between the algebra and the picture runs between two
-  ##   functions rather than through the middle of one -- and each side can be timed with
-  ##   a bracket that encloses none of the other's work. See `timings`.
+  ## Append one family of lattice lines; `placeGridFamily` says what family is.
+  ##   **Seam, as two calls.** Where pieces go is worked out by one proc and drawn by
+  ## another, so line between algebra and picture runs between two functions, and each
+  ## side is timed by bracket enclosing none of other's work. See `timings`.
   var count_assembled = 0
   timed(Side.Placing):
     count_assembled = placeGridFamily(
@@ -371,35 +322,29 @@ proc addGridFamily*(
 proc addGrid*(
   meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
 ) =
-  ## Append reference grid on the ground, so distance and direction stay judgeable, at
-  ## `sizeCellGridFor` cells laid around wherever the camera is standing.
-  ##   **Fog, not a halo.** Every line is faded by its own endpoints' distance from the
-  ## eye and cut off entirely at `fogFurnitureFor`'s outer radius -- so the ground is
-  ## solid underfoot and gone in the distance, wherever the reader has flown to. Cutting
-  ## the geometry rather than drawing it at ever-fainter alpha is deliberate: past that
-  ## radius cells crowd into so few screen pixels under perspective that even a faint line
-  ## still aliases.
-  ##   Drawn on the ground plane, so what the fog sphere leaves is a **disc** about the
-  ## point below the eye, of radius `sqrt(radius_gone^2 - height^2)`: a camera high above
-  ## the ground sees less of it than one standing on it, exactly as fog would leave.
-  ## An eye higher than the fog reaches sees no ground at all.
-  ##   Dimmed by `ALPHA_GRID` on top of that fade, so the ruled ground reads as reference
-  ## rather than as content; see that constant for why it is applied here and not to the
-  ## palette entry.
+  ## Append reference grid on ground, so distance and direction stay judgeable, at
+  ## `sizeCellGridFor` cells laid around wherever camera stands.
+  ##   **Fog, not halo.** Every line is faded by its endpoints' distance from eye and cut
+  ## off at `fogFurnitureFor`'s outer radius, so ground is solid underfoot and gone in
+  ## distance. Cutting geometry rather than drawing ever-fainter alpha: past that radius
+  ## cells crowd into so few pixels that even faint line aliases.
+  ##   Disc fog sphere leaves about point below eye, of radius
+  ## `sqrt(radius_gone^2 - height^2)`: camera high above ground sees less of it, and eye
+  ## higher than fog reaches sees none.
+  ##   Dimmed by `ALPHA_GRID` on top of fade, so ruled ground reads as reference rather
+  ## than content; see that constant.
   let
     base = Ink.Grid.colour
     tint = base.fade(base.alpha*ALPHA_GRID)
-    # The disc the fog leaves on the ground, and the cell laid across it -- both through
-    #   `radiusGroundFor`, so what a reader is told the cell is and what the grid is drawn
-    #   with cannot come apart.
+    # Take disc and cell both through `radiusGroundFor`, so what reader is told cell is
+    #   and what grid is drawn with cannot come apart.
     reach = radiusGroundFor(extent, scale)
   if reach.isNone: return
   let
     radius_ground = reach.get
     size_cell = sizeCellGridFor(radius_ground)
-  # One family at a time through the one scratch: each assembles, emits, and is done with
-  #   it before the next begins, so the buffer is sized for the larger family rather than
-  #   for both at once.
+  # Lay one family at time through one scratch, so buffer is sized for larger family
+  #   rather than both.
   meshes.addGridFamily(
     scratch, scale, tint, radius_ground, size_cell,
     along = Direction(x: 0, y: 1, z: 0), across = Direction(x: 1, y: 0, z: 0),
@@ -414,48 +359,45 @@ proc addGrid*(
 #[ Object Tessellation ]#
 
 type
-  PlacedKind* = enum ## Which drawable the algebra found, and in which of its two placements.
+  PlacedKind* = enum ## Name which drawable algebra found, and in which of two placements.
     Nothing ## No drawable geometry at all; nothing is emitted.
-    PointAt ## A point standing somewhere in the finite world.
-    PointToward ## A point at horizon: a direction, drawn as a star on the sky.
-    LineThrough ## A line through a support, running along an attitude.
-    LineAcross ## A line at horizon: the pencil of directions its two axes span.
-    PlaneOn ## A plane anchored somewhere, its disc spanned by two arms.
-    PlaneEverywhere ## A plane at horizon: the whole sky, carrying no orientation.
+    PointAt ## Point standing somewhere in finite world.
+    PointToward ## Point at horizon: direction, drawn as star on sky.
+    LineThrough ## Line through support, running along attitude.
+    LineAcross ## Line at horizon: pencil of directions its two axes span.
+    PlaneOn ## Plane anchored somewhere, disc spanned by two arms.
+    PlaneEverywhere ## Plane at horizon: whole sky, carrying no orientation.
 
-  Placed* = object ## Everything the *algebra* says about one object, and nothing else.
-    ## **The camera is not in it, and that is the whole point.** Every reader here --
-    ## `position`, `positionAnchor`, `direction`, `directionHorizon`, `frame`,
-    ## `spanPerpendicular` -- is a pure function of the multivector, so what this holds is
-    ## a function of the object alone. It stays true while the camera orbits, and a caller
-    ## that can say when an object last changed can therefore place it once and emit it
-    ## every frame. `browser_bridge` is that caller; on the 1,024-object demo the placing
-    ## side was 12 ms of a 17 ms frame, recomputed on every frame of every orbit for
-    ## objects nobody had touched.
-    ##   Flat rather than a variant object: it is copied per slot into a
-    ## `array[ITEMS_MAX, Placed]`, and a case object's tag would buy nothing but a
-    ## narrower read. Which fields carry meaning is `kind`'s to say, field by field below.
+  Placed* = object ## Hold everything *algebra* says about one object, and nothing else.
+    ## **Camera is not in it, and that is whole point.** Every reader here -- `position`,
+    ## `positionAnchor`, `direction`, `directionHorizon`, `frame`, `spanPerpendicular` --
+    ## is pure function of multivector, so this stays true while camera orbits, and caller
+    ## that can say when object last changed places it once and emits every frame.
+    ## `browser_bridge` is that caller: on 1,024-object demo placing side was 12 ms of
+    ## 17 ms frame, recomputed per orbit frame for objects nobody touched.
+    ##   Flat rather than variant object: copied per slot into `array[ITEMS_MAX, Placed]`,
+    ## and case object's tag would buy nothing but narrower read. Which fields carry
+    ## meaning is `kind`'s to say.
     kind*: PlacedKind
-    at*: Position ## Where it stands: a point's own place, a line's support, a plane's
-      ## disc centre. Meaningless for the two horizon kinds and for `Nothing`.
-    toward*: Direction ## The direction it names: a horizon point's heading, a line's
-      ## attitude. Meaningless for either plane kind and for `Nothing`.
-    axes*: FramePlane ## The two arms a disc or a great circle is spanned by, and their
-      ## normal. Carried by `PlaneOn` and by `LineAcross`, and by nothing else.
+    at*: Position ## Where it stands: point's place, line's support, plane's disc centre.
+      ## Meaningless for two horizon kinds and `Nothing`.
+    toward*: Direction ## Direction it names: horizon point's heading, line's attitude.
+      ## Meaningless for either plane kind and `Nothing`.
+    axes*: FramePlane ## Two arms disc or great circle is spanned by, and their normal.
+      ## Carried by `PlaneOn` and `LineAcross` only.
 
 
 proc placeObject*(
   geometry: Multivector; anchor_override: Option[Position] = none(Position)
 ): Placed =
-  ## Ask the algebra what an object is and where -- **the whole placing side of the cut**,
-  ## and none of the emitting side.
-  ##   Split out from `addObject` so a caller may keep the answer: nothing here reads the
-  ## camera, so the answer changes only when the object does. See `Placed`.
-  ##   `anchor_override` centres a plane's own disc there instead of on its own support;
-  ## ignored for a point or a line, neither of which is drawn centred on anything else.
-  ##   A plane whose support or frame the algebra cannot give lands on `PlaneEverywhere`,
-  ## which is what an infinite plane is: the sky. That is the same fall-through the one
-  ## proc had, stated as a kind rather than as a branch not taken.
+  ## Ask algebra what object is and where -- **whole placing side of cut**, none of
+  ## emitting side.
+  ##   Split from `addObject` so caller may keep answer: nothing here reads camera, so
+  ## answer changes only when object does. See `Placed`.
+  ##   `anchor_override` centres plane's disc there instead of on support; ignored for
+  ## point or line.
+  ##   Plane whose support or frame algebra cannot give lands on `PlaneEverywhere`, what
+  ## infinite plane is: sky.
   timed(Side.Placing):
     let shape = shape(geometry)
     if shape.isNone: return Placed(kind: PlacedKind.Nothing)
@@ -473,9 +415,8 @@ proc placeObject*(
         return Placed(kind: PlacedKind.LineThrough, at: anchor.get, toward: axis.get)
       let normal = directionNormalHorizon(geometry)
       if normal.isSome:
-        # The great circle's own plane, spanned at the origin: which plane it is depends
-        #   on the line and not on where the eye happens to stand, so the circle is
-        #   centred on the eye when it is drawn rather than when it is placed.
+        # Span great circle's plane at origin: which plane depends on line, not eye, so
+        #   circle is centred on eye when drawn rather than when placed.
         let spanned = spanPerpendicular(ORIGIN_WORLD, normal.get)
         if spanned.isSome:
           return Placed(kind: PlacedKind.LineAcross, axes: FramePlane(
@@ -496,63 +437,49 @@ proc emitObject*(
   progress: float = 1.0
 ): Placement =
   ## Turn one placed object into this frame's records, at this frame's camera.
-  ##   The other half of `placeObject`: it takes no multivector, so what an object *is* was
-  ## settled before this ran and cannot be re-decided here.
-  ##   `progress` is how much of its appear animation the object has completed, from
-  ## `mesh.animationProgress`; it fades every kind in, grows a plane's disc out from
-  ## nothing, and pushes a horizon object out to its full reach.
-  ##   **`placed` is `var` because nothing here writes it.** That reads backwards and is
-  ## nonetheless the point: under the JS backend a value parameter is deep-copied at every
-  ## call, and a caller emitting a thousand held placements a frame would copy a thousand
-  ## nested objects for values it only reads. The same `nimCopy` trap `PROVENANCE.md`
-  ## already lists four earlier catches of, and it is invisible to an allocation grep
-  ## because a parameter looks like a read. Passed as `var`, the caller's own storage is
-  ## used in place. Nothing in this proc assigns to it, and nothing may.
-  ##   **Two steps here are still charged to the placing side**, and deliberately: a
-  ## horizon marker's stand-off and a line's two vanishing points are multivector
-  ## arithmetic about where the eye is, so they are placing work that happens to depend on
-  ## the camera and so cannot be cached. The cut the diagnostics report is by *kind of
-  ## work*, not by which proc it sits in, and moving them silently into the emitting row
-  ## would make that row claim a purity it did not have.
+  ##   Other half of `placeObject`: takes no multivector, so what object *is* was settled
+  ## before and cannot be re-decided here.
+  ##   `progress` is how much of appear animation object has completed, from
+  ## `mesh.animationProgress`; fades every kind in, grows plane's disc from nothing, pushes
+  ## horizon object out to full reach.
+  ##   **`placed` is `var` because nothing here writes it.** Under JS backend value
+  ## parameter is deep-copied at every call, and caller emitting thousand held placements
+  ## per frame would copy thousand nested objects. Invisible to allocation grep because
+  ## parameter looks like read. Nothing here assigns to it, and nothing may.
+  ##   **Two steps are still charged to placing side**, deliberately: horizon marker's
+  ## stand-off and line's two vanishing points are multivector arithmetic about where eye
+  ## is, placing work that depends on camera and cannot be cached. Cut is by *kind of
+  ## work*, not by which proc it sits in.
   case placed.kind
   of PlacedKind.Nothing:
     Placement.Empty
 
   of PlacedKind.PointAt:
     timed(Side.Emitting):
-      meshes.addMarker(placed.at, tint.fade(tint.alpha*progress))
+      meshes.addMarker(placed.at, tint, tint.alpha*progress)
     Placement.Finite
 
   of PlacedKind.PointToward:
-    # A star effectively infinitely far away, staying in the same apparent direction as
-    #   the camera pans or dollies and moving only as the eye itself does.
+    # Place star effectively infinitely far, keeping apparent direction as camera pans or
+    #   dollies and moving only as eye does.
     var star = ORIGIN_WORLD
     timed(Side.Placing):
       star = pointFrom(add(scale.eye_point,
         wedge(progress*scale.radius_horizon, toMultivector(placed.toward))))
     timed(Side.Emitting):
-      meshes.addMarker(star, tint.fade(tint.alpha*progress))
+      meshes.addMarker(star, tint, tint.alpha*progress)
     Placement.Horizon
 
   of PlacedKind.LineThrough:
-    # Two segments meeting on the line at its support, each running out to one of the
-    #   line's own two vanishing points -- `scale.eye` plus and minus
-    #   `scale.radius_horizon` along its attitude. The forward one is exactly where a
-    #   horizon marker draws this line's attitude, so the drawn line reaches its own
-    #   attitude with no gap.
-    #   Two rather than one because a vanishing point is a property of the *eye*, not of
-    #   the line: an end anchored a fixed reach from the support instead stops short of
-    #   it by roughly the eye-to-line separation over that reach, a visible gap as soon
-    #   as the support is not close to the camera. A single segment cannot close it at
-    #   both ends -- one running eye-to-eye passes through the eye and projects to a point.
-    #   Each segment has one end on the true line and one at `eye +- radius*axis`, so both
-    #   lie in the plane through the eye containing the line. That plane projects to a
-    #   single screen line, so the pair draws exactly over the true line's own projection
-    #   however far the far ends sit from it in world space -- verified as zero screen skew
-    #   to floating-point precision, not argued. What it costs is depth: the far ends are
-    #   displaced along the view ray, so occlusion against other objects is approximate
-    #   there. Rebuilt against the current eye every frame, so this holds as the camera
-    #   orbits -- which is why these two points are not part of `Placed`.
+    # Draw two segments meeting at support, each running to one of line's two vanishing
+    #   points -- `scale.eye` plus and minus `scale.radius_horizon` along attitude, exactly
+    #   where horizon marker draws attitude, so line reaches it with no gap.
+    #   Two because vanishing point is property of *eye*: end anchored fixed reach from
+    #   support stops short by eye-to-line separation over that reach. Each segment has one
+    #   end on true line and one at `eye +- radius*axis`, so both lie in plane through eye
+    #   containing line, which projects to one screen line -- verified as zero screen skew.
+    #   Cost is depth: far ends are displaced along view ray, so occlusion there is
+    #   approximate. Rebuilt against current eye every frame, so not part of `Placed`.
     var far_ahead, far_behind = ORIGIN_WORLD
     timed(Side.Placing):
       let
@@ -567,8 +494,7 @@ proc emitObject*(
     Placement.Finite
 
   of PlacedKind.LineAcross:
-    # The pencil of directions the line stands for, traced across the sky as a great
-    #   circle around the eye at `scale.radius_horizon`.
+    # Trace pencil of directions across sky as great circle around eye.
     timed(Side.Emitting):
       meshes.addGreatCircle(
         scale.eye, placed.axes.axis_first, placed.axes.axis_second,
@@ -577,10 +503,8 @@ proc emitObject*(
     Placement.Horizon
 
   of PlacedKind.PlaneOn:
-    # Fill first, so the plane reads as a surface rather than a bare outline; flat, since
-    #   the rim drawn over it already marks the edge crisply on its own. The fill is one
-    #   disc record and the rim one ring record, both fanned out by their own vertex
-    #   shaders: a disc is not a plane, and none of this is algebra.
+    # Fill first, so plane reads as surface; rim drawn over it marks edge. Fill is one disc
+    #   record and rim one ring record, both fanned out by own vertex shaders.
     let
       extent = progress*EXTENT_PLANE_F
       tint_progress = tint.fade(tint.alpha*progress)
@@ -596,8 +520,8 @@ proc emitObject*(
     Placement.Finite
 
   of PlacedKind.PlaneEverywhere:
-    # One dome record the vertex shader widens over a static unit sphere; what the sphere
-    #   looks like and why a full one is drawn is `mesh.addDome`'s own story.
+    # Emit one dome record vertex shader widens over static unit sphere; see
+    #   `mesh.addDome`.
     timed(Side.Emitting):
       meshes.addDome(
         scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
@@ -610,19 +534,14 @@ proc addObject*(
   scale: DrawExtent; progress: float = 1.0;
   anchor_override: Option[Position] = none(Position)
 ): Placement =
-  ## Append object, dispatching on the geometry its grade stands for.
-  ##   Place it, then emit it, in one call -- for every caller with nothing to gain by
-  ##   keeping the placement: the desktop path, the storyboard, and the suite. A caller
-  ##   that draws the same unchanged object frame after frame should hold a `Placed`
-  ##   instead and call `emitObject` alone; see `placeObject`.
-  ##   Empty where the multivector carries no drawable geometry at all.
-  ##   `progress` is how much of its appear animation the object has completed, from
-  ##   `mesh.animationProgress`; defaults to fully appeared, for a caller with nothing
-  ##   to animate against.
-  ##   `anchor_override` centres a plane's own disc there instead of its own support;
-  ##   ignored for a point or line, neither of which is drawn centred on anything else.
-  ##   `scratch` is taken for the shape every other tessellation entry point has, and so
-  ##   that a caller need not know which shapes happen to want it today.
+  ## Append object, dispatching on geometry its grade stands for.
+  ##   Place then emit in one call, for every caller with nothing to gain by keeping
+  ## placement: desktop path, storyboard, suite. Caller drawing same unchanged object
+  ## frame after frame holds `Placed` and calls `emitObject`; see `placeObject`.
+  ##   Empty where multivector carries no drawable geometry.
+  ##   `progress` defaults to fully appeared, for caller with nothing to animate against.
+  ##   `anchor_override` centres plane's disc there instead of support; ignored otherwise.
+  ##   `scratch` is taken for shape every other tessellation entry point has.
   discard scratch
   var placed = placeObject(geometry, anchor_override)
   meshes.emitObject(placed, tint, scale, progress)

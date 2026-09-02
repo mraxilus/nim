@@ -1,21 +1,18 @@
-## Which objects are picked right now, as an ordered fixed-capacity list of slots.
+## Which objects are picked right now, as ordered fixed-capacity list of slots.
 ##
-## Order is the whole point, and the reason this is a list rather than a set: an operation
-## reads its operands positionally, so the first slot picked is `m` and the second is `n`.
-## A set would answer "is this selected" and lose the only other question anyone asks.
+## Order is whole point, and reason this is list rather than set: operation reads operands
+## positionally, so first slot picked is `m` and second is `n`.
 ##
-## Selection is deliberately **not** part of `Scene`. It is a view of the scene, not
-## content: it is never saved to a `.rgascene`, never recorded on the undo timeline, and a
-## restored snapshot clears it outright, since a snapshot's slot numbers need not match
-## whatever was picked against the live scene.
+## Selection is deliberately **not** part of `Scene`. It is view of scene, not content:
+## never saved to `.rgascene`, never recorded on undo timeline, and restored snapshot clears
+## it outright, since snapshot's slot numbers need not match what was picked.
 ##
-## A plain fixed-size value type with no refs, like `History` beside it -- copying one is a
-## value copy, so it can live in a GUI's own state struct without an allocator.
+## Plain fixed-size value type with no refs, like `History` beside it -- copying one is
+## value copy, so it can live in GUI's own state struct without allocator.
 ##
-## Shared between the desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
-## paths; see `visualiser.nim`'s own "Render Paths" table. The browser drives it through
-## `browser_bridge`'s own `nimSelect*` exports rather than keeping a parallel list in
-## JavaScript, so every rule about membership, order and arity is written once here.
+## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
+## Browser drives it through `browser_bridge`'s `nimSelect*` exports rather than parallel
+## list in JavaScript, so every rule about membership, order and arity is written once.
 
 {.experimental: "strictFuncs".}
 
@@ -27,49 +24,55 @@ import ./[marker, scene]
 
 #[ Type Definitions ]#
 
-type Selection* = object ## Hold slots picked, in the order they were picked.
-  slots: array[ITEMS_MAX, int] ## Picked slots, oldest pick first; only the first `count`
+type Selection* = object ## Hold slots picked, in order they were picked.
+  slots: array[ITEMS_MAX, int] ## Picked slots, oldest pick first; only first `count`
     ## entries carry meaning.
   count: int ## Slots picked so far, <= ITEMS_MAX.
+  count_changes: int ## How many times membership or order has changed; see `revision`.
 
 
 
-#[ Reading A Selection ]#
+#[ Reading Selection ]#
 
 func len*(selection: Selection): int = selection.count
   ## Count slots picked.
 
 
+func revision*(selection: Selection): int = selection.count_changes
+  ## Report how many times this selection has changed.
+  ##   Front-end holding last frame's meshes compares this, never whole selection: two
+  ## selections compared as values walk `ITEMS_MAX` ints, and copying one to remember it
+  ## is `ITEMS_MAX` more -- per frame, whatever is picked.
+
+
 func at*(selection: Selection; position: int): int = selection.slots[position]
-  ## Read the slot picked at a position, oldest pick first. Position 0 is operand `m` and
-  ## position 1 is `n`; callers bound themselves against `len`.
+  ## Read slot picked at position, oldest pick first. Position 0 is operand `m`, position
+  ## 1 is `n`; callers bound themselves against `len`.
 
 
 func contains*(selection: Selection; slot: int): bool =
-  ## Report whether a slot is picked.
+  ## Report whether slot is picked.
   for position in 0 ..< selection.count:
     if selection.slots[position] == slot: return true
   false
 
 
 func impliedArity*(selection: Selection): Arity =
-  ## Read the arity a selection implies: one slot names a unary operation's own operand,
-  ## two or more name a binary operation's `m` and `n`.
-  ##   Two *or more* rather than exactly two: a picker offering `m` and `n` can still act
-  ##   on the first two of a longer selection, and reverting to unary there would silently
-  ##   drop the second operand the user picked. An empty selection implies nothing, and
-  ##   reports unary only because `Arity` has no way to say "neither" -- callers check
-  ##   `len` first.
+  ## Read arity selection implies: one slot names unary operation's operand, two or more
+  ## name binary operation's `m` and `n`.
+  ##   Two *or more*: picker offering `m` and `n` still acts on first two of longer
+  ## selection, and reverting to unary would silently drop second operand. Empty selection
+  ## implies nothing, and reports unary only because `Arity` cannot say "neither"; callers
+  ## check `len` first.
   if selection.count >= 2: Arity.Two else: Arity.One
 
 
 func isAllHidden*(selection: Selection; scene: Scene): bool =
-  ## Report whether every picked object is hidden, so a control acting on the whole
-  ## selection can name what it would do -- `show` where they are all hidden, `hide`
-  ## otherwise.
-  ##   A rule about a selection rather than about either object, which is why it lives
-  ##   here instead of each front-end folding `isVisible` over the list its own way.
-  ##   An empty selection is not hidden: there is nothing there to show.
+  ## Report whether every picked object is hidden, so control acting on whole selection
+  ## can name what it would do -- `show` where all hidden, `hide` otherwise.
+  ##   Rule about selection rather than about either object, so it lives here instead of
+  ## each front-end folding `isVisible` its own way.
+  ##   Empty selection is not hidden: nothing there to show.
   if selection.count == 0: return false
   for position in 0 ..< selection.count:
     if scene.isVisible(selection.slots[position]): return false
@@ -77,137 +80,132 @@ func isAllHidden*(selection: Selection; scene: Scene): bool =
 
 
 
-#[ Editing A Selection ]#
+#[ Editing Selection ]#
 
-func clear*(selection: var Selection) = selection.count = 0
+func clear*(selection: var Selection) =
   ## Drop every pick.
+  if selection.count == 0: return
+  selection.count = 0
+  inc selection.count_changes
 
 
 func selectOnly*(selection: var Selection; slot: int) =
-  ## Replace the whole selection with one slot.
+  ## Replace whole selection with one slot.
+  if selection.count == 1 and selection.slots[0] == slot: return
   selection.slots[0] = slot
   selection.count = 1
+  inc selection.count_changes
 
 
 func toggle*(selection: var Selection; slot: int) =
-  ## Add a slot to the end of the selection, or drop it where it is already picked.
-  ##   Appending rather than inserting is what makes the order meaningful: pick two
-  ##   objects and they become `m` and `n` in the order you picked them.
+  ## Add slot to end of selection, or drop it where already picked.
+  ##   Appending is what makes order meaningful: two objects picked become `m` and `n` in
+  ## order picked.
   for position in 0 ..< selection.count:
     if selection.slots[position] != slot: continue
     for shift in position ..< selection.count - 1:
       selection.slots[shift] = selection.slots[shift + 1]
     selection.count.dec
+    inc selection.count_changes
     return
   if selection.count >= ITEMS_MAX: return # Every slot already picked; nothing to add.
   selection.slots[selection.count] = slot
   selection.count.inc
+  inc selection.count_changes
 
 
 func pruneDead*(selection: var Selection; scene: Scene) =
-  ## Drop every picked slot the scene no longer holds, keeping the rest in pick order.
-  ##   Call after removing an object: a freed slot is handed straight back to the next
-  ##   add, so a stale pick would silently reattach itself to an unrelated new object.
+  ## Drop every picked slot scene no longer holds, keeping rest in pick order.
+  ##   Call after removing object: freed slot is handed straight to next add, so stale
+  ## pick would silently reattach to unrelated new object.
   var kept = 0
   for position in 0 ..< selection.count:
     if not scene.isAlive(selection.slots[position]): continue
     selection.slots[kept] = selection.slots[position]
     kept.inc
+  if kept == selection.count: return
   selection.count = kept
+  inc selection.count_changes
 
 
 #[ Pulse Clock ]#
 
 const SECONDS_STEP_PULSE_MAX* = 0.1
-  ## Treat any gap longer than this as an absence rather than as a frame, for the pulse.
-  ##   Six frames at sixty a second. Long enough that no honestly slow frame is clipped,
-  ##   short enough that a tab returning from the background does not hand the comet a
-  ##   whole minute of travel in one step.
+  ## Treat any gap longer than this as absence rather than frame, for pulse.
+  ##   Six frames at sixty per second: long enough that no honestly slow frame is clipped,
+  ## short enough that tab returning from background does not hand comet whole minute of
+  ## travel in one step.
 
 
 type PulseClock* = object ## Carry each selected object's orientation pulse between frames.
-  ## **A travel in screen pixels per slot, integrated and reduced, not a position computed
-  ## from the clock.** Two faults have been fixed here and the second is the reason the
-  ## units are pixels rather than a fraction:
+  ## **Travel in screen pixels per slot, integrated and reduced, not position computed
+  ## from clock.** Two faults fixed here; second is why units are pixels, not fraction:
   ##
-  ## 1. Reading a *phase* straight off the time meant `frac(now·speed ÷ around)`, and the
-  ##    outline's length changes whenever the camera moves: after a few laps that quotient
-  ##    is tens of laps, so a one-percent change in the length throws the answer most of a
-  ##    lap and the comet teleports. Measured -- 11.15 px a frame against the 1.0 it should
-  ##    be, on all ninety sampled frames of an orbit.
-  ## 2. Carrying a phase across frames fixed that, but a phase is a *fraction of an outline
-  ##    measured this frame*, and `samplePulse` turned it back into a position by
-  ##    multiplying by that outline's current length from that outline's current first
-  ##    point. For a line both of those are viewport-clip artefacts, so the head still slid
-  ##    under the camera. What is carried now is the distance travelled from the outline's
-  ##    own anchor, in pixels, advanced by `speed·seconds` with **no camera quantity in the
-  ##    advance at all** -- so a fixed screen pace is true by construction rather than by
-  ##    argument.
+  ## 1. Phase read off time meant `frac(now·speed ÷ around)`, and outline's length changes
+  ##    whenever camera moves: after few laps quotient is tens of laps, so one-percent
+  ##    change in length throws answer most of lap and comet teleports. Measured 11.15 px
+  ##    per frame against 1.0, on all ninety sampled frames of orbit.
+  ## 2. Carrying phase across frames fixed that, but phase is *fraction of outline measured
+  ##    this frame*, turned back into position by current length from current first
+  ##    point. For line both are viewport-clip artefacts, so head still slid under camera.
+  ##    Carried now is distance travelled from outline's anchor, in pixels, advanced by
+  ##    `speed·seconds` with **no camera quantity in advance**, so fixed screen pace is
+  ##    true by construction.
   ##
-  ## **The travel is reduced into the current lap every frame, and that is load-bearing.**
-  ## An unbounded travel read back as `travelled mod lap` would amplify a one-percent change
-  ## in the lap by however many laps had accumulated -- fault 1 again, in new units. Reduced
-  ## each frame the travel is always below one lap, the amplification is exactly one, and
-  ## the only camera-caused discontinuity left is a lap arriving up to one frame's shrink
-  ## early, which is reachable only when the head is already that close to the end of its
-  ## run.
+  ## **Travel is reduced into current lap every frame, load-bearing.** Unbounded travel
+  ## read as `travelled mod lap` amplifies one-percent change in lap by laps accumulated
+  ## -- fault 1 in new units. Reduced each frame amplification is exactly one; only
+  ## discontinuity left is lap arriving up to one frame's shrink early.
   ##
-  ## A plain fixed array, like `Scene` and `MeshSet` beside it, not an arena allocation:
-  ## one float per slot with a compile-time bound and a lifetime as long as the program's
-  ## is exactly what `arena.nim`'s own header says needs no arena. Nor is it double
-  ## buffered, for the same reason it needs no allocator -- the update reads and writes one
-  ## slot and consults no neighbour, so there is no read-while-writing hazard for a swap to
-  ## resolve. `arena.nim` is desktop-only in any case, and this has to serve the browser.
+  ## Plain fixed array, like `Scene` and `MeshSet`, not arena allocation: one float per
+  ## slot with compile-time bound and program-long lifetime needs no arena (see
+  ## `arena.nim` header). Not double buffered either: update reads and writes one slot and
+  ## consults no neighbour. `arena.nim` is desktop-only in any case.
   ##
-  ## Kept here rather than in `marker.nim` because it is indexed by *slot* and the pulse
-  ## runs on exactly the selected set, which is the view of the scene this module already
-  ## is. A plain value type with no refs, like `Selection` above.
-  travels: array[ITEMS_MAX, float] ## Each slot's own travel along its marker's outline, in
-    ## screen pixels from that outline's own anchor, always reduced below one lap.
-  seconds_last: Option[float] ## Clock reading `tick` last saw, for the step between frames.
+  ## Here rather than `marker.nim` because indexed by *slot*, over exactly selected set,
+  ## which is view of scene this module already is.
+  travels: array[ITEMS_MAX, float] ## Each slot's travel along its marker's outline, in
+    ## screen pixels from outline's anchor, always reduced below one lap.
+  seconds_last: Option[float] ## Clock reading `tick` last saw, for step between frames.
 
 
 proc tick*(clock: var PulseClock; now: float) =
-  ## Take the frame's own clock reading, so `advance` knows how long the step was.
-  ##   Call once a frame, before advancing any slot. The first call establishes a reading
-  ##   and advances nothing, since one reading is not yet a step.
+  ## Take frame's clock reading, so `advance` knows how long step was.
+  ##   Call once per frame, before advancing any slot. First call establishes reading and
+  ## advances nothing.
   clock.seconds_last = some(now)
 
 
 func secondsStep*(clock: PulseClock; now: float): float =
-  ## Report how long has passed since the reading `tick` last took, in seconds.
-  ##   Zero before the first tick and for a step that ran backwards, which a caller
-  ##   restarting its clock can produce and which no pulse should answer by rewinding.
-  ##   Capped at `SECONDS_STEP_PULSE_MAX`, because a gap longer than that is not a frame:
-  ##   it is a backgrounded tab whose animation callbacks stopped, or a caller that moved
-  ##   its clock. Carrying such a gap would advance the comet by the whole absence at once
-  ##   and land it somewhere arbitrary -- the very teleport this clock exists to prevent,
-  ##   arriving by the other door. Measured: a probe stepping the clock from 1.5 s to 400 s
-  ##   moved the head 83 px in one frame before this cap, and 1 px after it.
+  ## Report seconds passed since reading `tick` last took.
+  ##   Zero before first tick and for step that ran backwards, which caller restarting
+  ## clock can produce and no pulse should answer by rewinding.
+  ##   Capped at `SECONDS_STEP_PULSE_MAX`: longer gap is backgrounded tab or moved clock,
+  ## and carrying it would land comet somewhere arbitrary -- teleport this clock exists to
+  ## prevent. Measured: clock stepped from 1.5 s to 400 s moved head 83 px in one frame
+  ## before cap, 1 px after.
   if clock.seconds_last.isNone: return 0.0
   min(SECONDS_STEP_PULSE_MAX, max(0.0, now - clock.seconds_last.get))
 
 
 proc advance*(clock: var PulseClock; slot: int; lap, seconds: float) =
-  ## Carry one slot's pulse forward by the pixels `seconds` is worth, reduced into a lap
-  ## `lap` pixels long.
-  ##   `lap` is what the marker just shaped actually measured (`Marker.lap`) and enters only
-  ##   the reduction, never the step: the step is `SPEED_MARKER_PULSE*seconds` whatever the
-  ##   camera is doing, which is what makes the comet's screen pace a fact rather than an
-  ##   aspiration. Reducing here rather than at the point of use is what keeps the carried
-  ##   travel below one lap; see this type's own doc comment for why that is not tidiness.
+  ## Carry one slot's pulse forward by pixels `seconds` is worth, reduced into lap `lap`
+  ## pixels long.
+  ##   `lap` is what marker just shaped measured (`Marker.lap`) and enters only reduction,
+  ## never step: step is `SPEED_MARKER_PULSE*seconds` whatever camera does. Reducing here
+  ## keeps carried travel below one lap; see type's doc for why that is load-bearing.
   if slot < 0 or slot >= ITEMS_MAX: return
   clock.travels[slot] = travelAdvanced(clock.travels[slot], lap, seconds)
 
 
 func travelAt*(clock: PulseClock; slot: int): float =
-  ## Read one slot's own pulse travel, in screen pixels from its outline's anchor.
+  ## Read one slot's pulse travel, in screen pixels from outline's anchor.
   if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.travels[slot]
 
 
 proc forget*(clock: var PulseClock; slot: int) =
-  ## Send a slot's pulse back to the start of its lap.
-  ##   Call where a slot is handed to a fresh object, so a new selection begins its comet
-  ##   at the head rather than inheriting wherever a since-removed object had got to.
+  ## Send slot's pulse back to start of its lap.
+  ##   Call where slot is handed to fresh object, so new selection begins comet at head
+  ## rather than inheriting wherever since-removed object had got to.
   if slot < 0 or slot >= ITEMS_MAX: return
   clock.travels[slot] = 0.0

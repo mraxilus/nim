@@ -1,41 +1,36 @@
 ## Lay out panels user edits scene and camera through.
 ##
-## Panel holds what the GUI needs between frames and the scene does not own:
-## which operands are picked, what an open edit is staging, where to export.
-##   Everything else is read straight off scene and camera, so there is one source of truth
-##   and no synchronisation step.
+## Panel holds what GUI needs between frames and scene does not own: which operands are
+## picked, what open edit is staging, where to export. Everything else is read straight
+## off scene and camera, so there is one source of truth and no synchronisation step.
 ##
 ##   |-------------|-------------------------------------------------------------------------|
 ##   | Panel       | Offers                                                                  |
 ##   |-------------|-------------------------------------------------------------------------|
-##   | Top bar     | Start a new object, toggle world furniture, save or load the scene.     |
-##   | Apply       | Apply any library operation of a chosen arity to picked operands, both  |
-##   |             | of which the current selection fills in.                                |
-##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool,         |
-##   |             | and everything else this binary reserves for itself, added up.          |
+##   | Top bar     | Start new object, toggle world furniture, save or load scene.           |
+##   | Apply       | Apply any library operation of chosen arity to picked operands, both of |
+##   |             | which current selection fills in.                                       |
+##   | Diagnostics | Live frame time, vsync, memory use of both arenas, object pool, and     |
+##   |             | everything else this binary reserves for itself, added up.              |
 ##   | Objects     | Select, show, hide, remove; edit any object's label, colour and         |
-##   |             | coefficients through one staged session, shared with composing a new    |
-##   |             | one.                                                                    |
+##   |             | coefficients through one staged session, shared with composing new one. |
 ##   | View        | Orbit, target, lens, PNG export.                                        |
 ##   |-------------|-------------------------------------------------------------------------|
 ##
-## Every panel above except the top bar is a collapsing header, ordered alphabetically and
-## matching the browser build's own drawer section for section. The top bar sits outside
-## them all, because its `add` button has to be able to open Objects. Only Objects opens by
-## default: it is what a returning session looks at first, and opening all four at once
-## buries the 3D view the visualiser exists to show.
+## Every panel except top bar is collapsing header, ordered alphabetically and matching
+## browser drawer section for section. Top bar sits outside them all, because its `add`
+## button has to open Objects. Only Objects opens by default: what returning session looks
+## at first, and opening all four buries 3D view.
 ##
-## Coefficients are staged through 32-bit floats because that is what the widget writes,
-## and written back only where widget reports a change, so editing costs no precision
-## on coefficients the user never touched.
+## Coefficients are staged through 32-bit floats because that is what widget writes, and
+## written back only where widget reports change, so editing costs no precision on
+## untouched coefficients.
 ##
-## Multivectors are printed by `scene.formatMultivector` rather than by the library's own
-## `$`, which returns a fresh heap `string` -- once per visible item, per frame. Basis
-## elements are named identically either way; the atlas carries the mathematical bold and
-## subscript blocks the library writes them in.
+## Multivectors are printed by `scene.formatMultivector` rather than library's `$`, which
+## returns fresh heap `string` once per visible item per frame. Atlas carries mathematical
+## bold and subscript blocks library writes basis elements in.
 ##
-## Desktop-only; unreachable from the browser build. See `visualiser.nim`'s own "Render
-## Paths" table.
+## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
 {.experimental: "strictFuncs".}
 
@@ -51,179 +46,145 @@ import ../core/[boundary, camera, format, help, history, interaction, tessellate
 
 const
   MESSAGE_MAX* = 96
-    ## Bound length of outcome reported after an action.
+    ## Bound length of outcome reported after action.
   PATH_MAX* = 256
     ## Bound length of export path user may type.
   WIDTH_PANEL* = 440.0'f32
-    ## Set width panels open at, in pixels -- wide enough that six coefficient cells share
-    ## one line, which is what sets the floor here, and close to the browser drawer's own
-    ## 400. Opening an editor must not resize the window, so this holds whether or not one
-    ## is open, and the grid divides itself out of whatever it is given.
+    ## Set width panels open at, in pixels: wide enough that six coefficient cells share
+    ## one line, close to browser drawer's 400. Opening editor must not resize window, so
+    ## this holds whether or not one is open.
   SPEED_DRAG* = 0.01'f32
-    ## Set how fast a coefficient moves per pixel dragged.
+    ## Set how fast coefficient moves per pixel dragged.
   WIDTH_ITEM_LINE = WIDTH_SHAPE_WORD + WIDTH_MULTIVECTOR
     ## Bound one item's shape-and-coefficient line in *bytes*, redrawn every frame. Sized
-    ## from what the two printers that fill it declare for themselves, rather than by a
-    ## number tuned by hand here: the line is a shape word followed by a whole multivector,
-    ## and a mixed-grade object genuinely does print every basis term.
+    ## from what two printers filling it declare: shape word then whole multivector, and
+    ## mixed-grade object prints every basis term.
   COEFFICIENTS_PER_ROW = 6
-    ## Wrap a grade's own elements after this many. In this build's 4D metric the largest
-    ## grade holds exactly six, so every grade fits one line and the desktop grid matches
-    ## the browser's own grade row one for one. A build of higher dimension wraps instead
-    ## of overflowing the panel. A wrap point, not a divisor: a line's cells share that
-    ## line between however many of them are on it.
+    ## Wrap grade's elements after this many. In 4D metric largest grade holds exactly six,
+    ## so every grade fits one line and grid matches browser's grade row. Wrap point, not
+    ## divisor: line's cells share line between however many are on it.
   INK_LABEL = Rgba(red: 0.357, green: 0.400, blue: 0.451, alpha: 1.0)
-    ## Draw a control's own name in this, the browser's `--ink-faint`: a name is read once
-    ## and then stops mattering, while the value beside it is what keeps changing.
+    ## Draw control's name in this, browser's `--ink-faint`: name is read once, value
+    ## beside it keeps changing.
   WIDTH_ITEM_LABEL = 150.0'f32
-    ## Set width an item row's own selectable label spans, leaving its three buttons room
-    ## to share the same line.
+    ## Set width item row's selectable label spans, leaving three buttons room on line.
   ALPHA_ITEM_HIDDEN = 0.45'f32
-    ## Dim a hidden item's own row to this fraction, matching the browser's own
-    ## `.item-row.hidden-item` rule -- present but plainly not drawn right now.
+    ## Dim hidden item's row to this fraction, matching browser's `.item-row.hidden-item`.
   HELP_COEFFICIENTS_PENDING: cstring =
     "The 16 numbers of the new multivector, in the library's basis order, stacked one " &
     "row per grade. A live preview draws as soon as any goes non-zero; nothing joins " &
     "the scene until you save."
-    ## Explain the coefficient grid while composing a new object.
+    ## Explain coefficient grid while composing new object.
   HELP_COEFFICIENTS_EDITING: cstring =
     "The 16 numbers of this object's own multivector, in the library's basis order, " &
     "stacked one row per grade. The object itself only moves when you save."
-    ## Explain the coefficient grid while editing an object that already exists.
+    ## Explain coefficient grid while editing existing object.
   WIDTH_LABEL_FIELD = 96.0'f32
-    ## Reserve room to the right of a field for its own label, which Dear ImGui draws
-    ## there rather than above -- so a control sized to fill the line leaves it space.
+    ## Reserve room to right of field for its label, which Dear ImGui draws there.
   SPACING_SEGMENT = 8.0'f32
-    ## Separate the segments of a segmented control, matching the gap `sameLine` leaves.
+    ## Separate segments of segmented control, matching gap `sameLine` leaves.
   WIDTH_OVERLAY_TEXT = 48
-    ## Bound length of a bar or graph's own overlay text, redrawn every frame.
+    ## Bound length of bar or graph's overlay text, redrawn every frame.
   SIZES_POOL_CELL = [14.0'f32, 10.0'f32, 6.0'f32, 4.0'f32, 3.0'f32, 2.0'f32]
-    ## Offer the sides one object-pool cell may take, in pixels, largest first.
-    ##   **Chosen against the capacity, not fixed.** It was 14, which was right when the pool
-    ## held 64 slots and the whole grid was three rows. At `ITEMS_MAX` = 1,024 that cell
-    ## wraps to about 37 rows and 555px, which ran off the bottom of the panel and pushed the
-    ## byte accounting under it out of reach; at 10,080 it is ten times worse. So
-    ## `sizePoolCell` picks the largest that still fits `HEIGHT_POOL_MAX`, which is the same
-    ## rule and the same reading the browser's `CELLS_POOL` follows -- what the two front-ends
-    ## agree on is the colour rule and the reading, not the number.
-    ##   Checked by rendering it, not inferred from the constant: at 14 the grid genuinely
-    ## did run off the panel, which is how this stopped being a constant at all.
+    ## Offer sides one object-pool cell may take, in pixels, largest first.
+    ##   **Chosen against capacity, not fixed.** 14 was right at 64 slots; at 1,024 that
+    ## cell wraps to ~37 rows and 555 px, off bottom of panel. `sizePoolCell` picks largest
+    ## that fits `HEIGHT_POOL_MAX`, same rule browser's `CELLS_POOL` follows. Checked by
+    ## rendering: at 14 grid genuinely ran off panel.
 
   SPACING_POOL_CELL = 1.0'f32
-    ## How much `gui.poolBar` leaves between two cells, in pixels; see its own shim.
+    ## How much `gui.poolBar` leaves between two cells, in pixels; see its shim.
 
   HEIGHT_POOL_MAX = 150.0'f32
-    ## Bound how tall the object-pool grid may be, in pixels.
-    ##   A block a reader takes in at a glance, beside the memory bars it belongs with,
-    ## rather than a page they have to scroll past to reach the accounting under it.
+    ## Bound how tall object-pool grid may be, in pixels: block taken in at glance beside
+    ## memory bars, not page to scroll past.
   CHANNELS_POOL_CELL = 3
-    ## Count the floats one pool cell contributes to `gui.poolBar`'s own buffer: red,
-    ## green and blue, with no alpha, since every cell is drawn opaque.
+    ## Count floats one pool cell contributes to `gui.poolBar`'s buffer: red, green, blue,
+    ## no alpha, since every cell is opaque.
   INK_POOL_FREE = Ink.Grid
-    ## Draw a free object-pool slot in the palette's own recessive furniture colour,
-    ## which is what an empty slot is: present, but carrying nothing to look at.
+    ## Draw free object-pool slot in palette's recessive furniture colour.
   FRAMES_HISTORY* {.define: "visualiser.frames_history".} = 240
-    ## Bound how many recent per-frame timings the live diagnostics graph keeps; at a
-    ## typical frame rate this covers a few seconds, long enough to see a stutter land
-    ## and scroll back off, not so long the graph goes stale reading it.
+    ## Bound how many recent per-frame timings live diagnostics graph keeps: few seconds,
+    ## long enough to see stutter land and scroll off.
 
 
 
 #[ Type Definitions ]#
 
 type
-  EditSession* = object ## Hold what an open edit is staging, before any of it reaches
-    ## the scene. One session exists at a time, in one of two modes -- see `slot`.
-    slot*: Option[int] ## Item being edited. None while composing a brand-new object,
-      ## which has nothing backing it in the scene until its own save commits it.
-    coefficients*: array[Basis, cfloat] ## Staged multivector, one coefficient per basis
-      ## element, drawn every frame as a muted ghost. Held as `cfloat` because that is
-      ## what the drag widget writes.
-    label*: array[LABEL_MAX, char] ## Staged label. Staged rather than edited in place
-      ## because `gui.inputText` writes straight through the pointer it is handed, and
-      ## the scene's own buffer must not change before save.
+  EditSession* = object ## Hold what open edit is staging, before any of it reaches scene.
+    ## One session at time, in one of two modes; see `slot`.
+    slot*: Option[int] ## Item being edited. None while composing brand-new object.
+    coefficients*: array[Basis, cfloat] ## Staged multivector, one per basis element, drawn
+      ## every frame as muted ghost. `cfloat` because that is what drag widget writes.
+    label*: array[LABEL_MAX, char] ## Staged label. Staged because `gui.inputText` writes
+      ## straight through pointer, and scene's buffer must not change before save.
     index_ink*: cint ## Staged palette slot.
 
   ItemRow* = object ## Hold what one object row has resolved about itself.
-    ## Computed once at the top of `layoutItem` and handed to each part of the row, so
-    ## the three agree on what they are drawing rather than each deriving it again.
-    slot*: Option[int] ## Item backing the row. None for the composing row, which has
-      ## nothing in the scene until its own save commits it.
-    is_open*: bool ## Whether this row's own edit session is the one open.
-    is_visible*: bool ## Whether the object is shown in the 3D view.
-    tint*: Rgba ## Colour the row's name draws in -- staged where a session is open, so
-      ## recolouring previews itself.
+    ## Computed once at top of `layoutItem` and handed to each part of row, so three agree.
+    slot*: Option[int] ## Item backing row. None for composing row.
+    is_open*: bool ## Whether this row's edit session is one open.
+    is_visible*: bool ## Whether object is shown in 3D view.
+    tint*: Rgba ## Colour row's name draws in; staged where session is open, so recolouring
+      ## previews itself.
 
-  Panel* = object ## Hold GUI's own state between frames.
-    is_help_open*: bool ## Whether the help panel is showing. Closed at startup: the
-      ## legend below the drag line already says the common half, and a reference that
-      ## opens itself is one a returning user closes every session.
-    session*: Option[EditSession] ## Edit in progress, if any -- see `EditSession`. Its
-      ## staged multivector is what `visualiser.assembleMeshes` draws as a ghost, read
-      ## later in the same frame this panel writes it, so there is no lag.
-    preview*: Option[Preview] ## What an open **apply** control would build, ghosted while
-      ## the reader is still choosing it rather than only once `apply` is pressed -- the
-      ## rule the drag's own rubber-band already follows.
-      ##   Written by whichever apply control is on screen, `layoutApply`'s section or the
-      ## selection menu's own picker, and cleared once at the top of every frame by
-      ## `layoutPanel`: a section that is closed simply never writes, which is the whole of
-      ## "shown while choosing" and needs no second flag to say so.
-      ##   Distinct from `session`, and **loses to it** where both stand: an edit session is
-      ## being typed into, while this is a passive reading of two pickers. Its own
-      ## `Preview.operands` is what has the camera frame the result beside the objects it
-      ## came from; see `framing.watched`.
-    selection*: Selection ## Items picked right now, in pick order, each drawn ringed by
-      ## `visualiser.drawSelectionRing`. Picked through an item row's own checkbox (which
-      ## toggles) or its name (which picks that one alone), and replaced outright by every
-      ## construction path (a storyboard step, or this session's own last drag-release or
-      ## apply-operation click). Cleared by a successful undo or redo, since a restored
-      ## snapshot's slot numbers may not match whatever was picked before.
-    tween_camera*: CameraTween ## Carries the camera toward whatever is being built or
-      ## edited -- see `camera.CameraTween`. Retargeted wherever an object is created or
-      ## an edit session stages a change, and advanced once per frame by the caller that
-      ## owns the clock (`visualiser.renderFrame`).
+  Panel* = object ## Hold GUI's state between frames.
+    is_help_open*: bool ## Whether help panel is showing. Closed at startup: reference that
+      ## opens itself is one returning user closes every session.
+    session*: Option[EditSession] ## Edit in progress, if any. Its staged multivector is
+      ## what `visualiser.assembleMeshes` draws as ghost, read later in same frame.
+    preview*: Option[Preview] ## What open **apply** control would build, ghosted while
+      ## reader is choosing, as drag's rubber-band does.
+      ##   Written by whichever apply control is on screen, cleared at top of every frame
+      ## by `layoutPanel`: closed section never writes, which is whole of "shown while
+      ## choosing".
+      ##   **Loses to `session`** where both stand: session is being typed into. Its
+      ## `Preview.operands` has camera frame result beside its objects; see
+      ## `framing.watched`.
+    selection*: Selection ## Items picked right now, in pick order, each ringed by
+      ## `visualiser.drawSelectionRing`. Picked through row's checkbox (toggles) or name
+      ## (picks alone), replaced by every construction path. Cleared by successful undo or
+      ## redo, since restored snapshot's slot numbers may not match.
+    tween_camera*: CameraTween ## Carries camera toward whatever is being built or edited;
+      ## see `camera.CameraTween`. Advanced once per frame by `visualiser.renderFrame`.
+    slots_ordered*: array[ITEMS_MAX, int] ## Live slots in creation order, as
+      ## `scene.slotsCreated` fills them; valid to `count_ordered`.
+    count_ordered*: int ## How many of `slots_ordered` are filled.
+    revision_ordered*: Option[int] ## `scene.revision` order was sorted at; none before
+      ## first layout.
     index_operand_first*: cint ## Item picked as left operand.
     index_operand_second*: cint ## Item picked as right operand.
-    selection_synced*: Selection ## Last `selection` reading the apply controls were
-      ## defaulted against -- lets `layoutApply` re-derive arity and operands from the
-      ## selection only the moment the selection actually changes, not every frame: this
-      ## panel redraws every frame regardless of whether anything changed, and an
-      ## unconditional resync would fight a user's own later manual pick right back to
-      ## whatever is selected. Empty until the first sync runs.
+    revision_selection_synced*: int ## `selection.revision` apply controls were defaulted
+      ## against, so `layoutApply` re-derives arity and operands only when selection
+      ## changes: panel redraws every frame, and unconditional resync would fight reader's
+      ## later manual pick.
     operations*: OperationMemory ## Which operation each arity's picker opens on, carried
-      ## from the last apply so a reader applying five wedges in a row picks once.
+      ## from last apply.
     index_operation*: cint ## Operation picked from catalogue.
-    index_arity*: cint ## Arity filter the operation picker offers: 0 unary, 1 binary,
-      ## matching `Arity`'s own ordinals. Filters which operations the picker lists at all,
-      ## rather than offering all 27 and greying the second operand for the unary ones.
-    is_menu_selection_shown*: bool ## Whether the floating selection menu is on screen --
-      ## see `layoutSelectionMenu`. Not derived from the selection being non-empty: every
-      ## construction path leaves its own result selected, and a menu appearing over each
-      ## new object would sit in the way of the next drag. Raised by the gestures that
-      ## *pick* something and lowered by the ones that build, exactly as the browser's own
-      ## `refreshSelectionMenu`/`adoptConstructionSelection` pair does.
-    is_menu_selection_picking*: bool ## Whether that menu's own operation picker is
-      ## revealed, which is what its `apply` button opens before it commits anything.
+    index_arity*: cint ## Arity filter operation picker offers: 0 unary, 1 binary, matching
+      ## `Arity`'s ordinals. Filters list rather than greying second operand.
+    is_menu_selection_shown*: bool ## Whether floating selection menu is on screen; see
+      ## `layoutSelectionMenu`. Not derived from selection being non-empty: every
+      ## construction leaves result selected, and menu over each new object would sit in
+      ## way of next drag. Raised by gestures that *pick*, lowered by ones that build, as
+      ## browser's `refreshSelectionMenu`/`adoptConstructionSelection` pair does.
+    is_menu_selection_picking*: bool ## Whether that menu's operation picker is revealed,
+      ## which its `apply` button opens before committing.
     position_menu_selection*: array[2, cfloat] ## Where that menu sits, in window pixels.
-      ## Kept between frames rather than recomputed from the selection each time: the
-      ## object it follows can pass behind the camera, and a menu that vanished or flew to
-      ## a corner for those frames would be worse than one that stays put.
-    index_operation_menu*: cint ## Operation picked in that menu. Its own reading rather
-      ## than the apply section's `index_operation`: the section's list is indexed per
-      ## whichever arity the reader last chose *there*, while the menu's is always the
-      ## arity the selection implies, so one number could not name a position in both.
+      ## Kept between frames: object it follows can pass behind camera, and menu that
+      ## vanished for those frames would be worse than one staying put.
+    index_operation_menu*: cint ## Operation picked in that menu. Own reading: section's
+      ## list is indexed per arity reader chose *there*, menu's is always arity selection
+      ## implies.
     is_grid_shown*: bool ## Whether ground reference grid is drawn.
     is_axes_shown*: bool ## Whether world axes are drawn.
-    is_algebra_shown*: bool ## Whether the algebra's own debug layer is drawn over the
-      ## scene -- every multivector the frame computed, in its true form, a plane as the
-      ## infinite lattice it is rather than the disc that stands for one. Off by default;
-      ## see `algebra_view`.
+    is_algebra_shown*: bool ## Whether algebra's debug layer is drawn over scene: every
+      ## multivector frame computed, in true form. Off by default; see `algebra_view`.
     is_export_requested*: bool ## Whether frame should be written out after drawing.
-    is_undo_requested*, is_redo_requested*: bool ## Whether a key asked to step the
-      ## timeline. Set by the key handler and consumed by the caller right after layout,
-      ## rather than stepping history from inside the event loop: `handleEvent` has no
-      ## `History` to step, and routing both the button and the key through one call is
-      ## what stops the two drifting apart.
+    is_undo_requested*, is_redo_requested*: bool ## Whether key asked to step timeline. Set
+      ## by key handler and consumed right after layout: `handleEvent` has no `History`,
+      ## and routing button and key through one call stops them drifting.
     is_vsync_enabled*: bool ## Whether swap waits for display refresh before returning.
     microseconds_tessellate*: float ## Cost of rebuilding vertex storage, last frame.
     count_vertices*: int ## Vertices assembled, last frame.
@@ -231,16 +192,14 @@ type
     path_scene*: array[PATH_MAX, char] ## Where scene is saved to and loaded from.
     message*: array[MESSAGE_MAX, char] ## Outcome of last action taken.
     milliseconds_history*: array[FRAMES_HISTORY, cfloat] ## Ring buffer of recent frame
-      ## times, oldest to newest by `index_history`; owned here rather than in a module
-      ## global, since nothing outside the GUI panel that plots it ever reads it.
-    index_history*: int ## Next slot in `milliseconds_history` a fresh reading overwrites.
-    bytes_arena_permanent_used*: int ## Snapshot of the permanent arena's own `used`.
-    bytes_arena_permanent_capacity*: int ## Snapshot of the permanent arena's `capacity`.
-    bytes_arena_frame_peak*: int ## Snapshot of the frame arena's own `peakUsed`.
-    bytes_arena_frame_capacity*: int ## Snapshot of the frame arena's `capacity`.
-    bytes_memory_total*: int ## Sum of every fixed reservation this binary makes for
-      ## itself; computed once where every piece is visible, since `panel` alone cannot
-      ## see the arenas' own backing storage or the tessellate and timing buffers beside them.
+      ## times, oldest to newest by `index_history`; nothing outside panel reads it.
+    index_history*: int ## Next slot in `milliseconds_history` fresh reading overwrites.
+    bytes_arena_permanent_used*: int ## Snapshot of permanent arena's `used`.
+    bytes_arena_permanent_capacity*: int ## Snapshot of permanent arena's `capacity`.
+    bytes_arena_frame_peak*: int ## Snapshot of frame arena's `peakUsed`.
+    bytes_arena_frame_capacity*: int ## Snapshot of frame arena's `capacity`.
+    bytes_memory_total*: int ## Sum of every fixed reservation this binary makes; computed
+      ## where every piece is visible, since `panel` cannot see arenas' backing storage.
 
 
 func initPanel*(path_export: string): Panel =
@@ -255,44 +214,39 @@ func initPanel*(path_export: string): Panel =
 
 
 func isPending*(row: ItemRow): bool = row.slot.isNone
-  ## Report whether the row is composing an object that does not exist yet.
+  ## Report whether row is composing object that does not exist yet.
 
 
 func showSelectionMenu*(panel: var Panel) =
-  ## Bring the floating selection menu up over whatever is picked, closed on the picker.
-  ##   Every gesture that *picks* calls this, so the menu is never something a reader has
-  ##   to go and find; every gesture that *builds* calls `hideSelectionMenu` instead.
+  ## Bring floating selection menu up over whatever is picked, closed on picker.
+  ##   Every gesture that *picks* calls this; every gesture that *builds* calls
+  ## `hideSelectionMenu`.
   panel.is_menu_selection_shown = true
   panel.is_menu_selection_picking = false
 
 
 func hideSelectionMenu*(panel: var Panel) =
-  ## Put the floating selection menu away, leaving the selection itself alone.
+  ## Put floating selection menu away, leaving selection alone.
   panel.is_menu_selection_shown = false
   panel.is_menu_selection_picking = false
 
 
 func geometry*(session: EditSession): Multivector =
-  ## Read what the session is staging, as the multivector saving it would commit.
-  ##   Coefficients are held as `cfloat` because that is what the drag widget writes, so
-  ##   every reader needs this widening. Written out at each of them once -- the ghost,
-  ##   the row's own description line, the save, and the camera's aim -- until one of the
-  ##   four drifted from the others was only a matter of time.
+  ## Read what session is staging, as multivector saving it would commit.
+  ##   Coefficients are `cfloat`, so every reader needs this widening; written out at each
+  ## of four readers, one drifting was matter of time.
   for b in Basis: result[b] = float(session.coefficients[b])
 
 
 proc stage*(session: var EditSession; geometry: Multivector) =
-  ## Load a multivector into the session, as the values its widgets edit.
-  ##   Inverse of `geometry` above, and the only other place the two representations meet.
+  ## Load multivector into session, as values its widgets edit.
+  ##   Inverse of `geometry`, and only other place two representations meet.
   for b in Basis: session.coefficients[b] = cfloat(geometry[b])
 func staged*(panel: Panel): Option[Preview] =
-  ## Resolve what this panel is offering as not-yet-committed: an open edit session's own
-  ## geometry, else whatever an apply control is previewing, else nothing.
-  ##   **The session wins**, and the order is stated here once rather than at the tessellate and
-  ##   the camera separately: a session is being typed into, while a preview is a passive
-  ##   reading of two pickers, and the one the reader's hands are on is the one to show.
-  ##   Its sibling is `browser_bridge.staged`, which answers the same question for the same
-  ##   two sources on the other front-end; fix both or neither.
+  ## Resolve what this panel offers as not-yet-committed: open edit session's geometry,
+  ## else whatever apply control is previewing, else nothing.
+  ##   **Session wins**: session is being typed into, preview is passive reading of two
+  ## pickers. Sibling is `browser_bridge.staged`; fix both or neither.
   if panel.session.isSome: return some(previewStaging(panel.session.get.geometry))
   panel.preview
 
@@ -302,21 +256,18 @@ func staged*(panel: Panel): Option[Preview] =
 #[ Field Layout ]#
 
 proc widthPushField() =
-  ## Size the controls that follow to whatever the line has left once their own names have
-  ## taken their column, so a field ends flush with the panel's right edge at any width.
-  ##   Fixed widths were tuned against a panel that has since changed width twice, and each
-  ##   time left some field stopping short of the edge; there is nothing here a caller
-  ##   should have to pick per field.
+  ## Size controls that follow to whatever line has left once their names have taken their
+  ## column, so field ends flush with panel's right edge at any width.
+  ##   Fixed widths were tuned against panel that changed width twice, each time leaving
+  ## some field short of edge.
   gui.widthPush(gui.contentWidth() - WIDTH_LABEL_FIELD)
 
 
 proc fieldLabel(name: cstring) =
-  ## Name a control, to its left, and leave the line open for the control itself.
-  ##   Dear ImGui draws a widget's own label to its *right*, which reads backwards: you
-  ##   meet the control before being told what it sets. Every control below is therefore
-  ##   given a hidden ImGui label (`##name`, which still identifies it) and its name is
-  ##   written here first. `sameLineAt` puts every control in one column, so a short name
-  ##   and a long one do not stagger their controls.
+  ## Name control, to its left, and leave line open for control itself.
+  ##   Dear ImGui draws widget's label to its *right*, which reads backwards. Every control
+  ## below gets hidden ImGui label (`##name`) and its name is written here first.
+  ## `sameLineAt` puts every control in one column.
   gui.textTinted(name, INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLineAt(WIDTH_LABEL_FIELD)
 
@@ -325,24 +276,18 @@ proc fieldLabel(name: cstring) =
 #[ Objects Panel ]#
 
 proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
-  ## Lay out one drag widget per basis coefficient, each under its own basis name, at most
-  ## six to a line, each grade starting a fresh line; report which coefficient changed.
-  ##   Grade comes from the library's own `grade`, so nothing here hardcodes a dimension,
-  ##   and a grade never shares a line with its neighbour. In this build's 4D metric the
-  ##   grades hold 1, 4, 6, 4 and 1 elements, so every one of them fits a single line.
-  ##   Name above its cell rather than beside it, matching the browser's own `.coeff-grid`.
-  ##   Beside costs every cell the width of the longest name whether or not it needs it,
-  ##   which is what forced the panel out to 680 px; above costs one line of text per grade
-  ##   and lets the panel sit at a width the rest of the UI actually wants.
-  ##   Cells divide the line they are on rather than a fixed sixth of it, so a grade fills
-  ##   its own row -- the scalar's lone cell spans the panel, grade 1's four take a quarter
-  ##   each. This is the browser's `flex: 1 1 56px` written out: six per line is the wrap
-  ##   point, not the divisor.
-  ##   `groupBegin`/`groupEnd` is what makes a name and its widget advance `sameLine` as one
-  ##   item; Dear ImGui has no notion of a labelled cell.
-  ##   Only one change is reported per frame, which is all a pointer can make.
-  # Read once, before anything is placed: `contentWidth` reports what is left on the
-  #   current line, which is no longer the whole line once a cell sits on it.
+  ## Lay out one drag widget per basis coefficient, each under its basis name, at most six
+  ## per line, each grade starting fresh line; report which coefficient changed.
+  ##   Grade comes from library's `grade`, so nothing hardcodes dimension. In 4D grades
+  ## hold 1, 4, 6, 4 and 1 elements, each fitting one line.
+  ##   Name above cell, matching browser's `.coeff-grid`: beside costs every cell width of
+  ## longest name, which forced panel out to 680 px.
+  ##   Cells divide line they are on rather than fixed sixth, so grade fills its row;
+  ## browser's `flex: 1 1 56px` written out.
+  ##   `groupBegin`/`groupEnd` makes name and widget advance `sameLine` as one item.
+  ##   Only one change is reported per frame, which is all pointer can make.
+  # Read once, before anything is placed: `contentWidth` reports what is left on current
+  #   line.
   let width_content = gui.contentWidth()
   for g in Grade.low .. Grade.high:
     var count_grade = 0
@@ -359,8 +304,7 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
       if column > 0: gui.sameLine()
       gui.groupBegin()
       gui.widthPush(width_cell)
-      # Name recedes and the number reads: both are on screen at once, and only one of
-      #   them changes. Matches the browser, where a field's own label is `--ink-faint`.
+      # Name recedes and number reads. Matches browser, where label is `--ink-faint`.
       gui.textTinted(
         cstring(lut_basis_to_name[b]), INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue
       )
@@ -374,11 +318,11 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
 
 
 proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
-  ## Open an edit session against `slot`, or a composing one where slot is none.
-  ##   A composing session starts on the same auto-label and cycled ink every other
-  ##   construction path assigns, leaving both editable before the object exists.
-  ##   Does not aim the camera itself: the session's own staged geometry is offered to the
-  ##   tween every frame by `layoutObjects` below, which covers the moment it opens too.
+  ## Open edit session against `slot`, or composing one where slot is none.
+  ##   Composing session starts on same auto-label and cycled ink every other construction
+  ## path assigns, both editable before object exists.
+  ##   Does not aim camera: session's staged geometry is offered to tween every frame by
+  ## `layoutObjects`.
   var session = EditSession(slot: slot)
   if slot.isSome:
     session.stage(scene.geometryOf(slot.get))
@@ -391,16 +335,14 @@ proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
 
 
 proc layoutSessionFields(panel: var Panel; is_pending: bool) =
-  ## Lay out the label, colour and coefficient controls an open session stages.
-  ##   Everything here writes into the session, never the scene: the row above previews
-  ##   the change and the ghost previews the geometry, but nothing lands until save.
+  ## Lay out label, colour and coefficient controls open session stages.
+  ##   Everything writes into session, never scene; nothing lands until save.
   widthPushField()
   fieldLabel("label")
   discard gui.inputText("##label", toCstring(panel.session.get.label), cint(LABEL_MAX))
-  # Offer the categorical run alone: the structural slots before it belong to the drawing's
-  #   own furniture, and the combo therefore counts positions within that run rather than
-  #   whole-palette ordinals. Names come from the shared table at its own offset, since the
-  #   run is contiguous -- see `tessellate.COUNT_INK_CATEGORICAL` for what holds that true.
+  # Offer categorical run alone: structural slots belong to furniture, and combo counts
+  #   positions within run. Names come from shared table at its offset, since run is
+  #   contiguous; see `tessellate.COUNT_INK_CATEGORICAL`.
   var index_categorical = cint(categoricalIndex(Ink(panel.session.get.index_ink)))
   fieldLabel("colour")
   if gui.combo(
@@ -418,17 +360,15 @@ proc layoutSessionFields(panel: var Panel; is_pending: bool) =
 
 
 proc layoutItemName(panel: var Panel; scene: var Scene; row: ItemRow) =
-  ## Lay out the row's leading checkbox and its name.
-  ##   Checkbox toggles membership, the way the browser's own row checkbox does, so a
-  ##   second and third object join the selection in the order they were picked -- that
-  ##   order is what names operands m and n over in `layoutApply`. The name beside it
-  ##   picks that one object alone: the browser gets single-select from a plain canvas
-  ##   click, which this build has no equivalent of, so the row carries both gestures.
+  ## Lay out row's leading checkbox and its name.
+  ##   Checkbox toggles membership, as browser's row checkbox does, so second and third
+  ## object join in pick order, which names operands m and n. Name picks that one alone:
+  ## browser gets single-select from canvas click, which this build has no equivalent of.
   var is_selected = (not row.isPending) and row.slot.get in panel.selection
   gui.disabledPush(row.isPending) # Nothing to select until it exists.
   if gui.checkbox("", addr is_selected):
     panel.selection.toggle(row.slot.get)
-    panel.showSelectionMenu() # Picking from the list is picking; see its own doc.
+    panel.showSelectionMenu() # Picking from list is picking.
   gui.disabledPop()
   gui.tooltip("Add this object to the selection, or drop it; the 3D view rings each one.")
   gui.sameLine()
@@ -448,15 +388,11 @@ proc layoutItemButtons(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   row: ItemRow; now: float
 ): bool =
-  ## Lay out the row's own actions; report whether user asked for the object to go.
-  ##   Longer than the sixty-line default, and not split further: the run's whole width
-  ##   has to be measured before any of it is placed, so the buttons after that
-  ##   measurement cannot move out without measuring them twice and letting the two
-  ##   readings drift.
-  ##   Buttons end flush against the panel's own right edge, as the browser's row does,
-  ##   so they form one column down the list instead of starting wherever each name
-  ##   happens to end. Their run has to be measured before any of it is placed, which is
-  ##   what `buttonSmallWidth` is for.
+  ## Lay out row's actions; report whether user asked for object to go.
+  ##   Longer than sixty-line default: run's whole width has to be measured before any of
+  ## it is placed, so buttons cannot move out without measuring twice.
+  ##   Buttons end flush against panel's right edge, as browser's row does, forming one
+  ## column down list. `buttonSmallWidth` measures run first.
   let
     label_commit = if row.is_open: cstring"save" else: cstring"edit"
     width_buttons =
@@ -491,8 +427,8 @@ proc layoutItemButtons(
   )
 
   if row.is_open:
-    # Abandon: a composing row vanishes with nothing added, an editing row reverts. The
-    #   scene was never touched either way, so this only has to drop the session.
+    # Abandon: composing row vanishes with nothing added, editing row reverts. Scene was
+    #   never touched, so this only drops session.
     gui.sameLine()
     if gui.buttonSmall("✕"): panel.session = none(EditSession)
     gui.tooltip(
@@ -500,10 +436,9 @@ proc layoutItemButtons(
       else: cstring"Discard these changes."
     )
 
-  # Hide and remove act on the object as the scene holds it, which is exactly what an open
-  #   session is staging a replacement for -- offering them mid-edit invites acting on one
-  #   version while looking at another. Absent for a composing row for the same reason its
-  #   own object does not exist yet.
+  # Hide and remove act on object as scene holds it, which open session is staging
+  #   replacement for; offering them mid-edit invites acting on one version while looking
+  #   at another. Absent for composing row, whose object does not exist yet.
   if not (row.isPending or row.is_open):
     gui.sameLine()
     if gui.buttonSmall(if row.is_visible: cstring"hide" else: cstring"show"):
@@ -516,13 +451,10 @@ proc layoutItemButtons(
 
 
 proc layoutItemDescription(panel: Panel; scene: var Scene; row: ItemRow) =
-  ## Lay out the row's own shape word and coefficients, on one line.
-  ##   Built into a stack buffer rather than a `string`, since every visible item redraws
-  ##   this line every frame; a fresh heap string per item per frame is exactly the kind
-  ##   of allocator churn an arena-backed scene should not turn around and reintroduce.
-  ##   Shape word first on the same line as the coefficients, matching the browser's own
-  ##   `point: 3e1 - 2e2 ...` -- two separate lines doubled every row's height for a word
-  ##   that reads as a prefix to the equation anyway.
+  ## Lay out row's shape word and coefficients, on one line.
+  ##   Built into stack buffer rather than `string`, since every visible item redraws this
+  ## every frame. Shape word first on same line, matching browser's `point: 3e1 - 2e2`;
+  ## two lines doubled every row's height.
   let geometry_shown =
     if row.is_open: panel.session.get.geometry else: scene.geometryOf(row.slot.get)
   var line: array[WIDTH_ITEM_LINE, char]
@@ -539,13 +471,11 @@ proc layoutItem(
   slot: Option[int]; now: float
 ): bool =
   ## Lay out one item's controls; report whether user asked for it to be removed.
-  ##   A none `slot` lays out the composing row instead: same shape, but nothing backs it
-  ##   in the scene, so it takes its values from the session and leaves out the buttons
-  ##   that act on an object that exists (hide, remove).
-  ##   A hidden item's whole row dims rather than disappearing, so it stays readable and
-  ##   its own show button stays clickable -- `alphaPush`, not `disabledPush`.
-  ##   An orchestrator over the row's three parts, which is what the row is: a name, the
-  ##   actions on it, and what it currently says.
+  ##   None `slot` lays out composing row: same shape, values from session, no buttons
+  ## acting on object that exists (hide, remove).
+  ##   Hidden item's row dims rather than disappearing, so it stays readable and its show
+  ## button clickable: `alphaPush`, not `disabledPush`.
+  ##   Orchestrator over row's three parts: name, actions on it, what it says.
   let is_pending = slot.isNone
   gui.idPush(if is_pending: cint(ITEMS_MAX) else: cint(slot.get))
   defer: gui.idPop()
@@ -553,13 +483,13 @@ proc layoutItem(
   let row = block:
     let is_open = is_pending or
       (panel.session.isSome and panel.session.get.slot == slot)
+    # Bound first: `colour` lends, and C++ backend cannot lend from converted temporary.
+    let ink = if is_open: Ink(panel.session.get.index_ink) else: scene.inkAt(slot.get)
     ItemRow(
       slot: slot,
       is_open: is_open,
       is_visible: is_pending or scene.isVisible(slot.get),
-      tint:
-        if is_open: Ink(panel.session.get.index_ink).colour
-        else: scene.inkAt(slot.get).colour,
+      tint: ink.colour,
     )
   if not row.is_visible: gui.alphaPush(ALPHA_ITEM_HIDDEN)
   defer:
@@ -576,11 +506,9 @@ proc layoutObjects*(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   now: float
 ) =
-  ## Lay out every live item's controls, plus the row being composed if there is one,
-  ## applying at most one removal per frame.
-  ##   One per frame is enough, since a click can only land on one button.
-  ##   `now` is forwarded to whichever row commits a fresh object this frame, so it
-  ##   animates in from the moment it appears.
+  ## Lay out every live item's controls, plus row being composed if there is one, applying
+  ## at most one removal per frame, since click lands on one button.
+  ##   `now` is forwarded to whichever row commits fresh object, so it animates in.
   var header: array[32, char]
   let label = buildChars(header):
     appendChars(header, cursor, "objects (")
@@ -596,27 +524,18 @@ proc layoutObjects*(
     gui.text("Nothing here yet -- press `add` above, or drag between two objects.")
     return
 
-  # A composing row heads the list: it is the newest thing here, and it has no `born`
-  #   reading to sort by since nothing backs it in the scene yet.
+  # Composing row heads list: newest thing here, with no `born` to sort by.
   if is_composing: discard layoutItem(panel, scene, camera, history, none(int), now)
 
-  # Most recently added first, matching the browser's own list order: the object just
-  #   built is the one a user is looking for, and it would otherwise sit at whatever
-  #   position the free list happened to hand out.
-  var
-    slots_ordered: array[ITEMS_MAX, int]
-    count = 0
-  for slot, _ in scene.pairs:
-    var position = count
-    while position > 0 and scene[slots_ordered[position - 1]].born < scene[slot].born:
-      slots_ordered[position] = slots_ordered[position - 1]
-      dec position
-    slots_ordered[position] = slot
-    inc count
+  # Newest first, as browser lists them. Sorted once per edit, never per frame: sorting
+  #   here by `born` each frame was 98% of desktop's CPU frame at 5,038 objects.
+  if panel.revision_ordered != some(scene.revision):
+    panel.count_ordered = scene.slotsCreated(panel.slots_ordered)
+    panel.revision_ordered = some(scene.revision)
 
   var slot_removed = none(int)
-  for position in 0 ..< count:
-    let slot = slots_ordered[position]
+  for position in countdown(panel.count_ordered - 1, 0):
+    let slot = panel.slots_ordered[position]
     if layoutItem(panel, scene, camera, history, some(slot), now):
       slot_removed = some(slot)
   if slot_removed.isSome:
@@ -632,12 +551,11 @@ proc layoutObjects*(
 #[ Construct Panel ]#
 
 proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
-  ## Lay out the controls reached for constantly, above every collapsing section: start a
-  ## new object, toggle world furniture, and save or load the scene.
-  ##   These sit outside the sections for the same reason the browser's own chip row and
-  ##   menu hold them -- each is either flipped repeatedly while working or applies to the
-  ##   whole scene, so neither should cost opening a section first. `add` in particular
-  ##   has to live outside `objects`, since pressing it opens that section.
+  ## Lay out controls reached for constantly, above every collapsing section: start new
+  ## object, toggle world furniture, save or load scene.
+  ##   Outside sections as browser's chip row and menu hold them: each is flipped
+  ## repeatedly or applies to whole scene. `add` has to live outside `objects`, since
+  ## pressing it opens that section.
   gui.disabledPush(panel.session.isSome or scene.isFull)
   if gui.button("add"):
     beginSession(panel, scene, none(int))
@@ -654,8 +572,8 @@ proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
   discard gui.checkbox("grid", addr panel.is_grid_shown)
   gui.tooltip("Toggle the reference grid at z = 0.")
   gui.sameLine()
-  # "debug", matching the browser chip and the diagnostics tree's "debug overlay" row:
-  #   a control called algebra reads as the subject of the whole app, not the wireframe.
+  # "debug", matching browser chip and diagnostics tree's "debug overlay" row: control
+  #   called algebra reads as subject of whole app.
   discard gui.checkbox("debug", addr panel.is_algebra_shown)
   gui.tooltip(
     "Draw every multivector this frame computed, in its true form -- a plane as the " &
@@ -671,26 +589,22 @@ proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
     toChars(saveScene(scene, toText(panel.path_scene)), panel.message)
   gui.sameLine()
   if gui.button("load scene"):
-    # This frame's own clock, so the file arrives as a replay of its construction rather
-    #   than whole; see `scene.bornReplaying`.
+    # This frame's clock, so file arrives as replay; see `scene.bornReplaying`.
     toChars(loadScene(scene, toText(panel.path_scene), now), panel.message)
-    # A loaded scene's slots are not the ones any open session was opened against.
+    # Loaded scene's slots are not ones any open session was opened against.
     panel.session = none(EditSession)
 
 
 proc offerOperationsOfArity*(
   arity: Arity
 ): (array[COUNT_OPERATION, cstring], array[COUNT_OPERATION, Operation], int) =
-  ## List the catalogue's operations of one arity, with the notation each is offered
-  ## under and the operation each offered position names.
-  ##   Only the operations of the chosen arity, rather than all of them with the second
-  ##   operand greyed out for the unary ones: the catalogue is long enough that halving
-  ##   it is the difference between scanning and hunting.
-  ##   Reports the operations alongside the notations because a combo hands back a dense
-  ##   position, which names nothing on its own once the list has been filtered.
-  ##   The `cstring`s handed back point into this build's own storage rather than at the
-  ##   `const` table they are taken from, which is what a combo needs: it keeps the address
-  ##   of the first entry and reads through it for as long as the list is open.
+  ## List catalogue's operations of one arity, with notation each is offered under and
+  ## operation each offered position names.
+  ##   Only chosen arity rather than all with second operand greyed: halving catalogue is
+  ## difference between scanning and hunting. Operations beside notations because combo
+  ## hands back dense position, which names nothing once list is filtered.
+  ##   `cstring`s point into this build's storage rather than `const` table: combo keeps
+  ## address of first entry while list is open.
   for operation in Operation:
     if lut_operation_to_arity[operation] != arity: continue
     result[0][result[2]] = cstring(notationSymbolic(operation))
@@ -701,25 +615,22 @@ proc offerOperationsOfArity*(
 proc adoptSelectionAsOperands(
   panel: var Panel; slots: openArray[int]; count: int
 ) =
-  ## Fill the arity and operand pickers in from whatever is selected in the 3D view.
-  ##   Everything the selection already says is taken rather than asked for a second
-  ##   time: how many objects are picked names the arity, and the order they were picked
-  ##   names m and n. Only right when the selection itself changes -- see
-  ##   `selection_synced`'s own doc -- so a later manual pick of either still sticks.
-  if panel.selection == panel.selection_synced: return
-  panel.selection_synced = panel.selection
+  ## Fill arity and operand pickers in from whatever is selected in 3D view.
+  ##   How many are picked names arity, pick order names m and n. Only when selection
+  ## itself changes (see `revision_selection_synced`), so later manual pick sticks.
+  if panel.selection.revision == panel.revision_selection_synced: return
+  panel.revision_selection_synced = panel.selection.revision
   if panel.selection.len == 0: return
 
   func positionOf(slots: openArray[int]; count, slot: int): Option[cint] =
-    ## Translate a slot back to the operand combo's own dense position.
+    ## Translate slot back to operand combo's dense position.
     for position in 0 ..< count:
       if slots[position] == slot: return some(cint(position))
 
   let arity_implied = cint(ord(panel.selection.impliedArity))
   if panel.index_arity != arity_implied:
-    # A filtered operation list is indexed per arity, so a position carried across from
-    #   the other list names an unrelated operation -- the arity control resets the same
-    #   way for the same reason.
+    # Filtered operation list is indexed per arity, so position carried across names
+    #   unrelated operation.
     panel.index_arity = arity_implied
     panel.index_operation = 0
   let position_first = positionOf(slots, count, panel.selection.at(0))
@@ -730,20 +641,18 @@ proc adoptSelectionAsOperands(
 
 
 proc openSelectionMenuPicker*(panel: var Panel) =
-  ## Reveal the selection menu's own operation picker, on the operation last applied at
-  ## whichever arity the selection implies.
-  ##   Shared by that menu's `apply` button and by the drag wheel's `more…`, which lands
-  ##   here rather than in the drawer-side apply section: `more…` is a fifth choice on a
-  ##   wheel that opened under the cursor, and sending it across to a panel buried the two
-  ##   objects it had just named under every other control. See `visualiser.handleEvent`.
+  ## Reveal selection menu's operation picker, on operation last applied at arity
+  ## selection implies.
+  ##   Shared by that menu's `apply` and by drag wheel's `more…`, which lands here rather
+  ## than in drawer's apply section: sending it to panel buried two objects it just named
+  ## under every other control. See `visualiser.handleEvent`.
   let
     arity = panel.selection.impliedArity
     (_, operations, count_offered) = offerOperationsOfArity(arity)
     wanted = panel.operations.lastOf(arity)
   panel.is_menu_selection_shown = true
   panel.is_menu_selection_picking = true
-  # The head of the list unless the remembered operation is in it: the list is per arity,
-  #   so a position carried over from the other one would name an unrelated operation.
+  # Head of list unless remembered operation is in it: list is per arity.
   panel.index_operation_menu = 0
   for index in 0 ..< count_offered:
     if operations[index] == wanted:
@@ -755,15 +664,12 @@ proc applyPickedOperation(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   operation: Operation; first, second: int; now: float
 ) =
-  ## Derive a fresh object from the picked operation and operands, and say what it gave.
-  ##   Leaves the result solely selected, which is what carries the camera to it: the
-  ##   standing aim in `visualiser.offerCameraAim` reads exactly that, so this path needs
-  ##   to know nothing about the camera.
-  ##   Takes the two operands as *slots*, not as positions in a picker's own list: the
-  ##   apply section reads them off its combos and the floating selection menu reads them
-  ##   straight off the selection, and neither should have to learn the other's indexing.
-  ##   A unary operation is applied by naming the same slot twice, which is what its
-  ##   caller has to decide anyway.
+  ## Derive fresh object from picked operation and operands, and say what it gave.
+  ##   Leaves result solely selected, which carries camera to it through
+  ## `visualiser.offerCameraAim`.
+  ##   Operands as *slots*, not picker positions: apply section reads combos, selection
+  ## menu reads selection, and neither learns other's indexing. Unary operation names same
+  ## slot twice.
   let
     operand_first = scene[first].geometry
     operand_second = scene[second].geometry
@@ -786,19 +692,15 @@ proc layoutApply*(
   now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
-  ##   Longer than the sixty-line default, and not split further: what is left after the
-  ##   catalogue filter, the selection adoption and the apply itself moved out is one run
-  ##   of controls over one set of offer lists, and those lists live exactly as long as
-  ##   the controls indexing them do -- the item names are `cstring`s borrowed from the
-  ##   scene's own label storage, so handing them across another boundary would be
-  ##   lending out a pointer for no gain.
+  ##   Longer than sixty-line default: one run of controls over one set of offer lists
+  ## living exactly as long as controls indexing them; item names are `cstring`s borrowed
+  ## from scene's label storage.
   if not gui.header("apply", is_open_first = false): return
   if scene.len == 0:
     gui.text("Scene is empty; add a multivector first.")
     return
 
-  # Offer every live item by label, so operands are picked by name rather than by slot;
-  #   `slots` translates the combo's dense position back to the slot it names.
+  # Offer every live item by label; `slots` translates combo's dense position back.
   var
     names: array[ITEMS_MAX, cstring]
     slots: array[ITEMS_MAX, int]
@@ -813,9 +715,8 @@ proc layoutApply*(
   let arity_wanted = Arity(panel.index_arity)
   let (notations, operations, count_offered) = offerOperationsOfArity(arity_wanted)
 
-  # Arity is a segmented control rather than a dropdown: there are exactly two choices,
-  #   both worth seeing at once, and switching should cost one click. Matches the
-  #   browser's own `.toggles` pill.
+  # Arity is segmented control rather than dropdown: exactly two choices, both worth
+  #   seeing, one click to switch. Matches browser's `.toggles` pill.
   const lut_arity_to_name = [Arity.One: cstring"unary", Arity.Two: cstring"binary"]
   fieldLabel("arity")
   let width_segment = (gui.contentWidth() - SPACING_SEGMENT)/2.0'f32
@@ -825,9 +726,8 @@ proc layoutApply*(
       lut_arity_to_name[arity], panel.index_arity == cint(ord(arity)), width_segment
     ):
       panel.index_arity = cint(ord(arity))
-      # A filtered operation list is indexed per arity, so a position carried across from
-      #   the other list names an unrelated operation. Land on whatever was last applied
-      #   at the arity being switched to, rather than on the head of its list.
+      # Filtered list is indexed per arity. Land on whatever was last applied at arity
+      #   switched to, rather than head of list.
       panel.index_operation = 0
       let (_, offered, count) = offerOperationsOfArity(arity)
       let wanted = panel.operations.lastOf(arity)
@@ -866,13 +766,11 @@ proc layoutApply*(
     first = slots[clamp(int(panel.index_operand_first), 0, count - 1)]
     second =
       if is_binary: slots[clamp(int(panel.index_operand_second), 0, count - 1)]
-      else: first # A unary operation ignores its second operand; naming the first
-        # keeps a stale picker reading from ever reaching `applyOperation`.
-  # Ghost what `apply` would build, from the very three readings the button below passes
-  #   to `applyPickedOperation` -- so the preview cannot name a different construction
-  #   from the commit. Resolved here rather than inside the button so it follows the
-  #   pickers as they are worked, which is the whole point of previewing at all; this
-  #   section returns early while its header is closed, so a closed one previews nothing.
+      else: first # Unary operation ignores second operand; naming first keeps stale
+        # picker reading from reaching `applyOperation`.
+  # Ghost what `apply` would build, from very three readings button passes to
+  #   `applyPickedOperation`, so preview cannot name different construction from commit.
+  #   Resolved here so it follows pickers as worked; closed section previews nothing.
   panel.preview = scene.previewApplying(operation, first, second)
 
   gui.disabledPush(scene.isFull)
@@ -887,8 +785,7 @@ proc layoutApply*(
 
 proc layoutView*(panel: var Panel; camera: var Camera) =
   ## Lay out camera placement and frame export.
-  ##   World furniture toggles moved to `layoutTopBar` -- they are flipped constantly
-  ##   while orbiting, so they should not cost opening a section first.
+  ##   World furniture toggles live in `layoutTopBar`, flipped constantly while orbiting.
   if not gui.header("view", is_open_first = false): return
   widthPushField()
 
@@ -905,9 +802,8 @@ proc layoutView*(panel: var Panel; camera: var Camera) =
     camera.elevation = float(placement[1])
   gui.tooltip("Tilt the camera up or down; clamped short of looking straight up or down.")
   fieldLabel("distance")
-  # Unbounded at the widget, floored by `distanceHeld` on the way in: there is no ceiling
-  #   on how far the camera may orbit, and the one value it may not take is stated in
-  #   `camera` rather than repeated in a widget's own bounds.
+  # Unbounded at widget, floored by `distanceHeld` on way in: no ceiling on orbit
+  #   distance, and one value it may not take is stated in `camera`.
   if gui.dragFloat("##distance", addr placement[2], 0.05, 0.0, 0.0):
     camera.distance = distanceHeld(float(placement[2]))
   gui.tooltip("Move the camera toward or away from its target.")
@@ -938,19 +834,18 @@ proc layoutView*(panel: var Panel; camera: var Camera) =
 #[ Diagnostics Panel ]#
 
 proc layoutDiagnosticsFrameTime(panel: var Panel) =
-  ## Lay out the "frame time" section: rolling frame-time plot, vsync toggle, current
-  ## rate, tessellation cost.
+  ## Lay out "frame time" section: rolling frame-time plot, vsync toggle, current rate,
+  ## tessellation cost.
   gui.separatorText("frame time")
-  var highest = 16.6'f32 # Floor the range at 60fps, so a smooth run doesn't zoom in on noise.
+  var highest = 16.6'f32 # Floor range at 60fps, so smooth run does not zoom in on noise.
   for value in panel.milliseconds_history:
     if value > highest: highest = value
   var overlay: array[WIDTH_OVERLAY_TEXT, char]
   let text_now = buildChars(overlay):
     appendFixed(overlay, cursor, 1000.0/max(float(gui.framerate()), 1.0), 2)
     appendChars(overlay, cursor, " ms now")
-  # Full panel width, passed rather than left at 0: Dear ImGui reads a zero width as its
-  #   own default *item* width, which is two thirds of the window, and a graph beside two
-  #   thirds of a bar reads as one of them being broken.
+  # Full panel width, passed rather than left at 0: Dear ImGui reads zero width as default
+  #   *item* width, two thirds of window.
   gui.plotLines(
     "##frame_time", addr panel.milliseconds_history[0], cint(FRAMES_HISTORY),
     cint(panel.index_history), text_now, 0.0, highest, gui.contentWidth(), 60.0,
@@ -982,7 +877,7 @@ proc layoutDiagnosticsFrameTime(panel: var Panel) =
 
 
 proc layoutDiagnosticsMemory(panel: Panel) =
-  ## Lay out the "memory" section: permanent and per-frame arena usage bars.
+  ## Lay out "memory" section: permanent and per-frame arena usage bars.
   gui.separatorText("memory")
   block:
     let
@@ -1032,10 +927,9 @@ proc layoutDiagnosticsMemory(panel: Panel) =
 
 
 func sizePoolCell(width: cfloat): cfloat =
-  ## Report the side to draw one object-pool cell at, for a panel this wide.
-  ##   The largest offered whose wrapped grid still fits `HEIGHT_POOL_MAX`, or the smallest
-  ## offered where none does -- every slot keeps a cell either way, which is the property
-  ## that matters, and only how big it is gives.
+  ## Report side to draw one object-pool cell at, for panel this wide.
+  ##   Largest offered whose wrapped grid fits `HEIGHT_POOL_MAX`, or smallest offered where
+  ## none does; every slot keeps cell either way.
   for side in SIZES_POOL_CELL:
     let
       columns = max(1, int(width/(side + SPACING_POOL_CELL)))
@@ -1045,11 +939,10 @@ func sizePoolCell(width: cfloat): cfloat =
 
 
 proc layoutDiagnosticsObjectPool(scene: Scene) =
-  ## Lay out the "object pool" section: live/free slot strip and byte accounting.
+  ## Lay out "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
-  # An occupied cell wears its own object's ink, so the strip reads as the scene rather
-  #   than as an anonymous occupancy count: which slot a given object sits in, and how
-  #   `inkCycled` has spread the palette so far, are both legible at a glance.
+  # Occupied cell wears its object's ink, so strip reads as scene: which slot object sits
+  #   in, and how `inkCycled` has spread palette.
   var cells: array[ITEMS_MAX * CHANNELS_POOL_CELL, cfloat]
   for slot in 0 ..< ITEMS_MAX:
     let colour = if scene.isAlive(slot): scene.inkAt(slot).colour else: INK_POOL_FREE.colour
@@ -1090,15 +983,15 @@ proc layoutDiagnosticsObjectPool(scene: Scene) =
 
 
 proc layoutDiagnosticsTotal(panel: Panel) =
-  ## Lay out the "total" section: every fixed reservation this binary makes, added up.
+  ## Lay out "total" section: every fixed reservation this binary makes, added up.
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
   let text_total = buildChars(total):
     appendFixed(total, cursor, float(panel.bytes_memory_total) / (1024.0*1024.0), 1)
     appendChars(total, cursor, " MB")
   gui.text(text_total)
-  # Folded to one literal rather than concatenated at the call, so the depth is still read
-  #   from `CAPACITY_HISTORY` and the tooltip is still a `cstring` pointing at static text.
+  # Folded to one literal, so depth is read from `CAPACITY_HISTORY` and tooltip is still
+  #   `cstring` pointing at static text.
   const TEXT_TOTAL =
     "Every fixed reservation this binary makes for itself, added up: both arenas at " &
     "their full capacity (committed whether or not they're ever filled), the object " &
@@ -1111,7 +1004,7 @@ proc layoutDiagnosticsTotal(panel: Panel) =
 
 proc layoutDiagnostics*(panel: var Panel; scene: Scene) =
   ## Lay out live performance and memory readouts: closed by default, since nothing here
-  ## is needed to use the visualiser, only to understand what using it costs.
+  ## is needed to use visualiser, only to understand what using it costs.
   if not gui.header("diagnostics", is_open_first = false): return
   gui.text("Live cost of this build, updated every frame.")
   gui.sameLine()
@@ -1133,15 +1026,13 @@ proc stepHistory*(
   panel: var Panel; scene: var Scene; camera: var Camera; history: var History;
   is_undo: bool
 ): bool =
-  ## Step the timeline one way, putting the view back where the restored edit was made,
-  ## and drop whatever an open edit was staged against.
-  ##   Reports whether anything moved, so a caller may say so.
-  ##   One proc for the buttons and for the keys that do the same thing: a restored
-  ##   snapshot's slot numbers need not match the ones a session or a selection was
-  ##   holding, and that consequence is easy to remember in one place and easy to forget
-  ##   in the second.
-  ##   Abandons the standing tween, which is aiming at whatever was last selected: left
-  ##   running it would drag the view straight off the placement just restored.
+  ## Step timeline one way, putting view back where restored edit was made, and drop
+  ## whatever open edit was staged against.
+  ##   Reports whether anything moved. One proc for buttons and keys: restored snapshot's
+  ## slot numbers need not match ones session or selection held, easy to forget in second
+  ## place.
+  ##   Abandons standing tween, aiming at whatever was last selected: left running it
+  ## drags view off placement just restored.
   result = if is_undo: history.undo(scene, camera) else: history.redo(scene, camera)
   if result:
     panel.selection.clear()
@@ -1155,30 +1046,26 @@ proc stepHistory*(
 
 const
   OFFSET_MENU_SELECTION = 46.0'f32
-    ## Lift the menu this far above the object it follows, in pixels.
-    ##   Above rather than on: an ImGui window makes `gui.wantsMouse` true wherever it
-    ## sits, and a menu straddling its own object would swallow the next drag off that
-    ## object. Far enough to clear the selection marker drawn around it too, so the menu
-    ## never hides the thing it names. Matches the browser's own 60-pixel lift, less the
-    ## height this row draws at, which the browser measures in CSS pixels rather than the
-    ## framebuffer ones this window is placed in.
+    ## Lift menu this far above object it follows, in pixels.
+    ##   Above rather than on: ImGui window makes `gui.wantsMouse` true wherever it sits,
+    ## and menu straddling its object would swallow next drag off it. Clears selection
+    ## marker too. Matches browser's 60-pixel lift less this row's height, browser
+    ## measuring in CSS pixels.
   MARGIN_MENU_SELECTION = 8.0'f32
-    ## Keep the menu at least this far inside the viewport, so an object near an edge does
-    ## not push half of it off screen.
+    ## Keep menu at least this far inside viewport, so object near edge does not push half
+    ## of it off screen.
   PADDING_MENU_PICKER = 36.0'f32
-    ## Slack added to the widest notation offered, for the combo's own frame and arrow.
+    ## Slack added to widest notation offered, for combo's frame and arrow.
 
 proc layoutSelectionMenuApply(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   now: float
 ) =
-  ## Lay out the menu's `apply` button and the operation picker it reveals beside it.
-  ##   One button in both roles: the first press opens the picker, the second commits
-  ##   whatever it is showing. `apply` itself never moves or relabels while that happens,
-  ##   so the picker reads as opening *out of* it rather than replacing it.
+  ## Lay out menu's `apply` button and operation picker it reveals beside it.
+  ##   One button in both roles: first press opens picker, second commits what it shows.
+  ## `apply` never moves or relabels, so picker reads as opening *out of* it.
   ##   Only for one or two picked objects; three or more have no operand pickers here, so
-  ##   this menu cannot say which two of them it would use, and it offers nothing rather
-  ##   than guessing. Matches the browser's own `refreshSelectionMenu`.
+  ## menu offers nothing rather than guessing. Matches browser's `refreshSelectionMenu`.
   let
     count = panel.selection.len
     arity = panel.selection.impliedArity
@@ -1203,13 +1090,11 @@ proc layoutSelectionMenuApply(
   )
   if not panel.is_menu_selection_picking: return
 
-  # Ghost whatever the picker is showing, from the same two slots and the same index the
-  #   button above commits with. Only while the picker is revealed: `apply` closed is a
-  #   button that has offered nothing yet, and previewing behind it would put an object on
-  #   screen that nothing on screen names.
-  #   Written after `visualiser.offerCameraAim` has run this frame, so the camera takes it
-  #   up on the next one; the offer is re-made every frame, so that costs a frame and
-  #   nothing else.
+  # Ghost whatever picker shows, from same two slots and index button commits with. Only
+  #   while picker is revealed: previewing behind closed `apply` puts object on screen
+  #   nothing names.
+  #   Written after `visualiser.offerCameraAim` has run this frame, so camera takes it up
+  #   next one; offer is re-made every frame.
   block:
     let
       index = clamp(int(panel.index_operation_menu), 0, count_offered - 1)
@@ -1237,15 +1122,12 @@ proc layoutSelectionMenu*(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   anchor: Option[tuple[x, y: cfloat]]; now: float
 ) =
-  ## Lay out the floating menu over whatever is picked: apply, edit, hide, delete, close.
-  ##   Follows the *most recently* picked object rather than the middle of them all, which
-  ##   would jump around as membership changes for no gain. `anchor` is where that object
-  ##   is on screen; none where it is behind the camera, which leaves the menu where it
-  ##   last was rather than flinging it to a corner.
-  ##   Longer than the sixty-line default and not split further: past `apply`, which has
-  ##   its own proc above, this is one run of buttons whose only shared state is which of
-  ##   them is on the line so far, and threading that through another boundary would buy
-  ##   nothing.
+  ## Lay out floating menu over whatever is picked: apply, edit, hide, delete, close.
+  ##   Follows *most recently* picked object rather than middle of them all, which would
+  ## jump as membership changes. `anchor` is where that object is on screen; none where
+  ## behind camera, which leaves menu where it last was.
+  ##   Longer than sixty-line default: past `apply`, one run of buttons whose only shared
+  ## state is which is on line so far.
   if not panel.is_menu_selection_shown or panel.selection.len == 0: return
   if anchor.isSome:
     panel.position_menu_selection = [
@@ -1253,8 +1135,8 @@ proc layoutSelectionMenu*(
       max(anchor.get.y - OFFSET_MENU_SELECTION, MARGIN_MENU_SELECTION),
     ]
   let count = panel.selection.len
-  var is_line_started = false # Whether anything is on the row yet, so the first button
-    # placed does not ask for a `sameLine` that has nothing to continue.
+  var is_line_started = false # Whether anything is on row yet, so first button placed
+    # does not ask for `sameLine` with nothing to continue.
   if gui.windowBeginPinned(
     "##selection_menu",
     clamp(
@@ -1271,15 +1153,15 @@ proc layoutSelectionMenu*(
       layoutSelectionMenuApply(panel, scene, camera, history, now)
       is_line_started = true
 
-    # Edit and the two bulk actions stand aside while an operation is being picked, so the
-    #   row stays one line at any width. Closing the menu stays reachable throughout.
+    # Edit and two bulk actions stand aside while operation is being picked, so row stays
+    #   one line at any width. Closing stays reachable throughout.
     if not panel.is_menu_selection_picking:
       if count == 1:
         if is_line_started: gui.sameLine()
         is_line_started = true
         if gui.buttonSmall("edit"):
           beginSession(panel, scene, some(panel.selection.at(0)))
-          panel.hideSelectionMenu() # The panel owns it now; the pick itself stays.
+          panel.hideSelectionMenu() # Panel owns it now; pick itself stays.
         gui.tooltip("Rename, recolour or reshape it; nothing changes until you save.")
 
       let is_all_hidden = panel.selection.isAllHidden(scene)
@@ -1297,12 +1179,11 @@ proc layoutSelectionMenu*(
 
       gui.sameLine()
       if gui.buttonSmall("delete"):
-        # Read the slots out before removing any: removal prunes the selection this loop
-        #   would otherwise be walking.
+        # Read slots out before removing any: removal prunes selection this loop walks.
         var slots: array[ITEMS_MAX, int]
         for position in 0 ..< count: slots[position] = panel.selection.at(position)
-        # An open session against one of these has nothing left to commit against, the
-        #   same guard `layoutObjects` keeps around its own single removal.
+        # Open session against one of these has nothing left to commit against; same
+        #   guard `layoutObjects` keeps.
         if panel.session.isSome and panel.session.get.slot.isSome and
             panel.session.get.slot.get in panel.selection:
           panel.session = none(EditSession)
@@ -1326,30 +1207,26 @@ proc layoutSelectionMenu*(
 
 const
   MARGIN_HELP = 16.0'f32
-    ## Hold the help affordance this far off the bottom-right corner, in pixels.
+    ## Hold help affordance this far off bottom-right corner, in pixels.
   GAP_HELP_COLUMN = 18.0'f32
-    ## Separate an entry's action from its outcome by at least this much, so the two
-    ## columns read as columns rather than as one run-on line.
+    ## Separate entry's action from its outcome by at least this much, so columns read as
+    ## columns.
   MARGIN_HELP_PANEL = 96.0'f32
-    ## Leave this much of the window unclaimed by the help panel: the `?` button below it,
-    ## the tab strip above its rows, and the window's own frame.
+    ## Leave this much of window unclaimed by help panel: `?` button below it, tab strip
+    ## above its rows, window's frame.
 
 func helpActionOf(entry: HelpEntry): string =
-  ## Write one entry's action as the panel draws it, indent and touch marker included.
-  ##   One writer, because the column is sized by measuring exactly what is then drawn.
+  ## Write one entry's action as panel draws it, indent and touch marker included.
+  ##   One writer, because column is sized by measuring exactly what is then drawn.
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
 proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath)) =
-  ## Lay out the help affordance: a `?` pinned to the bottom-right corner, and the panel
-  ## it opens.
-  ##   Sited in the corner rather than inside the panel window because it has to be
-  ##   reachable when the panel is the thing a reader does not yet understand, and
-  ##   because the browser build puts it in the same corner -- the two UIs are 1-1 here as
-  ##   everywhere else, down to what the panel says, which both read from `help.nim`.
-  ##   `path_forced` opens one tab whatever the reader last chose. Only `--drive-help`
-  ##   passes it: a headless run cannot click a tab strip, and a help panel no capture can
-  ##   reach is one whose rows nobody ever checks fit.
+  ## Lay out help affordance: `?` pinned to bottom-right corner, and panel it opens.
+  ##   In corner rather than inside panel window: reachable when panel is thing reader
+  ## does not understand, and browser puts it in same corner. Both read `help.nim`.
+  ##   `path_forced` opens one tab whatever reader last chose. Only `--drive-help` passes
+  ## it: headless run cannot click tab strip.
   let (width, height) = (gui.viewportWidth(), gui.viewportHeight())
   if gui.windowBeginPinned(
     "##help_open", width - MARGIN_HELP, height - MARGIN_HELP, 1.0, 1.0
@@ -1358,12 +1235,9 @@ proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath
   gui.windowEnd()
 
   if not panel.is_help_open: return
-  # Where the outcome column starts, and how wide the pair is, measured from the widest
-  #   entries there actually are rather than set by eye: an entry longer than whatever was
-  #   longest when this was written would otherwise run straight into its own outcome,
-  #   which is precisely what a hand-tuned number did here first time out. Measured only
-  #   while the panel is open -- every frame of a storyboard capture was paying for the
-  #   whole table's text metrics to draw nothing.
+  # Where outcome column starts, and how wide pair is, measured from widest entries rather
+  #   than set by eye: hand-tuned number ran long entry into its outcome. Measured only
+  #   while panel is open; every storyboard frame was paying for whole table's metrics.
   var offset_outcome, width_outcome = 0.0'f32
   for entry in lut_help_entries:
     offset_outcome = max(offset_outcome, gui.textWidth(cstring(helpActionOf(entry))))
@@ -1372,36 +1246,30 @@ proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath
   if gui.windowBeginPinned(
     "##help_panel", width - MARGIN_HELP, height - MARGIN_HELP - 44.0, 1.0, 1.0
   ):
-    # One tab per path, because a reader opens this in the middle of one way of working
-    #   and only that way's rows are any use to them right then. The window auto-sizes and
-    #   grows *upward* from the corner, with no scrollbar of its own, so a tall enough
-    #   panel silently loses its top rows off the screen; the region below is bounded to
-    #   what the window actually has and scrolls instead. `ENTRIES_MAX_PATH` is what keeps
-    #   that scrollbar from ever being the way this is read -- it is the safety net.
+    # One tab per path. Window auto-sizes and grows *upward* from corner with no scrollbar,
+    #   so tall panel silently loses top rows; region below is bounded to what window has
+    #   and scrolls. `ENTRIES_MAX_PATH` keeps scrollbar from being way this is read.
     let
-      # Sized from both columns, not left to fill whatever is available: a bounded region
-      #   asked to fill nothing in an auto-sizing window collapses to its widest *item*,
-      #   and every outcome, placed by `sameLineAt` past that, is then clipped away.
+      # Sized from both columns: bounded region asked to fill nothing in auto-sizing window
+      #   collapses to widest *item*, and every outcome past that is clipped.
       width_rows = offset_outcome + width_outcome + GAP_HELP_COLUMN
       height_available = height - MARGIN_HELP_PANEL
     if gui.tabBarBegin("##help_tabs"):
       for path in HelpPath:
         if not gui.tabBegin(cstring(titleOf(path)), path_forced == some(path)): continue
-        # What the tab is about, before the rows that assume it. Wrapped rather than
-        #   truncated, and drawn outside the rows child so it stays put while they scroll:
-        #   a sentence that scrolls away is one a reader loses exactly when they need it.
+        # What tab is about, before rows that assume it. Wrapped, and outside rows child so
+        #   it stays put while they scroll.
         gui.textWrappedAt(cstring(descriptionOf(path)), width_rows)
-        # Each tab is as tall as its own rows need, up to what the window has: a fixed
-        #   height sized for the largest would leave `menu`'s five rows floating in a
-        #   third of a panel of blank.
+        # Each tab as tall as its rows need, up to what window has: fixed height for
+        #   largest leaves `menu`'s five rows floating in blank.
         let height_rows = min(
           gui.childHeightForRows(cint(countOf(path))), height_available
         )
         if gui.childBegin(cstring("##help_rows"), width_rows, height_rows):
           for entry in lut_help_entries:
             if entry.path != path: continue
-            # The touch rows say so in a word rather than only in a tint, so which input a
-            #   line describes survives a reader who cannot tell two greys apart.
+            # Touch rows say so in word rather than only tint, surviving reader who cannot
+            #   tell two greys apart.
             gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
             gui.sameLineAt(offset_outcome)
             gui.text(cstring(entry.outcome))
@@ -1418,24 +1286,18 @@ proc layoutPanel*(
   panel: var Panel; scene: var Scene; camera: var Camera; history: var History; now: float
 ) =
   ## Lay out every panel inside one window.
-  ##   `now` is this frame's own clock reading, passed through to whichever construct
-  ##   control adds an item this frame, so it animates in from the moment it appears.
-  # Drop last frame's apply preview here, so only a control actually on screen this frame
-  #   can put one back. A closed section simply never writes, which is the whole of "shown
-  #   while choosing" -- no flag says whether a section is open, because the section's own
-  #   early return already does.
+  ##   `now` is this frame's clock reading, passed to whichever construct control adds
+  ## item, so it animates in.
+  # Drop last frame's apply preview here, so only control on screen this frame can put one
+  #   back. Closed section never writes; no flag says whether section is open.
   panel.preview = none(Preview)
   gui.windowPlace(16.0, 16.0, WIDTH_PANEL, 720.0)
   if gui.windowBegin("RGA visualiser"):
-    # Coloured words match the rubber-band drawn while dragging, so a line on screen names
-    #   its own outcome before it is released. Which colour belongs to which is
-    #   `interaction.inkOf`'s to say, so this legend cannot come to disagree with what is
-    #   actually drawn.
-    #   **This is where the three symbols are taught.** The wheel's own wedges say
-    #   `𝐦 ∧ 𝐧` (see `interaction.labelOf`), which is the picker's text and unreadable to
-    #   anyone who has not been told once that it is `join` -- so the word and the notation
-    #   appear here together, both read from `interaction`. Its sibling is the browser's
-    #   own `.drawer-intro` line in `shell.html`, which says the same thing in markup.
+    # Coloured words match rubber-band drawn while dragging. Which colour belongs to which
+    #   is `interaction.inkOf`'s to say.
+    #   **Where three symbols are taught.** Wheel's wedges say `𝐦 ∧ 𝐧` (see
+    #   `interaction.labelOf`), unreadable until told it is `join`, so word and notation
+    #   appear here together. Sibling is browser's `.drawer-intro` line in `shell.html`.
     gui.textWrapped("Drag one object onto another; the two of them choose what it makes:")
     for choice in [DragChoice.Join, DragChoice.Meet, DragChoice.Project]:
       let tint = inkOf(choice).colour
@@ -1444,11 +1306,9 @@ proc layoutPanel*(
       )
     gui.textWrapped("Right-drag to pick instead; on a touchscreen, hold still over the target.")
 
-    # Scene-content edits only -- an orbit is not a step of its own, though each step
-    #   restores the view it was made from; see `history.nim`. Each button greys out where
-    #   its own side of the timeline is empty, rather than staying live and reporting
-    #   "nothing to undo" only once pressed. A successful step drops any open session too:
-    #   a restored snapshot's slot numbers need not match the one it was opened against.
+    # Scene-content edits only; orbit is not step, though each step restores view it was
+    #   made from; see `history.nim`. Each button greys out where its side of timeline is
+    #   empty. Successful step drops open session too.
     gui.disabledPush(not history.canUndo)
     if gui.button("undo"):
       discard stepHistory(panel, scene, camera, history, is_undo = true)
@@ -1465,9 +1325,7 @@ proc layoutPanel*(
     layoutTopBar(panel, scene, now)
     gui.separator()
 
-    # Sections in alphabetical order, matching the browser's own drawer, with `objects`
-    #   the one open by default: it is what a returning session looks at first, and the
-    #   rest are reached for deliberately.
+    # Sections in alphabetical order, matching browser's drawer, `objects` open by default.
     layoutApply(panel, scene, camera, history, now)
     layoutDiagnostics(panel, scene)
     layoutObjects(panel, scene, camera, history, now)
