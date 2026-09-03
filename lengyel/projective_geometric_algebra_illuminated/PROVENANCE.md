@@ -1328,8 +1328,21 @@ moving frame costs the page 8–10 ms, mostly the walk (`build` at a 7.5–8.3 m
 where such a panel switches rate at touch start and end — a hypothesis, unmeasured. And the
 `overlay` pill had an artefact: with the SVG hidden, `overlay + menu` rose to 4.6 ms mean
 (4.9 on the slowest frame) from writing to a layer with no layout, so the pill now stops the
-refresh with the paint. The still-scene periodic spike has not yet had a clean test: every
-reading so far had the camera moving inside the ring. Every job
+refresh with the paint. The still-scene test then ran clean on the
+device — drawer open, untouched for twenty seconds, with the diagnostics section open and
+then collapsed — and changed nothing beyond noise, so the panel's own five-a-second updates
+are not the author either. **A held frame is no longer drawn.** With the bridge holding scene
+and furniture and the canvas not resized, `renderFrame` skips the clear and every draw: the
+compositor keeps what was last presented, and the GPU idles on a still scene instead of
+redrawing 5,038 antialiased points at full pixel ratio for a picture that had not changed.
+The frame loop alone may hold; a capture and every direct caller (the pixel-reading checks)
+pass nothing and always draw, and a resize forces one draw. On this container, still seed
+scene, drawer open, the browser's own row went from 34.60 (31.50) ms to 16.01 (16.00) — the
+display, and nothing else — and `style + layout + paint` from 33.48 (31.90) to 0.63 (0.40),
+because a software rasteriser's WebGL commit *is* main-thread time; `upload + draw calls`
+reads 0.00. On the device it is the last experiment the page can offer: a spike that outlives
+an idle GPU on an idle main thread is the device's own, and unmeasured there at the time of
+writing. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
