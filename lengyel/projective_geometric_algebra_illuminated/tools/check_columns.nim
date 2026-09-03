@@ -1,14 +1,13 @@
-## Hold every source file to layout rules `CONSTITUTION.md` states (Art. X.1): line width, trailing
-## whitespace, tabs, final newline.
+## Hold every source file to layout rules `CONSTITUTION.md` states (Art. X.1).
 ##
-## Width is counted in **characters, not bytes**, whole reason this is tool rather than
-## shell one-liner: `wc -L` or `awk length($0)` counts bytes, and sources are full of
-## multi-byte operators (`∧`, `⟑`, `𝐦`) and box-drawing table borders. Byte counter
-## reports compliant line as eleven columns too long and is ignored within day.
-##
-## Reads paths it checks from filesystem rather than list kept here, so new module is
-## covered moment it exists.
-##
+## Line width, trailing whitespace, tabs, final newline.
+## Width is counted in characters, not bytes, whole reason this is tool rather than shell
+## one-liner.
+##   `wc -L` or `awk length($0)` counts bytes, and sources are full of multi-byte
+##   operators (`∧`, `⟑`, `𝐦`) and box-drawing table borders.
+##   Byte counter reports compliant line as columns too long and is ignored within day.
+## Reads paths it checks from filesystem rather than list kept here.
+##   New module is covered moment it exists.
 ## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_columns tools/check_columns.nim && bin/check_columns
 
@@ -20,23 +19,24 @@ import std/[algorithm, os, strformat, strutils, unicode]
 
 const
   COLUMNS_MAX = 100
-    ## Hard limit on line's width, in characters. Art. X.1 states it as hard: not
-    ## guideline, and not limit comment may exceed.
+    ## Bound line's width, in characters.
+    ##   Art. X.1 states it as hard: not guideline, and not limit comment may exceed.
   PATHS_SKIPPED = ["bin", "deps", "fonts", "node_modules", "out", "pga", "pga.nim"]
-    ## Files and directories holding nothing this project wrote: build output, and
-    ## vendored source kept locally but never committed. Matched against each path
-    ## component, so directory name here skips everything beneath it.
+    ## Skip files and directories holding nothing this project wrote.
+    ##   Build output, and vendored source kept locally but never committed.
+    ##   Matched against each path component, so directory name here skips everything
+    ##   beneath it.
   EXTENSIONS_CHECKED* = [
     ".nim", ".nims", ".cfg", ".cpp", ".h", ".js", ".mjs", ".html", ".css", ".sh", ".md",
     ".list",
-  ] ## Every file kind this project authors. File kind absent here is not exempt; it is
-    ## file kind that does not exist yet.
+  ] ## Check every file kind this project authors.
+    ##   File kind absent here is not exempt; it is file kind that does not exist yet.
 
 
 
 #[ Findings ]#
 
-type Complaint = object ## Hold one line that breaks one rule.
+type Complaint = object ## Define one line that breaks one rule.
   path*: string ## Where, relative to project root.
   line*: int ## Which line, counting from one, as editor numbers them.
   rule*: string ## Which rule, named as Art. X names it.
@@ -66,10 +66,10 @@ proc complaintsIn(path: string): seq[Complaint] =
       path: path, line: countLines(content), rule: "final newline",
       detail: "file does not end in a newline",
     ))
-  # Testament spec is written in testament's format: `cmd` and `matrix` are each one line
-  #   by that format's rules, with nowhere to wrap. Spec is block test file opens with, and
-  #   nothing else is exempt.
-  # Counted once: counting per line made checker quadratic, forty seconds on star catalogue.
+  # Exempt testament spec, written in testament's format.
+  #   `cmd` and `matrix` are each one line by that format's rules, with nowhere to wrap.
+  #   Spec is block test file opens with, and nothing else is exempt.
+  # Count lines once: counting per line makes checker quadratic on star catalogue.
   let count_lines = countLines(content)
   var
     number = 0
@@ -82,7 +82,7 @@ proc complaintsIn(path: string): seq[Complaint] =
     if is_inside_spec:
       if line.startsWith("\"\"\""): is_inside_spec = false
       continue
-    # Trailing newline splits into final empty field, not line anyone wrote.
+    # Drop final empty field trailing newline splits into, not line anyone wrote.
     if number == count_lines + 1 and len(line) == 0: break
     let columns = runeLen(line)
     if columns > COLUMNS_MAX:
@@ -103,10 +103,11 @@ proc complaintsIn(path: string): seq[Complaint] =
 
 proc selfTest(): int =
   ## Check checker against fixtures it writes itself, and report each case pass or fail.
-  ## Answers with number that failed, for `main` to exit on.
-  ##   **Rule this exists for**: column limit is measured in *characters*, and checker
-  ## counting bytes lies about every line holding non-ASCII. Checker nobody checks can
-  ## quietly start passing everything, and this one gates every commit.
+  ##   Answers with number that failed, for `main` to exit on.
+  ##   Rule this exists for: column limit is measured in characters, and checker counting
+  ##   bytes lies about every line holding non-ASCII.
+  ##   Checker nobody checks can quietly start passing everything, and this one gates
+  ##   every commit.
   let directory = getTempDir() / "check_columns_self_test"
   createDir(directory)
   defer: removeDir(directory)

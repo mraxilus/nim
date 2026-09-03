@@ -1,12 +1,13 @@
 // Drive built browser page through real events, and assert what they reached.
 //
-// Suites test *rules*: what slide does to target, what zoom does to distance. Nothing in
-// them presses key, turns wheel or puts two fingers on canvas, so nothing in them catches
-// rule wired to wrong event; pinch once zoomed at its own midpoint with every case green.
-// This layer catches that, and `verify.sh` runs it rather than leaving it to `/tmp`.
+// Suites test *rules*:
+//   what slide does to target, what zoom does to distance.
+//   Nothing in them presses key, turns wheel or puts two fingers on canvas, so nothing in them
+//   catches rule wired to wrong event; pinch once zoomed at its own midpoint with every case green.
+//   This layer catches that, and `verify.sh` runs it rather than leaving it to `/tmp`.
 //
-// Reports every check, pass or fail, and exits non-zero if any failed, as `check_palette`
-// does: one run says everything wrong, not first thing.
+// Reports every check, pass or fail, and exits non-zero if any failed, as `check_palette` does:
+//   one run says everything wrong, not first thing.
 //
 // **Timing-dependent quantities are asserted as bands, never figures.** How far held key
 // travels depends on frames drawn while it was down; exact figure flakes, and flaky check
@@ -27,8 +28,9 @@ const { chromium } = require_here('playwright');
 const dir_project = join(dirname(fileURLToPath(import.meta.url)), '..');
 const url_page = `file://${join(dir_project, 'bin', 'rga_browser.html')}`;
 
-// Viewport checks below are written against; wheel check reads object's own
-// pixel out of page, so nothing here depends on these beyond having room to gesture in.
+// Fix viewport checks below are written against.
+//   Wheel check reads object's own pixel out of page, so nothing here depends on these
+//   beyond having room to gesture in.
 const SIZE_VIEW = { width: 1200, height: 900 };
 
 let count_failed = 0;
@@ -56,9 +58,10 @@ page.on('pageerror', (error) => errors_page.push(error.message));
 await page.goto(url_page);
 await page.waitForTimeout(2000);
 
-// Focused rather than clicked: click on canvas selects whatever is under it,
-// standing framing offer then moves camera on its own, and every reading below would be
-// measuring that instead of gesture under test.
+// Focus canvas rather than clicking it.
+//   Click on canvas selects whatever is under it, standing framing offer then moves
+//   camera on its own, and every reading below would be measuring that instead of
+//   gesture under test.
 await page.evaluate(() => document.getElementById('gl').focus());
 
 const readCamera = () => page.evaluate(() => ({
@@ -72,11 +75,11 @@ const spanTarget = (before, after) => Math.hypot(
   after.target[2] - before.target[2],
 );
 
-// Panels earlier check opened sit *over* canvas and swallow every pointer event, so
-//   gesture driven at pixel beneath one never reaches application at all. **
-//   drawer opens on left**, side desktop's own panel occupies, which is
-//   side most of gestures below start from -- so every section that drives canvas
-//   clears glass first rather than trusting pixels it aims at to be canvas.
+// Clear glass before every section that drives canvas.
+//   Panels earlier check opened sit over canvas and swallow every pointer event, so
+//   gesture driven at pixel beneath one never reaches application at all.
+//   Drawer opens on left, side desktop's own panel occupies, which is side most of
+//   gestures below start from.
 async function clearTheGlass() {
   await page.evaluate(() => {
     clearSelection();
@@ -111,8 +114,8 @@ report(
   'azimuth and distance unchanged',
 );
 
-// Release, which nothing watched before this: key that never comes up moves camera
-// for as long as page is open.
+// Check release, which key handling must see.
+//   Key that never comes up moves camera for as long as page is open.
 const at_release = await readCamera();
 await page.waitForTimeout(400);
 report(
@@ -152,8 +155,9 @@ report(
 
 /* ---- Wheel ----     */
 
-// Back to opening placement first, through key that means it, so wheel checks
-// below start from known camera and `home` is itself checked on way.
+// Return to opening placement first, through key that means it.
+//   Wheel checks below then start from known camera, and `home` is itself checked on
+//   way.
 await page.keyboard.press('Home');
 await page.waitForTimeout(120);
 const homed = await readCamera();
@@ -169,12 +173,13 @@ const pixelOf = (slot) => page.evaluate((s) => {
   const at = nimAnchorScreen(s, window.innerWidth, window.innerHeight);
   return at && at.length ? [at[0], at[1]] : null;
 }, slot);
-// Object standing furthest from every other on screen, rather than whichever slot
-//   happens to be last. Zoom aims at what `picking.pickNearest` finds under pointer
-//   and ranks point above plane, so pointer over two overlapping objects anchors on
-//   thinner one -- and this check would then be measuring object it did not aim
-//   at. Opening scene has point sitting 13 px from ground plane's own drawn
-//   anchor, which is exactly that case.
+// Pick object standing furthest from every other on screen.
+//   Rather than whichever slot happens to be last.
+//   Zoom aims at what `picking.pickNearest` finds under pointer and ranks point above
+//   plane, so pointer over two overlapping objects anchors on thinner one, and this
+//   check would then be measuring object it did not aim at.
+//   Opening scene has point sitting few pixels from ground plane's own drawn anchor,
+//   which is exactly that case.
 const slots = await page.evaluate(() => nimSceneSlots());
 const anchors = [];
 for (const slot of slots) anchors.push({ slot, at: await pixelOf(slot) });
@@ -201,9 +206,10 @@ report(
   wheel_in.distance < wheel_before.distance * 0.6,
   `distance ${wheel_before.distance.toFixed(2)} -> ${wheel_in.distance.toFixed(2)}`,
 );
-// Exact, not merely close: zoom anchors on very object pointer is over, so
-//   pixel it was on is pixel it stays on. Measured at 0.000 px across eight
-//   notches; it was 1.957 while anchor was plane through camera's own target.
+// Require exact, not merely close.
+//   Zoom anchors on very object pointer is over, so pixel it was on is pixel it stays
+//   on; anchor on plane through camera's own target drifts; figures in
+//   `PROVENANCE.md`.
 reportWithin(
   'what the pointer is over stays under the pointer',
   Math.hypot(pixel_after[0] - pixel_before[0], pixel_after[1] - pixel_before[1]),
@@ -249,8 +255,9 @@ async function pinch(mid_from, mid_to, spread_from, spread_to) {
   await page.waitForTimeout(200);
 }
 
-// Well off centre, which is where aimed zoom shows itself: midpoint never moves, so
-// pinch that also translated view would drag it toward that corner.
+// Pinch well off centre, which is where aimed zoom shows itself.
+//   Midpoint never moves, so pinch that also translated view would drag it toward that
+//   corner.
 const mid_pinch = { x: 300, y: 300 };
 const pinch_before = await readCamera();
 await pinch(mid_pinch, mid_pinch, 40, 160);
@@ -260,9 +267,11 @@ report(
   pinch_after.distance < pinch_before.distance * 0.6,
   `distance ${pinch_before.distance.toFixed(2)} -> ${pinch_after.distance.toFixed(2)}`,
 );
-// Residue is two-finger pan's own: midpoint sits between one finger's new
-// position and other's old one for moment between their two `pointermove` events.
-// Aimed at its midpoint instead, this same gesture dragged view 11.4 units.
+// Allow residue that is two-finger pan's own.
+//   Midpoint sits between one finger's new position and other's old one for moment
+//   between their two `pointermove` events.
+//   Aimed at its midpoint instead, this same gesture drags view far; figures in
+//   `PROVENANCE.md`.
 reportWithin(
   'a pinch whose middle stays put does not slide the view',
   spanTarget(pinch_before, pinch_after), 0, 0.5, 'units',
@@ -279,8 +288,9 @@ report(
 
 /* ---- Touch, way finger uses this ----       */
 
-// Gestures suites cannot reach and nothing committed has ever checked: they live in
-// `glue.js`'s pointer handling, which is where pinch regression lived too.
+// Drive gestures suites cannot reach.
+//   They live in `glue.js`'s pointer handling, which is where pinch regression lived
+//   too.
 const touchAt = (type, points) => touch(type, points);
 async function tapAt(x, y, milliseconds = 60) {
   await touchAt('touchStart', [{ x, y }]);
@@ -296,8 +306,7 @@ const slots_scene = await page.evaluate(() => nimSceneSlots());
 const pixel_first = await pixelOf(slots_scene[1]);
 const pixel_second = await pixelOf(slots_scene[2]);
 
-// Long press is only way finger has to start selection; `SECONDS_HOLD_SELECT`
-// decides when, so hold well past it.
+// Hold well past `SECONDS_HOLD_SELECT`, only way finger has to start selection.
 await tapAt(pixel_first[0], pixel_first[1], 1400);
 report(
   'a long press selects what it is over',
@@ -339,10 +348,9 @@ report(
   `target moved ${spanTarget(dragged_before, dragged_after).toFixed(3)}, ` +
     `distance ${dragged_after.distance.toFixed(3)}`,
 );
-// Pan slides view across level, so orbit centre keeps its height exactly. It
-// used to slide within plane facing eye, which is tilted: drag up screen
-// lifted target off ground -- driven at z 1.00 -> 6.40 -- and every later orbit
-// then swung about point in mid-air.
+// Check pan slides view across level, so orbit centre keeps its height exactly.
+//   Sliding within plane facing eye, which is tilted, lifts target off ground, and
+//   every later orbit then swings about point in mid-air.
 report(
   'and without lifting the orbit centre off the level it was on',
   Math.abs(dragged_after.target[2] - dragged_before.target[2]) < 1e-6,
@@ -350,8 +358,8 @@ report(
     `${dragged_after.target[2].toFixed(3)}`,
 );
 
-// Finger dragging one object onto another builds third, which is whole gesture
-// application is about.
+// Check finger dragging one object onto another builds third.
+//   Whole gesture application is about.
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
 await page.evaluate(() => nimSelectClear());
@@ -374,12 +382,13 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_drag}`,
 );
 
-// Same gesture as finger actually performs it: pause over target to aim before
-// lifting. Dwell wheel opens under finger during that pause -- hidden by it -- and
-// once read release as "chose nothing", so exactly careful drags built nothing.
-// Wheel nobody entered may not veto release: it takes pair's own answer, as
-// quick lift above does. Check first holds that wheel really did open, so slower
-// dwell could never turn this into second copy of quick-lift check.
+// Drive same gesture as finger actually performs it: pause over target to aim.
+//   Dwell wheel opens under finger during that pause, hidden by it; reading release as
+//   "chose nothing" would make exactly careful drags build nothing.
+//   Wheel nobody entered may not veto release: it takes pair's own answer, as quick
+//   lift above does.
+//   Check first holds that wheel really did open, so slower dwell could never turn this
+//   into second copy of quick-lift check.
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
 await page.evaluate(() => nimSelectClear());
@@ -406,14 +415,16 @@ report(
     `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_pause}`,
 );
 
-// Drag let go of over empty space built nothing and says nothing: reader can see
-// nothing, and status line for it fires on every gesture anybody thought better of.
+// Check drag let go of over empty space builds nothing and says nothing.
+//   Reader can see nothing, and status line for it would fire on every gesture anybody
+//   thought better of.
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
 await page.evaluate(() => {
   nimSelectClear();
-  // Cleared, not just hidden: check that only asked whether bar is up would pass on
-  //   message that was never dismissed from earlier gesture.
+  // Require cleared, not just hidden.
+  //   Check that only asked whether bar is up would pass on message that was never
+  //   dismissed from earlier gesture.
   const bar = document.getElementById('toast');
   bar.classList.remove('show');
   bar.textContent = '';
@@ -477,21 +488,20 @@ report(
   `${await page.evaluate(() => document.getElementById('op-first').options.length)} options, ` +
     `${await page.evaluate(() => nimSceneCount())} items`,
 );
-// Shut again, because open apply section keeps **ghost** standing -- that is whole
-//   point of `ghostDrawerOperation` running on section toggle -- and standing ghost is
-//   one of three things `is_scene_settled` refuses to hold frame over. Left open, this
-//   check would quietly break frame-hold checks further down, which is exactly what it
-//   did first time.
+// Shut apply section again, because open one keeps ghost standing.
+//   Whole point of `ghostDrawerOperation` running on section toggle, and standing ghost
+//   is one of three things `is_scene_settled` refuses to hold frame over.
+//   Left open, this check would quietly break frame-hold checks further down.
 await page.evaluate(() => {
   const section = document.querySelector('.section[data-section="apply"]');
   if (section.classList.contains('open')) section.querySelector('.section-header').click();
 });
 await page.waitForTimeout(200);
 const count_before_apply = await page.evaluate(() => nimSceneCount());
-// Applied twice over: once through picker, which names *positions*, and once straight
-//   through bridge with slots those positions stand for. Two build same
-//   object from same pair, so their drawn anchors coincide -- and would not if
-//   picker's position were passed through as slot, which is bug.
+// Apply twice over: once through picker, once straight through bridge.
+//   Picker names positions; bridge takes slots those positions stand for.
+//   Two build same object from same pair, so their drawn anchors coincide, and would
+//   not if picker's position were passed through as slot, which is bug.
 const slots_before_apply = await page.evaluate(() => nimSceneSlots());
 const applied = await page.evaluate(() => {
   const slots = nimSceneSlots();
@@ -503,9 +513,8 @@ const applied = await page.evaluate(() => {
 });
 await page.waitForTimeout(300);
 const coefficientsOf = (slot) => page.evaluate((s) => nimItemCoefficients(s), slot);
-// Slot new item lands in is lowest free one, which after delete is somewhere in
-//   middle -- "the last slot" is not newest item and saying so quietly compares
-//   wrong object.
+// Take slot new item lands in as lowest free one, which after delete is in middle.
+//   "The last slot" is not newest item, and saying so quietly compares wrong object.
 const addedSlot = (before, after) => after.find((slot) => !before.includes(slot));
 const slots_after_picker = await page.evaluate(() => nimSceneSlots());
 const slot_by_picker = addedSlot(slots_before_apply, slots_after_picker);
@@ -519,18 +528,18 @@ await page.waitForTimeout(300);
 const slots_after_bridge = await page.evaluate(() => nimSceneSlots());
 const slot_by_bridge = addedSlot(slots_after_picker, slots_after_bridge);
 if (slot_by_picker === undefined || slot_by_bridge === undefined) {
-  // Reading position as slot names slot that was freed by delete above, and
-  //   applying to dead operand builds nothing at all -- so this is shape
-  //   regression takes here, and it is reported rather than thrown over.
+  // Report rather than throw, since this is shape regression takes here.
+  //   Reading position as slot names slot that was freed by delete above, and applying
+  //   to dead operand builds nothing at all.
   report(
     'apply builds from the operands its pickers name, not from their positions', false,
     `the picker built ${slot_by_picker === undefined ? 'nothing' : 'slot ' + slot_by_picker}` +
       `, the bridge ${slot_by_bridge === undefined ? 'nothing' : 'slot ' + slot_by_bridge}`,
   );
 } else {
-  // Compared by their own coefficients rather than by where they are drawn: operation
-  //   picker happens to default to may be one whose result stands at horizon, and
-  //   horizon object has no drawn anchor to compare.
+  // Compare by their own coefficients rather than by where they are drawn.
+  //   Operation picker happens to default to may be one whose result stands at horizon,
+  //   and horizon object has no drawn anchor to compare.
   const built_by_picker = await coefficientsOf(slot_by_picker);
   const built_by_slot = await coefficientsOf(slot_by_bridge);
   const span_built = Math.max(
@@ -631,8 +640,8 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(200);
 const count_before_menu = await page.evaluate(() => nimSceneCount());
-// Menu's apply is press-twice by design: first press opens picker beside it,
-//   second commits whatever that picker names.
+// Press menu's apply twice, by design.
+//   First press opens picker beside it, second commits whatever that picker names.
 await page.evaluate(() => document.getElementById('selection-menu-apply').click());
 await page.waitForTimeout(200);
 await page.evaluate(() => {
@@ -651,11 +660,12 @@ report(
 /* ---- Camera gesture is not hover ----     */
 
 await page.keyboard.press('Home');
-// Clear what checks above left on screen, or this section measures menu and
-//   drawer rather than hover rule.
+// Clear what checks above left on screen.
+//   Otherwise this section measures menu and drawer rather than hover rule.
 await clearTheGlass();
-// Read afresh: checks above delete and build, so slot list captured for touch
-//   gestures no longer names what is alive here.
+// Read slots afresh.
+//   Checks above delete and build, so slot list captured for touch gestures no longer
+//   names what is alive here.
 const slots_now_live = await page.evaluate(() => nimSceneSlots());
 const slot_swept = slots_now_live[1];
 const pixel_swept = await pixelOf(slot_swept);
@@ -684,8 +694,9 @@ report(
   hovered_while_moving < 0,
   `slot hovered mid-gesture: ${hovered_while_moving}`,
 );
-// Onto where that object stands *now* -- pan moved world under pointer, so its
-// old pixel holds nothing any more, and asking there would say nothing about rule.
+// Aim onto where that object stands now.
+//   Pan moved world under pointer, so its old pixel holds nothing any more, and asking
+//   there would say nothing about rule.
 const pixel_settled = await pixelOf(slot_swept);
 await page.mouse.move(pixel_settled[0], pixel_settled[1]);
 await page.evaluate(() => nimUpdateHover(window.innerWidth, window.innerHeight));
@@ -736,11 +747,11 @@ report(
 
 /* ---- Horizon line's comet runs where reader can see it ----     */
 
-// Fault: horizon line's marker is two circles on sky running out to line's
-// own vanishing points, and uncut one laps in hundreds of thousands of pixels of
-// outline no camera can show. Comet, travelling at fixed screen pace, was then off
-// screen for all but few frames in thousand -- "comet does not work on horizon
-// lines". Driven rather than reasoned: this reads what page would actually stroke.
+// Guard comet on horizon line, whose marker is two circles on sky.
+//   Circles run out to line's own vanishing points, and uncut one laps in hundreds of
+//   thousands of pixels of outline no camera can show; comet travelling at fixed screen
+//   pace would be off screen for all but few frames in thousand.
+//   Driven rather than reasoned: this reads what page would actually stroke.
 await page.evaluate(() => showHelp(false));
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
@@ -752,8 +763,8 @@ const slot_horizon = await page.evaluate(() => {
   //   pencil of directions lying in it -- line at horizon.
   nimApplyOperation(0, plane, plane, performance.now() / 1000);
   const built = nimSceneSlots().find((slot) => !before.includes(slot));
-  // Level with ground, so sky bands wrap is in front of camera rather
-  //   than above top edge of it.
+  // Stand level with ground, so sky bands wrap is in front of camera.
+  //   Rather than above top edge of it.
   nimSetCameraElevation(0.0);
   nimSelectClear();
   selectOnly(built, null);
@@ -793,11 +804,11 @@ report(
   `kind ${marker_horizon.kind}, ${marker_horizon.points.length} points`,
 );
 
-// Wait for comet to have head before timing how far it travels. Object was
-//   created moments ago and fresh one starts its pulse at zero (`nimEndDrag` forgets its
-//   clock on purpose), so sampling straight away sometimes catches it before there is
-//   head to report -- which came back as `null` and read as "off screen". Three failures in
-//   six runs on this container, and none of them fault in comet.
+// Wait for comet to have head before timing how far it travels.
+//   Object was created moments ago and fresh one starts its pulse at zero
+//   (`nimEndDrag` forgets its clock on purpose), so sampling straight away sometimes
+//   catches it before there is head to report, which comes back as `null` and reads as
+//   "off screen".
 let head_first = null;
 for (let waited = 0; waited < 40 && head_first === null; waited += 1) {
   head_first = await headOf();
@@ -814,21 +825,21 @@ report(
     (await insideCanvas([head_first, head_second])),
   `head ${JSON.stringify(head_first)} then ${JSON.stringify(head_second)}`,
 );
-// Half second at SPEED_MARKER_PULSE is 30 pixels; banded rather than exact, since
-//   page's own frame pacing decides how much of that half second clock actually saw.
+// Band travel over half second at SPEED_MARKER_PULSE rather than pinning it exactly.
+//   Page's own frame pacing decides how much of that half second clock actually saw.
 reportWithin('its comet covers a screen pace, not a lap of the sky', travelled, 5, 60, 'px');
 
 /* ---- Mouse pan grabs level, and keeps its height ----       */
 
-// Drag below starts at x=160, which is drawer once drawer is open -- and it opens
-//   on left. Clear glass first, or this measures panel swallowing press.
+// Clear glass first, or this measures panel swallowing press.
+//   Drag below starts where drawer stands once open, and it opens on left.
 await clearTheGlass();
 await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
 await page.keyboard.press('Home');
 await page.waitForTimeout(900);
 const pan_before = await readCamera();
-// Started well clear of every object, so right button pans rather than arming drag,
-// and dragged up screen -- direction that used to lift target.
+// Start well clear of every object, so right button pans rather than arming drag.
+//   Dragged up screen, direction that lifts target under rate-based pan.
 await page.mouse.move(160, 170);
 await page.mouse.down({ button: 'right' });
 await page.mouse.move(360, 470, { steps: 12 });
@@ -846,16 +857,17 @@ report(
 
 /* ---- Zoom aims at what pointer is over, and settles target onto it ----           */
 
-// Anchored on plane through target, zoom left orbit centre stranded on
-// level it started at however far reader went in -- "target gets away from what
-// I'm looking at". Anchored on object or ground under pointer, it comes down
-// onto what is being zoomed into.
-// Canvas has to hold focus for key to reach view at all: help's own close
-//   button took it few checks ago, and Home pressed into button moves nothing.
+// Check zoom brings orbit centre down onto what is being zoomed into.
+//   Anchored on plane through target, zoom leaves orbit centre stranded on level it
+//   started at however far reader goes in; anchored on object or ground under pointer,
+//   it comes down.
+// Focus canvas, which has to hold focus for key to reach view at all.
+//   Help's own close button took it few checks ago, and Home pressed into button moves
+//   nothing.
 await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
 await page.keyboard.press('Home');
-// Long enough for camera's own tween home to settle: height read mid-flight is not
-//   height this check means to zoom away from.
+// Wait long enough for camera's own tween home to settle.
+//   Height read mid-flight is not height this check means to zoom away from.
 await page.waitForTimeout(900);
 const before_aim = await readCamera();
 // Low in frame, where sight ray reaches ground well in front of camera.
@@ -875,24 +887,26 @@ report(
 
 /* ---- Ground is still under camera however far it has pulled back ----         */
 
-// Fault: fog's reach was capped at 1,200 units, so camera dollied past that had
-// ground stop reaching what it was looking at, and past twice that met black void
-// with no reference of any kind -- grid, axes and all. Driven through page's own frame
-// build, so what is counted is what would actually be uploaded and drawn.
+// Guard against fog's reach being capped short of where camera can dolly.
+//   Camera dollied past cap would have ground stop reaching what it was looking at, and
+//   further out meet black void with no reference of any kind, grid, axes and all.
+//   Driven through page's own frame build, so what is counted is what would actually be
+//   uploaded and drawn.
 await page.evaluate(() => { nimSelectClear(); });
 await page.keyboard.press('Home');
 await page.waitForTimeout(150);
-// Grid only, with axes switched off: three axis lines are drawn by rule of their
-//   own and would keep count above zero in exactly case being guarded against.
+// Count grid only, with axes switched off.
+//   Three axis lines are drawn by rule of their own and would keep count above zero in
+//   exactly case being guarded against.
 const groundAt = (distance) => page.evaluate((given) => {
   nimSetCameraDistance(given);
   const canvas = document.getElementById('gl');
   const data = nimBuildFrame(
     canvas.width / canvas.height, performance.now() / 1000, canvas.height, false, true,
   );
-  // Distance frame was actually built at, not one asked for: camera can
-  //   be mid-tween toward framing of scene, and count reported against distance
-  //   it was not standing at says nothing.
+  // Read distance frame was actually built at, not one asked for.
+  //   Camera can be mid-tween toward framing of scene, and count reported against
+  //   distance it was not standing at says nothing.
   return { count: data.furn_ribbon_verts.length, distance: nimCameraDistance() };
 }, distance);
 const ground = {};
@@ -905,8 +919,9 @@ report(
   Object.values(ground)
     .map((at) => `${at.distance.toFixed(0)}: ${at.count}`).join(', '),
 );
-// Cell steps by decades to keep that true, so what is drawn stays inside budget
-//   fixed cell was bounded by rather than growing with reach.
+// Check cell steps by decades to keep that true.
+//   What is drawn then stays inside budget fixed cell was bounded by rather than
+//   growing with reach.
 report(
   'and no more of it is drawn far out than close in',
   Math.max(...Object.values(ground).map((at) => at.count)) <= 1.1 * ground[300].count,
@@ -918,13 +933,13 @@ await page.waitForTimeout(150);
 
 /* ---- Draw loop's own work fits inside frame ----       */
 
-// Reader's complaint was erratic frame time jumping between 30 and 60. Browser
-// page cannot draw faster than compositor presents -- `requestAnimationFrame` is
-// only honest loop and it is paced by display -- so "uncapped" is not thing to reach
-// for; what makes cadence even is every frame's work fitting inside budget.
-// Measured here is part this page owns, not wall clock: machine running these
-// checks renders through software GL, so its frame times say more about swiftshader than
-// about anything in this repository.
+// Check frame cadence is even, which is every frame's work fitting inside budget.
+//   Browser page cannot draw faster than compositor presents: `requestAnimationFrame`
+//   is only honest loop and it is paced by display, so "uncapped" is not thing to reach
+//   for.
+//   Measured here is part this page owns, not wall clock.
+//     Machine running these checks renders through software GL, so its frame times say
+//     more about swiftshader than about anything in this repository.
 await page.evaluate(() => { nimSelectClear(); document.getElementById('gl').focus(); });
 await page.keyboard.press('Home');
 await page.waitForTimeout(600);
@@ -947,9 +962,9 @@ await page.evaluate(() => {
       count_points: data.count_points, count_lines: data.count_lines,
       count_planes: data.count_planes, count_sky: data.count_sky,
       count_ghost: data.count_ghost, count_selected: data.count_selected,
-      // What crossed wire, by record kind. Plane's rim is one ring record; it used
-      //   to be `SEGMENTS_CIRCLE_HORIZON` ribbons, and check under demo below is
-      //   what would notice it silently becoming so again.
+      // Count what crossed wire, by record kind.
+      //   Plane's rim is one ring record, and check under demo below is what would
+      //   notice it silently becoming many ribbons.
       records_ribbon: data.ribbon_verts.length / 16,
       records_ring: data.ring_records.length / 14,
       records_disc: data.disc_records.length / 13,
@@ -972,13 +987,11 @@ report(
   work_frame !== null && work_frame.n > 30,
   `${work_frame === null ? 0 : work_frame.n} frames sampled`,
 );
-// Bands rather than figures: this is real machine's real clock. Numbers that matter
-// are measurements recorded in PROVENANCE.md's bottleneck ledger, taken on this same
-// software renderer.
-// These two bands grew (16/24 -> 18/30) with tessellation-stepping row of
-// bottleneck ledger: scene's own objects now assemble every point through
-// algebra and rebuild every frame with no cache, which is stress project exists
-// to apply. Bands still catch collapse class reader felt.
+// Pin bands rather than figures: this is real machine's real clock.
+//   Numbers that matter are measurements recorded in PROVENANCE.md's bottleneck ledger,
+//   taken on this same software renderer.
+//   Bands catch collapse class reader felt, over scene assembling every point through
+//   algebra, which is stress project exists to apply.
 reportWithin(
   'a frame is assembled in a fraction of its own budget',
   work_frame === null ? -1 : work_frame.median, 0, 18, 'ms',
@@ -990,10 +1003,11 @@ reportWithin(
 
 /* ---- Diagnostics tab's own phase clocks tell truth ----         */
 
-// Bridge reports each step of its own build -- scenery, scene objects, flatten -- and
-// those steps have to (a) be populated, (b) sum to no more than whole they are steps
-// of, and (c) agree with wall clock held around call from outside. Bands generous:
-// performance.now() is sub-ms quantised and this container is slow.
+// Check bridge's own build steps: populated, summing within whole, agreeing with clock.
+//   Bridge reports scenery, scene objects and flatten; those have to sum to no more
+//   than whole they are steps of, and agree with wall clock held around call from
+//   outside.
+//   Bands generous: performance.now() is sub-ms quantised and this container is slow.
 const phases = await page.evaluate(() => window.__phase_frame.slice(2));
 const sane = phases.filter((p) =>
   p.build > 0 && p.scene >= 0 && p.furniture >= 0 && p.flatten >= 0 &&
@@ -1060,9 +1074,10 @@ report(
 // em dash for good. Driving every branch open hid it: only opening outermost one
 // does.
 const nested = await page.evaluate(() => {
-  // Asked of row's own branch container, not of `offsetParent`: everything in
-  //   drawer sits inside `position: fixed` ancestor, which makes `offsetParent` null
-  //   whatever branch is doing, so it cannot tell open branch from shut one.
+  // Ask row's own branch container, not `offsetParent`.
+  //   Everything in drawer sits inside `position: fixed` ancestor, which makes
+  //   `offsetParent` null whatever branch is doing, so it cannot tell open branch from
+  //   shut one.
   const laid = (id) => getComputedStyle(
     document.getElementById(id).closest('.diag-children')).display !== 'none';
   const turned = (node) => getComputedStyle(document.querySelector(
@@ -1075,8 +1090,9 @@ const nested = await page.evaluate(() => {
   document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click();
   return shut;
 });
-// Read after chevron's own 350 ms turn has finished: asked in same tick as
-//   click, transition that has not started yet still reports its old transform.
+// Read after chevron's own turn has finished.
+//   Asked in same tick as click, transition that has not started yet still reports its
+//   old transform.
 await page.waitForTimeout(700);
 const nested_open = await page.evaluate(() => {
   const laid = (id) => getComputedStyle(
@@ -1156,21 +1172,21 @@ report(
 );
 report(
   'and its stated 1-in-100 agrees with the samples it was taken from',
-  // Within bucket and half: curve reports bucket's own lower edge, and
-  //   direct percentile lands anywhere inside that bucket.
+  // Allow bucket and half.
+  //   Curve reports bucket's own lower edge, and direct percentile lands anywhere inside
+  //   that bucket.
   Math.abs(curve.direct - curve.bucketed) <= 1.0 && curve.lit > 200,
   `curve says ${curve.bucketed.toFixed(1)} ms, samples say ${curve.direct.toFixed(1)} ms, ` +
     `${curve.lit} pixels drawn`,
 );
 
-// Axis waits before it moves and then glides, so synthetic window has to be given
-// wall-clock time to arrive at it. `recordExceedance` is stubbed while it settles: real
-// frame entering window mid-settle would change very extent being waited for, and
-// on this container every real frame is slower than anything these checks feed in.
-// Held **around** fill as well as settle: on this container every real frame is
-// slower than anything these checks feed in, so single one slipping into window
-// between filling it and waiting on it moves very extent being waited for. Feed through
-// `window.__record_kept` while hold stands.
+// Give synthetic window wall-clock time to arrive, since axis waits and then glides.
+//   `recordExceedance` is stubbed while it settles: real frame entering window
+//   mid-settle would change very extent being waited for, and on this container every
+//   real frame is slower than anything these checks feed in.
+//   Held around fill as well as settle, since single real frame slipping into window
+//   between filling it and waiting on it moves very extent being waited for.
+//     Feed through `window.__record_kept` while hold stands.
 const holdExceedance = () => page.evaluate(() => {
   if (window.__record_kept === undefined) window.__record_kept = recordExceedance;
   globalThis.recordExceedance = () => {};
@@ -1189,17 +1205,18 @@ const settleAxis = async () => {
   }
 };
 
-// How narrow axis may get is read **off page** rather than restated here: copy
-// would pass while page drifted away from it, which is one thing these checks exist
-// to stop.
+// Read how narrow axis may get off page rather than restating it here.
+//   Copy would pass while page drifted away from it, which is one thing these checks
+//   exist to stop.
 const { MILLISECONDS_FLOOR_DRAWN } = await page.evaluate(() => ({
   MILLISECONDS_FLOOR_DRAWN: MILLISECONDS_AXIS_LEAST,
 }));
-// How deep band at each end to look in for mark's own labels. **This check's own
-// sampling window, not copy of anything page declares** -- rates and durations are
-// drawn over plot rather than in rows of their own, so there is no page-side row height
-// to read. Comfortably more than 9px line they are set in, and comfortably less than
-// canvas, which is all it has to be.
+// Fix how deep band at each end to look in for mark's own labels.
+//   This check's own sampling window, not copy of anything page declares.
+//     Rates and durations are drawn over plot rather than in rows of their own, so
+//     there is no page-side row height to read.
+//   Comfortably more than line they are set in, and comfortably less than canvas, which
+//   is all it has to be.
 const ROW_LABEL_DRAWN = 11;
 
 // **Curve is drawn in colour of budget each part of it sits inside**, and
@@ -1274,22 +1291,24 @@ const reach = await page.evaluate(() => {
 });
 report(
   'the curve climbs from 0% at the fastest frame to 100% at the slowest',
-  // Bottom to top of canvas, which plot is whole of: rates and durations are
-  //   drawn over it rather than in rows of their own, so curve owns full height.
-  //   And all way out to slowest frame window holds, which on window this size
-  //   is far edge, axis being fitted to exactly that frame.
+  // Sample bottom to top of canvas, which plot is whole of.
+  //   Rates and durations are drawn over it rather than in rows of their own, so curve
+  //   owns full height.
+  //   And all way out to slowest frame window holds, which on window this size is far
+  //   edge, axis being fitted to exactly that frame.
   reach.top <= 2 && reach.bottom >= reach.height - 3 &&
-    // Within axis's own deadband of far edge: glide settles couple of
-    //   percent short of extent rather than landing exactly on it, which is axis
-    //   holding still rather than chasing last half-millisecond.
+    // Allow axis's own deadband of far edge.
+    //   Glide settles couple of percent short of extent rather than landing exactly on
+    //   it, which is axis holding still rather than chasing last half-millisecond.
     reach.rightmost >= reach.width * 0.95,
   `drawn from row ${reach.top} to ${reach.bottom} of ${reach.height}, ` +
     `out to column ${reach.rightmost} of ${reach.width}`,
 );
-// Floor, exercised where it actually binds: window holding nothing slower than
-// 15 ms would otherwise draw axis third that wide and zoom session into its own
-// noise, so it stops at 30 fps mark -- with room past it to write that mark's own
-// labels, which is why floor is little wider than 33.3 ms rather than exactly it.
+// Check floor where it actually binds.
+//   Window holding nothing slow would otherwise draw axis far narrower and zoom session
+//   into its own noise, so it stops at 30 fps mark.
+//   Room past it to write that mark's own labels, which is why floor is little wider
+//   than mark rather than exactly it.
 await page.evaluate(() => {
   for (let i = 0; i < 1024; i += 1) window.__record_kept(5 + Math.random() * 9);
 });
@@ -1301,28 +1320,29 @@ const floored = await page.evaluate(() => {
 report(
   'and its axis follows the window without ever closing below the 30 fps mark',
   Number.isFinite(reach.milliseconds) && reach.milliseconds >= 33 &&
-    // At floor, within axis's own deadband -- glide settles near extent
-    //   rather than exactly on it, and floor is extent like any other.
+    // Allow axis's own deadband at floor.
+    //   Glide settles near extent rather than exactly on it, and floor is extent like
+    //   any other.
     Number.isFinite(floored) && floored >= MILLISECONDS_FLOOR_DRAWN - 1 &&
     floored <= MILLISECONDS_FLOOR_DRAWN + 2,
   `a mixed window reads 0-${reach.milliseconds} ms, a fast one 0-${floored} ms`,
 );
 
-// Everything axis writes on itself, read out of canvas by opacity. Four things
-// drawn there are laid down at four different alphas -- gridlines faintest, then dashed
-// budget marks, then labels, then curve opaque -- so each can be counted apart from
-// others without knowing where any of them went.
+// Read everything axis writes on itself out of canvas by opacity.
+//   Four things drawn there are laid down at four different alphas, gridlines faintest,
+//   then dashed budget marks, then labels, then curve opaque, so each can be counted
+//   apart from others without knowing where any of them went.
 const readAxisInk = () => page.evaluate((row) => {
   const canvas = document.getElementById('exceedance');
   const w = canvas.width, h = canvas.height;
   const pixels = canvas.getContext('2d').getImageData(0, 0, w, h).data;
   const alphaAt = (x, y) => pixels[(y * w + x) * 4 + 3];
   const isLabel = (x, y) => alphaAt(x, y) > 120 && alphaAt(x, y) < 230;
-  // Dashed mark is column that **starts at very top** and carries its own alpha
-  //   down good part of height. Both halves are needed: percentages stacked in
-  //   left margin put antialiased pixels at that alpha down similar span of column,
-  //   and were counted as marks until run had to begin at row 0 as only full-height
-  //   line does. Dash pattern leaves gaps, so third of rows is bar.
+  // Find dashed mark as column that starts at very top and carries its alpha down.
+  //   Both halves are needed: percentages stacked in left margin put antialiased pixels
+  //   at that alpha down similar span of column, and only full-height line begins at
+  //   row 0.
+  //   Dash pattern leaves gaps, so third of rows is bar.
   const marks = [];
   for (let x = 0; x < w; x += 1) {
     let down = 0, first = h;
@@ -1337,8 +1357,9 @@ const readAxisInk = () => page.evaluate((row) => {
   for (let y = row; y < h - row; y += 1) {
     for (let x = 0; x < 26; x += 1) if (isLabel(x, y)) ink_margin += 1;
   }
-  // Each mark named at both ends: label ink in top row and in bottom row, within
-  //   reach of mark's own column on whichever side it took.
+  // Check each mark is named at both ends.
+  //   Label ink in top row and in bottom row, within reach of mark's own column on
+  //   whichever side it took.
   const named = marks.map((x) => {
     let above = 0, below = 0;
     for (let dx = -16; dx <= 16; dx += 1) {
@@ -1472,8 +1493,9 @@ const tinted = await page.evaluate(() => {
   }
   return { rows, idle: element_phase.idle.style.color };
 });
-// Ordering: sort by cost and walk, allowing equal step but never cheaper row further
-//   along ramp. Rows page left untinted carry no step and sit out of comparison.
+// Check ordering by sorting by cost and walking, never cheaper row further along ramp.
+//   Equal step is allowed; rows page left untinted carry no step and sit out of
+//   comparison.
 const ranked = tinted.rows.filter((r) => r.step >= 0 && r.name !== 'idle')
   .sort((a, b) => b.milliseconds - a.milliseconds);
 let is_ordered = true;
@@ -1486,8 +1508,9 @@ report(
   `${ranked.length} tinted rows, worst-first: ` +
     ranked.slice(0, 5).map((r) => `${r.name} ${r.milliseconds} step ${r.step}`).join(', '),
 );
-// And frame's leftover is left alone: it is largest share of healthy frame, so
-// tinting it would paint best case in ramp's loudest colour.
+// Check frame's leftover is left alone.
+//   It is largest share of healthy frame, so tinting it would paint best case in ramp's
+//   loudest colour.
 report(
   "and the frame's own idle time is left uncoloured, being no work at all",
   tinted.idle === '',
@@ -1500,10 +1523,10 @@ report(
 // Asserted on rendered geometry, not on strings, because it is claim about where
 // things *are*.
 const aligned = await page.evaluate(() => {
-  // Where **`ms` itself** ends, not where its box does. Row is flex-laid with
-  //   value right-aligned, so box's own edge is identical whatever it contains -- it
-  //   was, with trailing count, which makes it useless as evidence. Range over two
-  //   characters measures thing reader's eye actually runs along.
+  // Measure where `ms` itself ends, not where its box does.
+  //   Row is flex-laid with value right-aligned, so box's own edge is identical whatever
+  //   it contains, which makes it useless as evidence.
+  //   Range over two characters measures thing reader's eye actually runs along.
   const edges = new Set();
   const trailing = [];
   for (const [name] of PHASES_DIAGNOSTIC) {
@@ -1585,8 +1608,9 @@ report(
     `${Math.max(...stepped.map((r) => r.step))}), floor ${STEPS_SPREAD_RAMP_MIN}`,
 );
 
-// And shipped ramp is one tool verified against CET-I1: its ends are map's
-// own, so hand-edited table or stale build shows up here rather than only on screen.
+// And shipped ramp is one tool verified against CET-I1:
+//   its ends are map's own, so hand-edited table or stale build shows up here rather than only on
+//   screen.
 const ramp_ends = await page.evaluate(() => ({
   first: RAMP_TREE[0].label.map((c) => Math.round(c * 255)),
   last: RAMP_TREE[RAMP_TREE.length - 1].label.map((c) => Math.round(c * 255)),
@@ -1597,10 +1621,10 @@ report(
     ramp_ends.first[1] > 100 && ramp_ends.last[1] > 60,
   `cyan end rgb(${ramp_ends.first.join(', ')}), orange end rgb(${ramp_ends.last.join(', ')})`,
 );
-// **Breakdown adds up.** For long time it did not, and nothing said so: frame's
-// prologue and its view matrix belonged to no row, so `build` was simply larger than
-// sum of what it showed and reader had no way to know how much was missing. Every span is
-// now named, `unaccounted` included, and this is check that keeps it that way.
+// **Breakdown adds up.** For long time it did not, and nothing said so:
+//   frame's prologue and its view matrix belonged to no row, so `build` was simply larger than sum
+//   of what it showed and reader had no way to know how much was missing.
+//   Every span is now named, `unaccounted` included, and this is check that keeps it that way.
 const summed = await page.evaluate(() => {
   const runs = [];
   for (let i = 0; i < 30; i += 1) {
@@ -1621,7 +1645,7 @@ const summed = await page.evaluate(() => {
 });
 report(
   "build accounts for itself: its rows sum to it, with the residue named",
-  // Exact but for clock's own resolution -- these are all reads of one timer, so
+  // Exact but for clock's own resolution -- these are all reads of one timer, so.
   //   only slack needed is rounding it does, not proportional tolerance.
   Math.abs(summed.off) <= 0.05,
   `worst of ${summed.n} frames: ${summed.build.toFixed(2)} against ` +
@@ -1638,12 +1662,14 @@ report(
     `${summed.emitting.toFixed(2)} ms`,
 );
 
-// **Axis waits, then glides; it never jumps.** Fitted frame for frame it snapped: one
-// slow frame widened it and moment that frame aged out it snapped back, so two glances
-// second apart could not be compared. Driven exactly as that happens: settled window,
-// then one much slower frame put into it. Immediately after, axis must not have moved
-// at all -- that wait is what lets dip-and-return leave it where it was -- and some
-// seconds later it must have arrived, having passed through middle rather than jumped.
+// **Axis waits, then glides; it never jumps.** Fitted frame for frame it snapped:
+//   one slow frame widened it and moment that frame aged out it snapped back, so two glances second
+//   apart could not be compared.
+//   Driven exactly as that happens:
+//   settled window, then one much slower frame put into it.
+//   Immediately after, axis must not have moved at all -- that wait is what lets dip-and-return
+//   leave it where it was -- and some seconds later it must have arrived, having passed through
+//   middle rather than jumped.
 const axis_reading = () => page.evaluate(() => {
   drawExceedance();
   return Number((document.getElementById('diag-exceedance-axis').textContent
@@ -1689,7 +1715,7 @@ const axes_curve = await page.evaluate(async () => {
     const canvas = document.getElementById('exceedance');
     const pixels = canvas.getContext('2d')
       .getImageData(0, 0, canvas.width, canvas.height).data;
-    // Curve alone, at opacity only it is drawn with, summarised as row each
+    // Curve alone, at opacity only it is drawn with, summarised as row each.
     //   column's mark sits on -- which is shape of curve and nothing else.
     const rows = [];
     for (let x = 0; x < canvas.width; x += 1) {
@@ -1756,7 +1782,7 @@ const restoreRings = (kept) => page.evaluate((k) => {
 const kept_rings = await keepRings();
 const unmeasured = await page.evaluate(() => {
   for (const node of document.querySelectorAll('.diag-node')) node.classList.add('open');
-  // Frame ring is advanced first and phases written into it after, exactly as
+  // Frame ring is advanced first and phases written into it after, exactly as.
   //   draw loop does it, so slots line up way they really would.
   for (let i = 0; i < 240; i += 1) {
     recordFrameTime(16.7);
@@ -1864,7 +1890,7 @@ const reached = await page.evaluate((EXTENT_PLANE_DRIVE) => {
   // Furniture off, so every vertex counted here belongs to scene and layer over it.
   let furthest = 0;
   const v = data.ribbon_verts;
-  // Sixteen floats record now widening and fog both run in shaders: tail
+  // Sixteen floats record now widening and fog both run in shaders: tail.
   //   xyz, head xyz, width, fog, then two tints. Both ends are positions lattice
   //   actually reaches.
   for (let i = 0; i < v.length; i += 16) {
@@ -1892,7 +1918,7 @@ const kinds = await page.evaluate(() => window.__phase_frame.slice(2).map((p) =>
   counted: p.count_points + p.count_lines + p.count_planes +
     p.count_sky + p.count_ghost + p.count_selected,
 })));
-// Parts may never exceed whole by more than rounding, and must account for
+// Parts may never exceed whole by more than rounding, and must account for.
 //   bulk of it -- but not for all of it: phase also walks all 64 slots twice, marks
 //   overlay and packs view-projection, and none of that belongs to any one kind. That
 //   remainder is share of frame rather than fixed cost, so floor is share
@@ -1932,7 +1958,7 @@ const readRow = (names) => page.evaluate((given) => Object.fromEntries(given.map
 const rows_scenery = await readRow(['grid', 'axes']);
 report(
   'and both halves have their own row, the grid carrying its segment count',
-  // Count sits beside row's **name**, so every value ends in `ms` and times
+  // Count sits beside row's **name**, so every value ends in `ms` and times.
   //   down tree finish in one column; grid names its segments, axes name none.
   / ms$/.test(rows_scenery.grid.value) && /\(\d+\)$/.test(rows_scenery.grid.label) &&
     / ms$/.test(rows_scenery.axes.value) && !/\(\d+\)$/.test(rows_scenery.axes.label),
@@ -1976,19 +2002,19 @@ const scenery_far = await page.evaluate(() => {
 });
 report(
   'the scenery holds its line bound where it used to cost the most',
-  // One record per lattice line now fog fade is fragment shader's; bound is
-  // two families of at most `2*CELLS_GRID_HALF_MAX + 1` lines each.
+  // Bound at one record per lattice line, since fog fade is fragment shader's.
+  //   Two families of at most `2*CELLS_GRID_HALF_MAX + 1` lines each.
   scenery_far.segments > 0 && scenery_far.segments <= 2 * (2 * 120 + 1),
   `${scenery_far.segments} grid records at orbit distance 300, ` +
     `${scenery_far.median.toFixed(1)} ms of grid`,
 );
 
-// Same budget while camera actually moves, which is when reader felt it
-// collapse: moving camera rebuilds ground grid every frame, and per-segment
-// multivector churn once put that rebuild at 3x still frame's whole build. Band
-// is generous for same reason still ones are -- it exists to catch collapse,
-// not to time this container -- and drag is real one, from empty sky, so frames
-// sampled are frames hand would feel.
+// Same budget while camera actually moves, which is when reader felt it collapse:
+//   moving camera rebuilds ground grid every frame, and per-segment multivector churn once put that
+//   rebuild at 3x still frame's whole build.
+//   Band is generous for same reason still ones are -- it exists to catch collapse, not to time
+//   this container -- and drag is real one, from empty sky, so frames sampled are frames hand would
+//   feel.
 const index_before_drag = await page.evaluate(() => window.__work_frame.length);
 await page.mouse.move(SIZE_VIEW.width / 2, 60);
 await page.mouse.down();
@@ -2011,11 +2037,10 @@ const scenery = await page.evaluate((from) => window.__phase_frame.slice(from),
   index_before_drag);
 const scenery_moving = scenery.filter((p) => p.furniture > 0.05);
 // Slack is **proportional**, as per-kind check's is and for same reason:
-// bracket around two halves also spans mesh clear and loop between them, and on
-// frame scheduler interrupts that gap grows with frame rather than by fixed
-// amount. Flat +-1 ms was ample on 8 ms rebuild and failed one frame in hundred and
-// twenty on 15 ms one -- flake, not finding, and flaky check gets deleted rather
-// than fixed.
+//   bracket around two halves also spans mesh clear and loop between them, and on frame scheduler
+//   interrupts that gap grows with frame rather than by fixed amount.
+//   Flat +-1 ms was ample on 8 ms rebuild and failed one frame in hundred and twenty on 15 ms one
+//   -- flake, not finding, and flaky check gets deleted rather than fixed.
 const sceneryOff = (p) => (p.grid + p.axes) - p.furniture;
 const scenery_sane = scenery_moving.filter((p) =>
   sceneryOff(p) <= Math.max(0.6, 0.08 * p.furniture) &&
@@ -2040,29 +2065,31 @@ report(
   work_moving !== null,
   `${work_moving === null ? 0 : work_moving.n} frames sampled mid-drag`,
 );
-// Band grew from 20 when `directionAcross` was triple join. It is cross product
-// again -- ribbon is picture's business, not algebra's, see boundary in
-// PROVENANCE.md -- so that justification has lapsed, and band is now simply what
-// catches collapse class reader felt (30+ ms builds) without timing this container.
-// **It is close to bone on loaded shared runner**: identical code has measured 25.0
-// and 29.8 ms hours apart here. Failure at 27-30 says to re-measure against previous
-// commit before believing it; failure well past 30 is collapse this exists for.
+// Band grew from 20 when `directionAcross` was triple join.
+//   It is cross product again -- ribbon is picture's business, not algebra's, see boundary in
+//   PROVENANCE.md -- so that justification has lapsed, and band is now simply what catches collapse
+//   class reader felt (30+ ms builds) without timing this container.
+//   **It is close to bone on loaded shared runner**:
+//   identical code has measured 25.0 and 29.8 ms hours apart here.
+//   Failure at 27-30 says to re-measure against previous commit before believing it; failure well
+//   past 30 is collapse this exists for.
 reportWithin(
   'a frame is still assembled inside its budget while the camera moves',
   work_moving === null ? -1 : work_moving.median, 0, 26, 'ms',
 );
 
-// What buys that: camera that has not moved draws very same grid and axes, so they
-// are built once and held -- and loop above should have held them on nearly every one
-// of frames it just drew, since nothing moved camera for those two seconds.
+// What buys that:
+//   camera that has not moved draws very same grid and axes, so they are built once and held -- and
+//   loop above should have held them on nearly every one of frames it just drew, since nothing
+//   moved camera for those two seconds.
 report(
   'a still camera holds its ground and axes rather than rebuilding them',
   work_frame !== null && work_frame.held > 0.8 * work_frame.n,
   `${work_frame === null ? 0 : work_frame.held} of ` +
     `${work_frame === null ? 0 : work_frame.n} frames held`,
 );
-// Stated directly too, since share of frames could be right by accident: move
-// camera, so next call must build, and one after it must hold.
+// Stated directly too, since share of frames could be right by accident:
+//   move camera, so next call must build, and one after it must hold.
 const furniture_held = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
   const aspect = canvas.width / canvas.height;
@@ -2099,15 +2126,16 @@ report(
 
 /* ---- Performance regression pins ---- */
 
-// Every entry here pins repaired performance fault to band roughly three to four
-// times its repaired cost on driving container -- generous enough to survive
-// loaded shared runner, tight enough to catch fault class returning, since every
-// fault below was 3-30x multiplier while it was alive. Faults themselves, their
-// causes and their measurements live in PROVENANCE.md's performance ledger.
-//   **Raising band is sign-off.** Band is changed only with justification
-// recorded beside ledger entry it pins -- never adjusted to quiet failure
-// unexamined. Failure just past band on slow run says re-measure against
-// previous commit first; failure at multiples of it is fault this exists for.
+// Pin every repaired performance fault to band few times its repaired cost.
+//   Generous enough to survive loaded shared runner, tight enough to catch fault class
+//   returning, since every fault below was large multiplier while it was alive.
+//   Faults themselves, their causes and their measurements live in PROVENANCE.md's
+//   performance ledger.
+//   Raising band is sign-off.
+//     Band is changed only with justification recorded beside ledger entry it pins,
+//     never adjusted to quiet failure unexamined.
+//     Failure just past band on slow run says re-measure against previous commit
+//     first; failure at multiples of it is fault this exists for.
 const BANDS_PERF = {
   hover_pick_ms: 5, // Repaired 1.5 ms; scene-copy-per-slot fault measured 7.1.
   anchor_us: 100, // Repaired 8 us; extent-tuple + Item-copy fault measured 280.
@@ -2117,10 +2145,10 @@ const BANDS_PERF = {
   debug_layer_ms: 12, // Repaired 4.7 ms; per-piece lattice fades measured 18.5.
 };
 
-// Hover pick must stay off copy paths: it walks scene by slot (never through
-// `pairs`, whose Item carries whole Scene by value on this backend) and steps
-// horizon circle off fixed angle table. It runs on every pointer move, which is why
-// no frame row ever showed it.
+// Hover pick must stay off copy paths:
+//   it walks scene by slot (never through `pairs`, whose Item carries whole Scene by value on this
+//   backend) and steps horizon circle off fixed angle table.
+//   It runs on every pointer move, which is why no frame row ever showed it.
 const pin_pick = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
   nimUpdateCursor(canvas.clientWidth / 2, canvas.clientHeight / 2);
@@ -2138,8 +2166,8 @@ reportWithin(
   'ms median',
 );
 
-// Anchor lookup must stay projection, not copy: overlay view cache hands out
-// no `(DrawExtent, Matrix4)` value pair, and item is read by slot.
+// Anchor lookup must stay projection, not copy:
+//   overlay view cache hands out no `(DrawExtent, Matrix4)` value pair, and item is read by slot.
 const pin_anchor = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
   const slot = nimSceneSlots()[0];
@@ -2155,8 +2183,8 @@ reportWithin(
 );
 
 // Marker and its pulse must shape into caller storage and off fixed angle table:
-// `markerFor` fills shared `var Marker`, nothing walks its fixed arrays through
-// nimCopy, and loop and band rings are stepped rather than assembled.
+//   `markerFor` fills shared `var Marker`, nothing walks its fixed arrays through nimCopy, and loop
+//   and band rings are stepped rather than assembled.
 //   **Worst live shape, never slot zero.** Point's marker is ring of four
 // floats and line's or plane's is sampled outline order of magnitude dearer, so
 // pin that happened to time point would pass while selected plane cost multiples
@@ -2180,9 +2208,9 @@ reportWithin(
   pin_marker.ms, 0, BANDS_PERF.marker_pair_ms, 'ms mean',
 );
 
-// Grid and CPU emit must stay at one record per line with fog fade in
-// fragment shader: moving-camera rebuild is frame this repository has spent
-// most rounds on, and its cost is line count and nothing else now.
+// Grid and CPU emit must stay at one record per line with fog fade in fragment shader:
+//   moving-camera rebuild is frame this repository has spent most rounds on, and its cost is line
+//   count and nothing else now.
 const pin_grid = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
   const aspect = canvas.width / canvas.height;
@@ -2210,8 +2238,8 @@ reportWithin(
   BANDS_PERF.emitting_moving_ms, 'ms median',
 );
 
-// Debug layer must keep riding shared lattice machinery: traced plane is
-// lattice lines at one record each, not fade pieces, and trace is read by slot.
+// Debug layer must keep riding shared lattice machinery:
+//   traced plane is lattice lines at one record each, not fade pieces, and trace is read by slot.
 const pin_debug = await page.evaluate(() => {
   const canvas = document.getElementById('gl');
   const aspect = canvas.width / canvas.height;
@@ -2230,9 +2258,9 @@ reportWithin(
   BANDS_PERF.debug_layer_ms, 'ms median',
 );
 
-// Overlay must reuse its own SVG elements rather than rebuilding layer: mark
-// nodes standing now, let draw loop run, and same nodes must still be there --
-// layer cleared with innerHTML creates fresh nodes every frame and keeps none.
+// Overlay must reuse its own SVG elements rather than rebuilding layer:
+//   mark nodes standing now, let draw loop run, and same nodes must still be there -- layer cleared
+//   with innerHTML creates fresh nodes every frame and keeps none.
 await page.keyboard.press('Home'); // Earlier checks left camera wherever they orbited
 await page.waitForTimeout(800); //   it; hover below needs anchor actually on screen.
 const pixel_hover_pool = await pixelOf((await page.evaluate(() => nimSceneSlots()))[0]);
@@ -2258,10 +2286,11 @@ report(
 
 /* ---- Touch drags as finger really performs them ----   */
 
-// Last of checks, and deliberately so: these build objects, and budget and zoom
-// checks above are written against opening scene's own weight and layout.
+// Last of checks, and deliberately so:
+//   these build objects, and budget and zoom checks above are written against opening scene's own
+//   weight and layout.
 
-// `Home` glides camera back rather than snapping it, so anything that reads object's
+// `Home` glides camera back rather than snapping it, so anything that reads object's.
 //   own pixel has to wait for glide to finish -- pixel read mid-flight names where
 //   object *was*, and press then lands on empty space.
 async function settleCamera() {
@@ -2287,7 +2316,7 @@ await clearTheGlass();
 await page.keyboard.press('Home');
 await settleCamera();
 await page.evaluate(() => nimSelectClear());
-// Read afresh, for same reason section above says: checks between here and
+// Read afresh, for same reason section above says: checks between here and.
 //   opening scene delete and build, so slot list captured up there is stale.
 const points_live = await page.evaluate(() => nimSceneSlots()
   .filter((slot) => nimItemShapeWord(slot) === 'point'));
@@ -2297,7 +2326,7 @@ const camera_before_creep = await page.evaluate(() => ({
 }));
 const from_creep = await pixelOf(points_live[0]);
 const onto_creep = await pixelOf(points_live[1]);
-// Four steps of third of slop each, so gesture spends three moves under
+// Four steps of third of slop each, so gesture spends three moves under.
 //   threshold before crossing it -- exactly frames that used to orbit.
 const step_creep = (await page.evaluate(() => nimTapSlop())) / 3;
 await touchAt('touchStart', [{ x: from_creep[0], y: from_creep[1] }]);
@@ -2311,7 +2340,7 @@ for (let step = 1; step <= 4; step += 1) {
   }]);
   await page.waitForTimeout(35);
 }
-// **Finger chases object's live pixel, not memorised one.** Press starts
+// **Finger chases object's live pixel, not memorised one.** Press starts.
 //   aim tween, which glides camera target toward drag -- so every anchor
 //   moves on screen while gesture is still in flight. Real finger tracks thing
 //   it is reaching for; finger creeping to where object stood at press misses
@@ -2325,7 +2354,7 @@ for (let step = 1; step <= 8; step += 1) {
   }]);
   await page.waitForTimeout(35);
 }
-// And last touch settles on wherever object stands now, so hover read below
+// And last touch settles on wherever object stands now, so hover read below.
 //   is claim about picking rather than about how far tween happened to get.
 const onto_final = await pixelOf(points_live[1]);
 await touchAt('touchMove', [{ x: onto_final[0], y: onto_final[1] }]);
@@ -2398,7 +2427,7 @@ await touchAt('touchEnd', []);
 await page.waitForTimeout(400);
 const slot_plane_made = await page.evaluate(() => nimSceneSlots()
   .find((slot) => nimItemShapeWord(slot) === 'plane' && nimItemLabel(slot) !== 'ground'));
-// Sweep canvas for pixel that picks it. Disc this size covers good part of
+// Sweep canvas for pixel that picks it. Disc this size covers good part of.
 //   view, so finding none at all is fault this guards against.
 const pixels_on_plane = slot_plane_made === undefined ? 0 : await page.evaluate((slot) => {
   let found = 0;
@@ -2417,13 +2446,14 @@ report(
   `plane slot ${slot_plane_made}, picked at ${pixels_on_plane} sampled pixels`,
 );
 
-// **And from underneath it, not only from above.** Plane has two faces and neither is
-// its front: hit test asks where sight ray crosses, and where is not side.
-// shipped fault read crossing's *orientation* as its depth, so plane met from behind
-// its own normal reported itself behind eye and went unpickable over its whole disc --
-// reported as "I can only select a plane from one side". Ground plane is honest
-// subject for pin: it lies flat, so above and below are same view mirrored, and
-// reading that differs between them is sign leaking back in rather than geometry.
+// Pick plane from underneath it too, not only from above.
+//   Plane has two faces and neither is its front: hit test asks where sight ray crosses,
+//   and where is not side.
+//   Reading crossing's orientation as its depth makes plane met from behind its own
+//   normal report itself behind eye and go unpickable over its whole disc.
+//   Ground plane is honest subject for pin: it lies flat, so above and below are same
+//   view mirrored, and reading that differs between them is sign leaking back in rather
+//   than geometry.
 const slot_ground = await page.evaluate(() => nimSceneSlots()
   .find((slot) => nimItemLabel(slot) === 'ground'));
 const seenFromElevation = (elevation) => page.evaluate(([slot, rise]) => {
@@ -2438,7 +2468,7 @@ const seenFromElevation = (elevation) => page.evaluate(([slot, rise]) => {
   }
   return found;
 }, [slot_ground, elevation]);
-// Everything else hidden, so point or line standing in front cannot take pixel
+// Everything else hidden, so point or line standing in front cannot take pixel.
 //   plane would otherwise have answered for and make two sides differ for that reason.
 const hidden_for_sides = await page.evaluate((keep) => {
   const hidden = nimSceneSlots().filter((slot) => slot !== keep && nimItemVisible(slot));
@@ -2530,8 +2560,8 @@ report(
 // halves are held here, and second is checked through **drawn pixels** rather than
 // through flag: hold that released but drew old records would pass flag check.
 await page.evaluate(() => {
-  // Debug layer refuses hold outright (it draws cursor's own ray), and
-  //   earlier check left it on.
+  // Switch debug layer off, since it refuses hold outright and earlier check left it on.
+  //   It draws cursor's own ray.
   const chip = document.getElementById('toggle-algebra');
   if (chip.classList.contains('on')) chip.click();
   nimSelectClear();
@@ -2570,11 +2600,12 @@ report(
   `${idle.held} held, ${idle.built} rebuilt over ~1.2 s`,
 );
 
-// What frame loop last drew, hashed on coarse pixel grid: enough to notice object
-//   appearing, vanishing, moving or changing colour.
+// Hash what frame loop last drew on coarse pixel grid.
+//   Enough to notice object appearing, vanishing, moving or changing colour.
 const drawnSignature = () => page.evaluate(() => window.__drawn);
-// Each edit path in turn, through very export page's own controls call. What is
-//   asserted after each: next frames were rebuilt, not held, **and canvas changed**.
+// Drive each edit path in turn, through very export page's own controls call.
+//   What is asserted after each: next frames were rebuilt, not held, and canvas
+//   changed.
 const edits = [
   ['hiding an item', () => nimSetVisible(nimSceneSlots()[1], false)],
   ['showing it again', () => nimSetVisible(nimSceneSlots()[1], true)],
@@ -2636,12 +2667,12 @@ report(
   `${cells_shut} pool-strip rebuilds over ~1.5 s with the drawer shut`,
 );
 
-// And with drawer *and its diagnostics section* open, grid is drawn when scene
-// changes and not on every tick: at capacity of 1,024 that walk is about millisecond,
-// five times second, for picture that moves when object is added or removed and at no
-// other time. **Section has to be opened too**: tick returns immediately while it is
-// collapsed, so check that only opens drawer proves nothing about gate it names --
-// it was passing against refresh that never ran.
+// Check grid is drawn when scene changes and not on every tick.
+//   With drawer and its diagnostics section open.
+//   Walk over every slot per tick would be paid for picture that moves when object is
+//   added or removed and at no other time.
+//   Section has to be opened too: tick returns immediately while it is collapsed, so
+//   check that only opens drawer proves nothing about gate it names.
 await page.evaluate(() => {
   document.getElementById('btn-drawer').click();
   document.querySelector('.section[data-section="diagnostics"]').classList.add('open');
@@ -2655,8 +2686,8 @@ report(
   `${cells_open} pool-grid draws over ~1.5 s with the drawer and section open`,
 );
 
-// Remove is scene change, so it must reach picture -- other half of same
-// gate, and half "costs nothing" check can never fail.
+// Check remove reaches picture, since it is scene change.
+//   Other half of same gate, and half "costs nothing" check can never fail.
 const pool_edit = await page.evaluate(async () => {
   const wait = (n) => new Promise((r) => setTimeout(r, n));
   window.__cells = 0;
@@ -2677,9 +2708,9 @@ report(
 // right. This asks two questions that would have.
 const pool_grid = await page.evaluate(() => {
   const grid = document.getElementById('pool-grid');
-  // Read from draw itself rather than re-derived here: choice of cell size is
-  //   thing being checked, and check that repeats derivation agrees with itself
-  //   whatever reached canvas.
+  // Read from draw itself rather than re-deriving here.
+  //   Choice of cell size is thing being checked, and check that repeats derivation
+  //   agrees with itself whatever reached canvas.
   const { cell, columns, rows } = geometry_pool_drawn;
   const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
   // What actually reached canvas, rather than what arithmetic hoped for.
@@ -2821,8 +2852,8 @@ report(
     demo.tally.line >= 2 && demo.tally.line <= 3,
   Object.entries(demo.tally).map(([word, n]) => `${word} ${n}`).join(', '),
 );
-// And camera it leaves is standing back far enough to see what it just built: on
-//   opening camera demo loads *inside* its own inner planets.
+// Check camera it leaves is standing back far enough to see what it just built.
+//   On opening camera demo loads inside its own inner planets.
 report(
   'and it stands the camera back far enough to hold what it built',
   demo.distance > 40,
@@ -2963,15 +2994,15 @@ await page.evaluate(() => {
   if (chip.classList.contains('on')) chip.click();
 });
 await page.waitForTimeout(200);
-// Drag is also check below it: construction gesture released on **full** scene
-//   used to reach `scene.addItem` through shared code with no `isFull` between, and take
-//   whole page down with assertion. Every panel path guarded it; gesture did
-//   not, and nothing could reach full scene in one step until this preset existed.
-//   **Preset stopped being full when it grew.** It fills target and leaves rest of
-//   pool free on purpose, so reader can build on top of loaded demo -- which means
-//   gesture below now legitimately succeeds and this check silently stopped checking
-//   anything. Take free slots first. Copying point demo already placed, rather than
-//   composing one here, because what is under test is gesture's own guard.
+// Fill free slots first, so drag below meets full scene.
+//   Construction gesture released on full scene must refuse through `isFull` rather
+//   than take whole page down with assertion; every panel path guards it, and gesture
+//   reaches `scene.addItem` through shared code.
+//   Preset fills target and leaves rest of pool free on purpose, so reader can build on
+//   top of loaded demo, which means gesture below would legitimately succeed and this
+//   check would silently check nothing.
+//   Copying point demo already placed, rather than composing one here, because what is
+//   under test is gesture's own guard.
 await page.evaluate(() => {
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   while (nimSceneCount() < nimSceneCapacity()) nimAddItem(model, 'filler', nimDefaultInk(), 0);
@@ -2991,8 +3022,9 @@ await page.evaluate(() => {
   if (!section.classList.contains('open')) section.querySelector('.section-header').click();
 });
 await page.waitForTimeout(300);
-// Only now start window accounting below reads: fill is eighty committed edits
-//   back to back, which is not ordinary picture this measures.
+// Start window accounting below reads only now.
+//   Fill is many committed edits back to back, which is not ordinary picture this
+//   measures.
 await page.evaluate(() => { window.__phase_frame = []; });
 await page.mouse.move(720, 450);
 await page.mouse.down();
@@ -3109,9 +3141,10 @@ const drawer_dom = await page.evaluate(() => ({
   forms: document.querySelectorAll('#objects-list .item-edit').length,
 }));
 report(
-  // Bounded per row rather than outright: row count is scene's, and check written
-  // against fixed ceiling stops meaning anything moment capacity moves. Nine
-  // elements row is what collapsed row costs; slack covers rest of page.
+  // Bound per row rather than outright.
+  //   Row count is scene's, and check written against fixed ceiling stops meaning
+  //   anything moment capacity moves.
+  //   Nine elements row is what collapsed row costs; slack covers rest of page.
   'a closed row builds no edit form, so the page holds thousands of elements and not tens',
   drawer_dom.rows >= ITEMS_DEMO_LOAD && drawer_dom.forms === 0 &&
     drawer_dom.elements < 12 * drawer_dom.rows,
@@ -3120,8 +3153,8 @@ report(
     `${drawer_dom.forms} edit forms`,
 );
 
-// And opening one row builds exactly one form -- check that keeps guard above from
-// being way to break editing rather than way to make it cheap.
+// Check opening one row builds exactly one form.
+//   Keeps guard above from being way to break editing rather than way to make it cheap.
 const drawer_open_row = await page.evaluate(() => {
   document.querySelector('.section[data-section="objects"]').classList.add('open');
   document.querySelector('#objects-list .item-edit-toggle').click();
@@ -3227,8 +3260,8 @@ const cadence_tick = await page.evaluate(async () => {
   };
   await wait(3000);
   const open = { ticks, curves };
-  // And with section collapsed inside open drawer, whole tick is skipped: both
-  //   canvases used to fall back to made-up 300-pixel width and draw for nobody.
+  // Check whole tick is skipped with section collapsed inside open drawer.
+  //   Both canvases would otherwise fall back to made-up width and draw for nobody.
   document.querySelector('.section[data-section="diagnostics"]').classList.remove('open');
   ticks = 0; curves = 0;
   await wait(1500);

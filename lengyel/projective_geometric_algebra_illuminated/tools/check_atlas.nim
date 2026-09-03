@@ -1,17 +1,16 @@
 ## Hold desktop font atlas to text visualiser can put on screen.
 ##
-## Enumerates every codepoint reachable in UI text from tables that produce it (operation
-## notation, basis element names, shape words), then reads glyph ranges `gui_shim.cpp`
-## builds atlas from and reports any codepoint no range covers. Codepoint outside every
-## range renders as tofu box, which shipped for geometric product and antiproduct.
-##
-## Both sides are read from source rather than transcribed: codepoints from same `lut_*`
-## tables panel draws, ranges from `gui_shim.cpp` itself. Neither can drift from what is
-## compiled without this noticing.
-##
-## Covers desktop atlas only. Browser embeds whole faces; its coverage is question about
-## font files rather than ranges.
-##
+## Enumerates every codepoint reachable in UI text from tables that produce it.
+##   Operation notation, basis element names, shape words.
+##   Then reads glyph ranges `gui_shim.cpp` builds atlas from and reports any codepoint no
+##   range covers.
+##   Codepoint outside every range renders as tofu box.
+## Both sides are read from source rather than transcribed.
+##   Codepoints from same `lut_*` tables panel draws, ranges from `gui_shim.cpp` itself.
+##   Neither can drift from what is compiled without this noticing.
+## Covers desktop atlas only.
+##   Browser embeds whole faces; its coverage is question about font files rather than
+##   ranges.
 ## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_atlas tools/check_atlas.nim && bin/check_atlas
 
@@ -25,7 +24,7 @@ import ../visualiser/core/[boundary, scene]
 #[ Source Locations ]#
 
 const PATH_SHIM = "visualiser/desktop/gui_shim.cpp"
-  ## Where atlas ranges are declared, relative to project root this is run from.
+  ## Name where atlas ranges are declared, relative to project root this is run from.
 
 
 
@@ -33,20 +32,21 @@ const PATH_SHIM = "visualiser/desktop/gui_shim.cpp"
 
 proc codepointsReachable(): HashSet[Rune] =
   ## Collect every codepoint desktop UI can draw as part of item's text.
-  ##   Drawn from tables themselves, so this grows with them. Not covered: text written
-  ## literally at call site (button caption, section heading), plain Latin base range
-  ## covers wholesale.
-  # Each table entry is bound to local before being walked: `runes` takes open array over
-  #   its argument, and over temporary read from `const` array that open array outlives
-  #   what it points at; measured as segfault on first entry.
+  ##   Drawn from tables themselves, so this grows with them.
+  ##   Not covered: text written literally at call site (button caption, section
+  ##   heading), plain Latin base range covers wholesale.
+  # Bind each table entry to local before walking it.
+  #   `runes` takes open array over its argument, and over temporary read from `const`
+  #   array that open array outlives what it points at; segfaults on first entry.
   for operation in Operation:
     let notation = $lut_operation_to_notation[operation]
     for rune in runes(notation): result.incl(rune)
   for b in Basis:
     let name = lut_basis_to_name[b]
     for rune in runes(name): result.incl(rune)
-  # Every shape word, taken from writer rather than by listing: point, line and plane,
-  #   each finite and at horizon, plus mixed grade, is every branch `describeShape` has.
+  # Take every shape word from writer rather than by listing.
+  #   Point, line and plane, each finite and at horizon, plus mixed grade, is every branch
+  #   `describeShape` has.
   let
     place = toMultivector(Position(x: 1.0, y: 2.0, z: 3.0))
     other = toMultivector(Position(x: -2.0, y: 1.0, z: 4.0))
@@ -56,8 +56,7 @@ proc codepointsReachable(): HashSet[Rune] =
   for m in [place, line, plane, ⊖ place, ⊖ line, ⊖ plane, 1.0 + place]:
     let word = shapeText(m)
     for rune in runes(word): result.incl(rune)
-  # Magnitude contributes digits, sign, point and exponent marker; taken from formatter
-  #   rather than assumed.
+  # Take digits, sign, point and exponent marker from formatter rather than assuming.
   for value in [0.0, -1.5, 6.02e23, 1.0e-7]:
     let printed = multivectorText(initElement(Basis.scalar, value))
     for rune in runes(printed): result.incl(rune)
@@ -66,14 +65,15 @@ proc codepointsReachable(): HashSet[Rune] =
 
 #[ Declared Ranges ]#
 
-type Range = object ## Hold one inclusive span of codepoints atlas builds glyphs for.
+type Range = object ## Define one inclusive span of codepoints atlas builds glyphs for.
   first*, last*: int
 
 proc rangesDeclared(path: string): seq[Range] =
   ## Read every glyph range `gui_shim.cpp` declares, from file itself.
   ##   Parsed rather than mirrored: mirror of C++ array in Nim is second copy of thing
-  ## being checked. Looks only at lines inside `ImWchar RANGES...[] = {` block, so hex
-  ## literal elsewhere cannot widen what this believes is covered.
+  ##   being checked.
+  ##   Looks only at lines inside `ImWchar RANGES...[] = {` block, so hex literal
+  ##   elsewhere cannot widen what this believes is covered.
   var is_inside = false
   for line in lines(path):
     let trimmed = line.strip()
@@ -116,7 +116,7 @@ proc main() =
 
   var missing: seq[Rune]
   for rune in reachable:
-    # Space and control range below it are never drawn as glyph, so no gap there.
+    # Skip space and control range below it, never drawn as glyph.
     if int(rune) <= 0x20: continue
     if not ranges.covers(rune): missing.add(rune)
 

@@ -46,10 +46,10 @@ const SAMPLES_CET_I1: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.87850, 0.61462, 0.38312),
   (0.92406, 0.59059, 0.40246),
   (0.96644, 0.56505, 0.42674),
-] ## CET-I1 at seventeen even samples of its 256 entries, sRGB-encoded in 0 .. 1.
+] ## Sample CET-I1 at seventeen even points of its 256 entries, sRGB-encoded in 0 .. 1.
   ##   Transcribed, not derived, like OKLab matrices in `colour.nim`: published data.
-  ## Seventeen rather than 256 because shipped ramp is interpolated between them, and
-  ## error that costs is measured below.
+  ##   Seventeen rather than 256 because shipped ramp is interpolated between them, and
+  ##   error that costs is measured below.
 
 
 const MAP_CET_I1: array[256, (float, float, float)] = [
@@ -309,20 +309,23 @@ const MAP_CET_I1: array[256, (float, float, float)] = [
   (0.96130, 0.56834, 0.42348),
   (0.96388, 0.56671, 0.42511),
   (0.96644, 0.56505, 0.42674),
-] ## CET-I1 whole, all 256 entries, for measuring what sampling it seventeen ways costs.
+] ## Hold CET-I1 whole, all 256 entries, for measuring what sampling it seventeen ways costs.
   ##   Kept in this tool alone: nothing ships it.
 
 const
   TOLERANCE_CHANNEL = 0.5/255.0
-    ## How far regenerated channel may sit from shipped one: half display step, most
-    ## correct table can differ by through rounding to eight bits.
+    ## Bound how far regenerated channel may sit from shipped one.
+    ##   Half display step, most correct table can differ by through rounding to eight
+    ##   bits.
   SEPARATION_INTERPOLATED_MAX = 1.5
-    ## How far interpolated ramp may stray from full 256-entry map between two samples, in
-    ## OKLab distance `colour.separation` reports. Under 2 is below threshold at which
-    ## difference is noticeable, which makes seventeen samples enough.
+    ## Bound how far interpolated ramp may stray from full 256-entry map between samples.
+    ##   In OKLab distance `colour.separation` reports.
+    ##   Under 2 is below threshold at which difference is noticeable, which makes
+    ##   seventeen samples enough.
   SEPARATION_ENDS_MIN = 25.0
-    ## How far apart ramp's two ends must read, so "sliver of frame" and "half frame" are
-    ## never mistaken. Floor catches re-lighting that flattened them.
+    ## Bound below how far apart ramp's two ends must read.
+    ##   "Sliver of frame" and "half frame" are then never mistaken.
+    ##   Floor catches re-lighting that flattened them.
 
 
 
@@ -334,10 +337,11 @@ func lightnessOf(colour: (float, float, float)): float =
 
 
 func relit(sample: (float, float, float); lightness: float): (float, float, float) =
-  ## Rebuild one CET-I1 sample at given OKLab lightness, keeping its hue and as much of
-  ## its chroma as sRGB shows there.
+  ## Rebuild one CET-I1 sample at given OKLab lightness, keeping its hue.
+  ##   Keeps as much of its chroma as sRGB shows there.
   ##   Chroma is reduced rather than clamped per channel: clamping bends hue, whole signal
-  ## here. Search is bisection on scale factor, exact enough at eight bits.
+  ##   here.
+  ##   Search is bisection on scale factor, exact enough at eight bits.
   let source = toOklab(toLinear(sample[0], sample[1], sample[2]))
   func fits(scale: float): bool =
     let candidate = toLinear(Oklab(
@@ -368,7 +372,7 @@ func relit(sample: (float, float, float); lightness: float): (float, float, floa
 proc lightnessToken(name: string): float =
   ## Read one CSS custom property out of `shell.html` and report its OKLab lightness.
   ##   Read rather than transcribed: token edited in stylesheet must move ramp with it or
-  ## fail this tool.
+  ##   fail this tool.
   let source = readFile(currentSourcePath().parentDir / ".." /
     "visualiser" / "browser" / "shell.html")
   for line in source.splitLines():
@@ -386,12 +390,13 @@ proc lightnessToken(name: string): float =
 
 
 proc main() =
-  ## Regenerate ramp, compare it to what ships, and report every measurement.
+  ## Rebuild ramp, compare it to what ships, and report every measurement.
   let
     lightness_label = lightnessToken("--ink-muted")
     lightness_ink = lightnessToken("--ink")
-    # Row's value is drawn one small step brighter than its label, step untinted rows take
-    #   between `--ink-muted` and `--ink`. Lifting whole way would wash hue out of number.
+    # Draw row's value one small step brighter than its label.
+    #   Step untinted rows take between `--ink-muted` and `--ink`; lifting whole way
+    #   would wash hue out of number.
     lightness_value = lightness_label + LIFT_VALUE_RAMP*(lightness_ink - lightness_label)
   var failures = 0
 
@@ -403,7 +408,7 @@ proc main() =
     &"(--ink {lightness_ink:.4f}, lift {LIFT_VALUE_RAMP})."
 
   if paramCount() >= 1 and paramStr(1) == "--emit":
-    # Table as `ramp.nim` wants it, for one case token legitimately moves.
+    # Print table as `ramp.nim` wants it, for one case token legitimately moves.
     for (lightness, name) in [(lightness_label, "label"), (lightness_value, "value")]:
       echo &"# {name}"
       for i in 0 ..< STEPS_RAMP_TREE:
@@ -411,8 +416,8 @@ proc main() =
         echo &"  ({red:.5f}, {green:.5f}, {blue:.5f}),"
     return
 
-  # **Shipped table is this tool's answer, or it fails.** Every entry is rebuilt from map
-  #   and tokens and compared.
+  # Require shipped table to be this tool's answer, or fail.
+  #   Every entry is rebuilt from map and tokens and compared.
   var worst_channel = 0.0
   for i in 0 ..< STEPS_RAMP_TREE:
     for (shipped, lightness) in [
@@ -428,7 +433,8 @@ proc main() =
       &"-- worst channel differs by {worst_channel*255.0:.3f} of a display step",
   )
 
-  # Seventeen samples stand for 256 only if what lies between them is same colour.
+  # Check seventeen samples stand for 256.
+  #   Holds only if what lies between them is same colour.
   #   Measured against full map at every entry it does not sample.
   var worst_interpolated = 0.0
   for entry in 0 ..< 256:
@@ -454,7 +460,7 @@ proc main() =
       &"-- worst {worst_interpolated:.2f}, floor {SEPARATION_INTERPOLATED_MAX}",
   )
 
-  # Two ends must still read as different things after re-lighting.
+  # Check two ends still read as different things after re-lighting.
   for (name, ramp) in [("label", RAMP_TREE_LABEL), ("value", RAMP_TREE_VALUE)]:
     let apart = separation(
       toOklab(toLinear(ramp[0][0], ramp[0][1], ramp[0][2])),

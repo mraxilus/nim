@@ -1,22 +1,24 @@
 ## Measure how far apart two colours read, to typical vision and to dichromat vision.
 ##
-## Exists so palette's stated floors are *checked* rather than asserted: every number
-## `PROVENANCE.md` and `REQUIREMENTS.md` quote about palette came from run of
-## `check_palette.nim` beside this, and change to `mesh.lut_ink_to_rgba` breaking one
-## fails command rather than waiting to be noticed on screen.
-##
+## Exists so palette's stated floors are checked rather than asserted.
+##   Every number `PROVENANCE.md` and `REQUIREMENTS.md` quote about palette came from run
+##   of `check_palette.nim` beside this.
+##   Change to `mesh.lut_ink_to_rgba` breaking one fails command rather than waiting to
+##   be noticed on screen.
 ## Not part of visualiser: nothing here is imported by `visualiser.nim` or
-## `browser_bridge.nim`. It reads same table they draw from.
-##
+## `browser_bridge.nim`.
+##   It reads same table they draw from.
 ## Two published models are transcribed rather than derived, only things in this project
-## that are:
-##   * **OKLab** (Björn Ottosson, 2020, "A perceptual color space for image processing"),
-##     for distance tracking perceived difference. Its matrices are fit to CIECAM16.
-##   * **Machado, Oliveira and Fernandes (2009)**, "A physiologically-based model for
-##     simulation of color vision deficiency", at severity 1.0. Every floor quoted in
-##     `REQUIREMENTS.md` was calibrated against that model; Viénot-1999 and Brettel-1997
-##     give materially different numbers on borderline pairs, so choice of model is part
-##     of standard. Changing it means remeasuring every floor.
+## that are.
+##   OKLab (Björn Ottosson, 2020, "A perceptual color space for image processing"), for
+##   distance tracking perceived difference.
+##     Its matrices are fit to CIECAM16.
+##   Machado, Oliveira and Fernandes (2009), "A physiologically-based model for
+##   simulation of color vision deficiency", at severity 1.0.
+##     Every floor quoted in `REQUIREMENTS.md` was calibrated against that model.
+##     Viénot-1999 and Brettel-1997 give materially different numbers on borderline
+##     pairs, so choice of model is part of standard; changing it means remeasuring every
+##     floor.
 ## Everything else (distances, hue angles, floors) is computed here.
 
 {.experimental: "strictFuncs".}
@@ -28,15 +30,15 @@ import std/math
 #[ Type Definitions ]#
 
 type
-  Linear* = object ## Hold one colour with display encoding undone, in 0 .. 1.
+  Linear* = object ## Define one colour with display encoding undone, in 0 .. 1.
     red*, green*, blue*: float
 
-  Oklab* = object ## Hold one colour in OKLab: lightness, and two opponent axes.
+  Oklab* = object ## Define one colour in OKLab: lightness, and two opponent axes.
     lightness*: float ## 0 at black, 1 at white.
     green_red*: float ## Ottosson's `a`; negative toward green, positive toward red.
     blue_yellow*: float ## Ottosson's `b`; negative toward blue, positive toward yellow.
 
-  Deficiency* {.pure.} = enum ## Name form of colour vision deficiency to simulate.
+  Deficiency* {.pure.} = enum ## Define form of colour vision deficiency to simulate.
     Protanopia, ## Long-wavelength cone absent.
     Deuteranopia, ## Medium-wavelength cone absent.
     Tritanopia, ## Short-wavelength cone absent.
@@ -47,14 +49,14 @@ type
 
 func toLinear*(channel: float): float =
   ## Undo sRGB transfer function on one channel, so channels may be mixed.
-  ##   Every palette colour is written as what display is asked to emit, sRGB-encoded;
-  ## averaging or projecting those numbers directly is meaningless.
+  ##   Every palette colour is written as what display is asked to emit, sRGB-encoded.
+  ##   Averaging or projecting those numbers directly is meaningless.
   if channel <= 0.04045: channel/12.92
   else: pow((channel + 0.055)/1.055, 2.4)
 
 
 func toEncoded*(channel: float): float =
-  ## Reapply sRGB transfer function, inverse of `toLinear`.
+  ## Apply sRGB transfer function again, inverse of `toLinear`.
   if channel <= 0.0031308: channel*12.92
   else: 1.055*pow(channel, 1.0/2.4) - 0.055
 
@@ -86,10 +88,11 @@ func toOklab*(colour: Linear): Oklab =
 
 func toLinear*(colour: Oklab): Linear =
   ## Convert OKLab colour back to linear light, inverse of `toOklab`.
-  ##   Ottosson's inverse matrices, from same reference implementation. Needed to *build*
-  ## colour at chosen lightness rather than only measure one; see `check_ramp.nim`.
-  ##   Result may fall outside sRGB cube for lightness and chroma no display shows; caller
-  ## decides, since clamping channel and reducing chroma are different answers.
+  ##   Ottosson's inverse matrices, from same reference implementation.
+  ##   Needed to build colour at chosen lightness rather than only measure one; see
+  ##   `check_ramp.nim`.
+  ##   Result may fall outside sRGB cube for lightness and chroma no display shows.
+  ##     Caller decides, since clamping channel and reducing chroma are different answers.
   let
     l_root = colour.lightness + 0.3963377774*colour.green_red +
       0.2158037573*colour.blue_yellow
@@ -110,7 +113,7 @@ func toLinear*(colour: Oklab): Linear =
 func separation*(first, second: Oklab): float =
   ## Report how far apart two colours read, as OKLab distance scaled by 100.
   ##   Scaled so numbers land in range CIE ΔE figures do, range every floor in
-  ## `REQUIREMENTS.md` is quoted in.
+  ##   `REQUIREMENTS.md` is quoted in.
   100.0*sqrt(
     (first.lightness - second.lightness)^2 +
     (first.green_red - second.green_red)^2 +
@@ -149,14 +152,14 @@ const lut_deficiency_to_transform: array[Deficiency, array[3, array[3, float]]] 
     [-0.078411, 0.930809, 0.147602],
     [0.004733, 0.691367, 0.303900],
   ],
-] ## Map each deficiency to its Machado-Oliveira-Fernandes severity-1.0 transform over
-  ## linear RGB; see module header for citation.
+] ## Map each deficiency to its Machado-Oliveira-Fernandes severity-1.0 transform.
+  ##   Over linear RGB; see module header for citation.
 
 
 func toDeficient*(colour: Linear; deficiency: Deficiency): Linear =
   ## Report what `colour` looks like to reader with named deficiency.
   ##   Clamped on return: transform can leave sRGB cube, and negative channel is not
-  ## colour any display shows.
+  ##   colour any display shows.
   let m = lut_deficiency_to_transform[deficiency]
   func seen(row: array[3, float]): float =
     clamp(row[0]*colour.red + row[1]*colour.green + row[2]*colour.blue, 0.0, 1.0)
@@ -172,9 +175,10 @@ func separationDeficient*(first, second: Linear; deficiency: Deficiency): float 
 
 func separationRedGreen*(first, second: Linear): float =
   ## Report smaller of protan and deutan separations, figure palette floor is set against.
-  ##   Red-green alone, tritanopia measured separately: not comparable in prevalence
-  ## (red-green affects roughly one man in twelve, tritanopia fewer than one person in ten
-  ## thousand), and palette held to same floor on both collapses to single arc.
+  ##   Red-green alone, tritanopia measured separately.
+  ##     Not comparable in prevalence (red-green affects roughly one man in twelve,
+  ##     tritanopia fewer than one person in ten thousand), and palette held to same floor
+  ##     on both collapses to single arc.
   min(
     separationDeficient(first, second, Deficiency.Protanopia),
     separationDeficient(first, second, Deficiency.Deuteranopia),
