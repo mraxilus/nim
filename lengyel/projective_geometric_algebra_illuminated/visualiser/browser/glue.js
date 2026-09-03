@@ -2217,6 +2217,7 @@ const context_sparkline = sparkline.getContext('2d');
 const size_sparkline = sizeObserved(sparkline, () => askSlowPass(false, true, false, false));
 const diagnostic_frame_time = document.getElementById('diagnostic-frametime');
 const diagnostic_slowest = document.getElementById('diagnostic-slowest');
+const diagnostic_slowest_split = document.getElementById('diagnostic-slowest-split');
 const diagnostic_heap = document.getElementById('diagnostic-heap');
 const diagnostic_pool = document.getElementById('diagnostic-pool');
 const grid_pool = document.getElementById('pool-grid');
@@ -3253,10 +3254,11 @@ function refreshDiagnostics() {
   // Browser's share split where timer measured it; see `markRendered`.
   const render = written_phase.render[at_slowest] === 1
     ? ' (render ' + history_phase.render[at_slowest].toFixed(1) + ')' : '';
-  writeText(diagnostic_slowest,
-    history_frame[at_slowest].toFixed(1) + ' ms \u00b7 page ' + page.toFixed(1) +
+  writeText(diagnostic_slowest, history_frame[at_slowest].toFixed(1) + ' ms');
+  writeText(diagnostic_slowest_split,
+    page.toFixed(1) +
     (name_largest === '' ? '' : ' (' + name_largest + ' ' + largest.toFixed(1) + ')') +
-    ' \u00b7 browser ' + browser.toFixed(1) + render);
+    ' \u00b7 ' + browser.toFixed(1) + render);
 
   // Each step of drawing process, as `mean over 200 ms (median over the ring)`:
   //   short mean is what reader watches while changing something, long median is settled figure to
@@ -4264,8 +4266,38 @@ document.addEventListener('pointerdown', (e) => {
 /* Resize                                                                   */
 /* ---------------------------------------------------------------------- */
 
+// **Experiments: one suspect off at time, its cost read off rows.** Browser's main.
+//   thread spends most of frame on device after callback returns (`style + layout +
+//   paint` at 10.7 ms median of 16.7 on still scene), and page cannot tell apart from
+//   inside what it spends it on: every backdrop blur over canvas that changes each
+//   frame, canvas at full pixel ratio with antialiasing, or SVG overlay's paint. Each
+//   pill switches one off at runtime; reader flips one, watches row, and reports.
+//   None is saved: these are instruments, not settings.
+let cap_ratio_pixel = 2.5;
+function ratioPixel() {
+  return Math.min(window.devicePixelRatio || 1, cap_ratio_pixel);
+}
+function wireExperiment(id, apply) {
+  const toggle = document.getElementById(id);
+  if (toggle === null) return;
+  toggle.addEventListener('click', () => {
+    const is_on = toggle.classList.toggle('on');
+    apply(is_on);
+  });
+}
+wireExperiment('toggle-blur', (is_on) => {
+  document.body.classList.toggle('without-blur', !is_on);
+});
+wireExperiment('toggle-full-ratio', (is_on) => {
+  cap_ratio_pixel = is_on ? 2.5 : 1;
+  resize();
+});
+wireExperiment('toggle-overlay', (is_on) => {
+  svg_overlay.style.display = is_on ? '' : 'none';
+});
+
 function resize() {
-  const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
+  const ratio_pixel = ratioPixel();
   const w = Math.round(canvas.clientWidth * ratio_pixel);
   const h = Math.round(canvas.clientHeight * ratio_pixel);
   if (canvas.width !== w || canvas.height !== h) {
@@ -4369,7 +4401,7 @@ function renderFrame(now_seconds) {
   for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = data[COUNTS_DIAGNOSTIC[name]];
 
   const ms_before_draw = performance.now();
-  const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
+  const ratio_pixel = ratioPixel();
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   // Ribbon program's camera, once frame:

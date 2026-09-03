@@ -865,6 +865,12 @@
     color: var(--ink-faint);
   }
   .diagnostic-cut-row { padding-left: 12px; }
+  .diagnostic-experiments { display: flex; gap: 6px; }
+  /* Experiment: every backdrop blur off at once, so its cost can be read on device. */
+  body.without-blur * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
   .diagnostic-children { display: none; padding-left: 12px; }
   .diagnostic-node.open > .diagnostic-children { display: block; }
   .sparkline { width: 100%; height: 40px; display: block; }
@@ -1195,6 +1201,20 @@
              page authored it; this reads that frame's own slots. -->
         <div class="diagnostic-line"><span>slowest frame</span
           ><b id="diagnostic-slowest">&mdash;</b></div>
+        <div class="diagnostic-line diagnostic-cut-row"><span>page &middot; browser</span
+          ><b id="diagnostic-slowest-split">&mdash;</b></div>
+        <!-- Experiments, each switching one suspect off at runtime so its cost can be
+             read on device from rows below: every backdrop blur, canvas at full pixel
+             ratio, and SVG overlay. All on by default; none is saved. -->
+        <div class="diagnostic-line"><span>experiments</span
+          ><span class="diagnostic-experiments"
+            ><button id="toggle-blur" class="diagnostic-toggle on" type="button"
+              aria-label="backdrop blur">blur</button
+            ><button id="toggle-full-ratio" class="diagnostic-toggle on" type="button"
+              aria-label="full pixel ratio">hi-dpi</button
+            ><button id="toggle-overlay" class="diagnostic-toggle on" type="button"
+              aria-label="SVG overlay">overlay</button
+          ></span></div>
         <!-- Each step of drawing process, as `mean over last 200 ms (median over
              whole ring)` in ms, so reader can see where frame went rather than one
              opaque total. Short mean is what to watch while changing something and

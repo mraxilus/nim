@@ -1828,13 +1828,48 @@ const slowest = await page.evaluate(() => {
     recordFrameTime(i === 100 ? 30 : 16.7);
   }
   refreshDiagnostics();
-  return document.getElementById('diagnostic-slowest').textContent;
+  return document.getElementById('diagnostic-slowest').textContent + ' / ' +
+    document.getElementById('diagnostic-slowest-split').textContent;
 });
 report(
   'the slowest frame in the ring is named, split between the page and the browser',
-  slowest.startsWith('30.0 ms') && slowest.includes('page 7.0 (ui 6.0)') &&
-    slowest.endsWith('browser 23.0 (render 3.0)'),
-  `the row reads "${slowest}"`,
+  slowest === '30.0 ms / 7.0 (ui 6.0) \u00b7 23.0 (render 3.0)',
+  `the rows read "${slowest}"`,
+);
+// **Each experiment pill switches its suspect off, and back.** Blur through one class
+// on body, pixel ratio through canvas's own backing store, overlay through its display.
+const experiments = await page.evaluate(() => {
+  const gl_canvas = document.getElementById('gl');
+  const width_full = gl_canvas.width;
+  const click = (id) => document.getElementById(id).click();
+  click('toggle-blur');
+  const is_blur_off = document.body.classList.contains('without-blur');
+  click('toggle-blur');
+  const is_blur_back = !document.body.classList.contains('without-blur');
+  click('toggle-full-ratio');
+  const width_low = gl_canvas.width;
+  click('toggle-full-ratio');
+  const width_back = gl_canvas.width;
+  click('toggle-overlay');
+  const is_overlay_off = document.getElementById('overlay').style.display === 'none';
+  click('toggle-overlay');
+  const is_overlay_back = document.getElementById('overlay').style.display === '';
+  const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
+  return { is_blur_off, is_blur_back, width_full, width_low, width_back, ratio,
+    is_overlay_off, is_overlay_back };
+});
+report(
+  'each experiment pill switches its suspect off, and back on',
+  experiments.is_blur_off && experiments.is_blur_back &&
+    experiments.is_overlay_off && experiments.is_overlay_back &&
+    experiments.width_back === experiments.width_full &&
+    (experiments.ratio === 1
+      ? experiments.width_low === experiments.width_full
+      : experiments.width_low < experiments.width_full),
+  `blur ${experiments.is_blur_off}/${experiments.is_blur_back}, canvas ` +
+    `${experiments.width_full} -> ${experiments.width_low} -> ${experiments.width_back} ` +
+    `at ratio ${experiments.ratio}, overlay ${experiments.is_overlay_off}/` +
+    `${experiments.is_overlay_back}`,
 );
 await restoreRings(kept_rings);
 // **Browser's own rendering is timed, frame by frame, while panel is shown.** Message
