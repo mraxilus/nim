@@ -8,10 +8,11 @@ joinable: true
 ## Run shared suite at capacities small enough that its tests reach them.
 ##
 ## Every capacity is `.define`; at defaults suite reaches limits only where test spells
-## limit out. Shrinking them makes boundaries cheap to reach and makes any constant tuned
-## to *default* rather than derived from define fail here. `LABEL_MAX` at 12 is sharpest:
-## under length of several labels suite constructs, so truncation happens for real.
-##
-## Backend is C, matching desktop entry point: what varies is capacity, not render path;
-## see `test_4d_browser.nim` for other axis.
+## limit out.
+##   Shrinking them makes boundaries cheap to reach and makes any constant tuned to
+##   default rather than derived from define fail here.
+##   `LABEL_MAX` at 12 is sharpest: under length of several labels suite constructs, so
+##   truncation happens for real.
+## Backend is C, matching desktop entry point.
+##   What varies is capacity, not render path; see `test_4d_browser.nim` for other axis.
 include "./suites.nim"

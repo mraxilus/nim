@@ -1,15 +1,16 @@
 ## Check invariants of visualiser against deterministically sampled pool of RGA objects.
 ##
-## Suites are named after visualiser's modules rather than Lengyel's chapters: visualiser
-## is tool built on library, not replication of published equations.
+## Suites are named after visualiser's modules rather than Lengyel's chapters:
+##   visualiser is tool built on library, not replication of published equations.
 ##
 ## Pool is drawn once from seeded generator, so failure reproduces from test name alone.
 ##   Points are sampled inside box drawn extent covers, so nothing is degenerate.
 ##   Lines and planes are joined from those points, so collinear cases stay improbable.
 ##
-## `renderer`, `gui` and `panel` are absent, deliberately: each needs live OpenGL context,
-## which test runner has no business opening. What they would test sits below them:
-## `mesh` holds tessellation, `scene` operations and formatting, `camera` transforms.
+## `renderer`, `gui` and `panel` are absent, deliberately:
+##   each needs live OpenGL context, which test runner has no business opening.
+##   What they would test sits below them:
+##   `mesh` holds tessellation, `scene` operations and formatting, `camera` transforms.
 
 when compileOption("profiler"):
   import std/nimprof
@@ -23,19 +24,20 @@ import ../../visualiser/core/[
   boundary, camera, format, framing, help, history, interaction, neighbourhood, objects,
   orrery, scene, selection, starfield, storyboard, tessellate,
 ]
-# Arena, PNG encoder and GIF encoder are desktop-only: each binds C entry
+# Arena, PNG encoder and GIF encoder are desktop-only: each binds C entry.
 #   point JS backend has none of. Their own suites are guarded to match, below.
 #   `std/endians` joins them because only desktop cases build scene-file bytes by
 #   hand, and they write format's own byte order rather than host's.
 when not defined(js):
   import std/endians
   import ../../visualiser/desktop/[arena, gif, image]
-# `{.all.}` so suite can check `marker`'s own private helpers directly rather than
+# `{.all.}` so suite can check `marker`'s own private helpers directly rather than.
 #   only through markers they end up shaping -- `directionAcross` is whole of why
 #   line's rails converge, and is worth asserting on its own terms.
 import ../../visualiser/core/marker {.all.}
-# Likewise `picking`: `isBeyondDisc` is broad phase whose only property worth pinning --
-#   never rejecting hit meet would accept -- is stated against it directly.
+# Treat `picking` likewise.
+#   `isBeyondDisc` is broad phase whose only property worth pinning, never rejecting hit
+#   meet would accept, is stated against it directly.
 import ../../visualiser/core/picking {.all.}
 
 randomize(0)
@@ -47,7 +49,7 @@ const
   TOLERANCE_PLACES_TEST {.define: "visualiser.tolerance_places".} = 9
   TOLERANCE_TEST = 10.0.pow(-float(TOLERANCE_PLACES_TEST))
   TOLERANCE_SINGLE = 1.0e-5
-    ## Loosen tolerance for values that passed through 32-bit storage.
+    ## Widen tolerance for values that passed through 32-bit storage.
     ##   Matrices and vertices are single precision, as that is what GPU consumes,
     ##   so comparing them against double-precision geometry at full tolerance is wrong.
 
@@ -76,11 +78,12 @@ for i in 0 ..< SAMPLES:
   PLANES[i] = POINTS[i] ∧ POINTS[j] ∧ POINTS[k]
 
 const COUNT_GENERAL = 12
-  ## Points enough for two disjoint families of one point, one line and one plane.
+  ## Hold points enough for two disjoint families of one point, one line and one plane.
 
 func generalPlace(index: int): Position =
-  ## Place one of family of points in **general position**: no three collinear and no
-  ## four coplanar, so shape built from any of them is incident with none of rest.
+  ## Place one of family of points in **general position**:
+  ##   no three collinear and no four coplanar, so shape built from any of them is incident with
+  ##   none of rest.
   ##   Read off moment curve (t, t², t³), where that is theorem rather than hope:
   ##   4x4 matrix of (1, t, t², t³) over four distinct parameters is Vandermonde and
   ##   so never singular. Scaled to extent rest of suite works at.
@@ -160,8 +163,8 @@ func transform(matrix: Matrix4; p: Position; weight: float): array[4, float] =
 
 
 proc formatMultivectorString(m: Multivector): string =
-  ## Format into stack buffer exactly as panel does, then read it back as
-  ## `string` test can compare against; production code never takes this last step.
+  ## Format into stack buffer exactly as panel does, then read it back as `string`.
+  ##   Test can compare against that; production code never takes this last step.
   var
     buffer: array[128, char]
     cursor = 0
@@ -244,7 +247,7 @@ suite "Objects":
 
 
   test "the incidence vocabulary answers what the classical forms answer, sign included":
-    # Classical forms live HERE, in test, and algebra lives in `objects.nim`
+    # Classical forms live HERE, in test, and algebra lives in `objects.nim`.
     #   -- holding two equal is project's purpose, and it is also what pins every
     #   sign and argument order before anything downstream leans on them. Deterministic
     #   scatter, so failure names same case on every run.
@@ -259,7 +262,7 @@ suite "Objects":
       while norm(d) < 0.1: d = Direction(x: pseudo(), y: pseudo(), z: pseudo())
       normalize(d).get
 
-    # One fixed pin first: point one unit along plane's own construction
+    # One fixed pin first: point one unit along plane's own construction.
     #   direction reads exactly +1 -- `plane ∨ point`, in that order; other order
     #   negates and must not be what ships.
     let plane_pin = planeThrough(
@@ -269,7 +272,7 @@ suite "Objects":
     check depthAgainst(plane_pin, toMultivector(Position(x: 0, y: 0, z: 3))) =~ 1.0
     check depthAgainst(plane_pin, toMultivector(Position(x: 0, y: 0, z: 2))) =~ 0.0
     check depthAgainst(plane_pin, toMultivector(Position(x: 5, y: -4, z: 1))) =~ -1.0
-    # Doubled construction direction must change nothing: `planeThrough` unitizes, so
+    # Doubled construction direction must change nothing: `planeThrough` unitizes, so.
     #   depth read is metric whatever length caller's direction happened to have.
     let plane_doubled = planeThrough(
       toMultivector(Position(x: 0, y: 0, z: 2)),
@@ -296,14 +299,14 @@ suite "Objects":
     let level = levelPlaneThrough(toMultivector(Position(x: 1, y: 2, z: 4)))
     check depthAgainst(level, toMultivector(Position(x: -9, y: 6, z: 7))) =~ 3.0
 
-    # Centroid, folded one place at time, against mean written out here. Sum
+    # Centroid, folded one place at time, against mean written out here. Sum.
     #   of unit-weight points carries weight n and total of coordinates, so
     #   division `position` already does *is* averaging -- which is claim.
     let places = [
       Position(x: 3.0, y: -1.0, z: 2.0), Position(x: -5.0, y: 4.0, z: 0.5),
       Position(x: 1.0, y: 9.0, z: -3.5), Position(x: 8.0, y: -2.0, z: 6.0),
     ]
-    # Fold starts from first point itself -- one place is its own middle -- and
+    # Fold starts from first point itself -- one place is its own middle -- and.
     #   carries running sum as multivector, so nothing has to be told count.
     var middle = toMultivector(places[0])
     check position(middle).get =~ places[0]
@@ -314,12 +317,12 @@ suite "Objects":
         sum_x += places[i].x
         sum_y += places[i].y
         sum_z += places[i].z
-      # Every prefix, not only whole: incremental fold that is right at end and
+      # Every prefix, not only whole: incremental fold that is right at end and.
       #   wrong halfway is right by luck, and camera reads it at every length.
       check position(middle).get =~ Position(
         x: sum_x/float(counted + 1), y: sum_y/float(counted + 1), z: sum_z/float(counted + 1)
       )
-      # And sum's own weight *is* how many places it is middle of -- which is what
+      # And sum's own weight *is* how many places it is middle of -- which is what.
       #   lets running total stand in for count nobody carries.
       check middle[Basis.E4] =~ float(counted + 1)
 
@@ -327,7 +330,7 @@ suite "Objects":
 
 suite "Camera":
   test "the eye assembled through the algebra is the eye the trig names":
-    # `camera.eye` places point as multivector sum; spherical closed form lives
+    # `camera.eye` places point as multivector sum; spherical closed form lives.
     #   HERE. Angles are parametrization -- what is checked is placement.
     var seed = 27.0
     proc pseudo(): float =
@@ -411,7 +414,7 @@ suite "Camera":
 
 
   test "the clip planes follow the orbit distance, rather than where they were built":
-    # Bug this guards: pair was stored at construction and kept its value through
+    # Bug this guards: pair was stored at construction and kept its value through.
     #   every dolly, so far plane sat at fixed 400 while orbit could reach 500 --
     #   dollying past it clipped whole scene away, and well before that line's own far
     #   end came back inside frame and read as stopping in mid-air. Deriving both is
@@ -421,13 +424,13 @@ suite "Camera":
     camera.dolly(4.0)
     check camera.distanceNear =~ 4.0*near_opened
     check camera.distanceFar =~ 4.0*far_opened
-    # Scaled together, so frustum keeps its shape and depth buffer its precision --
-    #   function of far-to-near ratio -- however far camera stands.
+    # Scale together, so frustum keeps its shape and depth buffer its precision.
+    #   Precision is function of far-to-near ratio, however far camera stands.
     check camera.distanceFar/camera.distanceNear =~ far_opened/near_opened
 
 
   test "an orbit distance has a floor and no ceiling":
-    # Floor is geometry: at zero eye coincides with its target and every direction
+    # Floor is geometry: at zero eye coincides with its target and every direction.
     #   derived from line joining them collapses. Ceiling was round number, and
     #   reader who dollied out to look at something kilometre across simply stopped.
     check distanceHeld(0.0) =~ DISTANCE_LIMIT_NEAR
@@ -443,7 +446,7 @@ suite "Camera":
 
 
   test "the camera still derives a frame and a transform a thousand kilometres out":
-    # Nothing downstream of distance has ceiling of its own: both clip planes are
+    # Nothing downstream of distance has ceiling of its own: both clip planes are.
     #   fractions of it, so frustum keeps its shape however far eye stands.
     let camera = initCamera(target = ORIGIN, distance = 1.0e6, azimuth = 0.9, elevation = 0.4)
     check camera.distance =~ 1.0e6
@@ -460,7 +463,7 @@ suite "Camera":
 
 
   test "a zoom aimed at the cursor keeps what is under it under it":
-    # Map reading of wheel: reader points at something and arrives there, rather
+    # Map reading of wheel: reader points at something and arrives there, rather.
     #   than zooming at middle of frame and panning afterwards. Checked where it
     #   has to hold -- in pixels, against transform frame is actually drawn with.
     const (WIDTH_ZOOM, HEIGHT_ZOOM) = (1440, 900)
@@ -491,7 +494,7 @@ suite "Camera":
 
 
   test "zooming in and back out returns the camera exactly where it stood":
-    # Wheel notch each way has to be round trip, or reader who overshoots and corrects
+    # Wheel notch each way has to be round trip, or reader who overshoots and corrects.
     #   ends up somewhere they never chose -- and aimed zoom moves target as well as
     #   distance, so there is more to come back to than there used to be.
     var camera = initCameraDefault()
@@ -506,7 +509,7 @@ suite "Camera":
 
 
   test "a zoom with nothing under the cursor falls back to zooming at the middle":
-    # Over sky there is no object, no ground ahead and no level to meet, so there is
+    # Over sky there is no object, no ground ahead and no level to meet, so there is.
     #   no point to aim at. Answer is plain dolly wheel did before any of this,
     #   not refusal to zoom.
     var
@@ -514,8 +517,8 @@ suite "Camera":
       camera = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = 0.05)
       scene = initScene()
     let cursor = ScreenPosition(x: 720.0, y: 60.0) # High in frame, from camera barely
-      # above level it is looking at: that ray tilts up into sky and comes back
-      # down to neither ground nor target's own level.
+      # above level it is looking at:
+      #   that ray tilts up into sky and comes back down to neither ground nor target's own level.
     check positionUnderCursor(camera, 1440, 900, cursor).isNone
     check positionOnGround(camera, 1440, 900, cursor).isNone
     interaction.updateCursor(cursor.x, cursor.y)
@@ -528,14 +531,14 @@ suite "Camera":
 
 
   test "a zoom aims at the object under the cursor, then the ground, then the level":
-    # Order is rule: reader pointing at object means that object, at depth
+    # Order is rule: reader pointing at object means that object, at depth.
     #   it actually stands at. Anchored on plane through target instead, zoom crept
     #   past or short of it and what was under cursor slid away as wheel turned.
     const (WIDE, TALL) = (1440, 900)
     let
       camera = initCamera(target = ORIGIN, distance = 20.0, azimuth = 0.4, elevation = 0.5)
       view_projection = camera.initMatrixViewProjection(float(WIDE)/float(TALL))
-      # Point standing well above ground, so aiming at *it* and aiming at ground
+      # Point standing well above ground, so aiming at *it* and aiming at ground.
       #   under cursor are different answers and test can tell them apart.
       raised = Position(x: 2.0, y: -1.0, z: 6.0)
       on_screen = projectToScreen(view_projection, WIDE, TALL, raised)
@@ -550,7 +553,7 @@ suite "Camera":
     check at_object.isSome
     check at_object.get =~ raised
 
-    # Cursor little off it falls through to ground, which is `z = 0` itself rather
+    # Cursor little off it falls through to ground, which is `z = 0` itself rather.
     #   than level target happens to sit on.
     var camera_raised = camera
     camera_raised.target = Position(x: 0.0, y: 0.0, z: 5.0)
@@ -566,7 +569,7 @@ suite "Camera":
     # And it is ground *cursor* is over, not ground below eye.
     check at_ground.get =~ positionOnGround(camera_raised, WIDE, TALL, elsewhere).get
 
-    # Cursor whose ray reaches no ground still meets level through target, which
+    # Cursor whose ray reaches no ground still meets level through target, which.
     #   is last answer rather than first.
     let
       level = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = -0.4)
@@ -602,7 +605,7 @@ suite "Camera":
 
 
   test "the algebra's nearest point on a line agrees with the closed form":
-    # `positionOnLineNearest` answers through joins and meet; classical two-dot
+    # `positionOnLineNearest` answers through joins and meet; classical two-dot.
     #   closed form lives HERE, in test -- checking algebra against it is
     #   project's purpose. Deterministic scatter of line/ray pairs, comfortably away
     #   from parallel, so failure names same pair on every run.
@@ -634,7 +637,7 @@ suite "Camera":
 
 
   test "the algebra's near clip agrees with the componentwise clip":
-    # `clipToEyeSide` clips by plane depths and meet; componentwise interpolation
+    # `clipToEyeSide` clips by plane depths and meet; componentwise interpolation.
     #   -- very formula `mesh.addSegment`'s boundary packing still performs -- lives
     #   HERE as reference, which also pins two clips to each other so
     #   deliberate boundary asymmetry cannot drift.
@@ -678,7 +681,7 @@ suite "Camera":
 
 
   test "a pan grabs the level under the pointer and carries it to the cursor":
-    # Fault: pan of so many hundredths of orbit distance per pixel is right at
+    # Fault: pan of so many hundredths of orbit distance per pixel is right at.
     #   one depth and one tilt and wrong everywhere else -- driven, 200-pixel drag
     #   carried scene 288 -- and it slid target within plane *facing eye*,
     #   which is tilted, so same drag lifted target from z 1.00 to 6.40.
@@ -711,21 +714,21 @@ suite "Camera":
 
 
   test "a pan takes hold no further out than its own bound":
-    # Horizontal level meets ray aimed near horizon very long way off, and one
+    # Horizontal level meets ray aimed near horizon very long way off, and one.
     #   pixel of drag there is hundreds of world units. Hold point is clamped, so
     #   drag high in frame is governed rather than thrown across scene.
     const (WIDE, TALL) = (1440, 900)
     var camera = initCamera(
       target = ORIGIN, distance = 19.0, azimuth = 0.0, elevation = 0.06
     )
-    # Walk up middle of frame for first row whose ray grazes level far
+    # Walk up middle of frame for first row whose ray grazes level far.
     #   enough out to be governed, rather than naming pixel that change in field of
     #   view would quietly move off case being checked.
     var grazing = none(ScreenPosition)
     for row in countdown(450, 360):
       let at = ScreenPosition(x: 720.0, y: float(row))
       let hit = positionUnderCursor(camera, WIDE, TALL, at)
-      # Four times past bound, not merely over it: at bound itself clamp
+      # Four times past bound, not merely over it: at bound itself clamp.
       #   barely bites and there is no governing to see.
       if hit.isSome and
           norm(hit.get - camera.eye) > 4.0*FACTOR_PAN_REACH_MAX*camera.distance:
@@ -741,7 +744,7 @@ suite "Camera":
       )
     camera.panAcross(grazing.get, lower, WIDE, TALL)
     let moved = norm(camera.target - opening.target)
-    # It moves -- governed pan is still pan -- but by fraction of what ungoverned
+    # It moves -- governed pan is still pan -- but by fraction of what ungoverned.
     #   grab would have thrown view, and never past what two bounded holds can span.
     check moved > 0.0
     check moved < 0.5*unbounded
@@ -750,7 +753,7 @@ suite "Camera":
 
 
   test "an aimed zoom draws the target toward what it aimed at":
-    # `dollyToward` scales target toward anchor by exactly factor distance
+    # `dollyToward` scales target toward anchor by exactly factor distance.
     #   took, which is whole of why aimed zoom settles orbit centre onto what
     #   reader is zooming into. Aimed at ground, target comes down onto it
     #   rather than staying stranded on level it started at -- driven in shipped
@@ -773,7 +776,7 @@ suite "Camera":
 
 
   test "an aimed zoom is held off the near floor, and stays a placement while it is":
-    # `dollyToward` reads back what `distanceHeld` allowed rather than assuming its own
+    # `dollyToward` reads back what `distanceHeld` allowed rather than assuming its own.
     #   factor took, so zoom stopped by floor still describes where eye is.
     var camera = initCamera(target = ORIGIN, distance = 0.1, azimuth = 0.4, elevation = 0.5)
     let anchor = positionUnderCursor(camera, 1440, 900, ScreenPosition(x: 400.0, y: 600.0))
@@ -784,7 +787,7 @@ suite "Camera":
 
 
   test "framing a selection wider than the old ceiling pulls back past it":
-    # `distanceFitting` used to be clamped to same 500, so anything larger than
+    # `distanceFitting` used to be clamped to same 500, so anything larger than.
     #   frame could hold at that distance was framed by giving up rather than by moving.
     let camera = initCamera(target = ORIGIN, distance = 19.0, azimuth = 1.0, elevation = 0.4)
     check distanceFitting(4_000.0, camera, 1440, 900, 0.0) > 500.0
@@ -792,14 +795,15 @@ suite "Camera":
 
 suite "Mesh":
   const
-    VERTICES_RIBBON = 6 ## Vertices one ribbon is wound from: two triangles over four
-      ## corners. Stated here rather than imported so that change to how `addSegment`
-      ## winds quad has to be noticed here too.
+    VERTICES_RIBBON = 6 ## Vertices one ribbon is wound from: two triangles over four.
+      ## corners.
+      ##   Stated here rather than imported so that change to how `addSegment` winds quad has to be
+      ##   noticed here too.
     HEIGHT_SCALE_TEST = 900 ## Framebuffer height `SCALE_TEST` measures its widths in.
 
   let SCALE_TEST = block:
     let eye = Position(x: 5, y: -3, z: 7)
-    # `algebraFilled`, as every hand-built extent must be, or multivector twins
+    # `algebraFilled`, as every hand-built extent must be, or multivector twins.
     #   tessellation reads are zero and it silently draws nothing.
     algebraFilled(DrawExtent(scale: DrawScale(
       extent_furniture: 30.0,
@@ -810,7 +814,7 @@ suite "Mesh":
       height_pixels: HEIGHT_SCALE_TEST,
       depth_near: 0.1,
     )))
-  ## Eye held off-origin deliberately: horizon geometry anchored to origin by
+  ## Hold eye off-origin deliberately, since horizon geometry is anchored to eye.
     ## mistake, instead of to `eye`, would fail every horizon check below.
     ##   `extent_furniture` held distinct from `EXTENT_PLANE_F` (plane's own fixed
     ##   radius, no longer part of `DrawExtent` at all), so line test checking against
@@ -840,15 +844,16 @@ suite "Mesh":
 
 
   proc isRibbonDrawn(corners: array[6, Vertex]): bool =
-    ## Say whether expansion is drawable quad or shader's refusal -- six
-    ## coincident vertices for segment wholly behind eye, or one eye stands on.
+    ## Say whether expansion is drawable quad or shader's refusal.
+    ##   Refusal is six coincident vertices, for segment wholly behind eye or one eye
+    ##   stands on.
     corners[0].x != corners[1].x or corners[0].y != corners[1].y or
       corners[0].z != corners[1].z
 
   proc ringEnds(meshes: MeshSet; index, segment: int): (Position, Position) =
-    ## Recover segment `segment`-th piece of `index`-th ring was built around,
-    ## by `ribbonEnds`'s own midpoint argument -- through `expandRingVertex`, reference
-    ## of shader that widens it, so what is read back is what is drawn.
+    ## Recover segment `segment`-th piece of `index`-th ring was built around.
+    ##   By `ribbonEnds`'s own midpoint argument, through `expandRingVertex`, reference of
+    ##   shader that widens it, so what is read back is what is drawn.
     proc midpoint(a, b: Vertex): Position =
       Position(
         x: 0.5*(float(a.x) + float(b.x)),
@@ -865,17 +870,17 @@ suite "Mesh":
   proc ribbonEnds(meshes: MeshSet; index: int): (Position, Position) =
     ## Recover segment `index`-th ribbon was built around.
     ##   Each end's own two corners sit equal step either side of it, so their midpoint
-    ##   is endpoint again -- which is also property being asserted whenever this
-    ##   is used to check where line was drawn: ribbon that were not centred on its
-    ##   own line would fail every one of those checks.
+    ##   is endpoint again.
+    ##   Also property being asserted whenever this is used to check where line was
+    ##   drawn: ribbon not centred on its own line would fail every one of those checks.
     proc midpoint(a, b: Vertex): Position =
       Position(
         x: 0.5*(float(a.x) + float(b.x)),
         y: 0.5*(float(a.y) + float(b.y)),
         z: 0.5*(float(a.z) + float(b.z)),
       )
-    # Through `expandRibbon` -- reference of shader that now does widening --
-    #   so what is read back is what old expanded storage held: *clipped* ends.
+    # Read through `expandRibbon`, reference of shader that does widening.
+    #   What is read back is then clipped ends, as expanded storage holds them.
     let corners = expandRibbon(meshes.ribbons.records[index], toScale(SCALE_TEST))
     (
       midpoint(corners[0], corners[5]),
@@ -915,7 +920,7 @@ suite "Mesh":
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST) == Placement.Finite
       check 6*MESHES.ribbons.count == 2*VERTICES_RIBBON
-      # No point marker: line's own segment already passes through its support, so
+      # No point marker: line's own segment already passes through its support, so.
       #   marking that point again would only add stray dot segment does not need.
       check MESHES.points.count_vertices == 0
       let (anchor, axis) = (positionAnchor(line), direction(line))
@@ -926,7 +931,7 @@ suite "Mesh":
       # Both halves start on line, at its support, so they meet with no gap.
       check isNear(tail_first, anchor.get)
       check isNear(tail_second, anchor.get)
-      # Each runs toward one of line's own two vanishing points, both fixed to
+      # Each runs toward one of line's own two vanishing points, both fixed to.
       #   eye. It *reaches* that point only where point is in front of camera:
       #   ribbon is clipped to near plane first, since width proportional to
       #   depth is meaningless behind eye (see `addSegment`). So what is asserted is
@@ -939,7 +944,7 @@ suite "Mesh":
           toward = normalize(head - anchor.get)
           reach = normalize(vanishing - anchor.get)
         check toward.isSome and reach.isSome
-        # Compared with tolerance rather than through `=~`: these are read back out of
+        # Compared with tolerance rather than through `=~`: these are read back out of.
         #   `Vertex`'s own float32 storage, which `=~`'s exact-math tolerance is tighter
         #   than.
         check abs(toward.get.x - reach.get.x) < 1.0e-4
@@ -951,7 +956,7 @@ suite "Mesh":
 
 
   test "a drawn line projects onto the true line, however far its ends leave it":
-    # Each half has one end on line and one at `eye +- radius*axis`, so both lie in
+    # Each half has one end on line and one at `eye +- radius*axis`, so both lie in.
     #   plane through eye containing line. That plane projects to single
     #   screen line, which is what lets far ends sit well off line in world
     #   space -- displaced along view ray -- without drawing showing it.
@@ -981,7 +986,7 @@ suite "Mesh":
 
 
   test "line's own far end coincides exactly with where its attitude is drawn":
-    # Property "lines look cut off" feedback chased: line and its own
+    # Property "lines look cut off" feedback chased: line and its own.
     #   attitude are two different objects (finite segment and horizon point)
     #   drawn through two different branches of `mesh`, so nothing forces them to
     #   agree geometrically unless segment's own far end is deliberately built to
@@ -996,7 +1001,7 @@ suite "Mesh":
       discard MESHES.addObject(SCRATCH, line, Ink.Jade.colour, SCALE_TEST)
       let (_, far_first) = ribbonEnds(MESHES, 0)
       let (_, far_second) = ribbonEnds(MESHES, 1)
-      # Whichever half runs toward star has to land on it -- but only where star
+      # Whichever half runs toward star has to land on it -- but only where star.
       #   itself stands in front of near plane. Ribbon is clipped there (see
       #   `mesh.addSegment`), so star behind camera is met by half that stops at
       #   near plane instead. Nothing is visible there either way; what would be
@@ -1010,17 +1015,17 @@ suite "Mesh":
       MESHES.clearMeshes
       check MESHES.addObject(SCRATCH, plane, Ink.Olive.colour, SCALE_TEST) == Placement.Finite
       const SEGMENTS_RING = SEGMENTS_CIRCLE_HORIZON
-      # One disc record in one wash run: fan itself is shader's now, and
+      # One disc record in one wash run: fan itself is shader's now, and.
       #   `expandDiscVertex` -- its reference -- is what its corners are read through.
       check MESHES.discs.count == 1
       check MESHES.washes.count == 1
-      # Rim and nothing else, and rim is **one record**: ring, not
+      # Rim and nothing else, and rim is **one record**: ring, not.
       #   `SEGMENTS_CIRCLE_HORIZON` ribbons. Plane used to add one ribbon more for
       #   normal shaft out of its anchor; orientation now rides on selection marker's
       #   own pulse, so unselected plane draws no such thing -- and no ribbon at all.
       check MESHES.rings.count == 1
       check MESHES.ribbons.count == 0
-      # No point marker at all: neither anchor marker nor normal arrowhead, so
+      # No point marker at all: neither anchor marker nor normal arrowhead, so.
       #   plane never adds scattered dot beyond what fill and rim already draw.
       check MESHES.points.count_vertices == 0
       # Vertex lies on plane exactly when its offset from support is normal to normal.
@@ -1034,12 +1039,12 @@ suite "Mesh":
         )
         check isNear(dot(vertex.toPosition - anchor.get, normal.get), 0)
         check isNear(float(vertex.alpha), ALPHA_WASH)
-        # Every fill vertex is either fan's own centre or out at plane's own
+        # Every fill vertex is either fan's own centre or out at plane's own.
         #   fixed radius -- flat alpha throughout, so unlike old fading disc there
         #   is no band strictly between two to rule out.
         let radius_vertex = norm(vertex.toPosition - anchor.get)
         check isNear(radius_vertex, 0) or isNear(radius_vertex, EXTENT_PLANE_F)
-      # Rim is drawn as line is, so its own *corners* stand half line width off
+      # Rim is drawn as line is, so its own *corners* stand half line width off.
       #   plane -- step sideways is perpendicular to segment and to sight
       #   ray, which is only in plane when eye happens to lie in it. What is still
       #   exactly on plane, and at exactly plane's own radius, is segment each
@@ -1051,7 +1056,7 @@ suite "Mesh":
         for place in [tail, head]:
           check isNear(dot(place - anchor.get, normal.get), 0)
           check isNear(norm(place - anchor.get), EXTENT_PLANE_F)
-        # And every corner stays within that half width of plane, so bulge is
+        # And every corner stays within that half width of plane, so bulge is.
         #   fraction of pixel on screen rather than anything reader could see.
         let bound = 0.5*float(WIDTH_LINE_OBJECT)*
           max(worldPerPixelAt(tail, SCALE_TEST), worldPerPixelAt(head, SCALE_TEST))
@@ -1062,7 +1067,7 @@ suite "Mesh":
 
 
   test "the ring's static corners are the circle's own angles, in the ribbon's winding":
-    # **One table both ring shaders read, and only part of rim they are not
+    # **One table both ring shaders read, and only part of rim they are not.
     #   handed.** Shader reads segment's two angles from here and record supplies
     #   everything else, so table that drifted would move drawn circle with nothing
     #   else changing -- exactly failure `mesh.ringCorners` exists in Nim to prevent.
@@ -1082,7 +1087,7 @@ suite "Mesh":
         check isNear(float(corners[at + 3]), UNIT_CIRCLE_RIM[segment + 1].sin_angle)
         check float(corners[at + 4]) == WINDING[corner][0]
         check float(corners[at + 5]) == WINDING[corner][1]
-    # And ends those angles name are very ends `ribbonOfRing` derives, which is
+    # And ends those angles name are very ends `ribbonOfRing` derives, which is.
     #   join between this table and reference shaders expand: place ring
     #   whose arms are world's own axes and check every segment against it.
     MESHES.clearMeshes
@@ -1098,7 +1103,7 @@ suite "Mesh":
       check isNear(float(record.tail_y), 2.0*float(corners[at + 1]))
       check isNear(float(record.head_x), 2.0*float(corners[at + 2]))
       check isNear(float(record.head_y), 2.0*float(corners[at + 3]))
-      # Ring's tint and width reach both ends of every segment, flat: it is what lets
+      # Ring's tint and width reach both ends of every segment, flat: it is what lets.
       #   shaders drop ribbon's two-end blend and read one `fill`.
       check isNear(float(record.width), float(WIDTH_LINE_OBJECT))
       check isNear(float(record.tail_alpha), Ink.Olive.colour.alpha)
@@ -1107,7 +1112,7 @@ suite "Mesh":
 
 
   test "the disc is stepped in arithmetic, and lands where the algebra says":
-    # **Algebra is reference, not implementation.** Disc is stand-in
+    # **Algebra is reference, not implementation.** Disc is stand-in.
     #   drawn for plane, not plane, so its rim and its fan are stepped with
     #   `euclid.onCircle`; what that is held against is multivector sum it replaced --
     #   centre plus two scaled arms, read back out as place. Swept over real plane
@@ -1125,7 +1130,7 @@ suite "Mesh":
         arm_second = radius*axes.get.axis_second
         arm_first_point = wedge(radius, toMultivector(axes.get.axis_first))
         arm_second_point = wedge(radius, toMultivector(axes.get.axis_second))
-      # Record's own expansion beside plain stepping: `expandDiscVertex` is
+      # Record's own expansion beside plain stepping: `expandDiscVertex` is.
       #   reference both disc-fill vertex shaders are held to, so it too must land on
       #   multivector sums, corner for corner, through record's narrowed floats.
       MESHES.clearMeshes
@@ -1162,7 +1167,7 @@ suite "Mesh":
       MESHES.clearMeshes
       let attitude = ⊖ plane
       check MESHES.addObject(SCRATCH, attitude, Ink.Jade.colour, SCALE_TEST) == Placement.Horizon
-      # One record for whole circle now, drawn or not: segment wholly behind
+      # One record for whole circle now, drawn or not: segment wholly behind.
       #   camera is *shader's* to reject, and `expandRingVertex` -- its reference --
       #   reports it as six coincident vertices. About half circle stands behind
       #   eye, so drawn count must fall well short of full ring; both halves of
@@ -1171,7 +1176,7 @@ suite "Mesh":
       check MESHES.ribbons.count == 0
       const SEGMENTS_RING = SEGMENTS_CIRCLE_HORIZON
       var count_drawn = 0
-      # `directionNormalHorizon` reads straight off horizon line's own raw
+      # `directionNormalHorizon` reads straight off horizon line's own raw.
       #   coefficients; confirm it agrees with finite plane's own normal, read
       #   through wholly different pair of library operators, before trusting either
       #   to check where circle itself landed.
@@ -1192,21 +1197,21 @@ suite "Mesh":
         let (tail, head) = ringEnds(MESHES, 0, i)
         for place in [tail, head]:
           let offset = place - SCALE_TEST.eye
-          # In circle's own plane exactly, clipped or not: clip slides point
+          # In circle's own plane exactly, clipped or not: clip slides point.
           #   along chord, which lies in that plane too.
           check isNear(dot(offset, normal_from_plane.get), 0)
-          # And out at circle's own radius, unless clip pulled it in along that
+          # And out at circle's own radius, unless clip pulled it in along that.
           #   chord -- never past it.
           check norm(offset) <= SCALE_TEST.radius_horizon*(1.0 + 1e-5)
           if isNear(norm(offset), SCALE_TEST.radius_horizon): inc count_at_radius
       check count_at_radius > 0
-      # Half-behind claim, held rather than assumed: some of ring is drawn, and
+      # Half-behind claim, held rather than assumed: some of ring is drawn, and.
       #   well under all of it.
       check count_drawn in 1 ..< SEGMENTS_RING
 
 
   test "plane at horizon becomes a dome over the whole sky around eye":
-    # Every plane at horizon is same universal object regardless of source (see
+    # Every plane at horizon is same universal object regardless of source (see.
     #   `objects.directionNormalHorizon`'s own doc comment), so two unrelated planes'
     #   own attitudes should both land dome at exactly same distance from eye,
     #   with nothing about either plane's own coefficients read to decide it.
@@ -1223,7 +1228,7 @@ suite "Mesh":
 
     check MESHES.addObject(SCRATCH, attitude_first, Ink.Cobalt.colour, SCALE_TEST) ==
       Placement.Horizon
-    # One dome record in one wash run: sphere itself is static geometry shader
+    # One dome record in one wash run: sphere itself is static geometry shader.
     #   widens, and `expandDomeVertex` -- its reference -- is what its corners are read
     #   through.
     check MESHES.domes.count == 1
@@ -1262,7 +1267,7 @@ suite "Mesh":
 
 
   test "a scene filled with planes fits the bounds the record meshes reserve":
-    # Binding case for `RIBBONS_MAX` and `DISCS_MAX`: plane draws most ribbons
+    # Binding case for `RIBBONS_MAX` and `DISCS_MAX`: plane draws most ribbons.
     #   of any object and one disc besides, and every record append asserts rather than
     #   overflowing. Built rather than calculated, so bounds are checked against what
     #   is actually emitted rather than against arithmetic that could drift from it.
@@ -1283,12 +1288,11 @@ suite "Mesh":
 
 
   func scaleFurnitureAt(eye: Position; extent: float): DrawExtent =
-    ## Stand eye somewhere, with stated furniture reach, for fog cases below.
-    ##   `SCALE_TEST` cannot serve them: its eye is seven units up with reach of thirty,
-    ##   which `fogFurnitureFor` cuts to 3.6 -- shorter than that height, so its fog never
-    ##   reaches ground and no grid is drawn at all. Fog case needs eye standing
-    ##   inside its own fog, and several need it far from origin, which is whole
-    ##   point of rule being checked.
+    ## Place eye somewhere, with stated furniture reach, for fog cases below.
+    ##   `SCALE_TEST` cannot serve them: its fog reach is shorter than its eye's height,
+    ##   so its fog never reaches ground and no grid is drawn at all.
+    ##   Fog case needs eye standing inside its own fog, and several need it far from
+    ##   origin, which is whole point of rule being checked.
     algebraFilled(DrawExtent(scale: DrawScale(
       extent_furniture: extent,
       eye: eye, radius_horizon: extent,
@@ -1302,12 +1306,12 @@ suite "Mesh":
     )))
 
   let SCALE_FOG = scaleFurnitureAt(Position(x: 103, y: -97, z: 5), 300.0)
-    ## Eye inside its own fog: reach of 300 fades out at 36 units, well past five
-    ## eye stands above ground.
+    ## Place eye inside its own fog.
+    ##   Reach of 300 fades out well past five units eye stands above ground.
     ##   Stood few units off lattice crossing rather than anywhere convenient, so that
-    ##   hundred-unit cell actually lays line through fog's solid core --
-    ##   nearest lines are three units away, and eye parked between crossings would
-    ##   leave core empty and fade case with nothing to measure.
+    ##   hundred-unit cell actually lays line through fog's solid core.
+    ##     Nearest lines are three units away, and eye parked between crossings would
+    ##     leave core empty and fade case with nothing to measure.
 
 
   test "world furniture stays inside the fog it is drawn in":
@@ -1317,7 +1321,7 @@ suite "Mesh":
     check 6*MESHES.ribbons.count > 0
     let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
     for i in 0 ..< MESHES.ribbons.count:
-      # Expanded through reference of shader that now does widening, with
+      # Expanded through reference of shader that now does widening, with.
       #   slack of one unit for half-width it steps each corner off by.
       let corners = expandRibbon(MESHES.ribbons.records[i], toScale(SCALE_FOG))
       if not isRibbonDrawn(corners): continue
@@ -1326,7 +1330,7 @@ suite "Mesh":
 
 
   test "world furniture is fog about the camera, not a halo about the origin":
-    # Rule this project had before: furniture was laid about world origin and
+    # Rule this project had before: furniture was laid about world origin and.
     #   reader who panned away from it lost ground entirely. Both halves are checked,
     #   since either alone passes under old behaviour.
     let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
@@ -1343,7 +1347,7 @@ suite "Mesh":
 
 
   test "ground grid holds full alpha near the camera and fades to nothing at its reach":
-    # Fade runs per fragment in shaders now, so what records carry is
+    # Fade runs per fragment in shaders now, so what records carry is.
     #   grid's own full tint with fog *flag* set, and drawn alpha is that tint
     #   times `alphaGridFade` -- reference both fragment shaders are held to --
     #   evaluated here at each corner's own distance from eye, exactly as they do.
@@ -1359,7 +1363,7 @@ suite "Mesh":
       check record.fog > 0.5
       check isNear(float(record.tail_alpha), Ink.Grid.colour.alpha*ALPHA_GRID)
       check isNear(float(record.head_alpha), Ink.Grid.colour.alpha*ALPHA_GRID)
-      # Sampled *along* each record rather than at its corners alone: line is one
+      # Sampled *along* each record rather than at its corners alone: line is one.
       #   record spanning its whole chord now, and fade is fragment's, evaluated
       #   at every point of it -- so claim is checked where fragments are.
       let
@@ -1386,14 +1390,14 @@ suite "Mesh":
 
 
   test "the grid reads as reference: dimmer than the ink an object of that colour takes":
-    # `Ink.Grid` is also `INK_POOL_FREE`, so dimming has to live in grid rather
+    # `Ink.Grid` is also `INK_POOL_FREE`, so dimming has to live in grid rather.
     #   than in palette entry; object taking that ink must stay opaque.
     check ALPHA_GRID < 1.0
     check isNear(Ink.Grid.colour.alpha, 1.0)
 
 
   test "the join's normal is the classical cross product, sign included":
-    # `mesh.directionAcross` IS join -- `directionNormal(tail ∧ head ∧ eye)` -- and
+    # `mesh.directionAcross` IS join -- `directionNormal(tail ∧ head ∧ eye)` -- and.
     #   this holds algebra against classical cross product computed HERE, in
     #   test, which is project's purpose. **Sign included**: agreement up to sign
     #   would let ribbon's two edges swap sides without word from suite.
@@ -1408,7 +1412,7 @@ suite "Mesh":
         head = Position(x: pseudo(), y: pseudo(), z: pseudo())
         eye = Position(x: pseudo(), y: pseudo(), z: pseudo())
         computed = directionAcross(tail, head, eye)
-        # **Algebra is reference now, not implementation.** Shipped form is
+        # **Algebra is reference now, not implementation.** Shipped form is.
         #   cross product, because ribbon's width is picture's business and not
         #   geometry's; what it is held against is join it replaced -- one plane
         #   through segment and eye, read for its normal. Sign included: two
@@ -1419,15 +1423,15 @@ suite "Mesh":
       check algebraic.isSome == computed.isSome
       if algebraic.isSome:
         check computed.get =~ algebraic.get
-    # And two refusals: segment of no length, and eye on segment's own line,
-    #   neither of which has side to step off toward.
+    # Check two refusals: segment of no length, and eye on segment's own line.
+    #   Neither has side to step off toward.
     let (a, b) = (Position(x: 1, y: 2, z: 3), Position(x: 2, y: 4, z: 6))
     check directionAcross(a, a, b).isNone
     check directionAcross(a, b, Position(x: 3, y: 6, z: 9)).isNone
 
 
   test "grid cells are one fixed size, at every reach the camera asks for":
-    # Size this replaced doubled with reach, so reader who dollied out found
+    # Size this replaced doubled with reach, so reader who dollied out found.
     #   ground silently re-scaled under them and no distance read off it was comparable
     #   with last. Checked by counting what is actually laid, at two reaches four
     #   doublings apart, against what fixed cell says should be there.
@@ -1435,14 +1439,14 @@ suite "Mesh":
     for (extent, height) in [(1000.0, 60.0), (4000.0, 60.0)]:
       # Both reaches are inside what fixed cell covers, which is claim being made:
       #   nothing here is stepped cell `sizeCellGridFor` falls back on far out.
-      # Straight down from high above lattice crossing, so every line fog reaches is
+      # Straight down from high above lattice crossing, so every line fog reaches is.
       #   drawn whole: nothing falls behind near plane to be clipped, and count
       #   below is then exact arithmetic rather than reading of what happened to survive.
       let
         scale_above = scaleFurnitureAt(Position(x: 0, y: 0, z: height), extent)
         fog = fogFurnitureFor(extent)
         radius = sqrt(fog.radius_gone*fog.radius_gone - height*height)
-        # Lines each way from eye, in each of two families, skipping one
+        # Lines each way from eye, in each of two families, skipping one.
         #   through origin that coincides with world axis.
         lines = 4*int(floor(radius/SIZE_CELL_GRID))
       MESHES.clearMeshes
@@ -1461,7 +1465,7 @@ suite "Mesh":
 
 
   test "the fog fade is the shader's, held here to the reference it is a copy of":
-    # **Successor to fade-piece budget's regression case.** Each grid line used
+    # **Successor to fade-piece budget's regression case.** Each grid line used.
     #   to be cut into fade pieces under segment budget, whose cost sawtoothed with
     #   camera distance -- measured at 154 segments/7.3 ms at orbit distance 19 against
     #   2,084/126.5 ms at 300 before budget, and ~920 per-boundary sums per moving
@@ -1483,9 +1487,9 @@ suite "Mesh":
 
 
   test "the grid stays inside its line bound however far the camera pulls back":
-    # Held on what is actually laid rather than on rule alone: line is one record,
-    #   so grid's whole spend is its line count, which `CELLS_GRID_HALF_MAX` bounds
-    #   per family through stepped cell.
+    # Hold on what is actually laid rather than on rule alone.
+    #   Line is one record, so grid's whole spend is its line count, which
+    #   `CELLS_GRID_HALF_MAX` bounds per family through stepped cell.
     for (extent, height) in [
       (1.0e3, 6.0e1), (4.0e3, 6.0e1), (1.0e4, 5.0e2), (1.0e6, 5.0e4), (1.0e9, 5.0e7),
     ]:
@@ -1497,7 +1501,7 @@ suite "Mesh":
 
 
   test "a camera dollied far out still has ground under it, at a coarser cell":
-    # Fault: fog's reach was capped at `CELLS_GRID_HALF_MAX` cells, so past 1,200
+    # Fault: fog's reach was capped at `CELLS_GRID_HALF_MAX` cells, so past 1,200.
     #   units ground stopped reaching what camera was looking at, and past twice
     #   that there was nothing drawn at all -- black void, axes included. Bound now
     #   steps *cell*, which lays same count of lines across reach camera
@@ -1505,14 +1509,14 @@ suite "Mesh":
     check fogFurnitureFor(1.0e9).radius_gone =~ FRACTION_GRID_FADE_END*1.0e9
     check fogFurnitureFor(1.0e9).radius_full < fogFurnitureFor(1.0e9).radius_gone
 
-    # Cell holds at its fixed size right up to reach it can cover, and steps only
+    # Cell holds at its fixed size right up to reach it can cover, and steps only.
     #   past it -- reader working at any ordinary distance never meets step.
     let radius_fixed = float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
     check sizeCellGridFor(0.0) =~ SIZE_CELL_GRID
     check sizeCellGridFor(radius_fixed) =~ SIZE_CELL_GRID
     check sizeCellGridFor(1.5*radius_fixed) =~ 10.0*SIZE_CELL_GRID
     check sizeCellGridFor(15.0*radius_fixed) =~ 100.0*SIZE_CELL_GRID
-    # By decades, so every line of coarser lattice is line of finer one and
+    # By decades, so every line of coarser lattice is line of finer one and.
     #   step coarsens what is drawn without moving anything reader was measuring against.
     for radius in [2.0e3, 5.0e4, 3.0e6, 1.0e9]:
       let decades = log10(sizeCellGridFor(radius)/SIZE_CELL_GRID)
@@ -1527,7 +1531,7 @@ suite "Mesh":
       MESHES.addGrid(SCRATCH, extent, scale_afar)
       check MESHES.ribbons.count > 0
       check MESHES.ribbons.count <= RIBBONS_MAX
-      # Laid on world multiples of cell this reach asked for, so lattice is still
+      # Laid on world multiples of cell this reach asked for, so lattice is still.
       #   world's rather than one dragged along under camera.
       let
         fog = fogFurnitureFor(extent)
@@ -1540,7 +1544,7 @@ suite "Mesh":
             at = vertex.toPosition
             off_x = abs(at.x - size_cell*round(at.x/size_cell))
             off_y = abs(at.y - size_cell*round(at.y/size_cell))
-          # Within fiftieth of cell rather than exactly on it: line is drawn as
+          # Within fiftieth of cell rather than exactly on it: line is drawn as.
           #   ribbon, so its vertices stand half its own screen width either side of
           #   lattice line, which in world units grows with distance it is drawn at.
           #   Measured at 0.005 of cell across all three reaches.
@@ -1548,7 +1552,7 @@ suite "Mesh":
 
 
   test "the axes fog too: the one the camera stands by is drawn, the far ones are not":
-    # Fog applies to axes as well, so all furniture ends at one horizon rather
+    # Fog applies to axes as well, so all furniture ends at one horizon rather.
     #   than grid stopping while axes run on. Eye thousand units out along x
     #   stands beside that axis and has flown clear of other two -- and both halves
     #   matter, since axis rule that draws nothing at all passes second alone.
@@ -1564,7 +1568,7 @@ suite "Mesh":
       if not isRibbonDrawn(corners): continue
       for vertex in corners:
         let at = vertex.toPosition
-        # Everything drawn lies on x axis: y and z axes are outside fog, and
+        # Everything drawn lies on x axis: y and z axes are outside fog, and.
         #   stretch of x axis that is drawn is stretch inside it.
         check abs(at.y) <= 1.0 and abs(at.z) <= 1.0
         check norm(at - scale_afar.eye) <= fog.radius_gone + 1.0
@@ -1591,7 +1595,7 @@ suite "Mesh":
 
 
   test "the categorical run is contiguous, so a picker can walk it as one block":
-    # Colour picker offers `COUNT_INK_CATEGORICAL` entries starting at
+    # Colour picker offers `COUNT_INK_CATEGORICAL` entries starting at.
     #   `lut_ink_to_name[INK_CATEGORICAL_FIRST]`, which is only correct while every
     #   categorical slot follows every structural one, with no gaps.
     check COUNT_INK_CATEGORICAL == 5
@@ -1605,7 +1609,7 @@ suite "Mesh":
     var offered: seq[string]
     for index in 0 ..< COUNT_INK_CATEGORICAL: offered.add($inkCategorical(index))
     check offered == @["Rose", "Copper", "Olive", "Jade", "Cobalt"]
-    # `Invalid` is structural precisely so it can never be offered: status colour
+    # `Invalid` is structural precisely so it can never be offered: status colour.
     #   caller could also pick for ordinary object would say nothing.
     for structural in [Ink.Backdrop, Ink.AxisX, Ink.AxisY, Ink.AxisZ, Ink.Grid,
                        Ink.Guide, Ink.Outline, Ink.Invalid]:
@@ -1624,7 +1628,7 @@ suite "Mesh":
 
 suite "Scene":
   test "the startup scene gives every seed point a colour of its own":
-    # Four points wearing one hue say they are one kind of thing, which is opposite of
+    # Four points wearing one hue say they are one kind of thing, which is opposite of.
     #   what categorical palette is for; hand-added object takes next hue, so these
     #   should too. `ground` and `o` keep hues reader learns to find them by.
     var scene = initScene()
@@ -1739,7 +1743,7 @@ suite "Scene":
 
 
   test "meet finds where a line crosses a plane even far outside its own drawn disc":
-    # `mesh.addPlane`'s disc is only rendering choice -- plane it represents is
+    # `mesh.addPlane`'s disc is only rendering choice -- plane it represents is.
     #   same infinite object algebraically either way, and `WedgeAnti` (meet) reads
     #   straight off that Multivector, never consulting `EXTENT_PLANE_F` or anything
     #   drawn. Crossing plane three disc-radii out from its own drawn centre, well
@@ -1815,11 +1819,11 @@ suite "Scene":
 
 
   test "notation substitutes real operand names for the table's own bold placeholders":
-    # One table serves both render paths, so this is also what browser's own
+    # One table serves both render paths, so this is also what browser's own.
     #   `nimOperationNotation` hands out -- there is no second table to keep in step.
     check notationSubstituted(Operation.Wedge, "a", "b") == "a ∧ b"
     check notationSubstituted(Operation.Attitude, "L", "unused") == "L⊖"
-    # English name after symbols is full of ordinary m's and n's and must never
+    # English name after symbols is full of ordinary m's and n's and must never.
     #   reach label; only symbolic prefix is substituted.
     check notationSubstituted(Operation.DualWeight, "g", "unused") == "g☆"
     check "weight dual" notin notationSubstituted(Operation.DualWeight, "g", "unused")
@@ -1839,7 +1843,7 @@ suite "Scene":
 
 
   test "a truncated label never splits a character, whatever the buffer lands on":
-    # Bug this pins: bytes were copied until buffer filled, so three-byte
+    # Bug this pins: bytes were copied until buffer filled, so three-byte.
     #   operator could be cut in half. Invalid tail reached browser as literal
     #   `%e2%8a` where glyph belonged -- Nim's JS backend percent-escapes what it cannot
     #   decode -- which is how it was found, in screenshot of objects list.
@@ -1861,7 +1865,7 @@ suite "Scene":
     check toText(storage) == exact
 
 
-  # Every magnitude two front-ends show has to read same in both, and values
+  # Every magnitude two front-ends show has to read same in both, and values.
   #   most likely to break that are exact binary ties -- coefficient of 10.125 or 12345,
   #   which user can simply type. C rounds tie to even and JavaScript rounds it away
   #   from zero, so formatter that delegates to runtime disagrees with itself across
@@ -1873,7 +1877,7 @@ suite "Scene":
   ]
 
   test "magnitudes read the same whichever backend formats them":
-    # Pinned as text rather than against reference backend supplies, because that is
+    # Pinned as text rather than against reference backend supplies, because that is.
     #   exactly what differs. These are what C's own `%.4g` writes, verified against it.
     check formatMagnitude(10.125) == "10.12"   # Tie, rounds to even.
     check formatMagnitude(-10.125) == "-10.12"
@@ -1886,7 +1890,7 @@ suite "Scene":
     check formatMagnitude(-0.0) == "0"         # Sign on nothing reads as bug.
 
   test "magnitudesAgree: the browser's own formatter answers what C's does":
-    # One rule, two mechanisms: desktop reaches C's `%.4g` through `snprintf`, which
+    # One rule, two mechanisms: desktop reaches C's `%.4g` through `snprintf`, which.
     #   browser build has no runtime for, so `formatMagnitude` states same rule in
     #   plain Nim. Only this test holds two together -- run it before changing either.
     #   Skipped on JS backend, which has no `snprintf` to compare against; test
@@ -1902,7 +1906,7 @@ suite "Scene":
 
 
   test "multivectors print every term they carry, and nothing else":
-    # Significant digits, not fixed decimal places: whole number reads as one, and
+    # Significant digits, not fixed decimal places: whole number reads as one, and.
     #   coefficient keeps only digits it actually carries. Basis elements are named
     #   as library's own `$` names them, which is what keeps two GUIs 1-1.
     check formatMultivectorString(initElement(Basis.scalar, 0.0)) == "0 𝟏"
@@ -1911,8 +1915,8 @@ suite "Scene":
     check formatMultivectorString(toMultivector(Position(x: 3.5, y: 0, z: 0))) ==
       "3.5 𝐞₁ + 1 𝐞₄"
     check formatMultivectorString(initElement(Basis.scalar, 0.00012345)) == "0.0001234 𝟏"
-    # Every basis name matches what library writes for that element on its own,
-    #   rather than being trusted to table transcribed by hand.
+    # Match every basis name against what library writes for that element on its own.
+    #   Never trusted to table transcribed by hand.
     for b in Basis:
       let named = ($initElement(b, 1.0)).strip()
       check lut_basis_to_name[b] == named
@@ -1926,7 +1930,7 @@ suite "Scene":
 
 
   test "slotsCreated walks creation order, whatever order the slots fell in":
-    # Arena reuses most recently freed slot, so slot order stops being creation
+    # Arena reuses most recently freed slot, so slot order stops being creation.
     #   order moment anything is removed. This is what save path walks, and what
     #   `born`-sorted list could not answer: two items added in one frame share reading,
     #   and replayed item's own born is stamped into future.
@@ -1957,7 +1961,7 @@ suite "Scene":
 
 
   test "slotsCreated orders a scrambled arena of hundreds, not just a handful":
-    # Heapsort has cases insertion sort never exercised: many items, slots freed and
+    # Heapsort has cases insertion sort never exercised: many items, slots freed and.
     #   refilled throughout, so ordinals sit nowhere near their slots.
     var scene = initScene()
     let count_wanted = min(ITEMS_MAX, 300)
@@ -1977,7 +1981,7 @@ suite "Scene":
 
 
   test "revisionPlacingAt stamps the slot an edit touched, and every slot after a restore":
-    # Front-end re-places only slots stamped past what it holds, so stamp must move for
+    # Front-end re-places only slots stamped past what it holds, so stamp must move for.
     #   exactly slots whose placing inputs did.
     var scene = initScene()
     for i in 0 ..< 4: discard scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
@@ -1999,7 +2003,7 @@ suite "Scene":
 
 
   test "restoreFrom lands on a revision no earlier state carried":
-    # Assignment restored snapshot's own revision, and bump after it landed on very
+    # Assignment restored snapshot's own revision, and bump after it landed on very.
     #   number of edit being undone -- so front-end holding meshes on it drew
     #   undone object until camera moved. Measured on built page.
     var scene = initScene()
@@ -2020,13 +2024,13 @@ suite "Scene":
 
 
   proc savedWith(ordinal: int): ItemSaved =
-    ## Item that differs from its neighbours only in palette slot it names, which
-    ## is only field any version boundary has ever changed.
+    ## Build item differing from its neighbours only in palette slot it names.
+    ##   Only field any version boundary has ever changed.
     ItemSaved(ink_ordinal: ordinal, is_visible: true, label: "x", geometry: POINTS[0])
 
 
   test "an item already at this version is carried up unchanged":
-    # Chain has to be no-op on file this build wrote, or every save/load round
+    # Chain has to be no-op on file this build wrote, or every save/load round.
     #   trip quietly rewrites something.
     for ordinal in ord(Ink.low) .. ord(Ink.high):
       let carried = itemUpgraded(savedWith(ordinal), VERSION_SCENE)
@@ -2041,7 +2045,7 @@ suite "Scene":
 
 
   test "a version-2 item needs nothing doing to it but is walked all the same":
-    # Version 2 and 3 differ only in what item *sequence* promises, so item's own
+    # Version 2 and 3 differ only in what item *sequence* promises, so item's own.
     #   fields come through untouched -- and must not be folded by version-1 step.
     #   Compared field by field rather than through `==`, which `Multivector` makes
     #   compile error on purpose; geometry is checked with approximate operator.
@@ -2059,7 +2063,7 @@ suite "Scene":
 
 
   test "a version-1 item is carried onto today's palette, hue by hue":
-    # Version 1 had no `Invalid` and three more hues, so every ordinal it could hold is
+    # Version 1 had no `Invalid` and three more hues, so every ordinal it could hold is.
     #   walked here rather than only two ends.
     for ordinal in 0 ..< ORDINAL_INK_CATEGORICAL_V1:
       # Structural slots are unmoved to this day.
@@ -2074,7 +2078,7 @@ suite "Scene":
       check ink == inkCycled(step)
       check ink != Ink.Invalid
       check ink in inkCategorical(0) .. inkCategorical(COUNT_INK_CATEGORICAL - 1)
-    # Deliberately *not* pinned to fixed shift from version 1's own start. Structural
+    # Deliberately *not* pinned to fixed shift from version 1's own start. Structural.
     #   slot reserved since -- `Invalid`, then `Algebra` -- moves every hue along by one
     #   more while leaving fold correct, so such assertion fails on legitimate
     #   palette change and catches no real fault. Where each hue lands is stated above,
@@ -2089,7 +2093,7 @@ suite "Scene":
 
 
   test "a version outside what this build reads is refused by the chain itself":
-    # Guard lives with walk rather than only at each call site, so caller that
+    # Guard lives with walk rather than only at each call site, so caller that.
     #   forgets to check `readsSceneVersion` still cannot get half-upgraded item.
     check itemUpgraded(savedWith(ord(Ink.Rose)), 0'u8).isNone
     check itemUpgraded(savedWith(ord(Ink.Rose)), VERSION_SCENE + 1'u8).isNone
@@ -2120,7 +2124,7 @@ suite "Scene":
 
 
   test "replayFrom restamps a whole scene into an arrival, in creation order":
-    # What opening scene and demo preset both go through: built all at once, then
+    # What opening scene and demo preset both go through: built all at once, then.
     #   handed to reader as construction it is. Slot order is scrambled first, so
     #   this pins that restamp follows creation order rather than arena's layout.
     var scene = initScene()
@@ -2151,7 +2155,7 @@ suite "Scene":
 
 
   test "the opening scene arrives as a replay rather than all at once":
-    # Startup seeds are construction somebody else made, exactly as loaded file
+    # Startup seeds are construction somebody else made, exactly as loaded file.
     #   is, so both front-ends stagger them. `constructSeeds` itself deliberately does
     #   not: `runStoryboard` calls it too and sweeps each step on clock of its own.
     const CLOCK = 4.0
@@ -2166,13 +2170,13 @@ suite "Scene":
     check opened.len >= 2
     for slot in 1 ..< opened.len:
       check opened.bornAt(slot) > opened.bornAt(slot - 1)
-    # Still on screen quickly: opening scene reader waits through is worse opening
+    # Still on screen quickly: opening scene reader waits through is worse opening.
     #   scene than one that simply appeared.
     check opened.bornAt(opened.len - 1) - CLOCK <= SECONDS_REPLAY_WHOLE + TOLERANCE_TEST
 
 
   test "a replay stamp in the future draws its object at no size yet":
-    # What makes stagger visible rather than merely recorded: `mesh.animationProgress`
+    # What makes stagger visible rather than merely recorded: `mesh.animationProgress`.
     #   reads born clock has not reached as zero progress, so object waiting its
     #   turn is drawn at nothing and grows in when its beat arrives.
     const CLOCK = 3.0
@@ -2183,7 +2187,7 @@ suite "Scene":
     check animationProgress(CLOCK, bornReplaying(0, 4, CLOCK)) == 0.0
 
 
-  # Saving and loading name filesystem, which browser has none of: `scene.nim`
+  # Saving and loading name filesystem, which browser has none of: `scene.nim`.
   #   declares that pair for desktop backend alone, so their tests are guarded to
   #   match. Every other invariant in this suite holds on both backends and is checked
   #   on both.
@@ -2225,7 +2229,7 @@ suite "Scene":
 
 
     test "every multi-byte field is written little-endian, whatever the host":
-      # Bytes themselves, not round trip: round trip passes on any byte order as
+      # Bytes themselves, not round trip: round trip passes on any byte order as.
       #   long as one build writes and reads it, and second implementation of this
       #   format is `glue.js`, which hands `DataView` explicit `true` at every call and
       #   cannot be asked what desktop felt like doing. Pinning layout here is what
@@ -2247,7 +2251,7 @@ suite "Scene":
       check uint8(bytes[start_count]) == 1'u8
       for offset in 1 .. 3: check uint8(bytes[start_count + offset]) == 0'u8
 
-      # First coefficient, past count and this item's ink, visibility, label length and
+      # First coefficient, past count and this item's ink, visibility, label length and.
       #   one byte of label itself.
       let start_first = start_count + 4 + 3 + 1
       check uint8(bytes[start_first + 6]) == 0x00'u8
@@ -2312,7 +2316,7 @@ suite "Scene":
 
 
     test "a scene file from before the palette changed is read, not refused":
-      # Item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered
+      # Item's ink is stored as `Ink`'s own ordinal, and reserving `Invalid` renumbered.
       #   that enum -- version-1 file's bytes name different colours now. Reading it
       #   through palette it was written under is what keeps somebody's scene;
       #   three hues that no longer exist fold onto ones that do, which is recoverable
@@ -2343,7 +2347,7 @@ suite "Scene":
 
 
     test "a version-2 file is read under today's palette, unshifted":
-      # Version 2 and 3 differ only in what item *sequence* promises, so version-2
+      # Version 2 and 3 differ only in what item *sequence* promises, so version-2.
       #   file's ordinals are today's and must not be folded through version-1 rule.
       var scene = initScene()
       let path = getTempDir() / "visualiser_suite_scene_v2.rgascene"
@@ -2362,7 +2366,7 @@ suite "Scene":
 
 
     test "a file from a version this build predates is refused rather than guessed at":
-      # Floor never rises, so only ceiling can refuse: later format may mean
+      # Floor never rises, so only ceiling can refuse: later format may mean.
       #   anything at all by these bytes, and there is nothing honest to do but say so.
       var scene = initScene()
       discard scene.addItem(POINTS[0], "keep", Ink.Rose)
@@ -2379,7 +2383,7 @@ suite "Scene":
 
 
     test "a saved scene keeps creation order however its slots were reused":
-      # What version 3 is for. Removing and re-adding drops new item into freed
+      # What version 3 is for. Removing and re-adding drops new item into freed.
       #   slot, so slot order and creation order disagree -- and it is creation order
       #   replay has to walk, or file plays back construction that never happened.
       var original = initScene()
@@ -2399,7 +2403,7 @@ suite "Scene":
       check toText(loaded[1].label) == "p2"
       check toText(loaded[2].label) == "p3"
       check toText(loaded[3].label) == "late"
-      # And order survives second trip, since loading rebuilds ordinals from
+      # And order survives second trip, since loading rebuilds ordinals from.
       #   file's own sequence rather than from wherever slots landed.
       check saveScene(loaded, path).contains("Saved 4")
       var again = initScene()
@@ -2409,7 +2413,7 @@ suite "Scene":
 
 
     test "a loaded scene arrives one object at a time, replaying its construction":
-      # Load stamps borns from caller's clock forward, which is what makes each
+      # Load stamps borns from caller's clock forward, which is what makes each.
       #   object still be growing in when next arrives (`mesh.animationProgress` reads
       #   born in future as zero size). Checked against file, not against
       #   scene it came from: whole point is that replay is reconstructed from
@@ -2465,11 +2469,11 @@ suite "Scene":
 
 suite "History":
   proc scenesEqual(a, b: Scene): bool =
-    ## Compare two scenes item by item, rather than through plain `==`: `Scene`
-    ## embeds `Multivector`, whose own `==` is intentional compile error (see
-    ## `pga/multivectors.nim`) steering every other caller toward `=~`'s tolerance --
-    ## this is that same comparison, just folded field by field over whole scene
-    ## rather than one multivector at time.
+    ## Compare two scenes item by item, rather than through plain `==`:
+    ##   `Scene` embeds `Multivector`, whose own `==` is intentional compile error (see
+    ##   `pga/multivectors.nim`) steering every other caller toward `=~`'s tolerance -- this is that
+    ##   same comparison, just folded field by field over whole scene rather than one multivector at
+    ##   time.
     if a.len != b.len: return false
     for slot in 0 ..< ITEMS_MAX:
       if a.isAlive(slot) != b.isAlive(slot): return false
@@ -2497,7 +2501,7 @@ suite "History":
     check not history.canRedo
     check history.canUndo
 
-    # Walk all way back, checking scene equality against what was actually recorded
+    # Walk all way back, checking scene equality against what was actually recorded.
     #   at each step, and that canUndo agrees with undo's own success, right up to
     #   seeded state undo can never reach past.
     for i in countdown(len(snapshots) - 1, 1):
@@ -2528,7 +2532,7 @@ suite "History":
       history.record(scene, camera)
       snapshots.add(scene)
 
-    # Only most recent CAPACITY_HISTORY states are still reachable: undoing all
+    # Only most recent CAPACITY_HISTORY states are still reachable: undoing all.
     #   way back lands on oldest still-retained one, CAPACITY_HISTORY - 1 steps back
     #   from latest, not on very first state ever recorded.
     var count_undone = 0
@@ -2536,7 +2540,7 @@ suite "History":
     check count_undone == CAPACITY_HISTORY - 1
     check scenesEqual(scene, snapshots[^CAPACITY_HISTORY])
 
-    # Every retained step in turn, not just far end of walk. Timeline is
+    # Every retained step in turn, not just far end of walk. Timeline is.
     #   ring, so wrapped one has its oldest step somewhere in middle of array
     #   and its newest just behind it; index that forgets wrap still lands
     #   count and can still land two ends, and misorders everything between them.
@@ -2579,7 +2583,7 @@ suite "History":
 
 
   test "crossing a step either way restores the view that step's own edit was made from":
-    # Whole point of carrying camera: whatever step adds or takes away has to be
+    # Whole point of carrying camera: whatever step adds or takes away has to be.
     #   on screen as it happens, which means under view that edit was made from -- not
     #   under wherever camera has since been orbited to, and not under view
     #   *previous* edit happened to be made from however long ago.
@@ -2607,13 +2611,13 @@ suite "History":
     history.record(scene, camera)
     let camera_b = camera
 
-    # Orbiting after fact records nothing of its own, so step ignores wherever
+    # Orbiting after fact records nothing of its own, so step ignores wherever.
     #   camera has drifted to since.
     camera.azimuth = -2.5
     camera.distance = 3.0
     camera.elevation = 1.1
 
-    # Undoing `b` takes scene back to one item and view back to where `b` was
+    # Undoing `b` takes scene back to one item and view back to where `b` was.
     #   built -- `b` is what vanishes, so `b`'s own view is one to watch it from.
     check history.undo(scene, camera)
     checkAimedLike(camera, camera_b)
@@ -2633,7 +2637,7 @@ suite "History":
 
 
   test "undo and redo each advance the revision past every one the timeline has seen":
-    # Front-end holds meshes and placements on revision; step that landed on
+    # Front-end holds meshes and placements on revision; step that landed on.
     #   number it had already drawn showed nothing until camera moved.
     var scene = initScene()
     var camera = initCameraDefault()
@@ -2664,9 +2668,9 @@ suite "Camera Aim":
     (WIDTH_AIM, HEIGHT_AIM) = (1440, 900) ## Frame centred box is measured in.
     AZIMUTHS_AIM = [0.0, 0.7, 1.6, 2.4, 3.1]
     ELEVATIONS_AIM = [-0.6, 0.2, 0.9]
-      ## Orientations framing rule is swept over. Swept, not sampled at one camera:
-      ## twice now rule about screen geometry here passed single-orientation check and
-      ## was plainly wrong from camera nobody had looked from.
+      ## Sweep framing rule over these orientations.
+      ##   Swept, not sampled at one camera: rule about screen geometry passing
+      ##   single-orientation check can be plainly wrong from camera nobody looked from.
 
   proc marginsCentred(): (float, float) =
     ## Measure how far in centred box begins, across and down, in this suite's frame.
@@ -2697,7 +2701,7 @@ suite "Camera Aim":
 
 
   test "on screen is not in view: the box is two thirds of the frame, not all of it":
-    # What whole rule rests on. Object clinging to edge is visible without
+    # What whole rule rests on. Object clinging to edge is visible without.
     #   being what view is about, and this is case that says so.
     let point = toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))
     let camera = placementAim(1.6, 0.2)
@@ -2713,9 +2717,9 @@ suite "Camera Aim":
 
 
   proc offsetFromTarget(camera: Camera; across, down: float): Multivector =
-    ## Build point standing off camera's own target, sideways and downward, by these
-    ## fractions of its orbit distance -- which is to say by those tangents from sight
-    ## axis, since offsets are square to it and so leave depth alone.
+    ## Build point standing off camera's own target, sideways and downward.
+    ##   By these fractions of its orbit distance, i.e. by those tangents from sight axis,
+    ##   since offsets are square to it and so leave depth alone.
     let axes = camera.frame(camera.eye)
     toMultivector(
       camera.target + (across*camera.distance)*axes.axis_right -
@@ -2724,7 +2728,7 @@ suite "Camera Aim":
 
 
   test "a wider window does not widen what counts as in view":
-    # Defect box's shape exists to prevent. Field of view is vertical, so
+    # Defect box's shape exists to prevent. Field of view is vertical, so.
     #   fraction of frame's *width* is `aspect` times as much world: on shipped
     #   build box reached 23.9 degrees off sight axis across 1440x900 window
     #   against 15.4 down, and 7.3 across 390x844 phone. Picking object on desktop
@@ -2741,7 +2745,7 @@ suite "Camera Aim":
 
 
   test "the box never reaches further across than it reaches down":
-    # Property that makes one above true of *every* frame rather than of wide ones
+    # Property that makes one above true of *every* frame rather than of wide ones.
     #   only: tall frame keeps its own narrower reach across -- phone held upright is
     #   deliberately left as it was -- so rule is implication, not equality.
     for (width, height) in [(HEIGHT_AIM, HEIGHT_AIM), (WIDTH_AIM, HEIGHT_AIM), (390, 844)]:
@@ -2756,7 +2760,7 @@ suite "Camera Aim":
 
 
   test "on a wide frame the box is as far across as it is down, to the pixel":
-    # Shape itself, measured rather than asserted: walk point out sideways until it
+    # Shape itself, measured rather than asserted: walk point out sideways until it.
     #   leaves box and check where it went. Edge stands at frame's *height*,
     #   not its width -- 300 px from middle of 1440x900 frame rather than 480 -- less
     #   room drawn dot takes.
@@ -2799,7 +2803,7 @@ suite "Camera Aim":
 
 
   test "a previewed construction carries where it is drawn and what it came from":
-    # One statement of construction not yet committed, shared by drag's own
+    # One statement of construction not yet committed, shared by drag's own.
     #   rubber-band answer and both apply pickers. Line joined with point is case
     #   that exercises every field at once: it makes plane, and that plane's disc is
     #   centred on construction's own point rather than on its closest approach to
@@ -2817,14 +2821,14 @@ suite "Camera Aim":
       creationAnchor(Operation.Wedge, line, point, previewed.get.geometry).get
     check not (previewed.get.anchor.get =~ positionAnchor(previewed.get.geometry).get)
 
-    # Nothing drawable, nothing previewed -- one test that covers pair of wrong
+    # Nothing drawable, nothing previewed -- one test that covers pair of wrong.
     #   grades and pair already lying on each other alike.
     check scene.previewApplying(Operation.WedgeAnti, slot_point, slot_point).isNone
     # And nothing at all where picker is left open across delete.
     scene.removeItem(slot_point)
     check scene.previewApplying(Operation.Wedge, slot_line, slot_point).isNone
 
-    # Edit session's own staged geometry is same type with neither field, which is
+    # Edit session's own staged geometry is same type with neither field, which is.
     #   what keeps it out of framing rule below.
     check previewStaging(line).anchor.isNone
     check previewStaging(line).operands.isNone
@@ -2832,7 +2836,7 @@ suite "Camera Aim":
 
 
   test "a staged preview is framed with the operands it names; an edit stands alone":
-    # What reader is judging when picker previews operation is *result beside
+    # What reader is judging when picker previews operation is *result beside.
     #   its inputs*: plane that fits frame while two points that made it sit off
     #   edge answers nothing. Edit session is opposite case and must stay that
     #   way -- its staged geometry replaces very object it would be framed against.
@@ -2865,7 +2869,7 @@ suite "Camera Aim":
         # Two points that far apart cannot both be framed by panning alone.
         check framed.distance > camera.distance
 
-    # Edit-session case, over same pair: staging one of those points names no
+    # Edit-session case, over same pair: staging one of those points names no.
     #   operands, so other is left out and no pull-back is owed.
     let alone = some(previewStaging(scene.geometryOf(slot_first)))
     let camera = placementAim(0.7, 0.2)
@@ -2881,7 +2885,7 @@ suite "Camera Aim":
 
 
   test "a plane is centred by its middle and bounded by its rim, against two bounds":
-    # Two questions disc's own size forces apart. Its centre says whether plane is
+    # Two questions disc's own size forces apart. Its centre says whether plane is.
     #   what view is about, so it answers to centred box like any other position;
     #   its rim says only whether whole circle can be seen, so it answers to frame.
     #   Holding rim to box as well is what made picking demo's ground plane
@@ -2891,8 +2895,8 @@ suite "Camera Aim":
     let (margin_x, margin_y) = marginsCentred()
 
     proc rimAt(place: Camera; centre: Position): tuple[past_box, off_frame: bool] =
-      ## Walk drawn rim, reporting whether it reaches past centred box and whether
-      ## any of it leaves frame -- two bounds this rule now tells apart.
+      ## Walk drawn rim, reporting whether it reaches past centred box or leaves frame.
+      ##   Two bounds this rule tells apart.
       let
         axes = frame(ground).get
         view_projection = place.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
@@ -2909,7 +2913,7 @@ suite "Camera Aim":
             at.y < 0.0 or at.y > float(HEIGHT_AIM):
           result.off_frame = true
 
-    # Standing where rim reaches past centred box and stays on screen: in view, and
+    # Standing where rim reaches past centred box and stays on screen: in view, and.
     #   *because* rim is only held to frame. Both halves asserted, neither assumed.
     var camera = placementAim(0.0, 0.42)
     camera.distance = 19.0
@@ -2918,14 +2922,14 @@ suite "Camera Aim":
     check not spread.off_frame
     check isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
 
-    # Now far enough back that whole disc fits well inside frame, and walk where it
+    # Now far enough back that whole disc fits well inside frame, and walk where it.
     #   is drawn out sideways until its own centre leaves centred box. Rim is still
     #   wholly on screen there, so what refuses it is centre alone -- half
     #   rim-only test would miss.
     var afar = camera
     afar.distance = 40.0
     let projection_afar = afar.initMatrixViewProjection(WIDTH_AIM/HEIGHT_AIM)
-    # Sideways along camera's own right, which at any elevation lies flat in plane
+    # Sideways along camera's own right, which at any elevation lies flat in plane.
     #   disc is drawn in -- so this walks where circle is centred without lifting it
     #   off its own plane, and moves it across screen rather than into distance.
     let across = afar.frame(afar.eye).axis_right
@@ -2949,7 +2953,7 @@ suite "Camera Aim":
 
 
   test "a plane filling the frame is not in view; framing pulls its whole disc in":
-    # Complaint this rule was rewritten for: disc wide enough to cover box was
+    # Complaint this rule was rewritten for: disc wide enough to cover box was.
     #   read as in view -- sight axis struck it, so picking it moved camera not at
     #   all -- while reader could see no edge of circle anywhere.
     let ground = toMultivector(ORIGIN) ∧ toMultivector(Position(x: 1.0, y: 0.0, z: 0.0)) ∧
@@ -2981,7 +2985,7 @@ suite "Camera Aim":
           check at.isInFront
           check at.x >= 0.0 and at.x <= float(WIDTH_AIM)
           check at.y >= 0.0 and at.y <= float(HEIGHT_AIM)
-          # ... and rim is allowed to reach past *centred box* on way, which is
+          # ... and rim is allowed to reach past *centred box* on way, which is.
           #   whole of what this rule loosened. Without this case would pass just as
           #   well under stricter one and say nothing about which is in force.
           if at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
@@ -3001,13 +3005,13 @@ suite "Camera Aim":
       toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
     var camera = placementAim(0.0, 0.9)
     camera.distance = 32.0
-    # Fits about its own support at this distance, and does not once disc is drawn
+    # Fits about its own support at this distance, and does not once disc is drawn.
     #   long way off along plane instead.
     check isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
     check not isShownCentrally(
       ground, camera, WIDTH_AIM, HEIGHT_AIM, some(Position(x: 14.0, y: 0.0, z: 0.0))
     )
-    # And framing rule follows same anchor, item by item: same plane in
+    # And framing rule follows same anchor, item by item: same plane in.
     #   same scene at same camera costs nothing without one and moves view with it.
     let (scene_support, picked_support) = sceneOf(ground)
     check framedFor(scene_support, picked_support, camera) == camera.placementOf
@@ -3026,7 +3030,7 @@ suite "Camera Aim":
 
 
   test "a bound grows to hold a whole disc, and a disc swallowing it takes over":
-    # `widened` over balls rather than points, which is what lets distance search
+    # `widened` over balls rather than points, which is what lets distance search.
     #   bracket plane at all: bounding plane by its anchor alone leaves search
     #   starting from sphere of radius nothing and never reaching far enough.
     let bound = SphereWorld(centre: ORIGIN, radius: 1.0)
@@ -3035,7 +3039,7 @@ suite "Camera Aim":
     check held.centre =~ Position(x: 3.0, y: 0.0, z: 0.0)
     # Point is reach-nothing case, unchanged.
     check bound.widened(Position(x: 5.0, y: 0.0, z: 0.0), 0.0).radius =~ 3.0
-    # Contained outright, either way round, including concentric -- where there is no
+    # Contained outright, either way round, including concentric -- where there is no.
     #   direction to slide centre along at all.
     check bound.widened(Position(x: 0.5, y: 0.0, z: 0.0), 0.25) == bound
     let swallowed = bound.widened(ORIGIN, 9.0)
@@ -3044,12 +3048,12 @@ suite "Camera Aim":
 
 
   test "a point fits with its drawn dot inside the box, not only its middle":
-    # `INSET_POINT_SHOWN`, stated as property it exists for: point whose centre lands
+    # `INSET_POINT_SHOWN`, stated as property it exists for: point whose centre lands.
     #   pixel inside box is not in view, because half its dot is not.
     let camera = placementAim(0.0, 0.0)
     let margin_y = 0.5*(1.0 - FRACTION_VIEW_CENTRED)*float(HEIGHT_AIM)
     var found_edge = false
-    # Walk point down frame until it crosses inset edge, then check that bare
+    # Walk point down frame until it crosses inset edge, then check that bare.
     #   centre test would have admitted it little sooner.
     for step in 0 .. 400:
       let place = toMultivector(Position(x: 0.0, y: 0.0, z: 0.02*float(step)))
@@ -3064,7 +3068,7 @@ suite "Camera Aim":
 
 
   test "every selected object is brought into view, not merely the first":
-    # Rule, over orientations. Two points wide apart cannot both be framed by panning
+    # Rule, over orientations. Two points wide apart cannot both be framed by panning.
     #   alone, so this is also where pull-back earns its keep.
     let (scene, picked) = sceneOf(
       toMultivector(Position(x: 14.0, y: -11.0, z: 3.0)),
@@ -3079,7 +3083,7 @@ suite "Camera Aim":
 
 
   test "a selection already in view keeps the reader's own framing, and re-centres":
-    # Least-movement rule, judged where camera *is*: judging it at centred
+    # Least-movement rule, judged where camera *is*: judging it at centred.
     #   placement instead was bug that pulled view about on every pick of
     #   something already plainly visible. What survives of that is reader's own
     #   framing -- **distance and orbit do not move at all** -- while target
@@ -3090,7 +3094,7 @@ suite "Camera Aim":
       toMultivector(Position(x: -2.0, y: 0.0, z: 0.0)),
       toMultivector(Position(x: 0.0, y: 2.0, z: 0.0)),
     )
-    # Mean of three, computed here classical way: algebra's answer is what
+    # Mean of three, computed here classical way: algebra's answer is what.
     #   is under test, so arithmetic it is held against lives in test.
     let middle = Position(x: (2.0 - 2.0 + 0.0)/3.0, y: (0.0 + 0.0 + 2.0)/3.0, z: 0.0)
     for azimuth in AZIMUTHS_AIM:
@@ -3115,7 +3119,7 @@ suite "Camera Aim":
 
 
   test "an object picked on its own is carried to the middle, and nothing else moves":
-    # Single pick has one middle and it is object itself, so target lands on it
+    # Single pick has one middle and it is object itself, so target lands on it.
     #   exactly -- and once it is centred there is nothing left for zoom or turn to
     #   fix, which is least-movement rule holding over everything reader set.
     let place = Position(x: 9.0, y: -7.0, z: 4.0)
@@ -3134,7 +3138,7 @@ suite "Camera Aim":
 
 
   test "a finite selection never turns the orbit":
-    # Preference for pan and zoom over orbit, stated as property it is: finite
+    # Preference for pan and zoom over orbit, stated as property it is: finite.
     #   selection's move carries no turn at all, so no fraction of it does either.
     let scenes = [
       sceneOf(toMultivector(Position(x: 9.0, y: -7.0, z: 4.0))),
@@ -3162,7 +3166,7 @@ suite "Camera Aim":
         let camera = placementAim(azimuth, elevation)
         let framed = framedFor(scene, picked, camera)
         check framed.distance >= camera.distance # Never pulls in ...
-        # ... and not step further than it takes, pan and zoom judged together: tenth
+        # ... and not step further than it takes, pan and zoom judged together: tenth.
         #   of way back along very move fails.
         let short = camera.placementOf.toward(framed, 0.9)
         check not isShownAll(
@@ -3171,7 +3175,7 @@ suite "Camera Aim":
 
 
   test "a selection tight enough to fit already keeps the reader's own scale":
-    # Half of "only when it must" that spread selection cannot show: distance left
+    # Half of "only when it must" that spread selection cannot show: distance left.
     #   exactly alone, not merely one that did not grow much.
     let (scene, picked) = sceneOf(
       toMultivector(Position(x: 0.7, y: 0.4, z: 0.2)),
@@ -3185,7 +3189,7 @@ suite "Camera Aim":
 
 
   test "a line's own support never drags the view off the point beside it":
-    # Line has only to cross box, so where it stands is not where camera should
+    # Line has only to cross box, so where it stands is not where camera should.
     #   centre: support forty units away would pull view off point picked with
     #   it and force pull-back to drag that support back into frame, for nothing.
     let place = Position(x: 0.5, y: 0.2, z: 0.1)
@@ -3211,7 +3215,7 @@ suite "Camera Aim":
 
 
   test "a horizon object is turned toward only as far as it takes":
-    # Star is drawn fixed to eye, so pan and zoom cannot bring it into view and
+    # Star is drawn fixed to eye, so pan and zoom cannot bring it into view and.
     #   move is turn -- one place orbit is allowed, cut short like every other move.
     let star = attitude(
       toMultivector(Position(x: 4.0, y: 4.0, z: 1.0)) ∧
@@ -3229,7 +3233,7 @@ suite "Camera Aim":
       let short = camera.placementOf.toward(framed, 0.9)
       check not isShownCentrally(star, camera.placed(short), WIDTH_AIM, HEIGHT_AIM)
 
-    # Beside anything finite, finite framing wins outright and angles stand: star
+    # Beside anything finite, finite framing wins outright and angles stand: star.
     #   behind reader and point in front have no one placement showing both.
     let (scene_both, picked_both) =
       sceneOf(star, toMultivector(Position(x: 3.0, y: -2.0, z: 1.0)))
@@ -3264,7 +3268,7 @@ suite "Camera Aim":
 
 
   test "the whole selection is framed end to end, through the standing offer":
-    # Driving rule way front-end does, rather than calling `placementFor`
+    # Driving rule way front-end does, rather than calling `placementFor`.
     #   directly: offer, ease, and arrival, over whole animation.
     const DURATION = 0.35
     var camera = placementAim(1.6, 0.2)
@@ -3299,11 +3303,11 @@ suite "Camera Aim":
     let aim_two = aim_one.aimIncluding(toMultivector(b), SCALE_AIM)
     check aim_two.get.sphere.get.centre =~ ORIGIN
     check aim_two.get.sphere.get.radius =~ 3.0
-    # Bound cannot be widened by ball it already holds, so folding one in twice leaves
+    # Bound cannot be widened by ball it already holds, so folding one in twice leaves.
     #   it exactly as it was: as *bound*, aim is set and not tally.
     check aim_two.aimIncluding(toMultivector(a), SCALE_AIM).get.sphere.get ==
       aim_two.get.sphere.get
-    # Its **middle** is tally, because middle is: fold `a` again and mean of
+    # Its **middle** is tally, because middle is: fold `a` again and mean of.
     #   three leans back toward it. That is why `framing.watched` yields each object once
     #   -- unary preview naming its own operand twice must not weigh it twice.
     check aim_two.get.centroid.get =~ ORIGIN
@@ -3326,8 +3330,8 @@ suite "Camera Aim":
 
 
   proc aimOn(centre: Position; radius = 0.0): CameraAim =
-    ## Name bare requirement for tween cases below, which are about ease rather
-    ## than about what any particular geometry asks for.
+    ## Name bare requirement for tween cases below.
+    ##   Cases are about ease rather than about what any particular geometry asks for.
     CameraAim(sphere: some(SphereWorld(centre: centre, radius: radius)))
 
   proc placeOn(camera: Camera; target: Position): CameraPlacement =
@@ -3354,14 +3358,14 @@ suite "Camera Aim":
 
     tween.advance(camera, DURATION, easeOutCubic)
     check camera.target.x =~ arrival.x
-    # Arrived, so nothing left to carry -- but goal is kept, not dropped, so
+    # Arrived, so nothing left to carry -- but goal is kept, not dropped, so.
     #   caller still offering it every frame is recognised rather than re-armed.
     check tween.is_arrived
     check tween.goal.isSome
 
 
   test "a tween eases its distance too, geometrically rather than linearly":
-    # Distance is multiplicative quantity -- wheel and `FACTOR_DOLLY_PRESS` scale it
+    # Distance is multiplicative quantity -- wheel and `FACTOR_DOLLY_PRESS` scale it.
     #   -- so midpoint of ease from 10 to 40 is 20, not 25.
     const DURATION = 0.35
     var camera = initCamera(ORIGIN, 10.0, 0.0, 0.4)
@@ -3401,7 +3405,7 @@ suite "Camera Aim":
     let arrival = Position(x: 10.0, y: 0, z: 0)
     tween.aimAt(camera, aimOn(arrival), camera.placeOn(arrival), 0.0, DURATION)
     tween.advance(camera, DURATION*0.5, easeOutCubic)
-    # Same goal, offered again -- and with destination read off camera as it now
+    # Same goal, offered again -- and with destination read off camera as it now.
     #   stands, exactly as standing offer would recompute it.
     tween.aimAt(
       camera, aimOn(arrival), camera.placeOn(arrival), DURATION*0.5, DURATION
@@ -3435,7 +3439,7 @@ suite "Camera Aim":
 
 
   test "an arrived tween stops writing, so the user's own camera move survives":
-    # Bug this pins: aim rule offers selection's goal every frame. While
+    # Bug this pins: aim rule offers selection's goal every frame. While.
     #   tween cleared its goal on arrival, that standing offer re-armed ease each frame
     #   from wherever user had just panned to, and dragged camera straight back --
     #   panning was dead for as long as anything stayed selected.
@@ -3459,7 +3463,7 @@ suite "Camera Aim":
 
 
   test "abandon hands the camera to the user without re-arming the standing offer":
-    # `release` here would be actively wrong, and was: it clears goal, so aim
+    # `release` here would be actively wrong, and was: it clears goal, so aim.
     #   rule's own standing offer is seen as new on very next frame and takes
     #   camera straight back. Keeping goal and marking it done is what makes that
     #   offer read as already answered.
@@ -3482,7 +3486,7 @@ suite "Camera Aim":
 
 
   test "release lets the same goal aim the camera again":
-    # Withdrawing offer is what makes picking same object twice work: second
+    # Withdrawing offer is what makes picking same object twice work: second.
     #   pick must aim afresh, not be recognised as one already delivered.
     var camera = initCamera(ORIGIN, 12.0, 0.0, 0.4)
     var tween: CameraTween
@@ -3506,13 +3510,14 @@ suite "Camera Aim":
 
 suite "Selection":
   proc ordered(selection: Selection): seq[int] =
-    ## Read whole selection out in pick order, so test can state order it
-    ## expects in one line rather than indexing position by position.
+    ## Read whole selection out in pick order.
+    ##   Test can then state order it expects in one line rather than indexing position
+    ##   by position.
     for position in 0 ..< selection.len: result.add(selection.at(position))
 
 
   test "a pulse covers the same ground however many frames it is cut into":
-    # Frame-rate independence, which is whole reason travel advances by elapsed
+    # Frame-rate independence, which is whole reason travel advances by elapsed.
     #   seconds rather than by step frame. Driven on browser too: 3 s of clock
     #   moved head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180.
     proc travelAfter(seconds_total: float; frames: int; lap: float): float =
@@ -3530,7 +3535,7 @@ suite "Selection":
     for frames in [12, 60, 144, 600]:
       check travelAfter(1.0, frames, 900.0) =~ SPEED_MARKER_PULSE
 
-    # **And same pixels on short outline as on long one.** This is what units
+    # **And same pixels on short outline as on long one.** This is what units.
     #   buy and what phase could not: phase advanced by `speed/around`, so one second
     #   bought three times share of 300-px outline that it bought of 900-px one,
     #   and head's screen pace was whatever camera had most recently made
@@ -3538,7 +3543,7 @@ suite "Selection":
     check travelAfter(1.0, 60, 300.0) =~ travelAfter(1.0, 60, 900.0)
 
   test "a pulse ignores an absence, rather than travelling all of it at once":
-    # Backgrounded tab stops its animation callbacks; gap it comes back with is not
+    # Backgrounded tab stops its animation callbacks; gap it comes back with is not.
     #   frame, and spending it in one step would land comet anywhere.
     var clock: PulseClock
     clock.tick(0.0)
@@ -3550,7 +3555,7 @@ suite "Selection":
   test "each slot keeps its own pulse, and a reused slot starts afresh":
     var clock: PulseClock
     clock.tick(0.0)
-    # Step is read before tick that consumes it, which is order both frame
+    # Step is read before tick that consumes it, which is order both frame.
     #   loops use: one reading, then every slot advanced by it.
     let step = clock.secondsStep(1.0)
     clock.tick(1.0)
@@ -3562,7 +3567,7 @@ suite "Selection":
     # Out of range is question with no answer, not crash.
     check clock.travelAt(-1) == 0.0
     check clock.travelAt(ITEMS_MAX) == 0.0
-    # And carried travel is kept below one lap rather than accumulating, which is what
+    # And carried travel is kept below one lap rather than accumulating, which is what.
     #   stops change in lap being multiplied by however many laps have gone by --
     #   original teleport, which unreduced pixel offset would have reproduced.
     var carried: PulseClock
@@ -3576,22 +3581,22 @@ suite "Selection":
 
 
   test "every operator reads in the library's own symbols, not an ASCII stand-in":
-    # Drag used to name what it built with `^`, `v` and `->` while panel named
+    # Drag used to name what it built with `^`, `v` and `->` while panel named.
     #   same pair with catalogue's symbols, so one object list carried both.
     check notationSubstituted(Operation.Wedge, "a", "b") == "a ∧ b"
     check notationSubstituted(Operation.WedgeAnti, "L", "G") == "L ∨ G"
     check notationSymbolic(Operation.Wedge) == "𝐦 ∧ 𝐧"
-    # Picker offers symbols alone; English name after them is what made
+    # Picker offers symbols alone; English name after them is what made.
     #   popover wider than hand can reach.
     for operation in Operation:
       check not notationSymbolic(operation).contains("  ")
-    # Drag wedges carry that same picker text, so wheel and picker are one
+    # Drag wedges carry that same picker text, so wheel and picker are one.
     #   vocabulary rather than two reader has to map between. Words survive only
     #   where three are *taught*, in drawer's own legend, which prints both.
     check labelOf(DragChoice.Join) == notationSymbolic(Operation.Wedge)
     check labelOf(DragChoice.Project) == notationSymbolic(Operation.ProjectOrthogonal)
     check wordOf(DragChoice.Join) == "join"
-    # Way out to rest of catalogue is bare ellipsis: beside three pieces of
+    # Way out to rest of catalogue is bare ellipsis: beside three pieces of.
     #   notation word is odd one out, and no operation is written with one.
     check labelOf(DragChoice.More) == "…"
 
@@ -3601,7 +3606,7 @@ suite "Selection":
     check memory.lastOf(Arity.Two) == OPERATION_FIRST_BINARY
     memory.remember(Operation.WedgeAnti)
     check memory.lastOf(Arity.Two) == Operation.WedgeAnti
-    # Remembering binary leaves unary picker where it was: two lists are
+    # Remembering binary leaves unary picker where it was: two lists are.
     #   disjoint, so one arity's choice can say nothing about other's.
     check memory.lastOf(Arity.One) == OPERATION_FIRST_UNARY
     memory.remember(Operation.Bulk)
@@ -3692,7 +3697,7 @@ suite "Selection":
 
 
   test "pruneDead drops removed slots and keeps the rest in pick order":
-    # Removed slot goes straight back to free list, so stale pick left behind
+    # Removed slot goes straight back to free list, so stale pick left behind.
     #   would silently reattach itself to whatever object is added next.
     var scene = initScene()
     for i in 0 ..< 3: discard scene.addItem(POINTS[i], "p" & $i, inkCycled(i))
@@ -3715,11 +3720,11 @@ suite "Selection":
 
 
 
-# Arena is desktop-only -- it casts pointer over global and carves typed slices
+# Arena is desktop-only -- it casts pointer over global and carves typed slices.
 #   from it, which JS backend cannot do -- so its own suite runs on that backend alone.
 when not defined(js):
   suite "Arena Swap":
-    # Two blocks big enough to tell apart by what is written into them, and small enough
+    # Two blocks big enough to tell apart by what is written into them, and small enough.
     #   that filling one is test rather than wait.
     var backing_first: array[512, byte]
     var backing_second: array[512, byte]
@@ -3743,15 +3748,15 @@ when not defined(js):
       pair.swap()
       discard pair.current.push[:int32](2)
       check pair.current.used == 2*sizeof(int32)
-      # Round again: first block comes back current and is reclaimed on way in,
-      #   which is what "starts completely clean" means -- not reclaimed on way out,
-      #   since that would take last frame's bytes away while they were still wanted.
+      # Swap again: first block comes back current and is reclaimed on way in.
+      #   What "starts completely clean" means; not reclaimed on way out, since that
+      #   would take last frame's bytes away while they were still wanted.
       pair.swap()
       check pair.current.used == 0
       check pair.previous.used == 2*sizeof(int32)
 
     test "a carve outlives exactly one swap and no more":
-      # Two frames is lifetime. On second swap block is current again and its
+      # Two frames is lifetime. On second swap block is current again and its.
       #   offset is back to zero, so next carve hands out very same bytes.
       var pair = initArenaSwap(backing_first, backing_second)
       let first = pair.current.push[:int32](1)
@@ -3766,14 +3771,14 @@ when not defined(js):
       discard pair.current.push[:int32](6)
       pair.swap()
       discard pair.current.push[:int32](2)
-      # Larger of two, never their sum: they hold one frame's work each, so sum
+      # Larger of two, never their sum: they hold one frame's work each, so sum.
       #   would name quantity no single frame ever reached.
       check pair.peakUsedSwap == 6*sizeof(int32)
       check pair.usedSwap == 2*sizeof(int32)
 
 
 
-# PNG and GIF encoding, and arena backing both, are desktop-only: each binds C
+# PNG and GIF encoding, and arena backing both, are desktop-only: each binds C.
 #   entry point JS backend has none of, so these run on that backend alone.
 when not defined(js):
   suite "Image":
@@ -3841,7 +3846,7 @@ when not defined(js):
       check uint8(document[8]) == uint8(HEIGHT) and uint8(document[9]) == 0
       check document[^1] == char(0x3B)
 
-      # Walk every frame's own blocks by their own lengths, landing exactly on
+      # Walk every frame's own blocks by their own lengths, landing exactly on.
       #   trailer proves each frame's sub-blocks are sound, exactly as PNG test does.
       # Signature, logical screen, colour table, application extension.
       const HEADER_LEN = 6 + 7 + 256*3 + 19
@@ -3864,12 +3869,14 @@ when not defined(js):
 
 
     proc decodeGifFrame(data: seq[uint8]): seq[uint8] =
-      ## Decode one frame's own LZW sub-block stream back to palette indices, by exactly
-      ## algorithm any GIF89a reader implements -- mirroring `gif.nim`'s encoder, not
-      ## calling into it, so this stands as independent check of what it wrote.
-      ##   Widens its own code width one step earlier than encoder does: GIF's LZW
-      ##   is asymmetric here by design ("early change"), since decoder's dictionary
-      ##   always trails encoder's by one entry it has not yet been told about.
+      ## Decode one frame's own LZW sub-block stream back to palette indices.
+      ##   By exactly algorithm any GIF89a reader implements, mirroring `gif.nim`'s
+      ##   encoder, not calling into it, so this stands as independent check of what it
+      ##   wrote.
+      ##   Widens its own code width one step earlier than encoder does.
+      ##     GIF's LZW is asymmetric here by design ("early change"), since decoder's
+      ##     dictionary always trails encoder's by one entry it has not yet been told
+      ##     about.
       const
         BITS_CODE = 8
         COUNT_TABLE = 1 shl BITS_CODE
@@ -3916,10 +3923,10 @@ when not defined(js):
 
 
     test "written frame decodes back to what it was quantized to, past a code-width growth":
-      ## Regression test for real bug: growing LZW code width one symbol too early
-      ##   packed bits real reader disagreed with, corrupting every code from there on.
-      ##   Flat or small image never reaches dictionary sizes where that bites, so
-      ##   this drives enough distinct colour pairs to grow code width at least once.
+      ## Guard against growing LZW code width one symbol too early.
+      ##   Packs bits real reader disagrees with, corrupting every code from there on.
+      ##   Flat or small image never reaches dictionary sizes where that bites, so this
+      ##   drives enough distinct colour pairs to grow code width at least once.
       const (WIDTH, HEIGHT) = (64, 64)
       var frame = newSeq[uint8](WIDTH*HEIGHT*3)
       for i in 0 ..< WIDTH*HEIGHT:
@@ -3927,7 +3934,7 @@ when not defined(js):
         frame[i*3 + 1] = uint8((i*97) mod 256)
         frame[i*3 + 2] = uint8((i*211) mod 256)
 
-      # `writeGif` takes rows bottom-up and writes them top-down, exactly as `writePng`
+      # `writeGif` takes rows bottom-up and writes them top-down, exactly as `writePng`.
       #   does; build expected indices in that same written order, not source's.
       var expected: seq[uint8]
       for row_top in 0 ..< HEIGHT:
@@ -3964,7 +3971,7 @@ when not defined(js):
 
 suite "Help":
   test "every entry lands in exactly one tab, and the tabs account for the whole table":
-    # What stops reflow that quietly drops row to make rest fit. `countOf` is what
+    # What stops reflow that quietly drops row to make rest fit. `countOf` is what.
     #   both front-ends size tab from, so summing it is summing what is actually drawn.
     var total = 0
     for path in HelpPath: total += countOf(path)
@@ -3972,7 +3979,7 @@ suite "Help":
 
 
   test "no tab holds more than fits the smallest screen this help supports":
-    # Asserted at compile time too, in `help.nim`'s own `static` block; stated here as well
+    # Asserted at compile time too, in `help.nim`'s own `static` block; stated here as well.
     #   because that assertion is invisible in passing run, and this is property
     #   whole tab split exists to hold.
     #   Two paths have bounds of their own. `keys` describes keyboard, and screen this
@@ -3988,7 +3995,7 @@ suite "Help":
 
 
   test "the help records every operation the build offers, by the name it offers it under":
-    # Generated from catalogue rather than transcribed, so this cannot drift -- and
+    # Generated from catalogue rather than transcribed, so this cannot drift -- and.
     #   case is here to say that if anyone ever transcribes it, drift fails build.
     for operation in Operation:
       var is_listed = false
@@ -4001,7 +4008,7 @@ suite "Help":
 
 
   test "the help records every key, every motion and every action the view answers":
-    # What "up to date" has to mean if it is to stay true: binding added without row
+    # What "up to date" has to mean if it is to stay true: binding added without row.
     #   fails build day it is added, rather than being noticed by reader who
     #   went looking for it and found nothing.
     let text = block:
@@ -4010,7 +4017,7 @@ suite "Help":
       joined
     for key in Key:
       check nameOf(key) in text
-    # Every motion and action is *described* by some row; rows group them by job, so
+    # Every motion and action is *described* by some row; rows group them by job, so.
     #   this asks for words reader would look for rather than enum's own name.
     for phrase in [
       "slide the view", "lower or raise", "orbit", "further out", "faster",
@@ -4037,9 +4044,9 @@ suite "Help":
 
 
   test "every tab says what it is about, so none opens on rows with no context":
-    # Line above rows carries what two-column row cannot -- which menu this is,
-    #   what wedge is. Path added without one would render that line blank, which reads
-    #   as gap rather than as omission.
+    # Check line above rows, carrying what two-column row cannot.
+    #   Which menu this is, what wedge is; path added without one would render that line
+    #   blank, which reads as gap rather than as omission.
     for path in HelpPath:
       check len(descriptionOf(path)) > 0
       # Sentence, not label: tab strip already carries short form.
@@ -4105,7 +4112,7 @@ suite "Picking":
 
 
   test "a line's attitude is picked over the line it came from":
-    # Attitude of line is point at horizon, and `tessellate.addLine` runs
+    # Attitude of line is point at horizon, and `tessellate.addLine` runs.
     #   line out to *exactly* where `addPoint` draws that attitude, "with no gap" -- so
     #   two overlap on screen precisely and ranking is what has to separate them.
     #   Points outrank lines, so star must win. It did not: `pickNearest` built its
@@ -4115,7 +4122,7 @@ suite "Picking":
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
     let frame_camera = camera.frame(camera.eye)
-    # Running away from eye but tilted off sight line, so line is streak
+    # Running away from eye but tilted off sight line, so line is streak.
     #   rather than dot and its vanishing point stands clear of screen's middle.
     let heading = normalize(frame_camera.forward + 0.3*Direction(x: 0, y: 0, z: 1))
     check heading.isSome
@@ -4130,7 +4137,7 @@ suite "Picking":
     check screen.isInFront
     let at = ScreenPosition(x: screen.x, y: screen.y, depth: 0.0)
 
-    # Line alone is picked there -- without this case would pass on cursor that
+    # Line alone is picked there -- without this case would pass on cursor that.
     #   simply misses line, proving nothing about which of two wins.
     var scene_line = initScene()
     scene_line.addItem(line, "L", Ink.Jade)
@@ -4155,7 +4162,7 @@ suite "Picking":
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
     let camera = cameraFacingOrigin()
     let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
-    # Point itself projects exactly to CENTRE; offsetting cursor instead of
+    # Point itself projects exactly to CENTRE; offsetting cursor instead of.
     #   point is what actually exercises radius bound.
     let near = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT - 1.0, y: CENTRE.y, depth: 0.0)
     let far = ScreenPosition(x: CENTRE.x + RADIUS_PICK_POINT + 1.0, y: CENTRE.y, depth: 0.0)
@@ -4239,7 +4246,7 @@ suite "Picking":
 
 
   test "plane misses where its sight ray lands outside the drawn rim":
-    # Window corner is widest angle any ray reaches, off sight axis, and
+    # Window corner is widest angle any ray reaches, off sight axis, and.
     #   camera stands far enough back (30 units, against `EXTENT_PLANE_F` of 8) that
     #   corner ray's own diagonal reach lands well outside drawn rim's fixed
     #   radius regardless of how far back camera stands, while centre ray still
@@ -4269,7 +4276,7 @@ suite "Picking":
 
 
   test "the disc broad phase never rejects a cursor over the disc's own sphere":
-    # `isBeyondDisc` may only skip meet meet would refuse. Every point of sphere
+    # `isBeyondDisc` may only skip meet meet would refuse. Every point of sphere.
     #   bounding disc projects onto cursor phase must let through -- sampled over
     #   fixed grid of directions, from cameras facing and oblique to disc.
     let centre = Position(x: 1.5, y: -2.0, z: 0.5)
@@ -4300,7 +4307,7 @@ suite "Picking":
 
 
   test "a plane is picked from either side of it, whichever way its normal points":
-    # **Regression case for shipped fault.** Plane's hit test read depth of
+    # **Regression case for shipped fault.** Plane's hit test read depth of.
     #   raw `ray ∨ plane` meet, whose weight carries which side ray crossed from,
     #   not where crossing is. `unitize` divides by that weight's *norm* and so keeps
     #   its sign, and `depthAgainst` is linear in its point -- so every plane met from
@@ -4314,7 +4321,7 @@ suite "Picking":
     #   what makes *sign* subject, and either alone passes on coin flip.
     for facing in [1.0, -1.0]:
       var scene = initScene()
-      # Three points spanning x = 0. Ordered by `facing`, so two runs differ in
+      # Three points spanning x = 0. Ordered by `facing`, so two runs differ in.
       #   nothing but orientation of very same plane.
       let corners = [
         toMultivector(Position(x: 0, y: -3*facing, z: -3)),
@@ -4331,7 +4338,7 @@ suite "Picking":
 
 
   test "nearer plane wins over a farther one behind it":
-    # Eye sits at (10, 0, 0) looking toward origin along -x, so plane at x=6 stands
+    # Eye sits at (10, 0, 0) looking toward origin along -x, so plane at x=6 stands.
     #   nearer eye (distance 4) than one at x=3 (distance 7).
     var scene = initScene()
     let far_plane = (
@@ -4372,7 +4379,7 @@ suite "Interaction":
     interaction.index_hover = some(1)
     let outcome = interaction.endDrag(scene)
     check scene.len == 3
-    # Two points propose `join`, and item that lands is that join -- not button's
+    # Two points propose `join`, and item that lands is that join -- not button's.
     #   choice, which is what this used to be.
     check outcome.choice == some(DragChoice.Join)
     check scene[2].geometry =~ (POINTS[0] ∧ POINTS[1])
@@ -4383,7 +4390,7 @@ suite "Interaction":
 
 
   test "the sky starts no drag, so a press on empty space still reaches the camera":
-    # Regression this rule exists to prevent, held directly. `beginDrag` failing when
+    # Regression this rule exists to prevent, held directly. `beginDrag` failing when.
     #   nothing is hovered is *entire* mechanism by which press on empty space
     #   becomes orbit -- and plane at horizon is hovered wherever nothing else is,
     #   because it is drawn as dome over every direction. Were it to start drag, orbit
@@ -4397,7 +4404,7 @@ suite "Interaction":
     check not interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
     check not interaction.is_dragging
 
-    # And same refusal at far end: release over sky commits nothing, rather
+    # And same refusal at far end: release over sky commits nothing, rather.
     #   than quietly taking whole sky as operand.
     interaction.is_hover_backdrop = false
     check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
@@ -4413,7 +4420,7 @@ suite "Interaction":
 
 
   test "a press that never moves is a click on what it came down on, not a drag":
-    # Press over object has to start drag eagerly -- press target chooses
+    # Press over object has to start drag eagerly -- press target chooses.
     #   scheme -- so whether it *was* one is only answerable at release.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
@@ -4439,7 +4446,7 @@ suite "Interaction":
     interaction.beginPress(now = 10.0)
     check interaction.beginDrag(arming = MenuArming.OnDwell, now = 10.0)
     interaction.updateCursor(200.0 + 2.0*PIXELS_CLICK_SLOP, 200.0)
-    # Back where it started: reading is latched, so pointer that swung out and
+    # Back where it started: reading is latched, so pointer that swung out and.
     #   returned is still drag rather than click that happened to end where it began.
     interaction.updateCursor(200.0, 200.0)
     interaction.index_hover = some(1)
@@ -4449,7 +4456,7 @@ suite "Interaction":
 
 
   test "a press that never moved stays a click however long it is held":
-    # **Regression case for shipped fault.** 0.35 s deadline stood in `isClick`
+    # **Regression case for shipped fault.** 0.35 s deadline stood in `isClick`.
     #   beside distance bound, so shift-clicking with press held even slightly long
     #   selected nothing at all and answered "Released on its own source; nothing done" --
     #   measured on built page at 600 ms holds, three objects, none of them picked.
@@ -4470,7 +4477,7 @@ suite "Interaction":
 
 
   test "a right press that never opened a wheel reports a click":
-    # It could not once: any drag armed `Always` was refused click outright, on
+    # It could not once: any drag armed `Always` was refused click outright, on.
     #   reasoning that it had asked for menu. But wheel only opens over target
     #   *other* than source, so press that never left its own object never asked for
     #   anything -- and refusing it left right button doing nothing on plain click.
@@ -4486,8 +4493,9 @@ suite "Interaction":
 
 
   test "a release with the wheel open commits the wheel, never a click":
-    # Other half of that rule: once menu *is* open reader was offered choice,
-    #   and answering with quiet selection instead would make button unreliable.
+    # Check other half of that rule.
+    #   Once menu is open reader was offered choice, and answering with quiet selection
+    #   instead would make button unreliable.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
     scene.addItem(POINTS[1], "b", Ink.Rose)
@@ -4518,7 +4526,7 @@ suite "Interaction":
 
 
   test "a wheel the cursor walks away from lets go, and re-aims onto the next object":
-    # What makes wheel opened over wrong object recoverable. Before this it latched
+    # What makes wheel opened over wrong object recoverable. Before this it latched.
     #   its destination for rest of drag, so only way out was to release.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
@@ -4539,7 +4547,7 @@ suite "Interaction":
     interaction.updateDrag(scene, now = 0.0)
     check interaction.menu.isSome
 
-    # Past it: menu goes, and does not come back while cursor is still over that
+    # Past it: menu goes, and does not come back while cursor is still over that.
     #   same object -- otherwise disengaging would do nothing but move menu.
     interaction.updateCursor(centre.x + 2.0*PIXELS_MENU_DISENGAGE, centre.y)
     interaction.updateDrag(scene, now = 0.0)
@@ -4547,7 +4555,7 @@ suite "Interaction":
     interaction.updateDrag(scene, now = 0.0)
     check interaction.menu.isNone
 
-    # On to third object: open again, for **original source** with new
+    # On to third object: open again, for **original source** with new.
     #   destination. Pair re-aims; it never chains off object just left.
     interaction.index_hover = some(2)
     interaction.updateDrag(scene, now = 0.0)
@@ -4580,7 +4588,7 @@ suite "Interaction":
 
 
   test "the palette steps on every released construction, built or not":
-    # Reader watched colour on band for whole drag; offering it again to
+    # Reader watched colour on band for whole drag; offering it again to.
     #   next attempt reads as gesture having never registered.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
@@ -4611,7 +4619,7 @@ suite "Interaction":
 
 
   test "a built object wears exactly the hue its drag was drawn in":
-    # Band, comet and ghost all read `inkOfDrag`, so what reader watched is
+    # Band, comet and ghost all read `inkOfDrag`, so what reader watched is.
     #   what they get. It used to be operation's own colour, which said nothing about
     #   object about to exist.
     var scene = initScene()
@@ -4631,7 +4639,7 @@ suite "Interaction":
 
 
   test "a drag driven without a press is never mistaken for a click":
-    # Safe default `is_press_still` exists for: caller that never went through
+    # Safe default `is_press_still` exists for: caller that never went through.
     #   `beginPress` gets behaviour that predates clicks, whatever clock reads.
     var scene = initScene()
     scene.addItem(POINTS[0], "a", Ink.Rose)
@@ -4662,7 +4670,7 @@ suite "Interaction":
     check scene.len == 1
     check not interaction.is_dragging
     check outcome.index_created.isNone
-    # **And says nothing about it.** Drag let go of over empty space is commonest
+    # **And says nothing about it.** Drag let go of over empty space is commonest.
     #   thing reader does with gesture they thought better of, and it is plain on
     #   screen that nothing arrived; status line for it is message that fires all day.
     #   Refusals that *land on something* still speak, since those reader cannot read
@@ -4744,7 +4752,7 @@ suite "Interaction":
 
 
   test "a drag onto a pair that makes nothing refuses rather than adding a blank":
-    # Plane dragged onto point: join overflows grade 4, meet falls short of antigrade
+    # Plane dragged onto point: join overflows grade 4, meet falls short of antigrade.
     #   4, and projecting plane onto point gives nothing drawable. One pair in
     #   nine that offers no operation at all, and reason `proposalFor` is `Option`.
     var scene = initScene()
@@ -4762,7 +4770,7 @@ suite "Interaction":
 
 
   test "an insisted-on wedge that makes nothing refuses rather than adding a blank":
-    # Two points at same place join to zero. Menu greys that wedge, so this is
+    # Two points at same place join to zero. Menu greys that wedge, so this is.
     #   only reachable by releasing on it anyway -- and what happens then is message and
     #   no item, never slot holding geometry with no shape.
     var scene = initScene()
@@ -4780,7 +4788,7 @@ suite "Interaction":
 
 
   test "at most one of join and meet is offered, over every ordered pair of shapes":
-    # Property whole design rests on: because join and meet are never both
+    # Property whole design rests on: because join and meet are never both.
     #   drawable, `proposalFor` can be plain priority order rather than table of nine
     #   cases with tiebreak. Measured here rather than asserted in prose, over operands
     #   in general position -- earlier measurement used point lying *on* line it
@@ -4796,7 +4804,7 @@ suite "Interaction":
 
 
   test "the proposal for each ordered pair of shapes is the measured one":
-    # Table in `PROVENANCE.md`, pinned. Change to library's grades that moved
+    # Table in `PROVENANCE.md`, pinned. Change to library's grades that moved.
     #   any cell would otherwise silently redefine what every plain drag builds.
     const lut_expected = [
       # point -> point, line, plane.
@@ -4857,7 +4865,7 @@ suite "Interaction":
 
 
   test "the ghost is the wedge being aimed at, not what a plain release would make":
-    # Complaint this answers: with wheel open, ghost was `proposalFor`'s own
+    # Complaint this answers: with wheel open, ghost was `proposalFor`'s own.
     #   answer whatever wedge cursor was in, so reader reaching for `project` watched
     #   ghost of `join` and only found out what they had asked for after letting go.
     var scene = initScene()
@@ -4870,8 +4878,8 @@ suite "Interaction":
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
     let centre = interaction.menu.get
-    # Two points: `join` and `project` both make something, and they make different things,
-    #   which is what lets ghost be told apart from plain-release answer at all.
+    # Take two points: `join` and `project` both make something, and different things.
+    #   What lets ghost be told apart from plain-release answer at all.
     check proposalFor(GENERAL_FIRST[0], GENERAL_SECOND[0]) == some(DragChoice.Join)
     check isOffered(DragChoice.Project, GENERAL_FIRST[0], GENERAL_SECOND[0])
 
@@ -4886,7 +4894,7 @@ suite "Interaction":
       projectOrthogonal(GENERAL_FIRST[0], GENERAL_SECOND[0])
     interaction.aimAt(scene, DragChoice.Join)
     check interaction.preview.get.geometry =~ (GENERAL_FIRST[0] ∧ GENERAL_SECOND[0])
-    # And each of those is exactly what letting go there commits: one rule, drawn and then
+    # And each of those is exactly what letting go there commits: one rule, drawn and then.
     #   obeyed, checked by actually releasing rather than by re-deriving answer.
     for choice in [DragChoice.Join, DragChoice.Project]:
       var trial = interaction
@@ -4899,9 +4907,9 @@ suite "Interaction":
 
 
   test "what a release would do has three answers, and the band's tint has three":
-    # Wheel open over one pair reaches all three without cursor leaving target,
-    #   which is why `inkOfDrag`'s old two-way test could not carry it: centre and
-    #   greyed wedge both had no answer, and they want opposite feedback.
+    # Reach all three effects over one pair with wheel open, without cursor leaving target.
+    #   Two-way test could not carry it: centre and greyed wedge both have no answer, and
+    #   they want opposite feedback.
     var scene = initScene()
     scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
     scene.addItem(GENERAL_SECOND[0], "b", Ink.Rose)
@@ -4913,7 +4921,7 @@ suite "Interaction":
     interaction.updateDrag(scene, 0.0)
     let centre = interaction.menu.get
 
-    # Back at wheel's own centre: releasing calls gesture off, so band goes
+    # Back at wheel's own centre: releasing calls gesture off, so band goes.
     #   neutral rather than warning about refusal that is not going to happen.
     check interaction.effectOf == ReleaseEffect.Nothing
     check interaction.inkOfDrag(scene.inkNext) == Ink.Guide
@@ -4942,7 +4950,7 @@ suite "Interaction":
 
 
   test "with no wheel open the ghost is still the plain-release answer":
-    # Left button's own path, unchanged: it never opens wheel, so what it ghosts is
+    # Left button's own path, unchanged: it never opens wheel, so what it ghosts is.
     #   `proposalFor`'s answer exactly as before.
     var scene = initScene()
     scene.addItem(GENERAL_FIRST[0], "a", Ink.Rose)
@@ -4960,7 +4968,7 @@ suite "Interaction":
 
 
   test "a ghosted plane is centred where the committed one will be":
-    # `mesh.addPlane` centres disc on item's own creation anchor, so ghost drawn
+    # `mesh.addPlane` centres disc on item's own creation anchor, so ghost drawn.
     #   without one sits somewhere object is about to leave -- measured at 2.1 units
     #   here, against disc of radius 8, and jump lands at moment reader is
     #   watching hardest.
@@ -5042,7 +5050,7 @@ suite "Interaction":
     forced.updateDrag(scene, 1000.0)
     check forced.menu.isSome
 
-    # And left button, which is one mouse spends nearly every drag on, never
+    # And left button, which is one mouse spends nearly every drag on, never.
     #   reaches menu at all -- however long it is held still over its target. Dwell
     #   opening under hand that paused mid-gesture is exactly what it is for.
     var never = Interaction(is_enabled: true)
@@ -5056,7 +5064,7 @@ suite "Interaction":
 
 
   test "a dwell wheel nobody entered does not veto the release":
-    # Touch gesture as finger actually does it: drag onto target, pause there
+    # Touch gesture as finger actually does it: drag onto target, pause there.
     #   to aim -- wheel opens under finger, hidden by it -- and lift. Measured on
     #   phone before this rule: that release built nothing every time, which read as
     #   drag itself being broken.
@@ -5073,7 +5081,7 @@ suite "Interaction":
     interaction.updateDrag(scene, now = 0.0)
     interaction.updateDrag(scene, now = SECONDS_DWELL_MENU + 0.1)
     check interaction.menu.isSome
-    # Pair's own answer keeps standing under unentered wheel, ghost included, so
+    # Pair's own answer keeps standing under unentered wheel, ghost included, so.
     #   what band promises and what lift commits stay one thing.
     check interaction.proposal == some(DragChoice.Join)
     check interaction.preview.isSome
@@ -5083,7 +5091,7 @@ suite "Interaction":
 
 
   test "a wedge walked into and left again cancels the release, dwell wheel included":
-    # Other half of rule: entering wheel is engaging with it, so coming back
+    # Other half of rule: entering wheel is engaging with it, so coming back.
     #   to centre afterwards is deliberate way out -- on dwell wheel exactly
     #   as on summoned one.
     var scene = initScene()
@@ -5110,7 +5118,7 @@ suite "Interaction":
 
 
   test "a summoned wheel still cancels at its own centre":
-    # Arming distinction release rule turns on: right press asked for
+    # Arming distinction release rule turns on: right press asked for.
     #   wheel, so lifting back at its centre withdraws gesture even though no wedge
     #   was ever entered.
     var scene = initScene()
@@ -5131,7 +5139,7 @@ suite "Interaction":
 
 
   test "an overlay run covers exactly what was added after it was marked":
-    # Mechanism selected object is drawn over everything with. Held here because
+    # Mechanism selected object is drawn over everything with. Held here because.
     #   fault it guards against is silent: mesh nobody marked has to draw *entirely*
     #   depth-tested, and sentinel index of zero would have said opposite -- every
     #   line of furniture drawn over scene, on every frame.
@@ -5154,7 +5162,7 @@ suite "Interaction":
     discard meshes.addObject(SCRATCH, GENERAL_POINTS[1], Ink.Jade.colour, scale)
     check meshes.points.index_overlay == some(count_under)
     check meshes.points.count_vertices > count_under
-    # Stream nothing was added to after mark still reports mark, with empty
+    # Stream nothing was added to after mark still reports mark, with empty.
     #   overlay -- which is what makes "drawn over" property of order rather than of
     #   which stream object happens to tessellate into.
     check meshes.ribbons.index_overlay == some(0)
@@ -5164,7 +5172,7 @@ suite "Interaction":
     check meshes.washes.index_overlay == some(0)
     check meshes.washes.count == 0
 
-    # Wash run never straddles mark: disc laid on each side of it lands in two
+    # Wash run never straddles mark: disc laid on each side of it lands in two.
     #   runs of one record, and only second is overlay's.
     meshes.addDisc(
       ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
@@ -5185,7 +5193,7 @@ suite "Interaction":
     check meshes.washes.index_overlay == some(1)
     check meshes.washes.runs[0].count == 1 and meshes.washes.runs[1].count == 1
 
-    # **Plane's rim needs its own mark.** Its fill and its rim are two streams now, and
+    # **Plane's rim needs its own mark.** Its fill and its rim are two streams now, and.
     #   selected plane is tessellated second time after mark; without this split
     #   second rim would be drawn depth-tested -- behind very translucent fill it
     #   is highlight for. Held on whole object rather than on `addRing` directly,
@@ -5208,12 +5216,12 @@ suite "Interaction":
 
 
   test "a mouse never waits: left decides, right asks, middle starts nothing":
-    # One rule both render paths and help panel read, held here rather than left
+    # One rule both render paths and help panel read, held here rather than left.
     #   to three copies agreeing by inspection.
     check armingOf(PointerButton.Left) == some(MenuArming.Never)
     check armingOf(PointerButton.Right) == some(MenuArming.Always)
     check armingOf(PointerButton.Middle).isNone
-    # And no button reaches dwell, which belongs to one pointer with no second
+    # And no button reaches dwell, which belongs to one pointer with no second.
     #   button to ask with.
     for button in PointerButton:
       check armingOf(button) != some(MenuArming.OnDwell)
@@ -5234,7 +5242,7 @@ suite "Interaction":
     for i in 0 ..< 4: scene.addItem(GENERAL_POINTS[i], "p", Ink.Rose)
     scene.removeItem(1)
     scene.removeItem(2)
-    # Slots are sparse -- free list reuses holes in any order -- so this cannot be
+    # Slots are sparse -- free list reuses holes in any order -- so this cannot be.
     #   arithmetic on slot number, and hole must not be place keyboard lands.
     check scene.slotStepped(some(0), 1) == some(3)
     check scene.slotStepped(some(3), 1) == some(0)
@@ -5250,7 +5258,7 @@ suite "Interaction":
 
 
   test "every key answers the binding table, and answers exactly one half of it":
-    # Table has to be total: each render path translates its own naming and then trusts
+    # Table has to be total: each render path translates its own naming and then trusts.
     #   this, so key with no answer would be case nobody handled. Halves also have
     #   to be disjoint -- key that both moved view while held and did something at
     #   press would do second thing again on every auto-repeat.
@@ -5269,7 +5277,7 @@ suite "Interaction":
 
 
   test "a held key slides the view across the ground, never through it":
-    # **map** reading of movement key rather than fly one: forward keeps
+    # **map** reading of movement key rather than fly one: forward keeps.
     #   camera's height whatever it is looking at. Judged from camera tilted well down,
     #   where slide along raw sight direction would plainly lose height.
     var
@@ -5323,7 +5331,7 @@ suite "Interaction":
 
 
   test "how far a hold travels depends on how long it was held":
-    # Whole point of driving movement per frame: rate stated per second, multiplied
+    # Whole point of driving movement per frame: rate stated per second, multiplied.
     #   by frame's own elapsed time, so fast machine and slow one agree.
     var interaction = Interaction(is_enabled: true)
     interaction.holdKey(Key.W)
@@ -5334,7 +5342,7 @@ suite "Interaction":
     interaction.driveHeld(twice, 1.0)
     check norm(twice.target - ORIGIN) =~ 2.0*norm(once.target - ORIGIN)
 
-    # Dolly is one that compounds rather than adding, so it takes rate to
+    # Dolly is one that compounds rather than adding, so it takes rate to.
     #   power of elapsed seconds: two half-seconds must equal one whole one.
     interaction.releaseKey(Key.W)
     interaction.holdKey(Key.Minus)
@@ -5373,7 +5381,7 @@ suite "Interaction":
 
 
   test "letting go of everything at once stops the camera, however it lost the release":
-    # Window that loses focus never sees key up, and key left held moves camera
+    # Window that loses focus never sees key up, and key left held moves camera.
     #   forever with no press able to stop it.
     var
       interaction = Interaction(is_enabled: true)
@@ -5405,7 +5413,7 @@ suite "Interaction":
     check camera.azimuth =~ opening.azimuth
     check camera.elevation =~ opening.elevation
 
-    # Framing is standing offer's own job, so key itself moves nothing: each front
+    # Framing is standing offer's own job, so key itself moves nothing: each front.
     #   end releases its tween's goal and `framing.offerAim` aims afresh next frame.
     check interaction.applyAction(camera, scene, KeyAction.FrameSelection).isNone
     check camera.target =~ opening.target
@@ -5443,7 +5451,7 @@ suite "Interaction":
 
 
   test "a camera move is not a hover, however much it sweeps the pointer past":
-    # Hover is recomputed from cursor every frame, so pan drags ring across every
+    # Hover is recomputed from cursor every frame, so pan drags ring across every.
     #   object it sweeps and held W lights up whatever slides under cursor standing
     #   still. Neither gesture is pointing at anything.
     var scene = initScene()
@@ -5482,7 +5490,7 @@ suite "Interaction":
 
 
   test "keyboard focus is not hover, and a pointer moving does not erase it":
-    # Whole reason `index_focus` is its own field: `updateHover` recomputes hover from
+    # Whole reason `index_focus` is its own field: `updateHover` recomputes hover from.
     #   cursor every frame, so focus stored there would be gone before it was drawn.
     var scene = initScene()
     let target = Position(x: 0, y: 0, z: 0)
@@ -5502,7 +5510,7 @@ suite "Interaction":
 
 
   test "a drag that keeps moving never opens its menu, however long it stays on target":
-    # Dwell measures being *still*, not being over something. While it ran on presence
+    # Dwell measures being *still*, not being over something. While it ran on presence.
     #   alone, slow finger crossing one large object -- plane's disc spans most of
     #   phone screen -- had menu open on it mid-gesture, and construction it was in
     #   middle of then released into menu and built nothing. Found by driving real
@@ -5520,7 +5528,7 @@ suite "Interaction":
       interaction.updateCursor(100.0 + 2.0*PIXELS_TAP_SLOP*float(step), 100.0)
       interaction.updateDrag(scene, 0.15*SECONDS_DWELL_MENU*float(step))
       check interaction.menu.isNone
-    # Stop moving, and same drag opens it dwell later -- clock is restarted, not
+    # Stop moving, and same drag opens it dwell later -- clock is restarted, not.
     #   disabled, so gesture reader actually wanted still works.
     #   Dwell past last movement with room to spare: what is being checked here is
     #   that clock restarts rather than stops, not where its own boundary lies, and
@@ -5530,7 +5538,7 @@ suite "Interaction":
 
 
   test "a drift smaller than the tap slop still counts as holding still":
-    # Other half of rule: hand shakes. Dwell that any tremor could restart is
+    # Other half of rule: hand shakes. Dwell that any tremor could restart is.
     #   dwell nobody can ever reach, which is why threshold is same fingertip
     #   slop that decides press from drag rather than exact equality.
     var scene = initScene()
@@ -5577,7 +5585,7 @@ suite "Interaction":
     interaction.index_hover = none(int)
     interaction.updateDrag(scene, 0.0)
     check interaction.inkOfDrag(scene.inkNext) == Ink.Guide
-    # Standing over pair that makes nothing wears reserved magenta, and shows no
+    # Standing over pair that makes nothing wears reserved magenta, and shows no.
     #   ghost -- two signals, so warning is never colour alone.
     interaction.index_hover = some(1)
     interaction.updateDrag(scene, 0.0)
@@ -5628,10 +5636,10 @@ suite "Interaction":
   test "a hold fills linearly, is clamped at both ends, and is due exactly when full":
     var interaction = Interaction(is_enabled: true)
     interaction.beginHold(0, 1000.0)
-    # Fill starts once marker has grown clear of finger, so every time below is
+    # Fill starts once marker has grown clear of finger, so every time below is.
     #   measured from end of that grow rather than from press.
     const FILLING = 1000.0 + SECONDS_SWELL_GROW
-    # Linear, not eased: half wait is half fill. This is property that makes
+    # Linear, not eased: half wait is half fill. This is property that makes.
     #   marker clock reader can judge remaining time from, and it is what
     #   `easeOutCubic` here would break -- see `progressHold`'s own doc comment.
     check progressHold(interaction, FILLING + 0.5*SECONDS_LONG_PRESS) =~ 0.5
@@ -5645,7 +5653,7 @@ suite "Interaction":
       )
       check progress >= previous
       previous = progress
-    # Clamped below, so clock that steps backward cannot un-fill marker, and above, so
+    # Clamped below, so clock that steps backward cannot un-fill marker, and above, so.
     #   frame arriving late still draws whole one rather than overshooting past it.
     check progressHold(interaction, 900.0) == 0.0
     check progressHold(interaction, FILLING + 10.0*SECONDS_LONG_PRESS) == 1.0
@@ -5655,7 +5663,7 @@ suite "Interaction":
 
 
   test "the swell grows, waits out the whole hold, and settles only once the finger lifts":
-    # Defect this pins: swell used to be half sine over fill, so marker
+    # Defect this pins: swell used to be half sine over fill, so marker.
     #   was back to its true size at exactly moment selection landed -- shrinking
     #   while reader was still deciding, and gone when it mattered.
     var interaction = Interaction(is_enabled: true)
@@ -5666,8 +5674,8 @@ suite "Interaction":
     check swellHold(interaction, 1000.0 + SECONDS_SWELL_GROW) >=
       swellHold(interaction, 1000.0 + 0.5*SECONDS_SWELL_GROW)
 
-    # Out for whole fill, past maturity, and for as long as finger stays down --
-    #   unreleased hold never settles, however long it is held.
+    # Check swell stays out for whole fill, past maturity, and while finger stays down.
+    #   Unreleased hold never settles, however long it is held.
     const MATURED = 1000.0 + SECONDS_SWELL_GROW + SECONDS_LONG_PRESS
     for now in [MATURED - 0.5*SECONDS_LONG_PRESS, MATURED, MATURED + 60.0]:
       check swellHold(interaction, now) =~ 1.0
@@ -5678,7 +5686,7 @@ suite "Interaction":
     check swellHold(interaction, MATURED + 5.0) =~ 1.0
     check swellHold(interaction, MATURED + 5.0 + SECONDS_SWELL_SHRINK) =~ 0.0
     check not isHoldSpent(interaction, MATURED + 5.0 + 0.5*SECONDS_SWELL_SHRINK)
-    # Frame past shrink rather than exactly on it: subtracting two large timestamps
+    # Frame past shrink rather than exactly on it: subtracting two large timestamps.
     #   does not land on boundary exactly, and no caller asks at exact instant --
     #   they ask once frame. What matters is that it is not spent early and is spent.
     check isHoldSpent(interaction, MATURED + 5.0 + 1.1*SECONDS_SWELL_SHRINK)
@@ -5688,7 +5696,7 @@ suite "Interaction":
 
 
   test "a matured hold is taken once, and never again however long it is held":
-    # Regression this pins, measured: hold of 1.62 s selected its item and then lost
+    # Regression this pins, measured: hold of 1.62 s selected its item and then lost.
     #   it within 50 ms of lift. Caller asked "is it mature" beside its own flag for
     #   "have I acted on that", cleared flag on release, and still-settling --
     #   still mature -- hold selected second time and toggled it straight back off.
@@ -5722,7 +5730,7 @@ suite "Interaction":
 
 
   test "a cancelled hold snaps away rather than settling":
-    # Cancelling is press that stopped being one -- moved into camera gesture, or
+    # Cancelling is press that stopped being one -- moved into camera gesture, or.
     #   interrupted -- so there is nothing left for settle to be about.
     var interaction = Interaction(is_enabled: true)
     interaction.beginHold(0, 1000.0)
@@ -5738,8 +5746,7 @@ suite "Marker":
   proc setUpAt(
     azimuth, elevation, distance: float
   ): (Camera, Matrix4, DrawExtent) =
-    ## Build camera looking at origin from one placement, with transform and
-    ## extent frame carries.
+    ## Build camera looking at origin from one placement, with transform and extent frame carries.
     ##   Orientation is parameter because marker's own worst case can lie along it:
     ##   line's rails flared threefold at one azimuth while reading true at another, and
     ##   round that shipped that swept distance alone.
@@ -5751,8 +5758,7 @@ suite "Marker":
     (placement, placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK), scale)
 
   proc setUp(distance = 19.0): (Camera, Matrix4, DrawExtent) =
-    ## Placement most of these cases read, at one orientation they were written
-    ## against.
+    ## Hold placement most of these cases read, at one orientation they were written against.
     setUpAt(azimuth = 0.9, elevation = 0.4, distance = distance)
 
   proc shapedMarkerFor(
@@ -5760,9 +5766,9 @@ suite "Marker":
     placement: Camera; view_projection: Matrix4; width, height: int;
     progress: float = 1.0; is_touch: bool = false; travel: Option[float] = none(float)
   ): Option[Marker] =
-    ## Suite's own option wrapper over `markerFor`'s fill-in-place shape: cases here
-    ## read one answer many times over, and clarity outranks copy option costs
-    ## in test.
+    ## Wrap `markerFor`'s fill-in-place shape as option, for suite's own reading.
+    ##   Cases here read one answer many times over, and clarity outranks copy option
+    ##   costs in test.
     var marker: Marker
     if markerFor(
       geometry, anchor, scale, placement, view_projection, width, height, marker,
@@ -5781,13 +5787,13 @@ suite "Marker":
     )
 
   func apartRails(marker: Marker): float =
-    ## Widest two rails read apart anywhere along them, in screen pixels.
-    ##   Perpendicular distance from one rail's own points to *infinite line*
-    ##   through other's, sampled along both -- never distance between two
-    ##   rails' drawn endpoints, which `fractionLeavingView` cuts at its own fraction per
-    ##   rail, so those endpoints are not at same place along line and distance
-    ##   between them measures nothing.
-    # Segments arrive side 0's two halves then side 1's; each side's halves share support
+    ## Measure widest two rails read apart anywhere along them, in screen pixels.
+    ##   Perpendicular distance from one rail's own points to infinite line through
+    ##   other's, sampled along both.
+    ##   Never distance between two rails' drawn endpoints: `fractionLeavingView` cuts at
+    ##   its own fraction per rail, so those endpoints are not at same place along line
+    ##   and distance between them measures nothing.
+    # Segments arrive side 0's two halves then side 1's; each side's halves share support.
     #   and run opposite ways, so either half's own line carries whole rail.
     if marker.count_segment < 4: return 0.0
     for (own, other) in [(0, 2), (1, 3), (2, 0), (3, 1)]:
@@ -5801,14 +5807,14 @@ suite "Marker":
         )
 
   proc reachRails(marker: Marker): float =
-    ## Total screen length of every rail piece, which is what filling hold grows.
+    ## Sum screen length of every rail piece, which is what filling hold grows.
     for i in 0 ..< marker.count_segment:
       let piece = marker.segments[i]
       result += hypot(piece[1].x - piece[0].x, piece[1].y - piece[0].y)
 
   proc radiusLoop(marker: Marker): float =
-    ## Greatest screen distance between two of loop's own points, which stands in for
-    ## its radius without needing centre it was built around.
+    ## Measure greatest screen distance between two of loop's own points.
+    ##   Stands in for its radius without needing centre it was built around.
     for i in 0 ..< marker.count_point:
       for j in i + 1 ..< marker.count_point:
         result = max(result, hypot(
@@ -5822,10 +5828,10 @@ suite "Marker":
     LINE = POINT_A ∧ POINT_B
     PLANE = POINT_A ∧ POINT_B ∧ POINT_C
     LINE_HORIZON = attitude(PLANE)
-      ## Plane's own attitude: pencil of directions lying in it, at horizon.
+      ## Take plane's own attitude: pencil of directions lying in it, at horizon.
     PLANE_HORIZON = attitude(
       toMultivector(Position(x: 0.0, y: 0.0, z: 0.0)) ∧ PLANE
-    ) ## Whole sky, built way `storyboard`'s own step 11 builds it -- attitude
+    ) ## Whole sky, built way `storyboard`'s own step 11 builds it, as attitude.
       ## of grade-4 volume, which needs point genuinely *off* plane or wedge
       ## vanishes and there is no volume to take attitude of.
 
@@ -5841,10 +5847,10 @@ suite "Marker":
 
 
   const TOLERANCE_PIXEL_TILT = 0.25
-    ## What `directionAcross`'s own tilt out of projection plane is worth, in pixels.
+    ## Measure what `directionAcross`'s own tilt out of projection plane is worth, in pixels.
 
   test "a line's rails hold their own gap, at every orientation":
-    # Case previous two rounds needed and did not have. World offset hands
+    # Case previous two rounds needed and did not have. World offset hands.
     #   *rate* of convergence to perspective, and along half of line whose far point
     #   lies behind eye that is not convergence but flare -- measured at 45.6 px
     #   against stated 14.5. Ceiling that was tried against it capped gap at
@@ -5863,7 +5869,7 @@ suite "Marker":
             HEIGHT_MARK, progress = 1.0, is_touch = false, travel = none(float),
           )
           if marker.isNone: continue
-          # Two-sided, which is whole property: pair reads its stated gap at its
+          # Two-sided, which is whole property: pair reads its stated gap at its.
           #   widest -- never more, whatever perspective would have made of fixed world
           #   offset, and never so much less that marker stops saying anything. Over
           #   this sweep widest reading spans 14.2 to 14.5 px against stated 14.5.
@@ -5876,7 +5882,7 @@ suite "Marker":
 
 
   test "a rail is one straight line, not two halves meeting at an angle":
-    # Case that would have caught round that bought flat gap by offsetting rail's
+    # Case that would have caught round that bought flat gap by offsetting rail's.
     #   two halves differently: measured on that build, one rail turned 2.66 degrees at its
     #   support and far end of one half strayed 7.3 px -- whole gap -- from
     #   straight continuation of other. It was invisible at one camera shots
@@ -5900,7 +5906,7 @@ suite "Marker":
 
 
   test "a line's rails spend their spread rather than their visibility":
-    # What world offset costs is that perspective, not reader, chooses how far apart
+    # What world offset costs is that perspective, not reader, chooses how far apart.
     #   pair ends up: at one camera it read 45.6 px against stated 14.5. Offset
     #   is now settled until *widest* reading is stated gap, so what oblique
     #   view takes is gap at narrow end -- pair closing on its own line -- and
@@ -5916,11 +5922,11 @@ suite "Marker":
         marker.get.segments[2][0].x - marker.get.segments[0][0].x,
         marker.get.segments[2][0].y - marker.get.segments[0][0].y,
       )
-    # Support is where world offset states its gap, and it is exactly what oblique
+    # Support is where world offset states its gap, and it is exactly what oblique.
     #   view now gives up: 4.5 px at camera below against 13.1 at squarer one.
     check apartAtSupport(0.2, 0.05, 12.0) < apartAtSupport(1.6, 0.9, 19.0)
     check apartAtSupport(0.2, 0.05, 12.0) < 2.0*OFFSET_MARKER_RAIL
-    # And marker is still there to be seen, which sweep above holds everywhere: it
+    # And marker is still there to be seen, which sweep above holds everywhere: it.
     #   is *widest* reading that is pinned, so pair is that far apart somewhere by
     #   construction. No floor under narrowing is needed, and one tried at four tenths
     #   let 437 px splay through at camera this sweep does contain.
@@ -5933,7 +5939,7 @@ suite "Marker":
 
 
   test "an eye standing on the line has no side to flank it from":
-    # Joining line with eye gives no plane to take normal of -- and there is
+    # Joining line with eye gives no plane to take normal of -- and there is.
     #   nothing pair of rails either side of it could mean to viewer inside it.
     let scale = setUp()[2]
     let through_eye = toMultivector(scale.eye) ∧
@@ -5947,14 +5953,14 @@ suite "Marker":
       centre = positionAnchor(PLANE).get
       radius = radiusMarkerLoop(centre, scale, placement, HEIGHT_MARK)
       ring = positionsMarkerLoop(centre, frame(PLANE).get, radius)
-    # Unitized point wedged with unitized plane leaves its own signed distance from
+    # Unitized point wedged with unitized plane leaves its own signed distance from.
     #   that plane on antiscalar, so this reads as "how far off the surface".
     for point in ring:
       check abs((unitize(toMultivector(point)) ∧ unitize(PLANE))[Basis.scalarAnti]) =~ 0.0
 
 
   test "a marker's ring is stepped in arithmetic, and lands where the algebra says":
-    # **Algebra is reference, not implementation** -- rule disc rim
+    # **Algebra is reference, not implementation** -- rule disc rim.
     #   and great circle already follow, applied to marker rings that were
     #   overlay's last multivector cost. Held over real plane frames rather than one
     #   contrived pair, since arms come from `boundary.frame` and claim should
@@ -6018,12 +6024,12 @@ suite "Marker":
     # Plane's own attitude is line at horizon -- pencil of directions lying in it.
     let marker = markerOf(LINE_HORIZON).get
     check marker.kind == MarkerKind.Bands
-    # Both bands survive here: this line crosses view, so each of its two flanking
+    # Both bands survive here: this line crosses view, so each of its two flanking.
     #   circles has stretch of itself on screen.
     check marker.counts_band[0] > 0
     check marker.counts_band[1] > 0
 
-    # Only what survives near plane *and* edge of window is reported, so every
+    # Only what survives near plane *and* edge of window is reported, so every.
     #   point handed to overlay is one it can actually stroke and one reader can
     #   actually see -- `Loop`'s own rule, twice over and one cut further.
     for side in 0 .. 1:
@@ -6031,7 +6037,7 @@ suite "Marker":
         check marker.points_band[side][i].isInFront
         check marker.points_band[side][i].isWithinView(WIDTH_MARK, HEIGHT_MARK)
 
-    # And it stops *at* edge rather than sample short of it: band's samples are
+    # And it stops *at* edge rather than sample short of it: band's samples are.
     #   even in angle around sky and hundreds of pixels apart once projected, so
     #   crossing point is placed rather than rounded to last one inside.
     for side in 0 .. 1:
@@ -6044,7 +6050,7 @@ suite "Marker":
 
 
   test "a horizon line's bands lap in what the view can show, so its comet is seen":
-    # Fault this guards: band is circle running out to line's own vanishing
+    # Fault this guards: band is circle running out to line's own vanishing.
     #   points, and uncut it laps in hundreds of thousands of pixels of outline no camera
     #   can see -- measured at 396,102 against 1,490 on screen. Comet travelling at
     #   fixed screen pace was then off screen for all but four frames in thousand,
@@ -6052,16 +6058,16 @@ suite "Marker":
     let
       bands = markerOf(LINE_HORIZON, travel = some(0.3*LENGTH_MARKER_COMET)).get
       rails = markerOf(LINE, travel = some(0.3*LENGTH_MARKER_COMET)).get
-    # Within same order of magnitude as finite line's rails, which are bounded by
+    # Within same order of magnitude as finite line's rails, which are bounded by.
     #   very same rule. Window's own diagonal is scale both are measuring.
     check bands.lap > 0.0
     check bands.lap < 4.0*rails.lap
     check bands.lap < hypot(WIDTH_MARK.float, HEIGHT_MARK.float)*2.0
-    # Both bands pulse, and in step: one of pair lit and other not reads as
+    # Both bands pulse, and in step: one of pair lit and other not reads as.
     #   marker having broken rather than as direction.
     check bands.count_run_pulse == 2
 
-    # Comet advances along band at screen pace, rather than standing still
+    # Comet advances along band at screen pace, rather than standing still.
     #   because almost all of its lap is somewhere reader cannot look.
     var travel = 0.3*LENGTH_MARKER_COMET
     var heads: seq[ScreenPosition]
@@ -6072,28 +6078,28 @@ suite "Marker":
       travel = travelAdvanced(travel, marker.lap, 1.0)
     for i in 1 ..< heads.len:
       let step = hypot(heads[i].x - heads[i - 1].x, heads[i].y - heads[i - 1].y)
-      # Chord of gently curved band rather than arc along it, so within
+      # Chord of gently curved band rather than arc along it, so within.
       #   fraction of percent of pace rather than exactly it.
       check abs(step - SPEED_MARKER_PULSE) < 0.01*SPEED_MARKER_PULSE
       check heads[i].isWithinView(WIDTH_MARK, HEIGHT_MARK)
 
 
   test "a cut arc still measures its pulse from the ring's own angle zero":
-    # Twelve samples, arc emitted from sample 9, five of them surviving: angle zero is
+    # Twelve samples, arc emitted from sample 9, five of them surviving: angle zero is.
     #   fourth of those, since 9, 10, 11, 0 walks to it.
     check originAfterCut(12, 9, 5) == 3
-    # Points placed ahead of samples -- crossing point at edge band enters
+    # Points placed ahead of samples -- crossing point at edge band enters.
     #   through -- shift it by however many there are, or comet would be anchored to
     #   cut rather than to object.
     check originAfterCut(12, 9, 5, count_before = 1) == 4
-    # Angle zero cut away leaves nothing view-independent to measure from, and arc's
+    # Angle zero cut away leaves nothing view-independent to measure from, and arc's.
     #   own start is what is left -- crossing point itself, where there is one.
     check originAfterCut(12, 9, 2) == 0
     check originAfterCut(12, 9, 2, count_before = 1) == 0
 
 
   test "one band is drawn from the longest stretch of it the window holds":
-    # Ring can cross window more than once -- band seen nearly end on is circle
+    # Ring can cross window more than once -- band seen nearly end on is circle.
     #   about vanishing point, entering and leaving twice. One outline per band is
     #   what marker holds, so largest piece is one drawn.
     let ring = [
@@ -6104,7 +6110,7 @@ suite "Marker":
       ScreenPosition(x: 420.0, y: 20.0, depth: 1.0),
       ScreenPosition(x: -60.0, y: 20.0, depth: 1.0),
     ]
-    # Two stretches of two samples each: samples 0..1 spanning 10 pixels and samples 3..4
+    # Two stretches of two samples each: samples 0..1 spanning 10 pixels and samples 3..4.
     #   spanning 390. Longer one wins, and it is not one found first.
     check runShownLongest(ring, [true, true, false, true, true, false]) == (3, 2)
     # Stretch straddling sample zero is one stretch, not two index walk sees.
@@ -6121,7 +6127,7 @@ suite "Marker":
       opening = angleMarkerBands(scale, 0.0, 0.0)
       midway = angleMarkerBands(scale, 0.5, 0.0)
       settled = angleMarkerBands(scale, 1.0, 0.0)
-    # Quarter turn off line at start -- pole of its own sky, and so outside
+    # Quarter turn off line at start -- pole of its own sky, and so outside.
     #   any field of view this camera offers, which is what "arriving from outside" means
     #   for object that has no support to grow out from.
     check opening =~ ANGLE_MARKER_BANDS_OPEN
@@ -6145,8 +6151,8 @@ suite "Marker":
         let point = marker.points_frame[i]
         result.add(hypot(point.x - centre_x, point.y - centre_y))
 
-    # Finished frame *is* viewport's rectangle, standing `GAP_MARKER` inside it --
-    #   same clear space every other marker in family keeps from what it surrounds.
+    # Check finished frame is viewport's rectangle, standing `GAP_MARKER` inside it.
+    #   Same clear space every other marker in family keeps from what it surrounds.
     #   Every point lies on that rectangle, and its extremes reach whole way to it.
     check marker.count_frame >= SEGMENTS_MARKER_FRAME
     var (reached_x, reached_y) = (false, false)
@@ -6163,12 +6169,12 @@ suite "Marker":
       if point.y =~ GAP_MARKER or point.y =~ inside_y: reached_y = true
     check reached_x and reached_y
 
-    # Barely started, it is circle about centre of view: every point stands
+    # Barely started, it is circle about centre of view: every point stands.
     #   same distance out, which scaled rectangle never does. That is mechanic
     #   user asked for -- expanding outward from middle rather than shrinking inward
     #   from edge -- and it is opposite of bands above, which close in from
     #   outside any view at all.
-    # Full reach is corners' own distance, so `progress` of it is circle's radius
+    # Full reach is corners' own distance, so `progress` of it is circle's radius.
     #   for as long as circle is thing bounding it.
     let half_diagonal = hypot(centre_x - GAP_MARKER, centre_y - GAP_MARKER)
     proc reachAt(progress: float): float = progress*half_diagonal
@@ -6176,7 +6182,7 @@ suite "Marker":
     for distance in opening: check distance =~ reachAt(0.1)
     check reachAt(0.1) < centre_y - GAP_MARKER # Still clear of nearest edge.
 
-    # Part way, circle has passed short edges but not corners, so boundary
+    # Part way, circle has passed short edges but not corners, so boundary.
     #   is edge in some directions and still circle in others -- which is what "highlights
     #   each part of edge as it gets there" means, checked rather than assumed.
     let partial = markerOf(PLANE_HORIZON, progress = 0.75).get
@@ -6190,7 +6196,7 @@ suite "Marker":
         inc count_off_edge
     check count_on_edge > 0
     check count_off_edge > 0
-    # And part still short of edge is circular at that same shared reach, so
+    # And part still short of edge is circular at that same shared reach, so.
     #   marker really is one expanding circle bitten into by screen, not two shapes.
     for i in 0 ..< partial.count_frame:
       let point = partial.points_frame[i]
@@ -6198,7 +6204,7 @@ suite "Marker":
           point.y =~ GAP_MARKER or point.y =~ inside_y: continue
       check hypot(point.x - centre_x, point.y - centre_y) =~ reachAt(0.75)
 
-    # Frame's four corners are sampled explicitly, so finished outline has real
+    # Frame's four corners are sampled explicitly, so finished outline has real.
     #   corners rather than corners cut across by wherever even steps happened to land.
     var count_corner = 0
     for i in 0 ..< marker.count_frame:
@@ -6210,7 +6216,7 @@ suite "Marker":
 
 
   test "a touch hold swells every marker clear of the finger, and a mouse never sees it":
-    # Reason swell exists: fingertip covers what it presses, so marker filling
+    # Reason swell exists: fingertip covers what it presses, so marker filling.
     #   underneath one says nothing to person filling it. How far out it stands is now
     #   plain scaling of swell, whose *shape* is `interaction.swellHold`'s to decide.
     const RADIUS_FINGER = 22.0 # Half 44-pixel minimum touch target.
@@ -6221,7 +6227,7 @@ suite "Marker":
 
 
   test "a point at horizon keeps its ring, on the star it is drawn as":
-    # Its own star stands one horizon radius along its direction, so it is markable only
+    # Its own star stands one horizon radius along its direction, so it is markable only.
     #   while camera is turned toward it -- behind eye it reports same
     #   "nothing to draw" every other unmarkable case does.
     proc ringAt(azimuth: float): Option[Marker] =
@@ -6239,7 +6245,7 @@ suite "Marker":
 
 
   test "a marker at full progress is exactly the marker drawn with no progress asked for":
-    # Property whole animation rests on: adding `progress` moved nothing for any
+    # Property whole animation rests on: adding `progress` moved nothing for any.
     #   caller that is not animating hold. Held here as well as by storyboard's own
     #   byte comparison, so regression names itself rather than showing up as pixel.
     check markerOf(POINT_A, progress = 1.0).get.fraction == 1.0
@@ -6248,8 +6254,9 @@ suite "Marker":
 
 
   test "each shape fills the way its own outline is read":
-    # Point sweeps, because it is drawn at one fixed size and has nothing to grow into;
-    #   line runs outward toward its horizons; plane's circle opens from its centre.
+    # Check each kind's fill: point sweeps, line runs outward, plane's circle opens.
+    #   Point is drawn at one fixed size and has nothing to grow into; line runs toward
+    #   its horizons; plane's circle opens from its centre.
     check markerOf(POINT_A, progress = 0.25).get.fraction =~ 0.25
     check markerOf(POINT_A, progress = 0.25).get.radius =~
       markerOf(POINT_A).get.radius # Swept, never shrunk.
@@ -6268,7 +6275,7 @@ suite "Marker":
 
 
   test "a rail that is only part grown still lies along the rail it will become":
-    # Growing rail must not slide it off line it flanks. Every partial head sits on
+    # Growing rail must not slide it off line it flanks. Every partial head sits on.
     #   segment between finished rail's own two ends, which is line's own
     #   screen projection -- reason shortening is done after projecting, along
     #   that segment, rather than by scaling world reach anchored at eye.
@@ -6281,7 +6288,7 @@ suite "Marker":
           (tail, head) = (whole.segments[i][0], whole.segments[i][1])
           grown = part.segments[i][1]
           along = hypot(head.x - tail.x, head.y - tail.y)
-          # Distance from grown head to whole rail, as twice triangle's area
+          # Distance from grown head to whole rail, as twice triangle's area.
           #   over its base: zero exactly when three points are collinear.
           area_twice = abs(
             (head.x - tail.x)*(grown.y - tail.y) - (head.y - tail.y)*(grown.x - tail.x)
@@ -6291,7 +6298,7 @@ suite "Marker":
 
 
   test "a line's rails grow across the view, both halves at a comparable rate":
-    # Defect this pins: rail was shortened by fraction of its *own* projected
+    # Defect this pins: rail was shortened by fraction of its *own* projected.
     #   length, and that length runs to vanishing point. Measured on demo's own
     #   line, one half came to 1,140,706 pixels and other to 3,634 -- so one finished
     #   314 times sooner than other, and both were wholly off 900-pixel screen
@@ -6309,7 +6316,7 @@ suite "Marker":
     let diagonal = hypot(float(WIDTH_MARK), float(HEIGHT_MARK))
     for length in whole: check length <= diagonal
 
-    # Halves stay within small factor of one another rather than wild one, and
+    # Halves stay within small factor of one another rather than wild one, and.
     #   each is straight multiple of progress -- one speed, from support, both ways.
     check max(whole)/max(min(whole), 1.0) < 4.0
     for step in 1 .. 3:
@@ -6341,11 +6348,11 @@ suite "Marker":
     proc pulsed(geometry: Multivector; travel: float): Marker =
       markerOf(geometry, travel = some(travel)).get
 
-    # Plane's circle and line's rails both carry one; point has no orientation and
+    # Plane's circle and line's rails both carry one; point has no orientation and.
     #   plane at horizon carries no normal at all, so neither says anything.
     check pulsed(PLANE, 0.3).count_run_pulse > 0
     check pulsed(LINE, 0.3).count_run_pulse > 0
-    # Horizon line's bands are cut to view at both ends, and their own angle zero
+    # Horizon line's bands are cut to view at both ends, and their own angle zero.
     #   stands off screen here, so travel is measured from edge arc enters
     #   through -- third of pixel past which is comet with no tail yet, by same
     #   clamp that keeps arc's run from drawing chord across view. Read where
@@ -6378,7 +6385,7 @@ suite "Marker":
         check distanceToLoop(marker.pulses[run][i], marker) <
           0.5*float(WIDTH_MARKER_COMET) + 1.0
 
-    # Run tapers: its head stands off spine by half `WIDTH_MARKER_COMET`, and its
+    # Run tapers: its head stands off spine by half `WIDTH_MARKER_COMET`, and its.
     #   tail meets outline at outline's own width, so only head is edge.
     let outline = marker.pulses[0]
     let count = marker.counts_pulse[0]
@@ -6394,11 +6401,11 @@ suite "Marker":
 
 
   test "a pulse is the same length whatever shape it rides":
-    # Point of measuring run in pixels. Under fraction of outline it came out
+    # Point of measuring run in pixels. Under fraction of outline it came out.
     #   96 px along line's rail against 334 px round plane's circle -- one constant,
     #   compact comet on one shape and long gradient on another.
     proc lengthOfRun(marker: Marker; run: int): float =
-      # Down middle of ribbon, which recovers spine it was built around: its
+      # Down middle of ribbon, which recovers spine it was built around: its.
       #   own two edges splay wherever width changes, and are longer than run.
       let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
       proc middleAt(i: int): ScreenPosition =
@@ -6413,15 +6420,15 @@ suite "Marker":
       let shaped = markerOf(geometry, travel = some(0.4*lap)).get
       check shaped.count_run_pulse > 0
       for run in 0 ..< shaped.count_run_pulse:
-        # Run laid along curve is chain of chords, so it falls hair short of
+        # Run laid along curve is chain of chords, so it falls hair short of.
         #   arc it covers; nothing else may.
         check lengthOfRun(shaped, run) <= LENGTH_MARKER_COMET + TOLERANCE_SINGLE
         check lengthOfRun(shaped, run) > 0.98*LENGTH_MARKER_COMET
 
 
   proc headOfRun(marker: Marker; run: int): ScreenPosition =
-    ## Where run's spine begins, recovered from middle of ribbon around it: its
-    ##   own edges ride wide of spine on outside of any bend.
+    ## Find where run's spine begins, recovered from middle of ribbon around it.
+    ##   Its own edges ride wide of spine on outside of any bend.
     let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
     marker.pulses[run][0].towards(marker.pulses[run][2*spans - 1], 0.5)
 
@@ -6441,14 +6448,14 @@ suite "Marker":
         crossed = hypot(
           headAt(start + STEP).x - headAt(start).x, headAt(start + STEP).y - headAt(start).y
         )
-      # Chord, so hair under arc actually covered -- and no `lap` on either side of
+      # Chord, so hair under arc actually covered -- and no `lap` on either side of.
       #   comparison, which is assertion this case exists to make.
       check crossed <= STEP + TOLERANCE_SINGLE
       check crossed > 0.98*STEP
 
 
   test "a camera move slides a line's comet with the line, never along it":
-    # **Case whose absence let this ship twice.** Every other pulse case pins one
+    # **Case whose absence let this ship twice.** Every other pulse case pins one.
     #   camera, so head measured as fraction of viewport-clipped outline looked
     #   perfect standing still and slid moment view moved -- measured at time
     #   as median 3.76 px frame while orbiting, recorded as motion marker was
@@ -6484,20 +6491,20 @@ suite "Marker":
 
 
   test "a line wears one comet, not one for every piece it is drawn in":
-    # Rail is drawn as two halves either side of line's support, and each used to
+    # Rail is drawn as two halves either side of line's support, and each used to.
     #   pulse on its own -- four comets at four unrelated places on one selected line.
     let lap = markerOf(LINE, travel = some(0.0)).get.lap
     let shaped = markerOf(LINE, travel = some(0.4*lap)).get
     check shaped.count_segment == 4
     check shaped.count_run_pulse == 2
-    # And pair travels together rather than each rail keeping its own clock, so
+    # And pair travels together rather than each rail keeping its own clock, so.
     #   two read as one comet crossing line rather than as two chasing each other.
     let heads = [headOfRun(shaped, 0), headOfRun(shaped, 1)]
     check hypot(heads[1].x - heads[0].x, heads[1].y - heads[0].y) < LENGTH_MARKER_COMET
 
 
   test "a line's rails pulse from their very first frame, and report a lap to reduce on":
-    # Property browser-side deadlock turned on, kept and inverted. Every slot starts
+    # Property browser-side deadlock turned on, kept and inverted. Every slot starts.
     #   at travel 0, and while travel was *fraction* that put line's head at very
     #   start of open outline with nothing behind it to light -- no run, and marker
     #   that also reported no length left clock unable to advance, so it never left 0.
@@ -6524,11 +6531,11 @@ suite "Marker":
       if hypot(headAt(float(step)*lap/6.0).x - start.x,
         headAt(float(step)*lap/6.0).y - start.y) > 1.0: inc moved
     check moved == 5
-    # Whole lap on is where it began, so motion is circulation rather than run
+    # Whole lap on is where it began, so motion is circulation rather than run.
     #   that ends somewhere.
     let lapped = headAt(lap)
     check hypot(lapped.x - start.x, lapped.y - start.y) < 1.0
-    # And advance itself reduces rather than growing without bound: three laps' worth
+    # And advance itself reduces rather than growing without bound: three laps' worth.
     #   of seconds lands exactly where one moment of it did. Reducing every step, rather
     #   than at point of use, is what stops change in lap being amplified by
     #   however many laps have gone by -- see `travelAdvanced`.
@@ -6543,7 +6550,7 @@ suite "Marker":
         tail = ScreenPosition(x: 200.0, y: 150.0)
         head = ScreenPosition(x: tail.x + dx, y: tail.y + dy)
         drawn = cometFor(tail, head).get
-      # Widest across point aimed at, thinning to band's own width behind it, so
+      # Widest across point aimed at, thinning to band's own width behind it, so.
       #   swell itself is what says which end answer lands at.
       proc widthAcross(i: int): float =
         hypot(drawn[i].x - drawn[2*SPANS - 1 - i].x, drawn[i].y - drawn[2*SPANS - 1 - i].y)
@@ -6580,27 +6587,27 @@ suite "Marker":
 
 
 
-# Orrery needs room for its default size, and one configuration here deliberately compiles
+# Orrery needs room for its default size, and one configuration here deliberately compiles.
 #   much smaller pool to exercise pool's own limits. Guarded rather than shrunk:
 #   arrangement scaled down would no longer be stress case these cases exist to check.
 when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
   suite "Orrery":
-    ## Demo preset is heaviest scene this build draws, and since round that made
-    ## it real solar neighbourhood it also makes **claim about world**: these stars
-    ## stand where they really stand. That claim needs checking as much as counting does,
-    ## and it is one thing no amount of looking at picture would catch.
+    ## Check demo preset, heaviest scene this build draws, against world it claims.
+    ##   Real solar neighbourhood: these stars stand where they really stand.
+    ##   That claim needs checking as much as counting does, and it is one thing no
+    ##   amount of looking at picture would catch.
 
     const SCALES_HELD = block:
-      ## Which sizes this build's pool can actually hold.
-      ##   Every size at shipped capacity; at reduced one suite is skipped whole by
-      ## guard above, so this only ever narrows for capacity between two.
+      ## Name which sizes this build's pool can actually hold.
+      ##   Every size at shipped capacity; at reduced one suite is skipped whole by guard
+      ##   above, so this only ever narrows for capacity between two.
       var held: seq[ScaleOrrery]
       for scale in ScaleOrrery:
         if ITEMS_MAX >= itemsOf(scale): held.add(scale)
       held
 
     test "every size fills its own target exactly, and the largest leaves two slots":
-      # **Walk lands on count rather than near it.** It passes over system too
+      # **Walk lands on count rather than near it.** It passes over system too.
       #   large for room left instead of stopping on it, which is only reason three
       #   unrelated targets can each come out exact; when it stopped, size hit its target
       #   only where item counts happened to sum to it. Checked at every size, because
@@ -6617,7 +6624,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
         if scale == ScaleOrrery.high: check ITEMS_MAX - scene.len == 2
 
     test "every object it builds draws something":
-      # Three collinear points wedge to multivector of no clean grade, which takes slot
+      # Three collinear points wedge to multivector of no clean grade, which takes slot.
       #   and renders nothing while scene still counts it. Seven objects did that across
       #   two earlier rounds, so this counts *shapes* rather than items.
       var scene = initScene()
@@ -6629,7 +6636,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       check without == newSeq[string]()
 
     test "every size carries every drawable kind, at horizon as well as in the finite world":
-      # **Property that makes smallest size usable check at all.** Quick pass
+      # **Property that makes smallest size usable check at all.** Quick pass.
       #   over 60 objects is only worth running if it exercises what big one does, and
       #   block at horizon is fragile part -- it is built from attitudes of Sol's own
       #   objects and `addHorizon` refuses pair spanning nothing, so size too small to
@@ -6650,7 +6657,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
         checkpoint(&"{scale}: {tally[Shape.Point]} points, {tally[Shape.Line]} lines, " &
           &"{tally[Shape.Plane]} planes")
         for kind in Shape: check tally[kind] > 0
-        # **Ceiling as well as floor, and lines are only kind with one.** They are cut
+        # **Ceiling as well as floor, and lines are only kind with one.** They are cut.
         #   to three that mean something -- two in Sol and one at horizon -- because
         #   line is infinite and crosses whole frame whatever it joins. Floor alone
         #   would let them creep back one edit at time. Same three at every size, since
@@ -6660,7 +6667,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
         check at_horizon[Shape.Line] == 1
         check at_horizon[Shape.Plane] == 1
         counted[scale] = (tally[Shape.Point], tally[Shape.Plane])
-      # Points and planes are what bigger size buys, so both have to rise with it. Stated
+      # Points and planes are what bigger size buys, so both have to rise with it. Stated.
       #   as slope rather than as floor per size: three sets of magic numbers would be
       #   three things to keep true, and what is actually being claimed is that reaching
       #   further into catalogue reaches more stars and more of systems that earn
@@ -6672,7 +6679,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
         check counted[larger].planes > counted[smaller].planes
 
     test "the stars stand where the catalogue says they stand":
-      # **Claim this arrangement makes about world.** Every object after Sol is real
+      # **Claim this arrangement makes about world.** Every object after Sol is real.
       #   star placed from its real right ascension, declination and distance, so thing
       #   worth checking is conversion -- not that layout looks spread out. Measured
       #   against `starfield.STARS` itself, which is shipped snapshot and one layer
@@ -6690,7 +6697,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       var worst = 0.0
       var worst_name = ""
       var seen = 0
-      # Catalogue carries more stars than scene has room for, so what is checked is
+      # Catalogue carries more stars than scene has room for, so what is checked is.
       #   every star that *was* placed -- and, below, that ones placed are nearest.
       for star in STARS:
         if star.name notin placed: continue
@@ -6708,11 +6715,11 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       #   Folded from size rather than written down, so it survives next one.
       check seen > (itemsOf(scale) - ITEMS_FIXED_ORRERY) div 2
       check worst <= TOLERANCE_SINGLE
-      # And they really are ordered outward, which is what both `RADIUS_ORRERY` and
+      # And they really are ordered outward, which is what both `RADIUS_ORRERY` and.
       #   nearest-first fill rely on.
       for index in 1 ..< len(STARS):
         check STARS[index].parsecs >= STARS[index - 1].parsecs
-      # **Nearest-first, and no longer strict prefix -- by bounded amount.** Walk
+      # **Nearest-first, and no longer strict prefix -- by bounded amount.** Walk.
       #   passes over system too large for room left rather than stopping on it, which
       #   is only reason three unrelated sizes can each land on their count exactly.
       #   price is that right at end nearer multi-item system can give way to further
@@ -6734,7 +6741,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       check slack <= widest - 1
 
     test "the star catalogue is a snapshot, and holds together as one":
-      # Everything about shipped table that can be checked without network. It is
+      # Everything about shipped table that can be checked without network. It is.
       #   generated, so what is worth asserting is that generator's own claims survive:
       #   bound it queried to, order fill relies on, no star listed twice, and
       #   every planet range landing inside `neighbourhood.PLANETS` exactly once.
@@ -6757,7 +6764,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       for which, times in covered: check times == 1
 
     test "no point in it is a hub for the rest of the scene":
-      # Fault that broke arrangement before this one: every line and plane joined
+      # Fault that broke arrangement before this one: every line and plane joined.
       #   through single star, so scene drew as starburst. Counted, because "it looks
       #   like starburst" is not something suite can see.
       #   Gather joiners once instead of re-reading whole pool for every point. Ten
@@ -6798,14 +6805,14 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       check worst <= 6
 
     test "every object wears its own type's colour, and no two types share one":
-      # Moon and planet are two identical dots and hue is only thing separating
+      # Moon and planet are two identical dots and hue is only thing separating.
       #   them, so role collapsing onto another's slot is silent loss of their one signal.
       var scene = initScene()
       constructOrrery(scene)
       for role in Role.Sun .. Role.Derived:
         for other in Role.Sun .. Role.Derived:
           if role != other: check lut_role_to_ink[role] != lut_role_to_ink[other]
-      # Roles come from tables that placed objects -- `SOL` for our own system and
+      # Roles come from tables that placed objects -- `SOL` for our own system and.
       #   `NEIGHBOURS`/`PLANETS` for real ones -- rather than from second set of name
       #   rules that could drift from them.
       var roles: Table[string, Role]
@@ -6824,8 +6831,9 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
         check bodies[role] > 0
 
     test "two finite lines in the whole scene, and only one joins a star to a planet":
-      # Instruction this round was given, stated as assertion. Asked geometrically --
-      #   which lines pass through which bodies -- so renaming something cannot make it pass.
+      # State layout instruction as assertion.
+      #   Asked geometrically, which lines pass through which bodies, so renaming
+      #   something cannot make it pass.
       var scene = initScene()
       constructOrrery(scene)
       var roles: Table[string, Role]
@@ -6867,7 +6875,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       check joining == 1
 
     test "of the two points at horizon, only the one off the ecliptic makes the plane":
-      # **Why there are two.** Earth lies in Sol's ecliptic, so direction Sol-to-Earth
+      # **Why there are two.** Earth lies in Sol's ecliptic, so direction Sol-to-Earth.
       #   lies along that plane and therefore *on* line at horizon it gives -- wedging it
       #   back with that line adds nothing. Luna's ring is tipped out, so its direction is off
       #   line and spans plane with it. Both halves are checked, because whole
@@ -6896,7 +6904,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
     test "the framing radius holds the systems it claims, and the rest run past it":
       var scene = initScene()
       constructOrrery(scene)
-      # `RADIUS_ORRERY` is fitted to Sol and nearest few, and claim worth checking
+      # `RADIUS_ORRERY` is fitted to Sol and nearest few, and claim worth checking.
       #   is not exact count -- handful of real stars happen to fall inside radius
       #   fitted to their neighbours -- but that overwhelming majority lie *beyond* it.
       #   That is what makes crossing neighbourhood journey rather than nudge.
@@ -6910,7 +6918,7 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
 
 
     test "the preset both front-ends open on is one preset":
-      # `showOrrery` is whole thing demo button loads -- arrangement, its replayed
+      # `showOrrery` is whole thing demo button loads -- arrangement, its replayed.
       #   arrival and camera that holds it -- and browser's bridge and desktop's
       #   `--demo` both call it. It used to live inline in bridge, where desktop
       #   could not reach it and nothing could check it, so camera half of preset
@@ -6923,13 +6931,13 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       check camera.target =~ POSITION_ORRERY
       check camera.elevation =~ ELEVATION_ORRERY_SHOWN
       check camera.azimuth =~ 1.25
-      # Standing back far enough to hold arrangement is point of solve, and
+      # Standing back far enough to hold arrangement is point of solve, and.
       #   standing *inside* it is failure it exists to prevent -- opening camera,
       #   placed for seed scene, sits within this one.
       check camera.distance > RADIUS_ORRERY
       check camera.distance =~
         distanceFitting(RADIUS_ORRERY, camera, 1440, 900, INSET_ORRERY_SHOWN)
-      # Narrower window has to stand further back, since fit is bounded by whichever
+      # Narrower window has to stand further back, since fit is bounded by whichever.
       #   of two axes runs out first.
       var camera_narrow = initCameraDefault()
       showOrrery(scene, camera_narrow, 640, 900)
