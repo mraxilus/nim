@@ -303,7 +303,8 @@ proc awayDial(): string =
   result.add "From face to face the low lock is a whole turn one way and " &
     "the wrap half a turn the other, as the sheet's row says; from the " &
     "away rest both are half a turn, one each way, because the away rest " &
-    "already sits half a turn along that chain.\n\n"
+    "sits half a turn along that chain.  The pages count from face to " &
+    "face.\n\n"
 
 
 proc drawnStates(): string =
@@ -352,6 +353,60 @@ proc drawnStates(): string =
   result.add "\nThe hands are placed at the rope's midpoint, which is " &
     "coarse once the rope is wound; the words beside the numbers are the " &
     "drawing's, and the numbers are the rope's.\n\n"
+  result.add "The two X figures, both connections held low:\n\n"
+  result.add "| drawn as | built as | verdict |\n|---|---|---|\n"
+  for (drawn, pair, halves) in [
+      ("Left to right . Right to left @ 1/2",
+       @[(Arm.Left, Arm.Right), (Arm.Right, Arm.Left)], 1),
+      ("Left to left . Right to right @ 1/2 (face to face)",
+       @[(Arm.Left, Arm.Left), (Arm.Right, Arm.Right)], 0)]:
+    var base = facing(HUMAN, APART)
+    for (one, two) in pair:
+      base.links.add Link(ends: [(Body.One, one), (Body.Two, two)],
+                          height: LOW)
+    let
+      rested = settled(base)
+      spun = if halves == 0: rested
+             else: turned(rested, Body.Two, float(halves) * PI)
+    result.add &"| {drawn} | both low, face to face, her " &
+      &"{float(halves) / 2.0:+.1f} | {verdict(spun)} |\n"
+  result.add "\nBoth are refused as rope through rope: two connections " &
+    "at one height cross closer than the model lets them lie, and the " &
+    "braid that would set one above the other steps aside once a rope " &
+    "has caught on a body.  Which is over in the X is therefore the " &
+    "drawing's decision, not the rope's.\n\n"
+
+
+proc fullTurns(): string =
+  ## Test the floor's finding: everything gets a full turn before it blocks,
+  ## except the low wrap, which gets half.
+  ##   Counted from face to face, as the sheet counts.  The length each
+  ##     turn needs is printed against the two arms' budget, so a near call
+  ##     can be told from a wide one.
+  result = "## The full-turn claim\n\n"
+  result.add "The floor: *everything can have a full turn before getting " &
+    "blocked, except a low wrap, which can only do a half -- with a full " &
+    "turn on a low wrap the partner has not the reach to go round the " &
+    "wrapping torso.*  Counted from face to face, L-l, turning her:\n\n"
+  result.add "| level | way | 1/2 | 1 | 1 1/2 |\n|---|---|---|---|---|\n"
+  for (level, height) in [("low", LOW), ("high", HIGH)]:
+    for (sign, way) in [(-1.0, "lock way"), (1.0, "wrap way")]:
+      result.add &"| {level} | {way} |"
+      for halves in [1, 2, 3]:
+        let
+          spun = turned(settled(joined(Arm.Left, Arm.Left, height)), Body.Two,
+                        sign * float(halves) * PI)
+          laid = lay(spun, spun.links[0])
+          need = if laid.isSome: &" ({laid.get.length:.2f} of " &
+                                 &"{budget(HUMAN):.2f} m)"
+                 else: ""
+        result.add &" {verdict(spun)}{need} |"
+      result.add "\n"
+  result.add "\nThe rope agrees with the floor at the torso: the lock way " &
+    "holds to a whole turn and the wrap way to a half.  At the neck a " &
+    "whole turn holds either way; the one place the rope is more generous " &
+    "than the floor is the lock way at the neck, which it lets run to one " &
+    "and a half.\n\n"
 
 
 proc report(): string =
@@ -377,6 +432,7 @@ proc report(): string =
   result.add pairStates()
   result.add bothWound()
   result.add awayDial()
+  result.add fullTurns()
   result.add drawnStates()
 
 

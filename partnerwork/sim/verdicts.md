@@ -244,7 +244,20 @@ The drawn pages rest the same-name holds with the held body turned away.  From t
 | high | +1.0 | wrap high | holds | before the chest (fore +0.08, side -0.04) |
 | high | +1.5 | wrap high +1 lap | refused: out of rope | behind own shoulder (fore -0.04, side -0.08) |
 
-From face to face the low lock is a whole turn one way and the wrap half a turn the other, as the sheet's row says; from the away rest both are half a turn, one each way, because the away rest already sits half a turn along that chain.
+From face to face the low lock is a whole turn one way and the wrap half a turn the other, as the sheet's row says; from the away rest both are half a turn, one each way, because the away rest sits half a turn along that chain.  The pages count from face to face.
+
+## The full-turn claim
+
+The floor: *everything can have a full turn before getting blocked, except a low wrap, which can only do a half -- with a full turn on a low wrap the partner has not the reach to go round the wrapping torso.*  Counted from face to face, L-l, turning her:
+
+| level | way | 1/2 | 1 | 1 1/2 |
+|---|---|---|---|---|
+| low | lock way | holds (0.40 of 1.24 m) | holds (0.90 of 1.24 m) | refused: out of rope (1.41 of 1.24 m) |
+| low | wrap way | holds (1.04 of 1.24 m) | refused: out of rope (1.54 of 1.24 m) | refused: out of rope (2.04 of 1.24 m) |
+| high | lock way | holds (0.48 of 1.24 m) | holds (0.78 of 1.24 m) | holds (1.05 of 1.24 m) |
+| high | wrap way | holds (0.84 of 1.24 m) | holds (1.12 of 1.24 m) | refused: out of rope (1.39 of 1.24 m) |
+
+The rope agrees with the floor at the torso: the lock way holds to a whole turn and the wrap way to a half.  At the neck a whole turn holds either way; the one place the rope is more generous than the floor is the lock way at the neck, which it lets run to one and a half.
 
 ## The states the whole-cloth page draws
 
@@ -259,4 +272,13 @@ From face to face the low lock is a whole turn one way and the wrap half a turn 
 | left-wrap-high | L-l high, face to face, her +1/2 | holds | wrap high | open | behind the opposite shoulder (fore -0.07, side -0.06) |
 
 The hands are placed at the rope's midpoint, which is coarse once the rope is wound; the words beside the numbers are the drawing's, and the numbers are the rope's.
+
+The two X figures, both connections held low:
+
+| drawn as | built as | verdict |
+|---|---|---|
+| Left to right . Right to left @ 1/2 | both low, face to face, her +0.5 | refused: rope through rope |
+| Left to left . Right to right @ 1/2 (face to face) | both low, face to face, her +0.0 | refused: rope through rope |
+
+Both are refused as rope through rope: two connections at one height cross closer than the model lets them lie, and the braid that would set one above the other steps aside once a rope has caught on a body.  Which is over in the X is therefore the drawing's decision, not the rope's.
 
