@@ -1245,104 +1245,117 @@ the 1,024-object page, so a tap on `hide` froze the page for 736 ms. The geometr
 because `setVisible` bumps the revision; a geometry-only counter would remove it and is not
 worth the contract.
 
-**The diagnostics tick writes only what moved**, and returns immediately unless the drawer
-and its section are open. It ran five times a second regardless — 2.8 ms typical, 5.7 worst,
-landing on one frame in twelve against a still frame of about a millisecond, the largest
-source of variance left — and both canvases fell back to a made-up 300-pixel width when
-unlaid-out, so a canvas inside a closed drawer was drawn at a size it did not have. A tick
-costs the frame *after* it, where no row can name the cost: the browser's style, layout and
-paint over what was written land in `display wait + browser`. Measured on the demo, still,
-drawer and diagnostics open, as the next frame's penalty: +5.2 to +6.3 ms as built (12,741
-elements), +2.6 with the objects section collapsed, **+2.4** with `content-visibility: auto`
-on each row — over half the cost was the browser and over half of *that* was the objects
-rows the tick never writes. **`content-visibility` buys what virtualising would, and its trap
-is the box model**: `contain-intrinsic-size` sizes the content box (42 px of a 61 px row); with
-`auto` in front the browser remembers each row's real height once laid out. The open row is
-exempt, since `scrollIntoView({block: 'nearest'})` against a 42 px placeholder left its
-489 px form below the fold; the scroll settles over `PASSES_SCROLL_SETTLE` = 4 frames for the
-rows above it that are still estimates. **Nothing the tick reads is measured inside it.**
-Every CSS size the tick needs — the canvas for the ruler, the curve, the sparkline and the
-pool grid — is kept by a `ResizeObserver` (`sizeObserved`), measured once at load and then
-rewritten after each layout the browser was doing anyway; a `clientWidth` read after the
-tick's own writes forces a synchronous layout of the whole document inside the frame,
-measured at 0.9 ms of a 1.3 ms tick when the pool grid did it, and the ruler, the curve and
-the sparkline each did the same after writes the tick had just made. On this container that
-read measures as nothing (2.8 reads a tick, 0.0 ms: layout is cheap here); it is the only
-mechanism found with the once-a-second period of the spike the reader's phone showed, and it
-is unmeasured there. **The tick writes only what moved**: the camera fields compare each of
-the seven scalars against the value last written before formatting (seven `nimFormatNumber`
-calls and seven input writes a tick on a still camera, 0.1–0.2 ms, now 0.0), the ruler
-compares `(size_cell, world_per_pixel)`, and `disabled` flags are compared before they are
-set. **The slow pass runs in idle time, off the frame**: the tick only asks for the curve,
-the sparkline, the medians and the pool grid (`askSlowPass`), and `runSlowPass` draws them
-in a `requestIdleCallback` between one frame's callback and the next, with a timeout of one
-reading window so a browser that finds no idle time still draws within 200 ms, and a
-`setTimeout(0)` fallback where idle callbacks are missing (Safari), which is still a task of
-its own but without the browser's word that the frame had slack. Its clock reads are added
-to the same frame's `ui` slot (`addPhaseTime`; `recordPhaseTime` overwrote), so the row still
-states everything the panel cost, on the frame's path or off it, and the frame-time row is
-what says whether the frame stalled; the accounting check (rows reconstruct the frame) holds
-because the slot is closed at the next frame's start, after any idle callback. The rota is
-kept (`TICKS_DISTRIBUTION` = 5, slots 0, 2 and 4) so each idle task stays short, and the
-pass runs one job at a time, weighing each against `deadline.timeRemaining()` with the job's
-last measured cost (2 ms before its first run) and leaving the rest for the next idle period;
-a callback that arrives by its timeout, or through the `setTimeout` fallback, runs everything,
-as the timeout promised. A `slowest frame` row reads the slowest frame in the ring back from
-that frame's own slots — the page's total with its largest phase, and the browser's remainder
-— because the 200 ms means dilute one spike past telling whether the page authored it. It is
-the instrument for the periodic spikes a phone shows at 60 fps with `ui refresh` at 0.40 ms,
-which this container cannot reproduce. On the reader's tablet it read `39.0 ms · page 8.9
-(build 7.7) · browser 30.1` with `build` at 0.57 (7.00) — the slowest frame was a
-moving-camera frame walking 5,038 objects, the page's part 8.9 ms and the browser's 30.1 —
-so the spike's author is not the tick, and the page's own largest cost in motion is the
-walk. To split the browser's 30 ms between the main thread and the display, a message
-posted through a `MessageChannel` at the end of the frame callback runs once the browser's
-style, layout, paint and commit are done (a timer would be clamped, and under load deferred
-behind rendering); its lateness is the `style + layout + paint` row, clamped to the frame's
-remainder when the message still loses to the next frame's callback — before the clamp one
-16.7 ms frame read 24 ms, the next frame's own work counted twice — a cut of
-`display wait + browser` kept out of every sum and shown in the readout as `(render …)`, gated
-on the panel being shown with one timer in flight at a time. The device answered: on
-its slowest frame `34.5 ms · page 9.5 (build 8.4) · browser 25.0 (render 24.6)`, and per
-frame `style + layout + paint` at 13.18 ms mean and **10.7 ms median** of a 16.78 ms frame
-on a still scene, against `display wait + browser` at 11.1 — the main thread, not the
-display, and not the page's callback. With the page's own 2 ms that leaves 4 ms of slack, so
-anything extra costs a whole vsync: that is the spike. What Chrome charges to the main thread
-there the page cannot tell apart from inside — the commit waits on the compositor, so a
-backdrop blur, a full-ratio antialiased canvas or the overlay's paint all land in the same
-row — so three **experiment pills** in the section switch each off at runtime (`blur`, every
-`backdrop-filter` through one class on `body`; `hi-dpi`, the canvas's pixel-ratio cap from
-2.5 to 1; `overlay`, the SVG layer's display), for the reader to flip one and watch the row.
-None is saved. **The device answered again, and the answer was none of them.** Four
-readings, each with one pill on and then all three, with the camera orbiting for most of
-each ring: `style + layout + paint` medians 0.70, 0.70, 1.00 and 1.00 ms, and on every
-slowest frame (36.1, 69.7, 65.8 and 41.9 ms) the browser's share was 29 to 68 ms with
-`render` at 0.7 to 1.3 — the message came back within a millisecond and the next frame was
-withheld for tens more. The main thread is exonerated; the earlier 10.7 ms median did not
-reproduce and stays unexplained. What remains is the browser not delivering a frame while
-page and main thread are idle: GPU or compositor back-pressure, or the panel itself. Two
-things those readings add. The exceedance curve's foot sits at 8.3 ms and one reading
-averaged 63 fps, so the panel is 120 Hz, driven at 120 during touch and 60 at rest; a
-moving frame costs the page 8–10 ms, mostly the walk (`build` at a 7.5–8.3 ms median at
-5,038 objects), one vsync at 60 Hz and two at 120, and the 65–70 ms slowest frames sit
-where such a panel switches rate at touch start and end — a hypothesis, unmeasured. And the
-`overlay` pill had an artefact: with the SVG hidden, `overlay + menu` rose to 4.6 ms mean
-(4.9 on the slowest frame) from writing to a layer with no layout, so the pill now stops the
-refresh with the paint. The still-scene test then ran clean on the
-device — drawer open, untouched for twenty seconds, with the diagnostics section open and
-then collapsed — and changed nothing beyond noise, so the panel's own five-a-second updates
-are not the author either. **A held frame is no longer drawn.** With the bridge holding scene
-and furniture and the canvas not resized, `renderFrame` skips the clear and every draw: the
-compositor keeps what was last presented, and the GPU idles on a still scene instead of
-redrawing 5,038 antialiased points at full pixel ratio for a picture that had not changed.
-The frame loop alone may hold; a capture and every direct caller (the pixel-reading checks)
-pass nothing and always draw, and a resize forces one draw. On this container, still seed
-scene, drawer open, the browser's own row went from 34.60 (31.50) ms to 16.01 (16.00) — the
-display, and nothing else — and `style + layout + paint` from 33.48 (31.90) to 0.63 (0.40),
-because a software rasteriser's WebGL commit *is* main-thread time; `upload + draw calls`
-reads 0.00. On the device it is the last experiment the page can offer: a spike that outlives
-an idle GPU on an idle main thread is the device's own, and unmeasured there at the time of
-writing. Every job
+**The diagnostics tick writes only what moved**, and returns immediately unless the drawer and its
+section are open. It ran five times a second regardless — 2.8 ms typical, 5.7 worst, landing on one
+frame in twelve against a still frame of about a millisecond, the largest source of variance left —
+and both canvases fell back to a made-up 300-pixel width when unlaid-out, so a canvas inside a
+closed drawer was drawn at a size it did not have. A tick costs the frame *after* it, where no row
+can name the cost: the browser's style, layout and paint over what was written land in `display wait
++ browser`. Measured on the demo, still, drawer and diagnostics open, as the next frame's penalty:
++5.2 to +6.3 ms as built (12,741 elements), +2.6 with the objects section collapsed, **+2.4** with
+`content-visibility: auto` on each row — over half the cost was the browser and over half of *that*
+was the objects rows the tick never writes. **`content-visibility` buys what virtualising would, and
+its trap is the box model**: `contain-intrinsic-size` sizes the content box (42 px of a 61 px row);
+with `auto` in front the browser remembers each row's real height once laid out. The open row is
+exempt, since `scrollIntoView({block: 'nearest'})` against a 42 px placeholder left its 489 px form
+below the fold; the scroll settles over `PASSES_SCROLL_SETTLE` = 4 frames for the rows above it that
+are still estimates. **Nothing the tick reads is measured inside it.** Every CSS size the tick needs
+— the canvas for the ruler, the curve, the sparkline and the pool grid — is kept by a
+`ResizeObserver` (`sizeObserved`), measured once at load and then rewritten after each layout the
+browser was doing anyway; a `clientWidth` read after the tick's own writes forces a synchronous
+layout of the whole document inside the frame, measured at 0.9 ms of a 1.3 ms tick when the pool
+grid did it, and the ruler, the curve and the sparkline each did the same after writes the tick had
+just made. On this container that read measures as nothing (2.8 reads a tick, 0.0 ms: layout is
+cheap here); it is the only mechanism found with the once-a-second period of the spike the reader's
+phone showed, and it is unmeasured there. **The tick writes only what moved**: the camera fields
+compare each of the seven scalars against the value last written before formatting (seven
+`nimFormatNumber` calls and seven input writes a tick on a still camera, 0.1–0.2 ms, now 0.0), the
+ruler compares `(size_cell, world_per_pixel)`, and `disabled` flags are compared before they are
+set. **The slow pass runs in idle time, off the frame**: the tick only asks for the curve, the
+sparkline, the medians and the pool grid (`askSlowPass`), and `runSlowPass` draws them in a
+`requestIdleCallback` between one frame's callback and the next, with a timeout of one reading
+window so a browser that finds no idle time still draws within 200 ms, and a `setTimeout(0)`
+fallback where idle callbacks are missing (Safari), which is still a task of its own but without the
+browser's word that the frame had slack. Its clock reads are added to the same frame's `ui` slot
+(`addPhaseTime`; `recordPhaseTime` overwrote), so the row still states everything the panel cost, on
+the frame's path or off it, and the frame-time row is what says whether the frame stalled; the
+accounting check (rows reconstruct the frame) holds because the slot is closed at the next frame's
+start, after any idle callback. The rota is kept (`TICKS_DISTRIBUTION` = 5, slots 0, 2 and 4) so
+each idle task stays short, and the pass runs one job at a time, weighing each against
+`deadline.timeRemaining()` with the job's last measured cost (2 ms before its first run) and leaving
+the rest for the next idle period; a callback that arrives by its timeout, or through the
+`setTimeout` fallback, runs everything, as the timeout promised. A `slowest frame` row reads the
+slowest frame in the ring back from that frame's own slots — the page's total with its largest
+phase, and the browser's remainder — because the 200 ms means dilute one spike past telling whether
+the page authored it. It is the instrument for the periodic spikes a phone shows at 60 fps with `ui
+refresh` at 0.40 ms, which this container cannot reproduce. On the reader's tablet it read `39.0 ms
+· page 8.9 (build 7.7) · browser 30.1` with `build` at 0.57 (7.00) — the slowest frame was a
+moving-camera frame walking 5,038 objects, the page's part 8.9 ms and the browser's 30.1 — so the
+spike's author is not the tick, and the page's own largest cost in motion is the walk. To split the
+browser's 30 ms between the main thread and the display, a message posted through a `MessageChannel`
+at the end of the frame callback runs once the browser's style, layout, paint and commit are done (a
+timer would be clamped, and under load deferred behind rendering); its lateness is the `style +
+layout + paint` row, clamped to the frame's remainder when the message still loses to the next
+frame's callback — before the clamp one 16.7 ms frame read 24 ms, the next frame's own work counted
+twice — a cut of `display wait + browser` kept out of every sum and shown in the readout as `(render
+…)`, gated on the panel being shown with one timer in flight at a time. The device answered: on its
+slowest frame `34.5 ms · page 9.5 (build 8.4) · browser 25.0 (render 24.6)`, and per frame `style +
+layout + paint` at 13.18 ms mean and **10.7 ms median** of a 16.78 ms frame on a still scene,
+against `display wait + browser` at 11.1 — the main thread, not the display, and not the page's
+callback. With the page's own 2 ms that leaves 4 ms of slack, so anything extra costs a whole vsync:
+that is the spike. What Chrome charges to the main thread there the page cannot tell apart from
+inside — the commit waits on the compositor, so a backdrop blur, a full-ratio antialiased canvas or
+the overlay's paint all land in the same row — so three **experiment pills** in the section switch
+each off at runtime (`blur`, every `backdrop-filter` through one class on `body`; `hi-dpi`, the
+canvas's pixel-ratio cap from 2.5 to 1; `overlay`, the SVG layer's display), for the reader to flip
+one and watch the row. None is saved. **The device answered again, and the answer was none of
+them.** Four readings, each with one pill on and then all three, with the camera orbiting for most
+of each ring: `style + layout + paint` medians 0.70, 0.70, 1.00 and 1.00 ms, and on every slowest
+frame (36.1, 69.7, 65.8 and 41.9 ms) the browser's share was 29 to 68 ms with `render` at 0.7 to 1.3
+— the message came back within a millisecond and the next frame was withheld for tens more. The main
+thread is exonerated; the earlier 10.7 ms median did not reproduce and stays unexplained. What
+remains is the browser not delivering a frame while page and main thread are idle: GPU or compositor
+back-pressure, or the panel itself. Two things those readings add. The exceedance curve's foot sits
+at 8.3 ms and one reading averaged 63 fps, so the panel is 120 Hz, driven at 120 during touch and 60
+at rest; a moving frame costs the page 8–10 ms, mostly the walk (`build` at a 7.5–8.3 ms median at
+5,038 objects), one vsync at 60 Hz and two at 120, and the 65–70 ms slowest frames sit where such a
+panel switches rate at touch start and end — a hypothesis, unmeasured. And the `overlay` pill had an
+artefact: with the SVG hidden, `overlay + menu` rose to 4.6 ms mean (4.9 on the slowest frame) from
+writing to a layer with no layout, so the pill now stops the refresh with the paint. The still-scene
+test then ran clean on the device — drawer open, untouched for twenty seconds, with the diagnostics
+section open and then collapsed — and changed nothing beyond noise, so the panel's own five-a-second
+updates are not the author either. **A held frame is drawn like any other.** For one round a held
+frame skipped the clear and every draw, leaving the compositor showing its last presentation and the
+GPU idle on a still scene; on this container that took the browser's row from 34.60 (31.50) ms to
+16.01 (16.00) and `style + layout + paint` from 33.48 to 0.63, and on the device it changed the
+spikes not at all. The reader would rather still and moving frames behave alike than have still ones
+cheap, so it came out; the record cache above stays, since it changes nothing about what is drawn or
+when. Not held, then — a canvas that stops changing may invite the panel to drop its refresh rate
+and switch back on the next touch, a hypothesis, unmeasured.
+
+**Points outside the view are skipped before they cost anything.** `tessellate.isPointInView`
+tests a placed point against a `ViewBounds` frustum derived once per frame by
+`camera.viewBoundsFor` — eye, sight axis, right and up from the camera's own frame, half-width
+and half-height per unit of depth from the field of view and the framebuffer's aspect, near
+and far from the camera's clip distances — and the browser walk and the desktop's `addObject`
+both skip the point before it is emitted, flattened, uploaded or drawn. Lines and planes are
+not tested: a line crosses the whole frame whatever its support, and a disc reaches past its
+centre. Horizon points are tested by direction alone. The test is conservative on purpose:
+the sides carry a margin of the sprite's radius and one pixel more, so a sprite straddling the
+edge is still emitted whatever the GPU does with a centre just outside, and near and far sit
+one part in a thousand inside the GPU's own clip, so rounding never culls a point the GPU
+would draw. Components rather than `Direction` arithmetic and parameters read in place, so the
+test allocates nothing per point; the emitted JS was read for copies and has none. Its time is
+charged to the `points` row and the skipped count is reported beside it (`549 of 4938`), so
+the panel says how much the view holds. Pinned by a driven check that hashes the drawn pixels
+at three cameras with the cull on and off — identical every time, 602 of 4,938 points drawn
+at the demo's own camera — and by a suite case at the frustum's edges; the `nimSetCulling`
+export exists for that check alone. Measured on this container at the largest demo while the
+camera orbits, orbit frames only and the tree collapsed so the tally's clock reads stay out
+of it: `build` 8.0 / 10.7 ms (p50 / p90) to 5.5 / 7.3 and `scene` 4.0 / 5.5 to 1.8 / 2.3 at
+390×844; `build` 6.1 / 7.5 to 3.8 / 4.5 and `scene` 3.8 / 5.0 to 1.8 / 2.3 at 1200×900; about
+500 to 650 of 4,938 points drawn, flatten and upload shrinking with them. What remains of
+`scene` is the walk over 5,040 slots itself. Unmeasured on the device. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
@@ -1360,21 +1373,21 @@ price of live numbers and shrinks with the nodes a reader closes. The reader's o
 showed `ui refresh` at 3.10 ms mean against a 1.90 median before the rota and spikes to 4 ms
 after it; neither is re-measured here.
 
-**What this container cannot see.** Every frame-time figure here is SwiftShader's: on the
-demo `renderFrame` takes 0.9 ms and the same call followed by a `readPixels` takes 88.9 ms,
-a CPU rasteriser blending 132 translucent discs. Two device reports (an Android tablet, a
-real GPU) are the only hardware figures in this file: the demo at a median of 14.50 ms —
-plain vsync — with severe periodic spikes, and `ui refresh` the largest row at 3.80 ms.
-Measured directly, at the demo's opening camera 98 of 132 discs are entirely off-screen and
-the 34 visible cover 0.12 of one screen: fill rate is not the problem on a GPU, and reading
-SwiftShader's as a property of the design is the mistake. **Culling was measured and not
-done**: overdraw 0.12 screens, the display-wait median vsync, and a cull trades an
-object-vanishes bug for a fraction of a millisecond. The remaining device complaint is the
-*tail* — 1 frame in 100 at 25 ms against a 16.63 ms body — and under SwiftShader a profile is
-98% `(program)`, the rasteriser itself, so no claim is made about it; the hypothesis that the
-diagnostics' own once-a-second redraw authors it was tested and killed (0.5 ms). Two things
-were ruled out on this container for the periodic spike: the page has no timer of its own,
-and the drawer's `backdrop-filter` blur makes no difference (44 spikes against 40 over 30 s).
+**What this container cannot see.** Every frame-time figure here is SwiftShader's: on the demo
+`renderFrame` takes 0.9 ms and the same call followed by a `readPixels` takes 88.9 ms, a CPU
+rasteriser blending 132 translucent discs. Two device reports (an Android tablet, a real GPU) are
+the only hardware figures in this file: the demo at a median of 14.50 ms — plain vsync — with severe
+periodic spikes, and `ui refresh` the largest row at 3.80 ms. Measured directly, at the demo's
+opening camera 98 of 132 discs are entirely off-screen and the 34 visible cover 0.12 of one screen:
+fill rate is not the problem on a GPU, and reading SwiftShader's as a property of the design is the
+mistake. **Culling was measured and not done at 1,024 objects** — overdraw 0.12 screens, the
+display-wait median vsync — and done for points at 5,038, where most are off screen at any framing;
+see the walk above. The remaining device complaint is the *tail* — 1 frame in 100 at 25 ms against a
+16.63 ms body — and under SwiftShader a profile is 98% `(program)`, the rasteriser itself, so no
+claim is made about it; the hypothesis that the diagnostics' own once-a-second redraw authors it was
+tested and killed (0.5 ms). Two things were ruled out on this container for the periodic spike: the
+page has no timer of its own, and the drawer's `backdrop-filter` blur makes no difference (44 spikes
+against 40 over 30 s).
 
 **Not done, and known.** The frame walk still sweeps `scene.bound` twice (sky planes first,
 then everything else); every edit copies a whole `Scene` into the timeline; a restore
