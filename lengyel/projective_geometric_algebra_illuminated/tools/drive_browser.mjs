@@ -66,7 +66,7 @@ await page.evaluate(() => document.getElementById('gl').focus());
 
 const readCamera = () => page.evaluate(() => ({
   distance: nimCameraDistance(),
-  target: nimCameraTarget(),
+  target: Array.from(nimCameraTarget()), // Plain array, for return across `evaluate`.
   azimuth: nimCameraAzimuth(),
 }));
 const spanTarget = (before, after) => Math.hypot(

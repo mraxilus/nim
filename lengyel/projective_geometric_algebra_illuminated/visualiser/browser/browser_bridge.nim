@@ -296,6 +296,7 @@ var
   FLAT_TINT = initFlatFloats(3)
   FLAT_COMET = initFlatFloats(2*POINTS_MARKER_PULSE)
   FLAT_GRID = initFlatFloats(2)
+  FLAT_TARGET = initFlatFloats(3)
   FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
   FLAT_MENU_CENTRE = initFlatFloats(2)
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
@@ -967,9 +968,11 @@ proc nimCameraDistance(): cfloat {.exportc.} = cfloat(CAMERA.distance)
 proc nimCameraFov(): cfloat {.exportc.} = cfloat(CAMERA.degrees_field_of_view)
   ## Report vertical field of view, in degrees.
 
-proc nimCameraTarget(): seq[float32] {.exportc.} =
-  ## Report point camera orbits around, as `[x, y, z]` triple.
-  @[cfloat(CAMERA.target.x), cfloat(CAMERA.target.y), cfloat(CAMERA.target.z)]
+proc nimCameraTarget(): FlatBuffer {.exportc.} =
+  ## Report point camera orbits around, as `[x, y, z]` view over `FLAT_TARGET`.
+  ##   Refilled per call; camera fields' tick asks five times second and compares before
+  ##   writing, so fresh sequence here was allocation per tick.
+  FLAT_TARGET.fill3(cfloat(CAMERA.target.x), cfloat(CAMERA.target.y), cfloat(CAMERA.target.z))
 
 
 proc nimSetCameraAzimuth(v: cfloat) {.exportc.} =

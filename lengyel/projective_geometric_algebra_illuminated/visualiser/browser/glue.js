@@ -1178,13 +1178,20 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { nimReleaseKeysAll(); nimSetCameraDragging(false); }
 });
 
+// Write `disabled` only where it moved.
+//   Compared first, so button whose state stands costs its tick one property read and
+//   no attribute write.
+function writeDisabled(button, is_disabled) {
+  if (button.disabled !== is_disabled) button.disabled = is_disabled;
+}
+
 function refreshUndoRedoButtons() {
   // Dimmed/disabled (via shared .button:disabled rule) whenever there's nothing on.
   //   that side of timeline to move to -- checked after every history-touching
   //   action below, plus once per low-cadence UI tick to catch every other path
   //   (add, apply, remove, load demo, scene load/clear) without hooking each one.
-  button_undo.disabled = !nimCanUndo();
-  button_redo.disabled = !nimCanRedo();
+  writeDisabled(button_undo, !nimCanUndo());
+  writeDisabled(button_redo, !nimCanRedo());
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1227,18 +1234,31 @@ fields_camera.tx.addEventListener('change', commitTarget);
 fields_camera.ty.addEventListener('change', commitTarget);
 fields_camera.tz.addEventListener('change', commitTarget);
 
-function refreshCameraFields() {
-  if (are_fields_camera_focused) return; // Don't fight value user is mid-typing.
+// Each field's last written value, so still camera formats and writes nothing.
+//   Seven `nimFormatNumber` calls and seven input writes ran five times second for
+//   numbers that had not moved. `NaN` before first tick: equal to nothing, so first
+//   comparison always writes.
+const camera_written = {
+  azimuth: NaN, elevation: NaN, distance: NaN, fov: NaN, tx: NaN, ty: NaN, tz: NaN,
+};
+function writeCameraField(name, value) {
+  if (camera_written[name] === value) return;
+  camera_written[name] = value;
   // `nimFormatNumber`, not `toFixed` here: angle of 1.05 should read `1.05` rather.
   //   than `1.050`, and desktop draws every one of these with same widget.
-  fields_camera.azimuth.value = nimFormatNumber(nimCameraAzimuth());
-  fields_camera.elevation.value = nimFormatNumber(nimCameraElevation());
-  fields_camera.distance.value = nimFormatNumber(nimCameraDistance());
-  fields_camera.fov.value = nimFormatNumber(nimCameraFov());
-  const t = nimCameraTarget();
-  fields_camera.tx.value = nimFormatNumber(t[0]);
-  fields_camera.ty.value = nimFormatNumber(t[1]);
-  fields_camera.tz.value = nimFormatNumber(t[2]);
+  fields_camera[name].value = nimFormatNumber(value);
+}
+
+function refreshCameraFields() {
+  if (are_fields_camera_focused) return; // Don't fight value user is mid-typing.
+  writeCameraField('azimuth', nimCameraAzimuth());
+  writeCameraField('elevation', nimCameraElevation());
+  writeCameraField('distance', nimCameraDistance());
+  writeCameraField('fov', nimCameraFov());
+  const target = nimCameraTarget();
+  writeCameraField('tx', target[0]);
+  writeCameraField('ty', target[1]);
+  writeCameraField('tz', target[2]);
 }
 
 // **Asked for here, taken inside frame that draws it.** Context is created without.
@@ -1746,7 +1766,7 @@ function isEditing(slot) { return session_edit !== null && session_edit.slot ===
 function refreshAddButton() {
   // Disabled while any session is open, so starting second one cannot silently.
   //   discard first -- same treatment undo/redo get when their side is empty.
-  button_add.disabled = session_edit !== null || nimSceneCount() >= nimSceneCapacity();
+  writeDisabled(button_add, session_edit !== null || nimSceneCount() >= nimSceneCapacity());
 }
 
 function buildItemRow(slot) {
@@ -2147,6 +2167,41 @@ function parseAndLoadScene(buffer) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Sizes: every CSS size low-cadence tick reads, kept by observer.        */
+/* ---------------------------------------------------------------------- */
+
+// **Kept by `ResizeObserver`, never measured inside tick.** `clientWidth` read after
+//   tick's own writes forces browser to lay whole document out there and then, inside
+//   frame: measured at 0.9 ms of 1.3 ms tick on pool grid. Ruler, curve and
+//   sparkline each read theirs same way, after writes tick had just made; that cost
+//   is unmeasured on desktop, where layout is cheap, and is only mechanism found for
+//   once-second spike phone showed. Observer answers same question for nothing,
+//   after layout browser was doing anyway, and fires once when it starts watching.
+//   Measured once here, before any frame: observer's first report lands after first
+//   frame's own callback, and 0x0 canvas until then would draw nothing.
+//   Callback runs after layout, so reads inside it are free.
+//   `onResize` is where size's readers ask for their redraw.
+//   Without observer size stands as first measured; every browser this build runs in
+//   has one, and pool grid already leant on it.
+function sizeObserved(element, onResize) {
+  const size = { width: 0, height: 0 };
+  if (element === null) return size;
+  size.width = element.clientWidth;
+  size.height = element.clientHeight;
+  if (typeof ResizeObserver !== 'function') return size;
+  new ResizeObserver(() => {
+    size.width = element.clientWidth;
+    size.height = element.clientHeight;
+    onResize();
+  }).observe(element);
+  return size;
+}
+// Canvas's own, read by ruler's tick.
+//   Window's resize handler still measures for itself: it runs once per resize event,
+//   not five times second.
+const size_canvas = sizeObserved(canvas, () => {});
+
+/* ---------------------------------------------------------------------- */
 /* Diagnostics: browser-appropriate stand-ins for desktop build's own     */
 /* arena/frame-time panel -- see `browser_bridge.nim`'s own doc comment   */
 /* for why numbers differ in kind. Drawer states none of this:            */
@@ -2159,6 +2214,7 @@ let index_history_frame = 0;
 let time_frame_last = performance.now();
 const sparkline = document.getElementById('sparkline');
 const context_sparkline = sparkline.getContext('2d');
+const size_sparkline = sizeObserved(sparkline, () => askSlowPass(false, true, false, false));
 const diagnostic_frame_time = document.getElementById('diagnostic-frametime');
 const diagnostic_heap = document.getElementById('diagnostic-heap');
 const diagnostic_pool = document.getElementById('diagnostic-pool');
@@ -2171,12 +2227,9 @@ const context_pool = grid_pool === null ? null : grid_pool.getContext('2d');
 //   scene did, and because section opens onto canvas that had no size at all.
 let revision_pool_last = -1;
 let ratio_pool_last = 0;
-// **Set by `ResizeObserver`, never by measuring.** Gate below has to run before.
-//   anything reads canvas's width, because layout read *after* tick's own row
-//   writes forces browser to lay drawer out there and then -- measured at 0.9 ms of
-//   1.3 ms tick, five times second, for picture that had not changed. Observer
-//   answers same question for nothing, and fires once when it starts watching, which is
-//   what makes first draw happen.
+// Redraw owed for canvas's own reasons: resized, or never drawn.
+//   Set by observer below, which fires once when it starts watching -- what makes first
+//   draw happen.
 let is_pool_stale = true;
 // What last draw actually chose, for check to read rather than re-derive.
 //   derivation is thing being checked, so test that repeated it would agree with
@@ -2196,11 +2249,15 @@ const HEIGHT_POOL_MAX = 150;
 // CSS colour per packed triple, so palette that cycles is converted dozen times.
 //   rather than thousand. Cleared with nothing: palette is fixed, so it converges.
 const css_pool = new Map();
-if (grid_pool !== null && typeof ResizeObserver === 'function') {
-  // Its own box, not window's: drawer is fixed-width panel on wide screen and.
-  //   full-width sheet on narrow one, and either can change without window doing so.
-  new ResizeObserver(() => { is_pool_stale = true; }).observe(grid_pool);
-}
+// Width last draw laid grid out for; `NaN` before first, equal to nothing.
+let width_pool_drawn = NaN;
+// Watched in its own box rather than window's:
+//   drawer is fixed-width panel on wide screen and full-width sheet on narrow one, and
+//   either can change without window doing so. Width alone: draw sets canvas's own
+//   height, and observer answering that with second identical draw was 4 ms for nobody.
+const size_pool = sizeObserved(grid_pool, () => {
+  if (size_pool.width !== width_pool_drawn) is_pool_stale = true;
+});
 
 // Keep one ring per step of drawing process.
 //   Diagnostics tab can then show where frame actually went rather than one opaque
@@ -2284,6 +2341,17 @@ function recordPhaseTime(name, delta_milliseconds) {
     delta_milliseconds > 0 ? delta_milliseconds : 0;
   written_phase[name][index_history_frame] = 1;
 }
+// Add to phase's slot rather than replace it:
+//   `ui` is written more than once per frame -- tick inside frame's callback, glide
+//   redraw beside it, slow pass in idle time after it -- all before `recordFrameTime`
+//   closes slot at next frame's start, so every one lands in frame it belongs to.
+function addPhaseTime(name, delta_milliseconds) {
+  if (!Number.isFinite(delta_milliseconds)) return; // Nothing measured; leave it as is.
+  const at = index_history_frame;
+  const held = written_phase[name][at] === 1 ? history_phase[name][at] : 0;
+  history_phase[name][at] = held + (delta_milliseconds > 0 ? delta_milliseconds : 0);
+  written_phase[name][at] = 1;
+}
 
 // **How long reading is averaged over, and how often it is rewritten.** Single frame's.
 //   number changes faster than anyone can read it, which is what made these rows flicker.
@@ -2293,17 +2361,6 @@ function recordPhaseTime(name, delta_milliseconds) {
 //   number for interval since last one -- not average over one window
 //   sampled on cadence of another.
 const MILLISECONDS_WINDOW_READING = 200;
-// **Figure is redrawn on cadence of window it is averaged over, not on.
-//   panel's.** Rows above are 200 ms readings and belong at 200 ms. Three of things
-//   this panel shows are not: sparkline holds four seconds, ring medians four, and
-//   exceedance curve seventeen. None of them can visibly change in fifth of second,
-//   and redrawing them at that rate was single most expensive thing page did --
-//   measured at 0.31 ms for curve and 0.27 for medians out of 1.17 ms tick, half
-//   of it, five times second, on one row (`ui refresh`) that reads three to five times
-//   cost of building whole frame. Slow pass carries them instead.
-//   Not slower still: second is longest reader will watch curve without deciding
-//   it has stopped, and sparkline has to scroll rather than jump.
-const MILLISECONDS_WINDOW_DISTRIBUTION = 1000;
 // How many frames back that span reaches, measured in frames' own durations rather.
 //   than assumed from frame rate: at 60 fps it is dozen, on labouring phone it is
 //   two, and either way it is last 200 ms.
@@ -2356,19 +2413,24 @@ function medianPhase(name) {
   return scratch_median[count >> 1];
 }
 // Each row's last median, so 200 ms rows can state one without re-sorting ring that.
-//   is four seconds long. Refreshed on slow pass; `undefined` means never computed,
-//   which is not same as `null` -- that is phase which has genuinely never run, and
-//   row is left as em dash for it. Row that becomes shown between slow passes
-//   computes its own on spot rather than reading em dash for up to second.
+//   is four seconds long. Refreshed by `recomputeMedians` on slow pass; `undefined`
+//   means never computed, which is not same as `null` -- that is phase which has
+//   genuinely never run, and row is left as em dash for it.
 const median_phase_last = {};
-function medianPhaseHeld(name, is_recomputing) {
-  // Phase held as never run is asked again every tick: it is cheap to ask, and row.
-  //   coming alive between medians ticks would otherwise stay em dash for up to second.
+function medianPhaseHeld(name) {
+  // Ask on spot where nothing is held, or what is held says never ran.
+  //   Cheap to ask, and row coming alive between slow passes would otherwise stay em
+  //   dash for up to second.
   const held = median_phase_last[name];
-  if (is_recomputing || held === undefined || held === null) {
-    median_phase_last[name] = medianPhase(name);
-  }
+  if (held === undefined || held === null) median_phase_last[name] = medianPhase(name);
   return median_phase_last[name];
+}
+// Re-sort every shown row's median from ring. Rows inside closed node keep theirs:
+//   nobody is reading them, and each is 240-entry insertion sort.
+function recomputeMedians() {
+  for (const [name] of PHASES_DIAGNOSTIC) {
+    if (isPhaseShown(name)) median_phase_last[name] = medianPhase(name);
+  }
 }
 
 // Rows that have children, and whether each is open. **Every one starts closed**:
@@ -2437,6 +2499,7 @@ let index_exceedance = 0;
 let count_exceedance = 0; // Rises to window's own size, then stays there.
 const exceedance = document.getElementById('exceedance');
 const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
+const size_exceedance = sizeObserved(exceedance, () => askSlowPass(true, false, false, false));
 const diagnostic_exceedance = document.getElementById('diagnostic-exceedance');
 const label_exceedance_axis = document.getElementById('diagnostic-exceedance-axis');
 // Vertical axis's own switch, wired here rather than beside header's chips because.
@@ -2832,7 +2895,10 @@ function drawAxisExceedance(context, w, h, milliseconds_full, xOf, yOf) {
 
 function drawExceedance() {
   if (context_exceedance === null) return;
-  const w = exceedance.clientWidth || 300, h = exceedance.clientHeight || 74;
+  // Observer's size, not canvas's own; see `sizeObserved`.
+  //   Fallback stands for canvas without layout, as inside shut section; checks drawing
+  //   with drawer shut lean on it.
+  const w = size_exceedance.width || 300, h = size_exceedance.height || 74;
   if (exceedance.width !== w) exceedance.width = w;
   if (exceedance.height !== h) exceedance.height = h;
   context_exceedance.clearRect(0, 0, w, h);
@@ -2938,10 +3004,18 @@ const ruler_bar = document.getElementById('ruler-bar');
 const ruler_label = document.getElementById('ruler-label');
 const PIXELS_RULER_TARGET = 130;
 const STEPS_RULER = [1, 2, 5];
+// Reading bar was last laid out for, so still ground formats and writes nothing.
+//   Both `NaN` before first tick: equal to nothing, so first comparison always writes.
+let cell_ruler_written = NaN;
+let scale_ruler_written = NaN;
 function refreshRuler() {
   if (ruler === null) return;
-  const [size_cell, world_per_pixel] =
-    nimGridMetrics(canvas.clientWidth, canvas.clientHeight);
+  // Observer's size, not canvas's own; see `sizeObserved`.
+  const metrics = nimGridMetrics(size_canvas.width, size_canvas.height);
+  const size_cell = metrics[0], world_per_pixel = metrics[1];
+  if (size_cell === cell_ruler_written && world_per_pixel === scale_ruler_written) return;
+  cell_ruler_written = size_cell;
+  scale_ruler_written = world_per_pixel;
   // No ground drawn -- eye above fog's own reach -- so there is nothing to measure.
   if (!(size_cell > 0) || !(world_per_pixel > 0)) { ruler.hidden = true; return; }
   const world_target = PIXELS_RULER_TARGET * world_per_pixel;
@@ -2991,17 +3065,98 @@ function writeColour(element, value) {
 // Panel's own collapsible section, read by guard below rather than by class on.
 //   drawer: drawer holds several sections and only this one owns these figures.
 const section_diagnostics = document.querySelector('.section[data-section="diagnostics"]');
-// Slow pass is three jobs on three different ticks, each once per window.
-//   Curve, sparkline and medians together on one tick were one tick in five costing three
-//   to four times its neighbours -- spike reader saw once per second on `ui refresh`. Spread,
-//   worst tick carries one job; figures in `PROVENANCE.md`.
-//   Every job runs on first tick after section is shown, so panel never opens half drawn.
+// Report whether figures are on screen at all: drawer open, and section open inside it.
+function isDiagnosticsShown() {
+  return drawer.classList.contains('open') && section_diagnostics.classList.contains('open');
+}
+
+// **Figures are redrawn on cadence of window they are averaged over, not on panel's.**
+//   Rows are 200 ms readings and belong at 200 ms. Sparkline holds four seconds, ring
+//   medians four, exceedance curve seventeen, and pool grid changes with scene: none
+//   can visibly change in fifth of second, and redrawing them at that rate was single
+//   most expensive thing page did -- 0.31 ms for curve and 0.27 for medians out of
+//   1.17 ms tick. Not slower still: second is longest reader will watch curve without
+//   deciding it has stopped, and sparkline has to scroll rather than jump.
+//   One job per tick rather than three on one: three together made one tick in five
+//   cost three to four times its neighbours, spike reader saw once second on
+//   `ui refresh`. Jobs run off frame besides -- see `askSlowPass` -- and each is
+//   still kept short for idle window it runs in.
+//   Every job runs on first tick after section is shown, so panel never opens half
+//   drawn.
 const TICKS_DISTRIBUTION = 5; // Five 200 ms ticks is window's own second.
 const TICK_CURVE = 0;
 const TICK_SPARKLINE = 2;
 const TICK_MEDIANS = 4;
 let ticks_diagnostics = 0; // Ticks since section was shown, driving rota above.
 let is_diagnostics_shown_last = false; // Whether last tick found section open.
+
+// **Slow pass runs in idle time, off frame.** Tick only asks; `runSlowPass` draws.
+//   Curve, sparkline, medians and pool grid are drawn in `requestIdleCallback`, between
+//   one frame's callback and next, where page was waiting on display anyway. Its
+//   clock reads go into same frame's `ui` reading through `addPhaseTime`, so row
+//   still states everything panel cost -- on frame's path or off it -- and frame-time
+//   row above it is what says whether frame stalled.
+//   Timeout is one reading window: browser finding no idle time still draws figure
+//   within 200 ms rather than never.
+//   `setTimeout` where idle callbacks are missing: still task of its own, off frame's
+//   callback, only without browser's word that frame had slack.
+const MILLISECONDS_SLOW_PASS_LATEST = MILLISECONDS_WINDOW_READING;
+const scheduleIdle = typeof requestIdleCallback === 'function'
+  ? (job) => { requestIdleCallback(job, { timeout: MILLISECONDS_SLOW_PASS_LATEST }); }
+  : (job) => { setTimeout(job, 0); };
+// Jobs owed, each once however many ticks asked before pass ran.
+let is_curve_due = false;
+let is_sparkline_due = false;
+let are_medians_due = false;
+let is_pool_due = false;
+let is_slow_pass_scheduled = false;
+function askSlowPass(is_curve, is_sparkline, is_medians, is_pool) {
+  if (is_curve) is_curve_due = true;
+  if (is_sparkline) is_sparkline_due = true;
+  if (is_medians) are_medians_due = true;
+  if (is_pool) is_pool_due = true;
+  if (is_slow_pass_scheduled) return;
+  is_slow_pass_scheduled = true;
+  scheduleIdle(runSlowPass);
+}
+function runSlowPass() {
+  is_slow_pass_scheduled = false;
+  const ms_before = performance.now();
+  // Section shut since ask: owed jobs are dropped.
+  //   First tick after it is shown again asks for all of them.
+  if (isDiagnosticsShown()) {
+    if (is_curve_due) drawExceedance();
+    if (is_sparkline_due) drawSparkline();
+    if (are_medians_due) recomputeMedians();
+    if (is_pool_due) drawPoolGrid(nimSceneCount(), nimSceneCapacity());
+  }
+  is_curve_due = false;
+  is_sparkline_due = false;
+  are_medians_due = false;
+  is_pool_due = false;
+  addPhaseTime('ui', performance.now() - ms_before);
+}
+
+// Draw last four seconds of frame times as one line, scaled to slowest of them.
+function drawSparkline() {
+  // Observer's size, not canvas's own; see `sizeObserved`.
+  const w = size_sparkline.width || 300, h = size_sparkline.height || 40;
+  if (sparkline.width !== w) sparkline.width = w;
+  if (sparkline.height !== h) sparkline.height = h;
+  let highest = 16.6;
+  for (const v of history_frame) if (v > highest) highest = v;
+  context_sparkline.clearRect(0, 0, w, h);
+  context_sparkline.strokeStyle = '#00a7a5';
+  context_sparkline.lineWidth = 1.5;
+  context_sparkline.beginPath();
+  for (let i = 0; i < FRAMES_HISTORY; i++) {
+    const v = history_frame[(index_history_frame + i) % FRAMES_HISTORY];
+    const x = (i / (FRAMES_HISTORY - 1)) * w;
+    const y = h - (Math.min(v, highest) / highest) * h;
+    if (i === 0) context_sparkline.moveTo(x, y); else context_sparkline.lineTo(x, y);
+  }
+  context_sparkline.stroke();
+}
 
 function refreshDiagnostics() {
   // **Nothing here is worth millisecond while drawer is shut.** Every figure this.
@@ -3020,39 +3175,20 @@ function refreshDiagnostics() {
   //   so they fell back to 300 pixels and drew, five times second, for reader looking
   //   at objects list. Drawer guard above did not catch it because drawer is
   //   genuinely open.
-  const is_shown =
-    drawer.classList.contains('open') && section_diagnostics.classList.contains('open');
-  if (!is_shown) { is_diagnostics_shown_last = false; return; }
-  // Which slow-pass job this tick carries; see `TICKS_DISTRIBUTION`.
-  //   Numeric rows below run every tick.
+  if (!isDiagnosticsShown()) { is_diagnostics_shown_last = false; return; }
+  // Which slow-pass job this tick asks for; see `TICKS_DISTRIBUTION` and `askSlowPass`.
+  //   Numeric rows below run every tick, here on frame.
   const is_first_shown = !is_diagnostics_shown_last;
   is_diagnostics_shown_last = true;
   if (is_first_shown) ticks_diagnostics = 0;
   const slot_distribution = ticks_diagnostics % TICKS_DISTRIBUTION;
   ticks_diagnostics += 1;
-  const is_drawing_curve = is_first_shown || slot_distribution === TICK_CURVE;
-  const is_drawing_sparkline = is_first_shown || slot_distribution === TICK_SPARKLINE;
-  const is_recomputing_medians = is_first_shown || slot_distribution === TICK_MEDIANS;
-
-  if (is_drawing_curve) drawExceedance();
-  if (is_drawing_sparkline) {
-    const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
-    if (sparkline.width !== w) sparkline.width = w;
-    if (sparkline.height !== h) sparkline.height = h;
-    let highest = 16.6;
-    for (const v of history_frame) if (v > highest) highest = v;
-    context_sparkline.clearRect(0, 0, w, h);
-    context_sparkline.strokeStyle = '#00a7a5';
-    context_sparkline.lineWidth = 1.5;
-    context_sparkline.beginPath();
-    for (let i = 0; i < FRAMES_HISTORY; i++) {
-      const v = history_frame[(index_history_frame + i) % FRAMES_HISTORY];
-      const x = (i / (FRAMES_HISTORY - 1)) * w;
-      const y = h - (Math.min(v, highest) / highest) * h;
-      if (i === 0) context_sparkline.moveTo(x, y); else context_sparkline.lineTo(x, y);
-    }
-    context_sparkline.stroke();
-  }
+  askSlowPass(
+    is_first_shown || slot_distribution === TICK_CURVE,
+    is_first_shown || slot_distribution === TICK_SPARKLINE,
+    is_first_shown || slot_distribution === TICK_MEDIANS,
+    isPoolGridStale(),
+  );
 
   // Averaged over last 200 ms rather than taken from newest frame: per-frame.
   //   reading changes several times faster than it can be read, and frame rate quoted
@@ -3077,7 +3213,7 @@ function refreshDiagnostics() {
   //   Phase that has not run at all stays em dash.
   for (const [name] of PHASES_DIAGNOSTIC) {
     if (!isPhaseShown(name)) continue; // Inside closed node; nobody is reading it.
-    const median = medianPhaseHeld(name, is_recomputing_medians);
+    const median = medianPhaseHeld(name);
     if (median === null) continue;
     // Phase idle for whole window shows its median rather than nothing: it is step.
     //   that runs, and "0.00" would claim it had run for free this window.
@@ -3115,9 +3251,7 @@ function refreshDiagnostics() {
       (performance.memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(0) + ' MB');
   }
 
-  const count = nimSceneCount(), capacity = nimSceneCapacity();
-  writeText(diagnostic_pool, count + ' / ' + capacity);
-  drawPoolGrid(count, capacity);
+  writeText(diagnostic_pool, nimSceneCount() + ' / ' + nimSceneCapacity());
 }
 
 // Object pool, one square per slot in ink of whatever object holds it.
@@ -3130,20 +3264,24 @@ function refreshDiagnostics() {
 //   exactly that question, and it is same counter frame hold is keyed on.
 //   canvas's own geometry is part of key as well, because resize clears what was drawn
 //   and because section opens onto canvas that had no size until it did.
+// Report whether grid's picture is behind:
+//   scene edited, pixel ratio moved, or canvas itself resized or never drawn. Plain
+//   reads all; tick asks this and slow pass draws.
+function isPoolGridStale() {
+  const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
+  return is_pool_stale || revision_pool_last !== nimSceneRevision() || ratio_pool_last !== ratio;
+}
+
 function drawPoolGrid(count, capacity) {
   if (context_pool === null) return;
-  // **Gate runs before anything measures.** `devicePixelRatio` and revision are.
-  //   plain reads; canvas's width is not, and asking for it here -- after rows above
-  //   have been written -- is what makes browser lay drawer out there and then.
   const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
-  if (revision_pool_last === nimSceneRevision() && ratio_pool_last === ratio &&
-      !is_pool_stale) return;
-
-  const width = grid_pool.clientWidth;
+  // Observer's width, not canvas's own; see `sizeObserved`.
+  const width = size_pool.width;
   if (!(width > 0)) return; // Laid out inside something closed; nothing to draw on.
   revision_pool_last = nimSceneRevision();
   ratio_pool_last = ratio;
   is_pool_stale = false;
+  width_pool_drawn = width;
 
   // First size whose grid fits budget, or smallest offered where none does.
   let [cell, gap] = CELLS_POOL[CELLS_POOL.length - 1];
@@ -4340,14 +4478,18 @@ function frame() {
   // Redraw travelling axis at frame's own rate.
   //   Panel refreshes few times second, which would show glide as steps rather than
   //   movement.
-  //   Only while it travels, and only while curve is actually on screen; canvas inside
-  //   closed section reports no width.
-  if (is_axis_gliding && exceedance !== null && exceedance.clientWidth > 0) drawExceedance();
+  //   Only while it travels, and only while curve is actually on screen. On frame
+  //   rather than in idle time, since it is animation; charged to `ui` like rest.
+  if (is_axis_gliding && isDiagnosticsShown()) {
+    const ms_before_glide = performance.now();
+    drawExceedance();
+    addPhaseTime('ui', performance.now() - ms_before_glide);
+  }
   const ms_now_ui = performance.now();
-  // One reading for every kind of UI work this frame did, since `recordPhaseTime` writes.
-  //   phase rather than adding to it. Row build runs every frame while it has rows
-  //   left; rest runs on its own five-a-second cadence; frame doing neither leaves
-  //   slot unwritten, exactly as before.
+  // One reading for every kind of UI work this frame did, through `addPhaseTime`:
+  //   glide redraw above, tick here and slow pass in idle time after all land in same
+  //   slot. Row build runs every frame while it has rows left; rest runs on its own
+  //   five-a-second cadence; frame doing neither leaves slot unwritten.
   const is_ticking_ui = ms_now_ui - ms_refresh_ui >= MILLISECONDS_WINDOW_READING;
   if (is_ticking_ui || rows_pending !== null) {
     const ms_before_ui = performance.now();
@@ -4363,7 +4505,7 @@ function frame() {
       syncOperandsToSelection(); // catches selection changes from tap-to-select too.
       refreshAddButton(); // catches paths that fill or empty scene without click.
     }
-    recordPhaseTime('ui', performance.now() - ms_before_ui);
+    addPhaseTime('ui', performance.now() - ms_before_ui);
   }
 
   requestAnimationFrame(frame);
