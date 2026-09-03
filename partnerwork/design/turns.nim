@@ -81,9 +81,8 @@ func said(lying: Option[Lying]): string =
   way & " " & band & laps & held
 
 
-func short(state: State): string =
-  ## Say the verdict in the few words a page can show.
-  let refusing = refusal(state)
+func short(refusing: Option[Fault]): string =
+  ## Say a verdict in the few words a page can show.
   if refusing.isNone:
     return "holds"
   case refusing.get
@@ -92,6 +91,47 @@ func short(state: State): string =
   of Fault.Budget: "out of rope"
   of Fault.Braided: "rope through rope"
   of Fault.Swan: "past the swan"
+
+
+func isPair(hold: string): bool = hold.contains('.')
+
+
+func waived(state: State; hold: string): Option[Fault] =
+  ## Say what the rope alone would refuse that the page lets pass.
+  ##   For a two-hand hold the sim is over-cautious: it prices the braid at
+  ##     the torso's radius the whole way, and once a rope has caught a body
+  ##     it refuses two arms crossing at one height as rope through rope.
+  ##     So it refuses the X and the diamond, which dancers plainly manage.
+  ##     The hand-to-hand mock-up, checked on the floor, holds the chain to
+  ##     a turn and a half each way: swan, diamond, X, frame, X, diamond,
+  ##     swan (design/README, rule 31) -- the twist is in the arms and costs
+  ##     little reach.  So for a pair the two length faults are waived and
+  ##     reported; a body in the way, a rope that cannot be laid, and the
+  ##     swan itself still refuse.  A single hold gets the sim's whole
+  ##     judgement.
+  if not isPair(hold):
+    return none(Fault)
+  let fault = refusal(state, swan = false)
+  if fault.isSome and fault.get in {Fault.Budget, Fault.Braided}:
+    return fault
+  none(Fault)
+
+
+func allowed(state: State; hold: string; turn: float): Option[Fault] =
+  ## The page's judgement: the sim's, less what `waived` sets aside, with
+  ## the swan measured from the hold's own rest rather than from square.
+  ##   The sim measures twist from face to face, where a same-name pair is
+  ##     already crossed; its chain sits a half turn along, so its swan is
+  ##     counted from where its ropes run parallel, as rule 31 has it.
+  if not isPair(hold):
+    return refusal(state)
+  for link in state.links:
+    let fault = faultOf(state, link)
+    if fault.isSome and fault.get in {Fault.Tangent, Fault.Through}:
+      return fault
+  if abs(turn) > HUMAN.swan + 1e-9:
+    return some(Fault.Swan)
+  none(Fault)
 
 
 func at(hold, level: string; turn: float): State =
@@ -106,8 +146,10 @@ func vecJson(v: Vec): JsonNode = %*[v.x, v.y]
 proc turnScene(hold, level: cstring; turn: float): cstring {.exportc.} =
   ## Give the couple at a turn, as JSON the page draws from.
   let s = at($hold, $level, turn)
+  let set_aside = waived(s, $hold)
   var j = %*{
-    "verdict": short(s),
+    "verdict": short(allowed(s, $hold, turn)),
+    "waived": (if set_aside.isSome: short(set_aside) else: ""),
     "bodies": [
       {"centre": vecJson(s.stance[Body.One].centre),
        "facing": s.stance[Body.One].facing},
@@ -136,26 +178,28 @@ proc turnScene(hold, level: cstring; turn: float): cstring {.exportc.} =
   cstring($j)
 
 
-func limitWay(base: State; sign: float): float =
-  ## Sweep one way until a connection refuses; the turn reached, in turns.
-  ##   `windLimit` sweeps one way only, so the other way is swept here the
-  ##     same way it does: forward in steps, then bisected inside the step
-  ##     that failed.
+func limitWay(base: State; hold: string; sign: float): float =
+  ## Sweep one way until the page's judgement refuses; the turn reached, in
+  ## turns.
+  ##   `windLimit` sweeps one way only and with the sim's own judgement, so
+  ##     the sweep is done here the same way it does it: forward in steps,
+  ##     then bisected inside the step that failed.
   const STEP = 0.05
   var
     went = 0.0
     here = base
-  if not holds(here):
+  if allowed(here, hold, 0.0).isSome:
     return 0.0
   while went < MOST * 2.0 * PI:
     let next = turned(here, Body.Two, sign * STEP, STEP)
-    if not holds(next):
+    if allowed(next, hold, sign * (went + STEP) / (2.0 * PI)).isSome:
       var
         lo = 0.0
         hi = STEP
       for _ in 0 ..< 20:
         let mid = (lo + hi) / 2.0
-        if holds(turned(here, Body.Two, sign * mid, STEP)): lo = mid
+        if allowed(turned(here, Body.Two, sign * mid, STEP), hold,
+                   sign * (went + mid) / (2.0 * PI)).isNone: lo = mid
         else: hi = mid
       return (went + lo) / (2.0 * PI)
     here = next
@@ -164,18 +208,20 @@ func limitWay(base: State; sign: float): float =
 
 
 proc turnLimits(hold, level: cstring): cstring {.exportc.} =
-  ## Say how far the follow can turn each way before the rope refuses.
-  ##   Swept with the swan limit on: the page is asked to block where a
-  ##     dancer would be blocked, and the pair's twist is one of those places.
-  let base = rested($hold, $level)
+  ## Say how far the follow can turn each way before the page's judgement
+  ## refuses: the rope's, with a braiding pair's length faults waived.
   let
-    pos = limitWay(base, 1.0)
-    neg = limitWay(base, -1.0)
+    name = $hold
+    base = rested(name, $level)
+    pos = limitWay(base, name, 1.0)
+    neg = limitWay(base, name, -1.0)
   var why = "holds"
   if pos < MOST:
-    why = short(turned(base, Body.Two, (pos + 0.02) * 2.0 * PI))
+    why = short(allowed(turned(base, Body.Two, (pos + 0.02) * 2.0 * PI),
+                        name, pos + 0.02))
   var whyNeg = "holds"
   if neg < MOST:
-    whyNeg = short(turned(base, Body.Two, -(neg + 0.02) * 2.0 * PI))
+    whyNeg = short(allowed(turned(base, Body.Two, -(neg + 0.02) * 2.0 * PI),
+                           name, -(neg + 0.02)))
   cstring($(%*{"pos": pos, "neg": neg, "why": why, "whyNeg": whyNeg,
-               "restVerdict": short(base)}))
+               "restVerdict": short(allowed(base, name, 0.0))}))
