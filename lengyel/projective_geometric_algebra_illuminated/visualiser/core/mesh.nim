@@ -140,12 +140,13 @@ static:
     &"`{WIDTH_LINE_FURNITURE}`."
 
 
-const EXTENT_PLANE_F* = float(EXTENT_PLANE)
-  ## Hold `EXTENT_PLANE` as float.
-  ##   `.define` cannot take float literal, and every use wants float.
+const
+  EXTENT_PLANE_F* = float(EXTENT_PLANE)
+    ## Hold `EXTENT_PLANE` as float.
+    ##   `.define` cannot take float literal, and every use wants float.
 
-const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
-  ## Convert configured duration to seconds `animationProgress` works in.
+  ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
+    ## Convert configured duration to seconds `animationProgress` works in.
 
 const
   SIZE_CELL_GRID* = 10.0
@@ -559,21 +560,20 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   ##   indistinguishable under deficiency. Five is what fits honestly.
 
 
-const COUNT_INK* = ord(Ink.high) + 1
-  ## Count palette slots, structural and categorical alike.
+const
+  COUNT_INK* = ord(Ink.high) + 1
+    ## Count palette slots, structural and categorical alike.
 
+  INK_CATEGORICAL_FIRST* = Ink.Rose
+    ## Name where categorical run begins.
+    ##   Everything before it is structural, and offering one as object's colour would let
+    ##   object wear backdrop, world axis or outline.
 
-const INK_CATEGORICAL_FIRST* = Ink.Rose
-  ## Name where categorical run begins.
-  ##   Everything before it is structural, and offering one as object's colour would let
-  ##   object wear backdrop, world axis or outline.
-
-
-const COUNT_INK_CATEGORICAL* = ord(Ink.high) - ord(INK_CATEGORICAL_FIRST) + 1
-  ## Count slots colour picker may offer.
-  ##   Callers walk run as one contiguous block, so `Ink`'s declaration order is
-  ##   load-bearing: every categorical slot follows every structural one.
-  ##     `static` assertion below enforces it.
+  COUNT_INK_CATEGORICAL* = ord(Ink.high) - ord(INK_CATEGORICAL_FIRST) + 1
+    ## Count slots colour picker may offer.
+    ##   Callers walk run as one contiguous block, so `Ink`'s declaration order is
+    ##   load-bearing: every categorical slot follows every structural one.
+    ##     `static` assertion below enforces it.
 
 static:
   doAssert COUNT_INK_CATEGORICAL == 5,

@@ -74,16 +74,17 @@ const STEPS*: array[11, Step] = [
   ##   Closes with attitude taken down to line, then plane, at horizon.
 
 
-const INK_SEED_GROUND* = Ink.Olive
-  ## Reserve ink startup scene's ground plane wears.
-  ##   Reserved rather than cycled: `ground` is seed every later step derives against, and
-  ##   reader learns to find it by colour.
+const
+  INK_SEED_GROUND* = Ink.Olive
+    ## Reserve ink startup scene's ground plane wears.
+    ##   Reserved rather than cycled: `ground` is seed every later step derives against, and
+    ##   reader learns to find it by colour.
 
-const INK_SEED_ORIGIN* = Ink.Copper
-  ## Reserve ink startup scene's origin point wears.
-  ##   Reserved as `INK_SEED_GROUND` is: origin is one point not arbitrary.
-  ##   `a`, `b` and `c` step over both reserved hues, leaving them exactly three
-  ##   categorical run has left.
+  INK_SEED_ORIGIN* = Ink.Copper
+    ## Reserve ink startup scene's origin point wears.
+    ##   Reserved as `INK_SEED_GROUND` is: origin is one point not arbitrary.
+    ##   `a`, `b` and `c` step over both reserved hues, leaving them exactly three
+    ##   categorical run has left.
 
 
 proc constructSeeds*(scene: var Scene, now: float = 0.0) =

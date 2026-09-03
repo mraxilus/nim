@@ -26,13 +26,13 @@ import ./sdl3
 
 # Allow caller to point at Dear ImGui checkout elsewhere.
 #   E.g. `--define:visualiser.path_imgui=/usr/src/imgui`.
-const PATH_IMGUI* {.define: "visualiser.path_imgui".} = "../../deps/imgui"
+const
+  PATH_IMGUI* {.define: "visualiser.path_imgui".} = "../../deps/imgui"
 
-
-const PATH_IMGUI_ROOTED =
-  if isAbsolute(PATH_IMGUI): PATH_IMGUI
-  else: currentSourcePath().parentDir / PATH_IMGUI
-  ## Resolve dependency against this file, as C compiler runs from elsewhere.
+  PATH_IMGUI_ROOTED =
+    if isAbsolute(PATH_IMGUI): PATH_IMGUI
+    else: currentSourcePath().parentDir / PATH_IMGUI
+    ## Resolve dependency against this file, as C compiler runs from elsewhere.
 
 {.passC: "-I" & PATH_IMGUI_ROOTED.}
 

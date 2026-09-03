@@ -20,9 +20,15 @@ import std/[
 ]
 
 import ../../pga
+# Open `marker` and `picking` with `{.all.}`, so suite checks private helpers directly.
+#   `directionAcross` is whole of why line's rails converge, worth asserting on its own
+#   terms rather than only through markers it ends up shaping.
+#   `isBeyondDisc` is broad phase whose only property worth pinning, never rejecting hit
+#   meet would accept, is stated against it directly.
 import ../../visualiser/core/[
-  boundary, camera, format, framing, help, history, interaction, neighbourhood, objects,
-  orrery, scene, selection, starfield, storyboard, tessellate,
+  boundary, camera, format, framing, help, history, interaction, marker {.all.},
+  neighbourhood, objects, orrery, picking {.all.}, scene, selection, starfield, storyboard,
+  tessellate,
 ]
 # Arena, PNG encoder and GIF encoder are desktop-only: each binds C entry.
 #   point JS backend has none of. Their own suites are guarded to match, below.
@@ -31,14 +37,6 @@ import ../../visualiser/core/[
 when not defined(js):
   import std/endians
   import ../../visualiser/desktop/[arena, gif, image]
-# `{.all.}` so suite can check `marker`'s own private helpers directly rather than.
-#   only through markers they end up shaping -- `directionAcross` is whole of why
-#   line's rails converge, and is worth asserting on its own terms.
-import ../../visualiser/core/marker {.all.}
-# Treat `picking` likewise.
-#   `isBeyondDisc` is broad phase whose only property worth pinning, never rejecting hit
-#   meet would accept, is stated against it directly.
-import ../../visualiser/core/picking {.all.}
 
 randomize(0)
 

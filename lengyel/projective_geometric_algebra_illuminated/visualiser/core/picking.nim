@@ -52,20 +52,21 @@ const
 
 #[ In-View Configuration ]#
 
-const INSET_POINT_SHOWN* = 0.5*float(SIZE_POINT)
-  ## Shrink centred box by this many pixels when asking whether *point* is in view.
-  ##   Drawn dot then fits inside rather than only its middle.
-  ##   Half of what `tessellate.addPoint` draws, dot's radius.
-  ##   Deliberately not selection marker's radius.
-  ##     That ring swells while touch hold fills (see `marker.clearanceTouch`), and box
-  ##     breathing with gesture would re-frame view mid-hold.
-  ##   Nothing equivalent for line, which has only to cross; `INSET_RIM_SHOWN` is plane's.
+const
+  INSET_POINT_SHOWN* = 0.5*float(SIZE_POINT)
+    ## Shrink centred box by this many pixels when asking whether *point* is in view.
+    ##   Drawn dot then fits inside rather than only its middle.
+    ##   Half of what `tessellate.addPoint` draws, dot's radius.
+    ##   Deliberately not selection marker's radius.
+    ##     That ring swells while touch hold fills (see `marker.clearanceTouch`), and box
+    ##     breathing with gesture would re-frame view mid-hold.
+    ##   Nothing equivalent for line, which has only to cross; `INSET_RIM_SHOWN` is plane's.
 
-const INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
-  ## Shrink *frame* by this many pixels when asking whether *plane* is in view.
-  ##   Rim resting on edge then has whole stroke drawn rather than half clipped.
-  ##   Half of what `mesh.addRing` strokes rim at, same relationship `INSET_POINT_SHOWN`
-  ##   has to dot, and entire price of letting disc reach edge.
+  INSET_RIM_SHOWN* = 0.5*float(WIDTH_LINE_OBJECT)
+    ## Shrink *frame* by this many pixels when asking whether *plane* is in view.
+    ##   Rim resting on edge then has whole stroke drawn rather than half clipped.
+    ##   Half of what `mesh.addRing` strokes rim at, same relationship `INSET_POINT_SHOWN`
+    ##   has to dot, and entire price of letting disc reach edge.
 
 
 

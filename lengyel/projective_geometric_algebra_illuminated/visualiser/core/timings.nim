@@ -46,16 +46,17 @@ type FrameRecord* = object
 
 #[ Frame State ]#
 
-var SPENT_SIDE: array[Side, float]
-  ## Accumulate what each side has cost since `openFrameTimings`.
-  ##   Module state because that is what instrumentation is.
-  ##   Threading accumulator through every tessellation proc would put measurement into
-  ##   signatures that describe drawing.
+var
+  SPENT_SIDE: array[Side, float]
+    ## Accumulate what each side has cost since `openFrameTimings`.
+    ##   Module state because that is what instrumentation is.
+    ##   Threading accumulator through every tessellation proc would put measurement into
+    ##   signatures that describe drawing.
 
-var RECORDS_FRAME: array[2, FrameRecord]
-  ## Hold this frame's record and last frame's, turned over per frame.
-var INDEX_RECORD_CURRENT = 0
-  ## Point at record this frame writes.
+  RECORDS_FRAME: array[2, FrameRecord]
+    ## Hold this frame's record and last frame's, turned over per frame.
+  INDEX_RECORD_CURRENT = 0
+    ## Point at record this frame writes.
 
 proc openFrameTimings*() =
   ## Begin frame: forget both sides' totals, and turn record pair over.

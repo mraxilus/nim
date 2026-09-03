@@ -234,23 +234,23 @@ let lut_operation_to_notation_c* = block:
   lut
 
 
-const COUNT_OPERATION* = ord(Operation.high) + 1
-  ## Count operations, for handing whole catalogue to picker.
+const
+  COUNT_OPERATION* = ord(Operation.high) + 1
+    ## Count operations, for handing whole catalogue to picker.
 
-
-const lut_operation_split* = block:
-  ## Map operation to its two halves: symbols it is written with, and English name after.
-  ##   One split, at one place, i.e. double space between them, so no caller cuts at
-  ##   second place that drifts.
-  ##   `const`, so `help.nim` can build catalogue tab from it at compile time.
-  var lut: array[Operation, tuple[symbols, name: string]]
-  for operation in Operation:
-    let full = lut_operation_to_notation[operation]
-    let cutoff = full.find("  ")
-    lut[operation] =
-      if cutoff >= 0: (symbols: full[0 ..< cutoff], name: full[cutoff + 2 .. ^1].strip())
-      else: (symbols: full, name: "")
-  lut
+  lut_operation_split* = block:
+    ## Map operation to its two halves: symbols it is written with, and English name after.
+    ##   One split, at one place, i.e. double space between them, so no caller cuts at
+    ##   second place that drifts.
+    ##   `const`, so `help.nim` can build catalogue tab from it at compile time.
+    var lut: array[Operation, tuple[symbols, name: string]]
+    for operation in Operation:
+      let full = lut_operation_to_notation[operation]
+      let cutoff = full.find("  ")
+      lut[operation] =
+        if cutoff >= 0: (symbols: full[0 ..< cutoff], name: full[cutoff + 2 .. ^1].strip())
+        else: (symbols: full, name: "")
+    lut
 
 
 func notationSymbolic*(operation: Operation): string =

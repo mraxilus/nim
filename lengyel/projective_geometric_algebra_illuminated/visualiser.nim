@@ -107,9 +107,7 @@ import ./visualiser/core/[
   interaction, marker, orrery, picking,
   scene, selection, storyboard, tessellate, timings,
 ]
-import ./visualiser/desktop/[arena, gif, gui, image, panel, renderer]
-import ./visualiser/desktop/opengl as gl
-import ./visualiser/desktop/sdl3
+import ./visualiser/desktop/[arena, gif, gui, image, opengl as gl, panel, renderer, sdl3]
 
 
 
@@ -198,26 +196,27 @@ static:
     &"raise `--define:visualiser.width_export_max` or `...height_export_max`."
 
 # Hold vertex storage at module scope, far too large for stack frame.
-var MESHES: MeshSet ## Every scene object, excluding world furniture below.
-var TRACE: AlgebraTrace ## Scratch debug layer records into, reused every frame.
-  ## `ITEMS_MAX` entries long; see `algebra_view.addFrameTrace`.
-var SETTINGS_FURNITURE_HELD = none(SettingsFurniture)
-  ## Hold what `MESHES_FURNITURE` stands for, or none before first frame.
-  ##   Still camera then keeps grid it has rather than rebuilding it every frame.
-var MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn in own pass first.
-  ## Every object's translucent wash then blends over reference marks.
-  ## Thinner width (`mesh.WIDTH_LINE_FURNITURE`) is geometry, not draw setting; this
-  ## ordering needs pass.
-var CLOCK_PULSE: PulseClock ## Each selected object's orientation-pulse phase, held across
-  ## frames.
-  ## Module scope as `HISTORY` is: too large for stack, outlives frames.
-var HISTORY: History ## Undo/redo timeline of scene-content edits.
-  ## Too large for stack (`history.CAPACITY_HISTORY * sizeof(Scene)`).
-  ## Zeroed placeholder until `main` seeds it via `initHistory` once startup scene is
-  ## built.
+var
+  MESHES: MeshSet ## Every scene object, excluding world furniture below.
+  TRACE: AlgebraTrace ## Scratch debug layer records into, reused every frame.
+    ## `ITEMS_MAX` entries long; see `algebra_view.addFrameTrace`.
+  SETTINGS_FURNITURE_HELD = none(SettingsFurniture)
+    ## Hold what `MESHES_FURNITURE` stands for, or none before first frame.
+    ##   Still camera then keeps grid it has rather than rebuilding it every frame.
+  MESHES_FURNITURE: MeshSet ## Ground grid and world axes alone, drawn in own pass first.
+    ## Every object's translucent wash then blends over reference marks.
+    ## Thinner width (`mesh.WIDTH_LINE_FURNITURE`) is geometry, not draw setting; this
+    ## ordering needs pass.
+  CLOCK_PULSE: PulseClock ## Each selected object's orientation-pulse phase, held across
+    ## frames.
+    ## Module scope as `HISTORY` is: too large for stack, outlives frames.
+  HISTORY: History ## Undo/redo timeline of scene-content edits.
+    ## Too large for stack (`history.CAPACITY_HISTORY * sizeof(Scene)`).
+    ## Zeroed placeholder until `main` seeds it via `initHistory` once startup scene is
+    ## built.
 
-# Reserve two arenas, one permanent and one reset after each throwaway unit of work.
-#   See `arena.nim` for why interactive draw loop needs neither.
+  # Reserve two arenas, one permanent and one reset after each throwaway unit of work.
+  #   See `arena.nim` for why interactive draw loop needs neither.
 var
   BUFFER_ARENA_PERMANENT: array[CAPACITY_ARENA_PERMANENT, byte]
   ARENA_PERMANENT = initArena(BUFFER_ARENA_PERMANENT)

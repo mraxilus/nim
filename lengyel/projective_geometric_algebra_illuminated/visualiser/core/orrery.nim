@@ -480,18 +480,19 @@ const SCALE_ORRERY_DEFAULT* = ScaleOrrery.Neighbourhood
   ##   One default in one place, so two front-ends cannot disagree about what demo means.
 
 
-const ITEMS_FIXED_ORRERY* = COUNT_ITEM_HORIZON + ITEMS_SOL
-  ## Count items arrangement comes to before single neighbour is placed.
-  ##   Folded from tables rather than written beside them, for reason `RADIUS_ORRERY` is.
+const
+  ITEMS_FIXED_ORRERY* = COUNT_ITEM_HORIZON + ITEMS_SOL
+    ## Count items arrangement comes to before single neighbour is placed.
+    ##   Folded from tables rather than written beside them, for reason `RADIUS_ORRERY` is.
 
-const ITEMS_ORRERY_MIN* = ITEMS_FIXED_ORRERY + itemsOf(STARS[0])
-  ## Count smallest arrangement there is.
-  ##   Sol entire, block at horizon, and one neighbour opening camera is fitted to.
-  ##   Floor rather than preference.
-  ##     Below `ITEMS_FIXED_ORRERY` scene cannot hold Sol, and block at horizon takes
-  ##     attitudes of Sol's objects. One neighbour beyond is what `RADIUS_ORRERY` needs
-  ##     to be true.
-  ##   Folded, so it moves when `SOL`, `MOONS` or catalogue's nearest entry does.
+  ITEMS_ORRERY_MIN* = ITEMS_FIXED_ORRERY + itemsOf(STARS[0])
+    ## Count smallest arrangement there is.
+    ##   Sol entire, block at horizon, and one neighbour opening camera is fitted to.
+    ##   Floor rather than preference.
+    ##     Below `ITEMS_FIXED_ORRERY` scene cannot hold Sol, and block at horizon takes
+    ##     attitudes of Sol's objects. One neighbour beyond is what `RADIUS_ORRERY` needs
+    ##     to be true.
+    ##   Folded, so it moves when `SOL`, `MOONS` or catalogue's nearest entry does.
 
 static:
   for scale in ScaleOrrery:
@@ -519,20 +520,21 @@ const RADIUS_ORRERY* = block:
       far = max(far, star.parsecs*UNITS_PER_PARSEC + RADIUS_NEIGHBOUR)
   far
 
-const ELEVATION_ORRERY_SHOWN* = 0.95
-  ## Fix how far above horizontal demo's camera stands, in radians.
-  ##   Opening camera at 0.42 is nearly edge-on to systems on planes: every ring collapses
-  ##   to line and arrangement reads as starburst.
-  ##   Steeper also makes sphere fit honest.
-  ##   Not overhead: at `TAU/4` leans stop reading and ground grid disappears into own
-  ##   horizon.
-  ##   Azimuth is left where reader had it.
+const
+  ELEVATION_ORRERY_SHOWN* = 0.95
+    ## Fix how far above horizontal demo's camera stands, in radians.
+    ##   Opening camera at 0.42 is nearly edge-on to systems on planes: every ring collapses
+    ##   to line and arrangement reads as starburst.
+    ##   Steeper also makes sphere fit honest.
+    ##   Not overhead: at `TAU/4` leans stop reading and ground grid disappears into own
+    ##   horizon.
+    ##   Azimuth is left where reader had it.
 
-const INSET_ORRERY_SHOWN* = 24.0
-  ## Fix how many pixels of margin arrangement is framed with, per side.
-  ##   Wider than framed selection takes (`framing.INSET_POINT_SHOWN`).
-  ##     Fitted tightly, outermost framed system's marker ring touches frame edge, and
-  ##     marker is drawn at fixed pixel size solve knows nothing about.
+  INSET_ORRERY_SHOWN* = 24.0
+    ## Fix how many pixels of margin arrangement is framed with, per side.
+    ##   Wider than framed selection takes (`framing.INSET_POINT_SHOWN`).
+    ##     Fitted tightly, outermost framed system's marker ring touches frame edge, and
+    ##     marker is drawn at fixed pixel size solve knows nothing about.
 
 
 proc constructSol(

@@ -35,32 +35,33 @@ import ./[interaction, scene]
 
 #[ Type Definitions ]#
 
-const ENTRIES_MAX_PATH_CATALOGUE* = COUNT_OPERATION
-  ## Bound `operations` path at exactly size of catalogue it lists.
-  ##   Not height: this tab *is* catalogue, one row per operation, and only bound worth
-  ##   checking is that it holds every one.
-  ##   Scrolls on any screen; reference list read by lookup.
+const
+  ENTRIES_MAX_PATH_CATALOGUE* = COUNT_OPERATION
+    ## Bound `operations` path at exactly size of catalogue it lists.
+    ##   Not height: this tab *is* catalogue, one row per operation, and only bound worth
+    ##   checking is that it holds every one.
+    ##   Scrolls on any screen; reference list read by lookup.
 
-const ENTRIES_MAX_PATH_KEYS* = 12
-  ## Bound how many entries `keys` path may hold, checked at compile time.
-  ##   Larger than other paths': keyboard tab describes what phone-sized viewport lacks, so
-  ##   fitting it there is wrong trade; measurement in `PROVENANCE.md`.
-  ##   Bound stays so tab cannot grow unnoticed; raising it is deliberate.
+  ENTRIES_MAX_PATH_KEYS* = 12
+    ## Bound how many entries `keys` path may hold, checked at compile time.
+    ##   Larger than other paths': keyboard tab describes what phone-sized viewport lacks, so
+    ##   fitting it there is wrong trade; measurement in `PROVENANCE.md`.
+    ##   Bound stays so tab cannot grow unnoticed; raising it is deliberate.
 
-const ENTRIES_MAX_PATH* = 8
-  ## Bound how many entries any other path may hold, checked at compile time.
-  ##   Proxy: real constraint is *rendered height*, and count is what compile time checks.
-  ##   Measured on 320x568 viewport, each tab asked how far its rows overflow box given;
-  ##   figures in `PROVENANCE.md`.
-  ##     `select` scrolls by one row; trade taken for two rows teaching bindings reader
-  ##     cannot discover otherwise, after shortening recovered too little.
-  ##     `keys` scrolls and is left scrolling; see `ENTRIES_MAX_PATH_KEYS`.
-  ##     Other five fit exactly, two only after descriptions were cut.
-  ##   Count of rows is not count of lines; path nearing cap prompts re-measurement, never
-  ##   trust in number.
-  ##   Cap forces question to be asked again, not promise nothing scrolls.
-  ##     Splitting path is nearly always better than raising; not here, since regrouping
-  ##     keyboard rows onto tabs whose work they do overflowed `camera` and `select`.
+  ENTRIES_MAX_PATH* = 8
+    ## Bound how many entries any other path may hold, checked at compile time.
+    ##   Proxy: real constraint is *rendered height*, and count is what compile time checks.
+    ##   Measured on 320x568 viewport, each tab asked how far its rows overflow box given;
+    ##   figures in `PROVENANCE.md`.
+    ##     `select` scrolls by one row; trade taken for two rows teaching bindings reader
+    ##     cannot discover otherwise, after shortening recovered too little.
+    ##     `keys` scrolls and is left scrolling; see `ENTRIES_MAX_PATH_KEYS`.
+    ##     Other five fit exactly, two only after descriptions were cut.
+    ##   Count of rows is not count of lines; path nearing cap prompts re-measurement, never
+    ##   trust in number.
+    ##   Cap forces question to be asked again, not promise nothing scrolls.
+    ##     Splitting path is nearly always better than raising; not here, since regrouping
+    ##     keyboard rows onto tabs whose work they do overflowed `camera` and `select`.
 
 type
   HelpPath* {.pure.} = enum ## Define which way of working entries belong to.

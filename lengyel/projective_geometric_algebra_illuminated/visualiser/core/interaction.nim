@@ -41,101 +41,102 @@ import ./[boundary, camera, format, tessellate, picking, scene]
 #   rather than two that could disagree.
 #   Named in constants below, since browser's own clock reads milliseconds.
 
-const SECONDS_DWELL_MENU* = 0.75
-  ## Hold drag still over target this long and choice menu opens.
-  ##   On pointer armed `MenuArming.OnDwell`, which means touch alone.
-  ##   Still, not merely present: clock restarts whenever cursor moves further than
-  ##   `PIXELS_TAP_SLOP` from where it last settled.
-  ##     On presence alone, slow finger crossing ground plane tripped it mid-drag and
-  ##     construction built nothing.
-  ##   Longer than threshold triggered on its own would dare be.
-  ##     Only has to be slow enough never to fire on hesitation; usual failure of dwell
-  ##     menu is popping up at someone still moving.
-  ##   Above `SECONDS_LONG_PRESS`, so stationary finger's two thresholds race in right
-  ##   order.
+const
+  SECONDS_DWELL_MENU* = 0.75
+    ## Hold drag still over target this long and choice menu opens.
+    ##   On pointer armed `MenuArming.OnDwell`, which means touch alone.
+    ##   Still, not merely present: clock restarts whenever cursor moves further than
+    ##   `PIXELS_TAP_SLOP` from where it last settled.
+    ##     On presence alone, slow finger crossing ground plane tripped it mid-drag and
+    ##     construction built nothing.
+    ##   Longer than threshold triggered on its own would dare be.
+    ##     Only has to be slow enough never to fire on hesitation; usual failure of dwell
+    ##     menu is popping up at someone still moving.
+    ##   Above `SECONDS_LONG_PRESS`, so stationary finger's two thresholds race in right
+    ##   order.
 
-const SECONDS_LONG_PRESS* = 0.50
-  ## Hold touch this long on item to select it.
-  ##   Long enough that tap, or first instant of drag meant to orbit camera, never matures.
-  ##   Short enough that deliberate hold does not feel stuck.
-  ##   Tolerable only because it is shown: `progressHold` drives item's marker drawn
-  ##   part-built, so hold reads as filling rather than as nothing happening.
+  SECONDS_LONG_PRESS* = 0.50
+    ## Hold touch this long on item to select it.
+    ##   Long enough that tap, or first instant of drag meant to orbit camera, never matures.
+    ##   Short enough that deliberate hold does not feel stuck.
+    ##   Tolerable only because it is shown: `progressHold` drives item's marker drawn
+    ##   part-built, so hold reads as filling rather than as nothing happening.
 
-const SECONDS_SWELL_GROW* = 0.12
-  ## Take this long to swell touched item's marker clear of finger, before its fill begins.
-  ##   Own phase ahead of fill, so marker is already at size it fills at.
-  ##     Bar that grows and fills at once is two motions saying one thing, and growing wins.
-  ##   Quick enough to read as marker getting out of way rather than delay.
-  ##   Lengthens press end to end, to `SECONDS_SWELL_GROW + SECONDS_LONG_PRESS`.
-  ##     Fill keeps whole duration, so part reader watches is unchanged.
+  SECONDS_SWELL_GROW* = 0.12
+    ## Take this long to swell touched item's marker clear of finger, before its fill begins.
+    ##   Own phase ahead of fill, so marker is already at size it fills at.
+    ##     Bar that grows and fills at once is two motions saying one thing, and growing wins.
+    ##   Quick enough to read as marker getting out of way rather than delay.
+    ##   Lengthens press end to end, to `SECONDS_SWELL_GROW + SECONDS_LONG_PRESS`.
+    ##     Fill keeps whole duration, so part reader watches is unchanged.
 
-const SECONDS_SWELL_SHRINK* = 0.15
-  ## Take this long to settle swollen marker back to true size after finger lifts.
-  ##   Slower than grow: grow is getting out of way, this is marker arriving at what it
-  ##   stays as, and outline that snaps reads as second marker replacing first.
+  SECONDS_SWELL_SHRINK* = 0.15
+    ## Take this long to settle swollen marker back to true size after finger lifts.
+    ##   Slower than grow: grow is getting out of way, this is marker arriving at what it
+    ##   stays as, and outline that snaps reads as second marker replacing first.
 
-const FACTOR_PAN_REACH_MAX* = 4.0
-  ## Bound how far out along its sight ray pan may take hold, as multiple of orbit distance.
-  ##   Level pan grabs is horizontal, so ray aimed near horizon meets it very far off, and
-  ##   one pixel of drag there is hundreds of world units.
-  ##   Hold point is clamped rather than movement, so rule stays continuous.
-  ##     `min(reach, bound)` moves smoothly as cursor crosses bound; switching rule there
-  ##     would jolt mid-drag.
-  ##   Four rather than two: at opening placement, ray well inside window already reaches
-  ##   past two distances, ordinary place to start drag from; figures in `PROVENANCE.md`.
+  FACTOR_PAN_REACH_MAX* = 4.0
+    ## Bound how far out along its sight ray pan may take hold, as multiple of orbit distance.
+    ##   Level pan grabs is horizontal, so ray aimed near horizon meets it very far off, and
+    ##   one pixel of drag there is hundreds of world units.
+    ##   Hold point is clamped rather than movement, so rule stays continuous.
+    ##     `min(reach, bound)` moves smoothly as cursor crosses bound; switching rule there
+    ##     would jolt mid-drag.
+    ##   Four rather than two: at opening placement, ray well inside window already reaches
+    ##   past two distances, ordinary place to start drag from; figures in `PROVENANCE.md`.
 
-const FRACTION_PAN_PIXEL* = 0.0016
-  ## Slide target this fraction of orbit distance per dragged pixel, with nothing to grab.
-  ##   Fallback only, for drag whose sight ray never meets level it would grab; see
-  ##   `panAcross`.
+  FRACTION_PAN_PIXEL* = 0.0016
+    ## Slide target this fraction of orbit distance per dragged pixel, with nothing to grab.
+    ##   Fallback only, for drag whose sight ray never meets level it would grab; see
+    ##   `panAcross`.
 
-const PIXELS_TAP_SLOP* = 12.0
-  ## Move press further than this and it stops being press.
-  ##   Which scheme gesture enters: press staying inside matures into selection; press
-  ##   leaving becomes construction drag where it landed on item, camera move where it did
-  ##   not.
-  ##   Sized for fingertip: finger rolls few pixels on contact even held still, and
-  ##   threshold tight enough for mouse makes long-press unreachable on touchscreen.
+  PIXELS_TAP_SLOP* = 12.0
+    ## Move press further than this and it stops being press.
+    ##   Which scheme gesture enters: press staying inside matures into selection; press
+    ##   leaving becomes construction drag where it landed on item, camera move where it did
+    ##   not.
+    ##   Sized for fingertip: finger rolls few pixels on contact even held still, and
+    ##   threshold tight enough for mouse makes long-press unreachable on touchscreen.
 
-const PIXELS_CLICK_SLOP* = 6.0
-  ## Move pointer press further than this and it stops being click.
-  ##   Not `PIXELS_TAP_SLOP`: mouse resting on desk does not roll, so pointer that wandered
-  ##   this far was moved on purpose.
-  ##   Fingertip's allowance would swallow short deliberate drags between two objects
-  ##   overlapping on screen.
+  PIXELS_CLICK_SLOP* = 6.0
+    ## Move pointer press further than this and it stops being click.
+    ##   Not `PIXELS_TAP_SLOP`: mouse resting on desk does not roll, so pointer that wandered
+    ##   this far was moved on purpose.
+    ##   Fingertip's allowance would swallow short deliberate drags between two objects
+    ##   overlapping on screen.
 
-# Bound click by distance alone, never by time.
-#   Time bound dropped clicks hand lingered on; see `isClick`.
+  # Bound click by distance alone, never by time.
+  #   Time bound dropped clicks hand lingered on; see `isClick`.
 
-const PIXELS_MENU_REACH* = 76.0
-  ## Reach from menu's centre to centre of each of its four wedges.
-  ##   Wide enough that wedge clears cursor and object under it, and each is past WCAG
-  ##   2.5.8's 24-pixel target once `PIXELS_MENU_DEADZONE` is subtracted.
-  ##   Short enough to stay one wrist movement, since menu opens mid-drag.
+  PIXELS_MENU_REACH* = 76.0
+    ## Reach from menu's centre to centre of each of its four wedges.
+    ##   Wide enough that wedge clears cursor and object under it, and each is past WCAG
+    ##   2.5.8's 24-pixel target once `PIXELS_MENU_DEADZONE` is subtracted.
+    ##   Short enough to stay one wrist movement, since menu opens mid-drag.
 
-const PIXELS_MENU_DEADZONE* = 26.0
-  ## Choose nothing while cursor stands inside this distance of menu's centre.
-  ##   Way out of opened menu without committing.
-  ##   Reason dwell menu is safe to open unasked: it opens centred on cursor, so reader who
-  ##   did not want it is already in deadzone.
+  PIXELS_MENU_DEADZONE* = 26.0
+    ## Choose nothing while cursor stands inside this distance of menu's centre.
+    ##   Way out of opened menu without committing.
+    ##   Reason dwell menu is safe to open unasked: it opens centred on cursor, so reader who
+    ##   did not want it is already in deadzone.
 
-const PIXELS_MENU_CORNER_FURTHEST* = 103.9
-  ## Record furthest any wedge's outer corner sits from menu centre, measured.
-  ##   Not derivable here: wedge is as wide as its label, and only render path knows what
-  ##   its face laid that out as.
-  ##     Read off drawn rects in browser build; all four labels are fixed, so one number.
-  ##   Kept beside constant it justifies, so wider label or longer reach surfaces as number
-  ##   no longer clearing `PIXELS_MENU_DISENGAGE`, not as menu closing on wedge.
+  PIXELS_MENU_CORNER_FURTHEST* = 103.9
+    ## Record furthest any wedge's outer corner sits from menu centre, measured.
+    ##   Not derivable here: wedge is as wide as its label, and only render path knows what
+    ##   its face laid that out as.
+    ##     Read off drawn rects in browser build; all four labels are fixed, so one number.
+    ##   Kept beside constant it justifies, so wider label or longer reach surfaces as number
+    ##   no longer clearing `PIXELS_MENU_DISENGAGE`, not as menu closing on wedge.
 
-const PIXELS_MENU_DISENGAGE* = 150.0
-  ## Let open menu go of drag entirely past this distance from its centre.
-  ##   Makes wheel opened on wrong object recoverable: it closes, drag stops being latched
-  ##   to that destination, and travelling on to another object opens it there.
-  ##     Source is never touched, so pair re-aims rather than chains.
-  ##   Bounds `choiceAt`'s overshoot, unbounded on purpose for fast throw.
-  ##     Both cannot hold; re-aiming was chosen.
-  ##   Sited off `PIXELS_MENU_CORNER_FURTHEST`, leaving clearance past furthest point throw
-  ##   could aim at.
+  PIXELS_MENU_DISENGAGE* = 150.0
+    ## Let open menu go of drag entirely past this distance from its centre.
+    ##   Makes wheel opened on wrong object recoverable: it closes, drag stops being latched
+    ##   to that destination, and travelling on to another object opens it there.
+    ##     Source is never touched, so pair re-aims rather than chains.
+    ##   Bounds `choiceAt`'s overshoot, unbounded on purpose for fast throw.
+    ##     Both cannot hold; re-aiming was chosen.
+    ##   Sited off `PIXELS_MENU_CORNER_FURTHEST`, leaving clearance past furthest point throw
+    ##   could aim at.
 
 const
   HEIGHT_MENU_WEDGE* = 30.0
