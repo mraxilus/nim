@@ -336,8 +336,10 @@ suite "Chapter 2":
 1. Two-space indent; no tabs; lines at most 100 characters, counted in characters not
    bytes.
 2. Section banners are a distinct comment form in Title Case (`#[ Basis Conversion ]#` or
-   the language's equivalent): three blank lines before, one after, one tier only. Two blank
-   lines between substantial top-level definitions; one between façade siblings.
+   the language's equivalent), at most two tiers deep. Spacing marks the tier: a first-tier
+   banner takes three blank lines before, a second-tier banner two, and either one blank
+   line after. Two blank lines between substantial top-level definitions; one between
+   façade siblings.
 3. Multi-line declarative calls and constructors: one argument per line, trailing separator,
    named arguments, including for code-generating constructs.
 4. Guard clauses (`continue`, `return`) keep the success path prominent and nesting at most
