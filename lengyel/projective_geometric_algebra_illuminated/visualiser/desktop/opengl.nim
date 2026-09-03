@@ -1,17 +1,15 @@
 ## Bind subset of OpenGL 3.3 core visualiser uses.
 ##
-## Driver is depended on rather than derived, as windowing is: external. Only entry
-## points called are declared; declarations import through header, so C compiler
-## resolves every prototype and enum.
-##
-## Prototypes come from `GL_GLEXT_PROTOTYPES`, which links entry points directly. Holds
-## on Linux, where libGL exports every core symbol.
-##   TODO: Elsewhere, entry points must be fetched through `SDL_GL_GetProcAddress`, which
-##         would turn each declaration into loaded function pointer. Deferred until
-##         visualiser needs to leave Linux.
-##
-## Enumerants are written as literals rather than imported: values are fixed by OpenGL
-## specification and never renumbered.
+## Driver is depended on rather than derived, as windowing is: external.
+##   Only entry points called are declared.
+##   Declarations import through header, so C compiler resolves every prototype and enum.
+## Prototypes come from `GL_GLEXT_PROTOTYPES`, which links entry points directly.
+##   Holds on Linux, where libGL exports every core symbol.
+##   TODO: Fetch entry points through `SDL_GL_GetProcAddress` elsewhere.
+##     Would turn each declaration into loaded function pointer.
+##     Deferred until visualiser needs to leave Linux.
+## Enumerants are written as literals rather than imported.
+##   Values are fixed by OpenGL specification and never renumbered.
 ##
 ## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
@@ -24,8 +22,9 @@
 const HEADER = "<GL/gl.h>"
   ## Name header every declaration below imports through.
 
-# Ask header for prototypes above OpenGL 1.1, and link loader, here rather than in
-# project config, so every binary importing this module builds without extra flags.
+# Ask header for prototypes above OpenGL 1.1, and link loader.
+#   Here rather than in project config, so every binary importing this module builds
+#   without extra flags.
 {.passC: "-DGL_GLEXT_PROTOTYPES".}
 {.passL: "-lGL".}
 
@@ -77,7 +76,7 @@ const
 
 #[ Foreign Declarations ]#
 
-# Mechanical one-to-one imports of OpenGL entry points; see OpenGL reference for each.
+# Import OpenGL entry points one to one; see OpenGL reference for each.
 proc clearColor*(red, green, blue, alpha: Float) {.importc: "glClearColor", header: HEADER.}
 proc clear*(mask: Bitfield) {.importc: "glClear", header: HEADER.}
 proc viewport*(x, y: Int; width, height: Sizei) {.importc: "glViewport", header: HEADER.}

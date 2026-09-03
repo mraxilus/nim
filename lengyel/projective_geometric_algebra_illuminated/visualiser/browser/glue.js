@@ -11,7 +11,7 @@
 /* ---------------------------------------------------------------------- */
 
 const canvas = document.getElementById('gl');
-// No `preserveDrawingBuffer`, deliberately: it makes every frame keep copy of drawing
+// No `preserveDrawingBuffer`, deliberately: it makes every frame keep copy of drawing.
 //   buffer for whole session, on phone, so that button pressed once can read it
 //   afterwards. `captureFrameIfAsked` reads buffer from inside frame that drew it
 //   instead, which costs nothing and is what image export uses.
@@ -65,20 +65,21 @@ const uniform_view_projection = gl.getUniformLocation(program, 'uMVP');
 const uniform_size_point = gl.getUniformLocation(program, 'uPointSize');
 const uniform_is_round = gl.getUniformLocation(program, 'uRound');
 
-// Read from renderer.nim's own constants via nimRenderLineWidths, rather than hand-
-// copied literal that could drift out of sync with them.
-// `SIZE_POINT` is still draw-call setting here, since `gl_PointSize` is honoured.
-// two line widths are not: each ribbon record carries its width and ribbon vertex
-// shader widens it, because WebGL clamps `gl.lineWidth` to one pixel on most
-// implementations.
+// Read from renderer.nim's own constants via nimRenderLineWidths.
+//   Never hand-copied literal that could drift out of sync with them.
+//   `SIZE_POINT` is still draw-call setting here, since `gl_PointSize` is honoured.
+//   Two line widths are not: each ribbon record carries its width and ribbon vertex
+//   shader widens it, because WebGL clamps `gl.lineWidth` to one pixel on most
+//   implementations.
 const [SIZE_POINT] = nimRenderLineWidths();
 
-// Sibling copy of `mesh.expandRibbon` -- reference suite pins to algebra --
-// and of GLSL 3.30 source in `renderer.nim`; change to any one of three is not
-// finished until other two are checked. Widens one 16-float ribbon record into
-// corner this invocation is: clip to near plane, blend clipped end's tint by
-// same fraction, derive across as cross join reduces to, and step off by half
-// width of this end's own world-per-pixel.
+// Widen one 16-float ribbon record into corner this invocation is.
+//   Sibling copy of `mesh.expandRibbon`, reference suite pins to algebra, and of GLSL
+//   3.30 source in `renderer.nim`; change to any one of three is not finished until
+//   other two are checked.
+//   Clip to near plane, blend clipped end's tint by same fraction, derive across as
+//   cross join reduces to, and step off by half width of this end's own
+//   world-per-pixel.
 const SOURCE_VERTEX_RIBBON = `
   attribute vec2 aCorner;
   attribute vec3 aTail;
@@ -131,12 +132,13 @@ const SOURCE_VERTEX_RIBBON = `
     vColor = mix(tint_near, tint_far, aCorner.x);
   }
 `;
-// Sibling copy of `mesh.alphaGridFade` -- reference fog is held to -- and of
-// GLSL 3.30 fragment source in `renderer.nim`; change to any one of three is
-// not finished until other two are checked. Per fragment rather than per vertex, so
-// fade is exact along record of any length -- which is what lets lattice line be
-// one record instead of chain of fade pieces. Record with fog zero passes through
-// untouched, which is every scene ribbon.
+// Fade fogged record by its distance from eye, per fragment.
+//   Sibling copy of `mesh.alphaGridFade`, reference fog is held to, and of GLSL 3.30
+//   fragment source in `renderer.nim`; change to any one of three is not finished
+//   until other two are checked.
+//   Per fragment rather than per vertex, so fade is exact along record of any length,
+//   which is what lets lattice line be one record instead of chain of fade pieces.
+//   Record with fog zero passes through untouched, which is every scene ribbon.
 const SOURCE_FRAGMENT_RIBBON = `
   precision mediump float;
   varying vec4 vColor;
@@ -159,8 +161,9 @@ gl.linkProgram(program_ribbon);
 if (!gl.getProgramParameter(program_ribbon, gl.LINK_STATUS)) {
   throw new Error(gl.getProgramInfoLog(program_ribbon));
 }
-// Instancing is extension on WebGL1 and universally shipped; context without it gets
-// same loud failure context without WebGL gets, not silent picture with no lines.
+// Require instancing, extension on WebGL1 and universally shipped.
+//   Context without it gets same loud failure context without WebGL gets, not silent
+//   picture with no lines.
 const instanced = gl.getExtension('ANGLE_instanced_arrays');
 if (instanced === null) throw new Error('ANGLE_instanced_arrays is unavailable');
 const ribbon_attribs = {
@@ -188,11 +191,12 @@ gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ribbon_corners);
 gl.bufferData(gl.ARRAY_BUFFER,
   new Float32Array([0, -1, 1, -1, 1, 1, 0, -1, 1, 1, 0, 1]), gl.STATIC_DRAW);
 
-// Sibling copy of `mesh.expandDiscVertex` -- reference suite pins -- and of
-// GLSL 3.30 source in `renderer.nim`; change to any one of three is not finished
-// until other two are checked. Fans one 13-float disc record over static corner
-// buffer: each corner is centre plus two radius-scaled arms weighted by its own
-// cosine and sine, with `(0, 0)` landing centre corner on centre exactly.
+// Fan one 13-float disc record over static corner buffer.
+//   Sibling copy of `mesh.expandDiscVertex`, reference suite pins, and of GLSL 3.30
+//   source in `renderer.nim`; change to any one of three is not finished until other
+//   two are checked.
+//   Each corner is centre plus two radius-scaled arms weighted by its own cosine and
+//   sine, with `(0, 0)` landing centre corner on centre exactly.
 const SOURCE_VERTEX_DISC = `
   attribute vec2 aCorner;
   attribute vec3 aCentre;
@@ -207,8 +211,8 @@ const SOURCE_VERTEX_DISC = `
     vColor = aFill;
   }
 `;
-// Sibling copy of `mesh.expandDomeVertex`, under same three-way rule: each corner
-// is centre plus its own unit direction scaled by radius.
+// Sibling copy of `mesh.expandDomeVertex`, under same three-way rule:
+//   each corner is centre plus its own unit direction scaled by radius.
 const SOURCE_VERTEX_DOME = `
   attribute vec3 aUnit;
   attribute vec4 aCentreRadius;
@@ -221,19 +225,20 @@ const SOURCE_VERTEX_DOME = `
     vColor = aTint;
   }
 `;
-// Sibling copy of `mesh.expandRingVertex` -- reference suite pins -- and of
-// GLSL 3.30 source in `renderer.nim`; change to any one of three is not finished
-// until other two are checked. One 14-float ring record is plane's whole rim:
-// static corner buffer carries every segment of closed walk, so this one instance
-// draws all `SEGMENTS_CIRCLE_HORIZON` of them.
-//   Two steps, and second is not new. Place segment's ends on circle exactly
-// as disc source places its fan corners -- `centre + cos*arm_first + sin*arm_second`
-// -- and then widen that pair by *ribbon source's own body*, verbatim: near clip,
-// across join reduces to, and half width of this end's world-per-pixel. Rim
-// is line, and there is one rule for how wide line is drawn.
-//   Tint is flat, so ribbon's blend between two ends collapses to `aFill`, and
-// fog is always zero, so this shares plain fragment stage rather than ribbon's
-// fading one.
+// Widen one 14-float ring record into plane's whole rim.
+//   Sibling copy of `mesh.expandRingVertex`, reference suite pins, and of GLSL 3.30
+//   source in `renderer.nim`; change to any one of three is not finished until other
+//   two are checked.
+//   Static corner buffer carries every segment of closed walk, so this one instance
+//   draws all `SEGMENTS_CIRCLE_HORIZON` of them.
+//   Two steps, and second is not new.
+//     Place segment's ends on circle exactly as disc source places its fan corners,
+//     `centre + cos*arm_first + sin*arm_second`, then widen that pair by ribbon
+//     source's own body, verbatim: near clip, across join reduces to, and half width
+//     of this end's world-per-pixel.
+//     Rim is line, and there is one rule for how wide line is drawn.
+//   Tint is flat, so ribbon's blend between two ends collapses to `aFill`, and fog is
+//   always zero, so this shares plain fragment stage rather than ribbon's fading one.
 const SOURCE_VERTEX_RING = `
   attribute vec4 aArc;
   attribute vec2 aCorner;
@@ -327,8 +332,9 @@ const ring_uniforms = {
 };
 const uniform_disc_mvp = gl.getUniformLocation(program_disc, 'uMVP');
 const uniform_dome_mvp = gl.getUniformLocation(program_dome, 'uMVP');
-// Static corner geometry both wash shaders fan records over, read from mesh.nim's
-// own generators rather than hand-copied table that could drift from references.
+// Hold static corner geometry both wash shaders fan records over.
+//   Read from mesh.nim's own generators rather than hand-copied table that could drift
+//   from references.
 const CORNERS_DISC = new Float32Array(nimDiscCorners());
 const CORNERS_DOME = new Float32Array(nimDomeCorners());
 const COUNT_CORNERS_DISC = CORNERS_DISC.length / 2;
@@ -357,21 +363,21 @@ const STRIDE_DISC = 13 * 4;
 const STRIDE_DOME = 8 * 4;
 const STRIDE_RING = 14 * 4;
 
-// How many furniture vertices its own buffer holds, carried between frames because
-// bridge stops sending them once camera is still; see `renderFrame`.
+// Count furniture vertices its own buffer holds, carried between frames.
+//   Bridge stops sending them once camera is still; see `renderFrame`.
 let count_furniture_held = null;
 // And same for scene's own buffers, carried for same reason one layer out:
-// frame bridge reports as held has uploaded nothing, so what stands in each buffer is
-// last frame's -- correct, since bridge only says held when it would have written
-// very same bytes. See `FrameData.is_scene_held`.
+//   frame bridge reports as held has uploaded nothing, so what stands in each buffer is last
+//   frame's -- correct, since bridge only says held when it would have written very same bytes.
+//   See `FrameData.is_scene_held`.
 let count_ribbon_held = null;
 let count_ring_held = null;
 let count_point_held = null;
 
-// One mesh handed to driver whole, ready to be drawn as one run or two. Separate
-// from drawing because two runs go out in different passes (see draw loop below),
-// and mesh uploaded twice frame would be one real cost of that split.
-// Bridge fills `Float32Array`s page owns and hands back views on them, so there is
+// One mesh handed to driver whole, ready to be drawn as one run or two.
+//   Separate from drawing because two runs go out in different passes (see draw loop below), and
+//   mesh uploaded twice frame would be one real cost of that split.
+//   Bridge fills `Float32Array`s page owns and hands back views on them, so there is
 //   nothing to convert here and nothing to stage: driver reads very memory
 //   flatten wrote. Staging array used to sit here, refilled element by element from
 //   boxed `Array` `seq[float32]` is on JS backend -- see `browser_bridge.FlatBuffer`
@@ -387,10 +393,11 @@ function uploadBuffer(data, handle_buffer, floats_each) {
   return data.length / floats_each;
 }
 
-// One run of uploaded record buffer, drawn as instanced triangle pairs. `count_over`
-// is how many records at END are overlay run, exactly as `drawRun`'s split below;
-// run that does not start at first record re-points five instance attributes at
-// its own first byte, since WebGL1 has no base instance. Mirrors `renderer.drawRibbonRun`.
+// One run of uploaded record buffer, drawn as instanced triangle pairs.
+//   `count_over` is how many records at END are overlay run, exactly as `drawRun`'s split below;
+//   run that does not start at first record re-points five instance attributes at its own first
+//   byte, since WebGL1 has no base instance.
+//   Mirrors `renderer.drawRibbonRun`.
 function drawRibbons(handle_buffer, count, count_over, is_overlay) {
   if (!count) return;
   const split = Math.max(0, count - Math.min(count_over || 0, count));
@@ -413,7 +420,7 @@ function drawRibbons(handle_buffer, count, count_over, is_overlay) {
     instanced.vertexAttribDivisorANGLE(attrib, 1);
   }
   instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, span);
-  // Divisors are context state, not program state: left at one they would corrupt
+  // Divisors are context state, not program state: left at one they would corrupt.
   //   plain program's reads of these same attribute indices next draw.
   for (const attrib of [ribbon_attribs.tail, ribbon_attribs.head, ribbon_attribs.width,
     ribbon_attribs.fog, ribbon_attribs.tint_tail, ribbon_attribs.tint_head]) {
@@ -422,10 +429,11 @@ function drawRibbons(handle_buffer, count, count_over, is_overlay) {
   }
 }
 
-// One run of uploaded ring buffer, drawn as instanced rims: each instance is whole
-// plane's circle, `COUNT_CORNERS_RING` corners of it. Splits its two runs exactly as
-// `drawRibbons` does, and re-points five instance attributes at run's own first
-// byte for same reason -- WebGL1 has no base instance. Mirrors `renderer.drawRingRun`.
+// One run of uploaded ring buffer, drawn as instanced rims:
+//   each instance is whole plane's circle, `COUNT_CORNERS_RING` corners of it.
+//   Splits its two runs exactly as `drawRibbons` does, and re-points five instance attributes at
+//   run's own first byte for same reason -- WebGL1 has no base instance.
+//   Mirrors `renderer.drawRingRun`.
 function drawRings(count, count_over, is_overlay) {
   if (!count) return;
   const split = Math.max(0, count - Math.min(count_over || 0, count));
@@ -453,7 +461,7 @@ function drawRings(count, count_over, is_overlay) {
     instanced.vertexAttribDivisorANGLE(attrib, 1);
   }
   instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, COUNT_CORNERS_RING, span);
-  // Divisors are context state, not program state: left at one they would corrupt
+  // Divisors are context state, not program state: left at one they would corrupt.
   //   plain program's reads of these same attribute indices next draw.
   for (const [attrib] of records) {
     instanced.vertexAttribDivisorANGLE(attrib, 0);
@@ -464,10 +472,11 @@ function drawRings(count, count_over, is_overlay) {
   }
 }
 
-// One instanced wash draw: `record_attribs` re-pointed at run's first record (WebGL1
-// has no base instance), corner attrib from static buffer, divisors reset after --
-// they are context state, and left at one they would corrupt plain program's reads
-// of same attribute indices. Shared by disc and dome runs below.
+// One instanced wash draw:
+//   `record_attribs` re-pointed at run's first record (WebGL1 has no base instance), corner attrib
+//   from static buffer, divisors reset after -- they are context state, and left at one they would
+//   corrupt plain program's reads of same attribute indices.
+//   Shared by disc and dome runs below.
 function drawWashInstances(
   buffer_corners, floats_corner, count_corners, corner_attrib,
   handle_records, stride, record_attribs, first, count
@@ -491,10 +500,11 @@ function drawWashInstances(
   }
 }
 
-// Walk one pass's stretch of wash draw order -- `wash_runs` is [kind, first, count]
-// per run, `count_runs_over` how many runs at END are overlay stretch -- drawing
-// each run through its own kind's program so two washes still blend in order
-// scene emitted them. Mirrors `renderer.drawWashRuns`.
+// Walk one pass's stretch of wash draw order, drawing each run through its kind's program.
+//   `wash_runs` is [kind, first, count] per run, `count_runs_over` how many runs at end
+//   are overlay stretch.
+//   Two washes then still blend in order scene emitted them; mirrors
+//   `renderer.drawWashRuns`.
 function drawWashRuns(wash_runs, count_runs_over, is_overlay) {
   const count_runs = wash_runs.length / 3;
   const split = count_runs - Math.min(count_runs_over || 0, count_runs);
@@ -557,7 +567,7 @@ document.documentElement.style.setProperty('--bg', rgbToCss(backdrop));
 
 nimInit(performance.now() / 1000);
 let is_axes_shown = true, is_grid_shown = true;
-// Debug layer, off by default: it draws every multivector frame computed, with
+// Debug layer, off by default: it draws every multivector frame computed, with.
 //   plane drawn as infinite lattice it actually is rather than as disc that stands
 //   for one. Reader switches it on to see algebra rather than illustration of it.
 let is_algebra_shown = false;
@@ -620,7 +630,7 @@ function clearSelection() {
 //   each of shift test.
 function pickOnClick(slot, button, is_shifted) {
   const reveals = nimRevealsMenuOnButton(button);
-  // Selection already standing with its menu dismissed is reader who wants that menu
+  // Selection already standing with its menu dismissed is reader who wants that menu.
   //   back, not one who wants to throw selection away -- so reveal it and pick nothing.
   //   Rule is Nim's, asked rather than restated, since desktop asks same one.
   if (reveals && !is_shifted &&
@@ -634,9 +644,9 @@ function pickOnClick(slot, button, is_shifted) {
 }
 
 function adoptConstructionSelection() {
-  // Every construction path already picked its own new object (see nimAddItem/
-  //   nimApplyOperation/nimEndDrag's own doc comments), or cleared selection
-  //   (nimLoadDemo/nimUndo/nimRedo on success) -- this only picks that outcome up.
+  // Pick up outcome every construction path already decided.
+  //   Each picked its own new object (see nimAddItem/nimApplyOperation/nimEndDrag's own
+  //   doc comments), or cleared selection (nimLoadDemo/nimUndo/nimRedo on success).
   refreshSelectionSnapshot();
   hideSelectionMenu(); // Construction action never itself opens selection menu --
     // matches today's behaviour (add/apply/drag never popped tap-menu either).
@@ -651,9 +661,10 @@ function adoptConstructionSelection() {
 const element_toast = document.getElementById('toast');
 let timer_toast = null;
 function toast(message) {
-  // Empty message is one caller decided not to say -- drag released over empty
-  // space, say -- and showing empty bar for it is worse than saying nothing. Desktop
-  // has always guarded its own status line this way; this is that guard, on this side.
+  // Say nothing for empty message, which is one caller decided not to say.
+  //   Drag released over empty space, say; showing empty bar for it is worse than saying
+  //   nothing.
+  //   Desktop guards its own status line this way; this is that guard, on this side.
   if (!message) return;
   element_toast.textContent = message;
   element_toast.classList.remove('actionable');
@@ -663,7 +674,7 @@ function toast(message) {
 }
 
 function toastWithLink(message, url, filename, label, url_image) {
-  // Toast reader can act on, held until dismissed. For one case page cannot
+  // Toast reader can act on, held until dismissed. For one case page cannot.
   //   resolve on its own: file is ready and every automatic route to it may have been
   //   refused, silently, by frame this page does not control. Tap *reader* makes on
   //   real anchor is most permitted route there is, so offer that rather than assert
@@ -677,7 +688,7 @@ function toastWithLink(message, url, filename, label, url_image) {
   link.download = filename;
   link.textContent = label;
   link.rel = 'noopener';
-  // `url_image` set means file is one reader can save straight off screen, and
+  // `url_image` set means file is one reader can save straight off screen, and.
   //   showing it is worth space: drawing blob into `<img>` is not navigation, so
   //   it is only route measured to survive frame sandboxed without `allow-downloads`
   //   -- where press on anchor above is refused in silence, as is every automatic
@@ -692,7 +703,7 @@ function toastWithLink(message, url, filename, label, url_image) {
     hint.className = 'toast-hint';
     hint.textContent = 'or press and hold the image to save it';
   }
-  // Something to do about it, in words, above evidence. Measured on Android phone in
+  // Something to do about it, in words, above evidence. Measured on Android phone in.
   //   Claude app: that frame withholds `allow-downloads`, `allow-popups` and
   //   `web-share` policy all three, so no route from inside it can produce file and no
   //   amount of further work here will change that. Saying so is more use than link that
@@ -701,7 +712,7 @@ function toastWithLink(message, url, filename, label, url_image) {
   advice.className = 'toast-hint';
   advice.textContent = 'If nothing arrives, this frame is blocking it — '
     + 'open this page in its own browser tab and save from there.';
-  // What was tried and what came back, beside thing it was tried on. Every round of
+  // What was tried and what came back, beside thing it was tried on. Every round of.
   //   this fault so far ended with reader who could only report "nothing happened"; this
   //   is what turns next report into diagnosis.
   const detail = document.createElement('div');
@@ -743,7 +754,7 @@ function toastWithLink(message, url, filename, label, url_image) {
 let report_delivery = [];
 
 function describeEnvironment() {
-  // Read at delivery time, not at load: transient activation is whole question for
+  // Read at delivery time, not at load: transient activation is whole question for.
   //   share route and is only meaningful during gesture that asked.
   const share_allowed = document.featurePolicy === undefined ? 'unknown'
     : String(document.featurePolicy.allowsFeature('web-share'));
@@ -758,7 +769,7 @@ function describeEnvironment() {
 }
 
 async function shareFile(file, filename) {
-  // `canShare` is preference, never precondition, and this is second time that
+  // `canShare` is preference, never precondition, and this is second time that.
   //   distinction has cost route: gating on it skipped `share` outright, first on any
   //   platform shipping one without other, then -- once that was fixed but `false`
   //   still returned early -- on frame where `canShare` says no for reason that is not
@@ -790,7 +801,7 @@ async function deliverFile(blob, filename, mime, described) {
   report_delivery = describeEnvironment();
   const file = new File([blob], filename, { type: mime });
 
-  // 1. Share sheet, where platform has one. Route that actually works on
+  // 1. Share sheet, where platform has one. Route that actually works on.
   //    phone, and only one that does not care whether this frame may download. Both
   //    callers run inside click, so transient activation it needs is present -- see
   //    `captureFrameIfAsked` on what it cost to make that true of image too.
@@ -802,10 +813,11 @@ async function deliverFile(blob, filename, mime, described) {
   }
 
   const url = URL.createObjectURL(blob);
-  // 2. Real anchor, **in document**. Appending is whole of original fix;
-  //    click on element that is not in page is what browsers were discarding.
+  // 2. Real anchor, in document.
+  //    Appending is whole of original fix; click on element that is not in page is what
+  //    browsers were discarding.
   //    Measured in frame granted `allow-downloads`: this fires real download, and so
-  //    does reader's own tap on route 4. Neither does in frame without it, in silence.
+  //    does reader's own tap on route 4; neither does in frame without it, in silence.
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -815,7 +827,7 @@ async function deliverFile(blob, filename, mime, described) {
   anchor.remove();
   report_delivery.push('download: no signal');
 
-  // 3. Tab of its own, which frame that refuses download may still permit. Expected to
+  // 3. Tab of its own, which frame that refuses download may still permit. Expected to.
   //    fail from sandbox, since `blob:` URL minted in opaque origin resolves nowhere
   //    else -- but `null` return says "blocked" out loud, which is one more thing
   //    reader's report can rule out rather than leave open.
@@ -824,7 +836,7 @@ async function deliverFile(blob, filename, mime, described) {
     report_delivery.push('new tab: ' + (opened === null ? 'blocked' : 'opened'));
   }
 
-  // 4. Link to tap, always. There is no event for "the download was refused" -- framed
+  // 4. Link to tap, always. There is no event for "the download was refused" -- framed.
   //    page whose host withholds `allow-downloads` gets silence -- so rather than guess
   //    which happened, leave reader route they drive themselves. Framed is case
   //    that needs it and case this page ships in; unframed it is harmless second way.
@@ -849,7 +861,7 @@ async function deliverFile(blob, filename, mime, described) {
 /* Drawer + collapsible sections                                          */
 /* ---------------------------------------------------------------------- */
 
-// Every transition in stylesheet runs to these, so browser eases over same
+// Every transition in stylesheet runs to these, so browser eases over same.
 //   duration and curve appear animation does -- `nimAnimationMilliseconds` is
 //   `mesh.ANIMATION_MILLISECONDS`, and bezier is easeOutCubic written for CSS.
 document.documentElement.style.setProperty('--anim', nimAnimationMilliseconds() + 'ms');
@@ -861,12 +873,13 @@ const button_drawer = document.getElementById('btn-drawer');
 button_drawer.addEventListener('click', () => {
   const open = drawer.classList.toggle('open');
   button_drawer.classList.toggle('on', open);
-  // Everything inside it that skips its work while out of sight catches up now: rows,
-  // operand pickers. Both are no-ops when their own section is still collapsed.
+  // Everything inside it that skips its work while out of sight catches up now:
+  //   rows, operand pickers.
+  //   Both are no-ops when their own section is still collapsed.
   refreshObjectsUI();
 });
 
-// Top menu: one popover holding every top-bar action (undo/redo, axes/grid, save/load
+// Top menu: one popover holding every top-bar action (undo/redo, axes/grid, save/load.
 //   scene, save PNG/load demo) that used to be spread across four separate chip-row
 //   pill-groups -- each button inside keeps its own pre-existing #id-based wiring
 //   unchanged below; this only owns popover's own open/close.
@@ -880,14 +893,17 @@ button_menu.addEventListener('click', () => {
 document.querySelectorAll('.section-header').forEach((header) => {
   header.addEventListener('click', () => {
     header.parentElement.classList.toggle('open');
-    // Apply section's own preview lives exactly as long as section is on screen,
-    // so opening one starts it and collapsing one ends it. Asked of every section rather
-    // than only that one: check reads section's own class either way, and
-    // handler that knew which section it was would be second place to keep in step.
+    // Start or end apply section's own preview with section itself.
+    //   Preview lives exactly as long as section is on screen, so opening one starts it
+    //   and collapsing one ends it.
+    //   Asked of every section rather than only that one: check reads section's own
+    //   class either way, and handler that knew which section it was would be second
+    //   place to keep in step.
     ghostDrawerOperation();
-    // And objects list catches up on whatever it skipped while it was closed; see
-    // `refreshObjectsUI`. Same shape, same reason, and asked of every section for same
-    // reason as above -- call is no-op unless it is objects section that opened.
+    // Let objects list catch up on whatever it skipped while it was closed.
+    //   See `refreshObjectsUI`; same shape, same reason, and asked of every section for
+    //   same reason as above, since call is no-op unless it is objects section that
+    //   opened.
     refreshObjectsUI();
   });
 });
@@ -905,13 +921,13 @@ document.getElementById('toggle-algebra').addEventListener('click', (e) => {
 /* Help: ? button says it whenever asked.                                 */
 /* ---------------------------------------------------------------------- */
 
-// Pill naming few gestures used to greet every load and leave on reader's first
+// Pill naming few gestures used to greet every load and leave on reader's first.
 //   action. Panel below outgrew it -- it lists every path and every operation, on
 //   demand and for as long as reader wants -- and page that explains itself when
 //   asked does not need to explain itself unasked. Five gestures that dismissed
 //   pill now dismiss nothing, which is why no call replaced them.
 
-// Built from `help.lut_help_entries` across bridge, so this panel and desktop's
+// Built from `help.lut_help_entries` across bridge, so this panel and desktop's.
 //   own say same thing by construction. Four strings per entry; see nimHelpEntries.
 //   One tab per path, because reader opens this in middle of one way of working and
 //   only that way's rows are any use to them right then. Tab row belongs to is
@@ -924,7 +940,7 @@ const rows_help = document.getElementById('help-rows');
 const note_help = document.getElementById('help-description');
 const descriptions_help = new Map();
 function buildHelp() {
-  // What each tab is about, in one sentence, keyed by very title rows are grouped
+  // What each tab is about, in one sentence, keyed by very title rows are grouped.
   //   by -- so two exports join on string rather than on matching order.
   const described = nimHelpDescriptions();
   for (let i = 0; i + 1 < described.length; i += 2) {
@@ -973,7 +989,7 @@ function showHelpPath(path) {
   for (const row of rows_help.children) {
     row.hidden = row.dataset.path !== path;
   }
-  // Swapped with tab rather than one note per tab hidden alongside its rows: there is
+  // Swapped with tab rather than one note per tab hidden alongside its rows: there is.
   //   only ever one showing, so one element that changes text cannot go stale.
   note_help.textContent = descriptions_help.get(path) || '';
   rows_help.scrollTop = 0; // Tab always opens at its own first row.
@@ -1003,7 +1019,7 @@ const button_undo = document.getElementById('btn-undo');
 const button_redo = document.getElementById('btn-redo');
 
 function openApplyPickerOnOperands(position_local) {
-  // Where drag menu's `more…` lands: `nimEndDrag` has already selected both operands
+  // Where drag menu's `more…` lands: `nimEndDrag` has already selected both operands.
   //   in order they were dragged, so this only has to open picker that reads that
   //   selection. Refusing to open it would make `more…` dead end, which is exactly what
   //   it exists to stop gesture being.
@@ -1018,7 +1034,7 @@ function openApplyPickerOnOperands(position_local) {
   if (menu_selection_apply.style.display !== 'none') openSelectionMenuOp();
 }
 
-// **Settled scroll, not single jump.** Row outside viewport is placeholder
+// **Settled scroll, not single jump.** Row outside viewport is placeholder.
 //   rather than laid-out row -- see `.item-row`'s `content-visibility` in `shell.html` --
 //   so offset of row thousand places down list is estimate until rows
 //   above it have actually been measured. One `scrollIntoView` lands on estimate:
@@ -1039,7 +1055,7 @@ function scrollRowIntoView(row, passes = PASSES_SCROLL_SETTLE) {
 }
 
 function openPanelTo(slot) {
-  // Open edit session on `slot` (or composing one where null) and bring drawer
+  // Open edit session on `slot` (or composing one where null) and bring drawer.
   //   and Objects section far enough open to see it -- shared by top bar's `add`
   //   and selection menu's `edit`, which differ only in what they open onto.
   beginEditSession(slot);
@@ -1053,13 +1069,13 @@ function openPanelTo(slot) {
 }
 
 button_add.addEventListener('click', () => {
-  // Compose new object as row in Objects list rather than in section of its
+  // Compose new object as row in Objects list rather than in section of its.
   //   own: adding and editing stage same four things through same interface, so
   //   there is one grid and one ghost instead of two of each.
   openPanelTo(null);
 });
 
-// One function for buttons and for keys that do same thing. Keys used to
+// One function for buttons and for keys that do same thing. Keys used to.
 //   go through `button.click()`, which quietly made them depend on that button's own
 //   `disabled` attribute -- refreshed on low-cadence UI tick, so key pressed in
 //   frames after edit did nothing at all while timeline plainly had something on
@@ -1088,7 +1104,7 @@ button_redo.addEventListener('click', () => stepHistory(false));
 /* ---------------------------------------------------------------------- */
 
 document.addEventListener('keydown', (e) => {
-  // Typing in field is not shortcut: coefficient or label is edited with very
+  // Typing in field is not shortcut: coefficient or label is edited with very.
   //   keys these bind, and ctrl+z inside input already means browser's own undo.
   const target = e.target;
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
@@ -1097,7 +1113,7 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'Escape') {
-    // Everything in progress, in order reader would expect to shed it: panel
+    // Everything in progress, in order reader would expect to shed it: panel.
     //   they just opened, then menu, then gesture underneath.
     if (panel_help.classList.contains('show')) { showHelp(false); return; }
     if (menu_top.classList.contains('show')) {
@@ -1112,7 +1128,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // 3D view answers its own keys, but only while it actually has focus -- it is one
+  // 3D view answers its own keys, but only while it actually has focus -- it is one.
   //   ordinary tab stop (see its `tabindex` in markup), so reader tabs into it,
   //   drives it, and tabs onward. Tab itself is never intercepted: rebinding it inside
   //   canvas is tempting design and risks keyboard trap, which WCAG 2.1.2 rules
@@ -1120,14 +1136,14 @@ document.addEventListener('keydown', (e) => {
   //   Which key does what is `interaction.actionFor`'s to say; only DOM's own naming
   //   of keys is translated across, exactly as SDL scancodes are on desktop side.
   if (document.activeElement === canvas && !(e.ctrlKey || e.metaKey || e.altKey)) {
-    // `e.code`, physical key, which is what desktop's scancodes name -- see
+    // `e.code`, physical key, which is what desktop's scancodes name -- see.
     //   `browser_bridge.keyFor`. Key that moves view is held from here until its
     //   `keyup` below; key that acts does so on this press.
     if (nimKeyBound(e.code)) {
       e.preventDefault(); // Arrows would otherwise scroll page under canvas.
       const slot = nimKeyDown(e.code);
       if (slot >= 0) {
-        // Shift adds rather than replaces, exactly as shift-click does -- one thing
+        // Shift adds rather than replaces, exactly as shift-click does -- one thing.
         //   shift state means that shared binding table cannot answer alone.
         if (e.shiftKey) toggleSelection(slot, null); else selectOnly(slot, null);
       }
@@ -1135,7 +1151,7 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Ctrl on every platform, and cmd as well on macOS, where ctrl+z is not what reader
+  // Ctrl on every platform, and cmd as well on macOS, where ctrl+z is not what reader.
   //   with muscle memory presses.
   if (!(e.ctrlKey || e.metaKey)) return;
   const key = e.key.toLowerCase();
@@ -1148,10 +1164,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Key can only stop moving camera if its release is seen, and there are three ways
-// for one to go missing: release lands while another element has focus, window
-// loses focus entirely, or tab is hidden. First is handled by matching keydown
-// guard; other two let go of everything.
+// Let go of every held key whenever its release could go missing.
+//   Key can only stop moving camera if its release is seen, and there are three ways
+//   for one to go missing: release lands while another element has focus, window loses
+//   focus entirely, or tab is hidden.
+//   First is handled by matching keydown guard; other two let go of everything.
 document.addEventListener('keyup', (e) => {
   nimKeyUp(e.code);
 });
@@ -1162,7 +1179,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function refreshUndoRedoButtons() {
-  // Dimmed/disabled (via shared .btn:disabled rule) whenever there's nothing on
+  // Dimmed/disabled (via shared .btn:disabled rule) whenever there's nothing on.
   //   that side of timeline to move to -- checked after every history-touching
   //   action below, plus once per low-cadence UI tick to catch every other path
   //   (add, apply, remove, load demo, scene load/clear) without hooking each one.
@@ -1188,8 +1205,9 @@ Object.values(fields_camera).forEach((element) => {
   element.addEventListener('focus', () => { are_fields_camera_focused = true; });
   element.addEventListener('blur', () => { are_fields_camera_focused = false; });
 });
-// Each field commits on change, falling back to value camera treats as its own
-// floor for that quantity where box is left empty or unparseable.
+// Commit each field on change.
+//   Falls back to value camera treats as its own floor for that quantity where box is
+//   left empty or unparseable.
 function commitCameraField(field, apply, fallback) {
   field.addEventListener('change', () => apply(parseFloat(field.value) || fallback));
 }
@@ -1211,7 +1229,7 @@ fields_camera.tz.addEventListener('change', commitTarget);
 
 function refreshCameraFields() {
   if (are_fields_camera_focused) return; // Don't fight value user is mid-typing.
-  // `nimFormatNumber`, not `toFixed` here: angle of 1.05 should read `1.05` rather
+  // `nimFormatNumber`, not `toFixed` here: angle of 1.05 should read `1.05` rather.
   //   than `1.050`, and desktop draws every one of these with same widget.
   fields_camera.azimuth.value = nimFormatNumber(nimCameraAzimuth());
   fields_camera.elevation.value = nimFormatNumber(nimCameraElevation());
@@ -1223,7 +1241,7 @@ function refreshCameraFields() {
   fields_camera.tz.value = nimFormatNumber(t[2]);
 }
 
-// **Asked for here, taken inside frame that draws it.** Context is created without
+// **Asked for here, taken inside frame that draws it.** Context is created without.
 //   `preserveDrawingBuffer` (see its own note), so canvas read from task of its own finds
 //   drawing buffer already composited and thrown away -- read comes back blank or
 //   fails outright, which is image button doing nothing at all. `preserveDrawingBuffer:
@@ -1255,7 +1273,7 @@ function captureFrameIfAsked() {
   is_capture_wanted = false;
   const [width, height] = [canvas.width, canvas.height];
   canvas.toBlob((blob) => {
-    // `toBlob` hands back null where encoding failed. Unchecked, next line threw into
+    // `toBlob` hands back null where encoding failed. Unchecked, next line threw into.
     //   async callback nobody watches -- silence on top of silence.
     if (blob === null) {
       toast('The browser could not encode this frame as a PNG.');
@@ -1317,9 +1335,9 @@ function populateOperations() {
     option.textContent = nimOperationNotation(i);
     picker_operation.appendChild(option);
   }
-  // Switching arity can leave previous selection's own index absent from new,
-  //   filtered option list -- fall back to new list's first option rather than
-  //   leaving opSelect.value pointing at now-nonexistent <option>.
+  // Fall back to new list's first option where previous selection's index is absent.
+  //   Switching arity can leave it absent from new, filtered option list, and
+  //   opSelect.value must not point at now-nonexistent <option>.
   if (picker_operation.querySelector('option[value="' + value_previous + '"]')) {
     picker_operation.value = value_previous;
   } else {
@@ -1341,11 +1359,12 @@ picker_arity.querySelectorAll('button[data-arity]').forEach((button) => {
 });
 
 function ghostDrawerOperation() {
-  // Preview what `apply` would build, live while this section is open -- following
-  // operation AND both operands, since preview that ignored half its own inputs would
-  // be showing something button beside it would not build. Nim decides what
-  // preview is worth showing; this only says which three readings to try.
-  // Drawer names its own operands, so it reads them rather than selection.
+  // Preview what `apply` would build, live while this section is open.
+  //   Follows operation and both operands, since preview that ignored half its own
+  //   inputs would be showing something button beside it would not build.
+  //   Nim decides what preview is worth showing; this only says which three readings to
+  //   try.
+  //   Drawer names its own operands, so it reads them rather than selection.
   if (!isDrawerApplyOpen()) { nimClearPreview(); return; }
   const slots = nimSceneSlots();
   const first = slots[parseInt(picker_operand_first.value, 10)];
@@ -1356,11 +1375,11 @@ function ghostDrawerOperation() {
   nimGhostOperation(parseInt(picker_operation.value, 10), first, second);
 }
 
-// How long one slice of row building may take before it yields frame. Under third of
+// How long one slice of row building may take before it yields frame. Under third of.
 //   60 fps frame: long enough that few dozen rows land per slice, short enough that
 //   frame it is spending is still frame that draws.
 const MILLISECONDS_ROWS_SLICE = 5;
-// What is left of reconcile that has not finished building its rows, or null. Drained by
+// What is left of reconcile that has not finished building its rows, or null. Drained by.
 //   frame loop rather than by `requestAnimationFrame` of its own, for one reason:
 //   `recordPhaseTime` *overwrites* phase's reading for frame rather than adding to it,
 //   so work done in callback beside loop is either unmeasured or clobbers what
@@ -1369,7 +1388,7 @@ const MILLISECONDS_ROWS_SLICE = 5;
 let rows_pending = null;
 
 function sliceObjectRows() {
-  // One slice of pending reconcile, bounded by time rather than by row count: row
+  // One slice of pending reconcile, bounded by time rather than by row count: row.
   //   that is already standing and unchanged costs almost nothing, and one that has to be
   //   built costs far more, so fixed count would be different budget on every pass.
   if (rows_pending === null) return;
@@ -1392,7 +1411,7 @@ function sliceObjectRows() {
       list_objects.insertBefore(node, list_objects.children[at] || null);
     }
     rows_pending.at = at + 1;
-    // Checked only where row was actually built, so pass that changes nothing runs to
+    // Checked only where row was actually built, so pass that changes nothing runs to.
     //   end without ever reading clock -- tap on `hide` stays immediate.
     if (is_building && performance.now() >= until) return;
   }
@@ -1403,17 +1422,18 @@ function sliceObjectRows() {
 }
 
 function isDrawerObjectsOpen() {
-  // Collapsed section shows no rows, so there are none to keep current. Drawer is
-  // asked as well as section: section marked open inside closed drawer is still
-  // not on screen, and load happens either way.
+  // Collapsed section shows no rows, so there are none to keep current.
+  //   Drawer is asked as well as section:
+  //   section marked open inside closed drawer is still not on screen, and load happens either way.
   const section = document.querySelector('.section[data-section="objects"]');
   return section !== null && section.classList.contains('open') &&
     drawer.classList.contains('open');
 }
 
 function isDrawerApplyOpen() {
-  // Collapsed section previews nothing: ghost belongs to control on screen, and
-  // one left standing after its section closed names nothing reader can see.
+  // Collapsed section previews nothing:
+  //   ghost belongs to control on screen, and one left standing after its section closed names
+  //   nothing reader can see.
   const section = document.querySelector('.section[data-section="apply"]');
   return section !== null && section.classList.contains('open');
 }
@@ -1481,10 +1501,10 @@ document.getElementById('btn-apply').addEventListener('click', () => {
 });
 
 let key_selection_synced_last = ''; // Mirrors panel.nim's index_operand_synced_highlight,
-  // generalized to pair: re-defaults operand m/n to current selection only
-  // moment selection itself changes (not on every refreshOperandOptions call, which
-  // happens far more often than selection changes), so manual pick of different
-  // operand sticks until selection moves again.
+  // generalized to pair:
+  //   re-defaults operand m/n to current selection only moment selection itself changes (not on
+  //   every refreshOperandOptions call, which happens far more often than selection changes), so
+  //   manual pick of different operand sticks until selection moves again.
 let key_operand_options_last = ''; // Slot list + labels last used to rebuild operand m/n's
   // own <option> elements -- rebuilding <select>'s options while its native picker
   // is open (mobile especially) makes browser re-show/reset that picker, so
@@ -1493,13 +1513,13 @@ let key_operand_options_last = ''; // Slot list + labels last used to rebuild op
 
 function refreshOperandOptions() {
   const slots = nimSceneSlots();
-  // **Keyed on scene's own revision, not on roll-call of every label.** Key used
+  // **Keyed on scene's own revision, not on roll-call of every label.** Key used.
   //   to be `slot:label` joined over whole scene, which is one FFI call per object and
   //   string length of list -- 5,038 calls to decide whether two pickers needed
   //   rebuilding, on path every scene change runs through. `scene.revision` moves on
   //   exactly edits that can change label, and count catches nothing else moving.
   const key = nimSceneRevision() + ':' + slots.length;
-  // Collapsed section has no pickers to fill: rebuilding them is one `<option>` per
+  // Collapsed section has no pickers to fill: rebuilding them is one `<option>` per.
   //   object per picker, ten thousand elements at largest size, for control that is
   //   not on screen. Section header and drawer button both refresh on opening.
   if (key !== key_operand_options_last && isDrawerApplyOpen()) {
@@ -1520,13 +1540,13 @@ function refreshOperandOptions() {
 }
 
 function syncOperandsToSelection(slots) {
-  // Everything selection already says is filled in here rather than asked for
-  // second time: how many objects are picked names arity (`nimSelectionArity`,
-  // same rule floating menu reads), and order they were picked names m and n.
-  // Only right when selection itself changes -- cheap enough (no DOM rebuild) to
-  // call on every frame-loop tick, unlike option-list rebuild above, and leaving
-  // later manual pick of either alone until selection next moves. Mirrors
-  // panel.layoutApply exactly.
+  // Everything selection already says is filled in here rather than asked for second time:
+  //   how many objects are picked names arity (`nimSelectionArity`, same rule floating menu reads),
+  //   and order they were picked names m and n.
+  //   Only right when selection itself changes -- cheap enough (no DOM rebuild) to call on every
+  //   frame-loop tick, unlike option-list rebuild above, and leaving later manual pick of either
+  //   alone until selection next moves.
+  //   Mirrors panel.layoutApply exactly.
   const key = slots_selection.join(',');
   if (key === key_selection_synced_last) return;
   key_selection_synced_last = key;
@@ -1535,9 +1555,10 @@ function syncOperandsToSelection(slots) {
 
   const arity = nimSelectionArity();
   if (arity !== arity_current) {
-    // Filtered operation list is indexed per arity, so option carried across from
-    // other list names unrelated operation -- populateOperations rebuilds it and
-    // falls back to new list's first entry, exactly as arity buttons do.
+    // Rebuild filtered operation list, indexed per arity.
+    //   Option carried across from other list names unrelated operation;
+    //   populateOperations rebuilds it and falls back to new list's first entry, exactly
+    //   as arity buttons do.
     arity_current = arity;
     picker_arity.querySelectorAll('button[data-arity]').forEach((each) => {
       each.classList.toggle('on', parseInt(each.dataset.arity, 10) === arity);
@@ -1548,8 +1569,8 @@ function syncOperandsToSelection(slots) {
   const position_first = slots_scene.indexOf(slots_selection[0]);
   if (position_first >= 0) picker_operand_first.value = position_first;
   if (slots_selection.length >= 2) {
-    // Three or more picked still names binary operation, on first two: this picker
-    // can say which two, unlike floating menu, which hides `apply` rather than guess.
+    // Three or more picked still names binary operation, on first two:
+    //   this picker can say which two, unlike floating menu, which hides `apply` rather than guess.
     const position_second = slots_scene.indexOf(slots_selection[1]);
     if (position_second >= 0) picker_operand_second.value = position_second;
   }
@@ -1574,7 +1595,7 @@ const count_objects = document.getElementById('objects-count');
 let session_edit = null; // { slot: number|null, coefficients: number[], label, ink }
 
 function beginEditSession(slot) {
-  // Null slot composes; real slot edits that item. Seeding composing session from
+  // Null slot composes; real slot edits that item. Seeding composing session from.
   //   Nim's own defaults keeps auto-label and cycled ink every other construction
   //   path assigns, while leaving both editable before object exists.
   session_edit = slot === null
@@ -1598,7 +1619,7 @@ function endEditSession() {
   nimClearGhost();
 }
 
-// Two rows that are not object: note shown to empty list, and row
+// Two rows that are not object: note shown to empty list, and row.
 //   composing session heads it with. Keys rather than positions, so reconcile below can
 //   talk about every row same way.
 const KEY_ROW_EMPTY = 'empty';
@@ -1635,11 +1656,11 @@ function geometryTextFor(slot) {
 }
 
 function signatureOfItemRow(key) {
-  // **Everything row draws, and nothing else.** Two equal signatures mean same
+  // **Everything row draws, and nothing else.** Two equal signatures mean same.
   //   picture, so element standing there is already right and is left alone.
   if (key === KEY_ROW_EMPTY || key === KEY_ROW_PENDING) return key;
   const slot = parseInt(key, 10);
-  // Open row is keyed by being open rather than described. Its fields preview
+  // Open row is keyed by being open rather than described. Its fields preview.
   //   `session_edit` and its own handlers keep them current as reader types; rebuilding
   //   it on some unrelated refresh would take caret out of whatever field they were in.
   if (isEditing(slot)) return 'open:' + slot;
@@ -1661,7 +1682,7 @@ function buildRowFor(key) {
 }
 
 function refreshObjectsUI() {
-  // **Closed section builds nothing, and catches up when it opens.** Loading largest
+  // **Closed section builds nothing, and catches up when it opens.** Loading largest.
   //   size with this section collapsed built 5,038 rows for list nobody could see: 790 ms
   //   of 1,496 ms load, half of it, spent on picture that was not on screen. Count
   //   in header is written either way -- it is one string, it is visible while
@@ -1670,7 +1691,7 @@ function refreshObjectsUI() {
   //   `open` check; section handler above is what redeems flag.
   count_objects.textContent =
     '(' + nimSceneCount() + ' of ' + nimSceneCapacity() + ')';
-  // These two belong to *apply* section and to button above list, not to
+  // These two belong to *apply* section and to button above list, not to.
   //   rows -- they are refreshed here only because every caller that changes scene
   //   already calls this. So they run whether or not rows do: gating them behind
   //   objects section left operand pickers empty for reader who had collapsed it.
@@ -1678,7 +1699,7 @@ function refreshObjectsUI() {
   refreshAddButton();
   if (!isDrawerObjectsOpen()) return;
 
-  // **Reconciled against rows already standing, not rebuilt.** This used to empty
+  // **Reconciled against rows already standing, not rebuilt.** This used to empty.
   //   list and build every row again, which on 1,024-object demo was 570 ms of
   //   JavaScript and 164 ms of layout -- and there are dozen callers, so tap on `hide`
   //   paid all of it to change one checkbox.
@@ -1687,7 +1708,7 @@ function refreshObjectsUI() {
   //   this way every caller is cheap, including ones not yet written. Refresh that
   //   changes nothing writes nothing. Same shape as `timings.RECORDS_FRAME`'s
   //   this-frame/last-frame pair and swap arena, one side of wire over.
-  // **Ordered by bridge, not by comparator that calls it.** This used to sort by
+  // **Ordered by bridge, not by comparator that calls it.** This used to sort by.
   //   `nimItemBorn`, which is two calls across FFI per comparison -- about 124,000 of
   //   them over 5,038 slots, and 165 ms of load, to reach order Nim can hand over.
   //   `nimSceneSlotsCreated` is that order already: `scene.slotsCreated` walks by
@@ -1696,7 +1717,7 @@ function refreshObjectsUI() {
   const slots = Array.from(nimSceneSlotsCreated()).reverse();
   const keys = [];
   if (slots.length === 0 && !isComposing()) keys.push(KEY_ROW_EMPTY);
-  // Composing session heads list: it is newest thing here, and it has no
+  // Composing session heads list: it is newest thing here, and it has no.
   //   `born` reading to sort by since nothing backs it in scene yet.
   if (isComposing()) keys.push(KEY_ROW_PENDING);
   for (const slot of slots) keys.push(String(slot));
@@ -1705,7 +1726,7 @@ function refreshObjectsUI() {
   const standing = new Map();
   for (const node of Array.from(list_objects.children)) standing.set(node.dataset.key, node);
 
-  // **Built in slices, so long list cannot freeze page.** Five thousand rows is 820 ms
+  // **Built in slices, so long list cannot freeze page.** Five thousand rows is 820 ms.
   //   of element construction in one block -- whole of load, once bridge stopped
   //   deep-copying timeline -- and there is no version of that reader does not feel.
   //   Diff itself stays whole and synchronous: it is *building* that costs, and
@@ -1723,13 +1744,13 @@ function isComposing() { return session_edit !== null && session_edit.slot === n
 function isEditing(slot) { return session_edit !== null && session_edit.slot === slot; }
 
 function refreshAddButton() {
-  // Disabled while any session is open, so starting second one cannot silently
+  // Disabled while any session is open, so starting second one cannot silently.
   //   discard first -- same treatment undo/redo get when their side is empty.
   button_add.disabled = session_edit !== null || nimSceneCount() >= nimSceneCapacity();
 }
 
 function buildItemRow(slot) {
-  // `slot === null` builds composing row: same layout, but nothing backs it in
+  // `slot === null` builds composing row: same layout, but nothing backs it in.
   //   scene, so everything it displays comes from `session_edit` and buttons that act
   //   on real object (hide, remove) are left out entirely.
   const is_pending = slot === null;
@@ -1737,7 +1758,7 @@ function buildItemRow(slot) {
 
   const row = document.createElement('div');
   if (!is_pending) row.dataset.slot = slot; // Lets caller find one row again by slot.
-  // Open row says so on itself: it is one row whose real height panel has to
+  // Open row says so on itself: it is one row whose real height panel has to.
   //   know -- `scrollRowIntoView` scrolls to bring its edit form into view, and form
   //   standing behind 42px placeholder scrolls to placeholder. `shell.html` reads
   //   this class to keep open row out of containment other thousand are in.
@@ -1750,13 +1771,14 @@ function buildItemRow(slot) {
   const top = document.createElement('div');
   top.className = 'item-top';
 
-  // While session is open its staged values drive row, so swatch, label and
+  // While session is open its staged values drive row, so swatch, label and.
   //   coefficient line preview edit without scene having changed.
   const inkOf = () => (is_open ? session_edit.ink : nimItemInk(slot));
   const labelOf = () => (is_open ? session_edit.label : nimItemLabel(slot));
 
-  // Selection checkbox: mirrors/toggles membership in `slots_selection`, exactly
-  // same helper long-press/click-to-select already drives -- not visibility any more.
+  // Selection checkbox:
+  //   mirrors/toggles membership in `slots_selection`, exactly same helper
+  //   long-press/click-to-select already drives -- not visibility any more.
   const check_select = document.createElement('input');
   check_select.type = 'checkbox';
   check_select.checked = !is_pending && slots_selection.includes(slot);
@@ -1802,7 +1824,7 @@ function buildItemRow(slot) {
   top.appendChild(toggle_edit);
 
   if (is_open) {
-    // Abandon: composing row vanishes with nothing added, editing row reverts. In
+    // Abandon: composing row vanishes with nothing added, editing row reverts. In.
     //   both cases scene was never touched, so this only has to drop session.
     const cancel = document.createElement('button');
     cancel.className = 'btn item-edit-cancel';
@@ -1817,7 +1839,7 @@ function buildItemRow(slot) {
   }
 
   if (!is_open) {
-    // Hide/show and remove act on object as scene holds it, which is exactly what
+    // Hide/show and remove act on object as scene holds it, which is exactly what.
     //   open session is staging replacement for -- offering them mid-edit invites
     //   acting on one version while looking at another. Composing row has no object at
     //   all yet, so both are left out rather than shown disabled either way.
@@ -1859,7 +1881,7 @@ function buildItemRow(slot) {
   line_coefficient.textContent = describeStaged();
   row.appendChild(line_coefficient);
 
-  // **Built only for row that is open, which is at most one of them.** Everything
+  // **Built only for row that is open, which is at most one of them.** Everything.
   //   below is edit form, and closed row used to build whole of it -- label
   //   field, ink picker with option per choosable slot, and grid with input per
   //   basis element -- and then let CSS hide it. Measured on 1,024-object demo that was
@@ -1877,9 +1899,9 @@ function buildItemRow(slot) {
     const field_label = document.createElement('div');
     field_label.className = 'field';
     field_label.innerHTML = '<label>label</label>';
-    // Every field below writes into session, never scene: row's own swatch,
-    //   label and coefficient line preview change, ghost previews geometry,
-    //   and only `save` above reaches `g_scene`.
+    // Write every field below into session, never scene.
+    //   Row's own swatch, label and coefficient line preview change, ghost previews
+    //   geometry, and only `save` above reaches `g_scene`.
     const input_label = document.createElement('input');
     input_label.type = 'text';
     input_label.value = labelOf();
@@ -1895,7 +1917,7 @@ function buildItemRow(slot) {
     field_ink.className = 'field';
     field_ink.innerHTML = '<label>colour</label>';
     const picker_ink = document.createElement('select');
-    // Only categorical slots are offerable; `nimInkChoosableSlots` decides which those
+    // Only categorical slots are offerable; `nimInkChoosableSlots` decides which those.
     //   are, so no palette rule lives out here. Its entries stay whole-palette ordinals,
     //   same ones `nimItemInk` reports and `nimInkName`/`nimInkColor` accept.
     for (const ink of nimInkChoosableSlots()) {
@@ -1926,7 +1948,7 @@ function buildItemRow(slot) {
 
     const grid = document.createElement('div');
     grid.className = 'coeff-grid';
-    // `nimFormatNumber`, not `toFixed` here: how many digits coefficient is worth
+    // `nimFormatNumber`, not `toFixed` here: how many digits coefficient is worth.
     //   is decision about this project's numbers, and desktop's own cells make it
     //   same way.
     const inputs_coefficient = buildGradedCoefficientGrid(
@@ -1935,7 +1957,7 @@ function buildItemRow(slot) {
         nimFormatNumber(is_open ? session_edit.coefficients[b] : nimItemCoefficients(slot)[b]),
     );
     inputs_coefficient.forEach((input, b) => {
-      // `input`, not `change`: ghost tracks keystroke rather than waiting for
+      // `input`, not `change`: ghost tracks keystroke rather than waiting for.
       //   field to blur, which is what makes preview feel live.
       input.addEventListener('input', () => {
         session_edit.coefficients[b] = parseFloat(input.value) || 0;
@@ -1970,13 +1992,13 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 /* ---------------------------------------------------------------------- */
 
 function saveScene() {
-  // Creation order, not slot order: version-3 file promises its sequence is order
+  // Creation order, not slot order: version-3 file promises its sequence is order.
   //   scene was built in, and removed-then-re-added object sits in reused slot
   //   well before objects that predate it. Loading walks sequence back one object at
   //   time, so writing slot order here would replay construction that never happened.
   const slots = nimSceneSlotsCreated();
   const count_basis = nimBasisCount();
-  // Labels go out as UTF-8 bytes, which is what format holds and what `scene.nim`
+  // Labels go out as UTF-8 bytes, which is what format holds and what `scene.nim`.
   //   writes: derived label carries operator notation (`a ∧ b`, `a ∨ b`, `a ⊖ b`), and
   //   JavaScript string's own `.length` counts UTF-16 units while `charCodeAt` truncated to
   //   byte throws away everything above U+00FF. Both together wrote shorter length than
@@ -2046,14 +2068,14 @@ function parseAndLoadScene(buffer) {
   const view = new DataView(buffer);
   if (buffer.byteLength < 10) throw new Error('`' + 'file' + '` is not a scene file.');
   let offset = 0;
-  // Both expectations come from `scene.nim` through bridge, for reason `saveScene`
+  // Both expectations come from `scene.nim` through bridge, for reason `saveScene`.
   //   above gives: literal here is exactly what drifted out of step with format.
   const magic_wanted = nimSceneMagic();
   let magic = '';
   for (let i = 0; i < magic_wanted.length; i++) magic += String.fromCharCode(view.getUint8(i));
   offset = magic_wanted.length;
   if (magic !== magic_wanted) throw new Error('File is not a scene file.');
-  // *range* through bridge, not this build's own writing version: every version
+  // *range* through bridge, not this build's own writing version: every version.
   //   ever written stays readable, and which those are is `scene.readsSceneVersion`'s
   //   answer rather than pair of literals here to fall out of step with it.
   const version = view.getUint8(offset); offset += 1;
@@ -2089,7 +2111,7 @@ function parseAndLoadScene(buffer) {
         'File is truncated partway through object ' + i + '’s label.',
       );
     }
-    // Decoded as UTF-8, for reason `saveScene` gives: byte-per-character would read
+    // Decoded as UTF-8, for reason `saveScene` gives: byte-per-character would read.
     //   every operator in derived label as two or three Latin-1 characters of noise.
     const label = new TextDecoder().decode(
       new Uint8Array(buffer, offset, length_label),
@@ -2107,7 +2129,7 @@ function parseAndLoadScene(buffer) {
   }
 
   nimSceneClear();
-  // In file order, which from version 3 on is order objects were built: each is
+  // In file order, which from version 3 on is order objects were built: each is.
   //   stamped to appear beat after last, so scene replays its own construction.
   //   Version rides along because older file's palette ordinals mean something
   //   else; mapping is Nim's, not this parser's.
@@ -2142,14 +2164,14 @@ const diagnostic_heap = document.getElementById('diag-heap');
 const diagnostic_pool = document.getElementById('diag-pool');
 const grid_pool = document.getElementById('pool-grid');
 const context_pool = grid_pool === null ? null : grid_pool.getContext('2d');
-// Scene revision grid was last drawn at; -1 until it has been drawn once. Grid
+// Scene revision grid was last drawn at; -1 until it has been drawn once. Grid.
 //   is picture of which slots are occupied and in what ink, so it changes exactly when
 //   scene does -- see `scene.revision`, same counter frame hold reads. Its own
 //   geometry joins key because canvas cleared by resize has to be redrawn whatever
 //   scene did, and because section opens onto canvas that had no size at all.
 let revision_pool_last = -1;
 let ratio_pool_last = 0;
-// **Set by `ResizeObserver`, never by measuring.** Gate below has to run before
+// **Set by `ResizeObserver`, never by measuring.** Gate below has to run before.
 //   anything reads canvas's width, because layout read *after* tick's own row
 //   writes forces browser to lay drawer out there and then -- measured at 0.9 ms of
 //   1.3 ms tick, five times second, for picture that had not changed. Observer
@@ -2160,7 +2182,7 @@ let is_pool_stale = true;
 //   derivation is thing being checked, so test that repeated it would agree with
 //   itself no matter what reached canvas.
 let geometry_pool_drawn = { cell: 0, gap: 0, columns: 0, rows: 0, height: 0 };
-// **One square per slot, wrapped**, at largest size that keeps whole grid inside
+// **One square per slot, wrapped**, at largest size that keeps whole grid inside.
 //   block rather than page. Cell cannot be constant: at 1,024 slots six pixels with
 //   gap is 53 columns of 20 rows and 139px tall, and at 10,080 same cell is 191 rows
 //   and over 1,300px -- which is not grid reader scans, it is scroll. So size is
@@ -2171,23 +2193,26 @@ let geometry_pool_drawn = { cell: 0, gap: 0, columns: 0, rows: 0, height: 0 };
 //   ten thousand.
 const CELLS_POOL = [[6, 1], [5, 1], [4, 1], [3, 0], [2, 0], [1, 0]];
 const HEIGHT_POOL_MAX = 150;
-// CSS colour per packed triple, so palette that cycles is converted dozen times
+// CSS colour per packed triple, so palette that cycles is converted dozen times.
 //   rather than thousand. Cleared with nothing: palette is fixed, so it converges.
 const css_pool = new Map();
 if (grid_pool !== null && typeof ResizeObserver === 'function') {
-  // Its own box, not window's: drawer is fixed-width panel on wide screen and
+  // Its own box, not window's: drawer is fixed-width panel on wide screen and.
   //   full-width sheet on narrow one, and either can change without window doing so.
   new ResizeObserver(() => { is_pool_stale = true; }).observe(grid_pool);
 }
 
-// One ring per step of drawing process, so diagnostics tab can show where frame
-// actually went rather than one opaque total. Bridge reports its own three phases on
-// FrameData (build = furniture + scene + flatten, timed inside nimBuildFrame where only it
-// can see them); this side times what only it can see -- GL upload+draw, SVG
-// overlay, selection menu, and low-cadence UI block. Rings rather than latest
-// value, so each row can show rolling median beside instantaneous number: single
-// frame's reading flickers too fast to read, and median is what reader means by "how
-// long does this step take".
+// Keep one ring per step of drawing process.
+//   Diagnostics tab can then show where frame actually went rather than one opaque
+//   total.
+//   Bridge reports its own three phases on FrameData (build = furniture + scene +
+//   flatten, timed inside nimBuildFrame where only it can see them); this side times
+//   what only it can see: GL upload+draw, SVG overlay, selection menu, and low-cadence
+//   UI block.
+//   Rings rather than latest value, so each row can show rolling median beside
+//   instantaneous number.
+//     Single frame's reading flickers too fast to read, and median is what reader means
+//     by "how long does this step take".
 const PHASES_DIAGNOSTIC = [
   ['build', 'diag-build'], ['camera', 'diag-camera'], ['furniture', 'diag-furniture'],
   ['grid', 'diag-grid'], ['axes', 'diag-axes'], ['scene', 'diag-scene'],
@@ -2200,14 +2225,15 @@ const PHASES_DIAGNOSTIC = [
   ['hover', 'diag-hover'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
   ['ui', 'diag-ui'], ['idle', 'diag-idle'],
 ];
-// Rows that re-divide time already counted elsewhere. They must stay out of every sum
+// Rows that re-divide time already counted elsewhere. They must stay out of every sum.
 //   -- idle derivation below, and cost tint's own denominator -- or frame would
 //   appear to have spent its drawing twice.
 const PHASES_CUT_DIAGNOSTIC = ['placing', 'emitting'];
-// Phases nothing else contains: their sum is everything this page spent on frame,
-//   and rest of frame is `idle` below. `build` holds bridge's own three, and
-//   those hold scenery halves and object kinds, so counting any of them here would
-//   count same milliseconds twice.
+// Name phases nothing else contains.
+//   Their sum is everything this page spent on frame, and rest of frame is `idle`
+//   below.
+//   `build` holds bridge's own three, and those hold scenery halves and object kinds,
+//   so counting any of them here would count same milliseconds twice.
 const PHASES_TOP_DIAGNOSTIC = ['build', 'hover', 'upload', 'overlay', 'ui'];
 // Rows that carry count beside their time, and ring each count is written to.
 //   Time alone cannot tell "one of these is expensive" from "there are many of them",
@@ -2219,7 +2245,7 @@ const COUNTS_DIAGNOSTIC = {
 };
 const count_phase = {};
 const history_phase = {};
-// **Whether phase ran is kept beside its time, never inside it.** Sentinel in
+// **Whether phase ran is kept beside its time, never inside it.** Sentinel in.
 //   value's own range was doing that job, and duration has no room for one: every mobile
 //   browser coarsens and jitters `performance.now` against timing attacks, so
 //   sub-millisecond step can measure as zero or below, and real reading then becomes
@@ -2233,7 +2259,7 @@ for (const [name, id] of PHASES_DIAGNOSTIC) {
   history_phase[name] = new Float64Array(FRAMES_HISTORY);
   written_phase[name] = new Uint8Array(FRAMES_HISTORY);
   element_phase[name] = document.getElementById(id);
-  // Whole row as well as its number, so row can be tinted entire. `closest` rather
+  // Whole row as well as its number, so row can be tinted entire. `closest` rather.
   //   than `parentElement`: leaf's value sits in plain div and parent's in button,
   //   and both carry `.diag-line`.
   element_row[name] = element_phase[name] === null
@@ -2246,18 +2272,18 @@ for (const [name, id] of PHASES_DIAGNOSTIC) {
 }
 for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
-  // Shares frame ring's own index, advanced once per frame by recordFrameTime, so
-  // every ring lines up frame for frame; UI phase only runs one frame in six and
-  // leaves its other slots unwritten, which readings below skip.
+  // Share frame ring's own index, advanced once per frame by recordFrameTime.
+  //   Every ring then lines up frame for frame; UI phase only runs one frame in several
+  //   and leaves its other slots unwritten, which readings below skip.
   if (!Number.isFinite(delta_milliseconds)) return; // Nothing measured; leave it absent.
-  // Clamped at zero: negative elapsed time is artefact of coarsened clock, not
+  // Clamped at zero: negative elapsed time is artefact of coarsened clock, not.
   //   duration, and honest reading of it is "too short to measure".
   history_phase[name][index_history_frame] =
     delta_milliseconds > 0 ? delta_milliseconds : 0;
   written_phase[name][index_history_frame] = 1;
 }
 
-// **How long reading is averaged over, and how often it is rewritten.** Single frame's
+// **How long reading is averaged over, and how often it is rewritten.** Single frame's.
 //   number changes faster than anyone can read it, which is what made these rows flicker.
 //   200 ms is settling time performance readout is conventionally given: long enough
 //   that digits hold still, short enough that stall is still on screen while it is
@@ -2265,7 +2291,7 @@ function recordPhaseTime(name, delta_milliseconds) {
 //   number for interval since last one -- not average over one window
 //   sampled on cadence of another.
 const MILLISECONDS_WINDOW_READING = 200;
-// **Figure is redrawn on cadence of window it is averaged over, not on
+// **Figure is redrawn on cadence of window it is averaged over, not on.
 //   panel's.** Rows above are 200 ms readings and belong at 200 ms. Three of things
 //   this panel shows are not: sparkline holds four seconds, ring medians four, and
 //   exceedance curve seventeen. None of them can visibly change in fifth of second,
@@ -2276,7 +2302,7 @@ const MILLISECONDS_WINDOW_READING = 200;
 //   Not slower still: second is longest reader will watch curve without deciding
 //   it has stopped, and sparkline has to scroll rather than jump.
 const MILLISECONDS_WINDOW_DISTRIBUTION = 1000;
-// How many frames back that span reaches, measured in frames' own durations rather
+// How many frames back that span reaches, measured in frames' own durations rather.
 //   than assumed from frame rate: at 60 fps it is dozen, on labouring phone it is
 //   two, and either way it is last 200 ms.
 function framesRecent() {
@@ -2287,7 +2313,7 @@ function framesRecent() {
   }
   return FRAMES_HISTORY;
 }
-// Phase's mean over those frames, skipping ones it did not run in. Mean rather
+// Phase's mean over those frames, skipping ones it did not run in. Mean rather.
 //   than latest: whole complaint about latest is that one frame decides it.
 function meanPhase(name, frames) {
   const ring = history_phase[name];
@@ -2302,7 +2328,7 @@ function meanPhase(name, frames) {
   }
   return count === 0 ? null : total / count;
 }
-// Scratch median borrows rather than allocating: this runs per phase per refresh, and
+// Scratch median borrows rather than allocating: this runs per phase per refresh, and.
 //   rows tree can hold grow faster than frames between refreshes do. Filter
 //   plus sort built two arrays each time and threw both away.
 const scratch_median = new Array(FRAMES_HISTORY);
@@ -2314,7 +2340,7 @@ function medianPhase(name) {
     if (written[i] === 1) { scratch_median[count] = ring[i]; count += 1; }
   }
   if (count === 0) return null;
-  // Insertion sort over written part: ring is nearly sorted only by accident, but
+  // Insertion sort over written part: ring is nearly sorted only by accident, but.
   //   it is small and this beats allocating fresh sorted copy of it every refresh.
   for (let i = 1; i < count; i += 1) {
     const value = scratch_median[i];
@@ -2327,7 +2353,7 @@ function medianPhase(name) {
   }
   return scratch_median[count >> 1];
 }
-// Each row's last median, so 200 ms rows can state one without re-sorting ring that
+// Each row's last median, so 200 ms rows can state one without re-sorting ring that.
 //   is four seconds long. Refreshed on slow pass; `undefined` means never computed,
 //   which is not same as `null` -- that is phase which has genuinely never run, and
 //   row is left as em dash for it. Row that becomes shown between slow passes
@@ -2349,7 +2375,7 @@ function medianPhaseHeld(name, is_recomputing) {
 //   in one without other would silently stop hiding -- or stop updating -- with its
 //   branch. DOM is one copy now, and this file only asks it questions.
 for (const node of document.querySelectorAll('.diag-node')) {
-  // Node's *own* parent row, not descendant's: nested branch puts another
+  // Node's *own* parent row, not descendant's: nested branch puts another.
   //   `.diag-parent` inside this one, and `querySelector` would find that one first.
   const header = node.querySelector(':scope > .diag-parent');
   header.addEventListener('click', () => {
@@ -2359,7 +2385,7 @@ for (const node of document.querySelectorAll('.diag-node')) {
   header.setAttribute('aria-expanded', 'false');
 }
 function isPhaseShown(name) {
-  // Walk up: row is shown only where every branch holding it is open. Branch's own
+  // Walk up: row is shown only where every branch holding it is open. Branch's own.
   //   header row starts walk *above* its node -- header is what reader clicks
   //   to open it, so it stays visible while its node is closed.
   const row = element_row[name];
@@ -2389,7 +2415,7 @@ function isPhaseShown(name) {
 //   suffix scan over buckets, done only when panel is actually open.
 const FRAMES_EXCEEDANCE = 1024;
 const MILLISECONDS_BUCKET = 0.5; // Fine enough to separate 16.7 ms frame from 17.2.
-// **Slowest budget chart marks**, in frames per second, and reach of
+// **Slowest budget chart marks**, in frames per second, and reach of.
 //   histogram folded from it. Two have to agree or mark is unreachable: axis
 //   only ever runs as far as slowest bucket holding frame, so mark past last
 //   bucket is skipped by `drawExceedance` on every draw and simply never appears. Adding
@@ -2408,7 +2434,7 @@ const exceedance = document.getElementById('exceedance');
 const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
 const diagnostic_exceedance = document.getElementById('diag-exceedance');
 const label_exceedance_axis = document.getElementById('diag-exceedance-axis');
-// Vertical axis's own switch, wired here rather than beside header's chips because
+// Vertical axis's own switch, wired here rather than beside header's chips because.
 //   it reads chart it belongs to. Linear by default: chart exists to say what share
 //   of session ran at each speed, and proportion reads as proportion on linear
 //   axis. Log answers narrower question -- how bad slowest one percent is, which
@@ -2427,7 +2453,7 @@ if (toggle_exceedance_log !== null) {
 
 function bucketOf(milliseconds) {
   const index = Math.floor(milliseconds / MILLISECONDS_BUCKET);
-  // Anything past last bucket lands *in* it rather than being dropped: 300 ms stall
+  // Anything past last bucket lands *in* it rather than being dropped: 300 ms stall.
   //   is most important sample window ever holds, and curve that discarded it
   //   would read as calmer than session actually was.
   return Math.max(0, Math.min(BUCKETS_EXCEEDANCE - 1, index));
@@ -2444,7 +2470,7 @@ function recordExceedance(delta_milliseconds) {
   index_exceedance = (index_exceedance + 1) % FRAMES_EXCEEDANCE;
 }
 
-// Complementary distribution, as share of window per bucket, scanned from
+// Complementary distribution, as share of window per bucket, scanned from.
 //   slow end so each entry is "this many frames took at least this long". Written into
 //   buffer caller owns so scan allocates nothing on path that runs ten times
 //   second; returns how much of it is meaningful.
@@ -2460,7 +2486,7 @@ function scanExceedance() {
 
 function recordFrameTime(delta_milliseconds) {
   history_frame[index_history_frame] = delta_milliseconds;
-  // **Everything page did not spend itself**: waiting on display, and browser's
+  // **Everything page did not spend itself**: waiting on display, and browser's.
   //   own style, layout, paint, compositing and collection. Without it breakdown
   //   accounted for fraction of frame and left rest unexplained, so spike could
   //   not be told from stall in page's own code -- which is first question
@@ -2476,16 +2502,16 @@ function recordFrameTime(delta_milliseconds) {
   recordPhaseTime('idle', delta_milliseconds - spent);
   recordExceedance(delta_milliseconds);
   index_history_frame = (index_history_frame + 1) % FRAMES_HISTORY;
-  // Slot phases are about to write into is cleared up front, so phase that
-  // does not run this frame (UI block, held furniture build) reads as absent
-  // rather than as whatever it cost 240 frames ago.
+  // Clear slot phases are about to write into, up front.
+  //   Phase that does not run this frame (UI block, held furniture build) then reads as
+  //   absent rather than as whatever it cost one ring ago.
   for (const [name] of PHASES_DIAGNOSTIC) written_phase[name][index_history_frame] = 0;
 }
 
-// How far log axis runs, when reader switches to it: decades from every frame down
+// How far log axis runs, when reader switches to it: decades from every frame down.
 //   to one in thousand, which is as fine as window of thousand frames can resolve.
 const DECADES_EXCEEDANCE = 3;
-// **Axis follows window, but never closes below slowest budget plus room to
+// **Axis follows window, but never closes below slowest budget plus room to.
 //   name it.** Fitting it to slowest frame is what makes max readable -- curve
 //   reaches 100% exactly there -- and floor is what stops fast session zooming into
 //   its own noise: at 30 fps and better axis stands still and budget lines keep
@@ -2499,14 +2525,14 @@ const DECADES_EXCEEDANCE = 3;
 //   share because canvas is responsive -- fixed number of milliseconds buys
 //   different number of pixels at every drawer width -- and 14% clears label's own
 //   14px threshold down to about 110px canvas.
-// What label is haloed against where curve runs through it: drawer's own solid
+// What label is haloed against where curve runs through it: drawer's own solid.
 //   surface, which is what shows through this canvas, at most of full strength -- enough to
 //   part curve around digits, little enough that it reads as ground rather than
 //   as box drawn behind them.
 const HALO_LABEL_EXCEEDANCE = 'rgba(22, 27, 34, 0.85)';
 const SHARE_MARK_LEAST = 0.86;
 const MILLISECONDS_AXIS_LEAST = (1000 / 30) / SHARE_MARK_LEAST;
-// Frame budgets reader actually aims at, each named by rate it is: duration
+// Frame budgets reader actually aims at, each named by rate it is: duration.
 //   means nothing to most people and "60" means something to everyone.
 //   This list is both marks and colour bands: `bandOfExceedance` indexes it and
 //   `colours_exceedance` maps over it. 15 fps entry therefore carries *poor band's
@@ -2538,9 +2564,9 @@ const BUDGETS_EXCEEDANCE = [
     token: '--speed-poor' },
   { milliseconds: Infinity, label: '', token: '--speed-poor' },
 ];
-// Read once from stylesheet, which is where they are set and tuned; see tokens'
+// Read once from stylesheet, which is where they are set and tuned; see tokens'.
 //   own comment in `shell.html` for how four were screened.
-// Resolved once, like colours below: this is redrawn at frame rate while axis
+// Resolved once, like colours below: this is redrawn at frame rate while axis.
 //   glides, and each draw was asking layout for same font token.
 const FONT_EXCEEDANCE = '9px ' +
   (getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() ||
@@ -2556,10 +2582,11 @@ const colours_exceedance = BUDGETS_EXCEEDANCE.map((budget) =>
 //   fast frame and tenth of slow one wear same colour, and curve above says
 //   which of two session is in. Shares nest correctly, parent's being sum
 //   of its children's, and they sum with `idle` to whole ramp.
-// **Where ramp reaches its far end**: row costing this share of frame is drawn in
-// map's last colour. At whole frame far end means step that *is* frame.
+// **Where ramp reaches its far end**:
+//   row costing this share of frame is drawn in map's last colour.
+//   At whole frame far end means step that *is* frame.
 const SHARE_RAMP_FULL_DIAGNOSTIC = 1.0;
-// **Ramp is walked by ratio, not by difference.** Laid out linearly over whole
+// **Ramp is walked by ratio, not by difference.** Laid out linearly over whole.
 //   frame, every row on comfortable session lands in first two steps and tree
 //   reads as one colour: page waiting on display spends most of frame idle, so
 //   drawing's own rows are all small fractions and interesting differences between them
@@ -2591,10 +2618,10 @@ function positionRampTree(share) {
   }
   return (1 + Math.log10(held / SHARE_RAMP_KNEE_DIAGNOSTIC)) / UNITS_RAMP_TREE;
 }
-// Tree's ramp, from `ramp.nim` through `nimRampTree`: six floats step, row's
-// label rgb then its value rgb. What ramp is -- CET-I1 re-lit to this drawer's own
-// text tones -- and what holds it to that is `tools/check_ramp.nim`; nothing here knows
-// anything about it beyond how to walk it.
+// Tree's ramp, from `ramp.nim` through `nimRampTree`:
+//   six floats step, row's label rgb then its value rgb.
+//   What ramp is -- CET-I1 re-lit to this drawer's own text tones -- and what holds it to that is
+//   `tools/check_ramp.nim`; nothing here knows anything about it beyond how to walk it.
 const RAMP_TREE = (() => {
   const flat = nimRampTree();
   const steps = [];
@@ -2607,11 +2634,11 @@ const RAMP_TREE = (() => {
   return steps;
 })();
 
-// Legend bar is ramp **as rows are actually tinted**: across its width sits
-// share, not ramp position, so colours crowd into its left exactly as they do down
-// tree and reader can lay row's colour against it and read share off. Painted
-// by calling same function rows are tinted by, so key that disagreed with
-// tree would have to be bug in one line rather than second declaration left behind.
+// Legend bar is ramp **as rows are actually tinted**:
+//   across its width sits share, not ramp position, so colours crowd into its left exactly as they
+//   do down tree and reader can lay row's colour against it and read share off.
+//   Painted by calling same function rows are tinted by, so key that disagreed with tree would have
+//   to be bug in one line rather than second declaration left behind.
 const STOPS_LEGEND_RAMP = 48;
 (() => {
   const bar = document.getElementById('diag-legend-ramp');
@@ -2625,7 +2652,7 @@ const STOPS_LEGEND_RAMP = 48;
 })();
 
 function rampTreeAt(share) {
-  // Sample ramp at one row's share of frame, interpolating between shipped
+  // Sample ramp at one row's share of frame, interpolating between shipped.
   //   steps so row's colour moves as its cost does rather than stepping between bands.
   //   `check_ramp` measures what interpolating costs against map's full 256 entries.
   const position = positionRampTree(share) * (RAMP_TREE.length - 1);
@@ -2638,7 +2665,7 @@ function rampTreeAt(share) {
     value: mix(RAMP_TREE[below].value, RAMP_TREE[below + 1].value),
   };
 }
-// **Axis follows window, but not at window's own speed.** Fitted frame for
+// **Axis follows window, but not at window's own speed.** Fitted frame for.
 //   frame it snapped: one slow frame widened it, and moment that frame aged out of
 //   window it snapped back, so curve jumped about and two glances second apart could
 //   not be compared. Two things fix that without going back to fixed axis.
@@ -2656,7 +2683,7 @@ const SHARE_AXIS_DEADBAND = 0.02;
 let milliseconds_axis = 0; // What is drawn; zero until first extent arrives.
 let ms_axis_restless = 0; // When extent first differed from it; zero while settled.
 let ms_axis_eased = 0; // Last ease, for elapsed time glide is scaled by.
-// True while axis is still travelling, so frame loop can redraw curve at its
+// True while axis is still travelling, so frame loop can redraw curve at its.
 //   own rate instead of panel's five-a-second, which would show glide as steps.
 let is_axis_gliding = false;
 function axisEased(milliseconds_wanted) {
@@ -2721,7 +2748,7 @@ function drawExceedance() {
     Math.max(MILLISECONDS_AXIS_LEAST, (bucket_last + 1) * MILLISECONDS_BUCKET),
   );
   const xOf = (milliseconds) => (milliseconds / milliseconds_full) * w;
-  // Proportion **below**, rising: question reader is asking is how much of
+  // Proportion **below**, rising: question reader is asking is how much of.
   //   session came in under duration, and curve that answers it climbing left to right
   //   is read without translation.
   //   Linear, where axis is proportion itself; or, on switch, three decades of
@@ -2752,7 +2779,7 @@ function drawExceedance() {
   context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
   context_exceedance.lineWidth = 1;
   for (const gridline of gridlines) {
-    // Held half-pixel inside canvas at two ends, where line would otherwise
+    // Held half-pixel inside canvas at two ends, where line would otherwise.
     //   straddle edge and render at half its weight or not at all.
     const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
     context_exceedance.beginPath();
@@ -2760,12 +2787,12 @@ function drawExceedance() {
     context_exceedance.lineTo(w, y);
     context_exceedance.stroke();
     if (gridline.label === undefined) continue;
-    // Under its own line and at left margin, which rates along top and
+    // Under its own line and at left margin, which rates along top and.
     //   curve's own climb both leave clear.
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
     context_exceedance.fillText(gridline.label, 2, y + 1);
   }
-  // Budgets themselves, **each named twice**: rate at top of line and
+  // Budgets themselves, **each named twice**: rate at top of line and.
   //   duration at its foot, so one dashed mark answers both "how smooth is that" and "how
   //   long is that" and reader never has to convert between them in their head.
   //   Both sit *over* plot rather than in rows of their own. Rows were tried, and they
@@ -2790,12 +2817,12 @@ function drawExceedance() {
     context_exceedance.lineTo(x, h);
     context_exceedance.stroke();
     context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    // Inside line where it would otherwise run off right edge. Both rows take
+    // Inside line where it would otherwise run off right edge. Both rows take.
     //   same side, so rate and its duration stay in one column whichever way they go.
     const is_room = x + 14 < w;
     context_exceedance.textAlign = is_room ? 'left' : 'right';
     const x_label = x + (is_room ? 2 : -2);
-    // Haloed against drawer's own surface before being filled. These sit over plot
+    // Haloed against drawer's own surface before being filled. These sit over plot.
     //   and curve crosses fastest ones outright -- duration bisected by stroke
     //   of same weight is unreadable, and this is what buys numbers their place
     //   inside without asking chart for height it does not have.
@@ -2816,7 +2843,7 @@ function drawExceedance() {
   context_exceedance.textAlign = 'left';
   context_exceedance.textBaseline = 'top';
 
-  // Curve, in one run per band, each stroked in that band's own colour and each
+  // Curve, in one run per band, each stroked in that band's own colour and each.
   //   starting where last ended so line is continuous across change. Drawn
   //   band by band rather than sampling colour per segment: run is one path and one
   //   stroke, and join at boundary is exact rather than pixel of wrong hue.
@@ -2825,13 +2852,13 @@ function drawExceedance() {
   for (let i = bucket_first; i <= bucket_last; i += 1) {
     const milliseconds = i * MILLISECONDS_BUCKET;
     const band = bandOfExceedance(milliseconds);
-    // `shares_exceedance[i]` is share at or over this duration, so its complement is
+    // `shares_exceedance[i]` is share at or over this duration, so its complement is.
     //   share below it -- histogram stays exceedance and only drawing turns
     //   over, which is what keeps scan plain suffix sum.
     const point = [xOf(milliseconds), yOf(1 - shares_exceedance[i])];
     if (band !== band_open) {
       if (band_open >= 0) {
-        // Carry run into boundary before closing it, so two runs meet on
+        // Carry run into boundary before closing it, so two runs meet on.
         //   dashed line rather than bucket short of it.
         context_exceedance.lineTo(point[0], point[1]);
         context_exceedance.stroke();
@@ -2844,12 +2871,12 @@ function drawExceedance() {
       context_exceedance.lineTo(point[0], point[1]);
     }
   }
-  // Last bucket's own upper edge, where share below reaches one: slowest frame
+  // Last bucket's own upper edge, where share below reaches one: slowest frame.
   //   window holds, standing at 100% and at axis's own end.
   context_exceedance.lineTo(xOf((bucket_last + 1) * MILLISECONDS_BUCKET), yOf(1));
   if (band_open >= 0) context_exceedance.stroke();
 
-  // One number worth stating outright beside curve: what slowest frame in
+  // One number worth stating outright beside curve: what slowest frame in.
   //   hundred took. Reader tuning for smoothness is tuning that, not median.
   let milliseconds_p99 = 0;
   for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
@@ -2857,10 +2884,10 @@ function drawExceedance() {
   }
   diagnostic_exceedance.textContent =
     '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames';
-  // Axis's own extent, said where reader is looking rather than left to be
+  // Axis's own extent, said where reader is looking rather than left to be.
   //   inferred from curve that now moves with window.
   if (label_exceedance_axis !== null) {
-    // Mode is named in caption as well as lit on its own pill, so screenshot of
+    // Mode is named in caption as well as lit on its own pill, so screenshot of.
     //   drawer says which axis curve in it was read against.
     label_exceedance_axis.textContent =
       'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms' +
@@ -2868,7 +2895,7 @@ function drawExceedance() {
   }
 }
 
-// Scale bar's own reading, as map carries one: span of ground drawn at its true
+// Scale bar's own reading, as map carries one: span of ground drawn at its true.
 //   screen length, with distance it covers written under it, and **ground grid's
 //   own cell size beside that** -- which is what makes ruled ground measurable rather
 //   than decorative. Span is chosen 1-2-5 by decade to land near
@@ -2892,13 +2919,13 @@ function refreshRuler() {
   const decade = Math.pow(10, Math.floor(Math.log10(world_target)));
   let span = decade;
   for (const step of STEPS_RULER) {
-    // Largest 1-2-5 step still at or under target: bar that overshoots crowds
+    // Largest 1-2-5 step still at or under target: bar that overshoots crowds.
     //   corner it sits in, while one that undershoots is only harder to read against.
     if (step * decade <= world_target) span = step * decade;
   }
   ruler.hidden = false;
   ruler_bar.style.width = (span / world_per_pixel).toFixed(1) + 'px';
-  // Thousands separated with thin space rather than comma: comma reads as decimal
+  // Thousands separated with thin space rather than comma: comma reads as decimal.
   //   point to much of world, and these numbers are what bar is claiming.
   const written = (value) => (value >= 1000
     ? value.toLocaleString('en-US').replace(/,/g, '\u2009')
@@ -2908,7 +2935,7 @@ function refreshRuler() {
     : written(span) + ' units \u00b7 grid ' + written(size_cell);
 }
 
-// **Write only where value moved.** Every one of these is text node or inline
+// **Write only where value moved.** Every one of these is text node or inline.
 //   style browser must re-style and re-lay out afterwards, and measured on full tree
 //   only about **10 of 29 rows actually change** -- so two thirds of writes were
 //   dirtying layout to set string that was already there. Same rule pool strip
@@ -2932,13 +2959,13 @@ function writeColour(element, value) {
   element.style.color = value;
 }
 
-// Panel's own collapsible section, read by guard below rather than by class on
+// Panel's own collapsible section, read by guard below rather than by class on.
 //   drawer: drawer holds several sections and only this one owns these figures.
 const section_diagnostics = document.querySelector('.section[data-section="diagnostics"]');
 let ms_refresh_distribution = 0; // Last slow pass; zero, so first tick draws everything.
 
 function refreshDiagnostics() {
-  // **Nothing here is worth millisecond while drawer is shut.** Every figure this
+  // **Nothing here is worth millisecond while drawer is shut.** Every figure this.
   //   writes is inside it, and with drawer closed whole refresh was still running
   //   five times second: measured on 1,024-object demo at 2.8 ms typical and 5.7 ms
   //   worst, landing on one frame in twelve. On frame that otherwise costs about
@@ -2956,7 +2983,7 @@ function refreshDiagnostics() {
   //   genuinely open.
   if (!drawer.classList.contains('open')) return;
   if (!section_diagnostics.classList.contains('open')) return;
-  // Whether four- and seventeen-second figures are due; see
+  // Whether four- and seventeen-second figures are due; see.
   //   `MILLISECONDS_WINDOW_DISTRIBUTION`. Numeric rows below run either way.
   const ms_now_distribution = performance.now();
   const is_redrawing_distribution =
@@ -2983,7 +3010,7 @@ function refreshDiagnostics() {
     context_sparkline.stroke();
   }
 
-  // Averaged over last 200 ms rather than taken from newest frame: per-frame
+  // Averaged over last 200 ms rather than taken from newest frame: per-frame.
   //   reading changes several times faster than it can be read, and frame rate quoted
   //   off one frame swings by tens of fps between glances.
   const frames_recent = framesRecent();
@@ -2992,7 +3019,7 @@ function refreshDiagnostics() {
     total_recent += history_frame[(index_history_frame + FRAMES_HISTORY - 1 - i) % FRAMES_HISTORY];
   }
   const mean_frame = total_recent / frames_recent;
-  // **No band ceiling any more, and no share-of-work denominator.** Both belonged to
+  // **No band ceiling any more, and no share-of-work denominator.** Both belonged to.
   //   four-band tint this replaced: bands had to agree with curve above them, so
   //   tree was capped at whatever band that curve was drawing. Ramp is absolute --
   //   row's share of *frame*, over whole of it -- so it says same thing
@@ -3001,24 +3028,25 @@ function refreshDiagnostics() {
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)');
 
   // Each step of drawing process, as `mean over 200 ms (median over the ring)`:
-  // short mean is what reader watches while changing something, long median is
-  // settled figure to act on. Phase that has not run at all stays em dash.
+  //   short mean is what reader watches while changing something, long median is settled figure to
+  //   act on.
+  //   Phase that has not run at all stays em dash.
   for (const [name] of PHASES_DIAGNOSTIC) {
     if (!isPhaseShown(name)) continue; // Inside closed node; nobody is reading it.
     const median = medianPhaseHeld(name, is_redrawing_distribution);
     if (median === null) continue;
-    // Phase idle for whole window shows its median rather than nothing: it is step
+    // Phase idle for whole window shows its median rather than nothing: it is step.
     //   that runs, and "0.00" would claim it had run for free this window.
     const recent = meanPhase(name, frames_recent);
     const shown = recent === null ? median : recent;
     writeText(element_phase[name], shown.toFixed(2) + ' (' + median.toFixed(2) + ') ms');
-    // Count beside row's own name, so **every** value ends in `ms` and times
+    // Count beside row's own name, so **every** value ends in `ms` and times.
     //   down tree finish in one column. Zero is shown rather than left off: kind
     //   present but empty says something kind that is absent does not.
     writeText(element_tally[name], ' (' + count_phase[name] + ')');
     // And what that number is worth, in curve's own colours.
     if (element_row[name] === null) continue;
-    // Some rows keep neutral ink instead. **`idle` always**: it is frame's
+    // Some rows keep neutral ink instead. **`idle` always**: it is frame's.
     //   leftover rather than work done, so on healthy frame it is largest share of
     //   all and tinting it would paint best case in ramp's loudest colour. And
     //   where nothing has been measured yet there is no share to take.
@@ -3027,7 +3055,7 @@ function refreshDiagnostics() {
       writeColour(element_phase[name], '');
       continue;
     }
-    // **Against whole frame, not against work in it.** Row's colour answers
+    // **Against whole frame, not against work in it.** Row's colour answers.
     //   "how much of a frame goes here", so denominator is frame -- which makes
     //   ramp absolute reading reader can compare between sessions, rather than
     //   share of total that shrinks as page gets faster and repaints every row
@@ -3060,7 +3088,7 @@ function refreshDiagnostics() {
 //   and because section opens onto canvas that had no size until it did.
 function drawPoolGrid(count, capacity) {
   if (context_pool === null) return;
-  // **Gate runs before anything measures.** `devicePixelRatio` and revision are
+  // **Gate runs before anything measures.** `devicePixelRatio` and revision are.
   //   plain reads; canvas's width is not, and asking for it here -- after rows above
   //   have been written -- is what makes browser lay drawer out there and then.
   const ratio = Math.min(window.devicePixelRatio || 1, 2.5);
@@ -3087,7 +3115,7 @@ function drawPoolGrid(count, capacity) {
     break;
   }
   const pitch = cell + gap;
-  // **Drawn at device resolution, unlike its two neighbours.** Curve and sparkline
+  // **Drawn at device resolution, unlike its two neighbours.** Curve and sparkline.
   //   are 1.5px strokes and lose nothing to doubled display; grid of hard-edged squares
   //   this small does, and every cell edge would be soft on tablet this is read on.
   geometry_pool_drawn = { cell, gap, columns, rows, height };
@@ -3099,7 +3127,7 @@ function drawPoolGrid(count, capacity) {
   const cells = nimPoolCellColors();
   for (let slot = 0; slot < capacity; slot += 1) {
     const at = slot * 3;
-    // Keyed on bytes rather than floats, so triple that rounds to same colour
+    // Keyed on bytes rather than floats, so triple that rounds to same colour.
     //   is same entry; `rgbToCss` rounds to bytes anyway.
     const key = (Math.round(cells[at] * 255) << 16) | (Math.round(cells[at + 1] * 255) << 8) |
       Math.round(cells[at + 2] * 255);
@@ -3113,7 +3141,7 @@ function drawPoolGrid(count, capacity) {
       (slot % columns) * pitch, Math.floor(slot / columns) * pitch, cell, cell,
     );
   }
-  // What picture says, for reader who cannot see it. `title` beside it in
+  // What picture says, for reader who cannot see it. `title` beside it in.
   //   markup carries legend, which does not change.
   grid_pool.setAttribute(
     'aria-label', count + ' of ' + capacity + ' object slots in use, one cell each',
@@ -3128,20 +3156,22 @@ function drawPoolGrid(count, capacity) {
 /* ---------------------------------------------------------------------- */
 
 const svg_overlay = document.getElementById('overlay');
-// Read from marker.nim's own constants via nimOverlayMetrics, rather than hand-copied
-// literal that could drift out of sync with them.
+// Read from marker.nim's own constants via nimOverlayMetrics.
+//   Never hand-copied literal that could drift out of sync with them.
 const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER] =
   nimOverlayMetrics();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
-// Read from interaction.nim's own constants via nimMenuMetrics, for same reason
-// marker's sizes are: hand-copied literal here would drift from desktop's menu.
+// Read from interaction.nim's own constants via nimMenuMetrics, for same reason marker's sizes are:
+//   hand-copied literal here would drift from desktop's menu.
 const [HEIGHT_MENU_WEDGE, PADDING_MENU_WEDGE, ROUNDING_MENU_WEDGE,
   WIDTH_MENU_WEDGE_BORDER, RADIUS_MENU_CENTRE,
   ALPHA_MENU_WEDGE, ALPHA_MENU_UNOFFERED] = nimMenuMetrics();
-// Floats per wedge in nimDragMenuLayout: x, y, offered. Wedge's own colours come from
-// `.menu-wedge`, which is `.selection-menu button` -- see shell.html.
+// Floats per wedge in nimDragMenuLayout:
+//   x, y, offered.
+//   Wedge's own colours come from `.menu-wedge`, which is `.selection-menu button` -- see
+//   shell.html.
 const FLOATS_MENU_WEDGE = 3;
 
 // **Overlay reuses its own elements rather than rebuilding DOM each frame.**
@@ -3176,9 +3206,9 @@ function recycleOverlay() {
   staged_overlay = [];
 }
 
-// Stroke one object's marker into overlay. Every geometric decision -- which outline,
-// how far off object it sits, where its points land on screen -- was made by
-// marker.nim; this only turns flat array it reports into SVG elements.
+// Stroke one object's marker into overlay.
+//   Every geometric decision -- which outline, how far off object it sits, where its points land on
+//   screen -- was made by marker.nim; this only turns flat array it reports into SVG elements.
 //
 // **Interaction layer works in CSS pixels; render layer works in framebuffer
 // pixels.** Two layers, two units, and each is told which it is in: cursor, hover,
@@ -3227,18 +3257,17 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
   }
 
   if (kind === MARKER_RING) {
-    // Whole ring stays <circle>, element it has always been, so marker that is
-    // not filling draws exactly as it did before holds were animated. Only partial one
-    // becomes arc path.
+    // Keep whole ring as <circle>; only partial one becomes arc path.
+    //   Marker that is not filling draws exactly as plain ring.
     if (fraction >= 1) {
       stageEl('circle', {
         cx: points[0][0], cy: points[0][1], r: radius,
         fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       });
     } else if (fraction > 0) {
-      // Clockwise from twelve o'clock, measuring angle from top so sweep
-      // reads way every other progress dial does. With y downward, SVG's positive
-      // sweep direction (flag 1) is that same clockwise sense.
+      // Sweep clockwise from twelve o'clock, measuring angle from top.
+      //   Sweep then reads way every other progress dial does; with y downward, SVG's
+      //   positive sweep direction (flag 1) is that same clockwise sense.
       const [cx, cy] = points[0];
       const turn = fraction * 2 * Math.PI;
       const ex = cx + radius * Math.sin(turn), ey = cy - radius * Math.cos(turn);
@@ -3257,17 +3286,18 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
       });
     }
   } else if (kind === MARKER_LOOP || kind === MARKER_FRAME) {
-    // Frame is closed polyline too -- circle while it expands, screen's own
-    // rectangle once it arrives -- so it strokes through very same element plane's
-    // loop does rather than through <rect> of its own: one path for every closed
-    // outline, and nothing to keep in step when one of them changes.
+    // Stroke frame through very same element plane's loop does, as closed polyline.
+    //   Circle while it expands, screen's own rectangle once it arrives.
+    //   One path for every closed outline rather than <rect> of its own, and nothing to
+    //   keep in step when one of them changes.
     stageEl(is_closed ? 'polygon' : 'polyline', {
       points: points.map((p) => p[0] + ',' + p[1]).join(' '),
       fill: 'none', stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
     });
   } else if (kind === MARKER_BANDS) {
-    // Two runs in one array: header says how many points first band holds and
-    // whether each band closed, since either can be cut into arc by eye on its own.
+    // Two runs in one array:
+    //   header says how many points first band holds and whether each band closed, since either can
+    //   be cut into arc by eye on its own.
     const count_first = Math.round(marker[2]), is_closed_second = marker[3] > 0.5;
     const bands = [
       { run: points.slice(0, count_first), closed: is_closed },
@@ -3286,42 +3316,43 @@ function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
 function refreshOverlay(cursor) {
   recycleOverlay();
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  // One clock reading for whole overlay, before any pulse is shaped: every selected
-  // object's comet advances by that same step. Pulse carries its phase between frames
-  // rather than computing it from time -- see selection.PulseClock for why reading it
-  // off clock made every comet lurch moment camera moved.
+  // One clock reading for whole overlay, before any pulse is shaped:
+  //   every selected object's comet advances by that same step.
+  //   Pulse carries its phase between frames rather than computing it from time -- see
+  //   selection.PulseClock for why reading it off clock made every comet lurch moment camera moved.
   nimTickPulse(now());
 
-  // One marker per selected object, shaped to that object by marker.nim -- ring about
-  // point, rails flanking line, loop lying on plane. Hover draws very same
-  // marker at lower opacity, so both read as one family and hovering line previews
-  // exactly what selecting it will draw.
+  // Draw one marker per selected object, shaped to that object by marker.nim.
+  //   Ring about point, rails flanking line, loop lying on plane.
+  //   Hover draws very same marker at lower opacity, so both read as one family and
+  //   hovering line previews exactly what selecting it will draw.
   for (const slot of slots_selection) {
     if (slot === nimHoldSlot()) continue; // Its own swollen marker is drawn below.
     appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
     appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false);
   }
 
-  // Press maturing into selection fills that item's own marker as it goes, so
-  // wait reads as filling rather than as nothing happening. Drawn at selected weight
-  // it is about to become, and skipped for item already selected, whose finished
-  // marker is on screen already.
-  // Filled markers swell clear of finger doing filling. `nimBeginHold` is called
-  // from touch branch of `pointerdown` and from nowhere else, so hold in progress on
-  // this build is finger's by construction -- flag is passed rather than inferred
-  // inside marker.nim, which cannot see what kind of pointer is on glass.
-  // Drawn **even once slot is selected**, unlike every other overlay rule here:
-  // matured hold keeps its swollen marker until finger lifts and it settles, and
-  // plain selected marker underneath it is very size this is animating away from.
+  // Fill pressed item's own marker as press matures into selection.
+  //   Wait then reads as filling rather than as nothing happening.
+  //   Drawn at selected weight it is about to become, and skipped for item already
+  //   selected, whose finished marker is on screen already.
+  // Swell filled marker clear of finger doing filling.
+  //   `nimBeginHold` is called from touch branch of `pointerdown` and from nowhere
+  //   else, so hold in progress on this build is finger's by construction.
+  //   Flag is passed rather than inferred inside marker.nim, which cannot see what kind
+  //   of pointer is on glass.
+  // Draw even once slot is selected, unlike every other overlay rule here.
+  //   Matured hold keeps its swollen marker until finger lifts and it settles, and
+  //   plain selected marker underneath it is very size this is animating away from.
   const slot_hold = nimHoldSlot();
   if (slot_hold >= 0) {
     appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true,
       nimSwellHold(now()));
   }
 
-  // Hover and keyboard focus wear same marker at same weight: reader driving by
-  // key sees exactly what reader driving by pointer sees, and focus indicator WCAG
-  // 2.4.7 asks for is machinery already built rather than second one invented beside it.
+  // Hover and keyboard focus wear same marker at same weight:
+  //   reader driving by key sees exactly what reader driving by pointer sees, and focus indicator
+  //   WCAG 2.4.7 asks for is machinery already built rather than second one invented beside it.
   for (const slot of [nimHoverSlot(), nimFocusSlot()]) {
     if (slot >= 0 && slot !== slot_hold && !slots_selection.includes(slot)) {
       appendMarker(slot, ALPHA_MARKER_HOVER, w, h, 1);
@@ -3333,8 +3364,8 @@ function refreshOverlay(cursor) {
     if (src[2] > 0.5 && cursor) {
       const [sx, sy] = [src[0], src[1]];
       // Tinted by what releasing would do, not by which button started drag:
-      // operation's own colour over pair that makes something, reserved magenta
-      // over one that makes nothing, neutral while crossing empty space.
+      //   operation's own colour over pair that makes something, reserved magenta over one that
+      //   makes nothing, neutral while crossing empty space.
       const tint = nimDragTint();
       const stroke = 'rgba(' + Math.round(tint[0] * 255) + ',' +
         Math.round(tint[1] * 255) + ',' + Math.round(tint[2] * 255) + ',0.85)';
@@ -3342,11 +3373,11 @@ function refreshOverlay(cursor) {
         x1: sx, y1: sy, x2: cursor.x, y2: cursor.y,
         stroke: stroke, 'stroke-width': WIDTH_OVERLAY_LINE,
       });
-      // Which way round pair is being taken: band swelling into its own last
-      // stretch, same shape orientation pulse wears. Shaped by `marker.cometFor`
-      // across bridge rather than worked out here -- band's direction is
-      // gesture's own business, and this layer fills what it is handed. Empty while
-      // cursor rests on its own source, which points nowhere.
+      // Which way round pair is being taken:
+      //   band swelling into its own last stretch, same shape orientation pulse wears.
+      //   Shaped by `marker.cometFor` across bridge rather than worked out here -- band's direction
+      //   is gesture's own business, and this layer fills what it is handed.
+      //   Empty while cursor rests on its own source, which points nowhere.
       const comet = nimDragComet(w, h);
       if (comet.length) {
         const points = [];
@@ -3359,21 +3390,22 @@ function refreshOverlay(cursor) {
     appendChoiceMenu(w, h);
   }
 
-  // One swap for whole layer, in staged order. Also what detaches whatever last
+  // One swap for whole layer, in staged order. Also what detaches whatever last.
   //   frame drew and this one did not: those elements sit in pool, off DOM.
   svg_overlay.replaceChildren(...staged_overlay);
 }
 
-// Draw four wedges of open choice menu. Every position, colour, label and whether
-// wedge is offered comes from interaction.nim through nimDragMenuLayout/Labels, and
-// which one cursor stands in from nimDragMenuHighlighted -- same call release
-// resolves through, so highlight is never second opinion about where cursor is.
-// Wedge label's laid-out width, measured once per label and remembered. Still measured
-// from what browser actually laid it out as -- never estimated from character
-// count, which drifts moment face loaded is not one estimate was tuned
-// against -- but label's metrics cannot change between frames, and `getBBox` forces
-// layout, so paying it once per label is whole point. Cache empties when
-// document's fonts finish loading, in case early measure ran against fallback face.
+// Draw four wedges of open choice menu.
+//   Every position, colour, label and whether wedge is offered comes from interaction.nim through
+//   nimDragMenuLayout/Labels, and which one cursor stands in from nimDragMenuHighlighted -- same
+//   call release resolves through, so highlight is never second opinion about where cursor is.
+//   Wedge label's laid-out width, measured once per label and remembered.
+//   Still measured from what browser actually laid it out as -- never estimated from character
+//   count, which drifts moment face loaded is not one estimate was tuned against -- but label's
+//   metrics cannot change between frames, and `getBBox` forces layout, so paying it once per label
+//   is whole point.
+//   Cache empties when document's fonts finish loading, in case early measure ran against fallback
+//   face.
 const widths_menu_label = new Map();
 document.fonts.ready.then(() => widths_menu_label.clear());
 function widthMenuLabel(label) {
@@ -3409,8 +3441,9 @@ function appendChoiceMenu(w, h) {
     });
     const text = stageEl('text', {
       x: x, y: y, 'text-anchor': 'middle', 'dominant-baseline': 'central',
-      // Unoffered wedge is dimmed rather than dropped: gap where wedge should be is
-      // unreadable, and point of fixed compass is that choice never moves.
+      // Unoffered wedge is dimmed rather than dropped:
+      //   gap where wedge should be is unreadable, and point of fixed compass is that choice never
+      //   moves.
       'fill-opacity': is_offered ? 1 : 0.6,
       class: i === highlighted ? 'menu-wedge-label on' : 'menu-wedge-label',
     });
@@ -3447,7 +3480,7 @@ let pan_last = null;
 // Button held for camera orbit/pan fallback, while no operation drag is active.
 let button_mouse_drag = null;
 let cursor_last = null;
-// **What pointer asked for, for frame loop to answer once.** Pick and dolly
+// **What pointer asked for, for frame loop to answer once.** Pick and dolly.
 //   both walk whole scene, and pointer or trackpad reports several times between two
 //   frames; see frame loop, which is where each of these is spent.
 let is_hover_stale = false;
@@ -3460,7 +3493,7 @@ let has_long_press_fired = false;
 //   `slot_touch_down` is read once at pointerdown, while hover still holds it -- picking
 //   again later would report whatever finger has since moved over.
 let slot_touch_down = -1, is_touch_dragging = false;
-// Whether press landed on something drag may be built from, decided at press and
+// Whether press landed on something drag may be built from, decided at press and.
 //   held for gesture. **Press that can construct never moves camera, not even
 //   over pixels before slop is crossed** -- that is press-target rule mouse
 //   already follows by choosing its scheme at button. Touch reached same place by
@@ -3475,15 +3508,14 @@ let is_touch_press_constructing = false;
 //   it decides which scheme gesture enters, which is rule about gesture, not
 //   presentation number. Tap *timeout* stays here -- that one really is local.
 const TAP_MAX_MS = 350, TAP_MAX_MOVE = nimTapSlop();
-// How finger's construction drag comes to offer wheel. Mouse reads this off
+// How finger's construction drag comes to offer wheel. Mouse reads this off.
 //   button it pressed; touch has no second button, so it names one arming that waits.
 const ARMING_DRAG_TOUCH = nimDragArmingOnDwell();
 
-// Mouse click-vs-drag disambiguation -- plain click (no movement) selects/shift-selects;
-//   actual drag still applies join/meet/project exactly as before. *Whether* press
-//   stayed click is `interaction.isClick`'s to say: both of its bounds lived here as
-//   MOUSE_CLICK_MAX_MS/MOUSE_CLICK_MAX_MOVE until desktop needed same answer. All
-//   that is left here is which button went down, which is this layer's own numbering.
+// Tell mouse click from drag: plain click selects or shift-selects, drag builds.
+//   Whether press stayed click is `interaction.isClick`'s to say.
+//   All that is left here is which button went down, which is this layer's own
+//   numbering.
 let button_mouse_down = null;
 
 function pointerDist(points_flat) {
@@ -3497,7 +3529,7 @@ function pointerMid(points_flat) {
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
-  // Every gesture starts by saying it is not camera move; branches below say so where
+  // Every gesture starts by saying it is not camera move; branches below say so where.
   //   they are one. Cleared here rather than only at release because release can go
   //   missing -- pointer cancelled, touch sequence browser tears down -- and flag
   //   left true stops hover ring working for rest of session, with nothing on
@@ -3510,12 +3542,12 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse') {
     nimUpdateCursor(local.x, local.y);
     nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
-    // Note press before anything is decided about it: whether it was click is only
+    // Note press before anything is decided about it: whether it was click is only.
     //   knowable at release, and both branches below can end in one.
     nimBeginPress(now());
     button_mouse_down = e.button;
-    // Button says whether drag decides for you or asks; what it builds is read
-    // off operands at release. Mirrors `visualiser.armingFor`.
+    // Read off button whether drag decides for you or asks.
+    //   What it builds is read off operands at release; mirrors `visualiser.armingFor`.
     const arming_drag = nimDragKindForButton(e.button);
     if (arming_drag >= 0 && nimBeginDrag(arming_drag, now())) {
       button_mouse_drag = e.button;
@@ -3527,26 +3559,27 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  // Touch/pen: track for existing multi-touch orbit/pinch/pan gesture, for
-  // single-finger tap that toggles selection membership once selection exists, for
-  // long-press that starts one, and for drag off object that constructs.
+  // Touch/pen:
+  //   track for existing multi-touch orbit/pinch/pan gesture, for single-finger tap that toggles
+  //   selection membership once selection exists, for long-press that starts one, and for drag off
+  //   object that constructs.
   if (pointers.size === 1) {
     touch_down_at = performance.now();
     position_touch_down = local;
     has_touch_moved = false;
     has_long_press_fired = false;
-    // Pick item under finger now and hand press to Nim, which owns how long
+    // Pick item under finger now and hand press to Nim, which owns how long.
     //   hold takes and whether one is due. Frame loop asks it both, which is also what
     //   fills item's own marker -- timer firing on its own could not draw anything.
     //   Slot is kept as well: it is what decides, on first movement, whether this
     //   press was construction drag or camera orbit.
     nimUpdateCursor(local.x, local.y);
     nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
-    // Noted like any other press, so that finger's own construction drag is measured
+    // Noted like any other press, so that finger's own construction drag is measured.
     //   against where finger landed rather than against last mouse press.
     nimBeginPress(now());
     slot_touch_down = nimHoverSlot();
-    // Whether this press *can* become construction drag, decided here at press and
+    // Whether this press *can* become construction drag, decided here at press and.
     //   not re-asked -- same question `interaction.beginDrag` answers when slop is
     //   finally crossed, asked early because moves before that have to know which
     //   scheme they belong to. Sky is hovered wherever nothing else is and is refused
@@ -3556,7 +3589,7 @@ canvas.addEventListener('pointerdown', (e) => {
   } else {
     touch_down_at = null; // Second finger landed; this is pinch/pan gesture, not tap.
     nimCancelHold();
-    // ...and not construction either. Drag reader has visibly abandoned must not
+    // ...and not construction either. Drag reader has visibly abandoned must not.
     //   commit on whichever finger happens to lift first.
     if (is_touch_dragging) { nimCancelDrag(); is_touch_dragging = false; }
     slot_touch_down = -1;
@@ -3576,7 +3609,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'mouse') {
     nimUpdateCursor(cursor_last.x, cursor_last.y);
     if (button_mouse_drag !== null && typeof button_mouse_drag === 'number') {
-      // Re-check hover for drag's own destination preview -- next frame, not now; see
+      // Re-check hover for drag's own destination preview -- next frame, not now; see.
       //   `is_hover_stale`.
       is_hover_stale = true;
       return;
@@ -3587,15 +3620,15 @@ canvas.addEventListener('pointermove', (e) => {
     pointers.set(e.pointerId, current);
     const dx = current.x - prev.x, dy = current.y - prev.y;
     // Camera gesture is not hover, said at *move* rather than at press:
-    // press that never moves is click, and click has to know what it came down on.
+    //   press that never moves is click, and click has to know what it came down on.
     if (button_mouse_drag === 'orbit' || button_mouse_drag === 'pan') nimSetCameraDragging(true);
     if (button_mouse_drag === 'orbit') {
       nimCameraOrbit(
         -dx / canvas.clientWidth * Math.PI * 1.4, dy / canvas.clientHeight * Math.PI * 1.4,
       );
     } else if (button_mouse_drag === 'pan') {
-      // Where pointer was and where it is, not how far it moved: pan grabs
-      // level under it and carries that point along, which needs both ends of step.
+      // Where pointer was and where it is, not how far it moved:
+      //   pan grabs level under it and carries that point along, which needs both ends of step.
       nimCameraPanAt(
         prev.x - rect.left, prev.y - rect.top,
         current.x - rect.left, current.y - rect.top,
@@ -3613,7 +3646,7 @@ canvas.addEventListener('pointermove', (e) => {
   const reach_touch = position_touch_down &&
     Math.hypot(cursor_last.x - position_touch_down.x, cursor_last.y - position_touch_down.y);
   if (reach_touch > TAP_MAX_MOVE && !has_touch_moved) {
-    // One moment this press stops being press. Decided once, here, and never
+    // One moment this press stops being press. Decided once, here, and never.
     //   revisited: press target chooses scheme, so finger that came down on
     //   object constructs and one that came down on empty space moves camera.
     //   `nimBeginDrag` reads hover reading, which still holds touch-down slot
@@ -3622,7 +3655,7 @@ canvas.addEventListener('pointermove', (e) => {
     has_touch_moved = true;
     nimCancelHold(); // Moved, so this press will never mature into selection.
     if (slot_touch_down >= 0 && pointers.size === 1) {
-      // Finger has no second button to ask wheel for, so it is one pointer that
+      // Finger has no second button to ask wheel for, so it is one pointer that.
       //   still reaches wheel by standing still; see `interaction.MenuArming`.
       is_touch_dragging = nimBeginDrag(ARMING_DRAG_TOUCH, now());
     }
@@ -3638,7 +3671,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
 
   if (pointers.size === 1) {
-    // One finger that is not constructing and not holding is orbiting, which hover
+    // One finger that is not constructing and not holding is orbiting, which hover.
     //   ring should sit out; two branches above return before reaching here.
     //   Press that came down on object is not orbiting even now, before its slop is
     //   crossed: it is construction press waiting to become drag, and moving
@@ -3654,17 +3687,17 @@ canvas.addEventListener('pointermove', (e) => {
     const points_flat = [...pointers.values()];
     const separation = pointerDist(points_flat);
     const mid = pointerMid(points_flat);
-    // Straight in and out, at middle of frame -- **not** aimed at pinch's own
-    // midpoint way wheel is aimed at pointer. Pan below already moves
-    // view by that midpoint's own travel, so aiming zoom there too translates view
-    // twice for one gesture, and pinch anywhere but dead centre slides scene while it
-    // scales it. Wheel has no pan beside it, which is why same rule is right there.
+    // Zoom straight in and out, at middle of frame, not aimed at pinch's own midpoint.
+    //   Pan below already moves view by that midpoint's own travel, so aiming zoom
+    //   there too translates view twice for one gesture, and pinch anywhere but dead
+    //   centre slides scene while it scales it.
+    //   Wheel has no pan beside it, which is why aiming at pointer is right there.
     if (separation_pinch_start) nimCameraDolly(separation_pinch_start / Math.max(1, separation));
     separation_pinch_start = separation;
 
     if (pan_last) {
-      // Two fingers' own midpoint, grabbed and carried exactly as mouse drag is --
-      // same rule for both, so fix to one is fix to both.
+      // Grab and carry two fingers' own midpoint exactly as mouse drag is.
+      //   Same rule for both, so fix to one is fix to both.
       nimCameraPanAt(
         pan_last.x - rect.left, pan_last.y - rect.top,
         mid.x - rect.left, mid.y - rect.top,
@@ -3677,7 +3710,7 @@ canvas.addEventListener('pointermove', (e) => {
 
 function endMouseDrag(e) {
   if (typeof button_mouse_drag === 'number') {
-    // `nimEndDrag` resolves press itself: click over object comes back as
+    // `nimEndDrag` resolves press itself: click over object comes back as.
     //   `clicked_slot` with eagerly-begun drag already abandoned, actual drag as
     //   whatever it built. Which of two it was is `interaction.endDrag`'s answer, so
     //   this build and desktop cannot come to disagree about where line is.
@@ -3690,7 +3723,7 @@ function endMouseDrag(e) {
       else if (result.is_more) openApplyPickerOnOperands(cursor_last);
     }
   } else if (button_mouse_down !== null && nimIsClick(now())) {
-    // Plain click that began no drag to end -- so it landed on empty space, or on one
+    // Plain click that began no drag to end -- so it landed on empty space, or on one.
     //   thing that *is* empty space: plane at horizon, which nimBeginDrag refuses so this
     //   press could still have become orbit or pan. Clicking it selects it, which is
     //   only way pointer can, since it can never be dragged from. **Either button**,
@@ -3699,7 +3732,7 @@ function endMouseDrag(e) {
     if (nimIsHoverBackdrop() && nimHoverSlot() >= 0) {
       pickOnClick(nimHoverSlot(), button_mouse_down, e.shiftKey);
     } else if (button_mouse_down === 0 && !e.shiftKey) {
-      // Mirrors touch's own "tapping empty space always cancels" rule. Shift+click over
+      // Mirrors touch's own "tapping empty space always cancels" rule. Shift+click over.
       //   empty space is left no-op, not clear -- shift means "preserve what I have" --
       //   and so is right click, whose job on empty space is to pan.
       clearSelection();
@@ -3718,15 +3751,15 @@ function releasePointer(e) {
     return;
   }
 
-  // Touch: tap is same-finger down+up within time/distance bounds, with no second
-  // finger ever joining and no long-press already having fired -- resolves into
-  // selection toggle (see `handleTap`).
-  // Released, whether or not hold had matured; frame that matured it has already
+  // Touch:
+  //   tap is same-finger down+up within time/distance bounds, with no second finger ever joining
+  //   and no long-press already having fired -- resolves into selection toggle (see `handleTap`).
+  //   Released, whether or not hold had matured; frame that matured it has already
   //   selected item. Hold itself lives on for one settle, which is what shrinks
   //   marker back -- `nimIsHoldSpent` retires it in draw loop.
   nimReleaseHold(now());
   if (is_touch_dragging) {
-    // Construction drag ends exactly as mouse's own does -- same call, same three
+    // Construction drag ends exactly as mouse's own does -- same call, same three.
     //   outcomes -- because it *is* same gesture reached by different pointer.
     //   Drag is never also tap, so this branch runs instead of `handleTap`.
     //   `pointercancel` is browser saying it has taken gesture over, which is not
@@ -3760,11 +3793,12 @@ canvas.addEventListener('pointerleave', (e) => { if (e.buttons === 0) releasePoi
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  // Toward what pointer is over, way map zooms. Where that is comes from
-  // cursor this build already tracks, so wheel says it same way picking does.
+  // Toward what pointer is over, way map zooms.
+  //   Where that is comes from cursor this build already tracks, so wheel says it same way picking
+  //   does.
   const rect = canvas.getBoundingClientRect();
   nimUpdateCursor(e.clientX - rect.left, e.clientY - rect.top);
-  // **Summed here, applied once by frame loop.** Trackpad reports several notches
+  // **Summed here, applied once by frame loop.** Trackpad reports several notches.
   //   between two frames, and each dolly runs `picking.anchorZoomAt` to find what
   //   cursor is over -- full pick over every live slot, 11.4 ms on 1,024-object demo.
   //   Six notches frame measured 83.8 ms of picking on frame, for 136 ms gap, and
@@ -3788,7 +3822,7 @@ function handleTap(position_local) {
   nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
   const hovered = nimHoverSlot();
 
-  // Sky counts as empty space to *tap*, deliberately, though mouse click selects
+  // Sky counts as empty space to *tap*, deliberately, though mouse click selects.
   //   it: tapping empty space is only way finger has to dismiss selection, and
   //   spending it on selecting backdrop would take that away. Touch reaches sky
   //   through long-press instead -- which is where its marker fills anyway.
@@ -3829,15 +3863,15 @@ function populateSelectionMenuOptions(arity) {
 }
 
 function openSelectionMenuOp() {
-  // "apply" itself never moves -- it stays leftmost element of one single row
+  // "apply" itself never moves -- it stays leftmost element of one single row.
   //   throughout; this only animates picker+back group open immediately to its
   //   right (see .selection-menu-reveal's own max-width transition). hide/delete step
   //   aside while picking operation, matching old two-row design's own behaviour
   //   (its second row never carried them either) -- ✕ stays, as it always did.
   const arity = nimSelectionArity();
   populateSelectionMenuOptions(arity);
-  // Open on whatever was last applied at this arity rather than on head of list,
-  //   and ghost it straight away: picker's answer is worth seeing while choosing, not
+  // Open on whatever was last applied at this arity, and ghost it straight away.
+  //   Rather than on head of list; picker's answer is worth seeing while choosing, not
   //   only once apply is pressed.
   menu_selection_select.value = String(nimOperationRemembered(arity));
   ghostSelectionMenuOperation();
@@ -3856,9 +3890,9 @@ function ghostSelectionMenuOperation() {
 }
 
 function closeSelectionMenuOp() {
-  // Nothing is being chosen any more, so nothing is being previewed. Drawer's own
-  // section may still be open behind this menu, so ask it to speak up again rather than
-  // leaving view blank while control that has something to say is on screen.
+  // Nothing is being chosen any more, so nothing is being previewed.
+  //   Drawer's own section may still be open behind this menu, so ask it to speak up again rather
+  //   than leaving view blank while control that has something to say is on screen.
   nimClearPreview();
   ghostDrawerOperation();
   menu_selection_reveal.classList.remove('open');
@@ -3881,7 +3915,7 @@ function refreshSelectionMenu(position_local) {
   menu_selection.classList.add('show');
 }
 
-// Whether floating selection menu is currently up. Its own reader because it is now
+// Whether floating selection menu is currently up. Its own reader because it is now.
 //   question click rule asks (see `pickOnClick`), not just class this file toggles.
 function isSelectionMenuShown() {
   return menu_selection.classList.contains('show');
@@ -3895,7 +3929,7 @@ function hideSelectionMenu() {
 
 function positionSelectionMenuAt(position_local) {
   const rect = canvas.getBoundingClientRect();
-  // Reserved right margin covers widest state this popover reaches: op-picker
+  // Reserved right margin covers widest state this popover reaches: op-picker.
   //   row (select sized to its own longest notation, e.g. "𝐧 ∨ (𝐦 ∧ 𝐧☆)", plus "apply"/
   //   "back") now that select's own width is content-sized rather than truncated.
   menu_selection.style.left =
@@ -3904,7 +3938,7 @@ function positionSelectionMenuAt(position_local) {
 }
 
 function updateSelectionMenuPosition() {
-  // Keep menu glued to most-recently-selected slot's own screen position every
+  // Keep menu glued to most-recently-selected slot's own screen position every.
   //   frame it's open, generalizing old tap-menu's single-slot follow -- average
   //   across all selected would jump around as membership changes for no real benefit.
   if (!menu_selection.classList.contains('show') || slots_selection.length === 0) return;
@@ -3915,10 +3949,11 @@ function updateSelectionMenuPosition() {
 }
 
 menu_selection_apply.addEventListener('click', () => {
-  // First press: open picker (animates open to this same button's own right --
-  //   button itself never moves or relabels). Second press, picker already open:
-  //   commit with whatever operation is currently selected -- one button serves both
-  //   roles instead of separate "go" button appearing once picker opens.
+  // Serve both roles with one button: first press opens picker, second commits.
+  //   Picker animates open to this same button's own right; button itself never moves
+  //   or relabels.
+  //   Second press commits with whatever operation is currently selected, instead of
+  //   separate "go" button appearing once picker opens.
   if (!menu_selection_reveal.classList.contains('open')) {
     openSelectionMenuOp();
     return;
@@ -3933,8 +3968,8 @@ menu_selection_apply.addEventListener('click', () => {
   adoptConstructionSelection();
 });
 menu_selection_edit.addEventListener('click', () => {
-  // Reaching object's editor otherwise means opening drawer and hunting its row,
-  //   even with that object already picked and its own menu on screen.
+  // Offer edit here, since reaching object's editor otherwise means hunting its row.
+  //   Even with that object already picked and its own menu on screen.
   if (slots_selection.length !== 1) return; // Guard only -- hidden for 0 and 2+ anyway.
   openPanelTo(slots_selection[0]);
   hideSelectionMenu(); // Panel owns interaction now; pick itself stays.
@@ -3943,7 +3978,7 @@ menu_selection_edit.addEventListener('click', () => {
 menu_selection_back.addEventListener('click', closeSelectionMenuOp);
 
 menu_selection_hide.addEventListener('click', () => {
-  // Whichever way button reads is what it does, so objects it hid can be brought
+  // Whichever way button reads is what it does, so objects it hid can be brought.
   //   back from same place -- `nimSelectionAllHidden` owns what "hidden" means for
   //   whole selection, way row button reads `nimItemVisible` for one object.
   const show = nimSelectionAllHidden();
@@ -3964,7 +3999,7 @@ menu_selection_delete.addEventListener('click', () => {
 menu_selection_close.addEventListener('click', clearSelection);
 
 document.addEventListener('pointerdown', (e) => {
-  // Only tap/click landing outside canvas, menu itself, drawer
+  // Only tap/click landing outside canvas, menu itself, drawer.
   //   (interacting with Objects list/panel must not dismiss selection menu
   //   or clear selection), and top chip-row (save/load scene lives there too)
   //   should dismiss it here -- dismissing on canvas's own down event would race
@@ -3973,12 +4008,12 @@ document.addEventListener('pointerdown', (e) => {
       e.target !== canvas && !drawer.contains(e.target) && !row_chip.contains(e.target)) {
     clearSelection();
   }
-  // **Help is not dismissed by tap outside it**, unlike two popovers either side
+  // **Help is not dismissed by tap outside it**, unlike two popovers either side.
   //   of this. It is opened to be read *while* doing thing it describes -- that is
   //   whole reason it is cut by way of working rather than by kind of control -- and
   //   first touch of that thing used to close it, including touch on canvas. It goes
   //   when reader says so: its own close button, `?` that opened it, or escape.
-  // Top menu: same shape of guard, its own state/target -- tap landing outside
+  // Top menu: same shape of guard, its own state/target -- tap landing outside.
   //   popover and outside its own trigger button closes it.
   if (menu_top.classList.contains('show') && !menu_top.contains(e.target)
       && e.target !== button_menu
@@ -4012,7 +4047,7 @@ window.addEventListener('resize', resize);
 
 let ms_refresh_ui = 0;
 
-// Draw one frame, and nothing else. Split out of `frame()` so PNG button can draw and
+// Draw one frame, and nothing else. Split out of `frame()` so PNG button can draw and.
 //   read back **inside its own click**, without also re-running per-tick simulation that
 //   frame() does around it. Mirrors `visualiser.renderFrame`, which is split same way and
 //   for same reason: desktop's storyboard capture drives it directly too.
@@ -4020,7 +4055,7 @@ function renderFrame(now_seconds) {
   resize();
   const aspect = canvas.width / canvas.height;
 
-  // **Fine breakdown is gathered only where it is being read.** Bridge times
+  // **Fine breakdown is gathered only where it is being read.** Bridge times.
   //   placing and emitting halves of *every object*, so five-thousand-point scene reads
   //   clock three times per object per frame -- measured at 2.8 ms of 16 ms build,
   //   for rows that are not on screen unless this section is expanded. Per-kind
@@ -4030,16 +4065,16 @@ function renderFrame(now_seconds) {
     aspect, now_seconds, canvas.height, is_axes_shown, is_grid_shown, is_algebra_shown,
     !(drawer.classList.contains('open') && section_diagnostics.classList.contains('open')),
   );
-  // Bridge times its own three phases where only it can see them; this side just
-  // records what came back, into same rings its own phases use.
+  // Record bridge's own three phases into same rings this side's phases use.
+  //   Bridge times them where only it can see them.
   recordPhaseTime('build', data.ms_build);
-  // Frame's prologue and its view matrix, which used to belong to no row, and
+  // Frame's prologue and its view matrix, which used to belong to no row, and.
   //   residue named phases still fail to cover -- so `build` now sums from what is
   //   under it instead of merely being larger than sum.
   recordPhaseTime('camera', data.ms_camera);
   recordPhaseTime('matrix', data.ms_matrix);
   recordPhaseTime('unaccounted', data.ms_unaccounted);
-  // Second cut: same milliseconds re-divided by which side of algebra
+  // Second cut: same milliseconds re-divided by which side of algebra.
   //   boundary they fell on. Recorded like any other row and kept out of every sum by
   //   `PHASES_CUT_DIAGNOSTIC`.
   recordPhaseTime('placing', data.ms_placing);
@@ -4047,18 +4082,18 @@ function renderFrame(now_seconds) {
   // Measured between frames and reported by this one; see bridge's own note.
   recordPhaseTime('hover', data.ms_hover_pick);
   recordPhaseTime('furniture', data.ms_furniture);
-  // Scenery's own two halves, which bridge has clocked apart since grid's
+  // Scenery's own two halves, which bridge has clocked apart since grid's.
   //   segment budget went in: axes are three lines at any distance, grid however
   //   many ground reach asks for, and only split says which of them moved.
   recordPhaseTime('grid', data.ms_grid);
   recordPhaseTime('axes', data.ms_axes);
   recordPhaseTime('scene', data.ms_scene);
-  // Debug layer, beside scene rather than inside it, so per-kind rows still
+  // Debug layer, beside scene rather than inside it, so per-kind rows still.
   //   account for scene exactly. Zero whenever layer is off, which is its resting
   //   state.
   recordPhaseTime('algebra', data.ms_algebra);
   recordPhaseTime('flatten', data.ms_flatten);
-  // Scene phase broken out by kind of object each millisecond went to, with
+  // Scene phase broken out by kind of object each millisecond went to, with.
   //   counts kept beside them. Counts are latest rather than ringed: median count would
   //   lag deletion by two seconds and read as scene that still holds what it no longer
   //   does, while *time* wants its median precisely because single frame flickers.
@@ -4074,8 +4109,9 @@ function renderFrame(now_seconds) {
   const ratio_pixel = Math.min(window.devicePixelRatio || 1, 2.5);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  // Ribbon program's camera, once frame: widening runs in its vertex shader
-  // now, fed by exactly DrawScale fields mesh.expandRibbon reads.
+  // Ribbon program's camera, once frame:
+  //   widening runs in its vertex shader now, fed by exactly DrawScale fields mesh.expandRibbon
+  //   reads.
   gl.useProgram(program_ribbon);
   gl.uniformMatrix4fv(ribbon_uniforms.mvp, false, data.view_projection);
   gl.uniform3f(ribbon_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
@@ -4088,28 +4124,30 @@ function renderFrame(now_seconds) {
   gl.uniform1f(ribbon_uniforms.fog_full, data.fog_radius_full);
   gl.uniform1f(ribbon_uniforms.fog_gone, data.fog_radius_gone);
 
-  // World furniture first, with normal depth test/write. One record segment now --
-  // kept rather than re-uploaded where bridge says furniture is unchanged, since
-  // grid and axes are function of camera alone. Mirrors renderer.nim's own
-  // drawMeshes(MESHES_FURNITURE, ...) call exactly.
+  // World furniture first, with normal depth test/write.
+  //   One record segment now -- kept rather than re-uploaded where bridge says furniture is
+  //   unchanged, since grid and axes are function of camera alone.
+  //   Mirrors renderer.nim's own drawMeshes(MESHES_FURNITURE, ...) call exactly.
   if (!data.is_furniture_held) {
     count_furniture_held = uploadBuffer(data.furn_ribbon_verts, vbo.ribbon_furniture, 16);
   }
   drawRibbons(vbo.ribbon_furniture, count_furniture_held, 0, false);
 
-  // Scene objects last; opaque kinds before translucent washes, with depth writes
-  // off for those, so translucent plane never occludes line or point that happens to
-  // sit behind it -- it only tints over whatever was already drawn there. Mirrors
-  // renderer.nim's own drawMeshes(MESHES, ...) call exactly.
-  // Uploaded only where bridge rebuilt: held frame's buffers already hold this
-  //   frame's records, and re-uploading identical bytes is copy hold exists to
-  //   skip. Draws below still run -- framebuffer is cleared every frame.
+  // Draw scene objects last, opaque kinds before translucent washes.
+  //   Depth writes off for washes, so translucent plane never occludes line or point
+  //   that happens to sit behind it; it only tints over whatever was already drawn
+  //   there.
+  //   Mirrors renderer.nim's own drawMeshes(MESHES, ...) call exactly.
+  // Upload only where bridge rebuilt.
+  //   Held frame's buffers already hold this frame's records, and re-uploading
+  //   identical bytes is copy hold exists to skip.
+  //   Draws below still run; framebuffer is cleared every frame.
   if (!data.is_scene_held) count_ribbon_held = uploadBuffer(data.ribbon_verts, vbo.ribbon, 16);
   const count_ribbon = count_ribbon_held;
   drawRibbons(vbo.ribbon, count_ribbon, data.ribbon_over, false);
-  // Plane rims, one record each, straight after lines they are drawn like --
-  // widening is ribbon program's own, so this program takes same six camera
-  // uniforms and same pass.
+  // Draw plane rims, one record each, straight after lines they are drawn like.
+  //   Widening is ribbon program's own, so this program takes same six camera uniforms
+  //   and same pass.
   gl.useProgram(program_ring);
   gl.uniformMatrix4fv(ring_uniforms.mvp, false, data.view_projection);
   gl.uniform3f(ring_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
@@ -4127,9 +4165,10 @@ function renderFrame(now_seconds) {
   if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 7);
   const count_point = count_point_held;
   drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
-  // Washes: one record disc or dome, fanned out by their own vertex shaders and
-  // walked in scene order through run list. Both programs get this frame's matrix
-  // before walk, which switches between them per run.
+  // Washes:
+  //   one record disc or dome, fanned out by their own vertex shaders and walked in scene order
+  //   through run list.
+  //   Both programs get this frame's matrix before walk, which switches between them per run.
   gl.useProgram(program_disc);
   gl.uniformMatrix4fv(uniform_disc_mvp, false, data.view_projection);
   gl.useProgram(program_dome);
@@ -4142,10 +4181,11 @@ function renderFrame(now_seconds) {
   drawWashRuns(data.wash_runs, data.wash_run_over, false);
   gl.depthMask(true);
 
-  // Overlay over all of it, with no depth test at all -- which turns writes off with
-  // it, so nothing here occludes anything either. Second pass over every kind rather
-  // than tail on each: selected line drawn only after other lines is still tinted
-  // by plane's wash, which is later kind. Mirrors `renderer.drawMeshes`.
+  // Draw overlay over all of it, with no depth test at all.
+  //   Turns writes off with it, so nothing here occludes anything either.
+  //   Second pass over every kind rather than tail on each: selected line drawn only
+  //   after other lines is still tinted by plane's wash, which is later kind.
+  //   Mirrors `renderer.drawMeshes`.
   if (data.ribbon_over + data.ring_over + data.point_over + data.wash_run_over > 0) {
     gl.disable(gl.DEPTH_TEST);
     gl.useProgram(program_ribbon);
@@ -4157,8 +4197,9 @@ function renderFrame(now_seconds) {
     drawWashRuns(data.wash_runs, data.wash_run_over, true);
     gl.enable(gl.DEPTH_TEST);
   }
-  // Command submission only: GL runs asynchronously, so what CPU clock can honestly
-  // bracket here is upload and draw-call issue, not GPU's own work.
+  // Command submission only:
+  //   GL runs asynchronously, so what CPU clock can honestly bracket here is upload and draw-call
+  //   issue, not GPU's own work.
   recordPhaseTime('upload', performance.now() - ms_before_draw);
 }
 
@@ -4170,45 +4211,48 @@ function frame() {
   recordFrameTime(now_milliseconds - time_frame_last);
   time_frame_last = now_milliseconds;
 
-  // Whatever key is held moves camera by one frame's worth, before anything is drawn
-  // from placement. Scaled by frame's own elapsed time, so hold travels same
-  // distance on 60 Hz screen and 144 Hz one -- which way it moves camera is
-  // `interaction.driveHeld`'s to say, never this file's.
+  // Move camera by one frame's worth of whatever key is held, before drawing.
+  //   Scaled by frame's own elapsed time, so hold travels same distance on 60 Hz screen
+  //   and 144 Hz one.
+  //   Which way it moves camera is `interaction.driveHeld`'s to say, never this file's.
   nimDriveHeld(seconds_frame);
 
-  // Press that has now lasted long enough selects its item. Checked here rather than by
+  // Press that has now lasted long enough selects its item. Checked here rather than by.
   //   timer that fires on its own, so that moment marker finishes filling is
   //   moment selection lands -- `interaction.isHoldMature` is stated against same
   //   progress marker was just drawn at, so two cannot disagree by frame.
-  // One question, not two. Asking "is it mature" beside flag kept here for "have I
-  // already acted on that" needs two to agree, and they stopped agreeing once hold
-  // outlived its own release: this handler clears its flag on lift while hold is
-  // still settling and still mature, so next frame selected item again and toggled
-  // it straight back off. `nimTakeMaturedHold` answers once and never again.
+  // One question, not two.
+  //   Asking "is it mature" beside flag kept here for "have I already acted on that" needs two to
+  //   agree, and they stopped agreeing once hold outlived its own release:
+  //   this handler clears its flag on lift while hold is still settling and still mature, so next
+  //   frame selected item again and toggled it straight back off.
+  //   `nimTakeMaturedHold` answers once and never again.
   const slot_matured = nimTakeMaturedHold(now_seconds);
   if (slot_matured >= 0) {
-    // Selected, but hold is **kept**: its marker stays swollen clear of finger for
-    // as long as that finger is down, and settles only once `nimReleaseHold` says it may.
+    // Selected, but hold is **kept**:
+    //   its marker stays swollen clear of finger for as long as that finger is down, and settles
+    //   only once `nimReleaseHold` says it may.
     has_long_press_fired = true; // Still needed, to stop release also reading as tap.
     toggleSelection(slot_matured, position_touch_down);
   }
   // And retire it once that settle is spent, so finished hold stops being drawn at all.
   if (nimIsHoldSpent(now_seconds)) nimCancelHold();
 
-  // Recompute what drag in progress would build, and whether its dwell has come due,
-  // before frame that ghosts answer is assembled. Runs every frame rather than on
-  // pointermove alone: dwell is time passing over cursor that is deliberately still,
-  // so there is no move event to hang it off. Mirrors `visualiser.renderFrame`'s order.
-  // **One dolly and one pick frame, whatever pointer reported.** Both used to run
-  //   from event handlers, so device reporting faster than display paid for
-  //   answers nobody read: `picking.pickNearest` walks every live slot, and on
-  //   1,024-object demo that is 11.4 ms each. Coalesced here instead, after `nimDriveHeld`
-  //   so camera is where this frame will draw it, and before drag update and
-  //   build so both read answer this frame's cursor deserves.
-  //   Presses do not come through here: `pointerdown`, touch-down and `handleTap`
-  //   each need hover reading before their own handler returns -- it is what
-  //   `nimBeginDrag`, `slot_touch_down` and selection are decided from -- so they pick on
-  //   spot and are only paths that still do.
+  // Recompute what drag in progress would build, and whether its dwell has come due.
+  //   Before frame that ghosts answer is assembled.
+  //   Runs every frame rather than on pointermove alone: dwell is time passing over
+  //   cursor that is deliberately still, so there is no move event to hang it off.
+  //   Mirrors `visualiser.renderFrame`'s order.
+  // Take one dolly and one pick per frame, whatever pointer reported.
+  //   Device reporting faster than display would otherwise pay for answers nobody read:
+  //   `picking.pickNearest` walks every live slot.
+  //   Coalesced here, after `nimDriveHeld` so camera is where this frame will draw it,
+  //   and before drag update and build so both read answer this frame's cursor
+  //   deserves.
+  //   Presses do not come through here.
+  //     `pointerdown`, touch-down and `handleTap` each need hover reading before their
+  //     own handler returns, since `nimBeginDrag`, `slot_touch_down` and selection are
+  //     decided from it, so they pick on spot and are only paths that still do.
   if (deltas_wheel !== 0) {
     nimCameraDollyAt(
       Math.exp(deltas_wheel * 0.0012), canvas.clientWidth, canvas.clientHeight,
@@ -4225,32 +4269,34 @@ function frame() {
 
   renderFrame(now_seconds);
 
-  // Immediately after last draw call and before this callback yields, which is only
+  // Immediately after last draw call and before this callback yields, which is only.
   //   moment drawing buffer is still there to read; see `captureFrameIfAsked`.
   captureFrameIfAsked();
 
   const ms_before_overlay = performance.now();
   refreshOverlay(cursor_last);
   updateSelectionMenuPosition();
-  // Menu placement folded in with markers rather than kept as row of its own: it is
+  // Menu placement folded in with markers rather than kept as row of its own: it is.
   //   one early-returning call reading 0.00 in every state but one, and its old bracket
   //   enclosed overlay's own `recordPhaseTime` -- so that row had been charging its
   //   bookkeeping to itself.
   recordPhaseTime('overlay', performance.now() - ms_before_overlay);
 
-  // UI (camera fields, diagnostics) refresh at lower cadence than draw loop --
-  // no visual harm in number lagging frame, and it keeps DOM writes off hot path.
-  // Paced by clock rather than by frame count, so readings settle over same
-  // 200 ms they are averaged over however fast or slow machine is drawing: six frames
-  // is twelfth of second on desktop and third of one on labouring phone, and
-  // digits changed at whichever of those reader happened to be on.
-  // Travelling axis is redrawn at frame's own rate: panel refreshes five times
-  //   second, which would show glide as five steps rather than movement. Only while
-  //   it travels, and only while curve is actually on screen -- canvas inside
+  // Refresh UI (camera fields, diagnostics) at lower cadence than draw loop.
+  //   No visual harm in number lagging frame, and it keeps DOM writes off hot path.
+  //   Paced by clock rather than by frame count, so readings settle over same window
+  //   they are averaged over however fast or slow machine is drawing.
+  //     Fixed frame count is fraction of second on desktop and much longer on
+  //     labouring phone, and digits would change at whichever of those reader happened
+  //     to be on.
+  // Redraw travelling axis at frame's own rate.
+  //   Panel refreshes few times second, which would show glide as steps rather than
+  //   movement.
+  //   Only while it travels, and only while curve is actually on screen; canvas inside
   //   closed section reports no width.
   if (is_axis_gliding && exceedance !== null && exceedance.clientWidth > 0) drawExceedance();
   const ms_now_ui = performance.now();
-  // One reading for every kind of UI work this frame did, since `recordPhaseTime` writes
+  // One reading for every kind of UI work this frame did, since `recordPhaseTime` writes.
   //   phase rather than adding to it. Row build runs every frame while it has rows
   //   left; rest runs on its own five-a-second cadence; frame doing neither leaves
   //   slot unwritten, exactly as before.

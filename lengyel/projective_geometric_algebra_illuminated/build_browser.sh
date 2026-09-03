@@ -8,12 +8,12 @@
 #   visualiser/browser/glue.js        WebGL upload, DOM construction, pointer wiring
 #   fonts/*.woff2             vendored WOFF2 faces, kept locally and never committed
 #
-# `shell.html` ends on opening `<script>` and two scripts concatenate into it, so closing
-# tag is appended here rather than living in file that would not parse on its own. Font
-# bytes are injected at tokens so tracked shell stays 26 KB instead of ~940 KB.
-#
-# Override compiler with `NIM=/some/where/nim`; default is this fork's build, not on
-# `PATH`.
+# `shell.html` ends on opening `<script>` and two scripts concatenate into it.
+#   Closing tag is appended here rather than living in file that would not parse on its
+#   own.
+#   Font bytes are injected at tokens so tracked shell stays small.
+# Override compiler with `NIM=/some/where/nim`.
+#   Default is this fork's build, not on `PATH`.
 
 set -euo pipefail
 
@@ -23,8 +23,9 @@ DIR_OUT="${DIR_PROJECT}/bin"
 PATH_PAGE="${DIR_OUT}/rga_browser.html"
 PATH_BRIDGE="${DIR_OUT}/browser_bridge.js"
 
-# Fail with reason rather than broken page: missing face renders as box and missing
-#   script as blank canvas, neither reporting itself.
+# Fail with reason rather than broken page.
+#   Missing face renders as box and missing script as blank canvas, neither reporting
+#   itself.
 for path_needed in \
   "${NIM}" \
   "${DIR_PROJECT}/visualiser/browser/shell.html" \
@@ -36,12 +37,12 @@ done
 
 mkdir -p "${DIR_OUT}"
 
-# Compile every shared module desktop runs, through JS backend. Flags come from
-#   `browser_bridge.nim.cfg`, except `-d:release`, property of *this artefact*: suite's JS
-#   build must keep checks and stack traces, page must not carry them. Measured on opening
-#   scene, one `nimBuildFrame`: **36.7 ms debug against 21.9 ms released**. `-d:danger`
-#   measured 18.4 ms and rejected: buys tenth of frame by removing every bounds, range and
-#   field check from one build reader runs.
+# Compile every shared module desktop runs, through JS backend.
+#   Flags come from `browser_bridge.nim.cfg`, except `-d:release`, property of this
+#   artefact: suite's JS build must keep checks and stack traces, page must not carry
+#   them.
+#   `-d:danger` rejected: buys tenth of frame by removing every bounds, range and field
+#   check from one build reader runs; figures in `PROVENANCE.md`.
 "${NIM}" js --hints:off -d:release -o:"${PATH_BRIDGE}" \
   "${DIR_PROJECT}/visualiser/browser/browser_bridge.nim"
 

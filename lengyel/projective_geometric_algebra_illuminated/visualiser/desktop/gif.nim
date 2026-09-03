@@ -1,13 +1,13 @@
 ## Encode sequence of framebuffer readbacks as short looping animated GIF.
 ##
-## GIF is written out by hand, as PNG is in `image.nim`: container below compression is
-## handful of length- or count-tagged blocks. GIF's compression is LZW rather than
-## deflate, so no system codec carries it; encoder below is small enough to write
-## directly, on same "depend only where genuinely external" line `image.nim` draws.
-##
-## Every frame is quantized to one fixed colour cube, six levels per channel, rather than
-## searched for nearest colour: one integer divide per channel, no per-pixel palette
-## search. Runs only for storyboard's diagnostic capture, never in draw loop.
+## GIF is written out by hand, as PNG is in `image.nim`.
+##   Container below compression is handful of length- or count-tagged blocks.
+##   GIF's compression is LZW rather than deflate, so no system codec carries it.
+##   Encoder below is small enough to write directly, on same "depend only where
+##   genuinely external" line `image.nim` draws.
+## Every frame is quantized to one fixed colour cube, six levels per channel.
+##   One integer divide per channel, no per-pixel palette search.
+##   Runs only for storyboard's diagnostic capture, never in draw loop.
 ##
 ##   |-----------------------|-------------------------------------------------------|
 ##   | Block                 | Carries                                                |
@@ -18,12 +18,11 @@
 ##   | Image Descriptor      | This frame's LZW-compressed, quantized pixels.        |
 ##   |-----------------------|-------------------------------------------------------|
 ##
-## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being quantized,
-## as `image.nim` flips them while filtering, so no separate copy exists.
-##
-## Every scratch buffer (quantized indices, LZW dictionary, packed output) comes from
-## caller-owned frame arena, or is fixed-capacity table reset per call; nothing calls
-## allocator.
+## Rows arrive bottom-up, as OpenGL reads them, and are flipped while being quantized.
+##   As `image.nim` flips them while filtering, so no separate copy exists.
+## Every scratch buffer comes from caller-owned frame arena, or is fixed-capacity table
+## reset per call.
+##   Quantized indices, LZW dictionary, packed output; nothing calls allocator.
 ##
 ## Desktop-only; unreachable from browser build. See `visualiser.nim`'s "Render Paths".
 
@@ -43,8 +42,9 @@ const
   LEVELS_PER_CHANNEL {.define: "visualiser.gif_levels_per_channel".} = 6
     ## Set how many evenly spaced samples each channel is quantized to.
   BITS_CODE = 8
-    ## Fix LZW's root code size at 8 bits, so global colour table is simplest legal size,
-    ## 256, regardless of how few entries colour cube fills.
+    ## Fix LZW's root code size at 8 bits.
+    ##   Global colour table is then simplest legal size, 256, regardless of how few
+    ##   entries colour cube fills.
   COUNT_TABLE = 1 shl BITS_CODE
   COUNT_PALETTE = LEVELS_PER_CHANNEL*LEVELS_PER_CHANNEL*LEVELS_PER_CHANNEL
   CODE_CLEAR = COUNT_TABLE
@@ -52,8 +52,9 @@ const
   CODE_MAX = 4096
     ## Bound LZW dictionary size to what 12-bit code can name, as GIF's spec fixes.
   CAPACITY_DICT = 8192
-    ## Set fixed hash table's slot count: power of two, comfortably above `CODE_MAX`, so
-    ## linear probing stays cheap at load factor that ever occurs.
+    ## Set fixed hash table's slot count.
+    ##   Power of two, comfortably above `CODE_MAX`, so linear probing stays cheap at load
+    ##   factor that ever occurs.
 
 static:
   doAssert LEVELS_PER_CHANNEL in 2 .. 6,
@@ -71,8 +72,9 @@ static:
 #[ Colour Quantization ]#
 
 func levelToByte(level: int): uint8 =
-  ## Map quantized level, 0 up to but under `LEVELS_PER_CHANNEL`, to channel sample
-  ## spanning full 0..255 range, evenly spaced as "web-safe" cube is.
+  ## Map quantized level to channel sample spanning full 0..255 range.
+  ##   Level runs 0 up to but under `LEVELS_PER_CHANNEL`, evenly spaced as "web-safe" cube
+  ##   is.
   uint8((level * 255) div (LEVELS_PER_CHANNEL - 1))
 
 
@@ -84,7 +86,7 @@ func byteToLevel(value: uint8): int =
 func paletteIndex*(red, green, blue: uint8): uint8 =
   ## Quantize one pixel straight to its index in fixed colour cube.
   ##   Exported so test can compute same index written frame quantized to, independent
-  ## of decoding LZW stream.
+  ##   of decoding LZW stream.
   uint8(
     (byteToLevel(red)*LEVELS_PER_CHANNEL + byteToLevel(green))*LEVELS_PER_CHANNEL +
       byteToLevel(blue)
@@ -92,8 +94,9 @@ func paletteIndex*(red, green, blue: uint8): uint8 =
 
 
 func globalColorTable(): array[COUNT_TABLE*3, uint8] =
-  ## Build one colour cube every frame is quantized against; entries beyond cube's
-  ## `COUNT_PALETTE` stay black, and quantization never produces their index.
+  ## Build one colour cube every frame is quantized against.
+  ##   Entries beyond cube's `COUNT_PALETTE` stay black, and quantization never produces
+  ##   their index.
   for index in 0 ..< COUNT_PALETTE:
     let
       level_blue = index mod LEVELS_PER_CHANNEL
@@ -107,9 +110,9 @@ func globalColorTable(): array[COUNT_TABLE*3, uint8] =
 
 #[ LZW Dictionary ]#
 
-type LzwDict = object ## Hold (prefix code, next byte) to code, as fixed open-addressed
-  ## table rather than heap-backed `Table`: capacity is `CODE_MAX` at format's limit,
-  ## known at compile time, so nothing grows.
+type LzwDict = object ## Define map from (prefix code, next byte) to code.
+  ## Fixed open-addressed table rather than heap-backed `Table`.
+  ##   Capacity is `CODE_MAX` at format's limit, known at compile time, so nothing grows.
   keys_prefix: array[CAPACITY_DICT, int]
   keys_byte: array[CAPACITY_DICT, uint8]
   values: array[CAPACITY_DICT, int]
@@ -117,8 +120,9 @@ type LzwDict = object ## Hold (prefix code, next byte) to code, as fixed open-ad
 
 
 func hashKey(prefix: int; value: uint8): int =
-  ## Spread (prefix, value) pairs over table; multiplier is Knuth's constant for
-  ## multiplicative hashing, folded through `uint64` so it never overflows.
+  ## Spread (prefix, value) pairs over table.
+  ##   Multiplier is Knuth's constant for multiplicative hashing, folded through `uint64`
+  ##   so it never overflows.
   let combined = uint64(prefix)*2654435761'u64 xor uint64(value)
   int(combined and uint64(CAPACITY_DICT - 1))
 
@@ -151,8 +155,8 @@ proc insert(dict: var LzwDict; prefix: int; value: uint8; code: int) =
 
 #[ LZW Compression ]#
 
-type BitWriter = object ## Pack variable-width codes into caller-owned storage, least
-  ## significant bit first, tracking only how much is in use.
+type BitWriter = object ## Define packer of variable-width codes into caller-owned storage.
+  ## Least significant bit first, tracking only how much is in use.
   buffer: ptr UncheckedArray[uint8]
   capacity: int
   count: int
@@ -189,8 +193,9 @@ proc lzwEncode(
 ): BitWriter =
   ## Compress quantized pixel indices with GIF's variable-width LZW.
   ##   Root codes 0 ..< `COUNT_TABLE` are palette indices; clear and end codes follow, and
-  ## every invented code follows those. Output is reserved at double input plus slack:
-  ## LZW never expands data this repetitive by more than occasional wider code.
+  ##   every invented code follows those.
+  ##   Output is reserved at double input plus slack: LZW never expands data this
+  ##   repetitive by more than occasional wider code.
   dict.clear()
   let capacity_output = 2*len(indices) + 256
   var
@@ -213,8 +218,9 @@ proc lzwEncode(
     if next_code < CODE_MAX:
       dict.insert(code_current.get, value, next_code)
       inc next_code
-      # GIF's LZW widens step later than naive "table is now full" reading: code
-      # 2^width_code still fits current width, so only code after that forces growth.
+      # Widen one step later than naive "table is now full" reading.
+      #   Code 2^width_code still fits current width, so only code after that forces
+      #   growth.
       if next_code > (1 shl width_code) and width_code < 12: inc width_code
     else:
       writer.packCode(CODE_CLEAR, width_code)
@@ -238,8 +244,8 @@ func toLittleEndian16(value: uint16): array[2, uint8] =
 
 
 proc writeSubBlocks(file: File; data: openArray[uint8]) =
-  ## Write compressed stream as GIF's length-prefixed sub-blocks, at most 255 bytes each,
-  ## terminated by zero-length block.
+  ## Write compressed stream as GIF's length-prefixed sub-blocks.
+  ##   At most 255 bytes each, terminated by zero-length block.
   var offset = 0
   while offset < len(data):
     let count = min(255, len(data) - offset)
@@ -284,9 +290,9 @@ proc writeGif*(
   arena: var Arena; path: string; width, height: int;
   frames_bottom_up: openArray[uint8]; count_frames: int; centiseconds_delay: int
 ) =
-  ## Write `count_frames` frames as one looping animated GIF, flipping rows so each reads
-  ## top-down. `frames_bottom_up` holds every frame back to back, each same tightly packed
-  ## RGB triples `capturePixels` reads and `writePng` takes.
+  ## Write `count_frames` frames as one looping animated GIF, flipping rows to read top-down.
+  ##   `frames_bottom_up` holds every frame back to back, each same tightly packed RGB
+  ##   triples `capturePixels` reads and `writePng` takes.
   ##   Every scratch buffer comes from `arena`; caller resets it once this returns.
   doAssert width > 0 and height > 0,
     &"Image must have positive extent; got `{width}x{height}`."
@@ -306,7 +312,7 @@ proc writeGif*(
   let table = globalColorTable()
   discard file.writeBytes(table, 0, len(table))
 
-  # Application Extension: loop forever, as still storyboard is poor animated one.
+  # Loop forever through Application Extension, as still storyboard is poor animated one.
   discard file.writeChars("!\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00", 0, 19)
 
   var dict: LzwDict
