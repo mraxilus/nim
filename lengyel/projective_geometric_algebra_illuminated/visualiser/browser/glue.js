@@ -3423,10 +3423,14 @@ function widthMenuLabel(label) {
   return width;
 }
 
+// Cache wedge labels: fixed for build, so bridge is asked once rather than per frame.
+let labels_menu = null;
+
 function appendChoiceMenu(w, h) {
   const layout = nimDragMenuLayout();
   if (layout.length === 0) return;
-  const labels = nimDragMenuLabels();
+  if (labels_menu === null) labels_menu = nimDragMenuLabels();
+  const labels = labels_menu;
   const highlighted = nimDragMenuHighlighted();
   const centre = nimDragMenuCentre();
   for (let i = 0; i * FLOATS_MENU_WEDGE < layout.length; i += 1) {

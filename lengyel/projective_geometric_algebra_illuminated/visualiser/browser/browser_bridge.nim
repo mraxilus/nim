@@ -96,6 +96,29 @@ proc view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
 proc `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
   ## Write one float into flat buffer.
 
+# Fill fixed-size answers by template, not `openArray`.
+#   Array literal passed to proc is `new Float32Array` per call on this backend; template
+#   expands to plain stores (read in emitted JS).
+template emptied(flat: var FlatFloats): FlatBuffer =
+  ## Report flat buffer as empty view.
+  flat.used = 0
+  flat.view
+
+template fill2(flat: var FlatFloats, a, b: float32): FlatBuffer =
+  ## Replace contents with two floats, and report them as view.
+  flat[0] = a
+  flat[1] = b
+  flat.used = 2
+  flat.view
+
+template fill3(flat: var FlatFloats, a, b, c: float32): FlatBuffer =
+  ## Replace contents with three floats, and report them as view.
+  flat[0] = a
+  flat[1] = b
+  flat[2] = c
+  flat.used = 3
+  flat.view
+
 
 
 #[ Panel State ]#
@@ -267,6 +290,14 @@ var
   FLAT_DISC = initFlatFloats(DISCS_MAX*13)
   FLAT_DOME = initFlatFloats(DOMES_MAX*8)
   FLAT_RUNS = initFlatFloats((DISCS_MAX + DOMES_MAX)*3)
+  # Hold small overlay answers asked per frame, refilled in place through `fill`.
+  #   Fresh sequence per call was allocation per frame of every drag and open menu.
+  FLAT_ANCHOR = initFlatFloats(3)
+  FLAT_TINT = initFlatFloats(3)
+  FLAT_COMET = initFlatFloats(2*POINTS_MARKER_PULSE)
+  FLAT_GRID = initFlatFloats(2)
+  FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
+  FLAT_MENU_CENTRE = initFlatFloats(2)
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
 
 
@@ -1345,21 +1376,26 @@ proc nimDragSourceSlot(): cint {.exportc.} = cint(INTERACTION.index_source)
   ## Report item drag started from; meaningful only while `nimDragActive()`.
   ##   Mirrors `interaction.index_source`, field already paired with that guard.
 
-proc nimDragTint(): seq[float32] {.exportc.} =
+proc nimDragTint(): FlatBuffer {.exportc.} =
   ## Report colour rubber-band wears right now, as `[r, g, b]` triple.
   ##   From `interaction.inkOfDrag`, so this file keeps no copy of operation-to-ink table.
-  toRgbSeq(inkOfDrag(INTERACTION, SCENE.inkNext).colour)
+  ##   View over `FLAT_TINT`, refilled per frame of drag.
+  # Bind ink, not colour: `colour` is `lent`, and bound to `let` it copies (read in emitted
+  #   JS); read inline three times instead.
+  let ink = inkOfDrag(INTERACTION, SCENE.inkNext)
+  FLAT_TINT.fill3(ink.colour.red, ink.colour.green, ink.colour.blue)
 
 
-proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
+proc nimDragComet(width, height: cint): FlatBuffer {.exportc.} =
   ## Report drag band's head flat, `[x0, y0, x1, y1, ...]`, as one closed outline.
   ##   For overlay to fill over band.
+  ##   View over `FLAT_COMET`, refilled per frame of drag.
   ##   Shaped by `marker.cometFor`, aimed from where drag source is drawn (plane's creation
   ##   anchor included) at this module's cursor rather than presentation layer's.
   ##     Geometry belongs on side owning gesture.
   ##   Empty where no drag is in flight, source's anchor is behind eye, or cursor rests on
   ##   anchor.
-  if not INTERACTION.is_dragging: return
+  if not INTERACTION.is_dragging: return FLAT_COMET.emptied
   # Read through overlay cache and by-slot readers.
   #   Runs per frame of every drag; fresh extent and matrix plus whole-scene copy through
   #   `SCENE[slot]` would be paid each time.
@@ -1368,12 +1404,16 @@ proc nimDragComet(width, height: cint): seq[float32] {.exportc.} =
     SCENE.geometryOf(INTERACTION.index_source),
     SCENE.anchorOverrideAt(INTERACTION.index_source), SCALE_OVERLAY,
   )
-  if anchor.isNone: return
+  if anchor.isNone: return FLAT_COMET.emptied
   let screen = projectToScreen(VIEW_PROJECTION_OVERLAY, int(width), int(height), anchor.get)
-  if not screen.isInFront: return
+  if not screen.isInFront: return FLAT_COMET.emptied
   let comet = cometFor(screen, INTERACTION.cursor)
-  if comet.isNone: return
-  for point in comet.get: result.add([cfloat(point.x), cfloat(point.y)])
+  if comet.isNone: return FLAT_COMET.emptied
+  for i, point in comet.get:
+    FLAT_COMET[2*i] = float32(point.x)
+    FLAT_COMET[2*i + 1] = float32(point.y)
+  FLAT_COMET.used = 2*len(comet.get)
+  FLAT_COMET.view
 
 
 proc nimMenuMetrics(): seq[float32] {.exportc.} =
@@ -1392,10 +1432,11 @@ proc nimMenuMetrics(): seq[float32] {.exportc.} =
 proc nimDragMenuOpen(): bool {.exportc.} = INTERACTION.menu.isSome
   ## Report whether choice menu is open on drag in progress.
 
-proc nimDragMenuCentre(): seq[float32] {.exportc.} =
+proc nimDragMenuCentre(): FlatBuffer {.exportc.} =
   ## Report where open menu is centred, in canvas pixels, or empty where none is.
-  if INTERACTION.menu.isNone: return
-  @[float32(INTERACTION.menu.get.x), float32(INTERACTION.menu.get.y)]
+  ##   View over `FLAT_MENU_CENTRE`, refilled per frame menu is open.
+  if INTERACTION.menu.isNone: return FLAT_MENU_CENTRE.emptied
+  FLAT_MENU_CENTRE.fill2(float32(INTERACTION.menu.get.x), float32(INTERACTION.menu.get.y))
 
 
 proc nimDragMenuLabels(): seq[cstring] {.exportc.} =
@@ -1403,14 +1444,15 @@ proc nimDragMenuLabels(): seq[cstring] {.exportc.} =
   for choice in DragChoice: result.add(cstring(labelOf(choice)))
 
 
-proc nimDragMenuLayout(): seq[float32] {.exportc.} =
+proc nimDragMenuLayout(): FlatBuffer {.exportc.} =
   ## Lay open menu out, three floats per wedge in `DragChoice` order.
   ##   Centre x and y in canvas pixels, then offered as 1 or 0.
-  ##   Flat as `nimSelectionMarker` is.
+  ##   Flat as `nimSelectionMarker` is, view over `FLAT_MENU` refilled per frame menu is
+  ##   open.
   ##   No hue: label wears `--ink`; `interaction.inkOf` answers for rubber-band and
   ##   drawer's legend.
   ##   Empty where no menu is open.
-  if INTERACTION.menu.isNone: return
+  if INTERACTION.menu.isNone: return FLAT_MENU.emptied
   let
     centre = INTERACTION.menu.get
     over = destinationOf(INTERACTION)
@@ -1426,7 +1468,12 @@ proc nimDragMenuLayout(): seq[float32] {.exportc.} =
           choice, SCENE.geometryOf(INTERACTION.index_source),
           SCENE.geometryOf(over.get),
         ))
-    result.add([float32(at.x), float32(at.y), float32(ord(is_offered))])
+    let base = 3*ord(choice)
+    FLAT_MENU[base] = float32(at.x)
+    FLAT_MENU[base + 1] = float32(at.y)
+    FLAT_MENU[base + 2] = float32(ord(is_offered))
+  FLAT_MENU.used = 3*(ord(DragChoice.high) + 1)
+  FLAT_MENU.view
 
 
 proc nimDragMenuHighlighted(): cint {.exportc.} =
@@ -1489,8 +1536,9 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
   )
 
 
-proc nimGridMetrics(width, height: cint): seq[float32] {.exportc.} =
+proc nimGridMetrics(width, height: cint): FlatBuffer {.exportc.} =
   ## Report `[size_cell, world_per_pixel]` for ground grid as drawn right now.
+  ##   View over `FLAT_GRID`, refilled per frame.
   ##   Cell's size in world units, and how much world one screen pixel spans at height
   ##   grid is laid at.
   ##   `[0, 0]` where no ground is drawn (eye above fog's reach), read as "no scale to
@@ -1502,18 +1550,23 @@ proc nimGridMetrics(width, height: cint): seq[float32] {.exportc.} =
   ensureViewOverlay(int(width), int(height))
   template scale: DrawExtent = SCALE_OVERLAY
   let size_cell = sizeCellGridAt(scale.extentFurniture, scale)
-  if size_cell.isNone: return @[0.0'f32, 0.0'f32]
+  if size_cell.isNone: return FLAT_GRID.fill2(0.0'f32, 0.0'f32)
   # Measure at ground point below eye, where reported cell is laid.
   #   Pixel spans more world further away.
   let below = position(wedgeAnti(
     wedge(scale.eye_point, toMultivector(Direction(x: 0, y: 0, z: -1))), groundPlane()
   ))
-  let at = if below.isSome: below.get else: scale.eye
-  @[float32(size_cell.get), float32(worldPerPixelAt(at, scale))]
+  # Pass place straight through: bound to `let`, `Position` is `nimCopy` per frame (read in
+  #   emitted JS).
+  let world_per_pixel =
+    if below.isSome: worldPerPixelAt(below.get, scale) else: worldPerPixelAt(scale.eye, scale)
+  FLAT_GRID.fill2(float32(size_cell.get), float32(world_per_pixel))
 
 
-proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
+proc nimAnchorScreen(slot, width, height: cint): FlatBuffer {.exportc.} =
   ## Project item's representative point onto screen pixels, as `[x, y, is_in_front]`.
+  ##   View over `FLAT_ANCHOR`, refilled per call: asked per frame for band's source and
+  ##   for menu's anchor.
   ##   Point `mesh.anchorFor` and `visualiser.drawInteractionOverlay` use, so browser's
   ##   hover ring and drag rubber-band draw as 2D overlay where desktop draws them.
   ##   Item's drawn centre, through anchor-aware `anchorFor`.
@@ -1526,18 +1579,20 @@ proc nimAnchorScreen(slot, width, height: cint): seq[float32] {.exportc.} =
   ##   Plane at horizon reports middle of view: it has no place in scene, so menu goes to
   ##   centre of frame `marker.markerFrame` draws around it.
   ##   Duplicated by constraint in `visualiser.anchorOfSelection`; fix both or neither.
-  if not SCENE.isAlive(int(slot)): return @[0.0'f32, 0.0'f32, 0.0'f32]
+  if not SCENE.isAlive(int(slot)): return FLAT_ANCHOR.fill3(0.0'f32, 0.0'f32, 0.0'f32)
   if SCENE.geometryOf(int(slot)).isHorizonPlane:
-    return @[0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32]
+    return FLAT_ANCHOR.fill3(0.5'f32*float32(width), 0.5'f32*float32(height), 1.0'f32)
   ensureViewOverlay(int(width), int(height))
   # Read by slot, never `SCENE[slot]`.
   #   `Item` holds `Scene` by value on JS backend, so constructing one copies whole scene.
   let anchor = anchorFor(
     SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCALE_OVERLAY
   )
-  if anchor.isNone: return @[0.0'f32, 0.0'f32, 0.0'f32]
+  if anchor.isNone: return FLAT_ANCHOR.fill3(0.0'f32, 0.0'f32, 0.0'f32)
   let screen = projectToScreen(VIEW_PROJECTION_OVERLAY, int(width), int(height), anchor.get)
-  @[cfloat(screen.x), cfloat(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)]
+  FLAT_ANCHOR.fill3(
+    float32(screen.x), float32(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)
+  )
 
 
 proc nimSelectionMarker(
