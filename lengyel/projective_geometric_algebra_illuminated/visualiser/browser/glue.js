@@ -2362,7 +2362,10 @@ function medianPhase(name) {
 //   computes its own on spot rather than reading em dash for up to second.
 const median_phase_last = {};
 function medianPhaseHeld(name, is_recomputing) {
-  if (is_recomputing || median_phase_last[name] === undefined) {
+  // Phase held as never run is asked again every tick: it is cheap to ask, and row.
+  //   coming alive between medians ticks would otherwise stay em dash for up to second.
+  const held = median_phase_last[name];
+  if (is_recomputing || held === undefined || held === null) {
     median_phase_last[name] = medianPhase(name);
   }
   return median_phase_last[name];
@@ -2735,6 +2738,98 @@ function bandOfExceedance(milliseconds) {
   }
   return BUDGETS_EXCEEDANCE.length - 1;
 }
+// Axis layer of exceedance curve: rules, marks and their labels, cached between draws.
+//   Same size as curve's canvas; `drawExceedance` composites it under curve.
+const axis_exceedance = document.createElement('canvas');
+const context_axis_exceedance = axis_exceedance.getContext('2d');
+let key_axis_exceedance = ''; // Size, extent and mode layer was drawn for; empty before first.
+
+function drawAxisExceedance(context, w, h, milliseconds_full, xOf, yOf) {
+  if (axis_exceedance.width !== w) axis_exceedance.width = w;
+  if (axis_exceedance.height !== h) axis_exceedance.height = h;
+  context.clearRect(0, 0, w, h);
+  context.font = FONT_EXCEEDANCE;
+  context.textBaseline = 'top';
+  // Recessive rules at heights axis actually resolves, each named except floor.
+  //   Linear takes quarter at time up to 100%, which is what curve's own arrival is
+  //   read against. Log takes decades instead, up to 99.9% its three decades
+  //   actually reach -- ceiling is whole reason to switch to it, so it is last
+  //   thing that should go unnamed. **Neither names 0%**: it is where every curve starts,
+  //   so label states what shape already says, and at very bottom of canvas
+  //   it has nowhere to sit that is not either off plot or on top of label above.
+  const gridlines = is_exceedance_log
+    ? [{ share: 0 }, { share: 0.9, label: '90%' }, { share: 0.99, label: '99%' },
+      { share: 0.999, label: '99.9%' }]
+    : [{ share: 0 }, { share: 0.25, label: '25%' }, { share: 0.5, label: '50%' },
+      { share: 0.75, label: '75%' }, { share: 1, label: '100%' }];
+  context.strokeStyle = 'rgba(139, 150, 163, 0.18)';
+  context.lineWidth = 1;
+  for (const gridline of gridlines) {
+    // Held half-pixel inside canvas at two ends, where line would otherwise.
+    //   straddle edge and render at half its weight or not at all.
+    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(w, y);
+    context.stroke();
+    if (gridline.label === undefined) continue;
+    // Under its own line and at left margin, which rates along top and.
+    //   curve's own climb both leave clear.
+    context.fillStyle = 'rgba(139, 150, 163, 0.75)';
+    context.fillText(gridline.label, 2, y + 1);
+  }
+  // Budgets themselves, **each named twice**: rate at top of line and.
+  //   duration at its foot, so one dashed mark answers both "how smooth is that" and "how
+  //   long is that" and reader never has to convert between them in their head.
+  //   Both sit *over* plot rather than in rows of their own. Rows were tried, and they
+  //   do buy clearance -- curve reaches 100% in top right, under slowest mark's
+  //   label, and 0% in bottom left, under fastest mark's duration -- but they cost
+  //   22px of drawer that has none to spare, and number reader can find beside its
+  //   own line is worth more than guarantee it is never crossed. Labels are drawn
+  //   before curve, so where two meet it is curve that reads as continuous.
+  //   Drawn only where axis actually reaches them: window with nothing slower than
+  //   120 fps in it has no business drawing others, and 15 fps mark stays away
+  //   until window holds frame that slow. Floor is set so slowest mark
+  //   axis is guaranteed to reach -- 30 fps -- stands clear of right edge with room
+  //   for its own labels; see `SHARE_MARK_LEAST`.
+  context.setLineDash([2, 3]);
+  for (const budget of BUDGETS_EXCEEDANCE) {
+    if (!Number.isFinite(budget.milliseconds)) continue;
+    if (budget.milliseconds > milliseconds_full) continue;
+    const x = Math.round(xOf(budget.milliseconds)) + 0.5;
+    context.strokeStyle = 'rgba(139, 150, 163, 0.30)';
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, h);
+    context.stroke();
+    context.fillStyle = 'rgba(139, 150, 163, 0.75)';
+    // Inside line where it would otherwise run off right edge. Both rows take.
+    //   same side, so rate and its duration stay in one column whichever way they go.
+    const is_room = x + 14 < w;
+    context.textAlign = is_room ? 'left' : 'right';
+    const x_label = x + (is_room ? 2 : -2);
+    // Haloed against drawer's own surface before being filled. These sit over plot.
+    //   and curve crosses fastest ones outright -- duration bisected by stroke
+    //   of same weight is unreadable, and this is what buys numbers their place
+    //   inside without asking chart for height it does not have.
+    const write = (text, y, baseline) => {
+      context.textBaseline = baseline;
+      context.strokeStyle = HALO_LABEL_EXCEEDANCE;
+      context.lineWidth = 3;
+      context.setLineDash([]);
+      context.strokeText(text, x_label, y);
+      context.fillText(text, x_label, y);
+      context.lineWidth = 1;
+      context.setLineDash([2, 3]);
+    };
+    write(budget.label, 1, 'top');
+    write(budget.milliseconds.toFixed(1), h - 1, 'bottom');
+  }
+  context.setLineDash([]);
+  context.textAlign = 'left';
+  context.textBaseline = 'top';
+}
+
 function drawExceedance() {
   if (context_exceedance === null) return;
   const w = exceedance.clientWidth || 300, h = exceedance.clientHeight || 74;
@@ -2764,84 +2859,16 @@ function drawExceedance() {
       }
     : (share_below) => h - share_below * h;
 
-  context_exceedance.font = FONT_EXCEEDANCE;
-  context_exceedance.textBaseline = 'top';
-  // Recessive rules at heights axis actually resolves, each named except floor.
-  //   Linear takes quarter at time up to 100%, which is what curve's own arrival is
-  //   read against. Log takes decades instead, up to 99.9% its three decades
-  //   actually reach -- ceiling is whole reason to switch to it, so it is last
-  //   thing that should go unnamed. **Neither names 0%**: it is where every curve starts,
-  //   so label states what shape already says, and at very bottom of canvas
-  //   it has nowhere to sit that is not either off plot or on top of label above.
-  const gridlines = is_exceedance_log
-    ? [{ share: 0 }, { share: 0.9, label: '90%' }, { share: 0.99, label: '99%' },
-      { share: 0.999, label: '99.9%' }]
-    : [{ share: 0 }, { share: 0.25, label: '25%' }, { share: 0.5, label: '50%' },
-      { share: 0.75, label: '75%' }, { share: 1, label: '100%' }];
-  context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.18)';
-  context_exceedance.lineWidth = 1;
-  for (const gridline of gridlines) {
-    // Held half-pixel inside canvas at two ends, where line would otherwise.
-    //   straddle edge and render at half its weight or not at all.
-    const y = Math.min(h - 0.5, Math.max(0.5, Math.round(yOf(gridline.share)) + 0.5));
-    context_exceedance.beginPath();
-    context_exceedance.moveTo(0, y);
-    context_exceedance.lineTo(w, y);
-    context_exceedance.stroke();
-    if (gridline.label === undefined) continue;
-    // Under its own line and at left margin, which rates along top and.
-    //   curve's own climb both leave clear.
-    context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    context_exceedance.fillText(gridline.label, 2, y + 1);
+  // Rules, marks and labels come off cached layer, redrawn only where axis moved.
+  //   Some thirty text operations, each haloed, were most of what drawing curve cost, for
+  //   axis that changes only while it glides; figures in `PROVENANCE.md`.
+  const key_axis =
+    w + 'x' + h + '@' + milliseconds_full.toFixed(3) + (is_exceedance_log ? 'L' : 'l');
+  if (key_axis !== key_axis_exceedance) {
+    key_axis_exceedance = key_axis;
+    drawAxisExceedance(context_axis_exceedance, w, h, milliseconds_full, xOf, yOf);
   }
-  // Budgets themselves, **each named twice**: rate at top of line and.
-  //   duration at its foot, so one dashed mark answers both "how smooth is that" and "how
-  //   long is that" and reader never has to convert between them in their head.
-  //   Both sit *over* plot rather than in rows of their own. Rows were tried, and they
-  //   do buy clearance -- curve reaches 100% in top right, under slowest mark's
-  //   label, and 0% in bottom left, under fastest mark's duration -- but they cost
-  //   22px of drawer that has none to spare, and number reader can find beside its
-  //   own line is worth more than guarantee it is never crossed. Labels are drawn
-  //   before curve, so where two meet it is curve that reads as continuous.
-  //   Drawn only where axis actually reaches them: window with nothing slower than
-  //   120 fps in it has no business drawing others, and 15 fps mark stays away
-  //   until window holds frame that slow. Floor is set so slowest mark
-  //   axis is guaranteed to reach -- 30 fps -- stands clear of right edge with room
-  //   for its own labels; see `SHARE_MARK_LEAST`.
-  context_exceedance.setLineDash([2, 3]);
-  for (const budget of BUDGETS_EXCEEDANCE) {
-    if (!Number.isFinite(budget.milliseconds)) continue;
-    if (budget.milliseconds > milliseconds_full) continue;
-    const x = Math.round(xOf(budget.milliseconds)) + 0.5;
-    context_exceedance.strokeStyle = 'rgba(139, 150, 163, 0.30)';
-    context_exceedance.beginPath();
-    context_exceedance.moveTo(x, 0);
-    context_exceedance.lineTo(x, h);
-    context_exceedance.stroke();
-    context_exceedance.fillStyle = 'rgba(139, 150, 163, 0.75)';
-    // Inside line where it would otherwise run off right edge. Both rows take.
-    //   same side, so rate and its duration stay in one column whichever way they go.
-    const is_room = x + 14 < w;
-    context_exceedance.textAlign = is_room ? 'left' : 'right';
-    const x_label = x + (is_room ? 2 : -2);
-    // Haloed against drawer's own surface before being filled. These sit over plot.
-    //   and curve crosses fastest ones outright -- duration bisected by stroke
-    //   of same weight is unreadable, and this is what buys numbers their place
-    //   inside without asking chart for height it does not have.
-    const write = (text, y, baseline) => {
-      context_exceedance.textBaseline = baseline;
-      context_exceedance.strokeStyle = HALO_LABEL_EXCEEDANCE;
-      context_exceedance.lineWidth = 3;
-      context_exceedance.setLineDash([]);
-      context_exceedance.strokeText(text, x_label, y);
-      context_exceedance.fillText(text, x_label, y);
-      context_exceedance.lineWidth = 1;
-      context_exceedance.setLineDash([2, 3]);
-    };
-    write(budget.label, 1, 'top');
-    write(budget.milliseconds.toFixed(1), h - 1, 'bottom');
-  }
-  context_exceedance.setLineDash([]);
+  context_exceedance.drawImage(axis_exceedance, 0, 0);
   context_exceedance.textAlign = 'left';
   context_exceedance.textBaseline = 'top';
 
@@ -2884,16 +2911,16 @@ function drawExceedance() {
   for (let i = BUCKETS_EXCEEDANCE - 1; i >= 0; i -= 1) {
     if (shares_exceedance[i] >= 0.01) { milliseconds_p99 = i * MILLISECONDS_BUCKET; break; }
   }
-  diagnostic_exceedance.textContent =
-    '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames';
+  writeText(diagnostic_exceedance,
+    '1 in 100: ' + milliseconds_p99.toFixed(1) + ' ms \u00b7 ' + counted + ' frames');
   // Axis's own extent, said where reader is looking rather than left to be.
   //   inferred from curve that now moves with window.
   if (label_exceedance_axis !== null) {
     // Mode is named in caption as well as lit on its own pill, so screenshot of.
     //   drawer says which axis curve in it was read against.
-    label_exceedance_axis.textContent =
+    writeText(label_exceedance_axis,
       'frames under \u00b7 0\u2013' + milliseconds_full.toFixed(0) + ' ms' +
-      (is_exceedance_log ? ' \u00b7 log' : '');
+      (is_exceedance_log ? ' \u00b7 log' : ''));
   }
 }
 
@@ -2964,7 +2991,17 @@ function writeColour(element, value) {
 // Panel's own collapsible section, read by guard below rather than by class on.
 //   drawer: drawer holds several sections and only this one owns these figures.
 const section_diagnostics = document.querySelector('.section[data-section="diagnostics"]');
-let ms_refresh_distribution = 0; // Last slow pass; zero, so first tick draws everything.
+// Slow pass is three jobs on three different ticks, each once per window.
+//   Curve, sparkline and medians together on one tick were one tick in five costing three
+//   to four times its neighbours -- spike reader saw once per second on `ui refresh`. Spread,
+//   worst tick carries one job; figures in `PROVENANCE.md`.
+//   Every job runs on first tick after section is shown, so panel never opens half drawn.
+const TICKS_DISTRIBUTION = 5; // Five 200 ms ticks is window's own second.
+const TICK_CURVE = 0;
+const TICK_SPARKLINE = 2;
+const TICK_MEDIANS = 4;
+let ticks_diagnostics = 0; // Ticks since section was shown, driving rota above.
+let is_diagnostics_shown_last = false; // Whether last tick found section open.
 
 function refreshDiagnostics() {
   // **Nothing here is worth millisecond while drawer is shut.** Every figure this.
@@ -2983,17 +3020,22 @@ function refreshDiagnostics() {
   //   so they fell back to 300 pixels and drew, five times second, for reader looking
   //   at objects list. Drawer guard above did not catch it because drawer is
   //   genuinely open.
-  if (!drawer.classList.contains('open')) return;
-  if (!section_diagnostics.classList.contains('open')) return;
-  // Whether four- and seventeen-second figures are due; see.
-  //   `MILLISECONDS_WINDOW_DISTRIBUTION`. Numeric rows below run either way.
-  const ms_now_distribution = performance.now();
-  const is_redrawing_distribution =
-    ms_now_distribution - ms_refresh_distribution >= MILLISECONDS_WINDOW_DISTRIBUTION;
-  if (is_redrawing_distribution) ms_refresh_distribution = ms_now_distribution;
+  const is_shown =
+    drawer.classList.contains('open') && section_diagnostics.classList.contains('open');
+  if (!is_shown) { is_diagnostics_shown_last = false; return; }
+  // Which slow-pass job this tick carries; see `TICKS_DISTRIBUTION`.
+  //   Numeric rows below run every tick.
+  const is_first_shown = !is_diagnostics_shown_last;
+  is_diagnostics_shown_last = true;
+  if (is_first_shown) ticks_diagnostics = 0;
+  const slot_distribution = ticks_diagnostics % TICKS_DISTRIBUTION;
+  ticks_diagnostics += 1;
+  const is_drawing_curve = is_first_shown || slot_distribution === TICK_CURVE;
+  const is_drawing_sparkline = is_first_shown || slot_distribution === TICK_SPARKLINE;
+  const is_recomputing_medians = is_first_shown || slot_distribution === TICK_MEDIANS;
 
-  if (is_redrawing_distribution) {
-    drawExceedance();
+  if (is_drawing_curve) drawExceedance();
+  if (is_drawing_sparkline) {
     const w = sparkline.clientWidth || 300, h = sparkline.clientHeight || 40;
     if (sparkline.width !== w) sparkline.width = w;
     if (sparkline.height !== h) sparkline.height = h;
@@ -3035,7 +3077,7 @@ function refreshDiagnostics() {
   //   Phase that has not run at all stays em dash.
   for (const [name] of PHASES_DIAGNOSTIC) {
     if (!isPhaseShown(name)) continue; // Inside closed node; nobody is reading it.
-    const median = medianPhaseHeld(name, is_redrawing_distribution);
+    const median = medianPhaseHeld(name, is_recomputing_medians);
     if (median === null) continue;
     // Phase idle for whole window shows its median rather than nothing: it is step.
     //   that runs, and "0.00" would claim it had run for free this window.
