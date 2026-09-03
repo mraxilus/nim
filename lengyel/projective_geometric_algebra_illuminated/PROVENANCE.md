@@ -7,979 +7,650 @@ _Who made this, from what, and how far it has been checked._
 |--------|-------|
 | Agent  | Claude Code |
 | Author | Claude Opus 5 and Claude Sonnet 5 |
-| Date   | 2026-09-02 |
+| Date   | 2026-09-03 |
 | Style  | `CONSTITUTION.md` and `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 
-An interactive PGA (rigid metric) object visualiser, built over many turns as a testbed
-for the vendored `pga` library: a desktop app (SDL3 + OpenGL + Dear ImGui) and a browser
-app (WebGL) compiled from the same Nim geometry code, plus a scripted storyboard that
-exports PNG frames and an animated GIF.
+An interactive PGA (rigid metric) object visualiser, built as a testbed for the vendored
+`pga` library: a desktop app (SDL3 + OpenGL + Dear ImGui) and a browser app (WebGL)
+compiled from the same Nim geometry code, plus a scripted storyboard that exports PNG
+frames and an animated GIF.
 
-This file records the current design and the reasoning behind decisions that are not
-obvious from the code — what was chosen, what was rejected and why, and which constraints
-a change must not break. Superseded experiments and fixed bugs are not narrated; where a
-rejected alternative is a live trap, it appears as a terse "not X — Y" note.
+This file records the **current** design by subsystem and the reasoning behind decisions
+that are not obvious from the code: what was chosen, what was rejected, and what the choice
+costs. It is not a changelog. Where a rejected alternative is still a live trap it appears
+as a terse "not X — Y" note; where a figure justified a constant it is kept beside that
+constant, because the comments in the source no longer carry figures (Art. VII.5) and this
+file is where they went.
 
-**Verification practice, applies throughout.** Every change is rebuilt and the full
-property-test suite rerun (`tests/visualiser/suites.nim`, 210 cases; `renderer`/`gui`/
-`panel` are excluded — they need a live GL context). The storyboard is regenerated headless
-under `xvfb-run` with Mesa `llvmpipe` and the resulting PNGs/GIF looked at, not just
-recompiled. The browser bridge is rebuilt with `nim js`, reassembled, and driven headless
-through Playwright (SwiftShader) with real synthetic events — `page.mouse`, and CDP
-`Input.dispatchTouchEvent` for touch, since untrusted `PointerEvent`s fail
-`setPointerCapture` and calling handlers directly bypasses the listener wiring where real
-bugs have hidden. No human has driven either GUI, clicked a button, or seen the app on real
-GPU hardware; every number and screenshot here is software-rendered.
+**How claims are marked.** Each subsystem closes with a *Checked* block. *Verified* means
+the claim was established by running something — a suite case, a driven check, a render
+looked at, a byte read back — and names what. *Assumed* means the claim rests on reasoning
+alone. A figure without a *Verified* line beside it is a figure once read off a panel and
+not re-measured since; treat it as indicative.
+
+**Verification practice, applies throughout.** Every change is rebuilt and the full suite
+rerun (`tests/visualiser/suites.nim`, 296 cases, on the C backend at two capacities and on
+the JS backend). The desktop is driven under `xvfb-run` with Mesa `llvmpipe` through SDL's
+own event queue, and the storyboard PNGs and GIF are regenerated and looked at. The browser
+page is rebuilt with `nim js`, assembled, and driven headless through Playwright
+(SwiftShader) with real synthetic events — `page.mouse`, and CDP `Input.dispatchTouchEvent`
+for touch, since untrusted `PointerEvent`s fail `setPointerCapture` and calling handlers
+directly bypasses the listener wiring where real bugs have hidden. At the revision this file
+describes, `tools/verify.sh` passed end to end with 302 driven checks reporting `ok`.
+**No human has driven either GUI, clicked a button, or seen the app on real GPU hardware;
+every figure and screenshot here is software-rendered**, except two device reports quoted
+in Browser Pipeline, which are marked as such.
 
 
 Render Paths
 ---
-**The directory a module sits in is which render path may reach it.** The boundary used to
-be a table in `visualiser.nim`'s module doc that every other module cross-referenced; it is
-now the layout itself, so there is nothing to keep in step.
+**The directory a module sits in is which render path may reach it.**
 
 | Directory | Reachable from | Holds |
 |-----------|----------------|-------|
-| `visualiser/core` | Both | `objects`, `mesh`, `camera`, `scene`, `selection`,
-  `picking`, `marker`, `framing`, `interaction`, `storyboard`, `history`, `format` |
-| `visualiser/desktop` | `visualiser.nim` | `panel`, `renderer`, `opengl`, `gui`,
-  `gui_shim.cpp`, `sdl3`, `image`, `gif`, `arena` |
+| `visualiser/core` | Both | `objects`, `euclid`, `boundary`, `mesh`, `tessellate`, `camera`, |
+|  |  | `scene`, `selection`, `picking`, `marker`, `framing`, `interaction`, |
+|  |  | `storyboard`, `orrery`, `neighbourhood`, `starfield`, `history`, |
+|  |  | `format`, `help`, `timings`, `ramp`, `algebra_trace`, `algebra_view` |
+| `visualiser/desktop` | `visualiser.nim` | `panel`, `renderer`, `opengl`, `gui`, `gui_shim.cpp`, |
+|  |  | `sdl3`, `image`, `gif`, `arena` |
 | `visualiser/browser` | `browser_bridge.nim` | `browser_bridge.nim`, `shell.html`, `glue.js` |
 
 `pga` is vendored above all three and shared. `core` imports nothing outside itself and
-`pga`; `desktop` and `browser` each import `core` and never each other, which is now
-readable from the import paths (`../core/`) rather than needing an import-graph audit.
-`arena` sits in `desktop` rather than in `core` despite being general-purpose: it is
-reached only by the PNG and GIF encoders, and the JS backend has no use for it.
-The two entry points share all geometry and never import each other.
+`pga`; `desktop` and `browser` each import `core` and never each other, readable from the
+import paths (`../core/`). `arena` sits in `desktop` despite being general-purpose: only the
+PNG and GIF encoders and the desktop draw loop reach it, and the JS backend cannot carve
+typed slices from a byte array at all.
 
 A shared module reaching for something only one path has is a **compile error, not a
 comment**: `toCstring`, `buildChars`, `appendInt`, `appendFixed`, `saveScene`/`loadScene`
-and their `std/os` and `std/syncio` imports are all guarded `when not defined(js)`. The
-suite runs on both backends (see Testing), so the guard is exercised rather than trusted.
+and their `std/os` and `std/syncio` imports are guarded `when not defined(js)`.
+
+*Checked.* Verified: the guard is exercised rather than trusted, because the suite runs on
+both backends (see Testing). Assumed: nothing.
 
 
 Scene Storage
 ---
-`Scene` (`scene.nim`) is a fixed-capacity structure-of-arrays arena (`geometries`,
-`labels`, `inks`, `are_visible`, `are_alive`, `borns`, `anchor_overrides`), addressed by a
-slot assigned once on `addItem` and never moved. Free slots thread onto an intrusive
-singly-linked free list (`next_free`, head in `slot_free_first`), so add/remove are O(1).
-`ITEMS_MAX` = 64, `LABEL_MAX` = 40, both `{.define.}`-overridable.
+`Scene` (`scene.nim`) is a fixed-capacity structure-of-arrays arena — geometries, labels,
+inks, visibility, liveness, birth stamps, creation ordinals, placing stamps, anchor
+overrides — addressed by a slot assigned once on `addItem` and never moved. Free slots
+thread onto an intrusive singly-linked free list, so add and remove are O(1).
+`ITEMS_MAX` = 5040 and `LABEL_MAX` = 40, both `{.define.}`-overridable. Chosen over a
+shift-on-delete array whose removal renumbers every held cross-frame index; the property
+everything else relies on is that **a slot number stays valid until its item is removed**.
 
-Chosen over a shift-on-delete array whose O(n) removal also renumbered every held
-cross-frame index (hovered/dragged/operand slot) — the property everything else relies on
-is that **a slot number stays valid until its item is removed**.
+**`Scene.bound` is the highest slot ever occupied**, and every per-frame walk runs to it
+rather than to capacity. It only rises, so walking to it is safe. Three walks legitimately
+run to capacity — the free list and the two object-pool strips, whose subject is how much
+room is left — and `bound`'s own doc names them. A walk to capacity over five live objects
+cost 13.3 ms a frame on the JS backend; the debug layer's driven pin crept 2.5 → 8.8 →
+13.3 ms across three capacity rises before that was found.
+
+**`Scene.revision` counts edits, and every writer is inside `scene.nim`**: `addItem`,
+`removeItem`, `setInk`, `setVisible`, `replayFrom`, `setGeometryAt`. There is no
+`var`-returning geometry accessor — it was the hole through which a caller could write with
+nothing recorded, and twenty-six of its twenty-nine callers were reading anyway. Whole-scene
+replacement (undo, redo, clear, every load) goes through `restoreFrom`, which issues a
+revision **newer than every revision ever handed out**, `max(live, snapshot) + 1`. Not the
+snapshot's own count plus one — a number a state between the two had already worn, so a
+placement cache keyed on it drew six objects of the previous demo over the new one.
+
+**Placement is invalidated per slot.** `Scene.revisions_placing` stamps each slot at the
+edit that last changed it, and `restoreFrom` stamps every live slot of the snapshot. The
+browser's placement cache re-places only slots stamped after the revision it last filled at.
+Re-placing the whole scene per edit cost a 42 ms frame at 5,038 objects; a restore still
+re-places everything, correct and a whole placement pass per undo at that size. A per-slot
+diff against the live scene would cut that and was not done.
+
+**Creation order is recorded explicitly** (`orders`, `count_created`, `slotsCreated`), not
+inferred. Slot order stops being creation order the moment anything is removed, since the
+free list hands the most recently freed slot to the next arrival. Sorting by `born` was
+rejected on three counts that all occur: two objects added in one frame share a clock
+reading; a replayed item's `born` is stamped into the future; a reused slot's `born` is
+stale until overwritten. `slotsCreated` is a heap sort, O(n log n); as an insertion sort at
+5,038 objects it ran 12.7 million comparisons a call. The desktop panel caches its answer
+against `scene.revision`, because sorting by `born` every frame was 98% of the desktop's CPU
+frame at 5,038 objects.
 
 **`LABEL_MAX` counts bytes, so a label is cut on a character boundary and says it was cut.**
-`format.appendChars` reads each lead byte's own sequence length (`bytesCharacter`) and copies
-a sequence only if all of it fits, so it can never leave a partial character behind whatever
-the caller or the buffer size; `scene.toChars` then rewinds far enough to append `…`. Before
-this, a 3-byte operator glyph (`∧ ∨ ⊖`) straddling the 40-byte limit left invalid UTF-8, which
-Nim's JS backend percent-escapes — `%e2%8a` appeared in an object's name in the browser, which
-is how it was found. Exactly the byte-versus-character bug fixed in the scene file format one
-round earlier and not looked for in the label store beside it. Note what the fix does *not*
-address: derived names compound, so `b ^ ground⊖ ∧ b ∨ (o ∧ ground…` is unreadable because of
-the compounding rather than the cut. That is a deliberate choice to leave — the full name is
-what the object *is*.
+`format.appendChars` copies a UTF-8 sequence only if all of it fits; `scene.toChars` rewinds
+far enough to append `…`. A 3-byte operator glyph straddling the limit once left invalid
+UTF-8, which the JS backend percent-escapes into a name (`%e2%8a`). Derived names still
+compound (`b ^ ground⊖ ∧ b ∨ (o ∧ ground…`) and that is left: the full name is what the
+object *is*.
 
-`Item` is a handle (pointer into `Scene` + slot number), not an assembled copy;
-`.geometry`/`.label` resolve via `lent`. Do not hold one across a mutation of its own slot.
-By-slot accessors (`geometryOf`/`geometryAt`/`labelAt`/`inkAt`/`bornAt`/`orderOf`/
-`anchorOverrideAt`, plus `isVisible`/`setVisible`) exist beside it and are what the browser's
-per-frame loop uses — see Browser Pipeline for why constructing an `Item` there is expensive.
+`Item` is a handle, not an assembled copy, and under `nim js` it holds the `Scene` by value;
+the per-frame loops use the by-slot accessors instead (see Browser Pipeline).
+
+*Checked.* Verified by suite cases: slot stability across removal; `slotsCreated` on a
+scrambled arena of hundreds; `revisionPlacingAt` stamping one slot per edit and every slot
+after a restore; `restoreFrom` landing on a revision no earlier state carried; label
+truncation never splitting a character at any buffer size. Verified by driven check: undo
+while the frame is held redraws the current scene, not the previous one. The 13.3, 42 and
+12.7-million figures were read while fixing and not re-measured since.
 
 
 Memory And Allocation
 ---
-Explicit constraint: keep the GC out of the hot path, arena-style. The interactive render
-loop allocates nothing. `visualiser/core/format.nim` wraps C `snprintf` so per-frame number
-formatting writes into stack buffers; `formatMultivector`/`describeShape` append into
-caller-owned storage. Button-driven message building (apply, drag release, storyboard step)
-still uses `strformat` deliberately — once per click, not once per item per frame, and the
-result must become a real `string` for `Scene.addItem` anyway.
+The interactive render loop allocates nothing. `format.nim` wraps C `snprintf` so per-frame
+number formatting writes into stack buffers. Button-driven message building still uses
+`strformat`: once per click, and the result must become a `string` for `addItem` anyway.
 
-`visualiser/desktop/arena.nim`: a plain `array[N, byte]` global, carved by `push[T](arena, count)`,
-reclaimed by `reset`. Two instances — **permanent** (`CAPACITY_ARENA_PERMANENT` 160 MiB,
-never reset; backs the reused pixel-readback buffer and the storyboard's accumulated GIF
-frames) and **frame** (`CAPACITY_ARENA_FRAME` 64 MiB, reset after each throwaway unit — one
-PNG write, one GIF sub-frame; backs scanline/quantisation/LZW scratch). Permanent capacity
-is sized to the storyboard run's own actual
-`arena.used + bytes_needed`, not a round number. The interactive draw loop asks neither
-arena for anything (`Scene`/`MeshSet` are already fixed-lifetime arrays).
+`arena.nim`: a plain `array[N, byte]` carved by `push[T]` and reclaimed by `reset`. Three
+instances in `visualiser.nim`:
 
-GIF's LZW dictionary is a separate fixed open-addressed hash table (`LzwDict`, 8192 slots,
-Knuth multiplicative hashing) rather than a third arena — it needs random-access probing
-within a frame, not bump-only append.
+| Arena | Capacity | Backs | Reset |
+|---|---|---|---|
+| permanent | `CAPACITY_ARENA_PERMANENT` 160 MiB | pixel readback, every GIF frame | never |
+| frame | `CAPACITY_ARENA_FRAME` 64 MiB | one PNG's scanlines, one GIF frame's scratch | per unit |
+| swap pair | `CAPACITY_ARENA_SWAP` 256 KiB × 2 | the draw loop's `DrawScratch` | per frame |
 
-**LZW gotcha, now a permanent regression test:** the format widens code size one symbol
-earlier on decode than on encode ("early change"). Caught by an independent from-scratch
-decoder round-tripping a real encoded frame past the code-width growth point.
+Permanent capacity is sized to the storyboard run's own `arena.used + bytes_needed`, not a
+round number. The **swap pair** reclaims on the way *in*: what one frame assembled stays
+readable through the next while the block being moved to starts empty. A separate pair
+rather than a larger frame arena, because an export's scratch is tens of megabytes on a
+keypress and a frame's is under 20 KiB (the ground grid's `LINES_GRID_MAX` chords, the
+largest carver) sixty times a second. The storyboard's capture loop turns the pair over in
+its own `renderAt`; without that, captured sub-frames stacked scratch until the fifth
+overflowed.
+
+**The undo timeline is the largest reservation the binary makes.** A `Scene` at 5040 slots
+is 1.15 MiB as a C struct (1,204,616 bytes by `sizeof` on the release compiler), a `Step`
+is a `Scene` beside a five-float `Camera`, and `CAPACITY_HISTORY` = 32 of them reserve
+36.8 MiB (38,549,528 bytes) against 6.2 MiB for both mesh sets. In the browser the same
+timeline is roughly 105 MB of JS heap; the live page measured 85 MB at load before the
+per-slot placing stamps were added and has not been re-measured since. The depth is left at
+32: an edit no longer costs anything per step (see Undo/Redo), so what remains is a flat
+reservation, and the lever is linear — about 1.15 MiB of address space and 3.3 MB of JS heap
+a step. `BYTES_MEMORY_TOTAL` counts it; a figure omitting its own largest term is worse than
+none.
+
+GIF's LZW dictionary is a fixed open-addressed hash table (`CAPACITY_DICT` 8192, Knuth
+multiplicative hashing) rather than a third arena — random-access probing within a frame,
+not bump-only append. **LZW early change**: the format widens the code size one symbol
+earlier on decode than on encode; a from-scratch decoder in the suite round-trips a real
+frame past the growth point.
+
+*Checked.* Verified by suite cases: the swap pair keeps last frame's bytes; the GIF
+round-trip. Verified by `sizeof`: the struct and timeline sizes. Assumed: the JS heap figure
+per step, extrapolated from one measurement at the earlier stamp-less layout.
 
 
 Colour Palette
 ---
-Five assignable hues — `Rose, Copper, Olive, Jade, Cobalt` — plus `Backdrop`,
-`AxisX/Y/Z`, `Grid`, `Guide`, `Outline` and `Invalid` in one `Ink` enum
+Five assignable hues — `Rose, Copper, Olive, Jade, Cobalt` — plus `Backdrop`, `AxisX/Y/Z`,
+`Grid`, `Guide`, `Outline`, `Algebra` and `Invalid` in one `Ink` enum
 (`mesh.lut_ink_to_rgba`).
 
-**`Invalid` is a reserved magenta**, held out of the assignable run so that seeing it
-always means an object is wrong rather than merely coloured. Nothing draws in it yet; it
-is reserved so the palette can be held clear of it. Whatever comes to use it must not lean
-on the colour alone — magenta reads as *blue* under deuteranopia, which is exactly where
-every assignable hue sits furthest from it, so an invalid object needs a word or a marker
-too.
+**`Invalid` is a reserved magenta**: seeing it means an object is wrong. The drag band wears
+it over a pair that makes nothing (see Interaction Model); nothing else does. It is never
+leaned on alone — magenta reads as *blue* under deuteranopia — and the ghost fails to appear
+beside it. Reserving it cost three hues: `Violet` and `Cerise` measured CVD ΔE 10.2 and 8.3
+from magenta, and `Cobalt`, 88° of hue away, measured **6.6** because blue and magenta
+converge under deuteranopia. `Cobalt` was re-derived lighter and bluer (`#5b90c7`), which
+reopens the pair to 14.4.
 
-Reserving it cost three hues, not one. `Violet` and `Cerise` are the same pink-purple
-family by eye and measured CVD ΔE 10.2 and 8.3 from magenta — too close for a status
-colour. `Cobalt` is the surprise: 88° of hue away, plainly blue to normal vision, and yet
-CVD ΔE **6.6** from magenta, because blue and magenta converge under deuteranopia. Hue
-distance alone would have missed it. It is re-derived rather than dropped — lighter and
-bluer (`#5b90c7`) — which reopens the pair to 14.4. That 6.6 pair was already documented
-here as the palette's one legal-with-secondary-encoding exception; it stopped being
-acceptable the moment magenta came to mean "this is wrong".
+**Do not fill the remaining arc back up to eight.** A seven-hue set put `Olive` and a new
+yellow-green at CVD ΔE 0.4 and two blues at normal-vision ΔE 5.6. The axis hues flank the
+reserved arc on both sides, leaving one warm arc and one cool, 162° in total; five is what
+fits.
 
-`Ink.Magenta` was also the *meet* drag rubber-band and three storyboard steps' object
-colour. Both moved to `Rose`: a normal interaction must not wear the colour that means
-invalid.
+**The structural slots are not offerable as an object's colour.** `mesh` names the boundary
+once — `INK_CATEGORICAL_FIRST`, `COUNT_INK_CATEGORICAL`, `inkCategorical`,
+`categoricalIndex` — and both pickers and `inkCycled` derive from it. Structural slots are
+declared first and the categorical run last so it is one contiguous block; a
+`static: doAssert` on the count enforces that, so appending a structural slot after `Cobalt`
+fails the build.
 
-**Do not fill the remaining arc back up to eight.** That was tried and measured, not
-argued: a seven-hue set spread across what is left put `Olive` and a new yellow-green at
-CVD ΔE 0.4 and two blues at normal-vision ΔE 5.6 — the sixteen-slot failure exactly. The
-axis hues flank the reserved arc on both sides, so what remains is one warm arc and one
-cool, 162° in total. Five is what fits it honestly.
+Derived under floors `tools/check_palette` measures every run:
 
-**The structural slots are not offerable as an object's colour**, in either UI: an object
-wearing the backdrop, a world axis or the selection outline is either invisible or reads
-as something it is not. `mesh` names that boundary once — `INK_CATEGORICAL_FIRST`,
-`COUNT_INK_CATEGORICAL`, `inkCategorical`, `categoricalIndex` — and the two pickers and
-`inkCycled` all derive from it, so nothing cycles to a colour the user could not have
-chosen. Structural slots are declared first and the categorical run last precisely so it
-is one contiguous block a picker can walk: ImGui takes `lut_ink_to_name` at the run's own
-offset with no second table, and `nimInkChoosableSlots` hands JS the ordinals so it does
-no palette arithmetic. That contiguity is load-bearing rather than cosmetic, and a
-`static: doAssert` on the count is what enforces it — appending a structural slot after
-`Cobalt` fails the build rather than quietly adding it to both pickers.
+1. Every pair among the five clears normal-vision ΔE ≥ 15 and ≥ 20° of hue, so lightness can
+   never stand in for a hue difference. `Jade`/`Copper` at CVD ΔE 7.6 sits inside the
+   6–8 legal-with-secondary-encoding band; shape and screen position are that encoding.
+   `Rose` sits at contrast 2.78 against the backdrop, under 3:1; its always-present row label
+   is the relief.
+2. Axis safety: each hue clears ≥ 20° and a lower ΔE floor (4.0) against `AxisX/Y/Z`, so a
+   thin fixed line is never mistaken for a filled object. Loosened from the object floor on
+   purpose — a thin line needs less separation than two adjacent fills — which is what freed
+   most of the wheel; the sixteen-slot set that held everything to one floor crammed every
+   hue into a teal/blue/violet arc and read as one colour.
+3. Every assignable hue clears CVD ΔE ≥ 13 from `Invalid`: worst `Cobalt` 14.4, `Rose` 15.2.
+4. Furniture against `Backdrop` ≥ 8.0: the axes land at 15.7–25.3.
 
-Derived under two constraints checked with the dataviz skill's validator, not by eye:
+**The one declared exception.** `Jade` and `Cobalt` separate by only **3.7 ΔE under
+tritanopia**, carried rather than repainted: the pair clears 12.7 under red-green deficiency
+and 15.8 to typical vision, tritanopia affects fewer than one reader in ten thousand, and
+every object carries shape, position and label. It lives in `check_palette.nim`'s
+`EXCEPTIONS` table with a floor of 3.5 pinned just under where it measures, and its reason
+prints on every run.
 
-1. **Every one of the ten pairs** among the five clears normal-vision ΔE ≥ 15, plus ≥ 20°
-   hue separation so lightness/chroma can never stand in for a hue difference. One
-   exception: `Jade`/`Copper` at CVD ΔE 7.6, inside the validator's 6–8
-   legal-with-secondary-encoding band — these objects already carry shape and screen
-   position as secondary encoding. `Rose` sits at contrast 2.78 against the backdrop,
-   under the 3:1 the validator wants; its always-present row label in both panels is the
-   relief that permits.
-2. **Axis safety**: each hue clears a ≥ 20° hue distance plus a lower ΔE floor against
-   `AxisX/Y/Z`, so a thin fixed axis line is never mistaken for a filled categorical object.
-3. **Distance from `Invalid`**: every assignable hue clears CVD ΔE ≥ 14 from the reserved
-   magenta. Worst is `Rose` at 15.2 and `Cobalt` at 14.4; the rest are 23 or better.
+`check_palette` measures under **Machado, Oliveira and Fernandes (2009) at severity 1.0**.
+Viénot-1999 moves borderline pairs materially — it puts Jade/Cobalt at 0.9 ΔE where Machado
+puts it at 12.7 — so the model is part of the standard, and changing it means remeasuring
+every floor. Red-green (the minimum of protan and deutan) carries the floors; tritanopia is
+measured separately.
 
-Both floors matter. An earlier sixteen-hue set held only *adjacent* pairs to the full floor
-and everything else to a much looser ΔE ≥ 5, which crammed every slot into the narrow
-teal/blue/violet arc that strict axis-safety leaves available, and read as "all the same
-colour." Fewer slots alone does not fix that — the axis-safe arc is a fixed size regardless
-of hue count, so the real fix was loosening axis-safety (a thin line needs less separation
-than two adjacent filled objects) to free most of the wheel back up.
+**Axis colours are dimmed and desaturated at compile time** through `axisTinted` from
+`MUTE_AXIS_TOWARD_GREY` = 0.45 and `SCALE_AXIS_LUMINANCE` = 0.50 — the constants are the
+source, not documentation of hand-applied literals. Settled by the palette gate, not by
+eye: 0.62 luminance read well and *failed*, dimming having walked the green and blue axes
+onto `Rose`'s own luminance (3.5 and 3.3 ΔE under red-green against the 4.0 floor); further
+down clears it, the axes landing below every categorical hue.
 
-Axis colours additionally carry a permanent 22% blend toward their own luminance — enough
-that a bright RGB trio stops competing with categorical objects, without losing which axis
-is which. A compile-time palette literal with no alpha change, unlike `mesh.muted()`.
+**`Ink.Algebra`** is the debug layer's one hue, screened against every assignable slot and
+`Invalid` at the assignable floors (worst 8.2 against jade under tritanopia, 9.2 against
+cobalt under red-green, floor 6.0).
 
-`Ink.Outline` is retained in the enum although nothing draws with it: removing a
-categorical-adjacent entry shifts every later ordinal and silently corrupts the colours of
-an already-saved `.rgascene`.
+`Ink.Outline` is retained although nothing draws with it: removing a categorical-adjacent
+entry shifts every later ordinal and corrupts the colours of a saved `.rgascene`.
+
+**Seed hues.** `ground` keeps `INK_SEED_GROUND`'s olive and `o` keeps `INK_SEED_ORIGIN`'s
+copper — the two seeds that are not arbitrary — and `a`, `b`, `c` take the three that are
+left, so nothing collides.
+
+*Checked.* Verified: every floor above, by `check_palette` on each run, and the seven-hue
+and sixteen-slot failures by the same tool when those sets were tried. Verified by
+rendering: the axis dimming, and that 0.55 grid alpha read as absent (see Geometry). Assumed:
+the prevalence figure for tritanopia, taken from the literature.
 
 
 Geometry And Drawing
 ---
-**Plane.** A solid rim (`addPlaneRing`) plus a flat translucent fill (`addPlaneFill`,
-`ALPHA_WASH` = 0.16) bounded by that rim; no crosshair, no ruled grid, no anchor marker.
-Flat rather than fading because the rim already marks the boundary. Fixed radius
-`EXTENT_PLANE` = 8 world units around the plane's support/anchor — **not** camera-distance
-scaled, which visibly resizes a plane as the camera orbits. **No normal drawn**: a bare
-shaft at 0.25 × extent used to mark one on every plane in the scene, permanently, to answer
-a question a reader asks about one object at a time. Orientation moved onto the selection
-marker's own pulse instead (see Selection).
-
-The drawn radius is a rendering choice only: `EXTENT_PLANE` appears in `mesh.nim` (drawing)
-and `picking.nim` (click bound) and nowhere else — every construction path reads the full
-untruncated `Multivector`, so a meet lands correctly arbitrarily far outside the drawn
-disc. There is a regression test asserting this.
+**Plane.** A solid rim (`RingRecord`) plus a flat translucent fill (`DiscRecord`,
+`ALPHA_WASH` = 0.16) bounded by it; no crosshair, no grid, no normal shaft. Flat rather than
+fading because the rim already marks the boundary. Fixed radius `EXTENT_PLANE` = 8 world
+units about the plane's anchor — not camera-scaled, which visibly resizes a plane as the
+camera orbits. The radius is a rendering choice: it appears in `mesh` and `picking` and
+nowhere else, and every construction path reads the full `Multivector`, so a meet lands
+correctly arbitrarily far outside the drawn disc.
 
 **A meet is read back as the point it names before anything signed is asked of it.** A
-meet's weight carries the orientation of the crossing — which side of the plane the ray
-came from — and `unitize` divides by the weight's *norm*, so that sign survives it.
-`objects.depthAgainst` is linear in its point, so a meet passed in as it came reports its
-distance ahead of the eye **negated** on every plane the ray meets from behind the plane's
-own normal. `picking.rayPlaneHit` did exactly that for one release, and every such plane
-was read as standing behind the eye: unpickable at every pixel of the disc it was plainly
-drawn at, so no drag could reach one and no ghost could form. Measured on the built page —
-a plane joined from three of the opening scene's own points picked at **0 of 462 sampled
-pixels**; the ground plane, whose normal happens to face the eye, picked fine throughout
-and hid the fault. The fix is `position` (which divides by the *signed* weight) and
-`toMultivector` (which restates the answer at weight one) — the form every other
-`depthAgainst` call in that module already passed, which is why only this one site broke.
-Held from both sides of one plane by a suite case, and end to end by a driven check that
-sweeps the canvas for a pixel picking a plane the gesture itself built.
+meet's weight carries the orientation of the crossing and `unitize` divides by the weight's
+*norm*, so that sign survives; `depthAgainst` is linear in its point, so a meet passed as it
+came reports its depth **negated** on every plane met from behind its normal. `rayPlaneHit`
+did that for one release: a plane joined from three of the opening scene's points picked at
+0 of 462 sampled pixels while the ground plane, whose normal faces the eye, hid the fault.
+Held by a suite case from both sides of one plane and by a driven check that sweeps the
+canvas for a pixel picking a plane the gesture itself built.
 
-**Line.** Drawn as **two segments meeting on the line at its support**, each running out to
-one of the line's own two vanishing points, `eye ± radius_horizon*axis`. The forward one is
-exactly where that line's horizon-attitude marker draws, so a line reaches its own attitude
-with no gap.
+**Line.** Two segments meeting on the line at its support, each running out to one of the
+line's two vanishing points `eye ± radius_horizon*axis`. A vanishing point is a property of
+the *eye*, which forces this shape: an end anchored a fixed reach from the support stops
+short of the vanishing point by roughly eye-to-line separation over reach (≈6.7° for a
+support 40 units out). Each segment lies in the plane through the eye containing the line,
+so the pair draws exactly over the true line's projection — measured at 1e-16 of screen
+skew — while the far ends sit 6–17 world units off the line along the view ray, so occlusion
+is approximate there. `picking` tests both halves, through `clipToEyeSide`, a by-hand
+near-plane clip mirroring the GPU's, since a screen-space test divides by depth and this
+reach puts an endpoint behind the eye.
 
-A vanishing point is a property of the *eye*, not of the line, which is what forces this
-shape. An end anchored a fixed reach from the line's own support instead stops short of the
-vanishing point by roughly the eye-to-line separation over that reach — measured at ~6.7°
-for a line whose support sits 40 units out, which is a plainly visible gap. Anchoring both
-ends to the eye closes it at both; one segment cannot, since a segment running eye to eye
-passes through the eye and projects to a point.
+**Horizon objects** are drawn as sky: a horizon point is a fixed star at
+`eye + radius_horizon*heading`, a horizon line a great circle about the eye, a horizon plane
+a full-sphere dome (`DomeRecord`, `ALPHA_WASH_SKY` = 0.22). All anchor to the eye every
+frame — zero parallax on translation. A full sphere, not a hemisphere: an orbit view sits
+elevated and tilted down, so a dome cut at the horizontal loses sky the camera sees. Grade 4
+is one-dimensional in this algebra, so every horizon plane is the same universal object.
 
-Each segment has one end on the true line and one off it, so both lie in the plane through
-the eye containing the line. That plane projects to a single screen line, so the pair draws
-**exactly** over the true line's own projection however far the far ends sit from it in
-world space — measured at zero screen skew to floating-point precision (1e-16), not argued
-from the geometry. The far ends do sit 6–17 world units off the line, displaced along the
-view ray, so occlusion against other objects is approximate there; the meshes are rebuilt
-against the current eye every frame, so the screen-exactness holds as the camera orbits.
+**Draw-order invariant.** Translucent washes blend in scene order with depth writes off, so
+whichever is appended last wins. Both `visualiser.assembleMeshes` and
+`browser_bridge.nimBuildFrame` insert any visible horizon plane's dome **first** (via
+`objects.isHorizonPlane`), so an ordinary plane's fill blends over the sky whatever slots
+they occupy. Two ordinary washes crossing still look order-dependent; accepted.
 
-`picking.nim` tests both halves — testing one would leave the other half of a line on screen
-unpickable, and which half that is changes as the camera orbits. It needs `clipToEyeSide`, a
-by-hand near-plane clip mirroring what the GPU does when drawing, because a screen-space hit
-test divides by each endpoint's depth and this reach can put an endpoint behind the eye.
+**Muting.** `mesh.muted()` blends toward the colour's own luminance (`MUTE_DESATURATION`
+0.6) rather than replacing it with `Ink.Grid`, which made a muted object indistinguishable
+from the grid; `FRACTION_DIMMED_ALPHA` 0.55 so muted objects read as present context.
 
-**Horizon objects** (grade sends them to infinity) are drawn as sky, not as extended finite
-geometry: a horizon point is a fixed star at `eye + radius_horizon*heading`, a horizon line
-a great circle around `eye`, a horizon plane a full-sphere dome around `eye`
-(`ALPHA_WASH_SKY` = 0.22). All three anchor to `eye` every frame — zero parallax on
-translation, turning only with rotation. A full sphere, not a hemisphere: an orbit view sits
-elevated and tilted down, so cutting the dome at the eye's horizontal removes sky the camera
-can actually see. In this 4D algebra grade 4 is one-dimensional, so *every* horizon plane is
-the same universal object regardless of what built it and carries no orientation to render.
+**Draw sizes** live in `mesh.nim`, not `renderer.nim`: `SIZE_POINT` 9.0, `WIDTH_LINE_OBJECT`
+2.5, `WIDTH_LINE_FURNITURE` 1.5 px, with a `static: doAssert` that object lines exceed
+furniture lines. `marker` derives every clearance from them and cannot import `renderer`.
+A ribbon's width is measured in *framebuffer* pixels, so the bridge hands
+`drawExtentFor` the framebuffer's height rather than the window's.
 
-**Draw-order invariant.** Translucent triangles share one unsorted `Primitive.Triangle`
-bucket drawn with depth writes off, so among translucent draws whichever is appended last
-wins the blend regardless of true depth. Both `visualiser.assembleMeshes` and
-`browser_bridge.nimBuildFrame` therefore insert any visible horizon plane's dome into that
-bucket **first**, before every other visible object (via the shared `objects.isHorizonPlane`),
-guaranteeing an ordinary plane's fill blends over the dome whatever slots they occupy. Two
-ordinary washes crossing still look order-dependent — a known, accepted limit.
+**Furniture** (ground grid, world axes) reaches `extent_furniture`, from the far clip
+(`extentFurnitureFor`), and is drawn as **fog about the eye**, not a halo about the origin.
+`fogFurnitureFor` solves two radii from `DrawExtent.eye`: full strength within
+`FRACTION_GRID_FADE_START` = 0.06 × extent, gone by `FRACTION_GRID_FADE_END` = 0.20 ×
+extent. Those are 1.14 and 3.8 orbit distances, so what the camera looks at sits inside the
+solid core and the fog's edge is still a fifth of the far clip. Both came from rendering the
+alternatives: at 0.03/0.12 the ground at the target read as absent, and a reach of 300
+faded out at 36 units, inside the eye's own height above ground. Fog rather than a halo
+because a halo makes the origin a place the reader may not leave — pan a hundred units away
+and the ground was gone. The fade runs in the fragment shader against the fragment's own
+world position and two fog-radius uniforms, exact along a record of any length, held to
+`alphaGridFade` as its reference. A per-record `fog` flag (the sixteenth float) says who
+fades, so fogged furniture and plain scene ribbons share one buffer in emission order.
 
-**The wheel zooms toward what the pointer is over** — the map reading of a zoom, which is
-what Google Maps, Supreme Commander and every strategy game since do. Zooming at the middle
-of the frame makes a reader aim in three moves (zoom, pan, zoom again) where one should do.
+`addGrid` lays lines on world multiples of the cell size inside the ground disc the fog
+leaves — radius `sqrt(radius_gone² − height²)` about the point below the eye,
+`mesh.radiusGroundFor` — one record per lattice line, with whole-line behind-eye cull at
+placement (depth is linear along a straight segment, so two behind-eye endpoints put all of
+it behind). The two lines through the origin are skipped, coinciding with the X/Y axes.
 
-**A pinch does not**, and that exception is deliberate. It was aimed at the pinch's own
-midpoint at first, on the reasoning that a midpoint is a finger's way of pointing; on a phone
-it read as wrong, immediately. The two-finger gesture already pans the view by that
-midpoint's own travel between events, so aiming the zoom there as well translates the view
-*twice* for one gesture, and a pinch anywhere but dead centre slides the scene while it
-scales it. A wheel carries no pan beside it, which is exactly why the same rule is right
-there and wrong here. The pinch is centred, as it was before the camera pass touched it.
+**The cell is `SIZE_CELL_GRID` = 10.0 at every reach a reader works at.** A cell that walks
+with the reach re-scales the ground under a reader as they dolly; a fixed cell is a ruler.
+Ten rather than a hundred, by rendering both: at the opening placement the reach is ≈72
+units, so a hundred-unit cell put at most one line in view and the ground read as empty.
+`CELLS_GRID_HALF_MAX` = 120 bounds the lines laid (`LINES_GRID_MAX` = 241 per family),
+**spent on the cell, not on the reach**: `sizeCellGridFor` steps the cell by **decades** —
+the smallest power of ten keeping the ground disc inside 120 cells — because decades nest,
+so a step coarsens what is drawn without moving a line the reader was measuring against.
+The first step is at 1,200 units of reach, orbit distance ≈316, by which point a ten-unit
+cell is already the aliasing haze the fade end exists to cut. Cutting the *reach* at 120
+cells instead left a camera past 1,200 units with the ground stopping short and past twice
+that in a black void, axes included: grid vertices at orbit distance 300 / 1,000 / 5,000 /
+10⁶ were 86,142 / 95,088 / 0 / 0 before and 86,142 / 28,392 / 13,818 / 28,392 after.
 
-`picking.anchorZoomAt` solves the anchor, in three answers and **that order**: the finite
-object the pointer is over, else the ground at `z = 0` under it, else the horizontal plane
-through the camera's own target. Where none answers — a pointer on empty sky above the
-horizon — the wheel falls back to the plain centred dolly, which is the right answer there
-rather than a refusal to zoom.
+The grid is dimmed by `ALPHA_GRID` = 0.75 in `addGrid`, not on `Ink.Grid` (which is also
+`INK_POOL_FREE`); 0.55 rendered a ground that read as absent.
 
-The object comes first because a reader pointing at something means *that thing, at the
-depth it stands at*. `positionOnItemUnder` reads a point at its own place, a plane where the
-sight ray crosses it, and a line at the point of it nearest that ray (`positionOnLineNearest`
-— a cursor is a ray and a line is a line, and in three dimensions the two miss). Objects at
-horizon are refused: they are drawn at `radius_horizon` about the eye and are not *at* any
-place in the world, and a horizon plane in particular is ranked last by `pickNearest` and
-matches every ray, so without that refusal the sky would be "under the pointer" almost
-always.
+**The world axes are reference and are drawn that way**: they fade and cut off on the grid's
+own schedule, each drawn over the chord of the fog sphere it crosses, so all the furniture
+ends at one horizon. Beyond the fog nothing marks the origin; accepted. Before this an axis
+was the longest and brightest mark in any frame — no fade, 0.95 of the far clip at full
+alpha — and readers took it for a drawn line.
 
-**This reverses an earlier decision recorded here**, which anchored on the target's own
-level and argued that anchoring on the hovered object "makes the zoom jump between depths as
-the pointer crosses things". The jump is real and it is the price: two notches taken with
-the pointer either side of an object's edge converge on different depths. It is worth
-paying, and the measurements say why (below). The target-level rule survives as the last
-answer rather than the first — it is genuinely the best thing left when a ray reaches
-neither an object nor the ground.
+**The scale bar**, bottom left, is what makes the ruled ground measurable: a span of ground
+drawn at its true screen length with its distance written under it, and the cell size beside
+that. Stepped 1-2-5 by decade (`STEPS_RULER`) to land near `PIXELS_RULER_TARGET` = 130 px,
+as every map scale is; a bar tied to one cell ran 11,983 px at orbit distance 3 and 53 px at
+120. Both numbers come from `nimGridMetrics`, which reads the same `sizeCellGridAt` that
+`addGrid` lays the lattice with, and the bar is measured at the ground point below the eye,
+where the reported cell is laid. In CSS pixels, since a bar is read in the pointer's pixels.
+Hidden where no ground is drawn. **The drawer draws over it** (`z-index` 3 under the
+drawer's 4) rather than displacing or hiding it: on a phone "aside" was off-screen, and a
+bar a panel sits on can be read by closing the panel.
 
-`camera.dollyToward` then moves the eye **along its own line to that anchor** rather than
-straight in, leaving the angles alone. That is the whole trick and it is worth stating: the
-sight direction is fixed and the eye stays on the line joining it to the anchor, so that line
-is the same line afterwards and the anchor keeps its pixel. The scale actually applied is
-read back from `distanceHeld` rather than assumed, so a zoom stopped by the near floor moves
-the eye by exactly as much as the distance it was allowed — otherwise the placement stops
-describing where the eye is, which the suite checks by comparing `norm(eye - target)` against
-the distance.
+*Checked.* Verified by suite cases: a meet far outside the drawn disc; both halves of a line
+pickable; the horizon plane's dome inserted first; the great circle's segment count after
+the eye cut, computed rather than assumed; the fog radii at an eye inside its own fog.
+Verified by driven checks: the plane pick from either side; the scale bar's length against
+its label at two distances a decade apart; the bar unmoved and layered under the open
+drawer. Verified by rendering: the fade fractions, the cell size, the grid alpha, the axis
+dimming, an eye 1,000 units out standing on lit ground, and the far-orbit views before and
+after the decade step. The 1e-16 skew and the 6.7° gap are suite-measured; the far-end
+occlusion error is assumed to be tolerable, not measured.
 
-**Measured through real wheel events**, not by reasoning about the algebra: an object under
-the pointer drifts **0.000 px** across a 3.2× zoom (19 → 6.0 units), against 1.957 px while
-the anchor was the target's own level, and wheeling back out returns the camera to distance
-19.000 and target (0, 0, 1) — the opening placement exactly.
 
-**A drag pan grabs the level under the pointer and carries it**, rather than sliding the
-target at a rate. `interaction.panAcross` meets both ends of the pointer's step with the
-horizontal plane through the target and translates by the difference, so the world point a
-reader took hold of lands under the cursor. It replaces a rate of `FRACTION_PAN_PIXEL` of
-the orbit distance per pixel — right at exactly one depth and one tilt, and driven, a
-200-pixel drag carried the scene **288 pixels**. The rate survives only where a ray misses
-the level entirely, which is a drag beginning or ending on sky above the horizon.
-
-The rate's worse half was that `camera.pan` slides within the plane **facing the eye**,
-which is tilted: driven, one 200-pixel drag up the screen took the target from z **1.00 to
-6.40**, and a drag the other way to **−2.24**. The orbit centre ended up in mid-air, so
-every later orbit swung about a point on nothing and every later zoom was scaled by a
-distance measured to nowhere. Both hold points lie on one horizontal level, so the
-translation is horizontal by construction and the height cannot move at all — driven, 1.000
-to 1.000 on the mouse drag and on the two-finger pan alike, which used to be spelled
-separately in `glue.js` and now go through the one rule.
-
-**The hold point is bounded at `FACTOR_PAN_REACH_MAX` = 4 orbit distances**, because a
-horizontal level meets a ray aimed near the horizon a very long way off and one pixel of
-drag there is hundreds of world units. The *point* is clamped rather than the movement, so
-`min(reach, bound)` keeps the rule continuous as the cursor crosses the bound where
-switching rules there would jolt mid-drag; the clamp can tilt the step, so each hold point
-is taken to its **foot on the level through the target** (`projectOrthogonal`) and the
-step runs between the feet -- which changes nothing in the unclamped case, where both
-hits already lie on the level, and drops exactly the clamp's vertical artefact when it
-bites. Four rather than two:
-at the opening placement a ray a fifth of the way down the window already reaches 2.7
-distances, and bounding below what a reader routinely grabs would make the common case the
-governed one.
-
-**And the orbit centre now settles onto what is being zoomed into**, which is the other half
-of the same complaint: "the target gets away from what I'm looking at". `dollyToward` scales
-the target toward the anchor by exactly the factor the distance took — the whole of it is
-`target' = anchor + s·(target − anchor)` — so an anchor on the target's own level left the
-target on that level *for ever*, however far in the reader went, while an anchor on the
-ground draws it down. Driven in the shipped browser, eight notches over the ground carried
-the target from z = 1.00 to **0.32**; before this it held at 1.00 exactly.
+Camera
+---
+`camera.nim` holds an orbit camera: target, distance, azimuth, elevation. `ELEVATION_LIMIT`
+= π/2 − 0.02. The opening placement is `initCameraDefault`, read by both entry points and
+by `home`.
 
 **An orbit distance has a floor and no ceiling.** `DISTANCE_LIMIT_NEAR` = 0.05 is geometry:
-at zero the eye coincides with its target, the line joining them is undefined, and every
-direction `camera.frame` derives from it collapses. The 500-unit ceiling that stood beside it
-was a round number, and it was the camera reading as bounded to a region — dolly out to look
-at something a kilometre across and the view simply stopped moving. It is gone, along with
-the `clamp` that had been written out at five sites; `camera.distanceHeld` is the one
-statement of the floor, and construction, the dolly, both front-ends' numeric fields and
-`distanceFitting` all pass through it. Nothing downstream needed the ceiling: the clip planes
-are fractions of the distance, so the frustum keeps its shape at any distance, and the grid
-bounds its own line count rather than leaning on the camera's limits.
+at zero the eye coincides with its target and every direction `camera.frame` derives
+collapses. `distanceHeld` is the one statement of it; construction, the dolly, both numeric
+fields and `distanceFitting` pass through it. The 500-unit ceiling that stood beside it read
+as the camera being bounded to a region — dolly out to look at something a kilometre across
+and the view stopped. Nothing downstream needed it: the clip planes are fractions of the
+distance and the grid bounds its own line count. What degrades far out is `Vertex`'s
+float32 storage, past roughly 10⁶ units; wheeled out to 3 × 10¹⁹ the view empties to a
+speck rather than breaking, and `home` returns.
 
-What does degrade far out is `mesh.Vertex`'s float32 storage: past roughly 10⁶ units a
-coordinate carries under a tenth of a unit. Driven by the wheel out to 3 × 10¹⁹ the view
-empties to a speck rather than breaking — no NaN, no crash — and Home returns the camera to
-where it started. A stated limit, not an imposed one.
+**Clip planes follow orbit distance** — `FACTOR_CLIP_NEAR` 1/400 and `FACTOR_CLIP_FAR` 20
+times it — derived, never stored. Not a stored pair set at construction — it kept its value
+through every dolly, so dollying past the fixed far plane clipped the whole scene away. Both
+scale together, so depth-buffer precision stays constant as the camera pulls back.
 
-**Clip planes follow orbit distance** (`camera.distanceNear`/`distanceFar`, at 1/400 and 20
-times it). Derived rather than stored, so they cannot go stale — a stored pair set once at
-construction keeps its original value through every dolly, which is exactly the bug this
-replaced: the far plane sat at a fixed 400 while the orbit limit was then 500, so dollying past
-400 clipped the whole scene away, and well before that a line's own far end came back inside
-the frame and read as stopping in mid-air. Both scale together, so the frustum keeps its
-shape and depth-buffer precision — a function of the far-to-near ratio — stays constant
-instead of decaying as the camera pulls back.
+**The wheel zooms toward what the pointer is over** — the map reading of a zoom.
+`picking.anchorZoomAt` solves the anchor in three answers, in order: the finite object under
+the pointer, else the ground at `z = 0`, else the horizontal plane through the target; where
+none answers (empty sky above the horizon) the wheel falls back to a centred dolly. The
+object comes first because pointing at something means *that thing, at the depth it stands
+at*: `positionOnItemUnder` reads a point at its place, a plane where the sight ray crosses
+it, a line at the point nearest the ray. Horizon objects are refused — drawn at
+`radius_horizon` about the eye, they are not *at* any place, and a horizon plane matches
+every ray. The price is the jump: two notches taken either side of an object's edge converge
+on different depths. `camera.dollyToward` then moves the eye along its own line to the
+anchor, leaving the angles alone, and scales the target toward the anchor by the same factor
+(`target' = anchor + s·(target − anchor)`), so the orbit centre settles onto what is being
+zoomed into. The scale applied is read back from `distanceHeld`, so a zoom stopped by the
+floor moves the eye by exactly what it was allowed.
 
-**Furniture** (ground grid, world axes) reaches `extent_furniture`, computed from that far
-clip (`extentFurnitureFor`), and is drawn as **fog about the eye** rather than as a halo
-about the world origin. `fogFurnitureFor` solves the two radii, both measured from
-`DrawExtent.eye`: full strength within `FRACTION_GRID_FADE_START` × extent, gone by
-`FRACTION_GRID_FADE_END` × extent. `addGrid` lays lines on world multiples of the cell size
-that fall within the ground disc the fog leaves — radius `sqrt(radius_gone² − height²)`
-about the point below the eye, `mesh.radiusGroundFor` — and cuts each into as many as
-`SEGMENTS_GRID_FADE` pieces fading per-vertex (not per-piece, so GL interpolation stays
-smooth) by each endpoint's own distance from the eye; how many is `segmentsGridFadeFor`'s
-answer, bounded by the segment budget recorded in the bottleneck ledger. The two lines
-through the world origin are skipped, coinciding with the X/Y
-axes and depth-fighting them. Axes use standard convention (x red, y green, z blue).
+**A pinch stays centred**, and the exception is deliberate: the two-finger gesture already
+pans by its midpoint's travel, so aiming the zoom there translates the view twice for one
+gesture; measured, the midpoint-aimed pinch dragged the view 11.4 units where the centred
+one holds it.
 
-**The scale bar**, bottom left, is what makes that ruled ground measurable rather than
-decorative: a span of ground drawn at its true screen length with the distance it covers
-written under it, and the grid's own current cell size beside that. The span is stepped
-1-2-5 by decade to land near 130 px, the way every map scale is stepped — a bar tied
-rigidly to one cell runs off the screen at close range and shrinks to nothing far out,
-because the cell steps by decades while the projection does not; measured before the
-stepping, one cell ran 11,983 px at orbit distance 3 and 53 px at 120. Both numbers come
-from `browser_bridge.nimGridMetrics`, which reads the same `mesh.sizeCellGridAt` that
-`addGrid` lays the lattice with, so what a reader is told and what is drawn cannot come
-apart — the export exists for exactly the reason `nimRenderLineWidths` does. It is built
-from `extentViewOverlay`, hence in **CSS** pixels, since a bar is read in the same pixels
-the pointer works in. Hidden outright where no ground is drawn at all — an eye above the
-fog's own reach. The driven layer checks the bar's drawn length against the distance its
-label claims, at two camera distances a decade apart so the cell's own step is exercised.
-  **The drawer is drawn over it, rather than displacing or hiding it.** The bar sits at
-`z-index: 3`, under the drawer's 4, so it stays in the corner it measures from and the panel
-simply covers it — what a map's scale bar does when a panel opens across it. It used to step
-aside to the drawer's far edge, and a media query hid it outright in the bottom-sheet
-layout: on a phone, where the sheet is full width, "aside" was off-screen, so opening the
-drawer deleted the reading. A bar a panel is sitting on can still be read by closing the
-panel; one that has vanished cannot be found at all. Held by a driven check that opens the
-drawer and requires the bar to have moved zero pixels, to still be displayed, and to sit on
-a lower layer than the drawer.
+**A drag pan grabs the level under the pointer and carries it.** `interaction.panAcross`
+meets both ends of the pointer's step with the horizontal plane through the target and
+translates by the difference. It replaces a rate of `FRACTION_PAN_PIXEL` = 0.0016 of the
+distance per pixel, which carried the scene 288 px for a 200 px drag and, sliding within the
+plane *facing the eye*, took the target from z 1.00 to 6.40 one way and −2.24 the other, so
+every later orbit swung about a point in mid-air. Both hold points lie on one level, so the
+height cannot move: 1.000 to 1.000 driven, mouse and two-finger alike, through one rule. The
+rate survives only where a ray misses the level — a drag on sky. **The hold point is
+bounded at `FACTOR_PAN_REACH_MAX` = 4 orbit distances**, because a level meets a ray aimed
+near the horizon a very long way off; the *point* is clamped rather than the movement, so
+the rule stays continuous as the cursor crosses the bound, and each hold point is taken to
+its foot on the level (`projectOrthogonal`) so the clamp's tilt cannot leak into the step.
+Four rather than two: at the opening placement a ray a fifth of the way down the window
+already reaches 2.7 distances.
 
-Fog, not a halo, because a halo makes the origin a place the reader may not leave: panning a
-hundred units away left no ground at all, and the camera read as bounded to a region though
-only its orbit distance ever was. **Verified by rendering it**: an eye a thousand units from
-the origin now stands on lit ground, with the axes correctly gone.
+**Keys move by shared rates per second** — `TURN_SECOND` 1.4, `RISE_SECOND` 1.1,
+`SLIDE_SECOND` 1.2, `FACTOR_DOLLY_SECOND` 4.0, `FACTOR_HASTE` 4.0 under shift — applied
+each frame scaled by elapsed time, so a hold covers the same ground at 60 Hz and 144 Hz; the
+dolly compounds as `pow(factor, seconds)`. Drag rates differ per front-end for a real
+reason: `visualiser.SPEED_ORBIT` (0.008) is radians per pixel and `glue.js` works in
+fractions of canvas width.
 
-The **cell size is `SIZE_CELL_GRID` = 10.0 at every reach a reader works at**, replacing a
-size that doubled with the reach until at most `CELLS_GRID_HALF_MAX` cells covered it. A
-cell that walks continuously with the reach re-scales the ground under a reader as they
-dolly, so no distance read off it is comparable with the last; a fixed cell is a ruler. A
-hundred-unit cell was tried first and rendered: at the opening placement the reach is ≈72
-units, so it put at most one line in view and usually none, and the ground read as empty
-until the camera pulled back past a distance near 30.
-
-`CELLS_GRID_HALF_MAX` = 120 bounds the lines laid, at ≈23,000 ribbon vertices against
-`VERTICES_MAX` = 49,152, which world furniture has a mesh set to itself. **That bound is
-spent on the cell, not on the reach**, and that is the second thing it has done. Cutting the
-*reach* at 120 cells — 1,200 units — meant a camera dollied past it had the ground stop
-reaching what it was looking at, and past twice that saw nothing at all: measured in the
-shipped browser at orbit distance 5,000 and 1,000,000, **zero grid vertices built**, a black
-void with no reference of any kind, axes included, since the axes fade on the grid's own
-schedule. An orbit distance has no ceiling, so a reader meets this by scrolling.
-
-`sizeCellGridFor` steps the cell instead, by **decades** — the smallest power of ten that
-keeps the ground disc inside `CELLS_GRID_HALF_MAX` cells. Decades rather than a gentler
-1-2-5 sequence because they *nest*: every line of a hundred-unit lattice is a line of the
-ten-unit one, so a step coarsens what is drawn without moving a line the reader was
-measuring against, where 10 → 20 would replace every odd line with nothing. The first step
-is at 1,200 units of ground reach, orbit distance ≈316, well past any distance a reader is
-reading numbers off the ground at — and by then a ten-unit cell is already the aliasing haze
-`FRACTION_GRID_FADE_END` exists to cut short. Measured in the shipped browser, grid vertices
-built at orbit distance 300 / 1,000 / 5,000 / 10⁶: **86,142 / 95,088 / 0 / 0** before,
-**86,142 / 28,392 / 13,818 / 28,392** after. Rendered and looked at: the opening view and
-the view at 300 are pixel-identical to what they were, and 1,000 upward gains a legible
-lattice where it had a haze or a void.
-
-This is a cell that steps, which the paragraph above argues against, and the argument still
-holds where it was made. What is answered here is the case that rule left with nothing at
-all: past the reach a fixed cell can cover, the choice is not "fixed cell or stepped" but
-"stepped cell or no ground".
-
-The **fade fractions were re-tuned with the move to the eye**, 0.03/0.12 → 0.06/0.20, and
-the two sets are not comparable: a radius measured from the origin reached that far *past*
-the content, while the same radius from the eye is spent getting to it. 0.06 is 1.14 orbit
-distances, which puts what the camera is looking at inside the solid core; 0.20 is 3.8, which
-puts the fog's edge about 2.8 distances beyond it and still a fifth of the far clip. Both
-numbers came from rendering the alternatives: at 0.03/0.12 the ground at the target was
-faint enough to read as absent.
-
-The grid is additionally **dimmed by `ALPHA_GRID` = 0.75** where it is built. Width alone
-(1.5 px against a line's 2.5) was not carrying the difference between reference and content.
-Applied in `addGrid` rather than to `Ink.Grid`, which is also `INK_POOL_FREE` — dimming the
-palette entry would make a scene object taking that colour translucent. 0.55 was tried first
-and rendered a ground that read as absent rather than as recessive; the grid's colour already
-sits close to the backdrop, so opacity spends fast.
-
-**The world axes are reference, not geometry, and they are drawn that way.** Readers kept
-taking them for drawn lines. Measured against the source rather than judged: an axis was the
-only piece of furniture with *no* distance fade, running to 0.95 of the far clip at full
-alpha, while the ground grid faded out at 0.12 — so an axis was the longest and brightest
-mark in any frame. Width already separated them (1.5 px against a line's 2.5, compile-time
-asserted) and clearly was not enough on its own.
-
-Two changes. The axes now fade and cut off on **the grid's own schedule**, so all the
-furniture ends at one horizon and reference reads as a neighbourhood around the *reader* —
-this deliberately reverses an earlier decision to let them reach indefinitely, which bought
-orientation at any zoom and cost the confusion above. Each axis is drawn over the chord of
-the fog sphere it crosses, so one the camera has flown clear of contributes nothing; the
-cost, accepted, is that beyond the fog nothing marks where the origin is. And the three hues
-are **dimmed and desaturated**, through `axisTinted` at compile time from
-`MUTE_AXIS_TOWARD_GREY` (0.22 → 0.45) and a new `SCALE_AXIS_LUMINANCE` (0.50). Those
-constants were previously documentation only — the blend was hand-applied into the literals
-and nothing read the constant, so the number and the colours it described could drift apart.
-They are the source now.
-
-**The dimming was settled by the palette gate, not by eye.** A first attempt at 0.62
-luminance read well and *failed* `tools/check_palette`: dimming had walked the green and
-blue axes onto `Rose`'s own luminance and the pairs collapsed under red-green deficiency at
-3.5 and 3.3 ΔE against a floor of 4.0. Going further down clears it, the axes landing below
-every categorical hue rather than among them — the rare case where the accessible answer and
-the quieter one coincide. `check_palette` also gained the floor nobody had: furniture against
-`Backdrop`, since dimming has an obvious other end and nothing was watching it (axes now
-15.7–25.3 ΔE against a floor of 8.0).
-
-**Muting.** `mesh.muted()` blends a colour toward its own luminance
-(`MUTE_DESATURATION` = 0.6) rather than replacing it with `Ink.Grid.colour`, which made a
-muted object indistinguishable from the ground grid; `FRACTION_DIMMED_ALPHA` = 0.55 so
-muted objects read as present background context, not washed out.
-
-**Draw sizes** live in `mesh.nim`, not in `renderer.nim` where they are actually handed to
-OpenGL: `SIZE_POINT` 9.0, `WIDTH_LINE_FURNITURE` 1.5, `WIDTH_LINE_OBJECT` 2.5 px, with a
-`static: doAssert` that object lines exceed furniture lines so reference geometry recedes.
-`marker` derives every marker's own clearance from them and cannot import `renderer`, which
-binds straight to OpenGL — so one shared home, read by both render paths, replacing the
-copy `browser_bridge` used to carry.
+*Checked.* Verified by driven wheel events: an object under the pointer drifts 0.000 px
+across a 3.2× zoom against 1.957 px with the target-level anchor, and wheeling back out
+returns to distance 19.000 and target (0, 0, 1); eight notches over the ground carry the
+target from z 1.00 to 0.32. Verified by driven drags: the pan figures above. Verified by
+suite: `norm(eye − target)` equals the held distance after a floored dolly; the pan's height
+invariance; the clamp's continuity. Verified by driven keys: 500 ms of `w` moved the target
+12.8 units with z unchanged to four decimals, shift 49.3. Assumed: that no ceiling is wanted
+by any reader, argued from the map reading rather than measured.
 
 
-Ribbons
+Records And Shaders
 ---
-**Every line is drawn as a quad, never as `GL_LINES`.** A line width is a hint a target is
-entitled to ignore: most WebGL implementations clamp `gl.lineWidth` to one pixel outright,
-and core-profile OpenGL only ever guaranteed one. So `WIDTH_LINE_OBJECT` (2.5) and
-`WIDTH_LINE_FURNITURE` (1.5) meant nothing in the browser — scene lines and reference
-furniture drew identically there — and worked on the desktop only because Mesa is generous.
-`mesh.addSegment` now builds the width as geometry, so both builds draw the same thing and
-neither asks a driver for anything.
+**Every line is a quad, never `GL_LINES`.** A line width is a hint most WebGL targets clamp
+to one pixel, so `WIDTH_LINE_OBJECT` and `WIDTH_LINE_FURNITURE` meant nothing in the browser
+until width became geometry. Each end is offset half a width along `directionAcross` —
+the normal of the plane joining the segment with the eye — scaled by `worldPerPixelAt` at
+*that end's own depth*, which is what keeps the on-screen width constant along a receding
+line. **The near plane is clipped against first**: a depth clamped at the near plane breaks
+the proportionality, and the first frame after the change drew a world axis twenty pixels
+wide near the origin. An end behind the near plane moves up to it along the segment with its
+tint blended by the same fraction; a segment entirely behind is dropped.
 
-Each end is offset half a width along `directionAcross` — the normal of the plane joining
-the segment with the eye, which is the direction that shows as sideways from where the
-camera stands — scaled by `worldPerPixelAt` at *that end's own depth*. Offset proportional
-to depth is what makes the on-screen width constant: the quad's straight edges then
-interpolate a world offset that stays proportional to a depth which is itself linear along
-the segment. Both derivations already existed for a line's own selection rails in
-`marker.nim`, which now delegates to them rather than carrying a second copy.
+**The widening runs in the vertex shader on both targets.** One fifteen-float
+`RibbonRecord` per segment (sixteen with the `fog` flag) crosses the wire against the
+forty-two floats six CPU vertices cost, expanded by an instanced draw — GL 3.3 core on the
+desktop, `ANGLE_instanced_arrays` on WebGL1. The across is derived per vertex as
+`cross(head − tail, eye − tail)`, which for collinear pieces is the per-line hoist it
+replaces. **Chain of custody**: the GLSL ships, `mesh.expandRibbon` is its reference in Nim
+(sibling-marked with both shader sources), and the suite holds the reference to the
+algebra — the near clip equal to `clipToEyeSide`, the across equal to the join
+`directionNormal(tail ∧ head ∧ eye)`, sign included. The desktop captured the same frame
+under the old CPU expansion and the instanced path: zero of 1,296,000 pixels differed.
 
-**The near plane has to be clipped against first**, and this is the one part that was not
-obvious. A depth clamped at the near plane breaks the proportionality the whole scheme rests
-on, and the first frame rendered after the change showed it: a world axis running from far
-behind the camera to far in front drew *twenty pixels wide* near the origin. `addSegment`
-now moves an end that stands behind the near plane up to it, along the segment, blending its
-tint by the same fraction; a segment entirely behind is dropped. A great circle drawn around
-the eye loses about half its segments to this, which is why the suite checks a count it
-computes rather than one it assumes.
+**A plane's fill, its rim and the sky are one record each.** A 13-float `DiscRecord`
+(centre, two radius-scaled arms, tint) fans over a static unit-circle corner buffer; an
+8-float `DomeRecord` (centre, radius, tint) widens over a static unit sphere — a full sphere
+has no orientation, so the record carries none; a 14-float `RingRecord` is a disc's thirteen
+plus a width, one instance drawing the whole circle over `mesh.ringCorners`. The static
+corner tables come from one generator each in `mesh` (`discCorners`, `domeCorners`,
+`ringCorners`), read by the desktop directly and by the browser through `nim*Corners`, so
+neither target holds a table that could drift from the references (`expandDiscVertex`,
+`expandDomeVertex`, `expandRingVertex`), which the suite pins to the multivector sums they
+replaced. `ribbonOfRing` derives the very `RibbonRecord` a rim segment would have been and
+`expandRingVertex` is `expandRibbon` of it, so a rim is widened by the one rule every line
+is. The rim steps off `UNIT_CIRCLE_RIM`, resolved at start-up with the runtime's own
+`cos`/`sin` — not at compile time, whose evaluator need not agree with each backend's libm
+in the last bit.
 
-`GL_LINE_SMOOTH` went with `gl.lineWidth`, and a 1.5-pixel quad with nothing smoothing it
-rasterises only where it covers a pixel centre — the whole ground grid read as dotted.
-The desktop now asks for a 4-sample framebuffer and **falls back to none if no visual
-offers it**: `llvmpipe` under `xvfb`, which every headless capture here runs on, refuses the
-window outright rather than downgrading, and a visualiser that will not start is worse than
-one whose thinnest lines alias. The browser context already asked for `antialias: true`.
+The rim was the last to move and it was 85% of the demo frame: `SEGMENTS_CIRCLE_HORIZON`
+= 96 ribbon records per plane were 12,672 of 12,772 ribbon records (99.2% of ribbon traffic,
+811 KB walked four times a frame) and 45 ms of a 53 ms frame on 132 planes. As a record the
+demo's median frame went 239 → 84 ms under SwiftShader.
 
-`VERTICES_MAX` went from 16,384 to 49,152, because a segment that was two vertices is now
-six. The binding case is a scene filled to `ITEMS_MAX` with planes: 64 x 97 ribbons x 6 =
-37,248, which the old bound would have asserted on. The suite builds exactly that scene
-rather than trusting the arithmetic. Costs about 4 MB per `MeshSet`, of which there are two.
+**Wash order is kept, not assumed away**: two translucent washes still blend in scene
+order, so every append extends or opens a `WashRun` and both render paths walk the runs in
+sequence rather than drawing one whole array after the other. `markOverlay` seals the current
+run. `RingMesh` carries its own `index_overlay`, or a selected plane's second rim would draw
+depth-tested behind the fill it highlights. Rims are drawn straight after object lines
+rather than interleaved; the only difference is blend order where two translucent strokes
+overlap during a plane's fade-in.
 
-**Measured, on the desktop, by counting lit pixels across a drawn line** and correcting for
-the angle it runs at: a scene line asked for 2.5 px measures 2.39–2.73 px, and reference
-furniture asked for 1.5 px measures 1.29–1.52 px — each constant along the line's own length
-as it recedes, which is the property that fails if `worldPerPixelAt` is fed the wrong depth.
+**Capacities** are asserted in `scene.nim`, the one module that can see both sides, so
+raising `ITEMS_MAX` fails to *compile* rather than `doAssert` at draw time (a dead page):
+
+| Cap | Value | Binding case |
+|---|---|---|
+| `VERTICES_MAX` | 10080 = 2 × `ITEMS_MAX` | every slot a point, every one selected |
+| `DISCS_MAX`, `DOMES_MAX`, `RINGS_MAX` | 10081 = 2 × `ITEMS_MAX` + 1 | every slot a plane, |
+|  |  | every one selected, plus a ghost |
+| `RIBBONS_MAX` | 20161 = 4 × `ITEMS_MAX` + 1 | every slot a line, two segments, drawn twice |
+
+The furniture set's own binding case is `LINES_GRID_MAX` lattice lines per family. The
+desktop asks for a `SAMPLES_MULTISAMPLE` = 4 framebuffer and **falls back to none if no
+visual offers it**: `llvmpipe` under `xvfb` refuses the window outright rather than
+downgrading, and a visualiser that will not start is worse than one whose thinnest lines
+alias. The browser context asks for `antialias: true`.
+
+**The flat buffers are the page's own typed arrays, filled in place.** A `seq[float32]` on
+the JS backend is an `Array` of boxed doubles, converted element by element into a staging
+`Float32Array` — a fourth pass over bytes nothing else read. `FlatBuffer` is a `Float32Array`
+behind three `importjs` lines, allocated once at its mesh's cap (about 1.4 MB in all) and
+never grown; `flatten*Into` write into it unchanged and each frame hands back a `subarray`
+view — one small object per buffer, seven a frame, no copy. `uploadBuffer` refuses anything
+that is not a `Float32Array`. Measured at 0.1 ms a frame once the ring record had taken the
+input from 204,352 floats to about 9,000; the win is the class, since the conversion scaled
+with the scene.
+
+Draw order in `glue.js` mirrors `renderer.nim` and is kept in step by hand: furniture
+ribbons, then scene ribbons and points, then rings, then washes with `depthMask(false)`.
+
+*Checked.* Verified by suite: the widening reference against the algebra; every stepped disc,
+dome and ring corner against the sum it replaced; all ninety-six rim segments on the plane
+at its radius; the capacity assertions, by building the binding scenes. Verified by desktop
+A/B under Xvfb: 0 pixels for the ribbon move, at most 38 of 1,296,000 per storyboard frame
+(channel delta ≤ 12) for the disc and dome move, where the record narrows its arms to
+float32. Verified by driven check: the demo's ribbon records under 64 against a ring count
+over 120. Assumed: that the 0.1 ms flat-buffer figure holds at the current caps; it was
+measured at 1,024 objects.
 
 
-Selection And Picking
+Algebra Boundary And Debug Layer
 ---
-`visualiser/core/selection.nim`, shared: an ordered fixed-capacity list of slots, held as a plain
-value type like `History` beside it. **Order is the whole point, and the reason it is a list
-rather than a set** — an operation reads its operands positionally, so the first slot picked
-is `m` and the second `n`. `impliedArity` lives here too: one pick names a unary operation,
-two or more a binary one. Both UIs read that rule rather than restating it, which is what
-keeps the drawer's `apply` section and the browser's floating menu from disagreeing about
-what a selection means.
+The **algebra owns geometry** — what a thing is and where it stands: construction,
+incidence, meets, joins, projections, nearest points, side tests; the world-space camera;
+rays cast from the screen; the lattice lines and axes, which are lines; everything at the
+horizon. The **picture owns representation** — how geometry becomes GPU primitives: a
+plane's disc and rim, a ribbon's across-vector — built with whatever arithmetic is quickest.
+A point has no picture to own: one vertex sized by a uniform.
 
-**A selected object is drawn over every other object, until it is deselected.** It is the
-one being worked on, and a plane's wash tinting it or a line crossing in front of it is the
-view arguing with the reader about what they just asked to look at. The mechanism is one
-watermark per mesh — `mesh.Mesh.index_overlay`, an `Option[int]`, set once per frame by
-`markOverlay` between the ordinary objects and the selected ones — and then two draws per
-primitive instead of one, the tail with `GL_DEPTH_TEST` off. **`Option`, not a sentinel of
-zero**: an index of zero legitimately means "all of it is the overlay", so a mesh nobody
-marked has to say *none*, and getting that wrong drew every line of world furniture over
-the whole scene. A watermark rather than a third `MeshSet`, because a set reserves
-`VERTICES_MAX` per primitive up front — the largest single reservation this build makes —
-for a run that is usually one object; order already decides what these buckets look like, so
-an index into that order costs nothing and says the same thing.
+**The boundary is enforced by the compiler.** `mesh.nim` imports `euclid.nim` and nothing
+else, so `Multivector` is not a type it can name; `euclid` reaches `pga/algebra.nim` only;
+`objects.nim` is the algebra's vocabulary and names no Euclidean type; `boundary.nim` is the
+one module speaking both, so every lift and read-out is findable in one file; `tessellate`
+is the geometry side of drawing and calls down into `mesh`.
 
-**The overlay is a second pass over every primitive kind, not a tail on each one.** The tail
-was written first and measured: a selected line came out over the other lines and *still*
-tinted by a plane's wash, because the wash is a later kind and the overlay run, having no
-depth test, writes no depth for that wash to be rejected against. On the desktop that showed
-up as the selected line's own pure-ink pixel count falling from 2,626 to 1,106; with the
-whole ordinary set drawn before any of the overlay it is 2,626 again. Verified on the
-browser too, where the marker and its comet are SVG outside the canvas and the WebGL frame is
-still once the tweens settle: with two crossing planes selected, **15,668 pixels** change
-against a **0**-pixel noise floor between two identical shots — and **0** on the build before
-this change, where selecting altered nothing the canvas drew.
+**A PGA equation on the geometry side is never replaced with linear algebra.** The library
+is what this project exists to exercise, so a cost it carries there is a finding, restructured
+only in PGA's own terms (hoisting an invariant multivector, sharing one join across pieces
+that provably share it). What may leave the algebra is the *picture*, and when it does the
+algebra becomes the reference the shipped form is proved against: the across-vector cross
+product is held equal to the triple join, every stepped disc point to the multivector sum.
+The horizon shapes, the lattice lines and the axes stay in the algebra; the dense
+16-coefficient `Multivector` copied by value through every operation (~1–2 µs an op on the
+JS backend) stays, because changing its storage would change the thing being measured.
 
-**On the desktop, a mark on an object draws beneath the panels, not over them.** Dear ImGui
-offers two overlay layers: a background list beneath every window and a foreground list above
-them all, both above the 3D scene OpenGL has already rasterised. Every overlay call used the
-foreground one, so a selection ring, a hover ring, a line's rails, a plane's loop and the
-drag band all floated over the panel — including when the panel was covering the very object
-being marked. Reported by the user, and visible in the committed storyboard, where the
-selected plane's marker circle crossed the objects list. They are on the background list now;
-`gui_shim.overlayList` is the one place that choice is made. **The drag menu alone stays
-above**, since it is a control being steered rather than a mark on anything, and a wedge the
-reader is reaching for should not slide under chrome. `guiOverlayCircle` takes the layer as a
-parameter because it is the only call serving both — a marker's full ring through
-`guiOverlayArc`, and the menu's own centre dot. Measured on storyboard frame 02: marker
-pixels drawn inside the panel's rectangle fell from **3,453 to 3,059**, and frames whose
-marks never crossed the panel are pixel-identical.
+**The tessellation assembles before it emits.** Each loop resolves its places through the
+algebra into a `DrawScratch` and emits afterwards; for the grid and axes the seam is between
+two procs. `placeObject` answers what a drawable is and where — from the multivector alone,
+so the answer holds while the camera moves — and `emitObject(placeObject(...))` is what
+`addObject` is. Two steps stay on the placing side inside `emitObject` (a horizon marker's
+stand-off, a line's two vanishing points) because the cut the panel reports is by kind of
+work, not by proc. `tessellate` takes its scratch as a parameter: the desktop hands it swap
+arena memory, the browser a fixed buffer.
 
-Selection is deliberately **not** part of `Scene`: never saved, never recorded on the undo
-timeline, and cleared outright by a successful undo or redo, since a restored snapshot's
-slot numbers need not match what was picked against the live scene. `pruneDead` runs after
-a removal, because a freed slot goes straight back to the next add and a pick left behind
-would silently reattach to an unrelated object.
+**The debug layer** (`algebra_trace`, `algebra_view`) records every multivector a frame
+computed and draws each as what it is, the way an engine draws its physics world over the
+art: a finite plane as a fog-faded lattice over the whole plane (`radiusOnPlaneFor`,
+`addGridFamily`, generalised from the ground), plus geometry the scene does not contain —
+the sight axis, the eye and near planes, the cursor's ray and where it meets the level. Both
+render paths call one `addFrameTrace`. **What it does not reach**: the per-candidate meets
+`rayPlaneHit` forms inside `pickNearest` — threading a collector back out would make the
+pure `pickNearest` a proc, and re-deriving the meets would show what the drawer computed
+rather than what the pick did. The ray the pick casts *is* drawn. Off by default, with its
+own diagnostics row beside the scene's. The trace is caller-owned scratch of `TRACED_MAX` =
+`ITEMS_MAX` + 16 entries: as a stack local it built ten thousand `Traced` objects a frame
+before recording five, 13.3 ms against 4.1 after. Its control reads **debug**, not
+"algebra" — a control named algebra read as the subject of the app.
 
-"Just built" and "currently selected" are one concept with one mechanism, **one marker per
-selected slot** in both UIs, plain white, 2.0 px, and every construction path replaces the
-selection with the slot it just created. Hover draws the identical marker at 80% opacity —
-weight is the only thing that tells the two apart, so hovering a line previews exactly what
-selecting it will draw.
+*Checked.* Verified by suite: every moved form pinned to its algebraic reference. Verified by
+driven check: the layer draws more than the picture, and its cost band. Assumed: the µs per
+op figure, from one profile at 1,024 objects.
 
-`marker.nim` shapes that outline to what it marks, because a marker says "this one" best
-when its own outline echoes the thing it surrounds:
+
+Selection And Markers
+---
+`selection.nim`, shared: an ordered fixed-capacity list of slots, a plain value type.
+**Order is the whole point** — an operation reads its operands positionally, so the first
+slot picked is `𝐦` and the second `𝐧`. `impliedArity` lives here too. `Selection.revision`
+counts real changes (a clear of an empty selection is not one), so the frame record and the
+desktop panel compare one integer instead of a 5,040-slot array every frame. Selection is
+**not** part of `Scene`: never saved, never on the timeline, cleared outright by a
+successful undo or redo, and `pruneDead` runs after a removal because a freed slot goes
+straight back to the next add.
+
+**A selected object is drawn over every other object.** One watermark per mesh
+(`index_overlay`, an `Option[int]` — an index of zero legitimately means "all of it", so a
+mesh nobody marked has to say *none*), set once per frame by `markOverlay`, then a second
+pass over **every** primitive kind with the depth test off. A second pass rather than a
+tail on each kind: the tail left a selected line tinted by a later wash. A watermark rather
+than a third `MeshSet`, because a set reserves every cap up front for a run that is usually
+one object. On the desktop marks draw on Dear ImGui's **background** list, beneath the
+panels, exactly as the object is; the drag menu alone stays on the foreground list, since it
+is a control being steered.
+
+"Just built" and "currently selected" are one mechanism: one marker per selected slot,
+plain white, and every construction path replaces the selection with the slot it created.
+Hover draws the identical marker at `ALPHA_MARKER_HOVER` 0.6 against `ALPHA_MARKER_SELECTED`
+0.9; keyboard focus wears it too. Only a caller passing a time gets a pulse, so motion means
+selected.
+
+`marker.nim` shapes the outline to what it marks:
 
 | Shape | Marker | How it fills |
 |-------|--------|--------------|
-| Point | Circle in screen space about the drawn point. | Sweeps clockwise. |
-| Line | Two segments flanking its projection, one each side. | Runs out from its support. |
+| Point | Circle in screen space about the drawn point. | Sweeps clockwise from twelve. |
+| Line | Two rails flanking its projection, one each side. | Runs out from its support. |
 | Plane | A circle lying *on the plane*, outside its rim. | Opens from the disc's centre. |
-| Line at horizon | Two small circles of the sky it circles. | Closes in from a quarter turn. |
+| Line at horizon | Two bands on the sky it circles. | Closes in from a quarter turn. |
 | Plane at horizon | The viewport's edge, inset by the gap. | Expands as a circle from the middle. |
-| Point at horizon | Circle, about the fixed star it draws as. | Sweeps, as any point does. |
+| Point at horizon | Circle about the fixed star it draws as. | Sweeps. |
 
-The last two had no marker at all until this round, on the reasoning that an object drawn
-fixed to the eye offers nothing to surround. That was the wrong conclusion from a true
-premise: what a marker surrounds is *whatever is drawn*, and both are drawn. A horizon line's
-bands are built from the same normal and spanning pair `mesh.addLine` builds its great circle
-from, so the three wrap the sky as one family; they settle at the very gap a finite line's
-rails keep, read as an angle through `mesh.radiansPerPixel`. They arrive by closing *inward*
-because a horizon line has no support to grow outward from — and the horizon plane's frame
-opens *outward* from the middle, which is what tells the two apart while they fill.
+All keep `GAP_MARKER` = 6.0 px between the object's drawn edge and the marker, measured out
+from the drawn size: `RADIUS_MARKER_POINT` = `SIZE_POINT`/2 + gap = 10.5 px,
+`OFFSET_MARKER_RAIL` = `WIDTH_LINE_OBJECT`/2 + gap = 7.25 px. `WIDTH_MARKER` 1.5 px, asserted
+thinner than the line it marks — 2 px of pure white at an 11.5 px gap read as a second
+object. Markers are stroked by each render path's foreground layer (`gui.overlayPolyline`,
+SVG), never as scene geometry: a loop on a plane would z-fight its fill, and a marker the
+object can occlude is not a marker. A 3D-modelling-style outline (oversized silhouette,
+depth-write off, its own shader and mesh set) was built and deleted; do not reintroduce it
+without being asked.
 
-**The horizon plane's frame is an expanding circle that becomes the screen edge.**
-`markerFrame` samples a closed polyline: at each angle the boundary radius is `progress ×
-half-diagonal` or the distance to the inset viewport edge along that angle, whichever is
-smaller. So it is a circle for as long as the circle fits, and then *becomes* the edge piece
-by piece as the circle passes each part of it — the four edge midpoints first, the corners
-last, since full reach is the half-diagonal and that is exactly the corners' own distance.
-Scaling a rectangle about the centre instead, which is what shipped first, reached every
-edge simultaneously and read as a shrunken copy of the screen rather than as something
-opening out into it. `SEGMENTS_MARKER_FRAME` = 64 even angular steps, a multiple of four so
-the edge midpoints are sampled exactly, plus the four corner directions merged in by angle
-(`CORNERS_MARKER_FRAME`): a corner missed by a fraction of a step is a corner visibly cut off
-the finished frame, and nothing else needs extra sampling because a sample on a straight edge
-lies *on* that edge by construction. Measured in a 900×800 view: 68 points, radius flat at
-296.8 px at half progress (a circle), 394.0–445.2 px with 20 points on the edge at three
-quarters, and 394.0–593.6 px with all 68 on the edge when finished — read back off the live
-`<polygon>` the browser overlay strokes, not off the core alone.
-
-**On touch every marker swells clear of the finger** (`clearanceTouch`): a fingertip covers
-what it presses, so a marker filling underneath one says nothing to the person filling it.
-54.5 px, added rather than multiplied so one number means the same on a point's 10.5 px ring
-and on a plane's rim hundreds of pixels across; it takes the ring to a **130-pixel circle**,
-about twice a thumb's contact patch, so the halo stands outside the hand rather than at its
-edge. Zero throughout for a mouse, which hides nothing.
-
-**The swell runs on its own clock, in four phases** (`interaction.swellHold`): it grows over
-`SECONDS_SWELL_GROW` (0.12 s), sits at full through the whole fill, **stays there for as long
-as the finger is down past maturity**, and settles over `SECONDS_SWELL_SHRINK` (0.15 s) once
-the finger lifts. Only the middle two phases have anything to do with the fill. It was a half
-sine over the fill instead, which put the marker back at its true size at exactly the moment
-the selection landed — shrinking while the reader was still deciding, and gone when it
-mattered. `progressHold` now starts *after* the grow, so the marker is already at the size it
-will fill at before it begins filling and the fill keeps its whole half second; a press is
-0.62 s end to end rather than 0.50. Measured on a Pixel 5 in CSS pixels, sampled against the
-real clock: 10.5 → 58.2 → 65.0 through the grow with the fill still at 0, flat 65.0 across the
-fill, still 65.0 at 2 s and 10 s past maturity with the item already selected, then 64.9 →
-17.3 → 10.5 through the settle.
-
-That last property forces a rule the overlay breaks nowhere else: **the swollen marker is
-drawn even once its slot is selected**, and the plain selected marker for that slot is
-skipped. The plain one is the very size the swell is animating away from, so drawing it too
-would snap the outline at the moment the selection lands. The browser therefore keeps the hold
-past maturity rather than cancelling it, and retires it only once `isHoldSpent` says the
-settle is over. `cancelHold` still snaps away without settling — that is a press which
-*stopped* being one (moved into a camera gesture, a second finger, escape), and there is
-nothing left for a settle to be about. `isHoldSpent` is stated against `swellHold` rather than
-against the shrink duration a second time, which is `isHoldMature`'s own rule and necessary
-here: subtracting two large timestamps measured 0.14999999999997 against a 0.15 s shrink.
-
-**One notation, everywhere.** A drag used to name what it built in ASCII — `a ^ b`, `a v b`,
-`a -> b` — while the panel named the identical pair through the catalogue's own symbols, so
-one object list carried both spellings of the same operation. `commitChoice` now names and
-messages its result through `scene.notationSubstituted`, the very call the panel's apply
-button makes, so the two paths produce byte-identical labels. The storyboard's own step
-captions took the real symbols with them.
-
-**A picker offers symbols alone** (`scene.notationSymbolic`), not the whole catalogue entry:
-`𝐦 ∧ 𝐧`, not `𝐦 ∧ 𝐧  wedge (join)`. The English name is three to five times the width and
-pushed the selection menu's popover past what a hand can reach on a phone; it stays in the
-table for tooltips. The **drag wedges keep their words**, which is the opposite decision on
-purpose and was measured rather than assumed: rendered, the projection's own notation
-`𝐧 ∨ (𝐦 ∧ 𝐧☆)` is nearly twice the width of "project", so symbols widen the one menu that is
-read under a thumb. A picker is a list read at leisure; a wedge is a target.
-
-**A picker opens on what was last applied at its own arity** (`scene.OperationMemory`),
-defaulting to attitude for one operand and wedge for two. Per arity because the two lists are
-disjoint — a unary choice cannot carry across to a binary picker, and falling back to the head
-of the list there would undo the memory for the arity that did not change.
-
-**Every apply control ghosts its own answer while the reader is still choosing it**, rather
-than waiting for apply — the rule the edit session already follows on a keystroke and the
-drag's rubber-band beside it. `scene.Preview` is the one statement of a construction not yet
-committed: the geometry, the anchor its disc will be drawn about, and the operand slots it
-came from. `previewApplying` builds it from a scene and two slots, and the drag's own
-`Interaction.preview` is the same type built by the same call, so those two cannot drift.
-
-Reaching all four paths took three fixes, not one:
-
-- **The desktop had no preview at all**, in either its drawer's apply section or the
-  selection menu's picker. `Panel.preview` is cleared once a frame by `layoutPanel` and
-  written by whichever apply control is on screen; a closed section simply never writes,
-  which is the whole of "shown while choosing" without a flag saying so.
-- **The browser drawer's preview ignored its operands and never cleared**, so choosing an
-  operation left a ghost standing after the section collapsed. It also passed each operand
-  picker's *position* where a scene *slot* was wanted — the apply button beside it had
-  always translated through `nimSceneSlots`, and the preview had not, so the two named
-  different objects whenever the two orders differed.
-- **A previewed plane sat at its support**, and jumped to its creation anchor when apply
-  landed. Fixed by the anchor `Preview` now carries, the same way the drag's ghost was.
-
-`staged` (`panel.staged`, `browser_bridge.staged`) decides which of the two claims shows
-where both stand: **the session wins**, since it is being typed into while a preview is a
-passive reading of two pickers. Stated once per front-end rather than at the mesh and the
-camera separately. Driven: 6,076 vertices without a preview, 6,160 with, before apply is
-pressed.
-
-**The preview is framed together with the operands it names.** A result judged without the
-objects it was applied to is half a picture, so `Preview.operands` travels with the geometry
-and `framing.watched` yields those slots beside it. An open edit session names none, and
-must not: its staged geometry *replaces* the object selected beside it, and framing both
-would frame the edit against its own former self. Measured on the built page — the camera
-pushed to distance 9 with both operands far off screen (a at x = 8417, b at x = 17831),
-then the apply section opened: the view pulls back to 13.39 and both land inside the centred
-box, at (464, 542) and (1015, 344). The selection menu's own picker does the same.
-
-**Every seed point takes its own hue.** The startup scene gave `a`, `b`, `c` and `o` one rose
-between them, which says they are one kind of thing — the opposite of what a categorical
-palette is for, and not what adding them by hand would do. **Two of the five categorical
-slots are reserved by hand and the other three are cycled**: `ground` keeps
-`INK_SEED_GROUND`'s olive and `o` keeps `INK_SEED_ORIGIN`'s copper, for the same reason in
-both cases — those are the two seeds that are not arbitrary (one is what every later step is
-derived against, the other is the origin), so both are worth recognising without reading a
-label. `a`, `b` and `c` take exactly the three that are left, so nothing collides and no
-`Ink` is spent twice.
-
-**A drag band swells into its head** (`marker.cometFor`), because a drag is not symmetric —
-`a ∨ b` and `b ∨ a` are different operations and the line drawn for either was identical. The
-last `LENGTH_MARKER_COMET` of the band thickens to `WIDTH_MARKER_COMET` at the point it aims
-at — the same length, the same width and the same `ribbonAlong` as the orientation pulse, so a
-reader meets one vocabulary for direction instead of two. **Fixed pixels, not a fraction of
-the band**: a fraction would grow the head as the drag went further, and the head is the part
-carrying direction — driven at 61, 125, 200 and 277 px of drag, the head held its size. A band
-shorter than the comet lights all of itself rather than reaching back past the object the drag
-started on. None where the cursor rests on its own source, which points nowhere. The browser
-aims it from the *core's* cursor rather than the one the presentation layer holds — both come
-from the same pointer events, but only one can be the answer.
-
-**Orientation is a pulse travelling round the selection marker, and the shaft is gone.** A
-plane used to draw a bare normal shaft out of its anchor, *always*, on every plane in the
-scene, to answer a question a reader asks about one object at a time; a line had nothing at
-all. `marker.markerFor` now runs a short lit run along a selected object's own outline
-(`SEGMENTS_MARKER_PULSE` points spanning `LENGTH_MARKER_COMET` of it, travelling at
-`SPEED_MARKER_PULSE`), and **which way it travels is the orientation**.
-
-The run **tapers**, from `WIDTH_MARKER_COMET` at its head down `FALLOFF_MARKER_COMET` to
-`WIDTH_MARKER` at its tail, so the head reads as the front rather than the run reading as a
-bar. It ends at exactly the outline's own width, which is why the tail needs no cap and no
-alpha ramp: it merges into the line behind it, and only the head is an edge. The constants
-were chosen from thirteen variants drawn side by side on a plane's circle and a line's rails;
-against 2.8 px and 4.5 px heads, and against 1.6 and 2.4 falloffs.
-
-**The run is `LENGTH_MARKER_COMET` pixels long, not a share of the outline**, and it is walked
-by arc length to make that true. A fraction made the mark's size a property of the thing it
-annotates: measured, 96 px along a line's rail against 334 px round a plane's circle seen
-close up on a phone — a compact comet on one shape and a long gradient on another, from one
-constant. Stepping by *index* rather than by pixels would have left a second version of the
-same fault, since perspective bunches a tilted circle's points on its far side. Both shapes
-now measure 64 px, and so does the drag band's head; `FRACTION_MARKER_PULSE` survives only as
-a cap, for a marker smaller than the run itself, where a fixed length would light most of the
-outline and leave nothing plain to read the lit part against.
-
-**What the comet carries is a distance in pixels from the object's own anchor, and that
-is the second fix here.** The first (below) stopped the phase being recomputed from the
-clock; it did not stop the phase being turned back into a *place* by multiplying by a
-view-dependent length. `samplePulse` did `head = phase*total`, where `total` was the
-outline's screen arc length that frame and the ruler's zero was the outline's first point
-— and for a line's rails that first point is **where the rail crosses the edge of the
-window**, from `fractionLeavingView`. Both ends of the ruler were the camera's answer, so
-holding the phase constant could not hold the head still. A reader reported it, having been
-told in this file that the residual was motion the marker was entitled to; they were right
-and that claim was wrong.
-
-`PulseClock` now carries `travels`, advanced by `SPEED_MARKER_PULSE*seconds` with **no
-camera quantity in the advance at all**, and `PulseTrack` names a view-independent point to
-measure from: a line's own support, a ring's own angle zero. `originAfterCut` walks that
-angle-zero point back through an eye cut, because `markerLoop` and `markerBands` re-pick
-their first emitted point when the near plane slices them — the same fault as a rail's
-clipped end, checked rather than assumed.
-
-**A horizon line's bands are cut to the viewport, not just to the eye**, and until this
-round they were not. Each band is a circle on the sky running out to the line's own two
-vanishing points, so an uncut one is mostly outline no camera can show: measured on a
-horizon line held across the middle of the view, the ring laps in **396,102 px against the
-1,490 of it on screen**, and a comet travelling at a fixed *screen* pace is then visible for
-about four frames in a thousand. That is what "the comet does not work on horizon lines"
-turned out to be — the comet was always built (probed: two runs, kind `Bands`, at every
-travel), just almost never anywhere a reader could look. `markerBands` now keeps the longest
-stretch of each ring standing inside the window, `isWithinView` deciding and
-`fractionLeavingView` placing the crossing point at each end so the band reaches the edge
-rather than stopping a sample short of it — the very rule a rail's drawn end already
-followed. The lap comes out at **832 px against a finite line's rails' 870** at the suite's
-own placement, and the head advances 60.0 px a second along it.
-
-The costs, stated: a horizon line whose bands fall wholly off screen now yields **no marker
-at all** rather than one drawn where nothing can see it, which is the same picture and one
-fewer thing drawn; the longest stretch is kept and any *other* stretch of the same ring is
-dropped, since `points_band` holds one outline per band and a pulse needs one to ride; and
-the anchor falls back to the arc's own start whenever the band's angle zero is off screen,
-which for a horizon line is most of the time — `originAfterCut`'s documented fallback,
-carrying its documented price. Anchoring to a view-independent point that is not on screen
-was the alternative, and it puts the comet where the reader is not.
-
-**The travel is reduced into the current lap every frame, and that is load-bearing rather
-than tidy.** An unbounded travel read back as `travelled mod lap` amplifies a one-percent
-change in the lap by however many laps have accumulated, which is the original teleport in
-new units. Reduced each frame the amplification is exactly one.
-
-**Measured on the shipped browser build**, orbiting at four rates from still to 0.05 rad a
-frame, sampling the head every frame: the comet's advance *from its own anchor* is **62.4,
-61.7, 62.5 and 63.3 px/s** against the 60 it is asked for — flat across every rate, which
-is the property the reader asked for. Absolute screen motion of course rises with the orbit
-(73, 83 px/s medians) because the line itself is sweeping and a mark on a moving object
-moves with it; the anchor-relative figure is what separates the two.
-**The residual, stated plainly:** at the two faster orbit rates a tenth of frames still show
-a large step (p90 236 and 388 px/s anchor-relative). Those are laps and clip transitions,
-not drift, and they are not yet explained to the standard the medians are. A theory that the
-shared rail window was making the lap too short was tried and **measured to change nothing**,
-so it was reverted rather than kept as a plausible-sounding fix.
-
-A suite case now shapes one marker at 45 placements and asserts the head sits exactly the
-carried travel from its anchor, to within a pixel. **No such case existed**, which is why a
-sliding comet shipped twice: `markerOf` pins one camera, so every pulse case was blind to
-the only thing that was wrong. `Marker.anchors_pulse` exists so that invariant can be
-asserted from outside the module at all.
-
-**The phase is carried between frames, not computed from the clock.** A phase read off the
-time has to be `frac(now·speed ÷ around)`, and `around` changes whenever the camera moves:
-after a few laps that quotient is tens of laps, so a one-percent change in the outline's
-length throws the answer most of a lap and the comet teleports. Measured on the build that
-did it — orbiting, the head moved a **median of 11.15 px a frame against the 1.0 it should**,
-and all ninety sampled frames exceeded twice the honest step. `selection.PulseClock` carries
-one phase per slot instead, advanced by `speed·dt ÷ around` each frame, so a camera change
-alters the *rate* and never the position. After: the head's step while orbiting has a median
-of 3.76 px and a **worst of 4.01** — worst and median together, which is what "no jumps"
-looks like — and of that, 3.06 is the marker itself sweeping under the comet, which is motion
-the marker is entitled to.
-
-It is **frame-rate independent** by construction and by measurement: the same three seconds
-of clock moved the head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180. A gap
-longer than `SECONDS_STEP_PULSE_MAX` is treated as an absence rather than a frame, so a
-backgrounded tab resumes where it left off instead of spending the whole absence in one step
-— measured, 83 px in a frame before that cap and 1 px after.
-
-**No arena, and no swap buffer.** `arena.nim`'s own header already settles it: the draw loop
-asks it for nothing because `Scene` and `MeshSet` are fixed arrays with their own lifetimes,
-and this is the same shape — one float per slot, a compile-time bound, alive as long as the
-program. An arena earns its keep on variable-sized short-lived scratch. Two further reasons:
-`arena.nim` is desktop-only and unreachable from the browser build, so an arena-backed pulse
-would serve one front-end and leave the other needing a second mechanism; and a swap buffer
-resolves read-last-while-writing-this, where this update reads and writes one slot and
-consults no neighbour.
-
-**And it travels at a speed, not a lap time**, for exactly the same reason: one lap per fixed
-4.8 s made how fast the mark *moves* a property of the outline too — measured, 156 px/s along
-a line's rail against 348 px/s round a plane's circle seen close up, so the same signal read
-as a drift on one shape and a scurry on another. `SPEED_MARKER_PULSE` is 60 px/s, which is the
-speed the lap was chosen at: the specimens it was judged on were about 300 px around, and one
-lap of those in 4.8 s is 62 px/s. Driven, the comet crosses the browser at **61.3 px/s on a
-line and 61.3 px/s on a plane** — the same signal on both, which was the point. The phase is
-therefore a question about a particular outline rather than one answer shared by every marker,
-which is why `phaseAdvanced` takes the length it laps.
-
-**A selected line went a whole round with no comet at all, and the round's own verification
-missed it.** `nimSelectionPulse` returned *before* advancing the clock when no run came out,
-and every slot's phase starts at exactly 0 — at which `samplePulse` clamps rather than wraps
-on an **open** outline, so a line's rails produced nothing, so the clock was never advanced,
-so the phase stayed 0 for ever. A plane's loop is closed, wraps at 0, and never entered that
-deadlock; that asymmetry is the whole reason planes pulsed and lines did not. Two things let
-it ship: the number quoted above was taken on the **desktop**, whose `drawSelectionMarker`
-advances right after shaping and was never affected, and the suite shapes a marker directly
-and so never asked what a caller did with `around`. The advance now belongs to "this slot was
-drawn this frame". Measured against the shipped build: a selected line reports **0 runs, ever**
-before and **2 runs at 61.3 px/s** after. The suite case that would have caught it asserts a
-rails marker at phase 0 still reports a positive `around` — an empty run and an unmeasured
-outline are different things, and only the second is a fault.
-
-That taper is why each run is a **closed outline to fill rather than a path to stroke**: a
-stroke carries one width for its whole length. `ribbonAlong` wraps the sampled spine in both
-sides plus a rounded head cap, once, for both render paths — a ribbon worked out twice is a
-ribbon that drifts, and neither Dear ImGui nor SVG offers a varying-width stroke to hand it
-to. Each point's normal comes from its own neighbours on the spine rather than a second sample
-an epsilon away, which at either end would fall off the run. A run cut short by the end of an
-open arc spreads its taper over what survives, so it is a shorter comet rather than the front
-half of one.
-
-The desktop fill needs a **fixed winding**, which `gui_shim.guiOverlayRibbon` imposes rather
-than the caller: Dear ImGui's antialiased fill offsets each edge by `(dy, -dx)`, outward for
-one winding and inward for the other, and a ribbon handed to it the wrong way round comes out
-with the whole transparent fringe under the fill. That was measured, not guessed — a column
-across the mark stepped 16 to 248 with nothing between, where every other overlay stroke ramps
-through it. It cannot be settled once at the call site, because the pulse's winding flips with
-the very orientation it reports. SVG needs none of this.
-
-Nothing computes that sense. A plane's loop is generated around the plane's own frame, so the
-*projection* decides whether that order comes out clockwise or anticlockwise, and the pulse
-reverses of its own accord as the camera crosses the plane. Measured by orbiting past
-`ground` and taking the sign of the swept angle about the outline's centre: +74,393 from
-above, −82,167 from below. A line's rails pulse *along*: each rail is **drawn** as two halves
-either side of the support but **walked** as one path, from its far horizon through the
-support to the near one, so the direction falls out of the walk. A horizon line's bands pulse
-round both, sense from the great circle's own normal.
-
-**One comet to a line, not one per piece it is drawn in.** Each of a rail's two halves used to
-pulse on its own, so a selected line wore four comets at four unrelated places — four signals
-where there is one line with one direction. Walking each rail whole leaves two, one per rail,
-and they travel together because both take the phase measured on the first: the pair's
-projected lengths differ by a fraction of a percent, invisible in a moment and a slow drift
-apart over a long selection. Measured after: the two heads stay within one comet's length of
-each other, so they overlap as a single mark crossing the line.
-
-Two shapes get none. A point has no orientation, and its ring's sweep already means something
-else. **A plane at horizon has none either**, which was probed rather than assumed: `frame`,
-`directionNormal` and `direction` all report nothing for one, and negating it changes none of
-that, so there is no sense for a pulse to carry. Only a caller passing a time gets a pulse at
-all, which is how "selected" is said — hover and keyboard focus wear the same marker standing
-still, so motion means selected rather than merely under the cursor.
-
-The pulse crosses to the browser as `nimSelectionPulse`, its own call rather than a tail on
-`nimSelectionMarker`, whose format promises the points are "whatever is left"; appending a
-second array behind them would make that false for every kind at once. It costs shaping a
-selected item's marker twice, a few dozen projections against a whole frame of mesh.
-
-`CLEARANCE_MARKER_TOUCH` was 24 px, sized against a 44-pixel *minimum* touch target and
-reported here as clearing a fingertip; it did not, and the correction came from a thumb rather
-than from the suite. The measurement behind the old number compared framebuffer pixels against
-a CSS-pixel target — see the two-layer rule below, which had to be fixed before "bigger" meant
-anything stable.
-
-All three keep the same clearance, `GAP_MARKER` = 6.0 px, between the object's own drawn
-edge and the marker, measured out from the size that object is actually drawn at. That is
-where the point's ring radius of 10.5 px comes from (`SIZE_POINT`/2 + gap) rather than
-being written down; a line's rails sit at 7.25 px (`WIDTH_LINE_OBJECT`/2 + gap). Changing
-a draw size moves its marker with it.
-
-The clearance is deliberately tight, and the outline deliberately light: `WIDTH_MARKER`
-1.5 px (asserted thinner than the line it marks) at `ALPHA_MARKER_SELECTED` 0.9, hover at
-0.6. An earlier round drew 2 px of pure white at a 11.5 px gap and it read as a second
-object rather than as an annotation of the first — white at full strength is the brightest
-thing this palette can produce, brighter than anything it surrounds, which inverts the
-emphasis it exists to give.
+**A plane's loop lies on the plane**, traced from the plane's frame about the same anchor
+`addPlane` centres its disc on, so it is concentric with the drawn disc; its clearance is a
+world distance sized through `worldPerPixelAt` at the disc's own depth, so the gap reads as
+6 px where a reader judges it and foreshortens with the disc elsewhere. `worldPerPixel`
+measures depth along the sight axis, not distance from the eye — the two differ by over a
+percent even near the middle of the frame. The loop steps `euclid.unitRing`'s fixed table
+through `onCircleAt` with the arms taken through the algebra once, as the bands do.
 
 **A line's rails are two straight world-parallel lines, sized by the widest gap they will
-actually show.** Each is one straight line parallel to the one it flanks, offset at the
-support, running to the two vanishing points all three share — so all three converge exactly
-as perspective says, and a rail's two halves are two parts of one line rather than two
-things joined at the support.
-
-What a world offset gives away is that **perspective, not the reader, chooses how far apart
-the pair ends up**. `offsetMarkerRail` states a gap at the support and leaves the rest to the
-projection, and along the half of a line whose far point lies behind the eye — `clipToEyeSide`
-cuts that half back to the near plane, where depth *falls*, so the denominator of
-`off*(1 - t)/(k*depth(t))` shrinks faster than the numerator — that is not convergence but a
-flare. Measured on the demo's own `a ∧ b`, gap from the support out to each drawn end:
+show.** Each runs from an offset at the support to the two vanishing points all three share.
+Along the half whose far point lies behind the eye, `clipToEyeSide` cuts it back to the near
+plane where depth *falls*, so a world offset flares rather than converging. On the demo's
+`a ∧ b`, gap from support to drawn end:
 
 | camera (azimuth, elevation, distance) | one half | the other |
 |---|---|---|
@@ -988,180 +659,185 @@ flare. Measured on the demo's own `a ∧ b`, gap from the support out to each dr
 | 0.2, 0.05, 12 | 15.3 → 11.3 px | 15.3 → 20.9 px |
 | 2.4, 0.4, 30 | 14.5 → **45.6 px** | 14.5 → 0 px |
 
-So `OFFSET_MARKER_RAIL` stopped meaning "the gap at the support" and now means **the widest
-the pair may read anywhere**: `markerRails` lays the rails out, measures one rail against the
-other at every drawn end (`apartWidest`), and narrows the world offset until the widest
-reading meets the ceiling. It only ever narrows, so a view with nothing to spend is drawn
-exactly as it always was. The same table after: **14.5 px at the widest and no flare on any
-half**, and over a 45-camera sweep the widest reading spans 14.2 to 14.5 — which is the
-property the suite now asserts on both sides, since a pair that always reads its stated gap
-somewhere can never disappear either.
+So `OFFSET_MARKER_RAIL` means **the widest the pair may read anywhere**: `markerRails` lays
+the rails out, measures one rail against the other at every drawn end (`apartWidest`), and
+narrows the world offset until the widest reading meets the ceiling; it only ever narrows.
+After: 14.5 px at the widest and no flare on any half, 14.2 to 14.5 over a 45-camera sweep.
+Three details, each of which cost a round: **settle, do not solve** (`PASSES_MARKER_RAIL` = 4;
+one pass lands about five percent over, 15.2 against 14.5, because narrowing moves where
+each rail leaves the viewport); **settle against the finished rail, then draw at the
+progress asked for**, or the gap widens as a touch hold fills; **measure one rail against
+the other, not either against the line between them** — all three meet at one vanishing
+point, so a perpendicular from one lands further along the other. Two live traps: a ceiling
+on the gap *at the support* caps where the flare is not, and its table swept camera
+*distance* at one orientation, the one axis the flare does not lie along — **a marker's
+worst case can lie along orientation, and sweeping distance is not sweeping**; a constant
+*screen* offset bent every rail at its support (2.66°, 7.3 px of stray at azimuth 2.4). A
+floor under the narrowing at four tenths let a 437 px splay through and was unfounded: a
+ceiling on the widest reading is itself the guarantee of visibility. Driven over a 720-step
+orbit, the largest change in the gap between neighbouring frames is 0.103 px.
 
-Three details, each of which cost a round:
+**A rail's growth is measured against the edge of the view** (`fractionLeavingView`), not
+its own length: the two vanishing points sit at wildly unequal screen distances (1,140,706 px
+against 3,634 on the demo's `L = a ^ b`, a ratio of 314), so a fraction of each rail's length
+finished one half 314 times sooner and put both off a 900 px screen within the first
+percent. Bounded at the viewport, quarter progress reads 142 px against 100. Rails are
+shortened **after projecting**, along the screen segment: scaling the world reach walks the
+head toward the eye and spends almost the whole range within pixels of the vanishing point.
 
-- **Settle, do not solve.** Narrowing the pair moves where each rail leaves the viewport, so
-  `fractionLeavingView` hands back a different extent and the widest reading moves with it;
-  one scale lands about five per cent over. `PASSES_MARKER_RAIL` repeats it, and two passes
-  settle every camera of that sweep exactly.
-- **Settle against the finished rail, then draw at the progress asked for.** How far apart
-  the pair stands is a fact about the line under this camera, not about how far a touch hold
-  has got growing it. Settling against the partial rail made the gap widen as the hold
-  filled — caught by the case pinning that a growing rail starts where the finished one does,
-  which is the only reason it did not ship.
-- **Measure one rail against the other, not either against the line between them.** All three
-  screen lines meet at the same vanishing point, so a perpendicular dropped from one rail
-  lands further along the other; the two measures differ by a few percent where they converge
-  hardest, and the one a reader looks at is the one to bound.
+**The horizon plane's frame is an expanding circle that becomes the screen edge**: at each
+angle the radius is `progress × half-diagonal` or the distance to the inset edge, whichever
+is smaller, so it is a circle for as long as one fits and then becomes the edge piece by
+piece, midpoints first and corners last. `SEGMENTS_MARKER_FRAME` = 64 even steps (a multiple
+of four, so the midpoints are sampled exactly) plus `CORNERS_MARKER_FRAME` = 4 corner
+directions merged in by angle, since a corner missed by a fraction of a step is a corner cut
+off. Scaling a rectangle instead read as a shrunken copy of the screen. **A horizon line's
+bands are cut to the viewport, not just to the eye**: uncut, a ring lapped 396,102 px
+against the 1,490 on screen and a comet at a fixed screen pace was visible four frames in a
+thousand. `markerBands` keeps the longest stretch inside the window, `fractionLeavingView`
+placing each end at the edge; the lap is 832 px against a finite line's rails' 870 at the
+suite's placement. Costs: a horizon line wholly off screen yields no marker; only the
+longest stretch of each ring is kept; the anchor falls back to the arc's start when angle
+zero is off screen, which for a horizon line is most of the time.
 
-**Two rounds went past this before landing on it**, and both are worth keeping as traps. A
-*ceiling on the gap at the support* capped where the flare is not — the support reads true at
-nearly every orientation — and the table justifying it swept camera **distance** at a single
-azimuth and elevation, the one axis the flare does not lie along; its suite case inherited
-that camera and passed against a threefold flare. A *constant screen offset* then removed the
-flare by making each half's head shed its offset only where it had a vanishing point in front,
-which bent every rail at its support: measured, 2.66° and 7.3 px of stray — the whole gap —
-at azimuth 2.4, and 0.9 px at the one camera the screenshots were taken from. The suite now
-asserts a rail's own straightness over the orientation sweep, which is what neither round
-had. **A marker's worst case can lie along orientation, and sweeping distance is not
-sweeping.**
+**On touch every marker swells clear of the finger** (`CLEARANCE_MARKER_TOUCH` = 54.5 px,
+added not multiplied, taking a point's 10.5 px ring to a 130-pixel circle, about twice a
+thumb's contact patch). Zero for a mouse. It was 24 px, sized against a 44 px minimum touch
+target by a measurement that compared framebuffer pixels against a CSS-pixel target; see
+Browser UI on the two pixel spaces. **The swell runs on its own clock in four phases**
+(`interaction.swellHold`): grows over `SECONDS_SWELL_GROW` 0.12 s, sits at full through the
+fill, **stays there for as long as the finger is down past maturity**, and settles over
+`SECONDS_SWELL_SHRINK` 0.15 s once it lifts. A half sine over the fill put the marker back at
+true size at the very moment the selection landed. `progressHold` starts *after* the grow,
+so a press is 0.62 s end to end. The swollen marker is drawn even once its slot is selected
+and the plain marker for that slot skipped, or the outline snaps at the moment the selection
+lands; the browser retires the hold only once `isHoldSpent` says the settle is over, stated
+against `swellHold` rather than the shrink duration a second time — subtracting two large
+timestamps measured 0.14999999999997 against 0.15. `cancelHold` snaps away without settling:
+that press stopped being one. On a Pixel 5 in CSS pixels: 10.5 → 58.2 → 65.0 through the
+grow with the fill at 0, flat 65.0 across the fill and at 2 s and 10 s past maturity, then
+64.9 → 17.3 → 10.5 through the settle.
 
-A floor under the narrowing was tried too, at four tenths, on the worry that an extreme view
-would close the pair onto its own line. It let a **437 px** splay through at a camera eight
-units out looking steeply along the line, and the worry was unfounded: a ceiling on the widest
-reading is itself the guarantee of visibility.
+**Orientation is a pulse travelling round the selection marker**, and the normal shaft is
+gone (it marked every plane in the scene permanently to answer a question a reader asks
+about one object at a time). `markerFor` runs a lit run of `SEGMENTS_MARKER_PULSE` = 16
+points spanning `LENGTH_MARKER_COMET` = 64 px of the outline, tapering from
+`WIDTH_MARKER_COMET` 3.5 px at its head down `FALLOFF_MARKER_COMET` 1.2 to `WIDTH_MARKER` at
+its tail, so it merges into the line behind it and only the head is an edge; the constants
+came from thirteen variants drawn side by side against 2.8 and 4.5 px heads and 1.6 and 2.4
+falloffs. Fixed pixels, not a share of the outline, walked by arc length: a fraction
+measured 96 px along a rail against 334 px round a plane's circle. `FRACTION_MARKER_PULSE`
+0.35 survives as a cap for a marker smaller than the run. **Which way it travels is the
+orientation**: nothing computes the sense, the projection decides a loop's order (+74,393
+from above `ground`, −82,167 from below, as swept angle), a rail is walked as one path from
+far horizon through the support to near, a band takes the great circle's normal. Two shapes
+get none: a point, and a plane at horizon, whose `frame`, `direction` and `directionNormal`
+all report nothing and are unchanged by negation. One comet to a line, not one per drawn
+half: the two rails take the phase measured on the first and stay within one comet's length.
 
-The gap is continuous as the camera turns, which the settling could have broken — the extent
-it reads changes with the view. Driven over a 720-step orbit, the largest change in the gap
-between neighbouring frames is **0.103 px**: the rail slides along the viewport edge rather
-than snapping across it.
+**The travel is a distance in pixels from a view-independent anchor.** `PulseClock.travels`
+advances by `SPEED_MARKER_PULSE` = 60 px/s × seconds with no camera quantity in the advance,
+reduced into the current lap every frame (an unbounded travel read as `travelled mod lap`
+amplifies a one-percent lap change by the laps accumulated). `PulseTrack` names the anchor
+— a line's support, a ring's angle zero — and `originAfterCut` walks angle zero through an
+eye cut. A speed rather than a lap time: one lap per 4.8 s ran 156 px/s along a rail against
+348 round a circle; sixty is what the lap was chosen at over 300 px specimens. A gap longer
+than `SECONDS_STEP_PULSE_MAX` = 0.1 s is an absence, not a frame (83 px in one frame before
+the cap, 1 px after). The advance belongs to "this slot was drawn this frame": a bridge that
+returned before advancing when a rails marker at phase 0 produced no run left lines with no
+comet for a whole round while planes pulsed. The two exports share one shaped marker
+(`g_shaped_marker`, boxed behind a `ref` — held by value the memo's own store and read
+deep-copied the variant twice and measured as slow as the shaping it replaced). The desktop
+fill needs a **fixed winding** (`gui_shim.guiOverlayRibbon` imposes it): Dear ImGui's fill
+offsets each edge outward for one winding and inward for the other, and a ribbon handed the
+wrong way came out with its whole fringe under the fill (a column stepped 16 to 248 with
+nothing between).
 
-A touch hold widens the pair by `clearance` pixels a side, and the ceiling widens with it, so
-a swollen marker is settled by the same rule as a resting one.
+**A drag band swells into its head** (`marker.cometFor`) — the same length, width and
+`ribbonAlong` as the pulse, so one vocabulary for direction — because `a ∨ b` and `b ∨ a`
+are different operations. Fixed pixels: driven at 61, 125, 200 and 277 px of drag the head
+held its size. None where the cursor rests on its own source.
 
-**A rail's growth is measured against the edge of the view, not against its own length**
-(`fractionLeavingView`). Each rail runs from the line's support to one of the line's two
-vanishing points, and those sit at wildly unequal screen distances: measured on the demo's
-own `L = a ^ b`, one half's projected length came to 1,140,706 px and the other's to 3,634,
-a ratio of 314. Shortening each rail by a fraction of its own length — which is what shipped
-first — therefore made one half finish 314 times sooner than the other, and put both wholly
-off a 900 px screen within the first percent of the hold. Growing toward a vanishing point
-is growing into nothing. Bounding the reach at the viewport fixes both at once: the halves
-come out comparable because the same rectangle bounds them, and every pixel of the growth
-happens where it can be seen. Re-measured in a 900×800 view: 142 px against 100 px at
-quarter progress, a ratio of 1.5. The suite had been green throughout — it checked that a
-partial rail lay along the rail it would become, which was true the whole time.
+*Checked.* Verified by suite cases: the loop's points on the plane (1.1e-15 on the
+antiscalar against 1.0 for a control point one unit off); the rails' straightness over an
+orientation sweep and their widest reading on both sides; a growing rail starting where the
+finished one does; the frame's 68 points at 296.8 px flat at half progress; the head sitting
+exactly its carried travel from its anchor at 45 placements, within a pixel; a rails marker
+at phase 0 reporting a positive lap; a matured hold taken once (a 1.62 s hold had selected
+its item and lost it within 50 ms of lift). Verified on the shipped browser: the comet's
+advance from its anchor at 62.4, 61.7, 62.5 and 63.3 px/s across four orbit rates; 178.3,
+179.0 and 179.6 px over three seconds at 36, 60 and 144 fps against 180; the residual at the
+two faster rates — a tenth of frames stepping 236–388 px/s, laps and clip transitions, not
+drift — is **not explained** to the standard the medians are, and a theory that the shared
+rail window shortened the lap was measured to change nothing. Verified on the desktop: the
+selected line's pure-ink pixels 2,626 with the second pass against 1,106 with the tail;
+marker pixels inside the panel's rectangle 3,453 → 3,059 on the background list. Verified by
+driven check: two crossing planes selected change 15,668 canvas pixels against a 0-pixel
+noise floor. Assumed: the "twice a thumb's contact patch" sizing, from a rule of thumb.
 
-Which way is "sideways" is `marker.directionAcross`, and it stays RGA-native: joining the
-line with the eye gives the one plane containing both, and that plane's own normal is
-perpendicular to the line and to every sight ray reaching it. The rails then straddle the
-very plane the line's screen projection *is*, so the pair reads symmetric about it from any
-angle. It reports none where the eye lies on the line — no plane, and no side to flank
-from. The cost is that stepping perpendicular to the ray tilts a hair out of the plane
-perspective divides by, leaving the stated gap under a percent wide: 7.29 px against a
-nominal 7.25, pinned in the suite to a quarter pixel.
 
-`marker.worldPerPixel` turns a clearance stated in pixels into the world offset a
-world-anchored marker needs. It measures **depth along the sight axis, not distance from
-the eye** — perspective divides by the former, and the two differ by over a percent even
-near the middle of the frame, which is a visible fraction of a gap this tight.
+Picking
+---
+`picking.pickNearest`, shared: **point beats line beats plane, strictly**, regardless of
+pixel distance once a shape's own radius is met. That priority is what makes generous radii
+safe. `RADIUS_PICK_POINT` = 34, `RADIUS_PICK_LINE` = 24 CSS px, sized against a fingertip at
+phone density; a plane's test is area-based. **Everything drawn is pickable, horizon
+included**, ranked point, finite line, horizon line (tested against the great circle it
+draws as, stepped off the same table), finite plane, horizon plane (matches every ray, so
+last). A horizon point was silently unpickable while the extent was built fieldwise with its
+multivector twins zero; the extent goes through `algebraFilled`, the one derivation point.
 
-**A plane's marker circle genuinely lies on the plane**, traced from the plane's own
-spanning frame about the same anchor `mesh.addPlane` centres its disc on — the stored
-creation anchor where there is one, so the marker is concentric with the drawn disc rather
-than with a support the disc is not even drawn around. Its clearance therefore has to be a
-world distance, and `radiusMarkerLoop` sizes it through `worldPerPixelAt` so the gap reads
-as `GAP_MARKER` pixels *at the disc's own depth*, the depth a reader judges it at.
-Everywhere else around the ellipse the gap foreshortens exactly as the disc does — that
-is the point; a constant-pixel ring would sit off the plane and read as floating above
-it. Asserted in the suite point by point: a unitized ring point wedged with the unitized
-plane leaves 1.1e-15 on the antiscalar, against 1.0 for a control point one unit off.
+**The sky is a click and hold target, never a drag handle.** With a horizon plane visible
+the cursor is over *something* almost everywhere, and a press on empty space becomes an
+orbit precisely because nothing was hovered. `beginDrag` refuses the sky and `destinationOf`
+refuses it; `interaction.is_hover_backdrop` carries the answer from `updateHover`. Clicking
+empty space then selects the sky rather than clearing; a tap still treats it as empty space,
+since tapping empty space is a finger's only way to dismiss a selection, and touch reaches
+the sky by long-press. The selection menu follows the middle of the view for it.
 
-Markers are described in `marker.nim` and stroked by each render path's own **foreground**
-layer — `gui.overlayPolyline` on the desktop (one joined path, so corners do not nick), an
-SVG `<circle>`/`<line>`/`<polygon>` in the browser. Never as scene geometry: a loop lying
-exactly on a plane would z-fight with that plane's own fill, and a marker that the object
-it marks can occlude is not a marker. A circle whose rim crosses the eye plane is cut to
-the surviving arc and reported open rather than dropped — a camera close to a large plane
-is exactly when the selection still needs saying.
+**The pick runs once per frame, not per input event.** A pick walks every live slot, linear
+in the scene (11.4 ms p50 over 1,024 objects, 0.2 over five, before the fixes below). Pointer
+motion marks hover stale and the frame loop picks once after `nimDriveHeld`; the wheel sums
+its notches and the loop applies one dolly, the same zoom since `exp(k·Σdelta)` is the
+product of the notches (six notches a frame had cost 83.8 ms of picking). Three paths pick
+inside their handler because they must answer before it returns: `pointerdown`, a touch-down
+and `handleTap`.
 
-An elaborate 3D-modelling-style outline (oversized silhouette, depth-write off, dedicated
-shader uniforms, second mesh set) was built and then **deleted entirely** in favour of this;
-do not reintroduce it without being asked. Most WebGL/ANGLE browsers clamp `gl.lineWidth`
-to 1px regardless, which is one reason the outline approach could never look right in-browser.
+**The pick ranks what was drawn.** It takes the frame's placements and dispatches on
+`Placed.kind` rather than asking `position`, `direction`, `frame` and `spanPerpendicular`
+again per slot; empty means derive per slot, the desktop path and every suite case. A finite
+plane the algebra can span no frame for shares `PlaneEverywhere` with the sky and is not
+pickable; a direction point is picked at the horizon, where the eye puts it. **The pick
+rejects a plane before meeting it**: `isBeyondDisc` bounds the disc's screen extent by the
+silhouette of the sphere containing it, conservative in the depth and off-axis terms — 20,000
+random configurations with the centre up to three view-widths off screen and 300 surface
+samples each found no silhouette point outside the bound. `geometryOf` hands back a `lent`
+view, and the walk reads it inline — `lent` removes the copy only where the result is never
+bound. `projectToScreen` is written out as three dot products in local floats (the 4×4
+multiply with two typed arrays allocated per call was 43% of a 15.4 ms pick over 10,000
+slots), and the point branch reads `pixelsFromCursor` rather than building a
+`ScreenPosition` per slot.
 
-Desktop draws the selection markers from `drawSelectionMarker`, called directly from
-`renderFrame` — deliberately **not** folded into `drawInteractionOverlay`, whose first line
-is `if not interaction.is_enabled: return` and which is therefore dead during storyboard
-capture, where the marker is still wanted. It returns how many it drew, so a probe can
-assert that count directly instead of reading pixels; verified 0/1/2/3 against 0/1/2/3
-picked.
+**Slot-liveness guards.** Hovered, dragged, focused and selected slots are plain values
+carried across frames, so any can name a removed item the frame after a delete: `nimAnchorScreen`
+reports nothing for a dead slot; `endDrag` on both paths checks `isAlive` on source and
+destination; removing an item clears the highlight on both paths.
 
-**Picking** (`picking.pickNearest`, shared): point beats line beats plane, strictly,
-regardless of pixel distance, once a shape's own radius is met. That priority is what makes
-generous radii safe — a wide point radius overlapping a line behind it still resolves to the
-point. `RADIUS_PICK_POINT` = 34, `RADIUS_PICK_LINE` = 24 px, sized against a real
-fingertip's contact patch at phone density; a plane's test is area-based (inside the drawn
-rim). Tests assert both boundaries (one pixel inside picks, one pixel outside does not) and
-all three priority pairings, so changing a constant fails a test rather than only feeling
-different.
-
-**Everything drawn is now pickable, horizon included**, ranked point, finite line, horizon
-line, finite plane, horizon plane. A horizon line is tested against the great circle it draws
-as, sampled the way `mesh.addGreatCircle` samples it. A horizon plane matches every ray, since
-it is a dome over every direction — last of all, so anything else under the cursor wins.
-  A **point** at the horizon was the exception, and silently: `pickNearest` built its
-`DrawExtent` fieldwise, leaving the four multivector twins zero. `tessellate.anchorFor`
-places a horizon point at `eye_point + radius*heading`, so a zero eye left the sum
-weightless, `position` answered none, and the branch hit `continue` before anything could
-be ranked. The symptom was a line's attitude being unselectable while the line itself —
-drawn out to exactly that point, "with no gap" — took every click. The ranking was never
-wrong: a point already outranks a line. The extent now goes through `algebraFilled`, the
-one derivation point, whose own doc comment had predicted this failure mode
-("a hand-built extent … or its twins are zero multivectors"); the four locals that derived
-the same values beside it are gone, so there is no second copy to fill and forget. The
-horizon *line* path had worked only because it used one of those locals rather than the
-field. Verified by a suite case that first asserts the line alone is picked at that pixel,
-so the case cannot pass on a cursor that simply misses it.
-
-That last one costs something the design had to answer rather than discover: **the cursor is
-then over *something* almost everywhere.** Scanning a grid over the eleven-step demo, "nothing
-hovered" no longer occurs anywhere on screen. And a press on empty space becomes an orbit
-*precisely because* nothing was hovered — `beginDrag` failing is the entire mechanism. So the
-rule is: **the sky is a click and hold target, never a drag handle.** `beginDrag` refuses it
-(the press falls through to the camera, exactly as before) and `destinationOf` refuses it (a
-release over it stays "released over empty space; nothing done"). `interaction.is_hover_backdrop`
-carries the answer from `updateHover`, where the scene is in hand, so neither has to be handed
-a scene. Driven and confirmed on both builds: dragging bare sky turns the view and builds
-nothing; clicking it selects it.
-
-Two consequences worth stating. **Clicking empty space no longer clears the selection** when a
-visible horizon plane is in the scene — it selects the sky; hiding that object restores the old
-behaviour, and the help table's `select` tab says so. And a *tap* still treats the sky as empty
-space on purpose: tapping empty space is a finger's only way to dismiss a selection, so touch
-reaches the sky by long-press instead — which is where its marker fills anyway. The selection
-menu follows the middle of the view for it, since an object filling the sky has no place in the
-scene to sit beside; that rule is duplicated by constraint in `visualiser.anchorOfSelection` and
-`browser_bridge.nimAnchorScreen`, each naming the other.
-
-A horizon point (a fixed star) keeps the pickable anchor it always had.
-
-**Slot-liveness guards.** Hovered, dragged and selected slots are plain values carried
-across frames, not re-picked per frame, so any of them can name a removed item on the very
-next frame after a delete. Three guards exist and must stay:
-- `nimAnchorScreen` reports "nothing to draw" for a dead slot (the single choke point every
-  overlay — selection ring, hover ring, drag line — projects through).
-- `interaction.endDrag` and `browser_bridge.nimEndDrag` both check `isAlive` on source and
-  destination before reading either label.
-- Removing an item clears the highlight on both render paths.
+*Checked.* Verified by suite: both boundaries of each radius and all three priority pairings;
+a horizon point picked at a pixel where the line alone was first asserted picked; the disc
+bound sampled from inside the view. Verified by slot-for-slot map: 4,914 cursor positions
+across three cameras over the 1,024-object demo answered identically before and after the
+placement and copy changes. Verified by driven checks on both builds: dragging bare sky
+turns the view and builds nothing, clicking it selects it. Measured then, not since: one pick
+11.4 → 3.9 ms p50 at 1,024; 15.4 → 4.7 ms at 10,000; a hover pick 0.7 / 1.6 / 3.5 ms at 60 /
+360 / 5038.
 
 
 Interaction Model
 ---
 **Which button does what, stated once.** `interaction.revealsMenuOn` says whether a click
-brings the floating selection menu with it — right yes, left and middle no — and both render
-paths plus `help.nim` read it, exactly as they read `armingOf` for the drag. The left button
-used to do both jobs at once, so a reader who only wanted to pick something was answered with
-a menu they then had to dismiss, and the menu lived behind the same button that builds.
+brings the floating selection menu (right yes, left and middle no); `armingOf` says whether
+a drag opens the choice wheel. Both render paths and `help.nim` read them.
 
 | Gesture | Does |
 |---|---|
@@ -1170,136 +846,42 @@ a menu they then had to dismiss, and the menu lived behind the same button that 
 | shift with either | add it, or drop it again if already picked |
 | right click, selection standing, menu down | reveal the menu, selection untouched |
 
-That last row is `revealsWithoutPicking(has_selection, is_menu_shown)`, and shift never
-reaches it — shift always means "change the selection". With the menu already up the same
-click falls through and retargets, which is the way out of having revealed the wrong thing.
+**A click has no time limit**: `isClick` is distance alone, `PIXELS_CLICK_SLOP` = 6 px
+(not `PIXELS_TAP_SLOP`'s 12 — a mouse does not roll, and a finger's allowance would swallow
+the short deliberate drags between two overlapping objects). A 0.35 s deadline once lost
+every click held 600 ms. The stillness reading is latched and false until a press raises it.
+A right press that never moved is a click too: the wheel only opens over a target *other*
+than the source, so such a press never asked for one.
 
-**A click has no time limit, and the one it had was a bug.** `isClick` demanded
-`now - started < 0.35 s` beside the distance bound. Measured on the shipped page: shift-
-clicking three objects with each press held 600 ms picked **none** of them, every release
-answering "Released on its own source; nothing done", while the same three at 80 ms picked
-all three and a fourth click dropped one back out. The deadline was meant to separate a click
-from a press held to open the dwell menu, but the dwell is touch-only and a mouse's wheel
-opens on *arriving over another object*, never on time — so it separated nothing and lost
-clicks. Distance alone decides now.
+**The press target chooses the scheme; the button chooses whether you are asked.** Press an
+object and you are constructing; press empty space and you are moving the camera (left
+orbits, right pans, wheel zooms). Left takes the algebra's own answer on release; right opens
+the four-way wheel. **A mouse never waits**: `MenuArming` is `Never` (left), `Always`
+(right), `OnDwell` (no button — it belongs to touch, which has no second button and would
+otherwise lose `meet`, `project` and `more…`). `SECONDS_DWELL_MENU` = 0.75 measures only a
+finger, which pauses far more readily than a mouse, and sits above `SECONDS_LONG_PRESS`
+= 0.50 so the two thresholds a stationary finger races are in the right order; timed through
+CDP touch on a Pixel 5 profile at 0.93 s from the last movement to the wheel, the extra
+0.18 s being the 50 ms poll and SwiftShader's frame latency. The dwell measures stillness:
+`updateDrag` restarts it whenever the cursor moves further than `PIXELS_TAP_SLOP` from where
+it last settled, since measuring presence opened the menu under a finger moving continuously
+for 1.2 s. **Middle is unbound**: it once held `project`, behind hardware most trackpads
+lack.
 
-**A right press that never moved is a click.** It could not be one before: any drag armed
-`Always` was refused a click outright, on the reasoning that it had asked for the wheel. But
-the wheel only opens over a target *other* than the source, so such a press never opened one
-and there was no offer to withdraw. The test is now on the menu rather than the arming.
-
-**An open wheel lets go when the cursor leaves it.** Past `PIXELS_MENU_DISENGAGE` (150 px)
-the menu closes, the drag stops being latched to that destination, and travelling on to
-another object opens it there for the original source with the new target — re-aiming, never
-chaining. A target just let go of is held at arm's length until hover leaves it, or
-`MenuArming.Always` would re-open the menu on it the very next frame and disengaging would
-only ever move the menu.
-  The radius is sited off a measurement, not off `PIXELS_MENU_REACH`: the furthest wedge
-corner sits **103.9 px** from the centre, read off the drawn rects in the browser over six
-different pairs, leaving 46 px of clear air. **This bounds `choiceAt`'s overshoot, which was
-deliberately unbounded** ("overshooting a wedge still picks it, which is what makes a fast
-confident throw work"). Both cannot hold; being able to re-aim was chosen, with the user.
-
-**The drag wears the colour it will build.** `inkOfDrag` keeps its three states — neutral
-over empty space, the reserved magenta over a pair that makes nothing, and now the *scene's
-next hue* over one that works, rather than the operation's own. The operation is already
-named on the wedge and in the label; the colour was the only place the answer could be shown
-and it was spent saying something already said.
-  `Scene.index_ink` carries how far the cycle has been walked, with `inkNext`/`takeInk`/
-`skipInk`, because `inkCycled(scene.len)` cannot move for an object that was never added —
-and **every released construction steps it**, built or not, so a colour the reader watched
-for a whole drag is not offered again. A click does not step it (selecting is not
-constructing) and neither does `More` (the construction is still in flight, and the apply
-picker takes the hue the wheel previewed). Undo restores it with the rest of the scene, so
-undoing a build re-offers that hue; loading a scene sets it to the item count. The file
-format is untouched.
-
-**Desktop / mouse and pen.** Drag from an object onto another to derive a third. **The
-press target chooses the scheme; the button chooses whether you are asked.** Press an object
-and you are constructing; press empty space and you are moving the camera (left orbits, right
-pans, the wheel zooms at the pointer). Left then takes the algebra's own answer on release;
-right opens a four-way choice menu instead. Both buttons reach the same choices, so this is
-redundancy for different expertise rather than a mode split — which is exactly why it is safe
-where the button-per-operation mapping it replaced was not.
-
-**A mouse never waits.** `interaction.MenuArming` is three-valued — `Never`, `OnDwell`,
-`Always` — rather than the "forced" flag it replaced, because a flag could only say *now* or
-*after a wait* and the left button wants neither: a menu opening under a hand that paused
-mid-gesture is the classic dwell-menu failure, and the left button is where nearly every
-drag is spent. So left arms `Never`, right arms `Always`, and `OnDwell` is reachable from no
-button at all. **It belongs to touch**, which has no second button to ask with and would
-otherwise lose `meet`, `project` and `more…` entirely during a drag — that consequence is
-the whole reason the flag became an enum instead of just being deleted.
-`interaction.armingOf` states the button mapping once; `visualiser.armingFor` maps SDL
-button numbers and `browser_bridge.nimDragKindForButton` maps DOM `PointerEvent.button`
-numbers (0/1/2, a different numbering for the same three buttons) into it, while
-`nimDragArmingOnDwell` names the one arming no button carries so `glue.js` writes no ordinal
-of its own. `SECONDS_DWELL_MENU` is **0.75**, and now measures only a finger. It was 0.45
-while a mouse could trip it too, which made it a compromise — short enough not to feel like
-a wait for a reader who had no other way in. With the mouse deciding by button, the only
-requirement left is that a finger which paused mid-drag is not answered with a menu, and a
-finger pauses far more readily than a mouse. It also sat *under* `SECONDS_LONG_PRESS`
-(0.50), so the two thresholds a stationary finger races were in the wrong order. Timed end
-to end through real CDP touch on a Pixel 5 profile: **0.63 s → 0.93 s** from the last
-movement to the wheel appearing, the extra ~0.18 s in both being the 50 ms poll granularity
-and the frame loop's own latency under SwiftShader.
 **A press that can construct never moves the camera, not even before its slop is crossed.**
-The press target chooses the scheme, and the mouse follows that by choosing at the button —
-but touch reached the same rule by a different road and got it wrong. A finger that *eased*
-into its drag rather than flicking spent its first frame or two under `PIXELS_TAP_SLOP`, and
-those frames fell through to the one-finger orbit, which latches `nimSetCameraDragging`.
-Hover is suppressed while the camera moves (see the highlight rule above), and nothing
-cleared the latch when the construction drag armed a moment later — so that drag ran blind
-for the rest of the gesture: no destination, no ghost, nothing built on release. A flick
-that cleared the slop within a single event armed before any of it and worked, which is what
-made the fault read as intermittent rather than as a rule. `glue.js` now decides at the
-press, in `is_touch_press_constructing`, whether this press *can* become a drag — the same
-question `interaction.beginDrag` answers when the slop is finally crossed, including its
-refusal over the sky, so a press on the backdrop still falls through to the camera. Driven
-in sub-slop steps by `drive_browser.mjs`, which is what a real finger does and what no
-flick-speed check could reach; without the rule that check reports the camera orbiting
-(azimuth 1.0500 → 1.0633) and hover dead.
+A finger easing into its drag spent its first frames under the slop, fell through to the
+orbit, latched the camera-dragging flag that suppresses hover, and then ran blind. `glue.js`
+decides at the press, in `is_touch_press_constructing`, the same question `beginDrag`
+answers when the slop is crossed, refusal over the sky included.
 
-**A wheel the reader summoned may veto the release; one that invited itself may not.**
-Lifting at an open wheel's centre used to mean "chose nothing; nothing done" on every
-arming. On the right button that is correct — the press asked for the wheel — but the dwell
-wheel opens *under a finger pausing over its target to aim*, hidden by that finger, and
-pausing before lifting is the common touch release, not the rare one. Measured through
-driven touch at a phone-sized viewport: every careful point-onto-point drag built nothing,
-which reads as the drag itself being broken. So `endDrag` lets an unentered dwell wheel's
-centre release fall through to `proposalFor`'s own answer, `updateDrag` mirrors it so the
-ghost and band keep promising that answer under the unentered wheel, and
-`Interaction.is_menu_entered` — set the first time the cursor stands in any wedge, offered
-or not — is what "entered" means. Walking into a wedge and returning to the centre still
-cancels on every wheel: engagement, not arming, is what buys the veto back.
-**Middle is unbound**: `project` used to live there, which put a third of the vocabulary
-behind hardware most trackpads lack.
-A plain click selects instead of dragging; shift-click toggles into a multi-selection; a
-plain click on empty space clears it. The press over an object has to start a drag
-*eagerly* — the press target chooses the scheme — so whether it was a click is only
-answerable at the release, and `interaction.isClick` answers it there: the press has stayed
-inside `PIXELS_CLICK_SLOP` (6 px) and lasted under `SECONDS_CLICK` (0.35). Both bounds lived
-in `glue.js` as `MOUSE_CLICK_MAX_MOVE`/`MOUSE_CLICK_MAX_MS` while only the browser had a
-click to disambiguate; the desktop had none at all, so its own help table described a
-gesture it did not have. Six pixels, not `PIXELS_TAP_SLOP`'s twelve: a mouse on a desk does
-not roll, and a fingertip's allowance would swallow the short deliberate drags between two
-objects that overlap on screen. The stillness reading is **latched, and false until a press
-raises it** — a pointer that swung out and came back is still a drag, and a caller that
-never announced a press (a test driving `beginDrag` by hand) gets the behaviour that
-predates clicks rather than a spurious click.
+**The gesture clock is seconds**, on whichever monotonic clock the caller owns, and the
+same reading `addItem` stamps a birth with. `glue.js` divides once in its own `now()`. The
+desktop's dwell once needed 450 *seconds* because the durations were named in milliseconds.
 
-**The gesture clock is seconds**, on whichever monotonic clock the caller owns, and it is
-the same reading `scene.addItem` stamps a birth with. It had to be said out loud: the
-durations were named `MILLISECONDS_*` for the browser's `performance.now()`, the desktop
-passed seconds against them, and its dwell menu therefore needed 450 *seconds* to open and
-never had. Found while wiring the click rule, which needed the same clock to be right.
-`glue.js` now divides once, in its own `now()`, and passes that everywhere.
-
-**What a drag builds is read off the operands, not off the button.** `∧` adds grades and is
-drawable when the sum ≤ 4; `∨` adds antigrades and is drawable when the sum ≥ 4. Measured
-over every ordered pair of point, line and plane — with two disjoint families of operands in
-general position, points off the moment curve (t, t², t³), where "no three collinear and no
-four coplanar" is a Vandermonde theorem rather than a hope:
+**What a drag builds is read off the operands, not the button.** `∧` adds grades and is
+drawable when the sum ≤ 4; `∨` adds antigrades and is drawable when the sum ≥ 4. Over every
+ordered pair of point, line and plane in general position (points off the moment curve
+`(t, t², t³)`, where "no three collinear and no four coplanar" is a Vandermonde theorem):
 
 | first → second | join `∧` | meet `∨` | project | plain release takes |
 |---|---|---|---|---|
@@ -1313,3488 +895,902 @@ four coplanar" is a Vandermonde theorem rather than a hope:
 | plane → line | — | point | — | meet |
 | plane → plane | — | line | plane | meet |
 
-**At most one of join and meet is ever drawable**, so `proposalFor` is a plain priority
-order (Join → Meet → Project) with no tie to arbitrate. That property is what the whole
-design rests on, so the suite pins it exhaustively along with every cell of the table.
-Two consequences the first design got wrong: `plane → point` offers **nothing at all**, so
-`proposalFor` genuinely returns none and a release on such a pair refuses rather than
-inventing something; and the table is **asymmetric** (`point → plane` projects, `plane →
-point` makes nothing), so drag direction carries meaning — an argument for the preview
-rather than against it.
+**At most one of join and meet is ever drawable**, so `proposalFor` is a priority order
+(Join → Meet → Project) with no tie. `plane → point` offers nothing and a release refuses
+rather than inventing; the table is asymmetric, so drag direction carries meaning. A first
+measurement crossed a point lying *on* its paired line and read zeros from the fixture,
+which is why `GENERAL_FIRST`/`GENERAL_SECOND` are separate from the random operand sets.
 
-A first measurement of that table was invalid: it crossed a point lying *on* the line it was
-paired with and read zeros that came from the fixture, not the algebra. General position is
-what makes a zero here mean something, and it is why the suite's `GENERAL_FIRST` /
-`GENERAL_SECOND` are separate from the random `POINTS`/`LINES`/`PLANES`, whose `LINES[i]` is
-built out of neighbouring `POINTS` and is therefore incident with them.
-
-**Self-revelation.** The drag was the weakest of the three ways to build something, for one
-reason: it showed nothing. The panel lists every operation and the selection menu shows
-what applies, but a drag's whole vocabulary lived in a button mapping the reader had to have
-been told. So the drag now *shows its answer before committing it*: `interaction.preview`
-holds what a release **right now** would build, drawn as a ghost in `INK_GHOST` through the
-same `addObject` dispatch an open edit session's ghost uses — one "not committed yet"
-appearance, not two.
-
-**The ghost answers for the wedge being aimed at.** `preview` was `proposalFor`'s own answer
-whatever the wheel was doing, so a reader reaching for `project` watched a ghost of `join`
-and only learned what they had asked for after letting go — the module claimed "one rule,
-drawn and then obeyed" while `endDrag` resolved through `choiceAt` and the preview did not.
-`updateDrag` now resolves `proposal` in `endDrag`'s own order — `choosing()` where a wheel is
-open, `proposalFor` where none is — and `choosing` is the single statement of which wedge the
-cursor is in, read by the preview, by the release and by both front-ends' highlights, which
-each asked `choiceAt` separately before. The wheel is opened *before* that resolution rather
-than after, or the frame it opens on would ghost the plain-release answer while the wheel
-already stood over the cursor's own centre, which chooses nothing.
-
-**Three things a release can do, so three tints.** `ReleaseEffect` names them —
-`Nothing`, `Refused`, `Builds` — and `inkOfDrag` is a case over it: neutral `Ink.Guide`,
-`Ink.Invalid` magenta, the new object's own hue. The two-way test it replaced could not
-carry the wheel: with one open, the centre and a greyed wedge both have no answer and want
-*opposite* feedback, since one calls the gesture off and the other would be refused. Driven
-on the built page over one wheel, at 1440×900, reading `nimDragTint` at each stop:
-
-| cursor | wedge | band |
-|---|---|---|
-| the wheel's own centre | none | `(0.286, 0.322, 0.400)` neutral, no ghost |
-| `𝐦 ∧ 𝐧`, offered | join | next object's hue, ghost is the line |
-| `𝐦 ∨ 𝐧`, greyed | meet | `(0.612, 0, 0.722)` magenta, no ghost |
-| `𝐧 ∨ (𝐦 ∧ 𝐧☆)`, offered | project | next object's hue, ghost is the point |
-| `…` | more | next object's hue, no ghost — the picker takes that hue |
-
-That magenta is what the palette reserved a slot for and had no use for until now; it is
-never leaned on alone, since the ghost simultaneously fails to appear.
+**The drag shows its answer before committing it**: `Interaction.preview` holds what a
+release right now would build, drawn as a ghost in `INK_GHOST` (= `Ink.Guide`) through the
+same `addObject` an edit session's ghost uses, at `preview_anchor` from the same
+`creationAnchor` call the commit makes (or a ghosted plane jumps to its anchor the instant
+the release lands). It answers for the wedge being aimed at: `updateDrag` resolves through
+`choosing()` where a wheel is open and `proposalFor` where none is, and `choosing` is the
+one statement of which wedge the cursor is in, read by the preview, the release and both
+highlights. **Three things a release can do, so three tints** (`ReleaseEffect`: `Nothing`,
+`Refused`, `Builds`) — neutral `Ink.Guide`, `Ink.Invalid` magenta, the scene's next hue.
+`Scene.index_ink` carries how far the cycle has walked (`inkNext`/`takeInk`/`skipInk`), and
+**every released construction steps it**, built or not, so a colour the reader watched for
+a whole drag is not offered again; a click does not step it, nor `More`; undo restores it;
+loading sets it to the item count.
 
 **Everything that meets an object on screen meets it where it is drawn.** `mesh.anchorFor`
-takes an item's stored anchor beside its geometry and reads it exactly as `addPlane` and
-`marker.markerFor` do — a plane's disc is centred on its creation anchor, every other shape
-ignores one. The rubber-band's start, its comet's aim, and the floating selection menu's own
-follow all go through it, on both front-ends. Before, all three answered from the plane's
-closest-to-origin *support*: on this project's own demo scene those stand 0.5, 2.7 and 3.7
-world units apart from the drawn centre against a disc of radius 8, which is **13.7 px** for
-`ground` at the home camera — a band leaving from a point that is nowhere on the circle.
-Confirmed on the built page: `nimAnchorScreen` for `ground` now returns (712.9, 512.8), the
-projected creation anchor, where the support projects to (720.0, 501.1). `pickNearest` still
-meets the ray against the support's disc; that divergence predates this and is left alone.
+reads the stored anchor as `addPlane` and `markerFor` do; the band's start, its comet's aim
+and the selection menu's follow all go through it. The support stood 0.5, 2.7 and 3.7 units
+from the drawn centre on the demo's planes — 13.7 px for `ground` at the home camera.
+`pickNearest` still meets the ray against the support's disc; that divergence is left.
 
-**The ghost lands where the object will.** `Interaction.preview_anchor` is set beside
-`preview` from the same `scene.creationAnchor` call the commit itself makes, and both render
-paths hand it to `addObject`. Without it a ghosted plane was drawn about its support and
-then *jumped* to its creation anchor the instant the release landed — the one moment a
-reader is watching it hardest. The suite holds the property directly, checking the ghost's
-anchor against the anchor the created item ends up carrying rather than re-deriving either.
+**The choice wheel.** Four wedges at fixed compass points — join north, meet east, project
+south, `more…` west — unoffered ones greyed (`ALPHA_MENU_UNOFFERED` 0.45) rather than
+packed out, because a menu whose items move is one nobody learns. A wedge is the selection
+menu's own button, moved: same surface, hairline, `ROUNDING_MENU_WEDGE` 8 px radius, 12-px
+semibold face and `--accent` border on the one in force; the browser takes those from the
+same CSS variables, the desktop copies the tones into `drawChoiceMenu` with the siblings
+named. **A wedge says what the picker says**: `labelOf` returns `notationSymbolic` (`𝐦 ∧ 𝐧`,
+`𝐦 ∨ 𝐧`, `𝐧 ∨ (𝐦 ∧ 𝐧☆)`) and `More` a bare `…`; the words survive in the drawer's legend
+only. Symbols made the wheel **15 px narrower** on a 320 px phone (194.7 against 209.8),
+because `more…` → `…` takes 31 px off the east–west axis that sets the width, while the
+projection's 92 px sits at south, clear of anything. A release commits whatever is under the
+cursor, resolved by `endDrag` through `choiceAt` so the two paths cannot disagree; the
+centre (`PIXELS_MENU_DEADZONE` 26 px) commits nothing, which is why an unasked dwell wheel is
+safe to open. The wheel **latches its destination** when it opens. **An open wheel lets go
+when the cursor leaves it** past `PIXELS_MENU_DISENGAGE` = 150 px, sited off
+`PIXELS_MENU_CORNER_FURTHEST` = 103.9 px (the furthest wedge corner, read off the drawn rects
+over six pairs) leaving 46 px of clear air; travelling on to another object re-aims, never
+chains, and a target just let go of is held at arm's length until hover leaves it. This
+bounds the overshoot `choiceAt` once left unbounded; re-aiming was chosen, with the user.
+**A wheel the reader summoned may veto the release; one that invited itself may not**: a
+dwell wheel opens under a finger pausing to aim, and pausing before lifting is the common
+touch release, so an *unentered* dwell wheel's centre release falls through to
+`proposalFor`; `is_menu_entered` is set the first time the cursor stands in any wedge.
+Flick-marks are impossible on this path — a construction drag has spent its direction
+reaching the target — so the accelerator is the right button.
 
-**The choice menu.** Four wedges at fixed compass points — join north, meet east, project
-south, `more…` west — with unoffered ones drawn greyed rather than packed out, because a
-menu whose items move is one nobody learns to reach without reading it. **A wedge is the
-floating selection menu's own button, moved**: same surface (`--surface-raised`), same
-hairline `--border`, same 8-px radius, same 12-px semibold face, and the same `--accent`
-border on the one in force that `.btn.on` and `.help-tab.on` wear. The two are one control
-in two postures — one reached by dragging, one by picking — and they used to look like two
-things to learn. Verified by reading both out of the live page: wedge fill `rgb(27,33,43)`,
-stroke `rgb(42,50,61)`, radius 8, font `600 12px "Noto Sans UI"`, label `rgb(231,236,241)` —
-identical to `.selection-menu button`'s computed style in every one. On the browser the
-wedge takes those from the same CSS variables that menu does, so there is nothing to keep in
-step; the desktop copies the tones into `visualiser.drawChoiceMenu` with the siblings named,
-exactly as `gui_shim.guiButtonToggle` already had to.
+`more…` builds nothing and opens **the selection menu's own apply picker** over both
+operands in drag order (`panel.openSelectionMenuPicker`, `glue.openApplyPickerOnOperands`),
+already showing the operation last applied at that arity. Not the drawer's apply section:
+answering a wheel under the cursor by throwing the hand to a side panel buried the two
+objects just named. A degenerate construction is **refused**, the message naming what was
+degenerate, and a construction on a full scene is refused the same way (the drag commits in
+shared code with no panel between it and `addItem`'s assertion; one click on the demo
+reached it).
 
-**A wedge says what the picker says.** `interaction.labelOf` returns
-`scene.notationSymbolic`, so the wheel offers `𝐦 ∧ 𝐧`, `𝐦 ∨ 𝐧` and `𝐧 ∨ (𝐦 ∧ 𝐧☆)` — the
-picker's own text, in `--ink`, with `--accent-ink` on the wedge in force. `More` takes a
-bare `…`: beside three pieces of notation a word is the odd one out, and no operation is
-written with an ellipsis. The words survive in exactly one place, the drawer's own legend,
-which prints each beside its symbol (`interaction.wordOf` and `labelOf` on the desktop, the
-`.drawer-intro` markup in the browser, each naming the other as its sibling) — a wedge
-reading `𝐦 ∧ 𝐧` is only legible to someone told once that it is `join`.
+**Touch.** A finger that presses an object constructs; one that presses empty space moves
+the camera. Two fingers pinch and pan and cancel any construction. A long press selects; once
+a selection exists a tap (`TAP_MAX_MS` 350, in JS because a tap timeout is local) toggles
+another in or out; a tap on empty space clears. `pointercancel` cancels. `nimClearHover` runs
+once the last finger lifts, or the last reading sits stale forever. Accepted cost: a finger
+starting on the ground plane's disc constructs rather than orbiting — the same trade the
+mouse makes. `g_selection` (Nim) is the sole source of truth; `glue.js` keeps only a render
+snapshot refreshed when the selection changes.
 
-The wheel kept words for one round on a measurement that turned out to be the wrong one:
-the projection's notation is indeed near twice the width of `project`, but it sits at
-`Compass.South`, clear of the two wedges the width could have collided with, while `more…`
-→ `…` takes 31 px off the *east–west* axis that actually sets the wheel's width. Measured on
-a 320 px phone, rendered:
+**A picker offers symbols alone** (`notationSymbolic`), not the whole catalogue entry, and
+**opens on what was last applied at its own arity** (`OperationMemory`, attitude for one
+operand, wedge for two; per arity because the two lists are disjoint). **Every apply control
+ghosts its answer while the reader is still choosing**: `scene.Preview` is the one statement
+of a construction not yet committed (geometry, anchor, operand slots), built by
+`previewApplying`, and the drag's own preview is the same type by the same call. Where a
+session and a preview both stand, **the session wins** (`staged`, once per front-end). The
+preview is **framed together with the operands it names** (`Preview.operands`,
+`framing.watched`); an open edit session names none, since its staged geometry replaces the
+object selected beside it.
 
-| wedge | words | notation |
-|---|---|---|
-| north | `join` 44.9 px | `𝐦 ∧ 𝐧` 53.6 px |
-| east | `meet` 52.6 px | `𝐦 ∨ 𝐧` 53.6 px |
-| south | `project` 63.3 px | `𝐧 ∨ (𝐦 ∧ 𝐧☆)` 92.0 px |
-| west | `more…` 62.9 px | `…` 32.0 px |
-| **whole wheel** | **209.8 × 182 px** | **194.7 × 182 px** |
+**Selection menu** (both builds, one row, following its anchor every frame): `apply`
+leftmost and never moving, opening a picker to its right via a `max-width` transition
+(`width: auto` cannot animate); `edit` shown for exactly one selected, opening the drawer's
+objects section onto a session; `hide`, `delete` on every selected slot; `✕` clears. `apply`
+is hidden for 3+ selected, since this menu has no operand pickers. **Shown by the gestures
+that pick and hidden by the ones that build**, not derived from the selection being
+non-empty — every construction leaves its result selected and a menu over each new object
+would sit in the way of the next drag. Placed `OFFSET_MENU_SELECTION` = 46 px **above** its
+object: a Dear ImGui window makes `wantsMouse()` true wherever it sits, so a menu straddling
+its object would swallow the next drag off it. Its screen position is kept between frames so
+an object passing behind the camera leaves it where it was. The document-level tap-outside
+listener excludes the canvas, the drawer and the chip row, and fires on `pointerdown`,
+before the tap resolves.
 
-So the symbols made it **15 px narrower**, not wider. Moving a choice to a different compass
-point is therefore a decision about its label too. **One release rule:
-a release commits whatever is under the cursor.** `endDrag` resolves the wedge itself
-through `choiceAt`, rather than each render path resolving it, so the two cannot disagree
-about where a release landed; back at the centre (inside `PIXELS_MENU_DEADZONE`, 26 px)
-commits nothing, which is also why a dwell menu is safe to open unasked — it opens *centred
-on the cursor*, so a reader who did not want it is already in the deadzone. The menu
-**latches its destination** when it opens (`destinationOf`): reaching out to a wedge
-necessarily takes the cursor off the item, and a destination read from hover would go none
-at exactly the moment the release needs it.
-
-`more…` is the ramp from this gesture to the other twenty-four operations: it builds nothing
-itself and instead selects both operands in drag order and opens **the selection menu's own
-apply picker**, over those operands, already showing the operation last applied at that
-arity. Without it the gesture is a dead end at three operations out of twenty-seven.
-It used to open the drawer's apply section instead, and that was the wrong landing: `more…`
-is a fifth choice on a wheel that opened under the cursor, and answering it by throwing the
-hand across the viewport to a side panel buried the two objects it had just named under
-every other control. `panel.openSelectionMenuPicker` is the one proc both the menu's own
-`apply` button and the drag's `more…` reach it through; `glue.openApplyPickerOnOperands`
-is its browser counterpart. Driven end to end on both builds: the picker comes up on
-`𝐦 ∧ 𝐧` with both operands selected and the drawer untouched.
-
-**Flick-marks are impossible on this path**, which is why the menu earns its speed from
-fixed positions instead. A marking menu's accelerator is the direction of the stroke, and a
-construction drag has already spent its direction reaching the target. The accelerator here
-is the right button.
-
-A degenerate construction is **refused**: no item is added and the message names what was
-degenerate (Nielsen #5). Without that, a scene fills with invisible slots that still consume
-capacity and undo steps. The menu greys the wedges that would be refused, so that path
-reaches the refusal only by insisting.
-
-**Browser / touch.** The same invariant reaches touch: **a finger that presses an object
-constructs; one that presses empty space moves the camera.** Two fingers pinch to zoom and
-pan, and cancel any construction in progress. A long press (`SECONDS_LONG_PRESS` 0.5)
-selects an object; once a selection exists, a tap (`TAP_MAX_MS` 350) toggles another in or
-out; a tap on empty space clears. Selection is an *ordered* set — first selected becomes
-operand m, second operand n.
-
-A press begins as a hold, and the first movement past `PIXELS_TAP_SLOP` is the single moment
-it resolves — construction where it landed on an object, orbit where it did not. `beginDrag`
-reads the hover reading, so it has to run *before* the cursor starts following the finger;
-touch `pointermove` did not update the cursor at all, which is what makes that ordering
-available rather than something to engineer. Touch has no second button, so the dwell is the
-only way to open the choice menu there. `pointercancel` cancels rather than commits: the
-browser taking a gesture over is not the reader letting go.
-
-`PIXELS_TAP_SLOP` moved from `glue.js` into `interaction.nim` when its meaning changed. While
-it only separated a tap from an orbit it was a presentation detail; deciding **which scheme a
-gesture enters** is the same kind of rule as the two durations it now sits beside. `TAP_MAX_MS`
-stayed in JS — a tap timeout really is local.
-
-**Accepted cost:** a finger starting on the ground plane's disc now constructs rather than
-orbiting, and that disc covers most of the lower screen. This is the identical trade the mouse
-already makes, and the camera is still reachable two other ways, so it is consistency rather
-than regression. Measured, not assumed: a point chosen by hand as "empty" for the orbit test
-turned out to sit on the disc, which is the cost showing up in the test fixture before it
-could show up in anyone's hands.
-
-Touch is also where the dwell's own defect finally bit. The clock restarted only when a drag
-*left* a target, so it measured presence rather than stillness; a mouse crosses the screen too
-fast for that to matter, but a finger moving continuously for 1.2 s over one object had the
-menu open on it mid-gesture, and the construction then released into a menu and built nothing.
-Driving it is what found this — the suite was green and the code read fine. `updateDrag` now
-restarts `entered` whenever the cursor moves further than `PIXELS_TAP_SLOP` from where it last
-settled, with two suite cases: one that a drag which keeps moving never opens its menu however
-long it stays on target, and one that a drift smaller than the slop still counts as holding
-still, since a dwell any tremor could restart is a dwell nobody reaches.
-
-`g_selection` (Nim) is the sole source of truth in both builds, reached from the browser
-through `nimSelectionSlots`/`nimSelectionCount`/`nimSelectionArity` and
-`nimSelectOnly`/`nimSelectToggle`/`nimSelectClear`. `glue.js` keeps only a render snapshot
-(`slots_selection`), refreshed whenever the selection changes, so the per-frame overlay loop
-does not cross the boundary — a cache of Nim's answer, carrying no rule of its own. An
-earlier design kept the ordered list in JavaScript because Nim held a single scalar; that
-put pick order, the thing that names operands, in the wrong language.
-
-`nimClearHover()` is called once the last finger lifts. Touch has no continuous pointer
-position, so `nimUpdateHover` only ever runs at a touch-down point; without this the last
-reading sits stale forever and its ring (only 20% dimmer than a selection ring) reads as a
-second selected object.
-
-**Selection menu** (both builds, one row, following its anchor object every frame — the
-browser through `nimAnchorScreen`, the desktop through `visualiser.anchorOfSelection`, both
-projecting the same `mesh.anchorFor` the rubber-band uses): `apply` sits leftmost and
-never moves. Pressing it opens an operation
-picker to its right via a `max-width` transition on `.selection-menu-reveal`
-(`width: auto` cannot animate, which is why a max-width bound is animated instead); pressing
-it again commits with whatever is picked. `back` collapses without committing. `hide` and
-`delete` are hidden while the picker is open and restored when it closes. `✕` clears the
-selection and stays visible throughout. `apply` is hidden entirely for 3+ selected: this
-menu has no operand pickers, so it cannot say *which* two of three it would use — unlike the
-drawer's `apply` section, which can and therefore stays usable. `hide`/`delete` act on every
-selected slot.
-
-`edit` sits immediately right of `apply` and is shown only for exactly one selected object,
-since one object has one editor. It opens the drawer and the objects section, starts an edit
-session on that slot, scrolls its row into view and hides the menu — the panel owns the
-interaction from there — while keeping the selection itself. It shares `openPanelTo`
-with the top bar's own `add`, which differs only in opening onto a composing row instead.
-
-The document-level "tap outside closes the menu" listener excludes the canvas, the drawer
-and the chip row. It fires on `pointerdown`, before the tap gesture resolves on release, so
-including the canvas would clear selection state before the gesture that should use it ran.
-
-The desktop's own copy is `panel.layoutSelectionMenu`, an undecorated `windowBeginPinned`
-window over the 3D view laid out from the same rules — the row is `buttonSmall`s and the
-picker a `combo` sized to the widest notation offered. It reuses `offerOperationsOfArity`,
-`applyPickedOperation`, `beginSession` and `selection.isAllHidden` rather than restating any
-of them; `applyPickedOperation` was changed to take operand **slots** instead of positions
-in the apply section's own combo lists, since the menu reads its two operands straight off
-the selection and neither caller should have to learn the other's indexing.
-
-**It is shown by the gestures that pick and hidden by the ones that build** — not derived
-from the selection being non-empty, because every construction path leaves its own result
-selected and a menu appearing over each new object would sit in the way of the next drag.
-That is the browser's `refreshSelectionMenu`/`adoptConstructionSelection` split, written on
-the desktop as `showSelectionMenu`/`hideSelectionMenu`.
-
-Placed `OFFSET_MENU_SELECTION` (46 px) **above** its object, not on it. A Dear ImGui window
-makes `gui.wantsMouse()` true wherever it sits and `handleEvent` returns early on that, so a
-menu straddling its own object would swallow the next drag off it; the lift also clears the
-selection marker drawn around the object. Measured rather than assumed: `--drive-select`
-scripts three clicks and then a construction drag off the very object the menu is following,
-and that drag builds (`c ^ a gave line`). The menu's screen position is kept between frames
-so an object passing behind the camera leaves it where it was instead of flinging it into a
-corner.
-
-`--drive-select` also exists because a headless run could not otherwise be caught with the
-menu open. It posts to SDL's own queue like `--drive-drag`, splits each gesture across two
-frames (hover is recomputed inside `renderFrame`, so a press in the same drain as its motion
-reads the previous frame's pick), and sets shift through `sdl3.setModState` — a pushed key
-event never reaches the state `SDL_GetModState` reports. Capture one frame *later* than each
-step: Dear ImGui hides an auto-sized window for the one frame it measures it in, which cost
-an hour of looking at an empty patch of scene.
-
-`--drive-sky` guards the regression making a horizon plane pickable could cause: it drags
-across bare sky, which must turn the view and build nothing, and then clicks it, which must
-select it. Where the sky is bare it *scans for* rather than hard-codes — which patch of a
-window is empty depends on the scene and on wherever the camera was left, and a fixed pixel
-would quietly start testing something else the moment either changed.
-
-`--drive-undo` joins the same family, for the one desktop behaviour with no other headless
-handle: it drags `a` onto `b` to build, orbits three steps and rises one, then sends Ctrl+Z,
-so where undo leaves the view can be looked at. It drags with the **left** button, not the
-right: a right release commits the wedge the cursor stands in, and a scripted cursor resting
-on its target stands in none of them, so the right button's own release reports "released
-without choosing" and builds nothing. Capture frames 6, 10 and 13 or later — 6 and 13 show
-the same viewpoint to the pixel, 10 shows how far the orbit went.
+*Checked.* Verified by suite: every cell of the drag table and the at-most-one property,
+exhaustively; the click rule; the dwell restarting on movement and surviving a drift under
+the slop; the ghost's anchor equal to the created item's; the ink cycle stepping on release
+and not on click. Verified by driven checks: the tint table at each wedge stop
+(`nimDragTint` reading neutral `(0.286, 0.322, 0.400)`, magenta `(0.612, 0, 0.722)`, the
+next hue); shift-clicks held 600 ms selecting; the sub-slop touch drag hovering 2 with the
+azimuth unmoved; `more…` landing on `𝐦 ∧ 𝐧` with both operands selected on both builds; a
+construction drag off the very object the selection menu follows (`--drive-select`); the
+full-scene refusal. Verified by reading computed styles: the wedge's fill, stroke, radius,
+font and label identical to the menu button's. Assumed: that 0.75 s is the right dwell for
+any hand; it was set by one profile.
 
 
 Undo/Redo
 ---
-`visualiser/core/history.nim`, shared. Scoped to scene-content edits — add, apply (including
-drag and the touch flow), remove, visibility toggle, ink recolour, and an edit session's
-`save`. Coefficients, label and ink used to be excluded too, because the widgets driving
-them are continuous multi-frame inputs and recording every keystroke would flood the
-timeline; the staged edit session (see Edit Sessions) supplies the "edit committed" moment
-they lacked, so one `save` records one entry covering all three at once.
+`history.nim`, shared. Scoped to scene-content edits: add, apply (drag and touch flow
+included), remove, visibility, ink, and an edit session's `save`, which is the "edit
+committed" moment the continuous widgets lacked. One fixed array plus one cursor, not two
+stacks: an entry is a `Step {scene, camera}`, both plain value types, so recording is a copy
+and `entries[cursor].scene` is exactly the live scene. `CAPACITY_HISTORY` = 32.
 
-One fixed-size array plus one cursor, not separate past/future stacks: an entry is a
-`Step {scene, camera}`, and both are plain fixed-size value types (`Scene` is arrays of
-`Multivector`/`Label`/`Ink`/`bool`/`float`/`Option` with no pointers; `Camera` is five
-floats), so recording is a value copy and `entries[cursor].scene` is always exactly the
-live scene. Undo/redo move the cursor and copy back; a fresh edit truncates past the
-cursor. Halves the memory of a two-stack design and collapses two invariants into one.
-`CAPACITY_HISTORY` = 32; recording past it drops the oldest entry rather than growing.
+**The array is a ring.** `first` names the slot holding the oldest step, `slotOf` is the one
+place a timeline position becomes an index, and retiring the oldest entry moves one integer.
+Shifting every later entry down was 31 whole scene copies per edit past the thirty-second —
+153.5 ms to toggle one object's visibility on the JS backend, scaling with the *capacity*
+(26.4 ms at four deep, 39.9 at eight); as a ring one edit costs 11.3 ms and does not move
+with the depth (10.7 at four, 11.7 at eight). What remains per edit is the one `Scene` copy
+into the timeline, 1.15 MiB through `nimCopy` on the JS backend; not per frame. `initHistory`
+fills a timeline the caller owns: returned by value it compiled to a `nimCopy` of thirty-two
+whole scenes, 65% of the largest demo's load. `record` writes a `Step`'s fields rather than
+assigning a literal, for the same reason.
 
-**The camera rides along; an orbit is never a step of its own.** Each step records where
-the view stood when *that step's* edit was made, so crossing a step in either direction
-restores that one camera: undo reads it off the entry being stepped away from, redo off the
-entry arrived at. Chosen over restoring the camera of the state arrived at, which was the
-first implementation and is wrong in a way only running it shows — it hands back whatever
-view the *previous* edit happened to be made from, so undoing the first construction of a
-session teleports you to the startup view. Driving the browser build found that; the suite
-had passed. Not recording an orbit as its own entry is the accepted cost of not needing a
-gesture-settle rule (a camera drag emits an event per pixel), and it means **an accidental
-orbit is still not undoable on its own**. The first entry's camera is stored but never
-restored: no edit leads into the seeded state.
+**The camera rides along; an orbit is never a step of its own.** Each step records where the
+view stood when *that step's* edit was made; undo reads it off the entry stepped away from,
+redo off the entry arrived at. Restoring the camera of the state arrived at hands back
+whatever view the *previous* edit was made from, so undoing the first construction of a
+session teleported to the startup view. Not recording an orbit is the accepted cost of not
+needing a gesture-settle rule, and **an accidental orbit is still not undoable on its own**.
+Both front-ends abandon their camera tween on a successful step, or the standing aim drags
+the view straight back off the placement just restored.
 
-Both front-ends abandon their camera tween on a successful step (`panel.stepHistory`,
-`nimUndo`/`nimRedo`). Without it the standing aim — armed by the selection an edit leaves
-behind — drags the view straight back off the placement just restored.
+Seeded wherever the scene is (re)initialised, so undo never reaches past the moment
+tracking began. A successful step clears the selection and any ghost. Bound to Ctrl/Cmd+Z,
+Ctrl/Cmd+Shift+Z and Ctrl+Y on both builds, through one function per build rather than the
+button — routing through `button_undo.click()` depended on a `disabled` attribute refreshed
+on the low-cadence tick.
 
-Seeded via `initHistory(scene, camera)` wherever the scene is (re)initialised — desktop
-startup; browser `nimInit`/`nimLoadDemo`/`nimSceneClear` — so undo never reaches past the
-moment tracking began. A successful undo/redo clears the selection unconditionally, since a
-restored snapshot's slot numbers need not match. `nimCanUndo`/`nimCanRedo` drive the
-browser's disabled-button state. Bound to Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (and Ctrl+Y) on
-both builds; the desktop reads the modifiers off the key event rather than `getModState`.
-
-Tested by recording to capacity, walking all the way back and forward, and comparing against
-the actually-recorded state at every step. `Scene` embeds `Multivector`, whose `==` is an
-intentional compile error, so `scenesEqual` compares item by item using `=~` for geometry.
-Camera restoration is pinned by a suite case that makes two edits from two distinct
-viewpoints and checks both directions across each step, and verified end to end by running:
-`--drive-undo` on the desktop and `drive_undo_tween.js` on the browser both build something,
-orbit well away, undo, and show the view back where the construction was made from and
-holding there while the abandoned tween would otherwise have pulled it off.
+*Checked.* Verified by suite: recording to capacity and past it, walking every retained step
+forward and back and comparing each state (`scenesEqual`, since `Multivector`'s `==` is an
+intentional compile error); camera restoration across two edits from two viewpoints.
+Verified end to end: `--drive-undo` and the browser drive both build, orbit away, undo, and
+hold the view where the construction was made. The 153.5 / 11.3 ms figures were measured on
+the JS backend at 5,038 slots and not since.
 
 
 Storyboard And Seeds
 ---
-`storyboard.constructSeeds` builds five seeds: `a`, `b`, `c` (each raised 2 units in z, off
-the z = 0 ground plane), `o` (the world origin, left exactly at the origin), and `ground`
-(a plane joined from three points at z = 0). `o` must stay off `ground` — one step projects
-it onto that plane, and a point already lying on the plane projects to itself, making the
-step a silent no-op.
+`storyboard.constructSeeds` builds five seeds: `a`, `b`, `c` (raised 2 units in z), `o`
+(the origin), `ground` (a plane joined from three points at z = 0). `o` must stay off
+`ground` — one step projects it onto that plane. `STEPS` is eleven derived steps; both entry
+points compute the seed count from `scene.len`. One step (`a ^ ground`) is a grade-4 volume
+and correctly reports "mixed grade, nothing to draw" — its documented purpose.
 
-`STEPS` is eleven derived steps on top. Both entry points compute the seed count from
-`scene.len` rather than a hardcoded constant, so inserting a seed needs no matching edit.
-Step indices into the scene are stable once written because the scene grows by one per step.
+Both apps open on the seeds alone. `runStoryboard` distinguishes "reached" from "focal";
+reached-but-not-focal draws muted rather than hidden. Horizon steps aim the capture via
+`azimuthElevationFor(heading)`, a closed-form inverse of the orbit camera's forward
+direction. `constructSeeds` deliberately does not stagger arrivals (`runStoryboard` sweeps
+each step's animation on a clock of its own); the startup paths call `replayFrom` after it.
+The GIF is `FRAMES_GIF_GROW` 6 + `FRAMES_GIF_HOLD` 4 frames a step at `STRIDE_GIF` 2
+downsampling, `CENTISECONDS_GIF_DELAY` 8.
 
-Both apps open on the seeds alone. The eleven-step construction is reachable as a one-click
-preset (`nimLoadDemo` / the desktop's storyboard mode) that populates the scene with
-ordinary, fully-editable items — not a separate scripted-playback mode. `nimLoadDemo` stamps
-`g_borns` one second apart per step, mirroring `runStoryboard`'s synthetic clock, so the
-Objects list's recency sort reads seeds as oldest and each derived step as progressively
-newer.
-
-One step (`a ^ ground`) is a grade-4 volume and correctly reports "mixed grade, nothing to
-draw" — a point wedged with a plane it does not lie on has nothing to render. That is the
-step's documented purpose, not a bug.
-
-`runStoryboard` distinguishes "reached" (this step has happened; true forever after) from
-"focal" (the current step's operands and result, plus the step before, for continuity).
-Reached-but-not-focal draws muted as background context rather than being hidden — objects
-disappearing reads as more confusing than informative. Horizon-producing steps aim the
-capture via `azimuthElevationFor(heading)`, a closed-form inverse of the orbit camera's
-forward-direction formula (target and distance cancel out), then restore the default view;
-no FOV widening — reorienting alone suffices, and no FOV can fix content behind the camera.
+*Checked.* Verified by regenerating: the storyboard is byte-identical across changes that
+should not touch it (the replay, the help-table measurement). Nothing assumed.
 
 
 Creation-Anchored Plane Centring
 ---
-A plane's rim/fill centres on `scene.creationAnchor(operation, m, n, derived)` rather than
-always on its closest-to-origin support, which reads wrong for a plane built from operands
-that do not straddle the origin symmetrically. Dispatches on operation plus operand shapes:
-`Wedge` of a line and a point centres at the midpoint between the point and its orthogonal
-projection onto the line; `ExpandWeight` of a point and a line centres where the line meets
-the resulting plane; the three-point ground seed centres on their centroid. Everything else
-falls back to the support-based anchor.
+A plane's rim and fill centre on `scene.creationAnchor(operation, m, n, derived)` rather
+than on its closest-to-origin support, which reads wrong for a plane built from operands
+that do not straddle the origin. `Wedge` of a line and a point centres at the midpoint
+between the point and its projection onto the line; `ExpandWeight` of a point and a line
+where the line meets the plane; the three-point ground seed on the centroid; everything else
+falls back to the support. Computed at construction and stored (`anchor_overrides`, a
+rendering hint excluded from save/load), since many operand sets produce an identical plane
+`Multivector`. All anchor arithmetic is RGA-native — summing unit-weight points and reading
+`position`, which divides by weight.
 
-Must be computed at construction time and stored — it is not recoverable afterward, since
-many different operand sets produce an identical plane `Multivector` which carries no memory
-of what built it. Hence `Scene.anchor_overrides: array[ITEMS_MAX, Option[Position]]`, a
-rendering hint explicitly excluded from save/load.
-
-All anchor math stays RGA-native (e.g. summing two unit-weight grade-1 points and reading
-`position`, which divides by weight, gives the exact average) rather than hand-rolled vector
-arithmetic.
+*Checked.* Verified by suite: each special case's anchor. Assumed: that no other operation
+wants one; none has been asked for.
 
 
 Save/Load Format (`.rgascene`)
 ---
-Compact binary matching `Scene`'s SoA layout, **little-endian throughout**. There is no
-external spec to match, unlike PNG/GIF which follow their own required endianness, so the
-order was a free choice — but it had to be *a* choice, because two builds write this format
-and `glue.js` reaches it through `DataView`, which demands an explicit order at every call
-and is given `true`. Little-endian rather than big-endian precisely because it is what every
-file written so far already contains, so the rule cost no version bump and orphaned nothing.
-The desktop converts through `std/endians`, a copy on a little-endian host and a swap on a
-big-endian one.
+Compact binary matching `Scene`'s layout, **little-endian throughout** — a free choice that
+had to be *a* choice, because `glue.js` reaches it through `DataView`, and little-endian
+because every file already written contained it. The desktop converts through
+`std/endians`.
 
-| Bytes    | Field |
-|----------|-------|
-| 4        | Magic `RGAS` |
-| 1        | Format version (currently 3) |
-| 1        | Basis count (16 under this build's 4D rigid metric); must match, or the
-             file was saved under a different PGA dimension or metric |
-| 4        | Item count, little-endian `uint32` |
-| per item | Ink (1), visibility (1), label length in bytes (1) + that many bytes of
-             UTF-8, then one little-endian `float` per basis term |
+| Bytes | Field |
+|-------|-------|
+| 4 | Magic `RGAS` |
+| 1 | Format version (`VERSION_SCENE` = 3) |
+| 1 | Basis count (16 under this build); must match |
+| 4 | Item count, little-endian `uint32` |
+| per item | Ink (1), visibility (1), label length in bytes (1) + UTF-8, then one |
+|  | little-endian `float` per basis term |
 
-**The two builds could not open each other's files at all**, and had not been able to since
-the version bump to 2. Three defects, all in the same shape — a value derived in Nim, copied
-by hand into JavaScript, and left behind:
+`MAGIC_SCENE` and `VERSION_SCENE` are exported and reach `glue.js` through
+`nimSceneMagic`/`nimSceneVersion`, so there is no literal to drift; labels go through
+`TextEncoder`/`TextDecoder`. Three defects of the same shape — a value derived in Nim and
+copied by hand into JavaScript — once left the two builds unable to open each other's files
+while the round-trip suite stayed green, because it only ever asked one build to read what
+it wrote.
 
-1. `glue.js` stamped version `1` and refused anything but `1`, while `scene.nim` wrote and
-   demanded `2`. So the browser saved version-2 content under a version-1 label and rejected
-   every desktop file, under a comment claiming both directions worked.
-2. Labels were written with `String.length` and `charCodeAt` truncated to a byte. Those count
-   UTF-16 units and drop everything above U+00FF, so a derived label carrying operator
-   notation (`a ∧ b`, `a ⊖ b` — the catalogue's own names) wrote a length shorter than the
-   bytes that followed and every field after it parsed from the wrong offset.
-3. The endianness above.
+Only live items are written, **in creation order** (`nimSceneSlotsCreated` on the browser
+side; `nimSceneSlots` keeps slot order for the combo boxes indexed by position). That order
+is the whole of what version 3 added. Omitted on purpose: slot numbers, a per-item ordinal,
+fixed-width label padding.
 
-Fixed at the root rather than by correcting the copies: `MAGIC_SCENE` and `VERSION_SCENE`
-moved out of the desktop-only guard, are exported, and reach `glue.js` through
-`nimSceneMagic`/`nimSceneVersion` — so there is no literal left to drift. Labels go through
-`TextEncoder`/`TextDecoder`. Found by driving, not by reading: the round-trip suite passed
-throughout, because it only ever asked one build to read what that same build wrote.
+**A loaded scene replays its construction.** `born` is not written, but
+`scene.bornReplaying(index, count, now)` stamps the `index`-th of `count` arrivals a beat
+after the last, and `animationProgress` reads a `born` the clock has not reached as zero.
+`SECONDS_REPLAY_STEP` = 0.12 is shorter than the 350 ms appear animation, so an object is
+still growing as the next lands; `SECONDS_REPLAY_WHOLE` = 2.5 caps the whole arrival by
+shortening the beat, or a full scene would take minutes. Every arrival a reader did not
+build replays — a file, the demo, the opening scene — through one rule in both loaders and
+`replayFrom` for callers that assemble first.
 
-Only live items are written, **in the order they were created** — which is the whole of what
-version 3 added, and the reason it is a version rather than a quiet change: the bytes are
-shaped identically to version 2, so nothing but the version number says whether the sequence
-a reader walks is the order the scene was built in or merely the order its slots fell in.
-Deliberately omitted: slot numbers (meaningless once reloaded — a fresh scene assigns its own
-free-list order); a per-item ordinal (it would equal its own position, every time, since the
-sequence already carries the ordering); fixed-width label padding (length-prefixed, so the
-format does not depend on the writing build's `LABEL_MAX`).
+**Every version ever written is still readable.** `VERSION_SCENE_LEAST` = 1 and should stay
+1: reading an old version costs a mapping func and a suite case, refusing one costs somebody
+their scene. Reading is written once against `VERSION_SCENE`; each past version's difference
+lives in one `upgradedFrom<n>`, and `itemUpgraded` walks an `ItemSaved` up the chain one
+step at a time. Version 2 costs nothing but the sequence guarantee (`upgradedFrom2` is an
+explicit no-op kept so the question has an answer); version 1 costs colours only — its
+ordinals name a palette that no longer exists, folded by the same cycle `inkCycled` walks,
+bounded by `ORDINAL_INK_HIGH_V1` = 14 so a byte version 1 could never have written is
+refused. The browser's own version-1-stamped version-2 files read one hue along; **a wrong
+hue is recoverable, a refused scene is not**. `loadScene` parses into a staging scene and
+replaces the caller's only on complete success; native-only.
 
-**Creation order is recorded explicitly** (`Scene.orders`, `Scene.count_created`,
-`scene.slotsCreated`), not inferred. Slot order stops being creation order the moment
-anything is removed: the arena's free list hands the most recently freed slot to the next
-arrival, so a removed-then-re-added object sits *before* objects that predate it. Sorting by
-`born` was rejected as the ordering key on three counts, each of which happens in practice —
-two objects added in one frame share a clock reading; a replayed item's `born` is stamped
-into the *future* (below); and a reused slot's `born` is a stale reading until overwritten.
-An ordinal counts additions to one arena and answers all three. Cost: two more parallel
-arrays, `4 + 4` bytes per slot, on a structure already sized by its multivectors.
-
-**A loaded scene replays its own construction rather than arriving whole.** `born` is still
-not written — it is a clock reading meaningless across runs — but a loaded item is no longer
-stamped at the dawn of time either. `scene.bornReplaying(index, count, now)` stamps the
-`index`-th of `count` arrivals a beat after the last, and `mesh.animationProgress` reads a
-`born` the clock has not reached as zero progress, so each object is drawn at nothing until
-its turn and then grows in. `SECONDS_REPLAY_STEP = 0.12` is shorter than
-`mesh.ANIMATION_SECONDS`, so an object is still growing as the next lands — one construction
-unfolding, not a queue of pop-ins. `SECONDS_REPLAY_WHOLE = 2.5` caps the whole arrival by
-shortening the beat: without it a full `ITEMS_MAX` scene would take nearly eight seconds and
-a reader who just wanted their scene back would be watching a progress bar made of geometry.
-One rule, both loaders (`loadScene` and `browser_bridge.nimSceneAddRaw`), for the reason this
-format has already been burned by: a beat computed twice is a beat that drifts.
-
-**Every arrival a reader did not build themselves replays** — a loaded file, the demo preset,
-and the opening scene both builds start on. They are the same thing to a reader: a
-construction handed over whole, and watching it build says what a static arrangement of five
-objects does not, that these were placed one at a time and everything else is derived from
-them. The two loaders stamp as they add, since they are building the scene anyway and know
-each item's position as they go; `scene.replayFrom` is the same rule applied after the fact,
-for the two callers that assemble a scene first and only then hand it over. That also
-simplified the demo, which had been counting seed and step indices out by hand to reach the
-same beat.
-
-**`constructSeeds` deliberately does not stagger**, and the startup paths call `replayFrom`
-after it instead. `runStoryboard` calls `constructSeeds` too and sweeps each step's
-animation on a clock of its own, which a stagger inside the constructor would fight.
-Verified rather than assumed: the whole storyboard — twelve PNGs and the GIF — regenerates
-byte-identical to the build before this change.
-
-**Every version ever written is still readable, and that is a promise rather than a
-convenience.** A scene file is a reader's own work; a build that refuses it has destroyed it
-as surely as deleting it would. `VERSION_SCENE_LEAST` is 1 and should stay 1 — reading an old
-version costs a mapping func and a suite case, refusing one costs somebody their scene. What
-each older version costs: **version 2**, nothing but the sequence guarantee (a version-2 file
-of an untouched scene is byte-identical to a version-3 one but for the version); **version
-1**, colours only. `Ink` has since gained a reserved `Invalid` and lost three categorical
-hues, so version 1's ordinals name a palette that no longer exists — the structural slots are
-unmoved, the five surviving hues shift by exactly one, and `Violet`/`Magenta`/`Cerise` fold
-onto hues that exist by the same cycle `inkCycled` walks.
-
-**An old file is upgraded to today's shape, never read in an old build's dialect.** Reading
-is written once, against `VERSION_SCENE` alone; everything a past version did differently
-lives in one `scene.upgradedFrom<n>` per version boundary, and `scene.itemUpgraded` walks an
-item up the chain one step at a time before anything else sees it. `ItemSaved` is the shape
-that walk operates on — an item as a file holds it, distinct from the live `Item` handle.
-Both loaders go through it, so neither build has a reading of an old version the other lacks.
-
-The rejected alternative is what this replaced: one reader that branched on the version at
-each field it touched. It spreads every past decision across the whole reader, so supporting
-an old version is paid for again by everyone who edits reading, and the version that breaks
-is the one nobody has a file of to notice with. Under the chain, adding a version means
-adding one func and leaving the rest alone. The cost is a per-item copy through `ItemSaved`
-on the load path, which is not a hot path — a file is read once.
-
-`upgradedFrom2` is an explicit step that does nothing, kept rather than omitted: version 3
-changed what the item *sequence* promises, and an item alone carries no sequence. A
-version-2 file's order is taken as its creation order, being the closest thing surviving in
-the bytes. It is written down so a reader asking what version 2 meant differently finds an
-answer rather than a gap. Adding the chain also closed a real hole: version 1's fold had no
-upper bound, so any byte at all became some hue. `ORDINAL_INK_HIGH_V1 = 14` now bounds it,
-and an ordinal version 1 could never have written is refused as the corrupt file it is —
-verified through the shipped browser parser, which reads ordinal 15 in a version-1 file as a
-refusal where it previously produced a colour.
-
-The one file this reads wrong is the browser's own: it stamped version 1 onto version-2
-content for a while (defect 1 above), and nothing in the bytes distinguishes such a file from
-a genuine version-1 one. Read as version 1, its colours come back one hue along; geometry,
-labels and visibility are exact, and saving it again restamps it. Reading version 1 as
-today's ordinals instead would fix that file and *refuse* a genuine version-1 one outright,
-whose `Magenta` and `Cerise` fall past the end of today's palette. **A wrong hue is
-recoverable; a refused scene is not** — which is the whole basis of the choice.
-
-`loadScene` parses into a staging scene and replaces the caller's only on complete success,
-so a bad path, a foreign file, a wrong dimension, or too many items leaves the existing
-scene untouched. Native-only (`when not defined(js)`) — a browser has no filesystem.
-The browser reaches the identical format through `nimSceneAddRaw` plus a `DataView`
-pack/unpack in `glue.js`; `browser_bridge.nim` exposes raw per-item fields rather than bytes,
-since reinventing IEEE-754 encoding in Nim would only duplicate what `DataView` does
-natively. What it does *not* expose that way is any constant describing the format — those
-are exported and read across, for the reason above.
-
-Checked by cross-reading rather than by round-tripping: a scene the desktop saves is fed to
-`glue.js`'s own `parseAndLoadScene` and every coefficient compared, and a scene the browser
-saves through its own button is loaded by `--load-scene` and looked at. A round trip within
-one build passes under any byte order and any label encoding, which is exactly why it missed
-all three defects. A suite case now pins the on-disk bytes of a known float as well.
-
-Version 3 was checked the same way, and the same shape of drift was waiting: the browser
-wrote `nimSceneSlots()` — slot order — while stamping the version that promises creation
-order. `nimSceneSlotsCreated` was added beside it and `saveScene` moved onto it;
-`nimSceneSlots` keeps slot order, since its other callers are combo boxes indexed by dense
-position. **Measured on the shipped builds**: a browser scene built as `p0 p1 p2 p3`, with
-`p1` removed and `late` added, sits in slots as `p0 late p2 p3` and was written to file as
-`p0 p2 p3 late`; loading it back gave `p0 p2 p3 late` with borns 0.000/0.120/0.240/0.360 s
-past the load, and the objects were observed reaching full size one at a time. The desktop
-was then handed that same browser-written file through `--load-scene` and screenshotted at
-frames 2/8/16/24/45: nothing drawn at frame 2, three points at 16 with the first largest, all
-six at 45. Hand-built version-1 and version-2 files were fed to both parsers — version 1's
-ordinals 4/7/11/13 came back as `Grid`/`Rose`/`Cobalt`/`Copper`, version 2's 4/8/12 as
-`Grid`/`Rose`/`Cobalt` — and a file one version *ahead* of this build was refused by both,
-leaving the open scene untouched.
-
-**Fidelity, checked field by field rather than by eye.** The round trip above compared
-labels, which would pass with every coefficient wrong. The whole sixteen-object demo -- eleven
-derived objects, labels carrying `∧`/`☆`, five distinct inks, one item hidden -- was
-saved, reloaded and compared item for item in creation order: label, ink, visibility and all
-sixteen coefficients, **304 scalar comparisons, exactly equal**, no tolerance. Exact is the
-right test here and a tolerance would be the wrong one: these are the same doubles written and
-read back, not a recomputation, so anything but equality means the format lost something.
-
-That is still one build agreeing with itself. Across builds: the desktop read the
-browser-written file to the same 16 items and the same 304 values, and re-saving it produced a
-file **byte-identical** to the browser's, all 2245 bytes -- so the two writers agree on the
-bytes and not merely on the meaning. A hand-built version-1 file, written from the format
-table rather than by either build so that neither reader is checked against its own writer,
-came back identical from both, retired hue folded the same way.
-
-The opening replay was measured the same way. In the browser the five seeds come up spread
-over **0.480 s** — four beats of `SECONDS_REPLAY_STEP` — and were watched reaching full size
-one at a time from the page's first frames; the demo's sixteen objects arrive over **1.84 s**,
-under the cap, with the beat shortened to fit. On the desktop, opening frames 2/10/20/30/45
-show the scene building: three points part-grown at frame 20 with `o` and `ground` not yet
-arrived, all five settled by 45.
+*Checked.* Verified by cross-reading, not round-tripping: the sixteen-object demo saved,
+reloaded and compared item for item in creation order — label, ink, visibility and all
+sixteen coefficients, 304 scalar comparisons exactly equal; the desktop re-saving the
+browser-written file byte-identical, all 2245 bytes; hand-built version-1 and version-2
+files read the same by both parsers (version 1's ordinals 4/7/11/13 as
+`Grid`/`Rose`/`Cobalt`/`Copper`); a file one version ahead refused by both; ordinal 15 in a
+version-1 file refused. Verified by watching: seeds arriving over 0.480 s and the demo's
+sixteen over 1.84 s in the browser; the desktop's frames 2/8/16/24/45 building the scene.
+Verified by suite: the on-disk bytes of a known float. Assumed: the big-endian host path,
+never exercised (see Known Limitations).
 
 
 Browser Pipeline
 ---
-`visualiser/browser/browser_bridge.nim` compiles the same shared modules the desktop runs, through
-`nim js`. `glue.js` is presentation only — WebGL buffer upload and draw calls, DOM
-construction, pointer wiring, `DataView` packing, `Blob` download. Every join, meet,
-attitude, support, expansion, projection, pick and drag runs compiled Nim.
-
-**This is the project's central constraint.** An early attempt hand-rolled the demo's vector
-math in JS, reasoning that a fixed construction sequence made elementary formulas safe; it
-was rejected, because being a testbed for the real library is the point. Anything that
-derives a value from domain data belongs in Nim behind an `{.exportc.}`, not in `glue.js`.
-Audits have repeatedly found drift here — a grade computed by counting digits in a basis
-name, a button-to-operation mapping reimplemented, five render constants hand-copied — each
-replaced by an export (`nimBasisGrade`, `nimDragKindForButton`, `nimRenderLineWidths`,
-`nimOverlayMetrics`, `nimMenuMetrics`). The choice menu's own wedge label widths are the
-one thing measured on the JS side rather than exported: only the browser knows what its own
-font actually laid out, and estimating from a character count drifts the moment the face
-loaded is not the one the estimate was tuned against.
-
-Where a desktop-only module holds the authoritative value, `browser_bridge.nim` duplicates
-it in **Nim** with a comment naming the original (`drawExtentFor`, the render metrics above)
-— `renderer.nim` and `visualiser.nim` bind to OpenGL/SDL and cannot compile under `nim js`.
-A fix to one copy is not finished until the sibling is checked. One such pair is now gone:
-the drag-to-ink table lived in both files, each with a comment telling the reader to check
-the other; it moved to `interaction.inkOf`, which both render paths and the desktop panel's
-own legend now read.
-
-**Three JS-backend gotchas, all confirmed empirically, all still load-bearing:**
-
-1. `Item` holds `Scene` **by value** under `nim js` (a value parameter's address does not
-   survive the call that took it, unlike the C++ backend). Constructing one therefore copies
-   the entire scene. The per-frame loop must walk slots with the by-slot `*At` accessors —
-   going through the `pairs` iterator measured ~150 ms/frame at 64 items.
-2. A `var bool` accessor over an `array[N, bool]`, which an ImGui checkbox binds by address,
-   miscompiles under `nim js` whenever the result is consumed as a *value*: the generated
-   code indexes a primitive boolean with a stray compound key, yielding `undefined` — falsy
-   everywhere. `isVisible`/`setVisible` are the ordinary non-`var` pair that replaced the
-   `var`-returning reader this was found on, and both front-ends use them now; the accessor
-   itself is gone, so what survives is the rule. `geometryAt`/`labelAt` still return `var`
-   and are still correct — they are read by the desktop alone, and neither is a `bool`.
-3. `MeshSet`s must live at module scope and be cleared, never re-declared per frame. A
-   `MeshSet` reserves `VERTICES_MAX` (16384) vertices per primitive, and `nim js` has no
-   stack allocation for a fixed-size array inside a proc — re-declaring measured
-   ~90 ms/frame *regardless of item count*, versus ~6 ms hoisted.
-
-4. **The page is compiled `-d:release`; the JS suite is not.** The flag lives in
-   `build_browser.sh` rather than in `browser_bridge.nim.cfg` for exactly that reason — it
-   is a property of the shipped artefact, and `tools/verify.sh`'s own JS build must keep
-   its checks and stack traces. Measured on the opening scene, one `nimBuildFrame` call:
-   **36.7 ms debug, 21.9 ms released**, identical output. `-d:danger` measured 18.4 ms and
-   was rejected: a further tenth of a frame is not worth removing every bounds, range and
-   field check from the one build a reader actually runs.
-
-**The frame time was erratic because the frame was too big, not because the loop was.** The
-reader saw it jumping between 30 and 60; the cause is a frame whose work does not fit the
-budget, so some frames miss the compositor's deadline and some do not. Profiled by wrapping
-each phase of `glue.js`'s own loop and sampling: `nimBuildFrame` was **34.4 ms of a 67 ms
-frame** (on this container's software renderer), against 0.2 ms for the whole SVG overlay,
-0.5 ms for the diagnostics tick and 0.05 ms per buffer upload. Everything except the frame
-build was noise, including the periodic UI refresh that looked like the obvious suspect.
-Split further by toggling what goes into it: the ground grid and axes were **15 ms of the
-21.9**, the scene's own objects 6.9, an empty scene with no furniture 0.46.
-
-So the furniture is built once and **held while the camera is still**
-(`FrameData.is_furniture_held`, `SettingsFurniture`). It is a function of the camera alone,
-and the camera is still for most of the frames of an ordinary session — between drags, while
-reading, while typing a coefficient. Driven in the shipped page, 48 of 48 idle frames held
-it, and `nimBuildFrame`'s median fell from **34.4 ms to 5.8 ms**. The bridge sends an empty
-`furn_ribbon_verts` on a held frame and `glue.js` keeps the buffer it already uploaded, so
-nothing is re-flattened either. The comparison is exact rather than approximate: the
-question is whether anything moved at all, not whether it moved enough to see.
-
-**"Uncapped" is not available and was not chased.** A browser page draws through
-`requestAnimationFrame`, which the compositor paces at the display's own rate; there is no
-loop that presents faster, and a loop that *runs* faster only burns battery drawing frames
-nobody sees. What "extremely consistent" can mean here is that every frame's work fits
-inside the budget, which is what the numbers above buy. The driven layer guards it as a
-band on `nimBuildFrame`'s own median and p90 rather than on the wall clock: this machine
-renders through swiftshader, so its frame times say more about the software renderer than
-about anything in this repository.
-
-**The algebra boundary.** *(Rewritten: the rule below replaced an earlier one requiring PGA
-everywhere in world space. What changed is stated in "What moved, and what the picture costs
-now".)*
-
-The **algebra owns geometry** -- what a thing is and where it stands: scene-object
-construction, incidence, meets, joins, projections, nearest points, side tests; the
-world-space camera; rays cast from the screen; the ground grid's lattice lines and the world
-axes, which are lines; and everything at the horizon, where a point is a star, a line is the
-great circle of the directions it names, and a plane is the whole sky.
-
-The **picture owns representation** -- how geometry becomes GPU primitives: a plane's disc,
-fill and rim, since a disc is not a plane but a stand-in sized for an eye; and a ribbon's
-across-vector, since a ribbon is how wide a line is drawn and not where it runs. Both are
-built with whatever arithmetic is quickest. A point has no picture to own: its place is the
-algebra's and its marker is a single vertex sized by a uniform, with no construction between.
-
-**The boundary is enforced by the compiler, not by a comment.** `mesh.nim` imports
-`euclid.nim` and nothing else, so `Multivector` is not a type it can name; `euclid` reaches
-`pga/algebra.nim` only, which is the metric and grade constants and names no multivector.
-`objects.nim` is the algebra's own vocabulary and names no Euclidean type. `boundary.nim` is
-the one module speaking both, so every lift and read-out is findable in one file.
-`tessellate.nim` is the geometry side of drawing and calls down into `mesh` to emit
-primitives.
-
-**What moved, and what the picture costs now.** Two things left the algebra, each measured on
-the shipped page as the median build phase over a still camera, an orbiting one, and a
-six-plane scene:
-
-| | still | moving | six planes |
-|---|---|---|---|
-| before | 5.10 ms | 5.50 ms | 34.50 ms |
-| ribbon across-vector as a cross | 3.20 | 3.40 | 22.10 |
-| plane's disc stepped in arithmetic | **1.40** | **1.50** | **15.20** |
-
-A plane's own phase went 15.30 -> 2.20 ms on the six-plane scene; lines 3.80 -> 1.70. The
-sky is 8.3 ms of what remains and is untouched, as are the great circle, the lattice lines
-and the axes -- those are geometry. The grid did not move at all (4.00 -> 3.80): its across
-was already hoisted once per line, so it never ran the per-segment join, and the change there
-is consistency rather than speed. Both moved forms are **pinned to the algebra in the suite**,
-inverted from how they used to be pinned: the cross is held equal to
-`directionNormal(tail ∧ head ∧ eye)` sign included, and every stepped disc point to the
-multivector sum it replaced. The algebra is still exercised on every build; where it no
-longer ships, it is what the shipped form is proved against.
-
-**The debug layer.** Because the picture is no longer the algebra's own statement, the
-algebra gets a layer of its own -- `algebra_trace` records every multivector a frame computed
-and `algebra_view` draws each as what it is, the way a game engine draws its physics world in
-wireframe over the art. A finite plane is drawn there as a **fog-faded lattice over the whole
-plane**, which is how this project already draws an infinite plane: the ground grid *is* one,
-at `z = 0`. `radiusOnPlaneFor` and `addGridFamily` were generalised from the ground to an
-arbitrary plane rather than a second idiom being invented. The layer also draws geometry the
-scene does not contain -- the sight axis `camera.frame` derives and used to discard, the eye
-and near planes, the cursor's ray and where it meets the level being worked at. Both render
-paths call one `algebra_view.addFrameTrace` rather than each listing what to record, so an
-entry cannot reach one picture and miss the other -- which is exactly the fault this layer
-exists to expose.
-  **What it does not reach, stated plainly:** the per-candidate meets `picking.rayPlaneHit`
-forms inside `pickNearest`, one against each visible plane, most of them rejected. Reaching
-them is not a matter of adding a record call: `rayPlaneHit` returns `Option[float]` and
-`pickNearest` returns `Option[int]`, so a collector would have to be threaded back out
-through both, and a `var` parameter would make `pickNearest` a `proc` where the module
-currently documents it as pure. Re-deriving the meets inside `algebra_view` from the traced
-ray was rejected as the worse answer: it would be a second copy of the hit test drifting
-against the first, and it would show what the drawer computed rather than what the pick did.
-So the layer covers the render path's own intermediates in full and the hit test's not at
-all; the ray the pick casts *is* drawn, and it is the same ray.
-  Off by default, and it carries its own diagnostics row *beside* the scene rather than
-inside it, so the per-kind rows still account for the scene exactly. It is not cheap: a
-lattice per plane measured 16.5 ms on the driving container against 0 with the layer off,
-which is exactly why the panel says so. Its ink is one hue, `Ink.Algebra`, screened against
-every assignable slot and against `Invalid` at the floors an assignable pair is held to
-(worst 8.2 against jade under tritanopia, 9.2 against cobalt under a red-green deficiency,
-against a floor of 6.0), so nothing it draws can be mistaken for an object a reader built.
-
-**The bottleneck ledger.** A PGA equation on the *geometry* side is never replaced with
-standard linear algebra: the library is what this project exists to exercise, so a cost it
-carries there is a finding to record here, not a fault to patch around, and it may be
-restructured only in PGA's own terms (hoisting an invariant multivector, sharing one join
-across the collinear pieces that provably share it). What may leave the algebra is the
-*picture* — see the boundary above — and when it does, the algebra becomes the reference the
-shipped form is proved against rather than something dropped. Each entry: the site, the
-measured price on the driving container's shipped page, and where it stands now.
-
-**`mesh.directionAcross` — was the triple join `directionNormal(tail ∧ head ∧ eye)`, once
-per ribbon, ~3,800 times a moving frame.** Price measured both ways on the shipped page:
-+6.7 ms a moving frame against a written-out cross product. **Resolved by the boundary
-above, not paid**: a ribbon is how wide a line is drawn, which is the picture's business,
-so the cross is what ships and the join is now the reference the suite holds it against,
-sign included. The two sites that hoist one across per *line* rather than per piece — a
-world axis, a lattice line — take the same cross; the lines themselves are still placed
-through the algebra.
-
-**A plane's disc assembled as multivector sums, per vertex — 96 points for the rim, 192 for
-the fan, per plane per frame.** Price: the scene phase read ~8 ms against ~2 before the
-stepping went in. **Resolved the same way**: a disc is not a plane but a stand-in sized for
-an eye, so it steps through `euclid.onCircle`, and the suite holds every stepped point equal
-to the sum it replaced. Which plane the two arms span is still `boundary.frame`'s answer.
-
-**What the algebra still carries, and what it costs.** The horizon shapes are geometry and
-stay: the sky dome is 8.3 ms of a six-plane frame, and the great circle a line at infinity
-traces is its own. So do the ground grid's lattice lines and the world axes, whose per-piece
-fade stepping is ~3.8 ms of a rebuilt frame. These are the stress the project exists to
-apply, and they are what the frame's remaining build time is spent on.
-
-**The ground grid's segment count, which sawtoothed with camera distance.** The scenery's
-price *is* its segment count — about 50-60 us a segment on the driving container, flat
-across every distance measured — and that count climbs within each decade of camera reach
-before `sizeCellGridFor` steps the cell and drops it back by ten. Measured through the
-bridge's own grid clock, fixed viewport, moving camera: **154 segments / 7.3 ms at orbit
-distance 19, 370 / 25.2 at 50, 712 / 35.4 at 100, 2,084 / 126.5 at 300**, then 706 / 44.6
-at 1,000 once the cell had stepped, and up again to 2,075 / 113 at 3,000. So the worst
-frame is not the farthest one but the one just before a step, which is why a reader met it
-*intermittently* while panning and reported it as such.
-  Bounded rather than ledgered, because what was spent was not algebra: `SEGMENTS_GRID_MAX`
-(640, both families together) caps the ribbon segments the grid may spend, and
-`mesh.segmentsGridFadeFor` decides from a family's own line count how finely each line is
-cut **for its fade** — the full `SEGMENTS_GRID_FADE` = 8 where the family fits, down to a
-floor of 2. The lattice itself is untouched: which lines are drawn is where the world's own
-grid falls, and thinning that would move the grid rather than cheapen it. What coarsens is
-only the sampling of a gradient along lines that are, at those distances, a few pixels
-apart. Measured after: **626 segments / 30.4 ms at distance 300** against 2,045 / 113.9 with
-the rule reverted, and the near views bit-identical (67 segments at distance 6, 154 at 19 —
-the opening view never reaches the budget). Screenshots of the far view before and after are
-indistinguishable. The per-segment algebra is exactly as it was; this is a rendering-detail
-bound, not a change to what the algebra computes.
-
-**What a scene object costs, by kind.** The scene phase used to be one number, and a
-reader could see only that it was large. Broken out by kind — `FrameData.ms_points`,
-`ms_lines`, `ms_planes`, `ms_sky`, `ms_ghost`, `ms_selected`, each with the count it is a
-time for — the opening scene on the driving container reads: **points 0.10 ms for four
-(~0.025 ms each), one line ~1.7 ms, one plane 6.3–7.5 ms.** A plane is a rim of
-`SEGMENTS_CIRCLE_HORIZON` = 96 ribbon chords, each carrying its own `directionAcross`
-triple join, over a 288-vertex fan; a point is a single vertex. So "one more object" costs
-between a fortieth of a millisecond and most of a frame depending entirely on which object
-it is, which is the question the split exists to answer. A **selected** object is drawn a
-second time as the overlay tail and costs its full price again — a selected plane was
-measured at 7.7 ms on top of its own 7.5.
-  The tally reads the clock once per object rather than twice (the mark closing one object
-opens the next). `performance.now` measured at **0.27 µs a call** on the driving container,
-so a full 64-object scene pays **0.017 ms** for the whole breakdown — under a fifth of a
-percent of a 15 ms scene phase, and it lands inside `ms_scene` where it is honest about
-itself. Kept, and the rows start collapsed, so nothing is even formatted until asked.
-
-**Dense 16-float `Multivector` operations under the JS backend.** Price: each binary op
-walks 16×16 coefficient pairs through `nimCopy`, ~1–2 µs an op on the driving container.
-Kept — it is the library's own representation. The page stays `-d:release`, and redundant
-recomputation is cut by caches that skip bit-identical inputs without replacing any math.
-
-`blend` stays hoisted out of `addSegment` (the JS backend materialised the closure per
-call — no math changed), and the exactness caches stay: the furniture hold, the marker
-memo and the shared overlay extent skip recomputation when every input is bit-identical,
-which replaces no equation. The per-phase diagnostics rows in the browser drawer are the
-live face of this ledger.
-
-**The breakdown accounts for the whole frame, not a fraction of it.** Everything the page
-spends is `build + upload + overlay + menu + ui`; on a page keeping pace with the display
-that is a small part of a frame, and the rest — waiting on the display, plus the browser's
-own style, layout, paint, compositing and collection — went unnamed. A reader watching a
-frame spike therefore could not tell a stall in this code from one outside it, which is the
-first thing worth knowing and the thing that decides whether to look at the tree at all. The
-remainder now has its own row, computed inside `recordFrameTime`, which is the one moment a
-frame's duration and its own phases occupy the same ring slot: the delta being written
-measures the frame whose phases were recorded at that index. Held by a driven check that
-reconstructs every frame's duration from its six rows; measured worst error 0.0000 ms.
-
-**Each row is tinted by the share of the frame it takes, along CET-I1.** Twenty-odd numbers
-say nothing about which one to look at. A row's colour now answers one question only — *how
-much of this frame went here* — read continuously from a perceptual ramp rather than sorted
-into bands. The map is **CET-I1** (`isoluminant_cgo_70_c39`, Kovesi, arXiv:1509.03700), taken
-from colorcet's published table at
-`https://raw.githubusercontent.com/holoviz/colorcet/main/colorcet/__init__.py`; the `.csv`
-paths under that repository 404, so the Python table is the source of record. It is
-**isoluminant** — CIELAB L\*70, chroma 39, cyan through a neutral grey to orange — which is
-exactly the property this panel needs: the rows are text, so lightness is already spoken for
-by the drawer's own type hierarchy, and a ramp that varied it would fight the label/value
-step rather than add to it.
-  **The map supplies hue and chroma; the drawer supplies lightness.** Each sample is carried
-into OKLab, its lightness replaced by the tone that row already wore untinted — `--ink-muted`
-for a label, that lifted `LIFT_VALUE_RAMP` = 0.15 toward `--ink` for the number, measured at
-0.6685 and 0.7094 against `--ink`'s 0.9407 — and carried back. Re-lighting pushes some
-samples out of sRGB, so chroma is **scaled down by bisection until the colour fits**, never
-clamped per channel: clamping a channel bends the hue, and hue is the entire signal here.
-  **The ramp ships as a table, not as an algorithm.** `visualiser/core/ramp.nim` holds
-`STEPS_RAMP_TREE` = 17 label/value pairs and imports nothing; `nimRampTree` hands them to the
-page, which interpolates between them. `tools/check_ramp.nim` is both the generator (`--emit`)
-and the checker, run by `verify.sh` before the suites: it rebuilds the table from the
-published map and from the lightness tokens **parsed out of `shell.html`**, so editing a
-token fails the tool instead of silently disagreeing with the shipped colours. Its four
-checks, with the margins they passed at: the table reproduces the re-lit map to within
-**0.001** of a display step; interpolating between 17 samples never leaves the 256-entry map
-by more than **0.09** (floor 1.5), which is what makes 17 enough; and each ramp's ends stay
-**26.4** apart in OKLab ×100 (floor 25.0), so the two extremes are unmistakably different
-colours at the same lightness.
-  **The denominator is the whole frame and the ramp ends at the whole of it.**
-`SHARE_RAMP_FULL_DIAGNOSTIC` = 1.0: only a row that *is* the frame reaches orange. Sharing
-against the whole frame — idle included — rather than against the summed work is what the
-reading asks for, and the two phrasings coincide here: the tree's top rows plus `idle` *are*
-the frame, so a row's share of the frame is its share against the rest of the tree. `idle`
-itself stays **untinted**: it is the frame's leftover rather than work done, and on a healthy
-frame it is the largest share of all, so colouring it would paint the best case as the worst.
-  **The ramp is walked by ratio, on a symlog.** Laid out linearly it was useless in practice:
-a page waiting on the display spends most of a frame idle, so every row of the drawing is a
-small fraction and they all crowd into the ramp's first steps. Measured on a 28.8 ms frame,
-the costliest row at 12.7% and the floor at 0.3% sat one step of seventeen apart and the rows
-between them were one colour. What a reader compares is *one row against another* — this one
-is ten times that one — so equal ratios are made equal distances along the ramp, and the
-spread then no longer depends on whether the frame happened to be busy. The same frame now
-covers **nine of seventeen steps**.
-  `SHARE_RAMP_KNEE_DIAGNOSTIC` = 0.01 is the knee, below which the scale goes linear so that
-a row costing nothing has somewhere to sit — a logarithm has no zero. A hundredth of the
-frame is chosen because below it a row is not the one to look at whatever it sits beside.
-  A **symlog proper** — linear under the knee, logarithmic over it — and not the `log1p` that
-smooths the join, which was written first and measured: `log1p` is only asymptotically
-logarithmic, so its decades come out unequal, the one above the knee spanning 0.37 of the
-ramp where the top one spanned 0.48. The seam costs a kink in the rate at the knee and buys
-exactness. The linear toe is worth one decade of ramp, the usual convention, which makes the
-whole scale a sentence: under a hundredth of the frame, then a hundredth to a tenth, then a
-tenth to all of it — **a third of the ramp each**, held to 1e-9 by a driven check.
-  **The key shows the warp rather than describing it.** The legend bar is painted by calling
-the very function the rows are tinted by, sampled across share rather than across ramp
-position, so the colours crowd into its left exactly as they do down the tree and a row's
-colour can be laid against the bar and its share read off. `log` beside it is the word the
-exceedance graph directly above already uses for a scale of this shape.
-  **The band ceiling is gone, and that is the point of the change.** The previous tint was a
-share of the frame's *work*, which is a relative quantity — on a session that never dropped
-below 120 fps the costliest row was still painted red beside an entirely blue chart, so the
-band was capped at the worst the exceedance curve was actually drawing. An absolute share of
-the frame needs no such cap: 12% of a 6 ms frame and 12% of a 30 ms frame are the same
-reading, and the chart beside it already says which of those two the session is in. Removing
-the cap removes `bandCeilingExceedance` and the coupling between the tree and the curve's
-histogram scan; the two views now answer different questions on purpose, the tree *where the
-time went* and the curve *whether there is a problem*.
-  Hue remains not the sole encoding: each row's own figure stands beside it, and the key
-under the frame-time row is now the **ramp itself** drawn as a gradient, labelled `0` and `½`,
-so what the colour measures and where it tops out are both legible without prose. Held by
-driven checks that recover a row's ramp position from its *rendered* colour and assert the
-ordering — a costlier row may never wear an earlier colour — that the far end is reached at
-half the frame and held past it, and that the shipped table still runs from the map's cyan to
-its orange.
-
-**Each counted row carries its count beside its name, not after its time.** Seven rows report
-a count as well as a duration. Appended after the unit — `0.03 (0.00) ms · 3` — it pushed the
-`ms` inward on exactly the rows that had one, and with the value right-aligned in a flex row
-the units landed in three different columns down a tree of twenty numbers. A count is a
-property of the row's subject rather than of its duration, so it moved to the label; every
-value now ends in `ms` and, with the tabular figures already in force, every time ends in one
-column. Measured that way too: the driven check ranges over the `ms` characters themselves
-and counts distinct right edges, because the *box* is right-aligned whatever it holds and its
-edge was identical in both arrangements — the first version of that check would have passed
-either way. `sky (horizon planes)` became `sky, horizon planes` so the only parentheses on a
-row are the count's.
-
-**The last-save readout is gone.** It held a durable transcript of what a save attempt tried
-— the environment probe and one line per route. `REQUIREMENTS.md`'s rule is to record each
-route's outcome *and show it beside the failure*; the toast's own detail line joins the same
-`report_delivery` array and does exactly that, so the requirement stands unchanged and only
-the copy outliving the toast is lost. The data layer — `report_delivery`,
-`describeEnvironment`, `shareFile`, `deliverFile` — is untouched, `deliverFile` being the
-save path for both the image and the scene file.
-
-**The demo preset is the build's own worst case: 64 objects in seven isolated systems.**
-It replaced the eleven-step storyboard, which showed sixteen objects and could say nothing
-about how the build behaves under load — which is the one question a reader pressing *demo*
-on a visualiser with a diagnostics drawer is most likely to have. The storyboard itself is
-untouched and is still what `visualiser --storyboard` captures; the two had been the same
-thing only because nothing had yet asked them to differ.
-  **Every item slot filled, and every drawable kind in it.** `orrery.constructOrrery` builds
-44 points, 4 lines, 13 planes and one of each object at horizon — a star, a great circle and
-a sky dome — which is exactly `scene.ITEMS_MAX`, asserted rather than hoped for so a build
-compiled with a different capacity fails naming both numbers. Everything after the placed
-bodies is **derived**: every line and plane is a join of points already in the scene, and the
-three at horizon are attitudes of objects already in it.
-  **Nothing in it has a centre, and that is the whole shape of the arrangement.** The first
-version was *one* solar system: a star, its planets and its comets, with every radius line,
-every comet orbit and every plane joined *through* that one point — 22 of its 27 lines and
-planes contained it. Lines are infinite, so the scene drew as a starburst out of the middle
-of the frame and the clusters read as decoration on it. Seven self-contained systems replace
-it, each deriving only from its own bodies, and **no object stands at `POSITION_ORRERY`** at
-all: that constant is a coordinate the layout is measured from and the camera aims at.
-  Lines through a system's *own* sun are wanted — they are what makes a system read as one —
-so the rule is a ceiling rather than a prohibition. A driven suite case counts, for every
-point, how many lines and planes pass through it: the worst is now `sun 1` at **4** against a
-ceiling of 6, where a miniature of the old star-centred shape scores **11** and the full one
-scored 22. Counted rather than looked at, because "it draws as a starburst" is not something
-a suite can see.
-  **A solar system is the arrangement, not the subject.** Self-contained clusters scattered
-through a large volume is the distribution that makes culling, fading and extent decisions
-all matter at once — where `visualiser.fillSceneForBenchmark`'s flat helix, which `--timings`
-still uses, deliberately has no structure at all.
-  Constants settled by rendering rather than by reasoning. **Bearings step by the golden
-angle**, so seven systems land seven ways round and none hides behind another. **Reaches and
-radii are traded against each other**: what decides how big a system looks is its radius
-against the radius the camera is fitted to, so scaling the whole layout changes nothing on
-screen and only the ratio moves. A first table reached 140 units out with radii near 8, which
-put a system at a *ninth* of the framed radius and drew each as a speck; the reaches are
-compressed and the radii grown until the tightest pair sits at **2.20** times their combined
-reach, against a `FACTOR_ISOLATION_ORRERY` floor of 2.0 — pinned just under what the layout
-achieves, the same convention `check_palette` uses for its one declared exception. A system
-is now about a fifth of the framed radius.
-  **The isolation check measures reach, not the radius the table names**, and that caught a
-real mismatch: comets stand at `REACH_COMET` times the radius, so a system carrying one is
-half again as wide as its entry claims. It also caught **two direction vectors that were not
-unit** — the moon ring's tipped axis and the comet ring's steep one were each assembled by
-adding a component rather than by rotating, so bodies landed further out than any constant
-said. `normalOf` and `tipped` now rotate within the orthonormal pair `spanOf` returns.
-  **The demo places its own camera**, which the storyboard preset never needed to: the
-opening camera was placed to show the *seed* scene whole and sits inside this one, nearly in
-the plane the systems are spread through. It is pitched to `ELEVATION_ORRERY_SHOWN` = 0.95
-rad first — at the opening 0.42 every ring collapses to a line and every disc to a sliver —
-and then pulled back by `camera.distanceFitting`, the same sphere-tangent solve a framed
-selection uses, so the demo cannot come to disagree with the rest of the build about what
-"whole" means. `RADIUS_ORRERY` bounds the nearest `FRAMED_ORRERY` = 4 systems and is folded
-from the layout table; the other three stand beyond the opening frame on purpose, for a
-reader to find by pulling back. Azimuth is left where the reader had it.
-**The scene holds 1,024 objects, and the demo fills it with the real solar neighbourhood.**
-`scene.ITEMS_MAX` rose from 64. Every system in the demo but ours is a real star known to
-carry planets, standing at its real distance in its real direction, with the planets it really
-has — 331 systems out to **31.5 parsecs**, which is where the slots run out. It comes to
-exactly 1,024: **886 points, 2 lines, 132 planes, 4 at horizon.**
-
-  **Source, and what is and is not checked.** The table in `visualiser/core/neighbourhood.nim`
-is a snapshot of the **NASA Exoplanet Archive**, taken 2026-08-31 from its TAP service —
-`select hostname, pl_name, sy_dist, ra, dec, pl_orbsmax from ps where sy_dist < 35 and
-default_flag = 1`, fetched in distance bands because a single response was cut mid-stream. This
-research has made use of the NASA Exoplanet Archive, which is operated by the California
-Institute of Technology under contract with NASA under the Exoplanet Exploration Program.
-  Fetched once and shipped, the way `ramp.nim` ships a snapshot of a published colour map. A
-suite case checks that every star is drawn at the distance the table gives it — worst error
-under `TOLERANCE_SINGLE` — and that the table is ordered outward. **What is not checked is the
-table against the archive**: unlike `check_ramp`, no tool re-derives it, so a hand edit to
-`neighbourhood.nim` would pass. That gap is real and is stated rather than papered over; the
-tool that would close it is not written.
-
-  **Placement is a coordinate conversion, not a layout.** Right ascension and declination are
-a real direction and distance is a real length, which is exactly the `bearing`/`rise`/`reach`
-triple `sunOf` already took. `PARSECS_PER_UNIT` = 0.055 is the one number that turns the
-neighbourhood into a scene: Proxima lands 24 units from Sol, the outermost system 573.
-  Two things here are **not** claimed as data, and are marked as such at the code. Each
-neighbour's plane orientation (`lean`, `spin`) is spread from its own coordinates so the discs
-do not stack, and no orientation is being asserted. And a planet whose semi-major axis the
-archive does not carry — 49 of 544 — is placed by its order among its siblings; the table
-stores those as `0.0` rather than as a guess, so which they are is visible.
-
-  **Planet radii use the same logarithm Sol's do**, over a wider range: real semi-major axes in
-this table run from under a hundredth of an astronomical unit to tens, so `AU_NEIGHBOUR_NEAREST`
-starts the scale far below Mercury's and the result is clamped rather than extended, which is
-honest about the drawing being unable to separate a very close planet from its star.
-
-  **The capacity raise was not one constant.** Four capacities in `mesh.nim` are sized against
-`ITEMS_MAX`, each documenting its binding case as "a scene filled to `scene.ITEMS_MAX` with…",
-and every one of them was undersized at 1,024 — where overflow is a `doAssert`, so a dead page
-rather than a dropped triangle. `VERTICES_MAX` 1024 → 2048, `DISCS_MAX` and `DOMES_MAX` 192 →
-2176, `RIBBONS_MAX` 8192 → **131,072**. The last is the one with a price: 8.4 MB a mesh set,
-and `BYTES_MEMORY_TOTAL` counts two, so the binary's reported reservation grows about 17 MB.
-  **The prose link became a compile-time one.** `mesh` sits below `scene` in the import order
-and cannot name `ITEMS_MAX`, so the four caps were correct only because someone did the
-arithmetic by hand. `scene.nim` now carries a `static: doAssert` per cap, in the one module
-that can see both sides: raising the capacity again fails to *compile*.
-
-  **What it costs, measured.** Under the demo the scene phase peaks at **83 ms** a frame,
-against 7–14 ms for the eight-system arrangement it replaced -- 132 discs and 886 markers
-where there were 13 and 44. That is the stress case doing its job rather than a regression to
-tune away: every driven performance pin measures the *opening* scene, not the demo, and none
-of them moved. The one check that runs under the demo -- that the per-kind accounting still
-sums -- holds on all 65 frames over 2 ms.
-  A bucketing difference bit once while pinning this: `nimItemShapeWord` reports a line at
-horizon as its own kind, so the driven tally counts two finite lines where the suite's version
-counts all three together. The two floors differ by one on purpose, and both say so.
-
-  **The watermark, so the ordinary scene pays nothing for the bigger one.** Slots are stable
-addresses, so anything reading by slot must sweep a range — and at 1,024 the frame's object
-walks tested a thousand slots to draw the five a fresh scene holds. `Scene.bound` is the
-highest slot ever occupied; it only rises, so walking to it is safe. The browser's two frame
-walks and its slot listing take it, and `scene.pairs` takes it too, which is the single edit
-that makes every desktop consumer cheap at once.
-  Two allocations went with it: `nimPoolCellColors` grew a 3,072-float sequence on a per-frame
-path and now fills a buffer it keeps, and the pool strip's 1,024 cells were re-styled every
-frame — each with its own `slice` — and now write only the cells whose colour changed.
-
-**Lines are scarce, and the slots they gave up bought a system and nine more bodies.** A
-line in this algebra is *infinite*: it is drawn out to the whole draw extent whatever two
-points made it, so fifteen of them crossed the entire frame at once and the scene read as line
-traffic with the systems behind it. They also cost fifteen of sixty-four item slots to do it.
-Four are left — one in Sol and three planet-to-moon joins — plus the one at horizon.
-  The exchange is stated because it went the right way: **35 points, 15 lines, 11 planes**
-became **44 points, 4 lines, 13 planes**. Planes *rose*. A plane is a disc fan and much the
-most expensive kind, so cutting lines made the stress case heavier rather than lighter, which
-is the opposite of what "remove things" usually does and the reason it was worth measuring
-rather than assuming.
-  The line kind now carries a **ceiling as well as a floor** — the only kind that does, in
-both the suite and the driven check. A floor alone would let lines creep back one edit at a
-time, and the intent here is a maximum, not a minimum. The plane floor rose from 8 to 10 in
-the same move, free, because discs are what the slots bought.
-  **No sun is joined to a planet anywhere but in Sol.** The one orbit line in the scene is
-`sol ∧ earth`, held by a suite case that asks *geometrically* — which lines pass through both
-a sun and a planet — rather than by reading labels, so renaming something cannot make it pass.
-
-**One of the eight systems is ours, not to scale.** `SOL` names its eleven bodies and carries
-each one's real distance in astronomical units; `radiusOfSolBody` is the single place those
-are turned into world radii. The compression is a **logarithm**, lifted by `SHIFT_SOL` so
-Mercury stands clear of Sol and normalised so Neptune sits at the system's own radius: it
-keeps the real order and the shape of the real spacing — inner planets crowd, outer ones
-spread — while squashing a 77× range to about 5×. At true scale Neptune sets the system's size
-and the four inner planets share the innermost fiftieth of it as one dot. The real numbers are
-kept in the table rather than pre-squashed ones, because they are the thing worth being able
-to check, and because the compression is then one function rather than eleven constants.
-  **All three objects at horizon are attitudes of Sol's own objects** — the direction Earth
-lies in from its star, the attitude of Sol's ecliptic disc, and that ecliptic wedged with
-Halley. Halley and not a planet, because a planet lies on the very ecliptic it rings and a
-point wedged with a plane it lies on gives zero; `addHorizon` refuses that case, which is how
-the same mistake was caught the first time it was made.
-  Three suite cases hold what a model of a real system has to get right and nothing else would
-notice: the planets run strictly outward in the table's order, measured from the built scene;
-the squash is real (outermost under ten times the innermost, where the truth is 77); and the
-line at horizon is proportional to `attitude` of the scene's own `ecliptic sol` — proportional,
-not equal, since an attitude is a direction and carries no scale.
-  Sol's bodies are **named**, which broke the suite's habit of recovering an object's role
-from a label prefix. The `SOL` table is exported carrying each body's role, and the suite reads
-roles from it — one source, and the check still measures the scene against the table rather
-than restating a second set of prefixes.
-
-
-**Colour says what a thing is, not which system it belongs to.** The first version spent a
-hue per cluster, which meant a sun, its planets, its moons and its comets were all one colour
-— so a reader could see which cluster a dot belonged to, which its position already said, and
-could not tell a moon from a comet, which nothing else says at all. `lut_role_to_ink` now maps
-a `Role` to an `Ink`.
-  `mesh.Ink` offers exactly **five** assignable slots and records at length why widening that
-set failed twice, so five is the budget and the partition has to fit inside it: four kinds of
-body, and everything derived on the fifth. That collision is the deliberate one — a line and
-a disc are already told apart by shape, so a hue spent separating them says what a reader can
-see, while a moon and a comet are two identical dots. It is `Ink`'s own rule, applied here.
-  **Which body gets which slot is not free either, and was settled by rendering.** `Olive` is
-much the darkest slot, and on a *body* it disappears: built with the moons in it, a moon was a
-smudge that could not be found against the sky, while the same scene with `Olive` on the
-derived side showed all four kinds plainly. So `Olive` is forced onto the derived side, which
-forces the bodies onto `Rose`, `Copper`, `Jade` and `Cobalt` — and `Jade`/`Cobalt` is the one
-pair in the whole palette carrying a declared exception, converging to 3.7 under tritanopia
-(`check_palette` measures and prints it every run). That pair cannot be avoided; it can only
-be **placed**. It goes on planet and comet, which stand apart on screen — planets ring their
-sun in its own plane, comets sit a third again as far out and well off it — rather than on
-planet and moon, which sit beside each other and would have put the palette's weakest pair on
-its most adjacent one. The exception's own reasoning names screen position as part of what
-carries the pair, so where it lands is the thing this table gets to decide.
-  A suite case checks every object against the table and, separately, that the four body
-roles hold four *distinct* slots — the collapse that would silently cost the one signal a
-moon and a comet have.
-  **Six of the sixty-four drew nothing, and counting found it where looking did not.** Three
-collinear points wedge to a multivector of no clean grade, which `objects.shape` reports as
-nothing to draw: the item holds a slot and never appears, while the scene still reports 64.
-Every comet sheet was built from the star, the head and a tail pointing *exactly* away from
-the star — collinear by construction — and each two-moon planet's moons sit on opposite sides
-of it, so planet and both moons were collinear too. Fixed by leaning the tail off the radius
-by `BEND_TAIL_COMET` = 0.55, which is also the direction a real tail is swept, and by
-spanning every moon plane through the star instead of through a second moon — one rule for
-all six planets, and the plane then contains the radius line as well. Both are now held by an
-assertion at construction *and* by a suite case that lists the offending labels, because the
-collinearity comes from the layout tables and any edit to them can reintroduce it.
-
-**The stress scene found a crash the whole build had, and two weak checks.** Worth stating
-separately, because it is the argument for having it.
-  **A construction gesture released on a full scene took the page down.** Every *panel* path
-already checked `scene.isFull` — the desktop greys its add and apply controls, the browser
-toasts — but the drag gesture commits inside `interaction.endDrag`, in shared code, with no
-check between it and `scene.addItem`'s assertion. So both front-ends had the hole, and
-neither could reach it: filling 64 slots by hand is not something anyone had done. One click
-now does. Refused in the same shape as the neighbouring "makes nothing drawable" case, so the
-reader gets a sentence rather than a dead page, and pinned by a driven check that loads the
-demo and drags on it.
-  **The per-kind accounting check was near-vacuous, and is now asked twice.** On the opening
-scene the whole `scene` phase is around half a millisecond on this container, and every
-reading is quantised to a tenth — halving every part's contribution was measured to still
-pass, because the lower bound's allowance for unattributed work swamps the phase itself.
-Nothing about the rule is wrong; the scene is simply too cheap to divide. The same rule now
-runs a second time with the demo loaded, where the phase is 7–14 ms and the 0.6 ms upper
-tolerance is 5–8% rather than 120%. Both versions were guard-run by doubling every part:
-0 of 857 and 0 of 67 frames account.
-  Separately, that check's demand that **every** frame account was tightened to a quantile
-(99.5%, per-frame tolerance unchanged). It held for ten runs at ~600 frames and then failed
-twice at ~825 as the container sped up and the sample grew, which is a property of the sample
-size and not of the accounting. Loosening the per-frame tolerance instead would have weakened
-it on all 800; a real fault misses on every frame and cannot hide inside four.
-  A third, unrelated: the horizon comet's driven check sampled the pulse head immediately
-after building the object, and a fresh object starts its pulse at zero on purpose, so the
-first read sometimes found no head and reported it as off screen — three failures in six runs.
-It now waits for a head before timing the travel. No fault in the comet.
-
-
-**The breakdown is cut by the algebra boundary, and it sums.** Two faults were found while
-regrouping it, both older than the change. `build` did not sum from its rows: the frame's
-prologue — focus pruning, the camera tween, this frame's `DrawExtent`, and `framing.offerAim`
-walking everything watched — and the view-matrix build belonged to no row at all, so the
-total was simply larger than what it displayed. And the frame's leftover was not what it
-said: it absorbed `resize()`'s forced layout, the vertex marshalling, held-key motion and,
-above all, **hover picking**, which on the browser runs from event handlers rather than the
-frame loop, so no bracket inside the build could ever see it. Both are now rows.
-  A third finding the new rows made visible rather than caused: **`framing.offerAim` built a
-second `DrawExtent` every frame** instead of taking the one the bridge derived moments
-earlier. Fixed in the performance refactor below — it takes the caller's now.
-  The **`of which` pair** is a second cut through the same milliseconds and is drawn as one:
-a rule and a label rather than a nested node, since indenting it under `build` would read as
-double counting the very time it re-divides. It is excluded from `PHASES_TOP_DIAGNOSTIC`, so
-the leftover derivation and the cost tint's denominator each count the frame once.
-  `emitting` is pure **by construction**, not by assertion: it is reached only through `mesh`,
-which imports `euclid` alone and so cannot name a `Multivector`. `placing` is dominated by
-the algebra but carries a cross product per lattice line and two colour fades per piece,
-which sit inside its loops; `timings.nim` states that rather than claiming a purity the loops
-do not have.
-  Measured orbiting at distance 300: **placing 20.8 ms against emitting 6.3** — about
-three-quarters of the drawing work is the algebra, which is the number the panel existed to
-produce and could not. On this container `unaccounted` reads 0.00, so the named phases cover
-the build completely; the row stays because that is a measurement, not a guarantee.
-  Held by a driven check that `build` equals its rows within the clock's own resolution
-(worst of 30 frames: off by 0.000 ms). **Guard-running that check found the first guard
-vacuous** — zeroing `unaccounted` changed nothing precisely because it is already zero here —
-so the guard drops a row that does carry time, which leaves `build` 0.7 ms above its rows.
-
-**The tessellation assembles before it emits.** Four loops alternated multivector work with
-vertex emission, with the boundary read inside the emit call's own argument list, so no
-bracket could separate the two languages. Each now resolves its places through the algebra
-into a `DrawScratch` and emits the whole run afterwards; for the grid and the axes the seam is
-between two procs (`placeGridFamily`, `placeAxes` against `addRibbonPieces`), which is the
-strongest form of it — neither bracket can enclose any of the other's work.
-  Two of the loops were doing the work more than once, visible only once the phases were
-separated: the great circle derived every ring place **twice**, as one segment's far end and
-the next one's near end, and the dome called `spherePoint` **four times per quad — 1,152 calls
-for 325 distinct places**. Assembling once removed both: a scene holding a horizon line reads
-2.2 ms against 2.9 before. Both keep one extra row or column rather than wrapping the index,
-so the closing pieces meet places stepped at the angles the loops would have used —
-`cos(2*PI)` and `cos(0)` differ in the last bits.
-  **No regression in the hot path**, which was the risk: the ground grid orbiting at distance
-300 reads 28.9 ms against 28.9 before, and near 2.2–2.3 against 2.2. Vertex counts are
-identical in every bucket at both distances, which with the untouched suites is the evidence
-the reshape draws what it drew. The brackets themselves cost about 0.02 ms of a 32 ms frame —
-roughly 76 clock reads at the 0.27 us `SceneCost` already measured.
-
-**The draw loop has a frame arena that swaps.** Scratch a frame assembles is reclaimed on the
-*next* frame's swap rather than at the end of its own, so what one frame worked out stays
-readable through the frame after it while the block being moved to starts empty. Reclaiming on
-the way **in** is the whole mechanism; reclaiming on the way out would take last frame's bytes
-away while they were still wanted, and a suite case pins exactly that.
-  A separate pair rather than a larger `ARENA_FRAME`: an export's scratch is tens of megabytes
-on a keypress, a frame's is tens of kilobytes sixty times a second, and sizing one block for
-both would reserve the export's capacity twice over to buy the swap. 256 KiB each, from the
-budgets that bound the loops carving it.
-  **The browser cannot have it.** `arena.nim` casts a pointer over a global and carves typed
-slices from it, neither of which the JS backend can do — which is why it is desktop-only. So
-`tessellate` takes its scratch as a parameter: the desktop hands it arena memory, the browser
-a fixed buffer. Neither allocates per frame. The pair's *previous* half has no desktop
-consumer yet, because `updateHover` runs inside the frame there; the cross-frame need is
-browser-side, and rides `timings.FrameRecord` on the same two-frame lifetime.
-
-**The performance refactor, and what it measured.** One pass over the frame path for
-copying, duplicate work and allocation, each change benched on the shipped page at orbit
-distance 300 with the azimuth stepped so the furniture rebuilds every frame — the known
-worst case. Vertex and segment counts identical before and after every step.
-  **Each fade boundary assembled once** (the largest win): along a lattice line, piece
-`j`'s head is piece `j + 1`'s tail by the same formula, and the grid and axes loops
-assembled every interior boundary twice — two multivector sums, two boundary reads and two
-fades where one of each suffices. The two loops were also line-for-line copies of each
-other but for the span, so the fix and the deduplication are one shared `placeFadeLine`.
-Measured: grid **35.4 → 22.6 ms**, placing **31.7 → 18.6**, build **42.6 → 28.9**. The
-boundary buffers live in `DrawScratch`, not locals — a fresh local array is an allocation
-per lattice line on the JS backend.
-  **The camera derived once per frame**: `offerAim` took its own second `DrawExtent`
-(recorded as a finding last round, fixed now), `pickNearest` built a third, `addFrameTrace`
-ran `camera.frame` twice in one statement, and `nimBuildFrame` read `staged()` three times.
-All now take or reuse the frame's own. The pointer path gains most: `nimUpdateHover`
-rebuilt the view matrix per pointer move for a camera that cannot have changed (hover skips
-while the camera moves), and now reads the overlay cache. `anchorZoomAt` stays event-time
-and builds its own extent — there is no frame in flight to borrow from — but reads the eye
-and its plane off it instead of deriving both again.
-  **The FFI edge refills in place**: four fresh sequences a frame carried the vertices over
-the bridge and glue wrapped each in a fresh `Float32Array` — two allocations per buffer per
-frame for bytes living exactly as long as one `bufferData` call. Module-level buffers and
-high-water typed staging arrays now; the view matrix goes to `uniformMatrix4fv` as the
-plain sequence the spec takes. `ms_build` is stamped **after** the `FrameData` record is
-built, so the overlay scans and the record's construction — a tail that belonged to no row
-— are finally inside the total (~1 ms here, visible as `build` reading 29.8 against 28.7
-under the old, incomplete bracket).
-  **The `toScale` converter hoisted out of the one loop it fired in**: measured in the
-generated JS, each firing builds and `nimCopy`s a three-object graph; inside
-`addGreatCircle`'s emit loop that was an allocation per segment, 96 per horizon line per
-frame. The audit found no other per-iteration site. Milliseconds unchanged at the bench's
-resolution — this one is allocation churn, and is claimed as nothing more.
-  **What was deliberately left alone**: the `pga` library's own representation — a dense
-16-coefficient `Multivector` copied by value through every operation — is the deepest
-"heavy data type" in the program, and it stays. The library is what this project exists to
-exercise, and its equations may be restructured only in PGA's own terms; changing its
-storage to make it faster would change the thing being measured. The boundary work above is
-the sanctioned answer: derive through the algebra once, and stop paying for it twice.
-
-**The performance ledger.** Every repaired performance fault, ordered by what it cost at
-its worst, each pinned by a driven check whose band `REQUIREMENTS.md`'s regression policy
-governs (raising a band requires a justification recorded beside the entry here). The
-prose entries below and above carry each fault's full story; this table is the index.
-All figures are from the driving container, browser build.
-
-|---|-----------------------------------|---------------------|---------------|----------------|
-| # | Fault                             | Worst measured      | Repaired      | Pinned by      |
-|---|-----------------------------------|---------------------|---------------|----------------|
-| 1 | Grid fog fade sampled per piece   | 26.1 ms per moving  | 8.7 ms        | grid_moving_ms |
-|   | boundary on the CPU               | frame (25.3 Placing)|               |                |
-| 2 | Debug layer: a fade-piece lattice | 18.5 ms per frame,  | 4.7 ms        | debug_layer_ms |
-|   | per traced plane, derived planes  | layer on            |               |                |
-|   | included                          |                     |               |                |
-| 3 | Picker copied the Scene per slot  | 7.1 ms per pointer  | 1.5 ms        | hover_pick_ms  |
-|   | per pointer move; 97 sums per     | move                |               |                |
-|   | horizon candidate; an extent per  |                     |               |                |
-|   | wheel notch                       |                     |               |                |
-| 4 | Overlay row: Option[Marker] copy  | 7.45 ms per frame   | 3.97 ms       | marker_pair_ms,|
-|   | chain, extent-tuple returns,      | with 2 selected     | (0.26 ms a    | anchor_us, the |
-|   | g_scene[slot], innerHTML rebuild, | (0.99 ms a ring     | ring; 8 us an | element-reuse  |
-|   | per-wedge getBBox                 | marker; 0.28 ms an  | anchor)       | pin            |
-|   |                                   | anchor)             |               |                |
-| 5 | Sky dome and plane fills fanned   | 5.1 ms sky + 2.35   | 0.1 + 0.6 ms; | emitting band, |
-|   | on the CPU per frame              | flatten; 18,144     | 56 floats     | suite record   |
-|   |                                   | floats over the FFI |               | pins           |
-| 6 | Ribbon widening on the CPU, six   | 6.3 ms emitting     | 1.4 ms;       | emitting band  |
-|   | vertices a segment                | moving; 33,964      | 13,444 floats |                |
-|   |                                   | floats over the FFI |               |                |
-| 7 | Great circle assembled as 96      | inside rows 3 and   | table-stepped | hover_pick_ms  |
-|   | multivector sums per frame and    | the lines row       | arithmetic    |                |
-|   | per pick candidate                |                     |               |                |
-| 8 | Marker rings assembled per sample | 3.2 ms per marker   | 0.8 ms; the   | marker_pair_ms |
-|   | per frame; a ref Marker allocated | pair (horizon line);| row 1.93 ms   | (worst live    |
-|   | and zeroed per shaping            | the row 3.97 ms     |               | shape)         |
-|---|-----------------------------------|---------------------|---------------|----------------|
-
-Three root causes account for all of it, and each is now guarded: **JS-backend deep
-copies of value types** (an `Item` carries its `Scene`, an `Option[Marker]` its arrays, a
-returned tuple its extent -- four sightings of one trap, invisible to allocation greps
-because a return looks like a read); **immediate-mode CPU tessellation of
-camera-independent geometry** (fans, domes, fade pieces re-derived per frame, moved to
-records widened by shaders); and **instrumentation gaps** (rows that existed got
-optimised, while pointer events, the debug layer and per-call exports had no row at all
--- which is what the regression pins now close).
-
-**The ribbon widening runs in the vertex shader, on both targets.** Every line segment
-used to become six CPU-built vertices -- near clip, across-vector, per-end screen-constant
-width -- exactly the work `addSegmentAcross`'s own comment called "the licensed
-componentwise copy of what a geometry shader would do". It is a shader now: one
-**fifteen-float `RibbonRecord`** per segment crosses the wire against the forty-two floats
-its six vertices cost, and an instanced draw (GL 3.3 core on the desktop,
-`ANGLE_instanced_arrays` on WebGL1) expands it. The across is derived per vertex as
-`cross(head − tail, eye − tail)`, which for collinear pieces is provably the per-line hoist
-it replaces -- `cross(along, eye − t·along)` does not depend on `t` -- so the grid stopped
-hoisting anything at all.
-  **The chain of custody**: the GLSL ships, `mesh.expandRibbon` is its reference in Nim --
-sibling-marked with both shader sources -- and the suite holds the reference against the
-algebra as it always held the CPU form: the near clip equal to `clipToEyeSide`, the across
-equal to the join `directionNormal(tail ∧ head ∧ eye)`. The shader was then held to the
-reference the strongest way available: the desktop, run under Xvfb on Mesa GL 4.5, captured
-the same frame under the old CPU expansion and the new instanced path, and **zero of
-1,296,000 pixels differ**.
-  One semantic knot surfaced: `count_grid_segments` counts records now, and CPU clipping
-had been hiding that the grid *places* ~904 pieces at orbit distance 300 while drawing 629
--- the budget was a budget of drawn segments all along. Whole pieces behind the near plane
-are therefore culled at placement (a dot product per boundary, already computed for the
-fade), which restores the count's meaning and stops dead records crossing the wire; the
-exact per-end clip stays the shader's. Segment counts match the old pipeline exactly.
-  Measured at the orbit worst case, against the same scene: build **28.9 → 21.1 ms**, grid
-**22.6 → 16.5**, and the CPU emit -- the picture half of the boundary cut -- **6.3 →
-1.4 ms**, with 13,444 floats crossing the FFI where 33,964 did. `Primitive.Ribbon` is gone
-from the enum entirely: ribbons are records beside the vertex meshes, not vertices
-pretending, and the dead 1.3 MB bucket went with it.
-
-**The plane fills and sky domes run in vertex shaders too, on both targets.** A finite
-plane's fill was a 288-vertex fan and a horizon plane's dome 1,728 vertices, both walked on
-the CPU per frame through per-angle trigonometry -- camera-independent geometry re-derived
-every frame because the meshes are immediate-mode. Each is one record now: a **13-float
-`DiscRecord`** (centre, two radius-scaled arms, fill tint) fanned over a static unit-circle
-corner buffer, and an **8-float `DomeRecord`** (centre, radius, tint) widened over a static
-unit sphere -- a full sphere has no orientation, so the record carries none. The static
-corner buffers come from one generator pair in `mesh` (`discCorners`/`domeCorners`), read by
-the desktop directly and by the browser through `nimDiscCorners`/`nimDomeCorners`, so
-neither target holds a table that could drift from the references (`expandDiscVertex`,
-`expandDomeVertex`), which the suite pins to the multivector sums as it pinned the CPU
-walks. The rim steps off `UNIT_CIRCLE_RIM`, a fixed table of the ring's angles resolved
-once at start-up with the runtime's own `cos`/`sin` (not at compile time, whose evaluator
-need not agree with each backend's libm in the last bit); the rim's per-frame trigonometry
-is gone, and the rim itself followed the fill onto the GPU in the pass below.
-  **Wash order is kept, not assumed away**: discs and domes land in two record arrays, but
-two translucent washes still blend in scene order, so every append extends or opens a
-`WashRun` and both render paths walk the runs in sequence -- usually one run of one record
-per object -- rather than drawing one whole array after the other. `markOverlay` seals the
-current run, so a run never straddles the overlay mark. With the fills gone the Triangle
-mesh had no writers left: the `Primitive` enum is deleted outright, points are a plain
-`points: Mesh`, and `VERTICES_MAX` fell from 49,152 to 1,024 -- the binding case is a scene
-of selected points now, not plane rims.
-  Measured on the demo scene, still camera, medians: **build 11.7 → 3.2 ms**, sky
-**5.1 → 0.1**, flatten **2.35 → 0.6**, planes **1.0 → 0.5**, with 56 floats of wash records
-crossing the wire where 18,144 vertex floats did. Desktop A/B across all twelve storyboard
-frames under Xvfb: at most **38 of 1,296,000 pixels differ** per frame, channel delta ≤ 12
--- edge-pixel flips where the record narrows its arm vectors to `float32` before the GPU's
-own arithmetic, against a CPU fan that computed in doubles; the ribbon move's zero-diff is
-not repeatable here because the numeric path genuinely changed width. Verified visually on
-the dome frame besides.
-  The storyboard capture path surfaced a real bug on the way: it never called
-`ARENA_SWAP.swap()`, so every captured sub-frame stacked another `DrawScratch` into the
-current half until the fifth overflowed the arena -- the pair's turn-over now lives in the
-capture loop's own `renderAt`, mirroring the interactive loop.
-
-**A plane's rim is one record too, and it was 85% of the frame.** The fill became a
-`DiscRecord` in the pass above; the rim did not, and it was left being stepped in
-`addPlaneRing` and emitted as `SEGMENTS_CIRCLE_HORIZON` separate ribbons -- ninety-six
-records for a circle already fully described by thirteen floats, on a claim ("their draw
-order among the other ribbons is load-bearing") that was true of the old interleaved buffer
-and stopped mattering once the rim had a program of its own. On the 1,024-object demo, which
-holds ~132 planes, that was **12,672 of the frame's 12,772 ribbon records -- 99.2% of all
-ribbon traffic** -- 204,352 floats, 811 KB walked four times a frame (flatten, FFI, staging
-copy, upload).
-  It is a **14-float `RingRecord`** now: a `DiscRecord`'s own thirteen plus a width. One
-instance draws the whole circle, over a static corner buffer from `mesh.ringCorners` --
-`(cos, sin)` of each segment's two angles plus its `(end, side)` -- read by the desktop
-directly and by the browser through `nimRingCorners`, the one-source rule
-`discCorners` already set.
-  **The rim reuses the line-widening rule rather than restating it.** `ribbonOfRing` derives
-the very `RibbonRecord` a segment would have been, and `expandRingVertex` is `expandRibbon`
-of it; both GLSL copies place the two ends exactly as the disc source places its fan corners
-and then run the ribbon source's body verbatim. So a rim is still widened in screen space by
-the one rule every line is, and the three-way sibling check has one reference to hold, not
-two. The suite walks all ninety-six segments of the one record and holds each end on the
-plane and at its radius -- the very assertions the ninety-six ribbons carried.
-  `RingMesh` carries its own `index_overlay`: a selected plane is tessellated again after
-`markOverlay`, and without the split that second rim would draw depth-tested, behind the
-translucent fill it is the highlight for.
-  **Measured, browser, SwiftShader at 1200x900, the demo scene, same probe both sides:
-median frame 239 ms -> 84 ms**, p90 240 -> 95. Ribbon records 12,772 -> 4 (the three finite
-lines, at two segments each); the seed scene's 96 -> 0. A driven check pins the demo's
-ribbon records under 64 against a ring count over 120 -- a ceiling two orders of magnitude
-below the old figure, which a regression could not creep past.
-  **`RIBBONS_MAX` fell from 131,072 back to 8,192 with it.** That cap existed only for the
-rim case; the binding case is now a scene of *lines*, each two segments, every one selected:
-4,096 at `ITEMS_MAX` = 1,024, against the furniture set's 482 lattice lines. `scene.nim`'s
-`static: doAssert` block states both, and gained a `RINGS_MAX` line. The reservation
-`visualiser.BYTES_MEMORY_TOTAL` reports is **about 15.7 MB smaller** across the two mesh
-sets.
-  One thing the rim's own pass does change: rims used to be interleaved with object lines in
-one buffer and are now drawn straight after them. The depth test still decides occlusion, so
-the only difference is blend order where two *translucent* strokes overlap -- during a
-plane's fade-in progress.
-
-**A still frame rebuilds nothing, and the ways to change a scene without saying so are
-closed.** The furniture has had a hold since it became a function of the camera alone; the
-scene had none, so a still camera over a still scene re-tessellated every object, re-flattened
-every record and re-uploaded every buffer, sixty times a second, to draw the identical
-picture. On the demo that was the whole of the frame's own work.
-  `SettingsScene` is `SettingsFurniture`'s rule one layer out -- it carries the furniture
-tuple whole rather than restating the camera, plus the aspect, the scene's own revision, the
-selection and the debug-layer flag -- and where it matches the last frame's, the bridge skips
-the tessellation, **the flattens and the uploads together**. Held separately they would buy
-nothing: a buffer re-uploaded unchanged is the same copy again one layer down. `glue.js`
-carries the three buffer counts across frames exactly as it already carried the furniture's.
-  **Three states refuse the hold outright rather than being encoded**, because each is a way
-the picture changes with nothing in the scene changing: a ghost or drag preview follows the
-pointer; the debug layer draws the cursor's own ray; and an item still inside its appear
-animation is drawn differently every frame. The last is read off `g_born_last`, a watermark
-carried by `stampBorn` -- the one door birth stamps go through -- rather than by scanning
-1,024 stamps a frame. Refusing costs one rebuilt frame; holding wrongly freezes the picture,
-so the asymmetry decides the direction.
-  **The revision is only trustworthy because the writes are closed.** `scene.revision` counts
-edits, and every writer is in `scene.nim`, where the fields are private: `addItem`,
-`removeItem`, `setInk`, `setVisible`, `replayFrom`, and a new `setGeometryAt`. That last one
-replaces the `var Multivector`-returning `geometryAt`, which was the hole -- a caller could
-write a geometry through it with nothing recorded, and twenty-six of its twenty-nine callers
-were *reading* through it anyway, which is the JS-backend miscompile pattern `geometryOf`'s
-own doc comment was written about. Those readers now call `geometryOf`; the three writers
-call `setGeometryAt`; the accessor is gone. The one contract left outside the module is a
-whole-scene assignment, which is `history.undo`, `history.redo`, the clear and every load,
-and all of them go through `scene.restoreFrom`. **A restored revision is newer than every
-revision ever handed out**, `max(live, snapshot) + 1`: the earlier design copied the snapshot
-and called `markEdited`, which handed back the snapshot's own count plus one -- a number a
-state between the two had already worn, so the placement cache keyed on it believed itself
-current and drew six objects of the previous demo over the new one. Caught by a driven check
-(undo while the frame is held), not by the suite, which never keys a cache on the counter.
-  **Checked through the drawn pixels, not the flag.** A hold that released but drew the old
-records would pass a flag check, so the driven check hashes the canvas from inside the frame
-that drew it (the context keeps no drawing buffer afterwards) and walks eight edit paths --
-hide, show, recolour, move a coefficient, select, remove, undo, redo -- asserting after each
-that frames were rebuilt **and** that the canvas changed. All eight, both halves.
-  **Measured, browser, SwiftShader at 1200x900, the demo scene, still camera:** the bridge's
-own build **18.2 ms -> 0.6 ms** median; scene 16.9 -> 0, flatten 0.6 -> 0. Frame 84.9 -> 68
-ms. The driven per-kind accounting under the demo now orbits during its measurement window,
-because a still window records frames whose scene phase is legitimately zero and there is
-nothing there to divide -- the cost of drawing *while the view moves* is the case a reader
-waits on, and is what that check measures now.
-
-**The flat buffers are the page's own typed arrays, filled in place.** A `seq[float32]` on
-the JS backend is a plain `Array` of boxed doubles, so every buffer had to be converted
-element by element into the staging `Float32Array` that `gl.bufferData` wants -- a fourth
-pass over bytes nothing else read. `FlatBuffer` is a `Float32Array` behind three `importjs`
-lines, allocated once at the cap its mesh is bounded by and never grown; `flatten*Into` write
-into it unchanged (`dest[i] = v` compiles to the same indexed store), and each frame hands
-back a `subarray` view -- one small object a buffer, no copy. `uploadBuffer` lost its staging
-map and now refuses anything that is not a `Float32Array` rather than quietly copying it.
-About 1.4 MB of typed arrays, reserved the way every mesh cap in this project is; the boxed
-arrays they replace grew to their own high-water mark and cost more per element than that.
-  **Measured at 0.1 ms a frame, not the 1.84 ms the report attributed to it** -- because the
-ring record landed first and took the conversion's input from 204,352 floats a frame to about
-9,000. Recorded as measured rather than as predicted. What it buys at that size is not
-milliseconds but the class: the conversion scaled with the scene, so it would have come back
-linearly with the next rise in `ITEMS_MAX`, and now there is nothing to come back.
-
-**Making the mean small made the *distribution* worse, and pacing is a distribution.** The
-scene hold took a still frame's own work to nothing, which turned two costs that had been
-hiding inside a uniformly slow frame into visible stutters against a frame that now cost
-about a millisecond. Both were found by looking at percentiles rather than medians -- the
-median said everything was fine.
-
-  **The diagnostics refresh ran five times a second whether or not anyone could see it.**
-Measured on the demo with the drawer *shut*: 2.8 ms typical, 5.7 ms worst, landing on one
-frame in twelve, which was the largest single source of frame-time variance left in the
-build. Two faults under it. The refresh had no visibility guard at all, and the two canvases
-could not supply one for themselves: each fell back to a 300-pixel width where its own was
-zero, so a canvas nobody could see was drawn at a made-up size -- a fallback meant for a
-canvas not yet laid out, silently covering one inside a closed drawer. And the object-pool
-strip rewalked all 1,024 cells every tick: comparing per cell had already stopped the style
-writes, but not `nimPoolCellColors` filling its buffer nor the thousand comparisons after
-it, for a strip that changes when an object is added or removed and at no other time. The
-refresh now returns immediately unless the drawer is open, and the strip is gated on
-`scene.revision` -- the same counter the frame hold reads. **Still frame, drawer shut: the
-refresh 2.8 -> 0.0 ms, the frame's whole JavaScript p95 4.7 -> 1.4 ms and worst 8.5 -> 3.3.**
-With the drawer open, where a reader is actually watching, 2.8 -> 1.0 ms.
-  This moved a driven check: it used to open a node in the frame-time tree while the drawer
-was shut, which nobody can do, and read rows that were being written to a panel nobody could
-see. It opens the drawer first now, as a reader does.
-
-  **Placement is a pure function of the object, and it was being recomputed every frame of
-every orbit.** The tree's own second cut said so and nobody had read it that way: orbiting
-the demo cost 17.1 ms of scene phase, of which **placing was 12.0 and emitting 1.6**. Every
-reader on the placing side -- `position`, `positionAnchor`, `direction`, `directionHorizon`,
-`frame`, `spanPerpendicular` -- takes a multivector and nothing else, so what they answer
-stays true while the camera moves.
-  `addObject` is now `emitObject(placeObject(...))`, split along the very boundary the
-diagnostics already reported, with `tessellate.Placed` as the seam: which drawable the
-algebra found, where it stands, what it points along, and which arms span it. The browser
-holds one per slot, refreshed only when `scene.revision` moves; the desktop, the storyboard
-and the suite keep calling `addObject` and are untouched. Two steps stay charged to the
-placing side inside `emitObject` -- a horizon marker's stand-off and a line's two vanishing
-points, both multivector arithmetic *about where the eye is* -- because the cut the panel
-reports is by kind of work, not by which proc it sits in.
-  **A fifth sighting of the `nimCopy` trap came with it, and the measurement caught it.**
-Binding `let placed = g_placed[slot]` deep-copies the object under the JS backend, once per
-object per frame, and passing it as a value parameter copies it again: the scene phase sat
-at 4.9 ms with the cache in place until the generated JavaScript was read and the copies
-found. The slot is indexed where it is used and `emitObject` takes `var Placed` -- **`var`
-because nothing writes it**, which reads backwards and is exactly the point.
-  Also gone: `chargeTally` read the shape off the multivector a second time to pick its
-bucket. It takes the kind the placement already decided.
-  **Measured, orbiting the demo:** scene phase **17.1 -> 2.6 ms**, planes 9.2 -> 0.6, the
-bridge's whole build **21.3 -> 7.1 ms**. What is left is the ground grid, which follows the
-camera and is meant to be rebuilt when it moves.
-
-**The 68 ms that remains is SwiftShader, not this page** -- on *this container*, and the
-distinction turned out to matter more than the figure. Worth stating plainly, because it is
-the difference between a bottleneck and a driver. Measured on the demo after both passes:
-`renderFrame` -- every upload and every draw call issued -- takes 0.9 ms, and the same call
-followed by a `readPixels` that forces the GPU to finish takes **88.9 ms**. The page's own
-JavaScript is under a millisecond a frame; the rest is a CPU rasteriser blending 132
-overlapping translucent discs across 1,200x900 pixels. Every figure in this file is
-software-rendered (see the verification note at the top), and no measurement here has ever
-run on real GPU hardware. What that means for the numbers above: the CPU-side wins are real
-and carry over, and the fill-rate cost does not -- it is this container's, not the design's.
-
-**The fill-rate attribution above is a container artefact, and on hardware it is wrong.**
-Reported from a real device -- an Android tablet, real GPU -- the demo showed `display wait +
-browser` at a recent mean of 49.22 ms against a **median of 14.50**, and the ordinary scene at
-16.60 ms with `ui refresh` its largest row at 3.80 (4.00) ms. A median of 14.5 ms is plain
-vsync: that is a *fast* frame with severe periodic spikes, not a slow one, so the demo was
-never throughput-bound there. Measured directly: at the demo's opening camera **98 of 132
-discs are entirely off-screen**, and the 34 that are visible cover **0.12 of one screen**
-between them. Fill rate is not the problem on a GPU and never was; under SwiftShader, a CPU
-rasteriser, it genuinely was, and reading that measurement as a property of the design rather
-than of the container is the mistake. **No figure in this file has ever been taken on real
-GPU hardware** -- the note at the top says so, and this is what that warning is for.
-
-**The spikes were the drawer's DOM, and one hidden multiplier made them enormous.** The
-objects list builds a row per object, and every row built its whole edit form -- a label
-field, an ink picker with an option per choosable slot, and a grid with an input per basis
-element -- which CSS then hid. Nothing in there was even reachable: every field writes into
-`session_edit`, which is null unless a session is open. Measured on the 1,024-object demo:
-**76 elements a row and 80,325 on the page**, against 843 on the opening scene; one
-`refreshObjectsUI()` cost **570 ms of JavaScript plus 164 ms of layout**, and there are a
-dozen callers, so **a tap on `hide` froze the page for 736 ms**. Building the form only for
-the open row -- there is at most one -- takes a row to **9 elements** and the page to 11,717.
-  **The list reconciles now rather than rebuilding**, against a previous snapshot of what each
-row is a picture of, keyed so a row survives. This is the shape of `timings.RECORDS_FRAME`'s
-this-frame/last-frame pair and of the swap arena, one side of the FFI over: the buffers
-themselves are Nim's and this code is `glue.js`, so what carries across is the pattern.
-  **It is a diff rather than a narrower call for the callers that matter**, and that choice is
-the point: a list of "the cheap callers" is a contract a thirteenth caller breaks in silence,
-which is exactly what `CLAUDE.md` warns about. A diff has no such list. An unchanged refresh
-keeps every element; a hide rebuilds one row of a thousand; both are pinned on element
-identity, which a rebuilt row fails however fast it was built.
-  The costly half of a signature is the geometry line: `nimFormatMultivector` is **11.8 ms**
-across 1,024 rows and `nimItemShapeWord` 2.9, against 0.8 ms for every other field together.
-It is a function of the geometry alone, so it is held against `scene.revision` -- the counter
-the frame hold and the placement cache already rest on. **Tap costs: 736 ms -> 19 ms; an
-unchanged refresh 570 -> 3.7 ms; a selection change -> 4.3 ms.** A visibility toggle still
-pays about 24 ms, because `setVisible` bumps the revision and re-derives every row's geometry
-text though no geometry moved; a second, geometry-only counter would remove it, and is not
-worth the contract for 20 ms on a deliberate tap.
-
-**A row that reports only its JavaScript reports about half of what it costs.** `ui refresh`
-measured 1.0 ms and forced a further **0.8 ms of style and layout** -- work the browser does
-after the callback returns, so it lands in `display wait + browser` and not in the row that
-caused it. That is why a 4 ms burst five times a second looked affordable. The cause is gone
-rather than the reporting patched: the tick wrote **every** row's text and both its colours
-unconditionally while only about **10 of 29 rows** actually change, so two thirds of the writes
-were dirtying layout to set the string already there. Writing only what moved takes the tick
-to **0.7 ms of JavaScript and 0.0 ms of forced layout**, and a driven check counts the writes
-rather than clocking them. No meter was added for the residue: it is now 0.0-0.2 ms, and a row
-reporting nothing is machinery for nothing. The trap is recorded here instead, because the
-next thing to hide will hide the same way.
-
-**And the GPU work was left alone, on purpose.** The obvious next move was to stop emitting
-the 74% of records that are off-screen. It was not made: overdraw is 0.12 screens, the
-device's own display-wait median is plain vsync, and a cull trades an object-vanishes bug for
-a fraction of a millisecond of vertex work. Measured, judged not to pay, and recorded as such
-rather than done because it was available.
-
-**The demo is the real solar neighbourhood, in three sizes, with Sol at the origin.** Sol
-stands at the world origin, its ecliptic lies flat *in* the ground grid's own plane, there are
-no comets, and every star, known planet and major moon that fits is placed at its real
-distance.
-  Confirmed by reading the built scene rather than by looking at it: `sol` is `1 𝐞₄`, the
-point at the origin; `ecliptic sol` is `- 89.11 𝐞₄₁₂`, a plane with no other component at all
--- normal along z, through the origin, which *is* the z = 0 plane the grid is ruled on; Earth
-carries no z component either. No object anywhere is named "halley" or "comet".
-
-  **Three sizes of one arrangement, so a cost can be read as a slope.** `ScaleOrrery` is
-`Nearest` (60), `Neighbourhood` (360, the default everywhere) and `Catalogue` (5038). Every
-one is the same construction -- Sol entire, then real stars outward, then the four objects at
-horizon -- truncated at a different depth; nothing about *what* is built changes with the
-size, which is what makes the three comparable. Measured on one page, at 1400x900 under
-SwiftShader: **60 / 360 / 5038 objects cost 1.3 / 1.7 / 3.0 s to build, a hover pick 0.7 / 1.6
-/ 3.5 ms, a frame build 3.1 / 4.6 / 12.8 ms**, and an edit 9.1 / 8.5 / 8.0 ms -- flat, which
-is the ring timeline doing its job.
-  The working rule they exist for: `Nearest` for a quick check, `Neighbourhood` for a final
-one, `Catalogue` when the change could cost performance. Prefer the smaller for work unlikely
-to touch the frame, the larger for anything that could regress it.
-  **Each size lands on its count exactly, and that had to be made true.** The star walk used
-to `break` on the first system too large for the room left, so a scene reached its target only
-where the item counts happened to sum to it -- true at the single size that then existed, and
-luck rather than design. It passes over such a system now and keeps walking, so a nearer
-four-item system can give way to a further single star. The suite bounds that slack rather
-than waving at it: once a system needing `k` items is passed over there are fewer than `k`
-slots left and every star costs at least one, so at most `k - 1` stars can follow it in.
-  `Catalogue` stops two short of the pool rather than filling it. Two is the smallest margin
-that still proves the point of leaving one -- add a point, then join it to something is the
-shortest construction this build has.
-  **`POSITION_ORRERY` used to sit 18 units up** so that systems with a southern declination
-were not drawn through the ground. They are now, which is where they are: the grid is the
-plane of Sol's own ecliptic and half the sky is under it.
-
-  **Two positional traps, both of which would have been a dead assert at demo load rather
-than a wrong picture.** `SYSTEM_SOL.lean` did double duty -- it tilted the system's plane
-*and*, through `leaned`, tilted Luna's ring out of that plane -- and the plane at horizon is
-`att(ecliptic) ∧ att(earth ∧ luna)`, which exists only because the two differ. Zeroing the
-lean to lay the ecliptic flat would have made Luna coplanar and collapsed that plane to
-nothing. The tilts are separate now, and `TILT_MOON` carries Luna's real 5.14° inclination,
-which turns out to be well enough conditioned that `addHorizon` accepts it.
-  And Sol's tail indices were positional: `placed[len(SOL) - 2]` was Luna only because Halley
-sat last, and `- 3`/`- 4` were the two outermost planets for the same reason. Dropping the
-comet slid the tether onto Neptune and the ecliptic onto Saturn and Uranus, silently.
-`radiusOfSolBody` had the same fault already and nobody had noticed: it took its furthest
-distance from `SOL[len - 1]`, which was **Halley at 17.8 AU, not Neptune at 30.05**, so its own
-doc comment -- "scaled so Neptune sits at exactly the system's own radius" -- was describing
-something the code did not do. All four are named constants now, each held to the body it
-names by a compile-time check.
-  Removing comets also retires the palette's one declared exception from this scene: `Jade`
-was on comets and `Jade`/`Cobalt` is the pair that converges to 3.7 under tritanopia. Four
-roles, four inks, no exception.
-
-  **A second shipped catalogue, and it corrects the first.** `starfield.nim` is a snapshot of
-SIMBAD -- every star within the same 31.53 parsecs `neighbourhood.nim` reaches -- taken with
-the query that file records, on the same "data only, and generated" terms as the exoplanet
-archive and `ramp.nim`. The query returned **11,432**; 180 of those are composite entries
-whose own components are separately listed (`alf Cen` beside `alf Cen A` and `alf Cen B`) and
-are dropped in favour of the components, leaving **11,252**.
-  Each of the 331 planet hosts was matched to exactly one star **by sky position alone**,
-worst separation 161 arcseconds. That is not slack: the two archives are at different epochs
-and these are the nearest, fastest-moving stars in the sky, so Barnard's star and Kapteyn's
-star -- the two highest proper motions known -- are exactly the two worst matches, which is
-the mechanism confirming itself. Distance is deliberately *not* used to match, because it is
-the thing the two archives disagree about: **the exoplanet archive puts GJ 411 at 5.676
-parsecs where the true figure is 2.55**, and GJ 273 and Gl 725 B are wrong by more than a
-factor of two as well. So the star layer supplies every position and distance and the archive
-supplies only which planets exist, which fixes three real placements as a side effect.
-  **Nothing is generated.** A star with no known planet is a star and nothing else, which is
-what the great majority of those 9,868 points are; the fill to 10,000 is done with more real
-stars, never with invented planets or invented systems. The 49 archive planets with no
-recorded semi-major axis are still placed by their order among their siblings, and that stays
-the one drawn distance in the arrangement that is not a real one.
-  **A parsec is 100 world units, and the field stopped reading as a clump.** It was 18 --
-written as its own reciprocal, `PARSECS_PER_UNIT` = 0.055, which answered "how far is a
-parsec" in the wrong direction and is now `UNITS_PER_PARSEC` for that reason alone. At 18 the
-nearest neighbour stood 24 units out against systems drawn 9 units wide, barely two
-system-widths, so thousands of them piled into one frame with no space between. Proxima now
-stands **130 units** out and the outermost catalogue star **3,153**.
-  `RADIUS_NEIGHBOUR` and `SYSTEM_SOL.radius` deliberately did *not* move with it: what reads
-as clustered is the ratio of spacing to system size, and scaling those too would be a pure
-zoom that changed nothing.
-  **The price lands on the opening camera, and is stated rather than absorbed.**
-`RADIUS_ORRERY` fits the view to Sol and `FRAMED_ORRERY - 1` = 1 nearest neighbour, which now
-comes to 139 units against Sol's own 12 -- so the system a reader is meant to look into is
-under a tenth of the opening frame's radius, where at the old spacing it was over a third.
-Looked at: the field itself is right at every size, stars legible and separate, no clumping;
-Sol is a twenty-pixel smudge until a reader dollies in, and reads perfectly at a distance of
-48. So the arrangement is right and the *opening frame* is the thing that got worse.
-`FRAMED_ORRERY` is the knob -- fitting to Sol alone would open on the system and leave the
-neighbourhood to be found -- and it is left at 2 because nobody has asked for that.
-
-  Scales are otherwise each left on the footing they were already on: **star distance is
-linear**
-(`parsecs/PARSECS_PER_UNIT`), planet orbital radii stay logarithmic. The one new scale is
-moons, which had a single shared `REACH_MOON` when there was one moon and now map their real
-semi-major axes -- Phobos at 9,376 km to Nereid at 5.5 million, a range of 588 -- onto 0.08 to
-0.32 world units by the same logarithm. Small, and necessarily: Sol's tightest planet pair,
-Venus and Earth, stands 0.74 units apart, so a wider moon ring would reach into the next
-orbit. A moon is a dot beside its planet at the opening camera and a body of its own once a
-reader goes and looks.
-
-  **The capacity is 5040 and the pick got faster than it was at 1024.** `ITEMS_MAX` has been
-both raised tenfold and halved again since, and the `static: doAssert` block in `scene.nim`
-did exactly what it was built for each time --
-it refused to compile until `VERTICES_MAX`, `DISCS_MAX`, `DOMES_MAX`, `RINGS_MAX` and
-`RIBBONS_MAX` followed, and it reported each required figure rather than leaving them to be
-worked out.
-  A pick over 10,000 slots measured **15.4 ms**, which is a whole frame. The profile named the
-cause, and it was not the walk: **43%** of it was inside `projectToScreen` -- `28.9%` in the
-accumulate of its 4×4 multiply and the rest in the two typed arrays it allocated *per call*,
-which is twenty thousand allocations for one hover. (The profiler labels that accumulate
-`strutils.+=`, which is Nim's `+=` mangled onto the `strutils` symbol; it is float arithmetic,
-not a string, and it cost half an hour to stop believing the name.) Writing the multiply out
-as three dot products in local floats took the pick to **6.4 ms**; giving the point branch a
-`pixelsFromCursor` that returns a distance instead of building a `ScreenPosition` per slot took
-it to **4.7 ms**. Ten times the objects for 1.2 times what 1,024 cost before this round.
-
-  **The pool grid's cell size stopped being a constant.** Six pixels over ten thousand slots
-is 191 rows and more than 1,300px -- not a block, a page. Both front-ends now pick the largest
-cell whose wrapped grid still fits a 150px budget, and the gap goes before the cell does,
-because below four pixels a one-pixel gap is half the strip. At five thousand slots in a 371px
-drawer that is a dense block of small cells rather than a page of them, and it is derived
-either way. The desktop derives the same way from `gui.contentWidth`.
-
-  **What it costs, stated plainly.** The page goes from **2.17 MB to 3.64 MB** -- the star
-catalogue is 11,252 entries and most of that is names -- and the demo takes **4.1 seconds** to
-build on an otherwise idle container, against 2.1 seconds for the page itself to become ready.
-Both are the price of the count and both are worth knowing before raising it again.
-
-  **Looked at, at the angle where it could have gone wrong.** The ecliptic disc and the
-ground grid are now *exactly* the same plane, which is the one thing in this round that could
-have looked wrong rather than been wrong: coplanar surfaces stipple. Driven to three shallow
-elevations -- 0.10, 0.25 and 0.45 radians, where depth fighting shows if it is going to -- the
-grid reads cleanly through the disc at every one of them, continuous lines, no shimmer, and
-the disc's own two rims sit above and below the grid's horizon as separate clean arcs. Nothing
-to fix, so nothing was lifted off the plane the request asked for.
-  Read back rather than judged by eye, since a picture cannot be measured: `sol` stands at the
-origin and **every one of the nine planets has z exactly 0**, Neptune at 12.000 units which is
-the system radius its own scale claims. The moons hold their order against the real semi-major
-axes -- Phobos 0.080, Triton 0.217, Luna 0.219, Io 0.223, Titan 0.263, Callisto 0.279 -- and
-Phobos lands precisely on `RADIUS_MOON_NEAREST`. `ecliptic sol` is `-89.11 𝐞₄₁₂` and nothing
-else, which is the z = 0 plane and no other.
-  **The desktop had no demo, so it was given one.** `constructOrrery` was reached only from
-`browser_bridge`, which meant the heaviest scene the shared core builds could be looked at on
-one front-end only -- a gap in the build rather than a fact about it. What a demo button loads
-is now `orrery.showOrrery`: the arrangement, its replayed arrival and the camera solve that
-holds it, one copy, called by the bridge and by the desktop's new `--demo` alike. The camera
-half of the preset had lived inline in the bridge where nothing could reach it; a suite case
-now checks it -- target at the origin, the pitch the constant names, azimuth left where the
-reader had it, standing further back than the arrangement's own radius, and further back again
-in a narrower window.
-  Looked at on both: the desktop opens on the same neighbourhood at the same size, with real
-catalogue names down the objects list. Under `llvmpipe` it draws the largest size at seconds
-a frame, which says nothing about hardware and everything about software rasterisation of
-thousands of objects -- which is most of why the smaller sizes exist.
-
-  **The debug layer cost thirteen milliseconds a frame, and the walk was not why.** Its driven
-pin had crept 2.5 -> 8.8 -> 13.3 ms across the runs since the capacity rose, on the *opening*
-scene of five objects -- so the cost was in the capacity, not the content. Two faults, and only
-the second was the one that mattered.
-  `addFrameTrace` walked `0 ..< ITEMS_MAX`. `scene.bound` exists precisely to stop that and
-its own doc says so, yet the conversion had reached `pairs` and not its sibling `items`, nor
-`pickNearest`, nor this. All are on the watermark now; the three walks that legitimately run to
-capacity -- the free list and the two object-pool strips, whose whole subject is how much room
-is left -- stay, and `bound`'s doc now names them so the next reader does not have to work out
-which kind each one is.
-  That fixed nothing measurable, which is what pointed at the real cause: `var trace:
-AlgebraTrace` was a *stack local* of `TRACED_MAX` = `ITEMS_MAX` + 16 entries, so the layer
-built **ten thousand `Traced` objects every frame** before recording five. It is caller-owned
-scratch now, exactly as `tessellate`'s is and for exactly the same reason. **13.3 ms to 4.1**,
-measured on the same probe minutes apart.
-  Worth keeping as a rule: a pin that drifts upward while the thing it guards is untouched is
-reporting on its *surroundings*. This one had been quietly reporting the capacity change for
-four runs before it finally crossed its own ceiling.
-
-  **Loading the largest size was 1,496 ms of frozen page, and almost none of it was the
-arrangement.** Split by hand and then profiled: 706 ms in the bridge, 790 ms in the drawer.
-Four costs, none of them the algebra:
-  - **`initHistory` returned a `History` by value.** `g_history = initHistory(...)` compiles
-    to `nimCopy(g_history, initHistory(...))` on the JS backend, and a `History` is
-    `CAPACITY_HISTORY` **Steps** -- so seeding a *one-entry* timeline deep-copied thirty-two
-    whole scenes, about 106 MB at 5,038 slots. `nimCopy` plus `nimCopyAux` was 65% of the
-    load. It fills a timeline the caller owns now, which is what `STYLE.md` asks for anyway
-    and what `MeshSet` and `DrawScratch` already do. Bridge: **706 -> 95 ms**.
-  - **The objects list built every row for a section nobody had open.** `refreshObjectsUI`
-    has thirteen callers and no gate; 5,038 rows were built whether or not the section was
-    expanded. Gated on the section *and* the drawer, with the header and the drawer button
-    both redeeming it -- the same shape as `is_pool_stale` and the diagnostics tick.
-  - **The operand pickers rebuilt an `<option>` per object per picker**, and spent 5,038 FFI
-    calls building a `slot:label` roll-call *just to decide whether to*. Keyed on
-    `scene.revision` and the count now, and gated on the apply section, which is collapsed by
-    default. That alone was 119 ms.
-  - **The row sort crossed the FFI about 124,000 times.** `sort((a, b) => nimItemBorn(b) -
-    nimItemBorn(a))` is two calls per comparison; `nimSceneSlotsCreated` is that order
-    already, reversed in one pass.
-  The rows that remain are built **in slices bounded by time**, drained from the frame loop
-rather than from a `requestAnimationFrame` of their own -- because `recordPhaseTime`
-*overwrites* a phase's reading rather than adding to it, so work done in a callback beside
-the loop is either unmeasured or clobbers what the loop measured. Cost inside a frame belongs
-to a phase of that frame; the `ui refresh` row had to be fixed under that same rule once
-before, and the driven check on it caught this attempt too.
-  **1,496 ms to 101 ms**, of which 95 is now the arrangement itself, and the list fills
-progressively behind it instead of blocking. A pass that changes nothing never reads the
-clock, so a tap on `hide` is as immediate as it was.
-  Two driven checks had to change with it, and neither was weakened: the operand-picker check
-opens the apply section, because that is the only route by which a reader sees a picker at
-all -- and then closes it again, since an open apply section keeps a **ghost** standing and a
-standing ghost is one of the three things that stops a frame holding, which is exactly how it
-broke the frame-hold checks further down the file the first time. The row-count check opens
-the drawer and waits for the fill, against `nimSceneCount()` rather than the size loaded,
-since the refusal check above it fills the free slots first.
-
-  **Marks at 10, 5 and 1 fps, and the histogram had to be told about the slowest.**
-Loading the largest size is a frame of *seconds*; a chart whose slowest mark was 66.7 ms
-could only say "past the end". Adding the mark to `BUDGETS_EXCEEDANCE` alone did nothing at
-all, silently: the axis only ever runs as far as the slowest bucket holding a frame, and the
-histogram stopped at **128 ms**, so `drawExceedance` skipped the new mark on every draw. The
-bucket count is folded from the slowest mark now, so the next one cannot repeat it. The scan
-at 2,001 buckets measures 0 ms and the whole redraw 0.5 ms, and the curve loop already walked
-only the populated span rather than the array.
-
-  **Points are not missing an optimisation the other kinds have; they are 98% of the
-objects.** The question was whether points ever got the treatment planes and lines did, since
-they are now the bottleneck. Half of the premise is right. Planes cross the wire as a
-`DiscRecord` plus a `RingRecord`, lines as `RibbonRecord`s, the sky as a `DomeRecord` -- each
-one record standing in for a fan or a quad strip that used to be dozens of vertices, expanded
-by its own instanced vertex shader. **A point is one vertex** (two when selected), in one
-`Mesh`, drawn in one call. There is no fan to collapse: a point is already the minimum the
-wire can carry, which is why it was left behind when the others moved. What points carry is
-the *per-object* cost, and they carry 4,938 of the 5,038 shares of it.
-  Two of those costs were real, and both were found by profiling a **moving** camera -- the
-frame hold makes a still one free, so a still measurement says nothing about this at all.
-  **`addMarker` deep-copied a `Vertex` per point per frame.** Assigning a `Vertex` literal
-into the array compiles to a `nimCopy` of the whole object on the JS backend; writing the
-seven fields does not. `nimCopy` and `nimCopyAux` together were 41% of a moving frame's
-profile. The points row went **9.1 -> 7.1 ms**. The same fix `history.record` took, for the
-same reason, in the one proc that runs once per point.
-  **The instrument was a third of the frame it measured.** `timed` brackets the placing and
-emitting halves of *one object* and `chargeTally` reads the clock once more each, so a
-5,038-object scene made about fifteen thousand `performance.now()` calls a frame -- measured
-at 2.8 ms on their own. Gated on the drawer *and* the diagnostics section being open, as the
-pool grid, the objects list and the operand pickers now are: **14.5 ms watched, 9.2 ms
-unwatched**, a third of the moving frame returned to anyone not staring at the breakdown. The
-per-kind **counts** are not gated -- they are one increment each, and how many points were
-drawn is true whether or not anyone was watching.
-  **The flag is spelled `is_tally_skipped`, and the polarity is not a slip.** A Nim default
-argument does not survive into the generated JS signature: the function simply takes the
-parameter, so a JS caller that omits it passes `undefined`, which is falsy. Written the
-natural way round, every existing caller would have silently turned the measurement *off* and
-the per-kind rows would have read zero. Written inverted, omitting it measures everything.
-  The driven check that the kinds account for the scene phase now runs with the section open,
-because that is the only state in which the breakdown exists; collapsed, its rows are
-legitimately absent rather than wrong, and the check was summing zeros against a real phase.
-
-  **What could not be measured here, stated rather than guessed at.** The remaining complaint
-is the *tail* -- 1 frame in 100 at 25 ms against a 16.63 ms body -- and this container cannot
-see it. Under SwiftShader a frame is 70-100 ms and a CPU profile is **98% `(program)`**, the
-rasteriser itself; every named function in the build is under 0.2%. A promising hypothesis
-(that the diagnostics' own once-a-second redraw authors the tail it displays) was tested and
-**killed**: the redraw is 0.5 ms. So the load was fixed, because the load is CPU work and is
-measurable; the tail is not diagnosable on this hardware and no claim is made about it.
-
-  **The memory is the part that surprised, and one figure was simply wrong.** Measured, not
-reasoned about: a `Scene` at 5040 slots is **1.15 MiB** (1,204,616 bytes, `sizeof` on the
-release compiler; 1.11 before the per-slot placing stamps below) as a C struct and was measured
-at about 3.3 MB as JS objects before those stamps, and a `Step` is a whole `Scene` beside a
-five-float `Camera`. So the undo timeline at `CAPACITY_HISTORY` = 32 reserves **36.8 MiB**
-natively (38,549,528 bytes) -- the largest single reservation the binary makes, against 6.2
-MiB for both mesh sets together -- and roughly 105 MB of JS heap in the browser, where the
-live page measured **85 MB at load** and 92 MB with the largest size in it before the stamps
-were added; the JS figures have not been re-measured since. The timeline is essentially the
-entire heap of that page; everything else in it is single digits.
-  Those figures are half what they were: the pool held 10080 slots for a single
-ten-thousand-object scene, and holds 5040 now that the largest is 5038.
-  `BYTES_MEMORY_TOTAL` was not counting the timeline at all. It claims to be "every fixed
-reservation this binary makes for itself" and it omitted its own largest term, which is worse
-than reporting nothing; it counts it now, and `CAPACITY_HISTORY`'s own doc comment -- which
-until this round said the cost was cheap because "a Scene is already small" -- carries the
-per-step price so the lever is visible.
-  **The depth was left at 32.** Lowering it to 8 would return about 79 MB of browser heap,
-and was not taken: since the fix below the depth costs nothing per edit, so what is left is a
-flat reservation nothing has yet run out of, and the thing being spent is a reader's undo. The
-figure is stated and the lever is linear -- about 3.3 MB of JS heap and 1.11 MiB of address
-space a step -- so the trade can be made by whoever needs a lighter page.
-
-  **One edit cost 153 ms, and the cause was a loop with no reason to be looked at.** `record`
-dropped its oldest step by shifting every later entry down one place. That is a fair way to
-retire an entry when a `Step` is a 1,024-slot scene; at five and ten thousand it is **31 whole
-scene copies for every edit past the thirty-second**. Measured on the JS backend at steady state:
-**153.5 ms** to toggle one object's visibility -- nine dropped frames -- and it scaled with the
-*capacity*, 26.4 ms at four steps deep and 39.9 at eight, which is the signature that says the
-cost is the shift and not the copy.
-  The array is a ring now: `first` names the slot holding the oldest step, `slotOf` is the one
-place a timeline position becomes an array index, and retiring the oldest entry moves one
-integer. One edit costs **11.3 ms** and no longer moves with the depth at all (10.7 at four,
-11.7 at eight). Nothing else in the module changed; `count` and `cursor` still mean what they
-meant.
-  **The case that already overflowed the timeline could not have caught it, and now could.**
-It recorded four steps past capacity, undid all the way back, and checked the count and the
-state it landed on. Both of those survive an index that forgets the wrap -- what does not is
-the order of everything in between, so the case now retraces every retained step forward and
-back and checks each one.
-
-  **A suite case stopped finishing, and it was the case rather than the build.** "no point in
-it is a hub for the rest of the scene" walked every pair of slots to count how many lines and
-planes pass through each point. At 1,024 objects that is a million cheap reads; at 10,000 it is
-a hundred million, and on the JS backend each one copies a `Multivector` out of the pool. The
-run sat at 126% CPU and 3.6 GB of resident memory for ten minutes without emitting a line and
-was killed. The scene holds 9,868 points and 128 lines and planes, so the inner walk was
-reading ten thousand things to find a hundred: it gathers the joiners once now, unitising each
-plane a single time, and the JS suite runs in **127 seconds** end to end.
-
-**The object pool strip had been drawing nothing at all, and every check passed it.**
-Reported by a reader, found by measuring the rendered box rather than the code: 1,024 cells,
-all present, all correctly coloured, **every one of them 0px wide**. `.pool-strip` was a flex
-row with `gap: 1px`, so at a capacity of 1,024 the gaps alone demand 1,023px inside a 371px
-strip; flex shrinks the cells to nothing and the whole thing draws as gap. Invisible since
-capacity went from 64 to 1,024 -- the markup's own placeholder still read `0 / 64`, and so did
-the objects count and the desktop's memory tooltip.
-  Nothing could have caught it as written. The element count was right, the colours were
-right, the refresh was correctly gated, and a clock cannot see a picture. The check that
-exists now asks the two questions that would have: does `columns x rows` cover the capacity,
-and is a cell at least one device pixel wide.
-  **The browser had drifted from a sibling it says it mirrors.** `gui.poolBar` is documented
-as drawing "one square cell per pool slot, wrapped to the panel's width", and the browser's
-block says it mirrors `panel.layoutDiagnosticsObjectPool` -- it mirrored the colour loop and
-not the layout. So the fix is the desktop's own reading, not a new design: one square per
-slot, wrapped, occupied cells in their object's ink and free ones recessive. Columns come from
-the measured width, rows from the capacity, so a narrower drawer grows rows instead of
-starving cells: 53x20 and 139px tall at 371px, 30x35 at 211px, 70x15 at 491px.
-  Drawn on **one canvas rather than 1,024 spans**, which is the lesson of the round above
-applied before it could bite: a thousand boxes in that drawer cost a layout pass every time
-anything else in it is written. The page falls from 12,755 elements to 11,731. It is also the
-one canvas here scaled by `devicePixelRatio` -- its two neighbours are 1.5px strokes that lose
-nothing to a doubled display, and a grid of hard-edged 6px squares does.
-  The desktop needed the same look: `SIZE_POOL_CELL` was 14, chosen when 64 slots made three
-rows, and at 1,024 it wraps to about 37 rows and 555px -- which ran off the bottom of the
-panel and pushed the byte accounting under it out of reach. Rendered and looked at rather than
-inferred from the constant, then brought to the browser's own 6px, so the two front-ends read
-alike and differ only in how many columns each panel's width affords.
-  **And the fix regressed the tick, in the exact way this file had just recorded as harmless.**
-`drawPoolGrid` read `clientWidth` to work out its columns -- *after* the tick's row writes --
-which forces the browser to lay the drawer out mid-callback: **0.9 ms of a 1.3 ms tick**, five
-times a second, for a picture that had not changed. The earlier round measured a `clientWidth`
-read at 0.2 ms and dismissed the mechanism; that read sat *before* the writes, and the position
-is the whole cost. A `ResizeObserver` answers "has the box changed" for nothing, so the gate --
-revision, ratio, observer flag -- now runs before anything measures. `drawPoolGrid` 0.9 ->
-**0.0 ms**, the whole tick 1.3 -> **0.3**, and the 0.9 reappears in a probe's own read outside
-the tick, which is what confirms it was the relayout and not the drawing.
-
-**The spike that survived all of that was the panel itself, on a still frame.** Reported from
-the device with nothing moving, and the sparkline's spikes evenly spaced, which is the 5 Hz
-tick's signature. Two readings of the two captures, and the first has to be got out of the way
-before the second means anything.
-
-  **The seed-versus-demo inversion is the device, not the code.** The seed scene showed
-`ui refresh` at 6.90 ms against the demo's 3.70, which looks like a cost that *falls* as the
-scene grows and sent one round of analysis chasing a mechanism that could do that. There is
-none: every row on that capture is about 2x the demo's, `camera + framing` (0.90 against 0.70)
-and `view matrix` (0.50 against 0.40) included, and neither touches scene contents at all. The
-device was simply slower a minute earlier. Divide that factor out and one row is left --
-`ui refresh` is three to five times the cost of building the whole frame, on both scenes, and
-nothing else is over 1.4 ms.
-
-  **A tick costs the frame after it, where no row can name the cost.** The `ui` bracket closes
-at `refreshDiagnostics`'s last statement; the browser's style, layout and paint pass over what
-was just written happens after the callback returns and lands in `display wait + browser`.
-Measured on the demo, still, drawer and diagnostics open, as the median gap of the frame *after*
-a tick against a plain frame:
-
-| | penalty on the next frame |
-|---|---|
-| as built (12,741 elements) | **+5.2 to +6.3 ms** |
-| objects section collapsed | +2.6 |
-| objects list emptied (3,525 elements) | +2.5 |
-| `content-visibility: auto` on each row | **+2.4** |
-
-The tick's own JavaScript is 1.7 ms of that, so **over half the cost was the browser and over
-half of *that* was the 1,024 objects rows** -- rows the tick never writes to and only has to lay
-out again. It fires five times a second, so on a 60 Hz display it lands on one frame in twelve;
-at the device's roughly 4x that is 20-25 ms added to one frame in twelve, which is the 33 ms
-1-in-100 on the seed and, with the rows on top, the 58.5 ms on the demo.
-
-  **A figure is redrawn on the cadence of the window it is averaged over.** The 200 ms tick was
-chosen so a *reading* settles and the numeric rows keep it, but two of the three things riding
-it are not 200 ms readings: the exceedance curve covers 1,024 frames (~17 s) and the sparkline
-and ring medians four seconds. Measured, `drawExceedance` was 0.31 ms and `medianPhase` 0.27 of
-a 1.17 ms tick -- half of it -- to redraw figures that cannot visibly change in a fifth of a
-second. They moved to a one-second pass. A median is held between passes rather than recomputed,
-and a row that becomes shown between them computes its own on the spot, so opening a branch of
-the tree never shows an em dash for a second; checked across all 23 rows, 22 return a value
-identical to a fresh one and `idle` differs by 0.2 ms on 36, which is one second of staleness
-and exactly the design. The `log` toggle and the axis glide stay immediate, both being
-answers to something a reader just did.
-
-  **`content-visibility` buys what virtualising the list would, and its trap is the box model.**
-`contain-intrinsic-size` sizes the **content** box; the placeholder was first written as a
-border-box 61px, which is the row's real height, and every skipped row then rendered 19px too
-tall -- the rule's own padding and border added on top -- making the list 81,303px against a
-true 63,858. The content inside a 61px row is 42px. With `auto` in front of it the browser
-remembers each row's real height once laid out, so the extent is 62,493px fresh (2.1% short) and
-exactly 63,858 after one scroll through.
-  **And it broke a scroll, which only looking caught.** `openPanelTo` ends in
-`scrollIntoView({block: 'nearest'})`, and `nearest` scrolls the minimum to bring the box into
-view -- so with the target row a 42px placeholder rather than the 489px form it was about to
-become, opening slot 900 left the row's top at 839 in a 900px viewport with its whole form below
-the fold. Re-scrolling does not fix it: once the row is partially visible `nearest` is satisfied.
-The open row is exempt from the containment instead -- it is one row of a thousand and the only
-one whose true height anything depends on -- and the scroll settles over a few frames rather than
-jumping once, for the rows *above* it that are still estimates. Slot 900 lands at 421 against 411
-with no containment at all.
-  The section-level guard came from the same pass: the tick's guard asked whether the *drawer*
-was open, and a collapsed diagnostics section inside an open drawer put both canvases back on
-their made-up 300-pixel fallback, drawing five times a second for a reader looking at the
-objects list. Exactly the fault recorded two rounds above, one level down.
-
-  **Measured, demo, still, drawer and diagnostics open: the frame after a tick 5.2-6.3 -> 2.1 ms
-over a plain frame, the tick's own JavaScript 1.7 -> 1.0, and the tick at the median 1.1 -> 0.3.**
-
-  **One hypothesis was tested and rejected, which is worth as much as the one that held.**
-`drawExceedance` ends with two *unguarded* `textContent` writes and the very next statement in
-`refreshDiagnostics` read `sparkline.clientWidth` -- a textbook write-then-read forcing a
-synchronous relayout of a 12,741-element document, five times a second. It looked certain. It
-costs **0.2 ms**, and suppressing both writes changed the tick's percentiles not at all. The
-reflux was real and the amount was nothing.
-
-**Picking ran once per input event, and a pick walks the whole scene.** Not the reported symptom
--- both device captures are still and `hover picking` reads 0.00 on each -- but it was the
-largest cost in the build by a wide margin and it is what a reader meets the moment they touch
-anything. `pickNearest` walks every live slot doing full multivector geometry: **11.4 ms p50 over
-1,024 objects against 0.2 ms over five**, so it is linear in what the scene holds. It was called
-from the event handlers, and a pointer or trackpad reports faster than the display refreshes.
-
-  The wheel was the worst of it, because the cost is not obvious from the call: each notch
-dollies, `dollyAtCursor` asks `anchorZoomAt` what the cursor is over, and that is a full pick.
-Six notches in a frame -- an ordinary trackpad -- measured **83.8 ms of picking on one frame**,
-for a 136 ms gap. The handler sums its travel now and the frame loop applies one dolly, which is
-the *same* zoom rather than an approximation: the factor is `exp(k·Σdelta)`, so the product of
-the notches and the exponential of their sum are the same number, confirmed to four decimals and
-on the round trip back out. Pointer motion marks hover stale and the frame loop picks once, after
-`nimDriveHeld` so the camera is where the frame will draw it. Three paths still pick inside their
-own handler because they must answer before it returns: `pointerdown`, a touch-down and
-`handleTap` are what `nimBeginDrag`, `slot_touch_down` and selection are decided from.
-
-  **Then the pick stopped placing objects in order to rank them.** `placeObject` already answers
-what an object is and where, from the algebra alone, and the browser holds a frame's worth on
-`scene.revision`; the pick was asking `position`, `positionAnchor`, `direction`, `frame` and
-`spanPerpendicular` all over again, per live slot, per event. It takes the placements now and
-dispatches on `Placed.kind`, so it ranks what was drawn off one derivation rather than two that
-agreed only by care. The parameter is optional and empty means derive per slot, which is the
-desktop path and every case in the suite. Two semantics the kinds do not carry alone are kept
-explicitly: a finite plane the algebra can span no frame for shares `PlaneEverywhere` with the
-sky and is still not pickable, and a direction point is still picked out at the horizon, where
-the eye rather than the algebra puts it.
-
-  **A sixth sighting of the `nimCopy` trap, and this one produced a rule.**
-`scene.geometryOf` returned by value, so on the JS backend every call allocated a
-`Float64Array(16)` and `nimCopy`d the field into it -- once per live slot per pick, which put
-`nimCopy` and `nimCopyAux` at **19.8%** of the pick's profile. It hands back a `lent` view now.
-The rule the experiment produced, confirmed by compiling a reduced case and reading the output:
-**`lent` removes the copy only where the result is never bound** -- `let g = scene.geometryOf(s)`
-puts the `nimCopy` straight back, so a caller wanting the saving must read the call inline. The
-walk uses aliases for both the geometry and the placement for that reason, and the conditional
-alias choosing between a held placement and a derived one was checked in the generated JavaScript
-too: it compiles to a reference, not a copy. Removing that one copy alone moved nothing
-measurable -- the algebra's own copies dominate -- and it is the placement cache above that took
-the time out.
-
-  **The pick answers identically**: 4,914 cursor positions across three camera placements over
-the 1,024-object demo, not one slot different, before and after both changes. A screenshot would
-not have caught a wrong answer; a slot-for-slot map does.
-
-  **Measured on the demo, 1,024 objects:**
-
-| | before | after |
-|---|---|---|
-| one pick | 11.4 ms p50, 28.3 p95 | **3.9**, 10.4 |
-| wheel zoom, six notches a frame | 83.8 ms/frame, 136 ms gap | **4.4**, 55 ms |
-| a drag's hover, two moves a frame | 25.8 ms/frame | **4.2** |
-| frame while orbiting, median | 62.5 ms | **54.4** |
-
-**The driven checks measure the debug lattice from one check onward.** The check that proves
-the debug layer draws more than the picture switches it on with `chip.click()` and never
-switches it back, so every later frame drawn through the real loop carries ~1,650 lattice
-ribbon records. The record accounting under the demo switches it off for its own window and
-says so; the *other* measurements taken after that point have been including the lattice all
-along. Not changed here, because moving them is a band change under `REQUIREMENTS.md` §20 --
-recorded so the next reading of those numbers knows what is in them.
-
-**The overlay row's cost was copies, not markers -- and the DOM churn beside them.** With
-two objects selected the `overlay + menu` row cost more than the whole frame build, and
-none of it was the geometry:
-  - `markerFor` and its five shape procs returned `Option[Marker]`, and a `Marker`
-    reserves every kind's fixed arrays -- so on the JS backend each return, `get` and
-    assignment walked kilobytes through `nimCopy`. Measured at ~1 ms per shaped marker
-    **for six floats of ring**. The family fills a caller-supplied `var Marker` now and
-    reports a bool; the bridge shapes straight into the boxed marker its pulse cache
-    reuses, and nothing copies a `Marker` at all.
-  - The overlay view cache returned `(DrawExtent, Matrix4)` **by value** -- ~0.25 ms per
-    overlay call on a cache *hit*, since the tuple construction deep-copies an extent full
-    of multivectors. It is `ensureViewOverlay` now; callers read the shared globals.
-  - `nimAnchorScreen` and `nimDragComet` read `g_scene[slot]`, whose `Item` carries the
-    whole `Scene` by value -- the trap `nimBuildFrame`'s walk already documents, found
-    live again at 0.28 ms per anchor asked for. By-slot readers now; an anchor costs 8 µs.
-  - The SVG overlay cleared itself with `innerHTML = ''` and created every element afresh
-    each frame, and the choice menu ran a layout-forcing `getBBox` per wedge per frame for
-    label widths that cannot change between frames. Elements are pooled and re-staged with
-    one `replaceChildren` per frame -- z-order still reads straight down the staging
-    calls -- and label widths are measured once per label (cache emptied when
-    `document.fonts.ready` resolves, in case an early measure ran against a fallback face).
-  Net: the overlay row **7.45 → 3.97 ms** on the same two-selection scene. The menu itself
-cannot move to a shader -- its wedges are laid-out text, and text layout is the browser's --
-but nothing per-frame remains in it beyond class toggles and a handful of attributes.
-
-**The overlay row's last cost was marker geometry, not the menu it is named for.** With
-the copies and the DOM churn gone the row still read 3.97 ms, so the bracket was
-decomposed by temporary probes: **4.04 of 4.1 ms was `markerFor`**, the DOM commit 0.03,
-the menu positioning zero -- it was not even open. Timing the marker-and-pulse pair per
-shape then showed the fault the earlier microbench had hidden by happening to time a
-*point*: point 0.48 ms, plane 2.96, horizon line 3.21.
-  Two causes, both already-solved patterns living on in `marker.nim`. A plane's marker
-circle assembled **64 per-sample multivector sums every frame**, and a horizon line's
-bands two rings of 48 -- exactly what the disc rim and the great circle had retired --
-so both now step `euclid.unitRing`'s fixed table through `onCircleAt`, with the arms
-taken through the algebra once and the suite holding the stepped ring equal to the sums
-it replaced, point for point. And every shaping ran `new(Marker)`: a `Marker` reserves
-every kind's fixed arrays, so that was kilobytes allocated and zeroed per selected
-object per frame -- most of what a point's *four-float* answer cost. One box, allocated
-once, now serves both exports.
-  Pairs after: plane **2.96 → 0.79 ms**, horizon line **3.21 → 0.82**, line 2.93 → 1.21,
-point 0.48 → 0.21; the overlay row **3.97 → 1.93 ms** with two objects selected.
-  **Deferred, deliberately**: holding a shaped outline across frames and re-shaping only
-the travelling pulse. A marker's outline depends on object, camera and viewport alone,
-so the cache would be sound -- but a line's pulse rides a *walk* assembled locally
-during shaping and never stored on the `Marker`, so caching it means storing per-run
-ride outlines and their tracks. That is a real change to the type, not a hoist, and the
-remaining cost did not earn it; the residue is a variant construction per shaping plus
-the projections, which a future round can take together if the row rises again.
-  **The pin was rewritten with the fix**, because it would have passed through all of
-this: it timed slot zero, which was a point. It now times every live slot and reports
-the worst, naming the shape -- a cheap kind must never stand in for a dear one.
-
-**The picker copied the scene per slot per pointer move, and nothing measured it.** A
-systematic audit -- time every reachable export, grep every proc returning a large value
-type -- found `pickNearest` at **7.1 ms per call** on the nine-item demo scene, invisible
-to every bench because benches do not wiggle the pointer and the hover row only reports
-what the previous frame's moves happened to cost. Three layers, fixed in order: the
-`scene.pairs` walk (an `Item` holds its `Scene` by value; the same walk sat in the debug
-layer's `addFrameTrace`) went to the by-slot readers; the horizon-line hit test's
-ninety-seven multivector sums per candidate went to the fixed angle table through
-`euclid.onCircleAt`, with `addGreatCircle` delegating to `addPlaneRing` -- the same walk --
-so a hit still agrees with what is drawn; and the wheel path's fresh extent and matrix per
-notch went through the overlay cache (`anchorZoomAt`/`dollyAtCursor` take the caller's
-now). One hover pick is **1.5 ms**; the residue is the per-candidate meets and clips,
-which are the algebra this project exists to exercise. The `offerAim` duplicate-extent
-finding recorded two rounds up was in fact already fixed by the regroup itself; what
-remains of that shape is `placementFor`'s derivation inside `isShownCentrally`, which runs
-only when the aim changes and stays.
-
-**The furniture fog fades per fragment, and a lattice line is one record.** The grid's
-26.1 ms at the orbit worst case was almost entirely Placing, and the Placing was almost
-entirely fade sampling: each line was cut into pieces purely so `alphaGridFade` could be
-evaluated at their boundaries, under a 640-piece budget squeezing the cut as lines
-multiplied -- ~920 boundary sums, fades and depth dots per moving frame. The fade runs in
-the ribbon fragment shaders now, against the fragment's own interpolated world position
-and two fog-radius uniforms -- exact along a record of any length, where the per-piece cut
-was piecewise-linear -- held to `alphaGridFade` as its reference under the same three-way
-sibling rule as the widening. A per-record `fog` flag (the sixteenth float) says who
-fades, so fogged furniture and plain scene ribbons share one buffer in emission order; a
-lattice line, an axis chord and a debug lattice line are one record each, whole-line
-behind-eye cull included (depth is linear along a straight segment, so two behind-eye
-endpoints put all of it behind). The piece-cutting economy -- `SEGMENTS_GRID_FADE`, its
-floor, `SEGMENTS_GRID_MAX`, `segmentsGridFadeFor` and the suite case that held them -- is
-deleted; the bound is `LINES_GRID_MAX`, which `CELLS_GRID_HALF_MAX` always implied.
-  Measured at the orbit worst case: **build 29.9 → 10.8 ms, grid 26.1 → 8.7, Placing
-25.3 → 8.1**, 381 records where 629 pieces were. The residue is the per-line placement
-through the algebra -- two boundary sums and a line base per lattice line -- which is
-deliberate and stays. Verified by looking: the far-orbit fade is visibly smoother than
-the piecewise version it replaces, which is why no pixel-identical A/B was expected or
-sought for this change; the suites hold the reference's shape and the records' flat
-tints instead, sampled along each record the way the fragments are.
-
-**Why the debug layer cost twenty milliseconds, explained and mostly repaired.** Measured
-with the layer on over the demo scene: build 2.3 → 22.4 ms, 18.5 of it the layer, 16.5 of
-that Placing. The reason is structural: every traced *finite plane* is drawn as a full
-grid-scale lattice through `addGridFamily`, and the trace holds more planes than the
-scene shows -- the scene's own, plus the derived eye plane, near plane and ground plane --
-so the layer was laying roughly six grids' worth of per-boundary fade sampling per frame.
-The fog-fade move above repairs the machinery they all share (**18.5 → 4.7 ms** on the
-same scene), and the `pairs` walk in `addFrameTrace` went to by-slot readers with the
-picker's. What remains is the honest cost of tracing: a lattice per traced plane, at two
-boundary sums per line, which is the layer doing what its module doc promises. Its
-controls now say what the diagnostics tree already said: the browser chip and the desktop
-checkbox read **"debug"**, not "algebra" -- a control named algebra read as the subject of
-the whole app, not as the optional wireframe it switches (element ids stay, as wiring).
-
-**On the periodic frame-time spike, what has been ruled out and what has not.** Measured on
-the driving container, which is the wrong machine for the question — its median frame is
-17 ms against a fast machine's 6 — so these are eliminations, not a diagnosis:
-  - *Not a timer of ours.* The page has no `setInterval`, no `requestIdleCallback`, and no
-    CSS animation; its only `setTimeout`s dismiss a toast and revoke object URLs.
-  - *Not the drawer.* Its `backdrop-filter: blur(16px)` over an animating canvas was the
-    obvious suspect. Open against closed, over 30 s each: 44 spikes against 40, and 85%
-    against 87% of the excess outside the page's own work. No difference.
-  - *Unlikely to be collection.* Sampled allocation runs at 0.02 MB/s, the largest single
-    allocator being `drawExceedance` at 64 kB over 12 s. `performance.memory` is quantised
-    to a single value in this Chromium, so heap-drop detection is unavailable here and the
-    elimination rests on the allocation rate alone.
-  - *What is left.* On this container 85% of a spike's excess is outside anything the page
-    measures. That is the container's own software GL and shared CPU and says nothing about
-    another machine — which is exactly why the remainder now has a row: the instrument to
-    answer this belongs on the machine that has the symptom.
-
-**A phase's absence is recorded beside its time, never inside it.** The per-phase rings
-marked "did not run this frame" with a negative in the value's own range, and every mobile
-browser coarsens and jitters `performance.now` against timing attacks — so a sub-millisecond
-step measures as zero or below and a real reading becomes indistinguishable from silence.
-This was **not** what emptied those rows in practice — see the tree's own combinator bug
-below, which was — and no reading has been observed to be lost to it; the hazard is real but
-the evidence for it here is a driven check that constructs it, not a session that suffered
-it. Presence is now a parallel `Uint8Array` per phase, a
-non-positive reading is clamped to zero (a negative elapsed time is a clock artefact, not a
-duration, and "too short to measure" is the honest reading of it), and a non-finite one is
-left absent so a genuine wiring break still shows as an em dash rather than a confident
-0.00. The verified reproduction is the driven check that feeds a phase nothing but zeros
-and negatives; guard-run against the old rule, it fails with exactly the phone's symptom.
-  This is `STYLE.md`'s no-sentinel rule, and it was broken here in the one place where the
-value's range genuinely could not spare a member.
-
-**Readings are averaged over 200 ms, and rewritten on the same 200 ms.** Each row showed the
-newest frame's number beside a median, and a single frame changes several times faster than
-anyone can read it; the frame-rate line swung by tens of fps between glances. The leading
-figure is now the mean over the frames covering the last 200 ms — counted in the frames'
-own durations, so it is a dozen frames at 60 fps and two on a labouring phone, and either
-way it is the last 200 ms — with the ring's median kept beside it as the settled figure.
-The UI refresh moved from a six-frame count to that same 200 ms of wall clock: six frames is
-a twelfth of a second on a desktop and a third of one on a slow phone, so the digits changed
-at whichever rate the reader happened to be running at. 200 ms is the conventional settling
-time for a performance readout — long enough that the digits hold still, short enough that a
-stall is still on screen while it happens.
-
-**A branch reveals its own rows and stops there — `>`, not a descendant combinator.** The
-two rules that show an open node's children and turn its chevron were written with
-descendant selectors, and these nodes nest: opening `build` therefore matched *every*
-`.diag-children` and *every* `.chev` beneath it, laying the whole tree bare and rotating all
-three chevrons at once, while `isPhaseShown` went on correctly reporting the inner nodes
-closed and so never wrote their rows. What a reader saw was a fully expanded tree in which
-the two scenery halves and all six object kinds showed an em dash permanently — the deeper
-half of the breakdown looked broken and no amount of clicking fixed it, because the rows
-were already "open". Both rules are now scoped with `>`.
-  The driven checks had missed it for a structural reason worth recording: they opened every
-branch explicitly before reading, which makes the inner nodes genuinely open and hides the
-fault completely. The check that now guards it opens **only the outermost branch** and
-requires the inner branches to be neither laid out nor turned — the state a reader is in
-after one click. Two harness traps were found writing it: `offsetParent` is null for
-everything inside the `position: fixed` drawer, so it cannot tell an open branch from a shut
-one (ask the branch's own `.diag-children` for its computed `display` instead), and
-`getComputedStyle().transform` resolves to `none` inside a `display: none` subtree, so the
-panel has to be genuinely on screen before a chevron's rotation can be read at all.
-
-**The disclosure triangles are the solid glyph, not U+25B8's small one.** At the sizes these
-rows are read at the small triangle is a speck that reads as punctuation; a reader could not
-tell which rows opened. Both the tree's rows and the section headers use U+25B6 at 10px in
-`--ink-muted`, and they stay matched deliberately — both answer "there is more under here",
-and one idea should not need two marks.
-
-**How much of the session runs at each speed.** The drawer's sparkline holds 240 frames and
-answers "when did that stutter happen"; above it sits the distribution — for each duration,
-the share of recent frames that came in *under* it — across a rolling window of the last
-1,024 frames, about seventeen seconds at 60 fps. That length is a trade the window has to
-make: long enough to hold a stall, short enough that one ages out again rather than
-widening the axis for a minute. Kept as a ring and a histogram of the same samples
-maintained together, so a frame costs two array writes and the curve is one suffix scan
-taken only when the panel is open; a sample past the last bucket lands *in* it, since a
-300 ms stall is the most important sample the window holds. **The histogram stays an
-exceedance** — the suffix sum is the natural way to compute it — and only the drawing turns
-it over.
-  **It climbs, between its own two ends.** A rising curve answers the question as asked:
-how much of the session came in under this. It is drawn only between the two ends of the
-window it plots, so it leaves 0% at one and arrives at 100% at the other instead of running
-flat along both edges, and those two arrivals are how the extremes are read off it. The
-vertical axis is linear by default, ruled at every quarter and at both bounds, because a
-proportion reads as a proportion; the ceiling and the floor stay unlabelled, being the frame
-the curve's own two ends are read against.
-  **The axis switches to log, on a pill in the caption row.** Linear squeezes the slowest
-1% flat against the ceiling for the last third of the chart, and that region is exactly what
-a reader tuning for smoothness is after; log over three decades of the distance from the top
-(the share still at or over) reads it properly and compresses the bulk in exchange. Neither
-is right for every question, so it is a switch rather than a choice made once — off by
-default, since linear is what the chart is for and log is the question a reader goes looking
-for. In log the rules move to the decades, and the caption names the mode so a screenshot
-says which axis its curve was read against.
-  **Every rule is labelled, in both modes.** Shipped with linear drawing five bare rules and
-log naming only two of its three decades — so linear told a reader that some height mattered
-without saying which, and log left the 99.9% ceiling, the whole reason to switch to it,
-unnamed. Linear now names its quarters (0/25/50/75/100%) and log its decades up to 99.9%,
-which also retired the caption's `log to 99.9%` suffix: the axis states its own ceiling. The
-one placement exception is the rule on the plot's floor, whose label goes into the row below
-the plot at the left margin — under it is off the plot, above it lands on 25%, and the two
-overlapped outright when first drawn. The bands, the labelled budget lines, the eased axis
-and the 1-in-100 readout are untouched by the switch: only the vertical mapping changes. The
-pill shares the header chips' own CSS rules rather than copying them, at the caption row's
-scale — but **keeps a resting border and surface those chips do without**, because the
-header's chips read as controls only by sitting inside `.toggles`, which draws a bordered
-pill around the group. Shipped once without them, the switch rendered as the word "log" in
-the caption's own ink and was reported missing.
-  **The axis follows the window, floored a little past the 30 fps mark.** Fitting alone made
-the same curve mean a different thing minute to minute; a fixed 0–50 ms axis fixed that and cost the
-max its place on the chart. The floor is what keeps both: at 30 fps and better the axis
-stands still and the budget lines keep their places, so two readings of a healthy session
-compare directly, while a session with a stall in it stretches to exactly that stall and
-the curve's 100% lands on it. It is the bands that made this affordable — an axis that
-moves stays legible when the colours and the labelled lines say where the budgets are.
-  The floor is stated as the **share of the axis the slowest guaranteed mark stands at**
-(`SHARE_MARK_LEAST = 0.86`), not as that mark's own duration. At exactly `1000 / 30` the
-30 fps line landed *on* the right edge — half a pixel outside the canvas, its label flipped
-to the cramped inside-left branch, alone among the marks in reading right to left. The
-margin has to be a share because the canvas is responsive: a fixed number of milliseconds
-buys a different number of pixels at every drawer width, and 14% clears the label's own
-14px threshold down to about a 110px canvas. The floor is therefore ~38.8 ms, and 30 fps
-remains what sets it.
-  **Each mark is named twice — the rate above the line, the duration below it** (120/8.3,
-60/16.7, 30/33.3, 15/66.7) — so one dashed line answers both "how smooth is that" and
-"how long is that", and a reader never converts between them in their head. The line spans the
-full canvas height, which is what ties the two ends into one ruler; that in turn is why the
-canvas grew from 74px to 96px and the plot became the canvas less an 11px label row at each
-end. Overlaying the rows was tried and rejected: the curve reaches 100% in the top right,
-under the slowest mark's own label, and 0% in the bottom left, where the durations go.
-  The **15 fps mark** carries the poor band's own colour token on purpose. The budget list
-is both the marks and the colour bands — `bandOfExceedance` indexes it, `colours_exceedance`
-maps over it — so a fifth entry would otherwise invent a fifth band. Anything past 33.3 ms
-is poor whichever side of 66.7 it falls: the curve merely splits into two runs there and
-strokes them the same colour. The repeated token is load-bearing, and removing it would
-either lose the mark or invent a band. It appears only once the window holds a frame that
-slow; the floor does not widen to accommodate it.
-  The curve is drawn in one run per band so the colour changes exactly at the line it is
-read against. The four band colours are a **status** ramp, not the object palette — an object's
-colour says which object — screened through the dataviz validator against the drawer's own
-surface exactly as the object palette was: all four inside the dark lightness band, all
-clearing 3:1, worst adjacent normal-vision ΔE 16.3. The "good" band is a **jade** rather
-than a pure green because pure green against amber measures ΔE 1.2 under protanopia, where
-jade measures 7.9; amber against red sits at 7.7 under deuteranopia, inside the band the
-validator allows only with secondary encoding, which the labelled boundary lines are.
-  **The whole window is drawn, both extremes included.** A trim of one sample off each end
-was tried, to stop a lone collection pause setting the axis. It worked, and it was the wrong
-tool: a chart of what a session did should not quietly leave out the worst thing it did, and
-what that problem actually wanted was the axis's own timing. Removed.
-  **The axis waits, then glides.** Fitted frame for frame it snapped — one slow frame widened
-it, and the moment that frame aged out of the window it snapped back, so the curve jumped
-about and two glances a second apart could not be compared. An extent differing from what is
-drawn now starts a clock, and only a difference standing for **400 ms** moves the axis at
-all, so the dip-and-return an ageing spike produces leaves it exactly where it was — which
-is the case the trim had been covering for. Past the wait it eases exponentially on a
-**420 ms** time constant, written against elapsed time rather than a step count so it runs
-at one speed however often it is drawn, and it stops inside a **2%** deadband rather than
-chasing the last half-millisecond. While it travels, the curve is redrawn on the frame loop
-rather than the panel's five-a-second, which would show a glide as five steps; that redraw
-is gated on the canvas reporting a width, which a closed section does not.
-  Two consequences to know when reading a driven check: the axis settles a couple of percent
-short of the extent, so the curve's right-hand end lands near the far edge rather than on it;
-and a synthetic window must be fed **and** waited on with the recorder held, since one real
-frame entering between the two moves the very extent being waited for.
-
-**The overlay shapes each selected object's marker once, not twice.** `nimSelectionMarker`
-and `nimSelectionPulse` each ran `markerFor`; the split's own comment had accepted that as
-"a few dozen projections", and a profile put it at ~1 ms per selected object per frame —
-the largest overlay cost left. The marker call now shapes *with* the slot's current travel
-(the outline is identical; travel only populates pulse runs) and leaves the shaped marker
-in `g_shaped_marker`; the pulse call reuses it wherever every input matches. Reuse is sound
-because the overlay draws marker-then-pulse back to back in one synchronous pass — nothing
-can interleave — and the marker call always overwrites the entry, so it cannot survive into
-a frame whose scene differs. The stored marker is **boxed behind a `ref`**: held by value,
-the memo's own store-and-read deep-copied the wide variant twice over through `nimCopy` and
-measured as slow as the shaping it replaced — the fourth catch of the backend trap the list
-above opens with. The overlay calls also now share one `(DrawExtent, view-projection)`
-derivation per placement (`extentViewOverlay`) instead of each running `camera.frame`'s
-joins for itself.
-
-The driven layer holds the moving case now, not just the still one: a real drag from empty
-sky, with the frame build's mid-drag median banded — generous, to catch the collapse rather
-than to time the container — beside the still-frame bands.
-
-Two further things were considered and **not** done. Caching the *whole* frame, scene
-included, needs a "nothing changed" test over the scene version, the selection, the ghost,
-the hold progress and every per-object arrival animation — a stale frame is a visible bug,
-and the test is far easier to get subtly wrong than the camera-only one. And restructuring
-the whole of the shared geometry code around the JS backend's copying rules was judged the
-wrong trade for a visualiser — the `directionAcross` rewrite above is the one exception,
-taken because it sat on the per-segment hot path and could be pinned to its own
-specification mechanically.
-
-`scene.formatMultivector` and `format.nim` bind C `snprintf` and stay desktop-only.
-`nimFormatMultivector` calls the library's own `$` directly instead — confirmed by compiling
-both that it is pure Nim and byte-identical across backends. The bold Unicode it emits is
-fine in a browser; the ImGui font atlas is what cannot render it.
-
-Draw order in `glue.js` mirrors `renderer.nim` and must be kept in sync by hand: furniture
-ribbons with normal depth, then scene ribbons and points, then translucent triangles with
-`depthMask(false)`. No line width is set on either side any more; see Ribbons below.
-
-**Per-object costs at 5,038, as they stand.** Every object pays these per frame the scene is
-not held, and each of them was found by reading the generated JavaScript rather than by a
-profile row, which is why the list is kept here with the mechanism named:
-- **Flatten loops alias, never bind.** `template r: untyped = records[i]` in every flatten and
-  vertex walk; a `let` there is a `nimCopy` per record per frame. `Ink.colour` returns `lent`,
-  and a marker's fade is passed as an alpha rather than through `fade`, which returned a copy.
-- **`isAlive` compares, it does not slice.** `slot in 0 ..< ITEMS_MAX` allocates a slice object
-  on the JS backend, once per call; it is two comparisons now.
-- **The selection carries a revision.** `Selection.revision` counts real changes (a clear of an
-  empty selection and a re-select of the same single slot are not changes), so the frame
-  record and the desktop panel compare one integer instead of copying and comparing a
-  5,040-slot array every frame.
-- **Placement is invalidated per slot, not per scene.** `Scene.revisions_placing` stamps each
-  slot at the edit that last changed it; `ensurePlaced` re-places only slots stamped after the
-  revision it last filled at. `restoreFrom` (undo, redo, clear, load) stamps every live slot
-  of the snapshot, so a restore re-places the whole scene: correct, and at 5,038 a whole
-  placement pass per undo. A per-slot diff against the live scene would cut that and was not
-  done.
-- **Creation order is a heap sort, cached per revision.** `slotsCreated` was an insertion
-  sort, quadratic at 5,038; it is O(n log n) now, and the desktop panel keeps the result
-  against `scene.revision` instead of sorting every frame.
-- **The pick rejects a plane before meeting it.** `isBeyondDisc` bounds the disc's screen
-  extent by the silhouette of the sphere that contains it, conservative in the depth term and
-  in the off-axis term. Checked numerically in this audit: 20,000 random configurations, the
-  centre up to three view-widths off screen, 300 surface samples each, no silhouette point
-  outside the bound. The suite samples the same property from inside the view.
-Not done, and known: the walk still sweeps `scene.bound` twice (sky, then everything else);
-every edit copies a whole `Scene` into the timeline, which is a 1.15 MiB `nimCopy` on the JS
-backend per edit; and the timeline holds 32 of them. None of these is per frame.
-  **Verification status of this round.** The suite at every size and every driven check pass
-on a page built from this tree. The frame-time gains attributed to the fixes above were read
-off the diagnostics panel during the work and are not re-measured here; treat them as
-unrecorded rather than as figures. One driven check failed during the audit against a page
-built *before* `showOrrery` went through `restoreFrom`, and passed on a rebuild: a driven
-check is evidence only for the page just built, which `verify.sh` guarantees by ordering and
-an ad-hoc driver run does not.
+`browser_bridge.nim` compiles the shared modules through `nim js`. `glue.js` is presentation
+only — WebGL upload and draw, DOM, pointer wiring, `DataView`, `Blob`. **Every value derived
+from domain data sits in Nim behind an `{.exportc.}`.** Audits have repeatedly found drift
+here — a grade computed by counting digits in a basis name, a button mapping reimplemented,
+five render constants hand-copied — each replaced by an export (`nimBasisGrade`,
+`nimDragKindForButton`, `nimRenderLineWidths`, `nimOverlayMetrics`, `nimMenuMetrics`). The
+one thing measured on the JS side is the wheel's wedge label widths, which only the browser's
+own font layout knows. Where a desktop-only module holds the authoritative value the bridge
+duplicates it in **Nim** with a comment naming the original; a fix to one copy is not
+finished until the sibling is checked.
+
+**The page is compiled `-d:release`; the JS suite is not.** The flag lives in
+`build_browser.sh`, since `verify.sh`'s own JS build must keep its checks and stack traces.
+One `nimBuildFrame` on the opening scene: 36.7 ms debug, 21.9 ms released; `-d:danger`
+measured 18.4 and was rejected — a further tenth of a frame is not worth removing every
+bounds, range and field check from the one build a reader runs.
+
+**JS-backend rules, each found by reading the generated JavaScript**, since a return looks
+like a read and none shows up in an allocation grep:
+
+- An `Item` holds its `Scene` **by value**; the per-frame loops use the by-slot readers
+  (`geometryOf`, `labelAt`, `inkAt`, `bornAt`, `isVisible`). The `pairs` walk measured
+  ~150 ms a frame at 64 items.
+- A `var bool` accessor over an `array[N, bool]` miscompiles when consumed as a value; the
+  pair is `isVisible`/`setVisible`, plain.
+- `MeshSet`s live at module scope and are cleared, never re-declared: re-declaring measured
+  ~90 ms a frame regardless of item count.
+- **Binding a value type copies it.** `let placed = g_placed[slot]` deep-copies; the slot is
+  indexed where used and `emitObject` takes `var Placed` because nothing writes it. Every
+  flatten and vertex walk aliases with `template r: untyped = records[i]`. `Ink.colour`
+  returns `lent` (returned by value it was 8% of a moving frame at 5,038 objects); a
+  marker's fade is passed as an alpha rather than through `fade`.
+- **Assigning a literal copies it.** `addMarker` writing seven `Vertex` fields instead of a
+  literal took `nimCopy` from 41% of a moving frame's profile to nothing; the points row went
+  9.1 → 7.1 ms.
+- `slot in 0 ..< ITEMS_MAX` allocates a slice object per call; `isAlive` is two comparisons.
+- A returned tuple, an `Option[Marker]`, a `seq` per frame — each a deep copy. The overlay
+  view cache is `ensureViewOverlay` over shared globals; `markerFor` fills a caller-supplied
+  `var Marker` and reports a bool; the shaped marker is boxed behind a `ref`.
+- `lent` removes the copy only where the result is never bound (see Picking).
+- A default argument does not survive into the generated signature: a JS caller that omits
+  it passes `undefined`, falsy. `nimBuildFrame`'s flag is spelled `is_tally_skipped` so that
+  omitting it measures everything.
+
+**The furniture is built once and held while the camera is still** (`SettingsFurniture`).
+It is a function of the camera alone. The bridge sends empty furniture records on a held
+frame and `glue.js` keeps the buffer it uploaded. The grid and axes were 15 ms of a 21.9 ms
+opening-scene build; held, the median fell 34.4 → 5.8 ms over 48 of 48 idle frames.
+
+**A still frame rebuilds nothing.** `SettingsScene` carries the furniture tuple, the
+aspect, `scene.revision`, `Selection.revision` and the debug flag; where it matches the last
+frame's, the bridge skips the tessellation, **the flattens and the uploads together** (held
+separately they buy nothing). Three states refuse the hold: a ghost or drag preview follows
+the pointer; the debug layer draws the cursor's ray; an item still inside its appear
+animation is drawn differently every frame — read off `g_born_last`, a watermark carried by
+`stampBorn`, rather than by scanning every stamp. Refusing costs one rebuilt frame; holding
+wrongly freezes the picture. Under the demo, still camera: the bridge's build 18.2 → 0.6 ms.
+
+**Placement is cached per slot across camera moves.** `g_placed` holds `placeObject`'s
+answer per slot, refreshed for slots stamped since the last fill (see Scene Storage).
+Orbiting the 1,024-object demo the scene phase went 17.1 → 2.6 ms; placing was 12.0 of the
+17.1.
+
+**The per-object tally is gated on its reader.** `timed` brackets both halves of one object,
+so a 5,038-object scene made about fifteen thousand `performance.now()` calls a frame — 2.8 ms
+on their own (0.27 µs a call). `setTallying` is on only while the drawer *and* its
+diagnostics section are open: 14.5 ms watched, 9.2 unwatched on a moving frame. Counts are
+not gated. **Points are not missing an optimisation the other kinds have**: a point is one
+vertex (two when selected) in one mesh, already the minimum the wire can carry; what points
+carry is the per-object cost, and they are 4,938 of the 5,038 objects.
+
+**Loading the largest size** was 1,496 ms of frozen page, almost none of it the
+arrangement: the timeline copy above (bridge 706 → 95 ms); the objects list built for a
+section nobody had open (gated on the section *and* the drawer); the operand pickers
+rebuilding an `<option>` per object per picker and spending 5,038 FFI calls just to decide
+whether to (keyed on `scene.revision` and gated on the apply section, 119 ms); the row sort
+crossing the FFI 124,000 times (`nimSceneSlotsCreated` is that order already). The rows that
+remain are built **in slices bounded by time** (`MILLISECONDS_ROWS_SLICE` = 5), drained from
+the frame loop rather than a `requestAnimationFrame` of their own, because `recordPhaseTime`
+overwrites a phase's reading and work beside the loop is either unmeasured or clobbers it.
+Five thousand rows are 820 ms in one block. Now 101 ms, 95 of it the arrangement.
+
+**The objects list reconciles rather than rebuilds**, keyed so a row survives — the shape of
+the two-frame record pair, one side of the FFI over. A diff rather than a list of "the cheap
+callers", which a thirteenth caller breaks in silence. Only the open row builds its edit
+form: every row once carried the whole form hidden by CSS, 76 elements a row and 80,325 on
+the 1,024-object page, so a tap on `hide` froze the page for 736 ms. The geometry line
+(`nimFormatMultivector`, 11.8 ms across 1,024 rows) is held against `scene.revision`. Tap
+736 → 19 ms; an unchanged refresh 570 → 3.7 ms. A visibility toggle still pays about 24 ms
+because `setVisible` bumps the revision; a geometry-only counter would remove it and is not
+worth the contract.
+
+**The diagnostics tick writes only what moved**, and returns immediately unless the drawer
+and its section are open. It ran five times a second regardless — 2.8 ms typical, 5.7 worst,
+landing on one frame in twelve against a still frame of about a millisecond, the largest
+source of variance left — and both canvases fell back to a made-up 300-pixel width when
+unlaid-out, so a canvas inside a closed drawer was drawn at a size it did not have. A tick
+costs the frame *after* it, where no row can name the cost: the browser's style, layout and
+paint over what was written land in `display wait + browser`. Measured on the demo, still,
+drawer and diagnostics open, as the next frame's penalty: +5.2 to +6.3 ms as built (12,741
+elements), +2.6 with the objects section collapsed, **+2.4** with `content-visibility: auto`
+on each row — over half the cost was the browser and over half of *that* was the objects
+rows the tick never writes. **`content-visibility` buys what virtualising would, and its trap
+is the box model**: `contain-intrinsic-size` sizes the content box (42 px of a 61 px row); with
+`auto` in front the browser remembers each row's real height once laid out. The open row is
+exempt, since `scrollIntoView({block: 'nearest'})` against a 42 px placeholder left its
+489 px form below the fold; the scroll settles over `PASSES_SCROLL_SETTLE` = 4 frames for the
+rows above it that are still estimates. `drawPoolGrid` reads `clientWidth` *before* any write
+(a read after the writes forced 0.9 ms of layout in a 1.3 ms tick), gated on revision, ratio
+and a `ResizeObserver` flag. Figures are redrawn on the cadence of the window they average:
+the exceedance curve and the medians moved to a one-second pass, the 200 ms rows stay.
+
+**What this container cannot see.** Every frame-time figure here is SwiftShader's: on the
+demo `renderFrame` takes 0.9 ms and the same call followed by a `readPixels` takes 88.9 ms,
+a CPU rasteriser blending 132 translucent discs. Two device reports (an Android tablet, a
+real GPU) are the only hardware figures in this file: the demo at a median of 14.50 ms —
+plain vsync — with severe periodic spikes, and `ui refresh` the largest row at 3.80 ms.
+Measured directly, at the demo's opening camera 98 of 132 discs are entirely off-screen and
+the 34 visible cover 0.12 of one screen: fill rate is not the problem on a GPU, and reading
+SwiftShader's as a property of the design is the mistake. **Culling was measured and not
+done**: overdraw 0.12 screens, the display-wait median vsync, and a cull trades an
+object-vanishes bug for a fraction of a millisecond. The remaining device complaint is the
+*tail* — 1 frame in 100 at 25 ms against a 16.63 ms body — and under SwiftShader a profile is
+98% `(program)`, the rasteriser itself, so no claim is made about it; the hypothesis that the
+diagnostics' own once-a-second redraw authors it was tested and killed (0.5 ms). Two things
+were ruled out on this container for the periodic spike: the page has no timer of its own,
+and the drawer's `backdrop-filter` blur makes no difference (44 spikes against 40 over 30 s).
+
+**Not done, and known.** The frame walk still sweeps `scene.bound` twice (sky planes first,
+then everything else); every edit copies a whole `Scene` into the timeline; a restore
+re-places every slot. None is per frame. Caching the whole frame, scene included, needs a
+"nothing changed" test that is far easier to get subtly wrong than the two holds above.
+
+`nimFormatMultivector` calls the library's own `$`, pure Nim and byte-identical across
+backends; `format.nim`'s `snprintf` path stays desktop-only.
+
+*Checked.* Verified by driven checks: the furniture hold over idle frames; the scene hold
+through the drawn pixels — the canvas hashed from inside the frame that drew it, across
+eight edit paths (hide, show, recolour, move a coefficient, select, remove, undo, redo), each
+asserting frames were rebuilt *and* the canvas changed; the per-kind accounting summing to
+the scene phase, run twice (opening scene and demo, the demo orbiting since a still window
+has nothing to divide) at a 99.5% quantile, guard-run by doubling every part (0 of 857 and 0
+of 67 frames account); a placement held across a camera move drawing what a fresh one draws;
+element identity across an unchanged refresh and a hide; the tick's write count; the pool
+grid covering the capacity with every cell at least a device pixel wide; the rows count
+against `nimSceneCount()` after the fill. Verified by profile: the copies named above.
+Assumed: every millisecond figure is this container's, and the CPU-side wins carry over to
+hardware while the fill-rate cost does not.
+
+
+Diagnostics
+---
+**The frame-time breakdown accounts for the whole frame.** Rows are `build + hover + upload
++ overlay + ui` (`PHASES_TOP_DIAGNOSTIC`) plus a leftover row (`display wait + browser`)
+computed inside `recordFrameTime`, the one moment a frame's duration and its own phases
+occupy the same ring slot. `build` sums from its rows (the prologue and the view matrix are
+rows), `hover picking` is a row because on the browser it runs from event handlers and no
+bracket inside the build can see it, and the **`of which` pair** — `placing` against
+`emitting`, the algebra boundary's own cut — is a second cut through the same milliseconds
+drawn as a rule and a label rather than a nested node. `emitting` is pure by construction
+(reached only through `mesh`, which cannot name a `Multivector`); `placing` carries a cross
+product per lattice line, which `timings.nim` says rather than claiming a purity the loops
+do not have. `ms_build` is stamped after the `FrameData` record is built, so the overlay
+scans are inside the total. Each counted row carries its count beside its **name** so every
+value ends in `ms` in one column. Orbiting at distance 300: placing 20.8 ms against emitting
+6.3 — three-quarters of the drawing work is the algebra, which is the number the panel
+existed to produce.
+
+**Each row is tinted by its share of the frame, along CET-I1** (`isoluminant_cgo_70_c39`,
+Kovesi, arXiv:1509.03700, from colorcet's Python table; the `.csv` paths 404). Isoluminant
+because the rows are text and lightness is already spoken for. **The map supplies hue and
+chroma; the drawer supplies lightness**: each sample is carried into OKLab, its lightness
+replaced by the tone that row wore untinted (`--ink-muted` for a label, lifted
+`LIFT_VALUE_RAMP` toward `--ink` for the number), and chroma scaled down by bisection until
+the colour fits sRGB — never clamped per channel, which bends the hue. **The ramp ships as a
+table**: `ramp.nim` holds `STEPS_RAMP_TREE` = 17 label/value pairs, and `tools/check_ramp`
+is both generator (`--emit`) and checker, rebuilding the table from the published map and
+the lightness tokens parsed out of `shell.html`. Its floors: reproduces the re-lit map within
+0.001 of a display step; interpolation never leaves the 256-entry map by more than 0.09
+(`SEPARATION_INTERPOLATED_MAX` 1.5), which is what makes 17 enough; the ends stay 26.4 apart
+(`SEPARATION_ENDS_MIN` 25.0). **The denominator is the whole frame**
+(`SHARE_RAMP_FULL_DIAGNOSTIC` = 1.0), idle included, so 12% of a 6 ms frame and 12% of a
+30 ms frame read the same and the curve above says which session this is; `idle` stays
+untinted, being the leftover. **Walked by ratio on a symlog**: `SHARE_RAMP_KNEE_DIAGNOSTIC`
+= 0.01 is the knee below which the scale is linear (a logarithm has no zero), and each of the
+three regions — under a hundredth, a hundredth to a tenth, a tenth to all — is a third of
+the ramp. A symlog proper, not `log1p`, whose decades come out unequal (0.37 against 0.48 of
+the ramp). Laid out linearly, a 28.8 ms frame's costliest row at 12.7% and floor at 0.3% sat
+one step apart; by ratio the same frame covers nine of seventeen steps. The key is the ramp
+drawn as a gradient, sampled across share so it crowds left as the rows do.
+
+**Readings are averaged over 200 ms and rewritten on the same 200 ms**
+(`MILLISECONDS_WINDOW_READING`), counted in the frames' own durations, with the ring's median
+beside them; six frames was a twelfth of a second on a desktop and a third on a phone. Mean
+and deviation hide stutter that percentiles catch — 99% of frames at 2 ms and 1% at 40
+reports a fine mean — so the tail past p95 is what answers "does this stutter". **A phase's
+absence is recorded beside its time, never inside it**: presence is a parallel `Uint8Array`,
+a non-positive reading is clamped to zero (a clock artefact on a phone's coarsened
+`performance.now`), a non-finite one left absent so a wiring break still shows an em dash.
+This is the no-sentinel rule in the one place the value's range could not spare a member;
+the hazard was constructed by a driven check, not observed in a session. A branch reveals its
+own rows with `>` selectors, not descendants — descendant rules laid the whole tree bare on
+one click while the inner nodes reported closed and never wrote their rows.
+
+**The exceedance curve**: for each duration, the share of the last `FRAMES_EXCEEDANCE` =
+1024 frames (about seventeen seconds at 60 fps — long enough to hold a stall, short enough
+for it to age out) that came in *under* it. A ring and a histogram (`MILLISECONDS_BUCKET`
+0.5) maintained together; the bucket count is folded from the slowest mark
+(`RATE_BUDGET_SLOWEST` = 1 fps) plus one, because adding a 1 fps mark to the budget list
+alone did nothing, silently, against a histogram that stopped at 128 ms. A sample past the
+last bucket lands *in* it. It climbs between its own two ends, linear by default and log over
+`DECADES_EXCEEDANCE` = 3 decades of the share still over on a pill in the caption row (a pill
+that **keeps a resting border**, since the header chips read as controls only inside their
+`.toggles` track; shipped once without and reported missing). Every rule is labelled in both
+modes. **The axis follows the window, floored a little past the 30 fps mark**:
+`SHARE_MARK_LEAST` = 0.86 is the share of the axis the slowest guaranteed mark stands at, so
+the floor is ≈38.8 ms — a share because the canvas is responsive, and at exactly 33.3 ms the
+30 fps line landed half a pixel outside the canvas. The whole window is drawn, both extremes
+included (a trim off each end was tried and was the wrong tool). **The axis waits, then
+glides**: a difference standing `MILLISECONDS_AXIS_WAIT` = 400 ms moves it, eased on a
+`MILLISECONDS_AXIS_EASE` = 420 ms constant against elapsed time, stopping inside a
+`SHARE_AXIS_DEADBAND` = 2%; while travelling, the curve redraws on the frame loop. Marks at
+120/60/30/15/10/5/1 fps, each named twice (rate above, duration below), the 15, 10, 5 and 1
+carrying the poor band's token since the list is both the marks and the bands. The four band
+colours are a **status** ramp screened against the drawer's surface: jade rather than pure
+green (green against amber is ΔE 1.2 under protanopia, jade 7.9), worst adjacent
+normal-vision ΔE 16.3. The sparkline beneath holds `FRAMES_HISTORY` = 240 frames.
+
+**The desktop panel** holds a raw per-frame line graph (not smoothed — smoothing hides the
+rare slow frame this exists for), a fill bar for the permanent arena, a `peak_used` bar for
+the frame arena (instantaneous usage reads empty, since carve and reset happen within one
+frame), the pool grid, and `BYTES_MEMORY_TOTAL`. The arena snapshot is taken in the shared
+render function, or it reads zero in every storyboard PNG. `--timings` reports mean, p50,
+p95, p99 and max over `FRAMES_TIMING_MAX` = 20,000 frames.
+
+*Checked.* Verified by driven checks: every frame's duration reconstructed from its rows
+(worst error 0.0000 ms); `build` equal to its rows within the clock's resolution, guard-run
+by dropping a row that carries time; a costlier row never wearing an earlier colour, recovered
+from the *rendered* colour; the far end reached at the whole frame; the three ramp regions a
+third each to 1e-9; the marks appearing only once the window holds a frame that slow; the
+presence rule fed nothing but zeros and negatives, guard-run against the old rule; only the
+outermost branch laid out after one click (`offsetParent` is null inside a `position: fixed`
+drawer, so the check asks the branch's `.diag-children` for its computed `display`).
+Verified by `check_ramp` on every run: the four ramp floors. Assumed: that 200 ms is the
+right settling window; it is the conventional one.
+
+
+Demo: The Solar Neighbourhood
+---
+The demo preset is the build's own load case, in three sizes: `ScaleOrrery.Nearest` (60),
+`Neighbourhood` (360, the default everywhere) and `Catalogue` (5038, two slots short of the
+pool — the smallest margin that still proves the point of leaving one: add a point, then
+join it to something). Every size is the same construction — Sol entire, then real stars
+outward, then four objects at horizon — truncated at a different depth, so a cost can be read
+as a slope. Measured on one page under SwiftShader: 60 / 360 / 5038 objects cost 1.3 / 1.7 /
+3.0 s to build, a frame build 3.1 / 4.6 / 12.8 ms, an edit 9.1 / 8.5 / 8.0 ms — flat, the
+ring timeline doing its job. The working rule: `Nearest` for a quick check, `Neighbourhood`
+for a final one, `Catalogue` when the change could cost performance. **Each size lands on
+its count exactly**: the star walk passes over a system too large for the room left and
+keeps walking, so a nearer four-item system gives way to a further single star; the suite
+bounds the slack (once a system needing `k` items is passed over, at most `k − 1` stars can
+follow it in). `orrery.showOrrery` is the one copy — arrangement, replayed arrival and camera
+solve — reached by the bridge and by the desktop's `--demo`.
+
+**Sol at the origin, its ecliptic flat in the ground grid's own plane**, every star, known
+planet and major moon that fits at its real distance. `sol` is `1 𝐞₄`; `ecliptic sol` is
+`−89.11 𝐞₄₁₂` and nothing else, the z = 0 plane; every planet has z exactly 0, Neptune at
+12.000 units, the system radius its own scale claims. `SOL` names its bodies with real
+distances in AU; `radiusOfSolBody` compresses them by a **logarithm**, lifted by `SHIFT_SOL`
+= 1.0 so Mercury stands clear and normalised so Neptune sits at `SYSTEM_SOL.radius` = 12 —
+the real order and the shape of the real spacing, a 77× range squashed to under 10×. The
+tail indices are named constants (`INDEX_SOL_EARTH`, `INDEX_SOL_URANUS`,
+`INDEX_SOL_NEPTUNE`, `INDEX_MOON_LUNA`) held to their bodies at compile time; positional
+indices once put the ecliptic's furthest distance on a comet at 17.8 AU rather than Neptune
+at 30.05 while the doc comment said otherwise. `TILT_MOON` = 0.0897 rad carries Luna's real
+5.14° inclination, separate from the system's lean; the plane at horizon is
+`att(ecliptic) ∧ att(earth ∧ luna)` and exists only because the two differ. Moons map their
+real semi-major axes (Phobos at 9,376 km to Nereid at 5.5 million, a range of 588) onto
+`RADIUS_MOON_NEAREST` 0.08 to `RADIUS_MOON_FURTHEST` 0.32 by the same logarithm; small
+because Venus and Earth stand 0.74 units apart and a wider ring reaches the next orbit.
+
+**Two shipped catalogues, data only, generated.** `neighbourhood.nim` is a snapshot of the
+NASA Exoplanet Archive taken 2026-08-31 from its TAP service (`select hostname, pl_name,
+sy_dist, ra, dec, pl_orbsmax from ps where sy_dist < 35 and default_flag = 1`, fetched in
+distance bands): 331 planet hosts out to 31.5 parsecs. This research has made use of the
+NASA Exoplanet Archive, which is operated by the California Institute of Technology under
+contract with NASA under the Exoplanet Exploration Program. `starfield.nim` is a snapshot of
+SIMBAD, every star within the same 31.53 parsecs, with the query recorded in the file: 11,432
+returned, 180 composite entries dropped in favour of their listed components, 11,252 kept.
+Each planet host was matched to exactly one star **by sky position alone**, worst separation
+161 arcseconds — Barnard's and Kapteyn's stars, the two highest proper motions known, are the
+two worst matches, the mechanism confirming itself. Distance is not used to match because it
+is what the two archives disagree about: the exoplanet archive puts GJ 411 at 5.676 parsecs
+where the truth is 2.55. So the star layer supplies every position and distance and the
+archive only which planets exist. **Nothing is generated**: a star with no known planet is a
+star. Not claimed as data, and marked so at the code: each neighbour's disc orientation
+(`lean`, `spin`) is spread from its coordinates so discs do not stack; 49 of 544 planets with
+no recorded semi-major axis are placed by their order among siblings and stored as `0.0`.
+**What is not checked is either table against its archive**: no tool re-derives them, so a
+hand edit would pass; stated rather than papered over.
+
+**`UNITS_PER_PARSEC` = 100.** At 18 the nearest neighbour stood 24 units out against systems
+9 units wide, and thousands piled into one frame; Proxima now stands 130 units out (fourteen
+neighbour widths) and the outermost catalogue star 3,153. `RADIUS_NEIGHBOUR` = 9 and Sol's 12
+did not move with it, since what reads as clustered is the ratio of spacing to system size.
+**The price lands on the opening camera**: `RADIUS_ORRERY` fits the view to Sol and
+`FRAMED_ORRERY − 1` = 1 nearest neighbour, about 139 units against Sol's 12, so Sol is a
+twenty-pixel smudge until a reader dollies in (it reads at a distance of 48). Fitted to four,
+the camera stood 273 units off with a hundred and fifty systems on screen and nothing left to
+go and find. The camera is pitched to `ELEVATION_ORRERY_SHOWN` = 0.95 rad (at the opening
+0.42 every ring collapses to a line) and pulled back by `camera.distanceFitting`, the same
+solve a framed selection uses, azimuth left where the reader had it, `INSET_ORRERY_SHOWN`
+24 px. Planet radii use `AU_NEIGHBOUR_NEAREST` 0.01 to `AU_NEIGHBOUR_FURTHEST` 30 on the same
+logarithm, clamped rather than extended. `FACTOR_ISOLATION_ORRERY` = 2.0 floors the tightest
+pair's separation against their combined reach.
+
+**Colour says what a thing is, not which system it belongs to.** `lut_role_to_ink` maps a
+`Role` to an `Ink`: four kinds of body on four slots and everything derived on the fifth,
+`Olive`, the darkest — on a body a moon was a smudge that could not be found against the sky.
+With comets gone the palette's declared `Jade`/`Cobalt` exception is not in this scene: four
+roles, four inks.
+
+**Three suite properties a model of a real system has to get right**: the planets run
+strictly outward in the table's order; the squash is real (outermost under ten times the
+innermost, where the truth is 77); the line at horizon is proportional to `attitude` of the
+scene's own `ecliptic sol`. No point is a hub (lines and planes through any point ≤ 6, worst
+`sun 1` at 4, where a star-centred layout scored 22); the one orbit line is `sol ∧ earth`,
+asked geometrically rather than by label; three collinear points never wedge to nothing
+(held by an assertion at construction and a suite case listing offenders).
+
+*Checked.* Verified by suite at every size: every star at the distance its table gives it
+(worst error under `TOLERANCE_SINGLE`), the table ordered outward, the count exact, the
+camera solve, every object against the role table with four distinct body inks. Verified by
+reading the built scene: the multivectors quoted above, the moons' order (Phobos 0.080,
+Triton 0.217, Luna 0.219, Io 0.223, Titan 0.263, Callisto 0.279). Verified by looking, at
+three shallow elevations (0.10, 0.25, 0.45 rad): the grid reads cleanly through the coplanar
+ecliptic disc, no stipple. Verified by measuring: the page grew 2.17 → 3.64 MB for the star
+catalogue (mostly names). Assumed: the archive snapshots themselves.
 
 
 Browser UI
 ---
-`visualiser/browser/shell.html` (markup and stylesheet) and its sibling `glue.js`
-(presentation), assembled with `browser_bridge.js` by `build_browser.sh` into one
-self-contained page.
-`shell.html` ends on an opening `<script>` that the two scripts concatenate into, and the
-closing tag is appended by the script rather than living in a file that would then not
-parse on its own.
+`shell.html` (markup, stylesheet) and `glue.js` are assembled with `browser_bridge.js` by
+`build_browser.sh` into one page. `shell.html` ends on an opening `<script>` the two scripts
+concatenate into. The font payload is kept out of the tracked file: an `@EMBED:<file>@`
+token per face is substituted with that WOFF2's base64 data URL, so the tracked source is
+26 KB rather than the ~966 KB it assembles to.
 
-Both were untracked for a long stretch, which was an oversight rather than a decision:
-neither is generated, and without them the browser target cannot be rebuilt from the
-repository at all. What *is* deliberately kept out is the font payload — `shell.html`
-carries an `@EMBED:<file>@` token per face and the script substitutes each with that
-WOFF2's own base64 data URL, so the tracked source is 26 KB rather than the ~966 KB it
-assembles to, and the faces stay vendored under the same rule as `pga` (§ Dependencies).
-Family, weight and `unicode-range` stay in the tracked file beside the codepoints they
-cover; only the bytes are injected. Verified by assembling both ways and comparing: the
-six payloads hash identically and the pages differ only by the comment explaining the
-split.
+**Two pixel spaces, and each layer works in exactly one.** The render layer (`nimBuildFrame`,
+`gl.viewport`) works in framebuffer pixels, `clientWidth × devicePixelRatio` capped at 2.5.
+The interaction and overlay layer (`nimUpdateCursor`, `nimUpdateHover`, the markers, the
+menus, the SVG viewBox) works in **CSS pixels** and is handed `clientWidth`/`clientHeight`.
+Handed framebuffer dimensions it converted positions back down per point while using every
+length raw, so a marker's size scaled with the device pixel ratio; `RADIUS_PICK_POINT` on a
+Pixel 5 went from ~13.6 to a measured 34.0 CSS px with no change to `picking.nim`.
 
-**Two pixel spaces, and each layer works in exactly one of them.** The **render** layer
-(`nimBuildFrame`, the WebGL viewport, `gl.viewport`) works in framebuffer pixels —
-`canvas.clientWidth × devicePixelRatio`, capped at 2.5. The **interaction and overlay**
-layer — `nimUpdateCursor`, `nimUpdateHover`, `nimSelectionMarker`, `nimAnchorScreen`,
-`nimDragMenuLayout`, and the SVG whose viewBox they feed — works in **CSS pixels**, and is
-handed `canvas.clientWidth`/`clientHeight` to say so. It previously received framebuffer
-dimensions and converted marker *positions* back down per point while using every *length*
-raw, so a marker's real size scaled with device pixel ratio and any answer to "make it
-bigger" was unstable by a factor of the ratio. Asking in CSS pixels throughout deletes the
-conversions rather than adding any, and it silently fixed a second bug of the same family:
-`picking.RADIUS_PICK_POINT` (34) is now 34 CSS pixels, so a point's real touch target on a
-Pixel 5 went from ~13.6 to a measured **34.0** CSS px. Nothing in `picking.nim` changed;
-it was always the caller's units that were wrong.
+**Chip row** (always visible): brand/drawer toggle, undo and redo as bordered `.btn`
+rectangles, axes and grid as a segmented `.toggles` pill, then a `☰` menu holding the rare
+file actions. A pill shows state, a bordered rectangle is a momentary action. Below 520 px the
+brand label drops to its mark alone; the breakpoint was 480 and wrong by 39 px, found by
+sweeping the viewport a pixel at a time. **Stacking**: `.veil` (containing the chip row) is
+`z-index: 5`, above the drawer's 4, below the menus' 6 — set on `.veil`, not `.chip-row`,
+because `position: fixed` opens a stacking context and a descendant cannot outrank its
+ancestor's sibling.
 
-**Chip row** (always visible): brand/drawer toggle, then undo and redo as plain bordered
-`.btn` rectangles, axes and grid as a segmented `.toggles` pill, then a `☰` menu button.
-The visual grammar is deliberate — a pill shows state you can read at a glance, a bordered
-rectangle is a momentary action. Sorting by frequency matters: undo/redo and the view
-toggles are reached constantly and must not cost an extra click, while the menu holds only
-the genuinely rare file actions (save scene/image, load scene/demo, under `save` and `load`
-titles). Below 520px the brand label drops to its mark alone, or five controls plus the full
-label overflow a narrow phone. **That breakpoint was 480 and wrong by 39 px**: the row does
-not actually fit until 520, so every width from 481 to 519 overflowed. Found by checking the
-rename that shortened the label, and measured by sweeping the viewport a pixel at a time
-rather than by picking a rounder number — with the old "RGA workbench" label it was 50 px
-over, so this predated the rename rather than being caused by it.
+**Drawer sections** (alphabetical: apply, diagnostics, objects, view; only `objects` open by
+default). Each object row is `[✓] label` + edit/hide/remove, then `shapeWord: coefficients`,
+then the editor when open. Hidden rows dim to `opacity: 0.45`. The **coefficient grid** stacks
+one flex row per grade (`nimBasisGrade`, so nothing hardcodes the dimension).
 
-**Stacking.** `.veil` (which contains the chip row) is `z-index: 5`, above `.drawer`'s 4 and
-below `.selection-menu`/`.top-menu`'s 6. It must be set on `.veil`, not on `.chip-row`:
-`position: fixed` always opens a stacking context, so a z-index on a descendant cannot
-outrank its ancestor's sibling. Without this the drawer paints over the chip row's buttons
-at viewport widths between the 640px bottom-sheet breakpoint and roughly 950px, where the
-drawer is a full-height right panel occupying exactly that corner. `.drawer-scroll` gets
-extra top padding above 641px so its intro text starts below the chip row.
+The desktop panel (`panel.nim`, `WIDTH_PANEL` 440) mirrors this section for section. Where
+Dear ImGui forces a difference: selection is picked from the object rows (the row checkbox
+toggles membership, the name picks that one alone); a grade's row wraps explicitly at
+`COEFFICIENTS_PER_ROW` = 6 with the basis name **above** its cell (beside charged every cell
+the width of the longest name and forced the panel to 680 px); cells divide the line they are
+on — the browser's `flex: 1 1 56px` written out; an unselected arity segment is filled and
+bordered, since a transparent segment on the 3D scene read as a caption; row buttons end flush
+right (`guiAlignRight`); nothing carries a hardcoded width (`guiPlotLines` reads a zero width
+as two thirds of the window); names recede in `--ink-faint` and section headers carry
+`--surface-raised`; the edit toggle is a small button over session state, not a
+`CollapsingHeader`; hidden rows dim through a style-alpha push, not `BeginDisabled`; the
+atlas ranges start at 0x2700 so `✕` (U+2715) renders.
 
-**Top bar**, outside every section: `add`, the axes/grid toggles and the scene-file
-save/load controls. `add` has to be able to open the objects section, so it cannot live
-inside it. (On the browser the axes/grid pill and the `☰` file menu occupy the chip row;
-Dear ImGui has no equivalent overlay, so the desktop gathers all of it into one bar under
-undo/redo.)
-
-**Drawer sections** (alphabetical: apply, diagnostics, objects, view; only `objects`
-open by default). Each object row is one line of `[✓] label` + edit/hide/remove buttons,
-then `shapeWord: coefficients` on a single line, then the editor when open. The leading
-checkbox mirrors the selection highlight, which is single-select on the desktop, so
-checking one row releases another. Hidden rows dim to `opacity: 0.45`, independent of the
-selection highlight so the two can combine.
-
-**Coefficient grid** (one shared builder, used by whichever row is editing): the 16 inputs
-are stacked one flex row per grade, 0 to n, rather than wrapped at a fixed column count
-that cuts across grade boundaries. Grade comes from `nimBasisGrade`, so nothing hardcodes
-this build's dimension.
-
-The desktop panel (`panel.nim`) mirrors this section for section — same four headers in
-the same alphabetical order with only `objects` open, the same coefficient grid grouped by
-grade with a live ghost, the same selectable row carrying the item's ink plus inline
-edit/hide/remove and one wrapped `shape: coefficients` line, the same 0.45 dimming on a
-hidden row, the same recency ordering, the same arity filter, and the same greyed-out
-undo/redo. Where Dear ImGui forces a difference:
-
-- **Selection is picked from the object rows, not from the 3D view.** The row checkbox
-  toggles membership and the row's name picks that one object alone; the browser gets
-  single-select from a plain canvas click, which this build has no equivalent of, so the row
-  carries both gestures. Operands additionally stay pickable from named combo boxes.
-- **A grade's row wraps explicitly, six cells to a line.** `sameLine` places widgets
-  unconditionally with no wrapping of its own, so the grid decides where to break: a new
-  line at every grade boundary and again every six coefficients, with cell width divided
-  out of `guiContentWidth` so the count holds at any panel width. Six because this build's
-  largest grade holds exactly six, which puts every grade on one line and makes the desktop
-  grid match the browser's own grade row one for one. A build of higher dimension wraps
-  rather than overflowing.
-  A basis name sits **above** its cell, not beside it, as the browser's `.coeff-grid` does.
-  Beside charges every cell the width of the longest name whether it needs it or not, which
-  is what forced the panel out to 680 px and made opening an editor the thing that set the
-  window's width; above costs one line of text per grade and lets the panel sit at 440,
-  near the browser drawer's own 400. `guiGroupBegin`/`guiGroupEnd` is what makes a name and
-  its widget advance `sameLine` as a single item — Dear ImGui has no notion of a labelled
-  cell.
-  Cells divide the line they are on rather than a fixed sixth of the panel, so a grade
-  fills its own row — the scalar's lone cell spans the width, grade 1's four take a quarter
-  each. Six is the wrap point, not the divisor. This is the browser's `flex: 1 1 56px`
-  written out.
-- **An unselected arity segment is filled and bordered, not transparent.** The browser's
-  `.toggles` segment is transparent because the pill's own track is what makes it visible;
-  a panel drawn straight onto the 3D scene has no track, and a transparent segment
-  disappeared into the scene entirely — `binary` read as a caption rather than an option.
-  It carries the browser's `--surface` and `--border` tones instead, so both controls still
-  read as the same thing.
-- **An item row's buttons end flush against the right edge**, as the browser's do, rather
-  than following its name — `guiAlignRight` over a run measured with `guiButtonSmallWidth`.
-  Names vary in length, so left-packed buttons formed a ragged column that moved under the
-  pointer from row to row.
-- **Nothing in the panel carries a hardcoded width.** Fields, the frame-time plot and both
-  arena bars size themselves from `guiContentWidth`. The fixed widths they used to carry
-  were each tuned against a panel that then changed width twice, and every change left
-  something stopping short of the edge; `guiPlotLines` was the worst of it, since Dear ImGui
-  reads a zero width as its own default *item* width — two thirds of the window — so the
-  graph sat at two thirds beside a full-width bar.
-- **Names recede and values read.** A control's own name is drawn in the browser's
-  `--ink-faint`, and section headers carry `--surface-raised` rather than Dear ImGui's
-  default saturated blue: five blue bars stacked were the loudest thing in a panel whose
-  job is to sit over the 3D scene without burying it.
-- **The row's edit toggle is a small button over session state**, not a `CollapsingHeader`,
-  which spans the full remaining width and would push hide/remove onto their own line.
-- **Hidden rows dim through a style-alpha push, not `BeginDisabled`**, which would also make
-  the row's own show button unclickable.
-- **The abandon button needs the Dingbats glyph block.** `✕` is U+2715; the font atlas
-  ranges started at 0x27C0 and rendered it as tofu. Widened to 0x2700.
-
-**Diagnostics** shows browser-appropriate stand-ins — frame time from `requestAnimationFrame`
-deltas, `performance.memory` where available, live pool slots — rather than fabricating the
-desktop build's arena numbers, which describe that build's allocator and have no browser
-equivalent worth pretending to.
-
-**The object-pool strip wears the scene's own colours**: an occupied cell is drawn in that
-object's ink, a free one in `Ink.Grid`, the palette's recessive furniture colour. It reads
-as the scene rather than as an anonymous occupancy count — which slot an object sits in,
-and how far `inkCycled` has walked the palette, are both legible at a glance. Both UIs get
-the whole strip as one buffer of RGB triples, so neither presentation layer carries a
-palette rule: `guiPoolBar` takes `count * 3` floats and knows nothing about occupancy,
-and `nimPoolCellColors` hands JS the same array rather than letting it look up inks itself.
-Verified by reading the rendered cells back — every live cell matches its own item's ink,
-every free cell shares one colour used by no live cell, and adding one object recolours
-exactly one cell.
+**The object-pool grid**: one square per slot, wrapped to the panel's width, occupied cells in
+their object's ink and free ones in `Ink.Grid` (`INK_POOL_FREE`), so which slot an object sits
+in and how far `inkCycled` has walked are legible. Both UIs get the strip as one buffer of RGB
+triples and carry no palette rule. The cell size is derived, not constant: both front-ends
+pick the largest cell whose wrapped grid fits `HEIGHT_POOL_MAX` = 150 px (`CELLS_POOL`,
+`SIZES_POOL_CELL` 14 down to 2), and the gap goes before the cell does, because below four
+pixels a one-pixel gap is half the strip. Six pixels over ten thousand slots was 191 rows; the
+desktop's original 14 wrapped to 37 rows and 555 px and pushed the byte accounting off the
+panel. The browser draws it on **one canvas**, the one scaled by `devicePixelRatio` (a grid of
+hard-edged squares loses to a doubled display; 1.5 px strokes do not) — a thousand spans cost
+a layout pass every time anything else in the drawer was written, and as flex cells with
+`gap: 1px` at 1,024 slots every one of them was 0 px wide while every check passed.
 
 **Handing a file to the reader** — one route, `deliverFile`, for the scene file and the
-image alike. It was reported that neither `save → scene` nor `save → image` did anything on
-a phone, and that was **two faults presenting as one**, plus a third that hid both:
+image. The image is captured **inside the frame that drew it**, a one-shot flag read between
+the last draw and the yield (the context has no `preserveDrawingBuffer`, which would keep a
+copy of every frame to serve a button pressed once). Delivery tries three routes and never
+asserts a file was written: `navigator.share` with the `File` (transient activation, which
+a click has); an `<a download>` **appended to the document**, clicked, removed (a detached
+anchor's click is ignored by Safari); a link to tap plus, for an image, the picture itself in
+a toast that stays, whenever the page is framed. **Every route reports itself** in the toast
+and the diagnostics section — `framed`, `origin`, `share api`, `web-share` policy,
+`activation`, one line per route — because three rounds were spent guessing at a phone that
+could only report "nothing happened". **The artifact frame refuses downloads**: with
+`allow-downloads` withheld even a genuine user tap on a real anchor is refused in silence,
+and the Android report from inside the Claude app names all three refusals (`web-share:
+false`, `download: no signal`, `new tab: blocked`), so no route from inside it can produce a
+file; the toast says to open the page in its own tab. Two theories tested false: an
+asynchronous `toBlob` spending the activation (the window is about five seconds and spans
+the task boundary), and a backgrounded tab stranding the capture. **Deliberately not
+built**: the scene as clipboard text with a paste box, the only thing that could carry a
+scene out of that frame — a second serialisation to undo one host's sandbox.
 
-1. Each path built its own `<a download>` and clicked it **without appending it to the
-   document**. A detached anchor's synthetic click is ignored by Safari outright and is
-   unreliable elsewhere — which is a phone. The two paths were the same five statements
-   written twice, so neither was ever fixed in one place.
-2. The PNG was read by `canvas.toBlob` **from the click handler**, a task of its own. The
-   context is created without `preserveDrawingBuffer`, so by then the drawing buffer has
-   been composited and discarded; `toBlob` then hands back `null`, and the unchecked
-   `URL.createObjectURL(null)` threw inside an async callback nobody watched.
-3. Neither path had a `try`/`catch` and both toasts were success-worded and unconditional,
-   so the page said "Saved 5 object(s)" while delivering nothing. The **load** path, by
-   contrast, reported failure two ways. That asymmetry is why the fault survived: the code
-   could not tell you it had failed.
-
-The image is now captured **inside the frame that drew it** — a one-shot flag set by the
-button, read in `frame()` between the last draw call and the yield, the same
-capture-then-yield shape `runStoryboard` uses on the desktop. `preserveDrawingBuffer: true`
-was rejected: it makes every frame keep a copy forever, on the device least able to afford
-it, to serve a button pressed once in a session.
-
-Delivery then tries three routes in order, and **never asserts a file was written**:
-
-1. **`navigator.share` with the `File`**, where the platform offers one — a phone. It needs
-   transient activation, which both callers have, being inside a click. Cancelling the sheet
-   is a decision rather than a failure: it says nothing and stops.
-2. **An `<a download>` appended to the document**, clicked, removed. The appending is the
-   whole of the fix to fault 1.
-3. **A link to tap, plus — for an image — the picture itself**, left in a toast that stays
-   until dismissed, whenever the page is framed.
-
-Verified by driving, not by reasoning — every claim below is a measurement:
-
-- **Desktop Chromium, unframed.** Both buttons fire a real `download` event. The scene file
-  arrives as 675 bytes opening `RGAS`, version 3, 16 basis terms, 5 items; the PNG as
-  185,135 bytes opening with the PNG signature. Saved and re-read through the page's own
-  load input, the five objects come back in the same creation order (`a`, `b`, `c`, `o`,
-  `ground`) — the whole route end to end.
-- **The PNG holds the view, not an empty buffer.** A pixel census of the delivered file:
-  1000×760, **656 distinct colours**, backdrop 55.6%, plane wash 33.3%, with the axes,
-  grid, disc and all five points present. A "did a file arrive" check alone would have
-  passed on the blank image fault 2 produced, which is why this one exists.
-- **Phone profile (Pixel 7) with `navigator.share`/`canShare` stubbed.** Both buttons take
-  the share route and hand it a real `File` — `scene.rgascene`/`application/octet-stream`
-  and `rga_visualiser.png`/`image/png` — and no download fires, correctly, since share
-  short-circuits.
-- **Framed in a sandbox without `allow-downloads`**, which is the artifact's own situation.
-  No download fires and none can: measured, **even a genuine user click on a real anchor is
-  refused there, in silence**. What the reader gets instead is a toast that says only "A
-  900×760 image of this view is ready.", the link, and — for an image — the picture itself
-  to press and hold. Drawing a blob into an `<img>` is not a navigation, so it is the one
-  route that survives that sandbox; the scene file has no equivalent and cannot be
-  delivered there at all.
-
-**The artifact frame refuses downloads, and that is now measured rather than suspected.** An
-Android phone in the Claude app reached the framed fallback, meaning the share route had
-already failed, and then a real tap on the fallback link did nothing either. Re-running the
-framed probe with `sandbox="allow-scripts allow-downloads"` settles who is at fault: in that
-frame the automatic anchor fires a real download **and** the reader's own tap fires a second
-one. Same page, same code, same tap — only the flag differs. So the anchor mechanics are
-sound, nothing of ours swallows the gesture, and **no download route can work in the frame
-this page ships in.** For an image the press-and-hold picture remains; for a scene file there
-is no route left there at all.
-
-**Every route now reports itself**, in the toast and in the drawer's Diagnostics section:
-`framed`, `origin` (opaque or own), `share api`, `web-share` policy, `activation` at the
-moment of the attempt, then one line per route. This exists because three rounds were spent
-guessing: a download a frame refuses raises no event, and the share sheet's rejection was
-being swallowed, so a reader on a phone could only ever report "nothing happened". The
-`canShare` gate is part of that fix — it used to be a *precondition*, so a platform with
-`share` but no `canShare` skipped the share route entirely and silently.
-
-Two theories about the image path were tested and are **false**; they are recorded so they
-are not re-derived from how plausible they sound:
-
-- *An asynchronous `toBlob` spends the transient activation `navigator.share` needs.* It does
-  not — the window is about five seconds and spans the task boundary. Measured against a stub
-  that refuses unless `navigator.userActivation.isActive`: the existing build passes it.
-- *A backgrounded tab strands the capture, since `requestAnimationFrame` stops there.* Did not
-  reproduce; tapping and immediately backgrounding the page still delivered the file.
-
-So the capture stays asynchronous and inside the frame loop. A synchronous
-`renderFrame` + `toDataURL` in the click handler was written, measured against both theories,
-and reverted: with no benefit left it only costs a blocked main thread for the whole encode,
-most of a second on a phone-sized canvas. `renderFrame` itself was kept — splitting the draw
-out of `frame()` mirrors `visualiser.renderFrame` on the desktop and costs nothing.
-
-**The Android report came back, and it names all three refusals.** In the Claude app the
-frame reports `origin: own` -- so it is same-origin, and blob URLs and storage are ordinary --
-but `web-share: false` with `share: files no`, `download: no signal`, and `new tab: blocked`.
-The frame withholds `allow-downloads`, `allow-popups` and the `web-share` permission policy
-together, so **no route from inside it can produce a file**, and no further work on this page
-will change that. `canShare` returning false is reported now rather than ending the attempt --
-that gate had cost a route twice -- and the toast says the actionable thing: open the page in
-its own browser tab, where it downloads normally.
-
-**Deliberately not built**: a route needing no file at all -- the scene as text on the
-clipboard, with a paste box on the load side -- which is the only thing that could carry a
-scene out of that frame. Rejected because the embedded frame is not where this is meant to be
-used; it costs a second serialisation of the format and a load affordance that exists solely
-to undo one host's sandbox.
-
-Nothing in this is Nim's to do. The bytes were already correct and tested on both backends;
-what failed was delivery, which is `glue.js`'s side of the line by
-`REQUIREMENTS.md`'s own split.
+*Checked.* Verified by driving: both save buttons fire a real `download` on unframed desktop
+Chromium (675 bytes opening `RGAS`; a 185,135-byte PNG with 656 distinct colours, backdrop
+55.6%, wash 33.3% — a "did a file arrive" check passes on a blank image); the share route on
+a Pixel 7 profile with `share`/`canShare` stubbed; the framed fallback with and without
+`allow-downloads`; the pool grid's coverage and cell width; the chip row fitting from 520 px
+up; the marker size in CSS pixels on a Pixel 5 profile. Assumed: nothing about Safari beyond
+its documented refusal of detached anchors.
 
 
 Edit Sessions
 ---
-Adding an object and editing one are the same gesture, so both UIs run **one edit session
-at a time**, in one of two modes:
+Adding and editing are the same gesture, so both UIs run **one edit session at a time**:
 
 |                | Composing (new)             | Editing (existing)              |
 |----------------|-----------------------------|---------------------------------|
 | Started by     | the top bar's `add`         | the row's `edit`                |
-| Backing slot   | none — nothing in the scene | the row's own slot              |
+| Backing slot   | none                        | the row's own slot              |
 | Row shows      | `save` `✕`                  | `save` `✕` `hide` `remove`      |
 | `save`         | adds the object             | writes the four fields back     |
 | `✕`            | discards; nothing was added | reverts; the object never moved |
 
-Both stage the same four things — sixteen coefficients, label, ink — and preview through
-the same ghost. `hide`/`remove` are absent while composing because neither means anything
-for an object that does not exist yet. The composing row renders at the top of the list
-(it is the newest thing), and `add` is **disabled while a session is open**, so starting a
-second one cannot silently discard the first.
+Both stage sixteen coefficients, label and ink, and preview through the same ghost. `add` is
+disabled while a session is open. **A session never writes to the scene before `save`**, so
+the preview is invisible to `nimSceneSlots`, undo, save/load and `pickNearest`; the row is
+drawn from session state, which carries its own `array[LABEL_MAX, char]` (a pointer into the
+scene's label storage would edit it in place). `session: Option[EditSession]` with
+`EditSession.slot: Option[int]`, `none` while composing — no sentinel slot. `EditSession`
+owns `geometry`/`stage`, the two conversions between staged coefficients and a
+`Multivector`. The ghost is `INK_GHOST` through the same `addObject` a real object uses; an
+all-zero ghost degrades to "nothing to draw" through the existing `shape.isNone` branch.
+`save`, `✕`, undo and redo all clear it.
 
-**A session never writes to the scene before `save`.** That is what makes the preview safe:
-it stays invisible to `nimSceneSlots`/`nimSceneCount`, and so to undo/redo, save/load and
-`picking.pickNearest`. Writing a half-built object into a real slot would break all four.
-The row is therefore drawn from session state, not from a slot. Desktop note: passing
-`gui.inputText` a pointer into the scene's own label storage would edit it in place, so the
-session carries its own `array[LABEL_MAX, char]`.
-
-**Session state is a nested option**, honest about the two modes: `session: Option[EditSession]`
-where `EditSession.slot: Option[int]` is `none` while composing — no sentinel slot standing
-for "new". In the browser the same state sits at module scope, not on the row: `refreshObjectsUI`
-rebuilds every row through `innerHTML = ''`, destroying any closure held there.
-
-**Ghost preview.** Editing any session field fires `nimSetGhost` (browser) or updates
-`panel.session` (desktop), drawing a live muted preview through the same
-`mesh.addObject` dispatch a real object uses, tinted `INK_GHOST = Ink.Guide` (reusing its
-documented "construction helper" meaning). One ghost serves both modes — that is a direct
-consequence of unifying the sessions; two independent add/edit previews would have needed
-two. An all-zero ghost degrades to "nothing to draw" through `addObject`'s existing
-`shape.isNone` branch with no special case. `save` and `✕` both clear it, as do undo and
-redo, since a restored snapshot's slot numbers need not match the open session's.
-
-Verified by driving both UIs: editing a coefficient leaves `nimItemCoefficients(slot)`
-unchanged until `save`, `nimSceneCount()` is unchanged for the whole composing session,
-`✕` leaves the count and the object untouched, and a staged grade-1 point adds exactly one
-vertex to the desktop mesh (1964 → 1965) — counted, not pixel-diffed, because animation
-drift between two runs pollutes a pixel diff with thousands of false differences.
+*Checked.* Verified by driving both UIs: coefficients unchanged until `save`; the count
+unchanged for the whole composing session; a staged grade-1 point adding exactly one vertex
+to the desktop mesh (counted, not pixel-diffed — animation drift pollutes a pixel diff).
+Nothing assumed.
 
 
 Operation Notation
 ---
-**One table, `scene.lut_operation_to_notation`, read by both builds.** Each entry is
-Lengyel's own bold notation, two spaces, the English name — `𝐦⊖  attitude`. There is no
-second table to keep in step: a previous round kept a plain-ASCII desktop copy because the
-Dear ImGui atlas carried no astral-plane glyphs, which was a property of the font chosen
-(DejaVu), not of the GUI. See Typefaces below.
-
-`scene.notationSubstituted` swaps the bold `𝐦`/`𝐧` for real operand names when a derived
-object is labelled. It isolates the symbolic prefix first — the English name after it is
-full of ordinary m's and n's — and substitutes through two sentinel passes, so an operand
-whose own name contains a placeholder is never re-touched and a template with `𝐧` twice
-(the projections) substitutes both. Derived labels therefore never contain bold letters,
-which is why `LABEL_MAX` is unaffected.
+**One table, `scene.lut_operation_to_notation`, read by both builds**, each entry Lengyel's
+bold notation, two spaces, the English name (`𝐦⊖  attitude`); `notationSymbolic` and
+`notationNamed` are its two halves. `notationSubstituted` swaps `𝐦`/`𝐧` for real operand
+names through two sentinel passes, so an operand whose name contains a placeholder is never
+re-touched and a template with `𝐧` twice substitutes both.
 
 **Every glyph and its placement comes from that operator's own declaration doc comment in
-`pga/operators.nim`/`pga/multivectors.nim`** — never from `pga.nim`'s top-of-file summary
-table, whose "Lengyel" column renders several unary operators in a functional shorthand
-(`att(𝐦)`, `sup(𝐦)`, `car(𝐦)`) that the declarations do not use. Getting this wrong is a
-repeat offence: the table has carried prefix glyphs (`∩m`) where the declaration says
-postfix (`𝐦∩`). Verify by extracting codepoints, not by eye — the proper minus sign
-(U+2212, not a hyphen) is an invisible difference in a text editor.
+`pga/operators.nim`/`pga/multivectors.nim`** — never from `pga.nim`'s summary table, whose
+"Lengyel" column renders several unary operators in a functional shorthand the declarations
+do not use, and which has carried prefix glyphs where the declaration says postfix. Verify by
+extracting codepoints, not by eye; U+2212 minus is invisible against a hyphen. One deliberate
+exception: `Attitude` reads prefix in its doc comment and is placed postfix (`𝐦⊖`) on explicit
+request, for consistency with every other unary entry.
 
-The five accented operands use **spacing modifier letters** (`𝐦ˆ` U+02C6 unitize, `𝐦ˍ`
-U+02CD left complement, `𝐦¯` U+00AF right complement, `𝐦˜` U+02DC reverse, `𝐦˷` U+02F7
-antireverse) rather than the combining marks the same accents also exist as. Rendered, the
-combining forms landed to the *right* of the operand rather than over it — Dear ImGui has
-no shaper and simply advances by each glyph's own width — and antireverse's tilde-below
-came out indistinguishable from left complement's low line. A spacing modifier carries its
-own advance, so both renderers place it identically. Caught by rendering all 27 entries at
-once and reading them, not by reasoning about the font.
+The five accented operands use **spacing modifier letters** (`ˆ` U+02C6, `ˍ` U+02CD, `¯`
+U+00AF, `˜` U+02DC, `˷` U+02F7), not combining marks: Dear ImGui has no shaper, so a
+combining form landed to the right of its operand, and antireverse's tilde-below read as
+left complement's low line. Of the four compound operators only the `★` pair works infix;
+`m ∧☆ n` must be written `` m.`∧ ☆`n ``.
 
-One deliberate exception: `Attitude`'s doc comment reads prefix (`⊖𝐦`) but the table places
-it postfix (`𝐦⊖`) on explicit request, for consistency with every other unary entry.
+*Checked.* Verified by rendering all 27 entries at once and reading them; by
+`tools/check_atlas` on every run. Assumed: nothing.
 
 
 Typefaces
 ---
 **Noto Sans** for UI text, **Noto Serif** for prose, **Commit Mono** for code and figures;
-a `STYLE.md` rule, not just this project's habit. All are OFL-1.1 and redistributable with
-notice.
+all OFL-1.1. The desktop atlas merges three faces by codepoint range (`ImFontConfig.MergeMode`):
+Noto Sans for Latin, punctuation, subscripts and modifiers; **Noto Sans Math** for the
+operators and bold operands; **Noto Sans Symbols 2** for the dual stars and the abandon
+cross. `ImWchar` is 32 bits via `-DIMGUI_USE_WCHAR32` from `gui.nim`, a compiler flag rather
+than an edit to the vendored `imconfig.h`. Coverage was measured: every non-ASCII codepoint
+in the source rendered against each face and compared bitmap-wise against `.notdef`, which
+is what found DejaVu lacking `⟑` and `⟇`.
 
-No single face covers what the UI writes, so the desktop atlas merges three by codepoint
-range (`gui_shim.cpp`, `ImFontConfig.MergeMode`): **Noto Sans** for Latin, punctuation,
-subscripts and spacing modifiers; **Noto Sans Math** for the operators and Lengyel's bold
-operands; **Noto Sans Symbols 2** for the bulk/weight dual stars and the abandon cross.
-`ImWchar` is widened to 32 bits with `-DIMGUI_USE_WCHAR32` passed from `gui.nim` — a 16-bit
-`ImWchar` cannot express U+1D426 at all — set as a compiler flag rather than by editing the
-vendored checkout's `imconfig.h`, which is never committed and would not survive a reclone.
+The browser **embeds the faces** as base64 `@font-face`, split on the same `unicode-range`
+boundaries. The maths and symbol faces are declared under the *sans* family, and `--mono` and
+`--serif` name that family after their own, or a bold operand in monospace text falls through
+to the system. Embedded rather than named because an artifact page cannot reach a font host;
+about 940 KB of the ~1.6 MB page. Faces come from Fontsource (all 5.3.0) as WOFF2, vendored
+into `fonts/` and never committed; the desktop reads Noto from `fonts-noto-core`.
 
-Coverage was **measured, not assumed**: every non-ASCII codepoint in the source (36 of them)
-rendered against each face and compared bitmap-wise against `.notdef`, because a missing
-glyph is a box, not an error. That check is also what found the previous font's real bug —
-DejaVu lacks `⟑` and `⟇`, so `𝐦 ⟑ 𝐧  geometric product` had been drawing as tofu.
-
-The browser **embeds the faces** as base64 `@font-face`, split by the same `unicode-range`
-boundaries the desktop merges on. The maths and symbol faces are declared under the *sans*
-family, and `--mono` and `--serif` therefore name that family too, after their own: neither
-Commit Mono nor Noto Serif carries one of those codepoints, so without it a bold operand or
-a wedge in monospace text falls through to whatever the viewer's system happens to have —
-exactly what embedding the faces exists to rule out, and invisible on any machine with
-DejaVu installed. Listing the family costs no payload: CSS falls back per character, and a
-range-restricted face only ever matches the characters it is declared for.
-
-Embedded rather than named because an artifact page cannot reach an external font host, and
-naming a face the viewer might not have installed would leave the two builds looking
-different — which is the whole point of the rule. Costs about 940 KB of the ~1.6 MB page.
-
-Faces come from Fontsource (`@fontsource/noto-sans`, `-serif`, `-math`, `-symbols-2`,
-`commit-mono`, all 5.3.0) as WOFF2, vendored into `fonts/` — kept locally, never committed,
-licence notice beside the copies, fetch commands in `dependencies.list`. The desktop reads
-the same Noto families from `fonts-noto-core`; Commit Mono is not packaged at all. All are
-OFL-1.1.
+*Checked.* Verified: the coverage measurement above; the six embedded payloads hashing
+identically whichever way the page is assembled. Assumed: nothing.
 
 
 Naming And Number Formatting
 ---
-Basis elements are named exactly as the library's own `$` names them — `𝟏` for the scalar,
-`𝟙` for the antiscalar, and a bold `𝐞` with subscript digits for the rest — in both UIs and
-in the multivector text beside the grid. `scene.lut_basis_to_name` **derives** those names
-from the enum rather than transcribing them, so a build of another dimension names its own
-elements; a test asserts each entry equals what the library prints for that element alone,
-which is what keeps the derivation honest. The rule is a second copy of the one inside
-`pga/multivectors.nim`'s `$`, which does not expose it separately — check that one whenever
-this is touched. ASCII names (`E423`) were a workaround for the previous font's missing
-mathematical bold; the merged atlas removed the constraint, so the workaround went with it.
+Basis elements are named exactly as the library's `$` names them (`𝟏`, `𝟙`, bold `𝐞` with
+subscript digits); `lut_basis_to_name` **derives** them from the enum, and a suite case holds
+each entry equal to what the library prints. Magnitudes read to **four significant digits**
+(`DIGITS_SIGNIFICANT`): desktop `snprintf("%.4g")` into a stack buffer, browser
+`format.formatMagnitude` in plain Nim behind `nimFormatNumber` — a decimal exponent by
+`log10`, digits scaled, and **half-to-even** rounding, which C uses and Nim's `round` does not
+(1012.5 reads `1012` in C and `1013` from `round`). `formatBiggestFloat` disagreed with itself
+across backends on 1655 of 7000 values, so it is no primitive to build on. Both front-ends
+print a multivector through one writer (`scene.multivectorText`) and a shape through one
+(`scene.shapeText`). Diagnostics readings keep `%.*f` through `appendFixed`, since a live
+number that changes width is harder to read.
 
-Magnitudes read to **four significant digits, not four decimal places** (`format.nim`'s
-`DIGITS_SIGNIFICANT`), so 3.5 reads `3.5` rather than `3.5000` and 1664 keeps its integer
-part. One rule, two mechanisms, because the browser has no C runtime. `appendMagnitude` is
-the single entry point and branches inside itself:
+Fixed char storage is read through `format.toText`, never `$toCstring`, which casts the
+storage's *address* and yields an empty string on the JS backend.
 
-- Desktop: `snprintf("%.4g")` into a stack buffer, since it runs once per coefficient, per
-  item, per frame, and must not allocate. `guiDragFloat`'s own format string is `%.4g` too.
-- Browser: `format.formatMagnitude`, which derives the digits in plain Nim. Every editable
-  number goes through it behind `nimFormatNumber` — coefficients and the camera's own
-  angles, distance and target — because the desktop draws every one of them with the same
-  `%.4g` widget. It allocates one string, which is affordable only because a browser
-  rebuilds its number fields when the grid changes rather than every frame.
+*Checked.* Verified by suite on both backends: 17,001 values across 25 decades including every
+exact eighth, zero disagreements against C's `%.4g` and zero between backends; the JS entry
+point pins the tie cases' text directly. The C-only `magnitudesAgree` once stayed green while
+330 of 7000 values differed between the front-ends, which is why the suite runs under `nim js`.
 
-**`formatMagnitude` derives its own digits rather than delegating.** Measured, not assumed:
-`formatBiggestFloat(v, ffScientific, 16)` disagreed with itself across the two backends on
-**1655 of 7000** values, so it is no usable primitive to build on. The rule is stated
-directly instead — a decimal exponent by `log10`, the digits scaled to `DIGITS_SIGNIFICANT`,
-and a **half-to-even** rounding step, which is what C rounds decimal ties by and what Nim's
-own `round` does not (it breaks a half away from zero, so 1012.5 reads `1012` here and
-`1013` there). Verified over 17,001 values across 25 decades including every exact eighth:
-**zero disagreements against C's own `%.4g`, and zero between the backends.**
-
-That divergence shipped, and it shipped because the test that was supposed to catch it —
-`magnitudesAgree`, which compares the C path against the Nim path — could only ever run on
-the C backend, where it asks the C runtime whether it agrees with itself. **330 of 7000
-values** differed between the two front-ends while that test stayed green. The suite now
-also runs under `nim js`, and the JS entry point pins the text of the tie cases directly
-rather than against a second mechanism.
-
-Both front-ends print a whole multivector through **one writer**, `scene.multivectorText`
-over `formatMultivector`, and name a shape through **one writer**, `scene.shapeText` over
-`describeShape`. The browser's item list used the library's own `$` for the first of those,
-at the library's `%G` rather than at this project's four significant digits, so the same
-object read differently in the two UIs; there were four separate transcriptions of the shape
-wording. Diagnostics readings deliberately keep `%.*f` through `appendFixed`: a live number
-that changes width every frame is harder to read than one padded to a fixed width.
-
-Fixed char storage is read back through `format.toText`, never through `$toCstring`.
-`toCstring` casts the storage's *address*, which is exactly what Dear ImGui wants and what
-the JS backend has no notion of — measured there, it yields an empty string rather than the
-text held, which silently blanked every label a drag produced until the bridge worked around
-it by hand. `toCstring`, `buildChars`, `appendInt` and `appendFixed` are now all guarded
-`when not defined(js)`, so reaching for one from shared code is a compile error on the
-browser build rather than a blank field at run time. Visibility was the same trap in the
-other direction: an `isVisibleAt(...): var bool` accessor over an `array[N, bool]` compiled
-on both backends and silently wrote to a copy on JS. It is gone; `isVisible` reads and
-`setVisible` writes, both plain.
 
 Animation
 ---
-`mesh.ANIMATION_MILLISECONDS` = 350 and `mesh.easeOutCubic` are the one duration and one
-curve. A freshly added object grows in over them; the camera tween eases over them; and the
-browser reads them across the bridge (`nimAnimationMilliseconds`) into `--anim` / `--ease`
-on `:root`, so every CSS transition runs to the same numbers rather than to a second set
-written down separately. The CSS curve is `cubic-bezier(0.215, 0.61, 0.355, 1)`, which is
-easeOutCubic exactly.
+`ANIMATION_MILLISECONDS` = 350 and `easeOutCubic` are the one duration and one curve: a fresh
+object grows in over them, the camera tween eases over them, and the browser reads them across
+the bridge into `--anim`/`--ease` on `:root` (the CSS curve `cubic-bezier(0.215, 0.61, 0.355,
+1)` is easeOutCubic exactly). One exception, marked as one: the opening hint is a timed
+disclosure whose delay lives in `glue.js` alone — a stylesheet `transition-delay` ran from the
+class being added rather than from load, so the two stacked.
 
-One exception, and it is marked as one: the opening hint is a timed disclosure rather than
-a response to anything, and holds for 4 s before a 0.6 s fade. Its delay lives in `glue.js`
-alone — a `transition-delay` in the stylesheet ran from the moment the class was added
-rather than from load, so the two used to stack and the hint outstayed both numbers.
+*Checked.* Assumed: that one duration suits every transition; nobody has asked otherwise.
 
 
-Camera Aiming
+Camera Aiming And Framing
 ---
 `camera.aimIncluding(aim, geometry, scale)` folds one object into what the camera has been
-asked to show: a point at horizon contributes its own direction, a line at horizon the first
-axis spanning perpendicular to its normal (no single direction faces a whole great circle),
-a plane at horizon nothing at all (it fills the sky), and anything finite widens a bounding
-sphere by `mesh.anchorFor`'s representative point — the same point the selection ring is
-drawn on. A fold rather than a function of one object, so a caller with a whole selection
-needs no array to fold over and allocates nothing.
+asked to show: a horizon point contributes its direction, a horizon line the first axis
+spanning perpendicular to its normal, a horizon plane nothing, and anything finite widens a
+bounding sphere by `mesh.anchorFor`'s point. `CameraAim` is a **requirement**, a pure function
+of the geometry, which is what lets the standing offer re-made every frame compare equal every
+frame. **The sphere is over what has to fit** (`is_bound_by_fitted`): the first point or
+finite plane folded in discards whatever lines contributed, since a line whose support stands
+forty units off dragged the view off the point beside it (73.8 against a distance of 12). A
+plane widens the sphere by its **whole disc** (`widened` merges balls, with the swallowing case
+written out).
 
-What that aim then asks of the camera is "Framing the whole selection" below.
+Both builds aim from **one rule**, `framing.offerAim`, once per frame: the open session's
+staged multivector if there is one, else every selected object. **A standing offer** — the
+tween keeps its goal after arriving (`is_arrived` stops `advance` writing); a camera the user
+moves calls `abandon`, which keeps the goal and marks it done (`release` clears it, so the
+offer is re-made next frame and the camera taken straight back — panning was dead while
+anything stayed selected, on both builds); `release` belongs to the offer's own side. `goal`
+and `destination` are separate fields: the goal depends on geometry alone, the destination is
+a `CameraPlacement` resolved once against the camera as it stood. `advance` eases target and
+angles linearly and **distance geometrically**. `runStoryboard` goes through the same rule and
+calls `settle`.
 
-`camera.CameraTween` carries the camera there, eased. **Retargeting reads the start off the
-live camera**, not off the previous goal, which is what makes a goal that moves every frame
-— a coefficient being dragged — one continuous chase instead of a restarting jerk. Offering
-a goal already held is ignored, so a caller may aim every frame without the ease restarting
-forever and never arriving.
+**Framing** (`framing.nim`): on a new pick, **the orbit target comes to the middle of what
+was picked** — `objects.centroidFolded`, a sum of unit-weight points read back through
+`position`, over the same objects the bound is over, each yielded **once** by `watched` (a
+middle is a tally where a bound is a set) — and the camera moves by the **least zoom and
+orbit** on top of that which puts every selected object in view, where in view means the
+centred box `camera.reachCentred` shapes: `FRACTION_VIEW_CENTRED` = 2/3 of the height, and
+two thirds of the width **or the height, whichever is less**. The width cap because the field
+of view is vertical: uncapped, the acceptance edge stood at 23.9° across a 1440×900 window
+against 15.4° down, so picking an object on a desktop practically never moved the camera
+while the same pick on a phone did; capped, 0.417 of the half-frame across, exactly
+`2/3 × 900/1440`. One-sided, since on a tall frame the width is already the shorter side.
+`reachCentred` is the one statement of the box, from which `picking` derives pixel margins
+and `halfAngleCentred` the cone `distanceFitting` solves.
 
-Both builds aim from **one rule**, `framing.offerAim`, applied once per frame rather than at
-each event: the open edit session's staged multivector if there is one, else every selected
-object together. That second clause is what carries applying an operation, releasing a drag
-and stepping the storyboard, since each already leaves its new object selected — none of
-them needs to know the camera exists. The rule used to be written out in each front-end,
-which is exactly the kind of duplication that drifts; it now lives in one module both call.
-`runStoryboard` goes through the same rule (`offerAimAt`, for a derived multivector that is
-not yet anything a selection could name) but calls `settle`, which lands instantly: a
-captured frame must never show a half-finished pan.
-
-That rule is a **standing offer**, re-made every frame for as long as the same thing stays
-selected, and every subtlety below comes from that shape:
-
-- The tween **keeps its goal after arriving** and sets `is_arrived`, which is what stops
-  `advance` writing to the camera at all. Clearing the goal on arrival instead meant the
-  standing offer looked new the next frame and re-armed the ease from wherever the user had
-  just panned to, dragging the camera straight back — **panning was dead for as long as
-  anything stayed selected**, and returned on deselect. It was reported as a touch bug; it
-  was neither touch-specific nor browser-specific, and the desktop had it identically.
-- A camera the user moves calls **`abandon`**, not `release`: it keeps the goal and marks it
-  done, so the standing offer reads as already answered. `release` is actively wrong here
-  and was the first attempt — it clears the goal, so the offer is simply re-made next frame
-  and the camera taken straight back. Measured rather than reasoned: a two-finger pan driven
-  through CDP moved the target 0.21 units against 4.40 unselected, and it drifted all the
-  way back.
-- **`release` belongs to the offer's own side**, called when the rule has nothing to aim at.
-  Clearing the goal outright is what lets picking the same object again aim at it afresh
-  rather than be recognised as already delivered.
-
-`verify_touch_pan.js` holds all four cases with real touch events: pan unselected, pan with
-an object selected, a grab mid-ease, and re-selecting after a deselect.
-
-`anchorFor` moved from `picking` to `mesh` to make this possible — `camera` calling
-`picking` would close a cycle, and `mesh` is where `DrawExtent` lives and where the doc
-comment already pointed ("matching exactly where `mesh.addPoint` draws it").
-
-### Framing the whole selection
-
-The rule (`framing.nim`): on a new creation or a new pick, **the orbit target comes to the
-middle of what was picked**, and the camera moves by the **least zoom and orbit** on top of
-that which puts every selected object in view — no zoom and no turn at all when they all
-already are — where in view means the centred box `camera.reachCentred` shapes:
-`FRACTION_VIEW_CENTRED = 2/3` of the frame's height, and two thirds of its width **or its
-height, whichever is less**.
-
-**Why the width is capped.** The field of view is vertical, so a fraction of the frame's
-*width* is `aspect` times as much world. Measured on the shipped build by driving the
-browser page: the acceptance edge stood at two thirds of the way from the middle to the
-frame's edge on every axis and every viewport — which is 23.9° off the sight axis across a
-1440×900 window against 15.4° down, and 7.3° across a 390×844 phone. One rule behaving as
-three. The visible consequence was that **picking an object on a desktop window practically
-never moved the camera** while the same pick on a phone did, reported as centring that
-"doesn't seem to be working with mouse, only touch". Capping the box's width at its height
-makes its reach the same in angle both ways: re-measured after the change, the edge across
-1440×900 moved from 0.667 to 0.417 of the half-frame, exactly `2/3 × 900/1440`, and the
-vertical edge and both of the phone's stayed where they were.
-
-The cap is **one-sided on purpose**. On a frame taller than it is wide the width is already
-the shorter side, so nothing changes and touch keeps the behaviour it had. Taking `min` on
-both axes instead would have tightened the phone's vertical band to under a third of its
-frame, which nobody asked for.
-
-It was *not* a fault on the mouse path, which was the other live hypothesis: driving the
-same pick with a real mouse and with real CDP touch at one viewport gave identical camera
-readings on every demo object, at 1440×900 and 390×844 alike. `abandon` is unreachable
-between a click and the ease — a mouse press that begins a construction drag returns before
-`glue.js`'s orbit branch, and after the release the pointer is out of `pointers`, so a bare
-hover returns earlier still.
-
-`camera.reachCentred` is the **one statement of the box's shape**, which `picking`
-turns into pixel margins and `camera.halfAngleCentred` into the cone `distanceFitting`
-solves. Written twice, those two had already drifted: the cone took the narrower of its axes
-while the pixel test took the whole rectangle.
-
-**Pan and zoom are preferred over orbit by construction, not by weighing.** The full move
-the least is cut back from carries no turn for a finite selection (target and distance
-only), and *only* a turn for a horizon-only one — pan and zoom cannot bring a star into
-view. So a finite pick never changes azimuth or elevation, and a star is turned toward only
-as far as it takes.
-
-**The target is not part of the cut.** Turning about a point is what an orbit *is*, so a
-reader who picks objects and turns means to turn about those; leaving the target where it
-was swung the picked object around the screen instead. The middle therefore lands whatever
-else happens — including when everything picked is already in view, where the camera
-otherwise does nothing at all. This is not the old "swung the view on every pick" bug
-returning: **nothing the reader set moves.** The distance and the orbit angles are
-untouched by re-centring, and the aim compares equal from the next frame on, so the ease
-runs once for the pick and never re-arms. The search below therefore starts from the
-camera as it stands *with the target already at the middle*, so the fraction it searches
-over is a fraction of the zoom and the turn alone — were the re-centring inside that path,
-the search would find that a fraction of nothing already shows everything and quietly drop
-the very move it is there to make.
-
-**The middle is the centroid, and the centroid is a sum.** `objects.centroidFolded` states
-it once: a sum of unit-weight points carries weight *n* and the total of the coordinates,
-so `position` — which divides by the signed weight — reads the mean straight back out, and
-no averaging is written anywhere. Folded one place at a time so a caller walking a selection
-allocates nothing, exactly as `camera.widened` is. It is over the same objects the bound is
-over, and for the same reason `is_bound_by_fitted` gives: a line whose support stands a
-hundred units away would drag the middle off the point beside it, and dragging the *target*
-there is worse than dragging a bound there. Horizon objects fold into nothing — `anchorFor`
-places a star at the eye, and a middle that moved with the camera would re-aim it every
-frame, which is the standing offer's one forbidden behaviour.
-  A bound cannot be widened by a ball it already holds, but a middle a place is folded into
-twice does lean toward it: as a bound an aim is a set, as a middle it is a tally. That is
-why `framing.watched` now yields each object **once** — a unary preview names its own
-operand twice, and it used to be framed twice on the grounds that a repeat changed no
-answer, which was true only of the bound.
+**Three readings, following what each shape is drawn at**: a point's dot fits inside the
+centred box (inset `INSET_POINT_SHOWN`, half of `SIZE_POINT`, deliberately not by the swelling
+marker); a line merely crosses it (drawn to `radius_horizon`, it has no size to fit); a
+plane's **centre** is in the centred box and its **rim** on screen — against the frame inset
+by `INSET_RIM_SHOWN`, half the rim's stroke, 1.25 px, the entire price of letting a disc reach
+the edge. Holding the rim to the box threw the camera from 19 to 29.9 on the ground plane
+where 19 already showed the whole circle; rim on screen gives 19 → 19 from the home camera,
+8 → 15.24 dollied in, 19 → 42.76 on a phone. Screen segments meet the box by Liang–Barsky
+clipping. A plane is judged where its disc is drawn (the stored anchor), not at its support.
 
 **The cut.** `placementFor` first asks whether everything is already in view *where the
-camera stands* — judging that at the centred placement instead was the bug that pulled the
-view about on every pick of something plainly visible. Otherwise it builds the full
-placement (middle as target, facing angles for horizon-only, bisected least distance) and
-searches the least fraction of `camera.toward` — the exact path the ease travels, geometric
-distance included — that satisfies `isShownAll`: `STEPS_PLACEMENT_LEAST = 12` even steps to
-bracket the crossing, `ROUNDS_PLACEMENT_LEAST = 5` halvings into it (within 1/384 of the
-move). Each candidate is verified with the full test at its own trial placement, so the
-interaction between a partial pan and a partial zoom — the fitted distance was solved at
-the *centred* target — cannot admit a fraction that fails; the step-then-halve
-first-crossing shape is what handles the path not being strictly monotone.
+camera stands* — judged at the centred placement instead, every pick of something plainly
+visible pulled the view about. Otherwise it builds the full placement (middle as target,
+facing angles for horizon-only, bisected least distance: `ROUNDS_DISTANCE_FIT` = 8, the
+closed form `radius / sin θ` as the upper bracket only) and searches the least fraction of
+`camera.toward` satisfying `isShownAll`: `STEPS_PLACEMENT_LEAST` = 12 even steps then
+`ROUNDS_PLACEMENT_LEAST` = 5 halvings, each candidate verified at its own placement. The
+target is not part of the cut; distance grows, never shrinks; a finite pick never changes
+azimuth or elevation, and a star is turned toward only when nothing finite was picked.
 
-Two thirds rather than the whole frame because an object clinging to the very edge is
-visible without being what the view is about, and the marker ringing it is half off-frame.
-
-**Three readings, not one, and the split follows what each shape is *drawn at*.**
-
-| Shape | In view when |
-|---|---|
-| Point | Its dot fits inside the centred box. |
-| Line | It merely crosses the centred box. |
-| Plane | Its disc is centred in the centred box, and its rim is on screen. |
-
-A point's dot and a plane's disc are both drawn at a size the camera does not set
-(`mesh.SIZE_POINT`, `mesh.EXTENT_PLANE = 8` world units), so each is a bounded thing a frame
-can hold whole; a line is drawn out to `radius_horizon`, which moves with the camera, so it
-has no size to fit and demanding one would mean a camera pulled back until it was a speck.
-Each shape is tested against exactly what `mesh.addObject` puts on screen — a line's two
-halves clipped to the eye side as `pickNearest` clips them, a plane's whole rim, a horizon
-line's great circle, a horizon plane's whole sky. Screen segments meet the box by
-Liang–Barsky clipping rather than by sampling: a straight segment either crosses an
-axis-aligned box or it does not, and asking exactly is cheaper than sampling densely enough
-to be sure of a thin near-miss. A point's box is inset by `INSET_POINT_SHOWN`, half of
-`mesh.SIZE_POINT`, so its drawn dot fits rather than only its middle — deliberately *not*
-inset by the selection marker, which swells while a touch hold fills, and a box breathing
-with a gesture would re-frame the view mid-hold.
-
-**A plane is the one shape whose test splits in two**, because its disc is wide enough that
-"fits" and "is what the view is about" want different bounds. Its **centre** answers the
-second, against the same centred box every other position answers to. Its **rim** answers
-only the first, against the **frame** — inset by `INSET_RIM_SHOWN`, half the width
-`mesh.addPlaneRing` strokes it at, so an edge resting on the boundary keeps its whole stroke.
-Holding the rim to the box as well was the first attempt and overshot: it threw the camera
-from 19 out to 29.9 on the demo's own ground plane where 19 already showed the whole circle,
-which was reported as the plane moving too far. Measured across the change, picking that
-plane:
-
-| | rim in the centred box | rim on screen |
-|---|---|---|
-| 1440×900, from the home camera | 19 → 29.90 | 19 → **19** (no movement) |
-| 1440×900, dollied in to 8 | 8 → 29.95 | 8 → **15.24** |
-| 390×844, from the home camera | 19 → 63.26 | 19 → **42.76** |
-
-The rim lands where it is meant to: at 390×844 it spans x [2, 388] of a 390-wide frame. The
-looser rule is **strictly weaker** than the stricter one — a disc inside the box is inside
-the frame with its centre centred — so it can never cost more movement than before.
-
-The frame it must fit is the whole canvas, not the canvas minus an open panel. On the desktop
-that means a large disc's left edge can pass behind the panel; the centred box avoided that
-only by coincidence, its left edge falling near where that panel ends, and teaching the core
-where a front-end's chrome sits to preserve the coincidence buys less than it costs.
-
-**Why a plane had to change from crossing to fitting.** Reported as planes not recentring the
-way points do — "when clicking on the origin point there's a lot more movement than when
-clicking on the ground plane". Measured: at the home camera every seed object was already in
-view and cost nothing, but dollied in to distance 8 the ground plane's rim spanned x
-[−1367, 2808] and y [288, 4562] of a 1440×900 frame and was still called in view, because
-the crossing rule was backed by a sight-axis ray meeting the disc — a disc covering the frame
-outright keeps its rim well outside the box, so without that ray a plane filling the view
-read as *out* of view. Both halves of that test are gone; what replaced them is the two-bound
-rule above, whose rim half is what keeps a covering disc out of view.
-
-**A plane is judged where its disc is drawn, not where its support is.** `mesh.addPlane`
-centres the disc on the item's stored creation anchor where it has one (`scene.creationAnchor`
-— the construction's own point, not the plane's closest approach to the origin). Measured on
-the demo scene, the two stand 0.5, 2.7 and 3.7 units apart on `ground`, `G = L ∧ c` and
-`a ∧ L☆`, against a disc radius of 8: judging the support's circle would frame one nobody
-sees. So `framing.watched` now yields each object *with* the anchor it is drawn about, and
-both `isShownCentrally` and `aimIncluding` take it. Staged geometry yields none, and that is
-correct rather than an omission — neither front-end passes an anchor when drawing the ghost.
-`pickNearest` still meets the ray against the support's disc; that divergence predates this
-and is left alone.
-
-**What the aim is.** `CameraAim` is a *requirement*, not a placement: a bounding
-`SphereWorld` over the finite objects, and a merged `heading` for the horizon ones. It is a
-pure function of the geometry, which is what lets the standing offer re-made every frame
-compare equal every frame — the thing every subtlety below rests on. Horizon objects
-contribute no sphere point on purpose: `anchorFor` places a star at `scale.eye`, and an aim
-built from where the camera stands would stop comparing equal.
-
-**The sphere is over what has to fit.** The first point *or finite plane* folded in throws
-away whatever lines had contributed, and they contribute nothing after
-(`CameraAim.is_bound_by_fitted`; which objects contribute does not depend on fold order).
-Without this a line whose support happens to stand forty units away drags the view off the
-point picked beside it and forces a pull-back to drag that support into frame — measured at
-73.8 against a distance of 12 before the rule was added. Where nothing has to fit — a
-selection of lines alone — the sphere falls back to their own supports, so the camera still
-has somewhere to look.
-
-A plane widens the sphere by its **whole disc**, not by its anchor: `widened` merges balls
-rather than points, since a plane bounded by its centre alone leaves the distance search
-bracketing from a radius of nothing and never reaching far enough to fit anything. The
-swallowing case is written out separately — the sliding arithmetic would push the centre past
-the new ball, and two concentric balls give it no direction to slide along at all. The
-bracket is loose for a plane on purpose: the sphere holds the disc from every side while the
-disc is flat, so a plane seen at an angle needs far less room, and the bisection finds it.
-
-**Distance grows, never shrinks.** Panning alone cannot fit two points spread wider than
-the frame, so the eye has to pull back; but a tight selection is *not* zoomed into, because
-the reader chose that scale and re-scaling the world on every pick is disorienting in a way
-that panning is not. The least sufficient distance is found by **bisection on the test**
-(`ROUNDS_DISTANCE_FIT = 8`, 1/256 of the bracket), not by the closed form alone: the closed
-form `radius / sin θ` is used only as the upper bracket, since it would over-dolly whenever
-a line already crosses the frame. Sound because the test is monotone in distance —
-everything converges on the middle of the frame as the eye pulls back. Where even the
-bracket fails — two stars facing opposite ways, or a spread the frame cannot hold — the
-bracket stands rather than a wrong answer being reported as a right one. It is no longer cut
-short by an orbit ceiling: `distanceFitting` pulls back as far as the fit takes.
-
-**Finite framing wins over facing a star.** The angles turn to the merged heading only when
-nothing finite was picked. A star behind the reader and a point in front have no placement
-showing both, so a star picked alongside a point may stay out of view; there is no
-placement that would have helped.
-
-**`goal` and `destination` are separate fields on the tween**, and have to be: `goal` is the
-requirement and must depend on the geometry alone, or the standing offer stops comparing
-equal frame to frame and re-arms the ease every frame — which is the "panning was dead
-while anything stayed selected" bug in a new costume. `destination` is a `CameraPlacement`
-(target, distance, azimuth, elevation) resolved once when the goal is armed, against the
-camera as it stood then. `advance` eases target and angles linearly and **distance
-geometrically**, because distance is multiplicative — the wheel and `FACTOR_DOLLY_PRESS`
-both scale it, and a linear ease from 12 to 300 spends most of the visible change in the
-first few frames and then crawls.
-
-**Measured on the real page**, not reasoned about. Driving the browser build through
-`nimSelectOnly`/`nimSelectToggle`, seven selections × nine starting orientations, reading
-every picked object's screen position and the camera's target, angles and distance back
-after the ease. Three stages of this rule shipped; the sweep across them:
-
-| | watch one object | centre the selection | least move (current) |
-|---|---|---|---|
-| worst picked point outside the box | **323.9 px** | 0.0 px | 0.0 px |
-| total pan over the 63 trials | — | 277.9 | **97.2** |
-| trials moving an in-view selection | — | all of them | **none** |
-| orbit turned, finite selections | 0 | 0 | **0.000 in all 63** |
-| distance | 12.0 always | 12.0–14.7 | 12.0–13.6, never below |
-
-On the desktop, `--drive-select` frame 5 (a visible point picked) no longer moves the view
-at all, and frame 9 (three points) shifts it only slightly to bring the one point at the
-box's edge fully inside. The storyboard's horizon captures go through the same rule; a
-derived great circle that already crosses the demo angle's box now keeps that angle rather
-than turning to face the circle dead on.
-
-**History of the rule, kept because each step answered a real complaint.** Watching one
-object left the rest of a selection anywhere, including off screen — the first column.
-Centring the whole selection fixed that but swung the view for objects already plainly
-visible, because "already shown" was judged at the *centred* placement rather than where
-the camera stood — one terse trap: that check must read the live camera, or every pick
-moves the view. The least-move rule keeps the in-view guarantee of the second column at a
-third of its movement, and restores the horizon least-turn the intermediate rule had
-dropped.
-
-
-Diagnostics Panel (desktop)
----
-A closed-by-default section holding: a raw (not smoothed — smoothing hides exactly the rare
-slow frame this exists for) per-frame-ms line graph over ~4 s from a ring buffer on
-`Panel`; a fill-fraction bar for the permanent arena; a `peak_used` high-water bar for
-the frame arena (instantaneous usage reads ~empty almost any time this could sample it,
-since carve and reset both happen within one frame); a coloured cell per object-pool slot
-plus active/free counts; the pool's fixed memory as "N allocated, M used, per-slot"; and a
-total of every fixed reservation the binary makes for itself, computed once in
-`visualiser.nim` as the one place that can see every piece.
-
-Two widgets need raw ImGui draw-list C++ (`gui_shim.cpp`): the coloured pool bar and the
-arena bars (`ProgressBar` with fill/track colour overridden). An empty ImGui label collides
-with the window's own ID and aborts the process — hence the hidden `"##frame_time"` ID. The
-arena snapshot must be taken in the shared render function, not the interactive loop, or it
-reads zero in every storyboard-exported PNG.
-
-
-Style Guide
----
-Two documents at the project root. `CONSTITUTION.md` is the rule of law: eleven articles
-over exposition, derivation, notation, build-time safety, naming, documentation, cost,
-honesty, tests, form and the record, with a precedence clause and three gated mechanisms.
-`STYLE.md` is the Nim expression guide: construct selection, pragma discipline, compile-time
-and gated idioms, types, signatures, the test harness, and what each backend does with a
-value. Both were rewritten in this audit from the author's originals, folding in the rules
-that the performance work had to be told by hand (Articles II.6, VII, IX.4–6, VI.5) and the
-project's own presentation rules (X.8); the earlier merged `STYLE.md` that duplicated the
-constitution in different words is gone.
-  **Unverified:** the codebase has not yet been re-read against the rewritten pair; the
-comment rework that follows this audit is where that happens, and the outcomes below are
-from the two earlier audits against the merged guide.
-
-The codebase was brought into compliance across two audits. Notable outcomes still in force:
-
-- `gif.nim`'s internal `-1`-means-none became `Option[int]`. `browser_bridge.nim`'s
-  genuine FFI-boundary cases (`DragResult.created_slot`, `nimDragMenuHighlighted`,
-  `nimHoverSlot`) keep `Option[int]` internally and translate through one named
-  `SLOT_NONE` at each proc's return — the boundary is where a JS-incompatible
-  representation is translated, not a licence to use it upstream.
-- `picking.pickNearest` and `visualiser.runInteractive`/`runStoryboard` and
-  `scene.loadScene` and `nimBuildFrame` justify exceeding the 60-line default in a comment
-  rather than being force-split. `panel.layoutDiagnostics` genuinely qualified and became an
-  orchestrator over four helpers.
-- `browser_bridge.nim.cfg` pins the same two `pga` defines the browser build previously got
-  from undocumented manual flags — verified by breaking one define and confirming the build
-  fails at the compile-time assertion naming the correct flags.
-- The `when defined(js)` seams in `scene.nim` are documented backend-compatibility
-  necessities, not shortcuts. Leave them. What used to sit beside that note — a pair of
-  shape/label formatters duplicated in `browser_bridge.nim` — is gone: `nimItemShapeWord`
-  and `nimItemLabel` now delegate to `scene.shapeText` and `scene.labelAt`, so there is one
-  implementation and the browser reads the words the desktop status line uses.
-- `EditSession` owns `geometry`/`stage`, the two directions its staged coefficients and a
-  `Multivector` convert between. Both were written out by hand at four sites across two
-  files before the audit found them.
-- Camera aiming is `visualiser.offerCameraAim`, not a tail block inside `assembleMeshes`:
-  where to look is not mesh assembly, and having it there had the staged ghost built twice
-  in one function.
-- `runStoryboard` tracks which slots a step touched as flags per slot rather than as a
-  `seq[int]`, matching the fixed shape `are_dimmed` beside it already had.
-- `panel.layoutItem` is an orchestrator over the row's three parts (name, actions,
-  description) sharing an `ItemRow` record; `layoutApply` sheds the catalogue filter, the
-  selection adoption and the apply itself. `layoutItemButtons` and what remains of
-  `layoutApply` justify their length in a comment rather than being split further -- a run
-  whose whole width must be measured before any of it is placed cannot be split without
-  measuring twice.
-
-**`glue.js` and `shell.html` were audited for the first time** once they became tracked
-(see Browser UI): they had never been read against the guide because they were not in the
-repository. The naming was uniformly JavaScript-idiomatic camelCase -- 89 data bindings,
-none snake_case -- against a guide whose first naming rule is that the case *is* the
-signal, adopted "even where the language community differs". Every data binding and
-parameter is now snake_case, callables stay camelCase, and the forbidden coined
-truncations (`btn`, `cam`, `diag`, `coeff`, `el`, `cur`, `arr`, `lbl`, `opt`, `sel`,
-`dist`, `pts`) are spelled out. Shader attribute and uniform *strings* are untouched: they
-name GLSL identifiers in the shader source, so only the JS bindings holding their
-locations were renamed. Forty-eight lines over the hundred-column limit across the two
-files were wrapped.
-
-That rename introduced exactly one bug and the browser drive caught it: a callback
-parameter renamed at its use but not at its binding, which `node --check` passes happily
-because it is a scope error, not a syntax error. Every control was then driven -- apply,
-undo, redo, add, save, both view toggles, a camera field, all four drawer sections, and a
-selection through the bridge -- with the scene count checked at each step and no console
-errors.
-
-The vendored `pga` library was reviewed against the guide and left unmodified by request.
-It is the source of several of the guide's rules and largely complies; known deviations are
-mechanical (trailing whitespace, banner spacing, `,` where parameters do not share a type,
-a two-tier banner hierarchy in `operators.nim`) plus one substantive: `pga.nim:28` asserts
-its own module doc is the source of truth for names and documentation, which is what makes
-the notation trap above so easy to fall into.
-
-One library quirk worth knowing: of the four compound operators, only the `★` pair works
-infix. `m ∧★ n` compiles; `m ∧☆ n` does not, and must be written `` m.`∧ ☆`n `` (Nim joins
-`nnkAccQuoted` children). `pga.nim`'s table presents all four identically.
-
-
-Dependencies / Vendoring
----
-The PGA library is vendored at `pga.nim`/`pga/`, copied unmodified from
-[replications][replications] at commit `f8861e0` — **not committed to this repo**. Keep a
-local copy in place for building; refresh it only deliberately. Both projects are Prosperity
-Public License 3.0.0; `pga/LICENSE.md` names replications as source per the license's
-Notices term.
-
-The browser's six WOFF2 faces are vendored the same way, at `fonts/` (see Typefaces).
-
-System packages: `dependencies.list`. Dear ImGui compiles from source, expected at
-`deps/imgui`. Needs a Nim from `devel` (uses a `var`-returning index operator release
-compilers reject).
-
-**Nothing else is left untracked.** `pga`, `deps/imgui`, `fonts/` and `bin/` are the whole
-of what the working tree carries and the repository does not — the first three because
-vendoring rules them out, the last because it is build output. Everything consistently
-needed to build or test either target is committed: `build_browser.sh` assembles the
-browser page from tracked sources plus those vendored faces, and `PROVENANCE.md`,
-`STYLE.md`, `REQUIREMENTS.md` and `dependencies.list` are tracked alongside the code.
+*Checked.* Verified on the shipped page, seven selections × nine starting orientations: worst
+picked point outside the box 0.0 px (323.9 when watching one object); total pan over 63 trials
+97.2 (277.9 when centring the selection); trials moving an in-view selection none; orbit turned
+0.000 in all 63; distance 12.0–13.6 and never below. Verified by real touch events
+(`verify_touch_pan.js`): pan unselected, pan selected (0.21 units against 4.40 with `release`),
+a grab mid-ease, re-selecting after deselect. Verified by driven check: the preview framed with
+its operands (the camera pulling from 9 to 13.39 with both landing inside the box). Verified
+that it was not a mouse-path fault: identical camera readings under mouse and CDP touch at two
+viewports. Assumed: nothing.
 
 
 Hold Feedback, Help And Keys
 ---
-A touch long-press was a 500 ms wait with **no feedback of any kind** -- a `setTimeout` in
-`glue.js` and nothing on screen -- so a hold could not be told from a tap that had not
-registered. `interaction` now owns it: `SECONDS_LONG_PRESS`, a `Hold`, and
-`progressHold`/`isHoldMature` derived from it. The clock moved out of JavaScript because
-how long a hold takes and whether one is due are rules about the gesture, and because a
-timer that fires on its own cannot draw anything.
+**A touch hold shows itself**: `interaction` owns `SECONDS_LONG_PRESS`, a `Hold`, and
+`progressHold`/`isHoldMature`, and the indicator is the marker itself drawn part-built (see
+the fills table under Selection). Progress is **linear, never eased** — a clock being shown,
+and an eased clock appears to stall just before it fires.
 
-**The indicator is the marker itself, drawn part-built.** `markerFor` gained one
-`progress` parameter, defaulting to 1, and each outline interprets it in the terms that
-outline is read in:
+Both front-ends carry a `?` in the bottom-right corner, at least 44 px, opening the same
+table `help.lut_help_entries`, which both render. Construct rows derive from `armingOf` and
+`revealsMenuOn`; keyboard rows from `motionFor` and `actionFor`; the `operations` tab is
+generated from the catalogue (`notationSymbolic` against `notationNamed`), so it cannot fall
+behind. **Tabbed by how you are working**: `drag`, `select`, `menu`, `panel`, `camera`,
+`keys`, `operations`. `ENTRIES_MAX_PATH` = 8 per tab (`ENTRIES_MAX_PATH_KEYS` = 12,
+`ENTRIES_MAX_PATH_CATALOGUE` the operation count), asserted at compile time and in the suite,
+a **proxy and named as one**: the real constraint is rendered height. Measured at 320×568 as
+overflow of the rows box: `drag`, `select`, `menu`, `panel`, `camera` 0 (two after their
+descriptions were cut, about 17 px each), **`keys` 129 px over**, left scrolling deliberately
+— fitting it costs `enter`'s "hold shift to add it" on every screen to serve one with no
+keyboard; stacking cells was worse (161 over) and regrouping keyboard rows onto other tabs
+left `camera` 133 and `select` 66 over. Shift gets one row, not one per button: all four
+combinations measured 125 px over. **Every row makes sense with the rows above covered up**;
+what a two-column row cannot carry goes in `descriptionOf`, one sentence per tab, crossing as
+`nimHelpDescriptions`. One word, one meaning: objects are **selected**, operations **chosen**.
 
-| Shape | Fills by |
-|-------|----------|
-| Point (`Ring`) | Sweeping clockwise from twelve o'clock. It is drawn at one fixed
-  size, so a ring that grew would read as the point swelling. |
-| Line (`Rails`) | Both rails running out from the support toward each horizon. |
-| Plane (`Loop`) | Its circle opening from the disc's own centre out to the rim gap. |
+The browser's two columns are one grid over the whole table (`.help-rows` the grid, each row
+`display: contents`), so a column is one width down the table; a flat `44%` gave the actions
+245 px they did not want. Both tracks carry a 122 px floor, measured: without the outcome
+floor the actions took 208 of the 262 px a 320 px phone leaves; 150 px does not fit beside 122
+and the 10 px gap; dropping the action track to bare `max-content` put `drag` 533 px over. The
+panel is a flex column, capping its own height with `min-height: 0` on the rows box. Rows are
+hidden by attribute, which needs `.help-row[hidden] { display: none }`. The desktop measures
+its outcome column off the widest action, **only while the panel is open**: measuring every
+frame changed which glyphs Dear ImGui rasterised into the atlas and moved single pixels of
+panel text in the storyboard across three rounds (bisected: with the fix, two table sizes
+give byte-identical storyboards). `guiChildHeightForRows` asks Dear ImGui for its own line
+spacing rather than restating it. **The help stays open until it is closed**; the two
+popovers keep their tap-outside dismissal.
 
-Rails are shortened **after projecting**, along the screen segment. Scaling the world reach
-walks the head back toward the *eye*, because the far end is a point one horizon radius
-from the eye along the axis -- that was written first and was wrong. Interpolating on
-screen still keeps every partial rail exactly on the line's own projection (both endpoints
-lie on it, and a projected straight segment is straight) and is what makes the growth read
-as even: a world-space interpolation toward a point that distant spends almost its whole
-range within a few pixels of the vanishing point. The plane's circle scales in world units
-on the plane, so every intermediate circle lies on it as exactly as the finished one.
-
-**Progress is linear, never eased**, unlike every other animation here. This is a clock
-being shown rather than a transition being softened, and an eased clock appears to stall
-just before it fires -- precisely where a reader is deciding whether the hold is working.
-
-A line or plane **at horizon** has no marker at all, so a hold on one still fills nothing.
-Known, and deliberately not invented around.
-
-Both front-ends carry a `?` in the bottom-right corner, at least 44 px (Apple's guideline;
-WCAG 2.5.8 asks 24). It opens the same table, `help.lut_help_entries`, which **both UIs
-render** -- the desktop wrote the controls out in its panel and the browser wrote them in a
-hint, the two had drifted, and only one could be got back. The construct rows are derived
-from `interaction.isMenuForcedBy`, so rebinding a button rewrites the help with it, and a
-button that starts no drag (middle) contributes no row at all. Each render path translates
-only its own numbering (SDL's and the DOM's differ) into `PointerButton` and asks. The entry
-count is asserted against the array length at compile time, which caught a miscount twice.
-
-**Tabbed by how you are working, not by what the control is** — `drag`, `select`, `menu`,
-`panel`, `camera`, `keys`. A reader opens this in the middle of one thing, and only that
-thing's rows are of any use to them right then. The old grouping was by kind of control and
-the whole table rendered at once; it went 18 → 20 → 26 entries across three rounds while the
-module's own header still claimed everything in it fit one popup on a phone. It did not: the
-desktop panel is `AlwaysAutoResize | NoScrollbar` pinned bottom-right and grows *upward*, so
-below roughly 720 px of window height its top rows ran off the screen with no scrollbar to
-recover them, and the browser's was a 360 px column scrolling inside 70vh however wide the
-window was.
-
-`ENTRIES_MAX_PATH` (8) is what stops a fourth drift, asserted per tab at compile time and
-again in the suite. It is a **proxy and named as one**: the real constraint is rendered
-height, and a count is what compile time can check. Measured rather than estimated — the
-built page driven at 320x568, comparing each tab's `scrollHeight` against its `clientHeight`
-— and the measurement is what split `menu` out of `select`: ten rows did not fit, because at
-that width the outcome column wraps onto second lines, so a count of rows is not a count of
-lines. It sits exactly at what the largest tab holds, so the next row added to a full tab
-fails the build; the answer is nearly always to split that tab.
-
-**Every row has to make sense with the rows above it covered up**, because that is how this
-is read: a reader opens one tab, finds the line they need, and leaves. Three ways a row
-failed that, all found by reading the rendered panel cold rather than by any test — circular
-("drag one object onto another" → "make whatever the two of them make"), leaning on its
-neighbour ("hold still over the target" → "the same choice, without needing the other
-button"), and naming internals a reader has never met ("more… in that choice", "the apply
-section", "dolly in and out"). Every row is now written to stand on its own.
-
-What a two-column row genuinely cannot carry — which menu this is, what a wedge is — goes in
-`descriptionOf` instead, one sentence above each tab, drawn by `guiTextWrappedAt` on the
-desktop and a `<p>` in the browser, both fed from the same `case`. It crosses the bridge as
-`nimHelpDescriptions`, its own export rather than a fifth string on `nimHelpEntries`, which
-is per *row* and would repeat the sentence once per row of a tab; the two join on the tab
-title the rows are already grouped by rather than on a matching order.
-
-One word, one meaning: objects are **selected**, operations are **chosen**. "Choose" was
-doing both jobs — the tab now called `select` was about picking objects while "the two of
-them choose what it makes" is about picking an operation off the drag wheel — so it said
-nothing about which was meant.
-
-Re-measured at 320x568 after all of that, per tab, as overflow of the rows box rather than
-by cloning rows into it: `drag` 0, `select` 0, `menu` 0, `panel` 0, `camera` 0, **`keys`
-129 px over**. Five fit exactly, two of them only after their descriptions were cut to fewer
-wrapped lines — `drag`'s from four lines to two and `panel`'s from two to one, each worth
-about 17 px. A count of rows is still not a count of lines, and now a description is worth a
-row or two of height as well.
-
-**`keys` is left scrolling on that screen, deliberately.** Its eight rows come to 449 px
-against a 320 px box, and fitting them means every outcome under about 39 characters, which
-costs `enter`'s "hold shift to add it" and `escape`'s "one step at a time" — the things a
-reader cannot discover any other way — on every screen, to serve a 320 px one that has no
-keyboard. Two alternatives were tried and measured rather than argued about: stacking each
-row's cells into one column made it *worse* (161 px over, because a short action like `tab`
-then costs a whole line of its own), and regrouping the keyboard rows onto the tabs whose
-work they do — camera keys under `camera`, traversal under `select` — left `camera` 133 px
-over and `select` 66 px over. So the cap stays at 8, and what it means has changed: it is no
-longer a promise that nothing scrolls, but the bound that forces this measurement to be
-re-run. A tab nearing it is a prompt to measure, never to trust the number.
-
-The browser's rows box used to take `calc(min(82vh, 620px) - 82px)`, subtracting a flat
-allowance for the tab strip. That was already wrong wherever the strip wrapped to two lines,
-which it does on a phone, and a description above the rows made the panel able to grow
-taller than the screen. It is now a flex column — the panel caps its own height, the strip
-and the description take theirs, and the rows box takes what is left with `min-height: 0` so
-it can actually shrink. Nothing about the height is worked out by hand any more.
-
-`guiTextWrappedAt` exists because `guiTextWrapped` pushes wrap position 0, meaning "the
-content region's right edge", which in an auto-sizing window is decided by the widest item in
-it — a wrapped paragraph is then both an input to that width and a consequence of it. The
-help panel already knows the width it wants, so it says so.
-
-The desktop draws the tabs through four new shim calls (`BeginTabBar`/`BeginTabItem` and
-their ends) with each tab's rows inside a `childBegin` region bounded to what the window
-actually has. That region scrolls, and is the safety net rather than the design: no tab may
-ever again lose rows off the top, whatever the window height. Its height comes from
-`guiChildHeightForRows` rather than from a hand-picked row height — Dear ImGui's own line
-spacing, window padding and border, asked for rather than restated, so a tab is exactly as
-tall as its own rows and `panel`'s two do not float in a panel sized for eight. Its
-*width* is measured from both columns: a bounded region asked to fill nothing inside an
-auto-sizing window collapses to its widest item, and every outcome placed past that by
-`sameLineAt` is then clipped away — which is what the first attempt did, and looking at the
-capture is what caught it.
-
-The browser draws a wrapping button strip plus `data-path` on every row, with only the rows
-scrolling so the strip stays reachable, and the panel widened from 360 px to `min(560px,
-100vw - 28px)`. Rows are hidden by attribute rather than rebuilt per tab, which needs
-`.help-row[hidden] { display: none }`: an author `display` beats the UA stylesheet's own
-`[hidden]` rule, and without that line every tab reported the whole table's height —
-measured, and it is why the check compares `scrollHeight` to `clientHeight` per tab rather
-than trusting the markup.
-
-Its two columns are **one grid over the whole table** — `.help-rows` is the grid and each
-`.help-row` is `display: contents` — because a column has to be one width down the table and
-only a shared container can size it from the widest action in it. That is the rule the
-desktop panel already follows, where `layoutHelp` measures `offset_outcome` off the widest
-action; the browser's flat `44%` was the guess it replaces, and on the 558 px panel it gave
-the actions 245 px they did not want while the outcomes beside them wrapped. Measured, both
-viewports, wrapped outcomes out of 31 rows: 7 → 1 at 1400x900, tallest tab 213 px → 177 px;
-21 → 20 at 320x568, tallest unchanged at 337 px in the fixed 384 px box that sizing then
-had. (That box is no longer fixed — see the flex column above — so those two figures are the
-comparison that justified the grid, not current heights.)
-
-Both tracks carry a 122 px floor — `minmax(122px, max-content) minmax(122px, 1fr)` — and the
-pair was measured, not picked. The action floor keeps a tab of short actions (`menu`,
-`panel`) from starting its outcomes hard left of where every other tab starts them. The
-outcome floor is what stops `max-content` being greedy where there is nothing to be greedy
-with: without it the actions took 208 px of the 262 px a 320 px phone leaves, and `drag`,
-`select` and `keys` all grew a scrollbar. Candidates with a larger outcome floor (150–184 px)
-read better still until the cells were checked against the container's own right edge —
-122 + 122 + the 10 px gap is 254 and fits, 122 + 150 does not, and the difference is invisible
-in a screenshot because the overflow scrolls rather than clipping. Re-tested when the rows
-were rewritten longer, since `keys` has short actions and looked like it wanted the floor
-gone: dropping the action track to bare `max-content` put `drag` 533 px over, `camera` 538 px
-over and `select` 461 px over, because a tab with one long action then hands it the whole
-width. The floors are load-bearing.
-
-`--drive-help:<tab>` opens the panel on one named tab at startup, since a headless run cannot
-click a tab strip and a panel no capture can reach is one whose rows nobody ever checks fit.
-It is the only caller of `layoutHelp`'s `path_forced`, and of the shim's `is_forced` flag.
-
-The hint **persists until the reader first acts** -- a gesture that moves the camera or
-changes the scene, not a hover -- rather than for four seconds. A timer cuts off whoever
-reads slowly, and a first-time reader is exactly who reads slowly.
-
-Keyboard exists at all for the first time; before this there was none in either build
-(`grep keydown`, `grep SDLK_`, both empty), which fails **WCAG 2.1.1 at Level A**. `Escape`
-sheds what is in progress, innermost first; `ctrl`/`cmd`+`Z` and `ctrl`+`shift`+`Z` step
-the timeline. Both reach the timeline through one function per build (`panel.stepHistory`,
-`glue.js`'s own `stepHistory`) rather than through the button: routing the browser
-shortcut through `button_undo.click()` made it depend on that button's `disabled`
-attribute, refreshed on the low-cadence UI tick, so a key pressed in the frames after an
-edit did nothing while the timeline plainly had something on it. Measured while driving
-it, not suspected.
-
-On the desktop `Escape` **no longer quits** -- `ctrl+Q` does. Pressing escape twice to be
-sure a drag had cancelled would otherwise have thrown away an unsaved scene.
-
-**WCAG 2.5.7 (Dragging Movements)** is satisfied and worth stating so it is not re-derived:
-every operation the drag reaches is also reachable with no dragging at all, through
-tap/click → selection menu → apply, or through the apply section itself. That is what makes it
-safe for the drag to be the *fast* path rather than the only one, and it is the route a
-regression here would break first, so the touch drive exercises it explicitly.
-
-The canvas is now reachable from the keyboard too, which closes that. Reading the tree first
-found **two different gaps, and the desktop's was far worse than the note above admitted**:
-
-- **Desktop: the keyboard reached nothing.** `guiInit` never set `io.ConfigFlags`, so Dear
-  ImGui's own keyboard navigation was off. Tab reached no button, no combo, no field — not
-  "the canvas is unreachable" but the *entire UI* pointer-only, apart from the four
-  accelerators above. One line caused it and one line fixes it, and no amount of binding keys
-  in the application could have: the widgets are Dear ImGui's, and only its navigation moves
-  between them.
-- **Browser: only the canvas.** The drawer is real `<button>`/`<select>`/`<input>`, so Tab
-  already reached every control and constructing was *already* keyboard-operable through the
-  apply section. `shell.html` simply had no `tabindex` anywhere, so the view could not take
-  focus.
-
-**Turning navigation on then swallowed every view key**, and that was measured rather than
-suspected: `--drive-keys` reported the camera still at its opening placement with
-`WantCaptureKeyboard` reading true. That flag looks like the guard and is the wrong one —
-with keyboard navigation enabled it is true from the first frame, nothing focused, nobody
-having pressed Tab. `gui.wantsKeys` asks the two things that genuinely mean "these keys are
-ImGui's": a field is taking text (`WantTextInput`), or navigation has landed on a widget
-(`IsAnyItemFocused`). Neither is true while the reader is simply looking at the scene.
-
-**The help stays open until it is closed.** A tap anywhere outside it used to dismiss it,
-canvas included, so a reader who opened it to find out what a gesture does lost it on the
-first touch of that gesture — which is the one moment the panel exists for, and the reason it
-is cut by way of working rather than by kind of control. The two popovers either side of it
-in that guard keep their tap-outside dismissal: those are transient. The browser panel gained
-a close button of its own in the same change; it had none, and removing the outside tap
-without one would have stranded a phone, which has no escape key.
-
-**The help lists the whole catalogue, generated.** A seventh tab, `operations`, holds one row
-per `Operation`: `scene.notationSymbolic` against `scene.notationNamed`, the two halves of
-one split at the double space the catalogue table separates them with. Nothing is
-transcribed, so the tab cannot fall behind the catalogue — and a suite case says so, since
-the day someone hand-writes a row is the day it can. The catalogue table moved from `let` to
-`const` to make that possible (`help.nim` builds its table at compile time), with the
-`cstring` array a picker needs built from it rather than the other way round: addresses can
-be derived from text, text cannot be derived from addresses.
-
-**"Up to date" is a check, not a reading.** Two suite cases hold the help to the build: every
-operation appears with the name the pickers offer it under, and every `Key` the view answers
-appears in some row. A reading is only true on the day it is made.
-
-**Tab is deliberately not rebound.** Cycling objects with it inside the view is the tempting
-binding and risks a **keyboard trap — WCAG 2.1.2, also Level A**. Fixing 2.1.1 by creating
-2.1.2 is not a fix, so the view is one ordinary tab stop and traversal took the brackets:
+**Keyboard.** `Escape` sheds what is in progress, innermost first, and on the desktop no longer
+quits (`ctrl+Q` does). The view is one ordinary tab stop — **Tab is deliberately not rebound**,
+which would trap (WCAG 2.1.2) — and traversal took the brackets:
 
 | Key | Does | Kind |
 |---|---|---|
@@ -4802,260 +1798,179 @@ binding and risks a **keyboard trap — WCAG 2.1.2, also Level A**. Fixing 2.1.1
 | `q` / `e` | lower / raise it | held |
 | arrows | orbit | held |
 | `-` / `+` | dolly out / in | held |
-| `shift` | multiply every rate above by `FACTOR_HASTE` | held |
+| `shift` | multiply every rate by `FACTOR_HASTE` | held |
 | `[` / `]` | focus the previous / next object | press |
 | `enter` | select it, or add it where shift is held | press |
 | `f` | frame whatever is selected | press |
 | `home` | put the camera back where it started | press |
 
-`interaction.motionFor` and `interaction.actionFor` are that table, split by **kind**: a
-motion runs every frame its key is down (`driveHeld`), an action happens once at the press.
-One enum would have left every caller asking which kind it had, and an action re-run by the
-operating system's own auto-repeat is a bug waiting to happen. Each path translates only its
-own naming — SDL scancodes, DOM `KeyboardEvent.code` — exactly as each already does for mouse
-buttons, and `help.nim` renders its keyboard rows out of both rather than transcribing them.
+`motionFor` and `actionFor` split by **kind**: a motion runs every frame its key is down
+(`driveHeld`), an action once at the press. The bindings follow Unity, Unreal, Godot and
+Blender (WASD, Q/E, shift for faster, F to frame), with the one fork made the map's way:
+the view *slides* across the ground and the height never changes. Both front-ends watch key
+up as well as down; `releaseKeysAll` empties the held set on blur, on the tab being hidden,
+and when a panel widget takes the keyboard (`gui.wantsKeys`: `WantTextInput` or
+`IsAnyItemFocused` — `WantCaptureKeyboard` is true from the first frame with navigation on).
+Plain `s` moved to `ctrl+s`. Dear ImGui's keyboard navigation is enabled (`io.ConfigFlags`);
+without it Tab reached nothing on the desktop at all.
 
-**The bindings came from what other software does**, checked rather than guessed. Unity,
-Unreal, Godot and Blender's fly mode all bind WASD to *movement* and Q/E to down/up, all four
-use shift for *faster*, and three of them put "frame the selection" on F (Blender on numpad
-`.`). The one fork is what movement means: those editors *fly* the eye along its sight line,
-behind a held mouse button, while a map or an RTS *slides* the view across the ground. This
-project slides — the camera orbits a target on the ground plane, and the zoom that goes with
-it aims at the cursor — so holding W skims the ground rather than diving into it, and the
-height never changes. Measured through the browser's own events: 500 ms of W moved the target
-12.8 units with `z` unchanged to four decimals, and shift over the same interval moved 49.3.
+**A camera move is not a hover** (`isMovingCamera`: each front-end's own drag flag, plus
+`keys_held` through `motionFor`, so shift alone is not movement; a construction drag is
+excluded). Raised by the movement, not by the press, or a click read a suppressed hover. The
+latched flag is cleared on blur, on the tab being hidden, and at the start of any gesture
+that finds no pointer down. **Focus is its own state** (`index_focus`), pruned against
+liveness and drawn with the hover marker; the browser adds an inset `:focus-visible` ring.
 
-**Shift stopped meaning something different per key.** It used to turn an arrow's orbit into
-a pan, which is one meaning on four keys and none anywhere else; it is now a rate multiplier
-on every movement key, and `Key.Shift` is a key in the held set rather than a flag threaded
-through the calls — so letting go of it mid-movement is just another release.
+*Checked.* Verified by `--drive-keys`: focus walked, enter selected, azimuth/elevation/distance
+each moved by exactly their own constant. Verified by browser drive: real key events; Tab from
+the canvas moving to the next control and back; a blur mid-hold moving the target 0.0000
+further; the help table's per-tab overflow at 320×568; `[]-+` typed into a label reaching the
+label. **Not demonstrated**: Tab landing on a Dear ImGui widget — a window that never takes
+focus under `xvfb` gives ImGui nothing to move; `gui.isNavEnabled` reports the configuration,
+not the behaviour.
 
-**Movement runs while held, not once per press.** The old per-press steps leaned on the
-operating system's auto-repeat: movement began after the repeat delay and arrived in
-stutters. Both front-ends now watch key *up* as well as key *down* (neither did before),
-`Interaction.keys_held` carries what is down, and `driveHeld` applies each held key once a
-frame scaled by that frame's own elapsed time — so a hold covers the same ground at 60 Hz and
-144 Hz. The dolly compounds as `pow(FACTOR_DOLLY_SECOND, seconds)` rather than multiplying
-per frame, which would have moved a fast machine further for the same hold.
 
-**Releases go missing in three ways, and all three are handled.** The window loses focus
-(`SDL_EVENT_WINDOW_FOCUS_LOST`, `blur`), the tab is hidden (`visibilitychange`), or a panel
-widget takes the keyboard (`gui.wantsKeys`). In each the release is delivered somewhere else,
-and a key left in the held set moves the camera forever with no press able to stop it;
-`releaseKeysAll` empties it. Verified by dispatching a blur mid-hold in the browser: the
-target moved 0.0000 further.
+Style Guide
+---
+Two documents at the project root. `CONSTITUTION.md` is the rule of law: eleven articles over
+exposition, derivation, notation, build-time safety, naming, documentation, cost, honesty,
+tests, form and the record, with a precedence clause and three gated mechanisms. `STYLE.md`
+is the Nim expression guide: how each rule is spelled in Nim, and what each backend does with
+a value.
 
-**Plain `s` had to move.** It was bound to writing a PNG on the desktop, which a movement key
-cannot also do; that went to `ctrl+s`, beside the other accelerators, and the panel's own
-"save PNG" button is untouched.
+**Every comment in the project has been reworked to the vendored `pga` library's prose
+register**, against both documents: a one-line imperative summary ending in a period (types
+open "Define …"), elaboration as a hanging outline one claim per line, stage comments with a
+verb-first lead, trailing fragments on fields ending in a period, no articles, no history and
+no figures (which moved here). `tools/check_prose` holds the whole of that mechanically —
+article rule, summary form, stage form — in every authored language, and runs in `verify.sh`.
+Kept from earlier audits and still in force: `gif.nim`'s none is `Option[int]`; the bridge's
+FFI-boundary cases translate through one `SLOT_NONE` at each proc's return; the `when
+defined(js)` seams in `scene.nim` are backend necessities, not shortcuts; `glue.js` and
+`shell.html` use snake_case for data bindings and camelCase for callables with the forbidden
+truncations spelled out, shader attribute strings untouched.
 
-**A camera move is not a hover.** Hover is recomputed from the cursor every frame, so an
-orbit drag swept the highlight across every object it passed and a held movement key lit up
-whatever slid under a cursor standing still — a rash of rings for a gesture that is pointing
-at nothing. `updateHover` now reports nothing while the camera is moving, and the ring
-returns the frame the gesture ends. What counts as moving is `isMovingCamera`: the pointer
-half is each front-end's own (`Interaction.is_dragging_camera`, since each owns its drag
-state), the key half is answered here from `keys_held` — and asks `motionFor`, so shift alone
-is not movement. A *construction* drag is deliberately excluded: what it is pointing at is
-the whole gesture.
+The vendored `pga` library was reviewed and left unmodified by request. Known deviations are
+mechanical, plus one substantive: `pga.nim:28` asserts its own module doc is the source of
+truth for names, which is what makes the notation trap easy to fall into.
 
-**Raised by the movement, not by the press.** Setting it when a camera button goes down
-broke clicking outright: a press that never moves is a click, a click reads what is under the
-cursor, and hover was already suppressed by the time it asked. The desktop's own sky drive
-caught it within a minute of the change — "a click on bare sky selects it" went to 0
-selected — which is exactly what that layer is for.
+*Checked.* Verified: `check_prose` and `check_columns` report zero complaints across 51 and 56
+files, and the full suite, both drives and every checker pass on the reworked tree; the rework
+changed no code — a code-only diff against the previous revision was empty for every Nim, JS,
+HTML, CSS and C++ file. **Unverified**: no human has read the result.
 
-A latched flag can be left set by a release that never arrives — a cancelled pointer, a torn
-down touch sequence — and a stuck one would kill hover for the rest of the session with
-nothing on screen to explain it. It is therefore cleared on blur, on the tab being hidden,
-and at the start of any gesture that finds no pointer already down: the same failure the held
-keys have, handled the same way.
 
-**Focus is its own state, not hover.** `updateHover` recomputes hover from the cursor every
-frame, so a keyboard focus stored there would be erased before it could be drawn once.
-`interaction.index_focus` is separate, pruned against liveness like every other slot carried
-across frames, and **drawn with the marker hover already uses** — which satisfies 2.4.7 with
-machinery already built and already tested rather than a second indicator invented beside it.
-The browser adds a `:focus-visible` ring on the canvas itself, inset rather than outset
-because the canvas fills the viewport and an outside ring would fall off every edge.
-
-Camera keys move by one **shared** rate per second (`camera.TURN_SECOND` and friends),
-unlike the per-pixel drag rates, which differ per front-end for a real reason —
-`visualiser.SPEED_ORBIT` is radians per pixel and `glue.js` works in fractions of canvas
-width. A press has no pixels in it. `home` needed the opening placement, which was written
-out twice; it became `camera.initCameraDefault` and both entry points now read it.
-
-**What is verified, and what is not.** The view keys reaching the view with navigation on is
-measured on both builds — the desktop through `--drive-keys` (focus walked, enter selected,
-azimuth/elevation/distance each moved by exactly their own constant), the browser through
-real key events. The browser's **no-trap property is measured**: Tab from the canvas moves to
-the next control and shift+Tab back. Typing `[]-+` into a label still reaches the label on
-both. What is **not** demonstrated is Tab landing on a Dear ImGui widget: a window that never
-takes focus gives ImGui no navigation focus, so a synthesised Tab shows nothing under `xvfb`
-either hidden or mapped. `gui.isNavEnabled` reports the flag is set, which is the
-configuration rather than the behaviour; the behaviour wants a human at a real window.
-
-**The storyboard's old sensitivity to the help table is gone, and was explained on the way
-out.** Three rounds running, growing that shared table moved a handful of single pixels of
-text inside the desktop panel, and the mechanism had never been pinned down. It was
-`layoutHelp` measuring every entry's width *every frame*, open or not, to size its outcome
-column: Dear ImGui 1.92 rasterises glyphs on demand and packs them into the atlas as they
-are first asked for, so measuring a different set of strings changes where later glyphs land
-in the texture and shifts their antialiasing by a subpixel. Measuring only while the panel is
-open removes the coupling entirely, and the proof is a bisect: with that one change applied
-to *both* the 26-entry table and the 31-entry one, the two storyboards come out
-**byte-identical**. The capture did move once more in the process — five subpixels, all
-inside the panel, none of them 3D content — because the measurement stopped happening at
-all.
+Dependencies / Vendoring
+---
+The PGA library is vendored at `pga.nim`/`pga/`, copied unmodified from
+[replications][replications] at commit `f8861e0`, **not committed**. Both projects are
+Prosperity Public License 3.0.0; `pga/LICENSE.md` names replications as source per the
+licence's Notices term. The six WOFF2 faces are vendored the same way at `fonts/`. System
+packages: `dependencies.list`. Dear ImGui compiles from source at `deps/imgui`. Needs a Nim
+from `devel`. `pga`, `deps/imgui`, `fonts/` and `bin/` are the whole of what the working tree
+carries and the repository does not.
 
 
 Verification Tools
 ---
-`tools/verify.sh` runs everything below, in cheapest-first order, and fails on the first
-failure. Passing it is necessary and never sufficient — several bugs here survived a green
-run of all of it, so the script closes by saying so.
+`tools/verify.sh` runs everything below cheapest first and fails on the first failure. Passing
+it is necessary and never sufficient — several bugs here survived a green run — so the script
+closes by saying so.
 
 | Check | What it holds | Reads from |
 |-------|---------------|------------|
-| `check_columns` | Line width, trailing whitespace, tabs, final newline | The filesystem |
-| `check_prose` | No article in any comment, in any authored language | The filesystem |
-| `check_palette` | Palette separation floors | `mesh.lut_ink_to_rgba` |
+| `check_columns` | Width in **characters**, trailing space, tabs, final newline | The filesystem |
+| `check_prose` | Article rule, summary form, stage form of each comment | The filesystem |
+| `check_palette` | Palette separation floors under Machado severity 1.0 | `mesh.lut_ink_to_rgba` |
 | `check_atlas` | Every drawable codepoint has a glyph range | `lut_*` and `gui_shim.cpp` |
+| `check_ramp` | The tint table against the map and the shell's tokens | `ramp.nim`, `shell.html` |
 | Suite ×3 | Every invariant, on both backends and two capacities | `tests/visualiser/` |
+| Desktop drive | Seven scripted gestures through SDL's queue under `xvfb-run` | `bin/visualiser` |
+| Browser drive | Real key, wheel, mouse and touch events through Playwright | `bin/` page |
 
-Each reads the thing being checked rather than a transcription of it, which is the whole
-point: a mirror of the palette or of the atlas ranges would pass happily while the compiled
-build disagreed. `check_atlas` parses the `ImWchar RANGES` arrays out of `gui_shim.cpp`
-itself and enumerates the codepoints from the notation table, the basis names, the shape
-words and the formatter — 62 printable codepoints today, all covered. `check_columns`
-counts **characters, not bytes**, which is why it exists as a tool at all: a `wc -L` reports
-a compliant line full of `∧`, `⟑` and `𝐦` as eleven columns too long, and gets ignored
-within a day. It skips the testament spec block a test file opens with, whose `matrix` line
-is one line by testament's own rules with nowhere to wrap to. It counted the file's lines
-once *per line* until this audit, which made it quadratic — forty seconds on the star
-catalogue, for a check that runs first because it is the cheapest — and nobody noticed
-because nothing times the checks. It runs in under a tenth of a second now.
-
-`check_prose` holds every comment to `STYLE.md`'s article rule, which had been stated for
-doc comments and honoured nowhere else: module headers, body comments, shell and JavaScript
-glue had all drifted back to ordinary prose, and each cleanup had to be ordered by hand.
-It reads comments out of each language's own syntax (`#` outside strings and the testament
-block; `//`, `/* */`, `<!-- -->` outside strings and template literals), masks code spans
-and quoted titles, and treats a bare `a` before `and`, `or`, an operator or a single letter
-as an operand name. Prose files are deliberately not read: `PROVENANCE.md` is prose on
-purpose. It has a self-test like `check_columns`, and it reuses that tool's file walk
-rather than carrying a second copy of the skip list.
-
-`check_palette` measures under **Machado, Oliveira and Fernandes (2009) at severity 1.0**,
-because that is the model every floor quoted in `REQUIREMENTS.md` was calibrated against.
-Viénot-1999 is equally respectable and moves borderline pairs materially — measured here,
-it puts Jade/Cobalt at 0.9 ΔE where Machado puts it at 12.7 — so the model is part of the
-standard rather than an implementation detail, and changing it means remeasuring every
-floor. Red-green (the minimum of protan and deutan) carries the floors; tritanopia is
-measured separately, since it is rarer by three orders of magnitude and holding both to one
-floor collapses the palette to a single arc for no reader's benefit.
-
-**One declared exception, and it is a new finding.** Jade and Cobalt separate by only
-**3.7 ΔE under tritanopia** — a case no floor covered before this tool existed, because the
-original validation gated on red-green alone. It is carried rather than repainted: the pair
-clears 12.7 under red-green deficiency and 15.8 to typical vision, tritanopia affects fewer
-than one reader in ten thousand, and every object also carries its own shape, screen
-position and written label. The exception lives in `check_palette.nim`'s own `EXCEPTIONS`
-table with a floor of 3.5 pinned just under where it measures, so drifting further fails the
-run; the reason prints on every run so it stays argued rather than inherited.
+Each reads the thing being checked rather than a transcription of it. `check_columns` counts
+characters because `wc -L` reports a line full of `∧` and `𝐦` as eleven columns too long and
+gets ignored within a day; it skips the testament spec block, whose `matrix` line has nowhere
+to wrap; it runs in under a tenth of a second (a quadratic line count once cost forty seconds
+on the star catalogue). `check_prose` reads comments out of each language's own syntax, masks
+code spans and quoted titles, treats a bare `a` before `and`, `or`, an operator or a single
+letter as an operand name, requires a summary's lead line to end `.` or `:` and open with a
+verb from its list unless it is a trailing doc or a `TODO:`, and a stage lead to end `.`, `:`
+or `?`; prose files are deliberately not read. `check_atlas` parses the `ImWchar RANGES`
+arrays out of `gui_shim.cpp` and enumerates 62 printable codepoints; each table entry is bound
+to a local before being walked, since an open array over a temporary read from a `const`
+array outlived what it pointed at (a segfault on the first entry). All three self-testing
+tools reuse one file walk.
 
 
 Testing
 ---
-The suite is one file, `tests/visualiser/suites.nim`, run from three thin entry points that
-differ only in their testament spec:
+One file, `tests/visualiser/suites.nim`, 296 cases, from three thin entry points:
 
-| Entry point | Backend | Capacities | Why it exists |
-|-------------|---------|-----------|---------------|
+| Entry point | Backend | Capacities | Why |
+|-------------|---------|-----------|-----|
 | `test_4d.nim` | C | Default | The desktop build, as shipped |
 | `test_4d_browser.nim` | JS | Default | The browser build's own backend |
 | `test_4d_small.nim` | C | 12 items, 12-char labels, 4 steps | Boundaries a test reaches |
 
-The JS row is not a formality. A rule stated once and reached through two mechanisms is only
-held together where both mechanisms run; compiled to C alone, `magnitudesAgree` asks the C
-runtime whether it agrees with itself, and 330 of 7000 values differed between the front-ends
-while it stayed green. Adding that row also found `$toCstring` reading empty, `isVisibleAt`
-writing to a copy, and the browser's multivector text coming from the library's `$` — three
-divergences that had each been worked around or documented rather than fixed.
+The JS row is not a formality: a rule reached through two mechanisms is held together only
+where both run. The reduced row makes any constant tuned to the default fail here; `LABEL_MAX`
+at 12 is under several labels the suite constructs. Cases needing C — `snprintf`, the encoders,
+the arena, save/load — guard themselves `when not defined(js)`. A case that walked every pair
+of slots at 10,000 objects ran ten minutes without output and was killed; it gathers the
+joiners once now, and the JS suite runs in about two minutes.
 
-The reduced-capacity row makes any constant tuned to the *default* rather than derived from
-its `.define` fail here rather than in a build somebody configured. `LABEL_MAX` at 12 is the
-sharpest of the three: it is under the length of several labels the suite constructs, so
-truncation happens for real.
+**The suites test rules; a second layer drives events.** A rule bug earns a suite case; a
+wiring bug earns a driven check, at the layer the bug lived at. The desktop drives are
+`--drive-keys`, `--drive-sky`, `--drive-undo`, `--drive-select`, `--drive-drag`,
+`--drive-help:<tab>`, each posting to SDL's own queue, splitting each gesture across two frames
+(hover is recomputed inside `renderFrame`), setting shift through `sdl3.setModState`, and
+capturing one frame later than each step (Dear ImGui hides an auto-sized window for the frame
+it measures it in); `--drive-sky` scans for bare sky rather than hard-coding a pixel;
+`--drive-undo` drags with the **left** button, since a right release with a scripted cursor
+resting on its target stands in no wedge. The browser drive (`drive_browser.mjs`) reported 302
+checks `ok` at this revision. Timing-dependent quantities are asserted as **bands**, never
+figures, and the bands are stated as what catches the collapse class a reader felt rather than
+as this container's timings: identical code has measured 25.0 and 29.8 ms hours apart on the
+shared runner, a flat ±1 ms band failed one frame in a hundred and twenty, and a flaky check
+gets deleted rather than fixed. Three harness facts worth keeping: a driven check is evidence
+only for the page just built, which `verify.sh` guarantees by ordering; one check switches the
+debug layer on and never off, so later measurements include ~1,650 lattice records and say
+so; a fresh object starts its pulse at zero, so a comet check waits for a head before timing.
 
-Cases needing a C entry point — `snprintf`, the PNG and GIF encoders, the arena, and scene
-save/load, which needs a filesystem — guard themselves `when not defined(js)` and are skipped
-on the JS row. That row runs 104 of the 115 tests; the small-capacity row runs all 115.
-
-**The suites test rules; a second layer drives events.** Every case above calls a rule
-directly, so none of them can catch a rule wired to the wrong event — and that is where this
-project's bugs actually live. A pinch came to zoom at its own midpoint and slide the view
-with it while every suite case stayed green; a ghost was previewed from a picker's *position*
-passed through as a *slot*; a rename left a callback bound to nothing. Each was found by
-driving the thing by hand, and none of the drives was ever committed.
-
-Both front-ends are now driven by `tools/verify.sh`, and the checks assert rather than
-narrate:
-
-| Layer | What runs it | What it covers |
-|---|---|---|
-| Suites | three entry points, C and JS | the rules, 244 cases |
-| Desktop drive | `--drive-assert`, under `xvfb-run` | six gestures, through SDL's queue |
-| Browser drive | `drive_browser.mjs`, via Playwright | 23 checks: keys, wheel, touch, DOM |
-| Checkers | `check_columns --self-test` and friends | layout, palette floors, glyphs |
-
-**The rule this establishes: a fix is not finished until something checks it at the layer the
-bug lived at.** A rule bug earns a suite case; a wiring bug earns a driven check. Writing the
-driven layer immediately paid for itself twice — `--drive-undo` had been pushing key presses
-with no releases, which became a real fault the moment a held key meant continuous movement,
-and `--drive-sky` had never done anything at all, because the scene it scans for a horizon
-plane has none in it until one is built. Both had been "passing" for as long as they existed.
-
-Timing-dependent quantities in the browser drive are asserted as **bands**, never as figures:
-how far a held key travels depends on how many frames the machine drew while it was down, and
-a check written against an exact number flakes. What is exact is asserted exactly — a wheel
-notch each way returns the camera to distance 19.000 and target (0, 0, 1).
+*Checked.* Verified: everything in this file marked so was established by one of these
+layers. Assumed: nothing about the suite itself.
 
 
 Measurements
 ---
-Release build, 4 cores @ 2.8 GHz, 1440×900, headless Xvfb + Mesa `llvmpipe` (no GPU here):
+Desktop, release build, 4 cores at 2.8 GHz, 1440×900, headless Xvfb + Mesa `llvmpipe`, taken
+at 64 objects and not since:
 
-| Quantity                   | Cost |
-|----------------------------|------|
-| Tessellate 64-object scene | 61 µs (~0.95 µs/object) |
-| Any catalogued operation   | 80–170 ns |
+| Quantity | Cost |
+|----------|------|
+| Tessellate a 64-object scene | 61 µs (~0.95 µs/object) |
+| Any catalogued operation | 80–170 ns |
 
-`--timings`, 2000 frames, `--novsync`:
-
-| Scene                     | Mean | p50 | p95 | p99 | Max |
-|---------------------------|------|-----|-----|-----|-----|
-| Light (~8 items)          | 10.4 ms (96 fps) | 10.1 ms | 12.9 ms | 15.5 ms | 36.1 ms |
-| Full (`--fill`, 64 items) | 39.8 ms (25 fps) | 39.0 ms | 47.1 ms | 50.8 ms | 89.2 ms |
-
-Tessellation is under 0.25% of frame budget either way. **A ">500 fps" target cannot be
-assessed in this environment**: rasterisation runs on software `llvmpipe` and dominates the
-frame entirely — none of it is `Scene`/arena/RGA code. On real GPU hardware this geometry
-(hundreds to low-thousands of vertices) would cost low microseconds, but that needs an
-actual driver to confirm.
+Browser, SwiftShader, on this container, the figures the driven bands were pinned against:
+opening-scene `nimBuildFrame` 21.9 ms released; demo at 5,038 orbiting, scene walk 9.2 ms
+with the tally off; one hover pick 3.5 ms at 5,038. **No figure in this file has been taken on
+real GPU hardware** except the two device readings quoted in Browser Pipeline, and a ">500 fps"
+target cannot be assessed here: rasterisation dominates the frame entirely and none of it is
+this project's code.
 
 
 Known Limitations
 ---
 - No human has run either build. Every result here is software-rendered and machine-driven.
-- Dear ImGui's keyboard navigation is enabled and verified enabled, but Tab actually landing
-  on a desktop widget is unverified: a window that never takes focus under `xvfb` gives ImGui
-  no navigation focus to move. Wants a human at a real window.
-- Two crossing translucent washes blend order-dependently (see the draw-order invariant).
-- A camera move is not undoable on its own. Undo restores the view each edit was made from,
-  but an orbit that changed nothing else leaves no step to step back over.
+- Tab landing on a desktop widget is unverified (see Hold Feedback, Help And Keys).
+- Two crossing translucent washes blend order-dependently.
+- A camera move is not undoable on its own.
+- The comet's residual steps at fast orbit rates are unexplained (see Selection And Markers).
+- Neither catalogue is checked against its archive by any tool.
+- The frame-time tail on real hardware is undiagnosed; this container cannot see it.
 - Conformal metric (`IS_CONFORMAL`) is unfinished in the library; this build is rigid 4D.
 - `.rgascene` is little-endian by rule, but only a little-endian host has ever written or
-  read one; the byte-swapping path a big-endian host would take is unexercised.
+  read one; the byte-swapping path is unexercised.
 
 [replications]: https://gitlab.com/mraxilus/replications
