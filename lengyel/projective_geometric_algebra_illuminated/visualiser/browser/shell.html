@@ -1190,6 +1190,11 @@
         <canvas class="sparkline" id="sparkline"></canvas>
         <div class="diagnostic-line"><span>frame time</span
           ><b id="diagnostic-frametime">&mdash;</b></div>
+        <!-- Slowest frame ring holds, split between page's own code and browser.
+             Rows below are 200 ms means, which dilute one spike past telling whether
+             page authored it; this reads that frame's own slots. -->
+        <div class="diagnostic-line"><span>slowest frame</span
+          ><b id="diagnostic-slowest">&mdash;</b></div>
         <!-- Each step of drawing process, as `mean over last 200 ms (median over
              whole ring)` in ms, so reader can see where frame went rather than one
              opaque total. Short mean is what to watch while changing something and

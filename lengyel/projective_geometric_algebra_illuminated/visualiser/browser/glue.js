@@ -2216,6 +2216,7 @@ const sparkline = document.getElementById('sparkline');
 const context_sparkline = sparkline.getContext('2d');
 const size_sparkline = sizeObserved(sparkline, () => askSlowPass(false, true, false, false));
 const diagnostic_frame_time = document.getElementById('diagnostic-frametime');
+const diagnostic_slowest = document.getElementById('diagnostic-slowest');
 const diagnostic_heap = document.getElementById('diagnostic-heap');
 const diagnostic_pool = document.getElementById('diagnostic-pool');
 const grid_pool = document.getElementById('pool-grid');
@@ -3104,37 +3105,57 @@ const MILLISECONDS_SLOW_PASS_LATEST = MILLISECONDS_WINDOW_READING;
 const scheduleIdle = typeof requestIdleCallback === 'function'
   ? (job) => { requestIdleCallback(job, { timeout: MILLISECONDS_SLOW_PASS_LATEST }); }
   : (job) => { setTimeout(job, 0); };
+// Jobs of slow pass, in order pass runs them.
+const JOBS_SLOW_PASS = {
+  curve: () => drawExceedance(),
+  sparkline: () => drawSparkline(),
+  medians: () => recomputeMedians(),
+  pool: () => drawPoolGrid(nimSceneCount(), nimSceneCapacity()),
+};
 // Jobs owed, each once however many ticks asked before pass ran.
-let is_curve_due = false;
-let is_sparkline_due = false;
-let are_medians_due = false;
-let is_pool_due = false;
+const due_slow_pass = { curve: false, sparkline: false, medians: false, pool: false };
+// What each job cost last time, weighed against idle period's remaining time.
+//   2 ms before first run: first draws measured 2.6 and 6.1 ms on desktop, so first
+//   period is asked for room rather than assumed to have it.
+const ms_job_slow_pass = { curve: 2, sparkline: 2, medians: 2, pool: 2 };
 let is_slow_pass_scheduled = false;
 function askSlowPass(is_curve, is_sparkline, is_medians, is_pool) {
-  if (is_curve) is_curve_due = true;
-  if (is_sparkline) is_sparkline_due = true;
-  if (is_medians) are_medians_due = true;
-  if (is_pool) is_pool_due = true;
+  if (is_curve) due_slow_pass.curve = true;
+  if (is_sparkline) due_slow_pass.sparkline = true;
+  if (is_medians) due_slow_pass.medians = true;
+  if (is_pool) due_slow_pass.pool = true;
   if (is_slow_pass_scheduled) return;
   is_slow_pass_scheduled = true;
   scheduleIdle(runSlowPass);
 }
-function runSlowPass() {
+function runSlowPass(deadline) {
   is_slow_pass_scheduled = false;
   const ms_before = performance.now();
   // Section shut since ask: owed jobs are dropped.
   //   First tick after it is shown again asks for all of them.
-  if (isDiagnosticsShown()) {
-    if (is_curve_due) drawExceedance();
-    if (is_sparkline_due) drawSparkline();
-    if (are_medians_due) recomputeMedians();
-    if (is_pool_due) drawPoolGrid(nimSceneCount(), nimSceneCapacity());
+  const is_shown = isDiagnosticsShown();
+  // Callback without deadline, or past its timeout, runs every job:
+  //   `setTimeout` fallback has no deadline, and timeout promised figure within window,
+  //   whatever frame is doing.
+  const is_hurried = deadline === undefined || deadline.didTimeout;
+  let is_owed = false;
+  for (const name in JOBS_SLOW_PASS) {
+    if (!due_slow_pass[name]) continue;
+    if (!is_shown) { due_slow_pass[name] = false; continue; }
+    // Job that would overrun idle period waits for next one:
+    //   overrun lands on very frame job was moved off, and browser's own estimate of
+    //   period's end is only word there is on when that frame is due.
+    if (!is_hurried && deadline.timeRemaining() < ms_job_slow_pass[name]) {
+      is_owed = true;
+      continue;
+    }
+    const ms_job = performance.now();
+    JOBS_SLOW_PASS[name]();
+    ms_job_slow_pass[name] = performance.now() - ms_job;
+    due_slow_pass[name] = false;
   }
-  is_curve_due = false;
-  is_sparkline_due = false;
-  are_medians_due = false;
-  is_pool_due = false;
   addPhaseTime('ui', performance.now() - ms_before);
+  if (is_owed) { is_slow_pass_scheduled = true; scheduleIdle(runSlowPass); }
 }
 
 // Draw last four seconds of frame times as one line, scaled to slowest of them.
@@ -3206,6 +3227,31 @@ function refreshDiagnostics() {
   //   whatever curve happens to show, and there is nothing left to contradict.
   writeText(diagnostic_frame_time,
     mean_frame.toFixed(2) + ' ms (' + Math.round(1000 / Math.max(mean_frame, 1)) + ' fps)');
+  // Slowest frame ring holds, split from its own slots between page and browser.
+  //   Rows below are 200 ms means, which dilute one spike past telling whether page
+  //   authored it; every phase was recorded frame by frame, so one frame can be read
+  //   back exactly. Largest page phase is named beside page's sum.
+  //   Slot about to be written is skipped: its phases are cleared and its frame is
+  //   ring-old.
+  let at_slowest = -1;
+  for (let i = 0; i < FRAMES_HISTORY; i += 1) {
+    if (i === index_history_frame) continue;
+    if (at_slowest < 0 || history_frame[i] > history_frame[at_slowest]) at_slowest = i;
+  }
+  let page = 0;
+  let largest = 0;
+  let name_largest = '';
+  for (const name of PHASES_TOP_DIAGNOSTIC) {
+    if (written_phase[name][at_slowest] !== 1) continue;
+    const spent = history_phase[name][at_slowest];
+    page += spent;
+    if (spent > largest) { largest = spent; name_largest = name; }
+  }
+  const browser = written_phase.idle[at_slowest] === 1 ? history_phase.idle[at_slowest] : 0;
+  writeText(diagnostic_slowest,
+    history_frame[at_slowest].toFixed(1) + ' ms \u00b7 page ' + page.toFixed(1) +
+    (name_largest === '' ? '' : ' (' + name_largest + ' ' + largest.toFixed(1) + ')') +
+    ' \u00b7 browser ' + browser.toFixed(1));
 
   // Each step of drawing process, as `mean over 200 ms (median over the ring)`:
   //   short mean is what reader watches while changing something, long median is settled figure to

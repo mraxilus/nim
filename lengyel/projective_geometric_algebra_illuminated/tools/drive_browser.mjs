@@ -1816,6 +1816,25 @@ const smoothed = await page.evaluate(() => {
     frames: framesRecent(),
   };
 });
+// **Slowest frame in ring is named with its own split.** Rows are 200 ms means, which
+// dilute one spike past telling whether page authored it; readout reads that frame's
+// own slots. Driven with one 30 ms frame carrying 6 ms of `ui` among 16.7 ms frames
+// carrying 0.5, so page, its largest phase and browser's remainder are all known.
+const slowest = await page.evaluate(() => {
+  for (let i = 0; i < 240; i += 1) {
+    recordPhaseTime('build', 1);
+    recordPhaseTime('ui', i === 100 ? 6 : 0.5);
+    recordFrameTime(i === 100 ? 30 : 16.7);
+  }
+  refreshDiagnostics();
+  return document.getElementById('diagnostic-slowest').textContent;
+});
+report(
+  'the slowest frame in the ring is named, split between the page and the browser',
+  slowest.startsWith('30.0 ms') && slowest.includes('page 7.0 (ui 6.0)') &&
+    slowest.endsWith('browser 23.0'),
+  `the row reads "${slowest}"`,
+);
 await restoreRings(kept_rings);
 // **Rows account for whole frame, not fraction of it.** Everything page
 // spends is `build + upload + overlay + menu + ui`; rest of frame is waiting on
