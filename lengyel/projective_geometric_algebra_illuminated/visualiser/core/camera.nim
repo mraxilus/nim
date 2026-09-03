@@ -79,6 +79,15 @@ const
     ## Set near clip plane this fraction of orbit distance out.
     ##   Scaled beside `FACTOR_CLIP_FAR` so frustum stays same shape at every distance,
     ##   holding depth-buffer precision, function of far-to-near ratio, constant.
+  RATIO_CLIP_MAX* = 100_000.0
+    ## Bound far-to-near ratio, by raising near where far plane reaches scene.
+    ##   Far plane at scene's reach over orbit of 0.7 units put ratio at 1.8 million:
+    ##   24-bit depth then resolves 3 units at depth 300 and 34 at 1,000, and stars
+    ##   quantised behind translucent discs and dome striped and faded on device. At
+    ##   this bound depth 300 resolves to 0.17 units.
+  FRACTION_NEAR_OF_ORBIT* = 0.5
+    ## Bound how far out ratio may push near plane, as fraction of orbit distance.
+    ##   Target itself must never clip, whatever scene's reach asks.
 
 const
   ## Fix rates held key moves camera at, per second of holding.
@@ -217,11 +226,6 @@ func initCameraDefault*(): Camera =
   )
 
 
-func distanceNear*(camera: Camera): float = camera.distance*FACTOR_CLIP_NEAR
-  ## Read nearest depth clip volume keeps.
-  ##   Derived from orbit distance rather than stored, so it cannot go stale through dolly.
-
-
 func distanceFar*(camera: Camera): float =
   ## Read farthest depth clip volume keeps; see `distanceNear` for why derived.
   ##   Twenty orbit distances, or eye's distance to origin plus scene's reach where that
@@ -232,6 +236,16 @@ func distanceFar*(camera: Camera): float =
   let eye = camera.eye
   let away = sqrt(eye.x*eye.x + eye.y*eye.y + eye.z*eye.z)
   max(camera.distance*FACTOR_CLIP_FAR, away + camera.reach_scene*MARGIN_REACH_FAR)
+
+
+func distanceNear*(camera: Camera): float =
+  ## Read nearest depth clip volume keeps.
+  ##   Derived from orbit distance rather than stored, so it cannot go stale through dolly.
+  ##   One four-hundredth of orbit distance, raised where far plane reaching scene would
+  ##   put far-to-near ratio past `RATIO_CLIP_MAX`, and never past half orbit distance.
+  let near_scaled = camera.distance*FACTOR_CLIP_NEAR
+  let near_bounded = min(camera.distanceFar/RATIO_CLIP_MAX, camera.distance*FRACTION_NEAR_OF_ORBIT)
+  max(near_scaled, near_bounded)
 
 
 func eye*(camera: Camera): Position =

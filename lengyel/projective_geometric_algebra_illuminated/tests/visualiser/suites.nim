@@ -335,6 +335,12 @@ suite "Camera":
     camera.reach_scene = 3000.0
     let eye = camera.eye
     check camera.distanceFar >= norm(eye - Position(x: 0, y: 0, z: 0)) + 3000.0
+    # Near rises with far, holding ratio, and never past half orbit distance.
+    check camera.distanceFar/camera.distanceNear <= RATIO_CLIP_MAX*(1.0 + 1.0e-9)
+    check camera.distanceNear <= 0.5*camera.distance
+    var close = initCamera(Position(x: 0, y: 0, z: 0), 0.05, 0.0, 0.0)
+    close.reach_scene = 3000.0
+    check close.distanceNear <= 0.5*close.distance
     # Reach is measured from what scene holds, disc's own extent included.
     var scene = initScene()
     scene.addItem(toMultivector(Position(x: 300, y: 0, z: 0)), "p", Ink.Rose)
