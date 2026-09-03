@@ -2636,6 +2636,47 @@ report(
 
 /* ---- Scene hold ----     */
 
+// **Held frame is not drawn.** Bridge holding scene and furniture means every
+// buffer would be last frame's, and compositor keeps what was presented until
+// something is drawn over it -- so clear and draws are skipped, and GPU idles on
+// still scene. Counted through `clear`: every drawn frame clears once. Direct call,
+// as capture and pixel-reading checks make, always draws.
+const hold_draw = await page.evaluate(async () => {
+  const chip = document.getElementById('toggle-algebra');
+  if (chip.classList.contains('on')) chip.click();
+  nimSelectClear();
+  document.getElementById('gl').focus();
+  const counts = { held: 0, built: 0, clears: 0 };
+  const built = globalThis.nimBuildFrame;
+  globalThis.nimBuildFrame = function (...a) {
+    const d = built.apply(this, a);
+    if (d.is_scene_held && d.is_furniture_held) counts.held += 1; else counts.built += 1;
+    return d;
+  };
+  const clear = WebGLRenderingContext.prototype.clear;
+  WebGLRenderingContext.prototype.clear = function (...a) {
+    counts.clears += 1; return clear.apply(this, a);
+  };
+  await new Promise((r) => setTimeout(r, 1200));
+  const still = { ...counts };
+  counts.clears = 0;
+  renderFrame(performance.now() / 1000);
+  const clears_direct = counts.clears;
+  globalThis.nimBuildFrame = built;
+  WebGLRenderingContext.prototype.clear = clear;
+  // Leave one rebuild for check below, which counts both sides of its hold.
+  //   Recolouring item to ink it wears moves revision and not one pixel.
+  nimSetInk(nimSceneSlots()[0], nimItemInk(nimSceneSlots()[0]));
+  return { ...still, clears_direct };
+});
+report(
+  'a held frame is not drawn, and a direct call draws regardless',
+  hold_draw.held > 0 && hold_draw.clears <= hold_draw.built + 1 &&
+    hold_draw.clears_direct === 1,
+  `${hold_draw.clears} clears over ${hold_draw.held} held and ${hold_draw.built} ` +
+    `built frames; direct call cleared ${hold_draw.clears_direct}`,
+);
+
 // **Still camera over still scene rebuilds nothing, and every edit releases that.**
 // Scene phase was whole of frame's own work on large scene; frame matching
 // last one now skips tessellation, flattens and every upload together.
@@ -2666,7 +2707,8 @@ await page.evaluate(() => {
   const px = new Uint8Array(canvas.width * canvas.height * 4);
   const drawn = globalThis.renderFrame;
   globalThis.renderFrame = function (...a) {
-    const out = drawn.apply(this, a);
+    // Drawn whatever hold says: pixels are read back, and held frame draws nothing.
+    const out = drawn.call(this, a[0], false);
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
     let hash = 2166136261;
     for (let i = 0; i < px.length; i += 4 * 37) {
@@ -2835,7 +2877,7 @@ await page.evaluate(() => {
   const px = new Uint8Array(canvas.width * canvas.height * 4);
   const drawn = globalThis.renderFrame;
   globalThis.renderFrame = function (...a) {
-    const out = drawn.apply(this, a);
+    const out = drawn.call(this, a[0], false); // Drawn whatever hold says; see above.
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
     let hash = 2166136261;
     for (let i = 0; i < px.length; i += 4 * 17) {

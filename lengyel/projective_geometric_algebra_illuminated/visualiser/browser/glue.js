@@ -4301,6 +4301,9 @@ wireExperiment('toggle-overlay', (is_on) => {
   svg_overlay.style.display = is_on ? '' : 'none';
 });
 
+// Whether canvas was resized since last draw.
+//   Resize clears it, so held frame still has to be drawn once. True before first draw.
+let is_canvas_resized = true;
 function resize() {
   const ratio_pixel = ratioPixel();
   const w = Math.round(canvas.clientWidth * ratio_pixel);
@@ -4309,6 +4312,7 @@ function resize() {
     canvas.width = w;
     canvas.height = h;
     gl.viewport(0, 0, w, h);
+    is_canvas_resized = true;
   }
   svg_overlay.setAttribute('viewBox', '0 0 ' + canvas.clientWidth + ' ' + canvas.clientHeight);
 }
@@ -4351,7 +4355,10 @@ channel_render.port1.onmessage = markRendered;
 //   read back **inside its own click**, without also re-running per-tick simulation that
 //   frame() does around it. Mirrors `visualiser.renderFrame`, which is split same way and
 //   for same reason: desktop's storyboard capture drives it directly too.
-function renderFrame(now_seconds) {
+// Draw one frame, unless nothing in it moved and caller allows hold.
+//   `is_hold_allowed` is frame loop's alone; direct callers -- capture, checks reading
+//   pixels back -- leave it unset and always draw.
+function renderFrame(now_seconds, is_hold_allowed = false) {
   resize();
   const aspect = canvas.width / canvas.height;
 
@@ -4404,6 +4411,19 @@ function renderFrame(now_seconds) {
   recordPhaseTime('ghost', data.ms_ghost);
   recordPhaseTime('selected', data.ms_selected);
   for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = data[COUNTS_DIAGNOSTIC[name]];
+
+  // **Held frame is not drawn.** Bridge holding scene and furniture means every.
+  //   buffer and uniform below would be last frame's, and canvas not resized still
+  //   shows last frame: compositor keeps what was presented until something is drawn
+  //   over it. Skipping clear and draws leaves GPU idle on still scene -- 5,038 points
+  //   at full pixel ratio, antialiased, every frame, for picture that had not changed.
+  //   On device whose spikes survived every main-thread suspect this is experiment
+  //   as much as saving: spike outliving idle GPU is device's own.
+  //   `upload + draw calls` reads zero for such frame, which is what it cost.
+  const is_picture_held =
+    is_hold_allowed && data.is_scene_held && data.is_furniture_held && !is_canvas_resized;
+  if (is_picture_held) { recordPhaseTime('upload', 0); return; }
+  is_canvas_resized = false;
 
   const ms_before_draw = performance.now();
   const ratio_pixel = ratioPixel();
@@ -4567,7 +4587,8 @@ function frame() {
 
   if (nimDragActive()) nimUpdateDrag(now_seconds);
 
-  renderFrame(now_seconds);
+  // Hold allowed except where capture wants buffer drawn in this very frame.
+  renderFrame(now_seconds, !is_capture_wanted);
 
   // Immediately after last draw call and before this callback yields, which is only.
   //   moment drawing buffer is still there to read; see `captureFrameIfAsked`.
