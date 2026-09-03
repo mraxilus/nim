@@ -1302,9 +1302,18 @@ behind rendering); its lateness is the `style + layout + paint` row, clamped to 
 remainder when the message still loses to the next frame's callback — before the clamp one
 16.7 ms frame read 24 ms, the next frame's own work counted twice — a cut of
 `display wait + browser` kept out of every sum and shown in the readout as `(render …)`, gated
-on the panel being shown with one timer in flight at a time. Whether the 30 ms is that row
-or GPU and display wait is unmeasured on the device at the time of writing; the row is what
-will say. Every job
+on the panel being shown with one timer in flight at a time. The device answered: on
+its slowest frame `34.5 ms · page 9.5 (build 8.4) · browser 25.0 (render 24.6)`, and per
+frame `style + layout + paint` at 13.18 ms mean and **10.7 ms median** of a 16.78 ms frame
+on a still scene, against `display wait + browser` at 11.1 — the main thread, not the
+display, and not the page's callback. With the page's own 2 ms that leaves 4 ms of slack, so
+anything extra costs a whole vsync: that is the spike. What Chrome charges to the main thread
+there the page cannot tell apart from inside — the commit waits on the compositor, so a
+backdrop blur, a full-ratio antialiased canvas or the overlay's paint all land in the same
+row — so three **experiment pills** in the section switch each off at runtime (`blur`, every
+`backdrop-filter` through one class on `body`; `hi-dpi`, the canvas's pixel-ratio cap from
+2.5 to 1; `overlay`, the SVG layer's display), for the reader to flip one and watch the row.
+None is saved. Which of the three it is remains unmeasured here. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
