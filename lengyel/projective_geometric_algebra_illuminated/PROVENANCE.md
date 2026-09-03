@@ -394,15 +394,36 @@ distance and the grid bounds its own line count. What degrades far out is `Verte
 float32 storage, past roughly 10⁶ units; wheeled out to 3 × 10¹⁹ the view empties to a
 speck rather than breaking, and `home` returns.
 
-**Clip planes follow orbit distance** — `FACTOR_CLIP_NEAR` 1/400 and `FACTOR_CLIP_FAR` 20
-times it — derived, never stored. Not a stored pair set at construction — it kept its value
-through every dolly, so dollying past the fixed far plane clipped the whole scene away. Both
-scale together, so depth-buffer precision stays constant as the camera pulls back.
+**Clip planes follow orbit distance, and the far plane never comes inside the scene** —
+`FACTOR_CLIP_NEAR` 1/400 of the orbit distance and `FACTOR_CLIP_FAR` 20 times it, or the eye's
+distance to the origin plus the scene's reach (`Camera.reach_scene`, times `MARGIN_REACH_FAR`
+1.05) where that is farther — derived, never stored. Not a stored pair set at construction — it
+kept its value through every dolly, so dollying past the fixed far plane clipped the whole
+scene away. Not twenty orbit distances alone either: once the starfield was 3,000 units across,
+a zoom that carried the orbit distance down to a foreground star put the far plane a few
+hundred units out and the field vanished behind it; six notches in at the demo's centre left 49
+of 4,938 points drawn, and leave 367 now. The reach is the farthest visible finite object from
+the origin, a disc's own extent included (`framing.reachOf`), measured once per scene change —
+from the placement cache on the browser, by placing on the desktop — and stamped onto the
+camera at every derivation point rather than kept in it, because `home` and every other path
+that replaces the camera value would drop a stored one; the first cut did keep it, and the
+undo-while-held check caught the drop. Near stays scaled, so the ratio rises at close zoom over
+a wide scene — a hundred thousand for an orbit of twelve over three thousand — inside a 24-bit
+depth buffer for points and lines.
 
 **The wheel zooms toward what the pointer is over** — the map reading of a zoom.
 `picking.anchorZoomAt` solves the anchor in three answers, in order: the finite object under
 the pointer, else the ground at `z = 0`, else the horizontal plane through the target; where
-none answers (empty sky above the horizon) the wheel falls back to a centred dolly. The
+none answers (empty sky above the horizon) the wheel falls back to a centred dolly. **The
+object or ground is taken only where its depth is within `FACTOR_ANCHOR_DEPTH` = 2 of the
+orbit distance, either way**; otherwise the level through the target answers. The starfield
+put some star under every pixel, and anchoring on one a thousand units off slid the eye 38%
+of the way toward it per notch: six notches with the pointer off-centre carried the target
+1,737 units, three opening distances, and the far plane then clipped the field away behind.
+With the window the same six notches carry it 5 units here. Zooming onto a star being
+framed still works, since it stands at the depth being looked at. A cursor toward the horizon
+finds ground beyond the window and takes the level instead, which is what stops a zoom near
+the horizon flying off across the ground; the suite holds both cases. The
 object comes first because pointing at something means *that thing, at the depth it stands
 at*: `positionOnItemUnder` reads a point at its place, a plane where the sight ray crosses
 it, a line at the point nearest the ray. Horizon objects are refused — drawn at
