@@ -55,23 +55,23 @@ static:
   #   Overflowing any is `doAssert` at draw time, dead page, so raising `ITEMS_MAX` fails
   #   to compile instead.
   doAssert VERTICES_MAX >= 2*ITEMS_MAX,
-    &"`mesh.VERTICES_MAX` must hold every point drawn twice: `{2*ITEMS_MAX}` at this " &
-      &"capacity, but it is `{VERTICES_MAX}`."
+    &"`mesh.VERTICES_MAX` must hold every point drawn twice, `{2*ITEMS_MAX}` at this " &
+      &"capacity; got `{VERTICES_MAX}`."
   doAssert DISCS_MAX >= 2*ITEMS_MAX + 1,
-    &"`mesh.DISCS_MAX` must hold every plane drawn twice plus a ghost: " &
-      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{DISCS_MAX}`."
+    &"`mesh.DISCS_MAX` must hold every plane drawn twice plus a ghost, " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity; got `{DISCS_MAX}`."
   doAssert DOMES_MAX >= 2*ITEMS_MAX + 1,
-    &"`mesh.DOMES_MAX` must hold every plane at horizon drawn twice plus a ghost: " &
-      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{DOMES_MAX}`."
+    &"`mesh.DOMES_MAX` must hold every plane at horizon drawn twice plus a ghost, " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity; got `{DOMES_MAX}`."
   doAssert RINGS_MAX >= 2*ITEMS_MAX + 1,
-    &"`mesh.RINGS_MAX` must hold every plane's rim drawn twice plus a ghost: " &
-      &"`{2*ITEMS_MAX + 1}` at this capacity, but it is `{RINGS_MAX}`."
+    &"`mesh.RINGS_MAX` must hold every plane's rim drawn twice plus a ghost, " &
+      &"`{2*ITEMS_MAX + 1}` at this capacity; got `{RINGS_MAX}`."
   # Bind on scene of lines.
   #   Rim is one ring record, so what fills ribbons is two segments `tessellate.addLine`
   #   steps out per anchor, drawn twice.
   doAssert RIBBONS_MAX >= 4*ITEMS_MAX + 1,
     &"`mesh.RIBBONS_MAX` must hold a scene of lines, each two segments drawn twice, " &
-      &"plus a ghost: `{4*ITEMS_MAX + 1}` at this capacity, but it is `{RIBBONS_MAX}`."
+      &"plus a ghost, `{4*ITEMS_MAX + 1}` at this capacity; got `{RIBBONS_MAX}`."
 
 
 
@@ -582,7 +582,7 @@ func slotStepped*(scene: Scene, slot: Option[int], step: int): Option[int] =
   ##   Wraps deliberately: drives keyboard traversal, and walk stopping dead leaves reader
   ##   pressing key that silently stopped working.
   if scene.len == 0: return none(int)
-  doAssert step != 0, "Stepping nowhere would search forever; got a step of zero."
+  doAssert step != 0, &"Step must be non-zero, or search runs forever; got `{step}`."
   let start = if slot.isSome: slot.get else: -1
   for offset in 1 .. ITEMS_MAX:
     let candidate = floorMod(start + step*offset, ITEMS_MAX)
@@ -813,7 +813,8 @@ proc addItem*(
   ##   `anchor_override` is where plane's circle should centre instead of support, where
   ##   construction fixes that; see `creationAnchor`.
   doAssert not scene.isFull,
-    &"Scene holds at most {ITEMS_MAX} items; raise `--define:visualiser.items_max`."
+    &"Scene holds at most {ITEMS_MAX} items, raise `--define:visualiser.items_max`; got " &
+      &"`{scene.len}`."
   result = scene.slot_free_first.get
   scene.slot_free_first = scene.next_free[result]
   scene.geometries[result] = geometry

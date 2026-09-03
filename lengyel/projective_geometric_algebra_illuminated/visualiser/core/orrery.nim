@@ -371,20 +371,22 @@ func radiusOfNeighbourPlanet(planet: NeighbourPlanet; which, count: int): float 
 
 static:
   doAssert SOL[INDEX_SOL_EARTH].name == "earth",
-    "`INDEX_SOL_EARTH` must name Earth: the arrangement's one orbit line joins it to Sol, " &
-      "and the point at horizon is that line's own attitude."
+    &"`INDEX_SOL_EARTH` must name Earth, whose orbit line joins it to Sol and whose " &
+      &"attitude is the point at horizon; got `{SOL[INDEX_SOL_EARTH].name}`."
   doAssert SOL[INDEX_SOL_URANUS].name == "uranus" and
       SOL[INDEX_SOL_NEPTUNE].name == "neptune",
-    "`INDEX_SOL_URANUS` and `INDEX_SOL_NEPTUNE` must name the two outermost planets: the " &
-      "ecliptic is spanned from that pair and Neptune sets the system's own scale."
+    &"`INDEX_SOL_URANUS` and `INDEX_SOL_NEPTUNE` must name the two outermost planets, " &
+      &"which span the ecliptic and set the system's scale; got " &
+      &"`{SOL[INDEX_SOL_URANUS].name}` and `{SOL[INDEX_SOL_NEPTUNE].name}`."
   doAssert MOONS[INDEX_MOON_LUNA].name == "luna",
-    "`INDEX_MOON_LUNA` must name Luna: the arrangement's second finite line joins it to " &
-      "Earth, and the plane at horizon is built from that line's attitude."
-  doAssert SOL[0].role == Role.Sun, "`SOL` opens with the star every other entry rings."
+    &"`INDEX_MOON_LUNA` must name Luna, whose line to Earth gives the plane at horizon " &
+      &"its attitude; got `{MOONS[INDEX_MOON_LUNA].name}`."
+  doAssert SOL[0].role == Role.Sun, &"`SOL` must open with its star; got `{SOL[0].role}`."
   for moon in MOONS:
     doAssert moon.parent > 0 and moon.parent < len(SOL) and
         SOL[moon.parent].role == Role.Planet,
-      "Every moon must ring a planet of `SOL`; check `MOONS`' own `parent` column."
+      &"Every moon must ring a planet of `SOL`, see `MOONS`' own `parent` column; got " &
+        &"`{moon.parent}` for `{moon.name}`."
 
 
 proc addHorizon(
@@ -397,8 +399,8 @@ proc addHorizon(
   ##     plane `planet[0]` built.
   ##     `storyboard`'s seeds carry same warning about `o` and `ground`.
   doAssert shape(geometry) == some(expected) and isHorizon(geometry),
-    &"Orrery's `{label}` should be a {expected} at horizon; check that the operands it is " &
-      "taken from are genuinely apart."
+    &"Orrery's `{label}` must be {expected} at horizon, its operands genuinely apart; got " &
+      &"`{shape(geometry)}`."
   scene.addItem(geometry, label, lut_role_to_ink[Role.Derived], now)
 
 
@@ -411,8 +413,8 @@ proc addPlane(
   ##   Collinearity comes from layout table and any edit can reintroduce it; `angleRing`
   ##   says what edit to avoid.
   doAssert shape(geometry) == some(Shape.Plane),
-    &"Orrery derives `{label}` from three points that do not span a plane; " &
-      "check the layout for a collinear triple."
+    &"Orrery must derive `{label}` from three points spanning a plane, so the layout " &
+      &"holds a collinear triple; got `{shape(geometry)}`."
   scene.addItem(geometry, label, lut_role_to_ink[Role.Derived], now, some(anchor))
 
 
@@ -449,7 +451,7 @@ const ITEMS_SOL* = len(SOL) + len(MOONS) + 3
   ##   whole arrangement.
 
 
-type ScaleOrrery* = enum
+type ScaleOrrery* {.pure.} = enum
   ## Name how deep into catalogue one build of arrangement reaches.
   ##   Three sizes of same scene, not three scenes: Sol entire, then real stars outward,
   ##   then four objects at horizon, truncated at different depth.
@@ -469,9 +471,9 @@ func itemsOf*(scale: ScaleOrrery): int =
   ##   `Catalogue` stops two short of `scene.ITEMS_MAX`: smallest margin still proving
   ##   point of leaving one, so reader can add point and join it to something.
   case scale
-  of Nearest: 60
-  of Neighbourhood: 360
-  of Catalogue: 5038
+  of ScaleOrrery.Nearest: 60
+  of ScaleOrrery.Neighbourhood: 360
+  of ScaleOrrery.Catalogue: 5038
 
 
 const SCALE_ORRERY_DEFAULT* = ScaleOrrery.Neighbourhood
@@ -497,12 +499,12 @@ const
 static:
   for scale in ScaleOrrery:
     doAssert itemsOf(scale) >= ITEMS_ORRERY_MIN,
-      &"`ScaleOrrery.{scale}` asks for `{itemsOf(scale)}` items where the smallest " &
-        &"arrangement is `{ITEMS_ORRERY_MIN}`: Sol, the block at horizon, and the one " &
-        "neighbour the opening camera is fitted to."
+      &"`ScaleOrrery.{scale}` must ask for at least `{ITEMS_ORRERY_MIN}` items, Sol, the " &
+        &"block at horizon and the one neighbour the opening camera is fitted to; got " &
+        &"`{itemsOf(scale)}`."
   doAssert FRAMED_ORRERY == 2,
-    &"`ITEMS_ORRERY_MIN` folds in one neighbour because `FRAMED_ORRERY` is 2; it is now " &
-      &"`{FRAMED_ORRERY}`, so the floor has to fold in that many less one."
+    &"`ITEMS_ORRERY_MIN` folds in one neighbour because `FRAMED_ORRERY` is 2, and must " &
+      &"fold in that many less one; got `{FRAMED_ORRERY}`."
 
 const RADIUS_ORRERY* = block:
   ## Report how far out demo's camera stands back to hold systems it is meant to hold.
@@ -656,10 +658,9 @@ proc constructOrrery*(
     "att(ecliptic sol) ∧ att(earth ∧ luna)", Shape.Plane, now)
 
   doAssert scene.len == itemsOf(scale),
-    &"Orrery at `{scale}` built `{scene.len}` items where it fills `{itemsOf(scale)}`. The " &
-      "walk passes over what will not fit rather than stopping, so it can only fall short " &
-      "by running out of catalogue -- check that `starfield.STARS` still carries more " &
-      "stars than the scene has room for."
+    &"Orrery at `{scale}` must build `{itemsOf(scale)}` items, and its walk passes over " &
+      &"what will not fit rather than stopping, so it falls short only by running out of " &
+      &"catalogue, `starfield.STARS` carrying too few stars; got `{scene.len}`."
 
 
 proc showOrrery*(

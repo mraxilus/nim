@@ -170,7 +170,7 @@ proc packCode(writer: var BitWriter; code, width: int) =
   writer.count_pending += width
   while writer.count_pending >= 8:
     doAssert writer.count < writer.capacity,
-      &"LZW output exceeded its own reservation of {writer.capacity} bytes."
+      &"LZW output must fit its reservation of {writer.capacity} bytes; got `{writer.count}`."
     writer.buffer[writer.count] = uint8(writer.pending and 0xFF)
     inc writer.count
     writer.pending = writer.pending shr 8
@@ -181,7 +181,7 @@ proc flushBits(writer: var BitWriter) =
   ## Emit whatever partial byte remains, padded with zero bits above it.
   if writer.count_pending > 0:
     doAssert writer.count < writer.capacity,
-      &"LZW output exceeded its own reservation of {writer.capacity} bytes."
+      &"LZW output must fit its reservation of {writer.capacity} bytes; got `{writer.count}`."
     writer.buffer[writer.count] = uint8(writer.pending and 0xFF)
     inc writer.count
     writer.pending = 0

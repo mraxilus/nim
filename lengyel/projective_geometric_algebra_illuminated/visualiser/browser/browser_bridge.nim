@@ -194,7 +194,8 @@ var
     ## Held for scene's slots only: ghost and drag preview move with pointer, so both are
     ## placed where drawn.
     ## Dead slots hold whatever last occupant left; every walk skips them.
-  REVISION_PLACED = -1 ## Scene revision `PLACEMENTS` was filled at; -1 before first fill.
+  REVISION_PLACED = none(int) ## Scene revision `PLACEMENTS` was filled at, or none before
+    ## first fill.
   BORN_LAST = 0.0 ## Latest birth stamp `stampBorn` has written.
     ## What says scene has stopped animating.
     ##   Every item fades in over `mesh.ANIMATION_SECONDS` from its stamp, so frame past
@@ -844,16 +845,18 @@ proc ensurePlaced() =
   ##   Placing side reads no camera, so camera move never reaches this; only edit does.
   ##   Called by frame build and by hover pick, which can run before build on frame where
   ##   scene has just changed, so whichever comes first fills it.
-  if REVISION_PLACED == SCENE.revision: return
+  if REVISION_PLACED == some(SCENE.revision): return
   # Re-place only slots stamped since last fill: one per edit, all after restore.
   #   Re-placing every slot per edit is whole frame at capacity; figures in
   #   `PROVENANCE.md`.
   for slot in 0 ..< SCENE.bound:
-    if SCENE.isAlive(slot) and SCENE.revisionPlacingAt(slot) > REVISION_PLACED:
+    let is_stale = REVISION_PLACED.isNone or
+      SCENE.revisionPlacingAt(slot) > REVISION_PLACED.get
+    if SCENE.isAlive(slot) and is_stale:
       PLACEMENTS[slot] = placeObject(
         SCENE.geometryOf(slot), SCENE.anchorOverrideAt(slot),
       )
-  REVISION_PLACED = SCENE.revision
+  REVISION_PLACED = some(SCENE.revision)
 
 
 proc ensureViewOverlay(width, height: int) =

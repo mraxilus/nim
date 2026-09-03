@@ -23,7 +23,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/options
+import std/[options, strformat]
 
 import ../../pga
 import ./[euclid, objects]
@@ -169,5 +169,5 @@ func pointFrom*(m: Multivector): Position =
   ##   is exactly one and read cannot refuse.
   ##   Asserted rather than defaulted: zero weight here means assembly upstream is wrong.
   let read = position(m)
-  doAssert read.isSome, "An assembled point must carry weight; its assembly is wrong."
+  doAssert read.isSome, &"Assembled point must carry weight, its assembly is wrong; got `{m}`."
   read.get

@@ -386,7 +386,7 @@ proc lightnessToken(name: string): float =
       float(parseHexInt(value[3 .. 4]))/255.0,
       float(parseHexInt(value[5 .. 6]))/255.0,
     ))
-  doAssert false, &"Token `{name}` was not found in `shell.html`."
+  doAssert false, &"Token must be set in `shell.html`; got none for `{name}`."
 
 
 proc main() =

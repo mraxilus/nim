@@ -304,8 +304,8 @@ proc parseOptions(): Options =
           var counts: seq[string]
           for scale in ScaleOrrery: counts.add($itemsOf(scale))
           doAssert result.scale_demo.isSome,
-            &"Unknown demo size `{value}`; expected " & counts.join(", ") &
-              ", or `--demo` on its own for the default."
+            "Demo size must be one of " & counts.join(", ") &
+              &", or `--demo` alone for the default; got `{value}`."
       of "drive-assert": result.is_asserted = true
       of "drive-drag": result.is_drag_driven = true
       of "drive-keys": result.is_key_driven = true
@@ -316,15 +316,14 @@ proc parseOptions(): Options =
         for path in HelpPath:
           if titleOf(path) == value: result.path_help_driven = some(path)
         doAssert result.path_help_driven.isSome,
-          &"Unknown help tab `{value}`; expected one this build actually has."
+          &"Help tab must be one this build has; got `{value}`."
       else:
         doAssert false,
-          &"Unknown option `--{key}`; expected screenshot, storyboard, load-scene, " &
-          "frames, hidden, timings, novsync, fill, demo[:<items>], drive-assert, " &
-          "drive-drag, " &
-          "drive-keys, drive-select, drive-undo, drive-sky or drive-help."
+          "Option must be one of screenshot, storyboard, load-scene, frames, hidden, " &
+          "timings, novsync, fill, demo[:<items>], drive-assert, drive-drag, drive-keys, " &
+          &"drive-select, drive-undo, drive-sky or drive-help; got `--{key}`."
     of cmdArgument:
-      doAssert false, &"Unexpected argument `{key}`; every input is a named option."
+      doAssert false, &"Every input must be a named option; got `{key}`."
     of cmdEnd: discard
 
 
@@ -796,8 +795,8 @@ proc exportFrame(path: string; width, height: int): string =
   ##   close.
   if len(path) == 0: return "Export path is empty; nothing written."
   doAssert width <= WIDTH_EXPORT_MAX and height <= HEIGHT_EXPORT_MAX,
-    &"Window grew past the {WIDTH_EXPORT_MAX}x{HEIGHT_EXPORT_MAX} export bound; " &
-    &"raise `--define:visualiser.width_export_max` or `...height_export_max`."
+    &"Window must fit the {WIDTH_EXPORT_MAX}x{HEIGHT_EXPORT_MAX} export bound, raise " &
+    &"`--define:visualiser.width_export_max` or `...height_export_max`; got `{width}x{height}`."
   let count = width*height*3
   capturePixels(width, height, PIXELS_READBACK.toOpenArray(0, count - 1))
   writePng(ARENA_FRAME, path, width, height, PIXELS_READBACK.toOpenArray(0, count - 1))
@@ -1605,8 +1604,8 @@ proc runInteractive(
       panel.index_history = (panel.index_history + 1) mod FRAMES_HISTORY
       if options.is_timed:
         doAssert count_drawn - 1 < FRAMES_TIMING_MAX,
-          &"Timing run passed its own {FRAMES_TIMING_MAX}-frame bound; raise " &
-          "`--define:visualiser.frames_timing_max` or shorten `--frames`."
+          &"Timing run must stay within its {FRAMES_TIMING_MAX}-frame bound, raise " &
+          &"`--define:visualiser.frames_timing_max` or shorten `--frames`; got `{count_drawn}`."
         TIMINGS_FRAME_MILLISECONDS[count_drawn - 1] = delta_milliseconds
     ticks_previous_frame = ticks_frame_start
 
@@ -1747,10 +1746,12 @@ proc runStoryboard(
     block:
       let (width, height) = renderAt(now)
       doAssert width == PIXELS_WIDTH and height == PIXELS_HEIGHT,
-        "Storyboard capture assumes a fixed window size; the actual framebuffer differs."
+        "Storyboard capture assumes a " & $PIXELS_WIDTH & "x" & $PIXELS_HEIGHT &
+          " framebuffer; got `" & $width & "x" & $height & "`."
       dims_gif = (width div STRIDE_GIF, height div STRIDE_GIF)
       doAssert count_frames_gif < COUNT_GIF_FRAMES_MAX,
-        &"Storyboard asked for more than the {COUNT_GIF_FRAMES_MAX} GIF frames reserved."
+        &"Storyboard must fit the {COUNT_GIF_FRAMES_MAX} GIF frames reserved; got " &
+          &"`{count_frames_gif}`."
       capturePixels(width, height, PIXELS_READBACK.toOpenArray(0, width*height*3 - 1))
       let frame_size = dims_gif[0]*dims_gif[1]*3
       downsampleInto(
@@ -1869,7 +1870,7 @@ proc fillSceneForBenchmark(scene: var Scene, now: float) =
 proc main() =
   ## Open window, run mode command line asked for, then tear down in order.
   let options = parseOptions()
-  doAssert sdl3.init(INIT_VIDEO), &"SDL3 failed to start: {sdl3.getError()}"
+  doAssert sdl3.init(INIT_VIDEO), &"SDL3 must start; got `{sdl3.getError()}`."
   defer: sdl3.quit()
 
   # Ask for core profile renderer's shaders are written against.
@@ -1894,18 +1895,18 @@ proc main() =
     sdl3.glSetAttribute(GL_MULTISAMPLEBUFFERS, 0)
     sdl3.glSetAttribute(GL_MULTISAMPLESAMPLES, 0)
     window = sdl3.createWindow(TITLE, PIXELS_WIDTH, PIXELS_HEIGHT, flags)
-  doAssert window != nil, &"SDL3 failed to open window: {sdl3.getError()}"
+  doAssert window != nil, &"SDL3 must open a window; got `{sdl3.getError()}`."
   defer: sdl3.destroyWindow(window)
 
   let context = sdl3.glCreateContext(window)
-  doAssert context != nil, &"SDL3 failed to make OpenGL context: {sdl3.getError()}"
+  doAssert context != nil, &"SDL3 must make an OpenGL context; got `{sdl3.getError()}`."
   defer: sdl3.glDestroyContext(context)
   sdl3.glSetSwapInterval(if options.is_novsync: 0 else: 1)
   echo &"OpenGL: {gl.getString(gl.VERSION)}"
 
   doAssert gui.init(
     window, context, PATH_FONT, PATH_FONT_MATH, PATH_FONT_SYMBOL, SIZE_FONT
-  ), "Dear ImGui failed to start."
+  ), "Dear ImGui must start; got `false` from `gui.init`."
   defer: gui.shutdown()
   if not gui.isFontLoaded():
     echo &"Font `{PATH_FONT}` was not loaded; operator notation will draw as boxes."
@@ -1926,7 +1927,8 @@ proc main() =
   #   Window and script then agree on where construction starts.
   let now_startup = secondsNow()
   doAssert not (options.scale_demo.isSome and len(options.path_load_scene) > 0),
-    "`--demo` and `--load-scene` each replace the opening scene; ask for one of them."
+    &"`--demo` and `--load-scene` each replace the opening scene, ask for one; got " &
+      &"`{options.scale_demo}` with `{options.path_load_scene}`."
   if options.scale_demo.isSome:
     # Frame for window this run opens at; reader who resizes reframes by looking.
     showOrrery(scene, camera, PIXELS_WIDTH, PIXELS_HEIGHT, options.scale_demo.get, now_startup)

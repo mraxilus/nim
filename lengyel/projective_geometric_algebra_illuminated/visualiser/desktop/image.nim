@@ -131,7 +131,8 @@ proc writePng*(
     addr compressed[0], addr count_compressed,
     addr filtered[0], Ulong(count_filtered), cint(LEVEL_COMPRESSION),
   )
-  doAssert status == 0, &"Deflate of {count_filtered} bytes failed with zlib status {status}."
+  doAssert status == 0,
+    &"Deflate of {count_filtered} bytes must succeed; got zlib status `{status}`."
 
   var header: array[13, uint8]
   header[0 .. 3] = toBigEndian(uint32(width))

@@ -13,15 +13,16 @@
 
 {.experimental: "strictFuncs".}
 
-import std/options
+import std/[options, strformat]
 
 import ../../pga
 
 # Fail early rather than emit meaningless picture from algebra of wrong dimension.
 static:
   doAssert DIMENSIONS == 4 and IS_RIGID,
-    "Visualiser draws 3D Euclidean space, so it needs 4D rigid PGA; compile with " &
-    "`--define:pga.dimensions=4 --define:pga.is_conformal=false`."
+    &"Visualiser draws 3D Euclidean space, so it needs 4D rigid PGA, i.e. " &
+      &"`--define:pga.dimensions=4 --define:pga.is_conformal=false`; got `{DIMENSIONS}` " &
+      &"with conformal `{IS_CONFORMAL}`."
 
 
 

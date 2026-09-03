@@ -25,7 +25,7 @@
 {.experimental: "codeReordering".}
 {.experimental: "strictFuncs".}
 
-import std/[math, options]
+import std/[math, options, strformat]
 
 import ../../pga
 import ./[boundary, tessellate]
@@ -342,15 +342,18 @@ func frame*(camera: Camera, eye: Position): FrameCamera =
     axis_sight = toMultivector(eye) ∧ toMultivector(camera.target)
     forward = direction(axis_sight)
   doAssert forward.isSome,
-    "Camera eye and target must differ; orbit distance is bounded away from zero."
+    &"Camera eye and target must differ, orbit distance is bounded away from zero; got " &
+      &"`{eye}` and `{camera.target}`."
 
   let axis_right = directionNormal(axis_sight ∧ toMultivector(UP_WORLD))
   doAssert axis_right.isSome,
-    "Camera sight axis must not run along world up; elevation is clamped short of poles."
+    &"Camera sight axis must not run along world up, elevation is clamped short of " &
+      &"poles; got `{axis_sight}`."
 
   let axis_up = directionNormal(axis_sight ∧ toMultivector(axis_right.get))
   doAssert axis_up.isSome,
-    "Camera sight axis and right direction must span plane; they are perpendicular."
+    &"Camera sight axis and right direction must span plane, being perpendicular; got " &
+      &"`{axis_right.get}`."
 
   # Pin view's +y to world up, as antidual fixes axis only up to sign.
   #   Alignment is library's inner product of two directions, read at scalar.

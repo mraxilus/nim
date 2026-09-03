@@ -27,7 +27,7 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, strutils]
+import std/[options, strformat, strutils]
 
 import ./[interaction, scene]
 
@@ -279,7 +279,8 @@ const lut_help_entries* = block:
   for operation in Operation:
     add(HelpPath.Operations, notationSymbolic(operation), notationNamed(operation))
 
-  doAssert count == len(lut), "Every help slot must be filled; adjust the array's size."
+  doAssert count == len(lut),
+    &"Every help slot must be filled, adjust the array's size; got `{count}` of `{len(lut)}`."
   lut
 
 
@@ -296,16 +297,18 @@ static:
   for entry in lut_help_entries:
     if path_last != some(entry.path):
       doAssert entry.path notin seen,
-        "Entries of one help path must be written together, or it renders as two tabs."
+        &"Entries of one help path must be written together, or it renders as two tabs; " &
+          &"got `{entry.path}` again."
       seen.incl(entry.path)
       path_last = some(entry.path)
   for path in HelpPath:
-    doAssert path in seen, "Every help path must hold at least one entry: " & titleOf(path)
+    doAssert path in seen,
+      &"Every help path must hold at least one entry; got none for `{titleOf(path)}`."
     let entries_max =
       case path
       of HelpPath.Operations: ENTRIES_MAX_PATH_CATALOGUE
       of HelpPath.Keys: ENTRIES_MAX_PATH_KEYS
       else: ENTRIES_MAX_PATH
     doAssert countOf(path) <= entries_max,
-      "Help path `" & titleOf(path) & "` outgrew what fits a phone; split it or raise " &
-      "its own bound deliberately."
+      &"Help path `{titleOf(path)}` must fit a phone, split it or raise its own bound " &
+        &"deliberately; got `{countOf(path)}` over `{entries_max}`."

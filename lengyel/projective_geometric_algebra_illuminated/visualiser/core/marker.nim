@@ -974,7 +974,9 @@ func runShownLongest*(
     if shown: inc count_shown
   if count_shown == 0: return (0, 0)
   if count_shown == count: return (0, count)
-  var length_best = -1.0
+  var
+    found_stretch = false
+    length_best = 0.0
   for start in 0 ..< count:
     # Find each stretch once, from sample whose predecessor was cut.
     if not are_shown[start] or are_shown[(start + count - 1) mod count]: continue
@@ -988,7 +990,8 @@ func runShownLongest*(
           before = ring[(start + taken - 1) mod count]
         length += hypot(at.x - before.x, at.y - before.y)
       inc taken
-    if length > length_best:
+    if not found_stretch or length > length_best:
+      found_stretch = true
       length_best = length
       result = (start, taken)
 

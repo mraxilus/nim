@@ -374,7 +374,7 @@ proc addGrid*(
 #[ Object Tessellation ]#
 
 type
-  PlacedKind* = enum ## Define which drawable algebra found, and in which of two placements.
+  PlacedKind* {.pure.} = enum ## Define which drawable algebra found, and its placement.
     Nothing ## No drawable geometry at all; nothing is emitted.
     PointAt ## Point standing somewhere in finite world.
     PointToward ## Point at horizon: direction, drawn as star on sky.

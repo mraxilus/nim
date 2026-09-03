@@ -78,8 +78,8 @@ proc push*[T](arena: var Arena, count: int): ptr UncheckedArray[T] =
   ##   Never freed on its own; reclaimed only when `reset` reclaims whole arena.
   let bytes_needed = count * sizeof(T)
   doAssert arena.used + bytes_needed <= arena.capacity,
-    &"Arena holds {arena.capacity} bytes; {arena.used + bytes_needed} asked for. " &
-    "Raise whichever `--define:visualiser.capacity_arena_*` backs this arena."
+    &"Arena holds {arena.capacity} bytes, raise whichever `--define:visualiser.capacity_arena_*` " &
+    &"backs it; got `{arena.used + bytes_needed}` asked for."
   result = cast[ptr UncheckedArray[T]](addr arena.buffer[arena.used])
   arena.used += bytes_needed
   if arena.used > arena.peak_used: arena.peak_used = arena.used

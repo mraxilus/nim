@@ -21,6 +21,8 @@
 
 {.experimental: "strictFuncs".}
 
+import std/strformat
+
 import ../../pga
 import ./[boundary, tessellate, scene]
 
@@ -123,7 +125,8 @@ proc applyStep*(scene: var Scene, step: Step, now: float = 0.0): Multivector {.d
   ##   Reports derived geometry directly: caller naming what step produced cannot assume
   ##   it landed in last slot of dense array.
   doAssert scene.isAlive(step.index_first) and scene.isAlive(step.index_second),
-    "Storyboard step names an operand the scene has not built yet."
+    &"Storyboard step must name operands scene has built; got `{step.index_first}` and " &
+      &"`{step.index_second}`."
   let
     operand_first = scene[step.index_first].geometry
     operand_second = scene[step.index_second].geometry

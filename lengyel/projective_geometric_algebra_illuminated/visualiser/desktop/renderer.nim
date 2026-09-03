@@ -326,7 +326,7 @@ proc compileShader(kind: gl.Enum, source: string): gl.Uint =
 
   var log: array[LOG_MAX, char]
   gl.getShaderInfoLog(result, LOG_MAX, nil, addr log[0])
-  doAssert false, &"Shader stage {kind:#x} failed to compile: {cast[cstring](addr log[0])}"
+  doAssert false, &"Shader stage {kind:#x} must compile; got `{cast[cstring](addr log[0])}`."
 
 
 proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
@@ -347,7 +347,7 @@ proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
 
   var log: array[LOG_MAX, char]
   gl.getProgramInfoLog(result, LOG_MAX, nil, addr log[0])
-  doAssert false, &"Program failed to link: {cast[cstring](addr log[0])}"
+  doAssert false, &"Program must link; got `{cast[cstring](addr log[0])}`."
 
 
 
@@ -435,7 +435,7 @@ proc initRenderer*(): Renderer =
   gl.bindVertexArray(result.array_disc)
   let corners_disc = discCorners()
   doAssert len(corners_disc) == 2*COUNT_CORNERS_DISC,
-    &"Disc corner buffer holds {len(corners_disc)} floats, not {2*COUNT_CORNERS_DISC}."
+    &"Disc corner buffer must hold {2*COUNT_CORNERS_DISC} floats; got `{len(corners_disc)}`."
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_disc_corners)
   gl.bufferData(
     gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_disc)*sizeof(float32)),
@@ -480,7 +480,7 @@ proc initRenderer*(): Renderer =
   gl.bindVertexArray(result.array_ring)
   let corners_ring = ringCorners()
   doAssert len(corners_ring) == 6*COUNT_CORNERS_RING,
-    &"Ring corner buffer holds {len(corners_ring)} floats, not {6*COUNT_CORNERS_RING}."
+    &"Ring corner buffer must hold {6*COUNT_CORNERS_RING} floats; got `{len(corners_ring)}`."
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_ring_corners)
   gl.bufferData(
     gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_ring)*sizeof(float32)),
@@ -516,7 +516,7 @@ proc initRenderer*(): Renderer =
   gl.bindVertexArray(result.array_dome)
   let corners_dome = domeCorners()
   doAssert len(corners_dome) == 3*COUNT_CORNERS_DOME,
-    &"Dome corner buffer holds {len(corners_dome)} floats, not {3*COUNT_CORNERS_DOME}."
+    &"Dome corner buffer must hold {3*COUNT_CORNERS_DOME} floats; got `{len(corners_dome)}`."
   gl.bindBuffer(gl.ARRAY_BUFFER, result.buffer_dome_corners)
   gl.bufferData(
     gl.ARRAY_BUFFER, gl.Sizeiptr(len(corners_dome)*sizeof(float32)),
@@ -851,7 +851,7 @@ proc capturePixels*(width, height: int; pixels: var openArray[uint8]) =
   ##   Window resized past that bound fails loudly rather than silently reallocating.
   let count = width*height*3
   doAssert len(pixels) >= count,
-    &"Readback buffer holds {len(pixels)} bytes, short of {count}."
+    &"Readback buffer must hold {count} bytes; got `{len(pixels)}`."
   gl.pixelStorei(gl.PACK_ALIGNMENT, 1)
   gl.readPixels(
     0, 0, gl.Sizei(width), gl.Sizei(height), gl.RGB, gl.UNSIGNED_BYTE, addr pixels[0]

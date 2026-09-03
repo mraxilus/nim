@@ -577,8 +577,8 @@ const
 
 static:
   doAssert COUNT_INK_CATEGORICAL == 5,
-    "Ink's categorical slots must stay one contiguous run ending at Ink.high; a slot " &
-    "added or removed after Ink.Rose changes what a colour picker offers."
+    &"Ink's categorical slots must stay one contiguous run of five ending at Ink.high, " &
+      &"or a colour picker offers a different run; got `{COUNT_INK_CATEGORICAL}`."
 
 
 func inkCategorical*(index: int): Ink = Ink(ord(INK_CATEGORICAL_FIRST) + index)
@@ -672,7 +672,8 @@ proc addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
   ##     `fade` per point was two allocations and copy, once per point per frame.
   let count = meshes.points.count_vertices
   doAssert count < VERTICES_MAX,
-    &"Mesh holds at most {VERTICES_MAX} vertices; raise `--define:visualiser.vertices_max`."
+    &"Mesh holds at most {VERTICES_MAX} vertices, raise `--define:visualiser.vertices_max`; " &
+      &"got `{count}`."
   # Write fields in place.
   #   `Vertex` literal assigned here was deep copy per point on JS backend (Art. VII.1).
   template vertex: untyped = meshes.points.vertices[count]
@@ -809,7 +810,8 @@ proc addRibbon*(
   ##   Emit half of boundary is sixteen-float copy.
   let count = meshes.ribbons.count
   doAssert count < RIBBONS_MAX,
-    &"Frame holds at most {RIBBONS_MAX} ribbons; raise `--define:visualiser.ribbons_max`."
+    &"Frame holds at most {RIBBONS_MAX} ribbons, raise `--define:visualiser.ribbons_max`; " &
+      &"got `{count}`."
   meshes.ribbons.records[count] = RibbonRecord(
     tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
     head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
@@ -899,7 +901,8 @@ proc addRing*(
   ## Append one plane's rim as single record: circle `addDisc` fills, outlined.
   ##   Arms arrive already scaled by radius, as `addDisc`'s do.
   doAssert meshes.rings.count < RINGS_MAX,
-    &"Ring storage holds {RINGS_MAX} records; raise `--define:visualiser.rings_max`."
+    &"Ring storage holds {RINGS_MAX} records, raise `--define:visualiser.rings_max`; got " &
+      &"`{meshes.rings.count}`."
   let
     arm_first = radius*axis_first
     arm_second = radius*axis_second
@@ -1043,7 +1046,7 @@ proc appendWashRun(meshes: var MeshSet, kind: WashKind) =
     meshes.washes.runs[count - 1].count += 1
     return
   doAssert count < len(meshes.washes.runs),
-    &"Frame holds at most {len(meshes.washes.runs)} wash runs."
+    &"Frame holds at most {len(meshes.washes.runs)} wash runs; got `{count}`."
   meshes.washes.runs[count] = WashRun(
     kind: kind,
     first: int32(if kind == WashKind.Disc: meshes.discs.count else: meshes.domes.count),
@@ -1063,7 +1066,8 @@ proc addDisc*(
   ##     whatever sits behind legible.
   let count = meshes.discs.count
   doAssert count < DISCS_MAX,
-    &"Frame holds at most {DISCS_MAX} discs; raise `--define:visualiser.discs_max`."
+    &"Frame holds at most {DISCS_MAX} discs, raise `--define:visualiser.discs_max`; got " &
+      &"`{count}`."
   meshes.appendWashRun(WashKind.Disc)
   let
     arm_first = radius*axis_first
@@ -1091,7 +1095,8 @@ proc addDome*(meshes: var MeshSet, center: Position, radius: float, tint: Rgba) 
   ##     Occlusion against nearer things is depth test's job.
   let count = meshes.domes.count
   doAssert count < DOMES_MAX,
-    &"Frame holds at most {DOMES_MAX} domes; raise `--define:visualiser.domes_max`."
+    &"Frame holds at most {DOMES_MAX} domes, raise `--define:visualiser.domes_max`; got " &
+      &"`{count}`."
   meshes.appendWashRun(WashKind.Dome)
   meshes.domes.records[count] = DomeRecord(
     centre_x: float32(center.x), centre_y: float32(center.y), centre_z: float32(center.z),
