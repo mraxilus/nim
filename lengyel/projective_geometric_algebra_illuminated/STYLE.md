@@ -15,8 +15,8 @@ escalating only on need.
   both matter, define the overload pair:
 
   ```nim
-  proc `[]`*(m: var Multivector; b: Basis): var float {.inline.} = m.elements[b]
-  func `[]`*(m: Multivector; b: Basis): float {.inline.} = m.elements[b]
+  proc `[]`*(m: var Multivector, b: Basis): var float {.inline.} = m.elements[b]
+  func `[]`*(m: Multivector, b: Basis): float {.inline.} = m.elements[b]
   ```
 
 - `iterator` only when lazy enumeration is the exposed concept; yield `lent` from a stored
@@ -25,7 +25,7 @@ escalating only on need.
   typedesc aliases, and an alias to an element inside a loop where a `let` would copy (§7):
 
   ```nim
-  template `+`*(m: Multivector; s: float): Multivector = s + m
+  template `+`*(m: Multivector, s: float): Multivector = s + m
   template scalar*[I: Basis | Grade | GradeAnti](t: typedesc[I]): I = I.low
   template r: untyped = records[i]  # alias, never `let r = records[i]` in a hot loop
   ```
@@ -108,12 +108,14 @@ escalating only on need.
 - Bracket imports, grouped and consolidated: `import std/[bitops, options]`, then
   `import ./[algebra {.all.}, helpers]`; `{.all.}` only for deliberate sibling or test
   access to internals.
-- Semicolons between parameter groups of different types, commas within one group; return
-  type and pragmas on the closing line:
+- Commas between parameters while every type appears once (`m: Multivector, b: Basis`).
+  Escalate to semicolons between groups only when some group holds several parameters of
+  one type (`a, b: X; c: Y`). Return type and pragmas on the closing line of a multi-line
+  signature:
 
   ```nim
   func filterFactors(
-    cayley: Cayley1D; factors: seq[Basis]; as_exclusions = false
+    cayley: Cayley1D; factors, exclusions: seq[Basis]; as_exclusions = false
   ): Cayley1D {.compileTime.} =
   ```
 
