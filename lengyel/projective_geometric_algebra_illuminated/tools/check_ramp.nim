@@ -369,6 +369,7 @@ func relit(sample: (float, float, float), lightness: float): (float, float, floa
   (toEncoded(shown.red), toEncoded(shown.green), toEncoded(shown.blue))
 
 
+
 #[ Reading What Ships ]#
 
 proc lightnessToken(name: string): float =
@@ -393,6 +394,7 @@ proc lightnessToken(name: string): float =
 
 proc main() =
   ## Rebuild ramp, compare it to what ships, and report every measurement.
+  ##   Kept whole past sixty lines: one report, read in order it is written.
   let
     lightness_label = lightnessToken("--ink-muted")
     lightness_ink = lightnessToken("--ink")

@@ -77,62 +77,145 @@ const
 #[ Foreign Declarations ]#
 
 # Import OpenGL entry points one to one; see OpenGL reference for each.
-proc clearColor*(red, green, blue, alpha: Float) {.importc: "glClearColor", header: HEADER.}
-proc clear*(mask: Bitfield) {.importc: "glClear", header: HEADER.}
-proc viewport*(x, y: Int; width, height: Sizei) {.importc: "glViewport", header: HEADER.}
-proc enable*(capability: Enum) {.importc: "glEnable", header: HEADER.}
-proc disable*(capability: Enum) {.importc: "glDisable", header: HEADER.}
-proc blendFunc*(source, destination: Enum) {.importc: "glBlendFunc", header: HEADER.}
-proc depthFunc*(function: Enum) {.importc: "glDepthFunc", header: HEADER.}
-proc depthMask*(flag: Boolean) {.importc: "glDepthMask", header: HEADER.}
-proc lineWidth*(width: Float) {.importc: "glLineWidth", header: HEADER.}
-proc getString*(name: Enum): cstring {.importc: "glGetString", header: HEADER.}
-proc pixelStorei*(name: Enum, parameter: Int) {.importc: "glPixelStorei", header: HEADER.}
+# Mark every binding `sideEffect`.
+#   Compiler assumes imported body is pure, so `func` calling one would compile; marked,
+#   only `proc` may reach effects, which is what makes `func` mean anything here.
+proc clearColor*(red, green, blue, alpha: Float)
+  {.importc: "glClearColor", header: HEADER, sideEffect.}
+  ## Set colour `clear` fills colour buffer with.
+
+proc clear*(mask: Bitfield) {.importc: "glClear", header: HEADER, sideEffect.}
+  ## Clear buffers named by `mask` to their set values.
+
+proc viewport*(x, y: Int; width, height: Sizei)
+  {.importc: "glViewport", header: HEADER, sideEffect.}
+  ## Map clip space onto window rectangle at `x`, `y` of given size.
+
+proc enable*(capability: Enum) {.importc: "glEnable", header: HEADER, sideEffect.}
+  ## Turn capability on.
+
+proc disable*(capability: Enum) {.importc: "glDisable", header: HEADER, sideEffect.}
+  ## Turn capability off.
+
+proc blendFunc*(source, destination: Enum) {.importc: "glBlendFunc", header: HEADER, sideEffect.}
+  ## Set how fragment colour blends with what is already drawn.
+
+proc depthFunc*(function: Enum) {.importc: "glDepthFunc", header: HEADER, sideEffect.}
+  ## Set comparison depth test passes on.
+
+proc depthMask*(flag: Boolean) {.importc: "glDepthMask", header: HEADER, sideEffect.}
+  ## Say whether depth writes land.
+
+proc lineWidth*(width: Float) {.importc: "glLineWidth", header: HEADER, sideEffect.}
+  ## Set width `LINES` rasterise at, hint most targets clamp to one pixel.
+
+proc getString*(name: Enum): cstring {.importc: "glGetString", header: HEADER, sideEffect.}
+  ## Read driver string named by `name`, e.g. `VERSION`.
+
+proc pixelStorei*(name: Enum, parameter: Int)
+  {.importc: "glPixelStorei", header: HEADER, sideEffect.}
+  ## Set pixel transfer parameter, e.g. pack alignment for readback.
+
 proc readPixels*(
   x, y: Int; width, height: Sizei; format, kind: Enum; pixels: pointer
-) {.importc: "glReadPixels", header: HEADER.}
+) {.importc: "glReadPixels", header: HEADER, sideEffect.}
+  ## Read framebuffer rectangle into `pixels`.
 
 proc genVertexArrays*(count: Sizei, arrays: ptr Uint)
-  {.importc: "glGenVertexArrays", header: HEADER.}
-proc bindVertexArray*(array_object: Uint) {.importc: "glBindVertexArray", header: HEADER.}
-proc genBuffers*(count: Sizei, buffers: ptr Uint) {.importc: "glGenBuffers", header: HEADER.}
-proc bindBuffer*(target: Enum, buffer: Uint) {.importc: "glBindBuffer", header: HEADER.}
+  {.importc: "glGenVertexArrays", header: HEADER, sideEffect.}
+  ## Create `count` vertex array objects into `arrays`.
+
+proc bindVertexArray*(array_object: Uint)
+  {.importc: "glBindVertexArray", header: HEADER, sideEffect.}
+  ## Make vertex array current, or none at zero.
+
+proc genBuffers*(count: Sizei, buffers: ptr Uint)
+  {.importc: "glGenBuffers", header: HEADER, sideEffect.}
+  ## Create `count` buffer objects into `buffers`.
+
+proc bindBuffer*(target: Enum, buffer: Uint) {.importc: "glBindBuffer", header: HEADER, sideEffect.}
+  ## Make buffer current on `target`.
+
 proc bufferData*(target: Enum, size: Sizeiptr, data: pointer, usage: Enum)
-  {.importc: "glBufferData", header: HEADER.}
+  {.importc: "glBufferData", header: HEADER, sideEffect.}
+  ## Upload `size` bytes from `data` into current buffer, with usage hint.
+
 proc vertexAttribPointer*(
   index: Uint, size: Int, kind: Enum, normalized: Boolean, stride: Sizei, offset: pointer
-) {.importc: "glVertexAttribPointer", header: HEADER.}
+) {.importc: "glVertexAttribPointer", header: HEADER, sideEffect.}
+  ## Point attribute at its components within current buffer.
+
 proc enableVertexAttribArray*(index: Uint)
-  {.importc: "glEnableVertexAttribArray", header: HEADER.}
+  {.importc: "glEnableVertexAttribArray", header: HEADER, sideEffect.}
+  ## Turn attribute `index` on for current vertex array.
+
 proc vertexAttribDivisor*(index: Uint, divisor: Uint)
-  {.importc: "glVertexAttribDivisor", header: HEADER.}
+  {.importc: "glVertexAttribDivisor", header: HEADER, sideEffect.}
+  ## Advance attribute `index` once per `divisor` instances, not per vertex.
+
 proc drawArraysInstanced*(mode: Enum, first: Int, count: Sizei, instances: Sizei)
-  {.importc: "glDrawArraysInstanced", header: HEADER.}
+  {.importc: "glDrawArraysInstanced", header: HEADER, sideEffect.}
+  ## Draw `count` vertices from `first`, `instances` times over.
+
 proc drawArrays*(mode: Enum, first: Int, count: Sizei)
-  {.importc: "glDrawArrays", header: HEADER.}
+  {.importc: "glDrawArrays", header: HEADER, sideEffect.}
+  ## Draw `count` vertices from `first`.
 
-proc createShader*(kind: Enum): Uint {.importc: "glCreateShader", header: HEADER.}
+proc createShader*(kind: Enum): Uint {.importc: "glCreateShader", header: HEADER, sideEffect.}
+  ## Create empty shader stage of `kind`.
+
 proc shaderSource*(shader: Uint, count: Sizei, sources: ptr cstring, lengths: ptr Int)
-  {.importc: "glShaderSource", header: HEADER.}
-proc compileShader*(shader: Uint) {.importc: "glCompileShader", header: HEADER.}
-proc getShaderiv*(shader: Uint, name: Enum, parameters: ptr Int)
-  {.importc: "glGetShaderiv", header: HEADER.}
-proc getShaderInfoLog*(shader: Uint, capacity: Sizei, length: ptr Sizei, log: ptr Char)
-  {.importc: "glGetShaderInfoLog", header: HEADER.}
-proc deleteShader*(shader: Uint) {.importc: "glDeleteShader", header: HEADER.}
+  {.importc: "glShaderSource", header: HEADER, sideEffect.}
+  ## Set shader's source strings.
 
-proc createProgram*(): Uint {.importc: "glCreateProgram", header: HEADER.}
-proc attachShader*(program, shader: Uint) {.importc: "glAttachShader", header: HEADER.}
-proc linkProgram*(program: Uint) {.importc: "glLinkProgram", header: HEADER.}
+proc compileShader*(shader: Uint) {.importc: "glCompileShader", header: HEADER, sideEffect.}
+  ## Compile shader from its source.
+
+proc getShaderiv*(shader: Uint, name: Enum, parameters: ptr Int)
+  {.importc: "glGetShaderiv", header: HEADER, sideEffect.}
+  ## Read shader parameter `name` into `parameters`.
+
+proc getShaderInfoLog*(shader: Uint, capacity: Sizei, length: ptr Sizei, log: ptr Char)
+  {.importc: "glGetShaderInfoLog", header: HEADER, sideEffect.}
+  ## Read shader's compile log into `log`, up to `capacity` bytes.
+
+proc deleteShader*(shader: Uint) {.importc: "glDeleteShader", header: HEADER, sideEffect.}
+  ## Delete shader stage.
+
+proc createProgram*(): Uint {.importc: "glCreateProgram", header: HEADER, sideEffect.}
+  ## Create empty program.
+
+proc attachShader*(program, shader: Uint) {.importc: "glAttachShader", header: HEADER, sideEffect.}
+  ## Attach compiled stage to program.
+
+proc linkProgram*(program: Uint) {.importc: "glLinkProgram", header: HEADER, sideEffect.}
+  ## Link program's attached stages.
+
 proc getProgramiv*(program: Uint, name: Enum, parameters: ptr Int)
-  {.importc: "glGetProgramiv", header: HEADER.}
+  {.importc: "glGetProgramiv", header: HEADER, sideEffect.}
+  ## Read program parameter `name` into `parameters`.
+
 proc getProgramInfoLog*(program: Uint, capacity: Sizei, length: ptr Sizei, log: ptr Char)
-  {.importc: "glGetProgramInfoLog", header: HEADER.}
-proc useProgram*(program: Uint) {.importc: "glUseProgram", header: HEADER.}
+  {.importc: "glGetProgramInfoLog", header: HEADER, sideEffect.}
+  ## Read program's link log into `log`, up to `capacity` bytes.
+
+proc useProgram*(program: Uint) {.importc: "glUseProgram", header: HEADER, sideEffect.}
+  ## Make program current for drawing.
+
 proc getUniformLocation*(program: Uint, name: cstring): Int
-  {.importc: "glGetUniformLocation", header: HEADER.}
+  {.importc: "glGetUniformLocation", header: HEADER, sideEffect.}
+  ## Find uniform `name` in program; GL answers -1 where absent.
+
 proc uniformMatrix4fv*(location: Int, count: Sizei, transpose: Boolean, value: ptr Float)
-  {.importc: "glUniformMatrix4fv", header: HEADER.}
-proc uniform1f*(location: Int, value: Float) {.importc: "glUniform1f", header: HEADER.}
-proc uniform1i*(location: Int, value: Int) {.importc: "glUniform1i", header: HEADER.}
-proc uniform3f*(location: Int; x, y, z: Float) {.importc: "glUniform3f", header: HEADER.}
+  {.importc: "glUniformMatrix4fv", header: HEADER, sideEffect.}
+  ## Set matrix uniform from `count` matrices at `value`.
+
+proc uniform1f*(location: Int, value: Float) {.importc: "glUniform1f", header: HEADER, sideEffect.}
+  ## Set float uniform.
+
+proc uniform1i*(location: Int, value: Int) {.importc: "glUniform1i", header: HEADER, sideEffect.}
+  ## Set int uniform.
+
+proc uniform3f*(location: Int; x, y, z: Float)
+  {.importc: "glUniform3f", header: HEADER, sideEffect.}
+  ## Set three-float uniform.

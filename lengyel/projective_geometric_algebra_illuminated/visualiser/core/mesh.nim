@@ -527,7 +527,9 @@ func axisTinted(base: Rgba): Rgba =
     SCALE_AXIS_LUMINANCE*((1.0'f32 - MUTE_AXIS_TOWARD_GREY)*channel +
       MUTE_AXIS_TOWARD_GREY*grey)
   Rgba(
-    red: softened(base.red), green: softened(base.green), blue: softened(base.blue),
+    red: softened(base.red),
+    green: softened(base.green),
+    blue: softened(base.blue),
     alpha: base.alpha,
   )
 
@@ -791,10 +793,13 @@ func expandRibbon*(record: RibbonRecord, scale: DrawScale): array[6, Vertex] =
     tints = [tint_near, tint_far, tint_far, tint_near]
   for slot, index in [0, 1, 2, 0, 2, 3]:
     result[slot] = Vertex(
-      x: float32(corners[index].x), y: float32(corners[index].y),
+      x: float32(corners[index].x),
+      y: float32(corners[index].y),
       z: float32(corners[index].z),
-      red: tints[index].red, green: tints[index].green,
-      blue: tints[index].blue, alpha: tints[index].alpha,
+      red: tints[index].red,
+      green: tints[index].green,
+      blue: tints[index].blue,
+      alpha: tints[index].alpha,
     )
 
 
@@ -813,14 +818,22 @@ func addRibbon*(
     &"Frame holds at most {RIBBONS_MAX} ribbons, raise `--define:visualiser.ribbons_max`; " &
       &"got `{count}`."
   meshes.ribbons.records[count] = RibbonRecord(
-    tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
-    head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
+    tail_x: float32(tail.x),
+    tail_y: float32(tail.y),
+    tail_z: float32(tail.z),
+    head_x: float32(head.x),
+    head_y: float32(head.y),
+    head_z: float32(head.z),
     width: width,
     fog: (if is_fogged: 1.0'f32 else: 0.0'f32),
-    tail_red: tint_tail.red, tail_green: tint_tail.green,
-    tail_blue: tint_tail.blue, tail_alpha: tint_tail.alpha,
-    head_red: tint_head.red, head_green: tint_head.green,
-    head_blue: tint_head.blue, head_alpha: tint_head.alpha,
+    tail_red: tint_tail.red,
+    tail_green: tint_tail.green,
+    tail_blue: tint_tail.blue,
+    tail_alpha: tint_tail.alpha,
+    head_red: tint_head.red,
+    head_green: tint_head.green,
+    head_blue: tint_head.blue,
+    head_alpha: tint_head.alpha,
   )
   meshes.ribbons.count = count + 1
 
@@ -872,12 +885,21 @@ proc ribbonOfRing*(record: RingRecord, segment: int): RibbonRecord =
     tail = onCircleAt(centre, arm_first, arm_second, at_tail.cos_angle, at_tail.sin_angle)
     head = onCircleAt(centre, arm_first, arm_second, at_head.cos_angle, at_head.sin_angle)
   RibbonRecord(
-    tail_x: float32(tail.x), tail_y: float32(tail.y), tail_z: float32(tail.z),
-    head_x: float32(head.x), head_y: float32(head.y), head_z: float32(head.z),
-    width: record.width, fog: 0.0,
-    tail_red: record.red, tail_green: record.green, tail_blue: record.blue,
+    tail_x: float32(tail.x),
+    tail_y: float32(tail.y),
+    tail_z: float32(tail.z),
+    head_x: float32(head.x),
+    head_y: float32(head.y),
+    head_z: float32(head.z),
+    width: record.width,
+    fog: 0.0,
+    tail_red: record.red,
+    tail_green: record.green,
+    tail_blue: record.blue,
     tail_alpha: record.alpha,
-    head_red: record.red, head_green: record.green, head_blue: record.blue,
+    head_red: record.red,
+    head_green: record.green,
+    head_blue: record.blue,
     head_alpha: record.alpha,
   )
 
@@ -907,13 +929,20 @@ func addRing*(
     arm_first = radius*axis_first
     arm_second = radius*axis_second
   meshes.rings.records[meshes.rings.count] = RingRecord(
-    centre_x: float32(centre.x), centre_y: float32(centre.y), centre_z: float32(centre.z),
-    arm_first_x: float32(arm_first.x), arm_first_y: float32(arm_first.y),
+    centre_x: float32(centre.x),
+    centre_y: float32(centre.y),
+    centre_z: float32(centre.z),
+    arm_first_x: float32(arm_first.x),
+    arm_first_y: float32(arm_first.y),
     arm_first_z: float32(arm_first.z),
-    arm_second_x: float32(arm_second.x), arm_second_y: float32(arm_second.y),
+    arm_second_x: float32(arm_second.x),
+    arm_second_y: float32(arm_second.y),
     arm_second_z: float32(arm_second.z),
-    red: float32(tint.red), green: float32(tint.green), blue: float32(tint.blue),
-    alpha: float32(tint.alpha), width: float32(width),
+    red: float32(tint.red),
+    green: float32(tint.green),
+    blue: float32(tint.blue),
+    alpha: float32(tint.alpha),
+    width: float32(width),
   )
   inc meshes.rings.count
 
@@ -928,22 +957,30 @@ func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex 
   ##   Flat tint across fan; see `addDisc`.
   let at = onCircleAt(
     Position(
-      x: float(record.centre_x), y: float(record.centre_y), z: float(record.centre_z)
+      x: float(record.centre_x),
+      y: float(record.centre_y),
+      z: float(record.centre_z),
     ),
     Direction(
-      x: float(record.arm_first_x), y: float(record.arm_first_y),
+      x: float(record.arm_first_x),
+      y: float(record.arm_first_y),
       z: float(record.arm_first_z),
     ),
     Direction(
-      x: float(record.arm_second_x), y: float(record.arm_second_y),
+      x: float(record.arm_second_x),
+      y: float(record.arm_second_y),
       z: float(record.arm_second_z),
     ),
     cos_angle, sin_angle,
   )
   Vertex(
-    x: float32(at.x), y: float32(at.y), z: float32(at.z),
-    red: record.fill_red, green: record.fill_green,
-    blue: record.fill_blue, alpha: record.fill_alpha,
+    x: float32(at.x),
+    y: float32(at.y),
+    z: float32(at.z),
+    red: record.fill_red,
+    green: record.fill_green,
+    blue: record.fill_blue,
+    alpha: record.fill_alpha,
   )
 
 
@@ -958,7 +995,10 @@ func expandDomeVertex*(record: DomeRecord, unit: Direction): Vertex =
     x: float32(float(record.centre_x) + float(record.radius)*unit.x),
     y: float32(float(record.centre_y) + float(record.radius)*unit.y),
     z: float32(float(record.centre_z) + float(record.radius)*unit.z),
-    red: record.red, green: record.green, blue: record.blue, alpha: record.alpha,
+    red: record.red,
+    green: record.green,
+    blue: record.blue,
+    alpha: record.alpha,
   )
 
 
@@ -1073,12 +1113,18 @@ func addDisc*(
     arm_first = radius*axis_first
     arm_second = radius*axis_second
   meshes.discs.records[count] = DiscRecord(
-    centre_x: float32(center.x), centre_y: float32(center.y), centre_z: float32(center.z),
-    arm_first_x: float32(arm_first.x), arm_first_y: float32(arm_first.y),
+    centre_x: float32(center.x),
+    centre_y: float32(center.y),
+    centre_z: float32(center.z),
+    arm_first_x: float32(arm_first.x),
+    arm_first_y: float32(arm_first.y),
     arm_first_z: float32(arm_first.z),
-    arm_second_x: float32(arm_second.x), arm_second_y: float32(arm_second.y),
+    arm_second_x: float32(arm_second.x),
+    arm_second_y: float32(arm_second.y),
     arm_second_z: float32(arm_second.z),
-    fill_red: tint.red, fill_green: tint.green, fill_blue: tint.blue,
+    fill_red: tint.red,
+    fill_green: tint.green,
+    fill_blue: tint.blue,
     fill_alpha: tint.alpha,
   )
   meshes.discs.count = count + 1
@@ -1099,8 +1145,13 @@ func addDome*(meshes: var MeshSet, center: Position, radius: float, tint: Rgba) 
       &"`{count}`."
   meshes.appendWashRun(WashKind.Dome)
   meshes.domes.records[count] = DomeRecord(
-    centre_x: float32(center.x), centre_y: float32(center.y), centre_z: float32(center.z),
+    centre_x: float32(center.x),
+    centre_y: float32(center.y),
+    centre_z: float32(center.z),
     radius: float32(radius),
-    red: tint.red, green: tint.green, blue: tint.blue, alpha: tint.alpha,
+    red: tint.red,
+    green: tint.green,
+    blue: tint.blue,
+    alpha: tint.alpha,
   )
   meshes.domes.count = count + 1

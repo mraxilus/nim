@@ -65,7 +65,9 @@ proc complaintsIn(path: string): seq[Complaint] =
   let content = readFile(path)
   if len(content) > 0 and not content.endsWith("\n"):
     result.add(Complaint(
-      path: path, line: countLines(content), rule: "final newline",
+      path: path,
+      line: countLines(content),
+      rule: "final newline",
       detail: "file does not end in a newline",
     ))
   # Exempt testament spec, written in testament's format.
@@ -89,12 +91,17 @@ proc complaintsIn(path: string): seq[Complaint] =
     let columns = runeLen(line)
     if columns > COLUMNS_MAX:
       result.add(Complaint(
-        path: path, line: number, rule: "column limit",
+        path: path,
+        line: number,
+        rule: "column limit",
         detail: &"{columns} characters, limit {COLUMNS_MAX}",
       ))
     if len(line) > 0 and line[^1] in {' ', '\t'}:
       result.add(Complaint(
-        path: path, line: number, rule: "trailing whitespace", detail: "",
+        path: path,
+        line: number,
+        rule: "trailing whitespace",
+        detail: "",
       ))
     if '\t' in line:
       result.add(Complaint(path: path, line: number, rule: "tab", detail: ""))

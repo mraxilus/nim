@@ -565,7 +565,8 @@ func widened*(bound: SphereWorld, place: Position, reach: float): SphereWorld =
       (radius - bound.radius)/away, subtract(place_point, centre_point)
     )))
   SphereWorld(
-    centre: (if slid.isSome: slid.get else: place), radius: radius
+    centre: (if slid.isSome: slid.get else: place),
+    radius: radius,
   )
 
 
@@ -712,8 +713,10 @@ func isGoalHeld*(tween: CameraTween, goal: CameraAim): bool =
 func placementOf*(camera: Camera): CameraPlacement =
   ## Read where `camera` already stands as placement of its own.
   CameraPlacement(
-    target: camera.target, distance: camera.distance,
-    azimuth: camera.azimuth, elevation: camera.elevation,
+    target: camera.target,
+    distance: camera.distance,
+    azimuth: camera.azimuth,
+    elevation: camera.elevation,
   )
 
 

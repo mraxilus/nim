@@ -345,7 +345,9 @@ func shared*(track: PulseTrack; behind, ahead: float): PulseTrack =
   ##     Longer, on theory that rail near edge shrinks shared lap, measured as changing
   ##     nothing over four orbit rates.
   PulseTrack(
-    origin: track.origin, behind: min(track.behind, behind), ahead: min(track.ahead, ahead)
+    origin: track.origin,
+    behind: min(track.behind, behind),
+    ahead: min(track.ahead, ahead),
   )
 
 
@@ -399,10 +401,14 @@ func ribbonAlong(
     # Fill both sides at once, far one from back.
     #   Outline then closes as one loop rather than crossing itself at tail.
     outline[i] = ScreenPosition(
-      x: spine[i].x + normal_x*half, y: spine[i].y + normal_y*half, depth: spine[i].depth,
+      x: spine[i].x + normal_x*half,
+      y: spine[i].y + normal_y*half,
+      depth: spine[i].depth,
     )
     outline[2*count - 1 - i] = ScreenPosition(
-      x: spine[i].x - normal_x*half, y: spine[i].y - normal_y*half, depth: spine[i].depth,
+      x: spine[i].x - normal_x*half,
+      y: spine[i].y - normal_y*half,
+      depth: spine[i].depth,
     )
   result = 2*count
 
@@ -428,7 +434,8 @@ func ribbonAlong(
       swing_x = -head_x*cos(turn) + forward_x*sin(turn)
       swing_y = -head_y*cos(turn) + forward_y*sin(turn)
     outline[result] = ScreenPosition(
-      x: spine[0].x + swing_x*half_head, y: spine[0].y + swing_y*half_head,
+      x: spine[0].x + swing_x*half_head,
+      y: spine[0].y + swing_y*half_head,
       depth: spine[0].depth,
     )
     inc result
@@ -539,7 +546,9 @@ func cometFor*(
   for i in 0 ..< SEGMENTS_MARKER_PULSE:
     let back = reach*float(i)/float(SEGMENTS_MARKER_PULSE - 1)
     spine[i] = ScreenPosition(
-      x: head.x - dx/length*back, y: head.y - dy/length*back, depth: head.depth,
+      x: head.x - dx/length*back,
+      y: head.y - dy/length*back,
+      depth: head.depth,
     )
   var outline: array[POINTS_MARKER_PULSE, ScreenPosition]
   let used = ribbonAlong(
@@ -580,7 +589,9 @@ func markerRing(
   let centre = projectToScreen(view_projection, width, height, anchor.get)
   if not centre.isInFront: return
   marker = Marker(
-    kind: MarkerKind.Ring, centre: centre, radius: RADIUS_MARKER_POINT + clearance,
+    kind: MarkerKind.Ring,
+    centre: centre,
+    radius: RADIUS_MARKER_POINT + clearance,
     fraction: progress,
   )
   true
@@ -912,7 +923,8 @@ proc markerLoop(
   if count_in_front == 0: return
 
   marker = Marker(
-    kind: MarkerKind.Loop, is_closed: count_in_front == SEGMENTS_MARKER_LOOP
+    kind: MarkerKind.Loop,
+    is_closed: count_in_front == SEGMENTS_MARKER_LOOP,
   )
   # Start arc at first point whose predecessor was cut.
   #   Surviving run is then emitted unbroken instead of wrapping cut and drawing chord
@@ -1128,7 +1140,9 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
   template emit(angle: float) =
     let radius = min(reach, radiusToEdge(half_width, half_height, angle))
     marker.points_frame[marker.count_frame] = ScreenPosition(
-      x: centre_x + radius*cos(angle), y: centre_y + radius*sin(angle), depth: 1.0,
+      x: centre_x + radius*cos(angle),
+      y: centre_y + radius*sin(angle),
+      depth: 1.0,
     )
     inc marker.count_frame
   # Merge two ascending runs of angles into one, so boundary strokes as simple closed outline.

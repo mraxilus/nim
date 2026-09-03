@@ -258,6 +258,8 @@ func stage*(session: var EditSession, geometry: Multivector) =
   ## Load multivector into session, as values its widgets edit.
   ##   Inverse of `geometry`, and only other place two representations meet.
   for b in Basis: session.coefficients[b] = cfloat(geometry[b])
+
+
 func staged*(panel: Panel): Option[Preview] =
   ## Resolve what this panel offers as not-yet-committed.
   ##   Open edit session's geometry, else whatever apply control is previewing, else
@@ -270,16 +272,15 @@ func staged*(panel: Panel): Option[Preview] =
 
 
 
-
 #[ Field Layout ]#
 
-func widthPushField() =
+proc widthPushField() =
   ## Size controls that follow to whatever line has left once names have taken their column.
   ##   Field then ends flush with panel's right edge at any width.
   gui.widthPush(gui.contentWidth() - WIDTH_LABEL_FIELD)
 
 
-func fieldLabel(name: cstring) =
+proc fieldLabel(name: cstring) =
   ## Name control, to its left, and leave line open for control itself.
   ##   Dear ImGui draws widget's label to its right, which reads backwards.
   ##   Every control below gets hidden ImGui label (`##name`) and its name is written
@@ -291,7 +292,7 @@ func fieldLabel(name: cstring) =
 
 #[ Objects Panel ]#
 
-func layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
+proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
   ## Lay out one drag widget per basis coefficient; report which coefficient changed.
   ##   Each under its basis name, at most six per line, each grade starting fresh line.
   ##   Grade comes from library's `grade`, so nothing hardcodes dimension.
@@ -376,7 +377,7 @@ proc layoutSessionFields(panel: var Panel, is_pending: bool) =
   discard layoutCoefficientGrid(panel.session.get.coefficients)
 
 
-func layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
+proc layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's leading checkbox and its name.
   ##   Checkbox toggles membership, as browser's row checkbox does.
   ##     Second and third object join in pick order, which names operands m and n.
@@ -402,7 +403,7 @@ func layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
   gui.textColorPop()
 
 
-func layoutItemButtons(
+proc layoutItemButtons(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   row: ItemRow, now: float
 ): bool =
@@ -469,7 +470,7 @@ func layoutItemButtons(
     gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
 
-func layoutItemDescription(panel: Panel, scene: var Scene, row: ItemRow) =
+proc layoutItemDescription(panel: Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's shape word and coefficients, on one line.
   ##   Built into stack buffer rather than `string`, since every visible item redraws this
   ##   every frame.
@@ -711,7 +712,7 @@ func applyPickedOperation(
   toChars(&"{label} gave {shapeText(derived)}.", panel.message)
 
 
-func layoutApply*(
+proc layoutApply*(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
@@ -808,7 +809,7 @@ func layoutApply*(
 
 #[ View Panel ]#
 
-func layoutView*(panel: var Panel, camera: var Camera) =
+proc layoutView*(panel: var Panel, camera: var Camera) =
   ## Lay out camera placement and frame export.
   ##   World furniture toggles live in `layoutTopBar`, flipped constantly while orbiting.
   if not gui.header("view", is_open_first = false): return
@@ -858,7 +859,7 @@ func layoutView*(panel: var Panel, camera: var Camera) =
 
 #[ Diagnostics Panel ]#
 
-func layoutDiagnosticsFrameTime(panel: var Panel) =
+proc layoutDiagnosticsFrameTime(panel: var Panel) =
   ## Lay out "frame time" section.
   ##   Rolling frame-time plot, vsync toggle, current rate, tessellation cost.
   gui.separatorText("frame time")
@@ -901,7 +902,7 @@ func layoutDiagnosticsFrameTime(panel: var Panel) =
   gui.text(text_tessellate)
 
 
-func layoutDiagnosticsMemory(panel: Panel) =
+proc layoutDiagnosticsMemory(panel: Panel) =
   ## Lay out "memory" section: permanent and per-frame arena usage bars.
   gui.separatorText("memory")
   block:
@@ -963,7 +964,7 @@ func sizePoolCell(width: cfloat): cfloat =
   SIZES_POOL_CELL[len(SIZES_POOL_CELL) - 1]
 
 
-func layoutDiagnosticsObjectPool(scene: Scene) =
+proc layoutDiagnosticsObjectPool(scene: Scene) =
   ## Lay out "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
   # Colour occupied cell with its object's ink, so strip reads as scene.
@@ -1007,7 +1008,7 @@ func layoutDiagnosticsObjectPool(scene: Scene) =
   )
 
 
-func layoutDiagnosticsTotal(panel: Panel) =
+proc layoutDiagnosticsTotal(panel: Panel) =
   ## Lay out "total" section: every fixed reservation this binary makes, added up.
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
@@ -1028,7 +1029,7 @@ func layoutDiagnosticsTotal(panel: Panel) =
   gui.tooltip(TEXT_TOTAL)
 
 
-func layoutDiagnostics*(panel: var Panel, scene: Scene) =
+proc layoutDiagnostics*(panel: var Panel, scene: Scene) =
   ## Lay out live performance and memory readouts.
   ##   Closed by default, since nothing here is needed to use visualiser, only to
   ##   understand what using it costs.
@@ -1084,7 +1085,7 @@ const
   PADDING_MENU_PICKER = 36.0'f32
     ## Pad widest notation offered by this much, for combo's frame and arrow.
 
-func layoutSelectionMenuApply(
+proc layoutSelectionMenuApply(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
@@ -1146,7 +1147,7 @@ func layoutSelectionMenuApply(
   gui.tooltip("Leave the operation unapplied.")
 
 
-func layoutSelectionMenu*(
+proc layoutSelectionMenu*(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   anchor: Option[tuple[x, y: cfloat]], now: float
 ) =
@@ -1250,7 +1251,30 @@ func helpActionOf(entry: HelpEntry): string =
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
-func layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath)) =
+proc layoutHelpTab(
+  path: HelpPath, offset_outcome, width_rows, height_available: cfloat
+) =
+  ## Lay out one help tab: its description, then its rows in region sized to them.
+  ##   `offset_outcome` is where outcome column starts, measured by `layoutHelp` from
+  ##   widest action over whole table, so every tab's column stands at one place.
+  # Say what tab is about, before rows that assume it.
+  #   Wrapped, and outside rows child so it stays put while they scroll.
+  gui.textWrappedAt(cstring(descriptionOf(path)), width_rows)
+  # Size tab as tall as its rows need, up to what window has.
+  #   Fixed height for largest leaves `menu`'s five rows floating in blank.
+  let height_rows = min(gui.childHeightForRows(cint(countOf(path))), height_available)
+  if gui.childBegin(cstring("##help_rows"), width_rows, height_rows):
+    for entry in lut_help_entries:
+      if entry.path != path: continue
+      # Mark touch rows in word rather than only tint.
+      #   Survives reader who cannot tell two greys apart.
+      gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
+      gui.sameLineAt(offset_outcome)
+      gui.text(cstring(entry.outcome))
+  gui.childEnd()
+
+
+proc layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath)) =
   ## Lay out help affordance: `?` pinned to bottom-right corner, and panel it opens.
   ##   In corner rather than inside panel window: reachable when panel is thing reader
   ##   does not understand, and browser puts it in same corner; both read `help.nim`.
@@ -1288,23 +1312,7 @@ func layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath
     if gui.tabBarBegin("##help_tabs"):
       for path in HelpPath:
         if not gui.tabBegin(cstring(titleOf(path)), path_forced == some(path)): continue
-        # Say what tab is about, before rows that assume it.
-        #   Wrapped, and outside rows child so it stays put while they scroll.
-        gui.textWrappedAt(cstring(descriptionOf(path)), width_rows)
-        # Size each tab as tall as its rows need, up to what window has.
-        #   Fixed height for largest leaves `menu`'s five rows floating in blank.
-        let height_rows = min(
-          gui.childHeightForRows(cint(countOf(path))), height_available
-        )
-        if gui.childBegin(cstring("##help_rows"), width_rows, height_rows):
-          for entry in lut_help_entries:
-            if entry.path != path: continue
-            # Mark touch rows in word rather than only tint.
-            #   Survives reader who cannot tell two greys apart.
-            gui.textTinted(cstring(helpActionOf(entry)), 0.74, 0.95, 0.94)
-            gui.sameLineAt(offset_outcome)
-            gui.text(cstring(entry.outcome))
-        gui.childEnd()
+        layoutHelpTab(path, offset_outcome, width_rows, height_available)
         gui.tabEnd()
       gui.tabBarEnd()
   gui.windowEnd()

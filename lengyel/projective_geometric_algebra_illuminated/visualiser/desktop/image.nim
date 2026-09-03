@@ -45,14 +45,22 @@ type
   Uint = cuint ## Mirror `uInt`.
 
 # Import zlib entry points one to one; see zlib manual for each.
+# Mark every binding `sideEffect`.
+#   Compiler assumes imported body is pure, so `func` calling one would compile; marked,
+#   only `proc` may reach effects, which is what makes `func` mean anything here.
 proc compressBound(source_length: Ulong): Ulong
   {.importc: "compressBound", header: HEADER_ZLIB.}
+  ## Report largest size `compress2` can produce for `source_length` bytes.
+
 proc compress2(
   destination: ptr Byte, destination_length: ptr Ulong,
   source: ptr Byte, source_length: Ulong, level: cint
-): cint {.importc: "compress2", header: HEADER_ZLIB.}
+): cint {.importc: "compress2", header: HEADER_ZLIB, sideEffect.}
+  ## Deflate `source_length` bytes into `destination` at `level`, writing size back.
+
 proc crc32(crc: Ulong, buffer: ptr Byte, length: Uint): Ulong
   {.importc: "crc32", header: HEADER_ZLIB.}
+  ## Fold `length` bytes at `buffer` into running CRC.
 
 
 

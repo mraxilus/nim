@@ -50,12 +50,25 @@ type
 # Read through to Euclidean half, so caller writes `scale.eye`, not `scale.scale.eye`.
 #   Split is about which module may *name* multivector.
 func extentFurniture*(d: DrawExtent): float = d.scale.extent_furniture
+  ## Read how far furniture reaches.
+
 func eye*(d: DrawExtent): Position = d.scale.eye
+  ## Read where eye stands.
+
 func radiusHorizon*(d: DrawExtent): float = d.scale.radius_horizon
+  ## Read how far out horizon objects are drawn about eye.
+
 func forward*(d: DrawExtent): Direction = d.scale.forward
+  ## Read sight direction.
+
 func tangentHalfView*(d: DrawExtent): float = d.scale.tangent_half_view
+  ## Read tangent of half vertical field of view.
+
 func heightPixels*(d: DrawExtent): int = d.scale.height_pixels
+  ## Read framebuffer height in pixels.
+
 func depthNear*(d: DrawExtent): float = d.scale.depth_near
+  ## Read near clip depth.
 
 # Convert whole half implicitly, so extent hands to any of `mesh`'s procs unwrapped.
 #   Extent *is* scale with algebra's reading beside it, conversion runs one way, and no
@@ -161,7 +174,10 @@ func placeChord(
       dot(head - scale.eye, scale.forward) < scale.depthNear:
     return
   scratch.ribbons[count_assembled] = RibbonPiece(
-    tail: tail, head: head, tint_tail: tint, tint_head: tint,
+    tail: tail,
+    head: head,
+    tint_tail: tint,
+    tint_head: tint,
   )
   count_assembled += 1
 
@@ -437,7 +453,9 @@ proc placeObject*(
         let spanned = spanPerpendicular(ORIGIN_WORLD, normal.get)
         if spanned.isSome:
           return Placed(kind: PlacedKind.LineAcross, axes: FramePlane(
-            axis_first: spanned.get[0], axis_second: spanned.get[1], normal: normal.get,
+            axis_first: spanned.get[0],
+            axis_second: spanned.get[1],
+            normal: normal.get,
           ))
     of Shape.Plane:
       let

@@ -51,8 +51,6 @@ const
 
 
 
-
-
 #[ Declared Exceptions ]#
 
 type Exception = object ## Define one measurement allowed to sit below its stated floor.
@@ -102,7 +100,10 @@ var findings: seq[Finding]
 proc record(description: string; measured, floor: float; units = "ΔE") =
   ## Record one measurement against its floor.
   findings.add(Finding(
-    description: description, measured: measured, floor: floor, units: units
+    description: description,
+    measured: measured,
+    floor: floor,
+    units: units,
   ))
 
 
@@ -114,6 +115,7 @@ func linearOf(ink: Ink): Linear =
 
 proc main() =
   ## Measure every stated constraint and report, exiting non-zero if any failed.
+  ##   Kept whole past sixty lines: one report, read in order it is written.
   const ASSIGNABLE = [Ink.Rose, Ink.Copper, Ink.Olive, Ink.Jade, Ink.Cobalt]
   const AXES = [Ink.AxisX, Ink.AxisY, Ink.AxisZ]
 

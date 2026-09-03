@@ -139,7 +139,10 @@ const lut_help_entries* = block:
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
     lut[count] = HelpEntry(
-      path: path, action: action, outcome: outcome, is_touch: is_touch
+      path: path,
+      action: action,
+      outcome: outcome,
+      is_touch: is_touch,
     )
     inc count
 

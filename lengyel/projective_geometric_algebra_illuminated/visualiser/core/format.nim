@@ -64,6 +64,8 @@ func formatMagnitude*(value: float): string =
   ##   `%g`'s rule, from C standard: take exponent value rounds to at this precision,
   ##   write scientifically where it falls outside [-4, DIGITS_SIGNIFICANT), fixed
   ##   otherwise; trailing zeros go.
+  ##   Kept whole past sixty lines: one derivation of `%g`, whose rounding, exponent and
+  ##   trimming steps read as one rule.
   ##   Derives own digits rather than asking runtime.
   ##     `formatBiggestFloat` lands on whatever conversion backend has, and two disagree on
   ##     ties: C rounds tie to even and JavaScript away from zero.

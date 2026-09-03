@@ -318,7 +318,9 @@ suite "Objects":
       # Every prefix, not only whole: incremental fold that is right at end and.
       #   wrong halfway is right by luck, and camera reads it at every length.
       check position(middle).get =~ Position(
-        x: sum_x/float(counted + 1), y: sum_y/float(counted + 1), z: sum_z/float(counted + 1)
+        x: sum_x/float(counted + 1),
+        y: sum_y/float(counted + 1),
+        z: sum_z/float(counted + 1),
       )
       # And sum's own weight *is* how many places it is middle of -- which is what.
       #   lets running total stand in for count nobody carries.
@@ -343,7 +345,8 @@ suite "Camera":
         camera = initCamera(target, distance, azimuth, elevation)
         radius = distance*cos(camera.elevation)
         classical = target + Direction(
-          x: radius*cos(camera.azimuth), y: radius*sin(camera.azimuth),
+          x: radius*cos(camera.azimuth),
+          y: radius*sin(camera.azimuth),
           z: distance*sin(camera.elevation),
         )
       check camera.eye =~ classical
@@ -1236,7 +1239,8 @@ suite "Mesh":
       corners_dome = domeCorners()
     for i in 0 ..< 6*LATITUDES_HORIZON*LONGITUDES_HORIZON:
       let unit = Direction(
-        x: float(corners_dome[3*i]), y: float(corners_dome[3*i + 1]),
+        x: float(corners_dome[3*i]),
+        y: float(corners_dome[3*i + 1]),
         z: float(corners_dome[3*i + 2]),
       )
       let offset = expandDomeVertex(record_first, unit).toPosition - SCALE_TEST.eye
@@ -1366,9 +1370,15 @@ suite "Mesh":
       #   at every point of it -- so claim is checked where fragments are.
       let
         tail = Position(
-          x: float(record.tail_x), y: float(record.tail_y), z: float(record.tail_z))
+          x: float(record.tail_x),
+          y: float(record.tail_y),
+          z: float(record.tail_z),
+        )
         head = Position(
-          x: float(record.head_x), y: float(record.head_y), z: float(record.head_z))
+          x: float(record.head_x),
+          y: float(record.head_y),
+          z: float(record.head_z),
+        )
         count_samples = 32
       for step in 0 .. count_samples:
         let
@@ -2659,7 +2669,9 @@ suite "History":
 
 suite "Camera Aim":
   let SCALE_AIM = DrawExtent(scale: DrawScale(
-    extent_furniture: 100.0, eye: ORIGIN, radius_horizon: 90.0,
+    extent_furniture: 100.0,
+    eye: ORIGIN,
+    radius_horizon: 90.0,
   )) ## No ribbon fields: nothing here tessellates anything, it only aims camera.
 
   const
@@ -5142,8 +5154,12 @@ suite "Interaction":
     #   depth-tested, and sentinel index of zero would have said opposite -- every
     #   line of furniture drawn over scene, on every frame.
     let scale = algebraFilled(DrawExtent(scale: DrawScale(
-      extent_furniture: 10.0, radius_horizon: 10.0, tangent_half_view: 0.5,
-      height_pixels: 600, depth_near: 0.1, forward: Direction(x: 0, y: 0, z: -1),
+      extent_furniture: 10.0,
+      radius_horizon: 10.0,
+      tangent_half_view: 0.5,
+      height_pixels: 600,
+      depth_near: 0.1,
+      forward: Direction(x: 0, y: 0, z: -1),
     )))
     var meshes: MeshSet
     clearMeshes(meshes)

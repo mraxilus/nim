@@ -607,8 +607,6 @@ func inkOfDrag*(interaction: Interaction, ink_next: Ink): Ink =
 
 
 
-
-
 #[ Cursor And Hover ]#
 
 func updateCursor*(interaction: var Interaction; x, y: float) =
@@ -1133,7 +1131,8 @@ func commitChoice*(
   if choice == DragChoice.More:
     return DragOutcome(
       message: &"{label_source} and {label_destination} ready to apply.",
-      choice: some(choice), operands: operands,
+      choice: some(choice),
+      operands: operands,
     )
 
   # Name through catalogue's notation, as panel's apply button names same pair.
@@ -1145,7 +1144,8 @@ func commitChoice*(
   if derived.isNone:
     return DragOutcome(
       message: &"{label} makes nothing drawable; nothing added.",
-      choice: some(choice), operands: operands,
+      choice: some(choice),
+      operands: operands,
     )
 
   # Refuse gesture on full scene rather than asserting through it.
@@ -1154,7 +1154,8 @@ func commitChoice*(
   if scene.isFull:
     return DragOutcome(
       message: &"The scene holds all {ITEMS_MAX} objects it can; {label} was not added.",
-      choice: some(choice), operands: operands,
+      choice: some(choice),
+      operands: operands,
     )
 
   let
@@ -1163,7 +1164,9 @@ func commitChoice*(
       scene.addItem(derived.get, label, scene.takeInk(), now, anchor)
   DragOutcome(
     message: &"{label} gave {shapeText(derived.get)}.",
-    index_created: some(index_created), choice: some(choice), operands: operands,
+    index_created: some(index_created),
+    choice: some(choice),
+    operands: operands,
   )
 
 

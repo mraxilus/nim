@@ -770,7 +770,6 @@ func previewStaging*(geometry: Multivector): Preview =
   Preview(geometry: geometry, anchor: none(Position), operands: none((int, int)))
 
 
-
 func setInk*(scene: var Scene, slot: int, ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."

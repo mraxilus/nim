@@ -147,36 +147,67 @@ const
 #[ Foreign Declarations ]#
 
 # Import SDL3 entry points one to one; see SDL3 documentation for each.
-proc init*(flags: uint32): bool {.importc: "SDL_Init", header: HEADER, discardable.}
-proc quit*() {.importc: "SDL_Quit", header: HEADER.}
-proc getError*(): cstring {.importc: "SDL_GetError", header: HEADER.}
+# Mark every binding `sideEffect`.
+#   Compiler assumes imported body is pure, so `func` calling one would compile; marked,
+#   only `proc` may reach effects, which is what makes `func` mean anything here.
+proc init*(flags: uint32): bool {.importc: "SDL_Init", header: HEADER, discardable, sideEffect.}
+  ## Start SDL subsystems named by `flags`, reporting success.
+
+proc quit*() {.importc: "SDL_Quit", header: HEADER, sideEffect.}
+  ## Shut every SDL subsystem down.
+
+proc getError*(): cstring {.importc: "SDL_GetError", header: HEADER, sideEffect.}
+  ## Read message of last SDL failure.
+
 proc setHint*(name, value: cstring): bool
-  {.importc: "SDL_SetHint", header: HEADER, discardable.}
+  {.importc: "SDL_SetHint", header: HEADER, discardable, sideEffect.}
+  ## Set configuration hint `name` to `value`.
+
 proc createWindow*(title: cstring; width, height: cint; flags: uint64): Window
-  {.importc: "SDL_CreateWindow", header: HEADER.}
-proc destroyWindow*(window: Window) {.importc: "SDL_DestroyWindow", header: HEADER.}
+  {.importc: "SDL_CreateWindow", header: HEADER, sideEffect.}
+  ## Open window titled `title` at given size with `flags`.
+
+proc destroyWindow*(window: Window) {.importc: "SDL_DestroyWindow", header: HEADER, sideEffect.}
+  ## Close window.
+
 proc getWindowSizeInPixels*(window: Window; width, height: ptr cint): bool
-  {.importc: "SDL_GetWindowSizeInPixels", header: HEADER, discardable.}
+  {.importc: "SDL_GetWindowSizeInPixels", header: HEADER, discardable, sideEffect.}
+  ## Read window's drawable size in pixels, which may exceed logical size.
+
 proc glSetAttribute*(attribute: uint32, value: cint): bool
-  {.importc: "SDL_GL_SetAttribute", header: HEADER, discardable.}
+  {.importc: "SDL_GL_SetAttribute", header: HEADER, discardable, sideEffect.}
+  ## Set OpenGL context attribute, before context is created.
+
 proc glCreateContext*(window: Window): GlContext
-  {.importc: "SDL_GL_CreateContext", header: HEADER.}
+  {.importc: "SDL_GL_CreateContext", header: HEADER, sideEffect.}
+  ## Create OpenGL context for window and make it current.
+
 proc glDestroyContext*(context: GlContext): bool
-  {.importc: "SDL_GL_DestroyContext", header: HEADER, discardable.}
+  {.importc: "SDL_GL_DestroyContext", header: HEADER, discardable, sideEffect.}
+  ## Delete OpenGL context.
+
 proc glSetSwapInterval*(interval: cint): bool
-  {.importc: "SDL_GL_SetSwapInterval", header: HEADER, discardable.}
+  {.importc: "SDL_GL_SetSwapInterval", header: HEADER, discardable, sideEffect.}
+  ## Set vertical sync: 1 waits for display, 0 does not.
+
 proc glSwapWindow*(window: Window): bool
-  {.importc: "SDL_GL_SwapWindow", header: HEADER, discardable.}
-proc getModState*(): uint16 {.importc: "SDL_GetModState", header: HEADER.}
+  {.importc: "SDL_GL_SwapWindow", header: HEADER, discardable, sideEffect.}
+  ## Present back buffer.
+
+proc getModState*(): uint16 {.importc: "SDL_GetModState", header: HEADER, sideEffect.}
   ## Read which modifier keys are held right now, testable against `MODIFIER_` masks.
   ##   Mouse-button event carries no modifiers, so shift-clicking has to ask.
-proc setModState*(modifiers: uint16) {.importc: "SDL_SetModState", header: HEADER.}
+
+proc setModState*(modifiers: uint16) {.importc: "SDL_SetModState", header: HEADER, sideEffect.}
   ## Say which modifiers are held, for scripted gesture with no real keyboard behind it.
   ##   `SDL_PushEvent` only enqueues, never touching state `getModState` reads.
   ##   See `visualiser.driveSelect`, only caller.
-proc pollEvent*(event: ptr Event): bool {.importc: "SDL_PollEvent", header: HEADER.}
+
+proc pollEvent*(event: ptr Event): bool {.importc: "SDL_PollEvent", header: HEADER, sideEffect.}
+  ## Take next queued event into `event`, reporting whether there was one.
+
 proc pushEvent*(event: ptr Event): bool
-  {.importc: "SDL_PushEvent", header: HEADER, discardable.}
+  {.importc: "SDL_PushEvent", header: HEADER, discardable, sideEffect.}
   ## Put event on same queue `pollEvent` drains; see `visualiser.driveDrag`.
   ##   Scripted gesture then reaches application through identical path real one does.
   ##   Posting straight to handler would prove nothing about wiring between them, where

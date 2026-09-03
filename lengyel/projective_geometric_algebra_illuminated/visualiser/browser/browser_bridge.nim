@@ -40,15 +40,13 @@ import ../core/[
 ]
 
 
-
 var SCRATCH: DrawScratch
   ## Hold where tessellation step assembles ribbon pieces before emitting them.
   ##   Fixed buffer rather than desktop's frame arena, which casts pointer over global and
   ##   carves typed slices, neither possible on JS backend.
   ##   Sized by `LINES_GRID_MAX`, most one-piece chords grid family can lay.
 
-
-proc performanceNow(): float {.importjs: "performance.now()".}
+proc performanceNow(): float {.importjs: "performance.now()", sideEffect.}
   ## Read page's monotonic clock, in milliseconds.
   ##   Bridge's one piece of interop beyond exports: per-phase draw timings bracket work
   ##   inside one call, which single caller-supplied reading cannot.
@@ -72,23 +70,30 @@ type
     values: FlatBuffer
     used: int
 
-proc newFlatBuffer(count: int): FlatBuffer {.importjs: "new Float32Array(#)".}
-proc `[]=`(buffer: FlatBuffer, index: int, value: float32) {.importjs: "#[#] = #".}
-proc prefix(buffer: FlatBuffer, count: int): FlatBuffer {.importjs: "#.subarray(0, #)".}
+# Mark every binding `sideEffect`.
+#   Compiler assumes imported body is pure, so `func` calling one would compile; marked,
+#   only `proc` may reach effects, which is what makes `func` mean anything here.
+proc newFlatBuffer(count: int): FlatBuffer {.importjs: "new Float32Array(#)", sideEffect.}
+  ## Allocate typed array of `count` floats, once.
+
+proc `[]=`(buffer: FlatBuffer, index: int, value: float32) {.importjs: "#[#] = #", sideEffect.}
+  ## Write one float in place, compiling to plain indexed store.
+
+proc prefix(buffer: FlatBuffer, count: int): FlatBuffer {.importjs: "#.subarray(0, #)", sideEffect.}
   ## Report first `count` entries as view.
   ##   No copy, and `instanceof Float32Array` still holds, so `glue.js` uploads it with
   ##   nothing in between.
 
-func initFlatFloats(capacity: int): FlatFloats =
+proc initFlatFloats(capacity: int): FlatFloats =
   ## Reserve flat buffer of `capacity` floats, empty.
   FlatFloats(values: newFlatBuffer(capacity), used: 0)
 
-func view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
+proc view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
   ## Report just part this frame filled, for upload.
   ##   One small view object per buffer per frame, seven in all, against whole buffer of
   ##   element-by-element conversion it replaces.
 
-func `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
+proc `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
   ## Write one float into flat buffer.
 
 
@@ -265,7 +270,7 @@ var
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
 
 
-func flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
+proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
   ## Interleave one frame's ribbon records for instanced upload, sixteen floats each.
   ##   Tail xyz, head xyz, width, fog, tail rgba, head rgba: `RibbonRecord`'s field order,
   ##   which attribute setup in `glue.js` reads back apart.
@@ -290,7 +295,7 @@ func flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
     dest[16*i + 15] = r.head_alpha
 
 
-func flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
+proc flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
   ## Interleave one frame's disc records for instanced upload, thirteen floats each.
   ##   Centre xyz, first arm xyz, second arm xyz, fill rgba: `DiscRecord`'s field order.
   dest.used = discs.count * 13
@@ -311,7 +316,7 @@ func flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
     dest[13*i + 12] = r.fill_alpha
 
 
-func flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
+proc flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
   ## Interleave one frame's ring records for instanced upload, fourteen floats each.
   ##   `DiscRecord`'s thirteen in same order, then width, so ring and disc attribute
   ##   setups in `glue.js` differ by one trailing attribute.
@@ -334,7 +339,7 @@ func flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
     dest[14*i + 13] = r.width
 
 
-func flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
+proc flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
   ## Interleave one frame's dome records for instanced upload, eight floats each.
   ##   Centre xyz, radius, rgba: `DomeRecord`'s field order.
   dest.used = domes.count * 8
@@ -350,7 +355,7 @@ func flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
     dest[8*i + 7] = r.alpha
 
 
-func flattenWashRunsInto(washes: WashRuns, dest: var FlatFloats) =
+proc flattenWashRunsInto(washes: WashRuns, dest: var FlatFloats) =
   ## Interleave wash draw order, three floats per run: kind ordinal, first, count.
   dest.used = washes.count * 3
   for i in 0 ..< washes.count:
@@ -367,7 +372,7 @@ proc stampBorn(slot: int, born: float) =
   BORN_LAST = max(BORN_LAST, born)
 
 
-func flattenInto(mesh: Mesh, dest: var FlatFloats) =
+proc flattenInto(mesh: Mesh, dest: var FlatFloats) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`.
   ##   Ready for `gl.bufferData`.
   dest.used = mesh.count_vertices * 7
@@ -443,10 +448,8 @@ proc nimDemoScaleDefault(): cint {.exportc.} = cint(ord(SCALE_ORRERY_DEFAULT))
 proc nimSceneCount(): cint {.exportc.} = cint(SCENE.len)
   ## Report how many items are alive in scene.
 
-
 proc nimSceneCapacity(): cint {.exportc.} = cint(ITEMS_MAX)
   ## Report fixed number of item slots this build reserves.
-
 
 proc nimSceneRevision(): cint {.exportc.} =
   ## Report how many times scene's drawn content has changed; see `scene.revision`.
@@ -478,7 +481,6 @@ proc nimSceneSlotsCreated(): seq[cint] {.exportc.} =
 proc nimIsAlive(slot: cint): bool {.exportc.} = SCENE.isAlive(int(slot))
   ## Report whether slot holds live item.
 
-
 proc nimItemLabel(slot: cint): cstring {.exportc.} =
   ## Report item's display label, by slot.
   cstring(toText(SCENE.labelAt(int(slot))))
@@ -487,15 +489,12 @@ proc nimItemLabel(slot: cint): cstring {.exportc.} =
 proc nimItemInk(slot: cint): cint {.exportc.} = cint(SCENE.inkAt(int(slot)))
   ## Report item's palette slot, by slot.
 
-
 proc nimItemVisible(slot: cint): bool {.exportc.} = SCENE.isVisible(int(slot))
   ## Report item's visibility, by slot.
-
 
 proc nimItemBorn(slot: cint): cfloat {.exportc.} = cfloat(BORNS[int(slot)])
   ## Report moment item was added, by slot, on same clock as every `now` here.
   ##   Lets browser's Objects panel sort by recency.
-
 
 proc nimItemShapeWord(slot: cint): cstring {.exportc.} =
   ## Report item's shape, by slot, in words `scene.shapeText` names it.
@@ -536,11 +535,9 @@ proc nimDefaultLabel(): cstring {.exportc.} = cstring(&"m{SCENE.len}")
   ## Report label freshly composed object starts out carrying.
   ##   For pre-filling edit session.
 
-
 proc nimDefaultInk(): cint {.exportc.} = cint(SCENE.inkNext)
   ## Report palette slot freshly composed object starts out carrying.
   ##   Cycled as every construction path cycles it.
-
 
 proc nimAddItem(
   coefficients: seq[float], label: cstring, ink_ordinal: cint, now: cfloat
@@ -712,7 +709,6 @@ proc nimClearGhost() {.exportc.} =
 proc nimOperationCount(): cint {.exportc.} = cint(COUNT_OPERATION)
   ## Report how many catalogue operations exist.
 
-
 proc nimOperationNotation(index: cint): cstring {.exportc.} =
   ## Report Nth catalogue operation's notation, symbols alone.
   ##   English name after them is several times wider and pushes picker's popover past
@@ -730,14 +726,11 @@ proc nimOperationArity(index: cint): cint {.exportc.} =
 proc nimBasisCount(): cint {.exportc.} = cint(ord(Basis.high) + 1)
   ## Report how many basis coefficients multivector carries in this build's dimension.
 
-
 proc nimBasisName(index: cint): cstring {.exportc.} = cstring(lut_basis_to_name[Basis(index)])
   ## Report Nth basis element's name.
 
-
 proc nimBasisGrade(index: cint): cint {.exportc.} = cint(ord(Basis(index).grade))
   ## Report Nth basis element's grade, for grouping coefficient grid.
-
 
 proc nimInkChoosableSlots(): seq[int] {.exportc.} =
   ## List palette slots colour picker may offer, as whole-palette ordinals.
@@ -750,10 +743,8 @@ proc nimInkChoosableSlots(): seq[int] {.exportc.} =
 proc nimInkName(index: cint): cstring {.exportc.} = lut_ink_to_name[Ink(index)]
   ## Report Nth palette entry's name.
 
-
 proc nimInkColor(index: cint): seq[float32] {.exportc.} = toRgbSeq(Ink(index).colour)
   ## Report Nth palette entry's colour, as `[r, g, b]` triple.
-
 
 proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour)
   ## Report canvas backdrop's colour, as `[r, g, b]` triple.
@@ -766,7 +757,6 @@ const INK_POOL_FREE = Ink.Grid
 
 var FLAT_POOL: seq[float32] = newSeq[float32](ITEMS_MAX*3)
   ## Hold what `nimPoolCellColors` writes, kept across calls so it never allocates.
-
 
 proc nimPoolCellColors(): seq[float32] {.exportc.} =
   ## Report object-pool strip's colours, one `[r, g, b]` triple per slot in slot order.
@@ -839,7 +829,6 @@ proc nimOverlayMetrics(): seq[float32] {.exportc.} =
   @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER]
 
 
-
 proc ensurePlaced() =
   ## Refresh `PLACEMENTS`, whole placing side for every live slot, where scene has moved.
   ##   Placing side reads no camera, so camera move never reaches this; only edit does.
@@ -877,6 +866,7 @@ proc ensureViewOverlay(width, height: int) =
     SETTINGS_OVERLAY_HELD = some(settings)
     SCALE_OVERLAY = CAMERA.drawExtentFor(height)
     VIEW_PROJECTION_OVERLAY = CAMERA.initMatrixViewProjection(float(width)/float(height))
+
 
 
 #[ Camera ]#
@@ -936,12 +926,16 @@ proc nimCameraPanAt(
 
 proc nimCameraAzimuth(): cfloat {.exportc.} = cfloat(CAMERA.azimuth)
   ## Report angle about world up, in radians.
+
 proc nimCameraElevation(): cfloat {.exportc.} = cfloat(CAMERA.elevation)
   ## Report angle above horizontal plane, in radians.
+
 proc nimCameraDistance(): cfloat {.exportc.} = cfloat(CAMERA.distance)
   ## Report distance from target, in world units.
+
 proc nimCameraFov(): cfloat {.exportc.} = cfloat(CAMERA.degrees_field_of_view)
   ## Report vertical field of view, in degrees.
+
 proc nimCameraTarget(): seq[float32] {.exportc.} =
   ## Report point camera orbits around, as `[x, y, z]` triple.
   @[cfloat(CAMERA.target.x), cfloat(CAMERA.target.y), cfloat(CAMERA.target.z)]
@@ -970,7 +964,6 @@ proc nimSetCameraDistance(v: cfloat) {.exportc.} =
 proc nimSetCameraFov(v: cfloat) {.exportc.} = CAMERA.degrees_field_of_view = float(v)
   ## Rewrite vertical field of view, in degrees.
 
-
 proc nimSetCameraTarget(x, y, z: cfloat) {.exportc.} =
   ## Rewrite point camera orbits around.
   TWEEN_CAMERA.abandon()
@@ -993,7 +986,6 @@ const SLOT_NONE = -1'i32
   ##   `cint` cannot carry `Option[int]` into JS, so every exported proc reporting optional
   ##   slot translates through this one constant at its return.
   ##   Everything on this side of that translation stays `Option[int]`.
-
 
 proc nimUpdateCursor(x, y: cfloat) {.exportc.} =
   ## Forward to `interaction.updateCursor`.
@@ -1038,7 +1030,6 @@ proc nimIsHoverBackdrop(): bool {.exportc.} = INTERACTION.is_hover_backdrop
   ##   One hovered thing that must not act like one: starts no drag (see
   ##   `interaction.beginDrag`), and tap on it means "empty space" to touch flow.
 
-
 proc nimClearHover() {.exportc.} =
   ## Discard whatever is hovered.
   ##   Touch has no continuous pointer position: `nimUpdateHover` runs only at touch-down
@@ -1056,24 +1047,19 @@ proc nimSelectionSlots(): seq[int] {.exportc.} =
 proc nimSelectionCount(): cint {.exportc.} = cint(SELECTION.len)
   ## Count picked items.
 
-
 proc nimSelectionArity(): cint {.exportc.} = cint(ord(SELECTION.impliedArity))
   ## Report arity current selection implies; see `selection.impliedArity`.
   ##   Matches `nimOperationArity`'s convention: 0 unary, 1 binary.
 
-
 proc nimSelectOnly(slot: cint) {.exportc.} = SELECTION.selectOnly(int(slot))
   ## Replace whole selection with one slot.
-
 
 proc nimSelectToggle(slot: cint) {.exportc.} = SELECTION.toggle(int(slot))
   ## Add slot to end of selection, or drop it where already picked.
   ##   Pick order names operands m and n.
 
-
 proc nimSelectClear() {.exportc.} = SELECTION.clear()
   ## Drop every pick.
-
 
 proc nimSelectionAllHidden(): bool {.exportc.} =
   ## Forward to `selection.isAllHidden`.
@@ -1084,7 +1070,6 @@ proc nimAnimationMilliseconds(): cint {.exportc.} = cint(ANIMATION_MILLISECONDS)
   ## Report how long this build eases animation for.
   ##   Same `mesh` constant added object grows over, so presentation layer's transitions
   ##   run to it.
-
 
 proc nimUndo(): bool {.exportc.} =
   ## Move scene back one step on its edit timeline; report whether there was earlier step.
@@ -1314,7 +1299,6 @@ proc nimFocusSlot(): cint {.exportc.} =
 proc nimTapSlop(): cfloat {.exportc.} = cfloat(PIXELS_TAP_SLOP)
   ## Report how far press may move and still be press; see `interaction.PIXELS_TAP_SLOP`.
 
-
 proc nimBeginPress(now: cfloat) {.exportc.} =
   ## Forward to `interaction.beginPress`; every press goes through it, camera ones too.
   interaction.beginPress(INTERACTION, float(now))
@@ -1357,11 +1341,9 @@ proc nimCancelDrag() {.exportc.} =
 proc nimDragActive(): bool {.exportc.} = INTERACTION.is_dragging
   ## Report whether drag is in progress.
 
-
 proc nimDragSourceSlot(): cint {.exportc.} = cint(INTERACTION.index_source)
   ## Report item drag started from; meaningful only while `nimDragActive()`.
   ##   Mirrors `interaction.index_source`, field already paired with that guard.
-
 
 proc nimDragTint(): seq[float32] {.exportc.} =
   ## Report colour rubber-band wears right now, as `[r, g, b]` triple.
@@ -1409,7 +1391,6 @@ proc nimMenuMetrics(): seq[float32] {.exportc.} =
 
 proc nimDragMenuOpen(): bool {.exportc.} = INTERACTION.menu.isSome
   ## Report whether choice menu is open on drag in progress.
-
 
 proc nimDragMenuCentre(): seq[float32] {.exportc.} =
   ## Report where open menu is centred, in canvas pixels, or empty where none is.
@@ -1477,7 +1458,8 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     # Report press that never moved rather than act on it.
     #   Replace or join selection is shift key's to say, and caller reads that.
     return DragResult(
-      created_slot: SLOT_NONE, clicked_slot: cint(outcome.index_clicked.get)
+      created_slot: SLOT_NONE,
+      clicked_slot: cint(outcome.index_clicked.get),
     )
   if outcome.index_created.isSome:
     let slot = outcome.index_created.get
@@ -1485,7 +1467,9 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     SELECTION.selectOnly(slot)
     HISTORY.record(SCENE, CAMERA)
     return DragResult(
-      created_slot: cint(slot), message: cstring(outcome.message), clicked_slot: SLOT_NONE
+      created_slot: cint(slot),
+      message: cstring(outcome.message),
+      clicked_slot: SLOT_NONE,
     )
   if outcome.choice == some(DragChoice.More) and outcome.operands.isSome:
     # Select both operands in drag order, which apply section reads as m then n.
@@ -1493,11 +1477,15 @@ proc nimEndDrag(now: cfloat): DragResult {.exportc.} =
     SELECTION.selectOnly(outcome.operands.get.source)
     SELECTION.toggle(outcome.operands.get.destination)
     return DragResult(
-      created_slot: SLOT_NONE, message: cstring(outcome.message), is_more: true,
+      created_slot: SLOT_NONE,
+      message: cstring(outcome.message),
+      is_more: true,
       clicked_slot: SLOT_NONE,
     )
   DragResult(
-    created_slot: SLOT_NONE, message: cstring(outcome.message), clicked_slot: SLOT_NONE
+    created_slot: SLOT_NONE,
+    message: cstring(outcome.message),
+    clicked_slot: SLOT_NONE,
   )
 
 
@@ -1696,12 +1684,10 @@ proc nimSelectionPulse(
 proc nimSceneMagic(): cstring {.exportc.} = cstring(MAGIC_SCENE)
   ## Report four bytes `.rgascene` file opens with, for packer in `glue.js`.
 
-
 proc nimSceneVersion(): cint {.exportc.} = cint(VERSION_SCENE)
   ## Report format version this build writes, for that packer.
   ##   Exported rather than written again in JavaScript, where literal survives bump and
   ##   browser stamps old version onto new content; see `scene.MAGIC_SCENE`.
-
 
 proc nimSceneReadsVersion(version: cint): bool {.exportc.} =
   ## Report whether this build can read scene file stamped with this version.
@@ -1732,7 +1718,9 @@ proc nimSceneAddRaw(
   for b in Basis: geometry[b] = coefficients[ord(b)]
   let carried = itemUpgraded(
     ItemSaved(
-      ink_ordinal: int(ink_ordinal), is_visible: is_visible, label: $label,
+      ink_ordinal: int(ink_ordinal),
+      is_visible: is_visible,
+      label: $label,
       geometry: geometry,
     ),
     uint8(version),
@@ -1858,7 +1846,6 @@ var COUNTS_SCENE: SceneCost ## What scene meshes standing in `MESHES` are made o
   ##   Held frame draws what it had and should say what that is rather than report empty
   ##   scene.
   ## Here rather than in module's `var` block because `SceneCost` is declared just above.
-
 
 proc openTally(cost: var SceneCost) =
   ## Start tally's clock, so first object measures from here rather than from zero.

@@ -215,8 +215,9 @@ var
     ## Zeroed placeholder until `main` seeds it via `initHistory` once startup scene is
     ## built.
 
-  # Reserve two arenas, one permanent and one reset after each throwaway unit of work.
-  #   See `arena.nim` for why interactive draw loop needs neither.
+
+# Reserve two arenas, one permanent and one reset after each throwaway unit of work.
+#   See `arena.nim` for why interactive draw loop needs neither.
 var
   BUFFER_ARENA_PERMANENT: array[CAPACITY_ARENA_PERMANENT, byte]
   ARENA_PERMANENT = initArena(BUFFER_ARENA_PERMANENT)
@@ -279,51 +280,56 @@ type Options = object ## Define what command line asked of this run.
     ## Headless run cannot click tab strip, so `--drive-help:<tab>` names one.
 
 
+func demoScaleOf(value: string): Option[ScaleOrrery] =
+  ## Resolve `--demo:<items>` size by its item count, or none where no size matches.
+  ##   Counts come from `itemsOf`, so size added in `orrery` is accepted here untouched.
+  for scale in ScaleOrrery:
+    if $itemsOf(scale) == value: return some(scale)
+
+
+proc applyOption(options: var Options, key, value: string) =
+  ## Apply one named command-line option, rejecting anything unrecognised.
+  case key
+  of "screenshot": options.path_screenshot = value
+  of "storyboard": options.path_storyboard = value
+  of "load-scene": options.path_load_scene = value
+  of "frames": options.count_frames = parseInt(value)
+  of "hidden": options.is_hidden = true
+  of "timings": options.is_timed = true
+  of "novsync": options.is_novsync = true
+  of "fill": options.is_filled = true
+  of "demo":
+    options.scale_demo =
+      if len(value) == 0: some(SCALE_ORRERY_DEFAULT) else: demoScaleOf(value)
+    var counts: seq[string]
+    for scale in ScaleOrrery: counts.add($itemsOf(scale))
+    doAssert options.scale_demo.isSome,
+      "Demo size must be one of " & counts.join(", ") &
+        &", or `--demo` alone for the default; got `{value}`."
+  of "drive-assert": options.is_asserted = true
+  of "drive-drag": options.is_drag_driven = true
+  of "drive-keys": options.is_key_driven = true
+  of "drive-select": options.is_select_driven = true
+  of "drive-undo": options.is_undo_driven = true
+  of "drive-sky": options.is_sky_driven = true
+  of "drive-help":
+    for path in HelpPath:
+      if titleOf(path) == value: options.path_help_driven = some(path)
+    doAssert options.path_help_driven.isSome,
+      &"Help tab must be one this build has; got `{value}`."
+  else:
+    doAssert false,
+      "Option must be one of screenshot, storyboard, load-scene, frames, hidden, " &
+      "timings, novsync, fill, demo[:<items>], drive-assert, drive-drag, drive-keys, " &
+      &"drive-select, drive-undo, drive-sky or drive-help; got `--{key}`."
+
+
 proc parseOptions(): Options =
   ## Read command line into options, rejecting anything unrecognised.
   for kind, key, value in getopt():
     case kind
-    of cmdLongOption, cmdShortOption:
-      case key
-      of "screenshot": result.path_screenshot = value
-      of "storyboard": result.path_storyboard = value
-      of "load-scene": result.path_load_scene = value
-      of "frames": result.count_frames = parseInt(value)
-      of "hidden": result.is_hidden = true
-      of "timings": result.is_timed = true
-      of "novsync": result.is_novsync = true
-      of "fill": result.is_filled = true
-      of "demo":
-        # Name size by item count.
-        #   Counts come from `itemsOf`, so size added in `orrery` is accepted here untouched.
-        if len(value) == 0:
-          result.scale_demo = some(SCALE_ORRERY_DEFAULT)
-        else:
-          for scale in ScaleOrrery:
-            if $itemsOf(scale) == value: result.scale_demo = some(scale)
-          var counts: seq[string]
-          for scale in ScaleOrrery: counts.add($itemsOf(scale))
-          doAssert result.scale_demo.isSome,
-            "Demo size must be one of " & counts.join(", ") &
-              &", or `--demo` alone for the default; got `{value}`."
-      of "drive-assert": result.is_asserted = true
-      of "drive-drag": result.is_drag_driven = true
-      of "drive-keys": result.is_key_driven = true
-      of "drive-select": result.is_select_driven = true
-      of "drive-undo": result.is_undo_driven = true
-      of "drive-sky": result.is_sky_driven = true
-      of "drive-help":
-        for path in HelpPath:
-          if titleOf(path) == value: result.path_help_driven = some(path)
-        doAssert result.path_help_driven.isSome,
-          &"Help tab must be one this build has; got `{value}`."
-      else:
-        doAssert false,
-          "Option must be one of screenshot, storyboard, load-scene, frames, hidden, " &
-          "timings, novsync, fill, demo[:<items>], drive-assert, drive-drag, drive-keys, " &
-          &"drive-select, drive-undo, drive-sky or drive-help; got `--{key}`."
-    of cmdArgument:
-      doAssert false, &"Every input must be a named option; got `{key}`."
+    of cmdLongOption, cmdShortOption: result.applyOption(key, value)
+    of cmdArgument: doAssert false, &"Every input must be a named option; got `{key}`."
     of cmdEnd: discard
 
 
@@ -450,7 +456,7 @@ proc assembleMeshes(
     6*LATITUDES_HORIZON*LONGITUDES_HORIZON*(MESHES.domes.count + MESHES_FURNITURE.domes.count)
 
 
-func drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
+proc drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
   ## Fill orientation pulse travelling along marker's outline, if it has one.
   ##   Over outline rather than instead of it: pulse is outline swelling along stretch of
   ##   itself, tapering back to outline's width so only its head is edge.
@@ -467,7 +473,7 @@ func drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
     )
 
 
-func drawMarker(marker: Marker, tint: Rgba, alpha: float32) =
+proc drawMarker(marker: Marker, tint: Rgba, alpha: float32) =
   ## Stroke one marker onto foreground layer, in whichever outline its shape asked for.
   ##   Alpha separate from `tint`, so selection and hover reach this through identical
   ##   call and differ only in weight.
@@ -565,7 +571,7 @@ const
   TONE_WEDGE_LABEL_CHOSEN = (red: 0.741'f32, green: 0.953'f32, blue: 0.941'f32)
 
 
-func drawChoiceMenu(interaction: Interaction, scene: Scene) =
+proc drawChoiceMenu(interaction: Interaction, scene: Scene) =
   ## Draw four wedges of open choice menu onto foreground layer.
   ##   Every wedge at every opening, at fixed compass point, offered or not, so position
   ##   of `meet` is learned once.
@@ -675,7 +681,6 @@ proc drawInteractionOverlay(
           )
   if interaction.menu.isSome:
     drawChoiceMenu(interaction, scene)
-
 
 
 func anchorOfSelection(
@@ -1084,7 +1089,7 @@ proc reportTimings(milliseconds: var openArray[float32]) =
     &"max {milliseconds[^1]:.3f} ({1000.0/float(milliseconds[^1]):.1f})"
 
 
-func driveDrag(
+proc driveDrag(
   scene: Scene; interaction: Interaction; camera: Camera;
   width, height, count_drawn: int; scale: DrawExtent
 ) =
@@ -1197,7 +1202,7 @@ const lut_keys_driven = [
   ##   reachable.
 
 
-func driveKeys(count_drawn: int) =
+proc driveKeys(count_drawn: int) =
   ## Push one scripted keyboard step per frame onto SDL's queue, for `--drive-keys`.
   ##   Posted to queue rather than handed to `handleEvent`, for reason `driveDrag` gives.
   const FRAME_FIRST = 3 # Past startup, so first frame's layout has settled.
@@ -1217,7 +1222,7 @@ func driveKeys(count_drawn: int) =
   sdl3.pushEvent(addr event)
 
 
-func driveSelect(
+proc driveSelect(
   scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
 ) =
   ## Script click, then two shift-clicks, on first three items, then drag off menu's object.
@@ -1293,7 +1298,7 @@ const lut_keys_undo_driven = [
   ##   Every press is paired with release: arrow left down orbits every frame, so undo
   ##   restores view and still-held key takes it away again.
 
-func driveUndo(
+proc driveUndo(
   scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
 ) =
   ## Script construction drag onto second item, orbit well away, then undo, one step per frame.
@@ -1869,6 +1874,8 @@ func fillSceneForBenchmark(scene: var Scene, now: float) =
 
 proc main() =
   ## Open window, run mode command line asked for, then tear down in order.
+  ##   Kept whole past sixty lines: each `defer` undoes setup above it, and splitting
+  ##   would hide that order.
   let options = parseOptions()
   doAssert sdl3.init(INIT_VIDEO), &"SDL3 must start; got `{sdl3.getError()}`."
   defer: sdl3.quit()
