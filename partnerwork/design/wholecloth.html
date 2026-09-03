@@ -163,6 +163,33 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
 .foot ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }
 .foot li { margin-top: 0.45rem; }
 
+.specimen { --mark-bg: var(--paper); }
+.panel, .verb { --mark-bg: var(--card); }
+:root { --mark-bg: var(--paper); }
+.cn.no { stroke: var(--no) !important; stroke-dasharray: 5 4; opacity: 0.8; }
+.ctl { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: center;
+  margin-top: 0.9rem; font: 400 0.72rem/1.4 var(--mono); color: var(--faint); }
+.ctl .grp { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.ctl button { font: 500 0.72rem/1 var(--mono); padding: 0.4rem 0.6rem; border-radius: 999px;
+  border: 1px solid var(--rule); background: var(--card); color: var(--dim); cursor: pointer; }
+.ctl button.on { background: var(--hold-chip); color: var(--chip-text); border-color: var(--hold-chip); }
+.stagewrap { display: flex; flex-wrap: wrap; gap: 1rem 1.6rem; align-items: center; margin-top: 0.8rem; }
+.stagewrap svg { flex: 0 0 auto; width: 230px; height: auto; }
+#readout { flex: 1 1 16rem; font: 400 0.8rem/1.7 var(--mono); color: var(--dim); }
+#readout b { color: var(--ink); font-weight: 500; }
+#readout b.ok { color: var(--good); } #readout b.bad { color: var(--no); }
+.turnrow { margin-top: 0.4rem; }
+.turnrow input { width: 100%; max-width: 40rem; display: block; }
+.turnticks { display: flex; justify-content: space-between; max-width: 40rem;
+  font: 400 0.66rem/1 var(--mono); color: var(--faint); padding: 0.2rem 0.3rem 0; }
+.strip { display: flex; flex-wrap: wrap; gap: 0.6rem 0.25rem; margin-top: 1rem; }
+.strip .mini { cursor: pointer; border-radius: 6px; padding: 0.3rem 0.1rem; border: 1px solid transparent;
+  flex: 0 0 auto; width: 5.9rem; }
+.strip .mini:hover { border-color: var(--rule); background: var(--wash); }
+.strip .mini.refused svg { opacity: 0.6; }
+.strip figcaption { font-size: 0.6rem; line-height: 1.35; }
+.chip-l { fill: var(--card); }
+
 /* figure strokes */
 .rim  { fill: none; stroke: var(--rim); stroke-width: 2.2; }
 .chev { fill: none; stroke: var(--rim); stroke-width: 1.8;
@@ -218,12 +245,12 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
       aria-label="An annotated couple: the lead behind the follow, both facing up. His Left mark stays at his side and his deep rope runs up the west side, round the outside of her left shoulder, to the joined hands at her left front; her right mark stays at her side and her orange rope hugs her front on the inner track to meet it.">
       <circle cx="0" cy="34" r="20" class="rim"/><polyline points="-5,38 0,30 5,38" class="chev"/>
       <circle cx="0" cy="-34" r="20" class="rim"/><polyline points="-5,-30 0,-38 5,-30" class="chev"/>
-      <path d="M -20.0,26.3 L -29.5,-28.0 C -29.5,-38.0 -25.4,-43.8 -20.4,-45.8" class="cn" style="stroke:var(--left-deep)"/>
+      <path d="M -20.0,26.3 L -29.5,-28.0 C -31.1,-36.9 -24.9,-38.0 -20.4,-45.8" class="cn" style="stroke:var(--left-deep)"/>
       <path d="M 20.0,-41.7 L 19.5,-43.1 L 19.0,-44.5 L 18.4,-46.0 L 17.8,-47.5 L 17.1,-48.9 L 16.3,-50.3 L 15.3,-51.6 L 14.1,-52.7 L 12.8,-53.7 L 11.4,-54.6 L 9.9,-55.3 L 8.4,-55.9 L 6.8,-56.5 L 5.3,-56.9 L 3.7,-57.2 L 2.0,-57.4 L 0.4,-57.5 L -1.3,-57.5 L -2.9,-57.3 L -4.5,-57.1 L -6.1,-56.7 L -7.7,-56.2 L -9.2,-55.6 L -10.7,-54.9 L -12.1,-54.1 L -13.5,-53.2 L -14.8,-52.2 L -16.0,-51.2 L -17.2,-50.0 L -18.3,-48.8 L -19.3,-47.5 L -20.2,-46.1 L -20.4,-45.8" class="cn" style="stroke:var(--right)"/>
-      <rect x="-26.0" y="28.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
-      <rect x="14.0" y="28.0" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-      <circle cx="20.0" cy="-34.0" r="6" style="fill:var(--right);stroke:var(--right);stroke-width:1.5"/>
-      <circle cx="-20.0" cy="-34.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+      <rect x="-26.0" y="28.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26.0" y="28.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
+      <rect x="14.0" y="28.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14.0" y="28.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+      <circle cx="20.0" cy="-34.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20.0" cy="-34.0" r="6" style="fill:var(--right);stroke:var(--right);stroke-width:1.5"/>
+      <circle cx="-20.0" cy="-34.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20.0" cy="-34.0" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
       <g class="badge">
         <circle cx="-40" cy="34" r="5"/><text x="-40" y="36.2">1</text>
         <circle cx="-44" cy="0" r="5"/><text x="-44" y="2.2">2</text>
@@ -263,13 +290,13 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <polyline points="18,15.5 22,9.5 26,15.5" class="chev"/></svg>
       <span><b>a dancer</b> — the chevron is the facing; the rim is the body the arms go round</span>
       <svg viewBox="0 0 44 18" width="44" height="18" aria-hidden="true">
-        <rect x="3" y="3" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.6"/>
-        <circle cx="33" cy="9" r="6.5" style="fill:none;stroke:var(--left);stroke-width:1.6"/></svg>
+        <rect x="3" y="3" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.6"/>
+        <circle cx="33" cy="9" r="6.5" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.6"/></svg>
       <span><b>left arms</b> — blue; the lead's deep and square, the follow's plain and round.
       A mark is an arm's <b>anchor</b>, fixed at the body's side; it never moves</span>
       <svg viewBox="0 0 44 18" width="44" height="18" aria-hidden="true">
-        <rect x="3" y="3" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.6"/>
-        <circle cx="33" cy="9" r="6.5" style="fill:none;stroke:var(--right);stroke-width:1.6"/></svg>
+        <rect x="3" y="3" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.6"/>
+        <circle cx="33" cy="9" r="6.5" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.6"/></svg>
       <span><b>right arms</b> — orange, the same way round</span>
       <svg viewBox="0 0 52 18" width="52" height="18" aria-hidden="true">
         <line x1="3" y1="9" x2="20" y2="9" style="stroke:var(--left-deep);stroke-width:3.4;stroke-linecap:round"/>
@@ -280,7 +307,7 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
       joined hands, the deep rope always the lead's. Straight wherever it can be; it leaves a
       mark at its edge so the fill stays readable</span>
       <svg viewBox="0 0 44 18" width="44" height="18" aria-hidden="true">
-        <circle cx="22" cy="9" r="6.5" style="fill:none;stroke:var(--left);stroke-width:1.6" opacity="0.45"/></svg>
+        <circle cx="22" cy="9" r="6.5" style="fill:var(--mark-bg);stroke:none"/><circle cx="22" cy="9" r="6.5" style="fill:none;stroke:var(--left);stroke-width:1.6" opacity="0.45"/></svg>
       <span><b>faded</b> — a free hand: nobody holds it, but it keeps its identity. A free arm is never drawn; only a held arm has a rope</span>
     </div>
   </div>
@@ -329,17 +356,17 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
       <figure>
         <svg viewBox="0 0 200 120" width="200" aria-hidden="true">
           <g transform="translate(14,8)">
-            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.6"/>
+            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.6"/>
             <text x="24" y="11" class="gaugetxt">hollow — height unsaid</text></g>
           <g transform="translate(14,36)">
             <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.6"/>
             <text x="24" y="11" class="gaugetxt">solid — low</text></g>
           <g transform="translate(14,64)">
-            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.6"/>
+            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.6"/>
             <circle cx="6.5" cy="6.5" r="2.8" style="fill:var(--left-deep)"/>
             <text x="24" y="11" class="gaugetxt">dot — high</text></g>
           <g transform="translate(14,92)">
-            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:url(#aLd);stroke:var(--left-deep);stroke-width:1.6"/>
+            <rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="0" y="0" width="13" height="13" rx="1.5" style="fill:url(#aLd);stroke:var(--left-deep);stroke-width:1.6"/>
             <text x="24" y="11" class="gaugetxt">hatched — above</text></g>
         </svg>
         <figcaption>the fills, unchanged</figcaption>
@@ -371,10 +398,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
           <line x1="-20" y1="22.3" x2="-20" y2="0" class="cn" style="stroke:var(--left-deep)"/>
           <line x1="-20" y1="0" x2="-20" y2="-22.3" class="cn" style="stroke:var(--left)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>Left to left</b><br><span class="say">rest: follow away</span></figcaption>
       </figure>
@@ -384,10 +411,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
           <line x1="20" y1="22.3" x2="20" y2="0" class="cn" style="stroke:var(--right-deep)"/>
           <line x1="20" y1="0" x2="20" y2="-22.3" class="cn" style="stroke:var(--right)"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>Right to right</b><br><span class="say">rest: follow away</span></figcaption>
       </figure>
@@ -397,10 +424,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
           <line x1="-20" y1="22.3" x2="-20" y2="0" class="cn" style="stroke:var(--left-deep)"/>
           <line x1="-20" y1="0" x2="-20" y2="-22.3" class="cn" style="stroke:var(--right)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>Left to right</b><br><span class="say">rest: facing</span></figcaption>
       </figure>
@@ -410,10 +437,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
           <line x1="20" y1="22.3" x2="20" y2="0" class="cn" style="stroke:var(--right-deep)"/>
           <line x1="20" y1="0" x2="20" y2="-22.3" class="cn" style="stroke:var(--left)"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>Right to left</b><br><span class="say">rest: facing</span></figcaption>
       </figure>
@@ -425,10 +452,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <line x1="-20" y1="0" x2="-20" y2="-22.3" class="cn" style="stroke:var(--left)"/>
           <line x1="20" y1="22.3" x2="20" y2="0" class="cn" style="stroke:var(--right-deep)"/>
           <line x1="20" y1="0" x2="20" y2="-22.3" class="cn" style="stroke:var(--right)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
         </svg>
         <figcaption><b>Left to left · Right to right</b><br><span class="say">rest: follow away</span></figcaption>
       </figure>
@@ -440,10 +467,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <line x1="-20" y1="0" x2="-20" y2="-22.3" class="cn" style="stroke:var(--right)"/>
           <line x1="20" y1="22.3" x2="20" y2="0" class="cn" style="stroke:var(--right-deep)"/>
           <line x1="20" y1="0" x2="20" y2="-22.3" class="cn" style="stroke:var(--left)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
         </svg>
         <figcaption><b>Left to right · Right to left</b><br><span class="say">rest: facing</span></figcaption>
       </figure>
@@ -455,10 +482,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <path d="M -5,-2.2 Q -17,-8 -20,-22.3" class="cn" style="stroke:var(--left)"/>
           <path d="M -20,22.3 Q -16,6 0,0" class="cn" style="stroke:var(--left-deep)"/>
           <path d="M 0,0 Q 16,-6 20,-22.3" class="cn" style="stroke:var(--right)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
         </svg>
         <figcaption><b>Left to right · Right to left @ &frac12;</b><br><span class="say">the X, follow away — broken line passes under</span></figcaption>
       </figure>
@@ -470,10 +497,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           <path d="M -5,-2.2 Q -17,-8 -20,-22.3" class="cn" style="stroke:var(--right)"/>
           <path d="M -20,22.3 Q -16,6 0,0" class="cn" style="stroke:var(--left-deep)"/>
           <path d="M 0,0 Q 16,-6 20,-22.3" class="cn" style="stroke:var(--left)"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--left-deep);stroke-width:1.5"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
         </svg>
         <figcaption><b>Left to left · Right to right @ &frac12;</b><br><span class="say">the X, follow facing — a half turn from its away rest</span></figcaption>
       </figure>
@@ -481,10 +508,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -58 100 116" width="128" role="img" aria-label="No hands joined: the free state.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-34 0,-26 5,-34" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>free</b><br><span class="say">four free hands</span></figcaption>
       </figure>
@@ -496,7 +523,9 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
       which of her hands, differs. The two two-hand holds become one
       geometry offset by her facing: a half turn puts either pair in the X,
       with her <b>away</b> for the cross-name pair and <b>facing</b> for the
-      same-name one. Neither X is a hold of its own.</p>
+      same-name one. Neither X is a hold of its own. Counted from face to
+      face the away rest is <b>@ &#8722;&#189;</b>; the rope already reads her
+      arm there as the low lock beginning — led, not yet wound.</p>
       <p><b>The over/under in the X is the drawing's say.</b> The rope
       model withholds it: two ropes at one height cross closer than it lets
       them lie, so it refuses both X states outright — a limit of the model,
@@ -522,16 +551,19 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
   close the rope hugs the body — low and tight is under, high and wide is
   over — never by drawing the free arm. The mark never moves: what moves
   is the rope, and <b>the hand is where the rope ends</b> — a low lock ends
-  just behind the <i>opposite</i> shoulder, a high lock behind its own, a
-  wrap at the opposite front. Each figure was asked of the rope model.</p>
+  just behind the <i>opposite</i> shoulder, a wrap at the opposite front,
+  and a high lock comes back to its own shoulder: <b>a small loopback at
+  the mark</b>, the way a state loops to itself on an automaton. Each
+  figure was asked of the rope model; the turns count from face to
+  face.</p>
   <div class="panel">
     <div class="figrow tight">
       <figure>
         <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="An open arm: the mark at her side, the rope running straight out to the partner.">
           <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
           <path d="M -31.7,0 L -47,0" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>left</b> (open)<br><span class="say">the rope runs straight out; rope: holds</span></figcaption>
       </figure>
@@ -539,8 +571,8 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="A low wrap: from the fixed mark the rope hugs the front on the inner track and ends at the opposite front.">
           <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
           <path d="M -24.0,-7.7 L -23.5,-9.4 L -23.0,-11.1 L -22.4,-12.8 L -21.8,-14.6 L -21.0,-16.3 L -20.1,-18.0 L -19.0,-19.5 L -17.7,-21.0 L -16.2,-22.2 L -14.7,-23.3 L -13.0,-24.2 L -11.3,-25.1 L -9.5,-25.8 L -7.7,-26.4 L -5.8,-26.9 L -3.9,-27.2 L -2.0,-27.4 L -0.1,-27.5 L 1.8,-27.4 L 3.7,-27.2 L 5.6,-26.9 L 7.5,-26.5 L 9.3,-25.9 L 11.1,-25.2 L 12.8,-24.3 L 14.5,-23.4 L 16.1,-22.3 L 17.6,-21.1 L 19.0,-19.9 L 20.4,-18.5 L 21.6,-17.0 L 22.7,-15.5 L 23.8,-13.8 L 23.8,-13.7" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>left-wrap-low</b><br><span class="say">tight across the front: under her other arm; rope: holds @ &#189;</span></figcaption>
       </figure>
@@ -548,8 +580,8 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="A high wrap: the rope crosses the front on the outer track, wide of the body, over her other arm, ending at the opposite front.">
           <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
           <path d="M -24.0,-7.7 L -23.6,-9.4 L -23.4,-11.3 L -23.4,-13.4 L -23.2,-15.5 L -22.9,-17.8 L -22.4,-20.0 L -21.5,-22.1 L -20.3,-24.0 L -18.6,-25.4 L -16.8,-26.7 L -14.9,-27.8 L -12.9,-28.7 L -10.9,-29.6 L -8.8,-30.2 L -6.7,-30.8 L -4.5,-31.2 L -2.3,-31.4 L -0.1,-31.5 L 2.1,-31.4 L 4.3,-31.2 L 6.4,-30.8 L 8.6,-30.3 L 10.7,-29.6 L 12.7,-28.8 L 14.7,-27.9 L 16.6,-26.8 L 18.4,-25.6 L 20.2,-24.2 L 21.8,-22.7 L 23.3,-21.2 L 24.8,-19.5 L 26.0,-17.7 L 27.2,-15.9 L 27.3,-15.7" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>left-wrap-high</b><br><span class="say">wide across the front: over her other arm; rope: holds @ &#189;</span></figcaption>
       </figure>
@@ -557,64 +589,36 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="A low lock: the rope hugs the back and ends just behind the opposite shoulder.">
           <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
           <path d="M -24.0,7.7 L -23.5,9.4 L -23.0,11.1 L -22.4,12.8 L -21.8,14.6 L -21.0,16.3 L -20.1,18.0 L -19.0,19.5 L -17.7,21.0 L -16.2,22.2 L -14.7,23.3 L -13.0,24.2 L -11.3,25.1 L -9.5,25.8 L -7.7,26.4 L -5.8,26.9 L -3.9,27.2 L -2.0,27.4 L -0.1,27.5 L 1.8,27.4 L 3.7,27.2 L 5.6,26.9 L 7.5,26.5 L 9.3,25.9 L 11.1,25.2 L 12.8,24.3 L 14.5,23.4 L 16.1,22.3 L 17.6,21.1 L 19.0,19.9 L 20.4,18.5 L 21.6,17.0 L 22.7,15.5 L 23.8,13.8 L 23.8,13.7" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
-        <figcaption><b>left-lock-low</b><br><span class="say">round the back to behind the opposite shoulder; rope: holds @ 1</span></figcaption>
+        <figcaption><b>left-lock-low</b><br><span class="say">round the back to behind the opposite shoulder; led @ &#189;, wound @ 1</span></figcaption>
+      </figure>
+      <figure>
+        <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="A high lock: a small loopback at the mark, the rope leaving behind the shoulder and coming back to it, the hand at its own shoulder.">
+          <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
+          <path d="M -22.3,5.8 L -22.0,6.6 L -21.8,7.5 L -21.8,8.4 L -21.8,9.2 L -22.0,10.1 L -22.2,11.0 L -22.6,11.8 L -23.1,12.5 L -23.7,13.2 L -24.4,13.7 L -25.2,14.2 L -26.0,14.6 L -26.8,14.8 L -27.7,15.0 L -28.6,15.0 L -29.5,14.9 L -30.3,14.7 L -31.2,14.3 L -31.9,13.9 L -32.6,13.3 L -33.2,12.7 L -33.8,11.9 L -34.2,11.2 L -34.5,10.3 L -34.7,9.5 L -34.7,8.6 L -34.7,7.7 L -34.5,6.8 L -34.2,6.0 L -33.8,5.2 L -33.3,4.4 L -32.7,3.8 L -32.0,3.2 L -31.3,2.7 L -30.5,2.4 L -29.6,2.1" class="cn" style="stroke:var(--left)"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+        </svg>
+        <figcaption><b>left-lock-high</b><br><span class="say">the loopback: hand to its own shoulder; led @ &#189;, wound @ 1</span></figcaption>
       </figure>
       <figure>
         <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="An arm above: from the mark the rope goes inside the circle, over the head, ending clear of the chevron.">
           <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
           <path d="M -18.5,-1.5 L -9.5,-8" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:url(#aL);stroke:var(--left);stroke-width:1.5"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-24.0" cy="0.0" r="6" style="fill:url(#aL);stroke:var(--left);stroke-width:1.5"/>
+          <circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="24.0" cy="0.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>left</b> @ above<br><span class="say">over the head, clear of the chevron; rope: open at every turn</span></figcaption>
       </figure>
     </div>
     <p>What carries each fact: <b>the track</b> says lock or wrap (round the
     back, or across the front); <b>where the rope ends</b> says which lock
-    (opposite shoulder low, own shoulder high); <b>the fill</b> on the fixed
+    (behind the opposite shoulder low; the loopback to its own shoulder high); <b>the fill</b> on the fixed
     mark says the height, and with it under or over — the track's width
     only repeats that. Nothing is written twice, so nothing can disagree.
     The turns in the captions count from face to face.</p>
-  </div>
-
-  <div class="panel">
-    <h3>The high lock: a small loop — pick one<span class="tag">three candidates</span></h3>
-    <p>Your definition: the arm bent up behind, hand to its own shoulder.
-    All three take the short track behind her own shoulder — the rope
-    model puts the hand exactly there at half a turn the lock way — and
-    differ in how the loop is said. The rope's end is the hand in each.</p>
-    <div class="figrow">
-      <figure>
-        <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="High lock, candidate A: the rope ends in a small cursive curl behind her own shoulder.">
-          <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
-          <path d="M -24.0,7.7 L -23.5,9.4 L -23.0,11.1 L -22.4,12.8 L -21.8,14.6 L -21.0,16.3 L -20.1,18.0 L -19.0,19.5 L -17.7,21.0 L -16.2,22.2 L -15.8,22.5 C -10.4,28.8 -15.0,35.3 -18.5,31.6 C -22.0,27.9 -18.3,24.4 -15.0,26.7" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-        </svg>
-        <figcaption><b>A · the curl</b><br><span class="say">the rope loops once and ends there</span></figcaption>
-      </figure>
-      <figure>
-        <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="High lock, candidate B: a thin ring drawn around the rope's end behind her own shoulder.">
-          <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
-          <path d="M -24.0,7.7 L -23.5,9.4 L -23.0,11.1 L -22.4,12.8 L -21.8,14.6 L -21.0,16.3 L -20.1,18.0 L -19.0,19.5 L -17.7,21.0 L -16.2,22.2 L -15.8,22.5" class="cn" style="stroke:var(--left)"/><circle cx="-15.8" cy="22.5" r="7" style="fill:none;stroke:var(--left);stroke-width:1.3"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-        </svg>
-        <figcaption><b>B · the ring</b><br><span class="say">a loop drawn round the rope's end</span></figcaption>
-      </figure>
-      <figure>
-        <svg viewBox="-50 -52 100 104" width="140" role="img" aria-label="High lock, candidate C: the plain short hook behind her own shoulder, no loop mark.">
-          <circle cx="0" cy="0" r="24" class="rim"/><polyline points="-5,4 0,-4 5,4" class="chev"/>
-          <path d="M -24.0,7.7 L -23.5,9.4 L -23.0,11.1 L -22.4,12.8 L -21.8,14.6 L -21.0,16.3 L -20.1,18.0 L -19.0,19.5 L -17.7,21.0 L -16.2,22.2 L -15.8,22.5" class="cn" style="stroke:var(--left)"/>
-          <circle cx="-24.0" cy="0.0" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5"/><circle cx="-24.0" cy="0.0" r="2.7" style="fill:var(--left)"/>
-          <circle cx="24.0" cy="0.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-        </svg>
-        <figcaption><b>C · the hook</b><br><span class="say">no loop — the short track and the fill alone</span></figcaption>
-      </figure>
-    </div>
   </div>
 
   <div class="panel">
@@ -631,26 +635,26 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
           aria-label="Left to left-lock-low: the follow faces him; her rope hugs her back from her fixed left mark to just behind her opposite shoulder, where his rope, up the west side and round the outside of that shoulder, meets it.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-34 0,-26 5,-34" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <path d="M -20.0,22.3 L -29.5,-24.0 C -29.5,-34.0 -25.4,-39.8 -20.4,-41.8" class="cn" style="stroke:var(--left-deep)"/>
+          <path d="M -20.0,22.3 L -29.5,-24.0 C -31.3,-32.8 -24.9,-34.0 -20.4,-41.8" class="cn" style="stroke:var(--left-deep)"/>
           <path d="M 20.0,-37.7 L 19.5,-39.1 L 19.0,-40.5 L 18.4,-42.0 L 17.8,-43.5 L 17.1,-44.9 L 16.3,-46.3 L 15.3,-47.6 L 14.1,-48.7 L 12.8,-49.7 L 11.4,-50.6 L 9.9,-51.3 L 8.4,-51.9 L 6.8,-52.5 L 5.3,-52.9 L 3.7,-53.2 L 2.0,-53.4 L 0.4,-53.5 L -1.3,-53.5 L -2.9,-53.3 L -4.5,-53.1 L -6.1,-52.7 L -7.7,-52.2 L -9.2,-51.6 L -10.7,-50.9 L -12.1,-50.1 L -13.5,-49.2 L -14.8,-48.2 L -16.0,-47.2 L -17.2,-46.0 L -18.3,-44.8 L -19.3,-43.5 L -20.2,-42.1 L -20.4,-41.8" class="cn" style="stroke:var(--left)"/>
-          <rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
-          <circle cx="20.0" cy="-30.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
-          <rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20.0" cy="-30.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
+          <circle cx="20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20.0" cy="-30.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
+          <rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
-        <figcaption><b>Left to left-lock-low</b><br><span class="say">she faces him; hand behind her opposite shoulder; rope: holds</span></figcaption>
+        <figcaption><b>Left to left-lock-low</b><br><span class="say">she faces him; hand behind her opposite shoulder; rope: holds @ &#8722;1</span></figcaption>
       </figure>
       <figure>
         <svg viewBox="-52 -62 104 124" width="150" role="img"
           aria-label="Left-Lock-Low to left: the lead's rope hugs his back from his fixed Left mark to just behind his opposite shoulder; her rope comes down the east side, round the outside of that shoulder, to meet it. The follow faces him.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-34 0,-26 5,-34" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <path d="M 20.0,-22.3 L 29.5,24.0 C 29.5,34.0 25.4,39.8 20.4,41.8" class="cn" style="stroke:var(--left)"/>
+          <path d="M 20.0,-22.3 L 29.5,24.0 C 31.3,32.8 24.9,34.0 20.4,41.8" class="cn" style="stroke:var(--left)"/>
           <path d="M -20.0,37.7 L -19.5,39.1 L -19.0,40.5 L -18.4,42.0 L -17.8,43.5 L -17.1,44.9 L -16.3,46.3 L -15.3,47.6 L -14.1,48.7 L -12.8,49.7 L -11.4,50.6 L -9.9,51.3 L -8.4,51.9 L -6.8,52.5 L -5.3,52.9 L -3.7,53.2 L -2.0,53.4 L -0.4,53.5 L 1.3,53.5 L 2.9,53.3 L 4.5,53.1 L 6.1,52.7 L 7.7,52.2 L 9.2,51.6 L 10.7,50.9 L 12.1,50.1 L 13.5,49.2 L 14.8,48.2 L 16.0,47.2 L 17.2,46.0 L 18.3,44.8 L 19.3,43.5 L 20.2,42.1 L 20.4,41.8" class="cn" style="stroke:var(--left-deep)"/>
-          <rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
-          <circle cx="20.0" cy="-30.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
-          <rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20.0" cy="-30.0" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--left-deep);stroke:var(--left-deep);stroke-width:1.5"/>
+          <circle cx="20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20.0" cy="-30.0" r="6" style="fill:var(--left);stroke:var(--left);stroke-width:1.5"/>
+          <rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14.0" y="24.0" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20.0" cy="-30.0" r="6" style="fill:var(--mark-bg);stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>Left-Lock-Low to left</b><br><span class="say">only with her facing him; turned away it is out of rope</span></figcaption>
       </figure>
@@ -690,10 +694,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -58 100 116" width="110" role="img" aria-label="At rest.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-26 0,-34 5,-26" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>@ &#8722;&frac12;</b> <span class="say">her away rest</span></figcaption>
       </figure>
@@ -701,10 +705,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -58 100 116" width="110" role="img" aria-label="A quarter turn from rest.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-4,-35 4,-30 -4,-25" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <circle cx="0" cy="-50" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="0" cy="-10" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="0" cy="-50" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="0" cy="-50" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="0" cy="-10" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="0" cy="-10" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>@ &#8722;&frac14;</b> <span class="say">a quarter on</span></figcaption>
       </figure>
@@ -712,10 +716,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -58 100 116" width="110" role="img" aria-label="Half a turn from rest.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-34 0,-26 5,-34" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,34 0,26 5,34" class="chev"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>@ 0</b> <span class="say">face to face — or @ &#8722;1, wound</span></figcaption>
       </figure>
@@ -723,10 +727,10 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <svg viewBox="-50 -58 100 116" width="110" role="img" aria-label="Both dancers turned away from each other.">
           <circle cx="0" cy="-30" r="20" class="rim"/><polyline points="-5,-26 0,-34 5,-26" class="chev"/>
           <circle cx="0" cy="30" r="20" class="rim"/><polyline points="-5,26 0,34 5,26" class="chev"/>
-          <circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
-          <circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
-          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
-          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="-20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="-20" cy="-30" r="6" style="fill:none;stroke:var(--left);stroke-width:1.5" opacity="0.45"/>
+          <circle cx="20" cy="-30" r="6" style="fill:var(--mark-bg);stroke:none"/><circle cx="20" cy="-30" r="6" style="fill:none;stroke:var(--right);stroke-width:1.5" opacity="0.45"/>
+          <rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="14" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--left-deep);stroke-width:1.5" opacity="0.45"/>
+          <rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:var(--mark-bg);stroke:none"/><rect x="-26" y="24" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--right-deep);stroke-width:1.5" opacity="0.45"/>
         </svg>
         <figcaption><b>@ &frac12; · &frac12;</b> <span class="say">both turned away</span></figcaption>
       </figure>
@@ -736,23 +740,16 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
     <h3>The dial: one hold, turned, at each height</h3>
     <p>For <span class="m">Left to left</span>, turning the follow, counted
     <b>from face to face</b> — the sheet's own counting. Her away rest sits
-    at &#8722;&#189;. Each marker names what her arm has become at that
-    turn, in the sheet's words, as the rope model reads it; the legend
-    below says how to read them. Mirror the whole dial for
+    at &#8722;&#189;, and the low lock begins there: her hand is behind her
+    from the half turn, led; at the whole turn it is wound. Every row runs
+    to two turns so its block shows. The words are the rope model's; the
+    legend below says how to read them. Mirror the whole dial for
     <span class="m">Right to right</span>.</p>
     <figure style="text-align:left; overflow-x:auto">
-      <svg viewBox="0 0 700 232" width="700" style="max-width:100%; height:auto" role="img"
-        aria-label="A dial of turns from face to face, one row per height. At low: the low lock at minus one, the away rest at minus one half, the low wrap at plus one half, out of rope at plus one and beyond. At high: a full turn holds either way, the neck names flipping as the rope keeps going round; out of rope at plus one and a half. Above: open at every turn.">
+      <svg viewBox="0 0 700 236" width="700" style="max-width:100%; height:auto" role="img"
+        aria-label="A dial of turns from face to face, two turns each way, one row per height. At low: the lock is led at minus one half and wound at minus one, out of rope from minus one and a half; the wrap at plus one half, out of rope from plus one. At high: a full turn holds either way, the neck names flipping past it; out of rope from plus one and a half and from minus two. Above: open at every turn, no block within two.">
         <line x1="110" y1="34" x2="590" y2="34" class="axis"/>
-        <g class="dial-lbl" text-anchor="middle">
-          <line x1="110" y1="29" x2="110" y2="39" class="tick"/><text x="110" y="22">-1&#189;</text>
-          <line x1="190" y1="29" x2="190" y2="39" class="tick"/><text x="190" y="22">-1</text>
-          <line x1="270" y1="29" x2="270" y2="39" class="tick"/><text x="270" y="22">-&#189;</text>
-          <line x1="350" y1="29" x2="350" y2="39" class="tick"/><text x="350" y="22">face to face</text>
-          <line x1="430" y1="29" x2="430" y2="39" class="tick"/><text x="430" y="22">+&#189;</text>
-          <line x1="510" y1="29" x2="510" y2="39" class="tick"/><text x="510" y="22">+1</text>
-          <line x1="590" y1="29" x2="590" y2="39" class="tick"/><text x="590" y="22">+1&#189;</text>
-        </g>
+        <g class="dial-lbl" text-anchor="middle"><line x1="110" y1="29" x2="110" y2="39" class="tick"/><text x="110" y="22">-2</text><line x1="170" y1="29" x2="170" y2="39" class="tick"/><text x="170" y="22">-1&#189;</text><line x1="230" y1="29" x2="230" y2="39" class="tick"/><text x="230" y="22">-1</text><line x1="290" y1="29" x2="290" y2="39" class="tick"/><text x="290" y="22">-&#189;</text><line x1="350" y1="29" x2="350" y2="39" class="tick"/><text x="350" y="22">face to face</text><line x1="410" y1="29" x2="410" y2="39" class="tick"/><text x="410" y="22">+&#189;</text><line x1="470" y1="29" x2="470" y2="39" class="tick"/><text x="470" y="22">+1</text><line x1="530" y1="29" x2="530" y2="39" class="tick"/><text x="530" y="22">+1&#189;</text><line x1="590" y1="29" x2="590" y2="39" class="tick"/><text x="590" y="22">+2</text></g>
         <text x="110" y="7" class="dial-lbl">&#8592; the lock way</text>
         <text x="590" y="7" class="dial-lbl" text-anchor="end">the wrap way &#8594;</text>
 
@@ -760,37 +757,37 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
         <g transform="translate(0,76)">
           <rect x="12" y="-7" width="12" height="12" rx="1.5" style="fill:var(--dim);stroke:var(--dim)"/>
           <text x="32" y="3" class="gaugetxt">low</text>
-          <text x="110" y="4" text-anchor="middle" class="refuse">&#10005;</text><rect x="157" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="190" y="4" text-anchor="middle" class="chip-wt">lock-low</text><text x="270" y="4" text-anchor="middle" class="chip-lt">rest: away</text><circle cx="350" cy="0" r="3" style="fill:var(--rim)"/><rect x="397" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="430" y="4" text-anchor="middle" class="chip-wt">wrap-low</text><text x="510" y="4" text-anchor="middle" class="refuse">&#10005;</text><text x="590" y="4" text-anchor="middle" class="refuse">&#10005;</text>
-          <path d="M 190,16 L 190,24 L 430,24 L 430,16" class="callout"/>
-          <text x="310" y="37" text-anchor="middle" class="lbl">lock at 1, wrap at &#189; — sheet, floor and rope agree; the low wrap gets the half turn only</text>
+          <text x="110" y="4" text-anchor="middle" class="refuse">&#10005;</text><text x="170" y="4" text-anchor="middle" class="refuse">&#10005;</text><rect x="201" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="230" y="4" text-anchor="middle" class="chip-wt">lock-low</text><rect x="261" y="-10" width="58" height="20" rx="10" class="chip-l"/><text x="290" y="4" text-anchor="middle" class="chip-lt">lock-low</text><circle cx="350" cy="0" r="3" style="fill:var(--rim)"/><rect x="381" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="410" y="4" text-anchor="middle" class="chip-wt">wrap-low</text><text x="470" y="4" text-anchor="middle" class="refuse">&#10005;</text><text x="530" y="4" text-anchor="middle" class="refuse">&#10005;</text><text x="590" y="4" text-anchor="middle" class="refuse">&#10005;</text>
+          <path d="M 230,16 L 230,24 L 410,24 L 410,16" class="callout"/>
+          <text x="320" y="37" text-anchor="middle" class="lbl">the lock from &#189; (led) to 1 (wound), the wrap at &#189;; blocked at 1&#189; the lock way and at 1 the wrap way</text>
         </g>
 
         <!-- high row -->
-        <g transform="translate(0,144)">
+        <g transform="translate(0,146)">
           <rect x="12" y="-7" width="12" height="12" rx="1.5" style="fill:none;stroke:var(--dim);stroke-width:1.4"/>
           <circle cx="18" cy="-1" r="2.6" style="fill:var(--dim)"/>
           <text x="32" y="3" class="gaugetxt">high</text>
-          <rect x="77" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="110" y="4" text-anchor="middle" class="chip-wt">wrap-high</text><rect x="157" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="190" y="4" text-anchor="middle" class="chip-wt">lock-high</text><text x="270" y="4" text-anchor="middle" class="chip-lt">rest: away</text><circle cx="350" cy="0" r="3" style="fill:var(--rim)"/><rect x="397" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="430" y="4" text-anchor="middle" class="chip-wt">wrap-high</text><rect x="477" y="-10" width="66" height="20" rx="10" class="chip-w"/><text x="510" y="4" text-anchor="middle" class="chip-wt">lock-high</text><text x="590" y="4" text-anchor="middle" class="refuse">&#10005;</text>
-          <text x="350" y="30" text-anchor="middle" class="lbl">a full turn either way holds at the neck; past it the rope keeps going round, so the names flip</text>
+          <text x="110" y="4" text-anchor="middle" class="refuse">&#10005;</text><rect x="141" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="170" y="4" text-anchor="middle" class="chip-wt">wrap-high</text><rect x="201" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="230" y="4" text-anchor="middle" class="chip-wt">lock-high</text><rect x="261" y="-10" width="58" height="20" rx="10" class="chip-l"/><text x="290" y="4" text-anchor="middle" class="chip-lt">lock-high</text><circle cx="350" cy="0" r="3" style="fill:var(--rim)"/><rect x="381" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="410" y="4" text-anchor="middle" class="chip-wt">wrap-high</text><rect x="441" y="-10" width="58" height="20" rx="10" class="chip-w"/><text x="470" y="4" text-anchor="middle" class="chip-wt">lock-high</text><text x="530" y="4" text-anchor="middle" class="refuse">&#10005;</text><text x="590" y="4" text-anchor="middle" class="refuse">&#10005;</text>
+          <text x="350" y="30" text-anchor="middle" class="lbl">a full turn either way holds; past it the rope keeps going round and the names flip; blocked at 2 and at 1&#189;</text>
         </g>
 
         <!-- above row -->
-        <g transform="translate(0,204)">
+        <g transform="translate(0,208)">
           <rect x="12" y="-7" width="12" height="12" rx="1.5" style="fill:url(#aN);stroke:var(--dim);stroke-width:1.4"/>
           <text x="32" y="3" class="gaugetxt">above</text>
           <line x1="160" y1="0" x2="118" y2="0" style="stroke:var(--dim);stroke-width:1.4"/>
           <path d="M 124,-4 L 116,0 L 124,4" style="fill:none;stroke:var(--dim);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round"/>
           <line x1="540" y1="0" x2="582" y2="0" style="stroke:var(--dim);stroke-width:1.4"/>
           <path d="M 576,-4 L 584,0 L 576,4" style="fill:none;stroke:var(--dim);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round"/>
-          <text x="350" y="4" text-anchor="middle" class="dial-lbl">open at every turn — on the axis there is nothing to wind on</text>
+          <text x="350" y="4" text-anchor="middle" class="dial-lbl">open at every turn to two and beyond — there is nothing to wind on</text>
         </g>
       </svg>
     </figure>
     <div class="legend">
-      <span><svg viewBox="0 0 66 20" width="66" height="20"><rect x="0" y="0" width="66" height="20" rx="10" class="chip-w"/><text x="33" y="14" text-anchor="middle" class="chip-wt">wrap-low</text></svg>
-      &nbsp;a named marker: at this turn her arm <b style="color:var(--ink)">is</b> that modifier, and the rope holds</span>
-      <span><span style="font-family:var(--mono);color:var(--dim)">rest: away</span>
-      &nbsp;a plain word: the rope holds but nothing is wound — an ordinary hold at that orientation</span>
+      <span><svg viewBox="0 0 58 20" width="58" height="20"><rect x="0" y="0" width="58" height="20" rx="10" class="chip-w"/><text x="29" y="14" text-anchor="middle" class="chip-wt">wrap-low</text></svg>
+      &nbsp;a solid marker: her arm <b style="color:var(--ink)">is</b> that modifier, wound, and the rope holds</span>
+      <span><svg viewBox="0 0 58 20" width="58" height="20"><rect x="0" y="0" width="58" height="20" rx="10" class="chip-l"/><text x="29" y="14" text-anchor="middle" class="chip-lt">lock-low</text></svg>
+      &nbsp;a dashed marker: led — the hand is in the modifier's place, the arm not yet wound</span>
       <span><span class="refuse" style="font-family:var(--mono)">&#10005;</span>
       &nbsp;out of rope: the turn cannot be danced without letting go</span>
     </div>
@@ -805,13 +802,331 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
       The one place the rope is more generous than your floor: it lets the
       lock way at the neck run to 1&#189; (1.05 of 1.24), reading a wrap
       there — worth a test.</p>
-      <p>The earlier draft measured this dial from her away rest and found
-      lock and wrap a half turn out either way; that was the same chain
-      counted from a point half a turn along it. Counting from face to
-      face — the sheet's row, your floor, and the rope — there is nothing
-      left to reconcile.</p>
     </div>
   </div>
+
+  <div class="panel" id="turns-panel">
+    <h3>Every state, turned<span class="tag">the rope's words, the page's drawing</span></h3>
+    <p>Pick a starting hold and a height; drag the turn, or press play to
+    sweep two turns each way. The drawing is the page's own grammar — fixed
+    marks, ropes that hug, the seam at the joined hands — and the words
+    beside it are read from the rope model at the nearest half turn: what
+    her arm has become, where the hands are, whether the rope holds. A
+    refused state is drawn broken in red, so it can still be seen. The nine
+    small figures are every half turn from &#8722;2 to +2; click one to go
+    there. Two-hand holds are drawn rope by rope, with no crossing break,
+    and the rope gives only its verdict for them. One thing it shows: from
+    the face-to-face cross, a half turn either way leaves <i>one</i> of the
+    pair wrapped round her front — the straight away rest of plate 3 is
+    collected there, not turned to.</p>
+    <div class="ctl">
+      <span class="grp" id="hold-buttons"></span>
+      <span class="grp" id="level-buttons"></span>
+      <span class="grp"><button id="play">play / pause</button><button id="to-rest">to rest</button></span>
+    </div>
+    <div class="stagewrap">
+      <svg id="stage" viewBox="-60 -66 120 132" role="img" aria-label="The chosen hold at the chosen turn, drawn live."></svg>
+      <div id="readout"></div>
+    </div>
+    <div class="turnrow">
+      <input type="range" id="turn" min="-2" max="2" step="0.01" value="-0.5" aria-label="turn, in turns from face to face">
+      <div class="turnticks"><span>&#8722;2</span><span>&#8722;1&#189;</span><span>&#8722;1</span><span>&#8722;&#189;</span><span>face to face</span><span>+&#189;</span><span>+1</span><span>+1&#189;</span><span>+2</span></div>
+    </div>
+    <div class="strip" id="strip"></div>
+  </div>
+  <script type="application/json" id="turns">{"holds":{"L-l":{"wrap":1,"low":[{"t":-2.0,"verdict":"out of rope","her":"wrap low +1 lap","him":"open","hands":"at own side (fore +0.05, side +0.15)","hug":-1.500},{"t":-1.5,"verdict":"out of rope","her":"wrap low +1 lap","him":"open","hands":"before the chest (fore +0.15, side -0.05)","hug":-1.000},{"t":-1.0,"verdict":"holds","her":"lock low","him":"open","hands":"behind the opposite shoulder (fore -0.05, side -0.15)","hug":-0.500},{"t":-0.5,"verdict":"holds","her":"lock low (led, clear of the body)","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":0.0,"verdict":"holds","her":"wrap low","him":"wrap low","hands":"before the chest (fore +0.20, side +0.00)","hug":0.148},{"t":0.5,"verdict":"holds","her":"wrap low","him":"wrap low","hands":"at the opposite side (fore -0.02, side -0.16)","hug":0.648},{"t":1.0,"verdict":"out of rope","her":"lock low +1 lap","him":"wrap low","hands":"behind the back (fore -0.16, side +0.02)","hug":1.148},{"t":1.5,"verdict":"out of rope","her":"lock low +1 lap","him":"wrap low","hands":"at own side (fore +0.02, side +0.16)","hug":1.648},{"t":2.0,"verdict":"out of rope","her":"wrap low +2 lap","him":"wrap low","hands":"before the chest (fore +0.16, side -0.02)","hug":2.148}],"high":[{"t":-2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"behind own shoulder (fore -0.04, side +0.08)","hug":-1.318},{"t":-1.5,"verdict":"holds","her":"wrap high","him":"open","hands":"before the chest (fore +0.08, side +0.04)","hug":-0.818},{"t":-1.0,"verdict":"holds","her":"lock high","him":"open","hands":"at the opposite side (fore +0.04, side -0.10)","hug":-0.318},{"t":-0.5,"verdict":"holds","her":"lock high (led, clear of the body)","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":0.5,"verdict":"holds","her":"wrap high","him":"open","hands":"behind the opposite shoulder (fore -0.07, side -0.06)","hug":0.439},{"t":1.0,"verdict":"holds","her":"lock high","him":"open","hands":"behind own shoulder (fore -0.06, side +0.07)","hug":0.939},{"t":1.5,"verdict":"out of rope","her":"lock high +1 lap","him":"open","hands":"at own front (fore +0.07, side +0.06)","hug":1.439},{"t":2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"at the opposite front (fore +0.06, side -0.07)","hug":1.939}],"above":[{"t":-2.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side +0.00)","hug":0.000},{"t":-1.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":-1.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side +0.00)","hug":0.000},{"t":-0.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":0.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":1.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":1.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side +0.16)","hug":0.000},{"t":2.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000}]},"R-r":{"wrap":-1,"low":[{"t":-2.0,"verdict":"out of rope","her":"wrap low +2 lap","him":"wrap low","hands":"before the chest (fore +0.16, side +0.02)","hug":-2.148},{"t":-1.5,"verdict":"out of rope","her":"lock low +1 lap","him":"wrap low","hands":"at own side (fore +0.02, side -0.16)","hug":-1.648},{"t":-1.0,"verdict":"out of rope","her":"lock low +1 lap","him":"wrap low","hands":"behind the back (fore -0.16, side -0.02)","hug":-1.148},{"t":-0.5,"verdict":"holds","her":"wrap low","him":"wrap low","hands":"at the opposite side (fore -0.02, side +0.16)","hug":-0.648},{"t":0.0,"verdict":"holds","her":"wrap low","him":"wrap low","hands":"before the chest (fore +0.20, side -0.00)","hug":-0.148},{"t":0.5,"verdict":"holds","her":"lock low (led, clear of the body)","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":1.0,"verdict":"holds","her":"lock low","him":"open","hands":"behind the opposite shoulder (fore -0.05, side +0.15)","hug":0.500},{"t":1.5,"verdict":"out of rope","her":"wrap low +1 lap","him":"open","hands":"before the chest (fore +0.15, side +0.05)","hug":1.000},{"t":2.0,"verdict":"out of rope","her":"wrap low +1 lap","him":"open","hands":"at own side (fore +0.05, side -0.15)","hug":1.500}],"high":[{"t":-2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"at the opposite front (fore +0.06, side +0.07)","hug":-1.939},{"t":-1.5,"verdict":"out of rope","her":"lock high +1 lap","him":"open","hands":"at own front (fore +0.07, side -0.06)","hug":-1.439},{"t":-1.0,"verdict":"holds","her":"lock high","him":"open","hands":"behind own shoulder (fore -0.06, side -0.07)","hug":-0.939},{"t":-0.5,"verdict":"holds","her":"wrap high","him":"open","hands":"behind the opposite shoulder (fore -0.07, side +0.06)","hug":-0.439},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":0.5,"verdict":"holds","her":"lock high (led, clear of the body)","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":1.0,"verdict":"holds","her":"lock high","him":"open","hands":"at the opposite side (fore +0.04, side +0.10)","hug":0.318},{"t":1.5,"verdict":"holds","her":"wrap high","him":"open","hands":"before the chest (fore +0.08, side -0.04)","hug":0.818},{"t":2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"behind own shoulder (fore -0.04, side -0.08)","hug":1.318}],"above":[{"t":-2.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side +0.00)","hug":0.000},{"t":-1.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":-1.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side +0.00)","hug":0.000},{"t":-0.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":0.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":1.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000},{"t":1.5,"verdict":"holds","her":"open","him":"open","hands":"behind own shoulder (fore -0.20, side -0.16)","hug":0.000},{"t":2.0,"verdict":"holds","her":"open","him":"open","hands":"before the chest (fore +0.20, side -0.00)","hug":0.000}]},"L-r":{"wrap":-1,"low":[{"t":-2.0,"verdict":"out of rope","her":"wrap low +2 lap","him":"open","hands":"before the chest (fore +0.15, side -0.05)","hug":-2.000},{"t":-1.5,"verdict":"out of rope","her":"lock low +1 lap","him":"open","hands":"behind own shoulder (fore -0.05, side -0.15)","hug":-1.500},{"t":-1.0,"verdict":"out of rope","her":"lock low +1 lap","him":"open","hands":"behind the back (fore -0.15, side +0.05)","hug":-1.000},{"t":-0.5,"verdict":"holds","her":"wrap low","him":"open","hands":"at the opposite side (fore +0.05, side +0.15)","hug":-0.500},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"lock low","him":"wrap low","hands":"behind the back (fore -0.20, side -0.00)","hug":0.148},{"t":1.0,"verdict":"holds","her":"lock low","him":"wrap low","hands":"at the opposite side (fore +0.02, side +0.16)","hug":0.648},{"t":1.5,"verdict":"out of rope","her":"wrap low +1 lap","him":"wrap low","hands":"before the chest (fore +0.16, side -0.02)","hug":1.148},{"t":2.0,"verdict":"out of rope","her":"wrap low +1 lap","him":"wrap low","hands":"at own side (fore -0.02, side -0.16)","hug":1.648}],"high":[{"t":-2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"wrap high (led, clear of the body)","hands":"before the chest (fore +0.08, side +0.04)","hug":-1.818},{"t":-1.5,"verdict":"out of rope","her":"lock high +1 lap","him":"open","hands":"at own side (fore +0.04, side -0.08)","hug":-1.318},{"t":-1.0,"verdict":"holds","her":"lock high","him":"open","hands":"behind the back (fore -0.08, side -0.04)","hug":-0.818},{"t":-0.5,"verdict":"holds","her":"wrap high","him":"open","hands":"behind the opposite shoulder (fore -0.04, side +0.10)","hug":-0.318},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"lock high (led, clear of the body)","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":1.0,"verdict":"holds","her":"lock high","him":"open","hands":"at the opposite front (fore +0.07, side +0.06)","hug":0.439},{"t":1.5,"verdict":"holds","her":"wrap high","him":"open","hands":"at own front (fore +0.06, side -0.07)","hug":0.939},{"t":2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"behind own shoulder (fore -0.07, side -0.06)","hug":1.439}],"above":[{"t":-2.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":-1.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side -0.00)","hug":0.000},{"t":-1.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":-0.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":1.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000},{"t":1.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":2.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side -0.16)","hug":0.000}]},"R-l":{"wrap":1,"low":[{"t":-2.0,"verdict":"out of rope","her":"wrap low +1 lap","him":"wrap low","hands":"at own side (fore -0.02, side +0.16)","hug":-1.648},{"t":-1.5,"verdict":"out of rope","her":"wrap low +1 lap","him":"wrap low","hands":"before the chest (fore +0.16, side +0.02)","hug":-1.148},{"t":-1.0,"verdict":"holds","her":"lock low","him":"wrap low","hands":"at the opposite side (fore +0.02, side -0.16)","hug":-0.648},{"t":-0.5,"verdict":"holds","her":"lock low","him":"wrap low","hands":"behind the back (fore -0.20, side +0.00)","hug":-0.148},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"wrap low","him":"open","hands":"at the opposite side (fore +0.05, side -0.15)","hug":0.500},{"t":1.0,"verdict":"out of rope","her":"wrap low +1 lap","him":"open","hands":"behind the back (fore -0.15, side -0.05)","hug":1.000},{"t":1.5,"verdict":"out of rope","her":"lock low +1 lap","him":"open","hands":"behind own shoulder (fore -0.05, side +0.15)","hug":1.500},{"t":2.0,"verdict":"out of rope","her":"wrap low +2 lap","him":"open","hands":"before the chest (fore +0.15, side +0.05)","hug":2.000}],"high":[{"t":-2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"open","hands":"behind own shoulder (fore -0.07, side +0.06)","hug":-1.439},{"t":-1.5,"verdict":"holds","her":"wrap high","him":"open","hands":"at own front (fore +0.06, side +0.07)","hug":-0.939},{"t":-1.0,"verdict":"holds","her":"lock high","him":"open","hands":"at the opposite front (fore +0.07, side -0.06)","hug":-0.439},{"t":-0.5,"verdict":"holds","her":"lock high (led, clear of the body)","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"wrap high","him":"open","hands":"behind the opposite shoulder (fore -0.04, side -0.10)","hug":0.318},{"t":1.0,"verdict":"holds","her":"lock high","him":"open","hands":"behind the back (fore -0.08, side +0.04)","hug":0.818},{"t":1.5,"verdict":"out of rope","her":"lock high +1 lap","him":"open","hands":"at own side (fore +0.04, side +0.08)","hug":1.318},{"t":2.0,"verdict":"out of rope","her":"wrap high +1 lap","him":"wrap high (led, clear of the body)","hands":"before the chest (fore +0.08, side -0.04)","hug":1.818}],"above":[{"t":-2.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":-1.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side -0.00)","hug":0.000},{"t":-1.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":-0.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":0.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":0.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":1.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000},{"t":1.5,"verdict":"holds","her":"open","him":"open","hands":"behind the back (fore -0.20, side +0.00)","hug":0.000},{"t":2.0,"verdict":"holds","her":"open","him":"open","hands":"at own front (fore +0.20, side +0.16)","hug":0.000}]}},"pairs":{"L-l.R-r":{"low":[{"t":-2.0,"verdict":"out of rope","hugs":[-1.500,-2.148]},{"t":-1.5,"verdict":"out of rope","hugs":[-1.000,-1.648]},{"t":-1.0,"verdict":"out of rope","hugs":[-0.500,-1.148]},{"t":-0.5,"verdict":"holds","hugs":[0.000,-0.648]},{"t":0.0,"verdict":"rope through rope","hugs":[0.148,-0.148]},{"t":0.5,"verdict":"holds","hugs":[0.648,0.000]},{"t":1.0,"verdict":"out of rope","hugs":[1.148,0.500]},{"t":1.5,"verdict":"out of rope","hugs":[1.648,1.000]},{"t":2.0,"verdict":"out of rope","hugs":[2.148,1.500]}],"high":[{"t":-2.0,"verdict":"out of rope","hugs":[-1.318,-1.939]},{"t":-1.5,"verdict":"out of rope","hugs":[-0.818,-1.439]},{"t":-1.0,"verdict":"rope through rope","hugs":[-0.318,-0.939]},{"t":-0.5,"verdict":"holds","hugs":[0.000,-0.439]},{"t":0.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.5,"verdict":"holds","hugs":[0.439,0.000]},{"t":1.0,"verdict":"rope through rope","hugs":[0.939,0.318]},{"t":1.5,"verdict":"out of rope","hugs":[1.439,0.818]},{"t":2.0,"verdict":"out of rope","hugs":[1.939,1.318]}],"above":[{"t":-2.0,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":-1.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":-1.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":-0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":1.0,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":1.5,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":2.0,"verdict":"out of rope","hugs":[0.000,0.000]}]},"L-r.R-l":{"low":[{"t":-2.0,"verdict":"out of rope","hugs":[-2.000,-1.648]},{"t":-1.5,"verdict":"out of rope","hugs":[-1.500,-1.148]},{"t":-1.0,"verdict":"out of rope","hugs":[-1.000,-0.648]},{"t":-0.5,"verdict":"rope through rope","hugs":[-0.500,-0.148]},{"t":0.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.5,"verdict":"rope through rope","hugs":[0.148,0.500]},{"t":1.0,"verdict":"out of rope","hugs":[0.648,1.000]},{"t":1.5,"verdict":"out of rope","hugs":[1.148,1.500]},{"t":2.0,"verdict":"out of rope","hugs":[1.648,2.000]}],"high":[{"t":-2.0,"verdict":"out of rope","hugs":[-0.818,-1.439]},{"t":-1.5,"verdict":"rope through rope","hugs":[-0.318,-0.939]},{"t":-1.0,"verdict":"holds","hugs":[0.000,-0.439]},{"t":-0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":1.0,"verdict":"holds","hugs":[0.439,0.000]},{"t":1.5,"verdict":"rope through rope","hugs":[0.939,0.318]},{"t":2.0,"verdict":"out of rope","hugs":[1.439,0.818]}],"above":[{"t":-2.0,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":-1.5,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":-1.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":-0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":0.5,"verdict":"holds","hugs":[0.000,0.000]},{"t":1.0,"verdict":"holds","hugs":[0.000,0.000]},{"t":1.5,"verdict":"out of rope","hugs":[0.000,0.000]},{"t":2.0,"verdict":"out of rope","hugs":[0.000,0.000]}]}}}</script>
+  <script>
+(function () {
+  var DATA = JSON.parse(document.getElementById('turns').textContent);
+  var R = 20, HUGIN = 23.5, HUGOUT = 27.5, CLEAR = 29.5, STRAIGHT_OK = 22, MARK_OK = 9;
+  var HIMC = [0, 36], HERC = [0, -36];
+  var HOLDS = [
+    { key: 'L-l', name: 'Left to left', ropes: [['L', 'L']], rest: -0.5 },
+    { key: 'R-r', name: 'Right to right', ropes: [['R', 'R']], rest: -0.5 },
+    { key: 'L-r', name: 'Left to right', ropes: [['L', 'R']], rest: 0 },
+    { key: 'R-l', name: 'Right to left', ropes: [['R', 'L']], rest: 0 },
+    { key: 'L-l.R-r', name: 'Left to left · Right to right', ropes: [['L', 'L'], ['R', 'R']], rest: -0.5, pair: true },
+    { key: 'L-r.R-l', name: 'Left to right · Right to left', ropes: [['L', 'R'], ['R', 'L']], rest: 0, pair: true }];
+  var LEVELS = ['low', 'high', 'above'];
+
+  function rot(v, a) { var c = Math.cos(a), s = Math.sin(a); return [v[0] * c - v[1] * s, v[0] * s + v[1] * c]; }
+  function add(a, b, k) { k = (k === undefined) ? 1 : k; return [a[0] + k * b[0], a[1] + k * b[1]]; }
+  function sub(a, b) { return [a[0] - b[0], a[1] - b[1]]; }
+  function neg(a) { return [-a[0], -a[1]]; }
+  function len(v) { return Math.hypot(v[0], v[1]); }
+  function unit(v) { var l = len(v) || 1; return [v[0] / l, v[1] / l]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1]; }
+  function ang(v) { return Math.atan2(v[1], v[0]); }
+  function fmt(p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }
+  function smooth(u) { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); }
+  function sideOf(f, arm) { var l = [f[1], -f[0]]; return arm === 'L' ? l : neg(l); }
+  function wrapSign(arm) {
+    var f0 = [0, 1], s0 = sideOf(f0, arm), s1 = rot(s0, 0.01);
+    return dot(sub(s1, s0), f0) > 0 ? 1 : -1;
+  }
+  function polylen(pts) { var l = 0; for (var i = 1; i < pts.length; i++) l += len(sub(pts[i], pts[i - 1])); return l; }
+  function trimEnd(pts, by) {
+    var out = pts.slice(), left = by;
+    while (out.length > 1) {
+      var a = out[out.length - 2], b = out[out.length - 1], d = len(sub(b, a));
+      if (d > left) { out[out.length - 1] = add(a, unit(sub(b, a)), d - left); return out; }
+      left -= d; out.pop();
+    }
+    return out;
+  }
+  function splitAt(pts, frac) {
+    var total = polylen(pts) * frac, gone = 0;
+    for (var i = 1; i < pts.length; i++) {
+      var d = len(sub(pts[i], pts[i - 1]));
+      if (gone + d >= total) {
+        var p = add(pts[i - 1], unit(sub(pts[i], pts[i - 1])), total - gone);
+        return [pts.slice(0, i).concat([p]), [p].concat(pts.slice(i))];
+      }
+      gone += d;
+    }
+    return [pts, [pts[pts.length - 1]]];
+  }
+  function pathOf(pts) { return 'M ' + pts.map(fmt).join(' L '); }
+  function cubic(P0, C1, C2, P3, n) {
+    var out = [];
+    for (var i = 1; i <= n; i++) {
+      var u = i / n, v = 1 - u;
+      out.push([v * v * v * P0[0] + 3 * v * v * u * C1[0] + 3 * v * u * u * C2[0] + u * u * u * P3[0],
+                v * v * v * P0[1] + 3 * v * v * u * C1[1] + 3 * v * u * u * C2[1] + u * u * u * P3[1]]);
+    }
+    return out;
+  }
+
+  // Her held arm hugging her body from its mark: the mark's edge, a short blend out, then the arc.
+  function hug(c, f, s, way, sweepDeg, rHug) {
+    var t = way === 'front' ? f : neg(f);
+    var r0 = Math.hypot(R, 7.7), phi0 = Math.atan2(7.7, R) * 180 / Math.PI;
+    if (sweepDeg <= phi0 + 1) return null;
+    var pts = [], phi = phi0;
+    while (true) {
+      var r = r0 + (rHug - r0) * smooth((phi - phi0) / 35), a = phi * Math.PI / 180;
+      pts.push([c[0] + r * (s[0] * Math.cos(a) + t[0] * Math.sin(a)), c[1] + r * (s[1] * Math.cos(a) + t[1] * Math.sin(a))]);
+      if (phi >= sweepDeg) break;
+      phi = Math.min(sweepDeg, phi + 4);
+    }
+    var a1 = sweepDeg * Math.PI / 180;
+    var tan = unit([-s[0] * Math.sin(a1) + t[0] * Math.cos(a1), -s[1] * Math.sin(a1) + t[1] * Math.cos(a1)]);
+    var hd = Math.sign(((ang(sub(pts[1], c)) - ang(sub(pts[0], c)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) || 1;
+    return { pts: pts, end: pts[pts.length - 1], tan: tan, hd: hd };
+  }
+
+  // The high lock: a small loopback at the mark, the hand coming back to its own shoulder.
+  function loop(c, f, s, k) {
+    var M = add(c, s, R), d = unit(add(neg(f), s, 0.5)), rl = 6.5 * k, D = 3 + 6.5 * k;
+    var a = (36 - rl * rl + D * D) / (2 * D), h2 = 36 - a * a;
+    if (h2 <= 0) return null;
+    var h = Math.sqrt(h2), n = [d[1], -d[0]], L = add(M, d, D);
+    var P1 = add(add(M, d, a), n, h), P2 = add(add(M, d, a), n, -h);
+    var t1 = ang(sub(P1, L)), t2 = ang(sub(P2, L)), tf = ang(d);
+    var sweepPos = ((t2 - t1) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    var farPos = ((tf - t1) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    var dir = farPos <= sweepPos ? 1 : -1, sweep = dir === 1 ? sweepPos : 2 * Math.PI - sweepPos;
+    var pts = [], N = 36, farIndex = 0, best = 1e9;
+    for (var i = 0; i <= N; i++) {
+      var th = t1 + dir * sweep * i / N;
+      pts.push([L[0] + rl * Math.cos(th), L[1] + rl * Math.sin(th)]);
+      var off = Math.abs(((th - tf) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+      if (off < best) { best = off; farIndex = i; }
+    }
+    var F = pts[farIndex], tanF = unit(sub(pts[Math.min(N, farIndex + 1)], pts[Math.max(0, farIndex - 1)]));
+    return { pts: pts, far: F, tan: tanF, hd: dir };
+  }
+
+  // The partner's rope: straight where the straight is clear of her, else round the outside.
+  function nearTo(P0, u, L, q) {
+    var proj = Math.max(0, Math.min(L, dot(sub(q, P0), u)));
+    return len(sub(q, add(P0, u, proj)));
+  }
+  function route(P0, E, tanE, c, hd, marks) {
+    var seg = sub(E, P0), L = len(seg), u = unit(seg);
+    var clear = nearTo(P0, u, L, c) >= STRAIGHT_OK;
+    (marks || []).forEach(function (m) { if (nearTo(P0, u, L - 4, m) < MARK_OK) clear = false; });
+    if (clear) {
+      if (!tanE) return [P0, E];
+      return [P0].concat(cubic(P0, add(P0, u, 0.55 * L), add(E, tanE, Math.min(12, 0.3 * L)), E, 12));
+    }
+    var toC = sub(c, P0), D = len(toC), Rc = CLEAR;
+    if (D <= Rc + 1) return [P0, E];
+    var al = Math.asin(Rc / D), Lt = Math.sqrt(D * D - Rc * Rc), uc = unit(toC);
+    var thE = ang(sub(E, c)), bestT = null, bestSweep = 1e9, bestDir = 1;
+    [1, -1].forEach(function (sg) {
+      var T = add(P0, rot(uc, sg * al), Lt), thT = ang(sub(T, c));
+      var dirs = hd ? [-hd] : [1, -1];
+      dirs.forEach(function (dir) {
+        var sw = (((thE - thT) * dir) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+        if (sw < bestSweep) { bestSweep = sw; bestT = T; bestDir = dir; }
+      });
+    });
+    var pts = [P0, bestT], thT = ang(sub(bestT, c)), stop = Math.max(0, bestSweep - 12 * Math.PI / 180);
+    var n = Math.max(1, Math.round(stop / (4 * Math.PI / 180)));
+    for (var i = 1; i <= n; i++) {
+      var th = thT + bestDir * stop * i / n;
+      pts.push([c[0] + Rc * Math.cos(th), c[1] + Rc * Math.sin(th)]);
+    }
+    var A = pts[pts.length - 1], thA = thT + bestDir * stop;
+    var tanA = [-Math.sin(thA) * bestDir, Math.cos(thA) * bestDir];
+    var tE = tanE || unit(sub(A, E));
+    return pts.concat(cubic(A, add(A, tanA, 6), add(E, tE, 6), E, 10));
+  }
+
+  function markSvg(M, who, arm, fill, faded) {
+    var colour = (arm === 'L' ? 'left' : 'right') + (who === 'lead' ? '-deep' : '');
+    var pat = who === 'lead' ? 'aLd' : 'aL', body, out = '';
+    var f = { none: 'var(--mark-bg)', low: 'var(--' + colour + ')', high: 'var(--mark-bg)', above: 'url(#' + pat + ')' }[fill];
+    function shape(style, op) {
+      return who === 'lead'
+        ? '<rect x="' + (M[0] - 6).toFixed(1) + '" y="' + (M[1] - 6).toFixed(1) + '" width="12" height="12" rx="1.5" style="' + style + '"' + op + '/>'
+        : '<circle cx="' + M[0].toFixed(1) + '" cy="' + M[1].toFixed(1) + '" r="6" style="' + style + '"' + op + '/>';
+    }
+    out += shape('fill:var(--mark-bg);stroke:none', '');
+    out += shape('fill:' + f + ';stroke:var(--' + colour + ');stroke-width:1.5', faded ? ' opacity="0.45"' : '');
+    if (fill === 'high') out += '<circle cx="' + M[0].toFixed(1) + '" cy="' + M[1].toFixed(1) + '" r="2.7" style="fill:var(--' + colour + ')"/>';
+    return out;
+  }
+  function bodySvg(c, f) {
+    var pts = [[-5, -4], [0, 4], [5, -4]].map(function (p) { var q = rot(p, ang(f) - Math.PI / 2); return fmt(add(c, q)); });
+    return '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="' + R + '" class="rim"/><polyline points="' + pts.join(' ') + '" class="chev"/>';
+  }
+
+  // One rope of the couple: her body turned by theta, her arm hugging her through `hugSim` turns
+  // (the sim's signed reading), at a level.
+  function ropeSvg(his, hers, level, theta, hugSim, wrapSim, refused) {
+    var f = rot([0, 1], theta), s = sideOf(f, hers), M = add(HERC, s, R);
+    var P0 = add(add(HIMC, sideOf([0, -1], his), R), [0, -1], 7.7);
+    var deep = (his === 'L' ? 'left' : 'right') + '-deep', plain = hers === 'L' ? 'left' : 'right';
+    var cls = refused ? 'cn no' : 'cn';
+    function draw(pts, colour) { return '<path d="' + pathOf(pts) + '" class="' + cls + '" style="stroke:var(--' + colour + ')"/>'; }
+    if (level === 'above') {
+      var H = add(HERC, f, -7);
+      return draw([add(M, s, -7.7), H], plain) + draw([P0, H], deep);
+    }
+    var marks = [add(HERC, s, -R)];
+    var herPts = null, E, tanE, hd = null;
+    var amount = Math.abs(hugSim), way = (Math.sign(hugSim) === wrapSim) ? 'front' : 'back';
+    if (amount > 0.02 && way === 'back' && level === 'high') {
+      var lp = loop(HERC, f, s, Math.min(1, amount / 0.3));
+      if (lp) return draw(lp.pts, plain) + draw(route(P0, lp.far, lp.tan, HERC, lp.hd, marks), deep);
+    } else if (amount > 0.02) {
+      var hg = hug(HERC, f, s, way, Math.min(400, amount * 300), level === 'low' ? HUGIN : HUGOUT);
+      if (hg) { herPts = hg.pts; E = hg.end; tanE = hg.tan; hd = hg.hd; }
+    }
+    var whole;
+    if (herPts) {
+      whole = herPts.concat(route(P0, E, tanE, HERC, hd, marks).reverse().slice(1));
+    } else {
+      var rt = trimEnd(route(P0, M, null, HERC, null, [add(HERC, s, -R)]), 7.7);
+      whole = rt.slice().reverse();
+    }
+    var halves = splitAt(whole, 0.5);
+    return draw(halves[0], plain) + draw(halves[1], deep);
+  }
+
+  function ropeKey(rp) { return rp[0] + '-' + rp[1].toLowerCase(); }
+  function entries(hold, level) {
+    // The sim's nine half turns, put in the page's order: positive is the first rope's wrap way.
+    var simSign = DATA.holds[ropeKey(hold.ropes[0])].wrap;
+    var raw = hold.pair ? DATA.pairs[hold.key][level] : DATA.holds[hold.key][level];
+    return simSign === 1 ? raw : raw.slice().reverse();
+  }
+  function entryFor(hold, level, t) {
+    var k = Math.max(0, Math.min(8, Math.round(t * 2) + 4));
+    return entries(hold, level)[k];
+  }
+  function hugAt(hold, level, t, i) {
+    var es = entries(hold, level), x = Math.max(0, Math.min(8, t * 2 + 4)), a = Math.floor(x), b = Math.min(8, a + 1), u = x - a;
+    function h(e) { return hold.pair ? e.hugs[i] : e.hug; }
+    return h(es[a]) * (1 - u) + h(es[b]) * u;
+  }
+
+  function sceneSvg(hold, level, t) {
+    var first = hold.ropes[0], w1 = wrapSign(first[1]), theta = w1 * t * 2 * Math.PI, f = rot([0, 1], theta);
+    var e = entryFor(hold, level, t), refused = e.verdict !== 'holds';
+    var out = bodySvg(HIMC, [0, -1]) + bodySvg(HERC, f);
+    hold.ropes.forEach(function (rp, i) {
+      out += ropeSvg(rp[0], rp[1], level, theta, hugAt(hold, level, t, i), DATA.holds[ropeKey(rp)].wrap, refused);
+    });
+    var heldHis = {}, heldHers = {};
+    hold.ropes.forEach(function (rp) { heldHis[rp[0]] = true; heldHers[rp[1]] = true; });
+    ['L', 'R'].forEach(function (arm) {
+      out += markSvg(add(HIMC, sideOf([0, -1], arm), R), 'lead', arm, heldHis[arm] ? level : 'none', !heldHis[arm]);
+      out += markSvg(add(HERC, sideOf(f, arm), R), 'follow', arm, heldHers[arm] ? level : 'none', !heldHers[arm]);
+    });
+    return out;
+  }
+
+  function turnWord(t) {
+    var h = Math.round(t * 2), sign = h < 0 ? '−' : (h > 0 ? '+' : ''), a = Math.abs(h);
+    var w = (a % 2 === 0) ? String(a / 2) : (a > 1 ? Math.floor(a / 2) + '½' : '½');
+    return sign + w;
+  }
+
+  var state = { hold: HOLDS[0], level: 'low', t: -0.5, target: -0.5, playing: false, dir: 1 };
+  var stage = document.getElementById('stage'), readout = document.getElementById('readout'), strip = document.getElementById('strip');
+  var slider = document.getElementById('turn'), holdBox = document.getElementById('hold-buttons'), levelBox = document.getElementById('level-buttons');
+  var stripT = document.getElementById('strip-turns');
+
+  function renderStage() {
+    stage.innerHTML = sceneSvg(state.hold, state.level, state.t);
+    slider.value = state.t;
+    var e = entryFor(state.hold, state.level, state.t), exact = Math.abs(state.t * 2 - Math.round(state.t * 2)) < 0.02;
+    var head = '<b>' + state.hold.name + '</b> · ' + state.level + ' · @ ' + turnWord(state.t) + (exact ? '' : ' (nearest half turn)');
+    var body = state.hold.pair
+      ? 'the rope: <b class="' + (e.verdict === 'holds' ? 'ok' : 'bad') + '">' + e.verdict + '</b>'
+      : 'her arm: <b>' + e.her + '</b><br>the hands: ' + e.hands + '<br>the rope: <b class="' + (e.verdict === 'holds' ? 'ok' : 'bad') + '">' + e.verdict + '</b>';
+    readout.innerHTML = head + '<br>' + body;
+  }
+  function renderStrip() {
+    var html = '';
+    for (var h = -4; h <= 4; h++) {
+      var t = h / 2, e = entryFor(state.hold, state.level, t), ok = e.verdict === 'holds';
+      html += '<figure class="mini' + (ok ? '' : ' refused') + '" data-t="' + t + '"><svg viewBox="-52 -66 104 132" width="88">' + sceneSvg(state.hold, state.level, t) + '</svg>' +
+        '<figcaption><b>@ ' + turnWord(t) + '</b>' + (t === state.hold.rest ? ' rest' : '') + '<br><span class="say">' + (state.hold.pair ? e.verdict : e.her + ' · ' + e.verdict) + '</span></figcaption></figure>';
+    }
+    strip.innerHTML = html;
+    Array.prototype.forEach.call(strip.querySelectorAll('.mini'), function (el) {
+      el.addEventListener('click', function () { state.playing = false; state.target = parseFloat(el.getAttribute('data-t')); });
+    });
+  }
+  function renderButtons() {
+    holdBox.innerHTML = HOLDS.map(function (h) { return '<button class="' + (h === state.hold ? 'on' : '') + '" data-k="' + h.key + '">' + h.name + '</button>'; }).join('');
+    levelBox.innerHTML = LEVELS.map(function (l) { return '<button class="' + (l === state.level ? 'on' : '') + '" data-l="' + l + '">' + l + '</button>'; }).join('');
+    Array.prototype.forEach.call(holdBox.querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () {
+        state.hold = HOLDS.filter(function (h) { return h.key === b.getAttribute('data-k'); })[0];
+        state.t = state.target = state.hold.rest; renderButtons(); renderStrip(); renderStage();
+      });
+    });
+    Array.prototype.forEach.call(levelBox.querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () { state.level = b.getAttribute('data-l'); renderButtons(); renderStrip(); renderStage(); });
+    });
+  }
+  slider.addEventListener('input', function () { state.playing = false; state.t = state.target = parseFloat(slider.value); renderStage(); });
+  document.getElementById('play').addEventListener('click', function () { state.playing = !state.playing; });
+  document.getElementById('to-rest').addEventListener('click', function () { state.playing = false; state.target = state.hold.rest; });
+  var last = null;
+  function tick(now) {
+    if (last === null) last = now;
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (state.playing) {
+      state.t += state.dir * dt * 0.45;
+      if (state.t >= 2) { state.t = 2; state.dir = -1; } else if (state.t <= -2) { state.t = -2; state.dir = 1; }
+      state.target = state.t; renderStage();
+    } else if (Math.abs(state.target - state.t) > 0.002) {
+      var step = Math.sign(state.target - state.t) * Math.min(Math.abs(state.target - state.t), dt * 1.2);
+      state.t += step; renderStage();
+    }
+    requestAnimationFrame(tick);
+  }
+  renderButtons(); renderStrip(); renderStage();
+  requestAnimationFrame(tick);
+})();
+
+  </script>
 </section>
 
 
@@ -891,7 +1206,8 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
   lets it hug the rim; arms round the outside of the body, an <i>above</i>
   hand inside but clear of the chevron; only held arms are drawn, under or
   over said by the height and the hug; the low lock ends behind the
-  <i>opposite</i> shoulder, the high lock behind its own; same-name holds
+  <i>opposite</i> shoulder and begins at the half turn, led; the high lock
+  is a loopback to its own shoulder; same-name holds
   rest with the follow away, and turns count from face to face; the
   sheet's own naming — <span class="m">Left-Lock-Low to right</span> —
   with shorthand only where space is tight. <b>Every state drawn here was
@@ -899,13 +1215,13 @@ table.ledger td.rope { font-size: 0.78rem; max-width: 16rem; }
   lead-lock with her turned away was refused and is gone.</p>
   <p style="margin-top:0.9rem"><b>Still yours to pick or refuse:</b></p>
   <ul>
-    <li>The <b>high-lock loop</b>: candidate A (curl), B (ring), or C
-    (hook), on plate 4.</li>
     <li>The <b>over/under in the X</b>: the rope withholds it, so the
     break is a drawing decision — as drawn, the follow's-left rope passes
     under in both.</li>
     <li>The rope lets the <b>lock way at the neck run to 1&#189;</b>;
     your floor says a full turn. One to test.</li>
+    <li>Whether the animated states on plate 5 read as you dance them —
+    that panel is there to be checked against the floor.</li>
     <li>Symbols for the six moves — withdrawn this round; candidates
     next.</li>
     <li>Still open, unchanged: whether an arm above ever blocks a turn,
