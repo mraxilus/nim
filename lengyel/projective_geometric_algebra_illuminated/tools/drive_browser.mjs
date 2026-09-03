@@ -2664,9 +2664,6 @@ const hold_draw = await page.evaluate(async () => {
   const clears_direct = counts.clears;
   globalThis.nimBuildFrame = built;
   WebGLRenderingContext.prototype.clear = clear;
-  // Leave one rebuild for check below, which counts both sides of its hold.
-  //   Recolouring item to ink it wears moves revision and not one pixel.
-  nimSetInk(nimSceneSlots()[0], nimItemInk(nimSceneSlots()[0]));
   return { ...still, clears_direct };
 });
 report(
@@ -2698,6 +2695,10 @@ await page.evaluate(() => {
     if (d.is_scene_held) window.__hold.held += 1; else window.__hold.built += 1;
     return d;
   };
+  // One rebuild owed to counter above, so both sides of hold are seen.
+  //   Inside same task as counter, so no frame can spend it first; recolouring item to
+  //   ink it wears moves revision and not one pixel.
+  nimSetInk(nimSceneSlots()[0], nimItemInk(nimSceneSlots()[0]));
   // Drawn pixels have to be sampled from **inside** frame that drew them:
   //   context asks for no `preserveDrawingBuffer` (see `glue.js`'s own note at top),
   //   so read from later task finds buffer compositor has already taken. Hooked
