@@ -110,8 +110,9 @@ escalating only on need.
   access to internals.
 - Commas between parameters while every type appears once (`m: Multivector, b: Basis`).
   Escalate to semicolons between groups only when some group holds several parameters of
-  one type (`a, b: X; c: Y`). Return type and pragmas on the closing line of a multi-line
-  signature:
+  one type (`a, b: X; c: Y`). A formatter that promotes every comma to a semicolon is
+  wrong here; configure or ignore it. Return type and pragmas on the closing line of a
+  multi-line signature:
 
   ```nim
   func filterFactors(
