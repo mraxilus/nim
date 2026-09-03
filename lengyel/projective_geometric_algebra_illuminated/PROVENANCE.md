@@ -1313,7 +1313,23 @@ backdrop blur, a full-ratio antialiased canvas or the overlay's paint all land i
 row — so three **experiment pills** in the section switch each off at runtime (`blur`, every
 `backdrop-filter` through one class on `body`; `hi-dpi`, the canvas's pixel-ratio cap from
 2.5 to 1; `overlay`, the SVG layer's display), for the reader to flip one and watch the row.
-None is saved. Which of the three it is remains unmeasured here. Every job
+None is saved. **The device answered again, and the answer was none of them.** Four
+readings, each with one pill on and then all three, with the camera orbiting for most of
+each ring: `style + layout + paint` medians 0.70, 0.70, 1.00 and 1.00 ms, and on every
+slowest frame (36.1, 69.7, 65.8 and 41.9 ms) the browser's share was 29 to 68 ms with
+`render` at 0.7 to 1.3 — the message came back within a millisecond and the next frame was
+withheld for tens more. The main thread is exonerated; the earlier 10.7 ms median did not
+reproduce and stays unexplained. What remains is the browser not delivering a frame while
+page and main thread are idle: GPU or compositor back-pressure, or the panel itself. Two
+things those readings add. The exceedance curve's foot sits at 8.3 ms and one reading
+averaged 63 fps, so the panel is 120 Hz, driven at 120 during touch and 60 at rest; a
+moving frame costs the page 8–10 ms, mostly the walk (`build` at a 7.5–8.3 ms median at
+5,038 objects), one vsync at 60 Hz and two at 120, and the 65–70 ms slowest frames sit
+where such a panel switches rate at touch start and end — a hypothesis, unmeasured. And the
+`overlay` pill had an artefact: with the SVG hidden, `overlay + menu` rose to 4.6 ms mean
+(4.9 on the slowest frame) from writing to a layer with no layout, so the pill now stops the
+refresh with the paint. The still-scene periodic spike has not yet had a clean test: every
+reading so far had the camera moving inside the ring. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
