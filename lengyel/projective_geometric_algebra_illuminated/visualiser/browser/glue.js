@@ -4292,7 +4292,12 @@ wireExperiment('toggle-full-ratio', (is_on) => {
   cap_ratio_pixel = is_on ? 2.5 : 1;
   resize();
 });
+// Overlay's refresh stops with its paint.
+//   Writing to layer with no layout cost `overlay + menu` 4.6 ms mean on device, which
+//   is experiment's own artefact standing in page's column.
+let is_overlay_shown = true;
 wireExperiment('toggle-overlay', (is_on) => {
+  is_overlay_shown = is_on;
   svg_overlay.style.display = is_on ? '' : 'none';
 });
 
@@ -4569,7 +4574,7 @@ function frame() {
   captureFrameIfAsked();
 
   const ms_before_overlay = performance.now();
-  refreshOverlay(cursor_last);
+  if (is_overlay_shown) refreshOverlay(cursor_last);
   updateSelectionMenuPosition();
   // Menu placement folded in with markers rather than kept as row of its own: it is.
   //   one early-returning call reading 0.00 in every state but one, and its old bracket
