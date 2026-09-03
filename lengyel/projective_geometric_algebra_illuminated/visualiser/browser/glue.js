@@ -869,7 +869,7 @@ document.documentElement.style.setProperty('--ease', 'cubic-bezier(0.215, 0.61, 
 
 const drawer = document.getElementById('drawer');
 const row_chip = document.querySelector('.chip-row');
-const button_drawer = document.getElementById('btn-drawer');
+const button_drawer = document.getElementById('button-drawer');
 button_drawer.addEventListener('click', () => {
   const open = drawer.classList.toggle('open');
   button_drawer.classList.toggle('on', open);
@@ -884,7 +884,7 @@ button_drawer.addEventListener('click', () => {
 //   pill-groups -- each button inside keeps its own pre-existing #id-based wiring
 //   unchanged below; this only owns popover's own open/close.
 const menu_top = document.getElementById('top-menu');
-const button_menu = document.getElementById('btn-menu');
+const button_menu = document.getElementById('button-menu');
 button_menu.addEventListener('click', () => {
   const open = menu_top.classList.toggle('show');
   button_menu.classList.toggle('on', open);
@@ -933,7 +933,7 @@ document.getElementById('toggle-algebra').addEventListener('click', (e) => {
 //   only that way's rows are any use to them right then. Tab row belongs to is
 //   core's answer -- first of its four strings -- so this builds strip out of
 //   paths it actually sees rather than naming them here and drifting from table.
-const button_help = document.getElementById('btn-help');
+const button_help = document.getElementById('button-help');
 const panel_help = document.getElementById('help-panel');
 const strip_help = document.getElementById('help-tabs');
 const rows_help = document.getElementById('help-rows');
@@ -1014,9 +1014,9 @@ button_help.addEventListener('click', (e) => {
 /* so camera moves under these too; orbit alone is not step.               */
 /* ---------------------------------------------------------------------- */
 
-const button_add = document.getElementById('btn-add');
-const button_undo = document.getElementById('btn-undo');
-const button_redo = document.getElementById('btn-redo');
+const button_add = document.getElementById('button-add');
+const button_undo = document.getElementById('button-undo');
+const button_redo = document.getElementById('button-redo');
 
 function openApplyPickerOnOperands(position_local) {
   // Where drag menu's `more…` lands: `nimEndDrag` has already selected both operands.
@@ -1179,7 +1179,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function refreshUndoRedoButtons() {
-  // Dimmed/disabled (via shared .btn:disabled rule) whenever there's nothing on.
+  // Dimmed/disabled (via shared .button:disabled rule) whenever there's nothing on.
   //   that side of timeline to move to -- checked after every history-touching
   //   action below, plus once per low-cadence UI tick to catch every other path
   //   (add, apply, remove, load demo, scene load/clear) without hooking each one.
@@ -1263,7 +1263,7 @@ function refreshCameraFields() {
 //   main thread for whole encode, which on phone-sized canvas is most of second of
 //   frozen UI.
 let is_capture_wanted = false;
-document.getElementById('btn-export-png').addEventListener('click', () => {
+document.getElementById('button-export-png').addEventListener('click', () => {
   is_capture_wanted = true;
   toast('Capturing the next frame\u2026');
 });
@@ -1293,9 +1293,9 @@ function captureFrameIfAsked() {
 for (const scale of nimDemoScales()) {
   const items = nimDemoItems(scale);
   const button = document.createElement('button');
-  button.className = 'btn';
+  button.className = 'button';
   button.type = 'button';
-  button.id = `btn-load-demo-${items}`;
+  button.id = `button-load-demo-${items}`;
   button.textContent = String(items);
   button.title =
     `Load the orrery at ${items} objects: the real solar neighbourhood, Sol at the origin, ` +
@@ -1308,7 +1308,7 @@ for (const scale of nimDemoScales()) {
       `${nimSceneCapacity() - nimSceneCount()} slots free.`);
     adoptConstructionSelection();
   });
-  document.getElementById('btn-demo-scales').appendChild(button);
+  document.getElementById('button-demo-scales').appendChild(button);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1469,7 +1469,7 @@ function buildGradedCoefficientGrid(container, valueAt) {
   for (const group of by_grade) {
     if (!group) continue;
     const row = document.createElement('div');
-    row.className = 'coeff-grade-row';
+    row.className = 'coefficient-grade-row';
     for (const b of group) {
       const f = document.createElement('div');
       f.className = 'field';
@@ -1489,7 +1489,7 @@ function buildGradedCoefficientGrid(container, valueAt) {
   return inputs;
 }
 
-document.getElementById('btn-apply').addEventListener('click', () => {
+document.getElementById('button-apply').addEventListener('click', () => {
   if (nimSceneCount() === 0) { toast('Scene is empty; add a point first.'); return; }
   const slots = nimSceneSlots();
   const first = slots[Math.min(parseInt(picker_operand_first.value, 10) || 0, slots.length - 1)];
@@ -1636,7 +1636,7 @@ let signatures_row = new Map();
 //   and reused otherwise. Selection change, which is what most refreshes are, moves no
 //   revision and re-derives nothing.
 //   Cleared whole rather than per slot: revision is scene's, not slot's, so
-//   edit re-derives every row. That is same over-approximation `g_placed` makes, and it
+//   edit re-derives every row. That is same over-approximation `PLACEMENTS` makes, and it
 //   costs one deliberate action walk it would have paid anyway.
 let text_geometry_row = new Map();
 let revision_geometry_row = -1;
@@ -1799,7 +1799,7 @@ function buildItemRow(slot) {
   top.appendChild(label);
 
   const toggle_edit = document.createElement('button');
-  toggle_edit.className = 'btn item-edit-toggle';
+  toggle_edit.className = 'button item-edit-toggle';
   toggle_edit.type = 'button';
   toggle_edit.textContent = is_open ? 'save' : 'edit';
   toggle_edit.title = is_open
@@ -1827,7 +1827,7 @@ function buildItemRow(slot) {
     // Abandon: composing row vanishes with nothing added, editing row reverts. In.
     //   both cases scene was never touched, so this only has to drop session.
     const cancel = document.createElement('button');
-    cancel.className = 'btn item-edit-cancel';
+    cancel.className = 'button item-edit-cancel';
     cancel.type = 'button';
     cancel.textContent = '✕';
     cancel.title = is_pending ? 'Discard this new object.' : 'Discard these changes.';
@@ -1844,7 +1844,7 @@ function buildItemRow(slot) {
     //   acting on one version while looking at another. Composing row has no object at
     //   all yet, so both are left out rather than shown disabled either way.
     const visibility = document.createElement('button');
-    visibility.className = 'btn item-visibility';
+    visibility.className = 'button item-visibility';
     visibility.type = 'button';
     visibility.textContent = nimItemVisible(slot) ? 'hide' : 'show';
     visibility.title = 'Show or hide this object without removing it.';
@@ -1857,7 +1857,7 @@ function buildItemRow(slot) {
     top.appendChild(visibility);
 
     const remove = document.createElement('button');
-    remove.className = 'btn item-remove';
+    remove.className = 'button item-remove';
     remove.type = 'button';
     remove.textContent = 'remove';
     remove.title = "Delete this object; its slot is reused by the next one you add.";
@@ -1874,7 +1874,7 @@ function buildItemRow(slot) {
   row.appendChild(top);
 
   const line_coefficient = document.createElement('div');
-  line_coefficient.className = 'item-coeff';
+  line_coefficient.className = 'item-coefficient';
   const describeStaged = () =>
     is_open ? nimDescribeCoefficients(session_edit.coefficients)
            : geometryTextFor(slot);
@@ -1901,7 +1901,7 @@ function buildItemRow(slot) {
     field_label.innerHTML = '<label>label</label>';
     // Write every field below into session, never scene.
     //   Row's own swatch, label and coefficient line preview change, ghost previews
-    //   geometry, and only `save` above reaches `g_scene`.
+    //   geometry, and only `save` above reaches `SCENE`.
     const input_label = document.createElement('input');
     input_label.type = 'text';
     input_label.value = labelOf();
@@ -1947,7 +1947,7 @@ function buildItemRow(slot) {
     box_edit.appendChild(note_coefficient);
 
     const grid = document.createElement('div');
-    grid.className = 'coeff-grid';
+    grid.className = 'coefficient-grid';
     // `nimFormatNumber`, not `toFixed` here: how many digits coefficient is worth.
     //   is decision about this project's numbers, and desktop's own cells make it
     //   same way.
@@ -1972,8 +1972,8 @@ function buildItemRow(slot) {
   return row;
 }
 
-document.getElementById('btn-save-scene').addEventListener('click', saveScene);
-document.getElementById('btn-load-scene').addEventListener('click', () => {
+document.getElementById('button-save-scene').addEventListener('click', saveScene);
+document.getElementById('button-load-scene').addEventListener('click', () => {
   document.getElementById('file-load-scene').click();
 });
 document.getElementById('file-load-scene').addEventListener('change', (e) => {
@@ -2055,7 +2055,7 @@ function loadSceneFile(file) {
     try {
       const outcome = parseAndLoadScene(reader.result);
       toast(outcome);
-      adoptConstructionSelection(); // nimSceneClear() inside already cleared g_index_highlighted.
+      adoptConstructionSelection(); // nimSceneClear() inside already cleared hover.
     } catch (err) {
       toast(String(err.message || err));
     }
@@ -2159,9 +2159,9 @@ let index_history_frame = 0;
 let time_frame_last = performance.now();
 const sparkline = document.getElementById('sparkline');
 const context_sparkline = sparkline.getContext('2d');
-const diagnostic_frame_time = document.getElementById('diag-frametime');
-const diagnostic_heap = document.getElementById('diag-heap');
-const diagnostic_pool = document.getElementById('diag-pool');
+const diagnostic_frame_time = document.getElementById('diagnostic-frametime');
+const diagnostic_heap = document.getElementById('diagnostic-heap');
+const diagnostic_pool = document.getElementById('diagnostic-pool');
 const grid_pool = document.getElementById('pool-grid');
 const context_pool = grid_pool === null ? null : grid_pool.getContext('2d');
 // Scene revision grid was last drawn at; -1 until it has been drawn once. Grid.
@@ -2214,16 +2214,18 @@ if (grid_pool !== null && typeof ResizeObserver === 'function') {
 //     Single frame's reading flickers too fast to read, and median is what reader means
 //     by "how long does this step take".
 const PHASES_DIAGNOSTIC = [
-  ['build', 'diag-build'], ['camera', 'diag-camera'], ['furniture', 'diag-furniture'],
-  ['grid', 'diag-grid'], ['axes', 'diag-axes'], ['scene', 'diag-scene'],
-  ['points', 'diag-points'], ['lines', 'diag-lines'], ['planes', 'diag-planes'],
-  ['sky', 'diag-sky'], ['ghost', 'diag-ghost'], ['selected', 'diag-selected'],
-  ['algebra', 'diag-algebra'], ['matrix', 'diag-matrix'], ['flatten', 'diag-flatten'],
-  ['unaccounted', 'diag-unaccounted'],
+  ['build', 'diagnostic-build'], ['camera', 'diagnostic-camera'],
+  ['furniture', 'diagnostic-furniture'],
+  ['grid', 'diagnostic-grid'], ['axes', 'diagnostic-axes'], ['scene', 'diagnostic-scene'],
+  ['points', 'diagnostic-points'], ['lines', 'diagnostic-lines'], ['planes', 'diagnostic-planes'],
+  ['sky', 'diagnostic-sky'], ['ghost', 'diagnostic-ghost'], ['selected', 'diagnostic-selected'],
+  ['algebra', 'diagnostic-algebra'], ['matrix', 'diagnostic-matrix'],
+  ['flatten', 'diagnostic-flatten'],
+  ['unaccounted', 'diagnostic-unaccounted'],
   // Second cut, not stages: these re-divide very milliseconds above them.
-  ['placing', 'diag-placing'], ['emitting', 'diag-emitting'],
-  ['hover', 'diag-hover'], ['upload', 'diag-upload'], ['overlay', 'diag-overlay'],
-  ['ui', 'diag-ui'], ['idle', 'diag-idle'],
+  ['placing', 'diagnostic-placing'], ['emitting', 'diagnostic-emitting'],
+  ['hover', 'diagnostic-hover'], ['upload', 'diagnostic-upload'], ['overlay', 'diagnostic-overlay'],
+  ['ui', 'diagnostic-ui'], ['idle', 'diagnostic-idle'],
 ];
 // Rows that re-divide time already counted elsewhere. They must stay out of every sum.
 //   -- idle derivation below, and cost tint's own denominator -- or frame would
@@ -2261,14 +2263,14 @@ for (const [name, id] of PHASES_DIAGNOSTIC) {
   element_phase[name] = document.getElementById(id);
   // Whole row as well as its number, so row can be tinted entire. `closest` rather.
   //   than `parentElement`: leaf's value sits in plain div and parent's in button,
-  //   and both carry `.diag-line`.
+  //   and both carry `.diagnostic-line`.
   element_row[name] = element_phase[name] === null
-    ? null : element_phase[name].closest('.diag-line');
+    ? null : element_phase[name].closest('.diagnostic-line');
   // And slot beside row's own name where its count goes, on rows that have one.
   //   Written into rather than label being rewritten, so label's words stay in
   //   markup and this file never holds second copy of them to keep in step.
   element_tally[name] = element_row[name] === null
-    ? null : element_row[name].querySelector('.diag-tally');
+    ? null : element_row[name].querySelector('.diagnostic-tally');
 }
 for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = 0;
 function recordPhaseTime(name, delta_milliseconds) {
@@ -2374,10 +2376,10 @@ function medianPhaseHeld(name, is_recomputing) {
 //   tree's shape used to live in both places, agreeing only by care, and row moved
 //   in one without other would silently stop hiding -- or stop updating -- with its
 //   branch. DOM is one copy now, and this file only asks it questions.
-for (const node of document.querySelectorAll('.diag-node')) {
+for (const node of document.querySelectorAll('.diagnostic-node')) {
   // Node's *own* parent row, not descendant's: nested branch puts another.
-  //   `.diag-parent` inside this one, and `querySelector` would find that one first.
-  const header = node.querySelector(':scope > .diag-parent');
+  //   `.diagnostic-parent` inside this one, and `querySelector` would find that one first.
+  const header = node.querySelector(':scope > .diagnostic-parent');
   header.addEventListener('click', () => {
     const is_open = node.classList.toggle('open');
     header.setAttribute('aria-expanded', String(is_open));
@@ -2390,13 +2392,13 @@ function isPhaseShown(name) {
   //   to open it, so it stays visible while its node is closed.
   const row = element_row[name];
   if (row === null) return false;
-  let node = row.closest('.diag-node');
-  if (node !== null && row.classList.contains('diag-parent')) {
-    node = node.parentElement.closest('.diag-node');
+  let node = row.closest('.diagnostic-node');
+  if (node !== null && row.classList.contains('diagnostic-parent')) {
+    node = node.parentElement.closest('.diagnostic-node');
   }
   while (node !== null) {
     if (!node.classList.contains('open')) return false;
-    node = node.parentElement.closest('.diag-node');
+    node = node.parentElement.closest('.diagnostic-node');
   }
   return true;
 }
@@ -2432,8 +2434,8 @@ let index_exceedance = 0;
 let count_exceedance = 0; // Rises to window's own size, then stays there.
 const exceedance = document.getElementById('exceedance');
 const context_exceedance = exceedance === null ? null : exceedance.getContext('2d');
-const diagnostic_exceedance = document.getElementById('diag-exceedance');
-const label_exceedance_axis = document.getElementById('diag-exceedance-axis');
+const diagnostic_exceedance = document.getElementById('diagnostic-exceedance');
+const label_exceedance_axis = document.getElementById('diagnostic-exceedance-axis');
 // Vertical axis's own switch, wired here rather than beside header's chips because.
 //   it reads chart it belongs to. Linear by default: chart exists to say what share
 //   of session ran at each speed, and proportion reads as proportion on linear
@@ -2641,7 +2643,7 @@ const RAMP_TREE = (() => {
 //   to be bug in one line rather than second declaration left behind.
 const STOPS_LEGEND_RAMP = 48;
 (() => {
-  const bar = document.getElementById('diag-legend-ramp');
+  const bar = document.getElementById('diagnostic-legend-ramp');
   if (bar === null) return;
   const stops = [];
   for (let i = 0; i <= STOPS_LEGEND_RAMP; i += 1) {
@@ -4114,12 +4116,12 @@ function renderFrame(now_seconds) {
   //   reads.
   gl.useProgram(program_ribbon);
   gl.uniformMatrix4fv(ribbon_uniforms.mvp, false, data.view_projection);
-  gl.uniform3f(ribbon_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
+  gl.uniform3f(ribbon_uniforms.eye, data.camera_eye_x, data.camera_eye_y, data.camera_eye_z);
   gl.uniform3f(ribbon_uniforms.forward,
-    data.cam_forward_x, data.cam_forward_y, data.cam_forward_z);
-  gl.uniform1f(ribbon_uniforms.depth_near, data.cam_depth_near);
-  gl.uniform1f(ribbon_uniforms.tangent, data.cam_tangent_half_view);
-  gl.uniform1f(ribbon_uniforms.height, data.cam_height_pixels);
+    data.camera_forward_x, data.camera_forward_y, data.camera_forward_z);
+  gl.uniform1f(ribbon_uniforms.depth_near, data.camera_depth_near);
+  gl.uniform1f(ribbon_uniforms.tangent, data.camera_tangent_half_view);
+  gl.uniform1f(ribbon_uniforms.height, data.camera_height_pixels);
   // Furniture fog's two radii, for fragment stage's fade of fogged records.
   gl.uniform1f(ribbon_uniforms.fog_full, data.fog_radius_full);
   gl.uniform1f(ribbon_uniforms.fog_gone, data.fog_radius_gone);
@@ -4150,12 +4152,12 @@ function renderFrame(now_seconds) {
   //   and same pass.
   gl.useProgram(program_ring);
   gl.uniformMatrix4fv(ring_uniforms.mvp, false, data.view_projection);
-  gl.uniform3f(ring_uniforms.eye, data.cam_eye_x, data.cam_eye_y, data.cam_eye_z);
+  gl.uniform3f(ring_uniforms.eye, data.camera_eye_x, data.camera_eye_y, data.camera_eye_z);
   gl.uniform3f(ring_uniforms.forward,
-    data.cam_forward_x, data.cam_forward_y, data.cam_forward_z);
-  gl.uniform1f(ring_uniforms.depth_near, data.cam_depth_near);
-  gl.uniform1f(ring_uniforms.tangent, data.cam_tangent_half_view);
-  gl.uniform1f(ring_uniforms.height, data.cam_height_pixels);
+    data.camera_forward_x, data.camera_forward_y, data.camera_forward_z);
+  gl.uniform1f(ring_uniforms.depth_near, data.camera_depth_near);
+  gl.uniform1f(ring_uniforms.tangent, data.camera_tangent_half_view);
+  gl.uniform1f(ring_uniforms.height, data.camera_height_pixels);
   if (!data.is_scene_held) count_ring_held = uploadBuffer(data.ring_records, vbo.ring, 14);
   const count_ring = count_ring_held;
   drawRings(count_ring, data.ring_over, false);

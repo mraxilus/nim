@@ -78,7 +78,7 @@ proc addLattice*(
     axes = frame(plane)
     anchor = positionAnchor(plane)
   if axes.isNone or anchor.isNone: return
-  let reach = radiusOnPlaneFor(scale.extent_furniture, scale, plane)
+  let reach = radiusOnPlaneFor(scale.extentFurniture, scale, plane)
   if reach.isNone: return
   let
     radius = reach.get

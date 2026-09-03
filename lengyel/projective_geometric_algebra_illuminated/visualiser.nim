@@ -374,9 +374,9 @@ proc assembleMeshes(
     SETTINGS_FURNITURE_HELD = some(settings_furniture)
     MESHES_FURNITURE.clearMeshes
     if panel.is_grid_shown:
-      MESHES_FURNITURE.addGrid(scratch[0], scale.extent_furniture, scale)
+      MESHES_FURNITURE.addGrid(scratch[0], scale.extentFurniture, scale)
     if panel.is_axes_shown:
-      MESHES_FURNITURE.addAxes(scratch[0], scale.extent_furniture, scale)
+      MESHES_FURNITURE.addAxes(scratch[0], scale.extentFurniture, scale)
 
   MESHES.clearMeshes
   # Emit horizon plane's dome first, before anything sharing translucent wash pass.
@@ -1429,7 +1429,7 @@ proc driveSky(
 proc verdictDriven(
   options: Options; scene: Scene; camera, camera_opened, camera_before_slide: Camera;
   interaction: Interaction; panel: Panel; count_settled: int;
-  was_dragging, was_menu_open: bool
+  found_dragging, found_menu_open: bool
 ): int =
   ## Judge what `--drive-*` run reached, and report every check pass or fail.
   ##   Answers with number that failed, for caller to exit on.
@@ -1504,15 +1504,15 @@ proc verdictDriven(
       &"{len(panel.selection)} selected",
     )
     report(
-      "the menu did not swallow the drag after it", was_dragging,
-      &"a drag began after the clicks: {was_dragging}",
+      "the menu did not swallow the drag after it", found_dragging,
+      &"a drag began after the clicks: {found_dragging}",
     )
   if options.is_drag_driven:
     # Check drag caught mid-gesture by design: menu is open, or it has already committed.
     report(
       "a drag from one object onto another opens its choice menu",
-      was_dragging and was_menu_open,
-      &"dragged {was_dragging}, menu opened {was_menu_open}",
+      found_dragging and found_menu_open,
+      &"dragged {found_dragging}, menu opened {found_menu_open}",
     )
   if options.path_help_driven.isSome:
     report(
@@ -1561,8 +1561,8 @@ proc runInteractive(
   #   Drag is released before run ends, and right release at menu's centre commits
   #   nothing.
   var
-    was_dragging = false
-    was_menu_open = false
+    found_dragging = false
+    found_menu_open = false
     # Record camera as first held motion key found it.
     #   Picking turns orbit about what was picked, and script selects before it slides, so
     #   opening placement is not what slide starts from.
@@ -1661,8 +1661,8 @@ proc runInteractive(
         #   writing.
         is_slide_started = true
         camera_before_slide = camera
-      was_dragging = was_dragging or interaction.is_dragging
-      was_menu_open = was_menu_open or interaction.menu.isSome
+      found_dragging = found_dragging or interaction.is_dragging
+      found_menu_open = found_menu_open or interaction.menu.isSome
       if count_drawn == 2: count_settled = len(scene)
     # Carry size into next iteration's events, which need it to cast sight ray.
     (width_frame, height_frame) = (int(width), int(height))
@@ -1702,7 +1702,7 @@ proc runInteractive(
   if options.is_asserted:
     let count_failed = verdictDriven(
       options, scene, camera, camera_opened, camera_before_slide, interaction, panel,
-      count_settled, was_dragging, was_menu_open,
+      count_settled, found_dragging, found_menu_open,
     )
     if count_failed > 0:
       echo &"\n{count_failed} driven check(s) failed."

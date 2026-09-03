@@ -384,7 +384,7 @@ proc pickNearest*(
   ## Find visible item nearest cursor, preferring points over lines over planes.
   ##   `placed` is frame's own placements, where caller kept them.
   ##     `tessellate.placeObject` already answers what object is and where, and
-  ##     front-end holding frame's worth of answers (`browser_bridge.g_placed`) hands them
+  ##     front-end holding frame's worth of answers (`browser_bridge.PLACEMENTS`) hands them
   ##     over instead of having walk ask again.
   ##     Pick then ranks *what was drawn*, off one derivation, and stops running placing
   ##     side per live slot per pointer event.
@@ -455,7 +455,7 @@ proc pickNearest*(
       #   One part of point's anchor depending on eye, so not in placement. Matches
       #   `tessellate.anchorFor`.
       let star = position(add(
-        scale.eye_point, wedge(scale.radius_horizon, toMultivector(place.toward)),
+        scale.eye_point, wedge(scale.radiusHorizon, toMultivector(place.toward)),
       ))
       if star.isNone: continue
       let distance = pixelsFromCursor(view_projection, width, height, star.get, cursor)
@@ -467,8 +467,8 @@ proc pickNearest*(
       #   Stepped off same fixed table: which plane arms span is placement's answer, ring
       #   itself is arithmetic. Sums per candidate per pointer move were price of drift.
       let
-        arm_first = scale.radius_horizon*place.axes.axis_first
-        arm_second = scale.radius_horizon*place.axes.axis_second
+        arm_first = scale.radiusHorizon*place.axes.axis_first
+        arm_second = scale.radiusHorizon*place.axes.axis_second
       var
         distance_nearest = Inf
         previous = none(ScreenPosition)
@@ -489,7 +489,7 @@ proc pickNearest*(
       # Test both halves `tessellate.addLine` draws, support out to each vanishing point.
       #   Which half is on screen changes as camera orbits.
       var distance_nearest = Inf
-      for reach in [scale.radius_horizon, -scale.radius_horizon]:
+      for reach in [scale.radiusHorizon, -scale.radiusHorizon]:
         let clipped = clipToEyeSide(
           place.at,
           pointFrom(add(scale.eye_point, wedge(reach, toMultivector(place.toward)))),
@@ -509,7 +509,7 @@ proc pickNearest*(
       #   Frame guard is kind's to say: `placeObject` reaches `PlaneOn` only with anchor
       #   and frame in hand, anchor carrying override where disc is actually centred.
       if isBeyondDisc(
-        view_projection, width, height, scale.tangent_half_view, place.at, EXTENT_PLANE_F,
+        view_projection, width, height, scale.tangentHalfView, place.at, EXTENT_PLANE_F,
         cursor,
       ): continue
       let hit = rayPlaneHit(ray, scale.plane_eye, geometry, place.at, EXTENT_PLANE_F)
@@ -676,7 +676,7 @@ func isLineShownCentrally(
     let axes = spanPerpendicular(ORIGIN_WORLD, normal.get)
     if axes.isNone: return false
     return isRingCrossingCentre(
-      scale.eye, axes.get[0], axes.get[1], scale.radius_horizon,
+      scale.eye, axes.get[0], axes.get[1], scale.radiusHorizon,
       view_projection, width, height,
     )
 
@@ -684,7 +684,7 @@ func isLineShownCentrally(
   #   Half can sit behind eye while other half fills frame.
   let (anchor, axis) = (positionAnchor(m), direction(m))
   if anchor.isNone or axis.isNone: return false
-  for reach in [scale.radius_horizon, -scale.radius_horizon]:
+  for reach in [scale.radiusHorizon, -scale.radiusHorizon]:
     let clipped = clipToEyeSide(
       anchor.get,
       pointFrom(add(scale.eye_point, wedge(reach, toMultivector(axis.get)))),

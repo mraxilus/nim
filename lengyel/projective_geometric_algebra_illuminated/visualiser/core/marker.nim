@@ -673,7 +673,7 @@ func railsAt(
     axis_point = toMultivector(axis)
   for index_side, side in [offset, -offset]:
     let rail_base = pointFrom(add(anchor_point, wedge(side, across_point)))
-    for index_half, reach in [scale.radius_horizon, -scale.radius_horizon]:
+    for index_half, reach in [scale.radiusHorizon, -scale.radiusHorizon]:
       let clipped = clipToEyeSide(
         rail_base, pointFrom(add(scale.eye_point, wedge(reach, axis_point))),
         scale.plane_near,
@@ -1016,8 +1016,8 @@ proc markerBands(
   let
     (axis_first, axis_second) = axes.get
     angle = angleMarkerBands(scale, progress, clearance)
-    radius = scale.radius_horizon*cos(angle)
-    offset = scale.radius_horizon*sin(angle)
+    radius = scale.radiusHorizon*cos(angle)
+    offset = scale.radiusHorizon*sin(angle)
 
   marker = Marker(kind: MarkerKind.Bands)
   # Place each band's centre through algebra, eye stepped along normal, and ring off table.

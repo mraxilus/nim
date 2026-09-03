@@ -12,7 +12,7 @@
 ##   `mesh` out of ordinary arithmetic.
 ##   See `euclid.nim` header for split, and `boundary.nim` for one place two languages meet.
 ## Finite objects are tessellated about support point, i.e. point nearest origin.
-##   Objects at horizon are drawn fixed to `DrawExtent.eye` at `DrawExtent.radius_horizon`,
+##   Objects at horizon are drawn fixed to `DrawExtent.eye` at `DrawExtent.radiusHorizon`,
 ##   so orbiting or dollying leaves each in same apparent direction, as real star would.
 ##
 ## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
@@ -49,13 +49,13 @@ type
 
 # Read through to Euclidean half, so caller writes `scale.eye`, not `scale.scale.eye`.
 #   Split is about which module may *name* multivector.
-func extent_furniture*(d: DrawExtent): float = d.scale.extent_furniture
+func extentFurniture*(d: DrawExtent): float = d.scale.extent_furniture
 func eye*(d: DrawExtent): Position = d.scale.eye
-func radius_horizon*(d: DrawExtent): float = d.scale.radius_horizon
+func radiusHorizon*(d: DrawExtent): float = d.scale.radius_horizon
 func forward*(d: DrawExtent): Direction = d.scale.forward
-func tangent_half_view*(d: DrawExtent): float = d.scale.tangent_half_view
-func height_pixels*(d: DrawExtent): int = d.scale.height_pixels
-func depth_near*(d: DrawExtent): float = d.scale.depth_near
+func tangentHalfView*(d: DrawExtent): float = d.scale.tangent_half_view
+func heightPixels*(d: DrawExtent): int = d.scale.height_pixels
+func depthNear*(d: DrawExtent): float = d.scale.depth_near
 
 # Convert whole half implicitly, so extent hands to any of `mesh`'s procs unwrapped.
 #   Extent *is* scale with algebra's reading beside it, conversion runs one way, and no
@@ -74,7 +74,7 @@ func algebraFilled*(scale: DrawExtent): DrawExtent =
   result.forward_point = toMultivector(scale.forward)
   result.plane_eye = planeThrough(result.eye_point, result.forward_point)
   result.plane_near = planeThrough(
-    add(result.eye_point, wedge(scale.depth_near, result.forward_point)),
+    add(result.eye_point, wedge(scale.depthNear, result.forward_point)),
     result.forward_point,
   )
 
@@ -99,7 +99,7 @@ func anchorFor*(m: Multivector, scale: DrawExtent): Option[Position] =
     let heading = directionHorizon(m)
     if heading.isNone: return
     position(add(
-      scale.eye_point, wedge(scale.radius_horizon, toMultivector(heading.get))
+      scale.eye_point, wedge(scale.radiusHorizon, toMultivector(heading.get))
     ))
   of Shape.Line, Shape.Plane:
     positionAnchor(m)
@@ -157,8 +157,8 @@ proc placeChord(
   let
     tail = pointFrom(add(centre, wedge(-span, axis_point)))
     head = pointFrom(add(centre, wedge(span, axis_point)))
-  if dot(tail - scale.eye, scale.forward) < scale.depth_near and
-      dot(head - scale.eye, scale.forward) < scale.depth_near:
+  if dot(tail - scale.eye, scale.forward) < scale.depthNear and
+      dot(head - scale.eye, scale.forward) < scale.depthNear:
     return
   scratch.ribbons[count_assembled] = RibbonPiece(
     tail: tail, head: head, tint_tail: tint, tint_head: tint,
@@ -484,14 +484,14 @@ proc emitObject*(
     var star = ORIGIN_WORLD
     timed(Side.Placing):
       star = pointFrom(add(scale.eye_point,
-        wedge(progress*scale.radius_horizon, toMultivector(placed.toward))))
+        wedge(progress*scale.radiusHorizon, toMultivector(placed.toward))))
     timed(Side.Emitting):
       meshes.addMarker(star, tint, tint.alpha*progress)
     Placement.Horizon
 
   of PlacedKind.LineThrough:
     # Draw two segments meeting at support, each running to one of line's vanishing points.
-    #   Vanishing point is `scale.eye` plus or minus `scale.radius_horizon` along attitude,
+    #   Vanishing point is `scale.eye` plus or minus `scale.radiusHorizon` along attitude,
     #   exactly where horizon marker draws attitude, so line reaches it with no gap.
     #   Two because vanishing point is property of *eye*: end anchored fixed reach from
     #   support stops short by eye-to-line separation over that reach.
@@ -502,7 +502,7 @@ proc emitObject*(
     var far_ahead, far_behind = ORIGIN_WORLD
     timed(Side.Placing):
       let
-        reach = progress*scale.radius_horizon
+        reach = progress*scale.radiusHorizon
         axis_point = toMultivector(placed.toward)
       far_ahead = pointFrom(add(scale.eye_point, wedge(reach, axis_point)))
       far_behind = pointFrom(add(scale.eye_point, wedge(-reach, axis_point)))
@@ -517,7 +517,7 @@ proc emitObject*(
     timed(Side.Emitting):
       meshes.addGreatCircle(
         scale.eye, placed.axes.axis_first, placed.axes.axis_second,
-        progress*scale.radius_horizon, tint.fade(tint.alpha*progress),
+        progress*scale.radiusHorizon, tint.fade(tint.alpha*progress),
       )
     Placement.Horizon
 
@@ -543,7 +543,7 @@ proc emitObject*(
     # Emit one dome record vertex shader widens over static unit sphere; see `mesh.addDome`.
     timed(Side.Emitting):
       meshes.addDome(
-        scale.eye, progress*scale.radius_horizon, tint.fade(ALPHA_WASH_SKY*progress),
+        scale.eye, progress*scale.radiusHorizon, tint.fade(ALPHA_WASH_SKY*progress),
       )
     Placement.Horizon
 

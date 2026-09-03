@@ -771,12 +771,12 @@ proc drawMeshes*(
     gl.Float(scale.eye.x), gl.Float(scale.eye.y), gl.Float(scale.eye.z))
   gl.uniform3f(renderer.location_ribbon_forward,
     gl.Float(scale.forward.x), gl.Float(scale.forward.y), gl.Float(scale.forward.z))
-  gl.uniform1f(renderer.location_ribbon_depth_near, gl.Float(scale.depth_near))
-  gl.uniform1f(renderer.location_ribbon_tangent, gl.Float(scale.tangent_half_view))
-  gl.uniform1f(renderer.location_ribbon_height, gl.Float(scale.height_pixels))
+  gl.uniform1f(renderer.location_ribbon_depth_near, gl.Float(scale.depthNear))
+  gl.uniform1f(renderer.location_ribbon_tangent, gl.Float(scale.tangentHalfView))
+  gl.uniform1f(renderer.location_ribbon_height, gl.Float(scale.heightPixels))
   # Set furniture fog's two radii, for fragment stage's fade.
   #   One schedule per frame, from same rule placement cuts chords with.
-  let fog = fogFurnitureFor(scale.extent_furniture)
+  let fog = fogFurnitureFor(scale.extentFurniture)
   gl.uniform1f(renderer.location_ribbon_fog_full, gl.Float(fog.radius_full))
   gl.uniform1f(renderer.location_ribbon_fog_gone, gl.Float(fog.radius_gone))
   renderer.uploadRibbons(meshes)
@@ -808,9 +808,9 @@ proc drawMeshes*(
     gl.Float(scale.eye.x), gl.Float(scale.eye.y), gl.Float(scale.eye.z))
   gl.uniform3f(renderer.location_ring_forward,
     gl.Float(scale.forward.x), gl.Float(scale.forward.y), gl.Float(scale.forward.z))
-  gl.uniform1f(renderer.location_ring_depth_near, gl.Float(scale.depth_near))
-  gl.uniform1f(renderer.location_ring_tangent, gl.Float(scale.tangent_half_view))
-  gl.uniform1f(renderer.location_ring_height, gl.Float(scale.height_pixels))
+  gl.uniform1f(renderer.location_ring_depth_near, gl.Float(scale.depthNear))
+  gl.uniform1f(renderer.location_ring_tangent, gl.Float(scale.tangentHalfView))
+  gl.uniform1f(renderer.location_ring_height, gl.Float(scale.heightPixels))
   renderer.uploadWashes(meshes)
 
   # Draw opaque kinds first, so they own depth buffer.

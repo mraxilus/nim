@@ -746,7 +746,7 @@ than `SECONDS_STEP_PULSE_MAX` = 0.1 s is an absence, not a frame (83 px in one f
 the cap, 1 px after). The advance belongs to "this slot was drawn this frame": a bridge that
 returned before advancing when a rails marker at phase 0 produced no run left lines with no
 comet for a whole round while planes pulsed. The two exports share one shaped marker
-(`g_shaped_marker`, boxed behind a `ref` — held by value the memo's own store and read
+(`MARKER_SHAPED`, boxed behind a `ref` — held by value the memo's own store and read
 deep-copied the variant twice and measured as slow as the shaping it replaced). The desktop
 fill needs a **fixed winding** (`gui_shim.guiOverlayRibbon` imposes it): Dear ImGui's fill
 offsets each edge outward for one winding and inward for the other, and a ribbon handed the
@@ -962,7 +962,7 @@ a selection exists a tap (`TAP_MAX_MS` 350, in JS because a tap timeout is local
 another in or out; a tap on empty space clears. `pointercancel` cancels. `nimClearHover` runs
 once the last finger lifts, or the last reading sits stale forever. Accepted cost: a finger
 starting on the ground plane's disc constructs rather than orbiting — the same trade the
-mouse makes. `g_selection` (Nim) is the sole source of truth; `glue.js` keeps only a render
+mouse makes. `SELECTION` (Nim) is the sole source of truth; `glue.js` keeps only a render
 snapshot refreshed when the selection changes.
 
 **A picker offers symbols alone** (`notationSymbolic`), not the whole catalogue entry, and
@@ -1171,7 +1171,7 @@ like a read and none shows up in an allocation grep:
   pair is `isVisible`/`setVisible`, plain.
 - `MeshSet`s live at module scope and are cleared, never re-declared: re-declaring measured
   ~90 ms a frame regardless of item count.
-- **Binding a value type copies it.** `let placed = g_placed[slot]` deep-copies; the slot is
+- **Binding a value type copies it.** `let placed = PLACEMENTS[slot]` deep-copies; the slot is
   indexed where used and `emitObject` takes `var Placed` because nothing writes it. Every
   flatten and vertex walk aliases with `template r: untyped = records[i]`. `Ink.colour`
   returns `lent` (returned by value it was 8% of a moving frame at 5,038 objects); a
@@ -1198,11 +1198,11 @@ aspect, `scene.revision`, `Selection.revision` and the debug flag; where it matc
 frame's, the bridge skips the tessellation, **the flattens and the uploads together** (held
 separately they buy nothing). Three states refuse the hold: a ghost or drag preview follows
 the pointer; the debug layer draws the cursor's ray; an item still inside its appear
-animation is drawn differently every frame — read off `g_born_last`, a watermark carried by
+animation is drawn differently every frame — read off `BORN_LAST`, a watermark carried by
 `stampBorn`, rather than by scanning every stamp. Refusing costs one rebuilt frame; holding
 wrongly freezes the picture. Under the demo, still camera: the bridge's build 18.2 → 0.6 ms.
 
-**Placement is cached per slot across camera moves.** `g_placed` holds `placeObject`'s
+**Placement is cached per slot across camera moves.** `PLACEMENTS` holds `placeObject`'s
 answer per slot, refreshed for slots stamped since the last fill (see Scene Storage).
 Orbiting the 1,024-object demo the scene phase went 17.1 → 2.6 ms; placing was 12.0 of the
 17.1.
@@ -1386,7 +1386,7 @@ from the *rendered* colour; the far end reached at the whole frame; the three ra
 third each to 1e-9; the marks appearing only once the window holds a frame that slow; the
 presence rule fed nothing but zeros and negatives, guard-run against the old rule; only the
 outermost branch laid out after one click (`offsetParent` is null inside a `position: fixed`
-drawer, so the check asks the branch's `.diag-children` for its computed `display`).
+drawer, so the check asks the branch's `.diagnostic-children` for its computed `display`).
 Verified by `check_ramp` on every run: the four ramp floors. Assumed: that 200 ms is the
 right settling window; it is the conventional one.
 
@@ -1500,7 +1500,7 @@ Handed framebuffer dimensions it converted positions back down per point while u
 length raw, so a marker's size scaled with the device pixel ratio; `RADIUS_PICK_POINT` on a
 Pixel 5 went from ~13.6 to a measured 34.0 CSS px with no change to `picking.nim`.
 
-**Chip row** (always visible): brand/drawer toggle, undo and redo as bordered `.btn`
+**Chip row** (always visible): brand/drawer toggle, undo and redo as bordered `.button`
 rectangles, axes and grid as a segmented `.toggles` pill, then a `☰` menu holding the rare
 file actions. A pill shows state, a bordered rectangle is a momentary action. Below 520 px the
 brand label drops to its mark alone; the breakpoint was 480 and wrong by 39 px, found by

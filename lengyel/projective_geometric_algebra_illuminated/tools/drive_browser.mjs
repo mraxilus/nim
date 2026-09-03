@@ -84,7 +84,7 @@ async function clearTheGlass() {
   await page.evaluate(() => {
     clearSelection();
     hideSelectionMenu();
-    if (drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+    if (drawer.classList.contains('open')) document.getElementById('button-drawer').click();
   });
   await page.waitForTimeout(200);
 }
@@ -467,7 +467,7 @@ report(
   `slots ${JSON.stringify(slots_now)}`,
 );
 
-await page.click('#btn-drawer');
+await page.click('#button-drawer');
 // **And apply section, because that is where pickers are.** They are filled when
 //   their own section opens rather than on every scene change: one `<option>` per object per
 //   picker is ten thousand elements at largest size, and building them for collapsed
@@ -508,7 +508,7 @@ const applied = await page.evaluate(() => {
   document.getElementById('op-first').value = '0';
   document.getElementById('op-second').value = '1';
   const operation = parseInt(document.getElementById('op-select').value, 10);
-  document.getElementById('btn-apply').click();
+  document.getElementById('button-apply').click();
   return { operation, first: slots[0], second: slots[1] };
 });
 await page.waitForTimeout(300);
@@ -712,7 +712,7 @@ await page.evaluate(() => showHelp(true));
 await page.waitForTimeout(200);
 await page.mouse.click(SIZE_VIEW.width / 2, SIZE_VIEW.height - 80);
 await page.waitForTimeout(200);
-await page.click('#btn-drawer');
+await page.click('#button-drawer');
 await page.waitForTimeout(200);
 report(
   'the help stays open while the reader uses what it describes',
@@ -1029,7 +1029,7 @@ const glass_before = await page.evaluate(() => {
   const section = document.querySelector('.section[data-section="diagnostics"]');
   const was = { drawer: drawer.classList.contains('open'),
     section: section.classList.contains('open') };
-  if (!was.drawer) document.getElementById('btn-drawer').click();
+  if (!was.drawer) document.getElementById('button-drawer').click();
   if (!was.section) section.querySelector('.section-header').click();
   return was;
 });
@@ -1041,9 +1041,9 @@ await page.waitForTimeout(500);
 // are checked to be idle first, then opened way reader opens them, and only then
 // checked to be live. Without first half tree that never closed would pass.
 const rows_closed = await page.evaluate(() => ({
-  is_open: document.querySelector('.diag-node[data-node="build"]').classList.contains('open'),
+  is_open: document.querySelector('.diagnostic-node[data-node="build"]').classList.contains('open'),
   children: ['furniture', 'scene', 'flatten']
-    .map((n) => document.getElementById('diag-' + n).textContent),
+    .map((n) => document.getElementById('diagnostic-' + n).textContent),
 }));
 report(
   'the frame-time breakdown starts collapsed',
@@ -1051,12 +1051,12 @@ report(
   `node open ${rows_closed.is_open}, children ${JSON.stringify(rows_closed.children)}`,
 );
 await page.evaluate(() =>
-  document.querySelector('.diag-node[data-node="build"] .diag-parent').click());
+  document.querySelector('.diagnostic-node[data-node="build"] .diagnostic-parent').click());
 await page.waitForTimeout(400);
 const row_texts = await page.evaluate(() => Object.fromEntries(
   ['build', 'camera', 'furniture', 'scene', 'matrix', 'flatten', 'unaccounted',
     'placing', 'emitting', 'hover', 'upload', 'overlay', 'ui']
-    .map((n) => [n, document.getElementById('diag-' + n).textContent])
+    .map((n) => [n, document.getElementById('diagnostic-' + n).textContent])
 ));
 report(
   'every drawing step has a live row once its branch is opened',
@@ -1079,15 +1079,15 @@ const nested = await page.evaluate(() => {
   //   `offsetParent` null whatever branch is doing, so it cannot tell open branch from
   //   shut one.
   const laid = (id) => getComputedStyle(
-    document.getElementById(id).closest('.diag-children')).display !== 'none';
+    document.getElementById(id).closest('.diagnostic-children')).display !== 'none';
   const turned = (node) => getComputedStyle(document.querySelector(
-    '.diag-node[data-node="' + node + '"] > .diag-parent .chev')).transform !== 'none';
+    '.diagnostic-node[data-node="' + node + '"] > .diagnostic-parent .chev')).transform !== 'none';
   const shut = {
-    grid: laid('diag-grid'), points: laid('diag-points'),
+    grid: laid('diagnostic-grid'), points: laid('diagnostic-points'),
     scenery_turned: turned('furniture'), scene_turned: turned('scene'),
   };
 
-  document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click();
+  document.querySelector('.diagnostic-node[data-node="scene"] > .diagnostic-parent').click();
   return shut;
 });
 // Read after chevron's own turn has finished.
@@ -1096,13 +1096,13 @@ const nested = await page.evaluate(() => {
 await page.waitForTimeout(700);
 const nested_open = await page.evaluate(() => {
   const laid = (id) => getComputedStyle(
-    document.getElementById(id).closest('.diag-children')).display !== 'none';
+    document.getElementById(id).closest('.diagnostic-children')).display !== 'none';
   const turned = (node) => getComputedStyle(document.querySelector(
-    '.diag-node[data-node="' + node + '"] > .diag-parent .chev')).transform !== 'none';
+    '.diagnostic-node[data-node="' + node + '"] > .diagnostic-parent .chev')).transform !== 'none';
   return {
-    points: laid('diag-points'), grid: laid('diag-grid'),
+    points: laid('diagnostic-points'), grid: laid('diagnostic-grid'),
     scene_turned: turned('scene'), scenery_turned: turned('furniture'),
-    reading: document.getElementById('diag-points').textContent,
+    reading: document.getElementById('diagnostic-points').textContent,
   };
 });
 report(
@@ -1122,11 +1122,11 @@ report(
 // `scenery` opened too, for checks below which read every row; then drawer and
 // section are put back exactly as this check found them.
 await page.evaluate((was) => {
-  document.querySelector('.diag-node[data-node="furniture"] > .diag-parent').click();
+  document.querySelector('.diagnostic-node[data-node="furniture"] > .diagnostic-parent').click();
   const drawer = document.querySelector('.drawer');
   const section = document.querySelector('.section[data-section="diagnostics"]');
   if (drawer.classList.contains('open') !== was.drawer) {
-    document.getElementById('btn-drawer').click();
+    document.getElementById('button-drawer').click();
   }
   if (section.classList.contains('open') !== was.section) {
     section.querySelector('.section-header').click();
@@ -1283,7 +1283,7 @@ const reach = await page.evaluate(() => {
       if (x > rightmost) rightmost = x;
     }
   }
-  const said = document.getElementById('diag-exceedance-axis').textContent;
+  const said = document.getElementById('diagnostic-exceedance-axis').textContent;
   return {
     top, bottom, rightmost, height: canvas.height, width: canvas.width,
     milliseconds: Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]),
@@ -1314,7 +1314,7 @@ await page.evaluate(() => {
 });
 await settleAxis();
 const floored = await page.evaluate(() => {
-  const said = document.getElementById('diag-exceedance-axis').textContent;
+  const said = document.getElementById('diagnostic-exceedance-axis').textContent;
   return Number((said.match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]);
 });
 report(
@@ -1444,11 +1444,11 @@ report(
 // shut node's rows would be read stale.
 await page.evaluate(() => {
   const drawer = document.querySelector('.drawer');
-  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  if (!drawer.classList.contains('open')) document.getElementById('button-drawer').click();
   const section = document.querySelector('.section[data-section="diagnostics"]');
   if (!section.classList.contains('open')) section.querySelector('.section-header').click();
-  for (const node of document.querySelectorAll('.diag-node')) {
-    if (!node.classList.contains('open')) node.querySelector(':scope > .diag-parent').click();
+  for (const node of document.querySelectorAll('.diagnostic-node')) {
+    if (!node.classList.contains('open')) node.querySelector(':scope > .diagnostic-parent').click();
   }
 });
 await page.waitForTimeout(600);
@@ -1672,7 +1672,7 @@ report(
 //   middle rather than jumped.
 const axis_reading = () => page.evaluate(() => {
   drawExceedance();
-  return Number((document.getElementById('diag-exceedance-axis').textContent
+  return Number((document.getElementById('diagnostic-exceedance-axis').textContent
     .match(/0\u2013(\d+(?:\.\d+)?) ms/) || [])[1]);
 });
 await page.evaluate(() => {
@@ -1730,7 +1730,7 @@ const axes_curve = await page.evaluate(async () => {
     return rows.join(',');
   };
   const pill = document.getElementById('toggle-exceedance-log');
-  const caption = document.getElementById('diag-exceedance-axis');
+  const caption = document.getElementById('diagnostic-exceedance-axis');
   drawExceedance();
   const linear = { rows: inked(), said: caption.textContent, on: pill.classList.contains('on') };
   pill.click();
@@ -1781,7 +1781,7 @@ const restoreRings = (kept) => page.evaluate((k) => {
 
 const kept_rings = await keepRings();
 const unmeasured = await page.evaluate(() => {
-  for (const node of document.querySelectorAll('.diag-node')) node.classList.add('open');
+  for (const node of document.querySelectorAll('.diagnostic-node')) node.classList.add('open');
   // Frame ring is advanced first and phases written into it after, exactly as.
   //   draw loop does it, so slots line up way they really would.
   for (let i = 0; i < 240; i += 1) {
@@ -1790,7 +1790,7 @@ const unmeasured = await page.evaluate(() => {
   }
   refreshDiagnostics();
   return {
-    text: document.getElementById('diag-sky').textContent,
+    text: document.getElementById('diagnostic-sky').textContent,
     median: medianPhase('sky'),
   };
 });
@@ -1805,14 +1805,14 @@ report(
 // with phase that alternates between 1 ms and 9 ms every frame: newest frame is
 // always one or other, and only averaged reading lands between them.
 const smoothed = await page.evaluate(() => {
-  for (const node of document.querySelectorAll('.diag-node')) node.classList.add('open');
+  for (const node of document.querySelectorAll('.diagnostic-node')) node.classList.add('open');
   for (let i = 0; i < 240; i += 1) {
     recordFrameTime(16.7);
     recordPhaseTime('overlay', i % 2 === 0 ? 1 : 9);
   }
   refreshDiagnostics();
   return {
-    text: document.getElementById('diag-overlay').textContent,
+    text: document.getElementById('diagnostic-overlay').textContent,
     frames: framesRecent(),
   };
 });
@@ -1946,13 +1946,13 @@ report(
     `over ${kinds.length ? kinds[kinds.length - 1].counted : '?'} objects`,
 );
 await page.evaluate(() =>
-  document.querySelector('.diag-node[data-node="furniture"] > .diag-parent').click());
+  document.querySelector('.diagnostic-node[data-node="furniture"] > .diagnostic-parent').click());
 await page.waitForTimeout(400);
 const readRow = (names) => page.evaluate((given) => Object.fromEntries(given.map((n) => {
-  const value = document.getElementById('diag-' + n);
+  const value = document.getElementById('diagnostic-' + n);
   return [n, {
     value: value.textContent,
-    label: value.closest('.diag-line').querySelector('span').textContent,
+    label: value.closest('.diagnostic-line').querySelector('span').textContent,
   }];
 })), names);
 const rows_scenery = await readRow(['grid', 'axes']);
@@ -1967,7 +1967,7 @@ report(
 );
 
 await page.evaluate(() =>
-  document.querySelector('.diag-node[data-node="scene"] > .diag-parent').click());
+  document.querySelector('.diagnostic-node[data-node="scene"] > .diagnostic-parent').click());
 await page.waitForTimeout(400);
 const rows_kind = await readRow(['points', 'lines', 'planes', 'sky', 'ghost', 'selected']);
 report(
@@ -2531,12 +2531,12 @@ const covered = await page.evaluate(() => {
   const drawer = document.querySelector('.drawer');
   const boxOf = () => ruler.getBoundingClientRect();
   const closed = boxOf();
-  document.getElementById('btn-drawer').click();
+  document.getElementById('button-drawer').click();
   const open = boxOf();
-  const layer = (el) => Number(getComputedStyle(el).zIndex);
+  const layer = (element) => Number(getComputedStyle(element).zIndex);
   const shown = getComputedStyle(ruler).display !== 'none' &&
     getComputedStyle(ruler).visibility !== 'hidden' && !ruler.hidden;
-  document.getElementById('btn-drawer').click(); // Leave it as it was found.
+  document.getElementById('button-drawer').click(); // Leave it as it was found.
   return {
     moved: Math.abs(open.left - closed.left) + Math.abs(open.top - closed.top),
     shown, ruler: layer(ruler), drawer: layer(drawer), width: open.width,
@@ -2650,7 +2650,7 @@ await page.waitForTimeout(200);
 // expensive half and call to it is call nobody asked for.
 await page.evaluate(() => {
   if (document.getElementById('drawer').classList.contains('open')) {
-    document.getElementById('btn-drawer').click();
+    document.getElementById('button-drawer').click();
   }
   window.__cells = 0;
   const original = globalThis.nimPoolCellColors;
@@ -2674,7 +2674,7 @@ report(
 //   Section has to be opened too: tick returns immediately while it is collapsed, so
 //   check that only opens drawer proves nothing about gate it names.
 await page.evaluate(() => {
-  document.getElementById('btn-drawer').click();
+  document.getElementById('button-drawer').click();
   document.querySelector('.section[data-section="diagnostics"]').classList.add('open');
   window.__cells = 0;
 });
@@ -2732,7 +2732,7 @@ report(
 );
 await page.evaluate(() => {
   if (document.getElementById('drawer').classList.contains('open')) {
-    document.getElementById('btn-drawer').click();
+    document.getElementById('button-drawer').click();
   }
 });
 await page.waitForTimeout(200);
@@ -2798,9 +2798,9 @@ const ITEMS_DEMO_LOAD = await page.evaluate(
   () => nimDemoItems(nimDemoScales()[nimDemoScales().length - 1]));
 // One button per size, so size asked for names button that loads it.
 const loadDemo = async (items) => {
-  await page.click('#btn-menu');
-  await page.click(`#btn-load-demo-${items}`);
-  await page.click('#btn-menu'); // Shut popover again, as reader would.
+  await page.click('#button-menu');
+  await page.click(`#button-load-demo-${items}`);
+  await page.click('#button-menu'); // Shut popover again, as reader would.
   await page.waitForFunction((n) => nimSceneCount() === n, items, { timeout: 120000 });
   await page.waitForTimeout(600);
 };
@@ -3018,7 +3018,7 @@ await page.waitForTimeout(300);
 await page.evaluate(() => {
   const drawer = document.getElementById('drawer');
   const section = document.querySelector('.section[data-section="diagnostics"]');
-  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  if (!drawer.classList.contains('open')) document.getElementById('button-drawer').click();
   if (!section.classList.contains('open')) section.querySelector('.section-header').click();
 });
 await page.waitForTimeout(300);
@@ -3126,7 +3126,7 @@ report(
 await page.evaluate(() => {
   const drawer = document.getElementById('drawer');
   const section = document.querySelector('.section[data-section="objects"]');
-  if (!drawer.classList.contains('open')) document.getElementById('btn-drawer').click();
+  if (!drawer.classList.contains('open')) document.getElementById('button-drawer').click();
   if (!section.classList.contains('open')) section.querySelector('.section-header').click();
 });
 //   Waited against scene's own count rather than size that was loaded: refusal
@@ -3213,9 +3213,9 @@ report(
 const tick_writes = await page.evaluate(async () => {
   const wait = (n) => new Promise((r) => setTimeout(r, n));
   if (!document.getElementById('drawer').classList.contains('open')) {
-    document.getElementById('btn-drawer').click();
+    document.getElementById('button-drawer').click();
   }
-  for (const n of document.querySelectorAll('.diag-node')) n.classList.add('open');
+  for (const n of document.querySelectorAll('.diagnostic-node')) n.classList.add('open');
   await wait(400);
   const descriptor = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
   let writes = 0;
@@ -3234,7 +3234,7 @@ const tick_writes = await page.evaluate(async () => {
   globalThis.refreshDiagnostics = original;
   Object.defineProperty(Node.prototype, 'textContent', descriptor);
   return { ticks: per_tick.length, worst: Math.max(0, ...per_tick),
-    rows: document.querySelectorAll('[id^="diag-"]').length };
+    rows: document.querySelectorAll('[id^="diagnostic-"]').length };
 });
 report(
   'the diagnostics tick writes only the rows that moved',
@@ -3337,7 +3337,7 @@ report(
 
 await page.evaluate(() => {
   if (document.getElementById('drawer').classList.contains('open')) {
-    document.getElementById('btn-drawer').click();
+    document.getElementById('button-drawer').click();
   }
 });
 

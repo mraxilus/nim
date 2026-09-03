@@ -400,9 +400,9 @@ proc main() =
     lightness_value = lightness_label + LIFT_VALUE_RAMP*(lightness_ink - lightness_label)
   var failures = 0
 
-  template report(passed: bool, message: string) =
-    echo (if passed: "  ok   " else: " FAIL  ") & message
-    if not passed: inc failures
+  template report(is_passed: bool, message: string) =
+    echo (if is_passed: "  ok   " else: " FAIL  ") & message
+    if not is_passed: inc failures
 
   echo &"Lightness: label {lightness_label:.4f}, value {lightness_value:.4f} " &
     &"(--ink {lightness_ink:.4f}, lift {LIFT_VALUE_RAMP})."

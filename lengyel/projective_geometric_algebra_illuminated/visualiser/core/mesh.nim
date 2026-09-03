@@ -1,7 +1,7 @@
 ## Turn RGA objects into records and vertices renderer can draw, natively or in browser.
 ##
 ## Finite objects are tessellated about support point, i.e. point nearest origin.
-##   Line becomes segment along its attitude: `DrawExtent.radius_horizon` backward from
+##   Line becomes segment along its attitude: `DrawExtent.radiusHorizon` backward from
 ##   support, same radius forward from eye, so forward end lands exactly on
 ##   `eye + radius_horizon*axis`, where horizon marker for its attitude would be drawn.
 ##   Plane becomes flat translucent disc at fixed radius (`EXTENT_PLANE`) plus rim marking
@@ -9,13 +9,13 @@
 ##     Fixed rather than camera-relative, so plane holds one size in world units as
 ##     camera dollies or orbits.
 ## Object at horizon (infinitely far, no support point) is drawn fixed to `DrawExtent.eye`
-## at `DrawExtent.radius_horizon`, near far clip plane.
+## at `DrawExtent.radiusHorizon`, near far clip plane.
 ##   Point becomes marker standing in fixed direction; line becomes great circle of
 ##   directions its pencil spans; plane, unique universal whole-sky object every plane at
 ##   horizon is, becomes dome over entire sky.
 ##   Fixed to eye rather than origin, so orbiting or dollying leaves each in same apparent
 ##   direction, as real stars would.
-## World furniture (ground grid, world axes) reaches `DrawExtent.extent_furniture`.
+## World furniture (ground grid, world axes) reaches `DrawExtent.extentFurniture`.
 ##   Tied to far clip distance rather than orbit distance (`extentFurnitureFor`), so it
 ##   reads as extending indefinitely.
 ##   Drawn as fog about eye (`fogFurnitureFor`): solid nearby, faded to nothing at that
@@ -435,7 +435,7 @@ func radiansPerPixel*(scale: DrawScale): float =
   ##   Small-angle reading of `worldPerPixelAt` at unit depth, right unit for anything
   ##   placed by *direction*: horizon geometry sits on sphere about eye, where pixel is
   ##   angle and not distance.
-  2.0*scale.tangent_half_view/float(max(scale.height_pixels, 1))
+  2.0*scale.tangentHalfView/float(max(scale.heightPixels, 1))
 
 
 func worldPerPixelAt*(place: Position, scale: DrawScale): float =
@@ -446,8 +446,8 @@ func worldPerPixelAt*(place: Position, scale: DrawScale): float =
   ##   two differ by cosine of off-axis angle, over percent even near middle of frame.
   ##   Clamped at near plane: depth goes negative behind eye, and negative half-width
   ##   folds ribbon over on itself.
-  let depth = max(dot(place - scale.eye, scale.forward), scale.depth_near)
-  2.0*depth*scale.tangent_half_view/float(max(scale.height_pixels, 1))
+  let depth = max(dot(place - scale.eye, scale.forward), scale.depthNear)
+  2.0*depth*scale.tangentHalfView/float(max(scale.heightPixels, 1))
 
 
 func radiusHorizonFor*(distance_far: float): float =
@@ -766,18 +766,18 @@ func expandRibbon*(record: RibbonRecord, scale: DrawScale): array[6, Vertex] =
     depth_tail = dot(tail - scale.eye, scale.forward)
     depth_head = dot(head - scale.eye, scale.forward)
     across = directionAcross(tail, head, scale.eye)
-  if (depth_tail < scale.depth_near and depth_head < scale.depth_near) or across.isNone:
+  if (depth_tail < scale.depthNear and depth_head < scale.depthNear) or across.isNone:
     return
 
   var
     (near, far) = (tail, head)
     (tint_near, tint_far) = (tint_tail, tint_head)
-  if depth_tail < scale.depth_near:
-    let fraction = (scale.depth_near - depth_tail)/(depth_head - depth_tail)
+  if depth_tail < scale.depthNear:
+    let fraction = (scale.depthNear - depth_tail)/(depth_head - depth_tail)
     near = tail + fraction*(head - tail)
     tint_near = blend(tint_tail, tint_head, fraction)
-  elif depth_head < scale.depth_near:
-    let fraction = (scale.depth_near - depth_head)/(depth_tail - depth_head)
+  elif depth_head < scale.depthNear:
+    let fraction = (scale.depthNear - depth_head)/(depth_tail - depth_head)
     far = head + fraction*(tail - head)
     tint_far = blend(tint_head, tint_tail, fraction)
 

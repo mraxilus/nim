@@ -140,7 +140,7 @@
     stroke: var(--border);
   }
   /* Wedge cursor stands in, in same accent every other "this one is in force"
-     control on page wears (`.btn.on`, `.help-tab.on`), on both border and
+     control on page wears (`.button.on`, `.help-tab.on`), on both border and
      label -- so highlight survives reader who cannot tell one hue from another. */
   .menu-wedge.on { stroke: var(--accent); }
   .menu-wedge-label.on { fill: var(--accent-ink); }
@@ -213,11 +213,11 @@
     border-radius: 999px;
     padding: 5px;
   }
-  /* `.diag-toggle` wears same pill as header chips at caption row's own scale:
+  /* `.diagnostic-toggle` wears same pill as header chips at caption row's own scale:
      control that changes what chart above it means should be recognisably same
      kind of thing as controls that change what scene shows. Shared rather than
      copied, so change to chip is change to both. */
-  .toggles button, .diag-toggle {
+  .toggles button, .diagnostic-toggle {
     appearance: none;
     border: 1px solid transparent;
     background: transparent;
@@ -229,12 +229,12 @@
     border-radius: 999px;
     line-height: 1;
   }
-  .toggles button.on, .diag-toggle.on {
+  .toggles button.on, .diagnostic-toggle.on {
     background: rgba(0, 167, 165, 0.16);
     border-color: var(--accent);
     color: var(--accent-ink);
   }
-  .toggles button:focus-visible, .diag-toggle:focus-visible {
+  .toggles button:focus-visible, .diagnostic-toggle:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -242,7 +242,7 @@
      because `.toggles` draws bordered pill around group; there is no group here, and
      without resting border and surface of its own this one renders as word "log" in
      caption's own ink, indistinguishable from caption it sits in. */
-  .diag-toggle {
+  .diagnostic-toggle {
     font-size: 9.5px;
     padding: 2px 7px;
     color: var(--ink-muted);
@@ -544,7 +544,7 @@
 
   /* ---- Drawer toggle (panel open/close) -- merged onto .brand itself, so this
      ---- rule now only supplies its own open-state accent on top of .brand's base look. */
-  .drawer-toggle.on, #btn-menu.on { border-color: var(--accent); color: var(--accent-ink); }
+  .drawer-toggle.on, #button-menu.on { border-color: var(--accent); color: var(--accent-ink); }
 
   /* ---- Drawer: whole panel stack ----
      On **left**, and slid in from left, because that is side desktop
@@ -666,7 +666,7 @@
   input[type="number"] { font-variant-numeric: tabular-nums; }
   select { appearance: none; }
 
-  .btn {
+  .button {
     appearance: none;
     background: var(--surface-solid);
     border: 1px solid var(--border);
@@ -678,17 +678,17 @@
     padding: 8px 12px;
     cursor: pointer;
   }
-  .btn:active { background: #222a35; }
-  .btn:disabled { opacity: 0.4; cursor: default; }
-  .btn.primary {
+  .button:active { background: #222a35; }
+  .button:disabled { opacity: 0.4; cursor: default; }
+  .button.primary {
     background: rgba(0, 167, 165, 0.18);
     border-color: var(--accent);
     color: var(--accent-ink);
   }
-  #btn-apply { margin-top: 10px; } /* hr.rule elsewhere in this drawer uses same
+  #button-apply { margin-top: 10px; } /* hr.rule elsewhere in this drawer uses same
     10px margin; operand field-row directly above has no <hr> of its own now that
     "operate" no longer shares section with "add". */
-  .btn.danger { color: var(--danger); }
+  .button.danger { color: var(--danger); }
 
   .check-row {
     display: flex;
@@ -771,7 +771,7 @@
   /* Row being composed has no object behind it yet -- mark it so unsaved row is
      never mistaken for one that already exists. */
   .item-row.pending-item { border-left: 2px solid var(--accent); padding-left: 8px; }
-  .item-coeff {
+  .item-coefficient {
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--ink-faint);
@@ -784,34 +784,34 @@
      grade 2 in this build's own 4D rigid PGA has 6 members, more than comfortably fits
      one line at drawer's own width, so grade's own row wraps onto second line
      rather than letting fixed column count cut across grade boundaries instead. */
-  .coeff-grid { display: flex; flex-direction: column; gap: 6px; }
-  .coeff-grid .field { margin-bottom: 0; }
-  .coeff-grid label { font-size: 8.5px; }
-  .coeff-grid input { padding: 5px 5px; font-size: 10.5px; }
-  .coeff-grade-row { display: flex; flex-wrap: wrap; gap: 5px; }
-  .coeff-grade-row .field { flex: 1 1 56px; min-width: 56px; }
+  .coefficient-grid { display: flex; flex-direction: column; gap: 6px; }
+  .coefficient-grid .field { margin-bottom: 0; }
+  .coefficient-grid label { font-size: 8.5px; }
+  .coefficient-grid input { padding: 5px 5px; font-size: 10.5px; }
+  .coefficient-grade-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .coefficient-grade-row .field { flex: 1 1 56px; min-width: 56px; }
   .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
   /* ---- Diagnostics ---- */
-  .diag-line {
+  .diagnostic-line {
     font-size: 11.5px;
     color: var(--ink-muted);
     margin: 6px 0;
     display: flex;
     justify-content: space-between;
   }
-  .diag-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .diagnostic-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
   /* Parent row is button so it is reachable by keyboard and announced as one, and is
      otherwise same row: chevron and its rotation match section headers above,
      since both answer "there is more under here". */
-  .diag-parent {
+  .diagnostic-parent {
     appearance: none;
     background: none;
     border: none;
     padding: 0;
     width: 100%;
     /* Family and weight only, never `font` shorthand: that resets `font-size` too,
-       and `.diag-line`'s own 11.5px is size every sibling row is read at. */
+       and `.diagnostic-line`'s own 11.5px is size every sibling row is read at. */
     font-family: inherit;
     font-weight: inherit;
     text-align: left;
@@ -822,7 +822,7 @@
      to press anything; reader has to be able to tell at glance which rows open. Its
      own row is hit target, which is full drawer width, so glyph only has to
      be legible rather than large enough to hit. */
-  .diag-parent .chev {
+  .diagnostic-parent .chev {
     display: inline-block;
     width: 14px;
     /* Inherited so chevron joins its own row's cost tint. Untinted that is row's
@@ -832,21 +832,21 @@
     font-size: 10px;
     transition: transform var(--anim) var(--ease);
   }
-  .diag-parent:hover .chev, .diag-parent:focus-visible .chev { color: var(--accent); }
-  .diag-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .diagnostic-parent:hover .chev, .diagnostic-parent:focus-visible .chev { color: var(--accent); }
+  .diagnostic-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* **`>`, not descendant combinator.** These nodes nest, and descendant selector
-     matched every `.diag-children` and every `.chev` *below* open node -- so opening
+     matched every `.diagnostic-children` and every `.chev` *below* open node -- so opening
      `build` revealed whole tree at once and rotated all three chevrons, while
      `isPhaseShown` went on correctly reporting inner nodes closed and never wrote
      their rows. Result read as tree whose deeper rows were permanently broken: every
      one of them on screen, expanded, and showing em dash. Node's own class must reach
      its own children and stop there. */
-  .diag-node.open > .diag-parent .chev { transform: rotate(90deg); }
+  .diagnostic-node.open > .diagnostic-parent .chev { transform: rotate(90deg); }
   /* Which module to open when row is expensive one. Dim and small: it answers
      question reader only asks once they have found row, so it must not compete with
      row's own name for first glance. `currentColor` so it takes cost tint with
      rest of row rather than staying grey against red label. */
-  .diag-where {
+  .diagnostic-where {
     margin-left: 6px;
     font-size: 9.5px;
     font-family: var(--mono);
@@ -855,7 +855,7 @@
   /* Second cut through same milliseconds. Rule and word rather than nested
      node, because these are not children of anything above them -- indenting them under
      `build` would read as double counting very time they are re-dividing. */
-  .diag-cut {
+  .diagnostic-cut {
     margin: 10px 0 2px;
     padding-top: 6px;
     border-top: 1px solid var(--border);
@@ -864,14 +864,14 @@
     text-transform: uppercase;
     color: var(--ink-faint);
   }
-  .diag-cut-row { padding-left: 12px; }
-  .diag-children { display: none; padding-left: 12px; }
-  .diag-node.open > .diag-children { display: block; }
+  .diagnostic-cut-row { padding-left: 12px; }
+  .diagnostic-children { display: none; padding-left: 12px; }
+  .diagnostic-node.open > .diagnostic-children { display: block; }
   .sparkline { width: 100%; height: 40px; display: block; }
   .exceedance { width: 100%; height: 74px; display: block; }
   /* Curve's own caption, in row idiom numbers below it use, so legend and
      readings read as one column rather than as chart with label stuck on. */
-  .diag-legend {
+  .diagnostic-legend {
     font-size: 10.5px;
     color: var(--ink-faint);
     margin: 2px 0 8px;
@@ -881,8 +881,8 @@
     gap: 2px 8px;
     justify-content: space-between;
   }
-  .diag-legend-axis { display: flex; align-items: center; gap: 6px; }
-  .diag-legend b { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .diagnostic-legend-axis { display: flex; align-items: center; gap: 6px; }
+  .diagnostic-legend b { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
   /* Row ramp's own key: ramp itself, as bar. Its gradient is set by glue.js
      from very table rows are tinted out of, so key cannot come to show ramp
      tree no longer uses -- reason four band swatches it replaced were built
@@ -966,7 +966,7 @@
   .selection-menu-close { padding: 9px 11px; }
 
   /* ---- Top menu -- rare, file-management-flavored actions only (save/load scene,
-     save PNG/load demo): popover under #btn-menu, same fixed/blurred/bordered look as
+     save PNG/load demo): popover under #button-menu, same fixed/blurred/bordered look as
      .selection-menu. Undo/redo and axes/grid stay live in chip-row instead --
      two things reached for constantly during editing shouldn't cost extra click. ---- */
   .top-menu {
@@ -985,7 +985,7 @@
   }
   .top-menu.show { display: flex; }
   .top-menu-group { display: flex; gap: 6px; }
-  .top-menu .btn { flex: 1; white-space: nowrap; }
+  .top-menu .button { flex: 1; white-space: nowrap; }
   .top-menu-title {
     font-size: 10px;
     text-transform: uppercase;
@@ -999,7 +999,7 @@
     border-top: 1px solid var(--border);
   }
 
-  /* ---- Chip-row action buttons (undo/redo) -- plain bordered .btn look, deliberately
+  /* ---- Chip-row action buttons (undo/redo) -- plain bordered .button look, deliberately
      distinct from .toggles' pill/segmented look below: bordered rectangle reads as
      "press this, something happens once"; pill reads as "this shows current state." ---- */
   .action-group { display: flex; gap: 6px; }
@@ -1013,15 +1013,15 @@
 
 <div class="veil">
   <div class="chip-row">
-    <button class="brand drawer-toggle" id="btn-drawer" type="button">
+    <button class="brand drawer-toggle" id="button-drawer" type="button">
       <span class="mark" aria-hidden="true"></span>
       <span class="name">RGA visualiser</span>
     </button>
     <div style="display:flex; gap:8px; pointer-events:auto;">
       <div class="action-group">
-        <button class="btn" id="btn-add" type="button" aria-label="add object">add</button>
-        <button class="btn" id="btn-undo" type="button" aria-label="undo">undo</button>
-        <button class="btn" id="btn-redo" type="button" aria-label="redo">redo</button>
+        <button class="button" id="button-add" type="button" aria-label="add object">add</button>
+        <button class="button" id="button-undo" type="button" aria-label="undo">undo</button>
+        <button class="button" id="button-redo" type="button" aria-label="redo">redo</button>
       </div>
       <div class="toggles">
         <button id="toggle-axes" class="on" type="button">axes</button>
@@ -1035,7 +1035,7 @@
              optional wireframe it switches. Element id stays, as wiring not label. -->
         <button id="toggle-algebra" type="button">debug</button>
       </div>
-      <button class="brand" id="btn-menu" type="button" aria-label="menu">
+      <button class="brand" id="button-menu" type="button" aria-label="menu">
         <span aria-hidden="true">&#9776;</span>
       </button>
     </div>
@@ -1055,7 +1055,7 @@
   <div class="ruler-label" id="ruler-label">&mdash;</div>
 </div>
 
-<button class="help-open" id="btn-help" type="button" aria-label="help" aria-expanded="false">
+<button class="help-open" id="button-help" type="button" aria-label="help" aria-expanded="false">
   <span aria-hidden="true">?</span>
 </button>
 <div class="help-panel" id="help-panel" role="dialog" aria-label="help">
@@ -1069,14 +1069,14 @@
   <div class="top-menu-title">save</div>
   <div class="top-menu-group">
     <button
-      class="btn"
-      id="btn-save-scene"
+      class="button"
+      id="button-save-scene"
       type="button"
       title="Save this scene as a .rgascene file."
     >scene</button>
     <button
-      class="btn"
-      id="btn-export-png"
+      class="button"
+      id="button-export-png"
       type="button"
       title="Save the current view as a PNG image."
     >image</button>
@@ -1084,8 +1084,8 @@
   <div class="top-menu-title">load</div>
   <div class="top-menu-group">
     <button
-      class="btn"
-      id="btn-load-scene"
+      class="button"
+      id="button-load-scene"
       type="button"
       title="Load a .rgascene file, replacing this scene."
     >scene</button>
@@ -1096,7 +1096,7 @@
   <div class="top-menu-title">demo</div>
   <div
     class="top-menu-group"
-    id="btn-demo-scales"
+    id="button-demo-scales"
     role="group"
     aria-label="load the orrery, at one of three sizes"
   ></div>
@@ -1148,7 +1148,8 @@
             id="op-second-field"
           ><label>operand n</label><select id="op-second"></select></div>
         </div>
-        <button class="btn primary" id="btn-apply" type="button" style="width:100%;">apply</button>
+        <button class="button primary" id="button-apply" type="button" style="width:100%;"
+          >apply</button>
       </div>
     </div>
 
@@ -1168,26 +1169,27 @@
              follows change and then glides to it, so lone spike ageing out of
              window does not send it travelling out and back. -->
         <canvas class="exceedance" id="exceedance"></canvas>
-        <div class="diag-legend">
+        <div class="diagnostic-legend">
           <!-- Axis and its switch travel together, so control sits beside
                words it changes rather than adrift between them. Vertical axis is
                switchable because linear reads proportion as proportion while log
                reads slowest one percent, which linear squeezes flat against
                ceiling. Off by default -- linear is what chart is for, and log is
                question reader goes looking for. -->
-          <span class="diag-legend-axis"
-            ><span id="diag-exceedance-axis">frames under</span
+          <span class="diagnostic-legend-axis"
+            ><span id="diagnostic-exceedance-axis">frames under</span
             ><button
               id="toggle-exceedance-log"
-              class="diag-toggle"
+              class="diagnostic-toggle"
               type="button"
               aria-label="log probability axis"
             >log</button
           ></span
-            ><b id="diag-exceedance">&mdash;</b>
+            ><b id="diagnostic-exceedance">&mdash;</b>
         </div>
         <canvas class="sparkline" id="sparkline"></canvas>
-        <div class="diag-line"><span>frame time</span><b id="diag-frametime">&mdash;</b></div>
+        <div class="diagnostic-line"><span>frame time</span
+          ><b id="diagnostic-frametime">&mdash;</b></div>
         <!-- Each step of drawing process, as `mean over last 200 ms (median over
              whole ring)` in ms, so reader can see where frame went rather than one
              opaque total. Short mean is what to watch while changing something and
@@ -1210,42 +1212,43 @@
              `log` is word graph above already uses for scale of this shape, so it
              is word used here. Hue is never sole encoding in this drawer; every
              row's own figure stands beside it, and this names what hue measures. -->
-        <div class="diag-legend"><span>share of the frame &#183; log</span
-          ><span class="diag-legend-axis"><b>0</b
-            ><span class="key-ramp" id="diag-legend-ramp"></span><b>1</b></span></div>
-        <div class="diag-node" data-node="build">
-          <button class="diag-line diag-parent" type="button"
+        <div class="diagnostic-legend"><span>share of the frame &#183; log</span
+          ><span class="diagnostic-legend-axis"><b>0</b
+            ><span class="key-ramp" id="diagnostic-legend-ramp"></span><b>1</b></span></div>
+        <div class="diagnostic-node" data-node="build">
+          <button class="diagnostic-line diagnostic-parent" type="button"
             ><span><span class="chev">&#9654;</span>build (bridge)</span
-            ><b id="diag-build">&mdash;</b></button>
-          <div class="diag-children">
+            ><b id="diagnostic-build">&mdash;</b></button>
+          <div class="diagnostic-children">
             <!-- Frame's prologue: pruning focus, advancing camera tween, deriving
                  this frame's own DrawExtent, and framing.offerAim walking everything
                  watched. Real work that belonged to no row until now, and worth its own:
                  offerAim builds *second* DrawExtent rather than taking one made
                  moment earlier, which is kind of thing breakdown exists to show. -->
-            <div class="diag-line"><span>camera + framing<span
-              class="diag-where">camera, framing</span></span
-              ><b id="diag-camera">&mdash;</b></div>
-            <div class="diag-node" data-node="furniture">
-              <button class="diag-line diag-parent" type="button"
+            <div class="diagnostic-line"><span>camera + framing<span
+              class="diagnostic-where">camera, framing</span></span
+              ><b id="diagnostic-camera">&mdash;</b></div>
+            <div class="diagnostic-node" data-node="furniture">
+              <button class="diagnostic-line diagnostic-parent" type="button"
                 ><span><span class="chev">&#9654;</span>scenery</span
-                ><b id="diag-furniture">&mdash;</b></button>
+                ><b id="diagnostic-furniture">&mdash;</b></button>
               <!-- Two halves are not same size of thing: axes are three lines
                    however far camera stands, while grid is however many ground
                    reach asks for -- so scenery figure that rose could not say which of
                    them rose. Grid carries its record count -- one per lattice line
                    -- since its cost *is* that count, bounded by `LINES_GRID_MAX`. -->
-              <div class="diag-children">
-                <div class="diag-line"><span>ground grid<span class="diag-tally"></span></span
-                  ><b id="diag-grid">&mdash;</b></div>
-                <div class="diag-line"><span>world axes</span
-                  ><b id="diag-axes">&mdash;</b></div>
+              <div class="diagnostic-children">
+                <div class="diagnostic-line"><span>ground grid<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-grid">&mdash;</b></div>
+                <div class="diagnostic-line"><span>world axes</span
+                  ><b id="diagnostic-axes">&mdash;</b></div>
               </div>
             </div>
-            <div class="diag-node" data-node="scene">
-              <button class="diag-line diag-parent" type="button"
+            <div class="diagnostic-node" data-node="scene">
+              <button class="diagnostic-line diagnostic-parent" type="button"
                 ><span><span class="chev">&#9654;</span>scene objects</span
-                ><b id="diag-scene">&mdash;</b></button>
+                ><b id="diagnostic-scene">&mdash;</b></button>
               <!-- Each kind with its own count beside its name, because kinds differ
                    by two orders of magnitude: point is one vertex, plane is rim of
                    ribbons each carrying join, sky is whole dome. Time without its
@@ -1254,21 +1257,24 @@
                    thing, not of its duration, and trailing it after unit pushed
                    `ms` inward on exactly rows that had one, so times down tree
                    stopped ending in single column. -->
-              <div class="diag-children">
-                <div class="diag-line"><span>points<span class="diag-tally"></span></span
-                  ><b id="diag-points">&mdash;</b></div>
-                <div class="diag-line"><span>lines<span class="diag-tally"></span></span
-                  ><b id="diag-lines">&mdash;</b></div>
-                <div class="diag-line"><span>planes<span class="diag-tally"></span></span
-                  ><b id="diag-planes">&mdash;</b></div>
-                <div class="diag-line"><span>sky, horizon planes<span
-                  class="diag-tally"></span></span
-                  ><b id="diag-sky">&mdash;</b></div>
-                <div class="diag-line"><span>ghost + preview<span class="diag-tally"></span></span
-                  ><b id="diag-ghost">&mdash;</b></div>
-                <div class="diag-line"><span>selected, drawn again<span
-                  class="diag-tally"></span></span
-                  ><b id="diag-selected">&mdash;</b></div>
+              <div class="diagnostic-children">
+                <div class="diagnostic-line"><span>points<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-points">&mdash;</b></div>
+                <div class="diagnostic-line"><span>lines<span class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-lines">&mdash;</b></div>
+                <div class="diagnostic-line"><span>planes<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-planes">&mdash;</b></div>
+                <div class="diagnostic-line"><span>sky, horizon planes<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-sky">&mdash;</b></div>
+                <div class="diagnostic-line"><span>ghost + preview<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-ghost">&mdash;</b></div>
+                <div class="diagnostic-line"><span>selected, drawn again<span
+                  class="diagnostic-tally"></span></span
+                  ><b id="diagnostic-selected">&mdash;</b></div>
               </div>
             </div>
             <!-- Wireframe layer, when it is switched on: lattice per plane is not
@@ -1277,21 +1283,21 @@
                  Named "debug overlay" and not "algebra": with two sides of
                  boundary now reported below, row called algebra that meant "optional
                  wireframe" would be read as algebra's cost and is not. -->
-            <div class="diag-line"><span>debug overlay<span
-              class="diag-where">algebra_view</span></span
-              ><b id="diag-algebra">&mdash;</b></div>
-            <div class="diag-line"><span>view matrix<span
-              class="diag-where">camera</span></span
-              ><b id="diag-matrix">&mdash;</b></div>
-            <div class="diag-line"><span>flatten + pack<span
-              class="diag-where">mesh</span></span
-              ><b id="diag-flatten">&mdash;</b></div>
+            <div class="diagnostic-line"><span>debug overlay<span
+              class="diagnostic-where">algebra_view</span></span
+              ><b id="diagnostic-algebra">&mdash;</b></div>
+            <div class="diagnostic-line"><span>view matrix<span
+              class="diagnostic-where">camera</span></span
+              ><b id="diagnostic-matrix">&mdash;</b></div>
+            <div class="diagnostic-line"><span>flatten + pack<span
+              class="diagnostic-where">mesh</span></span
+              ><b id="diagnostic-flatten">&mdash;</b></div>
             <!-- Whatever rows above still fail to cover. Shown rather than left to be
                  inferred: breakdown whose parts quietly do not sum is worse than
                  coarser one that does, and this one did not sum for long time without
                  ever saying so. -->
-            <div class="diag-line"><span>unaccounted</span
-              ><b id="diag-unaccounted">&mdash;</b></div>
+            <div class="diagnostic-line"><span>unaccounted</span
+              ><b id="diagnostic-unaccounted">&mdash;</b></div>
           </div>
         </div>
         <!-- Second cut through very same milliseconds, not two more stages. Every
@@ -1302,31 +1308,31 @@
              euclid alone and so cannot name multivector. Placing is dominated by
              algebra but carries little Euclidean arithmetic inside its loops; see
              core/timings.nim for exactly what. -->
-        <div class="diag-cut">of which</div>
-        <div class="diag-line diag-cut-row"><span>placing<span
-          class="diag-where">pga, objects, boundary</span></span
-          ><b id="diag-placing">&mdash;</b></div>
-        <div class="diag-line diag-cut-row"><span>emitting<span
-          class="diag-where">mesh, euclid</span></span
-          ><b id="diag-emitting">&mdash;</b></div>
+        <div class="diagnostic-cut">of which</div>
+        <div class="diagnostic-line diagnostic-cut-row"><span>placing<span
+          class="diagnostic-where">pga, objects, boundary</span></span
+          ><b id="diagnostic-placing">&mdash;</b></div>
+        <div class="diagnostic-line diagnostic-cut-row"><span>emitting<span
+          class="diagnostic-where">mesh, euclid</span></span
+          ><b id="diagnostic-emitting">&mdash;</b></div>
         <!-- Picking under cursor, which on this build runs from event handlers rather
              than frame loop -- so it is measured where it happens and reported by
              frame after, and until now was landing unnamed in leftover below. -->
-        <div class="diag-line"><span>hover picking<span
-          class="diag-where">picking, interaction</span></span
-          ><b id="diag-hover">&mdash;</b></div>
-        <div class="diag-line"><span>upload + draw calls<span
-          class="diag-where">glue.js, WebGL</span></span
-          ><b id="diag-upload">&mdash;</b></div>
+        <div class="diagnostic-line"><span>hover picking<span
+          class="diagnostic-where">picking, interaction</span></span
+          ><b id="diagnostic-hover">&mdash;</b></div>
+        <div class="diagnostic-line"><span>upload + draw calls<span
+          class="diagnostic-where">glue.js, WebGL</span></span
+          ><b id="diagnostic-upload">&mdash;</b></div>
         <!-- Selection menu's own placement folded in here: it was one early-returning
              call reading 0.00 in every state but one, and overlay's own recording sat
              inside its bracket, so it had been charging this row's bookkeeping to itself. -->
-        <div class="diag-line"><span>overlay + menu<span
-          class="diag-where">marker, browser_bridge</span></span
-          ><b id="diag-overlay">&mdash;</b></div>
-        <div class="diag-line"><span>ui refresh<span
-          class="diag-where">glue.js</span></span
-          ><b id="diag-ui">&mdash;</b></div>
+        <div class="diagnostic-line"><span>overlay + menu<span
+          class="diagnostic-where">marker, browser_bridge</span></span
+          ><b id="diagnostic-overlay">&mdash;</b></div>
+        <div class="diagnostic-line"><span>ui refresh<span
+          class="diagnostic-where">glue.js</span></span
+          ><b id="diagnostic-ui">&mdash;</b></div>
         <!-- Remainder of frame, so rows above account for all of it rather
              than fraction: time spent waiting on display plus whatever browser
              did for itself -- style, layout, paint, compositing, collection. On page
@@ -1334,11 +1340,13 @@
              reading. It earns its row when frame runs long: spike here is not
              page's own code, and reader chasing one needs to know that before looking
              any further into tree above. -->
-        <div class="diag-line"><span>display wait + browser</span
-          ><b id="diag-idle">&mdash;</b></div>
-        <div class="diag-line"><span>JS heap</span><b id="diag-heap">unavailable</b></div>
+        <div class="diagnostic-line"><span>display wait + browser</span
+          ><b id="diagnostic-idle">&mdash;</b></div>
+        <div class="diagnostic-line"><span>JS heap</span
+          ><b id="diagnostic-heap">unavailable</b></div>
         <hr class="rule">
-        <div class="diag-line"><span>object pool</span><b id="diag-pool">&mdash;</b></div>
+        <div class="diagnostic-line"><span>object pool</span
+          ><b id="diagnostic-pool">&mdash;</b></div>
         <!-- Legend rides canvas as its own tooltip rather than taking line of
              drawer for itself, and says what desktop's own tooltip says. -->
         <canvas

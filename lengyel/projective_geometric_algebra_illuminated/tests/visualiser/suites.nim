@@ -935,8 +935,8 @@ suite "Mesh":
       #   depth is meaningless behind eye (see `addSegment`). So what is asserted is
       #   direction each half runs in, plus that its end stands in front.
       for (head, vanishing) in [
-        (head_first, SCALE_TEST.eye + SCALE_TEST.radius_horizon*axis.get),
-        (head_second, SCALE_TEST.eye - SCALE_TEST.radius_horizon*axis.get),
+        (head_first, SCALE_TEST.eye + SCALE_TEST.radiusHorizon*axis.get),
+        (head_second, SCALE_TEST.eye - SCALE_TEST.radiusHorizon*axis.get),
       ]:
         let
           toward = normalize(head - anchor.get)
@@ -948,7 +948,7 @@ suite "Mesh":
         check abs(toward.get.x - reach.get.x) < 1.0e-4
         check abs(toward.get.y - reach.get.y) < 1.0e-4
         check abs(toward.get.z - reach.get.z) < 1.0e-4
-        check dot(head - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depth_near - 1e-6
+        check dot(head - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depthNear - 1e-6
         # And it is either vanishing point itself or short of it, never past.
         check norm(head - anchor.get) <= norm(vanishing - anchor.get)*(1.0 + 1e-5)
 
@@ -1004,7 +1004,7 @@ suite "Mesh":
       #   `mesh.addSegment`), so star behind camera is met by half that stops at
       #   near plane instead. Nothing is visible there either way; what would be
       #   real defect is gap between two *on screen*, which this still catches.
-      if dot(star - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depth_near:
+      if dot(star - SCALE_TEST.eye, SCALE_TEST.forward) >= SCALE_TEST.depthNear:
         check isNear(far_first, star) or isNear(far_second, star)
 
 
@@ -1157,7 +1157,7 @@ suite "Mesh":
         heading = directionHorizon(attitude)
         star = MESHES.points.vertices[0].toPosition
       check heading.isSome
-      check isNear(star, SCALE_TEST.eye + SCALE_TEST.radius_horizon*heading.get)
+      check isNear(star, SCALE_TEST.eye + SCALE_TEST.radiusHorizon*heading.get)
 
 
   test "line at horizon becomes a great circle around eye, perpendicular to its normal":
@@ -1200,8 +1200,8 @@ suite "Mesh":
           check isNear(dot(offset, normal_from_plane.get), 0)
           # And out at circle's own radius, unless clip pulled it in along that.
           #   chord -- never past it.
-          check norm(offset) <= SCALE_TEST.radius_horizon*(1.0 + 1e-5)
-          if isNear(norm(offset), SCALE_TEST.radius_horizon): inc count_at_radius
+          check norm(offset) <= SCALE_TEST.radiusHorizon*(1.0 + 1e-5)
+          if isNear(norm(offset), SCALE_TEST.radiusHorizon): inc count_at_radius
       check count_at_radius > 0
       # Half-behind claim, held rather than assumed: some of ring is drawn, and.
       #   well under all of it.
@@ -1240,7 +1240,7 @@ suite "Mesh":
         z: float(corners_dome[3*i + 2]),
       )
       let offset = expandDomeVertex(record_first, unit).toPosition - SCALE_TEST.eye
-      check isNear(norm(offset), SCALE_TEST.radius_horizon)
+      check isNear(norm(offset), SCALE_TEST.radiusHorizon)
 
     MESHES.clearMeshes
     check MESHES.addObject(SCRATCH, attitude_second, Ink.Cobalt.colour, SCALE_TEST) ==
@@ -1314,10 +1314,10 @@ suite "Mesh":
 
   test "world furniture stays inside the fog it is drawn in":
     MESHES.clearMeshes
-    MESHES.addAxes(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
-    MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
+    MESHES.addAxes(SCRATCH, SCALE_FOG.extentFurniture, SCALE_FOG)
+    MESHES.addGrid(SCRATCH, SCALE_FOG.extentFurniture, SCALE_FOG)
     check 6*MESHES.ribbons.count > 0
-    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
+    let fog = fogFurnitureFor(SCALE_FOG.extentFurniture)
     for i in 0 ..< MESHES.ribbons.count:
       # Expanded through reference of shader that now does widening, with.
       #   slack of one unit for half-width it steps each corner off by.
@@ -1333,9 +1333,9 @@ suite "Mesh":
     #   since either alone passes under old behaviour.
     let scale_afar = scaleFurnitureAt(Position(x: 1000, y: -700, z: 6), 300.0)
     MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH, scale_afar.extent_furniture, scale_afar)
+    MESHES.addGrid(SCRATCH, scale_afar.extentFurniture, scale_afar)
     check 6*MESHES.ribbons.count > 0
-    let fog = fogFurnitureFor(scale_afar.extent_furniture)
+    let fog = fogFurnitureFor(scale_afar.extentFurniture)
     for i in 0 ..< MESHES.ribbons.count:
       let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_afar))
       if not isRibbonDrawn(corners): continue
@@ -1350,8 +1350,8 @@ suite "Mesh":
     #   times `alphaGridFade` -- reference both fragment shaders are held to --
     #   evaluated here at each corner's own distance from eye, exactly as they do.
     MESHES.clearMeshes
-    MESHES.addGrid(SCRATCH, SCALE_FOG.extent_furniture, SCALE_FOG)
-    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
+    MESHES.addGrid(SCRATCH, SCALE_FOG.extentFurniture, SCALE_FOG)
+    let fog = fogFurnitureFor(SCALE_FOG.extentFurniture)
     var
       alpha_near_min = 1.0
       alpha_far_max = 0.0
@@ -1470,7 +1470,7 @@ suite "Mesh":
     #   frame under it. Line is one record now and `alphaGridFade` runs per fragment,
     #   so what is held is reference's own shape: full inside fade start, gone at
     #   reach, monotone between -- very curve both fragment shaders copy.
-    let fog = fogFurnitureFor(SCALE_FOG.extent_furniture)
+    let fog = fogFurnitureFor(SCALE_FOG.extentFurniture)
     check isNear(alphaGridFade(0.0, fog.radius_full, fog.radius_gone), 1.0)
     check isNear(alphaGridFade(fog.radius_full, fog.radius_full, fog.radius_gone), 1.0)
     check isNear(alphaGridFade(fog.radius_gone, fog.radius_full, fog.radius_gone), 0.0)
@@ -1556,10 +1556,10 @@ suite "Mesh":
     #   matter, since axis rule that draws nothing at all passes second alone.
     let
       scale_afar = scaleFurnitureAt(Position(x: 1000, y: 0, z: 6), 300.0)
-      fog = fogFurnitureFor(scale_afar.extent_furniture)
+      fog = fogFurnitureFor(scale_afar.extentFurniture)
     check norm(scale_afar.eye - ORIGIN) > fog.radius_gone
     MESHES.clearMeshes
-    MESHES.addAxes(SCRATCH, scale_afar.extent_furniture, scale_afar)
+    MESHES.addAxes(SCRATCH, scale_afar.extentFurniture, scale_afar)
     check 6*MESHES.ribbons.count > 0
     for i in 0 ..< MESHES.ribbons.count:
       let corners = expandRibbon(MESHES.ribbons.records[i], toScale(scale_afar))
@@ -2892,7 +2892,7 @@ suite "Camera Aim":
       toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
     let (margin_x, margin_y) = marginsCentred()
 
-    proc rimAt(place: Camera, centre: Position): tuple[past_box, off_frame: bool] =
+    proc rimAt(place: Camera, centre: Position): tuple[is_past_box, is_off_frame: bool] =
       ## Walk drawn rim, reporting whether it reaches past centred box or leaves frame.
       ##   Two bounds this rule tells apart.
       let
@@ -2906,18 +2906,18 @@ suite "Camera Aim":
         )
         if at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
             at.y < margin_y or at.y > float(HEIGHT_AIM) - margin_y:
-          result.past_box = true
+          result.is_past_box = true
         if at.x < 0.0 or at.x > float(WIDTH_AIM) or
             at.y < 0.0 or at.y > float(HEIGHT_AIM):
-          result.off_frame = true
+          result.is_off_frame = true
 
     # Standing where rim reaches past centred box and stays on screen: in view, and.
     #   *because* rim is only held to frame. Both halves asserted, neither assumed.
     var camera = placementAim(0.0, 0.42)
     camera.distance = 19.0
     let spread = rimAt(camera, positionAnchor(ground).get)
-    check spread.past_box
-    check not spread.off_frame
+    check spread.is_past_box
+    check not spread.is_off_frame
     check isShownCentrally(ground, camera, WIDTH_AIM, HEIGHT_AIM)
 
     # Now far enough back that whole disc fits well inside frame, and walk where it.
@@ -2937,7 +2937,7 @@ suite "Camera Aim":
       let at = projectToScreen(projection_afar, WIDTH_AIM, HEIGHT_AIM, drawn)
       let is_centre_out = at.x < margin_x or at.x > float(WIDTH_AIM) - margin_x or
         at.y < margin_y or at.y > float(HEIGHT_AIM) - margin_y
-      if not (is_centre_out and not rimAt(afar, drawn).off_frame): continue
+      if not (is_centre_out and not rimAt(afar, drawn).is_off_frame): continue
       found_off_centre = true
       check not isShownCentrally(ground, afar, WIDTH_AIM, HEIGHT_AIM, some(drawn))
       break
@@ -2946,7 +2946,7 @@ suite "Camera Aim":
     # And close in, where rim leaves frame, it is out of view however centred it is.
     var near = camera
     near.distance = 6.0
-    check rimAt(near, positionAnchor(ground).get).off_frame
+    check rimAt(near, positionAnchor(ground).get).is_off_frame
     check not isShownCentrally(ground, near, WIDTH_AIM, HEIGHT_AIM)
 
 

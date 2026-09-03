@@ -102,7 +102,7 @@ type
     is_inside_block: bool ## Within `/* */`.
     is_inside_html: bool ## Within `<!-- -->`.
     is_inside_template: bool ## Within JavaScript backtick literal.
-    had_comment: bool ## Previous line carried comment text.
+    has_comment_before: bool ## Previous line carried comment text.
 
 
 func languageOf(path: string): Option[Language] =
@@ -337,8 +337,8 @@ proc complaintsIn(path: string): seq[Complaint] =
       if language.get == Language.Hash: reader.commentHash(line)
       else: reader.commentSlash(line)
     let has_text = len(comment.text.strip()) > 0
-    comment.is_lead = has_text and not reader.had_comment
-    reader.had_comment = has_text
+    comment.is_lead = has_text and not reader.has_comment_before
+    reader.has_comment_before = has_text
     if not has_text: continue
     for article in articlesIn(comment.text):
       result.add(Complaint(path: path, line: number, rule: "article", detail: article))
