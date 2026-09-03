@@ -73,7 +73,7 @@ proc reset*(arena: var Arena) =
 
 #[ Arena Allocation ]#
 
-proc push*[T](arena: var Arena; count: int): ptr UncheckedArray[T] =
+proc push*[T](arena: var Arena, count: int): ptr UncheckedArray[T] =
   ## Carve `count` elements of `T` from `arena`, uninitialised.
   ##   Never freed on its own; reclaimed only when `reset` reclaims whole arena.
   let bytes_needed = count * sizeof(T)

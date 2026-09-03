@@ -336,7 +336,7 @@ func lightnessOf(colour: (float, float, float)): float =
   toOklab(toLinear(colour[0], colour[1], colour[2])).lightness
 
 
-func relit(sample: (float, float, float); lightness: float): (float, float, float) =
+func relit(sample: (float, float, float), lightness: float): (float, float, float) =
   ## Rebuild one CET-I1 sample at given OKLab lightness, keeping its hue.
   ##   Keeps as much of its chroma as sRGB shows there.
   ##   Chroma is reduced rather than clamped per channel: clamping bends hue, whole signal
@@ -400,7 +400,7 @@ proc main() =
     lightness_value = lightness_label + LIFT_VALUE_RAMP*(lightness_ink - lightness_label)
   var failures = 0
 
-  template report(passed: bool; message: string) =
+  template report(passed: bool, message: string) =
     echo (if passed: "  ok   " else: " FAIL  ") & message
     if not passed: inc failures
 

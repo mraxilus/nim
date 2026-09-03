@@ -272,7 +272,7 @@ type
 #[ Orientation Pulse ]#
 
 func lengthOfOutline*(
-  points: openArray[ScreenPosition]; count: int; is_closed: bool
+  points: openArray[ScreenPosition], count: int, is_closed: bool
 ): float =
   ## Measure outline right round, in screen pixels.
   ##   Primitive `trackAlong` is built from, and what caller needs for how far pulse may
@@ -303,7 +303,7 @@ func lap*(track: PulseTrack): float = track.behind + track.ahead
 
 
 func trackAlong*(
-  points: openArray[ScreenPosition]; count: int; is_closed: bool; origin: int = 0
+  points: openArray[ScreenPosition], count: int, is_closed: bool, origin: int = 0
 ): PulseTrack =
   ## Measure outline either side of point travel is anchored at, in screen pixels.
   ##   Closed outline laps on itself, so all of it lies `ahead` and origin decides only
@@ -435,8 +435,8 @@ func ribbonAlong(
 
 
 func samplePulse(
-  points: openArray[ScreenPosition]; count: int; is_closed: bool; track: PulseTrack;
-  travelled: float; run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
+  points: openArray[ScreenPosition], count: int, is_closed: bool, track: PulseTrack,
+  travelled: float, run: var array[SEGMENTS_MARKER_PULSE, ScreenPosition]
 ): int =
   ## Lay pulse along `count` points of outline; report how many of `run` were used.
   ##   `travelled` pixels from `track`'s anchor.
@@ -494,8 +494,8 @@ func samplePulse(
 
 
 func addPulse(
-  marker: var Marker; points: openArray[ScreenPosition]; count: int; is_closed: bool;
-  track: PulseTrack; travelled: float
+  marker: var Marker, points: openArray[ScreenPosition], count: int, is_closed: bool,
+  track: PulseTrack, travelled: float
 ) =
   ## Add one run of pulse to `marker`, taken along `count` points of one outline.
   ##   Silently adds nothing where run came out too short or marker holds every run it
@@ -552,7 +552,7 @@ func cometFor*(
 
 #[ Touch Clearance ]#
 
-func clearanceTouch*(swell: float; is_touch: bool): float =
+func clearanceTouch*(swell: float, is_touch: bool): float =
   ## Measure how far outward to push marker, in pixels, at this much of swell.
   ##   Plain scaling of `CLEARANCE_MARKER_TOUCH`; *shape* of swell is caller's
   ##   (`interaction.swellHold`, four phases).
@@ -586,7 +586,7 @@ func markerRing(
   true
 
 
-func offsetMarkerRail(anchor: Position; scale: DrawExtent; clearance: float = 0.0): float =
+func offsetMarkerRail(anchor: Position, scale: DrawExtent, clearance: float = 0.0): float =
   ## Size how far to each side of line its rails stand, in world units.
   ##   *World* offset, so rails are lines genuinely parallel to one they flank, sharing
   ##   its vanishing points, each one straight line.
@@ -598,7 +598,7 @@ func offsetMarkerRail(anchor: Position; scale: DrawExtent; clearance: float = 0.
   (OFFSET_MARKER_RAIL + clearance)*worldPerPixelAt(anchor, scale)
 
 
-func directionAcross(geometry: Multivector; eye: Position): Option[Direction] =
+func directionAcross(geometry: Multivector, eye: Position): Option[Direction] =
   ## Resolve which way to step off line so rails land either side on screen.
   ##   Join of line with eye is one plane containing both; its normal is perpendicular to
   ##   line and to every sight ray reaching it, direction that shows as sideways.
@@ -833,7 +833,7 @@ func markerRails(
 #[ Plane ]#
 
 func radiusMarkerLoop*(
-  centre: Position; scale: DrawExtent; placement: Camera; height: int;
+  centre: Position, scale: DrawExtent, placement: Camera, height: int,
   clearance: float = 0.0
 ): float =
   ## Size plane's marker circle so gap reads as `GAP_MARKER` pixels at disc's depth.
@@ -856,7 +856,7 @@ let
 
 
 proc positionsMarkerLoop*(
-  centre: Position; axes: FramePlane; radius: float
+  centre: Position, axes: FramePlane, radius: float
 ): array[SEGMENTS_MARKER_LOOP, Position] =
   ## Trace plane's marker circle in world space, in order around it.
   ##   Every point is `centre` plus combination of two axes spanning plane, so whole
@@ -957,7 +957,7 @@ func angleMarkerBands*(scale: DrawExtent; progress, clearance: float): float =
 
 
 func runShownLongest*(
-  ring: openArray[ScreenPosition]; are_shown: openArray[bool]
+  ring: openArray[ScreenPosition], are_shown: openArray[bool]
 ): (int, int) =
   ## Find longest unbroken stretch of sampled ring that is shown.
   ##   As index it starts at and how many samples it runs for.

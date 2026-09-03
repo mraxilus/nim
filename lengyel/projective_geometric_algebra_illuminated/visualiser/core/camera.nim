@@ -157,7 +157,7 @@ func initMatrixProjection*(
   result.elements[14] = float32(2.0 * distance_far * distance_near / span)
 
 
-func initMatrixView*(eye: Position; frame: FrameCamera): Matrix4 =
+func initMatrixView*(eye: Position, frame: FrameCamera): Matrix4 =
   ## Construct transform carrying world into camera's own frame.
   ##   Rows hold camera axes, so transform is inverse of camera's placement.
   let (right, up, forward) = (frame.axis_right, frame.axis_up, frame.forward)
@@ -250,12 +250,12 @@ proc orbit*(camera: var Camera; turn, rise: float) =
   camera.elevation = clamp(camera.elevation + rise, -ELEVATION_LIMIT, ELEVATION_LIMIT)
 
 
-proc dolly*(camera: var Camera; factor: float) =
+proc dolly*(camera: var Camera, factor: float) =
   ## Scale separation of eye from target, holding it off near bound.
   camera.distance = distanceHeld(camera.distance * factor)
 
 
-proc dollyToward*(camera: var Camera; factor: float; anchor: Position) =
+proc dollyToward*(camera: var Camera, factor: float, anchor: Position) =
   ## Scale separation of eye from target by `factor`, moving eye along its line to `anchor`.
   ##   Rather than straight in, so whatever stands there keeps its pixel: how map zooms,
   ##   wheel taking reader toward what they point at, not middle of frame.
@@ -333,7 +333,7 @@ proc slideGround*(camera: var Camera; ahead, across, rise: float) =
 
 #[ Camera Frame ]#
 
-func frame*(camera: Camera; eye: Position): FrameCamera =
+func frame*(camera: Camera, eye: Position): FrameCamera =
   ## Derive camera's orthonormal axes from its placement, through joins and antiduals.
   ##   Elevation clamp keeps sight axis off world up, so every join below stays defined.
   ##   Takes eye explicitly, so caller already holding it, or calling once per frame
@@ -392,7 +392,7 @@ func settingsFurnitureFor*(
   )
 
 
-func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
+func drawExtentFor*(camera: Camera, height_pixels: int): DrawExtent =
   ## Derive this frame's draw scale from camera.
   ##   How far geometry reaches, where from, and everything ribbon needs to hold constant
   ##   width on screen.
@@ -417,7 +417,7 @@ func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
   ))
 
 
-func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
+func initMatrixViewProjection*(camera: Camera, aspect: float): Matrix4 =
   ## Compose whole transform from world space to clip space.
   let eye = camera.eye
   initMatrixProjection(
@@ -537,7 +537,7 @@ func `==`*(a, b: CameraAim): bool =
   d.x == e.x and d.y == e.y and d.z == e.z
 
 
-func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
+func widened*(bound: SphereWorld, place: Position, reach: float): SphereWorld =
   ## Grow bound just enough to contain one more ball.
   ##   Point where `reach` is zero, plane's whole disc where it is
   ##   `tessellate.EXTENT_PLANE_F`.
@@ -567,7 +567,7 @@ func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
 
 
 func aimIncluding*(
-  aim: Option[CameraAim]; m: Multivector; scale: DrawExtent;
+  aim: Option[CameraAim], m: Multivector, scale: DrawExtent,
   anchor_override: Option[Position] = none(Position)
 ): Option[CameraAim] =
   ## Fold one more object into aim, or start one where there was none.
@@ -642,7 +642,7 @@ func aimIncluding*(
 
 
 func aimFor*(
-  m: Multivector; scale: DrawExtent; anchor_override: Option[Position] = none(Position)
+  m: Multivector, scale: DrawExtent, anchor_override: Option[Position] = none(Position)
 ): Option[CameraAim] =
   ## Resolve what camera has been asked to show for one object alone.
   ##   None where it draws nothing. One-object case of `aimIncluding`.
@@ -699,7 +699,7 @@ func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: 
   distanceHeld(radius/max(sine, 1.0e-6))
 
 
-func isGoalHeld*(tween: CameraTween; goal: CameraAim): bool =
+func isGoalHeld*(tween: CameraTween, goal: CameraAim): bool =
   ## Report whether `goal` is one this tween already holds, and would ignore.
   ##   For caller whose preparation is worth skipping: `framing.offerAim` projects every
   ##   selected object several times over, and re-offers same goal every frame.
@@ -714,7 +714,7 @@ func placementOf*(camera: Camera): CameraPlacement =
   )
 
 
-func placed*(camera: Camera; placement: CameraPlacement): Camera =
+func placed*(camera: Camera, placement: CameraPlacement): Camera =
   ## Put copy of `camera` at `placement`, lens untouched.
   result = camera
   result.target = placement.target
@@ -779,7 +779,7 @@ proc aimAt*(
 
 
 proc advance*(
-  tween: var CameraTween; camera: var Camera; now: float;
+  tween: var CameraTween, camera: var Camera, now: float,
   ease: proc(t: float): float {.noSideEffect.},
 ) =
   ## Carry camera one frame further toward destination, and mark it arrived there.
@@ -793,7 +793,7 @@ proc advance*(
   if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
-proc settle*(tween: var CameraTween; camera: var Camera) =
+proc settle*(tween: var CameraTween, camera: var Camera) =
   ## Put camera on destination at once.
   ##   For caller that must not show half-finished pan, such as storyboard frame about to
   ##   be captured.

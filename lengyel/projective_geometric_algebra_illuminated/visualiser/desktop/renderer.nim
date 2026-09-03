@@ -313,7 +313,7 @@ type
 
 #[ Program Construction ]#
 
-proc compileShader(kind: gl.Enum; source: string): gl.Uint =
+proc compileShader(kind: gl.Enum, source: string): gl.Uint =
   ## Compile one shader stage, reporting driver's diagnosis on failure.
   result = gl.createShader(kind)
   var text = cstring(source)
@@ -560,7 +560,7 @@ proc clearFrame*(width, height: int) =
   gl.clear(gl.COLOR_BUFFER_BIT or gl.DEPTH_BUFFER_BIT)
 
 
-proc uploadPoints(renderer: Renderer; meshes: MeshSet) =
+proc uploadPoints(renderer: Renderer, meshes: MeshSet) =
   ## Hand point vertices to driver whole, ready to be drawn as one run or two.
   ##   Separate from drawing because two runs are issued in different passes; see
   ##   `drawMeshes`.
@@ -577,7 +577,7 @@ proc uploadPoints(renderer: Renderer; meshes: MeshSet) =
   )
 
 
-proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
+proc uploadRibbons(renderer: Renderer, meshes: MeshSet) =
   ## Hand this frame's ribbon records to driver whole; shader does rest.
   if meshes.ribbons.count == 0: return
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ribbon_records)
@@ -589,7 +589,7 @@ proc uploadRibbons(renderer: Renderer; meshes: MeshSet) =
   )
 
 
-proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
+proc uploadWashes(renderer: Renderer, meshes: MeshSet) =
   ## Hand this frame's disc, ring and dome records to driver whole; shaders fan them.
   ##   Rings ride along on same upload schedule, not because rim is wash: it is drawn
   ##   opaque, with lines.
@@ -619,7 +619,7 @@ proc uploadWashes(renderer: Renderer; meshes: MeshSet) =
     )
 
 
-func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: int] =
+func runOfRibbons(ribbons: RibbonMesh, is_overlay: bool): tuple[first, count: int] =
   ## Say which stretch of ribbon records belongs to which pass; `runOf`'s rule.
   let split =
     if ribbons.index_overlay.isSome: clamp(ribbons.index_overlay.get, 0, ribbons.count)
@@ -628,7 +628,7 @@ func runOfRibbons(ribbons: RibbonMesh; is_overlay: bool): tuple[first, count: in
   else: (first: 0, count: split)
 
 
-proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+proc drawRibbonRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded ribbon records as instanced triangle pairs.
   ##   GL 3.3 has no base instance, so run not starting at first record re-points five
   ##   instance attributes at its first byte.
@@ -647,7 +647,7 @@ proc drawRibbonRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, gl.Sizei(run.count))
 
 
-func runOfRings(rings: RingMesh; is_overlay: bool): tuple[first, count: int] =
+func runOfRings(rings: RingMesh, is_overlay: bool): tuple[first, count: int] =
   ## Say which stretch of ring records belongs to which pass; `runOf`'s rule.
   let split =
     if rings.index_overlay.isSome: clamp(rings.index_overlay.get, 0, rings.count)
@@ -656,7 +656,7 @@ func runOfRings(rings: RingMesh; is_overlay: bool): tuple[first, count: int] =
   else: (first: 0, count: split)
 
 
-proc drawRingRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+proc drawRingRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded ring records, each instance whole plane rim.
   ##   Re-points instance attributes at run's first byte, `drawRibbonRun`'s rule.
   ##   Mirrors `glue.js`'s `drawRings`.
@@ -676,7 +676,7 @@ proc drawRingRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
   )
 
 
-func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
+func runOf(mesh: Mesh, is_overlay: bool): tuple[first, count: int] =
   ## Say which stretch of one mesh belongs to depth-tested run or to overlay run.
   ##   Empty where mesh has no such run, ordinary case for overlay; see
   ##   `mesh.Mesh.index_overlay`.
@@ -687,7 +687,7 @@ func runOf(mesh: Mesh; is_overlay: bool): tuple[first, count: int] =
   else: (first: 0, count: split)
 
 
-proc drawPointRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+proc drawPointRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded point mesh, skipping empty one.
   let run = runOf(meshes.points, is_overlay)
   if run.count == 0: return
@@ -697,7 +697,7 @@ proc drawPointRun(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
   gl.drawArrays(gl.POINTS, gl.Int(run.first), gl.Sizei(run.count))
 
 
-func runsOfWashes(washes: WashRuns; is_overlay: bool): tuple[begin, until: int] =
+func runsOfWashes(washes: WashRuns, is_overlay: bool): tuple[begin, until: int] =
   ## Say which stretch of wash runs belongs to which pass: `runOf`'s rule at run grain.
   ##   Run never straddles mark; see `mesh.WashRuns`.
   let split =
@@ -707,7 +707,7 @@ func runsOfWashes(washes: WashRuns; is_overlay: bool): tuple[begin, until: int] 
   else: (begin: 0, until: split)
 
 
-proc drawWashRuns(renderer: Renderer; meshes: MeshSet; is_overlay: bool) =
+proc drawWashRuns(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Walk one pass's stretch of wash draw order, drawing each run through its program.
   ##   Two washes then blend in order scene emitted them.
   ##   Re-points instance attributes at run's first byte, as `drawRibbonRun` does.
@@ -753,7 +753,7 @@ func hasOverlay(meshes: MeshSet): bool =
 
 
 proc drawMeshes*(
-  renderer: Renderer; meshes: MeshSet; view_projection: Matrix4; scale: DrawScale
+  renderer: Renderer, meshes: MeshSet, view_projection: Matrix4, scale: DrawScale
 ) =
   ## Draw every mesh, opaque kinds before translucent ones, then overlay over both.
   ##   Takes frame's `DrawScale` because ribbon program needs camera.

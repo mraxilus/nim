@@ -86,7 +86,7 @@ const INK_SEED_ORIGIN* = Ink.Copper
   ##   categorical run has left.
 
 
-proc constructSeeds*(scene: var Scene; now: float = 0.0) =
+proc constructSeeds*(scene: var Scene, now: float = 0.0) =
   ## Place three points and ground plane every later step derives from.
   ##   `now` is forwarded to `addItem` untouched, so seeds animate in as any item does.
   let
@@ -117,7 +117,7 @@ proc constructSeeds*(scene: var Scene; now: float = 0.0) =
   scene.addItem(ground, "ground", INK_SEED_GROUND, now, anchor_ground)
 
 
-proc applyStep*(scene: var Scene; step: Step; now: float = 0.0): Multivector {.discardable.} =
+proc applyStep*(scene: var Scene, step: Step, now: float = 0.0): Multivector {.discardable.} =
   ## Apply one step, appending its result exactly as GUI's apply button would.
   ##   Reports derived geometry directly: caller naming what step produced cannot assume
   ##   it landed in last slot of dense array.

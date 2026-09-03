@@ -94,36 +94,36 @@ proc childBegin*(name: cstring; width, height: cfloat): bool {.importc: "guiChil
 proc childEnd*() {.importc: "guiChildEnd".}
 proc text*(text: cstring) {.importc: "guiText".}
 proc textWrapped*(text: cstring) {.importc: "guiTextWrapped".}
-proc textWrappedAt*(text: cstring; width: cfloat) {.importc: "guiTextWrappedAt".}
+proc textWrappedAt*(text: cstring, width: cfloat) {.importc: "guiTextWrappedAt".}
 proc textTinted*(text: cstring; red, green, blue: cfloat) {.importc: "guiTextTinted".}
-proc header*(label: cstring; is_open_first: bool): bool {.importc: "guiHeader".}
+proc header*(label: cstring, is_open_first: bool): bool {.importc: "guiHeader".}
 proc button*(label: cstring): bool {.importc: "guiButton".}
 proc buttonSmall*(label: cstring): bool {.importc: "guiButtonSmall".}
-proc buttonToggle*(label: cstring; is_on: bool; width: cfloat): bool
+proc buttonToggle*(label: cstring, is_on: bool, width: cfloat): bool
   {.importc: "guiButtonToggle".}
   ## Draw one segment of segmented control, tinted where it is option in force.
-proc buttonWide*(label: cstring; width: cfloat): bool {.importc: "guiButtonWide".}
+proc buttonWide*(label: cstring, width: cfloat): bool {.importc: "guiButtonWide".}
   ## Draw button filling given width, for one leading its section.
-proc checkbox*(label: cstring; value: ptr bool): bool {.importc: "guiCheckbox".}
+proc checkbox*(label: cstring, value: ptr bool): bool {.importc: "guiCheckbox".}
 proc dragFloat*(
   label: cstring; value: ptr cfloat; speed, lowest, highest: cfloat
 ): bool {.importc: "guiDragFloat".}
 proc dragFloat3*(
-  label: cstring; values: ptr cfloat; speed: cfloat
+  label: cstring, values: ptr cfloat, speed: cfloat
 ): bool {.importc: "guiDragFloat3".}
-proc inputText*(label: cstring; buffer: cstring; capacity: cint): bool
+proc inputText*(label: cstring, buffer: cstring, capacity: cint): bool
   {.importc: "guiInputText".}
 proc combo*(
-  label: cstring; index: ptr cint; entries: ptr cstring; count: cint
+  label: cstring, index: ptr cint, entries: ptr cstring, count: cint
 ): bool {.importc: "guiCombo".}
-proc colorEdit3*(label: cstring; values: ptr cfloat): bool {.importc: "guiColorEdit3".}
+proc colorEdit3*(label: cstring, values: ptr cfloat): bool {.importc: "guiColorEdit3".}
 proc childHeightForRows*(count: cint): cfloat {.importc: "guiChildHeightForRows".}
   ## Report how tall bordered `childBegin` region holding `count` text lines must be.
   ##   Measured against font loaded.
 proc tabBarBegin*(name: cstring): bool {.importc: "guiTabBarBegin".}
   ## Begin row of tabs; closed with `tabBarEnd`, entered only where it returns true.
 proc tabBarEnd*() {.importc: "guiTabBarEnd".}
-proc tabBegin*(label: cstring; is_forced: bool): bool {.importc: "guiTabBegin".}
+proc tabBegin*(label: cstring, is_forced: bool): bool {.importc: "guiTabBegin".}
   ## Begin one tab in row; true only for tab open, and closed with `tabEnd` only then.
   ##   `is_forced` opens it regardless of what reader last chose; see shim.
 proc tabEnd*() {.importc: "guiTabEnd".}
@@ -153,7 +153,7 @@ proc widthPop*() {.importc: "guiWidthPop".}
 proc disabledPush*(is_disabled: bool) {.importc: "guiDisabledPush".}
 proc disabledPop*() {.importc: "guiDisabledPop".}
 proc selectable*(
-  label: cstring; is_selected: bool; width: cfloat
+  label: cstring, is_selected: bool, width: cfloat
 ): bool {.importc: "guiSelectable".}
 proc alphaPush*(alpha: cfloat) {.importc: "guiAlphaPush".}
 proc alphaPop*() {.importc: "guiAlphaPop".}
@@ -169,7 +169,7 @@ proc plotLines*(
   label: cstring; values: ptr cfloat; count, offset: cint; overlay: cstring;
   scale_min, scale_max, width, height: cfloat;
 ) {.importc: "guiPlotLines".}
-proc poolBar*(colours: ptr cfloat; count: cint; cell_size: cfloat)
+proc poolBar*(colours: ptr cfloat, count: cint, cell_size: cfloat)
   {.importc: "guiPoolBar".}
   ## Draw one square cell per pool slot, wrapped to panel's width.
   ##   `colours` addresses `count` * 3 floats, red then green then blue per cell.

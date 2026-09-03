@@ -29,7 +29,7 @@ const HEADER = "<stdio.h>"
 #   definition for and throws only when call is reached, browser crash rather than build
 #   error. Every appender needing it is guarded to match.
 when not defined(js):
-  proc snprintf(buffer: cstring; size: csize_t; format: cstring): cint
+  proc snprintf(buffer: cstring, size: csize_t, format: cstring): cint
     {.importc: "snprintf", header: HEADER, varargs, discardable, noSideEffect.}
 
 
@@ -85,7 +85,7 @@ func formatMagnitude*(value: float): string =
   let sign = if value < 0.0: "-" else: ""
   var exponent = int(floor(log10(abs(value))))
 
-  func scaledTo(value: float; exponent: int): float =
+  func scaledTo(value: float, exponent: int): float =
     ## Carry `value`'s leading `DIGITS_SIGNIFICANT` digits into whole-number range.
     let shift = DIGITS_SIGNIFICANT - 1 - exponent
     if shift >= 0: abs(value)*pow(10.0, float(shift))
@@ -134,7 +134,7 @@ func bytesCharacter*(lead: char): int =
   else: 4
 
 
-func lengthFitting*(text: openArray[char]; capacity: int): int =
+func lengthFitting*(text: openArray[char], capacity: int): int =
   ## Measure how many leading bytes of `text` fit in `capacity` without splitting character.
   ##   Separate from copy below so boundary rule is stated once: `toChars` needs same
   ##   answer against smaller capacity, to leave room for mark it adds.
@@ -145,7 +145,7 @@ func lengthFitting*(text: openArray[char]; capacity: int): int =
     result += width
 
 
-proc appendChars*(storage: var openArray[char]; cursor: var int; text: openArray[char]) =
+proc appendChars*(storage: var openArray[char], cursor: var int, text: openArray[char]) =
   ## Copy as much of `text` as still fits after `cursor`, advancing it.
   ##   Silently truncates rather than overrunning `storage`, as `toChars` does.
   ##     Storage is display only, and GUI must never write past own buffer.
@@ -169,7 +169,7 @@ func toText*(storage: openArray[char]): string =
     result.add(ch)
 
 
-proc appendMagnitude*(storage: var openArray[char]; cursor: var int; value: float) =
+proc appendMagnitude*(storage: var openArray[char], cursor: var int, value: float) =
   ## Format `value` to `DIGITS_SIGNIFICANT` significant digits straight into `storage`.
   ##   Significant digits, not decimal places, and no `#` flag: 3.5 reads `3.5` rather
   ##   than `3.5000`, and 1664 keeps integer part.
@@ -192,7 +192,7 @@ proc appendMagnitude*(storage: var openArray[char]; cursor: var int; value: floa
 
 
 when not defined(js):
-  proc appendInt*(storage: var openArray[char]; cursor: var int; value: int) =
+  proc appendInt*(storage: var openArray[char], cursor: var int, value: int) =
     ## Format `value` as plain decimal integer straight into `storage`.
     ##   Every caller counts something small and bounded, so narrowing to `cint` never
     ##   truncates real value.
@@ -205,7 +205,7 @@ when not defined(js):
 
 
   proc appendFixed*(
-    storage: var openArray[char]; cursor: var int; value: float; digits: int
+    storage: var openArray[char], cursor: var int, value: float, digits: int
   ) =
     ## Format `value` to fixed digits after point straight into `storage`.
     ##   Matches `strformat`'s `:.Nf`.
@@ -217,7 +217,7 @@ when not defined(js):
     appendChars(storage, cursor, buffer.toOpenArray(0, int(count) - 1))
 
 
-proc finishChars*(storage: var openArray[char]; cursor: int) =
+proc finishChars*(storage: var openArray[char], cursor: int) =
   ## Zero every byte from `cursor` onward.
   ##   Text longer previous write left behind never trails past what was written this time.
   for i in cursor ..< len(storage): storage[i] = '\0'
@@ -227,7 +227,7 @@ proc finishChars*(storage: var openArray[char]; cursor: int) =
 #[ One-Line Assembly ]#
 
 when not defined(js):
-  template buildChars*(storage: var openArray[char]; body: untyped): cstring =
+  template buildChars*(storage: var openArray[char], body: untyped): cstring =
     ## Build one line into `storage` from `append*` calls in `body`, and hand back its address.
     ##   Zeroes fresh injected `cursor`, runs `body`, then terminates, so building one line
     ##   costs only calls that vary between sites.

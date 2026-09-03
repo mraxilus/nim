@@ -48,10 +48,10 @@ type
 proc compressBound(source_length: Ulong): Ulong
   {.importc: "compressBound", header: HEADER_ZLIB.}
 proc compress2(
-  destination: ptr Byte; destination_length: ptr Ulong;
-  source: ptr Byte; source_length: Ulong; level: cint
+  destination: ptr Byte, destination_length: ptr Ulong,
+  source: ptr Byte, source_length: Ulong, level: cint
 ): cint {.importc: "compress2", header: HEADER_ZLIB.}
-proc crc32(crc: Ulong; buffer: ptr Byte; length: Uint): Ulong
+proc crc32(crc: Ulong, buffer: ptr Byte, length: Uint): Ulong
   {.importc: "crc32", header: HEADER_ZLIB.}
 
 
@@ -79,7 +79,7 @@ func toBigEndian(value: uint32): array[4, uint8] =
   [uint8(value shr 24), uint8(value shr 16), uint8(value shr 8), uint8(value)]
 
 
-proc writeChunk(file: File; name: string; payload: openArray[uint8]) =
+proc writeChunk(file: File, name: string, payload: openArray[uint8]) =
   ## Write one length-tagged chunk, with checksum over name and payload.
   doAssert len(name) == 4, &"Chunk name must be 4 characters; got `{name}`."
   discard file.writeBytes(toBigEndian(uint32(len(payload))), 0, 4)

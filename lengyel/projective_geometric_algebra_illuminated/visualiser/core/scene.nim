@@ -390,7 +390,7 @@ const
     ##   Derived from `Basis`, so build of another dimension sizes own buffers.
 
 
-proc formatMultivector*(m: Multivector; storage: var openArray[char]; cursor: var int) =
+proc formatMultivector*(m: Multivector, storage: var openArray[char], cursor: var int) =
   ## Print multivector into fixed storage, in same shape library's `$` uses.
   ##   Basis elements named exactly as library names them; both GUIs carry faces covering
   ##   those codepoints.
@@ -415,7 +415,7 @@ const WIDTH_SHAPE_WORD* = 32
   ## Bound shape word alone, longest being "mixed grade, nothing to draw".
 
 
-proc describeShape*(m: Multivector; storage: var openArray[char]; cursor: var int) =
+proc describeShape*(m: Multivector, storage: var openArray[char], cursor: var int) =
   ## Name geometry multivector stands for into fixed storage, for reporting to user.
   ##   Appends from `cursor` onward; see `formatMultivector`.
   let shape = shape(m)
@@ -463,7 +463,7 @@ const ELLIPSIS_LABEL = "…"
   ##   Derived names compound, so few steps in every name is long enough to cut, and one
   ##   ending mid-word reads as name someone chose.
 
-proc toChars*(text: string; storage: var openArray[char]) =
+proc toChars*(text: string, storage: var openArray[char]) =
   ## Copy text into fixed char storage, marking it with `…` where it will not fit.
   ##   Truncation is deliberate: storage is display only, and GUI must never overrun it.
   ##   Room for mark is measured by `lengthFitting` against smaller capacity rather than
@@ -540,7 +540,7 @@ proc markEdited*(scene: var Scene) =
   inc scene.count_edits
 
 
-proc restoreFrom*(scene: var Scene; snapshot: Scene) =
+proc restoreFrom*(scene: var Scene, snapshot: Scene) =
   ## Replace scene's whole content with snapshot, at revision no earlier state carried.
   ##   Every whole-scene replacement, i.e. undo, redo, clear, load, comes through here.
   ##     Revision only ever rises and no two states front-end has drawn share one.
@@ -553,7 +553,7 @@ proc restoreFrom*(scene: var Scene; snapshot: Scene) =
     if scene.are_alive[slot]: scene.revisions_placing[slot] = scene.count_edits
 
 
-func revisionPlacingAt*(scene: Scene; slot: int): int =
+func revisionPlacingAt*(scene: Scene, slot: int): int =
   ## Report revision at which slot's placing inputs last changed.
   ##   Front-end caching `tessellate.placeObject`'s answer per slot re-places only slots
   ##   stamped past what it holds: one slot per edit, every slot after `restoreFrom`.
@@ -566,7 +566,7 @@ func isFull*(scene: Scene): bool = scene.count_live >= ITEMS_MAX
   ## Report whether scene has no room for another item.
 
 
-func isAlive*(scene: Scene; slot: int): bool =
+func isAlive*(scene: Scene, slot: int): bool =
   ## Report whether slot currently holds live item.
   ##   For slot read back across frame boundary, e.g. operand picked earlier.
   ##   Two comparisons, not `slot in 0 ..< ITEMS_MAX`.
@@ -575,7 +575,7 @@ func isAlive*(scene: Scene; slot: int): bool =
   slot >= 0 and slot < ITEMS_MAX and scene.are_alive[slot]
 
 
-func slotStepped*(scene: Scene; slot: Option[int]; step: int): Option[int] =
+func slotStepped*(scene: Scene, slot: Option[int], step: int): Option[int] =
   ## Walk to next live slot `step` places on from `slot`, wrapping past both ends.
   ##   None where scene holds nothing; first live slot from start where `slot` is none.
   ##   Slots are sparse, so this searches rather than computes; `ITEMS_MAX` bounds search.
@@ -590,7 +590,7 @@ func slotStepped*(scene: Scene; slot: Option[int]; step: int): Option[int] =
   none(int)
 
 
-func `[]`*(scene: Scene; slot: int): Item =
+func `[]`*(scene: Scene, slot: int): Item =
   ## Read item by slot: handle onto `scene`'s storage, not copy of it.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   when defined(js):
@@ -624,7 +624,7 @@ func anchorOverride*(item: Item): Option[Position] = item.scene.anchor_overrides
   ##   See `creationAnchor`.
 
 
-func geometryOf*(scene: Scene; slot: int): lent Multivector =
+func geometryOf*(scene: Scene, slot: int): lent Multivector =
   ## Read item's geometry in place, by slot, without mutable scene.
   ##   `lent`, not `var`: `var`-returning accessor read rather than written miscompiles
   ##   under JS backend; borrow cannot be written through.
@@ -638,7 +638,7 @@ func geometryOf*(scene: Scene; slot: int): lent Multivector =
   scene.geometries[slot]
 
 
-proc setGeometryAt*(scene: var Scene; slot: int; geometry: Multivector) =
+proc setGeometryAt*(scene: var Scene, slot: int, geometry: Multivector) =
   ## Write item's geometry, by slot, only way live item's geometry changes.
   ##   Setter rather than `var Multivector`, for reason `geometryOf` gives and second.
   ##     Front-end holding last frame's meshes can only know scene changed if every write
@@ -649,13 +649,13 @@ proc setGeometryAt*(scene: var Scene; slot: int; geometry: Multivector) =
   scene.revisions_placing[slot] = scene.count_edits
 
 
-proc labelAt*(scene: var Scene; slot: int): var Label =
+proc labelAt*(scene: var Scene, slot: int): var Label =
   ## Reach item's label for editing, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.labels[slot]
 
 
-func isVisible*(scene: Scene; slot: int): bool =
+func isVisible*(scene: Scene, slot: int): bool =
   ## Read item's visibility by value, by slot rather than through `Item`; see `inkAt`.
   ##   Read and written through plain accessor pair, never `var bool`-returning one.
   ##     Proc handing back `var bool` over `array[N, bool]` miscompiles under JS backend,
@@ -663,7 +663,7 @@ func isVisible*(scene: Scene; slot: int): bool =
   scene.are_visible[slot]
 
 
-func inkAt*(scene: Scene; slot: int): Ink =
+func inkAt*(scene: Scene, slot: int): Ink =
   ## Read item's palette slot, by slot rather than through `Item` handle.
   ##   Beside `Item.ink` for caller reading many items per frame.
   ##     Under JS backend `Item` holds `Scene` by value, so constructing one to read single
@@ -672,13 +672,13 @@ func inkAt*(scene: Scene; slot: int): Ink =
   scene.inks[slot]
 
 
-func bornAt*(scene: Scene; slot: int): float =
+func bornAt*(scene: Scene, slot: int): float =
   ## Read moment item arrived, by slot rather than through `Item` handle; see `inkAt`.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.borns[slot]
 
 
-func orderOf*(scene: Scene; slot: int): uint32 =
+func orderOf*(scene: Scene, slot: int): uint32 =
   ## Read where item stands in order this scene's items were created, by slot.
   ##   Comparable only within one scene: counts additions to this arena, says nothing
   ##   about wall-clock time or another scene's ordinals.
@@ -699,7 +699,7 @@ func siftDown(scene: Scene; slots: var array[ITEMS_MAX, int]; root, count: int) 
     parent = child
 
 
-func slotsCreated*(scene: Scene; slots: var array[ITEMS_MAX, int]): int =
+func slotsCreated*(scene: Scene, slots: var array[ITEMS_MAX, int]): int =
   ## Fill `slots` with every live slot, oldest creation first; report how many were filled.
   ##   Caller's own array rather than `seq`, so no allocation on either backend.
   ##   Heapsort on `orders`, in place, O(n log n).
@@ -717,7 +717,7 @@ func slotsCreated*(scene: Scene; slots: var array[ITEMS_MAX, int]): int =
     siftDown(scene, slots, 0, last)
 
 
-func anchorOverrideAt*(scene: Scene; slot: int): Option[Position] =
+func anchorOverrideAt*(scene: Scene, slot: int): Option[Position] =
   ## Read where item's circle should centre, by slot rather than through `Item` handle.
   ##   See `inkAt`.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
@@ -771,14 +771,14 @@ func previewStaging*(geometry: Multivector): Preview =
 
 
 
-proc setInk*(scene: var Scene; slot: int; ink: Ink) =
+proc setInk*(scene: var Scene, slot: int, ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.inks[slot] = ink
   scene.markEdited()
 
 
-proc setVisible*(scene: var Scene; slot: int; is_visible: bool) =
+proc setVisible*(scene: var Scene, slot: int, is_visible: bool) =
   ## Rewrite item's visibility, by slot, mirroring `setInk`.
   ##   Only writer: `isVisibleAt(...) = visible` accessor silently lands on copied
   ##   primitive under JS backend; see `isVisible`.
@@ -803,7 +803,7 @@ iterator pairs*(scene: Scene): (int, Item) =
 
 
 proc addItem*(
-  scene: var Scene; geometry: Multivector; label: string; ink: Ink; now: float = 0.0;
+  scene: var Scene, geometry: Multivector, label: string, ink: Ink, now: float = 0.0,
   anchor_override: Option[Position] = none(Position)
 ): int {.discardable.} =
   ## Insert object into scene at first free slot, visible; report slot used.
@@ -833,7 +833,7 @@ proc addItem*(
   scene.revisions_placing[result] = scene.count_edits
 
 
-proc removeItem*(scene: var Scene; slot: int) =
+proc removeItem*(scene: var Scene, slot: int) =
   ## Drop item at slot, in constant time: slot returns to free list, nothing moves.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.are_alive[slot] = false
@@ -993,7 +993,7 @@ func upgradedFrom2(item: ItemSaved): Option[ItemSaved] = some(item)
   ##   Kept as explicit step so chain has one entry per boundary.
 
 
-func itemUpgraded*(item: ItemSaved; version: uint8): Option[ItemSaved] =
+func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
   ## Carry item read from file of `version` up to shape this build works in.
   ##   One boundary at time; none where no version could have written it.
   ##   On success every field is at `VERSION_SCENE`'s meaning, so caller may take
@@ -1036,7 +1036,7 @@ func bornReplaying*(index, count: int; now: float): float =
   now + float(index)*step
 
 
-proc replayFrom*(scene: var Scene; now: float) =
+proc replayFrom*(scene: var Scene, now: float) =
   ## Stamp every live item to arrive one after another from `now`, oldest creation first.
   ##   Scene assembled at once then plays back as construction it is.
   ##   For arrivals reader did not build and is about to be shown whole, i.e. opening
@@ -1062,7 +1062,7 @@ when not defined(js):
   #   `endians` joins them because byte order is property of file.
   import std/[endians, os, syncio]
 
-  proc writeLittle[T](file: File; value: T) =
+  proc writeLittle[T](file: File, value: T) =
     ## Write one multi-byte field in file's little-endian order.
     ##   Through staging array: `littleEndian32`/`64` write into destination, and handing
     ##   caller's variable would byte-swap live value on big-endian host.
@@ -1074,7 +1074,7 @@ when not defined(js):
     discard file.writeBuffer(addr bytes[0], sizeof(T))
 
 
-  proc readLittle[T](file: File; value: var T): bool =
+  proc readLittle[T](file: File, value: var T): bool =
     ## Read one multi-byte little-endian field into host order.
     ##   Reports whether file held that many bytes, so caller can name truncation.
     var bytes: array[sizeof(T), byte]
@@ -1085,7 +1085,7 @@ when not defined(js):
     true
 
 
-  proc saveScene*(scene: Scene; path: string): string =
+  proc saveScene*(scene: Scene, path: string): string =
     ## Write every live item to `path`, in format documented above; report outcome.
     if len(path) == 0: return "Save path is empty; nothing written."
     let file = open(path, fmWrite)
@@ -1113,7 +1113,7 @@ when not defined(js):
     &"Saved {scene.len} object(s) to `{path}`."
 
 
-  proc loadScene*(scene: var Scene; path: string; now: float = 0.0): string =
+  proc loadScene*(scene: var Scene, path: string, now: float = 0.0): string =
     ## Replace scene's contents with what `path` holds; report outcome for display.
     ##   Parses into scene of own and replaces caller's only on complete success, so bad
     ##   or foreign file leaves scene untouched rather than half-overwritten.
@@ -1218,14 +1218,14 @@ const
     ##   Join, what two objects picked in order most often mean.
 
 
-func lastOf*(memory: OperationMemory; arity: Arity): Operation =
+func lastOf*(memory: OperationMemory, arity: Arity): Operation =
   ## Read operation picker of this arity should open on.
   if not memory.is_started:
     return if arity == Arity.One: OPERATION_FIRST_UNARY else: OPERATION_FIRST_BINARY
   if arity == Arity.One: memory.unary else: memory.binary
 
 
-func remember*(memory: var OperationMemory; operation: Operation) =
+func remember*(memory: var OperationMemory, operation: Operation) =
   ## Note operation as one its arity should open on next.
   ##   Call from every path applying one, drag menu's `more…` handover included, or picker
   ##   forgets what was reached for by another route.

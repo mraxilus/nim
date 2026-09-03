@@ -80,7 +80,7 @@ func depthAgainst*(plane, point: Multivector): float =
   wedgeAnti(plane, point)[Basis.scalar]
 
 
-func centroidFolded*(centroid: Multivector; place: Multivector): Multivector =
+func centroidFolded*(centroid: Multivector, place: Multivector): Multivector =
   ## Fold one more unit-weight point into running centroid.
   ##   Sum of unit-weight points is their centroid: sum of `n` unit points carries weight
   ##   `n` and total of coordinates; `boundary.position` divides by signed weight.

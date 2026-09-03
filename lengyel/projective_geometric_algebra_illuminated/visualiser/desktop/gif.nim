@@ -119,7 +119,7 @@ type LzwDict = object ## Define map from (prefix code, next byte) to code.
   are_used: array[CAPACITY_DICT, bool]
 
 
-func hashKey(prefix: int; value: uint8): int =
+func hashKey(prefix: int, value: uint8): int =
   ## Spread (prefix, value) pairs over table.
   ##   Multiplier is Knuth's constant for multiplicative hashing, folded through `uint64`
   ##   so it never overflows.
@@ -132,7 +132,7 @@ proc clear(dict: var LzwDict) =
   for i in 0 ..< CAPACITY_DICT: dict.are_used[i] = false
 
 
-proc find(dict: LzwDict; prefix: int; value: uint8): Option[int] =
+proc find(dict: LzwDict, prefix: int, value: uint8): Option[int] =
   ## Look up code (prefix, value) was assigned; none where it has none yet.
   var index = hashKey(prefix, value)
   while dict.are_used[index]:
@@ -142,7 +142,7 @@ proc find(dict: LzwDict; prefix: int; value: uint8): Option[int] =
   none(int)
 
 
-proc insert(dict: var LzwDict; prefix: int; value: uint8; code: int) =
+proc insert(dict: var LzwDict, prefix: int, value: uint8, code: int) =
   ## Assign (prefix, value) fresh code; caller has confirmed it has none.
   var index = hashKey(prefix, value)
   while dict.are_used[index]: index = (index + 1) and (CAPACITY_DICT - 1)
@@ -189,7 +189,7 @@ proc flushBits(writer: var BitWriter) =
 
 
 proc lzwEncode(
-  arena: var Arena; dict: var LzwDict; indices: openArray[uint8]
+  arena: var Arena, dict: var LzwDict, indices: openArray[uint8]
 ): BitWriter =
   ## Compress quantized pixel indices with GIF's variable-width LZW.
   ##   Root codes 0 ..< `COUNT_TABLE` are palette indices; clear and end codes follow, and
@@ -243,7 +243,7 @@ func toLittleEndian16(value: uint16): array[2, uint8] =
   [uint8(value and 0xFF), uint8(value shr 8)]
 
 
-proc writeSubBlocks(file: File; data: openArray[uint8]) =
+proc writeSubBlocks(file: File, data: openArray[uint8]) =
   ## Write compressed stream as GIF's length-prefixed sub-blocks.
   ##   At most 255 bytes each, terminated by zero-length block.
   var offset = 0

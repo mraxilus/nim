@@ -111,7 +111,7 @@ func directionNormal*(m: Multivector): Option[Direction] =
 
 #[ Plane Frame ]#
 
-func spanPerpendicular*(anchor: Position; normal: Direction): Option[(Direction, Direction)] =
+func spanPerpendicular*(anchor: Position, normal: Direction): Option[(Direction, Direction)] =
   ## Derive orthonormal pair of directions perpendicular to `normal`, through `anchor`.
   ##   Built as `frame` spans plane's own axes, so caller holding normal read some other
   ##   way still spans it algebraically, through joins and antiduals, not raw cross product.

@@ -157,7 +157,7 @@ proc createWindow*(title: cstring; width, height: cint; flags: uint64): Window
 proc destroyWindow*(window: Window) {.importc: "SDL_DestroyWindow", header: HEADER.}
 proc getWindowSizeInPixels*(window: Window; width, height: ptr cint): bool
   {.importc: "SDL_GetWindowSizeInPixels", header: HEADER, discardable.}
-proc glSetAttribute*(attribute: uint32; value: cint): bool
+proc glSetAttribute*(attribute: uint32, value: cint): bool
   {.importc: "SDL_GL_SetAttribute", header: HEADER, discardable.}
 proc glCreateContext*(window: Window): GlContext
   {.importc: "SDL_GL_CreateContext", header: HEADER.}

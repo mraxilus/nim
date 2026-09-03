@@ -87,52 +87,52 @@ proc depthFunc*(function: Enum) {.importc: "glDepthFunc", header: HEADER.}
 proc depthMask*(flag: Boolean) {.importc: "glDepthMask", header: HEADER.}
 proc lineWidth*(width: Float) {.importc: "glLineWidth", header: HEADER.}
 proc getString*(name: Enum): cstring {.importc: "glGetString", header: HEADER.}
-proc pixelStorei*(name: Enum; parameter: Int) {.importc: "glPixelStorei", header: HEADER.}
+proc pixelStorei*(name: Enum, parameter: Int) {.importc: "glPixelStorei", header: HEADER.}
 proc readPixels*(
   x, y: Int; width, height: Sizei; format, kind: Enum; pixels: pointer
 ) {.importc: "glReadPixels", header: HEADER.}
 
-proc genVertexArrays*(count: Sizei; arrays: ptr Uint)
+proc genVertexArrays*(count: Sizei, arrays: ptr Uint)
   {.importc: "glGenVertexArrays", header: HEADER.}
 proc bindVertexArray*(array_object: Uint) {.importc: "glBindVertexArray", header: HEADER.}
-proc genBuffers*(count: Sizei; buffers: ptr Uint) {.importc: "glGenBuffers", header: HEADER.}
-proc bindBuffer*(target: Enum; buffer: Uint) {.importc: "glBindBuffer", header: HEADER.}
-proc bufferData*(target: Enum; size: Sizeiptr; data: pointer; usage: Enum)
+proc genBuffers*(count: Sizei, buffers: ptr Uint) {.importc: "glGenBuffers", header: HEADER.}
+proc bindBuffer*(target: Enum, buffer: Uint) {.importc: "glBindBuffer", header: HEADER.}
+proc bufferData*(target: Enum, size: Sizeiptr, data: pointer, usage: Enum)
   {.importc: "glBufferData", header: HEADER.}
 proc vertexAttribPointer*(
-  index: Uint; size: Int; kind: Enum; normalized: Boolean; stride: Sizei; offset: pointer
+  index: Uint, size: Int, kind: Enum, normalized: Boolean, stride: Sizei, offset: pointer
 ) {.importc: "glVertexAttribPointer", header: HEADER.}
 proc enableVertexAttribArray*(index: Uint)
   {.importc: "glEnableVertexAttribArray", header: HEADER.}
-proc vertexAttribDivisor*(index: Uint; divisor: Uint)
+proc vertexAttribDivisor*(index: Uint, divisor: Uint)
   {.importc: "glVertexAttribDivisor", header: HEADER.}
-proc drawArraysInstanced*(mode: Enum; first: Int; count: Sizei; instances: Sizei)
+proc drawArraysInstanced*(mode: Enum, first: Int, count: Sizei, instances: Sizei)
   {.importc: "glDrawArraysInstanced", header: HEADER.}
-proc drawArrays*(mode: Enum; first: Int; count: Sizei)
+proc drawArrays*(mode: Enum, first: Int, count: Sizei)
   {.importc: "glDrawArrays", header: HEADER.}
 
 proc createShader*(kind: Enum): Uint {.importc: "glCreateShader", header: HEADER.}
-proc shaderSource*(shader: Uint; count: Sizei; sources: ptr cstring; lengths: ptr Int)
+proc shaderSource*(shader: Uint, count: Sizei, sources: ptr cstring, lengths: ptr Int)
   {.importc: "glShaderSource", header: HEADER.}
 proc compileShader*(shader: Uint) {.importc: "glCompileShader", header: HEADER.}
-proc getShaderiv*(shader: Uint; name: Enum; parameters: ptr Int)
+proc getShaderiv*(shader: Uint, name: Enum, parameters: ptr Int)
   {.importc: "glGetShaderiv", header: HEADER.}
-proc getShaderInfoLog*(shader: Uint; capacity: Sizei; length: ptr Sizei; log: ptr Char)
+proc getShaderInfoLog*(shader: Uint, capacity: Sizei, length: ptr Sizei, log: ptr Char)
   {.importc: "glGetShaderInfoLog", header: HEADER.}
 proc deleteShader*(shader: Uint) {.importc: "glDeleteShader", header: HEADER.}
 
 proc createProgram*(): Uint {.importc: "glCreateProgram", header: HEADER.}
 proc attachShader*(program, shader: Uint) {.importc: "glAttachShader", header: HEADER.}
 proc linkProgram*(program: Uint) {.importc: "glLinkProgram", header: HEADER.}
-proc getProgramiv*(program: Uint; name: Enum; parameters: ptr Int)
+proc getProgramiv*(program: Uint, name: Enum, parameters: ptr Int)
   {.importc: "glGetProgramiv", header: HEADER.}
-proc getProgramInfoLog*(program: Uint; capacity: Sizei; length: ptr Sizei; log: ptr Char)
+proc getProgramInfoLog*(program: Uint, capacity: Sizei, length: ptr Sizei, log: ptr Char)
   {.importc: "glGetProgramInfoLog", header: HEADER.}
 proc useProgram*(program: Uint) {.importc: "glUseProgram", header: HEADER.}
-proc getUniformLocation*(program: Uint; name: cstring): Int
+proc getUniformLocation*(program: Uint, name: cstring): Int
   {.importc: "glGetUniformLocation", header: HEADER.}
-proc uniformMatrix4fv*(location: Int; count: Sizei; transpose: Boolean; value: ptr Float)
+proc uniformMatrix4fv*(location: Int, count: Sizei, transpose: Boolean, value: ptr Float)
   {.importc: "glUniformMatrix4fv", header: HEADER.}
-proc uniform1f*(location: Int; value: Float) {.importc: "glUniform1f", header: HEADER.}
-proc uniform1i*(location: Int; value: Int) {.importc: "glUniform1i", header: HEADER.}
+proc uniform1f*(location: Int, value: Float) {.importc: "glUniform1f", header: HEADER.}
+proc uniform1i*(location: Int, value: Int) {.importc: "glUniform1i", header: HEADER.}
 proc uniform3f*(location: Int; x, y, z: Float) {.importc: "glUniform3f", header: HEADER.}

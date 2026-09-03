@@ -43,12 +43,12 @@ func revision*(selection: Selection): int = selection.count_changes
   ##     remember it is `ITEMS_MAX` more, per frame, whatever is picked.
 
 
-func at*(selection: Selection; position: int): int = selection.slots[position]
+func at*(selection: Selection, position: int): int = selection.slots[position]
   ## Read slot picked at position, oldest pick first.
   ##   Position 0 is operand `m`, position 1 is `n`; callers bound themselves against `len`.
 
 
-func contains*(selection: Selection; slot: int): bool =
+func contains*(selection: Selection, slot: int): bool =
   ## Report whether slot is picked.
   for position in 0 ..< selection.count:
     if selection.slots[position] == slot: return true
@@ -66,7 +66,7 @@ func impliedArity*(selection: Selection): Arity =
   if selection.count >= 2: Arity.Two else: Arity.One
 
 
-func isAllHidden*(selection: Selection; scene: Scene): bool =
+func isAllHidden*(selection: Selection, scene: Scene): bool =
   ## Report whether every picked object is hidden.
   ##   Lets control acting on whole selection name what it would do: `show` where all
   ##   hidden, `hide` otherwise.
@@ -89,7 +89,7 @@ func clear*(selection: var Selection) =
   inc selection.count_changes
 
 
-func selectOnly*(selection: var Selection; slot: int) =
+func selectOnly*(selection: var Selection, slot: int) =
   ## Replace whole selection with one slot.
   if selection.count == 1 and selection.slots[0] == slot: return
   selection.slots[0] = slot
@@ -97,7 +97,7 @@ func selectOnly*(selection: var Selection; slot: int) =
   inc selection.count_changes
 
 
-func toggle*(selection: var Selection; slot: int) =
+func toggle*(selection: var Selection, slot: int) =
   ## Add slot to end of selection, or drop it where already picked.
   ##   Appending is what makes order meaningful: two objects picked become `m` and `n` in
   ##   order picked.
@@ -114,7 +114,7 @@ func toggle*(selection: var Selection; slot: int) =
   inc selection.count_changes
 
 
-func pruneDead*(selection: var Selection; scene: Scene) =
+func pruneDead*(selection: var Selection, scene: Scene) =
   ## Drop every picked slot scene no longer holds, keeping rest in pick order.
   ##   Call after removing object: freed slot is handed straight to next add, so stale
   ##   pick would silently reattach to unrelated new object.
@@ -167,14 +167,14 @@ type PulseClock* = object ## Define each selected object's orientation pulse bet
   seconds_last: Option[float] ## Clock reading `tick` last saw, for step between frames.
 
 
-proc tick*(clock: var PulseClock; now: float) =
+proc tick*(clock: var PulseClock, now: float) =
   ## Take frame's clock reading, so `advance` knows how long step was.
   ##   Call once per frame, before advancing any slot.
   ##   First call establishes reading and advances nothing.
   clock.seconds_last = some(now)
 
 
-func secondsStep*(clock: PulseClock; now: float): float =
+func secondsStep*(clock: PulseClock, now: float): float =
   ## Report seconds passed since reading `tick` last took.
   ##   Zero before first tick and for step that ran backwards, which caller restarting
   ##   clock can produce and no pulse should answer by rewinding.
@@ -195,12 +195,12 @@ proc advance*(clock: var PulseClock; slot: int; lap, seconds: float) =
   clock.travels[slot] = travelAdvanced(clock.travels[slot], lap, seconds)
 
 
-func travelAt*(clock: PulseClock; slot: int): float =
+func travelAt*(clock: PulseClock, slot: int): float =
   ## Read one slot's pulse travel, in screen pixels from outline's anchor.
   if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.travels[slot]
 
 
-proc forget*(clock: var PulseClock; slot: int) =
+proc forget*(clock: var PulseClock, slot: int) =
   ## Send slot's pulse back to start of its lap.
   ##   Call where slot is handed to fresh object, so new selection begins comet at head
   ##   rather than inheriting wherever since-removed object had got to.

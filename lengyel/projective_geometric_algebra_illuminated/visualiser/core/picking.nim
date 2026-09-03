@@ -240,7 +240,7 @@ func positionUnderCursor*(
 
 
 func positionOnLineNearest*(
-  anchor: Position; axis: Direction; ray_from: Position; ray_along: Direction
+  anchor: Position, axis: Direction, ray_from: Position, ray_along: Direction
 ): Option[Position] =
   ## Find point of line through `anchor` along `axis` nearest ray from `ray_from`.
   ##   What line-under-cursor means: cursor is ray, line is line, and in three
@@ -264,7 +264,7 @@ func positionOnLineNearest*(
 
 
 func positionOnItemUnder(
-  geometry: Multivector; ray: Multivector; plane_eye: Multivector
+  geometry: Multivector, ray: Multivector, plane_eye: Multivector
 ): Option[Position] =
   ## Solve world point of one item cursor's sight `ray` is over.
   ##   Point stands where it stands, plane is met where ray crosses it, line is read at
@@ -413,7 +413,7 @@ proc pickNearest*(
     priority_best = high(int)
     distance_best = Inf
 
-  template consider(priority: int; distance: float) =
+  template consider(priority: int, distance: float) =
     if priority < priority_best or (priority == priority_best and distance < distance_best):
       priority_best = priority
       distance_best = distance

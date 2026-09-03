@@ -52,7 +52,7 @@ const
 #[ What Is Being Watched ]#
 
 iterator watched*(
-  scene: Scene; picked: Selection; staged: Option[Preview]
+  scene: Scene, picked: Selection, staged: Option[Preview]
 ): (Multivector, Option[Position]) =
   ## Walk whatever camera is asked to show, in order module doc states.
   ##   Each comes beside anchor its disc is drawn about where it has one: plane's creation
@@ -85,7 +85,7 @@ iterator watched*(
 
 
 func aimFor*(
-  scene: Scene; picked: Selection; staged: Option[Preview]; scale: DrawExtent
+  scene: Scene, picked: Selection, staged: Option[Preview], scale: DrawExtent
 ): Option[CameraAim] =
   ## Resolve what camera is asked to bring into view, or none where nothing is.
   ##   Pure function of geometry: see `CameraAim`, whose worth is that caller re-offering

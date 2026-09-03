@@ -116,7 +116,7 @@ func languageOf(path: string): Option[Language] =
 
 #[ Reading Comments ]#
 
-func endOfQuoted(line: string; start: int; is_raw: bool): int =
+func endOfQuoted(line: string, start: int, is_raw: bool): int =
   ## Report index just past double-quoted string opening at `start`, or line's end.
   var i = start + 1
   while i < len(line):
@@ -128,14 +128,14 @@ func endOfQuoted(line: string; start: int; is_raw: bool): int =
   len(line)
 
 
-func endOfSingleQuoted(line: string; start: int): Option[int] =
+func endOfSingleQuoted(line: string, start: int): Option[int] =
   ## Report index just past single-quoted span opening at `start`, if one closes here.
   ##   Apostrophes in prose never close, so they are not quotes.
   let close = line.find('\'', start + 1)
   if close < 0: none(int) else: some(close + 1)
 
 
-func commentHash(reader: var Reader; line: string): Comment =
+func commentHash(reader: var Reader, line: string): Comment =
   ## Extract comment from one line of `#`-commented source.
   var i = 0
   while i < len(line):
@@ -162,7 +162,7 @@ func commentHash(reader: var Reader; line: string): Comment =
     inc i
 
 
-func commentSlash(reader: var Reader; line: string): Comment =
+func commentSlash(reader: var Reader, line: string): Comment =
   ## Extract comment from one line of `//`-commented source.
   var i = 0
   while i < len(line):
@@ -310,7 +310,7 @@ func isBanner(text: string): bool =
   stripped.startsWith("#[") or stripped.startsWith("/* ---") or stripped == "/*"
 
 
-func formOf(comment: Comment; language: Language): Option[Complaint] =
+func formOf(comment: Comment, language: Language): Option[Complaint] =
   ## Check one lead comment line against form rule its kind carries.
   if not comment.is_lead or isBanner(comment.text): return
   let stripped = comment.text.strip()

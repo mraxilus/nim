@@ -154,7 +154,7 @@ func toPosition(vertex: Vertex): Position =
   Position(x: float(vertex.x), y: float(vertex.y), z: float(vertex.z))
 
 
-func transform(matrix: Matrix4; p: Position; weight: float): array[4, float] =
+func transform(matrix: Matrix4, p: Position, weight: float): array[4, float] =
   ## Apply transform to homogeneous point, so matrices can be checked by what they do.
   let coordinates = [p.x, p.y, p.z, weight]
   for row in 0 .. 3:
@@ -867,7 +867,7 @@ suite "Mesh":
     )
 
 
-  proc ribbonEnds(meshes: MeshSet; index: int): (Position, Position) =
+  proc ribbonEnds(meshes: MeshSet, index: int): (Position, Position) =
     ## Recover segment `index`-th ribbon was built around.
     ##   Each end's own two corners sit equal step either side of it, so their midpoint
     ##   is endpoint again.
@@ -1287,7 +1287,7 @@ suite "Mesh":
     check MESHES.washes.count <= len(MESHES.washes.runs)
 
 
-  func scaleFurnitureAt(eye: Position; extent: float): DrawExtent =
+  func scaleFurnitureAt(eye: Position, extent: float): DrawExtent =
     ## Place eye somewhere, with stated furniture reach, for fog cases below.
     ##   `SCALE_TEST` cannot serve them: its fog reach is shorter than its eye's height,
     ##   so its fog never reaches ground and no grid is drawn at all.
@@ -2293,7 +2293,7 @@ suite "Scene":
       check scene.len == 1
 
 
-    proc sceneFileOf(version: uint8; items: seq[(int, bool, string, Multivector)]): string =
+    proc sceneFileOf(version: uint8, items: seq[(int, bool, string, Multivector)]): string =
       ## Build bytes of scene file by hand, at whatever version is asked for.
       ##   Hand-built rather than saved by this build, because point of cases
       ##   below is to read version this build can no longer *write*: asking `saveScene`
@@ -2692,7 +2692,7 @@ suite "Camera Aim":
     (scene, picked)
 
   proc framedFor(
-    scene: Scene; picked: Selection; camera: Camera
+    scene: Scene, picked: Selection, camera: Camera
   ): CameraPlacement =
     ## Resolve where framing rule puts camera for whole selection.
     let aim = aimFor(scene, picked, none(Preview), camera.drawExtentFor(HEIGHT_AIM))
@@ -2894,7 +2894,7 @@ suite "Camera Aim":
       toMultivector(Position(x: 0.0, y: 1.0, z: 0.0))
     let (margin_x, margin_y) = marginsCentred()
 
-    proc rimAt(place: Camera; centre: Position): tuple[past_box, off_frame: bool] =
+    proc rimAt(place: Camera, centre: Position): tuple[past_box, off_frame: bool] =
       ## Walk drawn rim, reporting whether it reaches past centred box or leaves frame.
       ##   Two bounds this rule tells apart.
       let
@@ -3329,12 +3329,12 @@ suite "Camera Aim":
     check aimFor(empty, SCALE_AIM).isNone
 
 
-  proc aimOn(centre: Position; radius = 0.0): CameraAim =
+  proc aimOn(centre: Position, radius = 0.0): CameraAim =
     ## Name bare requirement for tween cases below.
     ##   Cases are about ease rather than about what any particular geometry asks for.
     CameraAim(sphere: some(SphereWorld(centre: centre, radius: radius)))
 
-  proc placeOn(camera: Camera; target: Position): CameraPlacement =
+  proc placeOn(camera: Camera, target: Position): CameraPlacement =
     ## Move camera's placement onto target, leaving its orbit exactly as it stands.
     result = camera.placementOf
     result.target = target
@@ -3520,7 +3520,7 @@ suite "Selection":
     # Frame-rate independence, which is whole reason travel advances by elapsed.
     #   seconds rather than by step frame. Driven on browser too: 3 s of clock
     #   moved head 178.3 px at 36 fps, 179.0 at 60 and 179.6 at 144, against 180.
-    proc travelAfter(seconds_total: float; frames: int; lap: float): float =
+    proc travelAfter(seconds_total: float, frames: int, lap: float): float =
       var clock: PulseClock
       var seconds = 0.0
       clock.tick(seconds)
@@ -4883,7 +4883,7 @@ suite "Interaction":
     check proposalFor(GENERAL_FIRST[0], GENERAL_SECOND[0]) == some(DragChoice.Join)
     check isOffered(DragChoice.Project, GENERAL_FIRST[0], GENERAL_SECOND[0])
 
-    proc aimAt(interaction: var Interaction; scene: Scene; choice: DragChoice) =
+    proc aimAt(interaction: var Interaction, scene: Scene, choice: DragChoice) =
       let at = anchorOf(centre, choice)
       interaction.updateCursor(at.x, at.y)
       interaction.updateDrag(scene, 0.0)
@@ -5777,8 +5777,8 @@ suite "Marker":
     else: none(Marker)
 
   proc markerOf(
-    geometry: Multivector; anchor = none(Position); progress = 1.0;
-    travel = none(float); distance = 19.0
+    geometry: Multivector, anchor = none(Position), progress = 1.0,
+    travel = none(float), distance = 19.0
   ): Option[Marker] =
     let (placement, view_projection, scale) = setUp(distance)
     shapedMarkerFor(
@@ -6345,7 +6345,7 @@ suite "Marker":
 
 
   test "a pulse rides its own outline, and only where there is an orientation to state":
-    proc pulsed(geometry: Multivector; travel: float): Marker =
+    proc pulsed(geometry: Multivector, travel: float): Marker =
       markerOf(geometry, travel = some(travel)).get
 
     # Plane's circle and line's rails both carry one; point has no orientation and.
@@ -6367,7 +6367,7 @@ suite "Marker":
     #   run is sampled from marker's own points rather than traced on curve of
     #   its own, and then wrapped in ribbon standing off that spine either side.
     let marker = pulsed(PLANE, 0.3)
-    proc distanceToLoop(point: ScreenPosition; marker: Marker): float =
+    proc distanceToLoop(point: ScreenPosition, marker: Marker): float =
       result = high(float)
       for i in 0 ..< marker.count_point:
         let (first, second) = (marker.points[i], marker.points[(i + 1) mod marker.count_point])
@@ -6404,7 +6404,7 @@ suite "Marker":
     # Point of measuring run in pixels. Under fraction of outline it came out.
     #   96 px along line's rail against 334 px round plane's circle -- one constant,
     #   compact comet on one shape and long gradient on another.
-    proc lengthOfRun(marker: Marker; run: int): float =
+    proc lengthOfRun(marker: Marker, run: int): float =
       # Down middle of ribbon, which recovers spine it was built around: its.
       #   own two edges splay wherever width changes, and are longer than run.
       let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2
@@ -6426,7 +6426,7 @@ suite "Marker":
         check lengthOfRun(shaped, run) > 0.98*LENGTH_MARKER_COMET
 
 
-  proc headOfRun(marker: Marker; run: int): ScreenPosition =
+  proc headOfRun(marker: Marker, run: int): ScreenPosition =
     ## Find where run's spine begins, recovered from middle of ribbon around it.
     ##   Its own edges ride wide of spine on outside of any bend.
     let spans = (marker.counts_pulse[run] - SEGMENTS_MARKER_CAP) div 2

@@ -91,7 +91,7 @@ proc rangesDeclared(path: string): seq[Range] =
     result.add(Range(first: parseHexInt(first), last: parseHexInt(last)))
 
 
-func covers(ranges: openArray[Range]; rune: Rune): bool =
+func covers(ranges: openArray[Range], rune: Rune): bool =
   ## Report whether any declared range holds `rune`.
   for span in ranges:
     if int(rune) >= span.first and int(rune) <= span.last: return true

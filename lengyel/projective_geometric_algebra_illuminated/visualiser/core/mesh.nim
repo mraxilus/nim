@@ -437,7 +437,7 @@ func radiansPerPixel*(scale: DrawScale): float =
   2.0*scale.tangent_half_view/float(max(scale.height_pixels, 1))
 
 
-func worldPerPixelAt*(place: Position; scale: DrawScale): float =
+func worldPerPixelAt*(place: Position, scale: DrawScale): float =
   ## Measure how much world distance one screen pixel spans at `place`'s depth.
   ##   Turns width or clearance stated in pixels into world offset, wherever anchored.
   ##     Every ribbon's half-width and every marker's clearance come through here.
@@ -603,7 +603,7 @@ func colour*(ink: Ink): lent Rgba = lut_ink_to_rgba[ink]
   ##   object per frame (Art. VII.1).
 
 
-func fade*(base: Rgba; alpha: float32): Rgba =
+func fade*(base: Rgba, alpha: float32): Rgba =
   ## Rewrite colour's opacity, leaving its hue alone.
   Rgba(red: base.red, green: base.green, blue: base.blue, alpha: alpha)
 
@@ -666,7 +666,7 @@ proc markOverlay*(meshes: var MeshSet) =
   meshes.washes.index_overlay = some(meshes.washes.count)
 
 
-proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba; alpha: float32) =
+proc addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
   ## Append point marking single position, in `tint`'s hue at `alpha`.
   ##   Alpha apart from tint so caller fading point need not build faded `Rgba` first.
   ##     `fade` per point was two allocations and copy, once per point per frame.
@@ -739,7 +739,7 @@ func directionAcross*(tail, head, eye: Position): Option[Direction] =
   normalize(cross(head - tail, eye - tail))
 
 
-func expandRibbon*(record: RibbonRecord; scale: DrawScale): array[6, Vertex] =
+func expandRibbon*(record: RibbonRecord, scale: DrawScale): array[6, Vertex] =
   ## Expand one ribbon record into six vertices shader will make of it.
   ##   Reference implementation of ribbon vertex shader; nothing else runs it.
   ##     Both render targets carry same arithmetic in GLSL (`renderer.nim` and `glue.js`,
@@ -824,7 +824,7 @@ proc addRibbon*(
 
 
 proc addRibbonPieces*(
-  meshes: var MeshSet; pieces: openArray[RibbonPiece]; width: float32;
+  meshes: var MeshSet, pieces: openArray[RibbonPiece], width: float32,
   is_fogged: bool = false
 ) =
   ## Append every assembled piece as ribbon record.
@@ -851,7 +851,7 @@ let UNIT_CIRCLE_RIM* = unitRing[SEGMENTS_CIRCLE_HORIZON + 1](SEGMENTS_CIRCLE_HOR
   ##   does.
 
 
-proc ribbonOfRing*(record: RingRecord; segment: int): RibbonRecord =
+proc ribbonOfRing*(record: RingRecord, segment: int): RibbonRecord =
   ## Report ribbon one segment of ring *is*: one place ring becomes line.
   ##   Ring is closed walk of `SEGMENTS_CIRCLE_HORIZON` segments around circle its centre
   ##   and arms describe, each ordinary ribbon of ring's tint and width.
@@ -881,7 +881,7 @@ proc ribbonOfRing*(record: RingRecord; segment: int): RibbonRecord =
 
 
 proc expandRingVertex*(
-  record: RingRecord; segment: int; scale: DrawScale
+  record: RingRecord, segment: int, scale: DrawScale
 ): array[6, Vertex] =
   ## Expand one segment of ring into six vertices shader will make of it.
   ##   Reference implementation of ring vertex shader; nothing else runs it.
@@ -944,7 +944,7 @@ func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex 
   )
 
 
-func expandDomeVertex*(record: DomeRecord; unit: Direction): Vertex =
+func expandDomeVertex*(record: DomeRecord, unit: Direction): Vertex =
   ## Widen one dome record into sphere corner given unit direction stands for.
   ##   Reference dome vertex shaders are held to; same three-way rule as
   ##   `expandDiscVertex`.
@@ -1033,7 +1033,7 @@ func domeCorners*(): seq[float32] =
         at += 3
 
 
-proc appendWashRun(meshes: var MeshSet; kind: WashKind) =
+proc appendWashRun(meshes: var MeshSet, kind: WashKind) =
   ## Note one more record of `kind` in wash draw order.
   ##   Extends current run where it is same kind and this side of overlay mark, opens
   ##   new one otherwise. See `WashRuns`.
@@ -1080,7 +1080,7 @@ proc addDisc*(
   meshes.discs.count = count + 1
 
 
-proc addDome*(meshes: var MeshSet; center: Position; radius: float; tint: Rgba) =
+proc addDome*(meshes: var MeshSet, center: Position, radius: float, tint: Rgba) =
   ## Append whole-sky sphere record around `center`, for dome vertex shader to widen.
   ##   Plane at horizon is unique universal whole-sky object, same regardless of which
   ##   points produced it (see `directionNormalHorizon`), so only `radius` and `tint`

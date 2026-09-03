@@ -388,7 +388,7 @@ static:
 
 
 proc addHorizon(
-  scene: var Scene; geometry: Multivector; label: string; expected: Shape; now: float
+  scene: var Scene, geometry: Multivector, label: string, expected: Shape, now: float
 ) =
   ## Add one of closing objects at horizon, refusing anything that is not one.
   ##   Same guard `addPlane` is, against second way of getting it wrong.
@@ -403,7 +403,7 @@ proc addHorizon(
 
 
 proc addPlane(
-  scene: var Scene; geometry: Multivector; label: string; now: float; anchor: Position
+  scene: var Scene, geometry: Multivector, label: string, now: float, anchor: Position
 ) =
   ## Add derived plane, refusing anything that is not one.
   ##   Three collinear points wedge to multivector of no clean grade, which `objects.shape`
@@ -583,7 +583,7 @@ proc constructSol(
 
 
 proc constructOrrery*(
-  scene: var Scene; scale: ScaleOrrery = SCALE_ORRERY_DEFAULT; now: float = 0.0
+  scene: var Scene, scale: ScaleOrrery = SCALE_ORRERY_DEFAULT, now: float = 0.0
 ) =
   ## Fill scene with every system in turn, then four objects at horizon.
   ##   `scale` says how deep into catalogue to reach; see `ScaleOrrery`. Every size runs

@@ -156,7 +156,7 @@ const lut_deficiency_to_transform: array[Deficiency, array[3, array[3, float]]] 
   ##   Over linear RGB; see module header for citation.
 
 
-func toDeficient*(colour: Linear; deficiency: Deficiency): Linear =
+func toDeficient*(colour: Linear, deficiency: Deficiency): Linear =
   ## Report what `colour` looks like to reader with named deficiency.
   ##   Clamped on return: transform can leave sRGB cube, and negative channel is not
   ##   colour any display shows.

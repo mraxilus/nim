@@ -85,7 +85,7 @@ proc isTallying*(): bool = IS_TALLYING
   ## Report whether fine breakdowns are gathered this frame.
 
 
-template timed*(side: Side; body: untyped) =
+template timed*(side: Side, body: untyped) =
   ## Charge whatever `body` does to one side of boundary.
   ##   Never nest two: inner stretch would be counted by both, undetectably.
   ##     Call sites bracket disjoint halves of one proc.

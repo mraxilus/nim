@@ -82,7 +82,7 @@ func algebraFilled*(scale: DrawExtent): DrawExtent =
 
 #[ Representative Point ]#
 
-func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
+func anchorFor*(m: Multivector, scale: DrawExtent): Option[Position] =
   ## Resolve one point standing for `m`, for picking point and for cursor feedback.
   ##   Point uses own place, or own star position at horizon, matching where
   ##   `mesh.addPoint` draws it.
@@ -106,7 +106,7 @@ func anchorFor*(m: Multivector; scale: DrawExtent): Option[Position] =
 
 
 func anchorFor*(
-  m: Multivector; anchor_override: Option[Position]; scale: DrawExtent
+  m: Multivector, anchor_override: Option[Position], scale: DrawExtent
 ): Option[Position] =
   ## Resolve one point standing for `m` as it is drawn.
   ##   For anything meeting object on screen: rubber-band leaving it, comet aimed from it,
@@ -166,7 +166,7 @@ proc placeChord(
   count_assembled += 1
 
 
-proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int =
+proc placeAxes(scratch: var DrawScratch, extent: float, scale: DrawExtent): int =
   ## Resolve world axes into `scratch` and report how many pieces.
   ##   One through origin along each of x, y and z (x red, y green, z blue), so
   ##   orientation reads at glance.
@@ -213,7 +213,7 @@ proc placeAxes(scratch: var DrawScratch; extent: float; scale: DrawExtent): int 
 
 
 proc addAxes*(
-  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
+  meshes: var MeshSet, scratch: var DrawScratch, extent: float, scale: DrawExtent
 ) =
   ## Append world axes; `placeAxes` says what each is and how far it runs.
   ##   Two calls, for reason `addGridFamily` gives.
@@ -226,7 +226,7 @@ proc addAxes*(
     )
 
 
-func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Option[float] =
+func radiusOnPlaneFor*(extent: float, scale: DrawExtent, plane: Multivector): Option[float] =
   ## Solve how far lattice laid on `plane` reaches from eye's foot on it.
   ##   Fog is sphere about eye, so what it leaves on any plane is disc about that foot, of
   ##   radius `sqrt(radius_gone^2 - height^2)`, height being eye's depth against plane.
@@ -240,7 +240,7 @@ func radiusOnPlaneFor*(extent: float; scale: DrawExtent; plane: Multivector): Op
   some(sqrt(radius_squared))
 
 
-func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
+func radiusGroundFor*(extent: float, scale: DrawExtent): Option[float] =
   ## Solve how far ground grid reaches from point directly below eye, in world units.
   ##   For camera whose furniture extends `extent`.
   ##   Disc fog sphere leaves on ground, height read as eye's depth against
@@ -251,7 +251,7 @@ func radiusGroundFor*(extent: float; scale: DrawExtent): Option[float] =
   radiusOnPlaneFor(extent, scale, groundPlane())
 
 
-func sizeCellGridAt*(extent: float; scale: DrawExtent): Option[float] =
+func sizeCellGridAt*(extent: float, scale: DrawExtent): Option[float] =
   ## Report cell size ground grid is laid on for this camera, in world units.
   ##   None where no ground is drawn. One answer both grid and scale bar read.
   let radius_ground = radiusGroundFor(extent, scale)
@@ -332,7 +332,7 @@ proc addGridFamily*(
 
 
 proc addGrid*(
-  meshes: var MeshSet; scratch: var DrawScratch; extent: float; scale: DrawExtent
+  meshes: var MeshSet, scratch: var DrawScratch, extent: float, scale: DrawExtent
 ) =
   ## Append reference grid on ground, so distance and direction stay judgeable.
   ##   Laid at `sizeCellGridFor` cells around wherever camera stands.
@@ -405,7 +405,7 @@ type
 
 
 proc placeObject*(
-  geometry: Multivector; anchor_override: Option[Position] = none(Position)
+  geometry: Multivector, anchor_override: Option[Position] = none(Position)
 ): Placed =
   ## Ask algebra what object is and where: whole placing side of cut, none of emitting.
   ##   Split from `addObject` so caller may keep answer.
@@ -450,7 +450,7 @@ proc placeObject*(
 
 
 proc emitObject*(
-  meshes: var MeshSet; placed: var Placed; tint: Rgba; scale: DrawExtent;
+  meshes: var MeshSet, placed: var Placed, tint: Rgba, scale: DrawExtent,
   progress: float = 1.0
 ): Placement =
   ## Turn one placed object into this frame's records, at this frame's camera.
@@ -549,8 +549,8 @@ proc emitObject*(
 
 
 proc addObject*(
-  meshes: var MeshSet; scratch: var DrawScratch; geometry: Multivector; tint: Rgba;
-  scale: DrawExtent; progress: float = 1.0;
+  meshes: var MeshSet, scratch: var DrawScratch, geometry: Multivector, tint: Rgba,
+  scale: DrawExtent, progress: float = 1.0,
   anchor_override: Option[Position] = none(Position)
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.

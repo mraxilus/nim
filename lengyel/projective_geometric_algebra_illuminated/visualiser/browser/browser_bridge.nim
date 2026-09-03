@@ -73,8 +73,8 @@ type
     used: int
 
 proc newFlatBuffer(count: int): FlatBuffer {.importjs: "new Float32Array(#)".}
-proc `[]=`(buffer: FlatBuffer; index: int; value: float32) {.importjs: "#[#] = #".}
-proc prefix(buffer: FlatBuffer; count: int): FlatBuffer {.importjs: "#.subarray(0, #)".}
+proc `[]=`(buffer: FlatBuffer, index: int, value: float32) {.importjs: "#[#] = #".}
+proc prefix(buffer: FlatBuffer, count: int): FlatBuffer {.importjs: "#.subarray(0, #)".}
   ## Report first `count` entries as view.
   ##   No copy, and `instanceof Float32Array` still holds, so `glue.js` uploads it with
   ##   nothing in between.
@@ -88,7 +88,7 @@ proc view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
   ##   One small view object per buffer per frame, seven in all, against whole buffer of
   ##   element-by-element conversion it replaces.
 
-proc `[]=`(flat: var FlatFloats; index: int; value: float32) = flat.values[index] = value
+proc `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
   ## Write one float into flat buffer.
 
 
@@ -264,7 +264,7 @@ var
   g_flat_view: seq[float32] = newSeq[float32](16)
 
 
-proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var FlatFloats) =
+proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
   ## Interleave one frame's ribbon records for instanced upload, sixteen floats each.
   ##   Tail xyz, head xyz, width, fog, tail rgba, head rgba: `RibbonRecord`'s field order,
   ##   which attribute setup in `glue.js` reads back apart.
@@ -289,7 +289,7 @@ proc flattenRibbonsInto(ribbons: RibbonMesh; dest: var FlatFloats) =
     dest[16*i + 15] = r.head_alpha
 
 
-proc flattenDiscsInto(discs: DiscMesh; dest: var FlatFloats) =
+proc flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
   ## Interleave one frame's disc records for instanced upload, thirteen floats each.
   ##   Centre xyz, first arm xyz, second arm xyz, fill rgba: `DiscRecord`'s field order.
   dest.used = discs.count * 13
@@ -310,7 +310,7 @@ proc flattenDiscsInto(discs: DiscMesh; dest: var FlatFloats) =
     dest[13*i + 12] = r.fill_alpha
 
 
-proc flattenRingsInto(rings: RingMesh; dest: var FlatFloats) =
+proc flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
   ## Interleave one frame's ring records for instanced upload, fourteen floats each.
   ##   `DiscRecord`'s thirteen in same order, then width, so ring and disc attribute
   ##   setups in `glue.js` differ by one trailing attribute.
@@ -333,7 +333,7 @@ proc flattenRingsInto(rings: RingMesh; dest: var FlatFloats) =
     dest[14*i + 13] = r.width
 
 
-proc flattenDomesInto(domes: DomeMesh; dest: var FlatFloats) =
+proc flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
   ## Interleave one frame's dome records for instanced upload, eight floats each.
   ##   Centre xyz, radius, rgba: `DomeRecord`'s field order.
   dest.used = domes.count * 8
@@ -349,7 +349,7 @@ proc flattenDomesInto(domes: DomeMesh; dest: var FlatFloats) =
     dest[8*i + 7] = r.alpha
 
 
-proc flattenWashRunsInto(washes: WashRuns; dest: var FlatFloats) =
+proc flattenWashRunsInto(washes: WashRuns, dest: var FlatFloats) =
   ## Interleave wash draw order, three floats per run: kind ordinal, first, count.
   dest.used = washes.count * 3
   for i in 0 ..< washes.count:
@@ -358,7 +358,7 @@ proc flattenWashRunsInto(washes: WashRuns; dest: var FlatFloats) =
     dest[3*i + 2] = float32(washes.runs[i].count)
 
 
-proc stampBorn(slot: int; born: float) =
+proc stampBorn(slot: int, born: float) =
   ## Record when item in `slot` arrived, and carry watermark with it.
   ##   One door birth stamps go through, so `g_born_last` cannot fall behind stamp written
   ##   directly, which would let scene hold engage over item still fading in.
@@ -366,7 +366,7 @@ proc stampBorn(slot: int; born: float) =
   g_born_last = max(g_born_last, born)
 
 
-proc flattenInto(mesh: Mesh; dest: var FlatFloats) =
+proc flattenInto(mesh: Mesh, dest: var FlatFloats) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`.
   ##   Ready for `gl.bufferData`.
   dest.used = mesh.count_vertices * 7
@@ -542,7 +542,7 @@ proc nimDefaultInk(): cint {.exportc.} = cint(g_scene.inkNext)
 
 
 proc nimAddItem(
-  coefficients: seq[float]; label: cstring; ink_ordinal: cint; now: cfloat
+  coefficients: seq[float], label: cstring, ink_ordinal: cint, now: cfloat
 ): cint {.exportc.} =
   ## Commit composing edit session as fresh scene object.
   ##   Takes label and palette slot session staged; both are editable before commit,
@@ -559,7 +559,7 @@ proc nimAddItem(
 
 
 proc nimCommitItem(
-  slot: cint; coefficients: seq[float]; label: cstring; ink_ordinal: cint
+  slot: cint, coefficients: seq[float], label: cstring, ink_ordinal: cint
 ) {.exportc.} =
   ## Commit editing session onto item it was opened against.
   ##   Writes every staged field at once and records history exactly once.
@@ -646,18 +646,18 @@ proc staged(): Option[Preview] =
   g_preview
 
 
-proc nimSetVisible(slot: cint; is_visible: bool) {.exportc.} =
+proc nimSetVisible(slot: cint, is_visible: bool) {.exportc.} =
   ## Rewrite item's visibility, by slot.
   g_scene.setVisible(int(slot), is_visible)
   g_history.record(g_scene, g_camera)
 
 
-proc nimSetLabel(slot: cint; text: cstring) {.exportc.} =
+proc nimSetLabel(slot: cint, text: cstring) {.exportc.} =
   ## Rewrite item's display label, by slot.
   toChars($text, g_scene.labelAt(int(slot)))
 
 
-proc nimSetInk(slot: cint; ink_ordinal: cint) {.exportc.} =
+proc nimSetInk(slot: cint, ink_ordinal: cint) {.exportc.} =
   ## Rewrite item's palette slot, by slot.
   g_scene.setInk(int(slot), Ink(ink_ordinal))
   g_history.record(g_scene, g_camera)
@@ -1170,7 +1170,7 @@ proc nimHelpDescriptions(): seq[cstring] {.exportc.} =
     result.add([cstring(titleOf(path)), cstring(descriptionOf(path))])
 
 
-proc nimBeginHold(slot: cint; now: cfloat) {.exportc.} =
+proc nimBeginHold(slot: cint, now: cfloat) {.exportc.} =
   ## Forward to `interaction.beginHold`.
   interaction.beginHold(g_interaction, int(slot), float(now))
 
@@ -1324,7 +1324,7 @@ proc nimIsClick(now: cfloat): bool {.exportc.} =
   isClick(g_interaction, float(now))
 
 
-proc nimBeginDrag(arming_ordinal: cint; now: cfloat): bool {.exportc.} =
+proc nimBeginDrag(arming_ordinal: cint, now: cfloat): bool {.exportc.} =
   ## Forward to `interaction.beginDrag`.
   ##   Arming as ordinal rather than flag: three of them, two reachable from mouse.
   ##   `nimDragArmingOnDwell` names one touch uses.
@@ -1714,8 +1714,8 @@ proc nimSceneClear() {.exportc.} =
 
 
 proc nimSceneAddRaw(
-  version: cint; ink_ordinal: cint; is_visible: bool; label: cstring;
-  coefficients: seq[float]; count_total: cint; now: cfloat
+  version: cint, ink_ordinal: cint, is_visible: bool, label: cstring,
+  coefficients: seq[float], count_total: cint, now: cfloat
 ): cint {.exportc.} =
   ## Add one item straight from parsed `.rgascene` fields, for load path.
   ##   Presentation layer parses bytes into these fields and calls this once per item, in

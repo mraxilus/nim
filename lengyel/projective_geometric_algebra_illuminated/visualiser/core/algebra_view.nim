@@ -63,7 +63,7 @@ func inkFor(role: TracedRole): Rgba =
 
 
 proc addLattice*(
-  meshes: var MeshSet; scratch: var DrawScratch; plane: Multivector; tint: Rgba;
+  meshes: var MeshSet, scratch: var DrawScratch, plane: Multivector, tint: Rgba,
   scale: DrawExtent
 ) =
   ## Append plane drawn as infinite thing it is: lattice laid across it.
@@ -95,7 +95,7 @@ proc addLattice*(
 
 
 proc addTraced*(
-  meshes: var MeshSet; scratch: var DrawScratch; traced: Traced;
+  meshes: var MeshSet, scratch: var DrawScratch, traced: Traced,
   scale: DrawExtent
 ): Placement =
   ## Append one recorded multivector, in its true form.
@@ -113,7 +113,7 @@ proc addTraced*(
 
 
 proc addTrace*(
-  meshes: var MeshSet; scratch: var DrawScratch; trace: AlgebraTrace;
+  meshes: var MeshSet, scratch: var DrawScratch, trace: AlgebraTrace,
   scale: DrawExtent
 ) =
   ## Append everything one frame recorded, in recording order.

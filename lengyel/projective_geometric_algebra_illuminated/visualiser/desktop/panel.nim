@@ -254,7 +254,7 @@ func geometry*(session: EditSession): Multivector =
   for b in Basis: result[b] = float(session.coefficients[b])
 
 
-proc stage*(session: var EditSession; geometry: Multivector) =
+proc stage*(session: var EditSession, geometry: Multivector) =
   ## Load multivector into session, as values its widgets edit.
   ##   Inverse of `geometry`, and only other place two representations meet.
   for b in Basis: session.coefficients[b] = cfloat(geometry[b])
@@ -333,7 +333,7 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
       inc placed
 
 
-proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
+proc beginSession(panel: var Panel, scene: var Scene, slot: Option[int]) =
   ## Open edit session against `slot`, or composing one where slot is none.
   ##   Composing session starts on same auto-label and cycled ink every other construction
   ##   path assigns, both editable before object exists.
@@ -350,7 +350,7 @@ proc beginSession(panel: var Panel; scene: var Scene; slot: Option[int]) =
   panel.session = some(session)
 
 
-proc layoutSessionFields(panel: var Panel; is_pending: bool) =
+proc layoutSessionFields(panel: var Panel, is_pending: bool) =
   ## Lay out label, colour and coefficient controls open session stages.
   ##   Everything writes into session, never scene; nothing lands until save.
   widthPushField()
@@ -376,7 +376,7 @@ proc layoutSessionFields(panel: var Panel; is_pending: bool) =
   discard layoutCoefficientGrid(panel.session.get.coefficients)
 
 
-proc layoutItemName(panel: var Panel; scene: var Scene; row: ItemRow) =
+proc layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's leading checkbox and its name.
   ##   Checkbox toggles membership, as browser's row checkbox does.
   ##     Second and third object join in pick order, which names operands m and n.
@@ -403,8 +403,8 @@ proc layoutItemName(panel: var Panel; scene: var Scene; row: ItemRow) =
 
 
 proc layoutItemButtons(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
-  row: ItemRow; now: float
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
+  row: ItemRow, now: float
 ): bool =
   ## Lay out row's actions; report whether user asked for object to go.
   ##   Longer than sixty-line default: run's whole width has to be measured before any of
@@ -469,7 +469,7 @@ proc layoutItemButtons(
     gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
 
-proc layoutItemDescription(panel: Panel; scene: var Scene; row: ItemRow) =
+proc layoutItemDescription(panel: Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's shape word and coefficients, on one line.
   ##   Built into stack buffer rather than `string`, since every visible item redraws this
   ##   every frame.
@@ -487,8 +487,8 @@ proc layoutItemDescription(panel: Panel; scene: var Scene; row: ItemRow) =
 
 
 proc layoutItem(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
-  slot: Option[int]; now: float
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
+  slot: Option[int], now: float
 ): bool =
   ## Lay out one item's controls; report whether user asked for it to be removed.
   ##   None `slot` lays out composing row: same shape, values from session, no buttons
@@ -523,7 +523,7 @@ proc layoutItem(
 
 
 proc layoutObjects*(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
   ## Lay out every live item's controls, plus row being composed if there is one.
@@ -571,7 +571,7 @@ proc layoutObjects*(
 
 #[ Construct Panel ]#
 
-proc layoutTopBar*(panel: var Panel; scene: var Scene; now: float) =
+proc layoutTopBar*(panel: var Panel, scene: var Scene, now: float) =
   ## Lay out controls reached for constantly, above every collapsing section.
   ##   Start new object, toggle world furniture, save or load scene.
   ##   Outside sections as browser's chip row and menu hold them: each is flipped
@@ -635,7 +635,7 @@ proc offerOperationsOfArity*(
 
 
 proc adoptSelectionAsOperands(
-  panel: var Panel; slots: openArray[int]; count: int
+  panel: var Panel, slots: openArray[int], count: int
 ) =
   ## Fill arity and operand pickers in from whatever is selected in 3D view.
   ##   How many are picked names arity, pick order names m and n.
@@ -712,7 +712,7 @@ proc applyPickedOperation(
 
 
 proc layoutApply*(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
   ## Lay out controls that derive fresh object by applying library operation to operands.
@@ -808,7 +808,7 @@ proc layoutApply*(
 
 #[ View Panel ]#
 
-proc layoutView*(panel: var Panel; camera: var Camera) =
+proc layoutView*(panel: var Panel, camera: var Camera) =
   ## Lay out camera placement and frame export.
   ##   World furniture toggles live in `layoutTopBar`, flipped constantly while orbiting.
   if not gui.header("view", is_open_first = false): return
@@ -1028,7 +1028,7 @@ proc layoutDiagnosticsTotal(panel: Panel) =
   gui.tooltip(TEXT_TOTAL)
 
 
-proc layoutDiagnostics*(panel: var Panel; scene: Scene) =
+proc layoutDiagnostics*(panel: var Panel, scene: Scene) =
   ## Lay out live performance and memory readouts.
   ##   Closed by default, since nothing here is needed to use visualiser, only to
   ##   understand what using it costs.
@@ -1050,7 +1050,7 @@ proc layoutDiagnostics*(panel: var Panel; scene: Scene) =
 #[ History Stepping ]#
 
 proc stepHistory*(
-  panel: var Panel; scene: var Scene; camera: var Camera; history: var History;
+  panel: var Panel, scene: var Scene, camera: var Camera, history: var History,
   is_undo: bool
 ): bool =
   ## Step timeline one way, putting view back where restored edit was made.
@@ -1085,7 +1085,7 @@ const
     ## Pad widest notation offered by this much, for combo's frame and arrow.
 
 proc layoutSelectionMenuApply(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
   ## Lay out menu's `apply` button and operation picker it reveals beside it.
@@ -1147,8 +1147,8 @@ proc layoutSelectionMenuApply(
 
 
 proc layoutSelectionMenu*(
-  panel: var Panel; scene: var Scene; camera: Camera; history: var History;
-  anchor: Option[tuple[x, y: cfloat]]; now: float
+  panel: var Panel, scene: var Scene, camera: Camera, history: var History,
+  anchor: Option[tuple[x, y: cfloat]], now: float
 ) =
   ## Lay out floating menu over whatever is picked: apply, edit, hide, delete, close.
   ##   Follows most recently picked object rather than middle of them all, which would
@@ -1250,7 +1250,7 @@ func helpActionOf(entry: HelpEntry): string =
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
-proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath)) =
+proc layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath)) =
   ## Lay out help affordance: `?` pinned to bottom-right corner, and panel it opens.
   ##   In corner rather than inside panel window: reachable when panel is thing reader
   ##   does not understand, and browser puts it in same corner; both read `help.nim`.
@@ -1314,7 +1314,7 @@ proc layoutHelp*(panel: var Panel; path_forced: Option[HelpPath] = none(HelpPath
 #[ Whole Panel ]#
 
 proc layoutPanel*(
-  panel: var Panel; scene: var Scene; camera: var Camera; history: var History; now: float
+  panel: var Panel, scene: var Scene, camera: var Camera, history: var History, now: float
 ) =
   ## Lay out every panel inside one window.
   ##   `now` is this frame's clock reading, passed to whichever construct control adds

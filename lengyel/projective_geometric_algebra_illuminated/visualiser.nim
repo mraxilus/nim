@@ -452,7 +452,7 @@ proc assembleMeshes(
     6*LATITUDES_HORIZON*LONGITUDES_HORIZON*(MESHES.domes.count + MESHES_FURNITURE.domes.count)
 
 
-proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
+proc drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
   ## Fill orientation pulse travelling along marker's outline, if it has one.
   ##   Over outline rather than instead of it: pulse is outline swelling along stretch of
   ##   itself, tapering back to outline's width so only its head is edge.
@@ -469,7 +469,7 @@ proc drawMarkerPulse(marker: Marker; tint: Rgba; alpha: float32) =
     )
 
 
-proc drawMarker(marker: Marker; tint: Rgba; alpha: float32) =
+proc drawMarker(marker: Marker, tint: Rgba, alpha: float32) =
   ## Stroke one marker onto foreground layer, in whichever outline its shape asked for.
   ##   Alpha separate from `tint`, so selection and hover reach this through identical
   ##   call and differ only in weight.
@@ -567,7 +567,7 @@ const
   TONE_WEDGE_LABEL_CHOSEN = (red: 0.741'f32, green: 0.953'f32, blue: 0.941'f32)
 
 
-proc drawChoiceMenu(interaction: Interaction; scene: Scene) =
+proc drawChoiceMenu(interaction: Interaction, scene: Scene) =
   ## Draw four wedges of open choice menu onto foreground layer.
   ##   Every wedge at every opening, at fixed compass point, offered or not, so position
   ##   of `meet` is learned once.
@@ -706,9 +706,9 @@ proc anchorOfSelection(
 
 
 proc renderFrame(
-  window: Window; renderer: Renderer;
-  panel: var Panel; scene: var Scene; camera: var Camera; interaction: var Interaction;
-  now: float; are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool]);
+  window: Window, renderer: Renderer,
+  panel: var Panel, scene: var Scene, camera: var Camera, interaction: var Interaction,
+  now: float, are_dimmed: array[ITEMS_MAX, bool] = default(array[ITEMS_MAX, bool]),
   path_help: Option[HelpPath] = none(HelpPath)
 ): (int, int) =
   ## Lay panels out, draw scene and interaction overlay, and report framebuffer size.
@@ -1147,7 +1147,7 @@ type KeyStep = object ## Define one frame of scripted keyboard run; see `lut_key
   is_down: bool ## Whether this step presses key or lets go of it.
 
 
-func stepKey(scancode: Scancode; keycode: uint32; is_down = true): KeyStep =
+func stepKey(scancode: Scancode, keycode: uint32, is_down = true): KeyStep =
   ## Name one scripted press or release.
   KeyStep(pressed: some((scancode: scancode, keycode: keycode)), is_down: is_down)
 
@@ -1440,7 +1440,7 @@ proc verdictDriven(
   ##   Each verdict belongs to one drive and is asked only where that drive ran.
   ##     What is checked comes from each drive's doc comment.
   var count_failed = 0
-  proc report(name: string; is_passing: bool; detail: string) =
+  proc report(name: string, is_passing: bool, detail: string) =
     if not is_passing: inc count_failed
     echo (if is_passing: "  ok   " else: " FAIL  ") & name & " -- " & detail
 
@@ -1527,8 +1527,8 @@ proc verdictDriven(
 
 
 proc runInteractive(
-  window: Window; renderer: Renderer; options: Options;
-  panel: var Panel; scene: var Scene; camera: var Camera;
+  window: Window, renderer: Renderer, options: Options,
+  panel: var Panel, scene: var Scene, camera: var Camera,
 ) =
   ## Draw frames, folding input in, until user or command line asks to stop.
   ##   Exceeds sixty-line default: sequential per-frame state machine threading dozen
@@ -1717,8 +1717,8 @@ proc runInteractive(
 
 
 proc runStoryboard(
-  window: Window; renderer: Renderer; directory: string;
-  panel: var Panel; scene: var Scene; camera: var Camera;
+  window: Window, renderer: Renderer, directory: string,
+  panel: var Panel, scene: var Scene, camera: var Camera,
 ) =
   ## Apply each scripted step in turn, writing one settled frame after each, plus one GIF.
   ##   GIF sweeps through every step's appear-in animation.
@@ -1841,7 +1841,7 @@ proc runStoryboard(
   echo &"Wrote {len(STEPS) + 1} frames to `{directory}`."
 
 
-proc fillSceneForBenchmark(scene: var Scene; now: float) =
+proc fillSceneForBenchmark(scene: var Scene, now: float) =
   ## Fill scene to capacity with synthetic points, lines and planes.
   ##   `--timings` then measures heaviest load this scene reaches.
   ##   Positions walk helix, so no two are collinear and every join is well formed.
