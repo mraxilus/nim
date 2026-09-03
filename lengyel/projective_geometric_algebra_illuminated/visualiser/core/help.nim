@@ -1,28 +1,26 @@
 ## Say what every gesture, button and key in this visualiser does, once, for both UIs.
 ##
 ## Desktop wrote this in its panel and browser in hint that vanished after four seconds;
-## two had drifted. Both render this table, so control gaining binding is described in one
-## place or in neither.
-##
-## Entries name *user's* action and its outcome, in reader's words, not handler: "drag one
-## object onto another", not "pointerdown then pointermove". Binding derived from rule
-## stated elsewhere is read from there: `lut_help_entries` builds construct rows out of
-## `interaction.armingOf`, so rebinding button rewrites help.
-##
-## **Every row has to make sense with rows above it covered up**: reader opens one tab,
-## finds line they need, leaves. Three failures, found by reading rendered panel cold:
-## circular ("drag one object onto another" → "make whatever the two of them make"),
-## leaning on neighbour ("the same choice, without needing the other button"), naming
-## internals reader never met ("the apply section", "dolly"). What row cannot carry (which
-## menu, what wedge is) goes in `descriptionOf`.
-##
-## One word, one meaning: objects are **selected**, operations are **chosen**.
-##
-## **Cut by how reader is working, not by what control is.** Reader opens this mid-task,
-## and only that task's rows are of use. `HelpPath` is axis, one tab per path, and
-## `ENTRIES_MAX_PATH` holds each tab to what fits phone without scrolling. Table grew from
-## 18 entries to 39 while its header claimed everything fit one popup; compile-time cap now
-## fails build over that drift.
+## two had drifted.
+##   Both render this table, so control gaining binding is described in one place or in
+##   neither.
+## Entries name *user's* action and its outcome, in reader's words, not handler.
+##   "Drag one object onto another", not "pointerdown then pointermove".
+##   Binding derived from rule stated elsewhere is read from there: `lut_help_entries`
+##   builds construct rows out of `interaction.armingOf`, so rebinding button rewrites help.
+## Every row has to make sense with rows above it covered up.
+##   Reader opens one tab, finds line they need, leaves.
+##   Three failures, found by reading rendered panel cold.
+##     Circular: "drag one object onto another" → "make whatever the two of them make".
+##     Leaning on neighbour: "the same choice, without needing the other button".
+##     Naming internals reader never met: "the apply section", "dolly".
+##   What row cannot carry (which menu, what wedge is) goes in `descriptionOf`.
+## One word, one meaning: objects are *selected*, operations are *chosen*.
+## Cut by how reader is working, not by what control is.
+##   Reader opens this mid-task, and only that task's rows are of use.
+##   `HelpPath` is axis, one tab per path; `ENTRIES_MAX_PATH` holds each tab to what fits
+##   phone without scrolling, checked at compile time.
+##     Cost: table that outgrows tab fails build until path is split or bound is raised.
 ##
 ## Shared between desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render
 ## paths; see `visualiser.nim`'s "Render Paths" table.
@@ -40,50 +38,34 @@ import ./[interaction, scene]
 const ENTRIES_MAX_PATH_CATALOGUE* = COUNT_OPERATION
   ## Bound `operations` path at exactly size of catalogue it lists.
   ##   Not height: this tab *is* catalogue, one row per operation, and only bound worth
-  ## checking is that it holds every one. It scrolls on any screen; reference list read by
-  ## lookup.
+  ##   checking is that it holds every one.
+  ##   Scrolls on any screen; reference list read by lookup.
 
 const ENTRIES_MAX_PATH_KEYS* = 12
   ## Bound how many entries `keys` path may hold, checked at compile time.
-  ##   Larger than other paths': measurement below found this one tab not worth fitting
-  ## 320-pixel viewport, since it describes keyboard and viewport that size is phone.
-  ## Bound stays so tab cannot grow unnoticed; 8 rows to 11 with movement keys was
-  ## deliberate raise.
+  ##   Larger than other paths': keyboard tab describes what phone-sized viewport lacks, so
+  ##   fitting it there is wrong trade; measurement in `PROVENANCE.md`.
+  ##   Bound stays so tab cannot grow unnoticed; raising it is deliberate.
 
 const ENTRIES_MAX_PATH* = 8
   ## Bound how many entries any other path may hold, checked at compile time.
   ##   Proxy: real constraint is *rendered height*, and count is what compile time checks.
-  ## **Measured**: built page driven at 320x568 (iPhone SE), each tab asked how far its
-  ## rows overflow box given, with description above them:
-  ##
-  ##   | Path | Rows | Rows box | Overflow |
-  ##   |------|------|----------|----------|
-  ##   | `drag` | 5 | 320 px | 4 px |
-  ##   | `select` | 7 | 320 px | **48 px** |
-  ##   | `menu` | 5 | 219 px | 0 |
-  ##   | `panel` | 5 | 328 px | 0 |
-  ##   | `camera` | 6 | 314 px | 0 |
-  ##   | `keys` | 11 | 320 px | **scrolls; see below** |
-  ##
-  ##   **`select` scrolls by one row; trade taken.** Menu on right button gave it two rows
-  ## teaching bindings reader cannot discover otherwise. Shortening tried first: shift per
-  ## button cost 125 px, folding into one row recovered 77, trimming outcomes recovered
-  ## nothing.
-  ##   `drag`'s 4 px is drift in measuring environment; rows untouched.
-  ##   **`keys` scrolls and is left scrolling.** Fitting eleven rows means every outcome
-  ## under ~39 characters, which costs real bindings (`enter`'s "hold shift to add it").
-  ## Wrong trade for keyboard tab serving phone.
-  ##   Other five fit *exactly*, two only after descriptions were cut (`drag` four lines to
-  ## two, `panel` two to one, ~17 px each). **Count of rows is not count of lines**; path
-  ## nearing cap prompts re-measurement, never trust in number.
-  ##   Cap is bound that forces question to be asked again, not promise nothing scrolls.
-  ## Splitting path is nearly always better than raising; not here: regrouping keyboard
-  ## rows onto tabs whose work they do left `camera` 133 px over and `select` 66 px over.
+  ##   Measured on 320x568 viewport, each tab asked how far its rows overflow box given;
+  ##   figures in `PROVENANCE.md`.
+  ##     `select` scrolls by one row; trade taken for two rows teaching bindings reader
+  ##     cannot discover otherwise, after shortening recovered too little.
+  ##     `keys` scrolls and is left scrolling; see `ENTRIES_MAX_PATH_KEYS`.
+  ##     Other five fit exactly, two only after descriptions were cut.
+  ##   Count of rows is not count of lines; path nearing cap prompts re-measurement, never
+  ##   trust in number.
+  ##   Cap forces question to be asked again, not promise nothing scrolls.
+  ##     Splitting path is nearly always better than raising; not here, since regrouping
+  ##     keyboard rows onto tabs whose work they do overflowed `camera` and `select`.
 
 type
-  HelpPath* {.pure.} = enum ## Group entries by which way of working they belong to.
-    ## What reader is in middle of when opening help. Ordered as reader meets them: drag is
-    ## what visualiser is for, keys are accelerator.
+  HelpPath* {.pure.} = enum ## Define which way of working entries belong to.
+    ## What reader is in middle of when opening help.
+    ##   Ordered as reader meets them: drag is what visualiser is for, keys are accelerator.
     Drag, ## Building one object out of two by dragging between them.
     Select, ## Saying which objects to work on.
     Menu, ## What menu beside selection offers.
@@ -92,13 +74,13 @@ type
     Keys, ## Keyboard.
     Operations, ## What every operation in catalogue is called.
 
-  HelpEntry* = object ## Hold one thing reader can do and what it does.
+  HelpEntry* = object ## Define one thing reader can do and what it does.
     path*: HelpPath ## Way of working it belongs to, and so tab it appears under.
     action*: string ## What reader does.
     outcome*: string ## What happens when they do it.
-    is_touch*: bool ## Whether this is touch way rather than pointer way. Both always
-      ## listed: laptop with touchscreen is one device, and hiding either behind guess
-      ## about hardware leaves reader believing gesture does not exist.
+    is_touch*: bool ## Whether this is touch way rather than pointer way.
+      ## Both always listed: laptop with touchscreen is one device, and hiding either
+      ## behind guess about hardware leaves reader believing gesture does not exist.
 
 
 func titleOf*(path: HelpPath): string =
@@ -115,9 +97,10 @@ func titleOf*(path: HelpPath): string =
 
 func descriptionOf*(path: HelpPath): string =
   ## Say in one sentence what tab is about, for line above its rows.
-  ##   Row stands on its own only so far: "the … wedge" and "the apply section" name things
-  ## met *inside* one way of working, and `menu` rows name five buttons without saying
-  ## which menu. Context stated once, above rows, for reader who has just opened this tab.
+  ##   Row stands on its own only so far: "the … wedge" and "the apply section" name
+  ##   things met *inside* one way of working, and `menu` rows name five buttons without
+  ##   saying which menu.
+  ##   Context stated once, above rows, for reader who has just opened this tab.
   case path
   of HelpPath.Drag:
     "Drag one object onto another to build a new one. Some pairs open a wheel of choices."
@@ -145,12 +128,12 @@ func nameOf(button: PointerButton): string =
 
 
 const lut_help_entries* = block:
-  ## Every entry two UIs render, grouped by path and in order reader meets them.
+  ## Hold every entry two UIs render, grouped by path and in order reader meets them.
   ##   Fixed array with `count` asserted against length at compile time, so adding entry
-  ## without resizing fails build rather than leaving blank row. Size is hand-written rows
-  ## plus catalogue, which is generated.
+  ##   without resizing fails build rather than leaving blank row.
+  ##     Size is hand-written rows plus catalogue, which is generated.
   ##   Entries of one path are written together, asserted below: both front-ends walk this
-  ## once in order, so split path renders as two tabs of same name.
+  ##   once in order, so split path renders as two tabs of same name.
   var lut: array[39 + COUNT_OPERATION, HelpEntry]
   var count = 0
   proc add(path: HelpPath; action, outcome: string; is_touch = false) =
@@ -159,8 +142,8 @@ const lut_help_entries* = block:
     )
     inc count
 
-  # Which button asks and which decides is `interaction.armingOf`'s to say. Walked in
-  #   reading order rather than `PointerButton`'s physical left, middle, right.
+  # Ask `interaction.armingOf` which button asks and which decides.
+  #   Walked in reading order rather than `PointerButton`'s physical left, middle, right.
   for button in [PointerButton.Left, PointerButton.Right, PointerButton.Middle]:
     let arming = armingOf(button)
     if arming.isNone: continue
@@ -185,10 +168,9 @@ const lut_help_entries* = block:
     "hand both objects to the apply picker, which lists every operation",
   )
 
-  # Which button brings menu is `interaction.revealsMenuOn`'s to say, as drag rows read
-  #   `armingOf`.
-  #   **Shift gets one row, not one per button.** All four combinations measured 125 px
-  #   over box 320-pixel phone gives this tab, and shift means same thing whichever button.
+  # Ask `interaction.revealsMenuOn` which button brings menu, as drag rows ask `armingOf`.
+  #   Shift gets one row, not one per button: shift means same thing whichever button,
+  #   and four rows overflow phone.
   for button in [PointerButton.Left, PointerButton.Right]:
     add(
       HelpPath.Select, nameOf(button) & "-click an object",
@@ -215,16 +197,17 @@ const lut_help_entries* = block:
     HelpPath.Select, "tap another object while one is selected",
     "add it to the selection", is_touch = true,
   )
-  # Menu beside selection. Own tab rather than tail of `select`: ten rows on phone wrap
-  #   and scroll.
+  # Give menu beside selection own tab rather than tail of `select`.
+  #   Ten rows on phone wrap and scroll.
   add(HelpPath.Menu, "apply", "run any operation on what you selected")
   add(HelpPath.Menu, "edit", "change the selected object's name, colour or coordinates")
   add(HelpPath.Menu, "hide", "keep the selection but stop drawing it")
   add(HelpPath.Menu, "delete", "remove the selection from the scene")
   add(HelpPath.Menu, "✕", "clear the selection and close this menu")
 
-  # Named by button rather than by where it sits: `add` and toggles are in desktop's top
-  #   bar and browser's chip row, so row naming place is false on one build.
+  # Name rows by button rather than by where it sits.
+  #   `add` and toggles are in desktop's top bar and browser's chip row, so row naming
+  #   place is false on one build.
   add(HelpPath.Panel, "add", "create a point by typing its coordinates")
   add(
     HelpPath.Panel, "the apply section",
@@ -246,7 +229,7 @@ const lut_help_entries* = block:
   add(HelpPath.Camera, "drag empty space", "orbit the view around what you are looking at")
   add(HelpPath.Camera, "right-drag empty space", "slide the view sideways and up or down")
   add(HelpPath.Camera, "wheel", "move toward or away from whatever you point at")
-  # "empty space", not just "with one finger": finger starting on *object* builds now.
+  # Say "empty space", not just "with one finger": finger starting on *object* builds now.
   add(
     HelpPath.Camera, "drag empty space with one finger",
     "orbit the view around what you are looking at", is_touch = true,
@@ -262,9 +245,8 @@ const lut_help_entries* = block:
   )
   add(HelpPath.Keys, "ctrl+z, ctrl+shift+z", "undo, then redo, the last change to the scene")
   add(HelpPath.Keys, "tab", "move focus between the controls and the 3D view")
-  # Read out of `interaction.motionFor` and `interaction.actionFor`, so rebinding key
-  #   rewrites its row. Grouped by job, since reader looks for job first; names come from
-  #   `nameOf`.
+  # Read keys out of `interaction.motionFor` and `actionFor`, so rebinding rewrites row.
+  #   Grouped by job, since reader looks for job first; names come from `nameOf`.
   add(
     HelpPath.Keys,
     nameOf(Key.W) & ", " & nameOf(Key.A) & ", " & nameOf(Key.S) & ", " & nameOf(Key.D),
@@ -291,8 +273,8 @@ const lut_help_entries* = block:
     "select the highlighted object; hold shift to add it",
   )
   add(HelpPath.Keys, nameOf(Key.Home), "put the camera back where it started")
-  # Whole catalogue, generated: row per operation, named as every picker offers it
-  #   (`scene.notationSymbolic`, `scene.notationNamed`). Hand-written list falls behind.
+  # Generate whole catalogue: row per operation, named as every picker offers it.
+  #   `scene.notationSymbolic`, `scene.notationNamed`; hand-written list falls behind.
   for operation in Operation:
     add(HelpPath.Operations, notationSymbolic(operation), notationNamed(operation))
 
@@ -307,7 +289,7 @@ func countOf*(path: HelpPath): int =
 
 
 static:
-  # Two properties front-ends rely on and neither can check for itself.
+  # Check two properties front-ends rely on and neither can check for itself.
   var seen: set[HelpPath]
   var path_last = none(HelpPath)
   for entry in lut_help_entries:

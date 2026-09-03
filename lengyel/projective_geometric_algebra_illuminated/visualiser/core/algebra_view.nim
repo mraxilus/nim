@@ -1,10 +1,10 @@
 ## Draw multivectors frame computed, each as thing it actually is.
 ##
 ## Ordinary picture draws stand-ins: plane becomes disc of fixed radius, since infinite
-## surface would bury everything else, and line becomes ribbon so it has width. Good
-## pictures, bad statements. This layer is statement -- switched on when reader wants
-## algebra rather than illustration of it, as game engine draws physics world in wireframe
-## over art.
+## surface would bury everything else, and line becomes ribbon so it has width.
+##   Good pictures, bad statements.
+##   This layer is statement, switched on when reader wants algebra rather than
+##   illustration of it, as game engine draws physics world in wireframe over art.
 ##
 ##   |------------------|------------------------|-----------------------------------|
 ##   | Object           | Ordinary picture       | Here                              |
@@ -13,17 +13,16 @@
 ##   | Everything else  | as drawn               | as drawn, in `Ink.Algebra`        |
 ##   |------------------|------------------------|-----------------------------------|
 ##
-## Lattice is how project already draws infinite plane: ground grid *is* plane at `z = 0`,
-## laid as far as fog reaches and faded out. Drawing every plane that way says "this goes
-## on" in vocabulary reader learnt from ground.
-##
-## Draws more than scene: line joining eye to target, plane near clip really is, ray under
-## cursor and where it meets working level -- geometry frame derived and never showed. See
-## `algebra_trace`.
-##
-## **What is recorded is decided here, once.** `addFrameTrace` is whole layer's entry
-## point; both render paths call it rather than listing what to record, since entry
-## reaching one picture and missing other is exactly fault layer exists to expose.
+## Lattice is how project already draws infinite plane.
+##   Ground grid *is* plane at `z = 0`, laid as far as fog reaches and faded out.
+##   Drawing every plane that way says "this goes on" in vocabulary reader learnt from
+##   ground.
+## Draws more than scene: line joining eye to target, plane near clip really is, ray
+## under cursor and where it meets working level. See `algebra_trace`.
+## What is recorded is decided here, once.
+##   `addFrameTrace` is whole layer's entry point; both render paths call it rather than
+##   listing what to record, since entry reaching one picture and missing other is exactly
+##   fault layer exists to expose.
 ##
 ## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
@@ -40,12 +39,12 @@ import ./[algebra_trace, boundary, camera, mesh, objects, picking, scene, tessel
 
 const
   ALPHA_ALGEBRA_LATTICE* = 0.55
-    ## Strength of traced plane's lattice, against full-strength ink traced point or line
-    ## takes. Below them deliberately: infinite plane covers whole view, and at full
-    ## strength hides everything else trace shows.
+    ## Fix strength of traced plane's lattice, against full-strength ink point or line takes.
+    ##   Below them deliberately: infinite plane covers whole view, and at full strength
+    ##   hides everything else trace shows.
   ALPHA_ALGEBRA_DERIVED* = 0.75
-    ## Strength of *derived* geometry -- sight axis, eye and near planes, cursor's ray.
-    ## Under scene's own entries: reader asks about their objects first.
+    ## Fix strength of *derived* geometry: sight axis, eye and near planes, cursor's ray.
+    ##   Under scene's own entries: reader asks about their objects first.
 
 
 
@@ -53,9 +52,10 @@ const
 
 func inkFor(role: TracedRole): Rgba =
   ## Choose how strongly one traced entry is drawn.
-  ##   One hue for whole layer -- `Ink.Algebra`, screened against every assignable slot --
-  ## and strength alone separates scene's geometry from what frame derived. Distinction is
-  ## foreground and background, not category; reader learns one debug colour.
+  ##   One hue for whole layer, `Ink.Algebra`, screened against every assignable slot.
+  ##   Strength alone separates scene's geometry from what frame derived.
+  ##     Distinction is foreground and background, not category; reader learns one debug
+  ##     colour.
   let base = Ink.Algebra.colour
   case role
   of TracedRole.SceneObject, TracedRole.Ghost: base
@@ -66,13 +66,14 @@ proc addLattice*(
   meshes: var MeshSet; scratch: var DrawScratch; plane: Multivector; tint: Rgba;
   scale: DrawExtent
 ) =
-  ## Append plane drawn as infinite thing it is: lattice laid across it, reaching as far
-  ## as fog does and faded out.
-  ##   Exactly what `addGrid` lays on ground, given different plane. `radiusOnPlaneFor`
-  ## answers how much of plane fog leaves, `boundary.frame` which two directions span it,
-  ## `positionAnchor` where to lay lattice from, so lines fall on plane's own multiples.
-  ##   Silently draws nothing for plane at horizon -- it spans no Euclidean directions, and
-  ## `addObject` already draws whole sky for it -- or for one further from eye than fog.
+  ## Append plane drawn as infinite thing it is: lattice laid across it.
+  ##   Reaches as far as fog does and fades out; exactly what `addGrid` lays on ground.
+  ##   `radiusOnPlaneFor` answers how much of plane fog leaves, `boundary.frame` which two
+  ##   directions span it, `positionAnchor` where to lay lattice from, so lines fall on
+  ##   plane's own multiples.
+  ##   Silently draws nothing for plane at horizon, or for one further from eye than fog.
+  ##     Horizon plane spans no Euclidean directions, and `addObject` already draws whole
+  ##     sky for it.
   let
     axes = frame(plane)
     anchor = positionAnchor(plane)
@@ -98,9 +99,10 @@ proc addTraced*(
   scale: DrawExtent
 ): Placement =
   ## Append one recorded multivector, in its true form.
-  ##   Finite plane becomes lattice; everything else goes through same `tessellate.addObject`
-  ## ordinary picture uses, since for point, line and anything at horizon ordinary drawing
-  ## *is* true one. Only plane had stand-in worth replacing.
+  ##   Finite plane becomes lattice.
+  ##   Everything else goes through same `tessellate.addObject` ordinary picture uses.
+  ##     For point, line and anything at horizon ordinary drawing *is* true one; only
+  ##     plane had stand-in worth replacing.
   let tint = inkFor(traced.role)
   if shape(traced.geometry) == some(Shape.Plane) and not isHorizon(traced.geometry):
     meshes.addLattice(
@@ -124,23 +126,26 @@ proc addFrameTrace*(
   width, height: int
 ) =
   ## Record everything this frame's geometry rests on, and draw it.
-  ##   **Both render paths call this one proc**: two lists would drift first time either
-  ## grew entry. Everything is read from values frame already holds; nothing is re-derived
-  ## by second spelling.
+  ##   Both render paths call this one proc: two lists would drift first time either grew
+  ##   entry.
+  ##   Everything is read from values frame already holds; nothing is re-derived by second
+  ##   spelling.
   ##   Does not reach per-candidate meets `picking.rayPlaneHit` forms; see `PROVENANCE.md`.
-  ##   `trace` is caller-owned scratch, as `tessellate` takes its own: `AlgebraTrace` holds
-  ## `TRACED_MAX` entries, and declaring one here built ten thousand `Traced` objects every
-  ## frame layer was on -- 13.3 ms on JS backend for scene of five objects.
+  ##   `trace` is caller-owned scratch, as `tessellate` takes its own.
+  ##     `AlgebraTrace` holds `TRACED_MAX` entries; declaring one here would build them
+  ##     all every frame layer was on.
   trace.clear()
-  # Read by slot, to `bound`: `pairs` copies whole scene per live slot on JS backend, and
-  #   walk to capacity cost 13.3 ms per frame over five objects.
+  # Read by slot, to `bound`.
+  #   `pairs` copies whole scene per live slot on JS backend, and walk to capacity pays
+  #   for every empty slot.
   for slot in 0 ..< scene.bound:
     if scene.isAlive(slot) and scene.isVisible(slot):
       trace.record(TracedRole.SceneObject, scene.geometryOf(slot))
   if staged.isSome: trace.record(TracedRole.Ghost, staged.get.geometry)
 
-  # Record what camera itself is, which nothing ever draws: where it stands, line it looks
-  #   along, plane depth is measured against, near clip as plane.
+  # Record what camera itself is, which nothing ever draws.
+  #   Where it stands, line it looks along, plane depth is measured against, near clip as
+  #   plane.
   let eye = camera.eye
   trace.record(TracedRole.EyePoint, scale.eye_point)
   # Derive camera frame once for layer: its joins are priciest thing here.
@@ -150,7 +155,7 @@ proc addFrameTrace*(
   trace.record(TracedRole.PlaneNear, scale.plane_near)
   trace.record(TracedRole.GroundPlane, groundPlane())
 
-  # Record cursor's ray and where it meets working level -- what picker and zoom rest on.
+  # Record cursor's ray and where it meets working level, what picker and zoom rest on.
   let ray = castRay(camera, eye, frame_camera, width, height, cursor)
   trace.record(TracedRole.CursorRay, ray)
   let met = ray ∨ levelPlaneThrough(toMultivector(camera.target))

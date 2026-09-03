@@ -11,9 +11,9 @@
 ##   | axis_up     | -(𝐋 ∧ 𝐫)☆     | Unit direction of view's +y.                    |
 ##   |-------------|---------------|-------------------------------------------------|
 ##
-## Only projection is left to convention: perspective divide, depth range and clip volume
-## belong to graphics pipeline rather than to geometry, so they are written out directly.
-##
+## Only projection is left to convention.
+##   Perspective divide, depth range and clip volume belong to graphics pipeline rather
+##   than to geometry, so they are written out directly.
 ## Placement is spherical about target, since that is what mouse drag turns.
 ##   Elevation is clamped short of poles, where up direction would run along sight axis
 ##   and joins above would collapse.
@@ -41,75 +41,80 @@ const
     ## Bound elevation short of pole, where sight axis would run along `UP_WORLD`.
   DISTANCE_LIMIT_NEAR* = 0.05
     ## Bound how close eye may orbit to target, through `distanceHeld`.
-    ##   **Only bound left on where camera may stand.** At orbit distance zero eye
-    ## coincides with target, sight axis is undefined, and every direction `frame` derives
-    ## collapses. Far end had limit of 500 for no reason but roundness, and reader dollying
-    ## out to look at something kilometre across simply stopped. Nothing downstream needs
-    ## ceiling: clip planes are fractions of orbit distance (`FACTOR_CLIP_NEAR`,
-    ## `FACTOR_CLIP_FAR`), so frustum keeps shape, and grid bounds own line count
-    ## (`tessellate.CELLS_GRID_HALF_MAX`). What degrades far out is `Vertex`'s float32
-    ## storage: past roughly million units coordinate carries under tenth of unit.
+    ##   Only bound on where camera may stand.
+    ##     At orbit distance zero eye coincides with target, sight axis is undefined, and
+    ##     every direction `frame` derives collapses.
+    ##   No far bound: nothing downstream needs ceiling.
+    ##     Clip planes are fractions of orbit distance (`FACTOR_CLIP_NEAR`,
+    ##     `FACTOR_CLIP_FAR`), so frustum keeps shape, and grid bounds own line count
+    ##     (`tessellate.CELLS_GRID_HALF_MAX`).
+    ##     What degrades far out is `Vertex`'s float32 storage: past roughly million
+    ##     units coordinate carries under tenth of unit.
   FACTOR_CLIP_FAR* = 20.0
-    ## Set far clip plane this many orbit distances out. Scaled rather than fixed so
-    ## everything meant to read "at horizon" -- `tessellate.radiusHorizonFor`,
-    ## `tessellate.extentFurnitureFor`, far end of every drawn line -- stays past what
-    ## frame shows at any orbit distance. Fixed plane cannot: view's extent grows with
-    ## distance while plane does not, so dollying out brings line's far end inside frame,
-    ## and clips target away once eye orbits past it.
+    ## Set far clip plane this many orbit distances out.
+    ##   Scaled rather than fixed so everything meant to read at horizon
+    ##   (`tessellate.radiusHorizonFor`, `tessellate.extentFurnitureFor`, far end of
+    ##   every drawn line) stays past what frame shows at any orbit distance.
+    ##   Fixed plane cannot: view's extent grows with distance while plane does not, so
+    ##   dollying out brings line's far end inside frame, and clips target away once eye
+    ##   orbits past it.
   FRACTION_VIEW_CENTRED* = 2.0/3.0
-    ## Fraction of frame that counts as being looked at: this much of height, and this much
-    ## of width **or height, whichever is less**. `reachCentred` writes that shape down.
+    ## Fix fraction of frame that counts as being looked at.
+    ##   This much of height, and this much of width *or height, whichever is less*;
+    ##   `reachCentred` writes that shape down.
     ##   Box rather than whole frame: object clinging to edge is on screen without being
-    ## what view is about, and marker ringing it is half off-frame. Not exact middle:
-    ## selection is *framed* inside box, spread across it.
+    ##   what view is about, and marker ringing it is half off-frame.
+    ##   Not exact middle: selection is *framed* inside box, spread across it.
     ##   Here rather than beside pixel test in `picking` because camera needs it too, to
-    ## solve how far back eye must stand (`distanceFitting`), and `picking` imports this.
+    ##   solve how far back eye must stand (`distanceFitting`), and `picking` imports this.
   FACTOR_CLIP_NEAR* = 1.0/400.0
-    ## Set near clip plane this fraction of orbit distance out. Scaled beside
-    ## `FACTOR_CLIP_FAR` so frustum stays same shape at every distance, holding
-    ## depth-buffer precision -- function of far-to-near ratio -- constant.
+    ## Set near clip plane this fraction of orbit distance out.
+    ##   Scaled beside `FACTOR_CLIP_FAR` so frustum stays same shape at every distance,
+    ##   holding depth-buffer precision, function of far-to-near ratio, constant.
 
 const
-  ## Rates **held key** moves camera at, per second of holding. Shared by both front-ends,
-  ## unlike per-pixel drag rates: `visualiser.SPEED_ORBIT` is radians per pixel and
-  ## `glue.js` works in fractions of canvas width. Held key has no pixels in it.
-  ##   **Per second, not per press.** Per-press steps leaned on operating system's
-  ## auto-repeat: movement began after repeat delay and arrived in stutters.
-  ## `interaction.driveHeld` applies these once per frame, scaled by elapsed time, so
-  ## distance depends on hold length, not draw rate.
+  ## Fix rates held key moves camera at, per second of holding.
+  ##   Shared by both front-ends, unlike per-pixel drag rates: `visualiser.SPEED_ORBIT` is
+  ##   radians per pixel and `glue.js` works in fractions of canvas width. Held key has no
+  ##   pixels in it.
+  ##   Per second, not per press.
+  ##     Per-press steps leaned on operating system's auto-repeat: movement began after
+  ##     repeat delay and arrived in stutters.
+  ##     `interaction.driveHeld` applies these once per frame, scaled by elapsed time, so
+  ##     distance depends on hold length, not draw rate.
   ##   Sized so reader crosses useful range in second or two of holding, while still
-  ## controllable in short taps.
+  ##   controllable in short taps.
   TURN_SECOND* = 1.4 ## Azimuth held arrow turns through per second, in radians.
   RISE_SECOND* = 1.1 ## Elevation held arrow rises through per second, in radians.
-  SLIDE_SECOND* = 1.2 ## Ground distance held key slides per second, as fraction of orbit
-    ## distance, so reader zoomed onto one object crosses it at same apparent speed as one
-    ## viewing whole scene.
-  FACTOR_DOLLY_SECOND* = 4.0 ## Orbit distance held key scales by per second, dollying
-    ## out; reciprocal dollies in, so second each way returns exactly. **Compounded as
-    ## power of elapsed seconds**, never multiplied per frame: per-frame scale would move
-    ## 144 Hz reader more than twice as far as 60 Hz one.
+  SLIDE_SECOND* = 1.2 ## Ground distance held key slides per second, as fraction of orbit.
+    ## Reader zoomed onto one object crosses it at same apparent speed as one viewing
+    ## whole scene.
+  FACTOR_DOLLY_SECOND* = 4.0 ## Orbit distance held key scales by per second, dollying out.
+    ## Reciprocal dollies in, so second each way returns exactly.
+    ## Compounded as power of elapsed seconds, never multiplied per frame: per-frame
+    ## scale would move 144 Hz reader more than twice as far as 60 Hz one.
   FACTOR_HASTE* = 4.0 ## Multiply every rate above by this while shift is held.
-    ## Shift means *faster* on every movement key rather than something different on each
-    ## -- what Blender, Unity, Unreal and Godot all do.
+    ## Shift means *faster* on every movement key rather than something different on
+    ## each: what Blender, Unity, Unreal and Godot all do.
 
 
 
 #[ Type Definitions ]#
 
 type
-  Matrix4* = object ## Hold 4x4 transform in column-major order, as OpenGL expects.
+  Matrix4* = object ## Define 4x4 transform in column-major order, as OpenGL expects.
     elements: array[16, float32]
 
-  Camera* = object ## Hold placement of eye about target, and lens it looks through.
+  Camera* = object ## Define placement of eye about target, and lens it looks through.
     target*: Position ## Point orbit turns about.
     distance*: float ## Separation of eye from target.
     azimuth*: float ## Angle about world up, in radians.
     elevation*: float ## Angle above horizon, in radians.
     degrees_field_of_view*: float ## Vertical field of view, in degrees.
 
-  FrameCamera* = object ## Hold orthonormal directions of camera's own axes.
-    axis_sight*: Multivector ## Line joining eye to target, every direction below derives
-      ## from. Carried because debug layer draws it; see `TracedRole.SightAxis`.
+  FrameCamera* = object ## Define orthonormal directions of camera's own axes.
+    axis_sight*: Multivector ## Line joining eye to target, every direction below derives from.
+      ## Carried because debug layer draws it; see `TracedRole.SightAxis`.
     axis_right*: Direction ## Unit direction of view's +x.
     axis_up*: Direction ## Unit direction of view's +y.
     forward*: Direction ## Unit direction eye looks along.
@@ -171,9 +176,10 @@ func initMatrixView*(eye: Position; frame: FrameCamera): Matrix4 =
 
 func distanceHeld*(distance: float): float = max(distance, DISTANCE_LIMIT_NEAR)
   ## Hold orbit distance off one value it may not take; see `DISTANCE_LIMIT_NEAR`.
-  ##   Every path writing distance goes through here -- construction, dolly, both
-  ## front-ends' numeric fields, fitted distance framing solves -- so floor is stated
-  ## once. Replaced `clamp` written at each site, shape limit takes when site is missed.
+  ##   Every path writing distance goes through here (construction, dolly, both
+  ##   front-ends' numeric fields, fitted distance framing solves), so floor is stated
+  ##   once.
+  ##   Replaced `clamp` written at each site, shape limit takes when site is missed.
 
 
 func initCamera*(target: Position; distance, azimuth, elevation: float): Camera =
@@ -189,9 +195,10 @@ func initCamera*(target: Position; distance, azimuth, elevation: float): Camera 
 
 func initCameraDefault*(): Camera =
   ## Place camera where both front-ends open, and where `home` puts it back.
-  ##   One statement: placement was written out in `visualiser.main` and
-  ## `browser_bridge.nimInit`, and key returning to it would have made third copy. Shows
-  ## seed scene whole, slightly above ground so plane reads as plane rather than line.
+  ##   One statement: placement written out in each front-end and key returning to it
+  ##   would be three copies.
+  ##   Shows seed scene whole, slightly above ground so plane reads as plane rather than
+  ##   line.
   initCamera(
     target = Position(x: 0, y: 0, z: 1), distance = 19.0, azimuth = 1.05, elevation = 0.42
   )
@@ -208,9 +215,10 @@ func distanceFar*(camera: Camera): float = camera.distance*FACTOR_CLIP_FAR
 
 func eye*(camera: Camera): Position =
   ## Place eye on sphere about target, from azimuth and elevation.
-  ##   Angles are parametrization -- trig scalars are ground field -- and *point* they place
-  ## is assembled through algebra: target plus one spherical offset direction, read back at
-  ## end. Held equal to spherical closed form by suite case.
+  ##   Angles are parametrization (trig scalars are ground field), and *point* they place
+  ##   is assembled through algebra: target plus one spherical offset direction, read
+  ##   back at end.
+  ##   Held equal to spherical closed form by suite case.
   let
     radius = camera.distance * cos(camera.elevation)
     offset = toMultivector(Direction(
@@ -219,18 +227,18 @@ func eye*(camera: Camera): Position =
       z: camera.distance * sin(camera.elevation),
     ))
     placed = position(add(toMultivector(camera.target), offset))
-  # Fall back to target only in name: unit-weight point plus weightless direction is
-  #   unit-weight point, so read cannot refuse.
+  # Fall back to target only in name.
+  #   Unit-weight point plus weightless direction is unit-weight point, so read cannot
+  #   refuse.
   if placed.isSome: placed.get else: camera.target
 
 
 func azimuthElevationFor*(heading: Direction): (float, float) =
-  ## Solve orbit angles camera needs to look along `heading`, regardless of target or
-  ## distance.
-  ##   `eye`'s formula cancels target out of `forward` entirely, so this is plain
-  ## spherical-coordinates inverse of same offset `D`.
+  ## Solve orbit angles camera needs to look along `heading`.
+  ##   Regardless of target or distance: `eye`'s formula cancels target out of `forward`
+  ##   entirely, so this is plain spherical-coordinates inverse of same offset.
   ##   For aiming capture at horizon object's direction: unlike finite one, it is not
-  ## anchored anywhere fixed demo angle frames.
+  ##   anchored anywhere fixed demo angle frames.
   let elevation = arcsin(clamp(-heading.z, -1.0, 1.0))
   let azimuth = arctan2(-heading.y, -heading.x)
   (azimuth, elevation)
@@ -248,23 +256,24 @@ proc dolly*(camera: var Camera; factor: float) =
 
 
 proc dollyToward*(camera: var Camera; factor: float; anchor: Position) =
-  ## Scale separation of eye from target by `factor`, moving eye **along its line to
-  ## `anchor`** rather than straight in, so whatever stands there keeps its pixel.
-  ##   How map zooms: wheel takes reader toward what they point at, not middle of frame.
-  ##   **Why anchor keeps pixel**: angles do not change, so sight direction is fixed, and
-  ## eye stays on line joining it to `anchor`; point on view ray through pixel is still on
-  ## it afterwards.
-  ##   Scale applied is read back from `distanceHeld` rather than assumed, so zoom stopped
-  ## by near floor moves eye by exactly as much as distance allowed.
+  ## Scale separation of eye from target by `factor`, moving eye along its line to `anchor`.
+  ##   Rather than straight in, so whatever stands there keeps its pixel: how map zooms,
+  ##   wheel taking reader toward what they point at, not middle of frame.
+  ##   Why anchor keeps pixel: angles do not change, so sight direction is fixed, and eye
+  ##   stays on line joining it to `anchor`; point on view ray through pixel is still on
+  ##   it afterwards.
+  ##   Scale applied is read back from `distanceHeld` rather than assumed, so zoom
+  ##   stopped by near floor moves eye by exactly as much as distance allowed.
   let
     eye_point = toMultivector(camera.eye)
     target_point = toMultivector(camera.target)
     anchor_point = toMultivector(anchor)
     distance_settled = distanceHeld(camera.distance*factor)
     scale = distance_settled/camera.distance
-    # Assemble new target as one multivector expression: anchor plus old offset scaled,
-    #   walked back along target-to-eye direction. Every difference of unit-weight points
-    #   is direction, so sum stays unit-weight point throughout.
+    # Assemble new target as one multivector expression.
+    #   Anchor plus old offset scaled, walked back along target-to-eye direction.
+    #   Every difference of unit-weight points is direction, so sum stays unit-weight
+    #   point throughout.
     settled = position(subtract(
       add(anchor_point, wedge(scale, subtract(eye_point, anchor_point))),
       wedge(distance_settled/camera.distance, subtract(eye_point, target_point)),
@@ -286,26 +295,28 @@ proc pan*(camera: var Camera; across, up: float) =
 
 
 func headingGround*(camera: Camera): Direction =
-  ## Read way camera faces, flattened onto ground: direction reader means by "forward"
-  ## looking at scene standing on ground plane.
-  ##   Solved from azimuth rather than by flattening `frame.forward` and normalising: at
-  ## elevation limit sight direction is within 0.02 radians of `UP_WORLD`, so horizontal
-  ## part is rounding error scaled to unit length. `eye` puts eye at `target +
-  ## radius*(cos azimuth, sin azimuth, ...)`, so way back is negation, elevation dropping
-  ## out.
+  ## Read way camera faces, flattened onto ground.
+  ##   Direction reader means by forward, looking at scene standing on ground plane.
+  ##   Solved from azimuth rather than by flattening `frame.forward` and normalising.
+  ##     At elevation limit sight direction is within 0.02 radians of `UP_WORLD`, so
+  ##     horizontal part is rounding error scaled to unit length.
+  ##     `eye` puts eye at `target + radius*(cos azimuth, sin azimuth, ...)`, so way back
+  ##     is negation, elevation dropping out.
   Direction(x: -cos(camera.azimuth), y: -sin(camera.azimuth), z: 0.0)
 
 
 proc slideGround*(camera: var Camera; ahead, across, rise: float) =
-  ## Slide target across world -- forward along `headingGround`, sideways along camera's
-  ## right, up along world up -- leaving eye's placement about it alone, so whole view
-  ## travels without turning.
-  ##   **Map** reading of movement key rather than *fly* one: forward keeps camera's height
-  ## whatever it looks at, so holding W skims ground instead of diving into it. What
-  ## Supreme Commander and Google Maps do, and reading that goes with cursor-aimed zoom.
-  ##   `across` reuses frame's `axis_right`, already horizontal -- join of sight line and
-  ## world up, dualised -- rather than second side direction that could disagree in sign
-  ## with mouse pan.
+  ## Slide target across world, leaving eye's placement about it alone.
+  ##   Forward along `headingGround`, sideways along camera's right, up along world up,
+  ##   so whole view travels without turning.
+  ##   *Map* reading of movement key rather than *fly* one.
+  ##     Forward keeps camera's height whatever it looks at, so holding W skims ground
+  ##     instead of diving into it.
+  ##     What Supreme Commander and Google Maps do, and reading that goes with
+  ##     cursor-aimed zoom.
+  ##   `across` reuses frame's `axis_right`, already horizontal (join of sight line and
+  ##   world up, dualised), rather than second side direction that could disagree in sign
+  ##   with mouse pan.
   ##   All three are fractions of orbit distance, as `pan`'s arguments are.
   let
     axes = camera.frame(camera.eye)
@@ -326,7 +337,7 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
   ## Derive camera's orthonormal axes from its placement, through joins and antiduals.
   ##   Elevation clamp keeps sight axis off world up, so every join below stays defined.
   ##   Takes eye explicitly, so caller already holding it, or calling once per frame
-  ## across many items, need not pay same trig again.
+  ##   across many items, need not pay same trig again.
   let
     axis_sight = toMultivector(eye) ∧ toMultivector(camera.target)
     forward = direction(axis_sight)
@@ -341,8 +352,8 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
   doAssert axis_up.isSome,
     "Camera sight axis and right direction must span plane; they are perpendicular."
 
-  # Pin view's +y to world up, as antidual fixes axis only up to sign; alignment is
-  #   library's inner product of two directions, read at scalar.
+  # Pin view's +y to world up, as antidual fixes axis only up to sign.
+  #   Alignment is library's inner product of two directions, read at scalar.
   let orientation =
     if dot(toMultivector(axis_up.get), toMultivector(UP_WORLD))[Basis.scalar] < 0: -1.0
     else: 1.0
@@ -355,13 +366,14 @@ func frame*(camera: Camera; eye: Position): FrameCamera =
 
 
 type SettingsFurniture* = tuple
-  ## Name everything ground grid and world axes are built from.
+  ## Define everything ground grid and world axes are built from.
   ##   `drawExtentFor` derives every field furniture reads from exactly these, so two
-  ## frames agreeing here draw same furniture, vertex for vertex -- what lets front-end
-  ## keep last frame's meshes. Field added to `Camera` that `drawExtentFor` reads must be
-  ## added here too, or frame holds furniture no longer matching view.
+  ##   frames agreeing here draw same furniture, vertex for vertex: what lets front-end
+  ##   keep last frame's meshes.
+  ##     Field added to `Camera` that `drawExtentFor` reads must be added here too, or
+  ##     frame holds furniture no longer matching view.
   ##   Here rather than in each front-end: two private copies would be drift sibling rule
-  ## warns about.
+  ##   warns about.
   target_x, target_y, target_z: float
   distance, azimuth, elevation, degrees_field_of_view: float
   height_pixels: int
@@ -372,7 +384,7 @@ func settingsFurnitureFor*(
   camera: Camera; height_pixels: int; is_axes_shown, is_grid_shown: bool
 ): SettingsFurniture =
   ## Read furniture's inputs off this camera and frame, for hold comparison.
-  ##   Compared exactly by callers: question is "did anything move at all".
+  ##   Compared exactly by callers: question is whether anything moved at all.
   (
     camera.target.x, camera.target.y, camera.target.z, camera.distance,
     camera.azimuth, camera.elevation, camera.degrees_field_of_view,
@@ -381,16 +393,17 @@ func settingsFurnitureFor*(
 
 
 func drawExtentFor*(camera: Camera; height_pixels: int): DrawExtent =
-  ## Derive this frame's draw scale from camera: how far geometry reaches, where from,
-  ## and everything ribbon needs to hold constant width on screen.
-  ##   One constructor, because there were four -- three literal copies in
-  ## `visualiser.nim` and fourth in `browser_bridge`. Here rather than `tessellate`
-  ## because it reads `Camera`, and `camera` imports `tessellate`.
+  ## Derive this frame's draw scale from camera.
+  ##   How far geometry reaches, where from, and everything ribbon needs to hold constant
+  ##   width on screen.
+  ##   One constructor: literal copies in each front-end drifted.
+  ##     Here rather than `tessellate` because it reads `Camera`, and `camera` imports
+  ##     `tessellate`.
   ##   `height_pixels` is framebuffer's, not window's: ribbon's width is measured in
-  ## pixels actually drawn.
+  ##   pixels actually drawn.
   let eye = camera.eye
-  # Derive four multivector twins through `algebraFilled`, one derivation point shared
-  #   with every hand-built extent.
+  # Derive four multivector twins through `algebraFilled`.
+  #   One derivation point shared with every hand-built extent.
   algebraFilled(DrawExtent(
     scale: DrawScale(
       extent_furniture: extentFurnitureFor(camera.distanceFar),
@@ -416,67 +429,73 @@ func initMatrixViewProjection*(camera: Camera; aspect: float): Matrix4 =
 #[ Aiming And Easing ]#
 
 type
-  SphereWorld* = object ## Bound set of world points by centre and radius.
-    ## What "selection" means to camera framing it: everything finite it was asked to show
+  SphereWorld* = object ## Define bound of world points by centre and radius.
+    ## What selection means to camera framing it: everything finite it was asked to show
     ## sits inside, so distance fitting sphere fits every one.
     centre*: Position ## Point orbit should turn about.
     radius*: float ## How far furthest object stands from `centre`. Zero for one point.
 
-  CameraAim* = object ## Name what camera has been asked to bring into view.
-    ## Not placement: **requirement**, derived from geometry alone and nothing about where
-    ## camera stands. That lets caller re-offer same selection every frame and have it
-    ## recognised as same request -- see `CameraTween.goal`.
-    ##   Two halves are reached differently: finite object is somewhere, so camera moves
-    ## target onto it and pulls back until several fit; horizon object is only direction,
-    ## drawn fixed to eye, so camera turns to face along it and leaves target and distance
-    ## alone.
+  CameraAim* = object ## Define what camera has been asked to bring into view.
+    ## Not placement: *requirement*, derived from geometry alone and nothing about where
+    ## camera stands.
+    ##   Lets caller re-offer same selection every frame and have it recognised as same
+    ##   request; see `CameraTween.goal`.
+    ## Two halves are reached differently.
+    ##   Finite object is somewhere, so camera moves target onto it and pulls back until
+    ##   several fit.
+    ##   Horizon object is only direction, drawn fixed to eye, so camera turns to face
+    ##   along it and leaves target and distance alone.
     sphere*: Option[SphereWorld] ## Finite objects to frame, or none where there are none.
-    is_bound_by_fitted*: bool ## Whether `sphere` is over picked objects that have to
-      ## **fit** alone -- points and finite planes.
-      ## Point and finite plane are drawn at size camera does not set, so each fits inside
-      ## centred box; line is drawn out to horizon and has only to cross it. Whatever has
-      ## to fit is what camera centres and sizes on; otherwise line whose support stands
-      ## hundred units away drags view off point beside it. Where nothing has to fit --
-      ## lines alone -- sphere falls back to their support points.
+    is_bound_by_fitted*: bool ## Whether `sphere` is over objects that have to *fit* alone.
+      ## Point and finite plane are drawn at size camera does not set, so each fits
+      ## inside centred box; line is drawn out to horizon and has only to cross it.
+      ## Whatever has to fit is what camera centres and sizes on; otherwise line whose
+      ## support stands hundred units away drags view off point beside it.
+      ## Where nothing has to fit (lines alone) sphere falls back to their support points.
     heading*: Option[Direction] ## Direction of horizon objects to face, or none.
       ## Merged where several were asked for: sum of unit directions is nearest thing to
       ## one facing two stars.
-    centroid_sum*: Option[Multivector] ## Middle of same finite objects `sphere` is over,
-      ## **carried as sum algebra makes it out of** rather than as place. Sum's weight is
-      ## how many places it is middle of, and `centroid` reads mean straight out: division
-      ## reading point out *is* averaging. Rebuilt from nothing on every `aimFor`, so it
-      ## never accumulates across frames -- restart is what makes aim compare equal to
-      ## itself. None where no finite objects.
-      ##   **What orbit turns about once selection stands**: sphere's centre is wherever
-      ## holding everything put it; this is middle of what was picked, point reader means.
-      ## Over same objects as `sphere`, for reason `is_bound_by_fitted` gives.
+    centroid_sum*: Option[Multivector] ## Middle of same finite objects `sphere` is over.
+      ## Carried as sum algebra makes it out of, rather than as place.
+      ##   Sum's weight is how many places it is middle of, and `centroid` reads mean
+      ##   straight out: division reading point out *is* averaging.
+      ##   Rebuilt from nothing on every `aimFor`, so it never accumulates across frames;
+      ##   restart is what makes aim compare equal to itself.
+      ## What orbit turns about once selection stands.
+      ##   Sphere's centre is wherever holding everything put it; this is middle of what
+      ##   was picked, point reader means.
+      ## Over same objects as `sphere`, for reason `is_bound_by_fitted` gives. None where
+      ## no finite objects.
 
-  CameraPlacement* = object ## Hold where camera stands -- everything ease moves.
+  CameraPlacement* = object ## Define where camera stands: everything ease moves.
     ## Lens is not here: field of view is reader's setting, and nothing aiming camera may
     ## rewrite it.
     target*: Position ## Point orbit turns about.
     distance*: float ## Separation of eye from target.
     azimuth*, elevation*: float ## Orbit angles, in radians.
 
-  CameraTween* = object ## Carry camera from where it was toward where it should look.
-    ## Eased over `duration`, so camera jumping to freshly built object is followed rather
-    ## than teleported after. Empty until something aims it.
-    ##   Retargeting captures wherever tween had reached as new start (see `aimAt`), which
-    ## lets goal moving every frame -- staged geometry of open edit session -- read as one
-    ## chase.
-    goal*: Option[CameraAim] ## What camera is watching, or has settled on. None only
-      ## while nothing is aimed at all.
-      ##   *Requirement*, not placement: derived from selected geometry alone, so re-offer
-      ## compares equal every frame. Ignore rule in `aimAt` and standing-offer rule in
-      ## `abandon` both rest on it; where ease ends is kept separately below.
-    destination*: CameraPlacement ## Where ease ends: goal resolved against camera as it
-      ## stood when goal was armed -- see `framing.placementFor` and `framing.offerAim`.
-      ##   Meaningless while `goal` is none; set beside it and never alone.
-    is_arrived*: bool ## Whether `destination` has been reached. Set once ease runs out,
-      ## stopping `advance` writing camera from then on: caller offering same goal every
-      ## frame must not keep holding camera there, or user's own orbit, pan and dolly are
-      ## overridden. `goal` is kept rather than cleared, so same offer is recognised as
-      ## delivered instead of re-arming ease.
+  CameraTween* = object ## Define ease carrying camera from where it was toward its goal.
+    ## Eased over `duration`, so camera jumping to freshly built object is followed
+    ## rather than teleported after. Empty until something aims it.
+    ##   Retargeting captures wherever tween had reached as new start (see `aimAt`),
+    ##   which lets goal moving every frame (staged geometry of open edit session) read
+    ##   as one chase.
+    goal*: Option[CameraAim] ## What camera is watching, or has settled on.
+      ## None only while nothing is aimed at all.
+      ## *Requirement*, not placement: derived from selected geometry alone, so re-offer
+      ## compares equal every frame.
+      ##   Ignore rule in `aimAt` and standing-offer rule in `abandon` both rest on it;
+      ##   where ease ends is kept separately below.
+    destination*: CameraPlacement ## Where ease ends.
+      ## Goal resolved against camera as it stood when goal was armed; see
+      ## `framing.placementFor` and `framing.offerAim`.
+      ## Meaningless while `goal` is none; set beside it and never alone.
+    is_arrived*: bool ## Whether `destination` has been reached.
+      ## Set once ease runs out, stopping `advance` writing camera from then on.
+      ##   Caller offering same goal every frame must not keep holding camera there, or
+      ##   user's own orbit, pan and dolly are overridden.
+      ## `goal` is kept rather than cleared, so same offer is recognised as delivered
+      ## instead of re-arming ease.
     started*: float ## Clock reading `goal` was last set or retargeted at.
     duration*: float ## Seconds ease takes, end to end.
     placement_from*: CameraPlacement ## Where current ease began.
@@ -491,22 +510,23 @@ func `==`*(a, b: SphereWorld): bool =
 func centroid*(aim: CameraAim): Option[Position] =
   ## Read middle of what was picked, as place to point camera at.
   ##   Sum's weight is count, so read-out's division is averaging; see `centroid_sum`.
-  ## None where nothing finite was picked.
+  ##   None where nothing finite was picked.
   if aim.centroid_sum.isNone: return
   position(aim.centroid_sum.get)
 
 
 func `==`*(a, b: CameraAim): bool =
   ## Compare two aims exactly, where reason for comparison is stated.
-  ##   Exact, not approximate: answers "is this same request I was already given", so
-  ## caller offering same selection every frame does not restart ease. Selection moved by
-  ## hair should restart it.
+  ##   Exact, not approximate: answers whether this is same request already given, so
+  ##   caller offering same selection every frame does not restart ease.
+  ##   Selection moved by hair should restart it.
   if a.sphere.isSome != b.sphere.isSome: return false
   if a.sphere.isSome and not (a.sphere.get == b.sphere.get): return false
   if a.is_bound_by_fitted != b.is_bound_by_fitted: return false
   if a.centroid_sum.isSome != b.centroid_sum.isSome: return false
-  # Compare sum's four coefficients, not place it reads to: weight is count, so this is
-  #   "same middle *and* same number of things" in one field. Sum of points is grade 1.
+  # Compare sum's four coefficients, not place it reads to.
+  #   Weight is count, so this is same middle *and* same number of things in one field.
+  #   Sum of points is grade 1.
   if a.centroid_sum.isSome:
     let (m, n) = (a.centroid_sum.get, b.centroid_sum.get)
     for slot in [Basis.E1, Basis.E2, Basis.E3, Basis.E4]:
@@ -518,23 +538,26 @@ func `==`*(a, b: CameraAim): bool =
 
 
 func widened*(bound: SphereWorld; place: Position; reach: float): SphereWorld =
-  ## Grow bound just enough to contain one more ball -- point where `reach` is zero,
-  ## plane's whole disc where it is `tessellate.EXTENT_PLANE_F`.
+  ## Grow bound just enough to contain one more ball.
+  ##   Point where `reach` is zero, plane's whole disc where it is
+  ##   `tessellate.EXTENT_PLANE_F`.
   ##   Incremental rather than fit over whole set, so caller folding selection allocates
-  ## nothing. Result depends on arrival order and can be little wider than tightest
-  ## sphere; always true bound, which is all framing needs.
+  ##   nothing.
+  ##     Result depends on arrival order and can be little wider than tightest sphere;
+  ##     always true bound, which is all framing needs.
   let
     centre_point = toMultivector(bound.centre)
     place_point = toMultivector(place)
     away = distanceBetween(centre_point, place_point)
   if away + reach <= bound.radius: return bound
-  # Handle new ball swallowing old one apart: arithmetic below would slide centre past
-  #   `place`, and concentric pair has no direction to slide along.
+  # Handle new ball swallowing old one apart.
+  #   Arithmetic below would slide centre past `place`, and concentric pair has no
+  #   direction to slide along.
   if away + bound.radius <= reach: return SphereWorld(centre: place, radius: reach)
   let
     radius = 0.5*(away + bound.radius + reach)
-    # Slide centre toward new ball by exactly what far side gives up, so old sphere stays
-    #   enclosed.
+    # Slide centre toward new ball by exactly what far side gives up.
+    #   Old sphere then stays enclosed.
     slid = position(add(centre_point, wedge(
       (radius - bound.radius)/away, subtract(place_point, centre_point)
     )))
@@ -549,19 +572,21 @@ func aimIncluding*(
 ): Option[CameraAim] =
   ## Fold one more object into aim, or start one where there was none.
   ##   Unchanged by geometry drawing nothing, and by plane at horizon, in view from every
-  ## camera.
-  ##   Point at horizon is fixed star, faced along own direction. Line at horizon is whole
-  ## great circle, so first axis spanning perpendicular to its normal is picked, putting
-  ## some of circle in view.
-  ##   Everything finite widens sphere about `anchorFor`'s point; finite plane widens it by
-  ## whole disc round that point -- except first object that has to *fit* throws away
-  ## whatever lines contributed, and they contribute nothing thereafter; see
-  ## `CameraAim.is_bound_by_fitted`. Which objects contribute does not depend on order.
+  ##   camera.
+  ##   Point at horizon is fixed star, faced along own direction.
+  ##   Line at horizon is whole great circle, so first axis spanning perpendicular to its
+  ##   normal is picked, putting some of circle in view.
+  ##   Everything finite widens sphere about `anchorFor`'s point; finite plane widens it
+  ##   by whole disc round that point.
+  ##     Except first object that has to *fit* throws away whatever lines contributed,
+  ##     and they contribute nothing thereafter; see `CameraAim.is_bound_by_fitted`.
+  ##     Which objects contribute does not depend on order.
   ##   `anchor_override` centres plane's disc there instead of on support, read as
-  ## `tessellate.addPlane` reads it; ignored for every other shape.
-  ##   Horizon objects widen nothing: `anchorFor` places star at `scale.eye`, and goal
-  ## built from where camera stands would stop comparing equal frame to frame. **Twice
-  ## over for centroid**: middle moving with eye would re-aim camera every frame.
+  ##   `tessellate.addPlane` reads it; ignored for every other shape.
+  ##   Horizon objects widen nothing.
+  ##     `anchorFor` places star at `scale.eye`, and goal built from where camera stands
+  ##     would stop comparing equal frame to frame.
+  ##     Twice over for centroid: middle moving with eye would re-aim camera every frame.
   let shape_m = shape(m)
   if shape_m.isNone: return aim
   var grown = if aim.isSome: aim.get else: CameraAim()
@@ -579,8 +604,8 @@ func aimIncluding*(
     if heading.isNone: return aim
     let merged =
       if grown.heading.isNone: heading
-      # Merge headings as sum of horizon points, read back through horizon reader, which
-      #   also refuses cancelling pair.
+      # Merge headings as sum of horizon points, read back through horizon reader.
+      #   Reader also refuses cancelling pair.
       else: directionHorizon(add(
         toMultivector(grown.heading.get), toMultivector(heading.get)
       ))
@@ -608,8 +633,8 @@ func aimIncluding*(
   grown.sphere =
     if grown.sphere.isNone: some(SphereWorld(centre: anchor.get, radius: reach))
     else: some(grown.sphere.get.widened(anchor.get, reach))
-  # Fold middle through algebra's reading of one (`objects.centroidFolded`); plane folds
-  #   in by disc's centre, not whole ball. Nothing is read out or scaled here.
+  # Fold middle through algebra's reading of one (`objects.centroidFolded`).
+  #   Plane folds in by disc's centre, not whole ball. Nothing is read out or scaled here.
   grown.centroid_sum =
     if grown.centroid_sum.isNone: some(toMultivector(anchor.get))
     else: some(centroidFolded(grown.centroid_sum.get, toMultivector(anchor.get)))
@@ -619,26 +644,26 @@ func aimIncluding*(
 func aimFor*(
   m: Multivector; scale: DrawExtent; anchor_override: Option[Position] = none(Position)
 ): Option[CameraAim] =
-  ## Resolve what camera has been asked to show for one object alone, or none where it
-  ## draws nothing. One-object case of `aimIncluding`.
+  ## Resolve what camera has been asked to show for one object alone.
+  ##   None where it draws nothing. One-object case of `aimIncluding`.
   aimIncluding(none(CameraAim), m, scale, anchor_override)
 
 
 func reachCentred*(width, height: int; inset: float): (float, float) =
   ## Measure centred box, across and down, in pixels of `width` x `height` frame.
   ##   One statement of box's shape: `picking` turns it into pixel margins, and
-  ## `halfAngleCentred` into cone `distanceFitting` solves. Written twice, two drifted.
-  ##   **Width is capped at height.** Field of view is vertical, so fraction of width is
-  ## `aspect` times as much *world*: at 1440x900 box reached 23.9 degrees off sight axis
-  ## across against 15.4 down, at 390x844 7.3. Picking object on desktop window then
-  ## almost never moved camera. Capping makes reach same in angle both ways.
+  ##   `halfAngleCentred` into cone `distanceFitting` solves. Written twice, two drifted.
+  ##   Width is capped at height.
+  ##     Field of view is vertical, so fraction of width is `aspect` times as much
+  ##     *world*; on wide desktop window picking object then almost never moved camera.
+  ##     Capping makes reach same in angle both ways.
   ##   Cap is one-sided: on frame taller than wide width is already shorter side, so touch
-  ## keeps behaviour it had. `min` on both axes would tighten phone's vertical band to
-  ## under third of frame.
-  ##   `inset` pulls box in by that many pixels on every side: `framing` passes room
-  ## point's dot takes, so distance solved here satisfies pixel test in `picking`, which
-  ## insets by same amount. Box inset past nothing collapses to middle rather than turning
-  ## inside out.
+  ##   keeps behaviour it had.
+  ##     `min` on both axes would tighten phone's vertical band to under third of frame.
+  ##   `inset` pulls box in by that many pixels on every side.
+  ##     `framing` passes room point's dot takes, so distance solved here satisfies pixel
+  ##     test in `picking`, which insets by same amount.
+  ##     Box inset past nothing collapses to middle rather than turning inside out.
   (
     max(FRACTION_VIEW_CENTRED*float(min(width, height)) - 2.0*inset, 0.0),
     max(FRACTION_VIEW_CENTRED*float(height) - 2.0*inset, 0.0),
@@ -646,11 +671,12 @@ func reachCentred*(width, height: int; inset: float): (float, float) =
 
 
 func halfAngleCentred*(camera: Camera; width, height: int; inset: float): float =
-  ## Measure half-angle, from sight axis, centred box covers -- narrower of its two, so
-  ## anything inside that cone is inside box both ways.
+  ## Measure half-angle, from sight axis, centred box covers.
+  ##   Narrower of its two, so anything inside that cone is inside box both ways.
   ##   Box is fraction of frame *in projection plane*, not in angle, so its half-angles
-  ## come from scaling tangents. Both scale by frame's **height**, dimension vertical field
-  ## of view sizes; box's width already carries what aspect did to it.
+  ##   come from scaling tangents.
+  ##     Both scale by frame's height, dimension vertical field of view sizes; box's
+  ##     width already carries what aspect did to it.
   let
     tangent_half = tan(0.5*degToRad(camera.degrees_field_of_view))
     (reach_across, reach_down) = reachCentred(width, height, inset)
@@ -660,15 +686,15 @@ func halfAngleCentred*(camera: Camera; width, height: int; inset: float): float 
 
 
 func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: float): float =
-  ## Solve how far eye must stand from centre of sphere of `radius` for whole of it to
-  ## fall inside centred box.
+  ## Solve how far eye must stand from sphere's centre for whole of it to fit centred box.
   ##   Sphere's tangent condition, `sin`, not flat one, `tan`: near side stands as far off
-  ## sight axis as far side while closer, so subtends more.
+  ##   sight axis as far side while closer, so subtends more.
   ##   Held off near bound as user's dolly is, and unbounded above: nothing about frustum
-  ## or furniture stops working at distance.
-  ##   Solves **centred box**, what point is held to and stricter than plane's rim
-  ## (`picking.isPlaneShownCentrally` holds that to frame), keeping this valid *upper
-  ## bracket* for `framing.placementFor`'s bisection -- never answer.
+  ##   or furniture stops working at distance.
+  ##   Solves centred box, what point is held to and stricter than plane's rim
+  ##   (`picking.isPlaneShownCentrally` holds that to frame).
+  ##     Keeps this valid *upper bracket* for `framing.placementFor`'s bisection, never
+  ##     answer.
   let sine = sin(halfAngleCentred(camera, width, height, inset))
   distanceHeld(radius/max(sine, 1.0e-6))
 
@@ -676,7 +702,7 @@ func distanceFitting*(radius: float; camera: Camera; width, height: int; inset: 
 func isGoalHeld*(tween: CameraTween; goal: CameraAim): bool =
   ## Report whether `goal` is one this tween already holds, and would ignore.
   ##   For caller whose preparation is worth skipping: `framing.offerAim` projects every
-  ## selected object several times over, and re-offers same goal every frame.
+  ##   selected object several times over, and re-offers same goal every frame.
   tween.goal.isSome and tween.goal.get == goal
 
 
@@ -699,9 +725,9 @@ func placed*(camera: Camera; placement: CameraPlacement): Camera =
 
 func toward*(from_placement, to_placement: CameraPlacement; progress: float): CameraPlacement =
   ## Step `progress` of way from one placement to another.
-  ##   Distance moves geometrically where everything else moves linearly: distance is
-  ## multiplicative, and linear ease from 12 to 300 covers most visible change in first
-  ## few frames then crawls.
+  ##   Distance moves geometrically where everything else moves linearly.
+  ##     Distance is multiplicative, and linear ease from 12 to 300 covers most visible
+  ##     change in first few frames then crawls.
   # Turn short way round: destination just past -pi is next door to camera short of +pi.
   var delta = to_placement.azimuth - from_placement.azimuth
   while delta > PI: delta -= 2.0*PI
@@ -733,18 +759,19 @@ proc aimAt*(
 ) =
   ## Set camera watching `goal` and ease it to `destination`, from where it stands now.
   ##   Requirement and placement, not one thing twice: `goal` is what re-offer is
-  ## recognised by, `destination` where that puts camera once resolved.
+  ##   recognised by, `destination` where that puts camera once resolved.
   ##   Start is read off live camera rather than previous goal, so moving goal stays
-  ## smooth: `advance` has already eased partway, and next ease continues motion.
-  ##   Re-aiming at goal already set is ignored, so caller may offer same goal every frame
-  ## without ease restarting forever. Holds after arrival too, keeping standing offer from
-  ## taking camera back off user each frame. `release` withdraws offer; only then does
-  ## same goal aim camera again.
+  ##   smooth: `advance` has already eased partway, and next ease continues motion.
+  ##   Re-aiming at goal already set is ignored, so caller may offer same goal every
+  ##   frame without ease restarting forever.
+  ##     Holds after arrival too, keeping standing offer from taking camera back off user
+  ##     each frame. `release` withdraws offer; only then does same goal aim camera again.
   if tween.isGoalHeld(goal): return
   tween.goal = some(goal)
   tween.destination = destination
-  # Mark arrived outright where camera already stands on destination, rather than easing
-  #   through whole duration writing reading it holds and fighting user who orbits.
+  # Mark arrived outright where camera already stands on destination.
+  #   Easing through whole duration would write reading it holds and fight user who
+  #   orbits.
   tween.is_arrived = destination == camera.placementOf
   tween.started = now
   tween.duration = duration
@@ -757,8 +784,9 @@ proc advance*(
 ) =
   ## Carry camera one frame further toward destination, and mark it arrived there.
   ##   `ease` is passed in rather than imported so module stays independent of where
-  ## project keeps easing curve; callers hand `tessellate.easeOutCubic`, same curve and
-  ## duration freshly added object grows in with.
+  ##   project keeps easing curve.
+  ##     Callers hand `tessellate.easeOutCubic`, same curve and duration freshly added
+  ##     object grows in with.
   if tween.goal.isNone or tween.is_arrived: return
   let progress = ease(clamp((now - tween.started) / max(tween.duration, 1.0e-6), 0.0, 1.0))
   camera = camera.placed(tween.placement_from.toward(tween.destination, progress))
@@ -766,8 +794,9 @@ proc advance*(
 
 
 proc settle*(tween: var CameraTween; camera: var Camera) =
-  ## Put camera on destination at once -- for caller that must not show half-finished
-  ## pan, such as storyboard frame about to be captured.
+  ## Put camera on destination at once.
+  ##   For caller that must not show half-finished pan, such as storyboard frame about to
+  ##   be captured.
   if tween.goal.isNone or tween.is_arrived: return
   camera = camera.placed(tween.destination)
   tween.is_arrived = true
@@ -775,8 +804,9 @@ proc settle*(tween: var CameraTween; camera: var Camera) =
 
 proc release*(tween: var CameraTween) =
   ## Withdraw whatever camera was aimed at, leaving it wherever it stands.
-  ##   For whoever offers aim, once it has nothing to offer -- selection cleared, edit
-  ## session closed. Clearing goal outright lets picking same object again aim afresh.
+  ##   For whoever offers aim, once it has nothing to offer: selection cleared, edit
+  ##   session closed.
+  ##   Clearing goal outright lets picking same object again aim afresh.
   ##   Not for camera *user* just moved: see `abandon`.
   tween.goal = none(CameraAim)
   tween.is_arrived = false
@@ -785,8 +815,9 @@ proc release*(tween: var CameraTween) =
 proc abandon*(tween: var CameraTween) =
   ## Stop carrying camera, but remember what it was carrying it toward.
   ##   For every path moving camera on user's own instruction: orbit, pan or dolly half
-  ## second into ease should win outright.
-  ##   Deliberately not `release`: aim is standing offer re-made every frame, so goal
-  ## cleared here is offered again next frame and camera is taken straight back off user.
-  ## Keeping goal and marking it done makes standing offer read as already answered.
+  ##   second into ease should win outright.
+  ##   Deliberately not `release`.
+  ##     Aim is standing offer re-made every frame, so goal cleared here is offered again
+  ##     next frame and camera is taken straight back off user.
+  ##     Keeping goal and marking it done makes standing offer read as already answered.
   if tween.goal.isSome: tween.is_arrived = true

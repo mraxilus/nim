@@ -4,23 +4,23 @@
 ## path changing scene has to know camera exists. What it watches, in order:
 ##
 ##   |----------------------|-----------------------------------------------------------|
-##   | Staged preview       | Thing being made, whatever is selected -- open edit       |
+##   | Staged preview       | Thing being made, whatever is selected: open edit         |
 ##   |                      |   session's geometry alone, or apply picker's answer      |
 ##   |                      |   together with operands it names.                        |
 ##   | Selection            | Every picked object, together.                            |
 ##   | Neither              | Nothing; standing offer is withdrawn (`release`).         |
 ##   |----------------------|-----------------------------------------------------------|
 ##
-## **In view** is `picking.isShownCentrally`: point's dot and finite plane's whole disc
-## inside centred box, line merely crossing it. **Framed** means camera's target moves to
-## middle of everything finite picked, and orbit distance grows -- only if it must, never
-## shrinks -- until every one satisfies that test.
-##
+## *In view* is `picking.isShownCentrally`: point's dot and finite plane's whole disc
+## inside centred box, line merely crossing it.
+## *Framed* means camera's target moves to middle of everything finite picked, and orbit
+## distance grows until every one satisfies that test.
+##   Grows only if it must, never shrinks.
 ## Lives above `picking` because folding selection needs `Selection`, and `picking` cannot
 ## import it: `selection` imports `marker`, which imports `picking`.
 ##
 ## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
-## Rule was once written out in each, duplication that drifted.
+##   Rule was once written out in each, duplication that drifted.
 
 {.experimental: "strictFuncs".}
 
@@ -35,17 +35,17 @@ import ./[boundary, camera, tessellate, picking, scene, selection]
 
 const
   ROUNDS_DISTANCE_FIT* = 8
-    ## Halvings run when searching least orbit distance bringing whole selection into view.
+    ## Fix halvings run when searching least orbit distance bringing selection into view.
     ##   Eight lands within 1/256 of bracket, itself distance at which selection exactly
-    ## fills box, so residue is fraction of percent of spread framed -- finer than reader
-    ## sees, and each halving costs projection of every selected object.
+    ##   fills box, so residue is fraction of percent of spread framed.
+    ##   Finer than reader sees; each halving costs projection of every selected object.
   STEPS_PLACEMENT_LEAST* = 12
-    ## Fractions of full framing move tried, evenly spaced, when cutting it back to least
-    ## already showing selection. Coarse on purpose: they only bracket crossing, which
-    ## halvings then close on, and each step costs projection of every selected object.
+    ## Fix fractions of full framing move tried, evenly spaced, when cutting it back.
+    ##   Coarse on purpose: they only bracket crossing, which halvings then close on, and
+    ##   each step costs projection of every selected object.
   ROUNDS_PLACEMENT_LEAST* = 5
-    ## Halvings run inside bracketed step. Five puts answer within 1/384 of full move --
-    ## under pixel of any pan or turn made here.
+    ## Fix halvings run inside bracketed step.
+    ##   Five puts answer within 1/384 of full move, under pixel of any pan or turn here.
 
 
 
@@ -54,23 +54,26 @@ const
 iterator watched*(
   scene: Scene; picked: Selection; staged: Option[Preview]
 ): (Multivector, Option[Position]) =
-  ## Walk whatever camera is asked to show, in order module doc states, each beside anchor
-  ## its disc is drawn about where it has one -- plane's creation anchor; see
-  ## `scene.creationAnchor`.
+  ## Walk whatever camera is asked to show, in order module doc states.
+  ##   Each comes beside anchor its disc is drawn about where it has one: plane's creation
+  ##   anchor, see `scene.creationAnchor`.
   ##   Something staged takes whole offer: it is thing being made, and selection beside it
-  ## is not what reader looks at.
-  ##   **What goes with it depends on where it came from**, which `Preview.operands` says.
-  ## Preview named operands, so they are framed *with* it: result judged without objects
-  ## it was applied to is half picture. Open edit session names none, and must not -- its
-  ## staged geometry *replaces* object selected beside it.
-  ##   Skips slots gone dead since selection was made: selection outlives removal of what
-  ## it names, and operand can go same way with picker left open across delete.
+  ##   is not what reader looks at.
+  ##   What goes with it depends on where it came from, which `Preview.operands` says.
+  ##     Preview named operands, so they are framed *with* it: result judged without
+  ##     objects it was applied to is half picture.
+  ##     Open edit session names none, and must not: its staged geometry *replaces* object
+  ##     selected beside it.
+  ##   Skips slots gone dead since selection was made.
+  ##     Selection outlives removal of what it names, and operand can go same way with
+  ##     picker left open across delete.
   if staged.isSome:
     yield (staged.get.geometry, staged.get.anchor)
     if staged.get.operands.isSome:
       let (first, second) = staged.get.operands.get
-      # Yield unary operation's operand **once**: bound cannot be widened by ball it holds,
-      #   but middle folded twice is pulled toward, and camera turns about that middle.
+      # Yield unary operation's operand once.
+      #   Bound cannot be widened by ball it holds, but middle folded twice is pulled
+      #   toward, and camera turns about that middle.
       for slot in (if first == second: @[first] else: @[first, second]):
         if scene.isAlive(slot):
           yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
@@ -86,7 +89,7 @@ func aimFor*(
 ): Option[CameraAim] =
   ## Resolve what camera is asked to bring into view, or none where nothing is.
   ##   Pure function of geometry: see `CameraAim`, whose worth is that caller re-offering
-  ## same selection every frame offers something comparing equal.
+  ##   same selection every frame offers something comparing equal.
   result = none(CameraAim)
   for (m, anchor) in watched(scene, picked, staged):
     result = result.aimIncluding(m, scale, anchor)
@@ -110,22 +113,26 @@ func placementFor*(
   aim: CameraAim; scene: Scene; picked: Selection; staged: Option[Preview];
   camera: Camera; width, height: int
 ): CameraPlacement =
-  ## Resolve `aim` against camera as it stands into placement ease should end at: **least
-  ## movement** -- pan, zoom and orbit together -- putting every picked object in view.
-  ## None at all where they all already are.
-  ##   Full move it is cut back from: **target** to middle of everything finite picked,
-  ## **angles** facing horizon objects only where nothing finite was, **distance** pulled
-  ## back only as far as fitting demands and never in. Orbit is preferred *against* by
-  ## construction: finite selection's full move carries no turn, so no fraction of it does;
-  ## horizon-only selection's move is turn because pan and zoom cannot bring star into view.
-  ##   Finite framing wins outright over facing star, since two can disagree: star behind
-  ## reader and point in front have no placement showing both, and selection with
-  ## something finite is one reader works on. Star picked beside point may stay out of view.
-  # Charge nothing for fitting where everything is already in view, judged where camera
-  #   *is*: judging at centred placement pulled view about on every pick of something
-  #   plainly visible. Target still comes to middle of what was picked -- reader who picks
-  #   object and turns means to turn about *it*. Aim compares equal from next frame on, so
-  #   ease runs once per pick; see `CameraAim` and `CameraTween.abandon`.
+  ## Resolve `aim` against camera as it stands into placement ease should end at.
+  ##   Least movement, pan, zoom and orbit together, putting every picked object in view;
+  ##   none at all where they all already are.
+  ##   Full move it is cut back from: target to middle of everything finite picked, angles
+  ##   facing horizon objects only where nothing finite was, distance pulled back only as
+  ##   far as fitting demands and never in.
+  ##     Orbit is preferred *against* by construction: finite selection's full move
+  ##     carries no turn, so no fraction of it does; horizon-only selection's move is turn
+  ##     because pan and zoom cannot bring star into view.
+  ##   Finite framing wins outright over facing star, since two can disagree.
+  ##     Star behind reader and point in front have no placement showing both, and
+  ##     selection with something finite is one reader works on.
+  ##     Star picked beside point may stay out of view.
+  # Charge nothing for fitting where everything is already in view, judged where camera is.
+  #   Judging at centred placement pulled view about on every pick of something plainly
+  #   visible.
+  #   Target still comes to middle of what was picked: reader who picks object and turns
+  #   means to turn about *it*.
+  #   Aim compares equal from next frame on, so ease runs once per pick; see `CameraAim`
+  #   and `CameraTween.abandon`.
   if isShownAll(scene, picked, staged, camera, width, height):
     var held = camera.placementOf
     if aim.centroid.isSome: held.target = aim.centroid.get
@@ -135,21 +142,21 @@ func placementFor*(
     if aim.sphere.isSome or aim.heading.isNone: (camera.azimuth, camera.elevation)
     else: azimuthElevationFor(aim.heading.get)
   var settled = CameraPlacement(
-    # Aim at middle of what was picked, not middle of bound holding it: bound still decides
-    #   *distance*.
+    # Aim at middle of what was picked, not middle of bound holding it.
+    #   Bound still decides *distance*.
     target: if aim.centroid.isSome: aim.centroid.get else: camera.target,
     distance: camera.distance,
     azimuth: angles[0],
-    # Clamp as orbit drag is: past pole camera's up runs along sight axis and frame
-    #   collapses.
+    # Clamp as orbit drag is.
+    #   Past pole camera's up runs along sight axis and frame collapses.
     elevation: clamp(angles[1], -ELEVATION_LIMIT, ELEVATION_LIMIT),
   )
   if aim.sphere.isSome and
       not isShownAll(scene, picked, staged, camera.placed(settled), width, height):
-    # Bracket with distance at which whole sphere fits, then halve into it for least that
-    #   does. Closed form alone over-dollies: line whose support stands hundred units away
-    #   needs no pulling back if it already crosses frame, and flat disc seen at angle
-    #   needs far less room than sphere holding it from every side.
+    # Bracket with distance at which whole sphere fits, then halve into it for least.
+    #   Closed form alone over-dollies: line whose support stands hundred units away needs
+    #   no pulling back if it already crosses frame, and flat disc seen at angle needs far
+    #   less room than sphere holding it from every side.
     var
       near = camera.distance
       far = max(
@@ -157,8 +164,8 @@ func placementFor*(
         distanceFitting(aim.sphere.get.radius, camera, width, height, INSET_POINT_SHOWN),
       )
     settled.distance = far
-    # Halve soundly because test is monotone in distance: everything converges on middle
-    #   of frame as eye pulls back.
+    # Halve soundly because test is monotone in distance.
+    #   Everything converges on middle of frame as eye pulls back.
     if isShownAll(scene, picked, staged, camera.placed(settled), width, height):
       for _ in 1 .. ROUNDS_DISTANCE_FIT:
         let middle = 0.5*(near + far)
@@ -168,17 +175,18 @@ func placementFor*(
         else: near = middle
       settled.distance = far
 
-  # Stand whole where even full move shows nothing -- selection wider than world may be
-  #   viewed from, or two stars facing opposite ways.
+  # Stand whole where even full move shows nothing.
+  #   Selection wider than world may be viewed from, or two stars facing opposite ways.
   if not isShownAll(scene, picked, staged, camera.placed(settled), width, height):
     return settled
 
-  # Cut whole move back to least fraction already showing everything, searched along path
-  #   ease travels (`toward`), each candidate verified at own trial placement so partial
-  #   pan and partial zoom cannot admit fraction that fails; step-then-halve handles path
-  #   not being strictly monotone.
-  # Start from where camera stands **but already centred**: re-centring is not concession
-  #   to fitting, and in path search would find fraction of nothing shows everything.
+  # Cut whole move back to least fraction already showing everything.
+  #   Searched along path ease travels (`toward`), each candidate verified at own trial
+  #   placement so partial pan and partial zoom cannot admit fraction that fails.
+  #   Step-then-halve handles path not being strictly monotone.
+  # Start from where camera stands but already centred.
+  #   Re-centring is not concession to fitting, and in path search would find fraction of
+  #   nothing shows everything.
   var start = camera.placementOf
   start.target = settled.target
   var (lower, upper) = (0.0, 1.0)
@@ -206,17 +214,17 @@ proc offerAim*(
   tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
   staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float
 ) =
-  ## Offer camera whatever is being worked on to look at -- one call both front-ends and
-  ## storyboard make, once per frame.
+  ## Offer camera whatever is being worked on to look at.
+  ##   One call both front-ends and storyboard make, once per frame.
   ##   Standing offer, re-made every frame: `aimAt` ignores goal it already holds, so
-  ## unchanged scene costs nothing while moving one -- coefficient being dragged -- reads
-  ## as one continuous chase.
+  ##   unchanged scene costs nothing while moving one (coefficient being dragged) reads as
+  ##   one continuous chase.
   ##   Anything drawing nothing, empty selection included, aims at nothing and releases,
-  ## which lets picking same object again aim at it afresh.
+  ##   which lets picking same object again aim at it afresh.
   ##   `isGoalHeld` guard keeps `placementFor`'s search off hot path: offer is re-made
-  ## every frame selection stands.
-  # Take caller's extent, not second derivation: building another here ran `algebraFilled`
-  #   and `camera.frame`'s joins twice per frame.
+  ##   every frame selection stands.
+  # Take caller's extent, not second derivation.
+  #   Building another here ran `algebraFilled` and `camera.frame`'s joins twice per frame.
   let aim = aimFor(scene, picked, staged, scale)
   if aim.isNone:
     tween.release()
@@ -233,13 +241,14 @@ proc offerAimAt*(
   tween: var CameraTween; camera: Camera; m: Multivector;
   width, height: int; now, duration: float
 ) =
-  ## Offer camera one object, outside any scene -- for storyboard, whose captures aim at
-  ## step's derived multivector before selection could name it.
+  ## Offer camera one object, outside any scene.
+  ##   For storyboard, whose captures aim at step's derived multivector before selection
+  ##   could name it.
   ##   Same rule, so captured frame and interactive one agree on where object is worth
-  ## looking from.
-  ##   Empty scene and selection are never read -- `previewStaging` names no operands, so
-  ## `watched` yields one object and stops -- and cost one zeroed `Scene` per capture,
-  ## storyboard's cost rather than frame loop's.
+  ##   looking from.
+  ##   Empty scene and selection are never read: `previewStaging` names no operands, so
+  ##   `watched` yields one object and stops.
+  ##     Cost is one zeroed `Scene` per capture, storyboard's rather than frame loop's.
   var alone: Scene
   offerAim(
     tween, camera, alone, Selection(), some(previewStaging(m)),

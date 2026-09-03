@@ -1,27 +1,27 @@
-## Turn RGA objects into vertices renderer can draw -- natively through OpenGL, in-browser
-## through WebGL.
+## Turn RGA objects into records and vertices renderer can draw, natively or in browser.
 ##
-## Finite objects are tessellated about support point, i.e. point nearest origin:
+## Finite objects are tessellated about support point, i.e. point nearest origin.
 ##   Line becomes segment along its attitude: `DrawExtent.radius_horizon` backward from
 ##   support, same radius forward from eye, so forward end lands exactly on
-##   `eye + radius_horizon*axis` -- where horizon marker for its attitude would be drawn.
+##   `eye + radius_horizon*axis`, where horizon marker for its attitude would be drawn.
 ##   Plane becomes flat translucent disc at fixed radius (`EXTENT_PLANE`) plus rim marking
-##   its edge, spanned by own frame -- fixed rather than camera-relative, so plane holds
-##   one size in world units as camera dollies or orbits.
-##
-## Object at horizon -- infinitely far, no support point -- is drawn fixed to
-## `DrawExtent.eye` at `DrawExtent.radius_horizon` (near far clip plane): point becomes
-## marker standing in fixed direction, line becomes great circle of directions its pencil
-## spans, plane -- unique universal "whole sky" object every plane at horizon is --
-## becomes dome over entire sky. Fixed to eye rather than origin, so orbiting or dollying
-## leaves each in same apparent direction, as real stars would.
-##
-## World furniture -- ground grid, world axes -- reaches `DrawExtent.extent_furniture`,
-## tied to far clip distance rather than orbit distance (`extentFurnitureFor`), so it reads
-## as extending indefinitely. Drawn as **fog about eye** (`fogFurnitureFor`): solid nearby,
-## faded to nothing at that reach, laid wherever camera has flown. Finite *line object*
-## reaches same extent from own support, since it is content and not reference.
-##
+##   its edge, spanned by own frame.
+##     Fixed rather than camera-relative, so plane holds one size in world units as
+##     camera dollies or orbits.
+## Object at horizon (infinitely far, no support point) is drawn fixed to `DrawExtent.eye`
+## at `DrawExtent.radius_horizon`, near far clip plane.
+##   Point becomes marker standing in fixed direction; line becomes great circle of
+##   directions its pencil spans; plane, unique universal whole-sky object every plane at
+##   horizon is, becomes dome over entire sky.
+##   Fixed to eye rather than origin, so orbiting or dollying leaves each in same apparent
+##   direction, as real stars would.
+## World furniture (ground grid, world axes) reaches `DrawExtent.extent_furniture`.
+##   Tied to far clip distance rather than orbit distance (`extentFurnitureFor`), so it
+##   reads as extending indefinitely.
+##   Drawn as fog about eye (`fogFurnitureFor`): solid nearby, faded to nothing at that
+##   reach, laid wherever camera has flown.
+##   Finite *line object* reaches same extent from own support, since it is content and
+##   not reference.
 ## Storage is fixed and owned by caller: meshes are cleared and refilled every frame.
 ##
 ##   |--------|-----------------------|----------------------------------------------|
@@ -35,13 +35,14 @@
 ##   |--------|-----------------------|----------------------------------------------|
 ##
 ## Every kind but point is one compact record per shape, widened into triangles by own
-## vertex shader; each record type's doc states expansion, and `expand*` reference proc
-## beside it is what suite pins and shaders are checked against.
-##
-## Line is drawn as **ribbon** -- quad sized to width in screen pixels -- never `GL_LINES`,
-## because line width is hint target may ignore: most WebGL implementations clamp it to
-## one pixel. See `addSegment`. Ribbons draw apart from washes because state differs:
-## ribbon writes depth, translucent wash does not.
+## vertex shader.
+##   Each record type's doc states expansion, and `expand*` reference proc beside it is
+##   what suite pins and shaders are checked against.
+## Line is drawn as ribbon, quad sized to width in screen pixels, never `GL_LINES`.
+##   Line width is hint target may ignore: most WebGL implementations clamp it to one
+##   pixel. See `addSegment`.
+##   Ribbons draw apart from washes because state differs: ribbon writes depth,
+##   translucent wash does not.
 ##
 ## Shared by desktop (`visualiser.nim`) and browser (`browser_bridge.nim`) render paths.
 
@@ -55,68 +56,69 @@ import ./euclid
 
 #[ Mesh Configuration ]#
 
-# Allow caller to resize plane's drawn radius and vertex storage without editing source,
-#   e.g. `--define:visualiser.extent_plane=20 --define:visualiser.vertices_max=32768`.
+# Allow caller to resize plane's drawn radius and vertex storage without editing source.
+#   E.g. `--define:visualiser.extent_plane=20 --define:visualiser.vertices_max=32768`.
 #   `.define` takes only integers, bools or strings, so plain ratios below stay ordinary
 #   constants.
 const
   EXTENT_PLANE* {.define: "visualiser.extent_plane".} = 8
-    ## Fix how far plane's disc and rim reach from support point, in world units --
-    ## independent of camera, so plane holds one size as camera dollies or orbits.
+    ## Fix how far plane's disc and rim reach from support point, in world units.
+    ##   Independent of camera, so plane holds one size as camera dollies or orbits.
   FRACTION_HORIZON* = 0.9
-    ## Place horizon geometry -- star, great circle, whole sky -- this fraction of way to
-    ## far clip plane, so it reads as farthest thing without being clipped away.
+    ## Place horizon geometry this fraction of way to far clip plane.
+    ##   Star, great circle, whole sky.
+    ##   Reads as farthest thing without being clipped away.
   FRACTION_FURNITURE* = 0.95
-    ## Reach world axes, ground grid and every finite line this fraction of way to far
-    ## clip plane -- tied to that depth rather than orbit distance, so all three read as
-    ## extending indefinitely.
+    ## Reach world axes, ground grid and every finite line this far toward far clip plane.
+    ##   Tied to that depth rather than orbit distance, so all three read as extending
+    ##   indefinitely.
   FRACTION_GRID_FADE_START* = 0.06
-    ## Hold ground grid lines at full alpha out to this fraction of reach, fading rest
-    ## toward `FRACTION_GRID_FADE_END` -- past that, cells crowd into few pixels under
-    ## perspective and read as aliasing noise.
-    ##   Doubled from 0.03 when fade moved from origin to eye (`fogFurnitureFor`): eye
-    ## stands whole orbit distance from content, so same fraction left ground under target
-    ## already fading. 0.06 of reach is 1.14 orbit distances, target inside solid core.
-    ## **Measured by rendering**: at 0.03 ground at target read as absent.
+    ## Hold ground grid lines at full alpha out to this fraction of reach.
+    ##   Rest fades toward `FRACTION_GRID_FADE_END`: past that, cells crowd into few
+    ##   pixels under perspective and read as aliasing noise.
+    ##   Measured by rendering: fog is about eye, which stands whole orbit distance from
+    ##   content, and smaller fraction left ground under target already fading.
+    ##     0.06 of reach is 1.14 orbit distances, target inside solid core.
   FRACTION_GRID_FADE_END* = 0.20
-    ## Cut ground grid lines off entirely at this fraction of reach: faint line still
-    ## aliases, so fix is to stop drawing it, not dim it further.
-    ##   Raised from 0.12 with move to fog about eye, as `FRACTION_GRID_FADE_START` was.
-    ## 0.20 of reach is 3.8 orbit distances, fog's edge about 2.8 distances beyond target.
+    ## Cut ground grid lines off entirely at this fraction of reach.
+    ##   Faint line still aliases, so fix is to stop drawing it, not dim it further.
+    ##   0.20 of reach is 3.8 orbit distances, fog's edge about 2.8 distances beyond
+    ##   target.
   RIBBONS_MAX* {.define: "visualiser.ribbons_max".} = 20161
     ## Bound how many ribbon segments one frame holds.
-    ##   Binding case is scene filled to `scene.ITEMS_MAX` with *lines*, each two segments
-    ## `tessellate.addLine` steps out, every one selected and drawn twice, plus ghost.
-    ## Furniture set, sharing this cap, wants `2*LINES_GRID_MAX` lattice lines and axes.
-    ##   Was 131,072 until rim became ring: plane's rim arrived as `SEGMENTS_CIRCLE_HORIZON`
-    ## records, making scene of planes binding case and costing 17 MB across two sets.
+    ##   Binding case is scene filled to `scene.ITEMS_MAX` with *lines*, each two
+    ##   segments `tessellate.addLine` steps out, every one selected and drawn twice,
+    ##   plus ghost.
+    ##   Furniture set, sharing this cap, wants `2*LINES_GRID_MAX` lattice lines and axes.
     ##   `scene.nim` carries `static` check tying this to `ITEMS_MAX`, which this module
-    ## cannot see. Overflow is `doAssert`, dead page rather than dropped triangle.
+    ##   cannot see. Overflow is `doAssert`, dead page rather than dropped triangle.
   VERTICES_MAX* {.define: "visualiser.vertices_max".} = 10080
     ## Bound how many vertices point mesh holds, per frame.
-    ##   Points are all that is left in vertex form; every other kind is record bounded by
-    ## own cap. Binding case: scene filled with points, every one selected, drawn twice.
+    ##   Points are all that is left in vertex form; every other kind is record bounded
+    ##   by own cap.
+    ##   Binding case: scene filled with points, every one selected, drawn twice.
   DISCS_MAX* {.define: "visualiser.discs_max".} = 10081
     ## Bound how many disc records one frame holds.
-    ##   Binding case: scene filled with finite planes, every one selected and drawn twice,
-    ## plus ghost.
+    ##   Binding case: scene filled with finite planes, every one selected and drawn
+    ##   twice, plus ghost.
   RINGS_MAX* {.define: "visualiser.rings_max".} = 10081
-    ## Bound how many ring records one frame holds, by same worst case as `DISCS_MAX`:
-    ## plane draws fill and rim together, so two caps move as pair.
+    ## Bound how many ring records one frame holds, by same worst case as `DISCS_MAX`.
+    ##   Plane draws fill and rim together, so two caps move as pair.
   DOMES_MAX* {.define: "visualiser.domes_max".} = 10081
-    ## Bound how many dome records one frame holds, by same worst case as `DISCS_MAX`
-    ## with every plane at horizon.
+    ## Bound how many dome records one frame holds, by same worst case as `DISCS_MAX`.
+    ##   With every plane at horizon.
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long freshly added object takes to grow and fade fully into view.
     ##   Milliseconds rather than seconds, as `.define` takes integer.
   SIZE_POINT* = 9.0'f32
     ## Set diameter of drawn points, in pixels.
   WIDTH_LINE_FURNITURE* = 1.5'f32
-    ## Set width of ground grid and world axes, in pixels -- thinner than scene line
-    ## object (`WIDTH_LINE_OBJECT`), so reference recedes behind content.
+    ## Set width of ground grid and world axes, in pixels.
+    ##   Thinner than scene line object (`WIDTH_LINE_OBJECT`), so reference recedes
+    ##   behind content.
   WIDTH_LINE_OBJECT* = 2.5'f32
-    ## Set width of scene line object, in pixels -- wider than furniture, so it reads as
-    ## content.
+    ## Set width of scene line object, in pixels.
+    ##   Wider than furniture, so it reads as content.
 
 static:
   doAssert EXTENT_PLANE > 0, &"Plane radius must be positive; got `{EXTENT_PLANE}`."
@@ -139,74 +141,78 @@ static:
 
 
 const EXTENT_PLANE_F* = float(EXTENT_PLANE)
-  ## `EXTENT_PLANE` as float; `.define` cannot take float literal, every use wants float.
+  ## Hold `EXTENT_PLANE` as float.
+  ##   `.define` cannot take float literal, and every use wants float.
 
 const ANIMATION_SECONDS* = float(ANIMATION_MILLISECONDS) / 1000.0
   ## Convert configured duration to seconds `animationProgress` works in.
 
 const
   SIZE_CELL_GRID* = 10.0
-    ## Set ground grid's cell size, in world units, at every reach. **One size**: grid
-    ## stepping its cell with reach re-scaled ground silently under reader, so no distance
-    ## read off it was comparable with last. Fixed cell is ruler; stepping one is not.
+    ## Set ground grid's cell size, in world units, at every reach.
+    ##   One size: grid stepping its cell with reach re-scaled ground silently under
+    ##   reader, so no distance read off it was comparable with last.
+    ##     Fixed cell is ruler; stepping one is not.
     ##   `sizeCellGridFor` steps it by decades past 1,200 units of ground reach, where
-    ## alternative is no ground at all.
-    ##   Ten rather than hundred, **measured by rendering both**: at opening placement
-    ## hundred-unit cell put at most one line in view.
+    ##   alternative is no ground at all.
+    ##   Ten rather than hundred, measured by rendering both: at opening placement
+    ##   hundred-unit cell put at most one line in view.
   CELLS_GRID_HALF_MAX* = 120
     ## Bound how many cells ground grid lays between camera and edge of reach, each way.
-    ## Reach follows far clip plane, which follows orbit distance, so unbounded reach
-    ## multiplies lines without limit as camera pulls back.
-    ##   **`sizeCellGridFor` spends this on cell, not reach.** Cutting *reach* against it
-    ## left camera past 1,200 units with ground stopping short, and past twice that with
-    ## black void. Stepping cell keeps same line count across reach camera has.
-    ##   Was 24 while cell was hundred; cell ten without raising this left grid patch
-    ## floating in near field at orbit distance 300. Rendered, not reasoned.
+    ##   Reach follows far clip plane, which follows orbit distance, so unbounded reach
+    ##   multiplies lines without limit as camera pulls back.
+    ##   `sizeCellGridFor` spends this on cell, not reach.
+    ##     Cutting *reach* against it left camera past 1,200 units with ground stopping
+    ##     short, and past twice that with black void.
+    ##     Stepping cell keeps same line count across reach camera has.
+    ##   Sized by rendering: fewer cells left grid patch floating in near field at orbit
+    ##   distance 300.
   ALPHA_GRID* = 0.75'f32
-    ## Scale ground grid's opacity by this, on top of `alphaGridFade`. Width alone was not
-    ## carrying difference from drawn line; readers read ruled ground as content.
-    ##   Quarter off rather than half: grid colour already sits close to backdrop. 0.55
-    ## rendered ground that read as absent.
+    ## Scale ground grid's opacity by this, on top of `alphaGridFade`.
+    ##   Width alone was not carrying difference from drawn line; readers read ruled
+    ##   ground as content.
+    ##   Quarter off rather than half: grid colour already sits close to backdrop, and
+    ##   half off rendered ground that read as absent.
     ##   Applied where grid is built rather than to `Ink.Grid`, which is also
-    ## `INK_POOL_FREE`; dimming entry would make that object translucent.
+    ##   `INK_POOL_FREE`; dimming entry would make that object translucent.
   LINES_GRID_MAX* = 2*CELLS_GRID_HALF_MAX + 1
-    ## Bound how many lattice lines one grid family lays, also how many ribbon records it
-    ## costs: line is **one record** spanning whole chord of fog disc, faded per fragment.
-    ##   Replaces piece-cutting economy: each line was cut into up to eight pieces so fade
-    ## could be sampled at boundaries -- ~920 boundary multivector sums per moving frame,
-    ## whole grid row. Per-fragment fade needs no boundaries and is exact.
+    ## Bound how many lattice lines one grid family lays, also how many ribbon records.
+    ##   Line is one record spanning whole chord of fog disc, faded per fragment.
+    ##   Per-fragment fade needs no piece boundaries and is exact, where cutting each
+    ##   line into pieces to sample fade cost boundary sums per moving frame.
   SEGMENTS_CIRCLE_HORIZON* = 96
-    ## Set segment count in horizon line's great circle, or finite plane's rim, dense
-    ## enough to read as circular.
+    ## Set segment count in horizon line's great circle, or finite plane's rim.
+    ##   Dense enough to read as circular.
   LATITUDES_HORIZON* = 12
   LONGITUDES_HORIZON* = 24
     ## Set band counts in horizon plane's whole-sky dome.
   ORIGIN_WORLD* = Position(x: 0, y: 0, z: 0)
     ## Set world origin, which objects through it are drawn about.
   ALPHA_WASH* = 0.16'f32
-    ## Set opacity of finite plane's fill -- flat across disc, since rim marks edge; low
-    ## enough that whatever sits behind, including crossing plane, stays legible.
+    ## Set opacity of finite plane's fill.
+    ##   Flat across disc, since rim marks edge; low enough that whatever sits behind,
+    ##   including crossing plane, stays legible.
   ALPHA_WASH_SKY* = 0.22'f32
-    ## Set opacity of horizon plane's sky dome -- no edge to fade toward, covering whole
-    ## sphere, so it must read as coloured sky without overwhelming what depth test lets
-    ## show through.
+    ## Set opacity of horizon plane's sky dome.
+    ##   No edge to fade toward, covering whole sphere, so it must read as coloured sky
+    ##   without overwhelming what depth test lets show through.
   FRACTION_DIMMED_ALPHA* = 0.55'f32
-    ## Scale non-focal constructed object's alpha by this, so it stays legible as context
-    ## while receding behind what step showcases.
+    ## Scale non-focal constructed object's alpha by this.
+    ##   Stays legible as context while receding behind what step showcases.
   MUTE_DESATURATION* = 0.6'f32
-    ## Blend muted object's colour this far toward own grayscale, short of replacing it --
-    ## dulled hint of hue rather than every muted object converging to one grey.
+    ## Blend muted object's colour this far toward own grayscale, short of replacing it.
+    ##   Dulled hint of hue rather than every muted object converging to one grey.
   MUTE_AXIS_TOWARD_GREY* = 0.45'f32
-    ## Blend world axis's colour this far toward own grayscale, no alpha change -- permanent
-    ## palette entry, unlike `muted()`. Enough that red/green/blue trio stops competing with
-    ## categorical colours, not so much axes stop reading as axes.
-    ##   Raised from 0.22 on report that axes were taken for drawn lines.
-    ##   **Read by `axisTinted`, which builds three palette entries from it**; hand-applied
-    ## blend in literals drifted from number describing it.
+    ## Blend world axis's colour this far toward own grayscale, no alpha change.
+    ##   Permanent palette entry, unlike `muted()`.
+    ##   Enough that red/green/blue trio stops competing with categorical colours, not so
+    ##   much axes stop reading as axes; readers once took axes for drawn lines.
+    ##   Read by `axisTinted`, which builds three palette entries from it.
+    ##     Hand-applied blend in literals drifted from number describing it.
   SCALE_AXIS_LUMINANCE* = 0.50'f32
     ## Scale world axis's blended colour down by this, after grey blend.
-    ##   Desaturating alone leaves three mid-grey lines as conspicuous as objects; together
-    ## these put axes between ground grid and drawn object in weight.
+    ##   Desaturating alone leaves three mid-grey lines as conspicuous as objects;
+    ##   together these put axes between ground grid and drawn object in weight.
 
 static:
   doAssert SIZE_CELL_GRID > 0, &"Grid cell size must be positive; got `{SIZE_CELL_GRID}`."
@@ -228,7 +234,7 @@ static:
 #[ Type Definitions ]#
 
 type
-  Ink* {.pure.} = enum ## Name palette slot, so every colour in output lives in one table.
+  Ink* {.pure.} = enum ## Define palette slot, so every colour in output lives in one table.
     ## Structural slots, spent on furniture of drawing itself.
     Backdrop, ## Colour framebuffer is cleared to.
     AxisX, ## World x axis through origin; standard convention is red.
@@ -236,147 +242,161 @@ type
     AxisZ, ## World z axis through origin; standard convention is blue.
     Grid, ## World reference grid on ground.
     Guide, ## Construction helper, e.g. plane normal.
-    Outline, ## Selection outline drawn around highlighted object -- never cycled to,
-      ## only drawn where caller names slot as highlighted (see `renderer.drawOutline`).
-    Algebra, ## Debug layer drawing multivectors frame computed, in true form -- see
-      ## `algebra_trace`. Structural and not assignable: entry in it is *algebra's* own
-      ## geometry, so it is screened against every assignable slot and `Invalid` at
-      ## assignable floors. Cyan: worst separation 8.2 against jade under tritanopia, 9.2
-      ## against cobalt under red-green deficiency, 54.4 against backdrop.
-    Invalid, ## Reserved for object that is wrong rather than merely coloured -- magenta no
-      ## object may be assigned, so seeing it always means something is invalid.
+    Outline, ## Selection outline drawn around highlighted object.
+      ## Never cycled to, only drawn where caller names slot as highlighted (see
+      ## `renderer.drawOutline`).
+    Algebra, ## Debug layer drawing multivectors frame computed, in true form.
+      ## See `algebra_trace`. Structural and not assignable: entry in it is *algebra's*
+      ## own geometry, so it is screened against every assignable slot and `Invalid` at
+      ## assignable floors by `tools/check_palette`.
+    Invalid, ## Reserved for object that is wrong rather than merely coloured.
+      ## Magenta no object may be assigned, so seeing it always means something is
+      ## invalid.
       ##   Worn by rubber-band of drag over pair that makes nothing
-      ## (`interaction.inkOfDrag`), warning arriving before release. Never leaned on
-      ## alone: magenta reads as blue under deuteranopia, so that drag also shows no ghost.
+      ##   (`interaction.inkOfDrag`), warning arriving before release.
+      ##   Never leaned on alone: magenta reads as blue under deuteranopia, so that drag
+      ##   also shows no ghost.
     ## Categorical slots, spent by caller on telling one object from another.
-    ##   Named by hue rather than role, as caller alone knows what objects mean. Grade is
-    ## legible from shape, so colour carries identity.
+    ##   Named by hue rather than role, as caller alone knows what objects mean.
+    ##     Grade is legible from shape, so colour carries identity.
     ##   Declared in this order for cycling: consecutive names sit far apart on wheel, so
-    ## two objects added one after another read as different even under colour-vision
-    ## deficiency.
-    ##   Five slots, not sixteen and no longer eight: sixteen packed into band clear of
-    ## three axis colours left every slot reading as shade of teal, blue, violet or
-    ## magenta. Reserving magenta for `Invalid` cost three more. Adding hues back was
-    ## measured and reproduced sixteen-slot failure; see `lut_ink_to_rgba`.
+    ##   two objects added one after another read as different even under colour-vision
+    ##   deficiency.
+    ##   Five slots, not sixteen and not eight.
+    ##     Sixteen packed into band clear of three axis colours left every slot reading
+    ##     as shade of teal, blue, violet or magenta; reserving magenta for `Invalid`
+    ##     cost three more.
+    ##     Adding hues back was measured and reproduced sixteen-slot failure; see
+    ##     `lut_ink_to_rgba`.
     Rose, Copper, Olive, Jade, Cobalt,
 
-  Placement* {.pure.} = enum ## Report what became of object once drawn.
+  Placement* {.pure.} = enum ## Define what became of object once drawn.
     Finite, ## Object had finite extent and was drawn where it stands.
     Horizon, ## Object lay wholly at horizon; only its direction could be drawn.
     Empty, ## Multivector carried no drawable geometry at all.
 
-  Rgba* = object ## Hold colour channels, in 0 .. 1.
+  Rgba* = object ## Define colour channels, in 0 .. 1.
     red*, green*, blue*, alpha*: float32
 
-  Vertex* = object ## Hold one vertex exactly as it is uploaded.
+  Vertex* = object ## Define one vertex exactly as it is uploaded.
     x*, y*, z*: float32
     red*, green*, blue*, alpha*: float32
 
-  Mesh* = object ## Hold point vertices, in storage fixed at compile time.
+  Mesh* = object ## Define point vertices, in storage fixed at compile time.
     ## One shape still uploaded as vertices; every widened kind crosses wire as records.
     vertices*: array[VERTICES_MAX, Vertex]
     count_vertices*: int
     index_overlay*: Option[int] ## Where overlay run begins, if this mesh has one.
       ## Vertices below it are drawn against depth buffer; rest are drawn after with test
-      ## off, landing over whatever is there. `markOverlay` sets it, and each render path
-      ## draws two runs as two calls -- see `renderer.drawRun`. None where nothing asked
-      ## to be drawn over; zero means whole mesh is overlay.
-      ##   Watermark rather than second `MeshSet`, since set reserves whole storage for run
-      ## that is usually one object. Order already decides buckets (see
-      ## `visualiser.assembleMeshes`), so index into order costs nothing.
+      ## off, landing over whatever is there.
+      ##   `markOverlay` sets it, and each render path draws two runs as two calls; see
+      ##   `renderer.drawRun`.
+      ## None where nothing asked to be drawn over; zero means whole mesh is overlay.
+      ## Watermark rather than second `MeshSet`, since set reserves whole storage for run
+      ## that is usually one object.
+      ##   Order already decides buckets (see `visualiser.assembleMeshes`), so index into
+      ##   order costs nothing.
 
-  RibbonRecord* = object ## Hold one line segment exactly as it is uploaded.
-    ## **Vertex shader's input, not vertex.** Each record is drawn as one instance of six
-    ## corners; shader clips to near plane, derives across as `cross(head - tail, eye -
-    ## tail)`, and steps each corner off by half width of own end's world-per-pixel -- work
-    ## `expandRibbon` states in Nim, reference shaders are held to. Sixteen floats against
-    ## forty-two for six expanded vertices, and no arithmetic on CPU.
+  RibbonRecord* = object ## Define one line segment exactly as it is uploaded.
+    ## Vertex shader's input, not vertex.
+    ##   Each record is drawn as one instance of six corners.
+    ##   Shader clips to near plane, derives across as `cross(head - tail, eye - tail)`,
+    ##   and steps each corner off by half width of own end's world-per-pixel: work
+    ##   `expandRibbon` states in Nim, reference shaders are held to.
+    ##   Sixteen floats against forty-two for six expanded vertices, and no arithmetic
+    ##   on CPU.
     tail_x*, tail_y*, tail_z*: float32
     head_x*, head_y*, head_z*: float32
     width*: float32
-    fog*: float32 ## Whether fragment shader fades this record by distance from eye -- 1
-      ## for world furniture and debug lattices, 0 otherwise. `alphaGridFade` states fade;
-      ## flag on record lets fogged and unfogged ribbons share one buffer in any order.
+    fog*: float32 ## Whether fragment shader fades this record by distance from eye.
+      ## 1 for world furniture and debug lattices, 0 otherwise.
+      ## `alphaGridFade` states fade; flag on record lets fogged and unfogged ribbons
+      ## share one buffer in any order.
     tail_red*, tail_green*, tail_blue*, tail_alpha*: float32
     head_red*, head_green*, head_blue*, head_alpha*: float32
 
-  RibbonMesh* = object ## Hold every ribbon segment of one frame, in fixed storage.
+  RibbonMesh* = object ## Define every ribbon segment of one frame, in fixed storage.
     records*: array[RIBBONS_MAX, RibbonRecord]
     count*: int
     index_overlay*: Option[int] ## Where overlay run begins; see `Mesh.index_overlay`.
 
-  DiscRecord* = object ## Hold one filled disc exactly as it is uploaded.
-    ## **Disc-fill vertex shader's input, not vertex.** Each record is drawn as one
-    ## instance of static fan of `3 * SEGMENTS_CIRCLE_HORIZON` unit-circle corners; shader
-    ## places every corner at `centre + cos*arm_first + sin*arm_second` -- work
-    ## `expandDiscVertex` states in Nim. Thirteen floats against fanned vertices, and no
-    ## per-frame trigonometry on CPU.
-    ##   Arms arrive already scaled by radius, so record needs no radius.
+  DiscRecord* = object ## Define one filled disc exactly as it is uploaded.
+    ## Disc-fill vertex shader's input, not vertex.
+    ##   Each record is drawn as one instance of static fan of
+    ##   `3 * SEGMENTS_CIRCLE_HORIZON` unit-circle corners.
+    ##   Shader places every corner at `centre + cos*arm_first + sin*arm_second`: work
+    ##   `expandDiscVertex` states in Nim.
+    ##   Thirteen floats against fanned vertices, and no per-frame trigonometry on CPU.
+    ## Arms arrive already scaled by radius, so record needs no radius.
     centre_x*, centre_y*, centre_z*: float32
     arm_first_x*, arm_first_y*, arm_first_z*: float32
     arm_second_x*, arm_second_y*, arm_second_z*: float32
     fill_red*, fill_green*, fill_blue*, fill_alpha*: float32
 
-  DomeRecord* = object ## Hold one whole-sky sphere exactly as it is uploaded.
-    ## **Dome vertex shader's input, not vertex.** Each record is drawn as one instance of
-    ## static lat/long sphere of unit directions; shader places every corner at `centre +
-    ## radius*direction`, stated in `expandDomeVertex`. Orientation is not field because
-    ## full sphere has none (see `tessellate.addPlane`).
+  DomeRecord* = object ## Define one whole-sky sphere exactly as it is uploaded.
+    ## Dome vertex shader's input, not vertex.
+    ##   Each record is drawn as one instance of static lat/long sphere of unit
+    ##   directions; shader places every corner at `centre + radius*direction`, stated
+    ##   in `expandDomeVertex`.
+    ## Orientation is not field because full sphere has none (see `tessellate.addPlane`).
     centre_x*, centre_y*, centre_z*, radius*: float32
     red*, green*, blue*, alpha*: float32
 
-  DiscMesh* = object ## Hold every disc record of one frame, in fixed storage.
+  DiscMesh* = object ## Define every disc record of one frame, in fixed storage.
     records*: array[DISCS_MAX, DiscRecord]
     count*: int
 
-  RingRecord* = object ## Hold one plane's rim exactly as it is uploaded.
-    ## **Ring vertex shader's input, not vertex.** `DiscRecord` with width: same centre and
-    ## same two radius-scaled arms, drawn as one instance of `SEGMENTS_CIRCLE_HORIZON`
-    ## quads rather than fan of triangles.
-    ##   **Record that took rim off CPU.** Rim was stepped and emitted as ninety-six
-    ## separate ribbons per plane: on scene of 132 planes 99.2% of all ribbon traffic, and
-    ## 45 ms of 53 ms frame. One record now; rim costs what fill costs.
-    ##   Width is *pixel* width, so shader widens each segment in screen space exactly as
-    ## ribbon: `ribbonOfRing` derives very `RibbonRecord` segment would have been, and
-    ## `expandRingVertex` is `expandRibbon` of it.
+  RingRecord* = object ## Define one plane's rim exactly as it is uploaded.
+    ## Ring vertex shader's input, not vertex.
+    ##   `DiscRecord` with width: same centre and same two radius-scaled arms, drawn as
+    ##   one instance of `SEGMENTS_CIRCLE_HORIZON` quads rather than fan of triangles.
+    ## Record that took rim off CPU.
+    ##   Rim stepped and emitted as ninety-six separate ribbons per plane was nearly all
+    ##   ribbon traffic on scene of planes; one record now, and rim costs what fill costs.
+    ## Width is *pixel* width, so shader widens each segment in screen space exactly as
+    ## ribbon.
+    ##   `ribbonOfRing` derives very `RibbonRecord` segment would have been, and
+    ##   `expandRingVertex` is `expandRibbon` of it.
     centre_x*, centre_y*, centre_z*: float32
     arm_first_x*, arm_first_y*, arm_first_z*: float32
     arm_second_x*, arm_second_y*, arm_second_z*: float32
     red*, green*, blue*, alpha*: float32
     width*: float32
 
-  RingMesh* = object ## Hold every ring record of one frame, in fixed storage.
+  RingMesh* = object ## Define every ring record of one frame, in fixed storage.
     records*: array[RINGS_MAX, RingRecord]
     count*: int
     index_overlay*: Option[int] ## Where overlay run begins; see `Mesh.index_overlay`.
-      ##   Rim needs own split as line does: selected plane is tessellated second time
+      ## Rim needs own split as line does: selected plane is tessellated second time
       ## after `markOverlay`, and without mark second rim draws behind own translucent
       ## fill, exactly highlight it exists to draw.
 
-  DomeMesh* = object ## Hold every dome record of one frame, in fixed storage.
+  DomeMesh* = object ## Define every dome record of one frame, in fixed storage.
     records*: array[DOMES_MAX, DomeRecord]
     count*: int
 
-  WashKind* {.pure.} = enum ## Name which record array one wash run draws from.
+  WashKind* {.pure.} = enum ## Define which record array one wash run draws from.
     Disc, Dome
 
-  WashRun* = object ## Hold one stretch of same-kind wash records, drawn as one call.
+  WashRun* = object ## Define one stretch of same-kind wash records, drawn as one call.
     kind*: WashKind
     first*: int32 ## Index of run's first record, within own kind's array.
     count*: int32
 
-  WashRuns* = object ## Hold frame's wash draw order, across both record kinds.
-    ## **Translucent pass's memory of scene order.** Discs and domes land in two arrays,
-    ## but two washes crossing still blend in order scene emitted them -- so each append
-    ## extends current run where it can and opens new one where kind changes, and each
-    ## render path walks runs in sequence. Usually one run per object, of one record.
+  WashRuns* = object ## Define frame's wash draw order, across both record kinds.
+    ## Translucent pass's memory of scene order.
+    ##   Discs and domes land in two arrays, but two washes crossing still blend in order
+    ##   scene emitted them.
+    ##   Each append extends current run where it can and opens new one where kind
+    ##   changes, and each render path walks runs in sequence.
+    ##   Usually one run per object, of one record.
     runs*: array[DISCS_MAX + DOMES_MAX, WashRun]
     count*: int
-    index_overlay*: Option[int] ## Index of first *run* of overlay pass --
+    index_overlay*: Option[int] ## Index of first *run* of overlay pass.
       ## `Mesh.index_overlay`'s rule at run grain, since run never straddles mark:
       ## `markOverlay` seals current run, and append refuses to extend across it.
 
-  MeshSet* = object ## Hold everything one frame draws: vertices and every record kind.
+  MeshSet* = object ## Define everything one frame draws: vertices and every record kind.
     ## Points are one shape still assembled as vertices; rest cross wire as records.
     points*: Mesh
     ribbons*: RibbonMesh
@@ -385,23 +405,26 @@ type
     domes*: DomeMesh
     washes*: WashRuns
 
-  DrawScale* = object ## Hold how far this frame's geometry reaches, and from where.
-    ## **Euclidean half of frame's camera.** Everything ribbon needs to hold constant width
-    ## on screen, and everything picture is measured against. Algebra's reading of same
-    ## camera lives beside it in `tessellate.DrawExtent`, which carries this whole record
-    ## and adds multivector twins; this module cannot name those, point of split.
-    extent_furniture*: float ## How far ground grid, world axes and every finite line
-      ## extend from origin or support -- tied to far clip distance via
-      ## `extentFurnitureFor`, not orbit distance, so all read as reaching indefinitely.
-    eye*: Position ## Camera's eye position, horizon geometry is anchored to, so it stays
-      ## in fixed apparent direction as camera pans or dollies.
+  DrawScale* = object ## Define how far this frame's geometry reaches, and from where.
+    ## Euclidean half of frame's camera.
+    ##   Everything ribbon needs to hold constant width on screen, and everything picture
+    ##   is measured against.
+    ##   Algebra's reading of same camera lives beside it in `tessellate.DrawExtent`,
+    ##   which carries this whole record and adds multivector twins; this module cannot
+    ##   name those, point of split.
+    extent_furniture*: float ## How far ground grid, world axes and finite lines extend.
+      ## From origin or support; tied to far clip distance via `extentFurnitureFor`, not
+      ## orbit distance, so all read as reaching indefinitely.
+    eye*: Position ## Camera's eye position, horizon geometry is anchored to.
+      ## Stays in fixed apparent direction as camera pans or dollies.
     radius_horizon*: float ## How far from `eye` horizon geometry is drawn.
     forward*: Direction ## Camera's sight axis, depth is measured along.
     tangent_half_view*: float ## Tangent of half vertical field of view.
     height_pixels*: int ## Framebuffer height, which vertical field of view spans.
-    depth_near*: float ## Camera's near clip distance, depth is clamped at. Nothing nearer
-      ## is drawn, and without clamp segment past eye reads negative depth and turns
-      ## ribbon inside out.
+    depth_near*: float ## Camera's near clip distance, depth is clamped at.
+      ## Nothing nearer is drawn, and without clamp segment past eye reads negative depth
+      ## and turns ribbon inside out.
+
 
 
 #[ Camera-Relative Scale ]#
@@ -409,52 +432,55 @@ type
 func radiansPerPixel*(scale: DrawScale): float =
   ## Measure how much of camera's angular field one pixel of height spans.
   ##   Small-angle reading of `worldPerPixelAt` at unit depth, right unit for anything
-  ## placed by *direction*: horizon geometry sits on sphere about eye, where pixel is
-  ## angle and not distance.
+  ##   placed by *direction*: horizon geometry sits on sphere about eye, where pixel is
+  ##   angle and not distance.
   2.0*scale.tangent_half_view/float(max(scale.height_pixels, 1))
 
 
 func worldPerPixelAt*(place: Position; scale: DrawScale): float =
   ## Measure how much world distance one screen pixel spans at `place`'s depth.
   ##   Turns width or clearance stated in pixels into world offset, wherever anchored.
-  ## Every ribbon's half-width and every marker's clearance come through here.
+  ##     Every ribbon's half-width and every marker's clearance come through here.
   ##   Depth along sight axis, not distance from eye: perspective divides by former, and
-  ## two differ by cosine of off-axis angle -- over percent even near middle of frame.
+  ##   two differ by cosine of off-axis angle, over percent even near middle of frame.
   ##   Clamped at near plane: depth goes negative behind eye, and negative half-width
-  ## folds ribbon over on itself.
+  ##   folds ribbon over on itself.
   let depth = max(dot(place - scale.eye, scale.forward), scale.depth_near)
   2.0*depth*scale.tangent_half_view/float(max(scale.height_pixels, 1))
 
 
 func radiusHorizonFor*(distance_far: float): float =
-  ## Compute how far from eye horizon geometry sits this frame, given far clip distance:
-  ## "infinitely far" sits near renderer's outer depth limit at any orbit distance.
+  ## Compute how far from eye horizon geometry sits this frame, given far clip distance.
+  ##   Infinitely far sits near renderer's outer depth limit at any orbit distance.
   distance_far * FRACTION_HORIZON
 
 
 func alphaGridFade*(radius, radius_fade_start, radius_end: float): float =
-  ## Fall from full alpha at `radius_fade_start` to none at `radius_end`: past fade
-  ## start grid cells crowd into few pixels under perspective, and fading them trades
-  ## aliasing noise for clean horizon.
-  ##   `radius` is distance **from eye**, bounds from `fogFurnitureFor`. One schedule for
-  ## all furniture -- grid, axes, debug lattices -- so reference ends at one horizon.
-  ##   **Reference fog half of both ribbon fragment shaders is held to**: change to this,
-  ## GLSL 3.30 in `renderer.nim` or WebGL source in `glue.js` is not finished until other
-  ## two are checked. Runs per fragment there against interpolated world position, exact
-  ## where retired per-piece sampling was piecewise-linear.
+  ## Fade from full alpha at `radius_fade_start` to none at `radius_end`.
+  ##   Past fade start grid cells crowd into few pixels under perspective, and fading
+  ##   them trades aliasing noise for clean horizon.
+  ##   `radius` is distance from eye, bounds from `fogFurnitureFor`.
+  ##     One schedule for all furniture (grid, axes, debug lattices), so reference ends
+  ##     at one horizon.
+  ##   Reference fog half of both ribbon fragment shaders is held to.
+  ##     Change to this, GLSL 3.30 in `renderer.nim` or WebGL source in `glue.js` is not
+  ##     finished until other two are checked.
+  ##     Runs per fragment there against interpolated world position, exact where
+  ##     per-piece sampling was piecewise-linear.
   1.0 - clamp((radius - radius_fade_start) / (radius_end - radius_fade_start), 0.0, 1.0)
 
 
 func fogFurnitureFor*(extent: float): tuple[radius_full, radius_gone: float] =
-  ## Solve where world furniture's fog begins and ends, as distances **from eye**: grid
-  ## line or axis holds full strength within `radius_full` and has faded by
-  ## `radius_gone`, where `addGrid` and `addAxes` cut geometry off.
-  ##   Fog rather than halo about world origin: halo made origin place reader may not
-  ## leave -- pan hundred units away and ground was gone. Measured from eye so what is
-  ## near reader is solid whichever way they look.
-  ##   **Uncapped**: outer radius stopping at `CELLS_GRID_HALF_MAX` cells left camera past
-  ## 1,200 units in black void, axes included. Line count is bounded by `sizeCellGridFor`
-  ## stepping *cell* instead.
+  ## Solve where world furniture's fog begins and ends, as distances from eye.
+  ##   Grid line or axis holds full strength within `radius_full` and has faded by
+  ##   `radius_gone`, where `addGrid` and `addAxes` cut geometry off.
+  ##   Fog rather than halo about world origin.
+  ##     Halo made origin place reader may not leave: pan hundred units away and ground
+  ##     was gone. Measured from eye so what is near reader is solid whichever way they
+  ##     look.
+  ##   Uncapped: outer radius stopping at `CELLS_GRID_HALF_MAX` cells left camera far out
+  ##   in black void, axes included.
+  ##     Line count is bounded by `sizeCellGridFor` stepping *cell* instead.
   let radius_gone = FRACTION_GRID_FADE_END*extent
   # Hold inner radius as ratio of outer, so two keep same proportion at any reach.
   (radius_full: radius_gone*(FRACTION_GRID_FADE_START/FRACTION_GRID_FADE_END),
@@ -462,16 +488,17 @@ func fogFurnitureFor*(extent: float): tuple[radius_full, radius_gone: float] =
 
 
 func sizeCellGridFor*(radius_ground: float): float =
-  ## Choose ground grid's cell size for ground disc of `radius_ground`: `SIZE_CELL_GRID`
-  ## wherever that lays no more than `CELLS_GRID_HALF_MAX` cells across radius, ten times
-  ## it for every further factor of ten needed.
+  ## Choose ground grid's cell size for ground disc of `radius_ground`.
+  ##   `SIZE_CELL_GRID` wherever that lays no more than `CELLS_GRID_HALF_MAX` cells
+  ##   across radius, ten times it for every further factor of ten needed.
   ##   Stepping cell, which `SIZE_CELL_GRID` argues against, and argument holds where
-  ## made: answered here is case that rule left with nothing -- reach past which fixed
-  ## cell lays tens of thousands of lines, choice being "stepped cell or no ground".
-  ##   **Decades, so coarser grid's lines are finer grid's lines**: step coarsens without
-  ## moving anything. 1-2-5 sequence does not nest.
+  ##   made.
+  ##     Answered here is case that rule left with nothing: reach past which fixed cell
+  ##     lays tens of thousands of lines, choice being stepped cell or no ground.
+  ##   Decades, so coarser grid's lines are finer grid's lines: step coarsens without
+  ##   moving anything. 1-2-5 sequence does not nest.
   ##   First step at 1,200 units of ground reach, about orbit distance 316, far past
-  ## anything reader reads distances off.
+  ##   anything reader reads distances off.
   ##   `SIZE_CELL_GRID` itself for disc of no radius.
   let radius_cells = float(CELLS_GRID_HALF_MAX)*SIZE_CELL_GRID
   if radius_ground <= radius_cells: return SIZE_CELL_GRID
@@ -479,9 +506,9 @@ func sizeCellGridFor*(radius_ground: float): float =
 
 
 func extentFurnitureFor*(distance_far: float): float =
-  ## Compute how far ground grid, world axes and every finite line reach this frame,
-  ## given far clip distance -- independent of orbit distance, so all read as extending
-  ## indefinitely rather than shrinking back when camera does.
+  ## Compute how far ground grid, world axes and every finite line reach this frame.
+  ##   Given far clip distance, independent of orbit distance, so all read as extending
+  ##   indefinitely rather than shrinking back when camera does.
   distance_far * FRACTION_FURNITURE
 
 
@@ -489,10 +516,10 @@ func extentFurnitureFor*(distance_far: float): float =
 #[ Palette ]#
 
 func axisTinted(base: Rgba): Rgba =
-  ## Soften one full-strength axis hue into reference mark it should read as.
+  ## Tint one full-strength axis hue down into reference mark it should read as.
   ##   Blends toward luminance-grey by `MUTE_AXIS_TOWARD_GREY`, using `muted()`'s
-  ## 0.299/0.587/0.114 weights, then scales by `SCALE_AXIS_LUMINANCE`. Alpha untouched:
-  ## permanent palette entry, not per-frame dim.
+  ##   0.299/0.587/0.114 weights, then scales by `SCALE_AXIS_LUMINANCE`.
+  ##   Alpha untouched: permanent palette entry, not per-frame dim.
   ##   Evaluated at compile time into table below, so axes *are* what constants say.
   let grey = 0.299*base.red + 0.587*base.green + 0.114*base.blue
   func softened(channel: float32): float32 =
@@ -506,8 +533,8 @@ func axisTinted(base: Rgba): Rgba =
 
 const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Backdrop: Rgba(red: 0.063, green: 0.075, blue: 0.102, alpha: 1.0),
-  # Soften standard convention at full strength through `axisTinted`: hue says which axis,
-  #   softening keeps it from saying "drawn object".
+  # Soften standard convention at full strength through `axisTinted`.
+  #   Hue says which axis; softening keeps it from saying drawn object.
   Ink.AxisX: axisTinted(Rgba(red: 0.85, green: 0.22, blue: 0.22, alpha: 1.0)),
   Ink.AxisY: axisTinted(Rgba(red: 0.26, green: 0.80, blue: 0.26, alpha: 1.0)),
   Ink.AxisZ: axisTinted(Rgba(red: 0.24, green: 0.42, blue: 0.90, alpha: 1.0)),
@@ -522,20 +549,14 @@ const lut_ink_to_rgba: array[Ink, Rgba] = [
   Ink.Jade: Rgba(red: 0.133, green: 0.655, blue: 0.478, alpha: 1.0),
   Ink.Cobalt: Rgba(red: 0.357, green: 0.565, blue: 0.780, alpha: 1.0),
 ] ## Map palette slot to colour: five assignable hues, magenta `Invalid` held out of run.
-  ##   Screened through dataviz validator (OKLCH lightness/chroma bounds, CVD deltaE,
-  ## normal-vision deltaE, `--pairs all`), with axis safety as hue-distance-plus-deltaE
-  ## gate (>= 20 degrees of hue from each axis) rather than full categorical floor: thin
-  ## axis lines and filled objects are never mistaken for each other.
-  ##   All ten pairings clear adjacent-pair floor (normal-vision deltaE >= 15) except
-  ## `Jade`/`Copper` at CVD deltaE 7.6, inside validator's 6-8 legal-with-secondary-
-  ## encoding band -- every object carries shape and position. `Rose` sits at contrast
-  ## 2.78 against backdrop, under 3:1, relieved by its always-present row label.
-  ##   **Every assignable hue is held clear of `Invalid`.** Worst is `Rose` at CVD deltaE
-  ## 15.2, then `Cobalt` at 14.4. `Cobalt` was re-derived: at old value it sat at 6.6 from
-  ## magenta, fine as categorical peer, not once magenta means "wrong". Blue and magenta
-  ## converge under deuteranopia though 88 degrees of hue separate them.
-  ##   Do not fill remaining arc back to eight. Measured: seven-hue set put `Olive` and new
-  ## yellow-green at CVD deltaE 0.4. Five is what fits honestly.
+  ##   Held to floors `REQUIREMENTS.md` states by `tools/check_palette`, which reads this
+  ##   table itself: typical vision, red-green deficiency, tritanopia, and every hue
+  ##   against `Invalid` and each axis.
+  ##     One declared exception, `Jade`/`Cobalt` under tritanopia, argued in that tool.
+  ##   Every assignable hue is held clear of `Invalid`: fine as categorical peer is not
+  ##   fine once magenta means wrong, and blue and magenta converge under deuteranopia.
+  ##   Do not fill remaining arc back to eight: seven-hue set measured two greens
+  ##   indistinguishable under deficiency. Five is what fits honestly.
 
 
 const COUNT_INK* = ord(Ink.high) + 1
@@ -543,15 +564,16 @@ const COUNT_INK* = ord(Ink.high) + 1
 
 
 const INK_CATEGORICAL_FIRST* = Ink.Rose
-  ## Name where categorical run begins. Everything before it is structural, and offering
-  ## one as object's colour would let object wear backdrop, world axis or outline.
+  ## Name where categorical run begins.
+  ##   Everything before it is structural, and offering one as object's colour would let
+  ##   object wear backdrop, world axis or outline.
 
 
 const COUNT_INK_CATEGORICAL* = ord(Ink.high) - ord(INK_CATEGORICAL_FIRST) + 1
   ## Count slots colour picker may offer.
   ##   Callers walk run as one contiguous block, so `Ink`'s declaration order is
-  ## load-bearing: every categorical slot follows every structural one. `static`
-  ## assertion below enforces it.
+  ##   load-bearing: every categorical slot follows every structural one.
+  ##     `static` assertion below enforces it.
 
 static:
   doAssert COUNT_INK_CATEGORICAL == 5,
@@ -578,7 +600,7 @@ let lut_ink_to_name* = block:
 func colour*(ink: Ink): lent Rgba = lut_ink_to_rgba[ink]
   ## Read colour of palette slot.
   ##   Borrowed, not returned by value: JS backend deep-copied entry per call, once per
-  ## object per frame, 8% of moving frame at 5,038 objects.
+  ##   object per frame (Art. VII.1).
 
 
 func fade*(base: Rgba; alpha: float32): Rgba =
@@ -587,10 +609,10 @@ func fade*(base: Rgba; alpha: float32): Rgba =
 
 
 func muted*(base: Rgba): Rgba =
-  ## Dull colour partway toward own grayscale, and cut opacity to `FRACTION_DIMMED_ALPHA`,
-  ## for constructed object not in focus -- shown as context rather than hidden.
+  ## Blend colour partway toward own grayscale, cutting opacity to `FRACTION_DIMMED_ALPHA`.
+  ##   For constructed object not in focus: shown as context rather than hidden.
   ##   Blended toward own luminance, not replaced by `Ink.Grid.colour`: fading every hue
-  ## to one grey made muted line indistinguishable from grid and lost identity.
+  ##   to one grey made muted line indistinguishable from grid and lost identity.
   let luminance = 0.299'f32*base.red + 0.587'f32*base.green + 0.114'f32*base.blue
   Rgba(
     red: base.red + (luminance - base.red)*MUTE_DESATURATION,
@@ -612,7 +634,7 @@ func easeOutCubic*(t: float): float =
 func animationProgress*(now, born: float): float =
   ## Report how much of appear animation item born at `born` has completed by `now`.
   ##   Clamped and eased, so caller may pass any `now - born` and always get value to
-  ## scale or fade by.
+  ##   scale or fade by.
   easeOutCubic((now - born) / ANIMATION_SECONDS)
 
 
@@ -635,8 +657,9 @@ proc clearMeshes*(meshes: var MeshSet) =
 
 proc markOverlay*(meshes: var MeshSet) =
   ## Say that everything appended from here on is drawn over what came before.
-  ##   Called once, between ordinary objects and selected ones. Calling twice moves
-  ## boundary rather than adding second one: assembly order decides what is over what.
+  ##   Called once, between ordinary objects and selected ones.
+  ##   Calling twice moves boundary rather than adding second one: assembly order
+  ##   decides what is over what.
   meshes.points.index_overlay = some(meshes.points.count_vertices)
   meshes.ribbons.index_overlay = some(meshes.ribbons.count)
   meshes.rings.index_overlay = some(meshes.rings.count)
@@ -645,13 +668,13 @@ proc markOverlay*(meshes: var MeshSet) =
 
 proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba; alpha: float32) =
   ## Append point marking single position, in `tint`'s hue at `alpha`.
-  ##   Alpha apart from tint so caller fading point need not build faded `Rgba` first:
-  ## `fade` per point was two allocations and copy, once per point per frame.
+  ##   Alpha apart from tint so caller fading point need not build faded `Rgba` first.
+  ##     `fade` per point was two allocations and copy, once per point per frame.
   let count = meshes.points.count_vertices
   doAssert count < VERTICES_MAX,
     &"Mesh holds at most {VERTICES_MAX} vertices; raise `--define:visualiser.vertices_max`."
-  # Write fields in place: `Vertex` literal assigned here was deep copy per point on JS
-  #   backend, 41% of moving frame's profile.
+  # Write fields in place.
+  #   `Vertex` literal assigned here was deep copy per point on JS backend (Art. VII.1).
   template vertex: untyped = meshes.points.vertices[count]
   vertex.x = float32(at.x)
   vertex.y = float32(at.y)
@@ -666,7 +689,7 @@ proc addMarker*(meshes: var MeshSet; at: Position; tint: Rgba; alpha: float32) =
 func blend(first, second: Rgba; fraction: float): Rgba =
   ## Read colour fraction of way between two tints, for ribbon end near clip has moved.
   ##   At module scope rather than nested in `addSegment`: JS backend materialises nested
-  ## routine on every call of its parent, thousands of times per frame.
+  ##   routine on every call of its parent, thousands of times per frame.
   let (a, b) = (1.0 - fraction, fraction)
   Rgba(
     red: float32(a*float(first.red) + b*float(second.red)),
@@ -679,57 +702,60 @@ func blend(first, second: Rgba; fraction: float): Rgba =
 const POINTS_SCRATCH_MAX* = SEGMENTS_CIRCLE_HORIZON + 1
   ## Bound places tessellation step may assemble before emitting them.
   ##   Horizon line's great circle is largest, one extra boundary so closing segment ends
-  ## on place stepped at angle loop would have used.
+  ##   on place stepped at angle loop would have used.
 
 
 type RibbonPiece* = object
-  ## Hold one ribbon segment, fully resolved: where it runs, and colour of each end.
-  ##   **Record algebra hands picture.** Assembling whole family into these first and
-  ## emitting after makes seam line in code rather than claim in comment, which lets panel
-  ## say what each side cost. Everything here is Euclidean.
+  ## Define one ribbon segment, fully resolved: where it runs, and colour of each end.
+  ##   Record algebra hands picture.
+  ##     Assembling whole family into these first and emitting after makes seam line in
+  ##     code rather than claim in comment, which lets panel say what each side cost.
+  ##   Everything here is Euclidean.
   tail*, head*: Position
   tint_tail*, tint_head*: Rgba
 
 
 type DrawScratch* = object
-  ## Hold working space tessellation step assembles into before it emits anything.
-  ##   **One object rather than buffer per shape**, so caller supplies scratch once.
-  ## Desktop carves this from frame arena and browser holds one; neither allocates per
-  ## frame, and suite's copy is same shape.
+  ## Define working space tessellation step assembles into before it emits anything.
+  ##   One object rather than buffer per shape, so caller supplies scratch once.
+  ##     Desktop carves this from frame arena and browser holds one; neither allocates
+  ##     per frame, and suite's copy is same shape.
   ##   Both members are written and read within single step, so they carry nothing
-  ## between callers and need no clearing.
-  ribbons*: array[LINES_GRID_MAX, RibbonPiece]
-    ## One piece per lattice line or axis chord; sized for larger grid family.
+  ##   between callers and need no clearing.
+  ribbons*: array[LINES_GRID_MAX, RibbonPiece] ## One piece per lattice line or axis chord.
+    ## Sized for larger grid family.
   places*: array[POINTS_SCRATCH_MAX, Position]
 
 
 func directionAcross*(tail, head, eye: Position): Option[Direction] =
   ## Resolve which way to step off segment so its two edges land either side on screen.
-  ##   Perpendicular to segment and to sight ray reaching it -- cross product of two edges
-  ## leaving `tail`.
-  ##   **Picture's quantity, not geometry's.** Was join `directionNormal(tail ∧ head ∧
-  ## eye)`, run ~3,800 times per moving frame, walking 16x16 coefficient pairs through
-  ## `nimCopy` on JS backend. Suite holds this cross equal to that join, sign included.
+  ##   Perpendicular to segment and to sight ray reaching it: cross product of two edges
+  ##   leaving `tail`.
+  ##   Picture's quantity, not geometry's.
+  ##     Join `directionNormal(tail ∧ head ∧ eye)` ran per segment per moving frame,
+  ##     walking 16x16 coefficient pairs through `nimCopy` on JS backend.
+  ##     Suite holds this cross equal to that join, sign included.
   ##   None where eye lies on segment's line, or segment has no length.
   normalize(cross(head - tail, eye - tail))
 
 
 func expandRibbon*(record: RibbonRecord; scale: DrawScale): array[6, Vertex] =
-  ## Expand one ribbon record into six vertices shader will make of it -- **reference
-  ## implementation of ribbon vertex shader, and nothing else runs it.**
-  ##   Both render targets carry same arithmetic in GLSL (`renderer.nim` and `glue.js`,
-  ## sibling copies; change to any of three is not finished until other two are checked).
-  ## Suite holds this against algebra -- near clip equal to `clipToEyeSide`, across equal
-  ## to join through `directionAcross` -- so chain runs shader ≡ this ≡ algebra.
+  ## Expand one ribbon record into six vertices shader will make of it.
+  ##   Reference implementation of ribbon vertex shader; nothing else runs it.
+  ##     Both render targets carry same arithmetic in GLSL (`renderer.nim` and `glue.js`,
+  ##     sibling copies); change to any of three is not finished until other two are
+  ##     checked.
+  ##     Suite holds this against algebra (near clip equal to `clipToEyeSide`, across
+  ##     equal to join through `directionAcross`), so chain runs shader ≡ this ≡ algebra.
   ##   Quad rather than `GL_LINES` because line width is *hint* both targets may ignore.
   ##   Each end is offset by half width of *its own* world-per-pixel, so ribbon narrows
-  ## with distance as line does, and two parallel lines keep shared vanishing point.
-  ##   **Clipped to near plane first.** World offset proportional to depth gives constant
-  ## screen width only while quad's edges interpolate depth linear along segment, false
-  ## once one end stands behind eye: unclipped world axis drew twenty pixels wide near
-  ## origin.
+  ##   with distance as line does, and two parallel lines keep shared vanishing point.
+  ##   Clipped to near plane first.
+  ##     World offset proportional to depth gives constant screen width only while quad's
+  ##     edges interpolate depth linear along segment, false once one end stands behind
+  ##     eye; unclipped world axis drew twenty pixels wide near origin.
   ##   Segment entirely behind eye, or one eye stands on, comes back as six coincident
-  ## zero-alpha vertices -- quad rasterising nothing, as shader leaves it.
+  ##   zero-alpha vertices: quad rasterising nothing, as shader leaves it.
   let
     tail = Position(x: record.tail_x, y: record.tail_y, z: record.tail_z)
     head = Position(x: record.head_x, y: record.head_y, z: record.head_z)
@@ -777,9 +803,10 @@ proc addRibbon*(
 ) =
   ## Append one line segment as ribbon record, for vertex shader to widen.
   ##   No camera needed: near clip, across direction and screen-constant width all moved
-  ## to GPU (see `expandRibbon`); `is_fogged` says whether fragment shader also fades
-  ## record by distance from eye (see `RibbonRecord.fog`). Emit half of boundary is
-  ## sixteen-float copy.
+  ##   to GPU (see `expandRibbon`).
+  ##   `is_fogged` says whether fragment shader also fades record by distance from eye
+  ##   (see `RibbonRecord.fog`).
+  ##   Emit half of boundary is sixteen-float copy.
   let count = meshes.ribbons.count
   doAssert count < RIBBONS_MAX,
     &"Frame holds at most {RIBBONS_MAX} ribbons; raise `--define:visualiser.ribbons_max`."
@@ -816,21 +843,22 @@ proc addSegment*(
 
 
 let UNIT_CIRCLE_RIM* = unitRing[SEGMENTS_CIRCLE_HORIZON + 1](SEGMENTS_CIRCLE_HORIZON)
-  ## Rim's fixed ring of angles, resolved once at start-up by `euclid.unitRing`.
-  ##   One boundary past wrap rather than reuse of first entry, so closing segment ends on
-  ## value `cos(2*PI)` takes, hair off `cos(0)`'s.
+  ## Hold rim's fixed ring of angles, resolved once at start-up by `euclid.unitRing`.
+  ##   One boundary past wrap rather than reuse of first entry, so closing segment ends
+  ##   on value `cos(2*PI)` takes, hair off `cos(0)`'s.
   ##   Exported for other walkers of same ring: horizon line's great circle (through
-  ## `addRing`) and `picking`'s sampling of it, which must step very angles drawn one does.
+  ##   `addRing`) and `picking`'s sampling of it, which must step very angles drawn one
+  ##   does.
 
 
 proc ribbonOfRing*(record: RingRecord; segment: int): RibbonRecord =
-  ## Report ribbon one segment of ring *is* -- **one place ring becomes line.**
+  ## Report ribbon one segment of ring *is*: one place ring becomes line.
   ##   Ring is closed walk of `SEGMENTS_CIRCLE_HORIZON` segments around circle its centre
-  ## and arms describe, each ordinary ribbon of ring's tint and width. Stating it as
-  ## derivation keeps ring shader honest: `expandRingVertex` is `expandRibbon` of this, so
-  ## build has exactly one screen-space widening.
+  ##   and arms describe, each ordinary ribbon of ring's tint and width.
+  ##   Stating it as derivation keeps ring shader honest: `expandRingVertex` is
+  ##   `expandRibbon` of this, so build has exactly one screen-space widening.
   ##   `proc` rather than `func` only because it reads `UNIT_CIRCLE_RIM`, which
-  ## `strictFuncs` counts as effect.
+  ##   `strictFuncs` counts as effect.
   let
     centre = Position(x: record.centre_x, y: record.centre_y, z: record.centre_z)
     arm_first = Direction(x: record.arm_first_x, y: record.arm_first_y,
@@ -855,12 +883,12 @@ proc ribbonOfRing*(record: RingRecord; segment: int): RibbonRecord =
 proc expandRingVertex*(
   record: RingRecord; segment: int; scale: DrawScale
 ): array[6, Vertex] =
-  ## Expand one segment of ring into six vertices shader will make of it -- **reference
-  ## implementation of ring vertex shader, and nothing else runs it.**
-  ##   Both render targets carry same arithmetic in GLSL, sibling copies as `expandRibbon`
-  ## and `expandDiscVertex` have.
+  ## Expand one segment of ring into six vertices shader will make of it.
+  ##   Reference implementation of ring vertex shader; nothing else runs it.
+  ##     Both render targets carry same arithmetic in GLSL, sibling copies as
+  ##     `expandRibbon` and `expandDiscVertex` have.
   ##   `expandRibbon` of `ribbonOfRing`, and nothing more: ring adds *where* segment is,
-  ## nothing to how line is widened.
+  ##   nothing to how line is widened.
   expandRibbon(ribbonOfRing(record, segment), scale)
 
 
@@ -868,7 +896,7 @@ proc addRing*(
   meshes: var MeshSet; centre: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba; width: float
 ) =
-  ## Append one plane's rim as single record -- circle `addDisc` fills, outlined.
+  ## Append one plane's rim as single record: circle `addDisc` fills, outlined.
   ##   Arms arrive already scaled by radius, as `addDisc`'s do.
   doAssert meshes.rings.count < RINGS_MAX,
     &"Ring storage holds {RINGS_MAX} records; raise `--define:visualiser.rings_max`."
@@ -888,13 +916,13 @@ proc addRing*(
 
 
 func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex =
-  ## Widen one disc record into fan corner given table entry stands for -- **reference
-  ## disc-fill vertex shaders are held to**, beside `expandRibbon`; change to it, GLSL in
-  ## `renderer.nim` or WebGL source in `glue.js` is not finished until other two are
-  ## checked.
+  ## Widen one disc record into fan corner given table entry stands for.
+  ##   Reference disc-fill vertex shaders are held to, beside `expandRibbon`.
+  ##     Change to it, GLSL in `renderer.nim` or WebGL source in `glue.js` is not
+  ##     finished until other two are checked.
   ##   One statement: centre plus two radius-scaled arms weighted by corner's cosine and
-  ## sine -- `euclid.onCircleAt`, centre corner carrying zero for both. Flat tint across
-  ## fan; see `addDisc`.
+  ##   sine, i.e. `euclid.onCircleAt`, centre corner carrying zero for both.
+  ##   Flat tint across fan; see `addDisc`.
   let at = onCircleAt(
     Position(
       x: float(record.centre_x), y: float(record.centre_y), z: float(record.centre_z)
@@ -917,12 +945,12 @@ func expandDiscVertex*(record: DiscRecord; cos_angle, sin_angle: float): Vertex 
 
 
 func expandDomeVertex*(record: DomeRecord; unit: Direction): Vertex =
-  ## Widen one dome record into sphere corner given unit direction stands for --
-  ## **reference dome vertex shaders are held to**; same three-way rule as
-  ## `expandDiscVertex`.
-  ##   One statement: centre plus unit direction scaled by radius -- sum `spherePoint`
-  ## walked through algebra before sphere became static geometry, which suite still
-  ## holds it equal to.
+  ## Widen one dome record into sphere corner given unit direction stands for.
+  ##   Reference dome vertex shaders are held to; same three-way rule as
+  ##   `expandDiscVertex`.
+  ##   One statement: centre plus unit direction scaled by radius.
+  ##     Sum `spherePoint` walked through algebra before sphere became static geometry,
+  ##     which suite still holds it equal to.
   Vertex(
     x: float32(float(record.centre_x) + float(record.radius)*unit.x),
     y: float32(float(record.centre_y) + float(record.radius)*unit.y),
@@ -932,11 +960,12 @@ func expandDomeVertex*(record: DomeRecord; unit: Direction): Vertex =
 
 
 proc discCorners*(): seq[float32] =
-  ## Emit disc fan's static corner buffer: `(cos, sin)` per corner, three corners per rim
-  ## segment, wound centre, this segment's boundary, next one's. Centre corner is `(0,
-  ## 0)`, which `expandDiscVertex` lands on centre exactly.
-  ##   **One source for both render targets**: desktop uploads from Nim and browser
-  ## through `nimDiscCorners`, so neither carries hand-copied table.
+  ## Emit disc fan's static corner buffer.
+  ##   `(cos, sin)` per corner, three corners per rim segment, wound centre, this
+  ##   segment's boundary, next one's.
+  ##   Centre corner is `(0, 0)`, which `expandDiscVertex` lands on centre exactly.
+  ##   One source for both render targets: desktop uploads from Nim and browser through
+  ##   `nimDiscCorners`, so neither carries hand-copied table.
   result = newSeq[float32](2*3*SEGMENTS_CIRCLE_HORIZON)
   for i in 0 ..< SEGMENTS_CIRCLE_HORIZON:
     let at = 6*i
@@ -949,14 +978,16 @@ proc discCorners*(): seq[float32] =
 
 
 proc ringCorners*(): seq[float32] =
-  ## Emit ring's static corner buffer: six floats per corner -- tail angle's `(cos, sin)`,
-  ## head angle's `(cos, sin)`, then `(end, side)` pair `expandRibbon`'s six corners are
-  ## wound in -- six corners per rim segment, all segments laid end to end.
+  ## Emit ring's static corner buffer.
+  ##   Six floats per corner: tail angle's `(cos, sin)`, head angle's `(cos, sin)`, then
+  ##   `(end, side)` pair `expandRibbon`'s six corners are wound in.
+  ##   Six corners per rim segment, all segments laid end to end.
   ##   Every ring instance draws whole buffer, so one `RingRecord` becomes entire rim in
-  ## one draw; `expandRingVertex` states what shader does with each corner, and this table
-  ## is only *where* on circle each sits.
+  ##   one draw.
+  ##     `expandRingVertex` states what shader does with each corner, and this table is
+  ##     only *where* on circle each sits.
   ##   Angles come off `UNIT_CIRCLE_RIM`, so drawn circle is unchanged.
-  ##   **One source for both render targets**, as `discCorners` is.
+  ##   One source for both render targets, as `discCorners` is.
   const WINDING = [(0.0'f32, -1.0'f32), (1.0'f32, -1.0'f32), (1.0'f32, 1.0'f32),
     (0.0'f32, -1.0'f32), (1.0'f32, 1.0'f32), (0.0'f32, 1.0'f32)]
   result = newSeq[float32](6*6*SEGMENTS_CIRCLE_HORIZON)
@@ -976,8 +1007,9 @@ proc ringCorners*(): seq[float32] =
 
 
 func domeCorners*(): seq[float32] =
-  ## Emit dome's static corner buffer: one unit direction per corner, six corners per
-  ## lat/long quad, wound as CPU quads were. `expandDomeVertex` says what each becomes.
+  ## Emit dome's static corner buffer.
+  ##   One unit direction per corner, six corners per lat/long quad, wound as CPU quads
+  ##   were. `expandDomeVertex` says what each becomes.
   ##   One source for both render targets, as `discCorners` is.
   result = newSeq[float32](3*6*LATITUDES_HORIZON*LONGITUDES_HORIZON)
   var at = 0
@@ -1002,8 +1034,9 @@ func domeCorners*(): seq[float32] =
 
 
 proc appendWashRun(meshes: var MeshSet; kind: WashKind) =
-  ## Note one more record of `kind` in wash draw order, extending current run where it is
-  ## same kind and this side of overlay mark, opening new one otherwise. See `WashRuns`.
+  ## Note one more record of `kind` in wash draw order.
+  ##   Extends current run where it is same kind and this side of overlay mark, opens
+  ##   new one otherwise. See `WashRuns`.
   let count = meshes.washes.count
   if count > 0 and meshes.washes.runs[count - 1].kind == kind and
       meshes.washes.index_overlay != some(count):
@@ -1023,10 +1056,11 @@ proc addDisc*(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba
 ) =
-  ## Append flat, uniformly translucent disc record filling circle `addRing` outlines,
-  ## for disc-fill vertex shader to fan out -- flat rather than faded toward rim, since
-  ## rim marks boundary; tilt still reads through foreshortened ellipse, and low constant
-  ## alpha keeps whatever sits behind legible.
+  ## Append flat, uniformly translucent disc record filling circle `addRing` outlines.
+  ##   For disc-fill vertex shader to fan out.
+  ##   Flat rather than faded toward rim, since rim marks boundary.
+  ##     Tilt still reads through foreshortened ellipse, and low constant alpha keeps
+  ##     whatever sits behind legible.
   let count = meshes.discs.count
   doAssert count < DISCS_MAX,
     &"Frame holds at most {DISCS_MAX} discs; raise `--define:visualiser.discs_max`."
@@ -1048,11 +1082,13 @@ proc addDisc*(
 
 proc addDome*(meshes: var MeshSet; center: Position; radius: float; tint: Rgba) =
   ## Append whole-sky sphere record around `center`, for dome vertex shader to widen.
-  ##   Plane at horizon is unique universal "whole sky" object, same regardless of which
-  ## points produced it (see `directionNormalHorizon`), so only `radius` and `tint` decide
-  ## its shape. Every direction camera can see sky in shows it, looking down across ground
-  ## included: dome stopped at eye's horizontal was reverted on feedback that it cut off
-  ## sky camera genuinely sees. Occlusion against nearer things is depth test's job.
+  ##   Plane at horizon is unique universal whole-sky object, same regardless of which
+  ##   points produced it (see `directionNormalHorizon`), so only `radius` and `tint`
+  ##   decide its shape.
+  ##   Every direction camera can see sky in shows it, looking down across ground
+  ##   included.
+  ##     Dome stopped at eye's horizontal cut off sky camera genuinely sees.
+  ##     Occlusion against nearer things is depth test's job.
   let count = meshes.domes.count
   doAssert count < DOMES_MAX,
     &"Frame holds at most {DOMES_MAX} domes; raise `--define:visualiser.domes_max`."

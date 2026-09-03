@@ -1,24 +1,24 @@
 ## Hold diagnostics tree's colour ramp, as shipped.
 ##
-## Tree tints each row by its share of frame: continuous ramp from cyan at nothing to
-## orange at half frame or more. Ramp is **CET-I1**, re-lit to drawer's own text tones;
-## `tools/check_ramp.nim` regenerates every entry from published map and stylesheet tokens
-## and fails where two disagree, so table cannot drift from what it claims.
+## Tree tints each row by its share of frame: cyan at nothing, orange at half frame or more.
+##   Ramp is CET-I1, re-lit to drawer's own text tones.
+##   `tools/check_ramp.nim` regenerates every entry from published map and stylesheet
+##   tokens, and fails where two disagree, so table cannot drift from what it claims.
+##   Two ramps, one per text weight: label and value take hue and chroma from map and
+##   lightness from tone untinted text wears, so tinting never disturbs type hierarchy.
+##     Cost: second table of `STEPS_RAMP_TREE` triples.
 ##
-## Two ramps because row is two pieces of text at two weights: label and value. Both take
-## hue and chroma from map and lightness from tone untinted text wears, so tinting never
-## disturbs type hierarchy.
-##
-## `core` module rather than `browser/` one because verifying tool is native and must not
-## import browser bridge; nothing here draws.
+## Lives in `core` rather than `browser/`: verifying tool is native and must not import
+## browser bridge. Nothing here draws.
 
 const STEPS_RAMP_TREE* = 17
-  ## Samples of map ramp ships. Presentation layer interpolates between them; `check_ramp`
-  ## measures that interpolation against map's full 256 entries.
+  ## Fix how many samples of map ramp ships.
+  ##   Presentation layer interpolates between them.
+  ##   `check_ramp` measures that interpolation against map's full 256 entries.
 
 
 const LIFT_VALUE_RAMP* = 0.15
-  ## How far row's value is lifted from label's lightness toward `--ink`'s.
+  ## Fix how far row's value is lifted from label's lightness toward `--ink`'s.
   ##   Small on purpose: lifting whole way desaturates number, half of row reader reads.
 
 
@@ -41,7 +41,7 @@ const RAMP_TREE_LABEL*: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.81370, 0.48972, 0.30279),
   (0.84972, 0.45984, 0.32453),
 ]
-  ## Row's label, at `--ink-muted`'s lightness.
+  ## Hold row's label ramp, at `--ink-muted`'s lightness.
 
 
 const RAMP_TREE_VALUE*: array[STEPS_RAMP_TREE, (float, float, float)] = [
@@ -63,4 +63,4 @@ const RAMP_TREE_VALUE*: array[STEPS_RAMP_TREE, (float, float, float)] = [
   (0.86772, 0.53902, 0.35173),
   (0.90479, 0.50942, 0.37277),
 ]
-  ## Row's value, one `LIFT_VALUE_RAMP` step brighter.
+  ## Hold row's value ramp, one `LIFT_VALUE_RAMP` step brighter.

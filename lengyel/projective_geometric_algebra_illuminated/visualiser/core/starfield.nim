@@ -1,43 +1,44 @@
-## Hold every star in real solar neighbourhood, out to same 31.53 parsecs
-## `neighbourhood.nim` reaches, and say which carry known planets.
+## Hold every star in real solar neighbourhood, and say which carry known planets.
 ##
-## **Data only, and generated.** Nothing here is chosen; it is snapshot of SIMBAD, taken
-## once and shipped, as `neighbourhood.nim` ships one of NASA Exoplanet Archive and
-## `ramp.nim` one of published colour map. `PROVENANCE.md` carries source, date and
-## acknowledgement SIMBAD asks for. Query:
+## Reaches same 31.53 parsecs `neighbourhood.nim` does.
+## Data only, and generated.
+##   Nothing here is chosen; it is snapshot of SIMBAD, taken once and shipped, as
+##   `neighbourhood.nim` ships one of NASA Exoplanet Archive and `ramp.nim` one of
+##   published colour map.
+##   `PROVENANCE.md` carries source, date and acknowledgement SIMBAD asks for.
+##   Query:
 ##
-## ```sql
-## SELECT main_id, plx_value, ra, dec FROM basic
-## WHERE plx_value > 31.72 AND otype = '*..' AND ra IS NOT NULL
-## ORDER BY plx_value DESC
-## ```
+##   ```sql
+##   SELECT main_id, plx_value, ra, dec FROM basic
+##   WHERE plx_value > 31.72 AND otype = '*..' AND ra IS NOT NULL
+##   ORDER BY plx_value DESC
+##   ```
 ##
-## Every claim below checkable without network is checked by suite's "Orrery" cases:
-## ordering, distance bound, absence of duplicates, and that each planet range indexes
-## `neighbourhood.PLANETS` exactly once.
-##
-## `otype = '*..'` is SIMBAD's star hierarchy, so brown and white dwarfs are included with
-## main-sequence stars: census of neighbourhood, not cut of it. Filter is named so it can
-## be re-run.
-##
+##   Every claim below checkable without network is checked by suite's "Orrery" cases:
+##   ordering, distance bound, absence of duplicates, and that each planet range indexes
+##   `neighbourhood.PLANETS` exactly once.
+##   `otype = '*..'` is SIMBAD's star hierarchy, so brown and white dwarfs are included
+##   with main-sequence stars: census of neighbourhood, not cut of it.
+##     Filter is named so it can be re-run.
 ## `11252` stars, ordered outward from Sol, of `11252` query returned.
-##
-## **This is one layer that says where anything is.** `neighbourhood.nim` carries its own
-## coordinates and distances; where two disagree this one is right (archive puts GJ 411 at
-## 5.676 parsecs against SIMBAD's 2.546, and two more differ by over factor of two). Star
-## carries its geometry here and names archive's planets by range; archive is source of
-## *which planets exist*, nothing else.
-##
-## `planets` and `first` index `neighbourhood.PLANETS`, zero for great majority: `331` of
-## these stars carry known planet. Match was made **by sky position alone**, every host to
-## exactly one star, worst separation `161` arcseconds. Not slack: archives sit at
-## different epochs and these are nearest, fastest-moving stars, so Barnard's star and
-## Kapteyn's star really do stand about two arcminutes apart between them. Distance is
-## not used to match, because distance is what they disagree about.
-
+## This is one layer that says where anything is.
+##   `neighbourhood.nim` carries its own coordinates and distances; where two disagree
+##   this one is right.
+##     Archive puts GJ 411 at 5.676 parsecs against SIMBAD's 2.546, and two more differ by
+##     over factor of two.
+##   Star carries its geometry here and names archive's planets by range; archive is
+##   source of which planets exist, nothing else.
+## `planets` and `first` index `neighbourhood.PLANETS`, zero for great majority.
+##   `331` of these stars carry known planet.
+##   Match was made by sky position alone, every host to exactly one star, worst
+##   separation `161` arcseconds.
+##     Not slack: archives sit at different epochs and these are nearest, fastest-moving
+##     stars, so Barnard's star and Kapteyn's star really do stand about two arcminutes
+##     apart between them.
+##   Distance is not used to match, because distance is what they disagree about.
 
 type
-  Star* = object ## Describe one real star in neighbourhood.
+  Star* = object ## Define one real star in neighbourhood.
     name*: string ## What SIMBAD calls it.
     parsecs*: float ## How far it stands from Sol.
     ascension*: float ## Its right ascension, in degrees.

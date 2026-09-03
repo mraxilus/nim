@@ -1,20 +1,19 @@
-## Hold real solar neighbourhood: every star within 31.53 parsecs known to carry planet,
-## and every planet it carries.
+## Hold real solar neighbourhood: every star within 31.53 parsecs known to carry planet.
 ##
-## **Data only, and generated.** Nothing here is chosen; it is snapshot of NASA Exoplanet
-## Archive, taken once and shipped, as `ramp.nim` ships snapshot of published colour map.
-## `PROVENANCE.md` carries source, date and acknowledgement archive asks for; suite's
-## "Orrery" cases check what can be checked without network.
-##
-## `331` systems and `544` planets, ordered outward from Sol. Each system names range of
-## `PLANETS` belonging to it rather than holding them, so both are flat arrays and neither
-## needs nested sequence, which JS backend would copy by value.
-##
-## Planet whose semi-major axis archive lacks is stored as `0.0`, not guess; `orrery`
-## places it by order among siblings instead. 49 such.
+## Data only, and generated.
+##   Nothing here is chosen; it is snapshot of NASA Exoplanet Archive, taken once and
+##   shipped, as `ramp.nim` ships snapshot of published colour map.
+##   `PROVENANCE.md` carries source, date and acknowledgement archive asks for.
+##   Suite's "Orrery" cases check what can be checked without network.
+## `331` systems and `544` planets, ordered outward from Sol.
+##   Each system names range of `PLANETS` belonging to it rather than holding them.
+##   Both are flat arrays and neither needs nested sequence, which JS backend would copy
+##   by value.
+## Planet whose semi-major axis archive lacks is stored as `0.0`, not guess.
+##   `orrery` places it by order among siblings instead; 49 such.
 
 type
-  Neighbour* = object ## Describe one real star known to carry planets.
+  Neighbour* = object ## Define one real star known to carry planets.
     name*: string ## What archive calls it.
     parsecs*: float ## How far it stands from Sol.
     ascension*: float ## Its right ascension, in degrees.
@@ -22,7 +21,7 @@ type
     planets*: int ## How many entries of `PLANETS` are its own.
     first*: int ## Where those entries begin.
 
-  NeighbourPlanet* = object ## Describe one real planet.
+  NeighbourPlanet* = object ## Define one real planet.
     name*: string ## What archive calls it.
     au*: float ## Its semi-major axis in astronomical units; `0.0` where none is known.
 

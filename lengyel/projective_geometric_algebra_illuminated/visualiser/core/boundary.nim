@@ -1,11 +1,11 @@
-## Crossing between algebra and picture -- one place both languages are spoken.
+## Convert between algebra and picture, in one place where both languages are spoken.
 ##
 ## Everything lifting Euclidean quantity into multivector, or reading one back out, is here
-## and nowhere else. Reader asking "where does project leave algebra" opens one file;
-## reader adding conversion has one place to put it.
-##
+## and nowhere else.
+##   Reader asking where project leaves algebra opens one file.
+##   Reader adding conversion has one place to put it.
 ## Quantities are read through library's own operators rather than out of coefficient
-## table, so renderer exercises algebra it exists to show:
+## table, so renderer exercises algebra it exists to show.
 ##
 ##   |-----------------|--------------|----------------------------------------------|
 ##   | Identifier      | Lengyel      | Meaning                                      |
@@ -28,9 +28,11 @@ import std/options
 import ../../pga
 import ./[euclid, objects]
 
-# Re-export both languages: module reaching for crossing needs both by definition. What
-#   boundary protects is other direction -- `mesh` imports `euclid` alone.
+# Re-export both languages: module reaching for crossing needs both by definition.
+#   What boundary protects is other direction: `mesh` imports `euclid` alone.
 export euclid, objects
+
+
 
 #[ Multivector Conversion ]#
 
@@ -43,6 +45,9 @@ func toMultivector*(d: Direction): Multivector =
   ## Convert Euclidean direction to grade-1 point at horizon.
   ##   Weight is 0, so point stands for direction rather than place.
   d.x.e1 + d.y.e2 + d.z.e3
+
+
+
 #[ Object Interrogation ]#
 
 func position*(m: Multivector): Option[Position] =
@@ -87,10 +92,10 @@ func directionHorizon*(m: Multivector): Option[Direction] =
 func directionNormalHorizon*(m: Multivector): Option[Direction] =
   ## Read unit direction normal to pencil of directions horizon line stands for.
   ##   Line's weight lives in `E41`/`E42`/`E43`; `E23`/`E31`/`E12` survive at horizon and
-  ## carry same normal finite plane's attitude would leave there, unnormalized --
-  ## confirmed component for component against `(⊖ plane)[E23], [E31], [E12]`.
+  ##   carry same normal finite plane's attitude would leave there, unnormalized.
+  ##     Confirmed component for component against `(⊖ plane)[E23], [E31], [E12]`.
   ##   None where line has weight, as it then runs along direction, not perpendicular to
-  ## pencil of them.
+  ##   pencil of them.
   if not m.isHorizon: return
   normalize(Direction(x: m[Basis.E23], y: m[Basis.E31], z: m[Basis.E12]))
 
@@ -109,9 +114,9 @@ func directionNormal*(m: Multivector): Option[Direction] =
 func spanPerpendicular*(anchor: Position; normal: Direction): Option[(Direction, Direction)] =
   ## Derive orthonormal pair of directions perpendicular to `normal`, through `anchor`.
   ##   Built as `frame` spans plane's own axes, so caller holding normal read some other
-  ## way still spans it algebraically, through joins and antiduals, not raw cross product.
+  ##   way still spans it algebraically, through joins and antiduals, not raw cross product.
   ##   Pair is arbitrary up to rotation about `normal`; only plane it spans is meaningful.
-  ## `anchor` only fixes where spanning joins are built through.
+  ##     `anchor` only fixes where spanning joins are built through.
   ##   None only where library's antiduals fail to resolve, which no unit `normal` causes.
 
   # Pick world axis least aligned with normal, so joins below stay well conditioned.
@@ -157,11 +162,12 @@ func frame*(m: Multivector): Option[FramePlane] =
   let (axis_first, axis_second) = axes.get
   some(FramePlane(axis_first: axis_first, axis_second: axis_second, normal: normal.get))
 
+
 func pointFrom*(m: Multivector): Position =
   ## Read point assembled through algebra back out as place.
   ##   Every caller builds `m` as unit-weight point plus weightless directions, so weight
-  ## is exactly one and read cannot refuse; asserted rather than defaulted, because zero
-  ## weight here means assembly upstream is wrong.
+  ##   is exactly one and read cannot refuse.
+  ##   Asserted rather than defaulted: zero weight here means assembly upstream is wrong.
   let read = position(m)
   doAssert read.isSome, "An assembled point must carry weight; its assembly is wrong."
   read.get
