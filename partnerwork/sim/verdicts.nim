@@ -61,6 +61,65 @@ func said(lying: Option[Lying]): string =
   &"{way} {band}{laps}{held}"
 
 
+func awayRest(a, b: Arm; height: float): State =
+  ## Stand the couple facing the same way -- the held body turned away --
+  ## with one connection and nothing wound: collected there, not turned there.
+  ##   This is the rest the drawn pages give the same-name holds, so the
+  ##     dial they draw is measured from it, not from face to face.
+  result = facing(HUMAN, APART)
+  result.stance[Body.Two].facing = result.stance[Body.One].facing
+  result.links = @[Link(ends: [(Body.One, a), (Body.Two, b)],
+                        height: height)]
+  result = settled(result)
+
+
+func hands(state: State; link: Link): Vec =
+  ## Place the joined hands: the rope's midpoint along its plan path.
+  ##   An approximation, and a coarse one once the rope is wound: the two
+  ##     arms are equal, so the seam sits half the span along the walk.
+  let
+    laid = lay(state, link).get
+    walk = traced(state, link, laid).at
+  var gone = 0.0
+  result = walk[^1]
+  for i in 1 ..< walk.len:
+    let step = dist(walk[i - 1], walk[i])
+    if gone + step >= laid.span / 2.0:
+      let f = (laid.span / 2.0 - gone) / max(step, 1e-12)
+      return (walk[i - 1].x + (walk[i].x - walk[i - 1].x) * f,
+              walk[i - 1].y + (walk[i].y - walk[i - 1].y) * f)
+    gone += step
+
+
+func inFrame(state: State; who: Body; p: Vec): (float, float) =
+  ## Read a plan point in one body's own frame: (fore, side), fore being
+  ## ahead of the body and side to the body's own left, in metres.
+  let
+    s = state.stance[who]
+    d = (p.x - s.centre.x, p.y - s.centre.y)
+  (d[0] * cos(s.facing) + d[1] * sin(s.facing),
+   -d[0] * sin(s.facing) + d[1] * cos(s.facing))
+
+
+func placed(state: State; who: Body): string =
+  ## Say where the joined hands sit on one body, in the drawing's words.
+  ##   "behind the opposite shoulder" is what a low lock's hand should be,
+  ##     per the review of the drawn pages; the numbers are given too, so
+  ##     the words can be checked against them.
+  if lay(state, state.links[0]).isNone:
+    return "not laid"
+  let
+    (fore, side) = inFrame(state, who, hands(state, state.links[0]))
+    held = state.links[0].ends[ord(who)][1]
+    own = if held == Arm.Left: side > 0.0 else: side < 0.0
+    where =
+      if abs(side) < 0.06: (if fore > 0.0: "before the chest" else: "behind the back")
+      elif fore > 0.06: (if own: "at own front" else: "at the opposite front")
+      elif fore < -0.02: (if own: "behind own shoulder" else: "behind the opposite shoulder")
+      else: (if own: "at own side" else: "at the opposite side")
+  &"{where} (fore {fore:+.2f}, side {side:+.2f})"
+
+
 func verdict(state: State): string =
   ## Say whether the rope allows a state, and what refuses it if not.
   let refusing = refusal(state, swan = false)
@@ -213,6 +272,88 @@ proc bothWound(): string =
   result.add "\n"
 
 
+proc awayDial(): string =
+  ## Measure the same-name holds from the rest the drawn pages give them:
+  ## the held body turned away, then turned on from there.
+  ##   The sheet counts its one worked row from face to face; the pages
+  ##     count from the away rest.  Both are measured here so the two can be
+  ##     reconciled by reading rather than by argument.
+  result = "## The dial from the away rest\n\n"
+  result.add "The drawn pages rest the same-name holds with the held body " &
+    "turned away.  From that rest, turning the held body:\n\n"
+  for (one, two, name) in [(Arm.Left, Arm.Left, "L-l"),
+                           (Arm.Right, Arm.Right, "R-r")]:
+    result.add &"### {name}, from the away rest\n\n"
+    result.add "| level | turn | arm lies | verdict | the hands, on her |\n"
+    result.add "|---|---|---|---|---|\n"
+    for (level, height) in [("low", LOW), ("high", HIGH)]:
+      for halves in [-3, -2, -1, 0, 1, 2, 3]:
+        let
+          turn = float(halves) / 2.0
+          base = awayRest(one, two, height)
+          spun = if halves == 0: base
+                 else: turned(base, Body.Two, turn * 2.0 * PI)
+          lying = lyingOn(spun, spun.links[0], Body.Two)
+          # At the rest itself nothing is wound; the classifier's "led"
+          # reading there is the partner standing behind her, not a lock.
+          lies = if halves == 0: "open (the rest)" else: said(lying)
+        result.add &"| {level} | {turn:+.1f} | {lies} | {verdict(spun)} | " &
+          &"{placed(spun, Body.Two)} |\n"
+    result.add "\n"
+  result.add "From face to face the low lock is a whole turn one way and " &
+    "the wrap half a turn the other, as the sheet's row says; from the " &
+    "away rest both are half a turn, one each way, because the away rest " &
+    "already sits half a turn along that chain.\n\n"
+
+
+proc drawnStates(): string =
+  ## Ask the rope each state the whole-cloth page draws, and the one it
+  ## withdrew.
+  ##   The page's captions quote this table; the table is the source.
+  result = "## The states the whole-cloth page draws\n\n"
+  result.add "| drawn as | built as | verdict | her arm | his arm | the hands |\n"
+  result.add "|---|---|---|---|---|---|\n"
+  proc row(drawn, built: string; state: State; on: Body): string =
+    &"| {drawn} | {built} | {verdict(state)} | " &
+      &"{said(lyingOn(state, state.links[0], Body.Two))} | " &
+      &"{said(lyingOn(state, state.links[0], Body.One))} | " &
+      &"{placed(state, on)} |\n"
+  block: # The specimen: her right wrapped low, half a turn from face to face.
+    let s = turned(settled(joined(Arm.Left, Arm.Right, LOW)), Body.Two, -PI)
+    result.add row("Left to right-wrap-low @ 1/2",
+                   "L-r low, face to face, her -1/2", s, Body.Two)
+  block: # Her low lock, wound: a whole turn from face to face, the lock way.
+    let s = turned(settled(joined(Arm.Left, Arm.Left, LOW)), Body.Two,
+                   -2.0 * PI)
+    result.add row("Left to left-lock-low",
+                   "L-l low, face to face, her -1", s, Body.Two)
+  block: # The same state from the away rest: half a turn the lock way.
+    let s = turned(awayRest(Arm.Left, Arm.Left, LOW), Body.Two, -PI)
+    result.add row("Left to left-lock-low",
+                   "L-l low, away rest, her -1/2", s, Body.Two)
+  block: # His low lock, her facing him.
+    let s = turned(settled(joined(Arm.Left, Arm.Left, LOW)), Body.One,
+                   -2.0 * PI)
+    result.add row("Left-Lock-Low to left",
+                   "L-l low, face to face, him -1", s, Body.One)
+  block: # The withdrawn draft: his low lock with her turned away.
+    let s = turned(turned(settled(joined(Arm.Left, Arm.Left, LOW)), Body.Two,
+                          PI), Body.One, -2.0 * PI)
+    result.add row("(withdrawn) Left-Lock-Low to left, her away",
+                   "L-l low, face to face, her +1/2, him -1", s, Body.One)
+  block: # Her high lock: half a turn the lock way at the neck.
+    let s = turned(settled(joined(Arm.Left, Arm.Left, HIGH)), Body.Two, -PI)
+    result.add row("left-lock-high (the loop)",
+                   "L-l high, face to face, her -1/2", s, Body.Two)
+  block: # Her high wrap: over her other arm, half a turn the wrap way.
+    let s = turned(settled(joined(Arm.Left, Arm.Left, HIGH)), Body.Two, PI)
+    result.add row("left-wrap-high",
+                   "L-l high, face to face, her +1/2", s, Body.Two)
+  result.add "\nThe hands are placed at the rope's midpoint, which is " &
+    "coarse once the rope is wound; the words beside the numbers are the " &
+    "drawing's, and the numbers are the rope's.\n\n"
+
+
 proc report(): string =
   ## Write the whole report.
   result = "# What the rope says about the modifier states\n\n"
@@ -235,6 +376,8 @@ proc report(): string =
   result.add liftedLock()
   result.add pairStates()
   result.add bothWound()
+  result.add awayDial()
+  result.add drawnStates()
 
 
 when isMainModule:

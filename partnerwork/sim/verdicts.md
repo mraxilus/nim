@@ -202,3 +202,61 @@ One connection, half a turn of each body -- each wind on its own dancer:
 | above | open | open | holds |
 | above | open | open | holds |
 
+## The dial from the away rest
+
+The drawn pages rest the same-name holds with the held body turned away.  From that rest, turning the held body:
+
+### L-l, from the away rest
+
+| level | turn | arm lies | verdict | the hands, on her |
+|---|---|---|---|---|
+| low | -1.5 | wrap low +1 lap | refused: out of rope | at own side (fore +0.05, side +0.15) |
+| low | -1.0 | wrap low +1 lap | refused: out of rope | before the chest (fore +0.15, side -0.05) |
+| low | -0.5 | lock low | holds | behind the opposite shoulder (fore -0.05, side -0.15) |
+| low | +0.0 | open (the rest) | holds | behind own shoulder (fore -0.20, side +0.16) |
+| low | +0.5 | wrap low | holds | before the chest (fore +0.20, side +0.00) |
+| low | +1.0 | wrap low | holds | at the opposite side (fore -0.02, side -0.16) |
+| low | +1.5 | lock low +1 lap | refused: out of rope | behind the back (fore -0.16, side +0.02) |
+| high | -1.5 | wrap high +1 lap | refused: out of rope | behind own shoulder (fore -0.04, side +0.08) |
+| high | -1.0 | wrap high | holds | before the chest (fore +0.08, side +0.04) |
+| high | -0.5 | lock high | holds | at the opposite side (fore +0.04, side -0.10) |
+| high | +0.0 | open (the rest) | holds | behind own shoulder (fore -0.20, side +0.16) |
+| high | +0.5 | open | holds | before the chest (fore +0.20, side +0.00) |
+| high | +1.0 | wrap high | holds | behind the opposite shoulder (fore -0.07, side -0.06) |
+| high | +1.5 | lock high | holds | behind own shoulder (fore -0.06, side +0.07) |
+
+### R-r, from the away rest
+
+| level | turn | arm lies | verdict | the hands, on her |
+|---|---|---|---|---|
+| low | -1.5 | lock low +1 lap | refused: out of rope | behind the back (fore -0.16, side -0.02) |
+| low | -1.0 | wrap low | holds | at the opposite side (fore -0.02, side +0.16) |
+| low | -0.5 | wrap low | holds | before the chest (fore +0.20, side -0.00) |
+| low | +0.0 | open (the rest) | holds | behind own shoulder (fore -0.20, side -0.16) |
+| low | +0.5 | lock low | holds | behind the opposite shoulder (fore -0.05, side +0.15) |
+| low | +1.0 | wrap low +1 lap | refused: out of rope | before the chest (fore +0.15, side +0.05) |
+| low | +1.5 | wrap low +1 lap | refused: out of rope | at own side (fore +0.05, side -0.15) |
+| high | -1.5 | lock high | holds | behind own shoulder (fore -0.06, side -0.07) |
+| high | -1.0 | wrap high | holds | behind the opposite shoulder (fore -0.07, side +0.06) |
+| high | -0.5 | open | holds | before the chest (fore +0.20, side +0.00) |
+| high | +0.0 | open (the rest) | holds | behind own shoulder (fore -0.20, side -0.16) |
+| high | +0.5 | lock high | holds | at the opposite side (fore +0.04, side +0.10) |
+| high | +1.0 | wrap high | holds | before the chest (fore +0.08, side -0.04) |
+| high | +1.5 | wrap high +1 lap | refused: out of rope | behind own shoulder (fore -0.04, side -0.08) |
+
+From face to face the low lock is a whole turn one way and the wrap half a turn the other, as the sheet's row says; from the away rest both are half a turn, one each way, because the away rest already sits half a turn along that chain.
+
+## The states the whole-cloth page draws
+
+| drawn as | built as | verdict | her arm | his arm | the hands |
+|---|---|---|---|---|---|
+| Left to right-wrap-low @ 1/2 | L-r low, face to face, her -1/2 | holds | wrap low | open | at the opposite side (fore +0.05, side +0.15) |
+| Left to left-lock-low | L-l low, face to face, her -1 | holds | lock low | open | behind the opposite shoulder (fore -0.05, side -0.15) |
+| Left to left-lock-low | L-l low, away rest, her -1/2 | holds | lock low | open | behind the opposite shoulder (fore -0.05, side -0.15) |
+| Left-Lock-Low to left | L-l low, face to face, him -1 | holds | open | lock low | behind the opposite shoulder (fore -0.05, side -0.15) |
+| (withdrawn) Left-Lock-Low to left, her away | L-l low, face to face, her +1/2, him -1 | refused: out of rope | wrap low | lock low | at the opposite front (fore +0.20, side -0.16) |
+| left-lock-high (the loop) | L-l high, face to face, her -1/2 | holds | lock high (led, clear of the body) | open | behind own shoulder (fore -0.20, side +0.16) |
+| left-wrap-high | L-l high, face to face, her +1/2 | holds | wrap high | open | behind the opposite shoulder (fore -0.07, side -0.06) |
+
+The hands are placed at the rope's midpoint, which is coarse once the rope is wound; the words beside the numbers are the drawing's, and the numbers are the rope's.
+
