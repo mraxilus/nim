@@ -1263,7 +1263,18 @@ exempt, since `scrollIntoView({block: 'nearest'})` against a 42 px placeholder l
 rows above it that are still estimates. `drawPoolGrid` reads `clientWidth` *before* any write
 (a read after the writes forced 0.9 ms of layout in a 1.3 ms tick), gated on revision, ratio
 and a `ResizeObserver` flag. Figures are redrawn on the cadence of the window they average:
-the exceedance curve and the medians moved to a one-second pass, the 200 ms rows stay.
+the exceedance curve, the sparkline and the medians each run once a second, the 200 ms rows
+stay. **The three once-a-second jobs land on three different ticks** (`TICKS_DISTRIBUTION`
+= 5, slots 0, 2 and 4), because together on one tick they were the spike a reader saw on
+`ui refresh` once a second: on this container an ordinary tick cost 0.3 ms and the tick
+carrying all three 1.0–1.2 ms, with the row's p90 at 1.4 ms; spread, every tick reads
+0.2–0.6 ms and the p90 is 0.9 (same probe, seed scene, drawer and diagnostics open, both
+viewports). Every job runs on the first tick after the section is shown, so the panel never
+opens half drawn. The curve's rules, marks and their thirty-odd haloed labels are drawn to a
+cached layer redrawn only when the axis, the size or the log mode changes, and composited
+under the curve; the curve itself is redrawn each pass. The reader's own phone showed
+`ui refresh` at 3.10 ms mean against a 1.90 median before this change and is not
+re-measured here.
 
 **What this container cannot see.** Every frame-time figure here is SwiftShader's: on the
 demo `renderFrame` takes 0.9 ms and the same call followed by a `readPixels` takes 88.9 ms,
