@@ -2994,6 +2994,56 @@ report(
 await page.keyboard.press('Home');
 await page.waitForTimeout(400);
 
+// **Zoom keeps field on screen and target where reader was looking.** Far clip used
+// to sit at twenty orbit distances whatever scene held, so six notches in at demo's
+// centre left 49 of 4,938 points drawn; and zoom anchored on whatever star was under
+// pointer, so six notches off-centre carried target 1,737 units off, three opening
+// distances. Driven with same notches. Off-centre spot sits right of middle, clear of
+// drawer standing open on left; canvas is focused before `Home` so key reaches it.
+const zoomed = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  await wait(400);
+  return { distance: nimCameraDistance(), target: Array.from(nimCameraTarget()) };
+});
+const canvas_box = await page.evaluate(() => {
+  const r = document.getElementById('gl').getBoundingClientRect();
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
+});
+const zoomAt = async (fx, fy) => {
+  await page.mouse.move(canvas_box.x + fx * canvas_box.w, canvas_box.y + fy * canvas_box.h);
+  for (let i = 0; i < 6; i += 1) {
+    await page.mouse.wheel(0, -400);
+    await page.waitForTimeout(250);
+  }
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => ({
+    distance: nimCameraDistance(), target: Array.from(nimCameraTarget()),
+    points: count_phase.points,
+  }));
+  await page.evaluate(() => document.getElementById('gl').focus());
+  await page.keyboard.press('Home');
+  await page.waitForTimeout(1200);
+  return after;
+};
+const zoom_centre = await zoomAt(0.5, 0.5);
+const zoom_corner = await zoomAt(0.85, 0.2);
+const carried = Math.hypot(
+  zoom_corner.target[0] - zoomed.target[0], zoom_corner.target[1] - zoomed.target[1],
+  zoom_corner.target[2] - zoomed.target[2],
+);
+report(
+  'six notches in at the centre keep the field drawn behind the near stars',
+  zoom_centre.distance < 0.1 * zoomed.distance && zoom_centre.points >= 200,
+  `${zoom_centre.points} points drawn at distance ${zoom_centre.distance.toFixed(1)}, ` +
+    `from ${zoomed.distance.toFixed(1)}`,
+);
+report(
+  'six notches in off-centre keep the target within one opening distance',
+  carried <= 1.0 * zoomed.distance,
+  `target carried ${carried.toFixed(0)} units over an opening distance of ` +
+    `${zoomed.distance.toFixed(0)}`,
+);
+
 // **Retiring oldest undo step used to move whole timeline.** `Step` is whole
 // scene, so once timeline is full that was thirty-one whole-scene copies for one
 // visibility toggle -- 153 ms at capacity of time, nine dropped frames, on edit

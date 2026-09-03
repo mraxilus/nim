@@ -39,6 +39,12 @@ import ./[boundary, camera, euclid, tessellate, scene]
 #[ Picking Configuration ]#
 
 const
+  FACTOR_ANCHOR_DEPTH* = 2.0
+    ## Take object or ground as zoom anchor only within this factor of orbit distance.
+    ##   Depth either way; otherwise level through target answers.
+    ##   Anchor at depth of what reader looks at is what map zoom means. Star field put
+    ##   some star under every pixel, and anchoring on one thousand units off carried
+    ##   eye across field in few notches and clipped scene away behind it.
   RADIUS_PICK_POINT* = 34.0
     ## Bound how far, in pixels, cursor may sit from point's marker and still hit it.
     ##   Fingertip's contact patch is roughly this wide at phone density.
@@ -524,6 +530,12 @@ proc pickNearest*(
   slot_best
 
 
+func isAnchorNear(anchor: Position, camera: Camera, scale: DrawExtent): bool =
+  ## Report whether anchor's depth is within `FACTOR_ANCHOR_DEPTH` of orbit distance.
+  let depth = dot(anchor - scale.eye, scale.forward)
+  depth >= camera.distance/FACTOR_ANCHOR_DEPTH and depth <= camera.distance*FACTOR_ANCHOR_DEPTH
+
+
 proc anchorZoomAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
@@ -536,6 +548,8 @@ proc anchorZoomAt*(
   ##     Failing object, ground is what reader means by there, what every map zooms
   ##     against.
   ##     Level through target survives as last answer, for cursor on empty sky.
+  ##   Object or ground far from what reader looks at is passed over for level through
+  ##   target; see `FACTOR_ANCHOR_DEPTH`.
   ##   `pickNearest` ranks horizon plane last and matches it everywhere, so sky is under
   ##   cursor almost always; `positionOnItemUnder` refuses horizon shapes for exactly
   ##   that reason, and fall-through does work.
@@ -551,9 +565,9 @@ proc anchorZoomAt*(
       frame_camera = camera.frame(scale.eye)
       ray = castRay(camera, scale.eye, frame_camera, width, height, cursor)
       found = positionOnItemUnder(scene.geometryOf(slot.get), ray, scale.plane_eye)
-    if found.isSome: return found
+    if found.isSome and isAnchorNear(found.get, camera, scale): return found
   let ground = positionOnGround(camera, width, height, cursor)
-  if ground.isSome: return ground
+  if ground.isSome and isAnchorNear(ground.get, camera, scale): return ground
   positionUnderCursor(camera, width, height, cursor)
 
 

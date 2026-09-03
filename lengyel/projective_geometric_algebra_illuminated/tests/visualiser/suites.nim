@@ -593,11 +593,12 @@ suite "Camera":
     check at_object.get =~ raised
 
     # Cursor little off it falls through to ground, which is `z = 0` itself rather.
-    #   than level target happens to sit on.
+    #   than level target happens to sit on. Lower in frame, where ground stands within
+    #   `FACTOR_ANCHOR_DEPTH` of orbit distance.
     var camera_raised = camera
     camera_raised.target = Position(x: 0.0, y: 0.0, z: 5.0)
     let
-      elsewhere = ScreenPosition(x: on_screen.x + 200.0, y: on_screen.y + 160.0)
+      elsewhere = ScreenPosition(x: on_screen.x + 200.0, y: on_screen.y + 400.0)
       at_ground = anchorZoomAt(
         scene, camera_raised, camera_raised.drawExtentFor(TALL),
         camera_raised.initMatrixViewProjection(float(WIDE)/float(TALL)),
@@ -605,6 +606,17 @@ suite "Camera":
       )
     check at_ground.isSome
     check abs(at_ground.get.z) <= 1.0e-6
+    # Cursor toward horizon finds ground too far to zoom toward, and takes level.
+    #   through target instead: zoom aimed there flew camera off across ground.
+    let
+      toward_horizon = ScreenPosition(x: on_screen.x + 200.0, y: on_screen.y + 60.0)
+      at_level = anchorZoomAt(
+        scene, camera_raised, camera_raised.drawExtentFor(TALL),
+        camera_raised.initMatrixViewProjection(float(WIDE)/float(TALL)),
+        WIDE, TALL, toward_horizon,
+      )
+    check at_level.isSome
+    check abs(at_level.get.z - 5.0) <= 1.0e-6
     # And it is ground *cursor* is over, not ground below eye.
     check at_ground.get =~ positionOnGround(camera_raised, WIDE, TALL, elsewhere).get
 
@@ -4110,6 +4122,29 @@ suite "Picking":
     initCamera(
       target = Position(x: 0, y: 0, z: 0), distance = distance, azimuth = 0.0, elevation = 0.0
     )
+
+  test "a zoom anchors on what is under the cursor only near the depth being looked at":
+    # Camera tilted down at origin from ten units.
+    #   Point on sight line below ground at one and half orbit distances is anchor; point
+    #   eight off is passed over, and ground under cursor -- origin itself -- answers instead.
+    let camera = initCamera(
+      target = Position(x: 0, y: 0, z: 0), distance = 10.0, azimuth = 0.0, elevation = 0.3
+    )
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let scale = camera.drawExtentFor(HEIGHT_PICK)
+    let eye = camera.eye
+    var near = initScene()
+    near.addItem(toMultivector(Position(x: -0.5*eye.x, y: 0, z: -0.5*eye.z)), "p", Ink.Rose)
+    let anchor_near = anchorZoomAt(
+      near, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE,
+    )
+    check anchor_near.isSome and abs(anchor_near.get.z + 0.5*eye.z) < 1.0e-6
+    var far = initScene()
+    far.addItem(toMultivector(Position(x: -7.0*eye.x, y: 0, z: -7.0*eye.z)), "p", Ink.Rose)
+    let anchor_far = anchorZoomAt(
+      far, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE,
+    )
+    check anchor_far.isSome and abs(anchor_far.get.x) < 1.0e-6 and abs(anchor_far.get.z) < 1.0e-6
 
   test "point at target is picked at screen centre":
     var scene = initScene()
