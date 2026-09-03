@@ -1260,21 +1260,46 @@ is the box model**: `contain-intrinsic-size` sizes the content box (42 px of a 6
 `auto` in front the browser remembers each row's real height once laid out. The open row is
 exempt, since `scrollIntoView({block: 'nearest'})` against a 42 px placeholder left its
 489 px form below the fold; the scroll settles over `PASSES_SCROLL_SETTLE` = 4 frames for the
-rows above it that are still estimates. `drawPoolGrid` reads `clientWidth` *before* any write
-(a read after the writes forced 0.9 ms of layout in a 1.3 ms tick), gated on revision, ratio
-and a `ResizeObserver` flag. Figures are redrawn on the cadence of the window they average:
-the exceedance curve, the sparkline and the medians each run once a second, the 200 ms rows
-stay. **The three once-a-second jobs land on three different ticks** (`TICKS_DISTRIBUTION`
-= 5, slots 0, 2 and 4), because together on one tick they were the spike a reader saw on
-`ui refresh` once a second: on this container an ordinary tick cost 0.3 ms and the tick
-carrying all three 1.0–1.2 ms, with the row's p90 at 1.4 ms; spread, every tick reads
-0.2–0.6 ms and the p90 is 0.9 (same probe, seed scene, drawer and diagnostics open, both
-viewports). Every job runs on the first tick after the section is shown, so the panel never
-opens half drawn. The curve's rules, marks and their thirty-odd haloed labels are drawn to a
-cached layer redrawn only when the axis, the size or the log mode changes, and composited
-under the curve; the curve itself is redrawn each pass. The reader's own phone showed
-`ui refresh` at 3.10 ms mean against a 1.90 median before this change and is not
-re-measured here.
+rows above it that are still estimates. **Nothing the tick reads is measured inside it.**
+Every CSS size the tick needs — the canvas for the ruler, the curve, the sparkline and the
+pool grid — is kept by a `ResizeObserver` (`sizeObserved`), measured once at load and then
+rewritten after each layout the browser was doing anyway; a `clientWidth` read after the
+tick's own writes forces a synchronous layout of the whole document inside the frame,
+measured at 0.9 ms of a 1.3 ms tick when the pool grid did it, and the ruler, the curve and
+the sparkline each did the same after writes the tick had just made. On this container that
+read measures as nothing (2.8 reads a tick, 0.0 ms: layout is cheap here); it is the only
+mechanism found with the once-a-second period of the spike the reader's phone showed, and it
+is unmeasured there. **The tick writes only what moved**: the camera fields compare each of
+the seven scalars against the value last written before formatting (seven `nimFormatNumber`
+calls and seven input writes a tick on a still camera, 0.1–0.2 ms, now 0.0), the ruler
+compares `(size_cell, world_per_pixel)`, and `disabled` flags are compared before they are
+set. **The slow pass runs in idle time, off the frame**: the tick only asks for the curve,
+the sparkline, the medians and the pool grid (`askSlowPass`), and `runSlowPass` draws them
+in a `requestIdleCallback` between one frame's callback and the next, with a timeout of one
+reading window so a browser that finds no idle time still draws within 200 ms, and a
+`setTimeout(0)` fallback where idle callbacks are missing (Safari), which is still a task of
+its own but without the browser's word that the frame had slack. Its clock reads are added
+to the same frame's `ui` slot (`addPhaseTime`; `recordPhaseTime` overwrote), so the row still
+states everything the panel cost, on the frame's path or off it, and the frame-time row is
+what says whether the frame stalled; the accounting check (rows reconstruct the frame) holds
+because the slot is closed at the next frame's start, after any idle callback. The rota is
+kept (`TICKS_DISTRIBUTION` = 5, slots 0, 2 and 4) so each idle task stays short. Every job
+runs on the first tick after the section is shown, so the panel never opens half drawn. The
+pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
+canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
+The curve's rules, marks and their thirty-odd haloed labels are drawn to a cached layer
+redrawn only when the axis, the size or the log mode changes, and composited under the
+curve; the curve itself is redrawn each pass. Measured on this container, seed scene, drawer
+and diagnostics open with every node expanded, same probe both sides: the tick's p50 / p90 /
+max went from 0.60 / 0.90 / 1.00 ms to 0.50 / 0.60 / 0.90 at 390×844 and from 0.70 / 0.90 /
+1.10 to 0.50 / 0.60 / 0.70 at 1200×900; the idle pass costs 0.1–0.2 ms typical and 0.3–0.5
+at p90, with first draws after the section opens at 2.6 ms (curve, axis layer and bitmap)
+and 6.1 ms (pool grid at 5,040 cells); the `ui` row's p90 fell from 0.9–1.0 to 0.6–0.7 ms
+with the idle pass included. What is left on the frame is the rows themselves: about
+0.3–0.5 ms for 23 open rows, each a 200 ms mean and two `toFixed` calls a tick, which is the
+price of live numbers and shrinks with the nodes a reader closes. The reader's own phone
+showed `ui refresh` at 3.10 ms mean against a 1.90 median before the rota and spikes to 4 ms
+after it; neither is re-measured here.
 
 **What this container cannot see.** Every frame-time figure here is SwiftShader's: on the
 demo `renderFrame` takes 0.9 ms and the same call followed by a `readPixels` takes 88.9 ms,
