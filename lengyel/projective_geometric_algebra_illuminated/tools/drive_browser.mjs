@@ -1824,6 +1824,7 @@ const slowest = await page.evaluate(() => {
   for (let i = 0; i < 240; i += 1) {
     recordPhaseTime('build', 1);
     recordPhaseTime('ui', i === 100 ? 6 : 0.5);
+    recordPhaseTime('render', i === 100 ? 3 : 0.2);
     recordFrameTime(i === 100 ? 30 : 16.7);
   }
   refreshDiagnostics();
@@ -1832,10 +1833,39 @@ const slowest = await page.evaluate(() => {
 report(
   'the slowest frame in the ring is named, split between the page and the browser',
   slowest.startsWith('30.0 ms') && slowest.includes('page 7.0 (ui 6.0)') &&
-    slowest.endsWith('browser 23.0'),
+    slowest.endsWith('browser 23.0 (render 3.0)'),
   `the row reads "${slowest}"`,
 );
 await restoreRings(kept_rings);
+// **Browser's own rendering is timed, frame by frame, while panel is shown.** Message
+// posted as callback ends runs once style, layout, paint and commit are done; row
+// is main-thread share of `display wait + browser`, never more than that remainder.
+// Read off live ring after second with panel open: most frames carry reading, none
+// negative, and each under its frame.
+//   On ring restored above rather than synthetic one: synthetic loop advanced ring by
+//   exactly one wrap inside one task, which put in-flight message back on its own slot.
+const rendered = await page.evaluate(async () => {
+  if (!document.getElementById('drawer').classList.contains('open')) {
+    document.getElementById('button-drawer').click();
+  }
+  document.querySelector('.section[data-section="diagnostics"]').classList.add('open');
+  written_phase.render.fill(0); // Only frames timed from here on are read.
+  await new Promise((r) => setTimeout(r, 1200));
+  let written = 0, bad = 0;
+  for (let i = 0; i < FRAMES_HISTORY; i += 1) {
+    if (i === index_history_frame || written_phase.render[i] !== 1) continue;
+    written += 1;
+    const v = history_phase.render[i];
+    if (!(v >= 0) || v > history_frame[i] + 1) bad += 1;
+  }
+  return { written, bad, text: document.getElementById('diagnostic-render').textContent };
+});
+report(
+  'the browser\'s style, layout and paint are timed frame by frame ' +
+    'while the panel is shown',
+  rendered.written >= 20 && rendered.bad === 0 && / ms$/.test(rendered.text),
+  `${rendered.written} frames timed, ${rendered.bad} out of range, row "${rendered.text}"`,
+);
 // **Rows account for whole frame, not fraction of it.** Everything page
 // spends is `build + upload + overlay + menu + ui`; rest of frame is waiting on
 // display plus browser's own style, layout, paint, compositing and collection. Without

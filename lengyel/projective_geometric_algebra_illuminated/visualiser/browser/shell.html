@@ -1347,6 +1347,13 @@
              any further into tree above. -->
         <div class="diagnostic-line"><span>display wait + browser</span
           ><b id="diagnostic-idle">&mdash;</b></div>
+        <!-- Browser's main-thread share of that remainder: style, layout, paint and
+             commit after frame's callback returned, measured by message posted at
+             callback's end, whose task runs once those steps are done. Rest of remainder
+             is display and GPU wait. Cut of row above, not stage; kept out of sums. -->
+        <div class="diagnostic-line diagnostic-cut-row"><span>style + layout + paint<span
+          class="diagnostic-where">browser</span></span
+          ><b id="diagnostic-render">&mdash;</b></div>
         <div class="diagnostic-line"><span>JS heap</span
           ><b id="diagnostic-heap">unavailable</b></div>
         <hr class="rule">

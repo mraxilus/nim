@@ -2284,11 +2284,13 @@ const PHASES_DIAGNOSTIC = [
   ['placing', 'diagnostic-placing'], ['emitting', 'diagnostic-emitting'],
   ['hover', 'diagnostic-hover'], ['upload', 'diagnostic-upload'], ['overlay', 'diagnostic-overlay'],
   ['ui', 'diagnostic-ui'], ['idle', 'diagnostic-idle'],
+  // Third cut: browser's main-thread share of `idle`; see `markRendered`.
+  ['render', 'diagnostic-render'],
 ];
 // Rows that re-divide time already counted elsewhere. They must stay out of every sum.
 //   -- idle derivation below, and cost tint's own denominator -- or frame would
 //   appear to have spent its drawing twice.
-const PHASES_CUT_DIAGNOSTIC = ['placing', 'emitting'];
+const PHASES_CUT_DIAGNOSTIC = ['placing', 'emitting', 'render'];
 // Name phases nothing else contains.
 //   Their sum is everything this page spent on frame, and rest of frame is `idle`
 //   below.
@@ -3248,10 +3250,13 @@ function refreshDiagnostics() {
     if (spent > largest) { largest = spent; name_largest = name; }
   }
   const browser = written_phase.idle[at_slowest] === 1 ? history_phase.idle[at_slowest] : 0;
+  // Browser's share split where timer measured it; see `markRendered`.
+  const render = written_phase.render[at_slowest] === 1
+    ? ' (render ' + history_phase.render[at_slowest].toFixed(1) + ')' : '';
   writeText(diagnostic_slowest,
     history_frame[at_slowest].toFixed(1) + ' ms \u00b7 page ' + page.toFixed(1) +
     (name_largest === '' ? '' : ' (' + name_largest + ' ' + largest.toFixed(1) + ')') +
-    ' \u00b7 browser ' + browser.toFixed(1));
+    ' \u00b7 browser ' + browser.toFixed(1) + render);
 
   // Each step of drawing process, as `mean over 200 ms (median over the ring)`:
   //   short mean is what reader watches while changing something, long median is settled figure to
@@ -4279,6 +4284,32 @@ window.addEventListener('resize', resize);
 
 let ms_refresh_ui = 0;
 
+// **Browser's own rendering, timed by message posted as frame's callback ends.**
+//   Message task runs once style, layout, paint and commit that follow callback are
+//   done, so its lateness is main-thread share of `display wait + browser`; rest is
+//   display and GPU wait. Cut of `idle`, kept out of every sum.
+//   `MessageChannel` rather than `setTimeout(0)`: timers are clamped and, under load,
+//   deferred behind rendering, and message is neither.
+//   Message that still loses to next frame's callback says thread was busy until that
+//   frame began, so reading is clamped to slot's whole remainder rather than left to
+//   count next frame's work as well -- measured 24 ms on 16.7 ms frame before clamp.
+//   One in flight at time. Gated on reader: message per frame is cheap, and still work
+//   for nobody while panel is shut.
+let is_render_pending = false;
+let at_render = 0; // Slot frame that posted message was recorded in.
+let ms_render_posted = 0;
+function markRendered() {
+  is_render_pending = false;
+  let spent = performance.now() - ms_render_posted;
+  if (index_history_frame !== at_render && written_phase.idle[at_render] === 1) {
+    spent = Math.min(spent, history_phase.idle[at_render]);
+  }
+  history_phase.render[at_render] = spent > 0 ? spent : 0;
+  written_phase.render[at_render] = 1;
+}
+const channel_render = new MessageChannel();
+channel_render.port1.onmessage = markRendered;
+
 // Draw one frame, and nothing else. Split out of `frame()` so PNG button can draw and.
 //   read back **inside its own click**, without also re-running per-tick simulation that
 //   frame() does around it. Mirrors `visualiser.renderFrame`, which is split same way and
@@ -4552,6 +4583,14 @@ function frame() {
       refreshAddButton(); // catches paths that fill or empty scene without click.
     }
     addPhaseTime('ui', performance.now() - ms_before_ui);
+  }
+
+  // Time browser's rendering of this frame; see `markRendered`.
+  if (!is_render_pending && isDiagnosticsShown()) {
+    is_render_pending = true;
+    at_render = index_history_frame;
+    ms_render_posted = performance.now();
+    channel_render.port2.postMessage(0);
   }
 
   requestAnimationFrame(frame);
