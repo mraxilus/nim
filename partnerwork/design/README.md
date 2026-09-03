@@ -49,9 +49,25 @@ the whole release step.  The URLs, so they are not hunted for:
 | `turns-single.html` | https://claude.ai/code/artifact/a2dce7eb-7a87-4575-a1c8-ce8d488a6530 |
 | `turns-hands.html` | https://claude.ai/code/artifact/9c4d89c1-8b72-4574-8051-c41e130148f1 |
 | the app itself | https://claude.ai/code/artifact/a447cf22-a71a-4416-a905-ae4999d7284c |
+| `wholecloth.html` | https://claude.ai/code/artifact/9440ffbc-93be-4634-a3ce-dd17d7b33c6c |
 
 Live pages only.  Retired ones keep whatever URL they were last published at,
 and are not listed: the git history is the record of what they claimed.
+
+`wholecloth.html` is the one hand-drawn page: the ontology redrawn from the
+ground up and reviewed plate by plate.  Its one generated part is the turns
+panel, which animates a hold turning by running the body sim itself in the
+browser -- `turns.nim` compiles `../sim/rope` to JavaScript and answers, per
+frame, where the bodies stand, where each hand is anchored, the rope's plan
+path and its verdict; the page only draws.  The turn stops where the rope
+refuses.  Rebuild and splice it with:
+
+```
+nimble turns                            # compiles design/turns.nim, splices it into wholecloth.html
+```
+
+`turns.js` is the build's intermediate and is not committed; the spliced page
+is.
 
 To screenshot them (the animations need a browser):
 

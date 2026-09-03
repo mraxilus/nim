@@ -64,5 +64,20 @@ task verdicts, "Ask the sim which of the sheet's modifier states hold":
   # An instrument run, not a build: the answers land in sim/verdicts.md.
   exec "nim c -r --hints:off sim/verdicts.nim"
 
+task turns, "Build the rope model's bridge for the whole-cloth page, and splice it in":
+  # The page animates a hold turning by asking the sim itself, compiled to
+  # JavaScript; the bridge lives in the page's one generated slot.
+  exec "nim js -d:release --hints:off -o:design/turns.js design/turns.nim"
+  let
+    page = readFile("design/wholecloth.html")
+    opening = "<script id=\"turns-sim\">"
+    a = page.find(opening)
+  if a < 0:
+    quit "design/wholecloth.html has no turns-sim slot"
+  let b = page.find("</script>", a)
+  writeFile("design/wholecloth.html",
+    page[0 ..< a + opening.len] & "\n" & readFile("design/turns.js") & "\n" &
+    page[b .. ^1])
+
 task shot, "Build the workbench's screenshot helper for node":
   exec "nim js --hints:off -d:nodejs -o:design/shot.js design/shot.nim"
