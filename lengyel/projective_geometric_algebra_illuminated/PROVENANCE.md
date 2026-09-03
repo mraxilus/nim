@@ -407,9 +407,15 @@ the origin, a disc's own extent included (`framing.reachOf`), measured once per 
 from the placement cache on the browser, by placing on the desktop — and stamped onto the
 camera at every derivation point rather than kept in it, because `home` and every other path
 that replaces the camera value would drop a stored one; the first cut did keep it, and the
-undo-while-held check caught the drop. Near stays scaled, so the ratio rises at close zoom over
-a wide scene — a hundred thousand for an orbit of twelve over three thousand — inside a 24-bit
-depth buffer for points and lines.
+undo-while-held check caught the drop. Near does not stay scaled: at
+one four-hundredth of a 0.7-unit orbit against a far plane at the scene's reach the ratio
+was 1.8 million, and a 24-bit depth buffer then resolves 3 units at a depth of 300 and 34 at
+1,000 — on the device the points near the horizon striped against the discs seen edge-on and
+distant stars faded behind the washes drawn over them, which read as the sky vanishing on a
+pinch. `distanceNear` is now raised to hold the ratio at `RATIO_CLIP_MAX` = 100,000 (0.17
+units resolved at 300), and never past half the orbit distance, so the target cannot clip
+however far the scene reaches. A 16-bit depth buffer cannot hold this ratio; nothing here
+detects one.
 
 **The wheel zooms toward what the pointer is over** — the map reading of a zoom.
 `picking.anchorZoomAt` solves the anchor in three answers, in order: the finite object under
