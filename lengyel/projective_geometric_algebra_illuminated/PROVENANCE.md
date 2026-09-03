@@ -1291,8 +1291,20 @@ as the timeout promised. A `slowest frame` row reads the slowest frame in the ri
 that frame's own slots — the page's total with its largest phase, and the browser's remainder
 — because the 200 ms means dilute one spike past telling whether the page authored it. It is
 the instrument for the periodic spikes a phone shows at 60 fps with `ui refresh` at 0.40 ms,
-which this container cannot reproduce; whether they are the page's own code or the browser's
-paint, compositing or collection is what that row says, and nothing here claims it yet. Every job
+which this container cannot reproduce. On the reader's tablet it read `39.0 ms · page 8.9
+(build 7.7) · browser 30.1` with `build` at 0.57 (7.00) — the slowest frame was a
+moving-camera frame walking 5,038 objects, the page's part 8.9 ms and the browser's 30.1 —
+so the spike's author is not the tick, and the page's own largest cost in motion is the
+walk. To split the browser's 30 ms between the main thread and the display, a message
+posted through a `MessageChannel` at the end of the frame callback runs once the browser's
+style, layout, paint and commit are done (a timer would be clamped, and under load deferred
+behind rendering); its lateness is the `style + layout + paint` row, clamped to the frame's
+remainder when the message still loses to the next frame's callback — before the clamp one
+16.7 ms frame read 24 ms, the next frame's own work counted twice — a cut of
+`display wait + browser` kept out of every sum and shown in the readout as `(render …)`, gated
+on the panel being shown with one timer in flight at a time. Whether the 30 ms is that row
+or GPU and display wait is unmeasured on the device at the time of writing; the row is what
+will say. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
