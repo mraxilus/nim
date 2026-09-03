@@ -329,6 +329,17 @@ suite "Objects":
 
 
 suite "Camera":
+  test "the far clip reaches the scene's farthest object however close the orbit is":
+    var camera = initCamera(Position(x: 0, y: 0, z: 0), 10.0, 0.0, 0.0)
+    check abs(camera.distanceFar - 10.0*FACTOR_CLIP_FAR) < 1.0e-9
+    camera.reach_scene = 3000.0
+    let eye = camera.eye
+    check camera.distanceFar >= norm(eye - Position(x: 0, y: 0, z: 0)) + 3000.0
+    # Reach is measured from what scene holds, disc's own extent included.
+    var scene = initScene()
+    scene.addItem(toMultivector(Position(x: 300, y: 0, z: 0)), "p", Ink.Rose)
+    check abs(reachOf(scene) - 300.0) < 1.0e-6
+
   test "a point is culled only where the frustum, sprite margin included, does not reach":
     # Bounds are camera's own frame; what is checked is test against them.
     let camera = initCamera(Position(x: 1, y: 2, z: 3), 10.0, 0.4, 0.3)

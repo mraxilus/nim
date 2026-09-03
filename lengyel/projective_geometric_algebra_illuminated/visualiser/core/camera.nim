@@ -53,8 +53,13 @@ const
     ##     (`tessellate.CELLS_GRID_HALF_MAX`).
     ##     What degrades far out is `Vertex`'s float32 storage: past roughly million
     ##     units coordinate carries under tenth of unit.
+  MARGIN_REACH_FAR* = 1.05
+    ## Widen far clip past scene's reach by this, so farthest object never sits on plane.
   FACTOR_CLIP_FAR* = 20.0
-    ## Set far clip plane this many orbit distances out.
+    ## Set far clip plane this many orbit distances out, or at scene's reach where farther.
+    ##   Scaled alone clipped field away as zoom carried orbit distance down to foreground
+    ##   star: twenty of thirty units is six hundred, and field is three thousand across.
+    ##   See `distanceFar` and `Camera.reach_scene`.
     ##   Scaled rather than fixed so everything meant to read at horizon
     ##   (`tessellate.radiusHorizonFor`, `tessellate.extentFurnitureFor`, far end of
     ##   every drawn line) stays past what frame shows at any orbit distance.
@@ -114,6 +119,11 @@ type
     azimuth*: float ## Angle about world up, in radians.
     elevation*: float ## Angle above horizon, in radians.
     degrees_field_of_view*: float ## Vertical field of view, in degrees.
+    reach_scene*: float ## How far farthest finite object stands from world origin.
+      ## Disc's own reach included; zero for empty scene, which leaves far clip scaled alone.
+      ## Stamped by whoever owns scene at each derivation point, from `framing.reachOf`;
+      ## `distanceFar` reads it so far clip never cuts scene away. Never trusted across
+      ## replacement of camera value: `home` builds fresh camera carrying zero.
 
   FrameCamera* = object ## Define orthonormal directions of camera's own axes.
     axis_sight*: Multivector ## Line joining eye to target, every direction below derives from.
@@ -212,8 +222,16 @@ func distanceNear*(camera: Camera): float = camera.distance*FACTOR_CLIP_NEAR
   ##   Derived from orbit distance rather than stored, so it cannot go stale through dolly.
 
 
-func distanceFar*(camera: Camera): float = camera.distance*FACTOR_CLIP_FAR
+func distanceFar*(camera: Camera): float =
   ## Read farthest depth clip volume keeps; see `distanceNear` for why derived.
+  ##   Twenty orbit distances, or eye's distance to origin plus scene's reach where that
+  ##   is farther, so no zoom clips scene away; see `FACTOR_CLIP_FAR`.
+  ##   Near stays scaled, so ratio rises at close zoom over wide scene: three thousand
+  ##   units over orbit of twelve is ratio of hundred thousand, inside 24-bit depth for
+  ##   points and lines.
+  let eye = camera.eye
+  let away = sqrt(eye.x*eye.x + eye.y*eye.y + eye.z*eye.z)
+  max(camera.distance*FACTOR_CLIP_FAR, away + camera.reach_scene*MARGIN_REACH_FAR)
 
 
 func eye*(camera: Camera): Position =
@@ -381,7 +399,7 @@ type SettingsFurniture* = tuple
   ##   Here rather than in each front-end: two private copies would be drift sibling rule
   ##   warns about.
   target_x, target_y, target_z: float
-  distance, azimuth, elevation, degrees_field_of_view: float
+  distance, azimuth, elevation, degrees_field_of_view, reach_scene: float
   height_pixels: int
   is_axes_shown, is_grid_shown: bool
 
@@ -393,7 +411,7 @@ func settingsFurnitureFor*(
   ##   Compared exactly by callers: question is whether anything moved at all.
   (
     camera.target.x, camera.target.y, camera.target.z, camera.distance,
-    camera.azimuth, camera.elevation, camera.degrees_field_of_view,
+    camera.azimuth, camera.elevation, camera.degrees_field_of_view, camera.reach_scene,
     height_pixels, is_axes_shown, is_grid_shown,
   )
 

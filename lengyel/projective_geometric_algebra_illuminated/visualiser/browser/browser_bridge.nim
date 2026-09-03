@@ -130,7 +130,7 @@ type SettingsOverlay = tuple
   ## Define everything overlay's shared draw extent and view-projection depend on.
   ##   Camera's whole placement and viewport asked about.
   target_x, target_y, target_z: float
-  distance, azimuth, elevation, degrees_field_of_view: float
+  distance, azimuth, elevation, degrees_field_of_view, reach_scene: float
   width, height: int
 
 type ShapedMarker = tuple
@@ -303,6 +303,7 @@ var
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
   IS_CULLING = true ## Whether points outside view are skipped before emitting.
     ## Off only through `nimSetCulling`, for check that culling changes no pixel.
+  REACH_SCENE = 0.0 ## Scene's reach from origin, refreshed with placements; see `ensurePlaced`.
 
 
 proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
@@ -887,6 +888,10 @@ proc ensurePlaced() =
       PLACEMENTS[slot] = placeObject(
         SCENE.geometryOf(slot), SCENE.anchorOverrideAt(slot),
       )
+  # Scene's reach moves with same edits, so far clip follows; see `camera.distanceFar`.
+  #   Held here and stamped onto camera at each derivation point, never kept in camera:
+  #   `home` and every path replacing camera value would drop it.
+  REACH_SCENE = reachOf(PLACEMENTS, SCENE)
   REVISION_PLACED = some(SCENE.revision)
 
 
@@ -899,9 +904,10 @@ proc ensureViewOverlay(width, height: int) =
   ##     which is what key holds.
   ##   Callers read globals rather than copies: returning pair deep-copies `DrawExtent`
   ##   full of multivectors per call on JS backend, cache hit or not.
+  CAMERA.reach_scene = REACH_SCENE # Stamped as frame build does; see `ensurePlaced`.
   let settings: SettingsOverlay = (
     CAMERA.target.x, CAMERA.target.y, CAMERA.target.z, CAMERA.distance,
-    CAMERA.azimuth, CAMERA.elevation, CAMERA.degrees_field_of_view,
+    CAMERA.azimuth, CAMERA.elevation, CAMERA.degrees_field_of_view, CAMERA.reach_scene,
     width, height,
   )
   if SETTINGS_OVERLAY_HELD.isNone or SETTINGS_OVERLAY_HELD.get != settings:
@@ -2007,6 +2013,9 @@ proc nimBuildFrame(
   # Take framebuffer's height, not window's.
   #   Ribbon's width is measured in pixels drawn, and this build renders at
   #   device-pixel-ratio multiple.
+  # Place first, so scene's reach is this frame's before extent reads far clip.
+  ensurePlaced()
+  CAMERA.reach_scene = REACH_SCENE
   let scale = CAMERA.drawExtentFor(int(height_pixels))
   # Derive frustum once, for cull of every point below; see `isPointInView`.
   let bounds = CAMERA.viewBoundsFor(scale, float(aspect))

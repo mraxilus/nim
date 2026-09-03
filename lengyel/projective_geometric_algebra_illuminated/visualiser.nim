@@ -244,6 +244,11 @@ var GIF_FRAMES =
 # Hold timing buffer at module scope as `MESHES` is.
 #   Too large for stack, touched only by `--timings` run.
 var TIMINGS_FRAME_MILLISECONDS: array[FRAMES_TIMING_MAX, float32]
+# Scene revision camera's reach was last measured at, and reach itself; none before first.
+#   Reach is one placement per object, so it is measured on edit rather than per frame, and
+#   stamped onto camera each frame rather than kept in it: `home` replaces camera value.
+var REVISION_REACH = none(int)
+var REACH_SCENE = 0.0
 
 
 
@@ -759,6 +764,11 @@ proc renderFrame(
   #   `offerCameraAim` sets goal this advance consumes next frame, one frame later by
   #   design.
   panel.tween_camera.advance(camera, now, easeOutCubic)
+  # Measure scene's reach on edit, so far clip follows; see `camera.distanceFar`.
+  if REVISION_REACH != some(scene.revision):
+    REACH_SCENE = reachOf(scene)
+    REVISION_REACH = some(scene.revision)
+  camera.reach_scene = REACH_SCENE
 
   let scale = camera.drawExtentFor(int(height))
   offerCameraAim(panel, scene, camera, scale, now, int(width), int(height))

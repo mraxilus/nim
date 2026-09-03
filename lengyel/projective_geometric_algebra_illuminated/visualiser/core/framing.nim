@@ -84,6 +84,37 @@ iterator watched*(
         yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
 
 
+func reachOfPlaced(placed: Placed): float =
+  ## Measure how far one placed object stands from world origin, disc's reach included.
+  ##   Zero for horizon kinds and nothing: neither has place to clip.
+  case placed.kind
+  of PlacedKind.PointAt, PlacedKind.LineThrough:
+    norm(placed.at - Position(x: 0, y: 0, z: 0))
+  of PlacedKind.PlaneOn:
+    norm(placed.at - Position(x: 0, y: 0, z: 0)) + EXTENT_PLANE_F
+  else: 0.0
+
+
+func reachOf*(placed: openArray[Placed], scene: Scene): float =
+  ## Measure how far scene's farthest visible finite object stands from origin.
+  ##   For `Camera.reach_scene`, from placements caller already holds; browser path.
+  ##   Sibling of `reachOf(scene)`, which places for itself.
+  result = 0.0
+  for slot in 0 ..< scene.bound:
+    if not scene.isAlive(slot) or not scene.isVisible(slot): continue
+    result = max(result, reachOfPlaced(placed[slot]))
+
+
+proc reachOf*(scene: Scene): float =
+  ## Measure how far scene's farthest visible finite object stands from origin.
+  ##   For `Camera.reach_scene` on path holding no placements; desktop, once per scene
+  ##   change. Sibling of `reachOf(placed, scene)`.
+  result = 0.0
+  for slot, item in scene.pairs:
+    if not item.isVisible: continue
+    result = max(result, reachOfPlaced(placeObject(item.geometry, item.anchorOverride)))
+
+
 func aimFor*(
   scene: Scene, picked: Selection, staged: Option[Preview], scale: DrawExtent
 ): Option[CameraAim] =
