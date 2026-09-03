@@ -67,8 +67,12 @@ A shared module reaching for something only one path has is a **compile error, n
 comment**: `toCstring`, `buildChars`, `appendInt`, `appendFixed`, `saveScene`/`loadScene`
 and their `std/os` and `std/syncio` imports are guarded `when not defined(js)`.
 
+Every binding into C, SDL, Dear ImGui, zlib and JavaScript carries `sideEffect`, so a `func`
+reaching one fails to compile; without it the compiler assumes an imported body pure.
+
 *Checked.* Verified: the guard is exercised rather than trusted, because the suite runs on
-both backends (see Testing). Assumed: nothing.
+both backends (see Testing); the `sideEffect` marks are what turned 51 funcs back into procs
+(see Style Guide). Assumed: nothing.
 
 
 Scene Storage
@@ -1187,6 +1191,11 @@ like a read and none shows up in an allocation grep:
 - A default argument does not survive into the generated signature: a JS caller that omits
   it passes `undefined`, falsy. `nimBuildFrame`'s flag is spelled `is_tally_skipped` so that
   omitting it measures everything.
+- An array literal handed to an `openArray` parameter is a `new Float32Array` per call, and
+  a `Position` bound to a `let` is a `nimCopy`; the small per-frame exports fill their flat
+  buffers through store templates and pass places straight through.
+- An imported binding is assumed pure, so a `func` may call `glDrawArrays` unless the binding
+  is marked `sideEffect`; every binding in the tree is.
 
 **The furniture is built once and held while the camera is still** (`SettingsFurniture`).
 It is a function of the camera alone. The bridge sends empty furniture records on a held
@@ -1844,20 +1853,62 @@ open "Define …"), elaboration as a hanging outline one claim per line, stage c
 verb-first lead, trailing fragments on fields ending in a period, no articles, no history and
 no figures (which moved here). `tools/check_prose` holds the whole of that mechanically —
 article rule, summary form, stage form — in every authored language, and runs in `verify.sh`.
-Kept from earlier audits and still in force: `gif.nim`'s none is `Option[int]`; the bridge's
-FFI-boundary cases translate through one `SLOT_NONE` at each proc's return; the `when
-defined(js)` seams in `scene.nim` are backend necessities, not shortcuts; `glue.js` and
-`shell.html` use snake_case for data bindings and camelCase for callables with the forbidden
-truncations spelled out, shader attribute strings untouched.
+
+**The code was then refactored against both documents in seven passes**, each its own
+commit, each verified by every build target, both suites and the driven checks before the
+next began:
+
+- **Separators** (STYLE §5): commas between parameters until one type repeats, across 256
+  signatures.
+- **Grouping** (X.5, X.6): related constants and module state under one keyword; bracket
+  imports.
+- **Naming** (V): the bridge's module state in screaming case; accessor funcs in
+  lowerCamelCase; booleans on the sanctioned prefixes; `cam_`, `btn`, `diag-` and `coeff`
+  spelled out across Nim, JS and CSS.
+- **Safety** (IV.4, STYLE §2): in-range sentinels to `Option`; every assertion message ends
+  by echoing its value; every enum pure and every member qualified.
+- **Purity** (STYLE §1, §2): every proc that compiles as `func` demoted, 148 of them;
+  `strictFuncs` in every module including the tools.
+- **Form** (VI.1, X.2–X.4): every foreign binding documented; nesting past three deep split
+  (option parsing, help tab, wash runs, renderer setup); multi-line constructors one field per
+  line; banners and definitions spaced by tier.
+- **Cost** (VII, STYLE §4): the six overlay exports asked per frame answer from module flat
+  buffers.
+
+**Foreign bindings are marked `sideEffect`, and that is what makes `func` mean anything
+here.** Nim assumes an imported body is pure, so before the mark the demotion pass turned
+every GL draw and every Dear ImGui layout into a `func` and the compiler agreed. With the
+mark on all 130-odd bindings in `gui`, `opengl`, `sdl3`, `image` and the bridge's `importjs`
+lines, 51 of those funcs failed to compile and went back to `proc`; the 66 that stayed `proc`
+from the first pass are the ones touching module state or the clock. A `func` in this tree
+now means the compiler checked it reaches no effect.
+
+**Deliberately left as they are**, each against a rule the reader might expect to see
+applied: the binding names in `opengl.nim` and `sdl3.nim` keep the foreign API's own verbs
+(`getError`, `getString`, `getUniformLocation`), since a reader greps the SDL and GL
+references by those names and V.3's bare-noun rule is for this project's own properties;
+lookup tables at module scope stay lowercase `lut_…` per V.5, the one family V.1's
+screaming case does not cover; `nimCameraTarget`, `nimOverlayMetrics`, `nimInkColor` and the
+scene-listing exports still return sequences, being asked on the UI tick, on a redraw or once
+rather than per frame; `visualiser.main`, `format.formatMagnitude` and the two tool `main`s
+stay over sixty lines with the comment X.4 asks for, as one derivation or one report each.
+Kept from earlier audits: the bridge's FFI-boundary cases translate through one `SLOT_NONE`
+at each proc's return; the `when defined(js)` seams in `scene.nim` are backend necessities;
+`glue.js` and `shell.html` use snake_case for data bindings and camelCase for callables,
+shader attribute strings untouched.
 
 The vendored `pga` library was reviewed and left unmodified by request. Known deviations are
 mechanical, plus one substantive: `pga.nim:28` asserts its own module doc is the source of
 truth for names, which is what makes the notation trap easy to fall into.
 
-*Checked.* Verified: `check_prose` and `check_columns` report zero complaints across 51 and 56
-files, and the full suite, both drives and every checker pass on the reworked tree; the rework
-changed no code — a code-only diff against the previous revision was empty for every Nim, JS,
-HTML, CSS and C++ file. **Unverified**: no human has read the result.
+*Checked.* Verified: `check_prose` and `check_columns` report zero complaints; every build
+target, the three suites and both drives pass on the refactored tree; the demotion and the
+revert were decided by the compiler, not by reading. Verified by reading the emitted JS: the
+six per-frame exports allocate nothing (`nimDragTint` binds the ink, not the colour, since
+`lent` bound to `let` copies; an array literal handed to an `openArray` parameter is a
+`new Float32Array` per call, which is why the fills are templates). The gain from that pass
+is **unmeasured**: no frame-time pair was taken, and the claim is the allocation count read
+off the generated code, not a millisecond. **Unverified**: no human has read the result.
 
 
 Dependencies / Vendoring
