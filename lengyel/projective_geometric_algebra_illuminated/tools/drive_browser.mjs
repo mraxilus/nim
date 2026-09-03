@@ -2953,6 +2953,47 @@ report(
 // could not see regression that shows at largest. Reloaded rather than reasoned about.
 await loadDemo(ITEMS_DEMO_LOAD);
 
+// **Culling changes no pixel.** Points outside view are skipped before emitting.
+// Hashed at three cameras -- demo's own, dollied in, orbited -- with cull on and then
+// off, each once picture has settled; at demo's own camera most points are off screen
+// and count row must say so.
+const culled = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  const settled = async () => {
+    let last = null;
+    for (let i = 0; i < 30; i += 1) {
+      await wait(150);
+      if (window.__drawn_placed === last) return last;
+      last = window.__drawn_placed;
+    }
+    return last;
+  };
+  const readings = [];
+  const moves = [() => {}, () => nimCameraDolly(0.3), () => nimCameraOrbit(0.9, 0.3)];
+  for (const move of moves) {
+    move();
+    nimSetCulling(true);
+    const hash_on = await settled();
+    const on = { hash: hash_on, points: count_phase.points, off: count_points_culled };
+    nimSetCulling(false);
+    const hash_off = await settled();
+    const off = { hash: hash_off, points: count_phase.points, off: count_points_culled };
+    readings.push({ on, off });
+  }
+  nimSetCulling(true);
+  return readings;
+});
+report(
+  'points outside the view are skipped before emitting, and not one pixel changes',
+  culled.every((r) => r.on.hash === r.off.hash && r.on.hash !== null &&
+    r.on.points + r.on.off === r.off.points && r.off.off === 0) &&
+    culled.some((r) => r.on.off > 0),
+  culled.map((r) => `${r.on.points} of ${r.on.points + r.on.off} drawn, ` +
+    `${r.on.hash === r.off.hash ? 'same' : 'different'} pixels`).join('; '),
+);
+await page.keyboard.press('Home');
+await page.waitForTimeout(400);
+
 // **Retiring oldest undo step used to move whole timeline.** `Step` is whole
 // scene, so once timeline is full that was thirty-one whole-scene copies for one
 // visibility toggle -- 153 ms at capacity of time, nine dropped frames, on edit

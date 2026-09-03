@@ -329,6 +329,33 @@ suite "Objects":
 
 
 suite "Camera":
+  test "a point is culled only where the frustum, sprite margin included, does not reach":
+    # Bounds are camera's own frame; what is checked is test against them.
+    let camera = initCamera(Position(x: 1, y: 2, z: 3), 10.0, 0.4, 0.3)
+    let scale = camera.drawExtentFor(900)
+    let bounds = camera.viewBoundsFor(scale, 16.0/9.0)
+    check isPointInView(placeObject(toMultivector(camera.target)), bounds)
+    check not isPointInView(placeObject(toMultivector(bounds.eye - 1.0*bounds.forward)), bounds)
+    # Sideways at target's depth: just inside half-width stays, just outside goes.
+    let reach_across = camera.distance*bounds.bound_width
+    let reach_above = camera.distance*bounds.bound_height
+    check isPointInView(
+      placeObject(toMultivector(camera.target + (0.9*reach_across)*bounds.right)), bounds
+    )
+    check not isPointInView(
+      placeObject(toMultivector(camera.target + (1.1*reach_across)*bounds.right)), bounds
+    )
+    check isPointInView(
+      placeObject(toMultivector(camera.target + (0.9*reach_above)*bounds.up)), bounds
+    )
+    check not isPointInView(
+      placeObject(toMultivector(camera.target + (1.1*reach_above)*bounds.up)), bounds
+    )
+    # Horizon point is tested by direction alone; every other kind passes untested.
+    check isPointInView(Placed(kind: PlacedKind.PointToward, toward: bounds.forward), bounds)
+    check not isPointInView(Placed(kind: PlacedKind.PointToward, toward: -bounds.forward), bounds)
+    check isPointInView(Placed(kind: PlacedKind.LineThrough), bounds)
+
   test "the eye assembled through the algebra is the eye the trig names":
     # `camera.eye` places point as multivector sum; spherical closed form lives.
     #   HERE. Angles are parametrization -- what is checked is placement.

@@ -419,6 +419,18 @@ type
     axes*: FramePlane ## Two arms disc or great circle is spanned by, and their normal.
       ## Carried by `PlaneOn` and `LineAcross` only.
 
+  ViewBounds* = object ## Define frustum points are tested against before emitting.
+    ## Everything `isPointInView` reads, derived once per frame by `camera.viewBoundsFor`.
+    ##   Scalars and directions alone, so test allocates nothing per point (Art. VII.1).
+    eye*: Position ## Where depth is measured from.
+    forward*: Direction ## Sight axis, depth is measured along.
+    right*: Direction ## View's +x, unit.
+    up*: Direction ## View's +y, unit.
+    depth_near*: float ## Nearest depth drawn; nearer is clipped by GPU as well.
+    depth_far*: float ## Furthest depth drawn; further is clipped by GPU as well.
+    bound_width*: float ## Half-width of view per unit of depth, sprite margin included.
+    bound_height*: float ## Half-height of view per unit of depth, sprite margin included.
+
 
 proc placeObject*(
   geometry: Multivector, anchor_override: Option[Position] = none(Position)
@@ -465,6 +477,38 @@ proc placeObject*(
         return Placed(kind: PlacedKind.PlaneOn, at: anchor.get, axes: axes.get)
       return Placed(kind: PlacedKind.PlaneEverywhere)
   Placed(kind: PlacedKind.Nothing)
+
+
+func isPointInView*(placed: Placed, bounds: ViewBounds): bool =
+  ## Report whether point lands inside frustum, sprite margin included.
+  ##   True for every other kind: line crosses whole frame whatever its support, and disc
+  ##   reaches past its centre, so neither is tested.
+  ##   Horizon point stands along its direction from eye, so its offset is direction
+  ##   alone and only sides are tested: its depth is `radius_horizon` scaled by appear
+  ##   progress, inside clip either way.
+  ##   Components rather than `Direction` difference: object per point per frame on JS
+  ##   backend (Art. VII.1). Parameters are read in place, never bound (read in emitted JS).
+  var rx, ry, rz: float
+  case placed.kind
+  of PlacedKind.PointAt:
+    rx = placed.at.x - bounds.eye.x
+    ry = placed.at.y - bounds.eye.y
+    rz = placed.at.z - bounds.eye.z
+  of PlacedKind.PointToward:
+    rx = placed.toward.x
+    ry = placed.toward.y
+    rz = placed.toward.z
+  else:
+    return true
+  let depth = rx*bounds.forward.x + ry*bounds.forward.y + rz*bounds.forward.z
+  if depth <= 0.0: return false
+  if placed.kind == PlacedKind.PointAt and
+      (depth < bounds.depth_near or depth > bounds.depth_far):
+    return false
+  let across = rx*bounds.right.x + ry*bounds.right.y + rz*bounds.right.z
+  if abs(across) > depth*bounds.bound_width: return false
+  let above = rx*bounds.up.x + ry*bounds.up.y + rz*bounds.up.z
+  abs(above) <= depth*bounds.bound_height
 
 
 proc emitObject*(
@@ -569,7 +613,8 @@ proc emitObject*(
 proc addObject*(
   meshes: var MeshSet, scratch: var DrawScratch, geometry: Multivector, tint: Rgba,
   scale: DrawExtent, progress: float = 1.0,
-  anchor_override: Option[Position] = none(Position)
+  anchor_override: Option[Position] = none(Position),
+  bounds: Option[ViewBounds] = none(ViewBounds)
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Place then emit in one call, for every caller with nothing to gain by keeping
@@ -580,6 +625,9 @@ proc addObject*(
   ##   `progress` defaults to fully appeared, for caller with nothing to animate against.
   ##   `anchor_override` centres plane's disc there instead of support; ignored otherwise.
   ##   `scratch` is taken for shape every other tessellation entry point has.
+  ##   `bounds`, where given, skips point outside view before it costs emitting; Empty
+  ##   then. See `isPointInView`.
   discard scratch
   var placed = placeObject(geometry, anchor_override)
+  if bounds.isSome and not isPointInView(placed, bounds.get): return Placement.Empty
   meshes.emitObject(placed, tint, scale, progress)

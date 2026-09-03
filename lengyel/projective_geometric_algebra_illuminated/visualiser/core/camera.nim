@@ -35,6 +35,9 @@ import ./[boundary, tessellate]
 #[ Camera Configuration ]#
 
 const
+  TOLERANCE_CULL_CLIP = 0.001
+    ## Keep cull's near and far one part in thousand inside GPU's own clip.
+    ##   Rounding then never culls point GPU would draw; see `viewBoundsFor`.
   UP_WORLD* = Direction(x: 0.0, y: 0.0, z: 1.0)
     ## Fix world's up direction, which azimuth turns about and elevation rises from.
   ELEVATION_LIMIT* = 0.5*PI - 0.02
@@ -418,6 +421,27 @@ func drawExtentFor*(camera: Camera, height_pixels: int): DrawExtent =
       depth_near: camera.distanceNear,
     ),
   ))
+
+
+func viewBoundsFor*(camera: Camera, scale: DrawExtent, aspect: float): ViewBounds =
+  ## Derive frustum points are culled against, once per frame; see `tessellate.isPointInView`.
+  ##   Margin is point sprite's radius and one pixel more, as tangent per unit of depth,
+  ##   so sprite straddling edge is still emitted whatever GPU does with centre just
+  ##   outside; sprite is `mesh.SIZE_POINT` wide.
+  ##   `aspect` is framebuffer's width over height, which `drawExtentFor` never needs.
+  let eye = camera.eye
+  let frame = camera.frame(eye)
+  let margin = (0.5*float(SIZE_POINT) + 1.0)*scale.scale.radiansPerPixel
+  ViewBounds(
+    eye: eye,
+    forward: frame.forward,
+    right: frame.axis_right,
+    up: frame.axis_up,
+    depth_near: camera.distanceNear*(1.0 - TOLERANCE_CULL_CLIP),
+    depth_far: camera.distanceFar*(1.0 + TOLERANCE_CULL_CLIP),
+    bound_width: scale.tangentHalfView*aspect + margin,
+    bound_height: scale.tangentHalfView + margin,
+  )
 
 
 func initMatrixViewProjection*(camera: Camera, aspect: float): Matrix4 =

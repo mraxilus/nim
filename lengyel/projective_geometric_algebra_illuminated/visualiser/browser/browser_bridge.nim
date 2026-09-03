@@ -169,6 +169,7 @@ type SettingsScene = tuple
     ## Comparing and copying `ITEMS_MAX` ints per frame is capacity-scaled work for scene
     ## of five.
   is_algebra_shown: bool
+  is_culling: bool ## Whether points outside view are skipped; see `IS_CULLING`.
 
 
 var
@@ -300,6 +301,8 @@ var
   FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
   FLAT_MENU_CENTRE = initFlatFloats(2)
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
+  IS_CULLING = true ## Whether points outside view are skipped before emitting.
+    ## Off only through `nimSetCulling`, for check that culling changes no pixel.
 
 
 proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
@@ -439,6 +442,13 @@ proc nimInit(now: cfloat) {.exportc.} =
   CAMERA = initCameraDefault()
   SELECTION.clear()
   HISTORY.initHistory(SCENE, CAMERA)
+
+
+proc nimSetCulling(is_on: bool) {.exportc.} =
+  ## Turn culling of points outside view on or off.
+  ##   Instrument for driven check that culling changes no pixel. Part of scene's hold
+  ##   key, so next frame rebuilds either way.
+  IS_CULLING = is_on
 
 
 proc nimLoadDemo(scale_ordinal: cint; now: cfloat; width, height: cint) {.exportc.} =
@@ -1882,6 +1892,8 @@ type FrameData = object
   count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
     ## Count objects of each kind times above are for.
     ##   Reader can divide: "is one expensive, or are there many?".
+  count_points_culled: int ## Count points skipped for lying outside view.
+    ## Beside `count_points`, so panel can say drawn of standing; see `isPointInView`.
   ribbon_over, ring_over, point_over, wash_run_over: int ## How much of each stream's end
     ## is overlay run, drawn after rest with depth test off.
     ## Count of tail rather than index it starts at, so glue subtracts nothing; see
@@ -1896,6 +1908,7 @@ type SceneCost = object
   ##   reader counted.
   ms_points, ms_lines, ms_planes, ms_sky, ms_ghost, ms_selected: float
   count_points, count_lines, count_planes, count_sky, count_ghost, count_selected: int
+  count_points_culled: int ## Count points skipped for lying outside view; see `chargeCulled`.
   mark: float ## When object now being drawn started, on `performanceNow`'s clock.
 
 
@@ -1948,6 +1961,15 @@ proc chargeTally(cost: var SceneCost; kind: PlacedKind; is_sky, is_ghost, is_sel
     cost.count_planes += 1
 
 
+proc chargeCulled(cost: var SceneCost) =
+  ## Charge point skipped for lying outside view: its test to points, its count to culled.
+  if isTallying():
+    let now_mark = performanceNow()
+    cost.ms_points += now_mark - cost.mark
+    cost.mark = now_mark
+  cost.count_points_culled += 1
+
+
 proc nimBuildFrame(
   aspect, now: cfloat; height_pixels: cint;
   is_axes_shown, is_grid_shown, is_algebra_shown: bool; is_tally_skipped: bool = false
@@ -1986,6 +2008,8 @@ proc nimBuildFrame(
   #   Ribbon's width is measured in pixels drawn, and this build renders at
   #   device-pixel-ratio multiple.
   let scale = CAMERA.drawExtentFor(int(height_pixels))
+  # Derive frustum once, for cull of every point below; see `isPointInView`.
+  let bounds = CAMERA.viewBoundsFor(scale, float(aspect))
   # Recover width of centred box from aspect, since this build is handed that.
   let ghost = staged()
   TWEEN_CAMERA.offerAim(
@@ -2035,6 +2059,7 @@ proc nimBuildFrame(
     revision: SCENE.revision,
     revision_selection: SELECTION.revision,
     is_algebra_shown: is_algebra_shown,
+    is_culling: IS_CULLING,
   )
   let is_scene_settled =
     ghost.isNone and INTERACTION.preview.isNone and not is_algebra_shown and
@@ -2057,6 +2082,7 @@ proc nimBuildFrame(
     cost.count_sky = COUNTS_SCENE.count_sky
     cost.count_ghost = COUNTS_SCENE.count_ghost
     cost.count_selected = COUNTS_SCENE.count_selected
+    cost.count_points_culled = COUNTS_SCENE.count_points_culled
   # Refresh placement cache only where scene moved; see `ensurePlaced`.
   ensurePlaced()
 
@@ -2091,6 +2117,10 @@ proc nimBuildFrame(
       if not SCENE.isAlive(slot) or slot in SELECTION: continue
       if SCENE.isVisible(slot):
         if PLACEMENTS[slot].kind != PlacedKind.PlaneEverywhere:
+          # Skip point outside view before it costs emitting, flatten and upload.
+          if IS_CULLING and not isPointInView(PLACEMENTS[slot], bounds):
+            cost.chargeCulled()
+            continue
           let progress = animationProgress(float(now), BORNS[slot])
           discard MESHES.emitObject(
             PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress,
@@ -2130,6 +2160,9 @@ proc nimBuildFrame(
     for position in 0 ..< SELECTION.len:
       let slot = SELECTION.at(position)
       if not SCENE.isAlive(slot) or not SCENE.isVisible(slot): continue
+      if IS_CULLING and not isPointInView(PLACEMENTS[slot], bounds):
+        cost.chargeCulled()
+        continue
       let progress = animationProgress(float(now), BORNS[slot])
       discard MESHES.emitObject(
         PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress,
@@ -2203,6 +2236,7 @@ proc nimBuildFrame(
     ms_ghost: float32(cost.ms_ghost),
     ms_selected: float32(cost.ms_selected),
     count_points: cost.count_points,
+    count_points_culled: cost.count_points_culled,
     count_lines: cost.count_lines,
     count_planes: cost.count_planes,
     count_sky: cost.count_sky,

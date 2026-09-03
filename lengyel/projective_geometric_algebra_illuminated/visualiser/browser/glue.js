@@ -2307,6 +2307,7 @@ const COUNTS_DIAGNOSTIC = {
   sky: 'count_sky', ghost: 'count_ghost', selected: 'count_selected',
 };
 const count_phase = {};
+let count_points_culled = 0; // Points skipped this frame for lying outside view.
 const history_phase = {};
 // **Whether phase ran is kept beside its time, never inside it.** Sentinel in.
 //   value's own range was doing that job, and duration has no room for one: every mobile
@@ -3276,7 +3277,11 @@ function refreshDiagnostics() {
     // Count beside row's own name, so **every** value ends in `ms` and times.
     //   down tree finish in one column. Zero is shown rather than left off: kind
     //   present but empty says something kind that is absent does not.
-    writeText(element_tally[name], ' (' + count_phase[name] + ')');
+    // Points drawn of points standing, where cull skipped any; see `isPointInView`.
+    const tally = name === 'points' && count_points_culled > 0
+      ? ' (' + count_phase[name] + ' of ' + (count_phase[name] + count_points_culled) + ')'
+      : ' (' + count_phase[name] + ')';
+    writeText(element_tally[name], tally);
     // And what that number is worth, in curve's own colours.
     if (element_row[name] === null) continue;
     // Some rows keep neutral ink instead. **`idle` always**: it is frame's.
@@ -4404,6 +4409,7 @@ function renderFrame(now_seconds) {
   recordPhaseTime('ghost', data.ms_ghost);
   recordPhaseTime('selected', data.ms_selected);
   for (const name in COUNTS_DIAGNOSTIC) count_phase[name] = data[COUNTS_DIAGNOSTIC[name]];
+  count_points_culled = data.count_points_culled;
 
   // **Every frame is drawn, still or moving.** Held frame could skip clear and draws.
   //   and leave compositor showing last presentation, and did for one round: on

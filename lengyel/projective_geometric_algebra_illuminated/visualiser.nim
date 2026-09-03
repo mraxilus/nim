@@ -371,6 +371,8 @@ proc assembleMeshes(
   #   Per-frame scratch that arena was waiting for, handed back clean at top of every
   #   frame.
   let scratch = ARENA_SWAP.current.push[:DrawScratch](1)
+  # Derive frustum once, for cull of every point below; see `tessellate.isPointInView`.
+  let bounds = some(camera.viewBoundsFor(scale, float(width)/float(max(height, 1))))
   # Hold furniture on unchanged frames, by same rule and tuple as browser.
   let settings_furniture = settingsFurnitureFor(
     camera, height, panel.is_axes_shown, panel.is_grid_shown,
@@ -399,7 +401,9 @@ proc assembleMeshes(
       continue
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
-    discard MESHES.addObject(scratch[0], item.geometry, tint, scale, progress, item.anchorOverride)
+    discard MESHES.addObject(
+      scratch[0], item.geometry, tint, scale, progress, item.anchorOverride, bounds = bounds,
+    )
 
   # Emit open edit session's staged multivector, through same dispatch real object uses.
   #   Composing then shows exactly what saving gives.
@@ -435,7 +439,9 @@ proc assembleMeshes(
     let item = scene[slot]
     let progress = animationProgress(now, item.born)
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
-    discard MESHES.addObject(scratch[0], item.geometry, tint, scale, progress, item.anchorOverride)
+    discard MESHES.addObject(
+      scratch[0], item.geometry, tint, scale, progress, item.anchorOverride, bounds = bounds,
+    )
 
   # Emit algebra's own layer, over everything.
   #   Every multivector this frame computed, drawn as what it is;
