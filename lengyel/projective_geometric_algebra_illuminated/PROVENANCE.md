@@ -1283,7 +1283,16 @@ to the same frame's `ui` slot (`addPhaseTime`; `recordPhaseTime` overwrote), so 
 states everything the panel cost, on the frame's path or off it, and the frame-time row is
 what says whether the frame stalled; the accounting check (rows reconstruct the frame) holds
 because the slot is closed at the next frame's start, after any idle callback. The rota is
-kept (`TICKS_DISTRIBUTION` = 5, slots 0, 2 and 4) so each idle task stays short. Every job
+kept (`TICKS_DISTRIBUTION` = 5, slots 0, 2 and 4) so each idle task stays short, and the
+pass runs one job at a time, weighing each against `deadline.timeRemaining()` with the job's
+last measured cost (2 ms before its first run) and leaving the rest for the next idle period;
+a callback that arrives by its timeout, or through the `setTimeout` fallback, runs everything,
+as the timeout promised. A `slowest frame` row reads the slowest frame in the ring back from
+that frame's own slots — the page's total with its largest phase, and the browser's remainder
+— because the 200 ms means dilute one spike past telling whether the page authored it. It is
+the instrument for the periodic spikes a phone shows at 60 fps with `ui refresh` at 0.40 ms,
+which this container cannot reproduce; whether they are the page's own code or the browser's
+paint, compositing or collection is what that row says, and nothing here claims it yet. Every job
 runs on the first tick after the section is shown, so the panel never opens half drawn. The
 pool grid's observer marks the grid stale only when its *width* changed: the draw sets the
 canvas's own height, and answering that with a second identical draw was 4.3 ms for nobody.
