@@ -1556,8 +1556,8 @@ proc nimGridMetrics(width, height: cint): FlatBuffer {.exportc.} =
   let below = position(wedgeAnti(
     wedge(scale.eye_point, toMultivector(Direction(x: 0, y: 0, z: -1))), groundPlane()
   ))
-  # Pass place straight through: bound to `let`, `Position` is `nimCopy` per frame (read in
-  #   emitted JS).
+  # Pass place straight through, since `Position` bound to `let` is `nimCopy` per frame.
+  #   Read in emitted JS.
   let world_per_pixel =
     if below.isSome: worldPerPixelAt(below.get, scale) else: worldPerPixelAt(scale.eye, scale)
   FLAT_GRID.fill2(float32(size_cell.get), float32(world_per_pixel))
