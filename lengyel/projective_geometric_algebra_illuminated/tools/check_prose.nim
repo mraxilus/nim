@@ -16,6 +16,8 @@
 ## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_prose tools/check_prose.nim && bin/check_prose
 
+{.experimental: "strictFuncs".}
+
 import std/[options, os, strformat, strutils]
 
 import ./check_columns

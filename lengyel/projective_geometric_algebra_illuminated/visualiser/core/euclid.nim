@@ -122,7 +122,7 @@ type RingAngle* = tuple[cos_angle, sin_angle: float]
   ##   See `onCircleAt`.
 
 
-proc unitRing*[N: static int](segments: int): array[N, RingAngle] =
+func unitRing*[N: static int](segments: int): array[N, RingAngle] =
   ## Resolve `N` entries of ring stepped `segments` ways round circle.
   ##   Entry `i` sits at angle `2*PI*i/segments`.
   ##   One generator for every fixed ring project walks.

@@ -336,7 +336,7 @@ proc secondsNow(): float =
   float(getMonoTime().ticks) / 1_000_000_000.0
 
 
-proc offerCameraAim(
+func offerCameraAim(
   panel: var Panel; scene: Scene; camera: Camera; scale: DrawExtent; now: float;
   width, height: int
 ) =
@@ -450,7 +450,7 @@ proc assembleMeshes(
     6*LATITUDES_HORIZON*LONGITUDES_HORIZON*(MESHES.domes.count + MESHES_FURNITURE.domes.count)
 
 
-proc drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
+func drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
   ## Fill orientation pulse travelling along marker's outline, if it has one.
   ##   Over outline rather than instead of it: pulse is outline swelling along stretch of
   ##   itself, tapering back to outline's width so only its head is edge.
@@ -467,7 +467,7 @@ proc drawMarkerPulse(marker: Marker, tint: Rgba, alpha: float32) =
     )
 
 
-proc drawMarker(marker: Marker, tint: Rgba, alpha: float32) =
+func drawMarker(marker: Marker, tint: Rgba, alpha: float32) =
   ## Stroke one marker onto foreground layer, in whichever outline its shape asked for.
   ##   Alpha separate from `tint`, so selection and hover reach this through identical
   ##   call and differ only in weight.
@@ -565,7 +565,7 @@ const
   TONE_WEDGE_LABEL_CHOSEN = (red: 0.741'f32, green: 0.953'f32, blue: 0.941'f32)
 
 
-proc drawChoiceMenu(interaction: Interaction, scene: Scene) =
+func drawChoiceMenu(interaction: Interaction, scene: Scene) =
   ## Draw four wedges of open choice menu onto foreground layer.
   ##   Every wedge at every opening, at fixed compass point, offered or not, so position
   ##   of `meet` is learned once.
@@ -678,7 +678,7 @@ proc drawInteractionOverlay(
 
 
 
-proc anchorOfSelection(
+func anchorOfSelection(
   panel: Panel; scene: Scene; view_projection: Matrix4; width, height: int;
   scale: DrawExtent
 ): Option[tuple[x, y: cfloat]] =
@@ -804,7 +804,7 @@ proc exportFrame(path: string; width, height: int): string =
   &"Wrote {width}x{height} frame to `{path}`."
 
 
-proc downsampleInto(
+func downsampleInto(
   destination: var openArray[uint8]; pixels: openArray[uint8]; width, height, stride: int
 ) =
   ## Keep every `stride`-th pixel in both directions.
@@ -1084,7 +1084,7 @@ proc reportTimings(milliseconds: var openArray[float32]) =
     &"max {milliseconds[^1]:.3f} ({1000.0/float(milliseconds[^1]):.1f})"
 
 
-proc driveDrag(
+func driveDrag(
   scene: Scene; interaction: Interaction; camera: Camera;
   width, height, count_drawn: int; scale: DrawExtent
 ) =
@@ -1197,7 +1197,7 @@ const lut_keys_driven = [
   ##   reachable.
 
 
-proc driveKeys(count_drawn: int) =
+func driveKeys(count_drawn: int) =
   ## Push one scripted keyboard step per frame onto SDL's queue, for `--drive-keys`.
   ##   Posted to queue rather than handed to `handleEvent`, for reason `driveDrag` gives.
   const FRAME_FIRST = 3 # Past startup, so first frame's layout has settled.
@@ -1217,7 +1217,7 @@ proc driveKeys(count_drawn: int) =
   sdl3.pushEvent(addr event)
 
 
-proc driveSelect(
+func driveSelect(
   scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
 ) =
   ## Script click, then two shift-clicks, on first three items, then drag off menu's object.
@@ -1293,7 +1293,7 @@ const lut_keys_undo_driven = [
   ##   Every press is paired with release: arrow left down orbits every frame, so undo
   ##   restores view and still-held key takes it away again.
 
-proc driveUndo(
+func driveUndo(
   scene: Scene; camera: Camera; width, height, count_drawn: int; scale: DrawExtent
 ) =
   ## Script construction drag onto second item, orbit well away, then undo, one step per frame.
@@ -1841,7 +1841,7 @@ proc runStoryboard(
   echo &"Wrote {len(STEPS) + 1} frames to `{directory}`."
 
 
-proc fillSceneForBenchmark(scene: var Scene, now: float) =
+func fillSceneForBenchmark(scene: var Scene, now: float) =
   ## Fill scene to capacity with synthetic points, lines and planes.
   ##   `--timings` then measures heaviest load this scene reaches.
   ##   Positions walk helix, so no two are collinear and every join is well formed.

@@ -79,16 +79,16 @@ proc prefix(buffer: FlatBuffer, count: int): FlatBuffer {.importjs: "#.subarray(
   ##   No copy, and `instanceof Float32Array` still holds, so `glue.js` uploads it with
   ##   nothing in between.
 
-proc initFlatFloats(capacity: int): FlatFloats =
+func initFlatFloats(capacity: int): FlatFloats =
   ## Reserve flat buffer of `capacity` floats, empty.
   FlatFloats(values: newFlatBuffer(capacity), used: 0)
 
-proc view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
+func view(flat: FlatFloats): FlatBuffer = flat.values.prefix(flat.used)
   ## Report just part this frame filled, for upload.
   ##   One small view object per buffer per frame, seven in all, against whole buffer of
   ##   element-by-element conversion it replaces.
 
-proc `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
+func `[]=`(flat: var FlatFloats, index: int, value: float32) = flat.values[index] = value
   ## Write one float into flat buffer.
 
 
@@ -239,7 +239,7 @@ const INK_GHOST = Ink.Guide
   ## Tint ghost in this palette slot, muted, reusing `Ink.Guide`'s "construction helper" role.
 
 
-proc toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
+func toRgbSeq(c: Rgba): seq[float32] = @[c.red, c.green, c.blue]
   ## Format colour as `[r, g, b]` triple, for caller formatting CSS colour string itself.
 
 
@@ -265,7 +265,7 @@ var
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
 
 
-proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
+func flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
   ## Interleave one frame's ribbon records for instanced upload, sixteen floats each.
   ##   Tail xyz, head xyz, width, fog, tail rgba, head rgba: `RibbonRecord`'s field order,
   ##   which attribute setup in `glue.js` reads back apart.
@@ -290,7 +290,7 @@ proc flattenRibbonsInto(ribbons: RibbonMesh, dest: var FlatFloats) =
     dest[16*i + 15] = r.head_alpha
 
 
-proc flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
+func flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
   ## Interleave one frame's disc records for instanced upload, thirteen floats each.
   ##   Centre xyz, first arm xyz, second arm xyz, fill rgba: `DiscRecord`'s field order.
   dest.used = discs.count * 13
@@ -311,7 +311,7 @@ proc flattenDiscsInto(discs: DiscMesh, dest: var FlatFloats) =
     dest[13*i + 12] = r.fill_alpha
 
 
-proc flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
+func flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
   ## Interleave one frame's ring records for instanced upload, fourteen floats each.
   ##   `DiscRecord`'s thirteen in same order, then width, so ring and disc attribute
   ##   setups in `glue.js` differ by one trailing attribute.
@@ -334,7 +334,7 @@ proc flattenRingsInto(rings: RingMesh, dest: var FlatFloats) =
     dest[14*i + 13] = r.width
 
 
-proc flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
+func flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
   ## Interleave one frame's dome records for instanced upload, eight floats each.
   ##   Centre xyz, radius, rgba: `DomeRecord`'s field order.
   dest.used = domes.count * 8
@@ -350,7 +350,7 @@ proc flattenDomesInto(domes: DomeMesh, dest: var FlatFloats) =
     dest[8*i + 7] = r.alpha
 
 
-proc flattenWashRunsInto(washes: WashRuns, dest: var FlatFloats) =
+func flattenWashRunsInto(washes: WashRuns, dest: var FlatFloats) =
   ## Interleave wash draw order, three floats per run: kind ordinal, first, count.
   dest.used = washes.count * 3
   for i in 0 ..< washes.count:
@@ -367,7 +367,7 @@ proc stampBorn(slot: int, born: float) =
   BORN_LAST = max(BORN_LAST, born)
 
 
-proc flattenInto(mesh: Mesh, dest: var FlatFloats) =
+func flattenInto(mesh: Mesh, dest: var FlatFloats) =
   ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`.
   ##   Ready for `gl.bufferData`.
   dest.used = mesh.count_vertices * 7

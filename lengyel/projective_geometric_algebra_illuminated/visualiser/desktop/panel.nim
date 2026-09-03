@@ -254,7 +254,7 @@ func geometry*(session: EditSession): Multivector =
   for b in Basis: result[b] = float(session.coefficients[b])
 
 
-proc stage*(session: var EditSession, geometry: Multivector) =
+func stage*(session: var EditSession, geometry: Multivector) =
   ## Load multivector into session, as values its widgets edit.
   ##   Inverse of `geometry`, and only other place two representations meet.
   for b in Basis: session.coefficients[b] = cfloat(geometry[b])
@@ -273,13 +273,13 @@ func staged*(panel: Panel): Option[Preview] =
 
 #[ Field Layout ]#
 
-proc widthPushField() =
+func widthPushField() =
   ## Size controls that follow to whatever line has left once names have taken their column.
   ##   Field then ends flush with panel's right edge at any width.
   gui.widthPush(gui.contentWidth() - WIDTH_LABEL_FIELD)
 
 
-proc fieldLabel(name: cstring) =
+func fieldLabel(name: cstring) =
   ## Name control, to its left, and leave line open for control itself.
   ##   Dear ImGui draws widget's label to its right, which reads backwards.
   ##   Every control below gets hidden ImGui label (`##name`) and its name is written
@@ -291,7 +291,7 @@ proc fieldLabel(name: cstring) =
 
 #[ Objects Panel ]#
 
-proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
+func layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
   ## Lay out one drag widget per basis coefficient; report which coefficient changed.
   ##   Each under its basis name, at most six per line, each grade starting fresh line.
   ##   Grade comes from library's `grade`, so nothing hardcodes dimension.
@@ -333,7 +333,7 @@ proc layoutCoefficientGrid(staged: var array[Basis, cfloat]): Option[Basis] =
       inc placed
 
 
-proc beginSession(panel: var Panel, scene: var Scene, slot: Option[int]) =
+func beginSession(panel: var Panel, scene: var Scene, slot: Option[int]) =
   ## Open edit session against `slot`, or composing one where slot is none.
   ##   Composing session starts on same auto-label and cycled ink every other construction
   ##   path assigns, both editable before object exists.
@@ -376,7 +376,7 @@ proc layoutSessionFields(panel: var Panel, is_pending: bool) =
   discard layoutCoefficientGrid(panel.session.get.coefficients)
 
 
-proc layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
+func layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's leading checkbox and its name.
   ##   Checkbox toggles membership, as browser's row checkbox does.
   ##     Second and third object join in pick order, which names operands m and n.
@@ -402,7 +402,7 @@ proc layoutItemName(panel: var Panel, scene: var Scene, row: ItemRow) =
   gui.textColorPop()
 
 
-proc layoutItemButtons(
+func layoutItemButtons(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   row: ItemRow, now: float
 ): bool =
@@ -469,7 +469,7 @@ proc layoutItemButtons(
     gui.tooltip("Delete this object; its slot is reused by the next one you add.")
 
 
-proc layoutItemDescription(panel: Panel, scene: var Scene, row: ItemRow) =
+func layoutItemDescription(panel: Panel, scene: var Scene, row: ItemRow) =
   ## Lay out row's shape word and coefficients, on one line.
   ##   Built into stack buffer rather than `string`, since every visible item redraws this
   ##   every frame.
@@ -616,7 +616,7 @@ proc layoutTopBar*(panel: var Panel, scene: var Scene, now: float) =
     panel.session = none(EditSession)
 
 
-proc offerOperationsOfArity*(
+func offerOperationsOfArity*(
   arity: Arity
 ): (array[COUNT_OPERATION, cstring], array[COUNT_OPERATION, Operation], int) =
   ## List catalogue's operations of one arity.
@@ -634,7 +634,7 @@ proc offerOperationsOfArity*(
     inc result[2]
 
 
-proc adoptSelectionAsOperands(
+func adoptSelectionAsOperands(
   panel: var Panel, slots: openArray[int], count: int
 ) =
   ## Fill arity and operand pickers in from whatever is selected in 3D view.
@@ -664,7 +664,7 @@ proc adoptSelectionAsOperands(
     if position_second.isSome: panel.index_operand_second = position_second.get
 
 
-proc openSelectionMenuPicker*(panel: var Panel) =
+func openSelectionMenuPicker*(panel: var Panel) =
   ## Reveal selection menu's operation picker, on operation last applied at implied arity.
   ##   Shared by that menu's `apply` and by drag wheel's `more…`, which lands here rather
   ##   than in drawer's apply section.
@@ -684,7 +684,7 @@ proc openSelectionMenuPicker*(panel: var Panel) =
       break
 
 
-proc applyPickedOperation(
+func applyPickedOperation(
   panel: var Panel; scene: var Scene; camera: Camera; history: var History;
   operation: Operation; first, second: int; now: float
 ) =
@@ -711,7 +711,7 @@ proc applyPickedOperation(
   toChars(&"{label} gave {shapeText(derived)}.", panel.message)
 
 
-proc layoutApply*(
+func layoutApply*(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
@@ -808,7 +808,7 @@ proc layoutApply*(
 
 #[ View Panel ]#
 
-proc layoutView*(panel: var Panel, camera: var Camera) =
+func layoutView*(panel: var Panel, camera: var Camera) =
   ## Lay out camera placement and frame export.
   ##   World furniture toggles live in `layoutTopBar`, flipped constantly while orbiting.
   if not gui.header("view", is_open_first = false): return
@@ -858,7 +858,7 @@ proc layoutView*(panel: var Panel, camera: var Camera) =
 
 #[ Diagnostics Panel ]#
 
-proc layoutDiagnosticsFrameTime(panel: var Panel) =
+func layoutDiagnosticsFrameTime(panel: var Panel) =
   ## Lay out "frame time" section.
   ##   Rolling frame-time plot, vsync toggle, current rate, tessellation cost.
   gui.separatorText("frame time")
@@ -901,7 +901,7 @@ proc layoutDiagnosticsFrameTime(panel: var Panel) =
   gui.text(text_tessellate)
 
 
-proc layoutDiagnosticsMemory(panel: Panel) =
+func layoutDiagnosticsMemory(panel: Panel) =
   ## Lay out "memory" section: permanent and per-frame arena usage bars.
   gui.separatorText("memory")
   block:
@@ -963,7 +963,7 @@ func sizePoolCell(width: cfloat): cfloat =
   SIZES_POOL_CELL[len(SIZES_POOL_CELL) - 1]
 
 
-proc layoutDiagnosticsObjectPool(scene: Scene) =
+func layoutDiagnosticsObjectPool(scene: Scene) =
   ## Lay out "object pool" section: live/free slot strip and byte accounting.
   gui.separatorText("object pool")
   # Colour occupied cell with its object's ink, so strip reads as scene.
@@ -1007,7 +1007,7 @@ proc layoutDiagnosticsObjectPool(scene: Scene) =
   )
 
 
-proc layoutDiagnosticsTotal(panel: Panel) =
+func layoutDiagnosticsTotal(panel: Panel) =
   ## Lay out "total" section: every fixed reservation this binary makes, added up.
   gui.separatorText("total")
   var total: array[WIDTH_OVERLAY_TEXT, char]
@@ -1028,7 +1028,7 @@ proc layoutDiagnosticsTotal(panel: Panel) =
   gui.tooltip(TEXT_TOTAL)
 
 
-proc layoutDiagnostics*(panel: var Panel, scene: Scene) =
+func layoutDiagnostics*(panel: var Panel, scene: Scene) =
   ## Lay out live performance and memory readouts.
   ##   Closed by default, since nothing here is needed to use visualiser, only to
   ##   understand what using it costs.
@@ -1049,7 +1049,7 @@ proc layoutDiagnostics*(panel: var Panel, scene: Scene) =
 
 #[ History Stepping ]#
 
-proc stepHistory*(
+func stepHistory*(
   panel: var Panel, scene: var Scene, camera: var Camera, history: var History,
   is_undo: bool
 ): bool =
@@ -1084,7 +1084,7 @@ const
   PADDING_MENU_PICKER = 36.0'f32
     ## Pad widest notation offered by this much, for combo's frame and arrow.
 
-proc layoutSelectionMenuApply(
+func layoutSelectionMenuApply(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   now: float
 ) =
@@ -1146,7 +1146,7 @@ proc layoutSelectionMenuApply(
   gui.tooltip("Leave the operation unapplied.")
 
 
-proc layoutSelectionMenu*(
+func layoutSelectionMenu*(
   panel: var Panel, scene: var Scene, camera: Camera, history: var History,
   anchor: Option[tuple[x, y: cfloat]], now: float
 ) =
@@ -1250,7 +1250,7 @@ func helpActionOf(entry: HelpEntry): string =
   "  " & entry.action & (if entry.is_touch: "  (touch)" else: "")
 
 
-proc layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath)) =
+func layoutHelp*(panel: var Panel, path_forced: Option[HelpPath] = none(HelpPath)) =
   ## Lay out help affordance: `?` pinned to bottom-right corner, and panel it opens.
   ##   In corner rather than inside panel window: reachable when panel is thing reader
   ##   does not understand, and browser puts it in same corner; both read `help.nim`.

@@ -389,7 +389,7 @@ static:
         &"`{moon.parent}` for `{moon.name}`."
 
 
-proc addHorizon(
+func addHorizon(
   scene: var Scene, geometry: Multivector, label: string, expected: Shape, now: float
 ) =
   ## Add one of closing objects at horizon, refusing anything that is not one.
@@ -404,7 +404,7 @@ proc addHorizon(
   scene.addItem(geometry, label, lut_role_to_ink[Role.Derived], now)
 
 
-proc addPlane(
+func addPlane(
   scene: var Scene, geometry: Multivector, label: string, now: float, anchor: Position
 ) =
   ## Add derived plane, refusing anything that is not one.
@@ -539,7 +539,7 @@ const
     ##     marker is drawn at fixed pixel size solve knows nothing about.
 
 
-proc constructSol(
+func constructSol(
   scene: var Scene; now: float; ecliptic, orbit, tether: var Multivector
 ) =
   ## Build modelled solar system, handing back three objects horizon block takes attitudes of.
@@ -586,7 +586,7 @@ proc constructSol(
   addPlane(scene, ecliptic, "ecliptic sol", now, place_sol)
 
 
-proc constructOrrery*(
+func constructOrrery*(
   scene: var Scene, scale: ScaleOrrery = SCALE_ORRERY_DEFAULT, now: float = 0.0
 ) =
   ## Fill scene with every system in turn, then four objects at horizon.
@@ -663,7 +663,7 @@ proc constructOrrery*(
       &"catalogue, `starfield.STARS` carrying too few stars; got `{scene.len}`."
 
 
-proc showOrrery*(
+func showOrrery*(
   scene: var Scene; camera: var Camera; width, height: int;
   scale: ScaleOrrery = SCALE_ORRERY_DEFAULT; now: float = 0.0
 ) =

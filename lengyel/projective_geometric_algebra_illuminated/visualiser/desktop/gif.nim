@@ -127,12 +127,12 @@ func hashKey(prefix: int, value: uint8): int =
   int(combined and uint64(CAPACITY_DICT - 1))
 
 
-proc clear(dict: var LzwDict) =
+func clear(dict: var LzwDict) =
   ## Empty every slot, in place; table itself is never reallocated.
   for i in 0 ..< CAPACITY_DICT: dict.are_used[i] = false
 
 
-proc find(dict: LzwDict, prefix: int, value: uint8): Option[int] =
+func find(dict: LzwDict, prefix: int, value: uint8): Option[int] =
   ## Look up code (prefix, value) was assigned; none where it has none yet.
   var index = hashKey(prefix, value)
   while dict.are_used[index]:
@@ -142,7 +142,7 @@ proc find(dict: LzwDict, prefix: int, value: uint8): Option[int] =
   none(int)
 
 
-proc insert(dict: var LzwDict, prefix: int, value: uint8, code: int) =
+func insert(dict: var LzwDict, prefix: int, value: uint8, code: int) =
   ## Assign (prefix, value) fresh code; caller has confirmed it has none.
   var index = hashKey(prefix, value)
   while dict.are_used[index]: index = (index + 1) and (CAPACITY_DICT - 1)

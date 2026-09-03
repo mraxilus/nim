@@ -210,7 +210,7 @@ func placementFor*(
 
 #[ Standing Offer ]#
 
-proc offerAim*(
+func offerAim*(
   tween: var CameraTween; camera: Camera; scene: Scene; picked: Selection;
   staged: Option[Preview]; scale: DrawExtent; width, height: int; now, duration: float
 ) =
@@ -237,7 +237,7 @@ proc offerAim*(
   )
 
 
-proc offerAimAt*(
+func offerAimAt*(
   tween: var CameraTween; camera: Camera; m: Multivector;
   width, height: int; now, duration: float
 ) =

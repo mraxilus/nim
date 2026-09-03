@@ -11,6 +11,8 @@
 ## Build and run:
 ##   ../../bin/nim c --hints:off -o:../bin/check_palette check_palette.nim && ../bin/check_palette
 
+{.experimental: "strictFuncs".}
+
 import std/[options, strformat, strutils, wordwrap]
 
 import ../visualiser/core/mesh

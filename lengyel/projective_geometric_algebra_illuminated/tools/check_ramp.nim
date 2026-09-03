@@ -19,6 +19,8 @@
 ## Build and run:
 ##   ../../bin/nim c --hints:off -o:../bin/check_ramp check_ramp.nim && ../bin/check_ramp
 
+{.experimental: "strictFuncs".}
+
 import std/[math, os, strformat, strutils]
 
 import ../visualiser/core/ramp

@@ -244,18 +244,18 @@ func azimuthElevationFor*(heading: Direction): (float, float) =
   (azimuth, elevation)
 
 
-proc orbit*(camera: var Camera; turn, rise: float) =
+func orbit*(camera: var Camera; turn, rise: float) =
   ## Turn eye about target by given angles, keeping elevation short of poles.
   camera.azimuth += turn
   camera.elevation = clamp(camera.elevation + rise, -ELEVATION_LIMIT, ELEVATION_LIMIT)
 
 
-proc dolly*(camera: var Camera, factor: float) =
+func dolly*(camera: var Camera, factor: float) =
   ## Scale separation of eye from target, holding it off near bound.
   camera.distance = distanceHeld(camera.distance * factor)
 
 
-proc dollyToward*(camera: var Camera, factor: float, anchor: Position) =
+func dollyToward*(camera: var Camera, factor: float, anchor: Position) =
   ## Scale separation of eye from target by `factor`, moving eye along its line to `anchor`.
   ##   Rather than straight in, so whatever stands there keeps its pixel: how map zooms,
   ##   wheel taking reader toward what they point at, not middle of frame.
@@ -282,7 +282,7 @@ proc dollyToward*(camera: var Camera, factor: float, anchor: Position) =
   camera.distance = distance_settled
 
 
-proc pan*(camera: var Camera; across, up: float) =
+func pan*(camera: var Camera; across, up: float) =
   ## Slide target within plane facing eye, so whole view shifts with it.
   ##   Slide is multivector sum along frame's own two axes.
   let
@@ -305,7 +305,7 @@ func headingGround*(camera: Camera): Direction =
   Direction(x: -cos(camera.azimuth), y: -sin(camera.azimuth), z: 0.0)
 
 
-proc slideGround*(camera: var Camera; ahead, across, rise: float) =
+func slideGround*(camera: var Camera; ahead, across, rise: float) =
   ## Slide target across world, leaving eye's placement about it alone.
   ##   Forward along `headingGround`, sideways along camera's right, up along world up,
   ##   so whole view travels without turning.
@@ -756,7 +756,7 @@ func `==`*(a, b: CameraPlacement): bool =
     a.distance == b.distance and a.azimuth == b.azimuth and a.elevation == b.elevation
 
 
-proc aimAt*(
+func aimAt*(
   tween: var CameraTween; camera: Camera; goal: CameraAim; destination: CameraPlacement;
   now, duration: float
 ) =
@@ -781,7 +781,7 @@ proc aimAt*(
   tween.placement_from = camera.placementOf
 
 
-proc advance*(
+func advance*(
   tween: var CameraTween, camera: var Camera, now: float,
   ease: proc(t: float): float {.noSideEffect.},
 ) =
@@ -796,7 +796,7 @@ proc advance*(
   if now - tween.started >= tween.duration: tween.is_arrived = true
 
 
-proc settle*(tween: var CameraTween, camera: var Camera) =
+func settle*(tween: var CameraTween, camera: var Camera) =
   ## Put camera on destination at once.
   ##   For caller that must not show half-finished pan, such as storyboard frame about to
   ##   be captured.
@@ -805,7 +805,7 @@ proc settle*(tween: var CameraTween, camera: var Camera) =
   tween.is_arrived = true
 
 
-proc release*(tween: var CameraTween) =
+func release*(tween: var CameraTween) =
   ## Withdraw whatever camera was aimed at, leaving it wherever it stands.
   ##   For whoever offers aim, once it has nothing to offer: selection cleared, edit
   ##   session closed.
@@ -815,7 +815,7 @@ proc release*(tween: var CameraTween) =
   tween.is_arrived = false
 
 
-proc abandon*(tween: var CameraTween) =
+func abandon*(tween: var CameraTween) =
   ## Stop carrying camera, but remember what it was carrying it toward.
   ##   For every path moving camera on user's own instruction: orbit, pan or dolly half
   ##   second into ease should win outright.

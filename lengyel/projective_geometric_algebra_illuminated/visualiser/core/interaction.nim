@@ -442,7 +442,7 @@ func compassOf*(choice: DragChoice): Compass =
   of DragChoice.More: Compass.West
 
 
-proc labelOf*(choice: DragChoice): string =
+func labelOf*(choice: DragChoice): string =
   ## Name choice as its wedge says it, in catalogue's symbols.
   ##   Very text apply picker offers, through `scene.notationSymbolic`.
   ##     Wheel and picker are same control in two postures, so whichever reader meets first
@@ -611,7 +611,7 @@ func inkOfDrag*(interaction: Interaction, ink_next: Ink): Ink =
 
 #[ Cursor And Hover ]#
 
-proc updateCursor*(interaction: var Interaction; x, y: float) =
+func updateCursor*(interaction: var Interaction; x, y: float) =
   ## Record cursor's latest window position, and note whether press has become drag.
   interaction.cursor = ScreenPosition(x: x, y: y, depth: 0.0)
   if interaction.is_press_still:
@@ -677,7 +677,7 @@ proc dollyAtCursor*(
   else: camera.dollyToward(factor, anchor.get)
 
 
-proc panAcross*(
+func panAcross*(
   camera: var Camera; before, after: ScreenPosition; width, height: int
 ) =
   ## Slide view so world point under `before` comes to lie under `after`.
@@ -722,19 +722,19 @@ proc panAcross*(
   )
 
 
-proc holdKey*(interaction: var Interaction, key: Key) =
+func holdKey*(interaction: var Interaction, key: Key) =
   ## Note key as held, so `driveHeld` moves camera by it every frame until released.
   ##   Harmless on key already held, which is what auto-repeat sends.
   interaction.keys_held.incl(key)
 
 
-proc releaseKey*(interaction: var Interaction, key: Key) =
+func releaseKey*(interaction: var Interaction, key: Key) =
   ## Note key as let go of.
   ##   Harmless on key not held, which is what release arriving after `releaseKeysAll` is.
   interaction.keys_held.excl(key)
 
 
-proc releaseKeysAll*(interaction: var Interaction) =
+func releaseKeysAll*(interaction: var Interaction) =
   ## Let go of every held key at once, for view that has stopped being told about releases.
   ##   Window losing focus, reader tabbing into panel.
   ##   Not nicety: release of key held at that moment is delivered elsewhere, so without
@@ -742,7 +742,7 @@ proc releaseKeysAll*(interaction: var Interaction) =
   interaction.keys_held = {}
 
 
-proc driveHeld*(interaction: Interaction, camera: var Camera, seconds: float) =
+func driveHeld*(interaction: Interaction, camera: var Camera, seconds: float) =
   ## Move camera by every key currently held, for one frame of `seconds`.
   ##   Called once per frame by both render paths rather than at each key event.
   ##     Makes hold read as continuous movement rather than OS auto-repeat, and lets two
@@ -776,7 +776,7 @@ proc driveHeld*(interaction: Interaction, camera: var Camera, seconds: float) =
     of Motion.DollyOut: camera.dolly(dolly)
 
 
-proc applyAction*(
+func applyAction*(
   interaction: var Interaction, camera: var Camera, scene: Scene, action: KeyAction
 ): Option[int] =
   ## Carry out one keyboard action, and report which item caller should select.
@@ -807,7 +807,7 @@ proc applyAction*(
   none(int)
 
 
-proc pruneFocus*(interaction: var Interaction, scene: Scene) =
+func pruneFocus*(interaction: var Interaction, scene: Scene) =
   ## Drop keyboard focus whose item has gone, same guard selection keeps.
   ##   Slot carried across frames may be freed by any other input path, and focus left
   ##   pointing at dead one would have marker drawn off freed storage.
@@ -818,14 +818,14 @@ proc pruneFocus*(interaction: var Interaction, scene: Scene) =
 
 #[ Hold Lifecycle ]#
 
-proc beginHold*(interaction: var Interaction, slot: int, now: float) =
+func beginHold*(interaction: var Interaction, slot: int, now: float) =
   ## Start press on `slot` that selects it once it has lasted long enough.
   interaction.hold = some(
     Hold(slot: slot, started: now, is_taken: false, released: none(float))
   )
 
 
-proc releaseHold*(interaction: var Interaction, now: float) =
+func releaseHold*(interaction: var Interaction, now: float) =
   ## Note that finger has lifted, starting marker's settle back to true size.
   ##   Distinct from `cancelHold`: press ending as press is meant to settles; press that
   ##   stopped being one (moved into camera gesture, second finger, escape) snaps away.
@@ -835,7 +835,7 @@ proc releaseHold*(interaction: var Interaction, now: float) =
   interaction.hold.get.released = some(now)
 
 
-proc cancelHold*(interaction: var Interaction) =
+func cancelHold*(interaction: var Interaction) =
   ## Abandon press in progress, selecting nothing.
   ##   For finger moved into camera gesture, second finger landing, early release, escape.
   interaction.hold = none(Hold)
@@ -900,7 +900,7 @@ func isHoldMature*(interaction: Interaction, now: float): bool =
   interaction.hold.isSome and progressHold(interaction, now) >= 1.0
 
 
-proc takeHold*(interaction: var Interaction, now: float): Option[int] =
+func takeHold*(interaction: var Interaction, now: float): Option[int] =
   ## Report slot matured hold selects, exactly once, and nothing on later calls.
   ##   None while hold is filling, none with no hold.
   ##   Replaces "is it mature" beside caller's "have I acted" flag.
@@ -929,7 +929,7 @@ func destinationOf*(interaction: Interaction): Option[int] =
   else: interaction.index_hover
 
 
-proc beginPress*(interaction: var Interaction, now: float) =
+func beginPress*(interaction: var Interaction, now: float) =
   ## Note where and when pointer press landed, whatever that press turns out to be.
   ##   Every press goes through this, because `isClick` answers same question about all.
   ##     Click on object selects, click on empty space clears, neither is drag.
@@ -955,7 +955,7 @@ func isClick*(interaction: Interaction, now: float): bool =
   interaction.is_press_still
 
 
-proc beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): bool =
+func beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): bool =
   ## Start construction drag from item currently hovered.
   ##   Reports whether one started, so caller knows whether to fall back to camera.
   ##   `arming` is what pointer chose; see `MenuArming` and `armingOf`.
@@ -980,7 +980,7 @@ proc beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): b
   true
 
 
-proc cancelDrag*(interaction: var Interaction) =
+func cancelDrag*(interaction: var Interaction) =
   ## Abandon drag in progress without applying anything.
   interaction.is_dragging = false
   interaction.menu = none(ScreenPosition)
@@ -991,7 +991,7 @@ proc cancelDrag*(interaction: var Interaction) =
   interaction.preview = none(Preview)
 
 
-proc updateDrag*(
+func updateDrag*(
   interaction: var Interaction, scene: Scene, now: float
 ) =
   ## Recompute what drag in progress would make and whether its menu should be open.
@@ -1106,7 +1106,7 @@ type DragOutcome* = object ## Define everything released drag did, for caller to
     ## None for every actual drag.
 
 
-proc commitChoice*(
+func commitChoice*(
   interaction: var Interaction, scene: var Scene, choice: DragChoice, now: float
 ): DragOutcome =
   ## Apply one choice between drag's source and whatever it points at.
@@ -1167,7 +1167,7 @@ proc commitChoice*(
   )
 
 
-proc endDrag*(
+func endDrag*(
   interaction: var Interaction, scene: var Scene, now: float = 0.0
 ): DragOutcome =
   ## End drag in progress, applying whatever release resolved to.

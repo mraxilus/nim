@@ -52,7 +52,7 @@ type Arena* = object ## Define fixed block of bytes and how much of it is in use
 
 #[ Arena Lifetime ]#
 
-proc initArena*(backing: var openArray[byte]): Arena =
+func initArena*(backing: var openArray[byte]): Arena =
   ## Wrap caller-owned backing storage as arena.
   ##   Nothing is allocated, as `backing` is expected to be fixed global array.
   Arena(
@@ -63,7 +63,7 @@ proc initArena*(backing: var openArray[byte]): Arena =
   )
 
 
-proc reset*(arena: var Arena) =
+func reset*(arena: var Arena) =
   ## Reclaim everything carved from `arena` so far, in one step.
   ##   Nothing is freed individually.
   ##   `peak_used` is untouched: it tracks high-water mark across whole lifetime.
@@ -73,7 +73,7 @@ proc reset*(arena: var Arena) =
 
 #[ Arena Allocation ]#
 
-proc push*[T](arena: var Arena, count: int): ptr UncheckedArray[T] =
+func push*[T](arena: var Arena, count: int): ptr UncheckedArray[T] =
   ## Carve `count` elements of `T` from `arena`, uninitialised.
   ##   Never freed on its own; reclaimed only when `reset` reclaims whole arena.
   let bytes_needed = count * sizeof(T)
@@ -101,7 +101,7 @@ type ArenaSwap* = object ## Define two frame arenas and which of them this frame
   index_current: int ## Which of `arenas` this frame carves from; other is last frame's.
 
 
-proc initArenaSwap*(backing_first, backing_second: var openArray[byte]): ArenaSwap =
+func initArenaSwap*(backing_first, backing_second: var openArray[byte]): ArenaSwap =
   ## Wrap two caller-owned blocks as swap pair, first of them current.
   ##   Two blocks rather than one twice size: point is that last frame's bytes are still
   ##   there, which single arena reset in place cannot promise.
@@ -111,7 +111,7 @@ proc initArenaSwap*(backing_first, backing_second: var openArray[byte]): ArenaSw
   )
 
 
-proc swap*(pair: var ArenaSwap) =
+func swap*(pair: var ArenaSwap) =
   ## Begin new frame.
   ##   What was current becomes readable as `previous`, and block moved to is reclaimed so
   ##   this frame starts clean.
@@ -119,10 +119,10 @@ proc swap*(pair: var ArenaSwap) =
   pair.arenas[pair.index_current].reset()
 
 
-proc current*(pair: var ArenaSwap): var Arena = pair.arenas[pair.index_current]
+func current*(pair: var ArenaSwap): var Arena = pair.arenas[pair.index_current]
   ## Reach arena this frame carves from.
 
-proc previous*(pair: var ArenaSwap): var Arena = pair.arenas[1 - pair.index_current]
+func previous*(pair: var ArenaSwap): var Arena = pair.arenas[1 - pair.index_current]
   ## Reach arena previous frame carved from, still holding what it wrote.
   ##   Read-only in spirit: carving from it takes memory this frame's `swap` is about to
   ##   reclaim, and nothing stops that; discipline is caller's.

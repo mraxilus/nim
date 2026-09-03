@@ -123,7 +123,7 @@ func anchorFor*(
 
 #[ Segments and Circles ]#
 
-proc addGreatCircle(
+func addGreatCircle(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba
 ) =
@@ -140,7 +140,7 @@ proc addGreatCircle(
 
 #[ World Furniture ]#
 
-proc placeChord(
+func placeChord(
   scratch: var DrawScratch; count_assembled: var int; centre, axis_point: Multivector;
   span: float; tint: Rgba; scale: DrawExtent
 ) =
@@ -166,7 +166,7 @@ proc placeChord(
   count_assembled += 1
 
 
-proc placeAxes(scratch: var DrawScratch, extent: float, scale: DrawExtent): int =
+func placeAxes(scratch: var DrawScratch, extent: float, scale: DrawExtent): int =
   ## Resolve world axes into `scratch` and report how many pieces.
   ##   One through origin along each of x, y and z (x red, y green, z blue), so
   ##   orientation reads at glance.
@@ -259,7 +259,7 @@ func sizeCellGridAt*(extent: float, scale: DrawExtent): Option[float] =
   some(sizeCellGridFor(radius_ground.get))
 
 
-proc placeGridFamily(
+func placeGridFamily(
   scratch: var DrawScratch; scale: DrawExtent; tint: Rgba;
   radius_ground, size_cell: float; along, across: Direction; origin: Position
 ): int =

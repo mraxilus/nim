@@ -145,7 +145,7 @@ func lengthFitting*(text: openArray[char], capacity: int): int =
     result += width
 
 
-proc appendChars*(storage: var openArray[char], cursor: var int, text: openArray[char]) =
+func appendChars*(storage: var openArray[char], cursor: var int, text: openArray[char]) =
   ## Copy as much of `text` as still fits after `cursor`, advancing it.
   ##   Silently truncates rather than overrunning `storage`, as `toChars` does.
   ##     Storage is display only, and GUI must never write past own buffer.
@@ -169,7 +169,7 @@ func toText*(storage: openArray[char]): string =
     result.add(ch)
 
 
-proc appendMagnitude*(storage: var openArray[char], cursor: var int, value: float) =
+func appendMagnitude*(storage: var openArray[char], cursor: var int, value: float) =
   ## Format `value` to `DIGITS_SIGNIFICANT` significant digits straight into `storage`.
   ##   Significant digits, not decimal places, and no `#` flag: 3.5 reads `3.5` rather
   ##   than `3.5000`, and 1664 keeps integer part.
@@ -192,7 +192,7 @@ proc appendMagnitude*(storage: var openArray[char], cursor: var int, value: floa
 
 
 when not defined(js):
-  proc appendInt*(storage: var openArray[char], cursor: var int, value: int) =
+  func appendInt*(storage: var openArray[char], cursor: var int, value: int) =
     ## Format `value` as plain decimal integer straight into `storage`.
     ##   Every caller counts something small and bounded, so narrowing to `cint` never
     ##   truncates real value.
@@ -204,7 +204,7 @@ when not defined(js):
     appendChars(storage, cursor, buffer.toOpenArray(0, int(count) - 1))
 
 
-  proc appendFixed*(
+  func appendFixed*(
     storage: var openArray[char], cursor: var int, value: float, digits: int
   ) =
     ## Format `value` to fixed digits after point straight into `storage`.
@@ -217,7 +217,7 @@ when not defined(js):
     appendChars(storage, cursor, buffer.toOpenArray(0, int(count) - 1))
 
 
-proc finishChars*(storage: var openArray[char], cursor: int) =
+func finishChars*(storage: var openArray[char], cursor: int) =
   ## Zero every byte from `cursor` onward.
   ##   Text longer previous write left behind never trails past what was written this time.
   for i in cursor ..< len(storage): storage[i] = '\0'

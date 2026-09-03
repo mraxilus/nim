@@ -313,7 +313,7 @@ type
 
 #[ Program Construction ]#
 
-proc compileShader(kind: gl.Enum, source: string): gl.Uint =
+func compileShader(kind: gl.Enum, source: string): gl.Uint =
   ## Compile one shader stage, reporting driver's diagnosis on failure.
   result = gl.createShader(kind)
   var text = cstring(source)
@@ -329,7 +329,7 @@ proc compileShader(kind: gl.Enum, source: string): gl.Uint =
   doAssert false, &"Shader stage {kind:#x} must compile; got `{cast[cstring](addr log[0])}`."
 
 
-proc linkProgram(source_vertex, source_fragment: string): gl.Uint =
+func linkProgram(source_vertex, source_fragment: string): gl.Uint =
   ## Link vertex and fragment stages into program, reporting failure same way.
   let
     shader_vertex = compileShader(gl.VERTEX_SHADER, source_vertex)
@@ -552,7 +552,7 @@ proc initRenderer*(): Renderer =
 
 #[ Frame Drawing ]#
 
-proc clearFrame*(width, height: int) =
+func clearFrame*(width, height: int) =
   ## Clear colour and depth to backdrop, resizing viewport first.
   let backdrop = Ink.Backdrop.colour
   gl.viewport(0, 0, gl.Sizei(width), gl.Sizei(height))
@@ -560,7 +560,7 @@ proc clearFrame*(width, height: int) =
   gl.clear(gl.COLOR_BUFFER_BIT or gl.DEPTH_BUFFER_BIT)
 
 
-proc uploadPoints(renderer: Renderer, meshes: MeshSet) =
+func uploadPoints(renderer: Renderer, meshes: MeshSet) =
   ## Hand point vertices to driver whole, ready to be drawn as one run or two.
   ##   Separate from drawing because two runs are issued in different passes; see
   ##   `drawMeshes`.
@@ -577,7 +577,7 @@ proc uploadPoints(renderer: Renderer, meshes: MeshSet) =
   )
 
 
-proc uploadRibbons(renderer: Renderer, meshes: MeshSet) =
+func uploadRibbons(renderer: Renderer, meshes: MeshSet) =
   ## Hand this frame's ribbon records to driver whole; shader does rest.
   if meshes.ribbons.count == 0: return
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_ribbon_records)
@@ -589,7 +589,7 @@ proc uploadRibbons(renderer: Renderer, meshes: MeshSet) =
   )
 
 
-proc uploadWashes(renderer: Renderer, meshes: MeshSet) =
+func uploadWashes(renderer: Renderer, meshes: MeshSet) =
   ## Hand this frame's disc, ring and dome records to driver whole; shaders fan them.
   ##   Rings ride along on same upload schedule, not because rim is wash: it is drawn
   ##   opaque, with lines.
@@ -628,7 +628,7 @@ func runOfRibbons(ribbons: RibbonMesh, is_overlay: bool): tuple[first, count: in
   else: (first: 0, count: split)
 
 
-proc drawRibbonRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
+func drawRibbonRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded ribbon records as instanced triangle pairs.
   ##   GL 3.3 has no base instance, so run not starting at first record re-points five
   ##   instance attributes at its first byte.
@@ -656,7 +656,7 @@ func runOfRings(rings: RingMesh, is_overlay: bool): tuple[first, count: int] =
   else: (first: 0, count: split)
 
 
-proc drawRingRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
+func drawRingRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded ring records, each instance whole plane rim.
   ##   Re-points instance attributes at run's first byte, `drawRibbonRun`'s rule.
   ##   Mirrors `glue.js`'s `drawRings`.
@@ -687,7 +687,7 @@ func runOf(mesh: Mesh, is_overlay: bool): tuple[first, count: int] =
   else: (first: 0, count: split)
 
 
-proc drawPointRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
+func drawPointRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Draw one run of already-uploaded point mesh, skipping empty one.
   let run = runOf(meshes.points, is_overlay)
   if run.count == 0: return
@@ -707,7 +707,7 @@ func runsOfWashes(washes: WashRuns, is_overlay: bool): tuple[begin, until: int] 
   else: (begin: 0, until: split)
 
 
-proc drawWashRuns(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
+func drawWashRuns(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
   ## Walk one pass's stretch of wash draw order, drawing each run through its program.
   ##   Two washes then blend in order scene emitted them.
   ##   Re-points instance attributes at run's first byte, as `drawRibbonRun` does.
@@ -752,7 +752,7 @@ func hasOverlay(meshes: MeshSet): bool =
   until > begin
 
 
-proc drawMeshes*(
+func drawMeshes*(
   renderer: Renderer, meshes: MeshSet, view_projection: Matrix4, scale: DrawScale
 ) =
   ## Draw every mesh, opaque kinds before translucent ones, then overlay over both.
@@ -845,7 +845,7 @@ proc drawMeshes*(
 
 #[ Frame Capture ]#
 
-proc capturePixels*(width, height: int; pixels: var openArray[uint8]) =
+func capturePixels*(width, height: int; pixels: var openArray[uint8]) =
   ## Read framebuffer back as tightly packed RGB triples, first row nearest bottom.
   ##   Caller owns fixed storage, sized to largest export this build allows.
   ##   Window resized past that bound fails loudly rather than silently reallocating.

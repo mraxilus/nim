@@ -167,7 +167,7 @@ type PulseClock* = object ## Define each selected object's orientation pulse bet
   seconds_last: Option[float] ## Clock reading `tick` last saw, for step between frames.
 
 
-proc tick*(clock: var PulseClock, now: float) =
+func tick*(clock: var PulseClock, now: float) =
   ## Take frame's clock reading, so `advance` knows how long step was.
   ##   Call once per frame, before advancing any slot.
   ##   First call establishes reading and advances nothing.
@@ -185,7 +185,7 @@ func secondsStep*(clock: PulseClock, now: float): float =
   min(SECONDS_STEP_PULSE_MAX, max(0.0, now - clock.seconds_last.get))
 
 
-proc advance*(clock: var PulseClock; slot: int; lap, seconds: float) =
+func advance*(clock: var PulseClock; slot: int; lap, seconds: float) =
   ## Carry one slot's pulse forward by pixels `seconds` is worth, reduced into `lap`.
   ##   `lap` is what marker just shaped measured (`Marker.lap`) and enters only reduction,
   ##   never step: step is `SPEED_MARKER_PULSE*seconds` whatever camera does.
@@ -200,7 +200,7 @@ func travelAt*(clock: PulseClock, slot: int): float =
   if slot < 0 or slot >= ITEMS_MAX: 0.0 else: clock.travels[slot]
 
 
-proc forget*(clock: var PulseClock, slot: int) =
+func forget*(clock: var PulseClock, slot: int) =
   ## Send slot's pulse back to start of its lap.
   ##   Call where slot is handed to fresh object, so new selection begins comet at head
   ##   rather than inheriting wherever since-removed object had got to.

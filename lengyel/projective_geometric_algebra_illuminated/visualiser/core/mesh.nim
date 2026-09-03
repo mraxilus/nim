@@ -641,7 +641,7 @@ func animationProgress*(now, born: float): float =
 
 #[ Vertex Assembly ]#
 
-proc clearMeshes*(meshes: var MeshSet) =
+func clearMeshes*(meshes: var MeshSet) =
   ## Drop every vertex and record assembled so far, so frame may be rebuilt from scratch.
   meshes.points.count_vertices = 0
   meshes.points.index_overlay = none(int)
@@ -655,7 +655,7 @@ proc clearMeshes*(meshes: var MeshSet) =
   meshes.washes.index_overlay = none(int)
 
 
-proc markOverlay*(meshes: var MeshSet) =
+func markOverlay*(meshes: var MeshSet) =
   ## Say that everything appended from here on is drawn over what came before.
   ##   Called once, between ordinary objects and selected ones.
   ##   Calling twice moves boundary rather than adding second one: assembly order
@@ -666,7 +666,7 @@ proc markOverlay*(meshes: var MeshSet) =
   meshes.washes.index_overlay = some(meshes.washes.count)
 
 
-proc addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
+func addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
   ## Append point marking single position, in `tint`'s hue at `alpha`.
   ##   Alpha apart from tint so caller fading point need not build faded `Rgba` first.
   ##     `fade` per point was two allocations and copy, once per point per frame.
@@ -798,7 +798,7 @@ func expandRibbon*(record: RibbonRecord, scale: DrawScale): array[6, Vertex] =
     )
 
 
-proc addRibbon*(
+func addRibbon*(
   meshes: var MeshSet; tail, head: Position; tint_tail, tint_head: Rgba; width: float32;
   is_fogged: bool = false
 ) =
@@ -825,7 +825,7 @@ proc addRibbon*(
   meshes.ribbons.count = count + 1
 
 
-proc addRibbonPieces*(
+func addRibbonPieces*(
   meshes: var MeshSet, pieces: openArray[RibbonPiece], width: float32,
   is_fogged: bool = false
 ) =
@@ -837,7 +837,7 @@ proc addRibbonPieces*(
     )
 
 
-proc addSegment*(
+func addSegment*(
   meshes: var MeshSet; tail, head: Position; tint: Rgba; width: float32
 ) =
   ## Append ribbon of one tint end to end.
@@ -894,7 +894,7 @@ proc expandRingVertex*(
   expandRibbon(ribbonOfRing(record, segment), scale)
 
 
-proc addRing*(
+func addRing*(
   meshes: var MeshSet; centre: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba; width: float
 ) =
@@ -1036,7 +1036,7 @@ func domeCorners*(): seq[float32] =
         at += 3
 
 
-proc appendWashRun(meshes: var MeshSet, kind: WashKind) =
+func appendWashRun(meshes: var MeshSet, kind: WashKind) =
   ## Note one more record of `kind` in wash draw order.
   ##   Extends current run where it is same kind and this side of overlay mark, opens
   ##   new one otherwise. See `WashRuns`.
@@ -1055,7 +1055,7 @@ proc appendWashRun(meshes: var MeshSet, kind: WashKind) =
   meshes.washes.count = count + 1
 
 
-proc addDisc*(
+func addDisc*(
   meshes: var MeshSet; center: Position; axis_first, axis_second: Direction;
   radius: float; tint: Rgba
 ) =
@@ -1084,7 +1084,7 @@ proc addDisc*(
   meshes.discs.count = count + 1
 
 
-proc addDome*(meshes: var MeshSet, center: Position, radius: float, tint: Rgba) =
+func addDome*(meshes: var MeshSet, center: Position, radius: float, tint: Rgba) =
   ## Append whole-sky sphere record around `center`, for dome vertex shader to widen.
   ##   Plane at horizon is unique universal whole-sky object, same regardless of which
   ##   points produced it (see `directionNormalHorizon`), so only `radius` and `tint`

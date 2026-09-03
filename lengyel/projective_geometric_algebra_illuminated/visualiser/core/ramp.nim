@@ -11,6 +11,8 @@
 ## Lives in `core` rather than `browser/`: verifying tool is native and must not import
 ## browser bridge. Nothing here draws.
 
+{.experimental: "strictFuncs".}
+
 const
   STEPS_RAMP_TREE* = 17
     ## Fix how many samples of map ramp ships.

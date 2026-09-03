@@ -59,13 +59,13 @@ type
 
 #[ Recording ]#
 
-proc clear*(trace: var AlgebraTrace) =
+func clear*(trace: var AlgebraTrace) =
   ## Clear last frame's geometry.
   ##   Count alone resets; entries are overwritten as recorded.
   trace.count = 0
 
 
-proc record*(trace: var AlgebraTrace, role: TracedRole, geometry: Multivector) =
+func record*(trace: var AlgebraTrace, role: TracedRole, geometry: Multivector) =
   ## Record one multivector this frame derived.
   ##   Silently drops anything past `TRACED_MAX`.
   ##     Debug layer crashing frame it explains would be worse than showing less.

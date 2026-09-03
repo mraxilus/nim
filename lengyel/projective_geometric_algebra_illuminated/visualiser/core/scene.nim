@@ -268,7 +268,7 @@ func notationNamed*(operation: Operation): string =
   lut_operation_split[operation].name
 
 
-proc notationSubstituted*(operation: Operation; name_first, name_second: string): string =
+func notationSubstituted*(operation: Operation; name_first, name_second: string): string =
   ## Build label text applied operation reads as, with real operand names in place.
   ##   Substitutes template's `𝐦`/`𝐧`: `Operation.Wedge` with "a"/"b" gives "a ∧ b".
   ##   Matches bold operands, not plain ASCII `m`/`n`: English description after symbols
@@ -390,7 +390,7 @@ const
     ##   Derived from `Basis`, so build of another dimension sizes own buffers.
 
 
-proc formatMultivector*(m: Multivector, storage: var openArray[char], cursor: var int) =
+func formatMultivector*(m: Multivector, storage: var openArray[char], cursor: var int) =
   ## Print multivector into fixed storage, in same shape library's `$` uses.
   ##   Basis elements named exactly as library names them; both GUIs carry faces covering
   ##   those codepoints.
@@ -415,7 +415,7 @@ const WIDTH_SHAPE_WORD* = 32
   ## Bound shape word alone, longest being "mixed grade, nothing to draw".
 
 
-proc describeShape*(m: Multivector, storage: var openArray[char], cursor: var int) =
+func describeShape*(m: Multivector, storage: var openArray[char], cursor: var int) =
   ## Name geometry multivector stands for into fixed storage, for reporting to user.
   ##   Appends from `cursor` onward; see `formatMultivector`.
   let shape = shape(m)
@@ -463,7 +463,7 @@ const ELLIPSIS_LABEL = "…"
   ##   Derived names compound, so few steps in every name is long enough to cut, and one
   ##   ending mid-word reads as name someone chose.
 
-proc toChars*(text: string, storage: var openArray[char]) =
+func toChars*(text: string, storage: var openArray[char]) =
   ## Copy text into fixed char storage, marking it with `…` where it will not fit.
   ##   Truncation is deliberate: storage is display only, and GUI must never overrun it.
   ##   Room for mark is measured by `lengthFitting` against smaller capacity rather than
@@ -491,7 +491,7 @@ when not defined(js):
 
 #[ Scene Editing ]#
 
-proc initScene*(): Scene =
+func initScene*(): Scene =
   ## Construct empty scene, threading every slot onto free list ahead of first use.
   for slot in 0 ..< ITEMS_MAX - 1:
     result.next_free[slot] = some(slot + 1)
@@ -532,7 +532,7 @@ func revision*(scene: Scene): int = scene.count_edits
   ##     already seen, i.e. edit being undone; reader holding meshes on that number draws
   ##     undone object until camera moves.
 
-proc markEdited*(scene: var Scene) =
+func markEdited*(scene: var Scene) =
   ## Say that scene's drawn content just changed; see `revision`.
   ##   Called by every writer in this module.
   ##   Caller wanting this for anything else is writing to scene by route that ought to be
@@ -540,7 +540,7 @@ proc markEdited*(scene: var Scene) =
   inc scene.count_edits
 
 
-proc restoreFrom*(scene: var Scene, snapshot: Scene) =
+func restoreFrom*(scene: var Scene, snapshot: Scene) =
   ## Replace scene's whole content with snapshot, at revision no earlier state carried.
   ##   Every whole-scene replacement, i.e. undo, redo, clear, load, comes through here.
   ##     Revision only ever rises and no two states front-end has drawn share one.
@@ -638,7 +638,7 @@ func geometryOf*(scene: Scene, slot: int): lent Multivector =
   scene.geometries[slot]
 
 
-proc setGeometryAt*(scene: var Scene, slot: int, geometry: Multivector) =
+func setGeometryAt*(scene: var Scene, slot: int, geometry: Multivector) =
   ## Write item's geometry, by slot, only way live item's geometry changes.
   ##   Setter rather than `var Multivector`, for reason `geometryOf` gives and second.
   ##     Front-end holding last frame's meshes can only know scene changed if every write
@@ -649,7 +649,7 @@ proc setGeometryAt*(scene: var Scene, slot: int, geometry: Multivector) =
   scene.revisions_placing[slot] = scene.count_edits
 
 
-proc labelAt*(scene: var Scene, slot: int): var Label =
+func labelAt*(scene: var Scene, slot: int): var Label =
   ## Reach item's label for editing, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.labels[slot]
@@ -771,14 +771,14 @@ func previewStaging*(geometry: Multivector): Preview =
 
 
 
-proc setInk*(scene: var Scene, slot: int, ink: Ink) =
+func setInk*(scene: var Scene, slot: int, ink: Ink) =
   ## Rewrite item's palette slot, by slot.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.inks[slot] = ink
   scene.markEdited()
 
 
-proc setVisible*(scene: var Scene, slot: int, is_visible: bool) =
+func setVisible*(scene: var Scene, slot: int, is_visible: bool) =
   ## Rewrite item's visibility, by slot, mirroring `setInk`.
   ##   Only writer: `isVisibleAt(...) = visible` accessor silently lands on copied
   ##   primitive under JS backend; see `isVisible`.
@@ -802,7 +802,7 @@ iterator pairs*(scene: Scene): (int, Item) =
     if scene.are_alive[slot]: yield (slot, scene[slot])
 
 
-proc addItem*(
+func addItem*(
   scene: var Scene, geometry: Multivector, label: string, ink: Ink, now: float = 0.0,
   anchor_override: Option[Position] = none(Position)
 ): int {.discardable.} =
@@ -834,7 +834,7 @@ proc addItem*(
   scene.revisions_placing[result] = scene.count_edits
 
 
-proc removeItem*(scene: var Scene, slot: int) =
+func removeItem*(scene: var Scene, slot: int) =
   ## Drop item at slot, in constant time: slot returns to free list, nothing moves.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.are_alive[slot] = false
@@ -926,13 +926,13 @@ func inkNext*(scene: Scene): Ink = inkCycled(scene.index_ink)
   ##   Peeking and taking are separate because previewing happens every frame.
 
 
-proc takeInk*(scene: var Scene): Ink =
+func takeInk*(scene: var Scene): Ink =
   ## Read hue for object being built, and step cycle past it.
   result = scene.inkNext
   inc scene.index_ink
 
 
-proc skipInk*(scene: var Scene) =
+func skipInk*(scene: var Scene) =
   ## Step cycle without building anything.
   ##   For construction gesture that ended in no object: reader was shown colour for whole
   ##   drag, and offering same colour again reads as gesture not registering.
@@ -1037,7 +1037,7 @@ func bornReplaying*(index, count: int; now: float): float =
   now + float(index)*step
 
 
-proc replayFrom*(scene: var Scene, now: float) =
+func replayFrom*(scene: var Scene, now: float) =
   ## Stamp every live item to arrive one after another from `now`, oldest creation first.
   ##   Scene assembled at once then plays back as construction it is.
   ##   For arrivals reader did not build and is about to be shown whole, i.e. opening

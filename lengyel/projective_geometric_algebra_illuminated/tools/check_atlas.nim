@@ -14,6 +14,8 @@
 ## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_atlas tools/check_atlas.nim && bin/check_atlas
 
+{.experimental: "strictFuncs".}
+
 import std/[algorithm, os, sequtils, sets, strformat, strutils, unicode]
 
 import ../pga
@@ -30,7 +32,7 @@ const PATH_SHIM = "visualiser/desktop/gui_shim.cpp"
 
 #[ Reachable Codepoints ]#
 
-proc codepointsReachable(): HashSet[Rune] =
+func codepointsReachable(): HashSet[Rune] =
   ## Collect every codepoint desktop UI can draw as part of item's text.
   ##   Drawn from tables themselves, so this grows with them.
   ##   Not covered: text written literally at call site (button caption, section

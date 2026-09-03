@@ -87,7 +87,7 @@ func slotOf(history: History, position: int): int =
 
 #[ History Editing ]#
 
-proc initHistory*(history: var History, scene: Scene, camera: Camera) =
+func initHistory*(history: var History, scene: Scene, camera: Camera) =
   ## Start fresh one-entry timeline anchored at current state.
   ##   Call whenever scene is reset (program start, load, clear), so undo never reaches
   ##   earlier than tracking began.
@@ -102,7 +102,7 @@ proc initHistory*(history: var History, scene: Scene, camera: Camera) =
   history.cursor = 0
 
 
-proc record*(history: var History, scene: Scene, camera: Camera) =
+func record*(history: var History, scene: Scene, camera: Camera) =
   ## Commit current state as timeline's new latest entry, discarding redo-able future.
   ##   Call once, right after edit settles.
   ##   `camera` is where view stood as edit was made; it never appends step of own.
@@ -127,7 +127,7 @@ func canRedo*(history: History): bool = history.cursor < history.count - 1
   ## Report whether later entry exists to redo forward to.
 
 
-proc undo*(history: var History, scene: var Scene, camera: var Camera): bool
+func undo*(history: var History, scene: var Scene, camera: var Camera): bool
   {.discardable.} =
   ## Move cursor one entry earlier and copy that entry's scene back out.
   ##   Camera restored is one step just undone was made from.
@@ -145,7 +145,7 @@ proc undo*(history: var History, scene: var Scene, camera: var Camera): bool
   true
 
 
-proc redo*(history: var History, scene: var Scene, camera: var Camera): bool
+func redo*(history: var History, scene: var Scene, camera: var Camera): bool
   {.discardable.} =
   ## Move cursor one entry later and copy it back into scene and camera.
   ##   Reports whether later entry existed. Same tween caveat as `undo`.

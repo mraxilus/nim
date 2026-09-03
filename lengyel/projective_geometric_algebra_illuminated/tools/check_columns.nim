@@ -11,6 +11,8 @@
 ## Build and run from project root:
 ##   bin/nim c --hints:off -o:bin/check_columns tools/check_columns.nim && bin/check_columns
 
+{.experimental: "strictFuncs".}
+
 import std/[algorithm, os, strformat, strutils, unicode]
 
 
