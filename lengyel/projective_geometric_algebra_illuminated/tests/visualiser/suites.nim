@@ -4296,6 +4296,30 @@ suite "Picking":
     )
     check report_plane.slot == some(2)
     check report_plane.count_rivals == 1
+    # Crowd reaches past pick.
+    #   Second point inside `RADIUS_CROWD_TOUCH` but outside pick reach is rival, one past
+    #   it is not. Placed along camera's own right axis.
+    let per_pixel = worldPerPixelAt(Position(x: 0, y: 0, z: 0), scale.scale)
+    let right = camera.frame(camera.eye).axis_right
+    for (pixels, rivals) in [(50.0, 2), (100.0, 1)]:
+      var apart = initScene()
+      apart.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
+      apart.addItem(toMultivector(Position(x: 0, y: 0, z: 0) + (pixels*per_pixel)*right),
+        "q", Ink.Jade)
+      let report = pickAt(
+        apart, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+      )
+      check report.slot == some(0)
+      check report.count_rivals == rivals
+    # Point beside picked line is rival too: finger may have meant it.
+    var mixed = initScene()
+    mixed.addItem(POINTS[0] ∧ POINTS[1], "l", Ink.Rose)
+    mixed.addItem(toMultivector(Position(x: 0, y: 0, z: 0) + (50.0*per_pixel)*right),
+      "q", Ink.Jade)
+    let report_mixed = pickAt(
+      mixed, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+    )
+    if report_mixed.slot == some(0): check report_mixed.count_rivals == 2
     # `pickNearest` is same walk's slot alone.
     check pickNearest(
       crowd, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE

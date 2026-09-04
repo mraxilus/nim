@@ -418,6 +418,20 @@ report(
   `${count_after_crowd} items, was ${count_before_crowd}; azimuth ` +
     `${azimuth_before_crowd.toFixed(3)} -> ${azimuth_after_crowd.toFixed(3)}`,
 );
+// Check long press over same crowd still selects: still finger competes with nothing.
+//   Crowd refuses drag alone; hold is how finger says which one it means.
+await page.evaluate(() => nimSelectClear());
+await page.keyboard.press('Home');
+await settleCamera();
+const from_crowd_still = await pixelOf(slots_scene[1]);
+await tapAt(from_crowd_still[0], from_crowd_still[1], 1400);
+report(
+  'a long press over a crowd still selects what it is over',
+  (await page.evaluate(() => nimSelectionCount())) === 1,
+  `${await page.evaluate(() => nimSelectionCount())} selected`,
+);
+await settleCamera();
+await page.evaluate(() => nimSelectClear());
 // Put camera back where orbit found it.
 //   Later checks frame with `Home`, which keeps azimuth, and at this one line's anchor
 //   lands over point.
@@ -2553,15 +2567,20 @@ const on_line = await page.evaluate((slot) => {
   return at && at.length ? [at[0], at[1]] : null;
 }, slot_line_made);
 const onto_third = await pixelOf(points_for_plane[2]);
-await touchAt('touchStart', [{ x: on_line[0], y: on_line[1] }]);
+// Mouse, not finger, for this leg.
+//   Line's anchor stands within crowd reach of point, which is exactly what touch
+//   refuses to drag from, and what is under test here is plane's pick, not gesture.
+//   Mouse saw its ring and drags as ever.
+await page.mouse.move(on_line[0], on_line[1]);
+await page.mouse.down({ button: 'left' });
 for (let step = 1; step <= 8; step += 1) {
-  await touchAt('touchMove', [{
-    x: on_line[0] + ((onto_third[0] - on_line[0]) * step) / 8,
-    y: on_line[1] + ((onto_third[1] - on_line[1]) * step) / 8,
-  }]);
+  await page.mouse.move(
+    on_line[0] + ((onto_third[0] - on_line[0]) * step) / 8,
+    on_line[1] + ((onto_third[1] - on_line[1]) * step) / 8,
+  );
   await page.waitForTimeout(35);
 }
-await touchAt('touchEnd', []);
+await page.mouse.up({ button: 'left' });
 await page.waitForTimeout(400);
 const slot_plane_made = await page.evaluate(() => nimSceneSlots()
   .find((slot) => nimItemShapeWord(slot) === 'plane' && nimItemLabel(slot) !== 'ground'));

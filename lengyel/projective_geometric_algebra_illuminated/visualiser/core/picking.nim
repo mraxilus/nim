@@ -53,6 +53,12 @@ const
   RADIUS_PICK_LINE* = 24.0
     ## Bound how far, in pixels, cursor may sit from line's drawn segment and still hit it.
     ##   Widened with `RADIUS_PICK_POINT`, for same reason.
+  RADIUS_CROWD_TOUCH* = 72.0
+    ## Bound how far, in pixels, second item may stand from finger and still make crowd.
+    ##   Wider than either pick reach: what is asked is not what finger hit but whether it
+    ##   could have meant something else, and finger lands whole fingertip wide of where
+    ##   reader aimed. At pick reach alone, star field still turned orbits into drags.
+    ##   Rivals are counted here; what is picked stays at pick reach. See `PickReport`.
 
 
 
@@ -386,11 +392,13 @@ func rayPlaneHit(
 
 type PickReport* = object ## Define what one pick found under cursor.
   slot*: Option[int] ## Nearest item of winning rank; none where nothing is in reach.
-  count_rivals*: int ## How many items of that rank were in reach, winner included.
+  count_rivals*: int ## How many items of winner's rank or better stood within
+    ## `RADIUS_CROWD_TOUCH`, winner included; zero where nothing was picked.
     ## One where pick is unambiguous. Touch has no hover ring to say which of several
     ## finger is over, so its drag refuses to start above one; see
     ## `interaction.beginDrag`.
-    ## Same rank only: point over plane is not rival to it, since rank already decides.
+    ## Winner's rank or better: point beside picked line is rival, since finger may have
+    ## meant it; plane under picked point is not, since rank already decides.
 
 
 proc pickAt*(
@@ -430,12 +438,11 @@ proc pickAt*(
     slot_best = none(int)
     priority_best = high(int)
     distance_best = Inf
-    count_rivals = 0
+    counts_crowd: array[5, int] # Per rank, within `RADIUS_CROWD_TOUCH`.
+
+  template crowd(priority: int) = inc counts_crowd[priority]
 
   template consider(priority: int, distance: float) =
-    # Count everything of winning rank in reach; better rank starts count over.
-    if priority < priority_best: count_rivals = 1
-    elif priority == priority_best: inc count_rivals
     if priority < priority_best or (priority == priority_best and distance < distance_best):
       priority_best = priority
       distance_best = distance
@@ -475,6 +482,7 @@ proc pickAt*(
         RADIUS_PICK_POINT, radiusPixelsAt(scene.radiusAt(slot), place.at, scale.scale)
       )
       if distance <= radius_pick: consider(0, distance)
+      if distance <= max(RADIUS_CROWD_TOUCH, radius_pick): crowd(0)
 
     of PlacedKind.PointToward:
       # Pick direction point where its star is drawn.
@@ -486,6 +494,7 @@ proc pickAt*(
       if star.isNone: continue
       let distance = pixelsFromCursor(view_projection, width, height, star.get, cursor)
       if distance <= RADIUS_PICK_POINT: consider(0, distance)
+      if distance <= RADIUS_CROWD_TOUCH: crowd(0)
 
     of PlacedKind.LineAcross:
       # Test against great circle it is drawn as, sampled as `tessellate.addGreatCircle` does.
@@ -510,6 +519,7 @@ proc pickAt*(
           )
         previous = if here.isInFront: some(here) else: none(ScreenPosition)
       if distance_nearest <= RADIUS_PICK_LINE: consider(2, distance_nearest)
+      if distance_nearest <= RADIUS_CROWD_TOUCH: crowd(2)
 
     of PlacedKind.LineThrough:
       # Test both halves `tessellate.addLine` draws, support out to each vanishing point.
@@ -529,6 +539,7 @@ proc pickAt*(
         if not (tail.isInFront and head.isInFront): continue
         distance_nearest = min(distance_nearest, distanceToSegment(cursor, tail, head))
       if distance_nearest <= RADIUS_PICK_LINE: consider(1, distance_nearest)
+      if distance_nearest <= RADIUS_CROWD_TOUCH: crowd(1)
 
     of PlacedKind.PlaneOn:
       # Meet only where disc could reach cursor at all; see `isBeyondDisc`.
@@ -539,14 +550,22 @@ proc pickAt*(
         cursor,
       ): continue
       let hit = rayPlaneHit(ray, scale.plane_eye, geometry, place.at, EXTENT_PLANE_F)
-      if hit.isSome: consider(3, hit.get)
+      if hit.isSome:
+        consider(3, hit.get)
+        crowd(3)
 
     of PlacedKind.PlaneEverywhere:
       # Match whole sky last of all, with no distance to measure, so anything else wins.
       #   Asked of geometry, not kind: finite plane whose frame algebra cannot give lands
       #   on this kind, and it was never drawn.
-      if geometry.isHorizon: consider(4, 0.0)
+      if geometry.isHorizon:
+        consider(4, 0.0)
+        crowd(4)
 
+  # Sum crowd of winner's rank and every better one; nothing picked, nothing counted.
+  var count_rivals = 0
+  if slot_best.isSome:
+    for priority in 0 .. priority_best: count_rivals += counts_crowd[priority]
   PickReport(slot: slot_best, count_rivals: count_rivals)
 
 
