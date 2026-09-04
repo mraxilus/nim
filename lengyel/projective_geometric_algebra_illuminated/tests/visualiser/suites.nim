@@ -2972,8 +2972,10 @@ suite "Camera Aim":
 
     # Edit session's own staged geometry is same type with neither field, which is.
     #   what keeps it out of framing rule below.
-    check previewStaging(line).anchor.isNone
-    check previewStaging(line).operands.isNone
+    check previewStaging(line, RADIUS_ITEM_DEFAULT).anchor.isNone
+    check previewStaging(line, RADIUS_ITEM_DEFAULT).operands.isNone
+    # Ghost of point under edit is drawn at session's own radius, not default.
+    check previewStaging(line, 0.03).radius == 0.03
     discard picked
 
 
@@ -3013,7 +3015,7 @@ suite "Camera Aim":
 
     # Edit-session case, over same pair: staging one of those points names no.
     #   operands, so other is left out and no pull-back is owed.
-    let alone = some(previewStaging(scene.geometryOf(slot_first)))
+    let alone = some(previewStaging(scene.geometryOf(slot_first), RADIUS_ITEM_DEFAULT))
     let camera = placementAim(0.7, 0.2)
     let aim = aimFor(scene, Selection(), alone, camera.drawExtentFor(HEIGHT_AIM))
     let framed = camera.placed(placementFor(
@@ -3403,7 +3405,7 @@ suite "Camera Aim":
 
     var empty: Multivector
     tween.offerAim(
-      camera, scene, Selection(), some(previewStaging(empty)),
+      camera, scene, Selection(), some(previewStaging(empty, RADIUS_ITEM_DEFAULT)),
       camera.drawExtentFor(HEIGHT_AIM), WIDTH_AIM, HEIGHT_AIM, 0.2, 0.35,
     )
     check tween.goal.isNone

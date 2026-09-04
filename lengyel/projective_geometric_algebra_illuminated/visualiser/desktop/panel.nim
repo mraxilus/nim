@@ -268,7 +268,8 @@ func staged*(panel: Panel): Option[Preview] =
   ##   Session wins: session is being typed into, preview is passive reading of two
   ##   pickers.
   ##   Sibling is `browser_bridge.staged`; fix both or neither.
-  if panel.session.isSome: return some(previewStaging(panel.session.get.geometry))
+  if panel.session.isSome:
+    return some(previewStaging(panel.session.get.geometry, float(panel.session.get.radius)))
   panel.preview
 
 

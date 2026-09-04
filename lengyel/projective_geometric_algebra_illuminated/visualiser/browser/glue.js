@@ -2080,7 +2080,7 @@ function buildItemRow(slot) {
       //   field to blur, which is what makes preview feel live.
       input.addEventListener('input', () => {
         session_edit.coefficients[b] = parseFloat(input.value) || 0;
-        nimSetGhost(session_edit.coefficients);
+        nimSetGhost(session_edit.coefficients, session_edit.radius);
         line_coefficient.textContent = describeStaged();
       });
     });

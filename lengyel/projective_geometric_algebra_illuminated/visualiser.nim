@@ -421,7 +421,7 @@ proc assembleMeshes(
   if staged.isSome:
     discard MESHES.addObject(
       scratch[0], staged.get.geometry, muted(INK_GHOST.colour), scale,
-      anchor_override = staged.get.anchor,
+      anchor_override = staged.get.anchor, radius = staged.get.radius,
     )
 
   # Emit what drag in progress would build, in same ghost ink.

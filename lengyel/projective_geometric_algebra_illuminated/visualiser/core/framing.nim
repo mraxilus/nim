@@ -287,6 +287,6 @@ func offerAimAt*(
   ##     Cost is one zeroed `Scene` per capture, storyboard's rather than frame loop's.
   var alone: Scene
   offerAim(
-    tween, camera, alone, Selection(), some(previewStaging(m)),
+    tween, camera, alone, Selection(), some(previewStaging(m, RADIUS_ITEM_DEFAULT)),
     camera.drawExtentFor(height), width, height, now, duration,
   )

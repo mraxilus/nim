@@ -752,6 +752,9 @@ type Preview* = object ## Define what applying operation would build, ready to d
     ## For camera framing preview to keep in view beside it.
     ## None where there are none to name: staged edit replaces very object it would be
     ## framed against.
+  radius*: float ## Drawn radius ghost takes, where it is point; see `radiusAt`.
+    ## Staged session's own, so editing moon ghosts moon-sized; derived preview takes
+    ## `RADIUS_ITEM_DEFAULT`, what commit gives it.
 
 
 func previewApplying*(
@@ -774,14 +777,19 @@ func previewApplying*(
     geometry: derived,
     anchor: creationAnchor(operation, m, n, derived),
     operands: some((first, second)),
+    radius: RADIUS_ITEM_DEFAULT,
   ))
 
 
-func previewStaging*(geometry: Multivector): Preview =
-  ## Hold open edit session's staged geometry as preview.
+func previewStaging*(geometry: Multivector, radius: float): Preview =
+  ## Hold open edit session's staged geometry as preview, at session's own radius.
   ##   No anchor and no operands: neither front-end draws that ghost about stored point,
   ##   and object it would be framed against is one it replaces; see `Preview`.
-  Preview(geometry: geometry, anchor: none(Position), operands: none((int, int)))
+  ##   Radius is staged one, or ghost of moon under edit was drawn at default and read as
+  ##   grey disc three times its size.
+  Preview(
+    geometry: geometry, anchor: none(Position), operands: none((int, int)), radius: radius
+  )
 
 
 func setInk*(scene: var Scene, slot: int, ink: Ink) =
@@ -929,7 +937,7 @@ func removeItem*(scene: var Scene, slot: int) =
 const
   MAGIC_SCENE* = "RGAS"
     ## Open every `.rgascene` file with these four bytes.
-  VERSION_SCENE* = 4'u8
+  VERSION_SCENE* = 5'u8
     ## Stamp format version this build writes.
     ##   Every version down to `VERSION_SCENE_LEAST` is still read; see table above.
     ##   Version 2 moved every stored ink ordinal, when `Ink` gained reserved `Invalid`

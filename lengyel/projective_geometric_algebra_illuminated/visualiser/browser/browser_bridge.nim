@@ -255,6 +255,7 @@ var
     ## Seeded via `initHistory` wherever `SCENE` is replaced (`nimInit`, `nimLoadDemo`,
     ## `nimSceneClear`).
   GHOST = none(Multivector) ## Multivector open edit session is staging.
+  RADIUS_GHOST = RADIUS_ITEM_DEFAULT ## Radius that session stages beside it.
     ## Rendered every frame like live object but never added to `SCENE`:
     ## `nimSceneSlots`, undo, save, picking never see it.
     ## Serves both session modes, composing and editing.
@@ -286,7 +287,7 @@ var
   #   Consumer uploads or reads within same frame and holds nothing across two.
   FLAT_RIBBON = initFlatFloats(RIBBONS_MAX*16)
   FLAT_FURNITURE = initFlatFloats(RIBBONS_MAX*16)
-  FLAT_POINT = initFlatFloats(VERTICES_MAX*8)
+  FLAT_POINT = initFlatFloats(VERTICES_MAX*11)
   FLAT_RING = initFlatFloats(RINGS_MAX*14)
   FLAT_DISC = initFlatFloats(DISCS_MAX*13)
   FLAT_DOME = initFlatFloats(DOMES_MAX*8)
@@ -696,7 +697,7 @@ proc staged(): Option[Preview] =
   ##   Session wins: session is being typed into, preview is passive reading of two
   ##   pickers.
   ##   Sibling is `panel.staged`; fix both or neither.
-  if GHOST.isSome: return some(previewStaging(GHOST.get))
+  if GHOST.isSome: return some(previewStaging(GHOST.get, RADIUS_GHOST))
   PREVIEW_APPLY
 
 
@@ -742,13 +743,15 @@ proc nimRemoveItem(slot: cint) {.exportc.} =
 
 #[ Ghost Preview ]#
 
-proc nimSetGhost(coefficients: seq[float]) {.exportc.} =
+proc nimSetGhost(coefficients: seq[float], radius: cfloat) {.exportc.} =
   ## Rewrite staged ghost multivector wholesale, from open session's JS-side state array.
   ##   On every `input` event, so preview tracks keystroke rather than blur.
-  ##   `nimBuildFrame` reads it next frame and draws it tinted `INK_GHOST`, muted.
+  ##   `nimBuildFrame` reads it next frame and draws it tinted `INK_GHOST`, muted, at
+  ##   `radius` where it is point.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   GHOST = some(geometry)
+  RADIUS_GHOST = float(radius)
 
 
 proc nimDescribeCoefficients(coefficients: seq[float]): cstring {.exportc.} =
@@ -2191,7 +2194,9 @@ proc nimBuildFrame(
     if ghost.isSome:
       # Place here rather than cache: ghost is not slot and moves with pointer.
       var placed_ghost = placeObject(ghost.get.geometry, ghost.get.anchor)
-      discard MESHES.emitObject(placed_ghost, INK_GHOST.colour.muted(), scale)
+      discard MESHES.emitObject(
+        placed_ghost, INK_GHOST.colour.muted(), scale, radius = ghost.get.radius
+      )
       cost.chargeTally(
         placed_ghost.kind, is_sky = false, is_ghost = true, is_selected = false
       )
