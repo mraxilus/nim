@@ -349,6 +349,25 @@ SwiftShader's per-instance overhead on 4,938 instances, which a hardware GPU doe
 ribbons, discs and rings already draw instanced here. **Unmeasured on the device**; the
 drawer's `render` row is where it would show.
 
+**Points are shaded as spheres lit by their sun.** An item may *shine* (`Scene.are_shining`,
+`shinesAt`/`setShining`, a `shines` checkbox in both editors, scene format version 5 with one
+byte after the radius; older files read as nothing shining). `lighting.lightsFor` gives every
+finite, non-shining point the unit direction toward its **nearest** shining point, or zero
+where there is none; nearest rather than brightest because the catalogues carry no
+luminosities and a system's own star is nearest to its planets by a hundred to one. The
+directions depend on positions alone, so both front-ends recompute them only where the
+scene's revision moved, beside the placements: 333 suns × 4,938 points once per edit at the
+largest demo, never per frame. The record carries the direction (`Vertex.light_*`, eleven
+floats per point now); the vertex shader turns it into the camera's basis (right, up, toward
+the eye) and the fragment stage builds the sphere's normal from the disc's unit coordinates
+(`(x, y, √(1−r²))`) and applies Lambert over an ambient floor `FRACTION_AMBIENT_SHADE` =
+0.25 — a quarter, so the night side still reads as a body in its own hue rather than a hole
+in the field. A zero direction draws flat: suns, ghosts, horizon stars, sunless scenes. The
+demo's Sol and every neighbour star shine. Verified by looking: Jupiter's limb faces Sol and
+its moons carry their own terminators at 1.2 units, the desktop draws the same frame, and the
+suite pins nearest-sun choice, the sun's own darkness, a hidden sun shedding nothing, and the
+placed and placing variants agreeing.
+
 **Furniture** (ground grid, world axes) reaches `extent_furniture`, from the far clip
 (`extentFurnitureFor`), and is drawn as **fog about the eye**, not a halo about the origin.
 `fogFurnitureFor` solves two radii from `DrawExtent.eye`: full strength within
@@ -964,6 +983,25 @@ by a driven check that drags a finger from a point with a twin 0.05 units away a
 the camera orbited and nothing built; the plane-pick check had to drop the four coincident
 `b ∧ c` lines earlier gestures left, which are exactly the crowd the rule refuses.
 
+**The edit ghost is drawn at the session's own radius.** `Preview` carries a radius
+(`previewStaging(geometry, radius)`), fed by `nimSetGhost(coefficients, radius)` on the
+browser and the panel's staged session on the desktop; a derived preview takes
+`RADIUS_ITEM_DEFAULT`, what commit gives it. Before this the ghost took the default, so
+editing a moon of 0.03 drew a grey disc nearly three times its size over it.
+
+**Edit from the selection menu waits for its row.** The objects list builds in time-bounded
+slices, so a row far down it does not exist when `openPanelTo` runs; the old code queried
+the row at once, found none and never scrolled, leaving the panel open on the top of the
+list. Now `key_reveal_pending` names the row and `revealPendingRow` scrolls the moment it
+stands, after each slice as well as at once, and the slice budget widens from 5 to 24 ms
+while a reveal is pending (`MILLISECONDS_ROWS_SLICE_REVEAL`) — the reader is looking at
+nothing until that row appears. Row signatures are also committed **per row** rather than at
+the end of a pass: a refresh landing mid-build restarted the pass and, with the signatures
+held back, rebuilt every row already standing, which with selection refreshes arriving was a
+list that never finished. Measured on this container at 5,038 with the list unbuilt: the row
+now lands in view after 15 frames rather than never. Pinned by a driven check that empties
+the list, edits a deep slot and finds its form in view.
+
 **The gesture clock is seconds**, on whichever monotonic clock the caller owns, and the
 same reading `addItem` stamps a birth with. `glue.js` divides once in its own `now()`. The
 desktop's dwell once needed 450 *seconds* because the durations were named in milliseconds.
@@ -1181,11 +1219,11 @@ because every file already written contained it. The desktop converts through
 | Bytes | Field |
 |-------|-------|
 | 4 | Magic `RGAS` |
-| 1 | Format version (`VERSION_SCENE` = 4) |
+| 1 | Format version (`VERSION_SCENE` = 5) |
 | 1 | Basis count (16 under this build); must match |
 | 4 | Item count, little-endian `uint32` |
 | per item | Ink (1), visibility (1), label length in bytes (1) + UTF-8, one |
-|  | little-endian `float` per basis term, then the radius as one more `float` |
+|  | little-endian `float` per basis term, the radius as one more `float`, then shines (1) |
 
 `MAGIC_SCENE` and `VERSION_SCENE` are exported and reach `glue.js` through
 `nimSceneMagic`/`nimSceneVersion`, so there is no literal to drift; labels go through
@@ -1197,8 +1235,9 @@ it wrote.
 Only live items are written, **in creation order** (`nimSceneSlotsCreated` on the browser
 side; `nimSceneSlots` keeps slot order for the combo boxes indexed by position). That order
 is the whole of what version 3 added; version 4 appended the radius after each item's
-geometry, and which versions carry one is `scene.hasRadius`, reached by the browser parser
-through `nimSceneHasRadius` rather than a literal `4`. Omitted on purpose: slot numbers, a
+geometry and version 5 the shines byte after that, and which versions carry each is
+`scene.hasRadius`/`hasShine`, reached by the browser parser through
+`nimSceneHasRadius`/`nimSceneHasShine` rather than literals. Omitted on purpose: slot numbers, a
 per-item ordinal, fixed-width label padding.
 
 **A loaded scene replays its construction.** `born` is not written, but
@@ -1214,8 +1253,10 @@ build replays — a file, the demo, the opening scene — through one rule in bo
 1: reading an old version costs a mapping func and a suite case, refusing one costs somebody
 their scene. Reading is written once against `VERSION_SCENE`; each past version's difference
 lives in one `upgradedFrom<n>`, and `itemUpgraded` walks an `ItemSaved` up the chain one
-step at a time. Version 3 costs sizes: `upgradedFrom3` fills `RADIUS_ITEM_DEFAULT`, the size
-version 3 drew everything at, whatever the parser had in the field — and the chain refuses a
+step at a time. Version 4 costs suns: `upgradedFrom4` fills false, so nothing shines and
+every point draws flat as it did. Version 3 costs sizes: `upgradedFrom3` fills
+`RADIUS_ITEM_DEFAULT`, the size version 3 drew everything at, whatever the parser had in the
+field — and the chain refuses a
 radius that is zero, negative or NaN as it refuses an unknown palette slot. Version 2 costs
 nothing but the sequence guarantee (`upgradedFrom2` is an
 explicit no-op kept so the question has an answer); version 1 costs colours only — its
