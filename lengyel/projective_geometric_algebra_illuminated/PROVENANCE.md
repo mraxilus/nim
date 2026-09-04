@@ -944,16 +944,21 @@ answers when the slop is crossed, refusal over the sky included.
 
 **A finger over a crowd moves the view; it never builds.** In the demo the pick's 34 px
 reach lands on some star almost anywhere, so a one-finger orbit kept becoming a construction
-drag. `picking.pickAt` now reports, beside the winner, how many items of the *winning rank*
-were in reach (`PickReport.count_rivals`; a point over a plane is no rival to it, since rank
-already decides), `updateHover` keeps it as `count_hover_rivals`, and
+drag. `picking.pickAt` now reports, beside the winner, how many items of the winner's rank *or
+better* stood within `RADIUS_CROWD_TOUCH` = 72 px (`PickReport.count_rivals`; a point over a
+plane is no rival to it, since rank already decides, but a point beside a picked line is,
+since the finger may have meant it). The crowd reach is wider than the 34 px pick reach on
+purpose: the question is not what the finger hit but whether it could have meant something
+else, and at the pick reach alone the star field still turned orbits into drags. What is
+*picked* stays at the pick reach. `updateHover` keeps the count as `count_hover_rivals`, and
 `interaction.canConstructByTouch` is true only for a hovered, non-sky item with no rival.
 `beginDrag` refuses `MenuArming.OnDwell` — touch alone — where that is false, and `glue.js`
 asks the same export (`nimCanTouchConstruct`) at the press so the pre-slop frames agree. The
 rule is the reader's: where a gesture is ambiguous, movement wins, because the reader can
 zoom in until it is not, whereas an unwanted object has to be undone. The mouse keeps its
 drag over the same crowd: its hover ring showed it which one it had. The long-press select
-is untouched — a still finger competes with nothing. Same-rank only, or every point on the
+is untouched — a still finger competes with nothing — and a driven check holds a 1.4 s press
+over the same crowd and finds one object selected. Same-rank only, or every point on the
 ground plane would have been a crowd. Held by suite cases on the count and the refusal, and
 by a driven check that drags a finger from a point with a twin 0.05 units away and finds
 the camera orbited and nothing built; the plane-pick check had to drop the four coincident
