@@ -3436,6 +3436,49 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(200);
 
+// **Edit from selection menu reaches its row, list built or not.** With objects
+//   section shut its rows do not exist, and `openPanelTo` that queried row at once found
+//   none and never scrolled: panel opened onto top of list, wanted row thousands of pixels
+//   down it. Now it waits for row, and refresh landing mid-build no longer rebuilds
+//   every row already standing. Deep slot, so row stands only after most of list.
+const edit_from_menu = await page.evaluate(async () => {
+  // Shut section and drop its rows, state load with section shut leaves list in.
+  document.querySelector('.section[data-section="objects"]').classList.remove('open');
+  drawer.classList.remove('open');
+  list_objects.innerHTML = '';
+  signatures_row.clear();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const slot = nimSceneSlotsCreated()[40];
+  const started = performance.now();
+  nimSelectOnly(slot);
+  openPanelTo(slot);
+  let frames = 0;
+  while (rows_pending !== null && frames < 600) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    frames += 1;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const row = list_objects.querySelector('.item-row[data-slot="' + slot + '"]');
+  const rect = row === null ? null : row.getBoundingClientRect();
+  return {
+    frames, ms: performance.now() - started,
+    in_view: rect !== null && rect.top >= -1 && rect.top < window.innerHeight,
+    top: rect === null ? null : rect.top,
+    form: row !== null && row.querySelector('.coefficient-grid') !== null,
+    rows: list_objects.children.length, count: nimSceneCount(),
+  };
+});
+report(
+  'edit from the selection menu scrolls to the row once it stands, form open',
+  edit_from_menu.in_view && edit_from_menu.form && edit_from_menu.frames > 1 &&
+    edit_from_menu.rows === edit_from_menu.count,
+  `row top ${edit_from_menu.top === null ? 'none' : edit_from_menu.top.toFixed(0)} px ` +
+    `after ${edit_from_menu.frames} frames of building, form ${edit_from_menu.form}, ` +
+    `${edit_from_menu.rows} rows`,
+);
+await page.evaluate(() => { endEditSession(); nimSelectClear(); refreshObjectsUI(); });
+await page.waitForFunction(() => rows_pending === null, null, { timeout: 120000 });
+
 // **List reconciles against what is standing rather than rebuilding.** Two properties,
 // and first is what makes second safe to rely on: refresh that changes nothing
 // keeps very same elements, and refresh that changes one row keeps every other one.

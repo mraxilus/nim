@@ -1133,9 +1133,12 @@ function openPanelTo(slot) {
   drawer.classList.add('open');
   button_drawer.classList.add('on');
   refreshObjectsUI();
-  const row = list_objects.querySelector(
-    slot === null ? '.item-row.pending-item' : '.item-row[data-slot="' + slot + '"]');
-  if (row) scrollRowIntoView(row);
+  // Scrolled once its row stands, which is now or slices from now; see `revealPendingRow`.
+  //   Asked at once as well, since list already built ends refresh above without slicing.
+  //   Querying row here and giving up where it was not yet built left panel open on
+  //   top of list with wanted row thousands of pixels down it.
+  key_reveal_pending = slot === null ? KEY_ROW_PENDING : String(slot);
+  revealPendingRow();
 }
 
 button_add.addEventListener('click', () => {
@@ -1469,6 +1472,14 @@ function ghostDrawerOperation() {
 //   60 fps frame: long enough that few dozen rows land per slice, short enough that
 //   frame it is spending is still frame that draws.
 const MILLISECONDS_ROWS_SLICE = 5;
+// Wider slice while row is waited for: reader pressed `edit` and is looking at nothing.
+//   until that row stands, so frames give way to rows -- five thousand at largest demo,
+//   which at five milliseconds is over one second of list filling before row can be
+//   scrolled to. See `openPanelTo`.
+const MILLISECONDS_ROWS_SLICE_REVEAL = 24;
+// Row `openPanelTo` is waiting to scroll to, by key, or null.
+//   Consumed by `revealPendingRow` once row stands, whether that is at once or slices later.
+let key_reveal_pending = null;
 // What is left of reconcile that has not finished building its rows, or null. Drained by.
 //   frame loop rather than by `requestAnimationFrame` of its own, for one reason:
 //   `recordPhaseTime` *overwrites* phase's reading for frame rather than adding to it,
@@ -1482,13 +1493,14 @@ function sliceObjectRows() {
   //   that is already standing and unchanged costs almost nothing, and one that has to be
   //   built costs far more, so fixed count would be different budget on every pass.
   if (rows_pending === null) return;
-  const { keys, standing, signatures } = rows_pending;
-  const until = performance.now() + MILLISECONDS_ROWS_SLICE;
+  const { keys, standing } = rows_pending;
+  const budget = key_reveal_pending === null
+    ? MILLISECONDS_ROWS_SLICE : MILLISECONDS_ROWS_SLICE_REVEAL;
+  const until = performance.now() + budget;
   while (rows_pending.at < keys.length) {
     const at = rows_pending.at;
     const key = keys[at];
     const signature = signatureOfItemRow(key);
-    signatures.set(key, signature);
     let node = standing.get(key);
     const is_building = node === undefined || signatures_row.get(key) !== signature;
     if (is_building) {
@@ -1496,6 +1508,11 @@ function sliceObjectRows() {
       node = buildRowFor(key);
       node.dataset.key = key;
     }
+    // **Signature committed per row, not at end of pass.** Refresh arriving mid-build.
+    //   restarts pass from top, and with signatures held back until pass finished every
+    //   row already built read as stale and was built again -- list that never finished
+    //   while selection kept refreshing it, and edit form that never scrolled into view.
+    signatures_row.set(key, signature);
     // Already in right place is common case; otherwise this moves it there.
     if (list_objects.children[at] !== node) {
       list_objects.insertBefore(node, list_objects.children[at] || null);
@@ -1503,12 +1520,30 @@ function sliceObjectRows() {
     rows_pending.at = at + 1;
     // Checked only where row was actually built, so pass that changes nothing runs to.
     //   end without ever reading clock -- tap on `hide` stays immediate.
-    if (is_building && performance.now() >= until) return;
+    if (is_building && performance.now() >= until) {
+      revealPendingRow();
+      return;
+    }
   }
-  // Whatever is left past wanted rows is gone from scene.
+  // Whatever is left past wanted rows is gone from scene, signatures with it.
   while (list_objects.children.length > keys.length) list_objects.lastElementChild.remove();
-  signatures_row = signatures;
+  const wanted = new Set(keys);
+  for (const key of Array.from(signatures_row.keys())) {
+    if (!wanted.has(key)) signatures_row.delete(key);
+  }
   rows_pending = null;
+  revealPendingRow();
+}
+
+function revealPendingRow() {
+  // Scroll to row `openPanelTo` asked for, once it stands; see `key_reveal_pending`.
+  //   Row far down list stands only after every row above it, so this is asked after
+  //   each slice as well as at once.
+  if (key_reveal_pending === null) return;
+  const row = list_objects.querySelector('.item-row[data-key="' + key_reveal_pending + '"]');
+  if (row === null) return;
+  key_reveal_pending = null;
+  scrollRowIntoView(row);
 }
 
 function isDrawerObjectsOpen() {
