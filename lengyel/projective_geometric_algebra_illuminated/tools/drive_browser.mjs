@@ -2672,8 +2672,11 @@ await page.evaluate(() => {
   globalThis.renderFrame = function (...a) {
     const out = drawn.apply(this, a);
     gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    // Sample every seventh pixel.
+    //   Six-pixel dot, least any point is drawn at, spans six in row and cannot slip
+    //   between samples; every thirty-seventh missed undone dot.
     let hash = 2166136261;
-    for (let i = 0; i < px.length; i += 4 * 37) {
+    for (let i = 0; i < px.length; i += 4 * 7) {
       hash = Math.imul(hash ^ px[i], 16777619) ^ px[i + 1] ^ (px[i + 2] << 8);
     }
     window.__drawn = hash | 0;
@@ -3078,7 +3081,9 @@ const ms_after_edit = await page.evaluate(() => {
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   const times = [];
   for (let i = 0; i < 6; i += 1) {
-    const slot = nimAddItem(model, 'placed', nimDefaultInk(), performance.now() / 1000);
+    const slot = nimAddItem(
+      model, 'placed', nimDefaultInk(), nimDefaultRadius(), performance.now() / 1000,
+    );
     const started = performance.now();
     nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, false, true);
     times.push(performance.now() - started);
@@ -3111,12 +3116,12 @@ const undo_drawn = await page.evaluate(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   const state = (f) => ({
-    verts: f.point_verts.length / 7, points: f.count_points, selected: f.count_selected,
+    verts: f.point_verts.length / 8, points: f.count_points, selected: f.count_selected,
     held: f.is_scene_held, count: nimSceneCount(), revision: nimSceneRevision(),
     hidden: nimSceneSlots().filter((slot) => !nimItemVisible(slot)).length,
   });
   const before = state(build());
-  nimAddItem(model, 'undone', nimDefaultInk(), performance.now() / 1000);
+  nimAddItem(model, 'undone', nimDefaultInk(), nimDefaultRadius(), performance.now() / 1000);
   nimSelectClear();
   let is_held = false;
   for (let i = 0; i < 60 && !is_held; i += 1) { await sleep(50); is_held = build().is_scene_held; }
@@ -3184,7 +3189,9 @@ await page.waitForTimeout(200);
 //   under test is gesture's own guard.
 await page.evaluate(() => {
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
-  while (nimSceneCount() < nimSceneCapacity()) nimAddItem(model, 'filler', nimDefaultInk(), 0);
+  while (nimSceneCount() < nimSceneCapacity()) {
+    nimAddItem(model, 'filler', nimDefaultInk(), nimDefaultRadius(), 0);
+  }
   nimSelectClear(); // Each add selects what it added; leave nothing standing behind.
 });
 await page.waitForTimeout(300);
@@ -3222,10 +3229,12 @@ await page.evaluate(() => document.getElementById('gl').focus());
 //   failing *because* thing it guards got faster, and on loaded runner it failed at
 //   different count each time. Window is wrong instrument for sample size. This
 //   collects until it has one, and gives up rather than hanging if frames never come.
+//   Forty rounds, not twenty: point cull took orbit's scene phase to about 1.7 ms p50,
+//   so frames clearing 2 ms are minority and twenty rounds stopped at nineteen.
 await page.evaluate(() => document.getElementById('gl').focus());
 await page.keyboard.down('ArrowRight');
 let count_heavy_seen = 0;
-for (let round = 0; round < 20 && count_heavy_seen < 25; round += 1) {
+for (let round = 0; round < 40 && count_heavy_seen < 25; round += 1) {
   await page.waitForTimeout(400);
   count_heavy_seen = await page.evaluate(
     () => window.__phase_frame.slice(2).filter((p) => p.scene >= 2.0).length);

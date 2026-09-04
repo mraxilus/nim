@@ -18,27 +18,66 @@ const canvas = document.getElementById('gl');
 const gl = canvas.getContext('webgl', { antialias: true, alpha: false })
   || canvas.getContext('experimental-webgl', { antialias: true, alpha: false });
 
-const SOURCE_VERTEX = `
-  attribute vec3 aPosition;
+// Fan one point record into camera-facing quad at its own radius.
+//   Sibling copy of `mesh.radiusDrawnAt` and of GLSL 3.30 source in `renderer.nim`;
+//   change to any one is not finished until other two are checked.
+//   Quad spans camera's screen axes at centre's depth, so disc shrinks with distance
+//   exactly as perspective says and floors at `uDiameterLeast` pixels. Behind near plane
+//   it collapses to clip-space point outside frustum.
+const SOURCE_VERTEX_POINT = `
+  attribute vec2 aCorner;
+  attribute vec3 aCentre;
+  attribute float aRadius;
   attribute vec4 aColor;
   uniform mat4 uMVP;
-  uniform float uPointSize;
+  uniform vec3 uEye;
+  uniform vec3 uForward;
+  uniform vec3 uRight;
+  uniform vec3 uUp;
+  uniform float uDepthNear;
+  uniform float uTangentHalfView;
+  uniform float uHeightPixels;
+  uniform float uDiameterLeast;
   varying vec4 vColor;
+  varying vec2 vCorner;
+  varying float vRadiusPixels;
   void main() {
-    gl_Position = uMVP * vec4(aPosition, 1.0);
-    gl_PointSize = uPointSize;
+    float depth = dot(aCentre - uEye, uForward);
+    if (depth < uDepthNear) {
+      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      vColor = vec4(0.0);
+      vCorner = vec2(0.0);
+      vRadiusPixels = 0.0;
+      return;
+    }
+    float world_per_pixel = 2.0*depth*uTangentHalfView/uHeightPixels;
+    float radius = max(aRadius, 0.5*uDiameterLeast*world_per_pixel);
+    vec3 at = aCentre + aCorner.x*radius*uRight + aCorner.y*radius*uUp;
+    gl_Position = uMVP*vec4(at, 1.0);
     vColor = aColor;
+    vCorner = aCorner;
+    vRadiusPixels = radius/world_per_pixel;
   }
 `;
+// Round point's quad into disc, fading its last pixel of rim.
+//   Corner pair is unit-circle coordinate, so edge is where its length passes one.
+const SOURCE_FRAGMENT_POINT = `
+  precision mediump float;
+  varying vec4 vColor;
+  varying vec2 vCorner;
+  varying float vRadiusPixels;
+  void main() {
+    float reach = length(vCorner);
+    if (reach > 1.0) discard;
+    float edge = clamp((1.0 - reach)*vRadiusPixels, 0.0, 1.0);
+    gl_FragColor = vec4(vColor.rgb, vColor.a*edge);
+  }
+`;
+// Plain colour pass-through, every wash program's fragment stage.
 const SOURCE_FRAGMENT = `
   precision mediump float;
   varying vec4 vColor;
-  uniform bool uRound;
   void main() {
-    if (uRound) {
-      vec2 d = gl_PointCoord - vec2(0.5);
-      if (dot(d, d) > 0.25) discard;
-    }
     gl_FragColor = vColor;
   }
 `;
@@ -51,27 +90,39 @@ function compileShader(type, src) {
   return s;
 }
 const program = gl.createProgram();
-gl.attachShader(program, compileShader(gl.VERTEX_SHADER, SOURCE_VERTEX));
-gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT));
+gl.attachShader(program, compileShader(gl.VERTEX_SHADER, SOURCE_VERTEX_POINT));
+gl.attachShader(program, compileShader(gl.FRAGMENT_SHADER, SOURCE_FRAGMENT_POINT));
 gl.linkProgram(program);
 if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
   throw new Error(gl.getProgramInfoLog(program));
 }
 gl.useProgram(program);
 
-const attribute_position = gl.getAttribLocation(program, 'aPosition');
-const attribute_colour = gl.getAttribLocation(program, 'aColor');
-const uniform_view_projection = gl.getUniformLocation(program, 'uMVP');
-const uniform_size_point = gl.getUniformLocation(program, 'uPointSize');
-const uniform_is_round = gl.getUniformLocation(program, 'uRound');
+const point_attribs = {
+  corner: gl.getAttribLocation(program, 'aCorner'),
+  centre: gl.getAttribLocation(program, 'aCentre'),
+  radius: gl.getAttribLocation(program, 'aRadius'),
+  colour: gl.getAttribLocation(program, 'aColor'),
+};
+const point_uniforms = {
+  mvp: gl.getUniformLocation(program, 'uMVP'),
+  eye: gl.getUniformLocation(program, 'uEye'),
+  forward: gl.getUniformLocation(program, 'uForward'),
+  right: gl.getUniformLocation(program, 'uRight'),
+  up: gl.getUniformLocation(program, 'uUp'),
+  depth_near: gl.getUniformLocation(program, 'uDepthNear'),
+  tangent: gl.getUniformLocation(program, 'uTangentHalfView'),
+  height: gl.getUniformLocation(program, 'uHeightPixels'),
+  diameter_least: gl.getUniformLocation(program, 'uDiameterLeast'),
+};
 
 // Read from renderer.nim's own constants via nimRenderLineWidths.
 //   Never hand-copied literal that could drift out of sync with them.
-//   `SIZE_POINT` is still draw-call setting here, since `gl_PointSize` is honoured.
+//   Least point diameter is uniform here, floor point vertex shader holds far disc at.
 //   Two line widths are not: each ribbon record carries its width and ribbon vertex
 //   shader widens it, because WebGL clamps `gl.lineWidth` to one pixel on most
 //   implementations.
-const [SIZE_POINT] = nimRenderLineWidths();
+const [DIAMETER_POINT_LEAST] = nimRenderLineWidths();
 
 // Widen one 16-float ribbon record into corner this invocation is.
 //   Sibling copy of `mesh.expandRibbon`, reference suite pins to algebra, and of GLSL
@@ -292,9 +343,6 @@ function linkWashProgram(source_vertex) {
   if (!gl.getProgramParameter(handle, gl.LINK_STATUS)) {
     throw new Error(gl.getProgramInfoLog(handle));
   }
-  // Shares plain fragment stage, whose point-rounding is off unless asked.
-  gl.useProgram(handle);
-  gl.uniform1i(gl.getUniformLocation(handle, 'uRound'), 0);
   return handle;
 }
 const program_disc = linkWashProgram(SOURCE_VERTEX_DISC);
@@ -351,13 +399,19 @@ const COUNT_CORNERS_RING = CORNERS_RING.length / 6;
 const buffer_ring_corners = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, buffer_ring_corners);
 gl.bufferData(gl.ARRAY_BUFFER, CORNERS_RING, gl.STATIC_DRAW);
+// Two triangles of unit square, one disc per point record.
+const CORNERS_POINT = new Float32Array(nimPointCorners());
+const COUNT_CORNERS_POINT = CORNERS_POINT.length / 2;
+const buffer_point_corners = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer_point_corners);
+gl.bufferData(gl.ARRAY_BUFFER, CORNERS_POINT, gl.STATIC_DRAW);
 
 const vbo = {
   disc: gl.createBuffer(), dome: gl.createBuffer(), ring: gl.createBuffer(),
   ribbon: gl.createBuffer(), point: gl.createBuffer(),
   ribbon_furniture: gl.createBuffer(),
 };
-const STRIDE = 7 * 4;
+const STRIDE_POINT = 8 * 4;
 const STRIDE_RIBBON = 16 * 4;
 const STRIDE_DISC = 13 * 4;
 const STRIDE_DOME = 8 * 4;
@@ -394,7 +448,7 @@ function uploadBuffer(data, handle_buffer, floats_each) {
 }
 
 // One run of uploaded record buffer, drawn as instanced triangle pairs.
-//   `count_over` is how many records at END are overlay run, exactly as `drawRun`'s split below;
+//   `count_over` is how many records at END are overlay run, exactly as `drawPoints`'s split;
 //   run that does not start at first record re-points five instance attributes at its own first
 //   byte, since WebGL1 has no base instance.
 //   Mirrors `renderer.drawRibbonRun`.
@@ -530,21 +584,37 @@ function drawWashRuns(wash_runs, count_runs_over, is_overlay) {
   }
 }
 
-// `count_over` is how many vertices at END of uploaded mesh are its overlay run;
-// `is_overlay` picks which of two runs to draw. Mirrors `renderer.drawRun`.
-function drawRun(handle_buffer, count, mode, are_points_round, count_over, is_overlay) {
+// One run of uploaded point records, drawn as instanced camera-facing discs.
+//   `count_over` is how many records at END are overlay run; `is_overlay` picks which of
+//   two runs to draw. Re-points three instance attributes at run's own first byte, since
+//   WebGL1 has no base instance, and resets divisors after, as `drawRings` does.
+//   Mirrors `renderer.drawPointRun`.
+function drawPoints(count, count_over, is_overlay) {
   if (!count) return;
   const split = Math.max(0, count - Math.min(count_over || 0, count));
   const first = is_overlay ? split : 0;
   const span = is_overlay ? count - split : split;
   if (span === 0) return;
-  gl.bindBuffer(gl.ARRAY_BUFFER, handle_buffer);
-  gl.enableVertexAttribArray(attribute_position);
-  gl.vertexAttribPointer(attribute_position, 3, gl.FLOAT, false, STRIDE, 0);
-  gl.enableVertexAttribArray(attribute_colour);
-  gl.vertexAttribPointer(attribute_colour, 4, gl.FLOAT, false, STRIDE, 12);
-  gl.uniform1i(uniform_is_round, are_points_round ? 1 : 0);
-  gl.drawArrays(mode, first, span);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer_point_corners);
+  gl.enableVertexAttribArray(point_attribs.corner);
+  gl.vertexAttribPointer(point_attribs.corner, 2, gl.FLOAT, false, 8, 0);
+  instanced.vertexAttribDivisorANGLE(point_attribs.corner, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo.point);
+  const base = first * STRIDE_POINT;
+  const records = [
+    [point_attribs.centre, 3, 0], [point_attribs.radius, 1, 12], [point_attribs.colour, 4, 16],
+  ];
+  for (const [attrib, floats, offset] of records) {
+    gl.enableVertexAttribArray(attrib);
+    gl.vertexAttribPointer(attrib, floats, gl.FLOAT, false, STRIDE_POINT, base + offset);
+    instanced.vertexAttribDivisorANGLE(attrib, 1);
+  }
+  instanced.drawArraysInstancedANGLE(gl.TRIANGLE_STRIP, 0, COUNT_CORNERS_POINT, span);
+  for (const [attrib] of records) {
+    instanced.vertexAttribDivisorANGLE(attrib, 0);
+    gl.disableVertexAttribArray(attrib);
+  }
+  gl.disableVertexAttribArray(point_attribs.corner);
 }
 
 function rgbToCss(rgb) {
@@ -1612,7 +1682,7 @@ const count_objects = document.getElementById('objects-count');
 /* rebuilds every row from scratch, which would otherwise discard it.      */
 /* ---------------------------------------------------------------------- */
 
-let session_edit = null; // { slot: number|null, coefficients: number[], label, ink }
+let session_edit = null; // { slot: number|null, coefficients: number[], label, ink, radius }
 
 function beginEditSession(slot) {
   // Null slot composes; real slot edits that item. Seeding composing session from.
@@ -1624,12 +1694,14 @@ function beginEditSession(slot) {
         coefficients: new Array(nimBasisCount()).fill(0),
         label: nimDefaultLabel(),
         ink: nimDefaultInk(),
+        radius: nimDefaultRadius(),
       }
     : {
         slot,
         coefficients: Array.from(nimItemCoefficients(slot)),
         label: nimItemLabel(slot),
         ink: nimItemInk(slot),
+        radius: nimItemRadius(slot),
       };
   nimSetGhost(session_edit.coefficients);
 }
@@ -1829,12 +1901,18 @@ function buildItemRow(slot) {
     if (!is_open) { beginEditSession(slot); refreshObjectsUI(); return; }
     if (is_pending && nimSceneCount() >= nimSceneCapacity()) { toast('Scene is full.'); return; }
     if (is_pending) {
-      nimAddItem(session_edit.coefficients, session_edit.label, session_edit.ink, now());
+      nimAddItem(
+        session_edit.coefficients, session_edit.label, session_edit.ink, session_edit.radius,
+        now(),
+      );
       endEditSession();
       adoptConstructionSelection();
       toast('Added `' + label.textContent + '`.');
     } else {
-      nimCommitItem(slot, session_edit.coefficients, session_edit.label, session_edit.ink);
+      nimCommitItem(
+        slot, session_edit.coefficients, session_edit.label, session_edit.ink,
+        session_edit.radius,
+      );
       endEditSession();
       toast('Saved `' + label.textContent + '`.');
     }
@@ -1956,6 +2034,27 @@ function buildItemRow(slot) {
     field_ink.appendChild(picker_ink);
     box_edit.appendChild(field_ink);
 
+    // Size reads for point alone; line and plane take theirs from camera and horizon.
+    //   World units, so what is typed shrinks with distance like everything else drawn
+    //   at position. Bounded below at what editor accepts, since model refuses zero
+    //   outright and would take page down with it.
+    const field_radius = document.createElement('div');
+    field_radius.className = 'field';
+    field_radius.innerHTML = '<label>size</label>';
+    const input_radius = document.createElement('input');
+    input_radius.type = 'number';
+    input_radius.min = String(nimLeastRadius());
+    input_radius.step = 'any';
+    input_radius.value = nimFormatNumber(session_edit.radius);
+    input_radius.title = 'Radius the point is drawn at, in world units; it shrinks with distance.';
+    input_radius.addEventListener('input', () => {
+      const typed = parseFloat(input_radius.value);
+      session_edit.radius = Number.isFinite(typed) && typed >= nimLeastRadius()
+        ? typed : nimDefaultRadius();
+    });
+    field_radius.appendChild(input_radius);
+    box_edit.appendChild(field_radius);
+
     const note_coefficient = document.createElement('div');
     note_coefficient.className = 'help-text';
     note_coefficient.style.margin = '6px 0';
@@ -2005,7 +2104,7 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 /* ---------------------------------------------------------------------- */
 /* Scene save/load: pack and parse exact `.rgascene` binary format         */
 /* `scene.nim`'s own doc comment documents (magic/version/basis-count/     */
-/* item-count/per-item ink+visible+label+16 float64), so file this        */
+/* item-count/per-item ink+visible+label+16 float64+radius), so file this */
 /* build saves loads on desktop build and vice versa. Packing lives       */
 /* here rather than in Nim, since `DataView` already does exactly this     */
 /* natively -- see `browser_bridge.nim`'s own doc comment.                */
@@ -2031,10 +2130,11 @@ function saveScene() {
     visible: nimItemVisible(slot),
     label: encoder.encode(nimItemLabel(slot)),
     coefficients: nimItemCoefficients(slot),
+    radius: nimItemRadius(slot),
   }));
 
   let size = 4 + 1 + 1 + 4;
-  for (const item of items) size += 1 + 1 + 1 + item.label.length + count_basis * 8;
+  for (const item of items) size += 1 + 1 + 1 + item.label.length + count_basis * 8 + 8;
 
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
@@ -2060,6 +2160,7 @@ function saveScene() {
       view.setFloat64(offset, item.coefficients[i], true);
       offset += 8;
     }
+    view.setFloat64(offset, item.radius, true); offset += 8;
   }
 
   deliverFile(
@@ -2145,7 +2246,17 @@ function parseAndLoadScene(buffer) {
       coefficients[b] = view.getFloat64(offset, true);
       offset += 8;
     }
-    parsed.push({ ink, visible, label, coefficients });
+    // Radius only where file's version wrote one; which versions did is Nim's rule.
+    //   Older file's items take theirs from upgrade chain, so value passed is moot.
+    let radius = nimDefaultRadius();
+    if (nimSceneHasRadius(version)) {
+      if (offset + 8 > buffer.byteLength) {
+        throw new Error('File is truncated partway through object ' + i + '’s radius.');
+      }
+      radius = view.getFloat64(offset, true);
+      offset += 8;
+    }
+    parsed.push({ ink, visible, label, coefficients, radius });
   }
 
   nimSceneClear();
@@ -2158,10 +2269,10 @@ function parseAndLoadScene(buffer) {
   const arrived = now();
   for (const item of parsed) {
     const slot = nimSceneAddRaw(
-      version, item.ink, item.visible, item.label, item.coefficients,
+      version, item.ink, item.visible, item.label, item.coefficients, item.radius,
       count_item, arrived,
     );
-    if (slot < 0) throw new Error('File names an unknown palette slot for an object.');
+    if (slot < 0) throw new Error('File names an unknown palette slot or radius for an object.');
   }
   return 'Loaded ' + count_item + ' object(s) from scene file.';
 }
@@ -4470,12 +4581,23 @@ function renderFrame(now_seconds) {
   if (!data.is_scene_held) count_ring_held = uploadBuffer(data.ring_records, vbo.ring, 14);
   const count_ring = count_ring_held;
   drawRings(count_ring, data.ring_over, false);
+  // Point program's camera, once per frame, with both screen axes disc spans.
+  //   Least diameter scaled by device pixel ratio, since `uHeightPixels` is framebuffer's.
   gl.useProgram(program);
-  gl.uniformMatrix4fv(uniform_view_projection, false, data.view_projection);
-  gl.uniform1f(uniform_size_point, SIZE_POINT * ratio_pixel);
-  if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 7);
+  gl.uniformMatrix4fv(point_uniforms.mvp, false, data.view_projection);
+  gl.uniform3f(point_uniforms.eye, data.camera_eye_x, data.camera_eye_y, data.camera_eye_z);
+  gl.uniform3f(point_uniforms.forward,
+    data.camera_forward_x, data.camera_forward_y, data.camera_forward_z);
+  gl.uniform3f(point_uniforms.right,
+    data.camera_right_x, data.camera_right_y, data.camera_right_z);
+  gl.uniform3f(point_uniforms.up, data.camera_up_x, data.camera_up_y, data.camera_up_z);
+  gl.uniform1f(point_uniforms.depth_near, data.camera_depth_near);
+  gl.uniform1f(point_uniforms.tangent, data.camera_tangent_half_view);
+  gl.uniform1f(point_uniforms.height, data.camera_height_pixels);
+  gl.uniform1f(point_uniforms.diameter_least, DIAMETER_POINT_LEAST * ratio_pixel);
+  if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 8);
   const count_point = count_point_held;
-  drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, false);
+  drawPoints(count_point, data.point_over, false);
   // Washes:
   //   one record disc or dome, fanned out by their own vertex shaders and walked in scene order
   //   through run list.
@@ -4504,7 +4626,7 @@ function renderFrame(now_seconds) {
     gl.useProgram(program_ring);
     drawRings(count_ring, data.ring_over, true);
     gl.useProgram(program);
-    drawRun(vbo.point, count_point, gl.POINTS, true, data.point_over, true);
+    drawPoints(count_point, data.point_over, true);
     drawWashRuns(data.wash_runs, data.wash_run_over, true);
     gl.enable(gl.DEPTH_TEST);
   }

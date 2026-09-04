@@ -110,8 +110,25 @@ const
   ANIMATION_MILLISECONDS* {.define: "visualiser.animation_milliseconds".} = 350
     ## Set how long freshly added object takes to grow and fade fully into view.
     ##   Milliseconds rather than seconds, as `.define` takes integer.
-  SIZE_POINT* = 9.0'f32
-    ## Set diameter of drawn points, in pixels.
+  DIAMETER_POINT_LEAST* = 6.0'f32
+    ## Bound smallest diameter point is drawn at, in pixels.
+    ##   Point carries world radius and shrinks with distance (see `radiusDrawnAt`); this
+    ##   floor keeps distant one readable dot rather than sub-pixel flicker.
+    ##   Both render targets read it: desktop as uniform, browser through
+    ##   `nimRenderLineWidths`.
+  RADIUS_ITEM_DEFAULT* = 0.08
+    ## Set drawn radius, in world units, item takes when nothing chose one.
+    ##   What nine-pixel dot every point once wore spans at opening camera: 19 units of
+    ##   orbit over 900 pixels of height, so old scenes and fresh constructions look as
+    ##   they did from there and only gain perspective.
+  RADIUS_ITEM_LEAST* = 0.001
+    ## Bound smallest radius either editor lets reader type.
+    ##   Model refuses only zero and below; this keeps typed size above what any camera
+    ##   in demo resolves, so item never vanishes into least on-screen size for good.
+  RADIUS_ITEM_MOST* = 1.0e6
+    ## Bound largest radius either editor lets reader type.
+    ##   Desktop's drag widget takes no upper bound as no bounds at all, so one is named;
+    ##   far past any scene here, which spans about 3,000 units.
   WIDTH_LINE_FURNITURE* = 1.5'f32
     ## Set width of ground grid and world axes, in pixels.
     ##   Thinner than scene line object (`WIDTH_LINE_OBJECT`), so reference recedes
@@ -279,8 +296,11 @@ type
   Rgba* = object ## Define colour channels, in 0 .. 1.
     red*, green*, blue*, alpha*: float32
 
-  Vertex* = object ## Define one vertex exactly as it is uploaded.
+  Vertex* = object ## Define one point record exactly as it is uploaded.
+    ## One instance per point: vertex shader fans it into camera-facing quad of
+    ## `pointCorners`, and fragment stage rounds quad into disc; see `radiusDrawnAt`.
     x*, y*, z*: float32
+    radius*: float32 ## Drawn radius, in world units.
     red*, green*, blue*, alpha*: float32
 
   Mesh* = object ## Define point vertices, in storage fixed at compile time.
@@ -420,6 +440,8 @@ type
       ## Stays in fixed apparent direction as camera pans or dollies.
     radius_horizon*: float ## How far from `eye` horizon geometry is drawn.
     forward*: Direction ## Camera's sight axis, depth is measured along.
+    axis_right*: Direction ## Camera's screen-right axis; point's disc spans it.
+    axis_up*: Direction ## Camera's screen-up axis; point's disc spans it.
     tangent_half_view*: float ## Tangent of half vertical field of view.
     height_pixels*: int ## Framebuffer height, which vertical field of view spans.
     depth_near*: float ## Camera's near clip distance, depth is clamped at.
@@ -448,6 +470,21 @@ func worldPerPixelAt*(place: Position, scale: DrawScale): float =
   ##   folds ribbon over on itself.
   let depth = max(dot(place - scale.eye, scale.forward), scale.depthNear)
   2.0*depth*scale.tangentHalfView/float(max(scale.heightPixels, 1))
+
+
+func radiusDrawnAt*(radius: float, place: Position, scale: DrawScale): float =
+  ## Measure radius point is drawn at, in world units.
+  ##   Its own, or least on-screen size where that is larger.
+  ##   Rule both vertex shaders apply, stated once here for marker and pick to follow.
+  ##   Perspective alone: radius stays fixed and disc shrinks as depth grows, until floor
+  ##   `DIAMETER_POINT_LEAST` holds it at readable dot.
+  max(radius, 0.5*float(DIAMETER_POINT_LEAST)*worldPerPixelAt(place, scale))
+
+
+func radiusPixelsAt*(radius: float, place: Position, scale: DrawScale): float =
+  ## Measure radius point is drawn at, in pixels; `radiusDrawnAt` divided back out.
+  ##   For marker's ring and pick's disc, both measured on screen.
+  radiusDrawnAt(radius, place, scale)/worldPerPixelAt(place, scale)
 
 
 func radiusHorizonFor*(distance_far: float): float =
@@ -668,10 +705,13 @@ func markOverlay*(meshes: var MeshSet) =
   meshes.washes.index_overlay = some(meshes.washes.count)
 
 
-func addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
-  ## Append point marking single position, in `tint`'s hue at `alpha`.
+func addMarker*(
+  meshes: var MeshSet, at: Position, radius: float, tint: Rgba, alpha: float32
+) =
+  ## Append point marking single position at `radius`, in `tint`'s hue at `alpha`.
   ##   Alpha apart from tint so caller fading point need not build faded `Rgba` first.
   ##     `fade` per point was two allocations and copy, once per point per frame.
+  ##   `radius` is world units; shader floors it at `DIAMETER_POINT_LEAST` on screen.
   let count = meshes.points.count_vertices
   doAssert count < VERTICES_MAX,
     &"Mesh holds at most {VERTICES_MAX} vertices, raise `--define:visualiser.vertices_max`; " &
@@ -682,6 +722,7 @@ func addMarker*(meshes: var MeshSet, at: Position, tint: Rgba, alpha: float32) =
   vertex.x = float32(at.x)
   vertex.y = float32(at.y)
   vertex.z = float32(at.z)
+  vertex.radius = float32(radius)
   vertex.red = tint.red
   vertex.green = tint.green
   vertex.blue = tint.blue
@@ -1018,6 +1059,21 @@ proc discCorners*(): seq[float32] =
     result[at + 3] = float32(UNIT_CIRCLE_RIM[i].sin_angle)
     result[at + 4] = float32(UNIT_CIRCLE_RIM[i + 1].cos_angle)
     result[at + 5] = float32(UNIT_CIRCLE_RIM[i + 1].sin_angle)
+
+
+const COUNT_CORNERS_POINT* = 4
+  ## Count corners point quad is drawn from: one triangle strip.
+  ##   Strip rather than two triangles: third less vertex work per point, and instanced
+  ##   strips restart per instance, so quads never join.
+
+
+proc pointCorners*(): seq[float32] =
+  ## Emit point's static corner buffer: `(across, up)` in -1 .. 1, strip order.
+  ##   Vertex shader steps `across*radius` along `DrawScale.axis_right` and `up*radius`
+  ##   along `axis_up` from record's centre, and fragment stage discards outside unit
+  ##   circle of same pair; see `radiusDrawnAt`.
+  ##   One source for both render targets, as `discCorners` is.
+  @[-1.0'f32, -1.0'f32, 1.0'f32, -1.0'f32, -1.0'f32, 1.0'f32, 1.0'f32, 1.0'f32]
 
 
 proc ringCorners*(): seq[float32] =

@@ -46,7 +46,6 @@ const
     ##   cannot see it from where it sits in import order.
   LABEL_MAX* {.define: "visualiser.label_max".} = 40
     ## Bound characters label may hold.
-
 static:
   doAssert ITEMS_MAX > 0, &"Scene capacity must be positive; got `{ITEMS_MAX}`."
   doAssert LABEL_MAX >= 8, &"Label must hold 8 characters; got `{LABEL_MAX}`."
@@ -98,6 +97,8 @@ type
     geometries: array[ITEMS_MAX, Multivector] ## Per-slot geometry.
     labels: array[ITEMS_MAX, Label] ## Per-slot display label.
     inks: array[ITEMS_MAX, Ink] ## Per-slot palette entry.
+    radii: array[ITEMS_MAX, float] ## Per-slot drawn radius, in world units; see `radiusAt`.
+      ## Read only for point: line and plane take their size from camera and horizon.
     are_visible: array[ITEMS_MAX, bool] ## Per-slot visibility.
     are_alive: array[ITEMS_MAX, bool] ## Per-slot occupancy; false where slot is free.
     borns: array[ITEMS_MAX, float] ## Per-slot moment item was added, for appear animation.
@@ -615,6 +616,10 @@ func isVisible*(item: Item): bool = item.scene.are_visible[item.slot]
   ## Read item's visibility, straight out of scene handle points at.
 
 
+func radius*(item: Item): float = item.scene.radii[item.slot]
+  ## Read item's drawn radius, straight out of scene handle points at; see `radiusAt`.
+
+
 func born*(item: Item): float = item.scene.borns[item.slot]
   ## Read item's `born` reading, straight out of scene handle points at.
 
@@ -670,6 +675,15 @@ func inkAt*(scene: Scene, slot: int): Ink =
   ##     field copies whole scene.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.inks[slot]
+
+
+func radiusAt*(scene: Scene, slot: int): float =
+  ## Read item's drawn radius, in world units, by slot rather than through `Item`.
+  ##   Beside `Item.radius` for same reason `inkAt` sits beside `Item.ink`.
+  ##   World units rather than pixels, so item shrinks with distance as everything else
+  ##   drawn at position does; front-end holds least on-screen size, not this.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.radii[slot]
 
 
 func bornAt*(scene: Scene, slot: int): float =
@@ -777,6 +791,16 @@ func setInk*(scene: var Scene, slot: int, ink: Ink) =
   scene.markEdited()
 
 
+func setRadius*(scene: var Scene, slot: int, radius: float) =
+  ## Rewrite item's drawn radius, by slot, mirroring `setInk`.
+  ##   Bumps `revision` only: radius is not placing input, nothing about where item
+  ##   stands changes.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  doAssert radius > 0.0, &"Item radius must be positive; got `{radius}`."
+  scene.radii[slot] = radius
+  scene.markEdited()
+
+
 func setVisible*(scene: var Scene, slot: int, is_visible: bool) =
   ## Rewrite item's visibility, by slot, mirroring `setInk`.
   ##   Only writer: `isVisibleAt(...) = visible` accessor silently lands on copied
@@ -803,7 +827,7 @@ iterator pairs*(scene: Scene): (int, Item) =
 
 func addItem*(
   scene: var Scene, geometry: Multivector, label: string, ink: Ink, now: float = 0.0,
-  anchor_override: Option[Position] = none(Position)
+  anchor_override: Option[Position] = none(Position), radius: float = RADIUS_ITEM_DEFAULT
 ): int {.discardable.} =
   ## Insert object into scene at first free slot, visible; report slot used.
   ##   Silently refuses nothing: caller checks `isFull` first, as scene cannot grow.
@@ -811,6 +835,7 @@ func addItem*(
   ##     Default reads as "born at dawn of time" and never animates.
   ##   `anchor_override` is where plane's circle should centre instead of support, where
   ##   construction fixes that; see `creationAnchor`.
+  ##   `radius` is how large point is drawn, in world units; see `radiusAt`.
   doAssert not scene.isFull,
     &"Scene holds at most {ITEMS_MAX} items, raise `--define:visualiser.items_max`; got " &
       &"`{scene.len}`."
@@ -819,6 +844,8 @@ func addItem*(
   scene.geometries[result] = geometry
   toChars(label, scene.labels[result])
   scene.inks[result] = ink
+  doAssert radius > 0.0, &"Item radius must be positive; got `{radius}`."
+  scene.radii[result] = radius
   scene.are_visible[result] = true
   scene.are_alive[result] = true
   scene.borns[result] = now
@@ -865,7 +892,8 @@ func removeItem*(scene: var Scene, slot: int) =
 ##   |          |   or metric and cannot be read here.                         |
 ##   | 4        | Item count, little-endian `uint32`.                          |
 ##   | per item | Ink (1), visibility (1), label length (1) then that many     |
-##   |          |   bytes, then one little-endian `float` per basis term.      |
+##   |          |   bytes, one little-endian `float` per basis term, then      |
+##   |          |   radius as one more little-endian `float`.                  |
 ##   |----------|--------------------------------------------------------------|
 ##
 ## Only live items are written, in order created, whole of what version 3 added.
@@ -880,7 +908,9 @@ func removeItem*(scene: var Scene, slot: int) =
 ##   |---------|-------------------------------------------------------------------|
 ##   | Version | Read as                                                           |
 ##   |---------|-------------------------------------------------------------------|
-##   | 3       | Exactly. Items replay in order built.                             |
+##   | 4       | Exactly. Each item carries drawn radius after its geometry.       |
+##   | 3       | Exactly, except every item is drawn at `RADIUS_ITEM_DEFAULT`, size |
+##   |         |   version 3 drew everything at; see `upgradedFrom3`.              |
 ##   | 2       | Exactly, except item sequence is slot order, so scene whose       |
 ##   |         |   objects were removed and re-added replays out of build order.   |
 ##   |         |   Byte-identical to version 3 but for version itself.             |
@@ -899,7 +929,7 @@ func removeItem*(scene: var Scene, slot: int) =
 const
   MAGIC_SCENE* = "RGAS"
     ## Open every `.rgascene` file with these four bytes.
-  VERSION_SCENE* = 3'u8
+  VERSION_SCENE* = 4'u8
     ## Stamp format version this build writes.
     ##   Every version down to `VERSION_SCENE_LEAST` is still read; see table above.
     ##   Version 2 moved every stored ink ordinal, when `Ink` gained reserved `Invalid`
@@ -907,6 +937,9 @@ const
     ##   Version 3 began writing items in creation order.
     ##     Bytes are shaped identically, so this number alone says whether sequence is
     ##     build order or slot order.
+    ##   Version 4 appended one float64 radius to each item, after its geometry.
+  VERSION_SCENE_RADIUS* = 4'u8
+    ## Record first version whose items carry radius; see `hasRadius`.
   VERSION_SCENE_LEAST* = 1'u8
     ## Bound oldest format version this build still reads.
     ##   One, and it stays one: version floor that rises throws reader's work away.
@@ -957,6 +990,11 @@ func readsSceneVersion*(version: uint8): bool =
   version >= VERSION_SCENE_LEAST and version <= VERSION_SCENE
 
 
+func hasRadius*(version: uint8): bool = version >= VERSION_SCENE_RADIUS
+  ## Report whether file of this version carries radius after each item's geometry.
+  ##   Both readers ask this rather than compare against literal; see `nimSceneHasRadius`.
+
+
 type ItemSaved* = object
   ## Define one item exactly as scene file holds it, at whatever version wrote file.
   ##   Shape reading works in, and thing `upgradedFrom<n>` carries between versions.
@@ -966,6 +1004,7 @@ type ItemSaved* = object
   is_visible*: bool ## Whether item was hidden when saved.
   label*: string ## Display label, decoded from file's UTF-8 bytes.
   geometry*: Multivector ## Object itself, one coefficient per basis term.
+  radius*: float ## Drawn radius, in world units; `RADIUS_ITEM_DEFAULT` before version 4.
 
 
 func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
@@ -993,6 +1032,16 @@ func upgradedFrom2(item: ItemSaved): Option[ItemSaved] = some(item)
   ##   Kept as explicit step so chain has one entry per boundary.
 
 
+func upgradedFrom3(item: ItemSaved): Option[ItemSaved] =
+  ## Carry one item from what version 3 meant to what version 4 means.
+  ##   Version 3 wrote no radius, and drew every point at one fixed pixel size.
+  ##     Reader fills `RADIUS_ITEM_DEFAULT`, that size at opening camera, so old scene
+  ##     opens looking as it was saved.
+  var carried = item
+  carried.radius = RADIUS_ITEM_DEFAULT
+  some(carried)
+
+
 func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
   ## Carry item read from file of `version` up to shape this build works in.
   ##   One boundary at time; none where no version could have written it.
@@ -1006,10 +1055,14 @@ func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
       case boundary
       of 1'u8: carried.upgradedFrom1
       of 2'u8: carried.upgradedFrom2
+      of 3'u8: carried.upgradedFrom3
       else: none(ItemSaved) # Unreachable: `readsSceneVersion` bounds walk above.
     if stepped.isNone: return none(ItemSaved)
     carried = stepped.get
   if carried.ink_ordinal notin ord(Ink.low) .. ord(Ink.high): return none(ItemSaved)
+  # Refuse radius no build could have written, as palette slot is refused above.
+  #   Zero or negative would draw nothing and trip `addItem`; NaN compares false to both.
+  if not (carried.radius > 0.0): return none(ItemSaved)
   some(carried)
 
 
@@ -1109,6 +1162,7 @@ when not defined(js):
       file.write(char(len(text)))
       discard file.writeChars(text, 0, len(text))
       for b in Basis: file.writeLittle(geometry[b])
+      file.writeLittle(item.radius)
 
     &"Saved {scene.len} object(s) to `{path}`."
 
@@ -1169,6 +1223,11 @@ when not defined(js):
           return &"`{path}` is truncated partway through object {index}'s geometry."
         geometry[b] = coefficient
 
+      # Read radius only where file has one; earlier versions take it from upgrade.
+      var radius = RADIUS_ITEM_DEFAULT
+      if hasRadius(version) and not file.readLittle(radius):
+        return &"`{path}` is truncated partway through object {index}'s radius."
+
       # Read at file's version, then carry up to this build's.
       #   Every field below means what `VERSION_SCENE` says.
       let carried = itemUpgraded(
@@ -1177,16 +1236,17 @@ when not defined(js):
           is_visible: uint8(visible_byte[0]) != 0,
           label: label,
           geometry: geometry,
+          radius: radius,
         ),
         version,
       )
       if carried.isNone:
-        return &"`{path}` names an unknown palette slot for object {index}."
+        return &"`{path}` names an unknown palette slot or radius for object {index}."
 
       # Add in file order, so staging scene's ordinals come out as file's sequence.
       let slot = staging.addItem(
         carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal),
-        bornReplaying(index, int(count), now),
+        bornReplaying(index, int(count), now), radius = carried.get.radius,
       )
       staging.setVisible(slot, carried.get.is_visible)
 

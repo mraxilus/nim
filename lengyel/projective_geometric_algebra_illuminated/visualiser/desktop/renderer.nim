@@ -25,42 +25,82 @@ import ./opengl as gl
 
 #[ Renderer Configuration ]#
 
-# Read `SIZE_POINT`, `WIDTH_LINE_FURNITURE` and `WIDTH_LINE_OBJECT` from `mesh`.
+# Read `DIAMETER_POINT_LEAST`, `WIDTH_LINE_FURNITURE` and `WIDTH_LINE_OBJECT` from `mesh`.
 #   `marker` derives selection marker's clearance from them and cannot import module
 #   binding straight to OpenGL; one home, read by both render paths.
 const LOG_MAX = 1024
   ## Bound how much of driver's compile log is reported.
 
 
-const SOURCE_VERTEX = """
+const SOURCE_VERTEX_POINT = """
 #version 330 core
-layout (location = 0) in vec3 in_position;
-layout (location = 1) in vec4 in_colour;
+layout (location = 0) in vec2 in_corner;
+layout (location = 1) in vec3 in_centre;
+layout (location = 2) in float in_radius;
+layout (location = 3) in vec4 in_colour;
 uniform mat4 view_projection;
-uniform float size_point;
+uniform vec3 eye;
+uniform vec3 forward;
+uniform vec3 axis_right;
+uniform vec3 axis_up;
+uniform float depth_near;
+uniform float tangent_half_view;
+uniform float height_pixels;
+uniform float diameter_least;
 out vec4 vertex_colour;
+out vec2 vertex_corner;
+out float vertex_radius_pixels;
 void main() {
-  gl_Position = view_projection * vec4(in_position, 1.0);
-  gl_PointSize = size_point;
+  float depth = dot(in_centre - eye, forward);
+  if (depth < depth_near) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    vertex_colour = vec4(0.0);
+    vertex_corner = vec2(0.0);
+    vertex_radius_pixels = 0.0;
+    return;
+  }
+  float world_per_pixel = 2.0*depth*tangent_half_view/height_pixels;
+  float radius = max(in_radius, 0.5*diameter_least*world_per_pixel);
+  vec3 at = in_centre + in_corner.x*radius*axis_right + in_corner.y*radius*axis_up;
+  gl_Position = view_projection*vec4(at, 1.0);
   vertex_colour = in_colour;
+  vertex_corner = in_corner;
+  vertex_radius_pixels = radius/world_per_pixel;
 }
-""" ## Transform world position to clip space, carrying vertex colour through.
+""" ## Fan one point record into camera-facing quad at its own radius.
+  ##   Sibling copy of `mesh.radiusDrawnAt` and of `glue.js`'s `SOURCE_VERTEX_POINT`;
+  ##   change to any one is not finished until other two are checked.
+  ##   Quad spans camera's screen axes at centre's depth, so disc shrinks with distance
+  ##   exactly as perspective says and floors at `diameter_least` pixels.
+  ##   Behind near plane it collapses to clip-space point outside frustum.
+
+
+const SOURCE_FRAGMENT_POINT = """
+#version 330 core
+in vec4 vertex_colour;
+in vec2 vertex_corner;
+in float vertex_radius_pixels;
+out vec4 out_colour;
+void main() {
+  float reach = length(vertex_corner);
+  if (reach > 1.0) discard;
+  float edge = clamp((1.0 - reach)*vertex_radius_pixels, 0.0, 1.0);
+  out_colour = vec4(vertex_colour.rgb, vertex_colour.a*edge);
+}
+""" ## Round point's quad into disc, fading its last pixel of rim.
+  ##   Corner pair is unit-circle coordinate, so edge is where its length passes one.
+  ##   Fade over one pixel of radius keeps small disc from shimmering as it moves.
 
 
 const SOURCE_FRAGMENT = """
 #version 330 core
 in vec4 vertex_colour;
-uniform float as_point;
 out vec4 out_colour;
 void main() {
-  if (as_point > 0.5) {
-    vec2 offset = gl_PointCoord - vec2(0.5);
-    if (dot(offset, offset) > 0.25) discard;
-  }
   out_colour = vertex_colour;
 }
-""" ## Write interpolated vertex colour, rounding off point sprites into discs.
-  ##   Nothing is lit or textured, so colour passes straight through otherwise.
+""" ## Write interpolated vertex colour, every wash program's fragment stage.
+  ##   Nothing is lit or textured, so colour passes straight through.
 
 
 const SOURCE_VERTEX_RIBBON = """
@@ -272,9 +312,16 @@ type
   Renderer* = object ## Define every OpenGL name visualiser allocates.
     program: gl.Uint
     location_view_projection: gl.Int
-    location_size_point: gl.Int
-    location_as_point: gl.Int
+    location_point_eye: gl.Int
+    location_point_forward: gl.Int
+    location_point_right: gl.Int
+    location_point_up: gl.Int
+    location_point_depth_near: gl.Int
+    location_point_tangent: gl.Int
+    location_point_height: gl.Int
+    location_point_diameter_least: gl.Int
     array_points: gl.Uint
+    buffer_point_corners: gl.Uint
     buffer_points: gl.Uint
     program_ribbon: gl.Uint
     location_ribbon_view_projection: gl.Int
@@ -357,8 +404,10 @@ type AttributeView = tuple[index: gl.Uint, floats: gl.Int, offset: int]
   ## Define one attribute's window onto record, i.e. attribute, float count and first float.
 
 const
-  VIEWS_POINT = [(gl.Uint(0), gl.Int(3), 0), (gl.Uint(1), gl.Int(4), 3)]
-    ## Hold point vertex's two views, position then colour, over `mesh.Vertex`.
+  VIEWS_POINT = [
+    (gl.Uint(1), gl.Int(3), 0), (gl.Uint(2), gl.Int(1), 3), (gl.Uint(3), gl.Int(4), 4),
+  ] ## Hold point record's three views, centre, radius then colour, over `mesh.Vertex`.
+    ## After corner's one at location zero.
   VIEWS_CORNER_FLAT = [(gl.Uint(0), gl.Int(2), 0)]
     ## Hold one view over corner buffer of `(end, side)` pairs, ribbon's and disc's alike.
   VIEWS_CORNER_DOME = [(gl.Uint(0), gl.Int(3), 0)]
@@ -405,17 +454,33 @@ proc uploadCorners(buffer: gl.Uint, corners: openArray[float32]) =
 
 
 proc initPointProgram(renderer: var Renderer) =
-  ## Build point program and its vertex array over interleaved position and colour.
-  renderer.program = linkProgram(SOURCE_VERTEX, SOURCE_FRAGMENT)
+  ## Build point program over `mesh.pointCorners`, same source `glue.js` uploads.
+  ##   One record per point, fanned into quad by vertex shader; takes ribbon program's
+  ##   camera uniforms and camera's two screen axes besides.
+  renderer.program = linkProgram(SOURCE_VERTEX_POINT, SOURCE_FRAGMENT_POINT)
   renderer.location_view_projection =
     gl.getUniformLocation(renderer.program, "view_projection")
-  renderer.location_size_point = gl.getUniformLocation(renderer.program, "size_point")
-  renderer.location_as_point = gl.getUniformLocation(renderer.program, "as_point")
+  renderer.location_point_eye = gl.getUniformLocation(renderer.program, "eye")
+  renderer.location_point_forward = gl.getUniformLocation(renderer.program, "forward")
+  renderer.location_point_right = gl.getUniformLocation(renderer.program, "axis_right")
+  renderer.location_point_up = gl.getUniformLocation(renderer.program, "axis_up")
+  renderer.location_point_depth_near = gl.getUniformLocation(renderer.program, "depth_near")
+  renderer.location_point_tangent =
+    gl.getUniformLocation(renderer.program, "tangent_half_view")
+  renderer.location_point_height = gl.getUniformLocation(renderer.program, "height_pixels")
+  renderer.location_point_diameter_least =
+    gl.getUniformLocation(renderer.program, "diameter_least")
   gl.genVertexArrays(1, addr renderer.array_points)
+  gl.genBuffers(1, addr renderer.buffer_point_corners)
   gl.genBuffers(1, addr renderer.buffer_points)
   gl.bindVertexArray(renderer.array_points)
+  let corners = pointCorners()
+  doAssert len(corners) == 2*COUNT_CORNERS_POINT,
+    &"Point corner buffer must hold {2*COUNT_CORNERS_POINT} floats; got `{len(corners)}`."
+  uploadCorners(renderer.buffer_point_corners, corners)
+  pointViews(gl.Sizei(2*sizeof(float32)), VIEWS_CORNER_FLAT, is_instanced = false)
   gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_points)
-  pointViews(gl.Sizei(sizeof(Vertex)), VIEWS_POINT, is_instanced = false)
+  pointViews(gl.Sizei(sizeof(Vertex)), VIEWS_POINT, is_instanced = true)
   gl.bindVertexArray(0)
 
 
@@ -453,8 +518,6 @@ proc initDiscProgram(renderer: var Renderer) =
   renderer.program_disc = linkProgram(SOURCE_VERTEX_DISC, SOURCE_FRAGMENT)
   renderer.location_disc_view_projection =
     gl.getUniformLocation(renderer.program_disc, "view_projection")
-  gl.useProgram(renderer.program_disc)
-  gl.uniform1f(gl.getUniformLocation(renderer.program_disc, "as_point"), 0.0)
   gl.genVertexArrays(1, addr renderer.array_disc)
   gl.genBuffers(1, addr renderer.buffer_disc_corners)
   gl.genBuffers(1, addr renderer.buffer_disc_records)
@@ -483,8 +546,6 @@ proc initRingProgram(renderer: var Renderer) =
     gl.getUniformLocation(renderer.program_ring, "tangent_half_view")
   renderer.location_ring_height =
     gl.getUniformLocation(renderer.program_ring, "height_pixels")
-  gl.useProgram(renderer.program_ring)
-  gl.uniform1f(gl.getUniformLocation(renderer.program_ring, "as_point"), 0.0)
   gl.genVertexArrays(1, addr renderer.array_ring)
   gl.genBuffers(1, addr renderer.buffer_ring_corners)
   gl.genBuffers(1, addr renderer.buffer_ring_records)
@@ -504,8 +565,6 @@ proc initDomeProgram(renderer: var Renderer) =
   renderer.program_dome = linkProgram(SOURCE_VERTEX_DOME, SOURCE_FRAGMENT)
   renderer.location_dome_view_projection =
     gl.getUniformLocation(renderer.program_dome, "view_projection")
-  gl.useProgram(renderer.program_dome)
-  gl.uniform1f(gl.getUniformLocation(renderer.program_dome, "as_point"), 0.0)
   gl.genVertexArrays(1, addr renderer.array_dome)
   gl.genBuffers(1, addr renderer.buffer_dome_corners)
   gl.genBuffers(1, addr renderer.buffer_dome_records)
@@ -560,7 +619,7 @@ proc clearFrame*(width, height: int) =
 
 
 proc uploadPoints(renderer: Renderer, meshes: MeshSet) =
-  ## Hand point vertices to driver whole, ready to be drawn as one run or two.
+  ## Hand point records to driver whole, ready to be drawn as one run or two.
   ##   Separate from drawing because two runs are issued in different passes; see
   ##   `drawMeshes`.
   ##   Mesh uploaded twice per frame would be one real cost of that split.
@@ -681,13 +740,20 @@ func runOf(mesh: Mesh, is_overlay: bool): tuple[first, count: int] =
 
 
 proc drawPointRun(renderer: Renderer, meshes: MeshSet, is_overlay: bool) =
-  ## Draw one run of already-uploaded point mesh, skipping empty one.
+  ## Draw one run of already-uploaded point records, each instance one disc.
+  ##   Re-points instance attributes at run's first byte, `drawRibbonRun`'s rule.
+  ##   Mirrors `glue.js`'s `drawPoints`.
   let run = runOf(meshes.points, is_overlay)
   if run.count == 0: return
-  # Tell fragment stage it is shading point sprites, which are rounded off.
-  gl.uniform1f(renderer.location_as_point, 1.0)
   gl.bindVertexArray(renderer.array_points)
-  gl.drawArrays(gl.POINTS, gl.Int(run.first), gl.Sizei(run.count))
+  gl.bindBuffer(gl.ARRAY_BUFFER, renderer.buffer_points)
+  pointViews(
+    gl.Sizei(sizeof(Vertex)), VIEWS_POINT, is_instanced = true,
+    base = run.first*sizeof(Vertex),
+  )
+  gl.drawArraysInstanced(
+    gl.TRIANGLE_STRIP, 0, gl.Sizei(COUNT_CORNERS_POINT), gl.Sizei(run.count)
+  )
 
 
 func runsOfWashes(washes: WashRuns, is_overlay: bool): tuple[begin, until: int] =
@@ -774,11 +840,24 @@ proc drawMeshes*(
   gl.uniform1f(renderer.location_ribbon_fog_gone, gl.Float(fog.radius_gone))
   renderer.uploadRibbons(meshes)
 
+  # Give point program ribbon program's camera and both screen axes.
+  #   Disc is spanned across them at centre's depth; see `mesh.radiusDrawnAt`.
   gl.useProgram(renderer.program)
   gl.uniformMatrix4fv(
     renderer.location_view_projection, 1, gl.FALSE, view_projection.elementsAddress
   )
-  gl.uniform1f(renderer.location_size_point, SIZE_POINT)
+  gl.uniform3f(renderer.location_point_eye,
+    gl.Float(scale.eye.x), gl.Float(scale.eye.y), gl.Float(scale.eye.z))
+  gl.uniform3f(renderer.location_point_forward,
+    gl.Float(scale.forward.x), gl.Float(scale.forward.y), gl.Float(scale.forward.z))
+  gl.uniform3f(renderer.location_point_right,
+    gl.Float(scale.axis_right.x), gl.Float(scale.axis_right.y), gl.Float(scale.axis_right.z))
+  gl.uniform3f(renderer.location_point_up,
+    gl.Float(scale.axis_up.x), gl.Float(scale.axis_up.y), gl.Float(scale.axis_up.z))
+  gl.uniform1f(renderer.location_point_depth_near, gl.Float(scale.depthNear))
+  gl.uniform1f(renderer.location_point_tangent, gl.Float(scale.tangentHalfView))
+  gl.uniform1f(renderer.location_point_height, gl.Float(scale.heightPixels))
+  gl.uniform1f(renderer.location_point_diameter_least, gl.Float(DIAMETER_POINT_LEAST))
   renderer.uploadPoints(meshes)
 
   # Give both wash programs this frame's matrix before run walk.

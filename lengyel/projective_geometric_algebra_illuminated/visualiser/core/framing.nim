@@ -84,11 +84,14 @@ iterator watched*(
         yield (scene.geometryOf(slot), scene.anchorOverrideAt(slot))
 
 
-func reachOfPlaced(placed: Placed): float =
+func reachOfPlaced(placed: Placed, radius: float): float =
   ## Measure how far one placed object stands from world origin, disc's reach included.
   ##   Zero for horizon kinds and nothing: neither has place to clip.
+  ##   `radius` is point's drawn radius, added so far clip holds whole disc.
   case placed.kind
-  of PlacedKind.PointAt, PlacedKind.LineThrough:
+  of PlacedKind.PointAt:
+    norm(placed.at - Position(x: 0, y: 0, z: 0)) + radius
+  of PlacedKind.LineThrough:
     norm(placed.at - Position(x: 0, y: 0, z: 0))
   of PlacedKind.PlaneOn:
     norm(placed.at - Position(x: 0, y: 0, z: 0)) + EXTENT_PLANE_F
@@ -102,7 +105,7 @@ func reachOf*(placed: openArray[Placed], scene: Scene): float =
   result = 0.0
   for slot in 0 ..< scene.bound:
     if not scene.isAlive(slot) or not scene.isVisible(slot): continue
-    result = max(result, reachOfPlaced(placed[slot]))
+    result = max(result, reachOfPlaced(placed[slot], scene.radiusAt(slot)))
 
 
 proc reachOf*(scene: Scene): float =
@@ -112,7 +115,9 @@ proc reachOf*(scene: Scene): float =
   result = 0.0
   for slot, item in scene.pairs:
     if not item.isVisible: continue
-    result = max(result, reachOfPlaced(placeObject(item.geometry, item.anchorOverride)))
+    result = max(
+      result, reachOfPlaced(placeObject(item.geometry, item.anchorOverride), item.radius)
+    )
 
 
 func aimFor*(

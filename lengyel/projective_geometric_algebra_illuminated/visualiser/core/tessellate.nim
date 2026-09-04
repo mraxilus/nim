@@ -61,6 +61,12 @@ func radiusHorizon*(d: DrawExtent): float = d.scale.radius_horizon
 func forward*(d: DrawExtent): Direction = d.scale.forward
   ## Read sight direction.
 
+func axisRight*(d: DrawExtent): Direction = d.scale.axis_right
+  ## Read camera's screen-right axis.
+
+func axisUp*(d: DrawExtent): Direction = d.scale.axis_up
+  ## Read camera's screen-up axis.
+
 func tangentHalfView*(d: DrawExtent): float = d.scale.tangent_half_view
   ## Read tangent of half vertical field of view.
 
@@ -479,10 +485,12 @@ proc placeObject*(
   Placed(kind: PlacedKind.Nothing)
 
 
-func isPointInView*(placed: Placed, bounds: ViewBounds): bool =
-  ## Report whether point lands inside frustum, sprite margin included.
+func isPointInView*(placed: Placed, radius: float, bounds: ViewBounds): bool =
+  ## Report whether point lands inside frustum, own `radius` and least margin included.
   ##   True for every other kind: line crosses whole frame whatever its support, and disc
   ##   reaches past its centre, so neither is tested.
+  ##   Radius widens side bounds by itself, in world units: disc whose centre is just
+  ##   past edge still shows its near half.
   ##   Horizon point stands along its direction from eye, so its offset is direction
   ##   alone and only sides are tested: its depth is `radius_horizon` scaled by appear
   ##   progress, inside clip either way.
@@ -506,14 +514,14 @@ func isPointInView*(placed: Placed, bounds: ViewBounds): bool =
       (depth < bounds.depth_near or depth > bounds.depth_far):
     return false
   let across = rx*bounds.right.x + ry*bounds.right.y + rz*bounds.right.z
-  if abs(across) > depth*bounds.bound_width: return false
+  if abs(across) > depth*bounds.bound_width + radius: return false
   let above = rx*bounds.up.x + ry*bounds.up.y + rz*bounds.up.z
-  abs(above) <= depth*bounds.bound_height
+  abs(above) <= depth*bounds.bound_height + radius
 
 
 proc emitObject*(
   meshes: var MeshSet, placed: var Placed, tint: Rgba, scale: DrawExtent,
-  progress: float = 1.0
+  progress: float = 1.0, radius: float = RADIUS_ITEM_DEFAULT
 ): Placement =
   ## Turn one placed object into this frame's records, at this frame's camera.
   ##   Other half of `placeObject`: takes no multivector, so what object *is* was settled
@@ -522,6 +530,9 @@ proc emitObject*(
   ##   `mesh.animationProgress`.
   ##     Fades every kind in, grows plane's disc from nothing, pushes horizon object out
   ##     to full reach.
+  ##   `radius` is how large point is drawn, in world units; every other kind ignores it.
+  ##     Horizon point stands at `radius_horizon`, where any radius falls to least
+  ##     on-screen size, so star reads as dot whatever its item says.
   ##   `placed` is `var` because nothing here writes it (Art. VII.1).
   ##     Under JS backend value parameter is deep-copied at every call, and caller
   ##     emitting thousand held placements per frame would copy thousand nested objects.
@@ -537,7 +548,7 @@ proc emitObject*(
 
   of PlacedKind.PointAt:
     timed(Side.Emitting):
-      meshes.addMarker(placed.at, tint, tint.alpha*progress)
+      meshes.addMarker(placed.at, radius, tint, tint.alpha*progress)
     Placement.Finite
 
   of PlacedKind.PointToward:
@@ -548,7 +559,7 @@ proc emitObject*(
       star = pointFrom(add(scale.eye_point,
         wedge(progress*scale.radiusHorizon, toMultivector(placed.toward))))
     timed(Side.Emitting):
-      meshes.addMarker(star, tint, tint.alpha*progress)
+      meshes.addMarker(star, radius, tint, tint.alpha*progress)
     Placement.Horizon
 
   of PlacedKind.LineThrough:
@@ -614,7 +625,7 @@ proc addObject*(
   meshes: var MeshSet, scratch: var DrawScratch, geometry: Multivector, tint: Rgba,
   scale: DrawExtent, progress: float = 1.0,
   anchor_override: Option[Position] = none(Position),
-  bounds: Option[ViewBounds] = none(ViewBounds)
+  bounds: Option[ViewBounds] = none(ViewBounds), radius: float = RADIUS_ITEM_DEFAULT
 ): Placement =
   ## Append object, dispatching on geometry its grade stands for.
   ##   Place then emit in one call, for every caller with nothing to gain by keeping
@@ -627,7 +638,8 @@ proc addObject*(
   ##   `scratch` is taken for shape every other tessellation entry point has.
   ##   `bounds`, where given, skips point outside view before it costs emitting; Empty
   ##   then. See `isPointInView`.
+  ##   `radius` is point's drawn radius, in world units; see `emitObject`.
   discard scratch
   var placed = placeObject(geometry, anchor_override)
-  if bounds.isSome and not isPointInView(placed, bounds.get): return Placement.Empty
-  meshes.emitObject(placed, tint, scale, progress)
+  if bounds.isSome and not isPointInView(placed, radius, bounds.get): return Placement.Empty
+  meshes.emitObject(placed, tint, scale, progress, radius)

@@ -7,7 +7,7 @@
 ##   it in wrong place: centred on support disc is not drawn around.
 ## Every marker keeps same clear space, `GAP_MARKER` pixels, between object's drawn edge
 ## and its outline, so three read as one family.
-##   Gap is measured from sizes object is drawn at (`tessellate.SIZE_POINT`,
+##   Gap is measured from sizes object is drawn at (`mesh.radiusPixelsAt`,
 ##   `mesh.WIDTH_LINE_OBJECT`, `mesh.EXTENT_PLANE_F`), so changing draw size moves marker
 ##   with it.
 ##
@@ -79,7 +79,6 @@ const
   SEGMENTS_MARKER_RAILS* = 4
     ## Bound how many segments line's rails come to.
     ##   One each side, each cut into two halves `tessellate.addLine` draws line as.
-  RADIUS_MARKER_POINT* = 0.5*float(SIZE_POINT) + GAP_MARKER
     ## Place point's ring this far from point, in pixels.
   OFFSET_MARKER_RAIL* = 0.5*float(WIDTH_LINE_OBJECT) + GAP_MARKER
     ## Place each of line's rails this far from line, in pixels.
@@ -575,15 +574,17 @@ func clearanceTouch*(swell: float, is_touch: bool): float =
 #[ Point And Line ]#
 
 func markerRing(
-  geometry: Multivector; scale: DrawExtent; view_projection: Matrix4; width, height: int;
-  progress, clearance: float; marker: var Marker
+  geometry: Multivector; radius: float; scale: DrawExtent; view_projection: Matrix4;
+  width, height: int; progress, clearance: float; marker: var Marker
 ): bool =
-  ## Build point's ring, about wherever that point is drawn.
+  ## Build point's ring, about wherever that point is drawn and just outside its disc.
   ##   Fills caller's `marker` and reports whether one was shaped; see `markerFor`.
   ##   Screen-space rather than world circle facing camera: point has no orientation to
   ##   echo, and every facing looks same from one angle it is seen from.
-  ##   `progress` sweeps ring rather than growing it: point is drawn at fixed size, so
-  ##   ring growing outward reads as point swelling, inward collides with it.
+  ##   `radius` is item's drawn radius, in world units; ring sits `GAP_MARKER` outside
+  ##   pixels that spans at point's depth, so it hugs sun and dot alike.
+  ##   `progress` sweeps ring rather than growing it: ring growing outward reads as point
+  ##   swelling, inward collides with it.
   let anchor = anchorFor(geometry, scale)
   if anchor.isNone: return
   let centre = projectToScreen(view_projection, width, height, anchor.get)
@@ -591,7 +592,7 @@ func markerRing(
   marker = Marker(
     kind: MarkerKind.Ring,
     centre: centre,
-    radius: RADIUS_MARKER_POINT + clearance,
+    radius: radiusPixelsAt(radius, anchor.get, scale.scale) + GAP_MARKER + clearance,
     fraction: progress,
   )
   true
@@ -1164,9 +1165,9 @@ func markerFrame(width, height: int; progress, clearance: float; marker: var Mar
 #[ Marker Dispatch ]#
 
 proc markerFor*(
-  geometry: Multivector; anchor_override: Option[Position]; scale: DrawExtent;
-  placement: Camera; view_projection: Matrix4; width, height: int; marker: var Marker;
-  progress: float = 1.0;
+  geometry: Multivector; anchor_override: Option[Position]; radius: float;
+  scale: DrawExtent; placement: Camera; view_projection: Matrix4; width, height: int;
+  marker: var Marker; progress: float = 1.0;
   is_touch: bool = false; travel: Option[float] = none(float); swell: float = 0.0
 ): bool =
   ## Shape marker for one object, dispatching on its grade and whether it is at horizon.
@@ -1176,6 +1177,7 @@ proc markerFor*(
   ##     On `false` storage holds nothing readable.
   ##   `anchor_override` is item's stored creation anchor, used for plane and ignored
   ##   otherwise, as `tessellate.addObject` treats it.
+  ##   `radius` is item's drawn radius, used for point and ignored otherwise, likewise.
   ##   `progress` draws marker part-built, for press maturing into selection; 1 is
   ##   finished marker.
   ##     How partial marker is shaped is each outline's business: ring sweeps, rails run
@@ -1197,7 +1199,9 @@ proc markerFor*(
   # Ring point at horizon about fixed star `anchorFor` places, so it needs no branch.
   #   Two below are drawn as great circle and whole sky with no anchor.
   of Shape.Point:
-    markerRing(geometry, scale, view_projection, width, height, progress, clearance, marker)
+    markerRing(
+      geometry, radius, scale, view_projection, width, height, progress, clearance, marker
+    )
   of Shape.Line:
     if is_horizon:
       markerBands(

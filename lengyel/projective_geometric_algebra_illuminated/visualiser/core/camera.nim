@@ -439,7 +439,9 @@ func drawExtentFor*(camera: Camera, height_pixels: int): DrawExtent =
   ##     `tessellate`.
   ##   `height_pixels` is framebuffer's, not window's: ribbon's width is measured in
   ##   pixels actually drawn.
-  let eye = camera.eye
+  let
+    eye = camera.eye
+    frame = camera.frame(eye)
   # Derive four multivector twins through `algebraFilled`.
   #   One derivation point shared with every hand-built extent.
   algebraFilled(DrawExtent(
@@ -447,7 +449,9 @@ func drawExtentFor*(camera: Camera, height_pixels: int): DrawExtent =
       extent_furniture: extentFurnitureFor(camera.distanceFar),
       eye: eye,
       radius_horizon: radiusHorizonFor(camera.distanceFar),
-      forward: camera.frame(eye).forward,
+      forward: frame.forward,
+      axis_right: frame.axis_right,
+      axis_up: frame.axis_up,
       tangent_half_view: tan(0.5*degToRad(camera.degrees_field_of_view)),
       height_pixels: height_pixels,
       depth_near: camera.distanceNear,
@@ -457,13 +461,13 @@ func drawExtentFor*(camera: Camera, height_pixels: int): DrawExtent =
 
 func viewBoundsFor*(camera: Camera, scale: DrawExtent, aspect: float): ViewBounds =
   ## Derive frustum points are culled against, once per frame; see `tessellate.isPointInView`.
-  ##   Margin is point sprite's radius and one pixel more, as tangent per unit of depth,
-  ##   so sprite straddling edge is still emitted whatever GPU does with centre just
-  ##   outside; sprite is `mesh.SIZE_POINT` wide.
+  ##   Margin is least on-screen radius and one pixel more, as tangent per unit of depth,
+  ##   so smallest disc straddling edge is still emitted whatever GPU does with centre
+  ##   just outside; point's own radius is added per point by `isPointInView`.
   ##   `aspect` is framebuffer's width over height, which `drawExtentFor` never needs.
   let eye = camera.eye
   let frame = camera.frame(eye)
-  let margin = (0.5*float(SIZE_POINT) + 1.0)*scale.scale.radiansPerPixel
+  let margin = (0.5*float(DIAMETER_POINT_LEAST) + 1.0)*scale.scale.radiansPerPixel
   ViewBounds(
     eye: eye,
     forward: frame.forward,

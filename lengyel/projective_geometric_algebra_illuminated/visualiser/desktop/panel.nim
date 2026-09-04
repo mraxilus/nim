@@ -123,6 +123,7 @@ type
       ## Staged because `gui.inputText` writes straight through pointer, and scene's
       ## buffer must not change before save.
     index_ink*: cint ## Staged palette slot.
+    radius*: cfloat ## Staged drawn radius, in world units; see `scene.radiusAt`.
 
   ItemRow* = object ## Define what one object row has resolved about itself.
     ## Computed once at top of `layoutItem` and handed to each part of row, so three agree.
@@ -345,9 +346,11 @@ func beginSession(panel: var Panel, scene: var Scene, slot: Option[int]) =
     session.stage(scene.geometryOf(slot.get))
     session.label = scene.labelAt(slot.get)
     session.index_ink = cint(scene.inkAt(slot.get))
+    session.radius = cfloat(scene.radiusAt(slot.get))
   else:
     toChars(&"m{scene.len}", session.label)
     session.index_ink = cint(scene.inkNext)
+    session.radius = cfloat(RADIUS_ITEM_DEFAULT)
   panel.session = some(session)
 
 
@@ -368,6 +371,14 @@ proc layoutSessionFields(panel: var Panel, is_pending: bool) =
     addr lut_ink_to_name[INK_CATEGORICAL_FIRST], cint(COUNT_INK_CATEGORICAL),
   ):
     panel.session.get.index_ink = cint(ord(inkCategorical(int(index_categorical))))
+  # Size reads for point alone; line and plane take theirs from camera and horizon.
+  #   Bounded below at what editor accepts, since model refuses zero outright.
+  fieldLabel("size")
+  discard gui.dragFloat(
+    "##size", addr panel.session.get.radius, SPEED_DRAG, cfloat(RADIUS_ITEM_LEAST),
+    cfloat(RADIUS_ITEM_MOST),
+  )
+  gui.tooltip(cstring"Radius a point is drawn at, in world units; shrinks with distance.")
   gui.widthPop()
   gui.textTinted("coefficients", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLine()
@@ -431,13 +442,16 @@ proc layoutItemButtons(
       let session = panel.session.get
       let geometry = session.geometry
       if row.isPending:
-        let slot_added =
-          scene.addItem(geometry, toText(session.label), Ink(session.index_ink), now)
+        let slot_added = scene.addItem(
+          geometry, toText(session.label), Ink(session.index_ink), now,
+          radius = float(session.radius),
+        )
         panel.selection.selectOnly(slot_added)
       else:
         scene.setGeometryAt(row.slot.get, geometry)
         scene.labelAt(row.slot.get) = session.label
         scene.setInk(row.slot.get, Ink(session.index_ink))
+        scene.setRadius(row.slot.get, float(session.radius))
       history.record(scene, camera)
       panel.session = none(EditSession)
   gui.tooltip(

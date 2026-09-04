@@ -341,37 +341,51 @@ suite "Camera":
     var close = initCamera(Position(x: 0, y: 0, z: 0), 0.05, 0.0, 0.0)
     close.reach_scene = 3000.0
     check close.distanceNear <= 0.5*close.distance
-    # Reach is measured from what scene holds, disc's own extent included.
+    # Reach is measured from what scene holds, point's own radius included.
     var scene = initScene()
-    scene.addItem(toMultivector(Position(x: 300, y: 0, z: 0)), "p", Ink.Rose)
-    check abs(reachOf(scene) - 300.0) < 1.0e-6
+    scene.addItem(toMultivector(Position(x: 300, y: 0, z: 0)), "p", Ink.Rose, radius = 2.5)
+    check abs(reachOf(scene) - 302.5) < 1.0e-6
 
   test "a point is culled only where the frustum, sprite margin included, does not reach":
     # Bounds are camera's own frame; what is checked is test against them.
     let camera = initCamera(Position(x: 1, y: 2, z: 3), 10.0, 0.4, 0.3)
     let scale = camera.drawExtentFor(900)
     let bounds = camera.viewBoundsFor(scale, 16.0/9.0)
-    check isPointInView(placeObject(toMultivector(camera.target)), bounds)
-    check not isPointInView(placeObject(toMultivector(bounds.eye - 1.0*bounds.forward)), bounds)
+    const RADIUS = RADIUS_ITEM_DEFAULT
+    check isPointInView(placeObject(toMultivector(camera.target)), RADIUS, bounds)
+    check not isPointInView(
+      placeObject(toMultivector(bounds.eye - 1.0*bounds.forward)), RADIUS, bounds
+    )
     # Sideways at target's depth: just inside half-width stays, just outside goes.
     let reach_across = camera.distance*bounds.bound_width
     let reach_above = camera.distance*bounds.bound_height
     check isPointInView(
-      placeObject(toMultivector(camera.target + (0.9*reach_across)*bounds.right)), bounds
+      placeObject(toMultivector(camera.target + (0.9*reach_across)*bounds.right)), RADIUS,
+      bounds,
     )
     check not isPointInView(
-      placeObject(toMultivector(camera.target + (1.1*reach_across)*bounds.right)), bounds
+      placeObject(toMultivector(camera.target + (1.1*reach_across)*bounds.right)), RADIUS,
+      bounds,
     )
     check isPointInView(
-      placeObject(toMultivector(camera.target + (0.9*reach_above)*bounds.up)), bounds
+      placeObject(toMultivector(camera.target + (0.9*reach_above)*bounds.up)), RADIUS, bounds
     )
     check not isPointInView(
-      placeObject(toMultivector(camera.target + (1.1*reach_above)*bounds.up)), bounds
+      placeObject(toMultivector(camera.target + (1.1*reach_above)*bounds.up)), RADIUS, bounds
     )
+    # Point's own radius widens margin: same centre just past edge stays once its disc.
+    #   reaches back in, exactly as far as radius says.
+    let just_out = placeObject(toMultivector(camera.target + (1.1*reach_across)*bounds.right))
+    check isPointInView(just_out, 0.2*reach_across, bounds)
+    check not isPointInView(just_out, 0.05*reach_across, bounds)
     # Horizon point is tested by direction alone; every other kind passes untested.
-    check isPointInView(Placed(kind: PlacedKind.PointToward, toward: bounds.forward), bounds)
-    check not isPointInView(Placed(kind: PlacedKind.PointToward, toward: -bounds.forward), bounds)
-    check isPointInView(Placed(kind: PlacedKind.LineThrough), bounds)
+    check isPointInView(
+      Placed(kind: PlacedKind.PointToward, toward: bounds.forward), RADIUS, bounds
+    )
+    check not isPointInView(
+      Placed(kind: PlacedKind.PointToward, toward: -bounds.forward), RADIUS, bounds
+    )
+    check isPointInView(Placed(kind: PlacedKind.LineThrough), RADIUS, bounds)
 
   test "the eye assembled through the algebra is the eye the trig names":
     # `camera.eye` places point as multivector sum; spherical closed form lives.
@@ -948,7 +962,7 @@ suite "Mesh":
     MESHES.clearMeshes
 
   test "clearing drops every vertex and every record":
-    MESHES.addMarker(ORIGIN, Ink.Rose.colour, 1.0)
+    MESHES.addMarker(ORIGIN, RADIUS_ITEM_DEFAULT, Ink.Rose.colour, 1.0)
     MESHES.addSegment(ORIGIN, PLACES[0], Ink.Jade.colour, WIDTH_LINE_OBJECT)
     MESHES.addDisc(
       ORIGIN, Direction(x: 1.0, y: 0.0, z: 0.0), Direction(x: 0.0, y: 1.0, z: 0.0),
@@ -2087,10 +2101,13 @@ suite "Scene":
     check scene.revision > revision_edit
 
 
-  proc savedWith(ordinal: int): ItemSaved =
-    ## Build item differing from its neighbours only in palette slot it names.
-    ##   Only field any version boundary has ever changed.
-    ItemSaved(ink_ordinal: ordinal, is_visible: true, label: "x", geometry: POINTS[0])
+  proc savedWith(ordinal: int, radius = RADIUS_ITEM_DEFAULT): ItemSaved =
+    ## Build item differing from its neighbours only in palette slot and radius.
+    ##   Two fields version boundaries have ever changed; radius defaults, since most
+    ##   cases care about palette alone.
+    ItemSaved(
+      ink_ordinal: ordinal, is_visible: true, label: "x", geometry: POINTS[0], radius: radius
+    )
 
 
   test "an item already at this version is carried up unchanged":
@@ -2103,9 +2120,31 @@ suite "Scene":
       check carried.get.is_visible
       check carried.get.label == "x"
       check carried.get.geometry =~ POINTS[0]
+      check carried.get.radius == RADIUS_ITEM_DEFAULT
     # And ordinal no palette answers to is refused rather than clamped into one.
     check itemUpgraded(savedWith(ord(Ink.high) + 1), VERSION_SCENE).isNone
     check itemUpgraded(savedWith(-1), VERSION_SCENE).isNone
+    # Radius this build keeps is whatever file said, so long as it could draw something.
+    check itemUpgraded(savedWith(0, 2.5), VERSION_SCENE).get.radius == 2.5
+    check itemUpgraded(savedWith(0, 0.0), VERSION_SCENE).isNone
+    check itemUpgraded(savedWith(0, -1.0), VERSION_SCENE).isNone
+    check itemUpgraded(savedWith(0, NaN), VERSION_SCENE).isNone
+
+
+  test "a version-3 item is given the radius version 3 drew everything at":
+    # Version 3 wrote no radius, so whatever reader had in field is overwritten, not.
+    #   trusted: parser passing garbage or zero there must still land on default.
+    for stale in [0.0, -1.0, 7.0, NaN]:
+      let carried = itemUpgraded(savedWith(ord(Ink.Rose), stale), 3'u8)
+      check carried.isSome
+      check carried.get.radius == RADIUS_ITEM_DEFAULT
+      check carried.get.ink_ordinal == ord(Ink.Rose)
+    # Same for every older version: radius joins chain at its boundary, once.
+    for version in VERSION_SCENE_LEAST ..< VERSION_SCENE_RADIUS:
+      check not hasRadius(version)
+      check itemUpgraded(savedWith(ORDINAL_INK_CATEGORICAL_V1, 0.0), version).get.radius ==
+        RADIUS_ITEM_DEFAULT
+    check hasRadius(VERSION_SCENE)
 
 
   test "a version-2 item needs nothing doing to it but is walked all the same":
@@ -2259,7 +2298,7 @@ suite "Scene":
     test "save then load reproduces every live item, compacting freed slots":
       var original = initScene()
       discard original.addItem(POINTS[0], "a", Ink.Rose)
-      discard original.addItem(POINTS[1], "bb", Ink.Jade)
+      discard original.addItem(POINTS[1], "bb", Ink.Jade, radius = 0.6)
       let slot_doomed = original.addItem(POINTS[2], "doomed", Ink.Olive)
       original.removeItem(slot_doomed) # leaves hole fresh load must not reproduce
       let slot_last = original.addItem(POINTS[3], "d", Ink.Cobalt)
@@ -2280,11 +2319,13 @@ suite "Scene":
       check loaded[0].ink == Ink.Rose
       check loaded[0].isVisible
       check loaded[0].born == 0.0 # dawn of time, not mid-appear-in-animation
+      check loaded[0].radius == RADIUS_ITEM_DEFAULT
 
       check loaded[1].geometry =~ POINTS[1]
       check toText(loaded[1].label) == "bb"
       check loaded[1].ink == Ink.Jade
       check loaded[1].isVisible
+      check loaded[1].radius == 0.6
 
       check loaded[2].geometry =~ POINTS[3]
       check toText(loaded[2].label) == "d"
@@ -2377,6 +2418,13 @@ suite "Scene":
             bytes = newString(8)
           littleEndian64(addr bytes[0], addr coefficient)
           result &= bytes
+        # Radius only from version that carries one; older bytes stop at geometry.
+        if hasRadius(version):
+          var
+            radius = 2.0*RADIUS_ITEM_DEFAULT
+            bytes = newString(8)
+          littleEndian64(addr bytes[0], addr radius)
+          result &= bytes
 
 
     test "a scene file from before the palette changed is read, not refused":
@@ -2427,6 +2475,34 @@ suite "Scene":
       check scene[1].ink == Ink.Rose
       check scene[2].ink == Ink.Cobalt
       check not scene[2].isVisible
+
+
+    test "a version-3 file is read with every item at the default radius":
+      # Version 3 stopped at geometry, so bytes run straight from one item's last.
+      #   coefficient into next item's ink: reading radius there would parse whole
+      #   rest of file from wrong offset.
+      var scene = initScene()
+      let path = getTempDir() / "visualiser_suite_scene_v3.rgascene"
+      writeFile(path, sceneFileOf(3'u8, @[
+        (ord(Ink.Rose), true, "first", POINTS[0]),
+        (ord(Ink.Cobalt), false, "second", POINTS[1]),
+      ]))
+      defer: removeFile(path)
+
+      check loadScene(scene, path).contains("Loaded 2")
+      check scene[0].radius == RADIUS_ITEM_DEFAULT
+      check scene[1].radius == RADIUS_ITEM_DEFAULT
+      check scene[1].geometry =~ POINTS[1]
+      check toText(scene[1].label) == "second"
+      check not scene[1].isVisible
+      # And today's file carries radius through, wherever writer put it.
+      let path_now = getTempDir() / "visualiser_suite_scene_v4.rgascene"
+      writeFile(path_now, sceneFileOf(VERSION_SCENE, @[
+        (ord(Ink.Rose), true, "sized", POINTS[0]),
+      ]))
+      defer: removeFile(path_now)
+      check loadScene(scene, path_now).contains("Loaded 1")
+      check scene[0].radius == 2.0*RADIUS_ITEM_DEFAULT
 
 
     test "a file from a version this build predates is refused rather than guessed at":
@@ -4152,6 +4228,41 @@ suite "Picking":
     )
     check anchor_far.isSome and abs(anchor_far.get.x) < 1.0e-6 and abs(anchor_far.get.z) < 1.0e-6
 
+  test "a sun drawn wide is picked anywhere on its disc, over the plane behind it":
+    # Pick radius follows drawn disc: Sol at 0.6 units from 1.2 units away spans about.
+    #   360 pixels of radius on 600-pixel frame, and cursor anywhere inside picks Sol,
+    #   not ecliptic disc it stands on.
+    # Smallest arrangement; reduced-capacity build cannot hold it and skips whole.
+    if ITEMS_MAX < itemsOf(ScaleOrrery.Nearest):
+      skip()
+    else:
+      var scene = initScene()
+      constructOrrery(scene, ScaleOrrery.Nearest)
+      var slot_sol = -1
+      for slot in 0 ..< scene.bound:
+        if scene.isAlive(slot) and toText(scene.labelAt(slot)) == "sol": slot_sol = slot
+      check slot_sol >= 0
+      let camera = initCamera(
+        target = Position(x: 0, y: 0, z: 0), distance = 1.2, azimuth = 0.9, elevation = 0.4
+      )
+      let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+      let scale = camera.drawExtentFor(HEIGHT_PICK)
+      let pixels_sol =
+        radiusPixelsAt(scene.radiusAt(slot_sol), Position(x: 0, y: 0, z: 0), scale.scale)
+      check pixels_sol > 300.0
+      for offset in [0.0, 100.0, 250.0]:
+        let cursor = ScreenPosition(x: CENTRE.x + offset, y: CENTRE.y, depth: 0.0)
+        check pickNearest(
+          scene, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, cursor
+        ) == some(slot_sol)
+      # Well past disc, Sol is no longer answer.
+      let outside = ScreenPosition(
+        x: CENTRE.x + pixels_sol + RADIUS_PICK_POINT + 1.0, y: CENTRE.y, depth: 0.0
+      )
+      check pickNearest(
+        scene, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, outside
+      ) != some(slot_sol)
+
   test "point at target is picked at screen centre":
     var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
@@ -5864,8 +5975,8 @@ suite "Marker":
     ##   costs in test.
     var marker: Marker
     if markerFor(
-      geometry, anchor, scale, placement, view_projection, width, height, marker,
-      progress, is_touch, travel,
+      geometry, anchor, RADIUS_ITEM_DEFAULT, scale, placement, view_projection, width, height,
+      marker, progress, is_touch, travel,
     ): some(marker)
     else: none(Marker)
 
@@ -5935,8 +6046,30 @@ suite "Marker":
 
 
   test "a point's ring clears the drawn point by the shared gap":
+    # Ring hugs disc as drawn: point's world radius in pixels at its depth, or least.
+    #   on-screen radius where that is larger, then shared gap.
+    let (placement, view_projection, scale) = setUp(19.0)
+    discard placement
+    discard view_projection
     let marker = markerOf(POINT_A).get
-    check marker.radius =~ 0.5*float(SIZE_POINT) + GAP_MARKER
+    let anchor = anchorFor(POINT_A, scale).get
+    check marker.radius =~
+      radiusPixelsAt(RADIUS_ITEM_DEFAULT, anchor, scale.scale) + GAP_MARKER
+    check marker.radius > 0.5*float(DIAMETER_POINT_LEAST) + GAP_MARKER
+    # Far point falls to least radius; huge one grows with its own.
+    let (placement_far, view_projection_far, scale_far) = setUp(1900.0)
+    var ring_far: Marker
+    check markerFor(
+      POINT_A, none(Position), RADIUS_ITEM_DEFAULT, scale_far, placement_far,
+      view_projection_far, WIDTH_MARK, HEIGHT_MARK, ring_far,
+    )
+    check ring_far.radius =~ 0.5*float(DIAMETER_POINT_LEAST) + GAP_MARKER
+    var ring_huge: Marker
+    check markerFor(
+      POINT_A, none(Position), 100.0*RADIUS_ITEM_DEFAULT, scale, placement,
+      view_projection, WIDTH_MARK, HEIGHT_MARK, ring_huge,
+    )
+    check ring_huge.radius > 10.0*marker.radius
 
 
   const TOLERANCE_PIXEL_TILT = 0.25
@@ -6314,7 +6447,8 @@ suite "Marker":
     #   plain scaling of swell, whose *shape* is `interaction.swellHold`'s to decide.
     const RADIUS_FINGER = 22.0 # Half 44-pixel minimum touch target.
     check clearanceTouch(0.0, is_touch = true) =~ 0.0
-    check RADIUS_MARKER_POINT + clearanceTouch(1.0, is_touch = true) > RADIUS_FINGER
+    check 0.5*float(DIAMETER_POINT_LEAST) + GAP_MARKER + clearanceTouch(1.0, is_touch = true) >
+      RADIUS_FINGER
     for swell in [0.0, 0.25, 0.5, 0.75, 1.0]:
       check clearanceTouch(swell, is_touch = false) =~ 0.0
 

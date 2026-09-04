@@ -59,10 +59,11 @@ const
 #[ In-View Configuration ]#
 
 const
-  INSET_POINT_SHOWN* = 0.5*float(SIZE_POINT)
+  INSET_POINT_SHOWN* = 0.5*float(DIAMETER_POINT_LEAST)
     ## Shrink centred box by this many pixels when asking whether *point* is in view.
-    ##   Drawn dot then fits inside rather than only its middle.
-    ##   Half of what `tessellate.addPoint` draws, dot's radius.
+    ##   Smallest drawn dot then fits inside rather than only its middle.
+    ##   Least radius rather than point's own: sun filling half of frame is shown once its
+    ##   centre is, and framing against its disc would push camera out to hold rim.
     ##   Deliberately not selection marker's radius.
     ##     That ring swells while touch hold fills (see `marker.clearanceTouch`), and box
     ##     breathing with gesture would re-frame view mid-hold.
@@ -453,8 +454,13 @@ proc pickNearest*(
       # Measure through `pixelsFromCursor`, not `projectToScreen`.
       #   Branch almost every slot takes wants distance, not projected position to
       #   measure one from.
+      # Widen to disc drawn where that is larger than generous default.
+      #   Sun hundred pixels across is picked anywhere on it, not only near middle.
       let distance = pixelsFromCursor(view_projection, width, height, place.at, cursor)
-      if distance <= RADIUS_PICK_POINT: consider(0, distance)
+      let radius_pick = max(
+        RADIUS_PICK_POINT, radiusPixelsAt(scene.radiusAt(slot), place.at, scale.scale)
+      )
+      if distance <= radius_pick: consider(0, distance)
 
     of PlacedKind.PointToward:
       # Pick direction point where its star is drawn.

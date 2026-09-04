@@ -408,6 +408,7 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(
       scratch[0], item.geometry, tint, scale, progress, item.anchorOverride, bounds = bounds,
+      radius = item.radius,
     )
 
   # Emit open edit session's staged multivector, through same dispatch real object uses.
@@ -446,6 +447,7 @@ proc assembleMeshes(
     let tint = if are_dimmed[slot]: muted(item.ink.colour) else: item.ink.colour
     discard MESHES.addObject(
       scratch[0], item.geometry, tint, scale, progress, item.anchorOverride, bounds = bounds,
+      radius = item.radius,
     )
 
   # Emit algebra's own layer, over everything.
@@ -558,8 +560,8 @@ proc drawSelectionMarker(
     #   Places orientation pulse; hover and focus pass none, so motion means selected.
     var marker: Marker
     if not markerFor(
-      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
-      marker, travel = some(clock.travelAt(slot)),
+      item.geometry, item.anchorOverride, item.radius, scale, camera, view_projection, width,
+      height, marker, travel = some(clock.travelAt(slot)),
     ): continue
     # Advance against lap this marker came out with.
     #   Orbiting then changes where comet wraps and never how fast it travels; see
@@ -658,8 +660,8 @@ proc drawInteractionOverlay(
     let item = scene[index.get]
     var marker: Marker
     if markerFor(
-      item.geometry, item.anchorOverride, scale, camera, view_projection, width, height,
-      marker,
+      item.geometry, item.anchorOverride, item.radius, scale, camera, view_projection, width,
+      height, marker,
     ):
       drawMarker(marker, Ink.Outline.colour, ALPHA_MARKER_HOVER)
 

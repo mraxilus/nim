@@ -286,7 +286,7 @@ var
   #   Consumer uploads or reads within same frame and holds nothing across two.
   FLAT_RIBBON = initFlatFloats(RIBBONS_MAX*16)
   FLAT_FURNITURE = initFlatFloats(RIBBONS_MAX*16)
-  FLAT_POINT = initFlatFloats(VERTICES_MAX*7)
+  FLAT_POINT = initFlatFloats(VERTICES_MAX*8)
   FLAT_RING = initFlatFloats(RINGS_MAX*14)
   FLAT_DISC = initFlatFloats(DISCS_MAX*13)
   FLAT_DOME = initFlatFloats(DOMES_MAX*8)
@@ -409,18 +409,19 @@ proc stampBorn(slot: int, born: float) =
 
 
 proc flattenInto(mesh: Mesh, dest: var FlatFloats) =
-  ## Interleave one primitive's vertices as `x, y, z, r, g, b, a, ...` into `dest`.
-  ##   Ready for `gl.bufferData`.
-  dest.used = mesh.count_vertices * 7
+  ## Interleave point records as `x, y, z, radius, r, g, b, a, ...` into `dest`.
+  ##   Ready for `gl.bufferData`; `mesh.Vertex`'s field order.
+  dest.used = mesh.count_vertices * 8
   for i in 0 ..< mesh.count_vertices:
     template v: untyped = mesh.vertices[i]
-    dest[7*i + 0] = v.x
-    dest[7*i + 1] = v.y
-    dest[7*i + 2] = v.z
-    dest[7*i + 3] = v.red
-    dest[7*i + 4] = v.green
-    dest[7*i + 5] = v.blue
-    dest[7*i + 6] = v.alpha
+    dest[8*i + 0] = v.x
+    dest[8*i + 1] = v.y
+    dest[8*i + 2] = v.z
+    dest[8*i + 3] = v.radius
+    dest[8*i + 4] = v.red
+    dest[8*i + 5] = v.green
+    dest[8*i + 6] = v.blue
+    dest[8*i + 7] = v.alpha
 
 
 
@@ -535,6 +536,15 @@ proc nimItemInk(slot: cint): cint {.exportc.} = cint(SCENE.inkAt(int(slot)))
 proc nimItemVisible(slot: cint): bool {.exportc.} = SCENE.isVisible(int(slot))
   ## Report item's visibility, by slot.
 
+proc nimItemRadius(slot: cint): cfloat {.exportc.} = cfloat(SCENE.radiusAt(int(slot)))
+  ## Report item's drawn radius, in world units, by slot.
+
+proc nimDefaultRadius(): cfloat {.exportc.} = cfloat(RADIUS_ITEM_DEFAULT)
+  ## Report radius freshly composed object starts out with.
+
+proc nimLeastRadius(): cfloat {.exportc.} = cfloat(RADIUS_ITEM_LEAST)
+  ## Report smallest radius size field accepts; see `scene.RADIUS_ITEM_LEAST`.
+
 proc nimItemBorn(slot: cint): cfloat {.exportc.} = cfloat(BORNS[int(slot)])
   ## Report moment item was added, by slot, on same clock as every `now` here.
   ##   Lets browser's Objects panel sort by recency.
@@ -583,24 +593,26 @@ proc nimDefaultInk(): cint {.exportc.} = cint(SCENE.inkNext)
   ##   Cycled as every construction path cycles it.
 
 proc nimAddItem(
-  coefficients: seq[float], label: cstring, ink_ordinal: cint, now: cfloat
+  coefficients: seq[float], label: cstring, ink_ordinal: cint, radius, now: cfloat
 ): cint {.exportc.} =
   ## Commit composing edit session as fresh scene object.
-  ##   Takes label and palette slot session staged; both are editable before commit,
-  ##   unlike every other construction path.
+  ##   Takes label, palette slot and radius session staged; all are editable before
+  ##   commit, unlike every other construction path.
   ##   Builds `geometry` coefficient by coefficient rather than reusing `nimSceneAddRaw`.
   ##     That one skips `HISTORY.record`, stamps `BORNS` to 0.0 and never touches
   ##     `SELECTION`, all three of which user-driven add must do.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
-  result = cint(SCENE.addItem(geometry, $label, Ink(ink_ordinal), float(now)))
+  result = cint(SCENE.addItem(
+    geometry, $label, Ink(ink_ordinal), float(now), radius = float(radius)
+  ))
   stampBorn(int(result), float(now))
   SELECTION.selectOnly(int(result))
   HISTORY.record(SCENE, CAMERA)
 
 
 proc nimCommitItem(
-  slot: cint, coefficients: seq[float], label: cstring, ink_ordinal: cint
+  slot: cint, coefficients: seq[float], label: cstring, ink_ordinal: cint, radius: cfloat
 ) {.exportc.} =
   ## Commit editing session onto item it was opened against.
   ##   Writes every staged field at once and records history exactly once.
@@ -612,6 +624,7 @@ proc nimCommitItem(
   SCENE.setGeometryAt(index, geometry)
   toChars($label, SCENE.labelAt(index))
   SCENE.setInk(index, Ink(ink_ordinal))
+  SCENE.setRadius(index, float(radius))
   HISTORY.record(SCENE, CAMERA)
 
 
@@ -701,6 +714,12 @@ proc nimSetLabel(slot: cint, text: cstring) {.exportc.} =
 proc nimSetInk(slot: cint, ink_ordinal: cint) {.exportc.} =
   ## Rewrite item's palette slot, by slot.
   SCENE.setInk(int(slot), Ink(ink_ordinal))
+  HISTORY.record(SCENE, CAMERA)
+
+
+proc nimSetRadius(slot: cint, radius: cfloat) {.exportc.} =
+  ## Rewrite item's drawn radius, by slot.
+  SCENE.setRadius(int(slot), float(radius))
   HISTORY.record(SCENE, CAMERA)
 
 
@@ -822,10 +841,14 @@ proc nimPoolCellColors(): seq[float32] {.exportc.} =
 #[ Render Metrics ]#
 
 proc nimRenderLineWidths(): seq[float32] {.exportc.} =
-  ## Report `[point_size, furniture_line_width, object_line_width]`.
-  ##   Browser's `gl.uniform1f`/`gl.lineWidth` then draw at sizes desktop's `renderer.nim`
-  ##   does, without hand-copied literal.
-  @[SIZE_POINT, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT]
+  ## Report `[least_point_diameter, furniture_line_width, object_line_width]`.
+  ##   Browser's uniforms then draw at sizes desktop's `renderer.nim` does, without
+  ##   hand-copied literal.
+  @[DIAMETER_POINT_LEAST, WIDTH_LINE_FURNITURE, WIDTH_LINE_OBJECT]
+
+
+proc nimPointCorners(): seq[float32] {.exportc.} = pointCorners()
+  ## Report point quad's static corner buffer; see `mesh.pointCorners`.
 
 
 proc nimRampTree(): seq[float32] {.exportc.} =
@@ -1649,9 +1672,9 @@ proc nimSelectionMarker(
   # Shape straight into shared box pulse call reads back.
   #   Nothing allocates or copies `Marker`.
   if not markerFor(
-    SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCALE_OVERLAY,
-    CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), BOX_MARKER[], float(progress),
-    is_touch, travel = some(travel), swell = float(swell),
+    SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCENE.radiusAt(int(slot)),
+    SCALE_OVERLAY, CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), BOX_MARKER[],
+    float(progress), is_touch, travel = some(travel), swell = float(swell),
   ):
     MARKER_SHAPED = none(ShapedMarker)
     return
@@ -1735,9 +1758,9 @@ proc nimSelectionPulse(
     MARKER_SHAPED = none(ShapedMarker)
     held = BOX_MARKER
     if not markerFor(
-      SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCALE_OVERLAY,
-      CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), held[], float(progress), is_touch,
-      travel = some(travel), swell = float(swell),
+      SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCENE.radiusAt(int(slot)),
+      SCALE_OVERLAY, CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), held[],
+      float(progress), is_touch, travel = some(travel), swell = float(swell),
     ): return
 
   template marker: Marker = held[]
@@ -1768,6 +1791,11 @@ proc nimSceneReadsVersion(version: cint): bool {.exportc.} =
   ##   Rule rather than number: what build reads is range, two literals to drift.
   version >= 0 and version <= int(high(uint8)) and readsSceneVersion(uint8(version))
 
+proc nimSceneHasRadius(version: cint): bool {.exportc.} =
+  ## Report whether file of this version carries radius after each item's geometry.
+  ##   Parser asks this rather than compare against literal; see `scene.hasRadius`.
+  version >= 0 and version <= int(high(uint8)) and hasRadius(uint8(version))
+
 
 proc nimSceneClear() {.exportc.} =
   ## Discard live scene and start fresh empty one.
@@ -1778,7 +1806,7 @@ proc nimSceneClear() {.exportc.} =
 
 proc nimSceneAddRaw(
   version: cint, ink_ordinal: cint, is_visible: bool, label: cstring,
-  coefficients: seq[float], count_total: cint, now: cfloat
+  coefficients: seq[float], radius: cfloat, count_total: cint, now: cfloat
 ): cint {.exportc.} =
   ## Add one item straight from parsed `.rgascene` fields, for load path.
   ##   Presentation layer parses bytes into these fields and calls this once per item, in
@@ -1786,6 +1814,8 @@ proc nimSceneAddRaw(
   ##   `version` is file's own; item is carried up by `scene.itemUpgraded`, same chain
   ##   desktop's `loadScene` walks.
   ##     `SLOT_NONE` where no version could have written item: corrupt or foreign file.
+  ##   `radius` is whatever parser read, or anything at all where version wrote none:
+  ##   upgrade chain fills it there.
   ##   `count_total` is file's whole item count and `now` this frame's clock, so arrival
   ##   is staggered by `scene.bornReplaying`, same rule desktop stamps with.
   var geometry: Multivector
@@ -1796,6 +1826,7 @@ proc nimSceneAddRaw(
       is_visible: is_visible,
       label: $label,
       geometry: geometry,
+      radius: float(radius),
     ),
     uint8(version),
   )
@@ -1804,7 +1835,8 @@ proc nimSceneAddRaw(
   #   Scene was cleared before first of these.
   let born = bornReplaying(SCENE.len, int(count_total), float(now))
   let slot = SCENE.addItem(
-    carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal), born
+    carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal), born,
+    radius = carried.get.radius,
   )
   SCENE.setVisible(slot, carried.get.is_visible)
   # Stamp rather than leave alone: slot could hold stale reading from earlier occupant.
@@ -1859,6 +1891,10 @@ type FrameData = object
     ## Carry what ribbon vertex shader needs of camera.
     ##   Exactly `mesh.DrawScale`'s same-named fields.
     ##   Widening, near clip and screen-constant width run on GPU.
+  camera_right_x, camera_right_y, camera_right_z: float32
+  camera_up_x, camera_up_y, camera_up_z: float32
+    ## Carry camera's screen axes, point vertex shader spans each disc across.
+    ##   `mesh.DrawScale.axis_right` and `axis_up`.
   fog_radius_full, fog_radius_gone: float32
     ## Carry furniture fog's two radii, for ribbon fragment shader's fade of fogged records.
     ##   `mesh.fogFurnitureFor`'s answer for this frame's reach.
@@ -2127,12 +2163,12 @@ proc nimBuildFrame(
       if SCENE.isVisible(slot):
         if PLACEMENTS[slot].kind != PlacedKind.PlaneEverywhere:
           # Skip point outside view before it costs emitting, flatten and upload.
-          if IS_CULLING and not isPointInView(PLACEMENTS[slot], bounds):
+          if IS_CULLING and not isPointInView(PLACEMENTS[slot], SCENE.radiusAt(slot), bounds):
             cost.chargeCulled()
             continue
           let progress = animationProgress(float(now), BORNS[slot])
           discard MESHES.emitObject(
-            PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress,
+            PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress, SCENE.radiusAt(slot),
           )
           cost.chargeTally(
             PLACEMENTS[slot].kind, is_sky = false, is_ghost = false, is_selected = false,
@@ -2169,12 +2205,12 @@ proc nimBuildFrame(
     for position in 0 ..< SELECTION.len:
       let slot = SELECTION.at(position)
       if not SCENE.isAlive(slot) or not SCENE.isVisible(slot): continue
-      if IS_CULLING and not isPointInView(PLACEMENTS[slot], bounds):
+      if IS_CULLING and not isPointInView(PLACEMENTS[slot], SCENE.radiusAt(slot), bounds):
         cost.chargeCulled()
         continue
       let progress = animationProgress(float(now), BORNS[slot])
       discard MESHES.emitObject(
-        PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress,
+        PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress, SCENE.radiusAt(slot),
       )
       cost.chargeTally(
         PLACEMENTS[slot].kind, is_sky = false, is_ghost = false, is_selected = true
@@ -2233,6 +2269,10 @@ proc nimBuildFrame(
     camera_depth_near: float32(scale.depthNear),
     camera_tangent_half_view: float32(scale.tangentHalfView),
     camera_height_pixels: float32(scale.heightPixels),
+    camera_right_x: float32(scale.axisRight.x), camera_right_y: float32(scale.axisRight.y),
+    camera_right_z: float32(scale.axisRight.z),
+    camera_up_x: float32(scale.axisUp.x), camera_up_y: float32(scale.axisUp.y),
+    camera_up_z: float32(scale.axisUp.z),
     fog_radius_full: float32(fogFurnitureFor(scale.extentFurniture).radius_full),
     fog_radius_gone: float32(fogFurnitureFor(scale.extentFurniture).radius_gone),
     ms_grid: float32(ms_grid),
