@@ -7,7 +7,7 @@ _Who made this, from what, and how far it has been checked._
 |--------|-------|
 | Agent  | Claude Code |
 | Author | Claude Opus 5 and Claude Sonnet 5 |
-| Date   | 2026-09-03 |
+| Date   | 2026-09-04 |
 | Style  | `CONSTITUTION.md` and `STYLE.md`, supplied with the prompt; followed for all code. |
 | Review | **Unreviewed.** Nothing here has been read line by line by a human. |
 
@@ -307,11 +307,47 @@ they occupy. Two ordinary washes crossing still look order-dependent; accepted.
 0.6) rather than replacing it with `Ink.Grid`, which made a muted object indistinguishable
 from the grid; `FRACTION_DIMMED_ALPHA` 0.55 so muted objects read as present context.
 
-**Draw sizes** live in `mesh.nim`, not `renderer.nim`: `SIZE_POINT` 9.0, `WIDTH_LINE_OBJECT`
-2.5, `WIDTH_LINE_FURNITURE` 1.5 px, with a `static: doAssert` that object lines exceed
-furniture lines. `marker` derives every clearance from them and cannot import `renderer`.
-A ribbon's width is measured in *framebuffer* pixels, so the bridge hands
+**Draw sizes** live in `mesh.nim`, not `renderer.nim`: `DIAMETER_POINT_LEAST` 6.0,
+`WIDTH_LINE_OBJECT` 2.5, `WIDTH_LINE_FURNITURE` 1.5 px, with a `static: doAssert` that object
+lines exceed furniture lines. `marker` derives every clearance from them and cannot import
+`renderer`. A ribbon's width is measured in *framebuffer* pixels, so the bridge hands
 `drawExtentFor` the framebuffer's height rather than the window's.
+
+**Every point has a radius, in world units, and is drawn in perspective.** `Scene.radii` holds
+one per slot (`radiusAt`/`setRadius`, `addItem(..., radius)`), `RADIUS_ITEM_DEFAULT` = 0.08 —
+what the old nine-pixel sprite spanned at the opening camera, 19 units over 900 px, so old
+scenes and fresh constructions open looking as they did and only gain perspective. Both
+editors carry a `size` field (`EditSession.radius`, `session_edit.radius`), bounded below at
+`RADIUS_ITEM_LEAST` 0.001 because the model refuses zero outright and would take the page down
+with it; `RADIUS_ITEM_MOST` 1e6 exists because ImGui's drag widget reads *no upper bound* as
+*no bounds*. A point crosses the wire as one eight-float record (`Vertex`: centre, radius,
+colour) and is drawn as an **instanced camera-facing quad**, four corners in strip order from
+`mesh.pointCorners`, on both targets: the vertex shader takes `depth = (centre − eye) · forward`,
+`world_per_pixel = 2·depth·tan(fov/2)/height`, `radius = max(own, ½·DIAMETER_POINT_LEAST·
+world_per_pixel)` and steps the corner along the camera's `axis_right`/`axis_up` (new fields of
+`DrawScale`, carried to `glue.js` as `camera_right_*`/`camera_up_*`); the fragment stage
+discards outside the unit circle and fades the last pixel of rim. The rule is stated once in
+Nim as `radiusDrawnAt` and its pixel reading `radiusPixelsAt`, and the two shaders are its
+sibling copies, named as such. So the size is *fixed in the world* and shrinks with distance
+exactly as perspective says, floored at six pixels so a distant star stays a readable dot
+rather than sub-pixel flicker — that floor is the one departure from pure perspective, and it
+is what keeps 4,900 catalogue stars visible. Pick, marker, cull and framing follow the drawn
+disc: the pick radius is `max(RADIUS_PICK_POINT, radiusPixelsAt(...))` so a sun a hundred
+pixels across is picked anywhere on it (verified: clicking 150 px off Sol's centre from 1.2
+units selects Sol on this build and the ecliptic behind it on the previous one); the marker
+ring sits `GAP_MARKER` outside the drawn pixels; `isPointInView` widens its side bounds by the
+point's own radius; `reachOf` adds the radius so the far clip holds the whole disc. The
+`gl.POINTS`/`gl_PointSize` path is gone from both targets, and with it `uRound`/`as_point`.
+  **Measured** on this container, largest demo, camera orbiting, before (sprites, branch head
+in a worktree) and after (discs), two rounds each, 1200×900: every CPU phase is unchanged
+within noise — cull off `build` 5.6–5.8 → 5.6–6.2 ms p50, `scene` 3.4–3.5 → 3.4–3.7; cull on
+`build` 3.5–3.7 → 3.6–3.8, `scene` 1.6–1.7 → 1.7–1.8 — while the **whole frame under
+SwiftShader** rose from 53–55 to 103–108 ms p50 with the cull off and 46–50 to 56–59 with it
+on. Drawing the quad as a four-corner strip instead of six triangle vertices changed nothing
+measurable (107 vs 105 ms), so the vertex count is not the cost; the hypothesis is
+SwiftShader's per-instance overhead on 4,938 instances, which a hardware GPU does not have —
+ribbons, discs and rings already draw instanced here. **Unmeasured on the device**; the
+drawer's `render` row is where it would show.
 
 **Furniture** (ground grid, world axes) reaches `extent_furniture`, from the far clip
 (`extentFurnitureFor`), and is drawn as **fog about the eye**, not a halo about the origin.
@@ -660,7 +696,8 @@ selected.
 | Point at horizon | Circle about the fixed star it draws as. | Sweeps. |
 
 All keep `GAP_MARKER` = 6.0 px between the object's drawn edge and the marker, measured out
-from the drawn size: `RADIUS_MARKER_POINT` = `SIZE_POINT`/2 + gap = 10.5 px,
+from the drawn size: a point's ring radius is `radiusPixelsAt(radius, anchor, scale)` + gap,
+so it hugs a sun and a dot alike (9 px + gap at the least size);
 `OFFSET_MARKER_RAIL` = `WIDTH_LINE_OBJECT`/2 + gap = 7.25 px. `WIDTH_MARKER` 1.5 px, asserted
 thinner than the line it marks — 2 px of pure white at an 11.5 px gap read as a second
 object. Markers are stroked by each render path's foreground layer (`gui.overlayPolyline`,
@@ -1122,11 +1159,11 @@ because every file already written contained it. The desktop converts through
 | Bytes | Field |
 |-------|-------|
 | 4 | Magic `RGAS` |
-| 1 | Format version (`VERSION_SCENE` = 3) |
+| 1 | Format version (`VERSION_SCENE` = 4) |
 | 1 | Basis count (16 under this build); must match |
 | 4 | Item count, little-endian `uint32` |
-| per item | Ink (1), visibility (1), label length in bytes (1) + UTF-8, then one |
-|  | little-endian `float` per basis term |
+| per item | Ink (1), visibility (1), label length in bytes (1) + UTF-8, one |
+|  | little-endian `float` per basis term, then the radius as one more `float` |
 
 `MAGIC_SCENE` and `VERSION_SCENE` are exported and reach `glue.js` through
 `nimSceneMagic`/`nimSceneVersion`, so there is no literal to drift; labels go through
@@ -1137,8 +1174,10 @@ it wrote.
 
 Only live items are written, **in creation order** (`nimSceneSlotsCreated` on the browser
 side; `nimSceneSlots` keeps slot order for the combo boxes indexed by position). That order
-is the whole of what version 3 added. Omitted on purpose: slot numbers, a per-item ordinal,
-fixed-width label padding.
+is the whole of what version 3 added; version 4 appended the radius after each item's
+geometry, and which versions carry one is `scene.hasRadius`, reached by the browser parser
+through `nimSceneHasRadius` rather than a literal `4`. Omitted on purpose: slot numbers, a
+per-item ordinal, fixed-width label padding.
 
 **A loaded scene replays its construction.** `born` is not written, but
 `scene.bornReplaying(index, count, now)` stamps the `index`-th of `count` arrivals a beat
@@ -1153,7 +1192,10 @@ build replays — a file, the demo, the opening scene — through one rule in bo
 1: reading an old version costs a mapping func and a suite case, refusing one costs somebody
 their scene. Reading is written once against `VERSION_SCENE`; each past version's difference
 lives in one `upgradedFrom<n>`, and `itemUpgraded` walks an `ItemSaved` up the chain one
-step at a time. Version 2 costs nothing but the sequence guarantee (`upgradedFrom2` is an
+step at a time. Version 3 costs sizes: `upgradedFrom3` fills `RADIUS_ITEM_DEFAULT`, the size
+version 3 drew everything at, whatever the parser had in the field — and the chain refuses a
+radius that is zero, negative or NaN as it refuses an unknown palette slot. Version 2 costs
+nothing but the sequence guarantee (`upgradedFrom2` is an
 explicit no-op kept so the question has an answer); version 1 costs colours only — its
 ordinals name a palette that no longer exists, folded by the same cycle `inkCycled` walks,
 bounded by `ORDINAL_INK_HIGH_V1` = 14 so a byte version 1 could never have written is
@@ -1368,8 +1410,9 @@ and far from the camera's clip distances — and the browser walk and the deskto
 both skip the point before it is emitted, flattened, uploaded or drawn. Lines and planes are
 not tested: a line crosses the whole frame whatever its support, and a disc reaches past its
 centre. Horizon points are tested by direction alone. The test is conservative on purpose:
-the sides carry a margin of the sprite's radius and one pixel more, so a sprite straddling the
-edge is still emitted whatever the GPU does with a centre just outside, and near and far sit
+the sides carry a margin of the least on-screen radius and one pixel more, widened per point by
+its own world radius, so a disc straddling the edge is still emitted whatever the GPU does with
+a centre just outside, and near and far sit
 one part in a thousand inside the GPU's own clip, so rounding never culls a point the GPU
 would draw. Components rather than `Direction` arithmetic and parameters read in place, so the
 test allocates nothing per point; the emitted JS was read for copies and has none. Its time is
@@ -1566,8 +1609,27 @@ at 30.05 while the doc comment said otherwise. `TILT_MOON` = 0.0897 rad carries 
 5.14° inclination, separate from the system's lean; the plane at horizon is
 `att(ecliptic) ∧ att(earth ∧ luna)` and exists only because the two differ. Moons map their
 real semi-major axes (Phobos at 9,376 km to Nereid at 5.5 million, a range of 588) onto
-`RADIUS_MOON_NEAREST` 0.08 to `RADIUS_MOON_FURTHEST` 0.32 by the same logarithm; small
-because Venus and Earth stand 0.74 units apart and a wider ring reaches the next orbit.
+`RADIUS_MOON_NEAREST` 0.08 to `RADIUS_MOON_FURTHEST` 0.32 by the same logarithm, **measured
+from the parent's drawn rim**, not its centre; small because Venus and Earth stand 0.74 units
+apart and a wider ring reaches the next orbit. From the rim because the planets now have one:
+Io's ring measured from Jupiter's centre lay at 0.22 inside Jupiter's 0.19 disc.
+
+**Every body is drawn at its real radius on a square-root scale** (`radiusDrawnOf`):
+`RADIUS_SOL_DRAWN` = 0.6 × √(km / 695,700 km), with the real mean radii in `SOL` and `MOONS`
+(`kilometres_radius`). Sol 0.6, Jupiter 0.19, Saturn 0.17, Earth 0.057, Luna 0.03, Phobos
+0.0024 — order kept, the Sol-to-Earth ratio compressed from 109 to 10.4 so four sizes read as
+four. **Rejected**: true scale, which at Mercury's seven units per AU puts Sol at 0.03 and
+Earth at 0.0003, every body under the least dot from any camera that shows two of them — the
+picture before sizes existed; linear scale anchored at Sol, which puts Earth at 0.006, still a
+dot beside the sun. The anchor 0.6 is under a quarter of Mercury's ring (2.75) so the innermost
+planet stands clear, and wider than the opening camera's least dot (8.7 px at 139 units) so
+Sol reads as a sun among stars. Neighbour suns take Sol's radius and neighbour planets Earth's
+(`RADIUS_NEIGHBOUR_SUN`, `RADIUS_NEIGHBOUR_PLANET`): neither catalogue carries radii, and one
+figure for all is honest about that. No other spacing changed — the orbit rings were already
+far wider than any body — and the suite pins order, ratio, every moon's ring clearing its
+planet's disc and its own, and every body above `RADIUS_ITEM_LEAST`. Verified by looking:
+Sol at 14 units is a disc among dots, Jupiter's four moons are discs about its disc at 1.2
+units, and the desktop draws the same frame as the browser.
 
 **Two shipped catalogues, data only, generated.** `neighbourhood.nim` is a snapshot of the
 NASA Exoplanet Archive taken 2026-08-31 from its TAP service (`select hostname, pl_name,
@@ -1864,8 +1926,10 @@ while the same pick on a phone did; capped, 0.417 of the half-frame across, exac
 and `halfAngleCentred` the cone `distanceFitting` solves.
 
 **Three readings, following what each shape is drawn at**: a point's dot fits inside the
-centred box (inset `INSET_POINT_SHOWN`, half of `SIZE_POINT`, deliberately not by the swelling
-marker); a line merely crosses it (drawn to `radius_horizon`, it has no size to fit); a
+centred box (inset `INSET_POINT_SHOWN`, half of `DIAMETER_POINT_LEAST` — the least dot, not
+the point's own disc, or a sun filling half the frame would push the camera out to hold its
+rim; deliberately not by the swelling marker); a line merely crosses it (drawn to
+`radius_horizon`, it has no size to fit); a
 plane's **centre** is in the centred box and its **rim** on screen — against the frame inset
 by `INSET_RIM_SHOWN`, half the rim's stroke, 1.25 px, the entire price of letting a disc reach
 the edge. Holding the rim to the box threw the camera from 19 to 29.9 on the ground plane
