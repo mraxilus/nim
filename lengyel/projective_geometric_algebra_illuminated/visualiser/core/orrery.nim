@@ -62,11 +62,13 @@ type
     name*: string ## What it is called, also label it carries in scene.
     role*: Role ## What kind of body it is.
     distance*: float ## How far it really stands from Sol, in astronomical units.
+    kilometres_radius*: float ## Real mean radius, in kilometres; see `radiusDrawnOf`.
 
   SolMoon* = object ## Define one real moon of modelled solar system.
     name*: string ## What it is called, also label it carries in scene.
     parent*: int ## Which entry of `SOL` it rings.
-    kilometres*: float ## Real semi-major axis about that parent, in kilometres.
+    kilometres_orbit*: float ## Real semi-major axis about that parent, in kilometres.
+    kilometres_radius*: float ## Real mean radius, in kilometres; see `radiusDrawnOf`.
 
   System* = object ## Define where one system stands and how wide it is drawn.
     reach*: float ## How far its sun stands from `POSITION_ORRERY`, in world units.
@@ -89,15 +91,15 @@ const
     ##   are.
 
   SOL*: array[9, SolBody] = [
-    SolBody(name: "sol", role: Role.Sun, distance: 0.0),
-    SolBody(name: "mercury", role: Role.Planet, distance: 0.39),
-    SolBody(name: "venus", role: Role.Planet, distance: 0.72),
-    SolBody(name: "earth", role: Role.Planet, distance: 1.00),
-    SolBody(name: "mars", role: Role.Planet, distance: 1.52),
-    SolBody(name: "jupiter", role: Role.Planet, distance: 5.20),
-    SolBody(name: "saturn", role: Role.Planet, distance: 9.58),
-    SolBody(name: "uranus", role: Role.Planet, distance: 19.20),
-    SolBody(name: "neptune", role: Role.Planet, distance: 30.05),
+    SolBody(name: "sol", role: Role.Sun, distance: 0.0, kilometres_radius: 695_700.0),
+    SolBody(name: "mercury", role: Role.Planet, distance: 0.39, kilometres_radius: 2_439.7),
+    SolBody(name: "venus", role: Role.Planet, distance: 0.72, kilometres_radius: 6_051.8),
+    SolBody(name: "earth", role: Role.Planet, distance: 1.00, kilometres_radius: 6_371.0),
+    SolBody(name: "mars", role: Role.Planet, distance: 1.52, kilometres_radius: 3_389.5),
+    SolBody(name: "jupiter", role: Role.Planet, distance: 5.20, kilometres_radius: 69_911.0),
+    SolBody(name: "saturn", role: Role.Planet, distance: 9.58, kilometres_radius: 58_232.0),
+    SolBody(name: "uranus", role: Role.Planet, distance: 19.20, kilometres_radius: 25_362.0),
+    SolBody(name: "neptune", role: Role.Planet, distance: 30.05, kilometres_radius: 24_622.0),
   ] ## One system modelling real one: ours, not to scale.
     ##   Distances are real semi-major axes in astronomical units; `radiusOfSolBody` says
     ##   what is done to them.
@@ -109,33 +111,55 @@ const
     ##   so it gets own constructor.
 
   MOONS*: array[21, SolMoon] = [
-    SolMoon(name: "luna", parent: 3, kilometres: 384_400.0),
-    SolMoon(name: "phobos", parent: 4, kilometres: 9_376.0),
-    SolMoon(name: "deimos", parent: 4, kilometres: 23_463.0),
-    SolMoon(name: "io", parent: 5, kilometres: 421_800.0),
-    SolMoon(name: "europa", parent: 5, kilometres: 671_100.0),
-    SolMoon(name: "ganymede", parent: 5, kilometres: 1_070_400.0),
-    SolMoon(name: "callisto", parent: 5, kilometres: 1_882_700.0),
-    SolMoon(name: "mimas", parent: 6, kilometres: 185_540.0),
-    SolMoon(name: "enceladus", parent: 6, kilometres: 238_040.0),
-    SolMoon(name: "tethys", parent: 6, kilometres: 294_670.0),
-    SolMoon(name: "dione", parent: 6, kilometres: 377_420.0),
-    SolMoon(name: "rhea", parent: 6, kilometres: 527_070.0),
-    SolMoon(name: "titan", parent: 6, kilometres: 1_221_870.0),
-    SolMoon(name: "iapetus", parent: 6, kilometres: 3_560_840.0),
-    SolMoon(name: "miranda", parent: 7, kilometres: 129_900.0),
-    SolMoon(name: "ariel", parent: 7, kilometres: 190_900.0),
-    SolMoon(name: "umbriel", parent: 7, kilometres: 266_000.0),
-    SolMoon(name: "titania", parent: 7, kilometres: 436_300.0),
-    SolMoon(name: "oberon", parent: 7, kilometres: 583_500.0),
-    SolMoon(name: "triton", parent: 8, kilometres: 354_760.0),
-    SolMoon(name: "nereid", parent: 8, kilometres: 5_513_800.0),
-  ] ## Major named satellites of modelled system, at real semi-major axes in kilometres.
+    SolMoon(name: "luna", parent: 3, kilometres_orbit: 384_400.0,
+      kilometres_radius: 1_737.4),
+    SolMoon(name: "phobos", parent: 4, kilometres_orbit: 9_376.0,
+      kilometres_radius: 11.1),
+    SolMoon(name: "deimos", parent: 4, kilometres_orbit: 23_463.0,
+      kilometres_radius: 6.2),
+    SolMoon(name: "io", parent: 5, kilometres_orbit: 421_800.0,
+      kilometres_radius: 1_821.6),
+    SolMoon(name: "europa", parent: 5, kilometres_orbit: 671_100.0,
+      kilometres_radius: 1_560.8),
+    SolMoon(name: "ganymede", parent: 5, kilometres_orbit: 1_070_400.0,
+      kilometres_radius: 2_634.1),
+    SolMoon(name: "callisto", parent: 5, kilometres_orbit: 1_882_700.0,
+      kilometres_radius: 2_410.3),
+    SolMoon(name: "mimas", parent: 6, kilometres_orbit: 185_540.0,
+      kilometres_radius: 198.2),
+    SolMoon(name: "enceladus", parent: 6, kilometres_orbit: 238_040.0,
+      kilometres_radius: 252.1),
+    SolMoon(name: "tethys", parent: 6, kilometres_orbit: 294_670.0,
+      kilometres_radius: 531.1),
+    SolMoon(name: "dione", parent: 6, kilometres_orbit: 377_420.0,
+      kilometres_radius: 561.4),
+    SolMoon(name: "rhea", parent: 6, kilometres_orbit: 527_070.0,
+      kilometres_radius: 763.8),
+    SolMoon(name: "titan", parent: 6, kilometres_orbit: 1_221_870.0,
+      kilometres_radius: 2_574.7),
+    SolMoon(name: "iapetus", parent: 6, kilometres_orbit: 3_560_840.0,
+      kilometres_radius: 734.5),
+    SolMoon(name: "miranda", parent: 7, kilometres_orbit: 129_900.0,
+      kilometres_radius: 235.8),
+    SolMoon(name: "ariel", parent: 7, kilometres_orbit: 190_900.0,
+      kilometres_radius: 578.9),
+    SolMoon(name: "umbriel", parent: 7, kilometres_orbit: 266_000.0,
+      kilometres_radius: 584.7),
+    SolMoon(name: "titania", parent: 7, kilometres_orbit: 436_300.0,
+      kilometres_radius: 788.4),
+    SolMoon(name: "oberon", parent: 7, kilometres_orbit: 583_500.0,
+      kilometres_radius: 761.4),
+    SolMoon(name: "triton", parent: 8, kilometres_orbit: 354_760.0,
+      kilometres_radius: 1_353.4),
+    SolMoon(name: "nereid", parent: 8, kilometres_orbit: 5_513_800.0,
+      kilometres_radius: 170.0),
+  ] ## Major named satellites of modelled system, real semi-major axes and radii in km.
     ##   Major ones, not all: some three hundred are known, most unnamed rocks; these are
     ##   ones reader recognises, stated here so what is drawn is what is written down.
-    ##   `radiusOfMoon` says what is done to kilometres.
+    ##   `radiusOfMoon` says what is done to orbit's kilometres.
     ##     Phobos rings Mars 588 times nearer than Nereid rings Neptune, so same logarithm
     ##     `radiusOfSolBody` uses squashes it.
+    ##   `radiusDrawnOf` says what is done to radius's.
     ##   `parent` indexes `SOL`; static block below checks every one is planet.
 
   INDEX_SOL_EARTH = 3
@@ -196,9 +220,40 @@ const
     ##   Sol and Proxima, two of three hundred and thirty-two.
     ##     Fitted to more, opening camera stood so far off that nothing was left to go and
     ##     find.
-    ##   Distant stars stay *visible* whatever this is: point is drawn at fixed pixel size.
+    ##   Distant stars stay *visible* whatever this is: point never falls under least
+    ##   pixel size (`mesh.DIAMETER_POINT_LEAST`).
 
 const
+  RADIUS_SOL_DRAWN = 0.6
+    ## Fix how large Sol is drawn, in world units, anchor every body's size is scaled from.
+    ##   Under quarter of Mercury's ring at 2.75, so innermost planet stands clear; wider
+    ##   than opening camera's least dot, so Sol reads as sun among stars from 139 units.
+  KILOMETRES_SOL = SOL[0].kilometres_radius
+    ## Name Sol's real radius, denominator of `radiusDrawnOf`.
+  RADIUS_NEIGHBOUR_SUN = RADIUS_SOL_DRAWN
+    ## Fix how large every neighbour star is drawn.
+    ##   Catalogue carries no radii, and one figure for all is honest about that; Sol's
+    ##   own, so our star is not singled out.
+
+
+func radiusDrawnOf*(kilometres: float): float =
+  ## Report how large body of real radius `kilometres` is drawn, in world units.
+  ##   Square root of ratio to Sol, anchored at `RADIUS_SOL_DRAWN`.
+  ##     True scale is unreadable: Sol's real radius is 0.0047 astronomical units, and at
+  ##     Mercury's seven units per unit of orbit that is 0.03, Earth 0.0003, every body
+  ##     under least dot from any camera that shows two of them. Picture would be one
+  ##     before sizes existed.
+  ##     Linear scale anchored at Sol puts Earth at 0.006, still dot beside 0.6 sun.
+  ##     Square root keeps order and compresses Sol-to-Earth ratio from 109 to 10: Sol,
+  ##     Jupiter, Earth and Luna read as four sizes, at 0.6, 0.19, 0.057 and 0.03.
+  ##   Exported so suite pins bodies against it.
+  RADIUS_SOL_DRAWN*sqrt(kilometres/KILOMETRES_SOL)
+
+
+const
+  RADIUS_NEIGHBOUR_PLANET = radiusDrawnOf(SOL[INDEX_SOL_EARTH].kilometres_radius)
+    ## Fix how large every neighbour planet is drawn.
+    ##   Archive carries no radii either; Earth's, same rule as suns take Sol's.
   COUNT_ITEM_HORIZON = 4
     ## Count items closing block comes to.
     ##   Four, not three: two points at horizon, because one cannot make plane. See
@@ -206,12 +261,16 @@ const
 
   RADIUS_MOON_NEAREST = 0.08
   RADIUS_MOON_FURTHEST = 0.32
-    ## Fix how far nearest and furthest moon ring parents, in world units.
+    ## Fix how far nearest and furthest moon ring parents' drawn rims, in world units.
+    ##   From rim rather than centre; see `radiusOfMoon`.
     ##   Small, necessarily: tightest planet pair, Venus and Earth, stands 0.74 apart, so
     ##   moon ring wider than third of that reaches next orbit.
     ##     Moon is dot beside planet at opening camera and separate body once reader goes
     ##     and looks.
     ##   Range rather than single multiple: twenty-one moons need range to map onto.
+    ##   From rim, since planet now has one: Io's ring measured from Jupiter's centre lay
+    ##   inside Jupiter's disc, at 0.22 against 0.19.
+
 
   TILT_MOON = 0.0897
     ## Fix how far moon's ring leans out of planet's orbital plane, in radians.
@@ -338,19 +397,21 @@ func radiusOfSolBody(body: SolBody): float =
 
 
 func radiusOfMoon(moon: SolMoon): float =
-  ## Report how far moon of `MOONS` rings its planet in scene, in world units.
+  ## Report how far moon of `MOONS` rings its planet's centre in scene, in world units.
   ##   Same logarithm `radiusOfSolBody` uses: real axes run from Phobos at 9,376 km to
   ##   Nereid at 5.5 million, range of 588.
   ##   Mapped onto `RADIUS_MOON_NEAREST`..`RADIUS_MOON_FURTHEST` rather than multiple of
   ##   system's radius: what bounds moon ring is gap to next planet's orbit, distance in
   ##   world units.
-  var nearest = MOONS[0].kilometres
-  var furthest = MOONS[0].kilometres
+  var nearest = MOONS[0].kilometres_orbit
+  var furthest = MOONS[0].kilometres_orbit
   for other in MOONS:
-    nearest = min(nearest, other.kilometres)
-    furthest = max(furthest, other.kilometres)
-  let share = (ln(moon.kilometres) - ln(nearest))/(ln(furthest) - ln(nearest))
-  RADIUS_MOON_NEAREST + share*(RADIUS_MOON_FURTHEST - RADIUS_MOON_NEAREST)
+    nearest = min(nearest, other.kilometres_orbit)
+    furthest = max(furthest, other.kilometres_orbit)
+  let share = (ln(moon.kilometres_orbit) - ln(nearest))/(ln(furthest) - ln(nearest))
+  # From parent's rim, so ring clears disc parent is drawn as; see `RADIUS_MOON_NEAREST`.
+  radiusDrawnOf(SOL[moon.parent].kilometres_radius) +
+    RADIUS_MOON_NEAREST + share*(RADIUS_MOON_FURTHEST - RADIUS_MOON_NEAREST)
 
 
 func radiusOfNeighbourPlanet(planet: NeighbourPlanet; which, count: int): float =
@@ -536,7 +597,7 @@ const
     ## Fix how many pixels of margin arrangement is framed with, per side.
     ##   Wider than framed selection takes (`framing.INSET_POINT_SHOWN`).
     ##     Fitted tightly, outermost framed system's marker ring touches frame edge, and
-    ##     marker is drawn at fixed pixel size solve knows nothing about.
+    ##     marker is drawn in pixels about dot solve knows nothing about.
 
 
 func constructSol(
@@ -564,7 +625,10 @@ func constructSol(
       of Role.Moon, Role.Derived: place_sol # `SOL` holds sun and planets; see its check.
     places[index] = place
     placed[index] = toMultivector(place)
-    scene.addItem(placed[index], body.name, lut_role_to_ink[body.role], now)
+    scene.addItem(
+      placed[index], body.name, lut_role_to_ink[body.role], now,
+      radius = radiusDrawnOf(body.kilometres_radius),
+    )
   # Ring every moon about planet it really rings, in that plane tipped by `TILT_MOON`.
   #   Phases step by golden angle per moon, so two moons of one planet never stand
   #   together.
@@ -573,7 +637,10 @@ func constructSol(
     let place = ringed(places[moon.parent], leaned, across, radiusOfMoon(moon),
       SYSTEM_SOL.spin + 2.4*float(index))
     placed_moons[index] = toMultivector(place)
-    scene.addItem(placed_moons[index], moon.name, lut_role_to_ink[Role.Moon], now)
+    scene.addItem(
+      placed_moons[index], moon.name, lut_role_to_ink[Role.Moon], now,
+      radius = radiusDrawnOf(moon.kilometres_radius),
+    )
   # Span ecliptic by Sol and two outermost planets, best conditioned join of eight.
   ecliptic = sol ∧ placed[INDEX_SOL_NEPTUNE] ∧ placed[INDEX_SOL_URANUS]
   orbit = sol ∧ placed[INDEX_SOL_EARTH]
@@ -620,7 +687,7 @@ func constructOrrery*(
       place_sun = sunOf(system)
       (along, across) = spanOf(system)
       sun = toMultivector(place_sun)
-    scene.addItem(sun, star.name, lut_role_to_ink[Role.Sun], now)
+    scene.addItem(sun, star.name, lut_role_to_ink[Role.Sun], now, radius = RADIUS_NEIGHBOUR_SUN)
     if star.planets == 0: continue
 
     var first_planet, second_planet: Multivector
@@ -633,7 +700,9 @@ func constructOrrery*(
         body = toMultivector(place)
       if which == 0: first_planet = body
       elif which == 1: second_planet = body
-      scene.addItem(body, planet.name, lut_role_to_ink[Role.Planet], now)
+      scene.addItem(
+        body, planet.name, lut_role_to_ink[Role.Planet], now, radius = RADIUS_NEIGHBOUR_PLANET
+      )
 
     # Span plane from two planets; star with single known planet gets no invented second.
     if star.planets >= 2:

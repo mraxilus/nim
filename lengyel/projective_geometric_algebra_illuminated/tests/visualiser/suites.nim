@@ -7031,6 +7031,39 @@ when ITEMS_MAX >= itemsOf(SCALE_ORRERY_DEFAULT):
       checkpoint(&"worst point is `{worst_label}`, carrying {worst} lines and planes")
       check worst <= 6
 
+    test "every body is drawn at its real radius on the square-root scale, clear of its moons":
+      # Sizes are what reader compares by eye, so what is pinned is order and ratio.
+      #   Sol over Earth compresses from 109 to about ten, and every moon ring starts
+      #   outside its planet's drawn disc.
+      var scene = initScene()
+      constructOrrery(scene)
+      var radii: Table[string, float]
+      var places: Table[string, Multivector]
+      for slot in 0 ..< scene.bound:
+        if not scene.isAlive(slot): continue
+        radii[toText(scene.labelAt(slot))] = scene.radiusAt(slot)
+        places[toText(scene.labelAt(slot))] = scene.geometryOf(slot)
+      check radii["sol"] =~ 0.6
+      check radii["sol"] > radii["jupiter"]
+      check radii["jupiter"] > radii["saturn"]
+      check radii["saturn"] > radii["earth"]
+      check radii["earth"] > radii["luna"]
+      check radii["luna"] > radii["phobos"]
+      check abs(radii["sol"]/radii["earth"] - sqrt(695_700.0/6_371.0)) < 1.0e-9
+      for body in SOL: check radii[body.name] =~ radiusDrawnOf(body.kilometres_radius)
+      # Every body stays above what editor accepts, so none is pinned at least dot for good.
+      for moon in MOONS: check radii[moon.name] >= RADIUS_ITEM_LEAST
+      # Moon's ring clears planet's disc and its own: two discs never overlap.
+      for moon in MOONS:
+        let parent = SOL[moon.parent].name
+        let apart = distanceBetween(places[moon.name], places[parent])
+        check apart > radii[parent] + radii[moon.name]
+      # Neighbour suns and planets take Sol's and Earth's, having no radii of their own.
+      check radii[STARS[0].name] =~ radii["sol"]
+      for planet in PLANETS:
+        if planet.name in radii: check radii[planet.name] =~ radii["earth"]
+
+
     test "every object wears its own type's colour, and no two types share one":
       # Moon and planet are two identical dots and hue is only thing separating.
       #   them, so role collapsing onto another's slot is silent loss of their one signal.
