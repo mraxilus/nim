@@ -99,6 +99,8 @@ type
     inks: array[ITEMS_MAX, Ink] ## Per-slot palette entry.
     radii: array[ITEMS_MAX, float] ## Per-slot drawn radius, in world units; see `radiusAt`.
       ## Read only for point: line and plane take their size from camera and horizon.
+    are_shining: array[ITEMS_MAX, bool] ## Per-slot whether item lights others; see
+      ## `shinesAt`.
     are_visible: array[ITEMS_MAX, bool] ## Per-slot visibility.
     are_alive: array[ITEMS_MAX, bool] ## Per-slot occupancy; false where slot is free.
     borns: array[ITEMS_MAX, float] ## Per-slot moment item was added, for appear animation.
@@ -620,6 +622,10 @@ func radius*(item: Item): float = item.scene.radii[item.slot]
   ## Read item's drawn radius, straight out of scene handle points at; see `radiusAt`.
 
 
+func shines*(item: Item): bool = item.scene.are_shining[item.slot]
+  ## Read whether item lights others, straight out of scene handle points at.
+
+
 func born*(item: Item): float = item.scene.borns[item.slot]
   ## Read item's `born` reading, straight out of scene handle points at.
 
@@ -684,6 +690,14 @@ func radiusAt*(scene: Scene, slot: int): float =
   ##   drawn at position does; front-end holds least on-screen size, not this.
   doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
   scene.radii[slot]
+
+
+func shinesAt*(scene: Scene, slot: int): bool =
+  ## Read whether item lights others, by slot rather than through `Item`; see `inkAt`.
+  ##   Sun: point every other point takes its shading from, and drawn flat itself; see
+  ##   `lighting`. Meaningful for point alone.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_shining[slot]
 
 
 func bornAt*(scene: Scene, slot: int): float =
@@ -809,6 +823,13 @@ func setRadius*(scene: var Scene, slot: int, radius: float) =
   scene.markEdited()
 
 
+func setShining*(scene: var Scene, slot: int, shines: bool) =
+  ## Rewrite whether item lights others, by slot, mirroring `setInk`.
+  doAssert scene.isAlive(slot), &"Item slot must be alive; got `{slot}`."
+  scene.are_shining[slot] = shines
+  scene.markEdited()
+
+
 func setVisible*(scene: var Scene, slot: int, is_visible: bool) =
   ## Rewrite item's visibility, by slot, mirroring `setInk`.
   ##   Only writer: `isVisibleAt(...) = visible` accessor silently lands on copied
@@ -835,7 +856,8 @@ iterator pairs*(scene: Scene): (int, Item) =
 
 func addItem*(
   scene: var Scene, geometry: Multivector, label: string, ink: Ink, now: float = 0.0,
-  anchor_override: Option[Position] = none(Position), radius: float = RADIUS_ITEM_DEFAULT
+  anchor_override: Option[Position] = none(Position), radius: float = RADIUS_ITEM_DEFAULT,
+  shines: bool = false
 ): int {.discardable.} =
   ## Insert object into scene at first free slot, visible; report slot used.
   ##   Silently refuses nothing: caller checks `isFull` first, as scene cannot grow.
@@ -844,6 +866,7 @@ func addItem*(
   ##   `anchor_override` is where plane's circle should centre instead of support, where
   ##   construction fixes that; see `creationAnchor`.
   ##   `radius` is how large point is drawn, in world units; see `radiusAt`.
+  ##   `shines` says point lights others; see `shinesAt`.
   doAssert not scene.isFull,
     &"Scene holds at most {ITEMS_MAX} items, raise `--define:visualiser.items_max`; got " &
       &"`{scene.len}`."
@@ -854,6 +877,7 @@ func addItem*(
   scene.inks[result] = ink
   doAssert radius > 0.0, &"Item radius must be positive; got `{radius}`."
   scene.radii[result] = radius
+  scene.are_shining[result] = shines
   scene.are_visible[result] = true
   scene.are_alive[result] = true
   scene.borns[result] = now
@@ -900,8 +924,8 @@ func removeItem*(scene: var Scene, slot: int) =
 ##   |          |   or metric and cannot be read here.                         |
 ##   | 4        | Item count, little-endian `uint32`.                          |
 ##   | per item | Ink (1), visibility (1), label length (1) then that many     |
-##   |          |   bytes, one little-endian `float` per basis term, then      |
-##   |          |   radius as one more little-endian `float`.                  |
+##   |          |   bytes, one little-endian `float` per basis term, radius as |
+##   |          |   one more little-endian `float`, then shines (1).           |
 ##   |----------|--------------------------------------------------------------|
 ##
 ## Only live items are written, in order created, whole of what version 3 added.
@@ -916,7 +940,9 @@ func removeItem*(scene: var Scene, slot: int) =
 ##   |---------|-------------------------------------------------------------------|
 ##   | Version | Read as                                                           |
 ##   |---------|-------------------------------------------------------------------|
-##   | 4       | Exactly. Each item carries drawn radius after its geometry.       |
+##   | 5       | Exactly. Each item carries shines byte after its radius.          |
+##   | 4       | Exactly, except nothing shines, so every point draws flat; see    |
+##   |         |   `upgradedFrom4`.                                                |
 ##   | 3       | Exactly, except every item is drawn at `RADIUS_ITEM_DEFAULT`, size |
 ##   |         |   version 3 drew everything at; see `upgradedFrom3`.              |
 ##   | 2       | Exactly, except item sequence is slot order, so scene whose       |
@@ -946,8 +972,11 @@ const
     ##     Bytes are shaped identically, so this number alone says whether sequence is
     ##     build order or slot order.
     ##   Version 4 appended one float64 radius to each item, after its geometry.
+    ##   Version 5 appended one shines byte to each item, after its radius.
   VERSION_SCENE_RADIUS* = 4'u8
     ## Record first version whose items carry radius; see `hasRadius`.
+  VERSION_SCENE_SHINE* = 5'u8
+    ## Record first version whose items carry shines byte; see `hasShine`.
   VERSION_SCENE_LEAST* = 1'u8
     ## Bound oldest format version this build still reads.
     ##   One, and it stays one: version floor that rises throws reader's work away.
@@ -1003,6 +1032,11 @@ func hasRadius*(version: uint8): bool = version >= VERSION_SCENE_RADIUS
   ##   Both readers ask this rather than compare against literal; see `nimSceneHasRadius`.
 
 
+func hasShine*(version: uint8): bool = version >= VERSION_SCENE_SHINE
+  ## Report whether file of this version carries shines byte after each item's radius.
+  ##   Asked as `hasRadius` is; see `nimSceneHasShine`.
+
+
 type ItemSaved* = object
   ## Define one item exactly as scene file holds it, at whatever version wrote file.
   ##   Shape reading works in, and thing `upgradedFrom<n>` carries between versions.
@@ -1013,6 +1047,7 @@ type ItemSaved* = object
   label*: string ## Display label, decoded from file's UTF-8 bytes.
   geometry*: Multivector ## Object itself, one coefficient per basis term.
   radius*: float ## Drawn radius, in world units; `RADIUS_ITEM_DEFAULT` before version 4.
+  shines*: bool ## Whether item lights others; false before version 5.
 
 
 func upgradedFrom1(item: ItemSaved): Option[ItemSaved] =
@@ -1050,6 +1085,14 @@ func upgradedFrom3(item: ItemSaved): Option[ItemSaved] =
   some(carried)
 
 
+func upgradedFrom4(item: ItemSaved): Option[ItemSaved] =
+  ## Carry one item from what version 4 meant to what version 5 means.
+  ##   Version 4 knew no sun, so nothing shines and every point draws flat, as it did.
+  var carried = item
+  carried.shines = false
+  some(carried)
+
+
 func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
   ## Carry item read from file of `version` up to shape this build works in.
   ##   One boundary at time; none where no version could have written it.
@@ -1064,6 +1107,7 @@ func itemUpgraded*(item: ItemSaved, version: uint8): Option[ItemSaved] =
       of 1'u8: carried.upgradedFrom1
       of 2'u8: carried.upgradedFrom2
       of 3'u8: carried.upgradedFrom3
+      of 4'u8: carried.upgradedFrom4
       else: none(ItemSaved) # Unreachable: `readsSceneVersion` bounds walk above.
     if stepped.isNone: return none(ItemSaved)
     carried = stepped.get
@@ -1171,6 +1215,7 @@ when not defined(js):
       discard file.writeChars(text, 0, len(text))
       for b in Basis: file.writeLittle(geometry[b])
       file.writeLittle(item.radius)
+      file.write(char(ord(item.shines)))
 
     &"Saved {scene.len} object(s) to `{path}`."
 
@@ -1236,6 +1281,14 @@ when not defined(js):
       if hasRadius(version) and not file.readLittle(radius):
         return &"`{path}` is truncated partway through object {index}'s radius."
 
+      # Read shines byte only where file has one, as radius above.
+      var shines = false
+      if hasShine(version):
+        var shine_byte: array[1, char]
+        if file.readChars(shine_byte) != 1:
+          return &"`{path}` is truncated partway through object {index}'s shine."
+        shines = uint8(shine_byte[0]) != 0
+
       # Read at file's version, then carry up to this build's.
       #   Every field below means what `VERSION_SCENE` says.
       let carried = itemUpgraded(
@@ -1245,6 +1298,7 @@ when not defined(js):
           label: label,
           geometry: geometry,
           radius: radius,
+          shines: shines,
         ),
         version,
       )
@@ -1255,6 +1309,7 @@ when not defined(js):
       let slot = staging.addItem(
         carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal),
         bornReplaying(index, int(count), now), radius = carried.get.radius,
+        shines = carried.get.shines,
       )
       staging.setVisible(slot, carried.get.is_visible)
 

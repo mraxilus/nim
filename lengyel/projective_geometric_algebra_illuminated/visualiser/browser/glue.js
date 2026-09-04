@@ -28,6 +28,7 @@ const SOURCE_VERTEX_POINT = `
   attribute vec2 aCorner;
   attribute vec3 aCentre;
   attribute float aRadius;
+  attribute vec3 aLight;
   attribute vec4 aColor;
   uniform mat4 uMVP;
   uniform vec3 uEye;
@@ -41,6 +42,7 @@ const SOURCE_VERTEX_POINT = `
   varying vec4 vColor;
   varying vec2 vCorner;
   varying float vRadiusPixels;
+  varying vec3 vLight;
   void main() {
     float depth = dot(aCentre - uEye, uForward);
     if (depth < uDepthNear) {
@@ -48,6 +50,7 @@ const SOURCE_VERTEX_POINT = `
       vColor = vec4(0.0);
       vCorner = vec2(0.0);
       vRadiusPixels = 0.0;
+      vLight = vec3(0.0);
       return;
     }
     float world_per_pixel = 2.0*depth*uTangentHalfView/uHeightPixels;
@@ -57,20 +60,31 @@ const SOURCE_VERTEX_POINT = `
     vColor = aColor;
     vCorner = aCorner;
     vRadiusPixels = radius/world_per_pixel;
+    vLight = vec3(dot(aLight, uRight), dot(aLight, uUp), -dot(aLight, uForward));
   }
 `;
-// Round point's quad into disc, fading its last pixel of rim.
-//   Corner pair is unit-circle coordinate, so edge is where its length passes one.
+// Round point's quad into disc, fading its last pixel of rim, shaded as sphere.
+//   Corner pair is unit-circle coordinate, so edge is where its length passes one, and
+//   sphere's normal is that pair with height lifted off it. Lit where record carries
+//   light, in camera's basis from vertex stage: Lambert toward it over `uAmbient` floor;
+//   flat otherwise. Sibling of GLSL 3.30 source in `renderer.nim`.
 const SOURCE_FRAGMENT_POINT = `
   precision mediump float;
   varying vec4 vColor;
   varying vec2 vCorner;
   varying float vRadiusPixels;
+  varying vec3 vLight;
+  uniform float uAmbient;
   void main() {
     float reach = length(vCorner);
     if (reach > 1.0) discard;
     float edge = clamp((1.0 - reach)*vRadiusPixels, 0.0, 1.0);
-    gl_FragColor = vec4(vColor.rgb, vColor.a*edge);
+    float shade = 1.0;
+    if (dot(vLight, vLight) > 0.5) {
+      vec3 normal = vec3(vCorner, sqrt(max(0.0, 1.0 - reach*reach)));
+      shade = uAmbient + (1.0 - uAmbient)*max(0.0, dot(normal, vLight));
+    }
+    gl_FragColor = vec4(vColor.rgb*shade, vColor.a*edge);
   }
 `;
 // Plain colour pass-through, every wash program's fragment stage.
@@ -102,6 +116,7 @@ const point_attribs = {
   corner: gl.getAttribLocation(program, 'aCorner'),
   centre: gl.getAttribLocation(program, 'aCentre'),
   radius: gl.getAttribLocation(program, 'aRadius'),
+  light: gl.getAttribLocation(program, 'aLight'),
   colour: gl.getAttribLocation(program, 'aColor'),
 };
 const point_uniforms = {
@@ -114,6 +129,7 @@ const point_uniforms = {
   tangent: gl.getUniformLocation(program, 'uTangentHalfView'),
   height: gl.getUniformLocation(program, 'uHeightPixels'),
   diameter_least: gl.getUniformLocation(program, 'uDiameterLeast'),
+  ambient: gl.getUniformLocation(program, 'uAmbient'),
 };
 
 // Read from renderer.nim's own constants via nimRenderLineWidths.
@@ -123,6 +139,8 @@ const point_uniforms = {
 //   shader widens it, because WebGL clamps `gl.lineWidth` to one pixel on most
 //   implementations.
 const [DIAMETER_POINT_LEAST] = nimRenderLineWidths();
+// Night side of lit point, as fraction of its colour; `mesh.FRACTION_AMBIENT_SHADE`.
+const AMBIENT_SHADE = nimShadeAmbient();
 
 // Widen one 16-float ribbon record into corner this invocation is.
 //   Sibling copy of `mesh.expandRibbon`, reference suite pins to algebra, and of GLSL
@@ -411,7 +429,7 @@ const vbo = {
   ribbon: gl.createBuffer(), point: gl.createBuffer(),
   ribbon_furniture: gl.createBuffer(),
 };
-const STRIDE_POINT = 8 * 4;
+const STRIDE_POINT = 11 * 4;
 const STRIDE_RIBBON = 16 * 4;
 const STRIDE_DISC = 13 * 4;
 const STRIDE_DOME = 8 * 4;
@@ -602,7 +620,8 @@ function drawPoints(count, count_over, is_overlay) {
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo.point);
   const base = first * STRIDE_POINT;
   const records = [
-    [point_attribs.centre, 3, 0], [point_attribs.radius, 1, 12], [point_attribs.colour, 4, 16],
+    [point_attribs.centre, 3, 0], [point_attribs.radius, 1, 12], [point_attribs.light, 3, 16],
+    [point_attribs.colour, 4, 28],
   ];
   for (const [attrib, floats, offset] of records) {
     gl.enableVertexAttribArray(attrib);
@@ -1717,7 +1736,7 @@ const count_objects = document.getElementById('objects-count');
 /* rebuilds every row from scratch, which would otherwise discard it.      */
 /* ---------------------------------------------------------------------- */
 
-let session_edit = null; // { slot: number|null, coefficients: number[], label, ink, radius }
+let session_edit = null; // { slot, coefficients: number[], label, ink, radius, shines }
 
 function beginEditSession(slot) {
   // Null slot composes; real slot edits that item. Seeding composing session from.
@@ -1730,6 +1749,7 @@ function beginEditSession(slot) {
         label: nimDefaultLabel(),
         ink: nimDefaultInk(),
         radius: nimDefaultRadius(),
+        shines: false,
       }
     : {
         slot,
@@ -1737,8 +1757,9 @@ function beginEditSession(slot) {
         label: nimItemLabel(slot),
         ink: nimItemInk(slot),
         radius: nimItemRadius(slot),
+        shines: nimItemShines(slot),
       };
-  nimSetGhost(session_edit.coefficients);
+  nimSetGhost(session_edit.coefficients, session_edit.radius);
 }
 
 function endEditSession() {
@@ -1938,7 +1959,7 @@ function buildItemRow(slot) {
     if (is_pending) {
       nimAddItem(
         session_edit.coefficients, session_edit.label, session_edit.ink, session_edit.radius,
-        now(),
+        session_edit.shines, now(),
       );
       endEditSession();
       adoptConstructionSelection();
@@ -1946,7 +1967,7 @@ function buildItemRow(slot) {
     } else {
       nimCommitItem(
         slot, session_edit.coefficients, session_edit.label, session_edit.ink,
-        session_edit.radius,
+        session_edit.radius, session_edit.shines,
       );
       endEditSession();
       toast('Saved `' + label.textContent + '`.');
@@ -2086,9 +2107,22 @@ function buildItemRow(slot) {
       const typed = parseFloat(input_radius.value);
       session_edit.radius = Number.isFinite(typed) && typed >= nimLeastRadius()
         ? typed : nimDefaultRadius();
+      nimSetGhost(session_edit.coefficients, session_edit.radius); // Ghost shows size too.
     });
     field_radius.appendChild(input_radius);
     box_edit.appendChild(field_radius);
+
+    // Sun: point every other point is shaded from, drawn flat itself; see `lighting`.
+    const field_shines = document.createElement('label');
+    field_shines.className = 'field field-check';
+    const input_shines = document.createElement('input');
+    input_shines.type = 'checkbox';
+    input_shines.checked = session_edit.shines;
+    input_shines.addEventListener('change', () => { session_edit.shines = input_shines.checked; });
+    field_shines.appendChild(input_shines);
+    field_shines.appendChild(document.createTextNode(' shines'));
+    field_shines.title = 'A sun: lights every other point from where it stands.';
+    box_edit.appendChild(field_shines);
 
     const note_coefficient = document.createElement('div');
     note_coefficient.className = 'help-text';
@@ -2139,7 +2173,7 @@ document.getElementById('file-load-scene').addEventListener('change', (e) => {
 /* ---------------------------------------------------------------------- */
 /* Scene save/load: pack and parse exact `.rgascene` binary format         */
 /* `scene.nim`'s own doc comment documents (magic/version/basis-count/     */
-/* item-count/per-item ink+visible+label+16 float64+radius), so file this */
+/* item-count/per-item ink+visible+label+16 float64+radius+shines), so    */
 /* build saves loads on desktop build and vice versa. Packing lives       */
 /* here rather than in Nim, since `DataView` already does exactly this     */
 /* natively -- see `browser_bridge.nim`'s own doc comment.                */
@@ -2166,10 +2200,11 @@ function saveScene() {
     label: encoder.encode(nimItemLabel(slot)),
     coefficients: nimItemCoefficients(slot),
     radius: nimItemRadius(slot),
+    shines: nimItemShines(slot),
   }));
 
   let size = 4 + 1 + 1 + 4;
-  for (const item of items) size += 1 + 1 + 1 + item.label.length + count_basis * 8 + 8;
+  for (const item of items) size += 1 + 1 + 1 + item.label.length + count_basis * 8 + 8 + 1;
 
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
@@ -2196,6 +2231,7 @@ function saveScene() {
       offset += 8;
     }
     view.setFloat64(offset, item.radius, true); offset += 8;
+    view.setUint8(offset, item.shines ? 1 : 0); offset += 1;
   }
 
   deliverFile(
@@ -2291,7 +2327,15 @@ function parseAndLoadScene(buffer) {
       radius = view.getFloat64(offset, true);
       offset += 8;
     }
-    parsed.push({ ink, visible, label, coefficients, radius });
+    let shines = false;
+    if (nimSceneHasShine(version)) {
+      if (offset + 1 > buffer.byteLength) {
+        throw new Error('File is truncated partway through object ' + i + '’s shine.');
+      }
+      shines = view.getUint8(offset) !== 0;
+      offset += 1;
+    }
+    parsed.push({ ink, visible, label, coefficients, radius, shines });
   }
 
   nimSceneClear();
@@ -2305,7 +2349,7 @@ function parseAndLoadScene(buffer) {
   for (const item of parsed) {
     const slot = nimSceneAddRaw(
       version, item.ink, item.visible, item.label, item.coefficients, item.radius,
-      count_item, arrived,
+      item.shines, count_item, arrived,
     );
     if (slot < 0) throw new Error('File names an unknown palette slot or radius for an object.');
   }
@@ -4632,7 +4676,8 @@ function renderFrame(now_seconds) {
   gl.uniform1f(point_uniforms.tangent, data.camera_tangent_half_view);
   gl.uniform1f(point_uniforms.height, data.camera_height_pixels);
   gl.uniform1f(point_uniforms.diameter_least, DIAMETER_POINT_LEAST * ratio_pixel);
-  if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 8);
+  gl.uniform1f(point_uniforms.ambient, AMBIENT_SHADE);
+  if (!data.is_scene_held) count_point_held = uploadBuffer(data.point_verts, vbo.point, 11);
   const count_point = count_point_held;
   drawPoints(count_point, data.point_over, false);
   // Washes:

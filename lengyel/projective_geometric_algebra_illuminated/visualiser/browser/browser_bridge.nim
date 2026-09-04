@@ -34,6 +34,7 @@ import std/[options, strformat]
 
 import ../../pga
 import ../core/[
+  lighting,
   algebra_trace, algebra_view, boundary, camera, format, framing, help, history,
   interaction, marker, orrery, picking, ramp, scene, selection, storyboard, tessellate,
   timings,
@@ -223,6 +224,8 @@ var
     ## Held for scene's slots only: ghost and drag preview move with pointer, so both are
     ## placed where drawn.
     ## Dead slots hold whatever last occupant left; every walk skips them.
+  LIGHTS: LightCache ## Per-slot direction toward its sun; see `lighting.LightCache`.
+    ## Refreshed with `PLACEMENTS`, since it reads them.
   REVISION_PLACED = none(int) ## Scene revision `PLACEMENTS` was filled at, or none before
     ## first fill.
   BORN_LAST = 0.0 ## Latest birth stamp `stampBorn` has written.
@@ -410,19 +413,22 @@ proc stampBorn(slot: int, born: float) =
 
 
 proc flattenInto(mesh: Mesh, dest: var FlatFloats) =
-  ## Interleave point records as `x, y, z, radius, r, g, b, a, ...` into `dest`.
+  ## Interleave point records as `x, y, z, radius, light xyz, r, g, b, a, ...` into `dest`.
   ##   Ready for `gl.bufferData`; `mesh.Vertex`'s field order.
-  dest.used = mesh.count_vertices * 8
+  dest.used = mesh.count_vertices * 11
   for i in 0 ..< mesh.count_vertices:
     template v: untyped = mesh.vertices[i]
-    dest[8*i + 0] = v.x
-    dest[8*i + 1] = v.y
-    dest[8*i + 2] = v.z
-    dest[8*i + 3] = v.radius
-    dest[8*i + 4] = v.red
-    dest[8*i + 5] = v.green
-    dest[8*i + 6] = v.blue
-    dest[8*i + 7] = v.alpha
+    dest[11*i + 0] = v.x
+    dest[11*i + 1] = v.y
+    dest[11*i + 2] = v.z
+    dest[11*i + 3] = v.radius
+    dest[11*i + 4] = v.light_x
+    dest[11*i + 5] = v.light_y
+    dest[11*i + 6] = v.light_z
+    dest[11*i + 7] = v.red
+    dest[11*i + 8] = v.green
+    dest[11*i + 9] = v.blue
+    dest[11*i + 10] = v.alpha
 
 
 
@@ -540,6 +546,9 @@ proc nimItemVisible(slot: cint): bool {.exportc.} = SCENE.isVisible(int(slot))
 proc nimItemRadius(slot: cint): cfloat {.exportc.} = cfloat(SCENE.radiusAt(int(slot)))
   ## Report item's drawn radius, in world units, by slot.
 
+proc nimItemShines(slot: cint): bool {.exportc.} = SCENE.shinesAt(int(slot))
+  ## Report whether item lights others, by slot.
+
 proc nimDefaultRadius(): cfloat {.exportc.} = cfloat(RADIUS_ITEM_DEFAULT)
   ## Report radius freshly composed object starts out with.
 
@@ -594,18 +603,19 @@ proc nimDefaultInk(): cint {.exportc.} = cint(SCENE.inkNext)
   ##   Cycled as every construction path cycles it.
 
 proc nimAddItem(
-  coefficients: seq[float], label: cstring, ink_ordinal: cint, radius, now: cfloat
+  coefficients: seq[float], label: cstring, ink_ordinal: cint, radius: cfloat, shines: bool,
+  now: cfloat
 ): cint {.exportc.} =
   ## Commit composing edit session as fresh scene object.
-  ##   Takes label, palette slot and radius session staged; all are editable before
-  ##   commit, unlike every other construction path.
+  ##   Takes label, palette slot, radius and shines session staged; all are editable
+  ##   before commit, unlike every other construction path.
   ##   Builds `geometry` coefficient by coefficient rather than reusing `nimSceneAddRaw`.
   ##     That one skips `HISTORY.record`, stamps `BORNS` to 0.0 and never touches
   ##     `SELECTION`, all three of which user-driven add must do.
   var geometry: Multivector
   for b in Basis: geometry[b] = coefficients[ord(b)]
   result = cint(SCENE.addItem(
-    geometry, $label, Ink(ink_ordinal), float(now), radius = float(radius)
+    geometry, $label, Ink(ink_ordinal), float(now), radius = float(radius), shines = shines
   ))
   stampBorn(int(result), float(now))
   SELECTION.selectOnly(int(result))
@@ -613,7 +623,8 @@ proc nimAddItem(
 
 
 proc nimCommitItem(
-  slot: cint, coefficients: seq[float], label: cstring, ink_ordinal: cint, radius: cfloat
+  slot: cint, coefficients: seq[float], label: cstring, ink_ordinal: cint, radius: cfloat,
+  shines: bool
 ) {.exportc.} =
   ## Commit editing session onto item it was opened against.
   ##   Writes every staged field at once and records history exactly once.
@@ -626,6 +637,7 @@ proc nimCommitItem(
   toChars($label, SCENE.labelAt(index))
   SCENE.setInk(index, Ink(ink_ordinal))
   SCENE.setRadius(index, float(radius))
+  SCENE.setShining(index, shines)
   HISTORY.record(SCENE, CAMERA)
 
 
@@ -721,6 +733,12 @@ proc nimSetInk(slot: cint, ink_ordinal: cint) {.exportc.} =
 proc nimSetRadius(slot: cint, radius: cfloat) {.exportc.} =
   ## Rewrite item's drawn radius, by slot.
   SCENE.setRadius(int(slot), float(radius))
+  HISTORY.record(SCENE, CAMERA)
+
+
+proc nimSetShining(slot: cint, shines: bool) {.exportc.} =
+  ## Rewrite whether item lights others, by slot.
+  SCENE.setShining(int(slot), shines)
   HISTORY.record(SCENE, CAMERA)
 
 
@@ -853,6 +871,9 @@ proc nimRenderLineWidths(): seq[float32] {.exportc.} =
 proc nimPointCorners(): seq[float32] {.exportc.} = pointCorners()
   ## Report point quad's static corner buffer; see `mesh.pointCorners`.
 
+proc nimShadeAmbient(): cfloat {.exportc.} = cfloat(FRACTION_AMBIENT_SHADE)
+  ## Report lit point's night-side brightness, for point fragment shader's uniform.
+
 
 proc nimRampTree(): seq[float32] {.exportc.} =
   ## Report diagnostics tree's colour ramp, six floats per step.
@@ -918,6 +939,8 @@ proc ensurePlaced() =
   #   Held here and stamped onto camera at each derivation point, never kept in camera:
   #   `home` and every path replacing camera value would drop it.
   REACH_SCENE = reachOf(PLACEMENTS, SCENE)
+  # Suns move with same edits, so lights follow, as far as edit reached.
+  refreshLights(LIGHTS, SCENE, PLACEMENTS, REVISION_PLACED)
   REVISION_PLACED = some(SCENE.revision)
 
 
@@ -1809,6 +1832,10 @@ proc nimSceneHasRadius(version: cint): bool {.exportc.} =
   ##   Parser asks this rather than compare against literal; see `scene.hasRadius`.
   version >= 0 and version <= int(high(uint8)) and hasRadius(uint8(version))
 
+proc nimSceneHasShine(version: cint): bool {.exportc.} =
+  ## Report whether file of this version carries shines byte after each item's radius.
+  version >= 0 and version <= int(high(uint8)) and hasShine(uint8(version))
+
 
 proc nimSceneClear() {.exportc.} =
   ## Discard live scene and start fresh empty one.
@@ -1819,7 +1846,7 @@ proc nimSceneClear() {.exportc.} =
 
 proc nimSceneAddRaw(
   version: cint, ink_ordinal: cint, is_visible: bool, label: cstring,
-  coefficients: seq[float], radius: cfloat, count_total: cint, now: cfloat
+  coefficients: seq[float], radius: cfloat, shines: bool, count_total: cint, now: cfloat
 ): cint {.exportc.} =
   ## Add one item straight from parsed `.rgascene` fields, for load path.
   ##   Presentation layer parses bytes into these fields and calls this once per item, in
@@ -1840,6 +1867,7 @@ proc nimSceneAddRaw(
       label: $label,
       geometry: geometry,
       radius: float(radius),
+      shines: shines,
     ),
     uint8(version),
   )
@@ -1849,7 +1877,7 @@ proc nimSceneAddRaw(
   let born = bornReplaying(SCENE.len, int(count_total), float(now))
   let slot = SCENE.addItem(
     carried.get.geometry, carried.get.label, Ink(carried.get.ink_ordinal), born,
-    radius = carried.get.radius,
+    radius = carried.get.radius, shines = carried.get.shines,
   )
   SCENE.setVisible(slot, carried.get.is_visible)
   # Stamp rather than leave alone: slot could hold stale reading from earlier occupant.
@@ -2182,6 +2210,7 @@ proc nimBuildFrame(
           let progress = animationProgress(float(now), BORNS[slot])
           discard MESHES.emitObject(
             PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress, SCENE.radiusAt(slot),
+            LIGHTS.lights[slot],
           )
           cost.chargeTally(
             PLACEMENTS[slot].kind, is_sky = false, is_ghost = false, is_selected = false,
@@ -2226,6 +2255,7 @@ proc nimBuildFrame(
       let progress = animationProgress(float(now), BORNS[slot])
       discard MESHES.emitObject(
         PLACEMENTS[slot], SCENE.inkAt(slot).colour, scale, progress, SCENE.radiusAt(slot),
+        LIGHTS.lights[slot],
       )
       cost.chargeTally(
         PLACEMENTS[slot].kind, is_sky = false, is_ghost = false, is_selected = true

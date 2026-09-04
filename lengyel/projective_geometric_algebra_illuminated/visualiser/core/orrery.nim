@@ -627,7 +627,7 @@ func constructSol(
     placed[index] = toMultivector(place)
     scene.addItem(
       placed[index], body.name, lut_role_to_ink[body.role], now,
-      radius = radiusDrawnOf(body.kilometres_radius),
+      radius = radiusDrawnOf(body.kilometres_radius), shines = body.role == Role.Sun,
     )
   # Ring every moon about planet it really rings, in that plane tipped by `TILT_MOON`.
   #   Phases step by golden angle per moon, so two moons of one planet never stand
@@ -687,7 +687,10 @@ func constructOrrery*(
       place_sun = sunOf(system)
       (along, across) = spanOf(system)
       sun = toMultivector(place_sun)
-    scene.addItem(sun, star.name, lut_role_to_ink[Role.Sun], now, radius = RADIUS_NEIGHBOUR_SUN)
+    scene.addItem(
+      sun, star.name, lut_role_to_ink[Role.Sun], now, radius = RADIUS_NEIGHBOUR_SUN,
+      shines = true,
+    )
     if star.planets == 0: continue
 
     var first_planet, second_planet: Multivector

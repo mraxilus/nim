@@ -391,7 +391,7 @@ await page.waitForTimeout(150);
 const slot_rival = await page.evaluate((slot) => {
   const model = Array.from(nimItemCoefficients(slot));
   model[1] += 0.05;
-  const added = nimAddItem(model, 'rival', nimDefaultInk(), nimDefaultRadius(), 0);
+  const added = nimAddItem(model, 'rival', nimDefaultInk(), nimDefaultRadius(), false, 0);
   nimSelectClear();
   return added;
 }, slots_scene[1]);
@@ -3155,7 +3155,7 @@ const ms_after_edit = await page.evaluate(() => {
   const times = [];
   for (let i = 0; i < 6; i += 1) {
     const slot = nimAddItem(
-      model, 'placed', nimDefaultInk(), nimDefaultRadius(), performance.now() / 1000,
+      model, 'placed', nimDefaultInk(), nimDefaultRadius(), false, performance.now() / 1000,
     );
     const started = performance.now();
     nimBuildFrame(aspect, performance.now() / 1000, canvas.height, true, true, false, true);
@@ -3189,12 +3189,12 @@ const undo_drawn = await page.evaluate(async () => {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   const state = (f) => ({
-    verts: f.point_verts.length / 8, points: f.count_points, selected: f.count_selected,
+    verts: f.point_verts.length / 11, points: f.count_points, selected: f.count_selected,
     held: f.is_scene_held, count: nimSceneCount(), revision: nimSceneRevision(),
     hidden: nimSceneSlots().filter((slot) => !nimItemVisible(slot)).length,
   });
   const before = state(build());
-  nimAddItem(model, 'undone', nimDefaultInk(), nimDefaultRadius(), performance.now() / 1000);
+  nimAddItem(model, 'undone', nimDefaultInk(), nimDefaultRadius(), false, performance.now() / 1000);
   nimSelectClear();
   let is_held = false;
   for (let i = 0; i < 60 && !is_held; i += 1) { await sleep(50); is_held = build().is_scene_held; }
@@ -3263,7 +3263,7 @@ await page.waitForTimeout(200);
 await page.evaluate(() => {
   const model = Array.from(nimItemCoefficients(nimSceneSlots()[0]));
   while (nimSceneCount() < nimSceneCapacity()) {
-    nimAddItem(model, 'filler', nimDefaultInk(), nimDefaultRadius(), 0);
+    nimAddItem(model, 'filler', nimDefaultInk(), nimDefaultRadius(), false, 0);
   }
   nimSelectClear(); // Each add selects what it added; leave nothing standing behind.
 });

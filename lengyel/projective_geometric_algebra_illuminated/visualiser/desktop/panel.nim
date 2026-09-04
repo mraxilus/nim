@@ -124,6 +124,7 @@ type
       ## buffer must not change before save.
     index_ink*: cint ## Staged palette slot.
     radius*: cfloat ## Staged drawn radius, in world units; see `scene.radiusAt`.
+    shines*: bool ## Staged sun flag; see `scene.shinesAt`.
 
   ItemRow* = object ## Define what one object row has resolved about itself.
     ## Computed once at top of `layoutItem` and handed to each part of row, so three agree.
@@ -348,6 +349,7 @@ func beginSession(panel: var Panel, scene: var Scene, slot: Option[int]) =
     session.label = scene.labelAt(slot.get)
     session.index_ink = cint(scene.inkAt(slot.get))
     session.radius = cfloat(scene.radiusAt(slot.get))
+    session.shines = scene.shinesAt(slot.get)
   else:
     toChars(&"m{scene.len}", session.label)
     session.index_ink = cint(scene.inkNext)
@@ -381,6 +383,8 @@ proc layoutSessionFields(panel: var Panel, is_pending: bool) =
   )
   gui.tooltip(cstring"Radius a point is drawn at, in world units; shrinks with distance.")
   gui.widthPop()
+  discard gui.checkbox("shines", addr panel.session.get.shines)
+  gui.tooltip(cstring"A sun: lights every other point from where it stands, and is drawn flat.")
   gui.textTinted("coefficients", INK_LABEL.red, INK_LABEL.green, INK_LABEL.blue)
   gui.sameLine()
   gui.helpMarker(
@@ -445,7 +449,7 @@ proc layoutItemButtons(
       if row.isPending:
         let slot_added = scene.addItem(
           geometry, toText(session.label), Ink(session.index_ink), now,
-          radius = float(session.radius),
+          radius = float(session.radius), shines = session.shines,
         )
         panel.selection.selectOnly(slot_added)
       else:
@@ -453,6 +457,7 @@ proc layoutItemButtons(
         scene.labelAt(row.slot.get) = session.label
         scene.setInk(row.slot.get, Ink(session.index_ink))
         scene.setRadius(row.slot.get, float(session.radius))
+        scene.setShining(row.slot.get, session.shines)
       history.record(scene, camera)
       panel.session = none(EditSession)
   gui.tooltip(
