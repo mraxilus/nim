@@ -3913,14 +3913,14 @@ let separation_pinch_start = null;
 // Whether two fingers have parted or closed further than tap slop since both came down.
 //   Until they have, gesture is pan and only pan: two fingers carried together never
 //   hold their separation to pixel, and every notch of that jitter went through zoom,
-//   scaling view while reader meant only to carry it. Slop itself is not
+//   which re-targets turntable onto whatever middle of frame crossed. Slop itself is not
 //   zoomed once crossed; zoom starts from separation where it was crossed, without jump.
 let is_pinch_zooming = false;
 // Whether two fingers have moved since frame loop last read them.
 //   Each finger's move arrives as its own `pointermove`, so between two of them
 //   separation and midpoint are one finger new and other old: read there, every step of
-//   pan carried together was zoom in by one finger's step and out again by other's.
-//   Read once per frame instead, in
+//   pan carried together was zoom in by one finger's step and out again by other's,
+//   and each of those went through re-target. Read once per frame instead, in
 //   `settleTwoFingers`, after both have reported.
 let is_two_fingers_pending = false;
 let pan_last = null;
@@ -4149,18 +4149,23 @@ function settleTwoFingers() {
   const points_flat = [...pointers.values()];
   const separation = pointerDist(points_flat);
   const mid = pointerMid(points_flat);
-  // Zoom straight in and out, at middle of frame, not aimed at pinch's own midpoint.
+  // Zoom at middle of frame, not aimed at pinch's own midpoint.
   //   Pan below already moves view by that midpoint's own travel, so aiming zoom
   //   there too translates view twice for one gesture, and pinch anywhere but dead
   //   centre slides scene while it scales it.
   //   Wheel has no pan beside it, which is why aiming at pointer is right there.
+  //   Through anchor at middle rather than plain dolly, so target lands on planet
+  //   pinch arrives at and orbit turns about it; plane, ground and level under middle
+  //   leave target on its level. See `interaction.dollyAtCentre`.
   if (separation_pinch_start !== null && !is_pinch_zooming &&
       Math.abs(separation - separation_pinch_start) > TAP_MAX_MOVE) {
     is_pinch_zooming = true;
     separation_pinch_start = separation;
   }
   if (is_pinch_zooming) {
-    nimCameraDolly(separation_pinch_start / Math.max(1, separation));
+    nimCameraDollyCentred(
+      separation_pinch_start / Math.max(1, separation), canvas.clientWidth, canvas.clientHeight,
+    );
     separation_pinch_start = separation;
   }
 

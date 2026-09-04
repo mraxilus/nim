@@ -317,6 +317,23 @@ func dollyToward*(camera: var Camera, factor: float, anchor: Position) =
   camera.distance = distance_settled
 
 
+func retargetToDepth*(camera: var Camera, depth: float) =
+  ## Move target along sight line to `depth` from eye, leaving picture unchanged.
+  ##   Eye and sight direction stay; only separation moves, so nothing on screen shifts.
+  ##   What turntable revolves about, and what every rate scaled by orbit distance reads,
+  ##   then follows what reader looks at: zoom that carried eye up to planet while target
+  ##   stayed on Sol far behind left every orbit swinging planet across frame.
+  ##   Held off near floor as every distance is.
+  let
+    eye = camera.eye
+    forward = camera.frame(eye).forward
+    settled = distanceHeld(depth)
+  camera.target = Position(
+    x: eye.x + settled*forward.x, y: eye.y + settled*forward.y, z: eye.z + settled*forward.z
+  )
+  camera.distance = settled
+
+
 func pan*(camera: var Camera; across, up: float) =
   ## Slide target within plane facing eye, so whole view shifts with it.
   ##   Slide is multivector sum along frame's own two axes.

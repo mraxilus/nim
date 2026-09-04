@@ -584,10 +584,20 @@ func isAnchorNear(anchor: Position, camera: Camera, scale: DrawExtent): bool =
   depth >= camera.distance/FACTOR_ANCHOR_DEPTH and depth <= camera.distance*FACTOR_ANCHOR_DEPTH
 
 
+type AnchorZoom* = object ## Define what zoom holds still, and whether it stands somewhere.
+  at*: Position ## World point that keeps its pixel through zoom.
+  is_standing*: bool ## Whether `at` is where point or line stands, not crossing of ray.
+    ## What stands somewhere is what reader looks at, so turntable's target follows its
+    ## depth (`camera.retargetToDepth`). Plane, ground and level are crossings, met where
+    ## ray happens to fall: their depth under cursor is not their depth at middle of
+    ## frame, and target lifted to it stood off plane being zoomed onto. Those three
+    ## are followed by map rule alone, target sliding toward `at`; see `camera.dollyToward`.
+
+
 proc anchorZoomAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
-): Option[Position] =
+): Option[AnchorZoom] =
   ## Solve world point zoom aimed at `cursor` should hold still.
   ##   Whatever finite object cursor is over, else ground under it, else level target
   ##   sits on. In that order, and order is rule.
@@ -613,10 +623,15 @@ proc anchorZoomAt*(
       frame_camera = camera.frame(scale.eye)
       ray = castRay(camera, scale.eye, frame_camera, width, height, cursor)
       found = positionOnItemUnder(scene.geometryOf(slot.get), ray, scale.plane_eye)
-    if found.isSome and isAnchorNear(found.get, camera, scale): return found
+    if found.isSome and isAnchorNear(found.get, camera, scale):
+      let is_standing = shape(scene.geometryOf(slot.get)) != some(Shape.Plane)
+      return some(AnchorZoom(at: found.get, is_standing: is_standing))
   let ground = positionOnGround(camera, width, height, cursor)
-  if ground.isSome and isAnchorNear(ground.get, camera, scale): return ground
-  positionUnderCursor(camera, width, height, cursor)
+  if ground.isSome and isAnchorNear(ground.get, camera, scale):
+    return some(AnchorZoom(at: ground.get, is_standing: false))
+  let level = positionUnderCursor(camera, width, height, cursor)
+  if level.isNone: return none(AnchorZoom)
+  some(AnchorZoom(at: level.get, is_standing: false))
 
 
 

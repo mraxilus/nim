@@ -589,6 +589,55 @@ suite "Camera":
     check camera.target =~ ORIGIN
 
 
+  test "a zoom onto a point brings the target to its depth, and onto ground or level does not":
+    # Turntable follows what reader looks at: eye carried up to planet while target.
+    #   stayed far behind left every orbit swinging planet across frame. Ground and
+    #   level are fallbacks, and following either drifted target's height with every
+    #   notch and moved it where pan and slide expect it held.
+    const (WIDE, TALL) = (1440, 900)
+    let planet = Position(x: 3.0, y: 1.0, z: 0.0)
+    var scene = initScene()
+    scene.addItem(toMultivector(planet), "planet", Ink.Cobalt)
+    # Middle of frame over planet, camera aimed at it from afar: pinch's case.
+    var camera = initCamera(target = planet, distance = 20.0, azimuth = 0.4, elevation = 0.5)
+    camera.target = Position(x: 3.0, y: 1.0, z: 0.0) + 10.0*camera.frame(camera.eye).forward
+    camera.distance = 30.0 # Eye where it was, target ten units past planet.
+    let eye_before = camera.eye
+    dollyAtCentre(
+      camera, scene, 0.5, camera.drawExtentFor(TALL),
+      camera.initMatrixViewProjection(float(WIDE)/float(TALL)), WIDE, TALL,
+    )
+    # Eye moved halfway to planet, and target now stands on it.
+    check camera.target =~ planet
+    check abs(camera.distance - 10.0) < 1.0e-6
+    check camera.eye =~ (planet + 0.5*(eye_before - planet))
+    # Over empty sky, level answers and target keeps its height: distance scales alone.
+    var level = initCamera(target = ORIGIN, distance = 12.0, azimuth = 0.5, elevation = 0.05)
+    var interaction = Interaction(is_enabled: true)
+    interaction.updateCursor(720.0, 200.0)
+    dollyAt(
+      level, initScene(), 0.5, level.drawExtentFor(TALL),
+      level.initMatrixViewProjection(float(WIDE)/float(TALL)), WIDE, TALL,
+      ScreenPosition(x: 720.0, y: 200.0),
+    )
+    check abs(level.distance - 6.0) < 1.0e-6
+    check abs(level.target.z) < 1.0e-6
+    # Over ground below raised target, ground answers and target slides halfway toward.
+    #   it by map rule alone, not to ground's depth along sight line.
+    var over_ground = initCamera(
+      target = Position(x: 0.0, y: 0.0, z: 1.0), distance = 12.0, azimuth = 0.5,
+      elevation = 0.5,
+    )
+    let under = ScreenPosition(x: 720.0, y: 700.0)
+    check positionOnGround(over_ground, WIDE, TALL, under).isSome
+    dollyAt(
+      over_ground, initScene(), 0.5, over_ground.drawExtentFor(TALL),
+      over_ground.initMatrixViewProjection(float(WIDE)/float(TALL)), WIDE, TALL, under,
+    )
+    check abs(over_ground.distance - 6.0) < 1.0e-6
+    check abs(over_ground.target.z - 0.5) < 1.0e-6
+
+
   test "a zoom aims at the object under the cursor, then the ground, then the level":
     # Order is rule: reader pointing at object means that object, at depth.
     #   it actually stands at. Anchored on plane through target instead, zoom crept
@@ -610,7 +659,8 @@ suite "Camera":
       ScreenPosition(x: on_screen.x, y: on_screen.y),
     )
     check at_object.isSome
-    check at_object.get =~ raised
+    check at_object.get.at =~ raised
+    check at_object.get.is_standing
 
     # Cursor little off it falls through to ground, which is `z = 0` itself rather.
     #   than level target happens to sit on. Lower in frame, where ground stands within
@@ -625,7 +675,8 @@ suite "Camera":
         WIDE, TALL, elsewhere,
       )
     check at_ground.isSome
-    check abs(at_ground.get.z) <= 1.0e-6
+    check abs(at_ground.get.at.z) <= 1.0e-6
+    check not at_ground.get.is_standing
     # Cursor toward horizon finds ground too far to zoom toward, and takes level.
     #   through target instead: zoom aimed there flew camera off across ground.
     let
@@ -636,9 +687,10 @@ suite "Camera":
         WIDE, TALL, toward_horizon,
       )
     check at_level.isSome
-    check abs(at_level.get.z - 5.0) <= 1.0e-6
+    check abs(at_level.get.at.z - 5.0) <= 1.0e-6
+    check not at_level.get.is_standing
     # And it is ground *cursor* is over, not ground below eye.
-    check at_ground.get =~ positionOnGround(camera_raised, WIDE, TALL, elsewhere).get
+    check at_ground.get.at =~ positionOnGround(camera_raised, WIDE, TALL, elsewhere).get
 
     # Cursor whose ray reaches no ground still meets level through target, which.
     #   is last answer rather than first.
@@ -653,7 +705,23 @@ suite "Camera":
       )
       let at_target = positionUnderCursor(level, WIDE, TALL, upward)
       check at_level.isSome == at_target.isSome
-      if at_level.isSome: check at_level.get =~ at_target.get
+      if at_level.isSome: check at_level.get.at =~ at_target.get
+
+    # Plane under cursor is crossing, not place: anchored where ray meets it, but not.
+    #   followed to depth, which is not plane's depth at middle of frame.
+    var scene_floor = initScene()
+    scene_floor.addItem(
+      planeThrough(toMultivector(ORIGIN), toMultivector(Direction(x: 0, y: 0, z: 1))),
+      "floor", inkCycled(1),
+    )
+    let at_plane = anchorZoomAt(
+      scene_floor, camera_raised, camera_raised.drawExtentFor(TALL),
+      camera_raised.initMatrixViewProjection(float(WIDE)/float(TALL)),
+      WIDE, TALL, elsewhere,
+    )
+    check at_plane.isSome
+    check abs(at_plane.get.at.z) <= 1.0e-6
+    check not at_plane.get.is_standing
 
 
   test "a line is aimed at where the cursor crosses it, not at its stored support":
@@ -4249,13 +4317,14 @@ suite "Picking":
     let anchor_near = anchorZoomAt(
       near, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE,
     )
-    check anchor_near.isSome and abs(anchor_near.get.z + 0.5*eye.z) < 1.0e-6
+    check anchor_near.isSome and abs(anchor_near.get.at.z + 0.5*eye.z) < 1.0e-6
     var far = initScene()
     far.addItem(toMultivector(Position(x: -7.0*eye.x, y: 0, z: -7.0*eye.z)), "p", Ink.Rose)
     let anchor_far = anchorZoomAt(
       far, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE,
     )
-    check anchor_far.isSome and abs(anchor_far.get.x) < 1.0e-6 and abs(anchor_far.get.z) < 1.0e-6
+    check anchor_far.isSome and abs(anchor_far.get.at.x) < 1.0e-6 and
+      abs(anchor_far.get.at.z) < 1.0e-6
 
   test "a sun drawn wide is picked anywhere on its disc, over the plane behind it":
     # Pick radius follows drawn disc: Sol at 0.6 units from 1.2 units away spans about.

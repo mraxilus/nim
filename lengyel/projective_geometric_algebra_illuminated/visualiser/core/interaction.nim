@@ -661,6 +661,44 @@ proc updateHover*(
 
 #[ Keyboard ]#
 
+proc dollyAt*(
+  camera: var Camera; scene: Scene; factor: float; scale: DrawExtent;
+  view_projection: Matrix4; width, height: int; cursor: ScreenPosition;
+  placed: openArray[Placed] = []
+) =
+  ## Zoom camera by `factor` toward whatever `cursor` is over; see `dollyAtCursor`.
+  ##   Cursor is parameter so pinch, which has no cursor, aims at frame's middle through
+  ##   same rule; see `dollyAtCentre`.
+  # Take caller's extent and matrix, not fresh derivations per notch; see
+  #   `picking.anchorZoomAt`.
+  let anchor = anchorZoomAt(
+    scene, camera, scale, view_projection, width, height, cursor, placed,
+  )
+  if anchor.isNone:
+    camera.dolly(factor)
+    return
+  camera.dollyToward(factor, anchor.get.at)
+  if anchor.get.is_standing:
+    # Depth from eye where it now stands, along sight direction zoom left unchanged.
+    let eye = camera.eye
+    let depth = dot(anchor.get.at - eye, camera.frame(eye).forward)
+    if depth > 0.0: camera.retargetToDepth(depth)
+
+
+proc dollyAtCentre*(
+  camera: var Camera; scene: Scene; factor: float; scale: DrawExtent;
+  view_projection: Matrix4; width, height: int; placed: openArray[Placed] = []
+) =
+  ## Zoom camera by `factor` toward whatever middle of frame is over; pinch's zoom.
+  ##   Pinch has two fingers and no pointer, and zooming at their midpoint translated
+  ##   view twice beside pan that carries same midpoint; middle of frame it is, aimed
+  ##   through `dollyAt` so target still lands on point or line there.
+  dollyAt(
+    camera, scene, factor, scale, view_projection, width, height,
+    ScreenPosition(x: float(width)/2.0, y: float(height)/2.0), placed,
+  )
+
+
 proc dollyAtCursor*(
   interaction: Interaction; camera: var Camera; scene: Scene; factor: float;
   scale: DrawExtent; view_projection: Matrix4; width, height: int;
@@ -671,13 +709,10 @@ proc dollyAtCursor*(
   ##   `picking.anchorZoomAt` decides what "over" means: object under cursor, ground under
   ##   it, or level target sits on, in that order.
   ##   Falls back to plain `dolly` where none answers, cursor on empty sky above horizon.
-  # Take caller's extent and matrix, not fresh derivations per notch; see
-  #   `picking.anchorZoomAt`.
-  let anchor = anchorZoomAt(
-    scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
-  )
-  if anchor.isNone: camera.dolly(factor)
-  else: camera.dollyToward(factor, anchor.get)
+  ##   Where anchor is point or line, target then follows its depth along sight line; see
+  ##   `camera.retargetToDepth` and `picking.AnchorZoom`.
+  dollyAt(camera, scene, factor, scale, view_projection, width, height, interaction.cursor,
+    placed)
 
 
 func panAcross*(

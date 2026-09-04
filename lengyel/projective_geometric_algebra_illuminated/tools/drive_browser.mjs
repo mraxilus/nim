@@ -67,8 +67,27 @@ await page.evaluate(() => document.getElementById('gl').focus());
 const readCamera = () => page.evaluate(() => ({
   distance: nimCameraDistance(),
   target: Array.from(nimCameraTarget()), // Plain array, for return across `evaluate`.
+  eye: Array.from(nimCameraEye()),
   azimuth: nimCameraAzimuth(),
 }));
+const spanOf = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+// Unit sight direction, eye toward target.
+const forwardOf = (camera) => {
+  const span = spanOf(camera.target, camera.eye);
+  return camera.target.map((v, i) => (v - camera.eye[i]) / span);
+};
+// Depth of world point along camera's sight line, from eye.
+const depthOf = (camera, at) => {
+  const forward = forwardOf(camera);
+  return at.reduce((sum, v, i) => sum + (v - camera.eye[i]) * forward[i], 0);
+};
+// How far eye moved across its own sight line, zoom's motion along it set aside.
+const slideOf = (before, after) => {
+  const forward = forwardOf(before);
+  const step = after.eye.map((v, i) => v - before.eye[i]);
+  const along = step.reduce((sum, v, i) => sum + v * forward[i], 0);
+  return Math.hypot(...step.map((v, i) => v - along * forward[i]));
+};
 const spanTarget = (before, after) => Math.hypot(
   after.target[0] - before.target[0],
   after.target[1] - before.target[1],
@@ -216,15 +235,30 @@ reportWithin(
   0, 1, 'px',
 );
 
+// Orbit centre comes to depth of what was zoomed onto, not left behind on level it.
+//   started at; see `interaction.dollyAt`. Depth along sight line, since object sits
+//   off middle of frame and target stays on that line.
+const world_aimed = await page.evaluate((s) => Array.from(nimAnchorWorld(s)), slot_aimed);
+reportWithin(
+  'and the orbit centre comes to its depth',
+  Math.abs(depthOf(wheel_in, world_aimed) - wheel_in.distance), 0, 1e-3, 'units',
+);
+
 for (let i = 0; i < 8; i += 1) { await page.mouse.wheel(0, 120); await page.waitForTimeout(40); }
 await page.waitForTimeout(300);
 const wheel_out = await readCamera();
+const pixel_out = await pixelOf(slot_aimed);
+// Eye and pixel round trip; target and distance do not, and are not meant to: target.
+//   came to object's depth on way in and stays there, so orbit after is about what was
+//   zoomed onto, and distance now reads to that depth. Old rule, target back where it
+//   started, was rule of level anchor alone.
 report(
   'a wheel notch each way is a round trip',
-  Math.abs(wheel_out.distance - wheel_before.distance) < 1e-3 &&
-    spanTarget(wheel_before, wheel_out) < 1e-3,
-  `distance ${wheel_out.distance.toFixed(3)}, target moved ` +
-    `${spanTarget(wheel_before, wheel_out).toFixed(4)}`,
+  spanOf(wheel_out.eye, wheel_before.eye) < 1e-3 &&
+    Math.hypot(pixel_out[0] - pixel_before[0], pixel_out[1] - pixel_before[1]) < 1,
+  `eye off by ${spanOf(wheel_out.eye, wheel_before.eye).toFixed(4)} units, ` +
+    `pixel off by ${Math.hypot(pixel_out[0] - pixel_before[0], pixel_out[1] - pixel_before[1])
+      .toFixed(2)} px`,
 );
 
 /* ---- Pinch ----     */
@@ -272,9 +306,11 @@ report(
 //   between their two `pointermove` events.
 //   Aimed at its midpoint instead, this same gesture drags view far; figures in
 //   `PROVENANCE.md`.
+//   Eye's travel across sight line, not target's: target is meant to move along that
+//   line, to depth of whatever middle of frame is over; see `interaction.dollyAtCentre`.
 reportWithin(
   'a pinch whose middle stays put does not slide the view',
-  spanTarget(pinch_before, pinch_after), 0, 0.5, 'units',
+  slideOf(pinch_before, pinch_after), 0, 0.5, 'units',
 );
 
 const panned_before = await readCamera();
@@ -636,7 +672,6 @@ await page.waitForTimeout(700);
 const centred_two = await readCamera();
 const place_two = await placeOfSlot(points_pickable[1]);
 const middle_two = place_one.map((v, i) => (v + place_two[i]) / 2);
-const spanOf = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 report(
   'picking an object turns the orbit about it, and a pair about their middle',
   spanOf(centred_one.target, place_one) < 0.01 &&

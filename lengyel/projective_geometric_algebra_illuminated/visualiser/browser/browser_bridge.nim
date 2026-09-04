@@ -302,6 +302,8 @@ var
   FLAT_COMET = initFlatFloats(2*POINTS_MARKER_PULSE)
   FLAT_GRID = initFlatFloats(2)
   FLAT_TARGET = initFlatFloats(3)
+  FLAT_EYE = initFlatFloats(3)
+  FLAT_ANCHOR_WORLD = initFlatFloats(3)
   FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
   FLAT_MENU_CENTRE = initFlatFloats(2)
   FLAT_VIEW: seq[float32] = newSeq[float32](16)
@@ -980,6 +982,18 @@ proc nimCameraDolly(factor: cfloat) {.exportc.} =
   camera.dolly(CAMERA, float(factor))
 
 
+proc nimCameraDollyCentred(factor: cfloat; width, height: cint) {.exportc.} =
+  ## Scale camera's distance from target by factor, toward whatever frame's middle is over.
+  ##   Pinch's zoom; see `interaction.dollyAtCentre`. Reads caches as `nimCameraDollyAt`.
+  TWEEN_CAMERA.abandon()
+  ensureViewOverlay(int(width), int(height))
+  ensurePlaced()
+  dollyAtCentre(
+    CAMERA, SCENE, float(factor), SCALE_OVERLAY, VIEW_PROJECTION_OVERLAY,
+    int(width), int(height), PLACEMENTS,
+  )
+
+
 proc nimCameraDollyAt(factor: cfloat; width, height: cint) {.exportc.} =
   ## Scale camera's distance from target by factor, toward whatever cursor is over.
   ##   See `interaction.dollyAtCursor`.
@@ -1038,6 +1052,14 @@ proc nimCameraTarget(): FlatBuffer {.exportc.} =
   ##   Refilled per call; camera fields' tick asks five times second and compares before
   ##   writing, so fresh sequence here was allocation per tick.
   FLAT_TARGET.fill3(cfloat(CAMERA.target.x), cfloat(CAMERA.target.y), cfloat(CAMERA.target.z))
+
+
+proc nimCameraEye(): FlatBuffer {.exportc.} =
+  ## Report where eye stands, as `[x, y, z]` view over `FLAT_EYE`.
+  ##   Driven checks read sight line off eye and target, to tell zoom along it from
+  ##   slide across it; nothing on page asks.
+  let eye = CAMERA.eye
+  FLAT_EYE.fill3(cfloat(eye.x), cfloat(eye.y), cfloat(eye.z))
 
 
 proc nimSetCameraAzimuth(v: cfloat) {.exportc.} =
@@ -1671,6 +1693,21 @@ proc nimAnchorScreen(slot, width, height: cint): FlatBuffer {.exportc.} =
   FLAT_ANCHOR.fill3(
     float32(screen.x), float32(screen.y), (if screen.isInFront: 1.0'f32 else: 0.0'f32)
   )
+
+
+proc nimAnchorWorld(slot: cint): FlatBuffer {.exportc.} =
+  ## Report item's representative point in world, as `[x, y, z, is_placed]`.
+  ##   Same point `nimAnchorScreen` projects, before projection; driven checks read
+  ##   depth of zoomed-onto object off it. `is_placed` 0 for dead slot and for plane at
+  ##   horizon, which stands nowhere.
+  if not SCENE.isAlive(int(slot)) or SCENE.geometryOf(int(slot)).isHorizonPlane:
+    return FLAT_ANCHOR_WORLD.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  ensurePlaced()
+  let anchor = anchorFor(
+    SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCALE_OVERLAY
+  )
+  if anchor.isNone: return FLAT_ANCHOR_WORLD.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  FLAT_ANCHOR_WORLD.fill3(float32(anchor.get.x), float32(anchor.get.y), float32(anchor.get.z))
 
 
 proc nimSelectionMarker(
