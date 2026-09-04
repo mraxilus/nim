@@ -1098,6 +1098,16 @@ proc nimHoverSlot(): cint {.exportc.} =
 
 
 proc nimIsHoverBackdrop(): bool {.exportc.} = INTERACTION.is_hover_backdrop
+  ## Report whether hovered item is plane at horizon.
+
+proc nimCanTouchConstruct(): bool {.exportc.} = INTERACTION.canConstructByTouch
+  ## Report whether finger's press where it stands may become construction drag.
+  ##   Same answer `beginDrag` gives touch at slop; see `interaction.canConstructByTouch`.
+
+proc nimHoverRivals(): cint {.exportc.} = cint(INTERACTION.count_hover_rivals)
+  ## Report how many items of hovered item's rank stood in reach; for driven checks.
+  ## Report whether finger's press where it stands may become construction drag.
+  ##   Same answer `beginDrag` gives touch at slop; see `interaction.canConstructByTouch`.
   ## Report whether what is hovered is whole sky, plane at horizon.
   ##   True wherever nothing else is under pointer and such plane is in scene.
   ##   One hovered thing that must not act like one: starts no drag (see

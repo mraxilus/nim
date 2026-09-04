@@ -384,11 +384,21 @@ func rayPlaneHit(
 
 #[ Item Hit Testing ]#
 
-proc pickNearest*(
+type PickReport* = object ## Define what one pick found under cursor.
+  slot*: Option[int] ## Nearest item of winning rank; none where nothing is in reach.
+  count_rivals*: int ## How many items of that rank were in reach, winner included.
+    ## One where pick is unambiguous. Touch has no hover ring to say which of several
+    ## finger is over, so its drag refuses to start above one; see
+    ## `interaction.beginDrag`.
+    ## Same rank only: point over plane is not rival to it, since rank already decides.
+
+
+proc pickAt*(
   scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
   width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
-): Option[int] =
-  ## Find visible item nearest cursor, preferring points over lines over planes.
+): PickReport =
+  ## Find visible item nearest cursor and count its rivals.
+  ##   Prefers points over lines over planes; see `PickReport`.
   ##   `placed` is frame's own placements, where caller kept them.
   ##     `tessellate.placeObject` already answers what object is and where, and
   ##     front-end holding frame's worth of answers (`browser_bridge.PLACEMENTS`) hands them
@@ -420,8 +430,12 @@ proc pickNearest*(
     slot_best = none(int)
     priority_best = high(int)
     distance_best = Inf
+    count_rivals = 0
 
   template consider(priority: int, distance: float) =
+    # Count everything of winning rank in reach; better rank starts count over.
+    if priority < priority_best: count_rivals = 1
+    elif priority == priority_best: inc count_rivals
     if priority < priority_best or (priority == priority_best and distance < distance_best):
       priority_best = priority
       distance_best = distance
@@ -533,7 +547,16 @@ proc pickNearest*(
       #   on this kind, and it was never drawn.
       if geometry.isHorizon: consider(4, 0.0)
 
-  slot_best
+  PickReport(slot: slot_best, count_rivals: count_rivals)
+
+
+proc pickNearest*(
+  scene: Scene; camera: Camera; scale: DrawExtent; view_projection: Matrix4;
+  width, height: int; cursor: ScreenPosition; placed: openArray[Placed] = []
+): Option[int] =
+  ## Find visible item nearest cursor, preferring points over lines over planes.
+  ##   `pickAt`'s slot alone, for caller with no use for rival count.
+  pickAt(scene, camera, scale, view_projection, width, height, cursor, placed).slot
 
 
 func isAnchorNear(anchor: Position, camera: Camera, scale: DrawExtent): bool =

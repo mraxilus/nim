@@ -3938,8 +3938,10 @@ canvas.addEventListener('pointerdown', (e) => {
     //   not re-asked -- same question `interaction.beginDrag` answers when slop is
     //   finally crossed, asked early because moves before that have to know which
     //   scheme they belong to. Sky is hovered wherever nothing else is and is refused
-    //   there, so press on it still falls through to camera; see `beginDrag`.
-    is_touch_press_constructing = slot_touch_down >= 0 && !nimIsHoverBackdrop();
+    //   there, so press on it still falls through to camera; so is crowd, several
+    //   objects in reach of one finger, which moves view instead; see
+    //   `interaction.canConstructByTouch`.
+    is_touch_press_constructing = nimCanTouchConstruct();
     if (slot_touch_down >= 0) nimBeginHold(slot_touch_down, now());
   } else {
     touch_down_at = null; // Second finger landed; this is pinch/pan gesture, not tap.

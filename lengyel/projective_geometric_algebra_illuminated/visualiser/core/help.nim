@@ -158,8 +158,9 @@ const lut_help_entries* = block:
       of MenuArming.OnDwell: "build that object, or pause on the target to be asked"
       of MenuArming.Always: "open the wheel, whatever the pair would have made on its own",
     )
+  # Say "on its own": finger over crowd moves view instead; see `interaction.canConstructByTouch`.
   add(
-    HelpPath.Drag, "drag one object onto another",
+    HelpPath.Drag, "drag an object on its own onto another",
     "build the one object those two define", is_touch = true,
   )
   # Touch alone, now that mouse decides by button; see `MenuArming`.
@@ -233,9 +234,10 @@ const lut_help_entries* = block:
   add(HelpPath.Camera, "drag empty space", "orbit the view around what you are looking at")
   add(HelpPath.Camera, "right-drag empty space", "slide the view sideways and up or down")
   add(HelpPath.Camera, "wheel", "move toward or away from whatever you point at")
-  # Say "empty space", not just "with one finger": finger starting on *object* builds now.
+  # Say "empty space or a crowd", not just "with one finger": finger starting on *lone*.
+  #   object builds; over several it moves, and zooming in separates them.
   add(
-    HelpPath.Camera, "drag empty space with one finger",
+    HelpPath.Camera, "drag empty space, or a crowd of objects, with one finger",
     "orbit the view around what you are looking at", is_touch = true,
   )
   add(HelpPath.Camera, "pinch", "move closer in or further out", is_touch = true)

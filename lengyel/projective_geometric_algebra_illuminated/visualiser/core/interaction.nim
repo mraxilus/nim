@@ -236,6 +236,9 @@ type
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
     is_hover_backdrop*: bool ## Whether hovered item is plane at horizon.
+    count_hover_rivals*: int ## How many items of hovered item's rank were in reach.
+      ## `picking.PickReport.count_rivals`; one where hover is unambiguous, zero where
+      ## nothing is hovered. Touch reads it through `canConstructByTouch`.
       ## Whole sky, which every ray meets, so true wherever nothing else is under cursor
       ## and sky is in scene.
       ## Recorded at `updateHover`, where scene is in hand, so `beginDrag` and `endDrag`
@@ -640,13 +643,15 @@ proc updateHover*(
   ##     Hover is recomputed every frame, so pan drag would highlight across every object
   ##     it sweeps, and held W would light up whatever slides under still cursor.
   ##     Ring comes back frame move ends.
-  interaction.index_hover =
-    if interaction.is_enabled and not interaction.isMovingCamera:
-      pickNearest(
-        scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
-      )
-    else:
-      none(int)
+  if interaction.is_enabled and not interaction.isMovingCamera:
+    let report = pickAt(
+      scene, camera, scale, view_projection, width, height, interaction.cursor, placed,
+    )
+    interaction.index_hover = report.slot
+    interaction.count_hover_rivals = report.count_rivals
+  else:
+    interaction.index_hover = none(int)
+    interaction.count_hover_rivals = 0
   # Note backdrop here, where scene is in hand; see `is_hover_backdrop`.
   interaction.is_hover_backdrop =
     interaction.index_hover.isSome and
@@ -953,6 +958,18 @@ func isClick*(interaction: Interaction, now: float): bool =
   interaction.is_press_still
 
 
+func canConstructByTouch*(interaction: Interaction): bool =
+  ## Report whether press where finger stands may become construction drag.
+  ##   Hovered, not sky, and unambiguous: exactly one item of winning rank in reach.
+  ##   Finger sees no hover ring before it lands, so over crowd it cannot know which of
+  ##   several it is dragging; where gesture is ambiguous, movement wins, and reader zooms
+  ##   in until it is not. Mouse keeps its drag: ring showed it which one.
+  ##   Asked by `beginDrag` at slop and by browser at press, so both agree; see
+  ##   `glue.js`'s `is_touch_press_constructing`.
+  interaction.index_hover.isSome and not interaction.is_hover_backdrop and
+    interaction.count_hover_rivals <= 1
+
+
 func beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): bool =
   ## Start construction drag from item currently hovered.
   ##   Reports whether one started, so caller knows whether to fall back to camera.
@@ -962,7 +979,9 @@ func beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): b
   ##     Drawn as dome over every direction, it is hovered wherever nothing else is; press
   ##     on it starting drag would stop press on empty space falling through to camera.
   ##     Dragging backdrop is moving view.
+  ##   Touch, `MenuArming.OnDwell`, also refuses crowd; see `canConstructByTouch`.
   if interaction.index_hover.isNone or interaction.is_hover_backdrop: return false
+  if arming == MenuArming.OnDwell and not interaction.canConstructByTouch: return false
   interaction.is_dragging = true
   interaction.index_source = interaction.index_hover.get
   interaction.index_destination = none(int)

@@ -382,6 +382,51 @@ report(
   `${await page.evaluate(() => nimSceneCount())} items, was ${count_before_drag}`,
 );
 
+// Check finger over crowd moves view rather than building anything.
+//   Second point beside first, inside one finger's pick reach, so press is ambiguous;
+//   same drag as above then orbits and builds nothing. Reader zooms in to separate them.
+//   See `interaction.canConstructByTouch`.
+await page.keyboard.press('Home');
+await page.waitForTimeout(150);
+const slot_rival = await page.evaluate((slot) => {
+  const model = Array.from(nimItemCoefficients(slot));
+  model[1] += 0.05;
+  const added = nimAddItem(model, 'rival', nimDefaultInk(), nimDefaultRadius(), 0);
+  nimSelectClear();
+  return added;
+}, slots_scene[1]);
+await page.waitForTimeout(200);
+const count_before_crowd = await page.evaluate(() => nimSceneCount());
+const azimuth_before_crowd = await page.evaluate(() => nimCameraAzimuth());
+const from_crowd = await pixelOf(slots_scene[1]);
+await touchAt('touchStart', [{ x: from_crowd[0], y: from_crowd[1] }]);
+for (let step = 1; step <= 10; step += 1) {
+  await touchAt('touchMove', [{
+    x: from_crowd[0] + ((onto[0] - from_crowd[0]) * step) / 10,
+    y: from_crowd[1] + ((onto[1] - from_crowd[1]) * step) / 10,
+  }]);
+  await page.waitForTimeout(30);
+}
+await touchAt('touchEnd', []);
+await page.waitForTimeout(400);
+const count_after_crowd = await page.evaluate(() => nimSceneCount());
+const azimuth_after_crowd = await page.evaluate(() => nimCameraAzimuth());
+report(
+  'a finger dragging from a crowd of objects orbits instead of building',
+  count_after_crowd === count_before_crowd &&
+    Math.abs(azimuth_after_crowd - azimuth_before_crowd) > 0.05,
+  `${count_after_crowd} items, was ${count_before_crowd}; azimuth ` +
+    `${azimuth_before_crowd.toFixed(3)} -> ${azimuth_after_crowd.toFixed(3)}`,
+);
+// Put camera back where orbit found it.
+//   Later checks frame with `Home`, which keeps azimuth, and at this one line's anchor
+//   lands over point.
+await page.evaluate(([slot, azimuth]) => {
+  nimRemoveItem(slot);
+  nimSetCameraAzimuth(azimuth);
+}, [slot_rival, azimuth_before_crowd]);
+await page.waitForTimeout(150);
+
 // Drive same gesture as finger actually performs it: pause over target to aim.
 //   Dwell wheel opens under finger during that pause, hidden by it; reading release as
 //   "chose nothing" would make exactly careful drags build nothing.
@@ -2474,6 +2519,15 @@ report(
 // picked fine and hid it. Held here on plane gesture itself builds, since that is
 // only kind reader makes.
 await clearTheGlass();
+// Drop lines earlier gestures left.
+//   Each built same `b ∧ c` again, and four coincident lines under one finger are crowd
+//   touch refuses to drag from; see `interaction.canConstructByTouch`. Line built below
+//   is then alone.
+await page.evaluate(() => {
+  for (const slot of nimSceneSlots()) {
+    if (nimItemShapeWord(slot) === 'line') nimRemoveItem(slot);
+  }
+});
 await page.keyboard.press('Home');
 await settleCamera();
 await page.evaluate(() => nimSelectClear());

@@ -4263,6 +4263,44 @@ suite "Picking":
         scene, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, outside
       ) != some(slot_sol)
 
+  test "a pick counts its rivals: two points in reach are two, a point over a plane is one":
+    # What touch refuses to drag from; see `interaction.canConstructByTouch`.
+    #   Rank decides first, so plane under point is no rival to it.
+    #   Tilted, so ground plane is seen face on rather than edge on.
+    let camera = initCamera(
+      target = Position(x: 0, y: 0, z: 0), distance = 10.0, azimuth = 0.0, elevation = 0.5
+    )
+    let view_projection = camera.initMatrixViewProjection(WIDTH_PICK/HEIGHT_PICK)
+    let scale = camera.drawExtentFor(HEIGHT_PICK)
+    var alone = initScene()
+    alone.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
+    alone.addItem(groundPlane(), "ground", Ink.Grid)
+    let report_alone = pickAt(
+      alone, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+    )
+    check report_alone.slot == some(0)
+    check report_alone.count_rivals == 1
+    var crowd = initScene()
+    crowd.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
+    crowd.addItem(toMultivector(Position(x: 0.05, y: 0, z: 0.05)), "q", Ink.Jade)
+    crowd.addItem(groundPlane(), "ground", Ink.Grid)
+    let report_crowd = pickAt(
+      crowd, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+    )
+    check report_crowd.slot.isSome
+    check report_crowd.count_rivals == 2
+    # Far from both, plane alone answers, as its own single candidate.
+    let corner = ScreenPosition(x: CENTRE.x + 300.0, y: CENTRE.y + 200.0, depth: 0.0)
+    let report_plane = pickAt(
+      crowd, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, corner
+    )
+    check report_plane.slot == some(2)
+    check report_plane.count_rivals == 1
+    # `pickNearest` is same walk's slot alone.
+    check pickNearest(
+      crowd, camera, scale, view_projection, WIDTH_PICK, HEIGHT_PICK, CENTRE
+    ) == report_crowd.slot
+
   test "point at target is picked at screen centre":
     var scene = initScene()
     scene.addItem(toMultivector(Position(x: 0, y: 0, z: 0)), "p", Ink.Rose)
@@ -4587,6 +4625,34 @@ suite "Interaction":
     check "gave" in outcome.message
     check outcome.index_created == some(2)
     check outcome.operands == some((source: 0, destination: 1))
+
+
+  test "a finger over a crowd starts no drag, so the press moves the view instead":
+    # Touch has no hover ring to say which of several it is over, so where gesture is.
+    #   ambiguous movement wins and reader zooms in until it is not. Mouse saw its
+    #   ring and keeps its drag over same crowd.
+    var scene = initScene()
+    scene.addItem(POINTS[0], "a", Ink.Rose)
+    scene.addItem(POINTS[1], "b", Ink.Rose)
+    var interaction = Interaction(is_enabled: true)
+    interaction.index_hover = some(0)
+    interaction.count_hover_rivals = 2
+    check not interaction.canConstructByTouch
+    check not interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    check not interaction.is_dragging
+    check interaction.beginDrag(arming = MenuArming.Never, now = 0.0)
+    interaction.cancelDrag()
+    check interaction.beginDrag(arming = MenuArming.Always, now = 0.0)
+    interaction.cancelDrag()
+    # Lone object under finger drags as ever.
+    interaction.count_hover_rivals = 1
+    check interaction.canConstructByTouch
+    check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)
+    interaction.cancelDrag()
+    # Nothing hovered is not lone object either.
+    interaction.index_hover = none(int)
+    interaction.count_hover_rivals = 0
+    check not interaction.canConstructByTouch
 
 
   test "the sky starts no drag, so a press on empty space still reaches the camera":
