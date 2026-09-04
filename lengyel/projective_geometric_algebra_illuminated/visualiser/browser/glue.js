@@ -3910,6 +3910,19 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const pointers = new Map();
 let separation_pinch_start = null;
+// Whether two fingers have parted or closed further than tap slop since both came down.
+//   Until they have, gesture is pan and only pan: two fingers carried together never
+//   hold their separation to pixel, and every notch of that jitter went through zoom,
+//   scaling view while reader meant only to carry it. Slop itself is not
+//   zoomed once crossed; zoom starts from separation where it was crossed, without jump.
+let is_pinch_zooming = false;
+// Whether two fingers have moved since frame loop last read them.
+//   Each finger's move arrives as its own `pointermove`, so between two of them
+//   separation and midpoint are one finger new and other old: read there, every step of
+//   pan carried together was zoom in by one finger's step and out again by other's.
+//   Read once per frame instead, in
+//   `settleTwoFingers`, after both have reported.
+let is_two_fingers_pending = false;
 let pan_last = null;
 // Button held for camera orbit/pan fallback, while no operation drag is active.
 let button_mouse_drag = null;
@@ -4034,6 +4047,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (pointers.size === 2) {
     const points_flat = [...pointers.values()];
     separation_pinch_start = pointerDist(points_flat);
+    is_pinch_zooming = false;
     pan_last = pointerMid(points_flat);
   }
 });
@@ -4120,29 +4134,47 @@ canvas.addEventListener('pointermove', (e) => {
     );
   } else if (pointers.size === 2) {
     nimSetCameraDragging(true); // Two fingers pan and pinch; neither points at anything.
-    const points_flat = [...pointers.values()];
-    const separation = pointerDist(points_flat);
-    const mid = pointerMid(points_flat);
-    // Zoom straight in and out, at middle of frame, not aimed at pinch's own midpoint.
-    //   Pan below already moves view by that midpoint's own travel, so aiming zoom
-    //   there too translates view twice for one gesture, and pinch anywhere but dead
-    //   centre slides scene while it scales it.
-    //   Wheel has no pan beside it, which is why aiming at pointer is right there.
-    if (separation_pinch_start) nimCameraDolly(separation_pinch_start / Math.max(1, separation));
-    separation_pinch_start = separation;
-
-    if (pan_last) {
-      // Grab and carry two fingers' own midpoint exactly as mouse drag is.
-      //   Same rule for both, so fix to one is fix to both.
-      nimCameraPanAt(
-        pan_last.x - rect.left, pan_last.y - rect.top,
-        mid.x - rect.left, mid.y - rect.top,
-        canvas.clientWidth, canvas.clientHeight,
-      );
-    }
-    pan_last = mid;
+    is_two_fingers_pending = true; // Read by frame loop; see `settleTwoFingers`.
   }
 });
+
+// Move camera by two fingers' travel since frame loop last looked.
+//   Run from `frame` before it draws, once per frame both fingers have reported in;
+//   see `is_two_fingers_pending`.
+function settleTwoFingers() {
+  if (!is_two_fingers_pending) return;
+  is_two_fingers_pending = false;
+  if (pointers.size !== 2) return;
+  const rect = canvas.getBoundingClientRect();
+  const points_flat = [...pointers.values()];
+  const separation = pointerDist(points_flat);
+  const mid = pointerMid(points_flat);
+  // Zoom straight in and out, at middle of frame, not aimed at pinch's own midpoint.
+  //   Pan below already moves view by that midpoint's own travel, so aiming zoom
+  //   there too translates view twice for one gesture, and pinch anywhere but dead
+  //   centre slides scene while it scales it.
+  //   Wheel has no pan beside it, which is why aiming at pointer is right there.
+  if (separation_pinch_start !== null && !is_pinch_zooming &&
+      Math.abs(separation - separation_pinch_start) > TAP_MAX_MOVE) {
+    is_pinch_zooming = true;
+    separation_pinch_start = separation;
+  }
+  if (is_pinch_zooming) {
+    nimCameraDolly(separation_pinch_start / Math.max(1, separation));
+    separation_pinch_start = separation;
+  }
+
+  if (pan_last) {
+    // Grab and carry two fingers' own midpoint exactly as mouse drag is.
+    //   Same rule for both, so fix to one is fix to both.
+    nimCameraPanAt(
+      pan_last.x - rect.left, pan_last.y - rect.top,
+      mid.x - rect.left, mid.y - rect.top,
+      canvas.clientWidth, canvas.clientHeight,
+    );
+  }
+  pan_last = mid;
+}
 
 function endMouseDrag(e) {
   if (typeof button_mouse_drag === 'number') {
@@ -4217,7 +4249,10 @@ function releasePointer(e) {
   has_long_press_fired = false;
   slot_touch_down = -1;
   pointers.delete(e.pointerId);
-  if (pointers.size < 2) { separation_pinch_start = null; pan_last = null; }
+  if (pointers.size < 2) {
+    separation_pinch_start = null; is_pinch_zooming = false; pan_last = null;
+    is_two_fingers_pending = false;
+  }
   if (pointers.size === 0) nimSetCameraDragging(false);
   if (pointers.size === 0) nimClearHover(); // No finger left touching canvas -- there's
     // no cursor position left to be "hovering" anything, so don't let last touch-down's
@@ -4731,6 +4766,7 @@ function frame() {
   //   and 144 Hz one.
   //   Which way it moves camera is `interaction.driveHeld`'s to say, never this file's.
   nimDriveHeld(seconds_frame);
+  settleTwoFingers();
 
   // Press that has now lasted long enough selects its item. Checked here rather than by.
   //   timer that fires on its own, so that moment marker finishes filling is
