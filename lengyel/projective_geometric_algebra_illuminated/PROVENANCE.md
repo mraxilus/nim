@@ -983,6 +983,49 @@ by a driven check that drags a finger from a point with a twin 0.05 units away a
 the camera orbited and nothing built; the plane-pick check had to drop the four coincident
 `b ∧ c` lines earlier gestures left, which are exactly the crowd the rule refuses.
 
+**The turntable's target follows what the zoom lands on.** Every rate but orbit is scaled
+by the orbit distance on purpose — pan grabs the ground, the slide keys move a fraction of
+the distance per second, dolly is multiplicative — so a drag or a key hold moves the view by
+the same fraction of what is seen at any zoom. What broke that was the target: a pinch
+zoomed straight in with the target left on Sol, so a reader arriving at a planet had the
+turntable still revolving about a point far behind it, and every orbit or pan swung the near
+planet across the frame — the "speed changes when zooming" report. `picking.anchorZoomAt`
+now says whether its anchor is where a point or line *stands* or a crossing of the sight ray
+with a plane, the ground or the level (`AnchorZoom.is_standing`); `interaction.dollyAt`
+re-targets along the sight line to a standing anchor's depth after the zoom
+(`camera.retargetToDepth`, which leaves the picture unchanged since eye and direction stay),
+and the pinch goes through the same rule aimed at the middle of the frame (`dollyAtCentre`,
+`nimCameraDollyCentred`) rather than a plain dolly. Crossings are followed by the map rule
+alone, the target sliding toward the anchor as `dollyToward` always did. Rejected: following
+the ground crossing too, which a reader zooming onto empty floor might expect. It moved the
+target off its level with every notch, and five driven pins fell at once — the wheel round
+trip, the pinch that must not slide, the two-finger pan, the target's height under pan, and
+the zoom over ground — every one a rule pan, slide and the level anchor rely on. Rejected
+second: following a plane. Its depth under the pointer is not its depth at the middle of
+the frame, and the target lifted to it stood well off the plane being zoomed onto (the
+opening scene's ground *is* a plane item, and the target rose from 1.0 to 2.6 units on the
+first notch). Verified: the driven pins now state the rule that holds — the eye and the
+pixel round-trip under a wheel notch each way, the target does not and is not meant to, and
+a pinch that does not slide is one whose eye moves along its own sight line (`nimCameraEye`
+exists for that reading and for nothing on the page). Measured on the demo: eight wheel
+notches over Jupiter from 30 units hold its pixel exactly and bring the target from Sol to
+0.09 units off Jupiter's plane at 1.5 units' distance; a centred pinch onto a planet lands
+the target on it, a zoom over sky leaves the target's height alone, and one over ground
+slides the target toward it by the map rule only, all pinned by suite.
+
+**Two fingers are read once per frame, and zoom only past the tap slop.** Each finger's
+move arrives as its own `pointermove`, so between the two events the separation and the
+midpoint are one finger new and the other old; read there, every step of a pan carried
+together was a zoom in by one finger's step and out again by the other's (ratios of 1.24
+and 0.81 alternating on the driven pan), harmless while a dolly was a pure scale and a
+target-moving re-target on every one of them once it was not. `glue.settleTwoFingers` reads
+both fingers once per frame from the frame loop instead, after both have reported. On top
+of that, two fingers carried together never hold their separation to the pixel, so a pinch
+zooms only once the separation has changed by more than `interaction.PIXELS_TAP_SLOP`
+since both came down, and the slop itself is not zoomed: the zoom starts from the separation
+where the slop was crossed, without a jump. Verified by the driven two-finger pan: the target
+moves across its level and the distance and height do not change at all.
+
 **The edit ghost is drawn at the session's own radius.** `Preview` carries a radius
 (`previewStaging(geometry, radius)`), fed by `nimSetGhost(coefficients, radius)` on the
 browser and the panel's staged session on the desktop; a derived preview takes
