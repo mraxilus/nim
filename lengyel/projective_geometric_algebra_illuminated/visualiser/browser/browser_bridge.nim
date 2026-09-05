@@ -830,6 +830,10 @@ proc nimInkCount(): cint {.exportc.} = cint(ord(Ink.high) + 1)
   ## Report Nth palette entry's name.
 
 proc nimInkColor(index: cint): seq[float32] {.exportc.} = toRgbSeq(Ink(index).colour)
+
+
+proc nimInkBackdrop(): cint {.exportc.} = cint(ord(Ink.Backdrop))
+  ## Report backdrop's palette slot, for label halo drawn in scene's own ground colour.
   ## Report Nth palette entry's colour, as `[r, g, b]` triple.
 
 proc nimBackdropColor(): seq[float32] {.exportc.} = toRgbSeq(Ink.Backdrop.colour)
@@ -912,15 +916,21 @@ proc nimDomeCorners(): seq[float32] {.exportc.} =
 
 
 proc nimOverlayMetrics(): seq[float32] {.exportc.} =
-  ## Report `[overlay_line_width, selected_alpha, hover_alpha, label_height]`.
+  ## Report overlay's weights: line width, two alphas, label height, halo width and alpha.
+  ##   In that order, as `[overlay_line_width, selected_alpha, hover_alpha, label_height,
+  ##   halo_width, halo_alpha]`.
   ##   Browser's SVG overlay then strokes markers and drag rubber-band at weights
-  ##   desktop's `visualiser.drawMarker` does, and sizes name label's face to
-  ##   `marker.HEIGHT_MARKER_LABEL`.
+  ##   desktop's `visualiser.drawMarker` does, sizes name label's face to
+  ##   `marker.HEIGHT_MARKER_LABEL` and its halo to `WIDTH_MARKER_LABEL_HALO` at
+  ##   `ALPHA_MARKER_LABEL_HALO`.
   ##   Marker's size is not here: depends on shape marked, and comes back from
   ##   `nimSelectionMarker`.
   ##   Neither is orientation pulse's, shaped into outline `nimSelectionPulse` reports and
   ##   filled rather than stroked.
-  @[WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, float32(HEIGHT_MARKER_LABEL)]
+  @[
+    WIDTH_MARKER, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, float32(HEIGHT_MARKER_LABEL),
+    float32(WIDTH_MARKER_LABEL_HALO), ALPHA_MARKER_LABEL_HALO,
+  ]
 
 
 proc ensurePlaced() =

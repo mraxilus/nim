@@ -750,7 +750,7 @@ report(
 await page.evaluate(() => clearSelection());
 
 // **Selected object wears its name above its marker.** Placed by marker.nim, drawn as
-// overlay <text> in object's ink outlined in marker's stroke; two selected are two
+// overlay <text> in object's ink haloed in backdrop's colour; two selected are two
 // labels, and none selected is none. Selected through glue's own entry, which is what
 // refreshes overlay; bare `nimSelect*` above never told glue anything changed.
 await page.evaluate((slots) => {
@@ -769,15 +769,19 @@ const labelled = await page.evaluate((slots) => {
   const ink = 'rgb(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) + ',' +
     Math.round(rgb[2] * 255) + ')';
   const anchor = Array.from(nimAnchorScreen(slots[0], window.innerWidth, window.innerHeight));
+  // Halo wears backdrop's colour at marker.nim's alpha; see `glue.COLOUR_LABEL_HALO`.
+  const ground = nimInkColor(nimInkBackdrop());
+  const halo = 'rgba(' + Math.round(ground[0] * 255) + ',' + Math.round(ground[1] * 255) +
+    ',' + Math.round(ground[2] * 255) + ',' + nimOverlayMetrics()[5] + ')';
   return {
-    count_two: two.length, first, ink, anchor_y: anchor[1],
+    count_two: two.length, first, ink, halo, anchor_y: anchor[1],
     labels: [nimItemLabel(slots[0]), nimItemLabel(slots[1])],
   };
 }, points_pickable);
 report(
-  'a selected object wears its name above its marker, in its ink, outlined',
+  'a selected object wears its name above its marker, in its ink, haloed',
   labelled.count_two === 2 && labelled.first !== undefined &&
-    labelled.first.fill === labelled.ink && labelled.first.stroke.startsWith('rgba(255,255,255') &&
+    labelled.first.fill === labelled.ink && labelled.first.stroke === labelled.halo &&
     labelled.first.y < labelled.anchor_y,
   `${labelled.count_two} labels for two selected (${labelled.labels.join(', ')}); ` +
     (labelled.first ? `fill ${labelled.first.fill} (ink ${labelled.ink}), ` +

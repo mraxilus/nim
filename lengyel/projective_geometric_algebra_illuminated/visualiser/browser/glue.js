@@ -3588,8 +3588,8 @@ function drawPoolGrid(count, capacity) {
 const svg_overlay = document.getElementById('overlay');
 // Read from marker.nim's own constants via nimOverlayMetrics.
 //   Never hand-copied literal that could drift out of sync with them.
-const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, HEIGHT_LABEL_MARKER] =
-  nimOverlayMetrics();
+const [WIDTH_OVERLAY_LINE, ALPHA_MARKER_SELECTED, ALPHA_MARKER_HOVER, HEIGHT_LABEL_MARKER,
+  WIDTH_LABEL_HALO, ALPHA_LABEL_HALO] = nimOverlayMetrics();
 // Every ink's colour as CSS string, read once: name label wears its object's ink, and.
 //   `nimInkColor` builds sequence per call, which per selected object per frame was
 //   allocation per frame. Indexed by ink ordinal, `nimItemInk`'s answer.
@@ -3601,10 +3601,14 @@ for (let ink = 0; ink < nimInkCount(); ink += 1) {
 }
 // Label's face sized to box marker.nim placed it in, so one number decides both.
 svg_overlay.style.fontSize = HEIGHT_LABEL_MARKER + 'px';
-// Halo around label's letters, in pixels: about tenth of face, map-label practice.
-//   Separates letters from object's own disc, which label's fill matches by design,
-//   without framing them; three pixels swamped counters at this size.
-const WIDTH_LABEL_STROKE = 1.5;
+// Halo in scene's own backdrop colour, at halo width and alpha marker.nim states.
+//   Halo that blends with ground knocks surroundings out of letters; marker's white
+//   dominated them. See `marker.WIDTH_MARKER_LABEL_HALO`.
+const COLOUR_LABEL_HALO = (() => {
+  const rgb = nimInkColor(nimInkBackdrop());
+  return 'rgba(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) + ',' +
+    Math.round(rgb[2] * 255) + ',' + ALPHA_LABEL_HALO + ')';
+})();
 // Mirrors marker.MarkerKind's own ordinals; nimSelectionMarker leads with one of these.
 const MARKER_RING = 0, MARKER_RAILS = 1, MARKER_LOOP = 2, MARKER_BANDS = 3,
   MARKER_FRAME = 4;
@@ -3689,18 +3693,18 @@ function appendMarkerPulse(slot, alpha, progress, is_touch) {
 }
 
 // Write selected object's name above its marker.
-//   Filled in object's own ink and outlined in marker's stroke, so label reads as part of
-//   marker family. Where it sits is `marker.Marker.label_at`'s decision, centred here on
-//   both axes; face is `svg#overlay text`'s in shell.html.
+//   Filled in object's own ink and haloed in backdrop's colour, so letters read against
+//   whatever they stand over. Where it sits is `marker.Marker.label_at`'s decision,
+//   centred here on both axes; face is `svg#overlay text`'s in shell.html.
 //   Text set on element rather than through attributes: `stageEl` strips and sets
 //   attributes only, and recycled <text> keeps last content unless overwritten.
-function appendLabel(slot, alpha) {
+function appendLabel(slot) {
   const at = nimSelectionLabelAt(slot, canvas.clientWidth, canvas.clientHeight);
   if (at[2] < 0.5) return;
   const element = stageEl('text', {
     x: at[0], y: at[1], 'text-anchor': 'middle', 'dominant-baseline': 'central',
     fill: COLOUR_INK_CSS[nimItemInk(slot)],
-    stroke: 'rgba(255,255,255,' + alpha + ')', 'stroke-width': WIDTH_LABEL_STROKE,
+    stroke: COLOUR_LABEL_HALO, 'stroke-width': WIDTH_LABEL_HALO,
     'stroke-linejoin': 'round', 'paint-order': 'stroke',
   });
   element.textContent = nimItemLabel(slot);
@@ -3793,7 +3797,7 @@ function refreshOverlay(cursor) {
     if (slot === nimHoldSlot()) continue; // Its own swollen marker is drawn below.
     appendMarker(slot, ALPHA_MARKER_SELECTED, w, h, 1);
     appendMarkerPulse(slot, ALPHA_MARKER_SELECTED, 1, false);
-    appendLabel(slot, ALPHA_MARKER_SELECTED);
+    appendLabel(slot);
   }
 
   // Fill pressed item's own marker as press matures into selection.
@@ -3813,7 +3817,7 @@ function refreshOverlay(cursor) {
     appendMarker(slot_hold, ALPHA_MARKER_SELECTED, w, h, nimHoldProgress(now()), true,
       nimSwellHold(now()));
     // Name rides up with swollen marker, once hold has selected it.
-    if (slots_selection.includes(slot_hold)) appendLabel(slot_hold, ALPHA_MARKER_SELECTED);
+    if (slots_selection.includes(slot_hold)) appendLabel(slot_hold);
   }
 
   // Hover and keyboard focus wear same marker at same weight:
