@@ -812,6 +812,51 @@ report(
   'and nothing selected wears no label',
   count_labels_cleared === 0, `${count_labels_cleared} labels with nothing selected`,
 );
+
+// **Plane filling view is backdrop.** Press on it used to start construction drag, and.
+//   with every pixel under plane there was no empty glass left to orbit from. Camera
+//   dropped onto ground plane so its disc spans frame; left-drag then orbits, builds
+//   nothing, and hover reads backdrop throughout.
+await clearTheGlass();
+const filled = await page.evaluate(async () => {
+  const wait = (n) => new Promise((r) => setTimeout(r, n));
+  let ground = -1;
+  for (const s of nimSceneSlots()) if (nimItemLabel(s) === 'ground') ground = s;
+  nimSetCameraTarget(0, 0, 0); nimSetCameraDistance(1.5);
+  nimSetCameraAzimuth(0.9); nimSetCameraElevation(0.9);
+  await wait(300);
+  // Off middle, where opening scene's origin point stands; disc spans whole frame.
+  const canvas = document.getElementById('gl');
+  nimUpdateCursor(canvas.clientWidth / 2 + 180, canvas.clientHeight / 2 + 140);
+  nimUpdateHover(canvas.clientWidth, canvas.clientHeight);
+  return {
+    ground, hovered: nimHoverSlot(), is_backdrop: nimIsHoverBackdrop(),
+    azimuth: nimCameraAzimuth(), items: nimSceneCount(),
+  };
+});
+await page.mouse.move(SIZE_VIEW.width / 2 + 180, SIZE_VIEW.height / 2 + 140);
+await page.mouse.down();
+for (let step = 1; step <= 6; step += 1) {
+  await page.mouse.move(SIZE_VIEW.width / 2 + 180 + 30 * step, SIZE_VIEW.height / 2 + 140);
+  await page.waitForTimeout(40);
+}
+const mid_drag = await page.evaluate(() => nimDragActive());
+await page.mouse.up();
+await page.waitForTimeout(300);
+const after_fill = await page.evaluate(
+  () => ({ azimuth: nimCameraAzimuth(), items: nimSceneCount() }),
+);
+report(
+  'a plane filling the view is backdrop: a drag on it orbits instead of building',
+  filled.hovered === filled.ground && filled.is_backdrop && !mid_drag &&
+    Math.abs(after_fill.azimuth - filled.azimuth) > 0.05 && after_fill.items === filled.items,
+  `hovered ${filled.hovered === filled.ground ? 'ground' : 'slot ' + filled.hovered}, ` +
+    `backdrop ${filled.is_backdrop}, drag ${mid_drag ? 'active' : 'refused'}, azimuth ` +
+    `${filled.azimuth.toFixed(3)} -> ${after_fill.azimuth.toFixed(3)}, items ` +
+    `${filled.items} -> ${after_fill.items}`,
+);
+await page.keyboard.press('Home');
+await settleCamera();
 await page.evaluate(() => nimSelectOnly(nimSceneSlots()[0]));
 await page.waitForTimeout(700); // Let framing ease finish before moving by hand.
 const panned_selected_before = await readCamera();

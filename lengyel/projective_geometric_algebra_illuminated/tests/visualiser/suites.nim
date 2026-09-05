@@ -4999,6 +4999,23 @@ suite "Interaction":
     check outcome.index_created.isNone
     check outcome.message.len == 0
 
+    # Finite plane filling view is backdrop too, read off scene by `updateHover`.
+    #   From half unit above ground its disc spans frame, and press on it starting drag
+    #   left view unmovable; from far off it is ordinary drag handle.
+    var floor = initScene()
+    floor.addItem(groundPlane(), "ground", Ink.Grid)
+    for (distance, is_backdrop) in [(0.5, true), (40.0, false)]:
+      let close = initCamera(target = ORIGIN, distance = distance, azimuth = 0.9, elevation = 0.9)
+      var over = Interaction(is_enabled: true)
+      over.updateCursor(400.0, 300.0)
+      over.updateHover(
+        floor, close, close.drawExtentFor(600), close.initMatrixViewProjection(800.0/600.0),
+        800, 600,
+      )
+      check over.index_hover == some(0)
+      check over.is_hover_backdrop == is_backdrop
+      check over.beginDrag(arming = MenuArming.Never, now = 0.0) == not is_backdrop
+
     # Horizon *line* is ordinary drag target both ways: it is curve, not backdrop.
     interaction.is_hover_backdrop = false
     check interaction.beginDrag(arming = MenuArming.OnDwell, now = 0.0)

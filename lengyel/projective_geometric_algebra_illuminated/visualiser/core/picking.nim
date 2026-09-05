@@ -707,6 +707,28 @@ proc pickNearest*(
   pickAt(scene, camera, scale, view_projection, width, height, cursor, placed).slot
 
 
+func coversView*(
+  centre: Position, radius: float, scale: DrawExtent, width, height: int
+): bool =
+  ## Report whether disc of `radius` about `centre` spans at least frame's longer side.
+  ##   Cursor over such disc has no empty glass beside it to press instead, so it is
+  ##   treated as backdrop; see `isBackdropUnder`.
+  radius/worldPerPixelAt(centre, scale.scale) >= float(max(width, height))
+
+
+func isBackdropUnder*(
+  scene: Scene, slot: int, scale: DrawExtent, width, height: int
+): bool =
+  ## Report whether hovered item is backdrop: plane at horizon, or plane filling view.
+  ##   Backdrop is click and hold target, never drag handle: press on it falls through to
+  ##   camera, or view cannot be moved while plane fills every pixel.
+  let geometry = scene.geometryOf(slot)
+  if geometry.isHorizonPlane: return true
+  if shape(geometry) != some(Shape.Plane): return false
+  let anchor = anchorFor(geometry, scene.anchorOverrideAt(slot), scale)
+  anchor.isSome and coversView(anchor.get, EXTENT_PLANE_F, scale, width, height)
+
+
 func isAnchorNear(anchor: Position, camera: Camera, scale: DrawExtent): bool =
   ## Report whether anchor's depth is within `FACTOR_ANCHOR_DEPTH` of orbit distance.
   let depth = dot(anchor - scale.eye, scale.forward)

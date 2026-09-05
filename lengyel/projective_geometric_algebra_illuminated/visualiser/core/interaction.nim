@@ -235,7 +235,8 @@ type
     is_enabled*: bool ## Whether picking and overlay run at all; off during storyboard capture.
     cursor*: ScreenPosition ## Last known cursor position, in window pixels.
     index_hover*: Option[int] ## Item nearest cursor this frame, regardless of dragging.
-    is_hover_backdrop*: bool ## Whether hovered item is plane at horizon.
+    is_hover_backdrop*: bool ## Whether hovered item is backdrop: plane at horizon, or
+      ## finite plane whose disc fills view; see `picking.isBackdropUnder`.
     count_hover_rivals*: int ## How many items of hovered item's rank were in reach.
       ## `picking.PickReport.count_rivals`; one where hover is unambiguous, zero where
       ## nothing is hovered. Touch reads it through `canConstructByTouch`.
@@ -655,7 +656,7 @@ proc updateHover*(
   # Note backdrop here, where scene is in hand; see `is_hover_backdrop`.
   interaction.is_hover_backdrop =
     interaction.index_hover.isSome and
-    scene.geometryOf(interaction.index_hover.get).isHorizonPlane
+    isBackdropUnder(scene, interaction.index_hover.get, scale, width, height)
 
 
 
@@ -1010,10 +1011,11 @@ func beginDrag*(interaction: var Interaction, arming: MenuArming, now: float): b
   ##   Reports whether one started, so caller knows whether to fall back to camera.
   ##   `arming` is what pointer chose; see `MenuArming` and `armingOf`.
   ##   Expects `beginPress` to have run for same press.
-  ##   Plane at horizon is click and hold target, never drag handle.
-  ##     Drawn as dome over every direction, it is hovered wherever nothing else is; press
-  ##     on it starting drag would stop press on empty space falling through to camera.
-  ##     Dragging backdrop is moving view.
+  ##   Backdrop is click and hold target, never drag handle; see `is_hover_backdrop`.
+  ##     Plane at horizon is drawn as dome over every direction, hovered wherever nothing
+  ##     else is; press on it starting drag would stop press on empty space falling
+  ##     through to camera. Plane filling view leaves no empty space at all, so press on
+  ##     it starting drag left view unmovable. Dragging backdrop is moving view.
   ##   Touch, `MenuArming.OnDwell`, also refuses crowd; see `canConstructByTouch`.
   if interaction.index_hover.isNone or interaction.is_hover_backdrop: return false
   if arming == MenuArming.OnDwell and not interaction.canConstructByTouch: return false
