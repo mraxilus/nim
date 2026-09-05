@@ -759,13 +759,44 @@ object's own ink and outlined in the marker's stroke, so it reads as part of the
 family; hover and focus wear none, as they carry no pulse. Where it sits is one more
 decision `marker.nim` makes (`Marker.has_label`, `Marker.label_at`): centred `GAP_MARKER`
 plus half `HEIGHT_MARKER_LABEL` (16 px) above the outline's top at the object's own place —
-a ring's top (so a held marker's swell lifts the label with it), the upper rail where it
-passes the line's support, the bands' highest projected point, a plane's circle as below —
+a ring's top (so a held marker's swell lifts the label with it), the bands' highest
+projected point, a plane's circle and a line's own left as below —
 and, for the sky's frame, just inside the top edge, since above a frame that is the
 viewport is off screen. Placed with the marker rather than by each front-end so the two
 agree by construction; each centres its own text on the point and keeps its own face (the
 page's sans at the shared height, set by `glue.js` from `nimOverlayMetrics`; on the desktop
 a face of its own, below).
+
+**A line's label keeps to the line's own left, beside its support clamped into view.**
+"Above the line" cannot be continuous: which side of an unoriented line is up flips as the
+line passes vertical on screen, and the old rule — above the upper rail where it passes the
+support — hopped rail to rail there, overlapped a steep line, and vanished with the support.
+The side of the line's *own* direction (`direction(geometry)`, fixed by the geometry, its
+projection a continuous vector) is continuous, so `marker.placeLabelBesideLine` anchors the
+label on the line and pushes it to that left: `Marker.is_label_beside` with `label_at` the
+anchor and `label_away_x/y` the unit push, and each front-end, which alone measures its
+text, sets the centre `clearanceBeside` along it — rail, gap, and the label's own box's
+half-extent in that direction (`|away_x|·half_width + |away_y|·half_height`), so a wide name
+beside a steep line still clears it where a fixed lift put letters across it (`glue.js`
+`appendLabel` measures with `getComputedTextLength`, the desktop with `guiLabelWidth` in
+the label face). The anchor is the support's projection while it is in view, held
+`MARGIN_LABEL_VIEW` = 40 px inside the edge along the line; past that it slides along the
+visible stretch (the stretch in front of the eye through `clipToEyeSide`, then
+`clipToView`, Liang–Barsky both ends), and a support behind the eye anchors at the
+near-plane crossing, the nearest visible point to it. The label may sit below the line after
+half a turn: the side is the line's, not the screen's, and that is what makes it continuous.
+Chosen over four others on isolated animated mock-ups sharing one 24 s camera path (orbit,
+near top-down turn through vertical twice, pan carrying the support off the view, near
+end-on pass) with a hop counter — a step over 12 px that is also over twice the step before:
+the old rule hopped five times; the upward side sliding through the line at vertical, the
+oriented side at the visible midpoint, and text set along the line all ran without hops,
+but the first overlaps at vertical, the second follows the viewport rather than a point of
+the line, and the third flips its text. Verified by suite (a full orbit at two elevations
+in 0.002 rad steps, the second carrying the line through vertical twice: no isolated step,
+push direction turning under 0.05 per step, anchor always in view; the support twelve units
+off the target lands the anchor on the line, in view, a margin from the edge; the clearance
+pinned flat and vertical) and by driven check on the browser (402 frames over the same two
+turns: 0 hops, 0 out of view, largest step 9.4 px). Both front-ends rendered and looked at.
 
 **A plane's label stands on the disc's column at the height of its circle's true top.**
 The top was the highest of the 64 projected vertices of the marker's circle, and as the
