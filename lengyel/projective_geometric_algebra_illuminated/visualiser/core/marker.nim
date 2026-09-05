@@ -67,6 +67,10 @@ const
   ALPHA_MARKER_LABEL_HALO* = 0.85'f32
     ## Set halo's opacity.
     ##   Solid enough to clear, soft enough to keep object's edge showing beside letters.
+  MARGIN_LABEL_VIEW* = 40.0
+    ## Set how far in from view's edge line's label anchor is held, in pixels, along line.
+    ##   Support off screen slides anchor along visible stretch to this far from edge it
+    ##   left through; whole label then stays readable rather than half cut.
   WIDTH_MARKER_COMET* = 3.5'f32
     ## Widen comet to this thickness at head, in pixels, tapering to `WIDTH_MARKER`.
     ##   Thicker than `WIDTH_MARKER`, whole of how it reads: weight separates lit part
@@ -237,10 +241,19 @@ type
       ## False where outline has no top to sit above: rails with both supports cut away.
     label_at*: ScreenPosition ## Where name label is centred, in screen space.
       ## `GAP_MARKER` plus half `HEIGHT_MARKER_LABEL` above outline's top at object's own
-      ## place: ring's top, upper rail at support, loop's or bands' highest point. Frame is
-      ## whole view, so its label sits just inside top edge instead.
+      ## place: ring's top, loop's true top on disc's column, bands' highest point. Frame
+      ## is whole view, so its label sits just inside top edge instead.
+      ## Rails: anchor *on* line instead, with label pushed off it; see `is_label_beside`.
       ## Decided here with rest of marker so both front-ends agree by construction; each
       ## centres its own text on it.
+    is_label_beside*: bool ## Whether `label_at` is anchor on outline, label pushed off it.
+      ## Rails: `label_at` lies on line at its support, clamped into view, and front-end
+      ## sets centre `clearanceBeside` along `label_away_x`/`label_away_y`, measured with
+      ## its own text box. False elsewhere: `label_at` is centre itself.
+    label_away_x*, label_away_y*: float ## Unit direction label is pushed along, on screen.
+      ## Line's own left, from its direction as projected: side fixed by geometry, not by
+      ## screen, which is what makes it continuous through every turn; see
+      ## `placeLabelBesideLine`.
     pulses*: array[
       RUNS_MARKER_PULSE, array[POINTS_MARKER_PULSE, ScreenPosition]
     ] ## Short runs travelling along marker's outline, in screen space.
@@ -604,6 +617,91 @@ func placeLabelAbove(marker: var Marker, x, top: float) =
   )
 
 
+func clearanceBeside*(away_x, away_y, half_width: float): float =
+  ## Measure how far label's centre stands off line along `away`, for label pushed beside.
+  ##   Rail, gap, then label's own box's half-extent in that direction: wide name beside
+  ##   steep line clears it, where fixed lift put letters across it.
+  ##   `half_width` is front-end's measured text, half; height is nominal one shared.
+  OFFSET_MARKER_RAIL + GAP_MARKER + abs(away_x)*half_width +
+    abs(away_y)*0.5*HEIGHT_MARKER_LABEL
+
+
+func clipToView(tail, head: ScreenPosition; width, height: int): Option[(float, float)] =
+  ## Clip screen segment to viewport, as fractions along it; none where it misses.
+  ##   Liang–Barsky, both ends free, where `fractionLeavingView` clips outward from tail
+  ##   already inside.
+  var (f0, f1) = (0.0, 1.0)
+  let (dx, dy) = (head.x - tail.x, head.y - tail.y)
+  for (rate, room) in [
+    (-dx, tail.x), (dx, float(width) - tail.x), (-dy, tail.y), (dy, float(height) - tail.y)
+  ]:
+    if rate == 0.0:
+      if room < 0.0: return
+      continue
+    let f = room/rate
+    if rate < 0.0:
+      if f > f1: return
+      if f > f0: f0 = f
+    else:
+      if f < f0: return
+      if f < f1: f1 = f
+  some((f0, f1))
+
+
+func placeLabelBesideLine(
+  marker: var Marker; anchor: Position; axis: Direction; scale: DrawExtent;
+  view_projection: Matrix4; width, height: int
+) =
+  ## Place line's label on line at its support, clamped into view, pushed to line's left.
+  ##   Left of line's *own* direction, as projected: choice of side on unoriented line
+  ##   cannot be continuous (it flips at vertical), and side of oriented one is. Label
+  ##   may stand below line after half turn, and never hops.
+  ##   Anchor is support's projection while that is in view, `MARGIN_LABEL_VIEW` inside;
+  ##   past that it slides along visible stretch, and support behind eye anchors at
+  ##   near-plane crossing, nearest visible point to it.
+  ##   Both ends of line in front of eye are found as `railsAt` finds rails', through
+  ##   `clipToEyeSide`; nothing visible leaves label off.
+  ##   Chosen over four others on animated mock-ups: above upper rail hopped at vertical
+  ##   and overlapped steep line; upward side sliding through line overlapped at vertical;
+  ##   visible midpoint followed viewport rather than line; text along line flipped.
+  let
+    anchor_point = toMultivector(anchor)
+    axis_point = toMultivector(axis)
+  var
+    ends: array[2, Option[(ScreenPosition, ScreenPosition)]] ## (tail, head) per half.
+  for index_half, reach in [-scale.radiusHorizon, scale.radiusHorizon]:
+    let clipped = clipToEyeSide(
+      anchor, pointFrom(add(scale.eye_point, wedge(reach, axis_point))), scale.plane_near
+    )
+    if clipped.isNone: continue
+    let
+      tail = projectToScreen(view_projection, width, height, clipped.get[0])
+      head = projectToScreen(view_projection, width, height, clipped.get[1])
+    if tail.isInFront and head.isInFront: ends[index_half] = some((tail, head))
+  if ends[0].isNone and ends[1].isNone: return
+  # Order stretch along `axis`, and note where support, or nearest point to it, falls.
+  var (a, b, at_support) = (ScreenPosition(), ScreenPosition(), ScreenPosition())
+  if ends[0].isSome and ends[1].isSome:
+    (a, b, at_support) = (ends[0].get[1], ends[1].get[1], ends[1].get[0])
+  elif ends[1].isSome: (a, b, at_support) = (ends[1].get[0], ends[1].get[1], ends[1].get[0])
+  else: (a, b, at_support) = (ends[0].get[1], ends[0].get[0], ends[0].get[0])
+  let
+    (dx, dy) = (b.x - a.x, b.y - a.y)
+    length = sqrt(dx*dx + dy*dy)
+  if length < 1.0e-6: return
+  let clipped = clipToView(a, b, width, height)
+  if clipped.isNone: return
+  let
+    (f0, f1) = clipped.get
+    inset = min(MARGIN_LABEL_VIEW/length, 0.5*(f1 - f0))
+    f_support = ((at_support.x - a.x)*dx + (at_support.y - a.y)*dy)/(length*length)
+    f = clamp(f_support, f0 + inset, f1 - inset)
+  marker.has_label = true
+  marker.is_label_beside = true
+  marker.label_at = ScreenPosition(x: a.x + f*dx, y: a.y + f*dy, depth: 1.0)
+  (marker.label_away_x, marker.label_away_y) = (dy/length, -dx/length)
+
+
 func placeLabelAboveTopmost(
   marker: var Marker, points: openArray[ScreenPosition], count: int
 ) =
@@ -906,12 +1004,10 @@ func markerRails(
         rails[index_side], counts[index_side], is_closed = false, origins[index_side]
       )
 
-  # Label above upper rail where it passes support, whichever side that is on screen.
-  for index_side in 0 .. 1:
-    let support = walks[index_side][1]
-    if support.isNone: continue
-    if not marker.has_label or support.get.y < marker.label_at.y + 0.5*HEIGHT_MARKER_LABEL:
-      marker.placeLabelAbove(support.get.x, support.get.y)
+  # Label beside line on its own left, anchored at support clamped into view.
+  marker.placeLabelBesideLine(
+    anchor.get, axis.get, scale, view_projection, width, height
+  )
 
   if travel.isSome:
     # Lap both rails against one shared reach either way; see `shared`.

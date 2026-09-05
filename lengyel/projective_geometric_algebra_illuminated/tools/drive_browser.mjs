@@ -858,6 +858,51 @@ report(
   `hover ${hover_plane} (ground ${slot_plane}); disc centre at depth ` +
     `${depth_plane.toFixed(3)}, wanted ${depth_wanted.toFixed(3)}`,
 );
+// **Line's label glides through full orbit and vertical crossing.** Select opening
+// scene's line, turn camera in 200 steps at two elevations, second carrying line through
+// vertical on screen, and read label's place each frame: no step over twelve pixels that
+// is also over twice one before (mock-up page's own criterion), and label always in view.
+await clearTheGlass();
+await page.keyboard.press('Home');
+await settleCamera();
+await page.evaluate(() => clearSelection());
+const slot_line = await page.evaluate(() => nimSceneSlots()
+  .find((slot) => nimItemShapeWord(slot) === 'line'));
+await page.evaluate((slot) => selectOnly(slot, null), slot_line);
+await page.waitForTimeout(300);
+let hops_line = 0, out_of_view_line = 0, frames_line = 0, step_line_most = 0;
+for (const elevation of [0.4, 1.25]) {
+  let before = null, step_before = 0;
+  for (let i = 0; i <= 200; i += 1) {
+    await page.evaluate((c) => {
+      nimSetCameraTarget(0, 0, 0); nimSetCameraDistance(19);
+      nimSetCameraAzimuth(c.azimuth); nimSetCameraElevation(c.elevation);
+    }, { azimuth: (i / 200) * 2 * Math.PI, elevation });
+    await page.waitForTimeout(25);
+    const at = await page.evaluate(() => {
+      const t = document.querySelector('#overlay text');
+      const r = document.getElementById('gl').getBoundingClientRect();
+      if (!t) return null;
+      return { x: +t.getAttribute('x'), y: +t.getAttribute('y'), w: r.width, h: r.height };
+    });
+    if (!at) { out_of_view_line += 1; before = null; continue; }
+    frames_line += 1;
+    if (at.x < 0 || at.x > at.w || at.y < 0 || at.y > at.h) out_of_view_line += 1;
+    if (before) {
+      const step = Math.hypot(at.x - before.x, at.y - before.y);
+      if (step > 12 && step > 2 * step_before + 1) hops_line += 1;
+      step_line_most = Math.max(step_line_most, step);
+      step_before = step;
+    }
+    before = at;
+  }
+}
+report(
+  'a line\'s label glides through a full orbit and a vertical crossing, staying in view',
+  slot_line !== undefined && frames_line >= 400 && hops_line === 0 && out_of_view_line === 0,
+  `${frames_line} frames, ${hops_line} hops, ${out_of_view_line} out of view, ` +
+    `largest step ${step_line_most.toFixed(1)} px`,
+);
 await page.evaluate(() => clearSelection());
 
 // **Selected object wears its name above its marker.** Placed by marker.nim, drawn as

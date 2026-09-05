@@ -120,6 +120,17 @@ template fill3(flat: var FlatFloats, a, b, c: float32): FlatBuffer =
   flat.used = 3
   flat.view
 
+template fill6(flat: var FlatFloats, a, b, c, d, e, f: float32): FlatBuffer =
+  ## Replace contents with six floats, and report them as view.
+  flat[0] = a
+  flat[1] = b
+  flat[2] = c
+  flat[3] = d
+  flat[4] = e
+  flat[5] = f
+  flat.used = 6
+  flat.view
+
 
 
 #[ Panel State ]#
@@ -300,7 +311,7 @@ var
   FLAT_GRID = initFlatFloats(2)
   FLAT_TARGET = initFlatFloats(3)
   FLAT_EYE = initFlatFloats(3)
-  FLAT_LABEL = initFlatFloats(3)
+  FLAT_LABEL = initFlatFloats(6)
   FLAT_ANCHOR_WORLD = initFlatFloats(3)
   FLAT_MENU = initFlatFloats(3*(ord(DragChoice.high) + 1))
   FLAT_MENU_CENTRE = initFlatFloats(2)
@@ -1817,12 +1828,17 @@ proc nimTickPulse(now: cfloat) {.exportc.} =
 
 
 proc nimSelectionLabelAt(slot, width, height: cint): FlatBuffer {.exportc.} =
-  ## Report where this item's name label is centred, as `[x, y, is_shown]` over `FLAT_LABEL`.
+  ## Report where this item's name label goes, over `FLAT_LABEL`.
+  ##   Six floats: `[x, y, is_shown, is_beside, away_x, away_y]`.
   ##   Place is marker's own (`marker.Marker.label_at`), so label sits above outline
   ##   actually drawn, swollen or not. Reads marker `nimSelectionMarker` just shaped for
   ##   this slot wherever it stands in `MARKER_SHAPED`, and shapes plain one otherwise.
   ##   `is_shown` 0 for dead slot, no marker, or outline with no top to sit above.
-  if not SCENE.isAlive(int(slot)): return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+  ##   `is_beside` 1 where `x, y` is anchor on line and glue pushes label off it along
+  ##   `away` by `nimLabelClearance`, measured with its own text; see
+  ##   `marker.Marker.is_label_beside`.
+  if not SCENE.isAlive(int(slot)):
+    return FLAT_LABEL.fill6(0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32)
   ensureViewOverlay(int(width), int(height))
   var held = (ref Marker)(nil)
   if MARKER_SHAPED.isSome:
@@ -1836,10 +1852,21 @@ proc nimSelectionLabelAt(slot, width, height: cint): FlatBuffer {.exportc.} =
     if not markerFor(
       SCENE.geometryOf(int(slot)), SCENE.anchorOverrideAt(int(slot)), SCENE.radiusAt(int(slot)),
       SCALE_OVERLAY, CAMERA, VIEW_PROJECTION_OVERLAY, int(width), int(height), held[],
-    ): return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
+    ): return FLAT_LABEL.fill6(0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32)
   template marker: Marker = held[]
-  if not marker.has_label: return FLAT_LABEL.fill3(0.0'f32, 0.0'f32, 0.0'f32)
-  FLAT_LABEL.fill3(float32(marker.label_at.x), float32(marker.label_at.y), 1.0'f32)
+  if not marker.has_label:
+    return FLAT_LABEL.fill6(0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32, 0.0'f32)
+  FLAT_LABEL.fill6(
+    float32(marker.label_at.x), float32(marker.label_at.y), 1.0'f32,
+    float32(ord(marker.is_label_beside)), float32(marker.label_away_x),
+    float32(marker.label_away_y),
+  )
+
+
+proc nimLabelClearance(away_x, away_y, half_width: cfloat): cfloat {.exportc.} =
+  ## Report how far label centre stands off line along `away`; see `marker.clearanceBeside`.
+  ##   `half_width` is glue's measured text, half.
+  cfloat(clearanceBeside(float(away_x), float(away_y), float(half_width)))
 
 
 proc nimSelectionPulse(

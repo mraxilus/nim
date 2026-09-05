@@ -320,6 +320,10 @@ proc overlayText*(cx, cy, red, green, blue, alpha: cfloat; text: cstring)
   {.importc: "guiOverlayText", sideEffect.}
   ## Write text centred on `cx`/`cy`, measured against font loaded.
 
+proc labelWidth*(text: cstring): cfloat {.importc: "guiLabelWidth", sideEffect.}
+  ## Measure name label as `overlayLabel` draws it, in label's face.
+  ##   For pushing it beside line by its own box.
+
 proc overlayLabel*(
   cx, cy, fill_red, fill_green, fill_blue, stroke_red, stroke_green, stroke_blue,
   alpha: cfloat; text: cstring

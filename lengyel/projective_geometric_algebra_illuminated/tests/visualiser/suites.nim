@@ -7122,10 +7122,83 @@ suite "Marker":
     check behind.isNone
 
 
+  test "a line's label keeps to the line's own left and glides through every turn":
+    # Side of unoriented line flips at vertical, so old rule hopped rail to rail there.
+    #   Side of line's own direction does not. Over full orbit at two elevations, second
+    #   carrying line through vertical twice, anchor never takes isolated step and push
+    #   direction turns steadily.
+    for elevation in [0.4, 1.25]:
+      var
+        at_before = none(ScreenPosition)
+        away_before = (0.0, 0.0)
+        step_before = 0.0
+      var azimuth = 0.0
+      while azimuth < 2.0*PI:
+        let (placement, view_projection, scale) = setUpAt(azimuth, elevation, 19.0)
+        let rails = shapedMarkerFor(
+          LINE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+        ).get
+        check rails.kind == MarkerKind.Rails and rails.has_label and rails.is_label_beside
+        check rails.label_at.x >= 0.0 and rails.label_at.x <= float(WIDTH_MARK)
+        check rails.label_at.y >= 0.0 and rails.label_at.y <= float(HEIGHT_MARK)
+        if at_before.isSome:
+          let step = hypot(rails.label_at.x - at_before.get.x, rails.label_at.y - at_before.get.y)
+          check step <= 2.0*step_before + 1.0
+          check hypot(
+            rails.label_away_x - away_before[0], rails.label_away_y - away_before[1]
+          ) < 0.05
+          step_before = step
+        at_before = some(rails.label_at)
+        away_before = (rails.label_away_x, rails.label_away_y)
+        azimuth += 0.002
+
+
+  test "a line's label stays in view when its support leaves it":
+    # Camera looks twelve units along line from support: support projects off screen, or.
+    #   behind eye, while line still crosses view. Anchor slides to visible stretch,
+    #   margin in from edge, on line.
+    let
+      support = positionAnchor(LINE).get
+      axis = direction(LINE).get
+    for sign in [1.0, -1.0]:
+      # Eye square to line, so support stands twelve units aside at eight of depth.
+      let placement = initCamera(
+        target = support + (sign*12.0)*axis, distance = 8.0,
+        azimuth = arctan2(axis.y, axis.x) + 0.5*PI, elevation = 0.35,
+      )
+      let scale = placement.drawExtentFor(HEIGHT_MARK)
+      let view_projection = placement.initMatrixViewProjection(WIDTH_MARK/HEIGHT_MARK)
+      let projected = projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, support)
+      check not projected.isWithinView(WIDTH_MARK, HEIGHT_MARK)
+      let rails = shapedMarkerFor(
+        LINE, none(Position), scale, placement, view_projection, WIDTH_MARK, HEIGHT_MARK
+      ).get
+      check rails.has_label and rails.is_label_beside
+      let at = rails.label_at
+      check at.isWithinView(WIDTH_MARK, HEIGHT_MARK)
+      # On line: square distance to line through support and point along it vanishes.
+      let along = projectToScreen(view_projection, WIDTH_MARK, HEIGHT_MARK, support + axis)
+      check awayFromScreen(at, projected, along) < 0.5
+      # Margin in from nearest edge, along line, is `MARGIN_LABEL_VIEW`.
+      let room = min(min(at.x, float(WIDTH_MARK) - at.x), min(at.y, float(HEIGHT_MARK) - at.y))
+      check room > 0.5*MARGIN_LABEL_VIEW - 1.0
+
+
+  test "a label pushed beside a line clears it by its own box":
+    # Clearance is rail, gap, and box's half-extent along push: flat line uses half height,.
+    #   vertical one half width.
+    check abs(clearanceBeside(0.0, -1.0, 30.0) - (OFFSET_MARKER_RAIL + GAP_MARKER + 8.0)) < 1.0e-9
+    check abs(clearanceBeside(1.0, 0.0, 30.0) - (OFFSET_MARKER_RAIL + GAP_MARKER + 30.0)) < 1.0e-9
+    let diagonal = clearanceBeside(sqrt(0.5), sqrt(0.5), 30.0)
+    check diagonal > OFFSET_MARKER_RAIL + GAP_MARKER + 8.0 and
+      diagonal < OFFSET_MARKER_RAIL + GAP_MARKER + 30.0
+
+
   test "every marker places its name label above its own top, clear of the outline":
     # Where label sits is marker's decision, so both front-ends agree by construction.
-    #   Ring: above its top. Rails: above upper rail at support. Loop and bands: above
-    #   highest outline point. Frame is whole view, so label sits just inside top edge.
+    #   Ring: above its top. Rails: on line at support, pushed to line's left. Loop and
+    #   bands: above highest outline point. Frame is whole view, so label sits just inside
+    #   top edge.
     let lift = GAP_MARKER + 0.5*HEIGHT_MARKER_LABEL
     let ring = markerOf(POINT_A).get
     check ring.has_label
@@ -7144,11 +7217,19 @@ suite "Marker":
     for i in 0 ..< loop.count_point:
       check loop.points[i].y >= loop.label_at.y + lift - TOLERANCE_TEST
     let rails = markerOf(LINE).get
-    check rails.kind == MarkerKind.Rails and rails.has_label
+    check rails.kind == MarkerKind.Rails and rails.has_label and rails.is_label_beside
     let support = projectToScreen(
       view_projection, WIDTH_MARK, HEIGHT_MARK, positionAnchor(LINE).get
     )
-    check rails.label_at.y < support.y - OFFSET_MARKER_RAIL
+    # Anchor on line at support, push direction unit and square to line's screen direction.
+    check abs(rails.label_at.x - support.x) < 1.0e-6
+    check abs(rails.label_at.y - support.y) < 1.0e-6
+    check abs(hypot(rails.label_away_x, rails.label_away_y) - 1.0) < 1.0e-9
+    let along = projectToScreen(
+      view_projection, WIDTH_MARK, HEIGHT_MARK, positionAnchor(LINE).get + 0.1*direction(LINE).get
+    )
+    check abs((along.x - support.x)*rails.label_away_x + (along.y - support.y)*rails.label_away_y) <
+      1.0e-6*hypot(along.x - support.x, along.y - support.y)
     let frame = markerOf(PLANE_HORIZON).get
     check frame.kind == MarkerKind.Frame and frame.has_label
     check frame.label_at.x =~ 0.5*float(WIDTH_MARK)

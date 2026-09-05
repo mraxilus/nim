@@ -570,8 +570,17 @@ proc drawSelectionMarker(
     #   Label storage is terminated fixed chars, read in place; see `scene.toCstring`.
     if marker.has_label:
       let (fill, halo) = (item.ink.colour, Ink.Backdrop.colour)
+      # Push line's label off its anchor by its own measured box; see `is_label_beside`.
+      var at = marker.label_at
+      if marker.is_label_beside:
+        let clearance = clearanceBeside(
+          marker.label_away_x, marker.label_away_y,
+          0.5*float(gui.labelWidth(toCstring(item.label))),
+        )
+        at.x += clearance*marker.label_away_x
+        at.y += clearance*marker.label_away_y
       gui.overlayLabel(
-        cfloat(marker.label_at.x), cfloat(marker.label_at.y),
+        cfloat(at.x), cfloat(at.y),
         fill.red, fill.green, fill.blue, halo.red, halo.green, halo.blue,
         ALPHA_MARKER_LABEL_HALO, toCstring(item.label),
       )

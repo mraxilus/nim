@@ -617,6 +617,13 @@ void guiOverlayText(float cx, float cy, float red, float green, float blue, floa
 //   Outline is text drawn again at eight one-pixel offsets beneath fill: draw list has
 //   no stroked text, and eight copies read as round outline at this size.
 //   Background list rather than menu's own, as markers are: beneath panels, over scene.
+// Measure name label as `guiOverlayLabel` will draw it, in its own face and size.
+float guiLabelWidth(const char *text) {
+  ImFont *font = font_label != nullptr ? font_label : ImGui::GetFont();
+  const float size = size_font_label > 0.0f ? size_font_label : ImGui::GetFontSize();
+  return font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
+}
+
 void guiOverlayLabel(float cx, float cy, float fill_red, float fill_green, float fill_blue,
                      float stroke_red, float stroke_green, float stroke_blue, float alpha,
                      const char *text) {

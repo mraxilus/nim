@@ -3698,6 +3698,9 @@ function appendMarkerPulse(slot, alpha, progress, is_touch) {
 //   centred here on both axes; face is `svg#overlay text`'s in shell.html.
 //   Text set on element rather than through attributes: `stageEl` strips and sets
 //   attributes only, and recycled <text> keeps last content unless overwritten.
+//   Line's label comes as anchor on line plus direction to push it: text is measured
+//   here, where its face is, and pushed by `nimLabelClearance` so its own box clears
+//   line at any angle; see `marker.Marker.is_label_beside`.
 function appendLabel(slot) {
   const at = nimSelectionLabelAt(slot, canvas.clientWidth, canvas.clientHeight);
   if (at[2] < 0.5) return;
@@ -3708,6 +3711,11 @@ function appendLabel(slot) {
     'stroke-linejoin': 'round', 'paint-order': 'stroke',
   });
   element.textContent = nimItemLabel(slot);
+  if (at[3] > 0.5) {
+    const clearance = nimLabelClearance(at[4], at[5], element.getComputedTextLength() / 2);
+    element.setAttribute('x', at[0] + clearance * at[4]);
+    element.setAttribute('y', at[1] + clearance * at[5]);
+  }
 }
 
 function appendMarker(slot, alpha, w, h, progress, is_touch, swell) {
